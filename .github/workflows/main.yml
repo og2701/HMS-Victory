@@ -47,13 +47,13 @@ jobs:
 
     - name: List contents of the coverage directory
       run: |
-        ls -la coverage/
+        ls -la htmlcov/
 
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
       with:
         personal_token: ${{ secrets.PERSONAL_TOKEN }}
-        publish_dir: ./coverage
+        publish_dir: ./htmlcov
         keep_files: false
         publish_branch: gh-pages
 
