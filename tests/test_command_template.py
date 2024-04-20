@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import Mock
+from discord import Embed
 
 from commands.command_template import placeholderCommandName
 
@@ -31,4 +32,23 @@ class TestPlaceholderCommand(unittest.TestCase):
         await placeholderCommandName(interaction, "SomeRole")
 
         sent_embed = interaction.response.send_message.call_args[0][0]
-        self.assertEqual(sent_embed.colour, 0xFFA500)
+        self.assertEqual(sent_embed.colour.value, 0xFFA500)
+
+class TestPlaceholderCommandEmbed(unittest.TestCase):
+
+    def test_embed_title(self):
+        embed = Embed(title="Placeholder", description="Test", color=0xFFA500)
+        self.assertEqual(embed.title, "Placeholder")
+
+    def test_embed_description(self):
+        embed = Embed(title="Test", description="Placeholder", color=0xFFA500)
+        self.assertEqual(embed.description, "Placeholder")
+
+    def test_embed_color(self):
+        embed = Embed(title="Test", description="Test", color=0xFFA500)
+        self.assertEqual(embed.colour.value, 0xFFA500)
+
+    def test_embed_fields_empty(self):
+        embed = Embed(title="Test", description="Test", color=0xFFA500)
+        self.assertEqual(len(embed.fields), 0)
+
