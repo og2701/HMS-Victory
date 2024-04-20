@@ -54,6 +54,7 @@ jobs:
       with:
         personal_token: ${{ secrets.PERSONAL_TOKEN }}
         publish_dir: ./htmlcov
+        keep_files: true
         publish_branch: gh-pages
 
     - name: Check Dependencies for Vulnerabilities
