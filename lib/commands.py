@@ -1,1 +1,4 @@
 from commands.role_management.roleManagement import updateRoleAssignments
+
+from commands.art_functions.colour_palette import colourPalette
+from commands.art_functions.grid import gridify
