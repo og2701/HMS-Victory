@@ -1,8 +1,7 @@
 from discord import app_commands, Intents, Interaction, Client
-import json
 
 from lib.commands import updateRoleAssignments, colourPalette, gridify
-from config import token
+from config import TOKEN
 
 
 class AClient(Client):
@@ -44,4 +43,4 @@ async def gridify_command(interaction: Interaction, attachment_url: str):
   await gridify(interaction, attachment_url)
 
 
-client.run(token)
+client.run(TOKEN)

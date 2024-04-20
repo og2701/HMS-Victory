@@ -1,5 +1,4 @@
 from discord import Embed, File
-from discord.ext.commands import Bot
 from PIL import Image, ImageDraw
 import io
 import aiohttp

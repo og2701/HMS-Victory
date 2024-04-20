@@ -13,8 +13,8 @@ async def placeholderCommandName(interaction, role_name: str):
     """
 
     initial_embed = Embed(
-        title=f"Placeholder", 
-        description=f"Placeholder", 
+        title="Placeholder", 
+        description="Placeholder", 
         color=0xFFA500
     )
 
