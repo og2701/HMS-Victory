@@ -24,11 +24,11 @@ class TestPlaceholderCommand(unittest.TestCase):
         sent_embed = interaction.response.send_message.call_args[0][0]
         self.assertIn("SomeRole", sent_embed.description)
 
-    async def test_embed_color_is_orange(self):
+    async def test_embed_colour_is_orange(self):
         interaction = Mock()
         interaction.response = Mock()
 
         await placeholderCommandName(interaction, "SomeRole")
 
         sent_embed = interaction.response.send_message.call_args[0][0]
-        self.assertEqual(sent_embed.color, 0xFFA500)
+        self.assertEqual(sent_embed.colour, 0xFFA500)
