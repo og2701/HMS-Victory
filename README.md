@@ -1,5 +1,7 @@
 # HMS Victory
 
+[![codecov](https://codecov.io/gh/og2701/HMS-Victory/branch/main/graph/badge.svg?token=YOUR_CODECOV_TOKEN)](https://codecov.io/gh/og2701/HMS-Victory)
+
 ## Getting Started
 
 To get started with HMS Victory, follow these steps:
