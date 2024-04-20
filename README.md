@@ -36,7 +36,7 @@ TOKEN = "your_discord_bot_token_here"
 
 ### Prerequisites
 
-- Python 3.12.2 or higher (earlier version probably work but are not tested)
+- Python 3.12.2 or higher (earlier versions would probably work but are not tested)
 - pip (Python package installer)
 
 ## Usage
