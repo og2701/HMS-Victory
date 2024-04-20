@@ -45,9 +45,9 @@ jobs:
         coverage run -m unittest discover -s tests
         coverage html
 
-    - name: List contents of the coverage directory
-      run: |
-        ls -la htmlcov/
+    - name: List full paths of contents in the coverage directory
+      run: ls -la htmlcov/* | awk '{print $9}' | xargs -n 1 realpath
+
 
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
