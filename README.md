@@ -27,11 +27,24 @@ pip install -r requirements.txt
 4. **Add your Discord bot token**
 
 - Open the `config.py` file located in the root directory.
-- Replace the placeholder value with your actual Discord bot token.
+- Replace the placeholder values with your actual Discord bot token and define role button configurations. The number of roles configured in `ROLE_BUTTONS` determines the number of role assignment buttons displayed by the role-react command. This feature allows users to assign roles to themselves by clicking buttons related to each role described:
 
 ```python
 # config.py
 TOKEN = "your_discord_bot_token_here"
+
+ROLE_BUTTONS = {
+    "1234567891234567891": {                    # role id
+        "name": "some role name",               # role name
+        "description": "some role description"  # role description
+    },
+    "1234567891234567891": {
+        "name": "some role name", 
+        "description": "some role description"
+    },
+    ...
+}
+
 ```
 
 ### Prerequisites
