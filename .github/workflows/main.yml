@@ -48,6 +48,8 @@ jobs:
     - name: List full paths of contents in the coverage directory
       run: ls -la htmlcov/* | awk '{print $9}' | xargs -n 1 realpath
 
+    - name: Add dummy file to ensure changes
+      run: touch ./htmlcov/.dummy
 
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
