@@ -30,3 +30,5 @@ class TestGridify(unittest.TestCase):
         sent_file = interaction.followup.send.call_args[1]['files'][0]
         self.assertEqual(sent_file.filename, "pixel.png")
 
+if __name__ == '__main__':
+    unittest.main()

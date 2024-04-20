@@ -1,6 +1,6 @@
-from discord import app_commands, Intents, Interaction, Client
+from discord import app_commands, Intents, Interaction, Client, InteractionType
 
-from lib.commands import updateRoleAssignments, colourPalette, gridify
+from lib.commands import updateRoleAssignments, colourPalette, gridify, persistantRoleButtons, handleRoleButtonInteraction
 from config import TOKEN
 
 
@@ -25,6 +25,13 @@ class AClient(Client):
     for command in tree.get_commands():
       print(command.name)
 
+  async def on_interaction(self, interaction: Interaction):
+      if interaction.type == InteractionType.component and 'custom_id' in interaction.data:
+          custom_id = interaction.data['custom_id']
+          if custom_id.startswith("role_"):
+              await handleRoleButtonInteraction(interaction)
+
+
 client = AClient()
 tree = app_commands.CommandTree(client)
 
@@ -42,5 +49,8 @@ async def colour_palette(interaction: Interaction, attachment_url: str):
 async def gridify_command(interaction: Interaction, attachment_url: str):
   await gridify(interaction, attachment_url)
 
+@tree.command(name="role-react", description="Adds a reaction role to a message")
+async def role_react_command(interaction: Interaction):
+  await persistantRoleButtons(interaction)
 
 client.run(TOKEN)

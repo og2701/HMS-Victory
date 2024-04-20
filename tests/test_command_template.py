@@ -52,3 +52,5 @@ class TestPlaceholderCommandEmbed(unittest.TestCase):
         embed = Embed(title="Test", description="Test", color=0xFFA500)
         self.assertEqual(len(embed.fields), 0)
 
+if __name__ == '__main__':
+    unittest.main()

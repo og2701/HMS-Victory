@@ -73,3 +73,5 @@ class TestUpdateRoleAssignments(unittest.TestCase):
         self.assertEqual(embed.title, "Role Assignment Complete")
         self.assertIn("Given role __Member__ to 2 members", embed.description)
         
+if __name__ == '__main__':
+    unittest.main()

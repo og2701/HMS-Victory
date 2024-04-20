@@ -36,3 +36,5 @@ class TestUpdateRoleAssignments(unittest.TestCase):
 
         interaction.followup.send.assert_called_once_with("Failed to update roles", ephemeral=True)
 
+if __name__ == '__main__':
+    unittest.main()

@@ -43,3 +43,6 @@ class TestColourPalette(unittest.TestCase):
 
         sent_file = interaction.edit_original_response.call_args[1]['attachments'][0]
         self.assertEqual(sent_file.filename, "palette_image.png")
+
+if __name__ == '__main__':
+    unittest.main()
