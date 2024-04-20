@@ -51,7 +51,7 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./coverage
         keep_files: false
-        publish_branch: main
+        publish_branch: gh-pages
 
     - name: Check Dependencies for Vulnerabilities
       run: |
