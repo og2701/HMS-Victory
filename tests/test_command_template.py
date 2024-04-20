@@ -4,8 +4,8 @@ from discord import Embed
 
 from commands.command_template import placeholderCommandName
 
-class TestPlaceholderCommand(unittest.TestCase):
 
+class TestPlaceholderCommand(unittest.TestCase):
     async def test_sends_initial_embed(self):
         interaction = Mock()
         interaction.response = Mock()
@@ -19,9 +19,9 @@ class TestPlaceholderCommand(unittest.TestCase):
     async def test_embed_description_contains_role_name(self):
         interaction = Mock()
         interaction.response = Mock()
-        
+
         await placeholderCommandName(interaction, "SomeRole")
-        
+
         sent_embed = interaction.response.send_message.call_args[0][0]
         self.assertIn("SomeRole", sent_embed.description)
 
@@ -34,8 +34,8 @@ class TestPlaceholderCommand(unittest.TestCase):
         sent_embed = interaction.response.send_message.call_args[0][0]
         self.assertEqual(sent_embed.colour.value, 0xFFA500)
 
-class TestPlaceholderCommandEmbed(unittest.TestCase):
 
+class TestPlaceholderCommandEmbed(unittest.TestCase):
     def test_embed_title(self):
         embed = Embed(title="Placeholder", description="Test", color=0xFFA500)
         self.assertEqual(embed.title, "Placeholder")
@@ -52,5 +52,6 @@ class TestPlaceholderCommandEmbed(unittest.TestCase):
         embed = Embed(title="Test", description="Test", color=0xFFA500)
         self.assertEqual(len(embed.fields), 0)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

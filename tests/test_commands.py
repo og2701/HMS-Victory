@@ -3,8 +3,8 @@ from unittest.mock import Mock
 
 from lib.commands import updateRoleAssignments
 
-class TestUpdateRoleAssignments(unittest.TestCase):
 
+class TestUpdateRoleAssignments(unittest.TestCase):
     async def test_calls_update_roles_on_guild(self):
         interaction = Mock()
         guild = Mock()
@@ -23,7 +23,9 @@ class TestUpdateRoleAssignments(unittest.TestCase):
 
         await updateRoleAssignments(interaction, "Member", ["Role1"])
 
-        interaction.followup.send.assert_called_once_with("Roles updated!", ephemeral=True)
+        interaction.followup.send.assert_called_once_with(
+            "Roles updated!", ephemeral=True
+        )
 
     async def test_sends_failure_message_on_error(self):
         interaction = Mock()
@@ -34,7 +36,10 @@ class TestUpdateRoleAssignments(unittest.TestCase):
 
         await updateRoleAssignments(interaction, "Member", ["Role1"])
 
-        interaction.followup.send.assert_called_once_with("Failed to update roles", ephemeral=True)
+        interaction.followup.send.assert_called_once_with(
+            "Failed to update roles", ephemeral=True
+        )
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

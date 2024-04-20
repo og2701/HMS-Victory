@@ -3,8 +3,8 @@ from unittest.mock import Mock
 
 from commands.art_functions.colour_palette import colourPalette
 
-class TestColourPalette(unittest.TestCase):
 
+class TestColourPalette(unittest.TestCase):
     async def test_colourPalette_sends_initial_embed(self):
         interaction = Mock()
         interaction.response = Mock()
@@ -32,7 +32,7 @@ class TestColourPalette(unittest.TestCase):
         await colourPalette(interaction, "http://example.com/image.png")
 
         interaction.edit_original_response.assert_called_once()
-        sent_embed = interaction.edit_original_response.call_args[1]['embed']
+        sent_embed = interaction.edit_original_response.call_args[1]["embed"]
         self.assertEqual(sent_embed.title, "Colour Palette")
 
     async def test_colourPalette_sends_palette_image(self):
@@ -41,8 +41,9 @@ class TestColourPalette(unittest.TestCase):
 
         await colourPalette(interaction, "http://example.com/image.png")
 
-        sent_file = interaction.edit_original_response.call_args[1]['attachments'][0]
+        sent_file = interaction.edit_original_response.call_args[1]["attachments"][0]
         self.assertEqual(sent_file.filename, "palette_image.png")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

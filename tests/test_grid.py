@@ -3,8 +3,8 @@ from unittest.mock import Mock
 
 from commands.art_functions.grid import gridify
 
-class TestGridify(unittest.TestCase):
 
+class TestGridify(unittest.TestCase):
     async def test_gridify_sends_initial_response(self):
         interaction = Mock()
         interaction.response = Mock()
@@ -27,8 +27,9 @@ class TestGridify(unittest.TestCase):
 
         await gridify(interaction, "http://example.com/image.png")
 
-        sent_file = interaction.followup.send.call_args[1]['files'][0]
+        sent_file = interaction.followup.send.call_args[1]["files"][0]
         self.assertEqual(sent_file.filename, "pixel.png")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()
