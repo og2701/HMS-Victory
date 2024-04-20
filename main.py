@@ -26,16 +26,15 @@ class AClient(Client):
     for command in tree.get_commands():
       print(command.name)
 
-
 client = AClient()
 tree = app_commands.CommandTree(client)
 
 
-@tree.command(name="role-manage", description="Manages user roles by assigning a specified role to members who don't have it")  
+@tree.command(name="role-manage", description="Manages user roles by assigning a specified role to members who don't have it")
 async def role_management(interaction: Interaction, role_name: str):
   await updateRoleAssignments(interaction, role_name)
 
-@tree.command(name="colour-palette", description="Generates a colour palette from an image")  
+@tree.command(name="colour-palette", description="Generates a colour palette from an image")
 
 async def colour_palette(interaction: Interaction, attachment_url: str):
   await colourPalette(interaction, attachment_url)
