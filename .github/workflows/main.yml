@@ -45,6 +45,10 @@ jobs:
         coverage run -m unittest discover -s tests
         coverage html
 
+    - name: List contents of the coverage directory
+      run: |
+        ls -la coverage/
+
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
       with:
