@@ -1,7 +1,6 @@
 from discord import app_commands, Intents, Interaction, Client, InteractionType
 
 from lib.commands import updateRoleAssignments, colourPalette, gridify, persistantRoleButtons, handleRoleButtonInteraction
-from config import TOKEN
 
 
 class AClient(Client):
