@@ -39,24 +39,14 @@ jobs:
       run: |
         python -m unittest discover -s tests
 
-    - name: Generate coverage HTML report
+    - name: Generate coverage report
       run: |
         pip install coverage
         coverage run -m unittest discover -s tests
-        coverage html
+        coverage xml
 
-    - name: List full paths of contents in the coverage directory
-      run: ls -la htmlcov/* | awk '{print $9}' | xargs -n 1 realpath
-
-    - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v3
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v2
       with:
-        personal_token: ${{ secrets.PERSONAL_TOKEN }}
-        publish_dir: ./htmlcov
-        keep_files: true
-        publish_branch: gh-pages
-
-    - name: Check Dependencies for Vulnerabilities
-      run: |
-        pip install safety
-        safety check
+        files: ./coverage.xml
+        fail_ci_if_error: true 
