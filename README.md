@@ -41,7 +41,8 @@ ROLE_BUTTONS = {
     "1234567891234567891": {
         "name": "some role name", 
         "description": "some role description"
-    }
+    },
+    ...
 }
 
 ```
