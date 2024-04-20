@@ -1,1 +1,1 @@
-from commands.role_management.roleManagement import myCommand
+from commands.role_management.roleManagement import updateRoleAssignments
