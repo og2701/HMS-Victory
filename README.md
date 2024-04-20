@@ -57,7 +57,7 @@ ROLE_BUTTONS = {
 After setting up your Discord bot token in `config.py`, run the bot script from the root of the project:
 
 ```bash
-python main.py
+python run.py
 ```
 
 ## Development
