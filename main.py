@@ -52,5 +52,3 @@ async def gridify_command(interaction: Interaction, attachment_url: str):
 @tree.command(name="role-react", description="Adds a reaction role to a message")
 async def role_react_command(interaction: Interaction):
   await persistantRoleButtons(interaction)
-
-client.run(TOKEN)
