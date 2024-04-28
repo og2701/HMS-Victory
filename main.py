@@ -1,4 +1,5 @@
 from discord import app_commands, Intents, Interaction, Client, InteractionType
+from typing import Optional
 
 from lib.commands import (
     updateRoleAssignments,
@@ -6,6 +7,7 @@ from lib.commands import (
     gridify,
     persistantRoleButtons,
     handleRoleButtonInteraction,
+    screenshotCanvas
 )
 
 
@@ -67,3 +69,7 @@ async def gridify_command(interaction: Interaction, attachment_url: str):
 @tree.command(name="role-react", description="Adds a reaction role to a message")
 async def role_react_command(interaction: Interaction):
     await persistantRoleButtons(interaction)
+
+@tree.command(name="screenshot-canvas", description="Takes a screenshot of the current canvas")
+async def screenshot_canvas(interaction: Interaction, x: Optional[int] = -770, y: Optional[int] = 7930):
+   await screenshotCanvas(interaction, x, y)

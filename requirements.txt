@@ -1,3 +1,5 @@
 discord
 aiohttp
 Pillow
+selenium
+webdriver_manager
