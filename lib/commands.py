@@ -4,3 +4,8 @@ from commands.role_management.persistant_role_buttons import persistantRoleButto
 from commands.art_functions.colour_palette import colourPalette
 from commands.art_functions.grid import gridify
 from commands.canvas.screenshot import screenshotCanvas
+
+from commands.dev.user_activity import userActivity
+
+from commands.iceberg.add_to_iceberg import add_iceberg_text
+from commands.iceberg.get_iceberg import show_iceberg
