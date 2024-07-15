@@ -53,6 +53,7 @@ async def colourPalette(interaction, attachment_url: str):
             display: flex;
             flex-direction: column;
             align-items: center;
+            width: fit-content;
         }}
         .original-container {{
             margin-bottom: 20px;
