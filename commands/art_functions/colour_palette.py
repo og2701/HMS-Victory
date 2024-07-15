@@ -1,8 +1,8 @@
 from discord import Embed, File
-from PIL import Image, ImageDraw
 import io
 import aiohttp
-
+from PIL import Image
+import imgkit
 
 async def colourPalette(interaction, attachment_url: str):
     """
@@ -41,21 +41,22 @@ async def colourPalette(interaction, attachment_url: str):
     with Image.open(image_bytes) as img:
         img = img.convert("P", palette=Image.ADAPTIVE, colors=16)
         palette = img.getpalette()
-        colours = [tuple(palette[i : i + 3]) for i in range(0, len(palette), 3)]
+        colours = [tuple(palette[i: i + 3]) for i in range(0, len(palette), 3)]
 
-    palette_img = Image.new("RGB", (400, 50 * len(colours)), "white")
-    draw = ImageDraw.Draw(palette_img)
-    for i, colour in enumerate(colours):
+    html_content = "<html><body style='font-family:Arial;'>"
+    html_content += "<h1>Colour Palette</h1>"
+    for colour in colours:
         hex_colour = f"#{colour[0]:02x}{colour[1]:02x}{colour[2]:02x}"
-        draw.rectangle([0, i * 50, 50, (i + 1) * 50], fill=colour)
-        draw.text(
-            (60, i * 50 + 10),
-            f"{hex_colour} RGB({colour[0]}, {colour[1]}, {colour[2]})",
-            fill="black",
-        )
+        html_content += f"""
+        <div style='display:flex;align-items:center;margin-bottom:10px;'>
+            <div style='width:50px;height:50px;background-color:{hex_colour};'></div>
+            <div style='margin-left:10px;'>{hex_colour} RGB({colour[0]}, {colour[1]}, {colour[2]})</div>
+        </div>
+        """
+    html_content += "</body></html>"
 
-    buffer = io.BytesIO()
-    palette_img.save(buffer, format="PNG")
+    options = {'format': 'png'}
+    buffer = io.BytesIO(imgkit.from_string(html_content, False, options=options))
     buffer.seek(0)
 
     most_significant_colour = colours[0]
