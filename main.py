@@ -52,6 +52,10 @@ def has_role(interaction: Interaction, role_id: int) -> bool:
     """Check if the user has the specified role."""
     return any(role.id == role_id for role in interaction.user.roles)
 
+def has_any_role(interaction: Interaction, role_ids: list[int]) -> bool:
+    """Check if the user has any of the specified roles."""
+    return any(role.id in role_ids for role in interaction.user.roles)
+
 @tree.command(
     name="role-manage",
     description="Manages user roles by assigning a specified role to members who don't have it",
@@ -71,6 +75,9 @@ async def gridify_command(interaction: Interaction, attachment_url: str):
 
 @tree.command(name="role-react", description="Adds a reaction role to a message")
 async def role_react_command(interaction: Interaction):
+    if not has_any_role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID]):
+        await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+        return
     await persistantRoleButtons(interaction)
 
 @tree.command(name="screenshot-canvas", description="Takes a screenshot of the current canvas")
@@ -83,7 +90,7 @@ async def user_activity_command(interaction: Interaction, month: str, user: Memb
 
 @tree.command(name="add-to-iceberg", description="Adds text to the iceberg image")
 async def add_to_iceberg_command(interaction: Interaction, text: str, level: int):
-    if not has_role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID]):
+    if not has_any_role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID]):
         await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
         return
     await add_iceberg_text(interaction, text, level)
@@ -91,3 +98,5 @@ async def add_to_iceberg_command(interaction: Interaction, text: str, level: int
 @tree.command(name="show-iceberg", description="Shows the iceberg image")
 async def show_iceberg_command(interaction: Interaction):
     await show_iceberg(interaction)
+
+client.run('YOUR_BOT_TOKEN')
