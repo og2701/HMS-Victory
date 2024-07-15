@@ -4,9 +4,6 @@ import aiohttp
 from PIL import Image
 from html2image import Html2Image
 import base64
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.cluster import KMeans
 
 async def colourPalette(interaction, attachment_url: str):
     """
@@ -30,19 +27,12 @@ async def colourPalette(interaction, attachment_url: str):
             image_bytes = io.BytesIO(await resp.read())
 
     with Image.open(image_bytes) as img:
-        # Convert the image to numpy array
-        img_array = np.array(img)
+        img = img.convert("P", palette=Image.ADAPTIVE, colors=10)
+        palette = img.getpalette()
+        colours = [tuple(palette[i:i + 3]) for i in range(0, len(palette), 3)][:10]
 
-        # Reshape the image array to a 2D array of pixels
-        pixels = img_array.reshape(-1, 3)
-
-        # Use KMeans clustering to find 10 dominant colors
-        kmeans = KMeans(n_clusters=10)
-        kmeans.fit(pixels)
-        colors = kmeans.cluster_centers_.astype(int)
-
-    original_img = Image.fromarray(img_array)
-    original_img.thumbnail((200, 200))
+        original_img = img.convert("RGB")
+        original_img.thumbnail((200, 200))
 
     buffered = io.BytesIO()
     original_img.save(buffered, format="PNG")
@@ -99,13 +89,13 @@ async def colourPalette(interaction, attachment_url: str):
         <h1>COLOUR PALETTE</h1>
         <div class="palette-container">
     """
-    for color in colors:
-        hex_color = f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
+    for colour in colours:
+        hex_colour = f"#{colour[0]:02x}{colour[1]:02x}{colour[2]:02x}"
         html_content += f"""
         <div class="color-box">
-            <div style="background-color: {hex_color};"></div>
-            <p>{hex_color}</p>
-            <p>rgb({color[0]}, {color[1]}, {color[2]})</p>
+            <div style="background-color: {hex_colour};"></div>
+            <p>{hex_colour}</p>
+            <p>rgb({colour[0]}, {colour[1]}, {colour[2]})</p>
         </div>
         """
     html_content += """
