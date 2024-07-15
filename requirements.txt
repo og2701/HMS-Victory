@@ -3,3 +3,4 @@ aiohttp
 Pillow
 selenium
 webdriver_manager
+imgkit
