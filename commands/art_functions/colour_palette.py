@@ -1,8 +1,7 @@
-from discord import Embed, File
+from discord import File
+from PIL import Image, ImageDraw, ImageFont
 import io
 import aiohttp
-from PIL import Image
-from html2image import Html2Image
 
 async def colourPalette(interaction, attachment_url: str):
     """
@@ -16,66 +15,38 @@ async def colourPalette(interaction, attachment_url: str):
         None
     """
 
-    initial_embed = Embed(
-        title="Processing Image",
-        description="Analyzing the image to extract colour palette...",
-        color=0xFFA500,
-    )
-
-    await interaction.response.send_message(embed=initial_embed)
+    initial_message = await interaction.response.send_message("Processing image to extract color palette...")
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(
-            attachment_url, headers={"User-Agent": "YourBotName"}
-        ) as resp:
+        async with session.get(attachment_url, headers={"User-Agent": "YourBotName"}) as resp:
             if resp.status != 200:
-                error_embed = Embed(
-                    title="Error",
-                    description=f"Failed to download image. HTTP Status: {resp.status}",
-                    color=0xFF0000,
-                )
-                await interaction.followup.send(embed=error_embed)
+                await interaction.followup.send(f"Failed to download image. HTTP Status: {resp.status}")
                 return
             image_bytes = io.BytesIO(await resp.read())
 
     with Image.open(image_bytes) as img:
         img = img.convert("P", palette=Image.ADAPTIVE, colors=16)
         palette = img.getpalette()
-        colours = [tuple(palette[i: i + 3]) for i in range(0, len(palette), 3)]
+        colours = [tuple(palette[i:i + 3]) for i in range(0, len(palette), 3)]
+        
+        original_img = img.convert("RGB")
+        original_img.thumbnail((200, 200))
 
-    html_content = "<html><body style='font-family:Arial;'>"
-    html_content += "<h1>Colour Palette</h1>"
-    for colour in colours:
+    palette_img = Image.new("RGB", (400, 50 * len(colours) + 210), "white")
+    draw = ImageDraw.Draw(palette_img)
+    
+    palette_img.paste(original_img, (200, 0))
+    
+    font = ImageFont.load_default()
+    for i, colour in enumerate(colours):
         hex_colour = f"#{colour[0]:02x}{colour[1]:02x}{colour[2]:02x}"
-        html_content += f"""
-        <div style='display:flex;align-items:center;margin-bottom:10px;'>
-            <div style='width:50px;height:50px;background-color:{hex_colour};'></div>
-            <div style='margin-left:10px;'>{hex_colour} RGB({colour[0]}, {colour[1]}, {colour[2]})</div>
-        </div>
-        """
-    html_content += "</body></html>"
+        draw.rectangle([0, i * 50 + 210, 50, (i + 1) * 50 + 210], fill=colour)
+        draw.text((60, i * 50 + 220), f"{hex_colour} RGB({colour[0]}, {colour[1]}, {colour[2]})", fill="black", font=font)
 
-    hti = Html2Image()
-    hti.screenshot(html_str=html_content, save_as='palette_image.png')
-
-    with open('palette_image.png', 'rb') as f:
-        buffer = io.BytesIO(f.read())
-
+    buffer = io.BytesIO()
+    palette_img.save(buffer, format="PNG")
     buffer.seek(0)
 
-    most_significant_colour = colours[0]
-    rgb_int = (
-        most_significant_colour[0] * 65536
-        + most_significant_colour[1] * 256
-        + most_significant_colour[2]
-    )
-    result_embed = Embed(
-        title="Colour Palette",
-        description="Here is the extracted colour palette.",
-        color=rgb_int,
-    )
     file = File(buffer, filename="palette_image.png")
-    result_embed.set_image(url=f"attachment://{file.filename}")
-    result_embed.set_thumbnail(url=attachment_url)
 
-    await interaction.edit_original_response(embed=result_embed, attachments=[file])
+    await interaction.edit_original_response(content="Here is the extracted colour palette:", attachments=[file])
