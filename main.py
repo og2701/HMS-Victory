@@ -98,5 +98,3 @@ async def add_to_iceberg_command(interaction: Interaction, text: str, level: int
 @tree.command(name="show-iceberg", description="Shows the iceberg image")
 async def show_iceberg_command(interaction: Interaction):
     await show_iceberg(interaction)
-
-client.run('YOUR_BOT_TOKEN')
