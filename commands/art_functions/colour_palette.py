@@ -1,7 +1,8 @@
 from discord import File
-from PIL import Image, ImageDraw, ImageFont
 import io
 import aiohttp
+from PIL import Image
+from html2image import Html2Image
 
 async def colourPalette(interaction, attachment_url: str):
     """
@@ -25,26 +26,81 @@ async def colourPalette(interaction, attachment_url: str):
             image_bytes = io.BytesIO(await resp.read())
 
     with Image.open(image_bytes) as img:
-        img = img.convert("P", palette=Image.ADAPTIVE, colors=16)
+        img = img.convert("P", palette=Image.ADAPTIVE, colors=10)
         palette = img.getpalette()
-        colours = [tuple(palette[i:i + 3]) for i in range(0, len(palette), 3)]
-        
+        colours = [tuple(palette[i:i + 3]) for i in range(0, len(palette), 3)][:10]
+
         original_img = img.convert("RGB")
         original_img.thumbnail((200, 200))
 
-    palette_img = Image.new("RGB", (400, 50 * len(colours) + 210), "white")
-    draw = ImageDraw.Draw(palette_img)
-    
-    palette_img.paste(original_img, (200, 0))
-    
-    font = ImageFont.load_default()
-    for i, colour in enumerate(colours):
+    html_content = """
+    <html>
+    <head>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            background-color: #2c2c2c;
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }}
+        .container {{
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+        }}
+        .color-box {{
+            width: 150px;
+            margin: 10px;
+            padding: 20px;
+            border-radius: 10px;
+            background-color: #3c3c3c;
+            text-align: center;
+        }}
+        .color-box div {{
+            height: 100px;
+            border-radius: 10px;
+        }}
+        .original {{
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            border-radius: 10px;
+        }}
+    </style>
+    </head>
+    <body>
+    <h1>COLOR PALETTE</h1>
+    <div class="container">
+    """
+    for colour in colours:
         hex_colour = f"#{colour[0]:02x}{colour[1]:02x}{colour[2]:02x}"
-        draw.rectangle([0, i * 50 + 210, 50, (i + 1) * 50 + 210], fill=colour)
-        draw.text((60, i * 50 + 220), f"{hex_colour} RGB({colour[0]}, {colour[1]}, {colour[2]})", fill="black", font=font)
+        html_content += f"""
+        <div class="color-box">
+            <div style="background-color: {hex_colour};"></div>
+            <p>{hex_colour}</p>
+            <p>rgb({colour[0]}, {colour[1]}, {colour[2]})</p>
+        </div>
+        """
+    html_content += """
+    </div>
+    <img src="data:image/png;base64,{}" class="original" />
+    </body>
+    </html>
+    """
 
-    buffer = io.BytesIO()
-    palette_img.save(buffer, format="PNG")
+    buffered = io.BytesIO()
+    original_img.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+
+    html_content = html_content.format(img_str)
+
+    hti = Html2Image()
+    hti.screenshot(html_str=html_content, save_as='palette_image.png')
+
+    with open('palette_image.png', 'rb') as f:
+        buffer = io.BytesIO(f.read())
+
     buffer.seek(0)
 
     file = File(buffer, filename="palette_image.png")
