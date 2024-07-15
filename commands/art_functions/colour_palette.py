@@ -48,12 +48,13 @@ async def colourPalette(interaction, attachment_url: str):
             color: white;
             margin: 0;
             padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }}
         .container {{
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            width: fit-content;
+            display: inline-block;
+            text-align: center;
         }}
         .original-container {{
             margin-bottom: 20px;
@@ -62,19 +63,17 @@ async def colourPalette(interaction, attachment_url: str):
             border-radius: 10px;
         }}
         .palette-container {{
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: flex-start;
-            width: 100%;
+            display: inline-block;
+            text-align: left;
         }}
         .color-box {{
+            display: inline-block;
             width: 150px;
             margin: 10px;
             padding: 20px;
             border-radius: 10px;
             background-color: #3c3c3c;
             text-align: center;
-            flex: 0 1 auto;
         }}
         .color-box div {{
             height: 100px;
@@ -109,7 +108,7 @@ async def colourPalette(interaction, attachment_url: str):
     html_content = html_content.format(img_str)
 
     hti = Html2Image()
-    hti.screenshot(html_str=html_content, save_as='palette_image.png')
+    hti.screenshot(html_str=html_content, save_as='palette_image.png', size=(600, 400))
 
     with open('palette_image.png', 'rb') as f:
         buffer = io.BytesIO(f.read())
