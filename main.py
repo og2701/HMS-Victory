@@ -8,7 +8,6 @@ from lib.commands import (
     persistantRoleButtons,
     handleRoleButtonInteraction,
     screenshotCanvas,
-    userActivity,
     add_iceberg_text,
     show_iceberg
 )
