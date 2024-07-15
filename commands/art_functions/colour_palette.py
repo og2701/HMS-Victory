@@ -17,7 +17,7 @@ async def colourPalette(interaction, attachment_url: str):
         None
     """
 
-    initial_message = await interaction.response.send_message("Processing image to extract colour palette...")
+    initial_message = await interaction.response.send_message("Processing image to extract color palette...")
 
     async with aiohttp.ClientSession() as session:
         async with session.get(attachment_url, headers={"User-Agent": "YourBotName"}) as resp:
@@ -65,7 +65,6 @@ async def colourPalette(interaction, attachment_url: str):
             flex-wrap: wrap;
             justify-content: flex-start;
             width: 100%;
-            max-width: 800px;
         }}
         .color-box {{
             width: 150px;
@@ -74,6 +73,7 @@ async def colourPalette(interaction, attachment_url: str):
             border-radius: 10px;
             background-color: #3c3c3c;
             text-align: center;
+            flex: 0 1 auto;
         }}
         .color-box div {{
             height: 100px;
