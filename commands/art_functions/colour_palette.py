@@ -108,7 +108,7 @@ async def colourPalette(interaction, attachment_url: str):
     html_content = html_content.format(img_str)
 
     hti = Html2Image()
-    hti.screenshot(html_str=html_content, save_as='palette_image.png', size=(600, 400))
+    hti.screenshot(html_str=html_content, save_as='palette_image.png')
 
     with open('palette_image.png', 'rb') as f:
         buffer = io.BytesIO(f.read())
