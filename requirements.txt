@@ -7,3 +7,4 @@ imgkit
 html2image
 numpy
 matplotlib
+sklearn
