@@ -2,7 +2,7 @@ from discord import Embed, File
 import io
 import aiohttp
 from PIL import Image
-import imgkit
+from html2image import Html2Image
 
 async def colourPalette(interaction, attachment_url: str):
     """
@@ -55,8 +55,12 @@ async def colourPalette(interaction, attachment_url: str):
         """
     html_content += "</body></html>"
 
-    options = {'format': 'png'}
-    buffer = io.BytesIO(imgkit.from_string(html_content, False, options=options))
+    hti = Html2Image()
+    hti.screenshot(html_str=html_content, save_as='palette_image.png')
+
+    with open('palette_image.png', 'rb') as f:
+        buffer = io.BytesIO(f.read())
+
     buffer.seek(0)
 
     most_significant_colour = colours[0]
