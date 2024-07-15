@@ -17,7 +17,7 @@ async def colourPalette(interaction, attachment_url: str):
         None
     """
 
-    initial_message = await interaction.response.send_message("Processing image to extract color palette...")
+    initial_message = await interaction.response.send_message("Processing image to extract colour palette...")
 
     async with aiohttp.ClientSession() as session:
         async with session.get(attachment_url, headers={"User-Agent": "YourBotName"}) as resp:
@@ -34,6 +34,10 @@ async def colourPalette(interaction, attachment_url: str):
         original_img = img.convert("RGB")
         original_img.thumbnail((200, 200))
 
+    buffered = io.BytesIO()
+    original_img.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+
     html_content = """
     <html>
     <head>
@@ -47,8 +51,21 @@ async def colourPalette(interaction, attachment_url: str):
         }}
         .container {{
             display: flex;
+            flex-direction: column;
+            align-items: center;
+        }}
+        .original-container {{
+            margin-bottom: 20px;
+        }}
+        .original {{
+            border-radius: 10px;
+        }}
+        .palette-container {{
+            display: flex;
             flex-wrap: wrap;
-            justify-content: space-around;
+            justify-content: flex-start;
+            width: 100%;
+            max-width: 800px;
         }}
         .color-box {{
             width: 150px;
@@ -62,17 +79,15 @@ async def colourPalette(interaction, attachment_url: str):
             height: 100px;
             border-radius: 10px;
         }}
-        .original {{
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            border-radius: 10px;
-        }}
     </style>
     </head>
     <body>
-    <h1>COLOR PALETTE</h1>
     <div class="container">
+        <div class="original-container">
+            <img src="data:image/png;base64,{}" class="original" />
+        </div>
+        <h1>COLOUR PALETTE</h1>
+        <div class="palette-container">
     """
     for colour in colours:
         hex_colour = f"#{colour[0]:02x}{colour[1]:02x}{colour[2]:02x}"
@@ -84,15 +99,11 @@ async def colourPalette(interaction, attachment_url: str):
         </div>
         """
     html_content += """
+        </div>
     </div>
-    <img src="data:image/png;base64,{}" class="original" />
     </body>
     </html>
     """
-
-    buffered = io.BytesIO()
-    original_img.save(buffered, format="PNG")
-    img_str = base64.b64encode(buffered.getvalue()).decode()
 
     html_content = html_content.format(img_str)
 
