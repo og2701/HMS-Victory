@@ -3,6 +3,7 @@ import io
 import aiohttp
 from PIL import Image
 from html2image import Html2Image
+import base64
 
 async def colourPalette(interaction, attachment_url: str):
     """
