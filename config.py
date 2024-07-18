@@ -9,7 +9,7 @@ ROLE_BUTTONS = {
     },
     "1133022537962491964": {
         "name": "Voting ✅",
-        "description": "Receive pings for new votes in #🗳️ I voting.",
+        "description": "Receive pings for new votes in <#959848236384919692>.",
     },
     "1132285964094558288": {
         "name": "Visitor ✈️",
@@ -17,7 +17,7 @@ ROLE_BUTTONS = {
     },
     "1156757081924313161": {
         "name": "Gardener 🌳",
-        "description": "Receive pings when #🌲 I the-tree needs watering.",
+        "description": "Receive pings when <#1142970908059910204> needs watering.",
     }
 }
 
