@@ -1,9 +1,6 @@
 # Python cache files
 *__pycache__*
 
-# Configuration file 
-config.py
-
 #Dev stuff
 commands/dev
 data/updated_iceberg.png
