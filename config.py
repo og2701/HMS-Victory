@@ -1,6 +1,6 @@
 ROLE_BUTTONS = {
     "1132280073379123311": {
-        "name": "Soldier :man_guard:",
+        "name": "Soldier 🪖",
         "description": "Receive pings for important events and battles.",
     },
     "1132951426386116629": {
