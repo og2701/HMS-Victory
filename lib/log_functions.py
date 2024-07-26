@@ -25,6 +25,11 @@ def read_html_template(file_path):
         print(f"Error reading HTML template {file_path}: {e}")
         return ""
 
+def estimate_height(content, avg_chars_per_line=50, line_height=20, base_height=100):
+    lines = content.count('\n') + (len(content) // avg_chars_per_line) + 1
+    content_height = lines * line_height
+    return base_height + content_height
+
 async def create_message_image(message, title):
     avatar_url = message.author.avatar.url if message.author.avatar else message.author.default_avatar.url
     response = requests.get(avatar_url)
@@ -32,10 +37,6 @@ async def create_message_image(message, title):
     avatar_data_url = f"data:image/png;base64,{avatar_base64}"
     
     escaped_content = html.escape(message.content)
-    message_lines = escaped_content.split('\n')
-    line_height = 20
-    content_height = line_height * (len(message_lines) + 1)
-    estimated_height = max(100, content_height + 100)
     border_color = message.author.color.to_rgb()
     display_name = message.author.display_name
     created_at = message.created_at.strftime('%H:%M')
@@ -47,6 +48,8 @@ async def create_message_image(message, title):
         created_at=created_at,
         content=escaped_content
     )
+
+    estimated_height = estimate_height(escaped_content)
     output_path = f"{uuid.uuid4()}.png"
     hti.screenshot(html_str=html_content, save_as=output_path, size=(800, estimated_height))
     image = Image.open(output_path)
@@ -85,13 +88,6 @@ async def create_edited_message_image(before, after):
     highlighted_before_content, highlighted_after_content, changes_detected = highlight_diff(before.content, after.content)
     if not changes_detected:
         return None
-    before_lines = highlighted_before_content.split('\n')
-    after_lines = highlighted_after_content.split('\n')
-    line_height = 20
-    before_content_height = line_height * (len(before_lines) + 1)
-    after_content_height = line_height * (len(after_lines) + 1)
-    content_height = before_content_height + after_content_height + 60
-    estimated_height = max(150, content_height + 100)
     border_color = before.author.color.to_rgb()
     display_name = before.author.display_name
     before_created_at = before.created_at.strftime('%H:%M')
@@ -105,6 +101,8 @@ async def create_edited_message_image(before, after):
         after_created_at=after_created_at,
         after_content=highlighted_after_content
     )
+
+    estimated_height = estimate_height(highlighted_before_content + highlighted_after_content)
     output_path = f"{uuid.uuid4()}.png"
     hti.screenshot(html_str=html_content, save_as=output_path, size=(800, estimated_height))
     image = Image.open(output_path)
