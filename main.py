@@ -63,11 +63,13 @@ class AClient(Client):
     async def send_log_message(self, message: discord.Message, action: str, after_message: Optional[discord.Message] = None):
         log_channel = self.get_channel(LOG_CHANNEL_ID)
         if log_channel:
-            role_color = message.author.top_role.color if message.author.top_role else discord.Color.default()
+            # Fetch the member object to get roles
+            member = message.guild.get_member(message.author.id)
+            role_color = member.top_role.color if member and member.top_role else discord.Color.default()
             role_color_hex = role_color.to_rgb()
 
-            before_content = message.content
-            after_content = after_message.content if after_message else ""
+            before_content = message.content.replace('\n', '<br>')
+            after_content = after_message.content.replace('\n', '<br>') if after_message else ""
 
             html_content = f"""
             <div style="font-family: 'Arial', sans-serif; width: 800px; background-color: #2f3136; color: #dcddde; padding: 20px; border-radius: 8px;">
@@ -76,10 +78,10 @@ class AClient(Client):
                     <span style="color: rgb{role_color_hex}; font-weight: bold;">{message.author}</span>
                     <span style="color: #72767d; margin-left: 10px; font-size: 12px;">{message.created_at.strftime('%Y-%m-%d %H:%M:%S')}</span>
                 </div>
-                <div style="margin-top: 10px;">
+                <div style="margin-top: 10px; white-space: pre-wrap;">
                     <p>{before_content}</p>
                 </div>
-                {"<hr style='border-color: #72767d;'><div style='margin-top: 10px;'><p>" + after_content + "</p></div>" if action == "edited" else ""}
+                {"<hr style='border-color: #72767d;'><div style='margin-top: 10px; white-space: pre-wrap;'><p>" + after_content + "</p></div>" if action == "edited" else ""}
             </div>
             """
 
