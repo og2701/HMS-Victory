@@ -70,9 +70,9 @@ class AClient(Client):
             after_content = after_message.content if after_message else ""
 
             html_content = f"""
-            <div style="font-family: 'Arial', sans-serif; width: 400px; background-color: #2f3136; color: #dcddde; padding: 10px; border-radius: 8px;">
+            <div style="font-family: 'Arial', sans-serif; width: 800px; background-color: #2f3136; color: #dcddde; padding: 20px; border-radius: 8px;">
                 <div style="display: flex; align-items: center;">
-                    <img src="{message.author.avatar.url}" width="40" height="40" style="border-radius: 50%; margin-right: 10px;">
+                    <img src="{message.author.avatar.url}" width="50" height="50" style="border-radius: 50%; margin-right: 10px;">
                     <span style="color: rgb{role_color_hex}; font-weight: bold;">{message.author}</span>
                     <span style="color: #72767d; margin-left: 10px; font-size: 12px;">{message.created_at.strftime('%Y-%m-%d %H:%M:%S')}</span>
                 </div>
@@ -83,8 +83,10 @@ class AClient(Client):
             </div>
             """
 
-            hti.screenshot(html_str=html_content, save_as='log_message.png')
+            # Increase the screenshot size to fit larger messages
+            hti.screenshot(html_str=html_content, save_as='log_message.png', size=(900, 600))
 
+            # Load image and convert to discord file
             image = Image.open('log_message.png')
             buffer = BytesIO()
             image.save(buffer, 'PNG')
