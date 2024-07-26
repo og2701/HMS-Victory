@@ -1,5 +1,9 @@
+import discord
 from discord import app_commands, Intents, Interaction, Client, InteractionType, Member
 from typing import Optional
+from html2image import Html2Image
+from io import BytesIO
+from PIL import Image
 
 from lib.commands import (
     updateRoleAssignments,
@@ -14,6 +18,9 @@ from lib.commands import (
 
 MINISTER_ROLE_ID = 1250190944502943755
 CABINET_ROLE_ID = 959493505930121226
+LOG_CHANNEL_ID = 959723562892144690
+
+hti = Html2Image(output_path='.')
 
 class AClient(Client):
     def __init__(self):
@@ -44,6 +51,53 @@ class AClient(Client):
             custom_id = interaction.data["custom_id"]
             if custom_id.startswith("role_"):
                 await handleRoleButtonInteraction(interaction)
+
+    async def on_message_delete(self, message: discord.Message):
+        if message.guild:
+            await self.send_log_message(message, "deleted")
+
+    async def on_message_edit(self, before: discord.Message, after: discord.Message):
+        if before.guild: 
+            await self.send_log_message(before, "edited", after)
+
+    async def send_log_message(self, message: discord.Message, action: str, after_message: Optional[discord.Message] = None):
+        log_channel = self.get_channel(LOG_CHANNEL_ID)
+        if log_channel:
+            role_color = message.author.top_role.color if message.author.top_role else discord.Color.default()
+            role_color_hex = role_color.to_rgb()
+
+            before_content = message.content
+            after_content = after_message.content if after_message else ""
+
+            html_content = f"""
+            <div style="font-family: 'Arial', sans-serif; width: 400px; background-color: #2f3136; color: #dcddde; padding: 10px; border-radius: 8px;">
+                <div style="display: flex; align-items: center;">
+                    <img src="{message.author.avatar.url}" width="40" height="40" style="border-radius: 50%; margin-right: 10px;">
+                    <span style="color: rgb{role_color_hex}; font-weight: bold;">{message.author}</span>
+                    <span style="color: #72767d; margin-left: 10px; font-size: 12px;">{message.created_at.strftime('%Y-%m-%d %H:%M:%S')}</span>
+                </div>
+                <div style="margin-top: 10px;">
+                    <p>{before_content}</p>
+                </div>
+                {"<hr style='border-color: #72767d;'><div style='margin-top: 10px;'><p>" + after_content + "</p></div>" if action == "edited" else ""}
+            </div>
+            """
+
+            hti.screenshot(html_str=html_content, save_as='log_message.png')
+
+            image = Image.open('log_message.png')
+            buffer = BytesIO()
+            image.save(buffer, 'PNG')
+            buffer.seek(0)
+            file = discord.File(fp=buffer, filename='log_message.png')
+
+            embed = discord.Embed(
+                title=f"Message {action.capitalize()}",
+                color=discord.Color.red() if action == "deleted" else discord.Color.orange()
+            )
+            embed.set_image(url="attachment://log_message.png")
+
+            await log_channel.send(embed=embed, file=file)
 
 client = AClient()
 tree = app_commands.CommandTree(client)
