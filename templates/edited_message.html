@@ -1,4 +1,3 @@
-<!-- edited_message.html -->
 <html>
 <head>
     <style>
@@ -10,8 +9,9 @@
         .container {{
             border: 2px solid rgb{border_color};
             padding: 10px;
-            width: fit-content;
             display: inline-block;
+            width: 100%;
+            box-sizing: border-box;
         }}
         .title {{
             font-size: 18px;
@@ -27,12 +27,21 @@
             color: white;
             font-family: Arial, sans-serif;
             margin-bottom: 10px;
+            width: 100%;
+            box-sizing: border-box;
         }}
         .avatar {{
             width: 50px;
             height: 50px;
             border-radius: 50%;
             margin-right: 10px;
+            flex-shrink: 0;
+        }}
+        .message-content {{
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            word-break: break-all;
         }}
         .username {{
             color: rgb{border_color};
@@ -46,6 +55,8 @@
         .content {{
             margin-top: 5px;
             white-space: pre-wrap;
+            word-break: break-all;
+            overflow-wrap: break-word;
         }}
         .label {{
             font-size: 14px;
@@ -59,7 +70,7 @@
         <div class="label">Before:</div>
         <div class="message">
             <img src="{avatar_data_url}" class="avatar" />
-            <div>
+            <div class="message-content">
                 <span class="username">{display_name}</span>
                 <span class="timestamp">Today at {before_created_at}</span>
                 <div class="content">{before_content}</div>
@@ -68,7 +79,7 @@
         <div class="label">After:</div>
         <div class="message">
             <img src="{avatar_data_url}" class="avatar" />
-            <div>
+            <div class="message-content">
                 <span class="username">{display_name}</span>
                 <span class="timestamp">Today at {after_created_at}</span>
                 <div class="content">{after_content}</div>
