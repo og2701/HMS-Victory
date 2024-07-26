@@ -2,23 +2,23 @@
 <html>
 <head>
     <style>
-        body {{
+        body {
             margin: 0;
             padding: 0;
             background-color: white;
-        }}
-        .container {{
-            border: 2px solid rgb{{border_color}};
+        }
+        .container {
+            border: 2px solid rgb{border_color};
             padding: 10px;
             width: 100%;
             display: inline-block;
-        }}
-        .title {{
+        }
+        .title {
             font-size: 18px;
             font-weight: bold;
             margin-bottom: 10px;
-        }}
-        .message {{
+        }
+        .message {
             display: flex;
             align-items: flex-start;
             padding: 10px;
@@ -28,31 +28,31 @@
             font-family: Arial, sans-serif;
             word-wrap: break-word;
             width: 100%;
-        }}
-        .avatar {{
+        }
+        .avatar {
             width: 50px;
             height: 50px;
             border-radius: 50%;
             margin-right: 10px;
-        }}
-        .username {{
-            color: rgb{{border_color}};
+        }
+        .username {
+            color: rgb{border_color};
             font-weight: bold;
             margin-right: 5px;
-        }}
-        .timestamp {{
+        }
+        .timestamp {
             color: #72767d;
             font-size: 12px;
-        }}
-        .content {{
+        }
+        .content {
             margin-top: 5px;
             white-space: pre-wrap;
             width: 100%;
-        }}
-        .label {{
+        }
+        .label {
             font-size: 14px;
             margin-bottom: 5px;
-        }}
+        }
     </style>
 </head>
 <body>
@@ -60,20 +60,20 @@
         <div class="title">Edited Message</div>
         <div class="label">Before:</div>
         <div class="message">
-            <img src="{{avatar_data_url}}" class="avatar" />
+            <img src="{avatar_data_url}" class="avatar" />
             <div>
-                <span class="username">{{display_name}}</span>
-                <span class="timestamp">Today at {{before_created_at}}</span>
-                <div class="content">{{before_content}}</div>
+                <span class="username">{display_name}</span>
+                <span class="timestamp">Today at {before_created_at}</span>
+                <div class="content">{before_content}</div>
             </div>
         </div>
         <div class="label">After:</div>
         <div class="message">
-            <img src="{{avatar_data_url}}" class="avatar" />
+            <img src="{avatar_data_url}" class="avatar" />
             <div>
-                <span class="username">{{display_name}}</span>
-                <span class="timestamp">Today at {{after_created_at}}</span>
-                <div class="content">{{after_content}}</div>
+                <span class="username">{display_name}</span>
+                <span class="timestamp">Today at {after_created_at}</span>
+                <div class="content">{after_content}</div>
             </div>
         </div>
     </div>
