@@ -53,11 +53,11 @@ class AClient(Client):
                 await handleRoleButtonInteraction(interaction)
 
     async def on_message_delete(self, message: discord.Message):
-        if message.guild:
+        if message.guild and message.author != self.user:
             await self.send_log_message(message, "deleted")
 
     async def on_message_edit(self, before: discord.Message, after: discord.Message):
-        if before.guild: 
+        if before.guild and before.author != self.user:
             await self.send_log_message(before, "edited", after)
 
     async def send_log_message(self, message: discord.Message, action: str, after_message: Optional[discord.Message] = None):
@@ -91,13 +91,7 @@ class AClient(Client):
             buffer.seek(0)
             file = discord.File(fp=buffer, filename='log_message.png')
 
-            embed = discord.Embed(
-                title=f"Message {action.capitalize()}",
-                color=discord.Color.red() if action == "deleted" else discord.Color.orange()
-            )
-            embed.set_image(url="attachment://log_message.png")
-
-            await log_channel.send(embed=embed, file=file)
+            await log_channel.send(file=file)
 
 client = AClient()
 tree = app_commands.CommandTree(client)
@@ -152,3 +146,5 @@ async def add_to_iceberg_command(interaction: Interaction, text: str, level: int
 @tree.command(name="show-iceberg", description="Shows the iceberg image")
 async def show_iceberg_command(interaction: Interaction):
     await show_iceberg(interaction)
+
+client.run("YOUR_BOT_TOKEN")
