@@ -54,48 +54,7 @@ class AClient(Client):
 
     async def on_message_delete(self, message: discord.Message):
         if message.guild and message.author != self.user:
-            await self.send_log_message(message, "deleted")
-
-    async def on_message_edit(self, before: discord.Message, after: discord.Message):
-        if before.guild and before.author != self.user:
-            await self.send_log_message(before, "edited", after)
-
-    async def send_log_message(self, message: discord.Message, action: str, after_message: Optional[discord.Message] = None):
-        log_channel = self.get_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            member = message.guild.get_member(message.author.id)
-            role_color = member.top_role.color if member and member.top_role else discord.Color.default()
-            role_color_hex = role_color.to_rgb()
-
-            before_content = message.content.replace('\n', '<br>')
-            after_content = after_message.content.replace('\n', '<br>') if after_message else ""
-
-            html_content = f"""
-            <div style="font-family: 'Arial', sans-serif; width: 800px; background-color: #2f3136; color: #dcddde; padding: 20px; border-radius: 8px;">
-                <div style="display: flex; align-items: center;">
-                    <img src="{message.author.avatar.url}" width="50" height="50" style="border-radius: 50%; margin-right: 10px;">
-                    <span style="color: rgb{role_color_hex}; font-weight: bold;">{message.author}</span>
-                    <span style="color: #72767d; margin-left: 10px; font-size: 12px;">{message.created_at.strftime('%Y-%m-%d %H:%M:%S')}</span>
-                </div>
-                <div style="margin-top: 10px; white-space: pre-wrap;">
-                    {before_content}
-                </div>
-                {"<hr style='border-color: #72767d;'><div style='margin-top: 10px; white-space: pre-wrap;'>" + after_content + "</div>" if action == "edited" else ""}
-            </div>
-            """
-
-            options = {'no-sandbox': '', 'disable-gpu': ''}
-            hti.screenshot(html_str=html_content, save_as='log_message.png', size=(900, 600), options=options)
-
-            image = Image.open('log_message.png')
-            buffer = BytesIO()
-            image.save(buffer, 'PNG')
-            buffer.seek(0)
-            file = discord.File(fp=buffer, filename='log_message.png')
-
-            await log_channel.send(file=file)
-
-
+            print(message.content)
 
 client = AClient()
 tree = app_commands.CommandTree(client)
