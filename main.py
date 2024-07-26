@@ -2,6 +2,7 @@ import discord
 from discord import app_commands, Intents, Interaction, Client, InteractionType, Member
 from typing import Optional
 from lib.log_functions import *
+import os
 
 from lib.commands import (
     updateRoleAssignments,
