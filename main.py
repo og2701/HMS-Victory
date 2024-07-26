@@ -79,9 +79,9 @@ class AClient(Client):
                     <span style="color: #72767d; margin-left: 10px; font-size: 12px;">{message.created_at.strftime('%Y-%m-%d %H:%M:%S')}</span>
                 </div>
                 <div style="margin-top: 10px; white-space: pre-wrap;">
-                    <p>{before_content}</p>
+                    {before_content}
                 </div>
-                {"<hr style='border-color: #72767d;'><div style='margin-top: 10px; white-space: pre-wrap;'><p>" + after_content + "</p></div>" if action == "edited" else ""}
+                {"<hr style='border-color: #72767d;'><div style='margin-top: 10px; white-space: pre-wrap;'>" + after_content + "</div>" if action == "edited" else ""}
             </div>
             """
 
