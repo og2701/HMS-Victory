@@ -61,8 +61,6 @@ class AClient(Client):
             await self.send_log_message(before, "edited", after)
 
     async def send_log_message(self, message: discord.Message, action: str, after_message: Optional[discord.Message] = None):
-        print(message)
-        print('message*')
         log_channel = self.get_channel(LOG_CHANNEL_ID)
         if log_channel:
             member = message.guild.get_member(message.author.id)
@@ -86,7 +84,8 @@ class AClient(Client):
             </div>
             """
 
-            hti.screenshot(html_str=html_content, save_as='log_message.png', size=(900, 600))
+            options = {'no-sandbox': '', 'disable-gpu': ''}
+            hti.screenshot(html_str=html_content, save_as='log_message.png', size=(900, 600), options=options)
 
             image = Image.open('log_message.png')
             buffer = BytesIO()
@@ -95,6 +94,7 @@ class AClient(Client):
             file = discord.File(fp=buffer, filename='log_message.png')
 
             await log_channel.send(file=file)
+
 
 
 client = AClient()
