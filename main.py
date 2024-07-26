@@ -77,7 +77,7 @@ class AClient(Client):
             image_file_path = await create_message_image(message, "Deleted Message")
 
             channel_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
-            description = f"Message deleted in {message.channel.mention} by {message.author.mention} ({message.author.id})."
+            description = f"Message by {message.author.mention} ({message.author.id}) deleted in {message.channel.mention}."
             if deleter and deleter != message.author:
                 description += f" Deleted by {deleter.mention} ({deleter.id})."
             
@@ -189,9 +189,11 @@ def read_html_template(file_path):
         return ""
 
 async def create_message_image(message, title):
-    response = requests.get(message.author.avatar.url)
+    avatar_url = message.author.avatar.url if message.author.avatar else message.author.default_avatar.url
+    response = requests.get(avatar_url)
     avatar_base64 = base64.b64encode(response.content).decode('utf-8')
     avatar_data_url = f"data:image/png;base64,{avatar_base64}"
+    
     escaped_content = html.escape(message.content)
     message_lines = escaped_content.split('\n')
     line_height = 20
