@@ -68,7 +68,7 @@ class AClient(Client):
             channel_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
             description = f"Message by {message.author.mention} ({message.author.id}) deleted in {message.channel.mention}."
             if deleter and deleter != message.author:
-                description += f" Deleted by {deleter.mention} ({deleter.id})."
+                description += f"\nDeleted by {deleter.mention} ({deleter.id})."
             
             embed = discord.Embed(
                 title="Message Deleted",
