@@ -61,9 +61,10 @@ class AClient(Client):
             await self.send_log_message(before, "edited", after)
 
     async def send_log_message(self, message: discord.Message, action: str, after_message: Optional[discord.Message] = None):
+        print(message)
+        print('message*')
         log_channel = self.get_channel(LOG_CHANNEL_ID)
         if log_channel:
-            # Fetch the member object to get roles
             member = message.guild.get_member(message.author.id)
             role_color = member.top_role.color if member and member.top_role else discord.Color.default()
             role_color_hex = role_color.to_rgb()
@@ -85,10 +86,8 @@ class AClient(Client):
             </div>
             """
 
-            # Increase the screenshot size to fit larger messages
             hti.screenshot(html_str=html_content, save_as='log_message.png', size=(900, 600))
 
-            # Load image and convert to discord file
             image = Image.open('log_message.png')
             buffer = BytesIO()
             image.save(buffer, 'PNG')
@@ -96,6 +95,7 @@ class AClient(Client):
             file = discord.File(fp=buffer, filename='log_message.png')
 
             await log_channel.send(file=file)
+
 
 client = AClient()
 tree = app_commands.CommandTree(client)
