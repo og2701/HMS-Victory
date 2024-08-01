@@ -1,11 +1,14 @@
 <html>
 <head>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Emoji&display=swap');
+
         body {{
             margin: 0;
             padding: 0;
-            background-color: white;
+            background-color: #2C2F33;
             font-family: Arial, sans-serif;
+            color: #DCDDDE;
         }}
         .container {{
             border: 2px solid #7289da;
@@ -15,7 +18,7 @@
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 20px;
-            background-color: #f9f9f9;
+            background-color: #23272A;
         }}
         .title {{
             grid-column: 1 / -1;
@@ -26,11 +29,13 @@
             text-align: center;
         }}
         .summary-item {{
-            background-color: #ffffff;
-            border: 1px solid #ddd;
+            background-color: #2C2F33;
+            border: 1px solid #99AAB5;
             border-radius: 8px;
             padding: 20px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            color: #DCDDDE;
+            font-family: 'Noto Emoji', sans-serif;
         }}
         .summary-item strong {{
             color: #7289da;
