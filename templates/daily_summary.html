@@ -4,8 +4,9 @@
         body {{
             margin: 0;
             padding: 0;
-            background-color: white;
+            background-color: #2c2f33;
             font-family: Arial, sans-serif;
+            color: #dcddde;
         }}
         .container {{
             border: 2px solid #7289da;
@@ -15,7 +16,7 @@
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 20px;
-            background-color: #f9f9f9;
+            background-color: #23272a;
         }}
         .title {{
             grid-column: 1 / -1;
@@ -26,8 +27,8 @@
             text-align: center;
         }}
         .summary-item {{
-            background-color: #ffffff;
-            border: 1px solid #ddd;
+            background-color: #2c2f33;
+            border: 1px solid #99aab5;
             border-radius: 8px;
             padding: 20px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -53,22 +54,22 @@
 </head>
 <body>
     <div class="container">
-        <div class="title">{title}</div>
-        <div class="summary-item half-width"><strong>Total Members:</strong> {total_members}</div>
-        <div class="summary-item half-width"><strong>Members Joined:</strong> {members_joined}</div>
-        <div class="summary-item half-width"><strong>Members Left:</strong> {members_left}</div>
-        <div class="summary-item half-width"><strong>Total Messages:</strong> {total_messages}</div>
-        <div class="summary-item half-width"><strong>Reactions Added/Removed:</strong> {reactions_added} / {reactions_removed}</div>
-        <div class="summary-item half-width"><strong>Deleted Messages:</strong> {deleted_messages}</div>
-        <div class="summary-item half-width"><strong>Boosters (New/Lost):</strong> {boosters}</div>
+        <div class="title">{{title}}</div>
+        <div class="summary-item half-width"><strong>Total Members:</strong> {{total_members}}</div>
+        <div class="summary-item half-width"><strong>Members Joined:</strong> {{members_joined}}</div>
+        <div class="summary-item half-width"><strong>Members Left:</strong> {{members_left}}</div>
+        <div class="summary-item half-width"><strong>Total Messages:</strong> {{total_messages}}</div>
+        <div class="summary-item half-width"><strong>Reactions Added/Removed:</strong> {{reactions_added}} / {{reactions_removed}}</div>
+        <div class="summary-item half-width"><strong>Deleted Messages:</strong> {{deleted_messages}}</div>
+        <div class="summary-item half-width"><strong>Boosters (New/Lost):</strong> {{boosters}}</div>
         <div class="summary-item full-width"><strong>Top 5 Active Channels:</strong>
-            <ul>{top_channels}</ul>
+            <ul>{{top_channels}}</ul>
         </div>
         <div class="summary-item full-width"><strong>Top 5 Active Members:</strong>
-            <ul>{active_members}</ul>
+            <ul>{{active_members}}</ul>
         </div>
         <div class="summary-item full-width"><strong>Top 5 Reacting Members:</strong>
-            <ul>{reacting_members}</ul>
+            <ul>{{reacting_members}}</ul>
         </div>
     </div>
 </body>
