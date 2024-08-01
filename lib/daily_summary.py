@@ -23,6 +23,13 @@ def initialize_summary_data():
                 "active_members": defaultdict(int),
                 "reacting_members": defaultdict(int)
             }, file)
+    else:
+        with open(SUMMARY_DATA_FILE, "r") as file:
+            data = json.load(file)
+        if "total_messages" not in data:
+            data["total_messages"] = 0
+        with open(SUMMARY_DATA_FILE, "w") as file:
+            json.dump(data, file)
 
 def update_summary_data(key, channel_id=None, user_id=None, remove=False):
     with open(SUMMARY_DATA_FILE, "r") as file:
