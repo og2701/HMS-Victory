@@ -105,10 +105,14 @@ async def post_daily_summary(client, log_channel_id):
             embed.add_field(name="Top 5 Active Members", value=top_members_str, inline=False)
         
         if reacted_messages:
-            top_reacted_messages_str = "\n".join([
-                f"{msg_info['content'][:50]} by {msg_info['author']}: {msg_info['count']} reactions"
-                for message_id, msg_info in reacted_messages
-            ])
+            top_reacted_messages = []
+            for message_id, msg_info in reacted_messages:
+                if msg_info:
+                    content = msg_info.get("content", "")
+                    author = msg_info.get("author", "Unknown")
+                    count = msg_info.get("count", 0)
+                    top_reacted_messages.append(f"{content[:50]} by {author}: {count} reactions")
+            top_reacted_messages_str = "\n".join(top_reacted_messages)
             embed.add_field(name="Top 5 Most Reacted Messages", value=top_reacted_messages_str, inline=False)
         
         if reacting_members:
