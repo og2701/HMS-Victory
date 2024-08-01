@@ -111,7 +111,8 @@ async def post_daily_summary(client, log_channel_id):
                     content = msg_info.get("content", "")
                     author = msg_info.get("author", "Unknown")
                     count = msg_info.get("count", 0)
-                    top_reacted_messages.append(f"{content[:50]} by {author}: {count} reactions")
+                    if content and author is not None:
+                        top_reacted_messages.append(f"{content[:50]} by {author}: {count} reactions")
             top_reacted_messages_str = "\n".join(top_reacted_messages)
             embed.add_field(name="Top 5 Most Reacted Messages", value=top_reacted_messages_str, inline=False)
         
@@ -120,3 +121,4 @@ async def post_daily_summary(client, log_channel_id):
             embed.add_field(name="Top 5 Reacting Members", value=top_reacting_members_str, inline=False)
 
         await log_channel.send(embed=embed)
+
