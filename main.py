@@ -3,6 +3,10 @@ from discord import app_commands, Intents, Interaction, Client, InteractionType,
 from typing import Optional
 from lib.log_functions import *
 import os
+import json
+from datetime import datetime, timedelta
+from discord.ext import tasks
+from collections import defaultdict
 
 from lib.commands import (
     updateRoleAssignments,
@@ -19,6 +23,23 @@ MINISTER_ROLE_ID = 1250190944502943755
 CABINET_ROLE_ID = 959493505930121226
 LOG_CHANNEL_ID = 959723562892144690
 
+# Initialize the JSON data file
+SUMMARY_DATA_FILE = "daily_summary.json"
+if not os.path.exists(SUMMARY_DATA_FILE):
+    with open(SUMMARY_DATA_FILE, "w") as file:
+        json.dump({
+            "members_joined": 0,
+            "members_left": 0,
+            "members_banned": 0,
+            "messages": {},
+            "reactions_added": 0,
+            "reactions_removed": 0,
+            "deleted_messages": 0,
+            "boosters_gained": 0,
+            "boosters_lost": 0,
+            "active_members": defaultdict(int)
+        }, file)
+
 class AClient(Client):
     def __init__(self):
         intents = Intents.default()
@@ -29,6 +50,7 @@ class AClient(Client):
         intents.typing = True
         intents.voice_states = True
         intents.webhooks = True
+        intents.members = True
 
         super().__init__(intents=intents)
         self.synced = False
@@ -41,6 +63,8 @@ class AClient(Client):
         print(f"Logged in as {self.user}")
         for command in tree.get_commands():
             print(f"Command loaded: {command.name}")
+        
+        self.daily_summary.start()
 
     async def on_interaction(self, interaction: Interaction):
         if (
@@ -82,6 +106,8 @@ class AClient(Client):
                 with open(image_file_path, "rb") as f:
                     await log_channel.send(file=discord.File(f, "deleted_message.png"), embed=embed)
                 os.remove(image_file_path)
+        
+        self.update_summary_data("deleted_messages")
 
     async def on_message_edit(self, before, after):
         if before.author.bot:
@@ -103,6 +129,103 @@ class AClient(Client):
                 with open(image_file_path, "rb") as f:
                     await log_channel.send(file=discord.File(f, "edited_message.png"), embed=embed)
                 os.remove(image_file_path)
+
+    async def on_member_join(self, member):
+        self.update_summary_data("members_joined")
+
+    async def on_member_remove(self, member):
+        self.update_summary_data("members_left")
+
+    async def on_member_ban(self, guild, user):
+        self.update_summary_data("members_banned")
+
+    async def on_message(self, message):
+        if message.author.bot:
+            return
+        self.update_summary_data("messages", message.channel.id)
+        self.update_summary_data("active_members", user_id=message.author.id)
+
+    async def on_reaction_add(self, reaction, user):
+        if user.bot:
+            return
+        self.update_summary_data("reactions_added")
+
+    async def on_reaction_remove(self, reaction, user):
+        if user.bot:
+            return
+        self.update_summary_data("reactions_removed")
+
+    def update_summary_data(self, key, channel_id=None, user_id=None):
+        with open(SUMMARY_DATA_FILE, "r") as file:
+            data = json.load(file)
+
+        if key == "messages" and channel_id:
+            if str(channel_id) not in data["messages"]:
+                data["messages"][str(channel_id)] = 0
+            data["messages"][str(channel_id)] += 1
+        elif key == "active_members" and user_id:
+            if str(user_id) not in data["active_members"]:
+                data["active_members"][str(user_id)] = 0
+            data["active_members"][str(user_id)] += 1
+        else:
+            data[key] += 1
+
+        with open(SUMMARY_DATA_FILE, "w") as file:
+            json.dump(data, file)
+
+    @tasks.loop(minutes=1)
+    async def daily_summary(self):
+        await self.post_daily_summary()
+        self.reset_summary_data()
+
+    async def post_daily_summary(self):
+        log_channel = self.get_channel(LOG_CHANNEL_ID)
+        if log_channel is not None:
+            with open(SUMMARY_DATA_FILE, "r") as file:
+                data = json.load(file)
+
+            guild = log_channel.guild
+            total_members = guild.member_count
+            active_members = sorted(data["active_members"].items(), key=lambda x: x[1], reverse=True)[:5]
+
+            embed = discord.Embed(
+                title="Daily Server Summary",
+                description=f"Here is the summary for {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="Total Members", value=total_members, inline=False)
+            embed.add_field(name="Members Joined", value=data["members_joined"], inline=False)
+            embed.add_field(name="Members Left", value=f"{data['members_left']} ({data['members_banned']} banned)", inline=False)
+            embed.add_field(name="Reactions Added/Removed", value=f"{data['reactions_added']} / {data['reactions_removed']}", inline=False)
+            embed.add_field(name="Deleted Messages", value=data["deleted_messages"], inline=False)
+            embed.add_field(name="New Boosters", value=data["boosters_gained"], inline=False)
+            embed.add_field(name="Lost Boosters", value=data["boosters_lost"], inline=False)
+            
+            top_channels = sorted(data["messages"].items(), key=lambda x: x[1], reverse=True)[:5]
+            if top_channels:
+                top_channels_str = "\n".join([f"<#{channel_id}>: {count} messages" for channel_id, count in top_channels])
+                embed.add_field(name="Top 5 Active Channels", value=top_channels_str, inline=False)
+
+            if active_members:
+                top_members_str = "\n".join([f"<@{user_id}>: {count} messages" for user_id, count in active_members])
+                embed.add_field(name="Top 5 Active Members", value=top_members_str, inline=False)
+            
+            await log_channel.send(embed=embed)
+
+    def reset_summary_data(self):
+        with open(SUMMARY_DATA_FILE, "w") as file:
+            json.dump({
+                "members_joined": 0,
+                "members_left": 0,
+                "members_banned": 0,
+                "messages": {},
+                "reactions_added": 0,
+                "reactions_removed": 0,
+                "deleted_messages": 0,
+                "boosters_gained": 0,
+                "boosters_lost": 0,
+                "active_members": defaultdict(int)
+            }, file)
 
 client = AClient()
 tree = app_commands.CommandTree(client)
@@ -147,7 +270,7 @@ async def user_activity_command(interaction: Interaction, month: str, user: Memb
 
 @tree.command(name="add-to-iceberg", description="Adds text to the iceberg image")
 async def add_to_iceberg_command(interaction: Interaction, text: str, level: int):
-    if not has_any_role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID]):
+    if not has any role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID]):
         await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
         return
     await add_iceberg_text(interaction, text, level)
