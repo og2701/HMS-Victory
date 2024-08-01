@@ -2,12 +2,15 @@ import discord
 from discord import app_commands, Intents, Interaction, Client, InteractionType, Member
 from typing import Optional
 from lib.log_functions import *
-from lib.daily_summary import initialize_summary_data, update_summary_data, reset_summary_data, post_daily_summary
+from lib.daily_summary import *
 import os
 import json
 from datetime import datetime, timedelta
 from discord.ext import tasks
 from collections import defaultdict
+import pytz
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 from lib.commands import (
     updateRoleAssignments,
@@ -40,6 +43,7 @@ class AClient(Client):
 
         super().__init__(intents=intents)
         self.synced = False
+        self.scheduler = AsyncIOScheduler()
 
     async def on_ready(self):
         global tree
@@ -49,8 +53,9 @@ class AClient(Client):
         print(f"Logged in as {self.user}")
         for command in tree.get_commands():
             print(f"Command loaded: {command.name}")
-        
-        self.daily_summary.start()
+
+        self.scheduler.add_job(self.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
+        self.scheduler.start()
 
     async def on_interaction(self, interaction: Interaction):
         if (
@@ -143,7 +148,6 @@ class AClient(Client):
         update_summary_data("reactions_removed")
         update_summary_data("reacting_members", user_id=user.id, remove=True)
 
-    @tasks.loop(minutes=1)
     async def daily_summary(self):
         await post_daily_summary(self, LOG_CHANNEL_ID)
         reset_summary_data()

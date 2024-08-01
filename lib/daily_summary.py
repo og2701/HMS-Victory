@@ -5,6 +5,7 @@ import discord
 from lib.daily_summary_html import create_daily_summary_image
 
 SUMMARY_DATA_FILE = "daily_summary.json"
+DEPUTY_PM_ROLE_ID = 1268676483476361357
 
 def initialize_summary_data():
     if not os.path.exists(SUMMARY_DATA_FILE):
@@ -103,8 +104,14 @@ async def post_daily_summary(client, log_channel_id):
 
         image_path = await create_daily_summary_image(summary_data, "Daily Server Summary")
 
+        role = guild.get_role(DEPUTY_PM_ROLE_ID)
+        if role:
+            role_mention = role.mention
+        else:
+            role_mention = ""
+
         try:
             with open(image_path, "rb") as f:
-                await log_channel.send(file=discord.File(f, "daily_summary.png"))
+                await log_channel.send(content=f"{role_mention}", file=discord.File(f, "daily_summary.png"))
         finally:
             os.remove(image_path)

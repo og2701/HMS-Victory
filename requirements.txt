@@ -5,3 +5,5 @@ selenium
 webdriver_manager
 imgkit
 html2image
+pytz
+apscheduler
