@@ -144,7 +144,7 @@ class AClient(Client):
     async def on_message(self, message):
         if message.author.bot:
             return
-        self.update_summary_data("messages", message.channel.id)
+        self.update_summary_data("messages", channel_id=message.channel.id)
         self.update_summary_data("active_members", user_id=message.author.id)
 
     async def on_reaction_add(self, reaction, user):
@@ -204,9 +204,9 @@ class AClient(Client):
 
             guild = log_channel.guild
             total_members = guild.member_count
-            active_members = sorted(data["active_members"].items(), key=lambda x: x[1], reverse=True)[:5]
-            reacted_messages = sorted(data["reacted_messages"].items(), key=lambda x: x[1], reverse=True)[:5]
-            reacting_members = sorted(data["reacting_members"].items(), key=lambda x: x[1], reverse=True)[:5]
+            active_members = sorted(data.get("active_members", {}).items(), key=lambda x: x[1], reverse=True)[:5]
+            reacted_messages = sorted(data.get("reacted_messages", {}).items(), key=lambda x: x[1], reverse=True)[:5]
+            reacting_members = sorted(data.get("reacting_members", {}).items(), key=lambda x: x[1], reverse=True)[:5]
 
             embed = discord.Embed(
                 title="Daily Server Summary",
@@ -220,7 +220,7 @@ class AClient(Client):
             embed.add_field(name="Deleted Messages", value=data["deleted_messages"], inline=False)
             embed.add_field(name="Boosters (New/Lost)", value=f"{data['boosters_gained']} / {data['boosters_lost']}", inline=False)
             
-            top_channels = sorted(data["messages"].items(), key=lambda x: x[1], reverse=True)[:5]
+            top_channels = sorted(data.get("messages", {}).items(), key=lambda x: x[1], reverse=True)[:5]
             if top_channels:
                 top_channels_str = "\n".join([f"<#{channel_id}>: {count} messages" for channel_id, count in top_channels])
                 embed.add_field(name="Top 5 Active Channels", value=top_channels_str, inline=False)
@@ -230,7 +230,7 @@ class AClient(Client):
                 embed.add_field(name="Top 5 Active Members", value=top_members_str, inline=False)
             
             if reacted_messages:
-                top_reacted_messages_str = "\n".join([f"[Message](https://discord.com/channels/{log_channel.guild.id}/{message.channel.id}/{message_id}): {count} reactions" for message_id, count in reacted_messages])
+                top_reacted_messages_str = "\n".join([f"[Message](https://discord.com/channels/{log_channel.guild.id}/{log_channel.id}/{message_id}): {count} reactions" for message_id, count in reacted_messages])
                 embed.add_field(name="Top 5 Most Reacted Messages", value=top_reacted_messages_str, inline=False)
             
             if reacting_members:
