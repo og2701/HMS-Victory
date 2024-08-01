@@ -37,7 +37,9 @@ if not os.path.exists(SUMMARY_DATA_FILE):
             "deleted_messages": 0,
             "boosters_gained": 0,
             "boosters_lost": 0,
-            "active_members": defaultdict(int)
+            "active_members": defaultdict(int),
+            "reacted_messages": defaultdict(int),
+            "reacting_members": defaultdict(int)
         }, file)
 
 class AClient(Client):
@@ -149,13 +151,17 @@ class AClient(Client):
         if user.bot:
             return
         self.update_summary_data("reactions_added")
+        self.update_summary_data("reacted_messages", message_id=reaction.message.id)
+        self.update_summary_data("reacting_members", user_id=user.id)
 
     async def on_reaction_remove(self, reaction, user):
         if user.bot:
             return
         self.update_summary_data("reactions_removed")
+        self.update_summary_data("reacted_messages", message_id=reaction.message.id, remove=True)
+        self.update_summary_data("reacting_members", user_id=user.id, remove=True)
 
-    def update_summary_data(self, key, channel_id=None, user_id=None):
+    def update_summary_data(self, key, channel_id=None, user_id=None, message_id=None, remove=False):
         with open(SUMMARY_DATA_FILE, "r") as file:
             data = json.load(file)
 
@@ -167,6 +173,18 @@ class AClient(Client):
             if str(user_id) not in data["active_members"]:
                 data["active_members"][str(user_id)] = 0
             data["active_members"][str(user_id)] += 1
+        elif key == "reacted_messages" and message_id:
+            if str(message_id) not in data["reacted_messages"]:
+                data["reacted_messages"][str(message_id)] = 0
+            data["reacted_messages"][str(message_id)] += 1 if not remove else -1
+            if data["reacted_messages"][str(message_id)] <= 0:
+                del data["reacted_messages"][str(message_id)]
+        elif key == "reacting_members" and user_id:
+            if str(user_id) not in data["reacting_members"]:
+                data["reacting_members"][str(user_id)] = 0
+            data["reacting_members"][str(user_id)] += 1 if not remove else -1
+            if data["reacting_members"][str(user_id)] <= 0:
+                del data["reacting_members"][str(user_id)]
         else:
             data[key] += 1
 
@@ -187,6 +205,8 @@ class AClient(Client):
             guild = log_channel.guild
             total_members = guild.member_count
             active_members = sorted(data["active_members"].items(), key=lambda x: x[1], reverse=True)[:5]
+            reacted_messages = sorted(data["reacted_messages"].items(), key=lambda x: x[1], reverse=True)[:5]
+            reacting_members = sorted(data["reacting_members"].items(), key=lambda x: x[1], reverse=True)[:5]
 
             embed = discord.Embed(
                 title="Daily Server Summary",
@@ -198,8 +218,7 @@ class AClient(Client):
             embed.add_field(name="Members Left", value=f"{data['members_left']} ({data['members_banned']} banned)", inline=False)
             embed.add_field(name="Reactions Added/Removed", value=f"{data['reactions_added']} / {data['reactions_removed']}", inline=False)
             embed.add_field(name="Deleted Messages", value=data["deleted_messages"], inline=False)
-            embed.add_field(name="New Boosters", value=data["boosters_gained"], inline=False)
-            embed.add_field(name="Lost Boosters", value=data["boosters_lost"], inline=False)
+            embed.add_field(name="Boosters (New/Lost)", value=f"{data['boosters_gained']} / {data['boosters_lost']}", inline=False)
             
             top_channels = sorted(data["messages"].items(), key=lambda x: x[1], reverse=True)[:5]
             if top_channels:
@@ -210,6 +229,14 @@ class AClient(Client):
                 top_members_str = "\n".join([f"<@{user_id}>: {count} messages" for user_id, count in active_members])
                 embed.add_field(name="Top 5 Active Members", value=top_members_str, inline=False)
             
+            if reacted_messages:
+                top_reacted_messages_str = "\n".join([f"[Message](https://discord.com/channels/{log_channel.guild.id}/{message.channel.id}/{message_id}): {count} reactions" for message_id, count in reacted_messages])
+                embed.add_field(name="Top 5 Most Reacted Messages", value=top_reacted_messages_str, inline=False)
+            
+            if reacting_members:
+                top_reacting_members_str = "\n".join([f"<@{user_id}>: {count} reactions" for user_id, count in reacting_members])
+                embed.add_field(name="Top 5 Reacting Members", value=top_reacting_members_str, inline=False)
+
             await log_channel.send(embed=embed)
 
     def reset_summary_data(self):
@@ -224,7 +251,9 @@ class AClient(Client):
                 "deleted_messages": 0,
                 "boosters_gained": 0,
                 "boosters_lost": 0,
-                "active_members": defaultdict(int)
+                "active_members": defaultdict(int),
+                "reacted_messages": defaultdict(int),
+                "reacting_members": defaultdict(int)
             }, file)
 
 client = AClient()
