@@ -20,11 +20,11 @@ def initialize_summary_data():
                 "boosters_gained": 0,
                 "boosters_lost": 0,
                 "active_members": defaultdict(int),
-                "reacted_messages": defaultdict(int),
+                "reacted_messages": {},
                 "reacting_members": defaultdict(int)
             }, file)
 
-def update_summary_data(key, channel_id=None, user_id=None, message_id=None, remove=False):
+def update_summary_data(key, channel_id=None, user_id=None, message_id=None, message_content=None, author_nickname=None, remove=False):
     with open(SUMMARY_DATA_FILE, "r") as file:
         data = json.load(file)
 
@@ -38,9 +38,9 @@ def update_summary_data(key, channel_id=None, user_id=None, message_id=None, rem
         data["active_members"][str(user_id)] += 1
     elif key == "reacted_messages" and message_id:
         if str(message_id) not in data["reacted_messages"]:
-            data["reacted_messages"][str(message_id)] = 0
-        data["reacted_messages"][str(message_id)] += 1 if not remove else -1
-        if data["reacted_messages"][str(message_id)] <= 0:
+            data["reacted_messages"][str(message_id)] = {"count": 0, "content": message_content, "author": author_nickname}
+        data["reacted_messages"][str(message_id)]["count"] += 1 if not remove else -1
+        if data["reacted_messages"][str(message_id)]["count"] <= 0:
             del data["reacted_messages"][str(message_id)]
     elif key == "reacting_members" and user_id:
         if str(user_id) not in data["reacting_members"]:
@@ -67,7 +67,7 @@ def reset_summary_data():
             "boosters_gained": 0,
             "boosters_lost": 0,
             "active_members": defaultdict(int),
-            "reacted_messages": defaultdict(int),
+            "reacted_messages": {},
             "reacting_members": defaultdict(int)
         }, file)
 
@@ -80,7 +80,7 @@ async def post_daily_summary(client, log_channel_id):
         guild = log_channel.guild
         total_members = guild.member_count
         active_members = sorted(data.get("active_members", {}).items(), key=lambda x: x[1], reverse=True)[:5]
-        reacted_messages = sorted(data.get("reacted_messages", {}).items(), key=lambda x: x[1], reverse=True)[:5]
+        reacted_messages = sorted(data.get("reacted_messages", {}).items(), key=lambda x: x[1]["count"], reverse=True)[:5]
         reacting_members = sorted(data.get("reacting_members", {}).items(), key=lambda x: x[1], reverse=True)[:5]
 
         embed = discord.Embed(
@@ -105,14 +105,10 @@ async def post_daily_summary(client, log_channel_id):
             embed.add_field(name="Top 5 Active Members", value=top_members_str, inline=False)
         
         if reacted_messages:
-            top_reacted_messages = []
-            for message_id, count in reacted_messages:
-                try:
-                    message = await log_channel.fetch_message(message_id)
-                    top_reacted_messages.append(f"{message.content[:50]} by <@{message.author.id}>: {count} reactions")
-                except discord.NotFound:
-                    continue
-            top_reacted_messages_str = "\n".join(top_reacted_messages)
+            top_reacted_messages_str = "\n".join([
+                f"{msg_info['content'][:50]} by {msg_info['author']}: {msg_info['count']} reactions"
+                for message_id, msg_info in reacted_messages
+            ])
             embed.add_field(name="Top 5 Most Reacted Messages", value=top_reacted_messages_str, inline=False)
         
         if reacting_members:
