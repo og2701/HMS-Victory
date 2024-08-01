@@ -24,13 +24,6 @@ def read_html_template(file_path):
         print(f"Error reading HTML template {file_path}: {e}")
         return ""
 
-def calculate_estimated_height(content, line_height=20, base_height=400):
-    message_lines = content.split('\n')
-    total_lines = sum(len(line) // 80 + 1 for line in message_lines)
-    content_height = line_height * total_lines
-    estimated_height = max(base_height, content_height + 100)
-    return estimated_height
-
 async def create_daily_summary_image(summary_data, title):
     total_members = summary_data['total_members']
     members_joined = summary_data['members_joined']
@@ -66,7 +59,7 @@ async def create_daily_summary_image(summary_data, title):
     )
 
     output_path = f"{uuid.uuid4()}.png"
-    hti.screenshot(html_str=html_content, save_as=output_path, size=(800, 1000))
+    hti.screenshot(html_str=html_content, save_as=output_path, size=(800, 1000))  # Consistent size
     image = Image.open(output_path)
     image = trim(image)
     image.save(output_path)
