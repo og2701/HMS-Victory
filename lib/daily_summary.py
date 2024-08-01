@@ -103,7 +103,8 @@ async def post_daily_summary(client, log_channel_id):
 
         image_path = await create_daily_summary_image(summary_data, "Daily Server Summary")
 
-        with open(image_path, "rb") as f:
-            await log_channel.send(file=discord.File(f, "daily_summary.png"))
-
-        os.remove(image_path)
+        try:
+            with open(image_path, "rb") as f:
+                await log_channel.send(file=discord.File(f, "daily_summary.png"))
+        finally:
+            os.remove(image_path)
