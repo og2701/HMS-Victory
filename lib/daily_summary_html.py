@@ -26,7 +26,7 @@ def read_html_template(file_path):
 
 def calculate_estimated_height(content, line_height=20, base_height=100):
     message_lines = content.split('\n')
-    total_lines = sum(len(line) // 80 + 1 for line in message_lines)
+    total_lines = len(message_lines) + sum(len(line) // 80 for line in message_lines)
     content_height = line_height * total_lines
     estimated_height = max(base_height, content_height + 100)
     return estimated_height
