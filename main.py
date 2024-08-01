@@ -134,15 +134,21 @@ class AClient(Client):
     async def on_reaction_add(self, reaction, user):
         if user.bot:
             return
+        message = reaction.message
+        author_nickname = message.author.display_name
+        message_content = message.content[:50]
         update_summary_data("reactions_added")
-        update_summary_data("reacted_messages", message_id=reaction.message.id)
+        update_summary_data("reacted_messages", message_id=message.id, message_content=message_content, author_nickname=author_nickname)
         update_summary_data("reacting_members", user_id=user.id)
 
     async def on_reaction_remove(self, reaction, user):
         if user.bot:
             return
+        message = reaction.message
+        author_nickname = message.author.display_name
+        message_content = message.content[:50]
         update_summary_data("reactions_removed")
-        update_summary_data("reacted_messages", message_id=reaction.message.id, remove=True)
+        update_summary_data("reacted_messages", message_id=message.id, message_content=message_content, author_nickname=author_nickname, remove=True)
         update_summary_data("reacting_members", user_id=user.id, remove=True)
 
     @tasks.loop(minutes=1)
