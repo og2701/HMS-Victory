@@ -105,10 +105,14 @@ async def post_daily_summary(client, log_channel_id):
             embed.add_field(name="Top 5 Active Members", value=top_members_str, inline=False)
         
         if reacted_messages:
-            top_reacted_messages_str = "\n".join([
-                f"{(await log_channel.fetch_message(message_id)).content[:50]} by <@{(await log_channel.fetch_message(message_id)).author.id}>: {count} reactions"
-                for message_id, count in reacted_messages
-            ])
+            top_reacted_messages = []
+            for message_id, count in reacted_messages:
+                try:
+                    message = await log_channel.fetch_message(message_id)
+                    top_reacted_messages.append(f"{message.content[:50]} by <@{message.author.id}>: {count} reactions")
+                except discord.NotFound:
+                    continue
+            top_reacted_messages_str = "\n".join(top_reacted_messages)
             embed.add_field(name="Top 5 Most Reacted Messages", value=top_reacted_messages_str, inline=False)
         
         if reacting_members:
@@ -116,4 +120,3 @@ async def post_daily_summary(client, log_channel_id):
             embed.add_field(name="Top 5 Reacting Members", value=top_reacting_members_str, inline=False)
 
         await log_channel.send(embed=embed)
-
