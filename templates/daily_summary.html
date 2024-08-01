@@ -1,57 +1,73 @@
 <html>
 <head>
     <style>
-        body {{
+        body {
             margin: 0;
             padding: 0;
             background-color: white;
-        }}
-        .container {{
+            font-family: Arial, sans-serif;
+        }
+        .container {
             border: 2px solid #7289da;
             padding: 20px;
-            width: fit-content;
-            display: inline-block;
-            font-family: Arial, sans-serif;
-        }}
-        .title {{
+            width: 90%;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            background-color: #f9f9f9;
+        }
+        .title {
+            grid-column: 1 / -1;
             font-size: 24px;
             font-weight: bold;
             color: #7289da;
             margin-bottom: 20px;
-        }}
-        .summary-item {{
-            margin-bottom: 10px;
-        }}
-        .summary-item strong {{
+            text-align: center;
+        }
+        .summary-item {
+            background-color: #ffffff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .summary-item strong {
             color: #7289da;
-        }}
-        ul {{
+        }
+        ul {
             margin: 0;
             padding-left: 20px;
-        }}
-        li {{
             list-style-type: disc;
+        }
+        li {
             margin-bottom: 5px;
-        }}
+        }
+        .half-width {
+            grid-column: span 1;
+        }
+        .full-width {
+            grid-column: 1 / -1;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="title">{title}</div>
-        <div class="summary-item"><strong>Total Members:</strong> {total_members}</div>
-        <div class="summary-item"><strong>Members Joined:</strong> {members_joined}</div>
-        <div class="summary-item"><strong>Members Left:</strong> {members_left}</div>
-        <div class="summary-item"><strong>Total Messages:</strong> {total_messages}</div>
-        <div class="summary-item"><strong>Reactions Added/Removed:</strong> {reactions_added} / {reactions_removed}</div>
-        <div class="summary-item"><strong>Deleted Messages:</strong> {deleted_messages}</div>
-        <div class="summary-item"><strong>Boosters (New/Lost):</strong> {boosters}</div>
-        <div class="summary-item"><strong>Top 5 Active Channels:</strong>
+        <div class="summary-item half-width"><strong>Total Members:</strong> {total_members}</div>
+        <div class="summary-item half-width"><strong>Members Joined:</strong> {members_joined}</div>
+        <div class="summary-item half-width"><strong>Members Left:</strong> {members_left}</div>
+        <div class="summary-item half-width"><strong>Total Messages:</strong> {total_messages}</div>
+        <div class="summary-item half-width"><strong>Reactions Added/Removed:</strong> {reactions_added} / {reactions_removed}</div>
+        <div class="summary-item half-width"><strong>Deleted Messages:</strong> {deleted_messages}</div>
+        <div class="summary-item half-width"><strong>Boosters (New/Lost):</strong> {boosters}</div>
+        <div class="summary-item full-width"><strong>Top 5 Active Channels:</strong>
             <ul>{top_channels}</ul>
         </div>
-        <div class="summary-item"><strong>Top 5 Active Members:</strong>
+        <div class="summary-item full-width"><strong>Top 5 Active Members:</strong>
             <ul>{active_members}</ul>
         </div>
-        <div class="summary-item"><strong>Top 5 Reacting Members:</strong>
+        <div class="summary-item full-width"><strong>Top 5 Reacting Members:</strong>
             <ul>{reacting_members}</ul>
         </div>
     </div>
