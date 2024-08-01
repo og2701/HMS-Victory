@@ -2,7 +2,7 @@ import os
 import json
 from datetime import datetime
 import discord
-from collections import defaultdict
+from lib.daily_summary_html import create_daily_summary_image
 
 SUMMARY_DATA_FILE = "daily_summary.json"
 
@@ -20,8 +20,8 @@ def initialize_summary_data():
                 "deleted_messages": 0,
                 "boosters_gained": 0,
                 "boosters_lost": 0,
-                "active_members": defaultdict(int),
-                "reacting_members": defaultdict(int)
+                "active_members": {},
+                "reacting_members": {}
             }, file)
     else:
         with open(SUMMARY_DATA_FILE, "r") as file:
@@ -69,8 +69,8 @@ def reset_summary_data():
             "deleted_messages": 0,
             "boosters_gained": 0,
             "boosters_lost": 0,
-            "active_members": defaultdict(int),
-            "reacting_members": defaultdict(int)
+            "active_members": {},
+            "reacting_members": {}
         }, file)
 
 async def post_daily_summary(client, log_channel_id):
@@ -83,31 +83,27 @@ async def post_daily_summary(client, log_channel_id):
         total_members = guild.member_count
         active_members = sorted(data.get("active_members", {}).items(), key=lambda x: x[1], reverse=True)[:5]
         reacting_members = sorted(data.get("reacting_members", {}).items(), key=lambda x: x[1], reverse=True)[:5]
-
-        embed = discord.Embed(
-            title="Daily Server Summary",
-            description=f"Here is the summary for {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}",
-            color=discord.Color.blue()
-        )
-        embed.add_field(name="Total Members", value=total_members, inline=False)
-        embed.add_field(name="Members Joined", value=data["members_joined"], inline=False)
-        embed.add_field(name="Members Left", value=f"{data['members_left']} ({data['members_banned']} banned)", inline=False)
-        embed.add_field(name="Total Messages", value=data["total_messages"], inline=False)
-        embed.add_field(name="Reactions Added/Removed", value=f"{data['reactions_added']} / {data['reactions_removed']}", inline=False)
-        embed.add_field(name="Deleted Messages", value=data["deleted_messages"], inline=False)
-        embed.add_field(name="Boosters (New/Lost)", value=f"{data['boosters_gained']} / {data['boosters_lost']}", inline=False)
-        
         top_channels = sorted(data.get("messages", {}).items(), key=lambda x: x[1], reverse=True)[:5]
-        if top_channels:
-            top_channels_str = "\n".join([f"<#{channel_id}>: {count} messages" for channel_id, count in top_channels])
-            embed.add_field(name="Top 5 Active Channels", value=top_channels_str, inline=False)
 
-        if active_members:
-            top_members_str = "\n".join([f"<@{user_id}>: {count} messages" for user_id, count in active_members])
-            embed.add_field(name="Top 5 Active Members", value=top_members_str, inline=False)
-        
-        if reacting_members:
-            top_reacting_members_str = "\n".join([f"<@{user_id}>: {count} reactions" for user_id, count in reacting_members])
-            embed.add_field(name="Top 5 Reacting Members", value=top_reacting_members_str, inline=False)
+        summary_data = {
+            "total_members": total_members,
+            "members_joined": data["members_joined"],
+            "members_left": data["members_left"],
+            "members_banned": data["members_banned"],
+            "total_messages": data["total_messages"],
+            "reactions_added": data["reactions_added"],
+            "reactions_removed": data["reactions_removed"],
+            "deleted_messages": data["deleted_messages"],
+            "boosters_gained": data["boosters_gained"],
+            "boosters_lost": data["boosters_lost"],
+            "top_channels": [(log_channel.guild.get_channel(int(channel_id)).name, count) for channel_id, count in top_channels],
+            "active_members": [(guild.get_member(int(user_id)).display_name, count) for user_id, count in active_members],
+            "reacting_members": [(guild.get_member(int(user_id)).display_name, count) for user_id, count in reacting_members]
+        }
 
-        await log_channel.send(embed=embed)
+        image_path = await create_daily_summary_image(summary_data, "Daily Server Summary")
+
+        with open(image_path, "rb") as f:
+            await log_channel.send(file=discord.File(f, "daily_summary.png"))
+
+        os.remove(image_path)
