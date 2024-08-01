@@ -28,7 +28,7 @@ def calculate_estimated_height(content, line_height=20, base_height=100):
     message_lines = content.split('\n')
     total_lines = len(message_lines) + sum(len(line) // 80 for line in message_lines)
     content_height = line_height * total_lines
-    estimated_height = max(base_height, content_height + 50)
+    estimated_height = max(base_height, content_height + 100)
     return estimated_height
 
 async def create_daily_summary_image(summary_data, title):
@@ -65,7 +65,7 @@ async def create_daily_summary_image(summary_data, title):
         reacting_members=reacting_members_str
     )
 
-    estimated_height = calculate_estimated_height(html_content, base_height=300)
+    estimated_height = calculate_estimated_height(html_content, base_height=400)
 
     output_path = f"{uuid.uuid4()}.png"
     hti.screenshot(html_str=html_content, save_as=output_path, size=(800, estimated_height))
