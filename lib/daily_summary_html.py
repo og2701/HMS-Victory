@@ -24,7 +24,7 @@ def read_html_template(file_path):
         print(f"Error reading HTML template {file_path}: {e}")
         return ""
 
-def calculate_estimated_height(content, line_height=20, base_height=100):
+def calculate_estimated_height(content, line_height=20, base_height=400):
     message_lines = content.split('\n')
     total_lines = sum(len(line) // 80 + 1 for line in message_lines)
     content_height = line_height * total_lines
@@ -50,7 +50,7 @@ async def create_daily_summary_image(summary_data, title):
     active_members_str = '\n'.join([f'<li>{member_name}: {count} messages</li>' for member_name, count in active_members])
     reacting_members_str = '\n'.join([f'<li>{member_name}: {count} reactions</li>' for member_name, count in reacting_members])
 
-    html_content = read_html_template('templates/daily_summary.html').format(
+    html_content = read_html_template('templates/daily_summary_grid.html').format(
         title=title,
         total_members=total_members,
         members_joined=members_joined,
@@ -65,10 +65,8 @@ async def create_daily_summary_image(summary_data, title):
         reacting_members=reacting_members_str
     )
 
-    estimated_height = calculate_estimated_height(html_content, base_height=400)
-
     output_path = f"{uuid.uuid4()}.png"
-    hti.screenshot(html_str=html_content, save_as=output_path, size=(800, estimated_height))
+    hti.screenshot(html_str=html_content, save_as=output_path, size=(800, 1000))
     image = Image.open(output_path)
     image = trim(image)
     image.save(output_path)
