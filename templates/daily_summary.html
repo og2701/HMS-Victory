@@ -1,102 +1,57 @@
-<!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body {
+        body {{
             margin: 0;
             padding: 0;
-            background-color: #f0f0f0;
-            font-family: Arial, sans-serif;
-        }
-        .container {
-            display: grid;
-            grid-template-areas:
-                "title title"
-                "members messages"
-                "reactions deleted"
-                "boosters channels"
-                "active reacting";
-            grid-gap: 10px;
-            padding: 20px;
-            width: 800px;
             background-color: white;
+        }}
+        .container {{
             border: 2px solid #7289da;
-            border-radius: 10px;
-        }
-        .title {
-            grid-area: title;
+            padding: 20px;
+            width: fit-content;
+            display: inline-block;
+            font-family: Arial, sans-serif;
+        }}
+        .title {{
             font-size: 24px;
             font-weight: bold;
             color: #7289da;
             margin-bottom: 20px;
-            text-align: center;
-        }
-        .box {
-            padding: 10px;
-            background-color: #ffffff;
-            border: 2px solid #7289da;
-            border-radius: 5px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-        }
-        .box strong {
+        }}
+        .summary-item {{
+            margin-bottom: 10px;
+        }}
+        .summary-item strong {{
             color: #7289da;
-        }
-        .box ul {
+        }}
+        ul {{
             margin: 0;
             padding-left: 20px;
-            text-align: left;
-        }
-        .box li {
+        }}
+        li {{
             list-style-type: disc;
             margin-bottom: 5px;
-        }
-        .members { grid-area: members; }
-        .messages { grid-area: messages; }
-        .reactions { grid-area: reactions; }
-        .deleted { grid-area: deleted; }
-        .boosters { grid-area: boosters; }
-        .channels { grid-area: channels; }
-        .active { grid-area: active; }
-        .reacting { grid-area: reacting; }
+        }}
     </style>
-    <title>Daily Summary</title>
 </head>
 <body>
     <div class="container">
         <div class="title">{title}</div>
-        <div class="box members">
-            <strong>Total Members:</strong> {total_members}
-            <strong>Members Joined:</strong> {members_joined}
-            <strong>Members Left:</strong> {members_left}
-        </div>
-        <div class="box messages">
-            <strong>Total Messages:</strong> {total_messages}
-        </div>
-        <div class="box reactions">
-            <strong>Reactions Added/Removed:</strong> {reactions_added} / {reactions_removed}
-        </div>
-        <div class="box deleted">
-            <strong>Deleted Messages:</strong> {deleted_messages}
-        </div>
-        <div class="box boosters">
-            <strong>Boosters (New/Lost):</strong> {boosters}
-        </div>
-        <div class="box channels">
-            <strong>Top 5 Active Channels:</strong>
+        <div class="summary-item"><strong>Total Members:</strong> {total_members}</div>
+        <div class="summary-item"><strong>Members Joined:</strong> {members_joined}</div>
+        <div class="summary-item"><strong>Members Left:</strong> {members_left}</div>
+        <div class="summary-item"><strong>Total Messages:</strong> {total_messages}</div>
+        <div class="summary-item"><strong>Reactions Added/Removed:</strong> {reactions_added} / {reactions_removed}</div>
+        <div class="summary-item"><strong>Deleted Messages:</strong> {deleted_messages}</div>
+        <div class="summary-item"><strong>Boosters (New/Lost):</strong> {boosters}</div>
+        <div class="summary-item"><strong>Top 5 Active Channels:</strong>
             <ul>{top_channels}</ul>
         </div>
-        <div class="box active">
-            <strong>Top 5 Active Members:</strong>
+        <div class="summary-item"><strong>Top 5 Active Members:</strong>
             <ul>{active_members}</ul>
         </div>
-        <div class="box reacting">
-            <strong>Top 5 Reacting Members:</strong>
+        <div class="summary-item"><strong>Top 5 Reacting Members:</strong>
             <ul>{reacting_members}</ul>
         </div>
     </div>
