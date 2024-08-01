@@ -270,7 +270,7 @@ async def user_activity_command(interaction: Interaction, month: str, user: Memb
 
 @tree.command(name="add-to-iceberg", description="Adds text to the iceberg image")
 async def add_to_iceberg_command(interaction: Interaction, text: str, level: int):
-    if not has any role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID]):
+    if not has_any_role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID]):
         await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
         return
     await add_iceberg_text(interaction, text, level)
