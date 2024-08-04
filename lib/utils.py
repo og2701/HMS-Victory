@@ -4,6 +4,8 @@ import discord
 async def restrict_channel_for_new_members(message: discord.Message, channel_id: int, days_required: int = 7):
     if message.channel.id == channel_id:
         join_date = message.author.joined_at
+        print(join_date)
+        print(datetime.now(timezone.utc))
         if join_date is None or (datetime.now(timezone.utc) - join_date).days < days_required:
             await message.delete()
             await message.channel.send(
