@@ -213,7 +213,7 @@ async def add_to_iceberg_command(interaction: Interaction, text: str, level: int
 async def show_iceberg_command(interaction: Interaction):
     await show_iceberg(interaction)
 
-@tree.command(name="whitelist", description="Adds a user to the whitelist for the politics channel")
+@tree.command(name="add-whitelist", description="Adds a user to the whitelist for the politics channel")
 async def add_whitelist_command(interaction: Interaction, user: Member):
     if not has_any_role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID]):
         await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
