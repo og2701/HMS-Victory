@@ -28,6 +28,9 @@ MINISTER_ROLE_ID = 1250190944502943755
 CABINET_ROLE_ID = 959493505930121226
 LOG_CHANNEL_ID = 959723562892144690
 POLITICS_CHANNEL_ID = 1141097424849481799
+COMMONS_CHANNEL_ID = 959501347571531776
+
+POLITICS_WHITELISTED_USER_IDS = []
 
 initialize_summary_data()
 
@@ -136,7 +139,7 @@ class AClient(Client):
         if message.author.bot:
             return
 
-        if not await restrict_channel_for_new_members(message, POLITICS_CHANNEL_ID, 7):
+        if not await restrict_channel_for_new_members(message, POLITICS_CHANNEL_ID, 7, POLITICS_WHITELISTED_USER_IDS):
             return
 
         update_summary_data("messages", channel_id=message.channel.id)
@@ -155,7 +158,7 @@ class AClient(Client):
         update_summary_data("reacting_members", user_id=user.id, remove=True)
 
     async def daily_summary(self):
-        await post_daily_summary(self, LOG_CHANNEL_ID)
+        await post_daily_summary(self, COMMONS_CHANNEL_ID)
         reset_summary_data()
 
 client = AClient()

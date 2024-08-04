@@ -1,11 +1,12 @@
+# lib/utils.py
 from datetime import datetime, timezone
 import discord
 
-async def restrict_channel_for_new_members(message: discord.Message, channel_id: int, days_required: int = 7):
+async def restrict_channel_for_new_members(message: discord.Message, channel_id: int, days_required: int = 7, whitelisted_user_ids: list[int] = []):
     if message.channel.id == channel_id:
+        if message.author.id in whitelisted_user_ids:
+            return True
         join_date = message.author.joined_at
-        print(join_date)
-        print(datetime.now(timezone.utc))
         if join_date is None or (datetime.now(timezone.utc) - join_date).days < days_required:
             await message.delete()
             await message.channel.send(
