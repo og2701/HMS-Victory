@@ -3,6 +3,7 @@ from discord import app_commands, Intents, Interaction, Client, InteractionType,
 from typing import Optional
 from lib.log_functions import *
 from lib.daily_summary import *
+from lib.utils import restrict_channel_for_new_members
 import os
 import json
 from datetime import datetime, timedelta
@@ -26,6 +27,7 @@ from lib.commands import (
 MINISTER_ROLE_ID = 1250190944502943755
 CABINET_ROLE_ID = 959493505930121226
 LOG_CHANNEL_ID = 959723562892144690
+POLITICS_CHANNEL_ID = 1141097424849481799
 
 initialize_summary_data()
 
@@ -133,6 +135,10 @@ class AClient(Client):
     async def on_message(self, message):
         if message.author.bot:
             return
+
+        if not await restrict_channel_for_new_members(message, POLITICS_CHANNEL_ID, 7):
+            return
+
         update_summary_data("messages", channel_id=message.channel.id)
         update_summary_data("active_members", user_id=message.author.id)
 
