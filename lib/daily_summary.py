@@ -4,12 +4,14 @@ from datetime import datetime
 import discord
 from lib.daily_summary_html import create_daily_summary_image
 
-SUMMARY_DATA_FILE = "daily_summary.json"
+SUMMARY_DATA_FILE = "daily_summary_{date}.json"
 DEPUTY_PM_ROLE_ID = 1268676483476361357
 
 def initialize_summary_data():
-    if not os.path.exists(SUMMARY_DATA_FILE):
-        with open(SUMMARY_DATA_FILE, "w") as file:
+    date = datetime.now().strftime("%Y-%m-%d")
+    file_path = SUMMARY_DATA_FILE.format(date=date)
+    if not os.path.exists(file_path):
+        with open(file_path, "w") as file:
             json.dump({
                 "members_joined": 0,
                 "members_left": 0,
@@ -25,15 +27,17 @@ def initialize_summary_data():
                 "reacting_members": {}
             }, file)
     else:
-        with open(SUMMARY_DATA_FILE, "r") as file:
+        with open(file_path, "r") as file:
             data = json.load(file)
         if "total_messages" not in data:
             data["total_messages"] = 0
-        with open(SUMMARY_DATA_FILE, "w") as file:
+        with open(file_path, "w") as file:
             json.dump(data, file)
 
 def update_summary_data(key, channel_id=None, user_id=None, remove=False):
-    with open(SUMMARY_DATA_FILE, "r") as file:
+    date = datetime.now().strftime("%Y-%m-%d")
+    file_path = SUMMARY_DATA_FILE.format(date=date)
+    with open(file_path, "r") as file:
         data = json.load(file)
 
     if key == "messages" and channel_id:
@@ -54,11 +58,13 @@ def update_summary_data(key, channel_id=None, user_id=None, remove=False):
     else:
         data[key] += 1
 
-    with open(SUMMARY_DATA_FILE, "w") as file:
+    with open(file_path, "w") as file:
         json.dump(data, file)
 
 def reset_summary_data():
-    with open(SUMMARY_DATA_FILE, "w") as file:
+    date = datetime.now().strftime("%Y-%m-%d")
+    file_path = SUMMARY_DATA_FILE.format(date=date)
+    with open(file_path, "w") as file:
         json.dump({
             "members_joined": 0,
             "members_left": 0,
@@ -77,7 +83,9 @@ def reset_summary_data():
 async def post_daily_summary(client, log_channel_id):
     log_channel = client.get_channel(log_channel_id)
     if log_channel is not None:
-        with open(SUMMARY_DATA_FILE, "r") as file:
+        date = datetime.now().strftime("%Y-%m-%d")
+        file_path = SUMMARY_DATA_FILE.format(date=date)
+        with open(file_path, "r") as file:
             data = json.load(file)
 
         guild = log_channel.guild
