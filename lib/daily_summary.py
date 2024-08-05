@@ -61,25 +61,6 @@ def update_summary_data(key, channel_id=None, user_id=None, remove=False):
     with open(file_path, "w") as file:
         json.dump(data, file)
 
-def reset_summary_data():
-    date = datetime.now().strftime("%Y-%m-%d")
-    file_path = SUMMARY_DATA_FILE.format(date=date)
-    with open(file_path, "w") as file:
-        json.dump({
-            "members_joined": 0,
-            "members_left": 0,
-            "members_banned": 0,
-            "messages": {},
-            "total_messages": 0,
-            "reactions_added": 0,
-            "reactions_removed": 0,
-            "deleted_messages": 0,
-            "boosters_gained": 0,
-            "boosters_lost": 0,
-            "active_members": {},
-            "reacting_members": {}
-        }, file)
-
 async def post_daily_summary(client, log_channel_id):
     log_channel = client.get_channel(log_channel_id)
     if log_channel is not None:

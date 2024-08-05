@@ -28,7 +28,7 @@ MINISTER_ROLE_ID = 1250190944502943755
 CABINET_ROLE_ID = 959493505930121226
 LOG_CHANNEL_ID = 959723562892144690
 POLITICS_CHANNEL_ID = 1141097424849481799
-COMMONS_CHANNEL_ID = 959501347571531776
+COMMONS_CHANNEL_ID = 1197572903294730270 #959501347571531776
 
 POLITICS_WHITELISTED_USER_IDS = []
 
@@ -59,7 +59,8 @@ class AClient(Client):
         for command in tree.get_commands():
             print(f"Command loaded: {command.name}")
 
-        self.scheduler.add_job(self.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
+        # self.scheduler.add_job(self.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
+        self.scheduler.add_job(self.daily_summary, CronTrigger(minute="*"))
         self.scheduler.start()
 
     async def on_interaction(self, interaction: Interaction):
