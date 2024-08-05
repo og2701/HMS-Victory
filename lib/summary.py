@@ -107,12 +107,12 @@ async def post_summary(client, log_channel_id, frequency):
                 data = json.load(file)
             title_color = "#7289da"  # Blue
         elif frequency == "weekly":
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=end_date.weekday() + 1)
+            end_date = datetime.now() - timedelta(days=datetime.now().weekday() + 1)
+            start_date = end_date - timedelta(days=6)
             data = aggregate_summaries(start_date, end_date)
             title_color = "#7CFC00"  # Light Green
         elif frequency == "monthly":
-            end_date = datetime.now()
+            end_date = datetime.now().replace(day=1) - timedelta(days=1)
             start_date = end_date.replace(day=1)
             data = aggregate_summaries(start_date, end_date)
             title_color = "#FFD700"  # Yellow
