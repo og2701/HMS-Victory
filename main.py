@@ -2,8 +2,8 @@ import discord
 from discord import app_commands, Intents, Interaction, Client, InteractionType, Member
 from typing import Optional
 from lib.log_functions import *
-from lib.daily_summary import *
 from lib.utils import restrict_channel_for_new_members
+from lib.summary import initialize_summary_data, update_summary_data, post_summary
 import os
 import json
 from datetime import datetime, timedelta
@@ -60,6 +60,8 @@ class AClient(Client):
             print(f"Command loaded: {command.name}")
 
         self.scheduler.add_job(self.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
+        self.scheduler.add_job(self.weekly_summary, CronTrigger(day_of_week="sun", hour=23, minute=59, timezone="Europe/London"))
+        self.scheduler.add_job(self.monthly_summary, CronTrigger(day=1, hour=0, minute=0, timezone="Europe/London"))
         self.scheduler.start()
 
     async def on_interaction(self, interaction: Interaction):
@@ -158,7 +160,13 @@ class AClient(Client):
         update_summary_data("reacting_members", user_id=user.id, remove=True)
 
     async def daily_summary(self):
-        await post_daily_summary(self, COMMONS_CHANNEL_ID)
+        await post_summary(self, COMMONS_CHANNEL_ID, "daily")
+
+    async def weekly_summary(self):
+        await post_summary(self, COMMONS_CHANNEL_ID, "weekly")
+
+    async def monthly_summary(self):
+        await post_summary(self, COMMONS_CHANNEL_ID, "monthly")
 
 client = AClient()
 tree = app_commands.CommandTree(client)
@@ -223,4 +231,3 @@ async def add_whitelist_command(interaction: Interaction, user: Member):
         await interaction.response.send_message(f"{user.mention} has been added to the whitelist.", ephemeral=True)
     else:
         await interaction.response.send_message(f"{user.mention} is already in the whitelist.", ephemeral=True)
-

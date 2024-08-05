@@ -31,7 +31,7 @@ def calculate_estimated_height(content, line_height=20, base_height=100):
     estimated_height = max(base_height, content_height + 100)
     return estimated_height
 
-async def create_daily_summary_image(summary_data, title):
+async def create_summary_image(summary_data, title):
     total_members = summary_data['total_members']
     members_joined = summary_data['members_joined']
     members_left = summary_data['members_left']
@@ -50,7 +50,7 @@ async def create_daily_summary_image(summary_data, title):
     active_members_str = '\n'.join([f'<li>{member_name}: {count} messages</li>' for member_name, count in active_members])
     reacting_members_str = '\n'.join([f'<li>{member_name}: {count} reactions</li>' for member_name, count in reacting_members])
 
-    html_content = read_html_template('templates/daily_summary.html').format(
+    html_content = read_html_template('templates/summary.html').format(
         title=title,
         total_members=total_members,
         members_joined=members_joined,
