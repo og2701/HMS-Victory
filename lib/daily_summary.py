@@ -4,7 +4,7 @@ from datetime import datetime
 import discord
 from lib.daily_summary_html import create_daily_summary_image
 
-SUMMARY_DATA_FILE = "daily_summary_{date}.json"
+SUMMARY_DATA_FILE = "daily_summaries/daily_summary_{date}.json"
 DEPUTY_PM_ROLE_ID = 1268676483476361357
 
 def initialize_summary_data():
