@@ -105,14 +105,17 @@ async def post_summary(client, log_channel_id, frequency):
             file_path = SUMMARY_DATA_FILE.format(date=date)
             with open(file_path, "r") as file:
                 data = json.load(file)
-        else:
-            if frequency == "weekly":
-                end_date = datetime.now()
-                start_date = end_date - timedelta(days=end_date.weekday() + 1)
-            elif frequency == "monthly":
-                end_date = datetime.now()
-                start_date = end_date.replace(day=1)
+            title_color = "#7289da"  # Blue
+        elif frequency == "weekly":
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=end_date.weekday() + 1)
             data = aggregate_summaries(start_date, end_date)
+            title_color = "#7CFC00"  # Light Green
+        elif frequency == "monthly":
+            end_date = datetime.now()
+            start_date = end_date.replace(day=1)
+            data = aggregate_summaries(start_date, end_date)
+            title_color = "#FFD700"  # Yellow
 
         guild = log_channel.guild
         total_members = guild.member_count
@@ -137,7 +140,7 @@ async def post_summary(client, log_channel_id, frequency):
         }
 
         title = f"{frequency.capitalize()} Server Summary"
-        image_path = await create_summary_image(summary_data, title)
+        image_path = await create_summary_image(summary_data, title, title_color)
 
         role = guild.get_role(DEPUTY_PM_ROLE_ID)
         if role:

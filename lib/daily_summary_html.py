@@ -31,7 +31,7 @@ def calculate_estimated_height(content, line_height=20, base_height=100):
     estimated_height = max(base_height, content_height + 100)
     return estimated_height
 
-async def create_summary_image(summary_data, title):
+async def create_summary_image(summary_data, title, title_color):
     total_members = summary_data['total_members']
     members_joined = summary_data['members_joined']
     members_left = summary_data['members_left']
@@ -52,6 +52,7 @@ async def create_summary_image(summary_data, title):
 
     html_content = read_html_template('templates/summary.html').format(
         title=title,
+        title_color=title_color,
         total_members=total_members,
         members_joined=members_joined,
         members_left=f"{members_left} ({members_banned} banned)",
