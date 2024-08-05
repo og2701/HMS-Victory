@@ -59,12 +59,12 @@ class AClient(Client):
         for command in tree.get_commands():
             print(f"Command loaded: {command.name}")
 
-        self.scheduler.add_job(self.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
-        # self.scheduler.add_job(self.weekly_summary, CronTrigger(day_of_week="sun", hour=23, minute=59, timezone="Europe/London"))
-        self.scheduler.add_job(self.monthly_summary, CronTrigger(day=1, hour=0, minute=0, timezone="Europe/London"))
-        # self.scheduler.add_job(self.daily_summary, CronTrigger(minute="*"))
-        self.scheduler.add_job(self.weekly_summary, CronTrigger(minute="*"))
-        # self.scheduler.add_job(self.monthly_summary, CronTrigger(minute="*"))
+        # self.scheduler.add_job(self.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
+        self.scheduler.add_job(self.weekly_summary, CronTrigger(day_of_week="sun", hour=23, minute=59, timezone="Europe/London"))
+        # self.scheduler.add_job(self.monthly_summary, CronTrigger(day=1, hour=0, minute=0, timezone="Europe/London"))
+        self.scheduler.add_job(self.daily_summary, CronTrigger(minute="*"))
+        # self.scheduler.add_job(self.weekly_summary, CronTrigger(minute="*"))
+        self.scheduler.add_job(self.monthly_summary, CronTrigger(minute="*"))
         self.scheduler.start()
 
     async def on_interaction(self, interaction: Interaction):
