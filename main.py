@@ -159,7 +159,6 @@ class AClient(Client):
 
     async def daily_summary(self):
         await post_daily_summary(self, COMMONS_CHANNEL_ID)
-        reset_summary_data()
 
 client = AClient()
 tree = app_commands.CommandTree(client)
