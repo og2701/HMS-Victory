@@ -101,6 +101,7 @@ def aggregate_summaries(start_date, end_date):
 
 async def post_summary(client, log_channel_id, frequency, channel_override=None):
     log_channel = client.get_channel(log_channel_id) if channel_override is None else channel_override
+    guild = log_channel.guild
     total_members = guild.member_count
     if log_channel is not None:
         if frequency == "daily":
@@ -132,7 +133,6 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None)
             data = aggregate_summaries(start_date, end_date)
             title_color = "#FFD700"  # Yellow
 
-        guild = log_channel.guild
         active_members = sorted(data.get("active_members", {}).items(), key=lambda x: x[1], reverse=True)[:5]
         reacting_members = sorted(data.get("reacting_members", {}).items(), key=lambda x: x[1], reverse=True)[:5]
         top_channels = sorted(data.get("messages", {}).items(), key=lambda x: x[1], reverse=True)[:5]
