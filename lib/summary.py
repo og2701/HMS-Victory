@@ -13,6 +13,7 @@ def initialize_summary_data():
     if not os.path.exists(file_path):
         with open(file_path, "w") as file:
             json.dump({
+                "total_members": 0,
                 "members_joined": 0,
                 "members_left": 0,
                 "members_banned": 0,
@@ -63,6 +64,7 @@ def update_summary_data(key, channel_id=None, user_id=None, remove=False):
 
 def aggregate_summaries(start_date, end_date):
     aggregated_data = {
+        "total_members": 0,
         "members_joined": 0,
         "members_left": 0,
         "members_banned": 0,
@@ -166,3 +168,7 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None)
         finally:
             os.remove(image_path)
 
+        if frequency == "daily":
+            data["total_members"] = total_members
+            with open(file_path, "w") as file:
+                json.dump(data, file)
