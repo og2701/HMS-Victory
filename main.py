@@ -234,3 +234,13 @@ async def add_whitelist_command(interaction: Interaction, user: Member):
         await interaction.response.send_message(f"{user.mention} has been added to the whitelist.", ephemeral=True)
     else:
         await interaction.response.send_message(f"{user.mention} is already in the whitelist.", ephemeral=True)
+
+@tree.command(name="post-daily-summary", description="Posts the daily summary in the current channel")
+async def post_daily_summary(interaction: Interaction):
+    if not has_role(interaction, MINISTER_ROLE_ID):
+        await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+        return
+    
+    await post_summary(client, interaction.channel.id, "daily", interaction.channel)
+    await interaction.response.send_message("Daily summary posted.", ephemeral=True)
+

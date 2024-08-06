@@ -97,8 +97,8 @@ def aggregate_summaries(start_date, end_date):
 
     return aggregated_data
 
-async def post_summary(client, log_channel_id, frequency):
-    log_channel = client.get_channel(log_channel_id)
+async def post_summary(client, log_channel_id, frequency, channel_override=None):
+    log_channel = client.get_channel(log_channel_id) if channel_override is None else channel_override
     if log_channel is not None:
         if frequency == "daily":
             date = datetime.now().strftime("%Y-%m-%d")
@@ -106,6 +106,18 @@ async def post_summary(client, log_channel_id, frequency):
             with open(file_path, "r") as file:
                 data = json.load(file)
             title_color = "#7289da"  # Blue
+
+            previous_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            previous_file_path = SUMMARY_DATA_FILE.format(date=previous_date)
+            if os.path.exists(previous_file_path):
+                with open(previous_file_path, "r") as previous_file:
+                    previous_data = json.load(previous_file)
+                member_change = data["total_members"] - previous_data["total_members"]
+                member_change_str = f" (+{member_change})" if member_change > 0 else f" ({member_change})"
+                member_change_color = "green" if member_change > 0 else "red"
+            else:
+                member_change_str = ""
+                member_change_color = "white"
         elif frequency == "weekly":
             end_date = datetime.now() - timedelta(days=datetime.now().weekday() + 1)
             start_date = end_date - timedelta(days=6)
@@ -124,7 +136,7 @@ async def post_summary(client, log_channel_id, frequency):
         top_channels = sorted(data.get("messages", {}).items(), key=lambda x: x[1], reverse=True)[:5]
 
         summary_data = {
-            "total_members": total_members,
+            "total_members": f"{total_members} <span style='color: {member_change_color};'>{member_change_str}</span>",
             "members_joined": data["members_joined"],
             "members_left": data["members_left"],
             "members_banned": data["members_banned"],
@@ -153,3 +165,4 @@ async def post_summary(client, log_channel_id, frequency):
                 await log_channel.send(content=f"{role_mention}", file=discord.File(f, f"{frequency}_summary.png"))
         finally:
             os.remove(image_path)
+
