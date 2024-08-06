@@ -2,7 +2,7 @@ import os
 import json
 from datetime import datetime, timedelta
 import discord
-from lib.daily_summary_html import create_summary_image
+from lib.summary_html import create_summary_image
 
 SUMMARY_DATA_FILE = "daily_summaries/daily_summary_{date}.json"
 DEPUTY_PM_ROLE_ID = 1268676483476361357
