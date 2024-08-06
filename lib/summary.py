@@ -101,6 +101,7 @@ def aggregate_summaries(start_date, end_date):
 
 async def post_summary(client, log_channel_id, frequency, channel_override=None):
     log_channel = client.get_channel(log_channel_id) if channel_override is None else channel_override
+    total_members = guild.member_count
     if log_channel is not None:
         if frequency == "daily":
             date = datetime.now().strftime("%Y-%m-%d")
@@ -114,7 +115,7 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None)
             if os.path.exists(previous_file_path):
                 with open(previous_file_path, "r") as previous_file:
                     previous_data = json.load(previous_file)
-                member_change = data["total_members"] - previous_data["total_members"]
+                member_change = total_members - previous_data["total_members"]
                 member_change_str = f" (+{member_change})" if member_change > 0 else f" ({member_change})"
                 member_change_color = "green" if member_change > 0 else "red"
             else:
@@ -132,7 +133,6 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None)
             title_color = "#FFD700"  # Yellow
 
         guild = log_channel.guild
-        total_members = guild.member_count
         active_members = sorted(data.get("active_members", {}).items(), key=lambda x: x[1], reverse=True)[:5]
         reacting_members = sorted(data.get("reacting_members", {}).items(), key=lambda x: x[1], reverse=True)[:5]
         top_channels = sorted(data.get("messages", {}).items(), key=lambda x: x[1], reverse=True)[:5]
