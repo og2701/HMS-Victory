@@ -29,8 +29,19 @@ CABINET_ROLE_ID = 959493505930121226
 LOG_CHANNEL_ID = 959723562892144690
 POLITICS_CHANNEL_ID = 1141097424849481799
 COMMONS_CHANNEL_ID = 959501347571531776
+WHITELIST_FILE = "whitelist.json"
 
-POLITICS_WHITELISTED_USER_IDS = []
+def load_whitelist():
+    if os.path.exists(WHITELIST_FILE):
+        with open(WHITELIST_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def save_whitelist(whitelist):
+    with open(WHITELIST_FILE, "w") as f:
+        json.dump(whitelist, f)
+
+POLITICS_WHITELISTED_USER_IDS = load_whitelist()
 
 initialize_summary_data()
 
@@ -235,6 +246,7 @@ async def add_whitelist_command(interaction: Interaction, user: Member):
 
     if user.id not in POLITICS_WHITELISTED_USER_IDS:
         POLITICS_WHITELISTED_USER_IDS.append(user.id)
+        save_whitelist(POLITICS_WHITELISTED_USER_IDS)
         await interaction.response.send_message(f"{user.mention} has been added to the whitelist.", ephemeral=True)
     else:
         await interaction.response.send_message(f"{user.mention} is already in the whitelist.", ephemeral=True)
@@ -247,4 +259,3 @@ async def post_daily_summary(interaction: Interaction):
     
     await post_summary(client, interaction.channel.id, "daily", interaction.channel)
     await interaction.response.send_message("Daily summary posted.", ephemeral=True)
-
