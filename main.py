@@ -62,9 +62,6 @@ class AClient(Client):
         self.scheduler.add_job(self.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
         self.scheduler.add_job(self.weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=1, timezone="Europe/London"))
         self.scheduler.add_job(self.monthly_summary, CronTrigger(day=1, hour=0, minute=2, timezone="Europe/London"))
-        # self.scheduler.add_job(self.daily_summary, CronTrigger(minute="*"))
-        # self.scheduler.add_job(self.weekly_summary, CronTrigger(minute="*"))
-        # self.scheduler.add_job(self.monthly_summary, CronTrigger(minute="*"))
         self.scheduler.start()
 
     async def on_interaction(self, interaction: Interaction):
@@ -108,6 +105,7 @@ class AClient(Client):
                     await log_channel.send(file=discord.File(f, "deleted_message.png"), embed=embed)
                 os.remove(image_file_path)
         
+        initialize_summary_data()
         update_summary_data("deleted_messages")
 
     async def on_message_edit(self, before, after):
@@ -132,12 +130,15 @@ class AClient(Client):
                 os.remove(image_file_path)
 
     async def on_member_join(self, member):
+        initialize_summary_data()
         update_summary_data("members_joined")
 
     async def on_member_remove(self, member):
+        initialize_summary_data()
         update_summary_data("members_left")
 
     async def on_member_ban(self, guild, user):
+        initialize_summary_data()
         update_summary_data("members_banned")
 
     async def on_message(self, message):
@@ -147,18 +148,21 @@ class AClient(Client):
         if not await restrict_channel_for_new_members(message, POLITICS_CHANNEL_ID, 7, POLITICS_WHITELISTED_USER_IDS):
             return
 
+        initialize_summary_data()
         update_summary_data("messages", channel_id=message.channel.id)
         update_summary_data("active_members", user_id=message.author.id)
 
     async def on_reaction_add(self, reaction, user):
         if user.bot:
             return
+        initialize_summary_data()
         update_summary_data("reactions_added")
         update_summary_data("reacting_members", user_id=user.id)
 
     async def on_reaction_remove(self, reaction, user):
         if user.bot:
             return
+        initialize_summary_data()
         update_summary_data("reactions_removed")
         update_summary_data("reacting_members", user_id=user.id, remove=True)
 
