@@ -122,7 +122,7 @@ class AClient(Client):
                     os.remove(image_file_path)
 
             for attachment in message.attachments:
-                attachment_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}"
+                attachment_link = f"https://cdn.discordapp.com/attachments/{message.channel.id}/{message.id}/{attachment.filename}"
                 if attachment.content_type and attachment.content_type.startswith('image/'):
                     image_embed = discord.Embed(
                         title="Image Deleted",
