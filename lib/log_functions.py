@@ -5,6 +5,7 @@ import uuid
 from PIL import Image, ImageChops
 from html2image import Html2Image
 import logging
+import difflib
 
 logging.basicConfig(level=logging.DEBUG)
 
