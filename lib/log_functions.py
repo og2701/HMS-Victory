@@ -3,12 +3,9 @@ import base64
 import html
 import uuid
 from PIL import Image, ImageChops
-from html2image import Html2Image
-import logging
-import mimetypes
 import difflib
-
-logging.basicConfig(level=logging.DEBUG)
+from html2image import Html2Image
+import os
 
 hti = Html2Image(output_path='.')
 
@@ -26,24 +23,29 @@ def read_html_template(file_path):
         with open(file_path, 'r') as file:
             return file.read()
     except Exception as e:
-        logging.error(f"Error reading HTML template {file_path}: {e}")
+        print(f"Error reading HTML template {file_path}: {e}")
         return ""
 
-def calculate_estimated_height(content, attachments=[], line_height=20, base_height=100):
+def calculate_estimated_height(content, line_height=20, base_height=100):
     message_lines = content.split('\n')
     total_lines = sum(len(line) // 80 + 1 for line in message_lines)
     content_height = line_height * total_lines
-    attachments_height = 0
-    for attachment in attachments:
-        if attachment['type'] == 'image':
-            attachments_height += 200
-        else:
-            attachments_height += 30
-    estimated_height = max(base_height, content_height + attachments_height + 100)
+    estimated_height = max(base_height, content_height + 100)
     return estimated_height
 
-def is_image(mime_type):
-    return mime_type and mime_type.startswith('image/')
+def format_images(attachments):
+    image_html = ""
+    for attachment in attachments:
+        if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
+            image_html += f'<div class="image-container"><img src="{attachment.url}" /></div>'
+    return image_html
+
+def format_attachments(attachments):
+    attachment_html = ""
+    for attachment in attachments:
+        if not attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
+            attachment_html += f'<div class="attachment">{attachment.filename}</div>'
+    return attachment_html
 
 async def create_message_image(message, title):
     avatar_url = message.author.avatar.url if message.author.avatar else message.author.default_avatar.url
@@ -52,35 +54,14 @@ async def create_message_image(message, title):
     avatar_data_url = f"data:image/png;base64,{avatar_base64}"
     
     escaped_content = html.escape(message.content)
-    attachments_html = ""
-
-    attachments = []
-    for attachment in message.attachments:
-        logging.debug(f"Processing attachment: {attachment.filename}")
-        response = requests.head(attachment.url)
-        mime_type, _ = mimetypes.guess_type(attachment.url)
-        if is_image(mime_type):
-            response = requests.get(attachment.url)
-            if response.status_code == 200:
-                attachment_base64 = base64.b64encode(response.content).decode('utf-8')
-                attachment_data_url = f"data:image/png;base64,{attachment_base64}"
-                attachments_html += f'<div class="attachment"><img src="{attachment_data_url}" /></div>'
-                attachments.append({'type': 'image'})
-                logging.debug(f"Image attachment added: {attachment.filename}")
-            else:
-                logging.error(f"Failed to fetch attachment image: {attachment.url}")
-        else:
-            attachments_html += f'<div class="attachment">{html.escape(attachment.filename)}</div>'
-            attachments.append({'type': 'file'})
-            logging.debug(f"File attachment added: {attachment.filename}")
-
-    logging.debug(f"Attachments HTML: {attachments_html}")
-
-    estimated_height = calculate_estimated_height(escaped_content, attachments)
+    estimated_height = calculate_estimated_height(escaped_content)
     
     border_color = message.author.color.to_rgb()
     display_name = message.author.display_name
     created_at = message.created_at.strftime('%H:%M')
+    
+    images_html = format_images(message.attachments)
+    attachments_html = format_attachments(message.attachments)
     
     html_content = read_html_template('templates/deleted_message.html').format(
         title=title,
@@ -89,17 +70,16 @@ async def create_message_image(message, title):
         display_name=display_name,
         created_at=created_at,
         content=escaped_content,
+        images=images_html,
         attachments=attachments_html
     )
     
     output_path = f"{uuid.uuid4()}.png"
-    logging.debug(f"HTML content length: {len(html_content)}")
     hti.screenshot(html_str=html_content, save_as=output_path, size=(800, estimated_height))
     image = Image.open(output_path)
     image = trim(image)
     image.save(output_path)
     return output_path
-
 
 def highlight_diff(before, after):
     sm = difflib.SequenceMatcher(None, before, after)
