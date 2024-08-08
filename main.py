@@ -131,7 +131,7 @@ class AClient(Client):
                     await log_channel.send(embed=image_embed)
                 else:
                     attachment_embed = discord.Embed(
-                        title=f"Attachments Deleted {message.attachments}",
+                        title=f"Attachments Deleted {attachment.url}",
                         description=f"The following attachments were deleted:\n{attachment.filename}",
                         color=discord.Color.red()
                     )
