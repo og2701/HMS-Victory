@@ -122,14 +122,14 @@ class AClient(Client):
                     os.remove(image_file_path)
 
             for attachment in message.attachments:
+                attachment_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}"
                 if attachment.content_type and attachment.content_type.startswith('image/'):
                     image_embed = discord.Embed(
                         title="Image Deleted",
                         description=f"An image by {message.author.mention} ({message.author.id}) was deleted in {message.channel.mention}.",
                         color=discord.Color.red()
                     )
-                    image_embed.add_field(name="Channel Link", value=f"[Click here](https://discord.com/channels/{message.guild.id}/{message.channel.id})")
-                    image_embed.add_field(name="Image Link", value=f"{attachment.url}")
+                    image_embed.add_field(name="Channel Link", value=f"[Click here]({attachment_link})")
                     image_embed.set_image(url=attachment.url)
                     await log_channel.send(embed=image_embed)
                 else:
@@ -138,7 +138,7 @@ class AClient(Client):
                         description=f"The following attachments by {message.author.mention} ({message.author.id}) were deleted in {message.channel.mention}:\n{attachment.filename}",
                         color=discord.Color.red()
                     )
-                    attachment_embed.add_field(name="Channel Link", value=f"[Click here](https://discord.com/channels/{message.guild.id}/{message.channel.id})")
+                    attachment_embed.add_field(name="Channel Link", value=f"[Click here]({attachment_link})")
                     await log_channel.send(embed=attachment_embed)
 
 
