@@ -199,10 +199,23 @@ class AClient(Client):
             if cache_channel:
                 for attachment in message.attachments:
                     if attachment.content_type and attachment.content_type.startswith('image/'):
-                        cached_message = await cache_channel.send(attachment.url)
-                        if message.id not in self.image_cache:
-                            self.image_cache[message.id] = {}
-                        self.image_cache[message.id][attachment.url] = cached_message.attachments[0].url
+                        try:
+                            cached_message = await cache_channel.send(attachment.url)
+                            if cached_message.attachments:
+                                if message.id not in self.image_cache:
+                                    self.image_cache[message.id] = {}
+                                self.image_cache[message.id][attachment.url] = cached_message.attachments[0].url
+                                print(f"Cached attachment URL: {cached_message.attachments[0].url}")
+                            else:
+                                print("Cached message has no attachments.")
+                        except Exception as e:
+                            print(f"Error caching image: {e}")
+                            raise e
+                    else:
+                        print("Attachment is not an image.")
+        else:
+            print("Message has no attachments.")
+
 
     async def on_reaction_add(self, reaction, user):
         if user.bot:
