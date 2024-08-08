@@ -121,7 +121,7 @@ class AClient(Client):
                 os.remove(image_file_path)
 
             for attachment in message.attachments:
-                if attachment.url.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff')):
+                if attachment.content_type.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'webp')):
                     image_embed = discord.Embed(
                         title="Image Deleted",
                         description=f"An image was deleted in {message.channel.mention}.",
@@ -131,7 +131,7 @@ class AClient(Client):
                     await log_channel.send(embed=image_embed)
                 else:
                     attachment_embed = discord.Embed(
-                        title=f"Attachments Deleted {attachment.content_type}",
+                        title=f"Attachments Deleted",
                         description=f"The following attachments were deleted:\n{attachment.filename}",
                         color=discord.Color.red()
                     )
