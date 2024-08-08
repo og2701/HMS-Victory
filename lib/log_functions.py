@@ -25,11 +25,17 @@ def read_html_template(file_path):
         print(f"Error reading HTML template {file_path}: {e}")
         return ""
 
-def calculate_estimated_height(content, line_height=20, base_height=100):
+def calculate_estimated_height(content, attachments, line_height=20, base_height=100):
     message_lines = content.split('\n')
     total_lines = sum(len(line) // 80 + 1 for line in message_lines)
     content_height = line_height * total_lines
-    estimated_height = max(base_height, content_height + 100)
+    attachments_height = 0
+    for attachment in attachments:
+        if attachment['type'] == 'image':
+            attachments_height += 200
+        else:
+            attachments_height += 30
+    estimated_height = max(base_height, content_height + attachments_height + 100)
     return estimated_height
 
 async def create_message_image(message, title):
@@ -39,7 +45,21 @@ async def create_message_image(message, title):
     avatar_data_url = f"data:image/png;base64,{avatar_base64}"
     
     escaped_content = html.escape(message.content)
-    estimated_height = calculate_estimated_height(escaped_content)
+    attachments_html = ""
+
+    attachments = []
+    for attachment in message.attachments:
+        if attachment.url.endswith(('png', 'jpg', 'jpeg', 'gif')):
+            response = requests.get(attachment.url)
+            attachment_base64 = base64.b64encode(response.content).decode('utf-8')
+            attachment_data_url = f"data:image/png;base64,{attachment_base64}"
+            attachments_html += f'<div class="attachment"><img src="{attachment_data_url}" /></div>'
+            attachments.append({'type': 'image'})
+        else:
+            attachments_html += f'<div class="attachment">{html.escape(attachment.filename)}</div>'
+            attachments.append({'type': 'file'})
+
+    estimated_height = calculate_estimated_height(escaped_content, attachments)
     
     border_color = message.author.color.to_rgb()
     display_name = message.author.display_name
@@ -51,7 +71,8 @@ async def create_message_image(message, title):
         avatar_data_url=avatar_data_url,
         display_name=display_name,
         created_at=created_at,
-        content=escaped_content
+        content=escaped_content,
+        attachments=attachments_html
     )
     
     output_path = f"{uuid.uuid4()}.png"

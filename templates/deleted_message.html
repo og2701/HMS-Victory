@@ -1,3 +1,4 @@
+<!-- deleted_message.html -->
 <html>
 <head>
     <style>
@@ -45,6 +46,13 @@
             margin-top: 5px;
             white-space: pre-wrap;
         }}
+        .attachment {{
+            margin-top: 10px;
+        }}
+        .attachment img {{
+            max-width: 100%;
+            border-radius: 5px;
+        }}
     </style>
 </head>
 <body>
@@ -56,6 +64,7 @@
                 <span class="username">{display_name}</span>
                 <span class="timestamp">Today at {created_at}</span>
                 <div class="content">{content}</div>
+                {attachments}
             </div>
         </div>
     </div>
