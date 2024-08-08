@@ -100,11 +100,11 @@ class AClient(Client):
             deleter = None
 
         log_channel = self.get_channel(LOG_CHANNEL_ID)
+        channel_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
         if log_channel is not None:
             if message.content:
                 image_file_path = await create_message_image(message, "Deleted Message")
 
-                channel_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
                 description = f"Message by {message.author.mention} ({message.author.id}) deleted in {message.channel.mention}."
                 if deleter and deleter != message.author:
                     description += f"\nDeleted by {deleter.mention} ({deleter.id})."
@@ -129,8 +129,9 @@ class AClient(Client):
                         description=f"An image by {message.author.mention} ({message.author.id}) was deleted in {message.channel.mention}.",
                         color=discord.Color.red()
                     )
-                    image_embed.add_field(name="Channel Link", value=f"[Click here]({attachment_link})")
-                    image_embed.set_image(url=attachment.url)
+                    image_embed.add_field(name="Channel Link", value=f"[Click here]({channel_link})")
+                    image_embed.add_field(name="Image Link", value=f"{attachment.url}")
+                    image_embed.set_image(url=attachment_link)
                     await log_channel.send(embed=image_embed)
                 else:
                     attachment_embed = discord.Embed(
