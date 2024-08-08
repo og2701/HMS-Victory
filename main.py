@@ -183,26 +183,39 @@ class AClient(Client):
         initialize_summary_data()
         update_summary_data("members_banned")
 
-    async def on_message(self, message):
-        if message.author.bot:
-            return
+async def on_message(self, message):
+    if message.author.bot:
+        return
 
-        if not await restrict_channel_for_new_members(message, POLITICS_CHANNEL_ID, 7, POLITICS_WHITELISTED_USER_IDS):
-            return
+    if not await restrict_channel_for_new_members(message, POLITICS_CHANNEL_ID, 7, POLITICS_WHITELISTED_USER_IDS):
+        return
 
-        initialize_summary_data()
-        update_summary_data("messages", channel_id=message.channel.id)
-        update_summary_data("active_members", user_id=message.author.id)
+    initialize_summary_data()
+    update_summary_data("messages", channel_id=message.channel.id)
+    update_summary_data("active_members", user_id=message.author.id)
 
-        if message.attachments:
-            cache_channel = self.get_channel(IMAGE_CACHE_CHANNEL)
-            if cache_channel:
-                for attachment in message.attachments:
-                    if attachment.content_type and attachment.content_type.startswith('image/'):
+    if message.attachments:
+        cache_channel = self.get_channel(IMAGE_CACHE_CHANNEL)
+        if cache_channel:
+            for attachment in message.attachments:
+                if attachment.content_type and attachment.content_type.startswith('image/'):
+                    try:
                         cached_message = await cache_channel.send(attachment.url)
-                        if message.id not in self.image_cache:
-                            self.image_cache[message.id] = {}
-                        self.image_cache[message.id][attachment.url] = cached_message.attachments[0].url
+                        if cached_message.attachments:
+                            if message.id not in self.image_cache:
+                                self.image_cache[message.id] = {}
+                            self.image_cache[message.id][attachment.url] = cached_message.attachments[0].url
+                            print(f"Cached attachment URL: {cached_message.attachments[0].url}")
+                        else:
+                            print("Cached message has no attachments.")
+                    except Exception as e:
+                        print(f"Error caching image: {e}")
+                        raise e
+                else:
+                    print("Attachment is not an image.")
+    else:
+        print("Message has no attachments.")
+
 
     async def on_reaction_add(self, reaction, user):
         if user.bot:
