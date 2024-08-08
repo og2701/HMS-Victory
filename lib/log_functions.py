@@ -3,11 +3,10 @@ import base64
 import html
 import uuid
 from PIL import Image, ImageChops
-import difflib
 from html2image import Html2Image
 import logging
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 hti = Html2Image(output_path='.')
 
@@ -25,7 +24,7 @@ def read_html_template(file_path):
         with open(file_path, 'r') as file:
             return file.read()
     except Exception as e:
-        logging.info(f"Error reading HTML template {file_path}: {e}")
+        logging.error(f"Error reading HTML template {file_path}: {e}")
         return ""
 
 def calculate_estimated_height(content, attachments=[], line_height=20, base_height=100):
@@ -52,17 +51,23 @@ async def create_message_image(message, title):
 
     attachments = []
     for attachment in message.attachments:
+        logging.debug(f"Processing attachment: {attachment.filename}")
         if attachment.url.endswith(('png', 'jpg', 'jpeg', 'gif')):
             response = requests.get(attachment.url)
-            attachment_base64 = base64.b64encode(response.content).decode('utf-8')
-            attachment_data_url = f"data:image/png;base64,{attachment_base64}"
-            attachments_html += f'<div class="attachment"><img src="{attachment_data_url}" /></div>'
-            attachments.append({'type': 'image'})
+            if response.status_code == 200:
+                attachment_base64 = base64.b64encode(response.content).decode('utf-8')
+                attachment_data_url = f"data:image/png;base64,{attachment_base64}"
+                attachments_html += f'<div class="attachment"><img src="{attachment_data_url}" /></div>'
+                attachments.append({'type': 'image'})
+                logging.debug(f"Image attachment added: {attachment.filename}")
+            else:
+                logging.error(f"Failed to fetch attachment image: {attachment.url}")
         else:
             attachments_html += f'<div class="attachment">{html.escape(attachment.filename)}</div>'
             attachments.append({'type': 'file'})
+            logging.debug(f"File attachment added: {attachment.filename}")
 
-    logging.info(attachments)
+    logging.debug(f"Attachments HTML: {attachments_html}")
 
     estimated_height = calculate_estimated_height(escaped_content, attachments)
     
@@ -81,6 +86,7 @@ async def create_message_image(message, title):
     )
     
     output_path = f"{uuid.uuid4()}.png"
+    logging.debug(f"HTML content: {html_content}")
     hti.screenshot(html_str=html_content, save_as=output_path, size=(800, estimated_height))
     image = Image.open(output_path)
     image = trim(image)
