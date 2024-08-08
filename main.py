@@ -101,24 +101,25 @@ class AClient(Client):
 
         log_channel = self.get_channel(LOG_CHANNEL_ID)
         if log_channel is not None:
-            image_file_path = await create_message_image(message, "Deleted Message")
+            if message.content:
+                image_file_path = await create_message_image(message, "Deleted Message")
 
-            channel_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
-            description = f"Message by {message.author.mention} ({message.author.id}) deleted in {message.channel.mention}."
-            if deleter and deleter != message.author:
-                description += f"\nDeleted by {deleter.mention} ({deleter.id})."
-            
-            embed = discord.Embed(
-                title="Message Deleted",
-                description=description,
-                color=discord.Color.red()
-            )
-            embed.add_field(name="Channel Link", value=f"[Click here]({channel_link})")
-            embed.set_image(url="attachment://deleted_message.png")
-            if image_file_path is not None:
-                with open(image_file_path, "rb") as f:
-                    await log_channel.send(file=discord.File(f, "deleted_message.png"), embed=embed)
-                os.remove(image_file_path)
+                channel_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
+                description = f"Message by {message.author.mention} ({message.author.id}) deleted in {message.channel.mention}."
+                if deleter and deleter != message.author:
+                    description += f"\nDeleted by {deleter.mention} ({deleter.id})."
+                
+                embed = discord.Embed(
+                    title="Message Deleted",
+                    description=description,
+                    color=discord.Color.red()
+                )
+                embed.add_field(name="Channel Link", value=f"[Click here]({channel_link})")
+                embed.set_image(url="attachment://deleted_message.png")
+                if image_file_path is not None:
+                    with open(image_file_path, "rb") as f:
+                        await log_channel.send(file=discord.File(f, "deleted_message.png"), embed=embed)
+                    os.remove(image_file_path)
 
             for attachment in message.attachments:
                 if attachment.content_type.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'webp')):
