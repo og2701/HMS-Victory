@@ -214,28 +214,13 @@ class AClient(Client):
                                         image_data = await response.read()
                                         image_filename = attachment.filename
                                         file = discord.File(io.BytesIO(image_data), filename=image_filename)
-                                        
-                                        # Create an embed with sender information and message link
-                                        embed = discord.Embed(
-                                            title="Image Cached",
-                                            description=f"Image by {message.author.mention} in {message.channel.mention}",
-                                            color=discord.Color.blue()
-                                        )
-                                        embed.add_field(name="Message Link", value=f"[Click here](https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id})")
-                                        embed.set_image(url=f"attachment://{image_filename}")
-
-                                        cached_message = await cache_channel.send(file=file, embed=embed)
-                                        
+                                        cached_message = await cache_channel.send(file=file)
                                         if cached_message.attachments:
                                             if message.id not in self.image_cache:
                                                 self.image_cache[message.id] = {}
-                                            self.image_cache[message.id][attachment.url] = {
-                                                'url': cached_message.attachments[0].url,
-                                                'timestamp': time.time()
-                                            }
+                                            self.image_cache[message.id][attachment.url] = cached_message.attachments[0].url
                             else:
-                                print(f"Skipped downloading {attachment.filename} as it exceeds the size limit of {MAX_IMAGE_SIZE / (1024 * 1024)} MB.")
-
+                                logger.info(f"Skipped downloading {attachment.filename} as it exceeds the size limit of {MAX_IMAGE_SIZE / (1024 * 1024)} MB.")
 
 
     async def on_reaction_add(self, reaction, user):
