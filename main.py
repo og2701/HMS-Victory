@@ -249,7 +249,7 @@ class AClient(Client):
                     print(f"Skipped downloading {attachment.filename} as it exceeds the size limit of {MAX_IMAGE_SIZE / (1024 * 1024)} MB.")
                     continue
 
-                cached_url = await self.cache_image(session, attachment, cache_channel, message)
+                cached_url = await cache_image(session, attachment, cache_channel, message)
                 if cached_url:
                     if message.id not in self.image_cache:
                         self.image_cache[message.id] = {}
