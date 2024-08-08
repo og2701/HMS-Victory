@@ -99,7 +99,7 @@ class AClient(Client):
         else:
             deleter = None
 
-        log_channel = self.get_channel(LOG_CHANNEL_ID)
+        log_channel = self.get_channel(self.LOG_CHANNEL_ID)
         if log_channel is not None:
             image_file_path = await create_message_image(message, "Deleted Message")
 
@@ -107,27 +107,18 @@ class AClient(Client):
             description = f"Message by {message.author.mention} ({message.author.id}) deleted in {message.channel.mention}."
             if deleter and deleter != message.author:
                 description += f"\nDeleted by {deleter.mention} ({deleter.id})."
-
+            
             embed = discord.Embed(
                 title="Message Deleted",
                 description=description,
                 color=discord.Color.red()
             )
             embed.add_field(name="Channel Link", value=f"[Click here]({channel_link})")
-
+            embed.set_image(url="attachment://deleted_message.png")
             if image_file_path is not None:
                 with open(image_file_path, "rb") as f:
                     await log_channel.send(file=discord.File(f, "deleted_message.png"), embed=embed)
                 os.remove(image_file_path)
-
-            if message.attachments:
-                attachment_names = "\n".join([attachment.filename for attachment in message.attachments])
-                attachment_embed = discord.Embed(
-                    title="Attachments Deleted",
-                    description=f"The following attachments were deleted:\n{attachment_names}",
-                    color=discord.Color.red()
-                )
-                await log_channel.send(embed=attachment_embed)
 
             for attachment in message.attachments:
                 if attachment.url.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff')):
@@ -138,9 +129,13 @@ class AClient(Client):
                     )
                     image_embed.set_image(url=attachment.url)
                     await log_channel.send(embed=image_embed)
-        
-        initialize_summary_data()
-        update_summary_data("deleted_messages")
+                else:
+                    attachment_embed = discord.Embed(
+                        title="Attachments Deleted",
+                        description=f"The following attachments were deleted:\n{attachment.filename}",
+                        color=discord.Color.red()
+                    )
+                    await log_channel.send(embed=attachment_embed)
 
 
     async def on_message_edit(self, before, after):
