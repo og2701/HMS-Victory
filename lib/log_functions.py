@@ -25,12 +25,26 @@ def read_html_template(file_path):
         print(f"Error reading HTML template {file_path}: {e}")
         return ""
 
-def calculate_estimated_height(content, line_height=20, base_height=100):
+def calculate_estimated_height(content, attachments=[], line_height=20, base_height=100):
     message_lines = content.split('\n')
     total_lines = sum(len(line) // 80 + 1 for line in message_lines)
     content_height = line_height * total_lines
-    estimated_height = max(base_height, content_height + 100)
+
+    image_height = 0
+    for attachment in attachments:
+        if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif')):
+            try:
+                image_response = requests.get(attachment.url, stream=True)
+                image_response.raw.decode_content = True
+                image = Image.open(image_response.raw)
+                image_height += image.height
+            except Exception as e:
+                print(f"Error loading image {attachment.filename}: {e}")
+                image_height += 200
+
+    estimated_height = max(base_height, content_height + image_height + 100)
     return estimated_height
+
 
 async def create_message_image(message, title):
     avatar_url = message.author.avatar.url if message.author.avatar else message.author.default_avatar.url
@@ -39,21 +53,28 @@ async def create_message_image(message, title):
     avatar_data_url = f"data:image/png;base64,{avatar_base64}"
     
     escaped_content = html.escape(message.content)
-    estimated_height = calculate_estimated_height(escaped_content)
+    
+    attachments = []
+    attachments_html = ""
+    for attachment in message.attachments:
+        attachments.append(attachment)
+        if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif')):
+            try:
+                image_response = requests.get(attachment.url)
+                image_base64 = base64.b64encode(image_response.content).decode('utf-8')
+                image_data_url = f"data:image/png;base64,{image_base64}"
+                attachments_html += f'<img src="{image_data_url}" style="max-width: 100%; margin-top: 10px; border-radius: 5px;" />'
+            except Exception as e:
+                print(f"Error loading image {attachment.filename}: {e}")
+                attachments_html += f'<div class="attachment-name">{html.escape(attachment.filename)} (failed to load)</div>'
+        else:
+            attachments_html += f'<div class="attachment-name">{html.escape(attachment.filename)}</div>'
+    
+    estimated_height = calculate_estimated_height(escaped_content, attachments)
     
     border_color = message.author.color.to_rgb()
     display_name = message.author.display_name
     created_at = message.created_at.strftime('%H:%M')
-    
-    attachments_html = ""
-    for attachment in message.attachments:
-        if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif')):
-            image_response = requests.get(attachment.url)
-            image_base64 = base64.b64encode(image_response.content).decode('utf-8')
-            image_data_url = f"data:image/png;base64,{image_base64}"
-            attachments_html += f'<img src="{image_data_url}" style="max-width: 100%; margin-top: 10px; border-radius: 5px;" />'
-        else:
-            attachments_html += f'<div class="attachment-name">{html.escape(attachment.filename)}</div>'
     
     html_content = read_html_template('templates/deleted_message.html').format(
         title=title,
