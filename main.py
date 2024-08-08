@@ -214,7 +214,7 @@ class AClient(Client):
                                         image_data = await response.read()
                                         image_filename = attachment.filename
                                         file = discord.File(io.BytesIO(image_data), filename=image_filename)
-                                        cached_message = await cache_channel.send(file=file)
+                                        cached_message = await cache_channel.send(content=f"Image by {message.author.mention} in {message.channel.mention}", file=file)
                                         if cached_message.attachments:
                                             if message.id not in self.image_cache:
                                                 self.image_cache[message.id] = {}
