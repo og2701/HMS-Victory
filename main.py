@@ -200,7 +200,7 @@ class AClient(Client):
         initialize_summary_data()
         update_summary_data("members_banned")
 
-    async def cache_image(session, attachment, cache_channel, message):
+    async def cache_image(self, session, attachment, cache_channel, message):
         async with session.get(attachment.url) as response:
             if response.status != 200:
                 return None
