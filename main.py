@@ -214,7 +214,7 @@ class AClient(Client):
                                         image_data = await response.read()
                                         image_filename = attachment.filename
                                         file = discord.File(io.BytesIO(image_data), filename=image_filename)
-                                         embed = discord.Embed(
+                                        embed = discord.Embed(
                                             title="Image Cached",
                                             description=f"Image by {message.author.mention} in {message.channel.mention}",
                                             color=discord.Color.blue()
