@@ -24,11 +24,15 @@ from lib.commands import (
     show_iceberg
 )
 
-MINISTER_ROLE_ID = 1250190944502943755
-CABINET_ROLE_ID = 959493505930121226
 LOG_CHANNEL_ID = 959723562892144690
 POLITICS_CHANNEL_ID = 1141097424849481799
 COMMONS_CHANNEL_ID = 959501347571531776
+
+MINISTER_ROLE_ID = 1250190944502943755
+CABINET_ROLE_ID = 959493505930121226
+BORDER_FORCE_ROLE_ID = 959500686746345542
+POLITICS_BAN_ROLE_ID = 1265295557115510868
+
 WHITELIST_FILE = "whitelist.json"
 
 def load_whitelist():
@@ -258,3 +262,22 @@ async def post_daily_summary(interaction: Interaction):
         return
     
     await post_summary(client, interaction.channel.id, "daily", interaction.channel)
+
+@tree.command(name="politics-ban", description="Toggles politics ban for a member")
+async def manage_role_command(interaction: Interaction, user: Member):
+    if not has_any_role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID, BORDER_FORCE_ROLE_ID]):
+        await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+        return
+
+    role = interaction.guild.get_role(POLITICS_BAN_ROLE_ID)
+    if not role:
+        await interaction.response.send_message(f"Role with ID {role_id} not found.", ephemeral=True)
+        return
+    
+    if role in user.roles:
+        await user.remove_roles(role)
+        await interaction.response.send_message(f"Role {role.name} has been removed from {user.mention}.", ephemeral=True)
+    else:
+        await user.add_roles(role)
+        await interaction.response.send_message(f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True)
+
