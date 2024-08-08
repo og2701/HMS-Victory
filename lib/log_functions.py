@@ -87,12 +87,13 @@ async def create_message_image(message, title):
     )
     
     output_path = f"{uuid.uuid4()}.png"
-    logging.debug(f"HTML content: {html_content}")
+    logging.debug(f"HTML content length: {len(html_content)}")
     hti.screenshot(html_str=html_content, save_as=output_path, size=(800, estimated_height))
     image = Image.open(output_path)
     image = trim(image)
     image.save(output_path)
     return output_path
+
 
 def highlight_diff(before, after):
     sm = difflib.SequenceMatcher(None, before, after)
