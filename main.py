@@ -214,7 +214,13 @@ class AClient(Client):
                                         image_data = await response.read()
                                         image_filename = attachment.filename
                                         file = discord.File(io.BytesIO(image_data), filename=image_filename)
-                                        cached_message = await cache_channel.send(content=f"Image by {message.author.mention} in {message.channel.mention}", file=file)
+                                         embed = discord.Embed(
+                                            title="Image Cached",
+                                            description=f"Image by {message.author.mention} in {message.channel.mention}",
+                                            color=discord.Color.blue()
+                                        )
+                                        embed.add_field(name="Message Link", value=f"[Click here](https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id})")
+                                        cached_message = await cache_channel.send(embed=embed, file=file)
                                         if cached_message.attachments:
                                             if message.id not in self.image_cache:
                                                 self.image_cache[message.id] = {}
