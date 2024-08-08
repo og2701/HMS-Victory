@@ -5,9 +5,6 @@ import uuid
 from PIL import Image, ImageChops
 import difflib
 from html2image import Html2Image
-import os
-import requests
-import base64
 
 hti = Html2Image(output_path='.')
 
@@ -35,20 +32,6 @@ def calculate_estimated_height(content, line_height=20, base_height=100):
     estimated_height = max(base_height, content_height + 100)
     return estimated_height
 
-def format_images(attachments):
-    image_html = ""
-    for attachment in attachments:
-        if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
-            image_html += f'<div class="image-container"><img src="{attachment.url}" alt="{attachment.filename}" /></div>'
-    return image_html
-
-def format_attachments(attachments):
-    attachment_html = ""
-    for attachment in attachments:
-        if not attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
-            attachment_html += f'<div class="attachment">{attachment.filename}</div>'
-    return attachment_html
-
 async def create_message_image(message, title):
     avatar_url = message.author.avatar.url if message.author.avatar else message.author.default_avatar.url
     response = requests.get(avatar_url)
@@ -62,18 +45,13 @@ async def create_message_image(message, title):
     display_name = message.author.display_name
     created_at = message.created_at.strftime('%H:%M')
     
-    images_html = format_images(message.attachments)
-    attachments_html = format_attachments(message.attachments)
-    
     html_content = read_html_template('templates/deleted_message.html').format(
         title=title,
         border_color=border_color,
         avatar_data_url=avatar_data_url,
         display_name=display_name,
         created_at=created_at,
-        content=escaped_content,
-        images=images_html,
-        attachments=attachments_html
+        content=escaped_content
     )
     
     output_path = f"{uuid.uuid4()}.png"
@@ -82,9 +60,6 @@ async def create_message_image(message, title):
     image = trim(image)
     image.save(output_path)
     return output_path
-
-
-
 
 def highlight_diff(before, after):
     sm = difflib.SequenceMatcher(None, before, after)
