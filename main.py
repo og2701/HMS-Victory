@@ -99,7 +99,7 @@ class AClient(Client):
         else:
             deleter = None
 
-        log_channel = self.get_channel(self.LOG_CHANNEL_ID)
+        log_channel = self.get_channel(LOG_CHANNEL_ID)
         if log_channel is not None:
             image_file_path = await create_message_image(message, "Deleted Message")
 
