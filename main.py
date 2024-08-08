@@ -123,6 +123,7 @@ class AClient(Client):
         initialize_summary_data()
         update_summary_data("deleted_messages")
 
+
     async def on_message_edit(self, before, after):
         if before.author.bot:
             return

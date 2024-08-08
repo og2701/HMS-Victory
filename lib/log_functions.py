@@ -45,13 +45,24 @@ async def create_message_image(message, title):
     display_name = message.author.display_name
     created_at = message.created_at.strftime('%H:%M')
     
+    attachments_html = ""
+    for attachment in message.attachments:
+        if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif')):
+            image_response = requests.get(attachment.url)
+            image_base64 = base64.b64encode(image_response.content).decode('utf-8')
+            image_data_url = f"data:image/png;base64,{image_base64}"
+            attachments_html += f'<img src="{image_data_url}" style="max-width: 100%; margin-top: 10px; border-radius: 5px;" />'
+        else:
+            attachments_html += f'<div class="attachment-name">{html.escape(attachment.filename)}</div>'
+    
     html_content = read_html_template('templates/deleted_message.html').format(
         title=title,
         border_color=border_color,
         avatar_data_url=avatar_data_url,
         display_name=display_name,
         created_at=created_at,
-        content=escaped_content
+        content=escaped_content,
+        attachments=attachments_html
     )
     
     output_path = f"{uuid.uuid4()}.png"
@@ -60,6 +71,7 @@ async def create_message_image(message, title):
     image = trim(image)
     image.save(output_path)
     return output_path
+
 
 def highlight_diff(before, after):
     sm = difflib.SequenceMatcher(None, before, after)
