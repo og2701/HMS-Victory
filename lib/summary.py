@@ -172,16 +172,3 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None)
             data["total_members"] = total_members
             with open(file_path, "w") as file:
                 json.dump(data, file)
-
-            role_mention = ""
-
-        try:
-            with open(image_path, "rb") as f:
-                await log_channel.send(content=f"{role_mention}", file=discord.File(f, f"{frequency}_summary.png"))
-        finally:
-            os.remove(image_path)
-
-        if frequency == "daily":
-            data["total_members"] = total_members
-            with open(file_path, "w") as file:
-                json.dump(data, file)

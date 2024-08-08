@@ -258,4 +258,3 @@ async def post_daily_summary(interaction: Interaction):
         return
     
     await post_summary(client, interaction.channel.id, "daily", interaction.channel)
-    await interaction.response.send_message("Daily summary posted.", ephemeral=True)
