@@ -149,8 +149,8 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None)
             "boosters_gained": data["boosters_gained"],
             "boosters_lost": data["boosters_lost"],
             "top_channels": [(log_channel.guild.get_channel(int(channel_id)).name, count) for channel_id, count in top_channels],
-            "active_members": [(guild.get_member(int(user_id)).display_name, count) for user_id, count in active_members],
-            "reacting_members": [(guild.get_member(int(user_id)).display_name, count) for user_id, count in reacting_members]
+            "active_members": [(guild.get_member(int(user_id)).display_name if guild.get_member(int(user_id)) else "Unknown Member", count) for user_id, count in active_members],
+            "reacting_members": [(guild.get_member(int(user_id)).display_name if guild.get_member(int(user_id)) else "Unknown Member", count) for user_id, count in reacting_members]
         }
 
         title = f"{frequency.capitalize()} Server Summary"
@@ -160,6 +160,19 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None)
         if role:
             role_mention = role.mention
         else:
+            role_mention = ""
+
+        try:
+            with open(image_path, "rb") as f:
+                await log_channel.send(content=f"{role_mention}", file=discord.File(f, f"{frequency}_summary.png"))
+        finally:
+            os.remove(image_path)
+
+        if frequency == "daily":
+            data["total_members"] = total_members
+            with open(file_path, "w") as file:
+                json.dump(data, file)
+
             role_mention = ""
 
         try:
