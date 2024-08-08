@@ -59,6 +59,8 @@ async def create_message_image(message, title):
             attachments_html += f'<div class="attachment">{html.escape(attachment.filename)}</div>'
             attachments.append({'type': 'file'})
 
+    print(attachments)
+
     estimated_height = calculate_estimated_height(escaped_content, attachments)
     
     border_color = message.author.color.to_rgb()
