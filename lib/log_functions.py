@@ -6,6 +6,8 @@ from PIL import Image, ImageChops
 import difflib
 from html2image import Html2Image
 import os
+import requests
+import base64
 
 hti = Html2Image(output_path='.')
 
@@ -33,20 +35,11 @@ def calculate_estimated_height(content, line_height=20, base_height=100):
     estimated_height = max(base_height, content_height + 100)
     return estimated_height
 
-import requests
-import base64
-
 def format_images(attachments):
     image_html = ""
     for attachment in attachments:
         if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
-            response = requests.get(attachment.url)
-            if response.status_code == 200:
-                image_base64 = base64.b64encode(response.content).decode('utf-8')
-                image_data_url = f"data:image/png;base64,{image_base64}"
-                image_html += f'<div class="image-container"><img src="{image_data_url}" alt="{attachment.filename}" /></div>'
-            else:
-                image_html += f'<div class="attachment">{attachment.filename}</div>'
+            image_html += f'<div class="image-container"><img src="{attachment.url}" alt="{attachment.filename}" /></div>'
     return image_html
 
 def format_attachments(attachments):
@@ -89,6 +82,7 @@ async def create_message_image(message, title):
     image = trim(image)
     image.save(output_path)
     return output_path
+
 
 
 
