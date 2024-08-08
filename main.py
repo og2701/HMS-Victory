@@ -13,10 +13,8 @@ import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import logging
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
+import aiohttp
+import io
 
 from lib.commands import (
     updateRoleAssignments,
@@ -28,6 +26,11 @@ from lib.commands import (
     add_iceberg_text,
     show_iceberg
 )
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
 LOG_CHANNEL_ID = 959723562892144690
 POLITICS_CHANNEL_ID = 1141097424849481799
@@ -77,9 +80,9 @@ class AClient(Client):
         if not self.synced:
             await tree.sync()
             self.synced = True
-        print(f"Logged in as {self.user}")
+        logger.info(f"Logged in as {self.user}")
         for command in tree.get_commands():
-            print(f"Command loaded: {command.name}")
+            logger.info(f"Command loaded: {command.name}")
 
         self.scheduler.add_job(self.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
         self.scheduler.add_job(self.weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=1, timezone="Europe/London"))
@@ -89,7 +92,7 @@ class AClient(Client):
 
     async def clear_image_cache(self):
         self.image_cache.clear()
-        print("Image cache cleared.")
+        logger.info("Image cache cleared.")
 
     async def on_interaction(self, interaction: Interaction):
         if (
@@ -202,24 +205,22 @@ class AClient(Client):
         if message.attachments:
             cache_channel = self.get_channel(IMAGE_CACHE_CHANNEL)
             if cache_channel:
-                for attachment in message.attachments:
-                    if attachment.content_type and attachment.content_type.startswith('image/'):
-                        try:
-                            cached_message = await cache_channel.send(attachment.url)
-                            if cached_message.attachments:
-                                if message.id not in self.image_cache:
-                                    self.image_cache[message.id] = {}
-                                self.image_cache[message.id][attachment.url] = cached_message.attachments[0].url
-                                logger.info(f"Cached attachment URL: {cached_message.attachments[0].url}")
+                async with aiohttp.ClientSession() as session:
+                    for attachment in message.attachments:
+                        if attachment.content_type and attachment.content_type.startswith('image/'):
+                            if attachment.size <= MAX_IMAGE_SIZE:
+                                async with session.get(attachment.url) as response:
+                                    if response.status == 200:
+                                        image_data = await response.read()
+                                        image_filename = attachment.filename
+                                        file = discord.File(io.BytesIO(image_data), filename=image_filename)
+                                        cached_message = await cache_channel.send(file=file)
+                                        if cached_message.attachments:
+                                            if message.id not in self.image_cache:
+                                                self.image_cache[message.id] = {}
+                                            self.image_cache[message.id][attachment.url] = cached_message.attachments[0].url
                             else:
-                                logger.warning("Cached message has no attachments.")
-                        except Exception as e:
-                            logger.error(f"Error caching image: {e}", exc_info=True)
-                    else:
-                        logger.info("Attachment is not an image.")
-        else:
-            logger.info("Message has no attachments.")
-
+                                logger.info(f"Skipped downloading {attachment.filename} as it exceeds the size limit of {MAX_IMAGE_SIZE / (1024 * 1024)} MB.")
 
 
     async def on_reaction_add(self, reaction, user):
