@@ -5,6 +5,9 @@ import uuid
 from PIL import Image, ImageChops
 import difflib
 from html2image import Html2Image
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 hti = Html2Image(output_path='.')
 
@@ -22,7 +25,7 @@ def read_html_template(file_path):
         with open(file_path, 'r') as file:
             return file.read()
     except Exception as e:
-        print(f"Error reading HTML template {file_path}: {e}")
+        logging.info(f"Error reading HTML template {file_path}: {e}")
         return ""
 
 def calculate_estimated_height(content, attachments=[], line_height=20, base_height=100):
@@ -59,7 +62,7 @@ async def create_message_image(message, title):
             attachments_html += f'<div class="attachment">{html.escape(attachment.filename)}</div>'
             attachments.append({'type': 'file'})
 
-    print(attachments)
+    logging.info(attachments)
 
     estimated_height = calculate_estimated_height(escaped_content, attachments)
     
