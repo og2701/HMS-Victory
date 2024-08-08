@@ -12,6 +12,11 @@ from collections import defaultdict
 import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 from lib.commands import (
     updateRoleAssignments,
@@ -205,16 +210,16 @@ class AClient(Client):
                                 if message.id not in self.image_cache:
                                     self.image_cache[message.id] = {}
                                 self.image_cache[message.id][attachment.url] = cached_message.attachments[0].url
-                                print(f"Cached attachment URL: {cached_message.attachments[0].url}")
+                                logger.info(f"Cached attachment URL: {cached_message.attachments[0].url}")
                             else:
-                                print("Cached message has no attachments.")
+                                logger.warning("Cached message has no attachments.")
                         except Exception as e:
-                            print(f"Error caching image: {e}")
-                            raise e
+                            logger.error(f"Error caching image: {e}", exc_info=True)
                     else:
-                        print("Attachment is not an image.")
+                        logger.info("Attachment is not an image.")
         else:
-            print("Message has no attachments.")
+            logger.info("Message has no attachments.")
+
 
 
     async def on_reaction_add(self, reaction, user):
