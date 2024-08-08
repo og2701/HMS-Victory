@@ -37,7 +37,7 @@ def format_images(attachments):
     image_html = ""
     for attachment in attachments:
         if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
-            image_html += f'<div class="image-container"><img src="{attachment.url}" /></div>'
+            image_html += f'<div class="image-container"><img src="{attachment.url}" alt="{attachment.filename}" /></div>'
     return image_html
 
 def format_attachments(attachments):
@@ -80,6 +80,7 @@ async def create_message_image(message, title):
     image = trim(image)
     image.save(output_path)
     return output_path
+
 
 def highlight_diff(before, after):
     sm = difflib.SequenceMatcher(None, before, after)
