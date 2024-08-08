@@ -27,6 +27,7 @@ from lib.commands import (
 LOG_CHANNEL_ID = 959723562892144690
 POLITICS_CHANNEL_ID = 1141097424849481799
 COMMONS_CHANNEL_ID = 959501347571531776
+IMAGE_CACHE_CHANNEL = 1271188365244497971
 
 MINISTER_ROLE_ID = 1250190944502943755
 CABINET_ROLE_ID = 959493505930121226
@@ -64,6 +65,7 @@ class AClient(Client):
         super().__init__(intents=intents)
         self.synced = False
         self.scheduler = AsyncIOScheduler()
+        self.image_cache = {}
 
     async def on_ready(self):
         global tree
@@ -77,7 +79,12 @@ class AClient(Client):
         self.scheduler.add_job(self.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
         self.scheduler.add_job(self.weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=1, timezone="Europe/London"))
         self.scheduler.add_job(self.monthly_summary, CronTrigger(day=1, hour=0, minute=2, timezone="Europe/London"))
+        self.scheduler.add_job(self.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=0, timezone="Europe/London"))
         self.scheduler.start()
+
+    async def clear_image_cache(self):
+        self.image_cache.clear()
+        print("Image cache cleared.")
 
     async def on_interaction(self, interaction: Interaction):
         if (
@@ -122,26 +129,26 @@ class AClient(Client):
                     os.remove(image_file_path)
 
             for attachment in message.attachments:
-                attachment_link = f"https://cdn.discordapp.com/attachments/{message.channel.id}/{message.id}/{attachment.filename}"
-                if attachment.content_type and attachment.content_type.startswith('image/'):
-                    image_embed = discord.Embed(
-                        title="Image Deleted",
-                        description=f"An image by {message.author.mention} ({message.author.id}) was deleted in {message.channel.mention}.",
-                        color=discord.Color.red()
-                    )
-                    image_embed.add_field(name="Channel Link", value=f"[Click here]({channel_link})")
-                    image_embed.add_field(name="Image Link", value=f"{attachment.url}")
-                    image_embed.set_image(url=attachment_link)
-                    await log_channel.send(embed=image_embed)
-                else:
-                    attachment_embed = discord.Embed(
-                        title="Attachments Deleted",
-                        description=f"The following attachments by {message.author.mention} ({message.author.id}) were deleted in {message.channel.mention}:\n{attachment.filename}",
-                        color=discord.Color.red()
-                    )
-                    attachment_embed.add_field(name="Channel Link", value=f"[Click here]({attachment_link})")
-                    await log_channel.send(embed=attachment_embed)
-
+                attachment_link = self.image_cache.get(message.id, {}).get(attachment.url)
+                if attachment_link:
+                    if attachment.content_type and attachment.content_type.startswith('image/'):
+                        image_embed = discord.Embed(
+                            title="Image Deleted",
+                            description=f"An image by {message.author.mention} ({message.author.id}) was deleted in {message.channel.mention}.",
+                            color=discord.Color.red()
+                        )
+                        image_embed.add_field(name="Channel Link", value=f"[Click here]({channel_link})")
+                        image_embed.add_field(name="Image Link", value=f"{attachment_link}")
+                        image_embed.set_image(url=attachment_link)
+                        await log_channel.send(embed=image_embed)
+                    else:
+                        attachment_embed = discord.Embed(
+                            title="Attachments Deleted",
+                            description=f"The following attachments by {message.author.mention} ({message.author.id}) were deleted in {message.channel.mention}:\n{attachment.filename}",
+                            color=discord.Color.red()
+                        )
+                        attachment_embed.add_field(name="Channel Link", value=f"[Click here]({attachment_link})")
+                        await log_channel.send(embed=attachment_embed)
 
     async def on_message_edit(self, before, after):
         if before.author.bot:
@@ -186,6 +193,16 @@ class AClient(Client):
         initialize_summary_data()
         update_summary_data("messages", channel_id=message.channel.id)
         update_summary_data("active_members", user_id=message.author.id)
+
+        if message.attachments:
+            cache_channel = self.get_channel(IMAGE_CACHE_CHANNEL)
+            if cache_channel:
+                for attachment in message.attachments:
+                    if attachment.content_type and attachment.content_type.startswith('image/'):
+                        cached_message = await cache_channel.send(attachment.url)
+                        if message.id not in self.image_cache:
+                            self.image_cache[message.id] = {}
+                        self.image_cache[message.id][attachment.url] = cached_message.attachments[0].url
 
     async def on_reaction_add(self, reaction, user):
         if user.bot:
@@ -300,4 +317,3 @@ async def manage_role_command(interaction: Interaction, user: Member):
     else:
         await user.add_roles(role)
         await interaction.response.send_message(f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True)
-
