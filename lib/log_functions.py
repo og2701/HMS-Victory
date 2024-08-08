@@ -5,6 +5,7 @@ import uuid
 from PIL import Image, ImageChops
 from html2image import Html2Image
 import logging
+import mimetypes
 import difflib
 
 logging.basicConfig(level=logging.DEBUG)
@@ -41,6 +42,9 @@ def calculate_estimated_height(content, attachments=[], line_height=20, base_hei
     estimated_height = max(base_height, content_height + attachments_height + 100)
     return estimated_height
 
+def is_image(mime_type):
+    return mime_type and mime_type.startswith('image/')
+
 async def create_message_image(message, title):
     avatar_url = message.author.avatar.url if message.author.avatar else message.author.default_avatar.url
     response = requests.get(avatar_url)
@@ -53,7 +57,9 @@ async def create_message_image(message, title):
     attachments = []
     for attachment in message.attachments:
         logging.debug(f"Processing attachment: {attachment.filename}")
-        if attachment.url.endswith(('png', 'jpg', 'jpeg', 'gif')):
+        response = requests.head(attachment.url)
+        mime_type, _ = mimetypes.guess_type(attachment.url)
+        if is_image(mime_type):
             response = requests.get(attachment.url)
             if response.status_code == 200:
                 attachment_base64 = base64.b64encode(response.content).decode('utf-8')
