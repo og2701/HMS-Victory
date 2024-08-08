@@ -126,24 +126,19 @@ class AClient(Client):
         log_channel = self.get_channel(LOG_CHANNEL_ID)
         channel_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}"
         if log_channel is not None:
+            description = f"Message by {message.author.mention} ({message.author.id}) deleted in {message.channel.mention}."
+            if deleter and deleter != message.author:
+                description += f"\nDeleted by {deleter.mention} ({deleter.id})."
+
+            embed = discord.Embed(
+                title="Message Deleted",
+                description=description,
+                color=discord.Color.red()
+            )
+            embed.add_field(name="Channel Link", value=f"[Click here]({channel_link})")
+
             if message.content:
-                image_file_path = await create_message_image(message, "Deleted Message")
-
-                description = f"Message by {message.author.mention} ({message.author.id}) deleted in {message.channel.mention}."
-                if deleter and deleter != message.author:
-                    description += f"\nDeleted by {deleter.mention} ({deleter.id})."
-
-                embed = discord.Embed(
-                    title="Message Deleted",
-                    description=description,
-                    color=discord.Color.red()
-                )
-                embed.add_field(name="Channel Link", value=f"[Click here]({channel_link})")
-                embed.set_image(url="attachment://deleted_message.png")
-                if image_file_path is not None:
-                    with open(image_file_path, "rb") as f:
-                        await log_channel.send(file=discord.File(f, "deleted_message.png"), embed=embed)
-                    os.remove(image_file_path)
+                embed.add_field(name="Content", value=message.content[:1024], inline=False)
 
             for attachment in message.attachments:
                 attachment_info = self.image_cache.get(message.id, {}).get(attachment.url)
@@ -168,6 +163,9 @@ class AClient(Client):
                         attachment_embed.add_field(name="Channel Link", value=f"[Click here]({channel_link})")
                         attachment_embed.add_field(name="Attachment Link", value=attachment_link)
                         await log_channel.send(embed=attachment_embed)
+
+            await log_channel.send(embed=embed)
+
 
 
     async def on_message_edit(self, before, after):
