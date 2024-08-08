@@ -15,6 +15,7 @@ from apscheduler.triggers.cron import CronTrigger
 import logging
 import aiohttp
 import io
+import time
 
 from lib.commands import (
     updateRoleAssignments,
@@ -30,7 +31,8 @@ from lib.commands import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MAX_IMAGE_SIZE = 5 * 1024 * 1024
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  #5mb
+CACHE_EXPIRATION_TIME = 7 * 24 * 60 * 60  #1 week
 
 LOG_CHANNEL_ID = 959723562892144690
 POLITICS_CHANNEL_ID = 1141097424849481799
@@ -87,12 +89,19 @@ class AClient(Client):
         self.scheduler.add_job(self.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
         self.scheduler.add_job(self.weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=1, timezone="Europe/London"))
         self.scheduler.add_job(self.monthly_summary, CronTrigger(day=1, hour=0, minute=2, timezone="Europe/London"))
-        self.scheduler.add_job(self.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=0, timezone="Europe/London"))
+        self.scheduler.add_job(self.clear_expired_cache_entries, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
         self.scheduler.start()
 
-    async def clear_image_cache(self):
-        self.image_cache.clear()
-        logger.info("Image cache cleared.")
+    async def clear_expired_cache_entries(self):
+        current_time = time.time()
+        for message_id, attachments in list(self.image_cache.items()):
+            for attachment_url, data in list(attachments.items()):
+                if current_time - data['timestamp'] > CACHE_EXPIRATION_TIME:
+                    del self.image_cache[message_id][attachment_url]
+            if not self.image_cache[message_id]:
+                del self.image_cache[message_id]
+        logger.info("Expired image cache entries cleared.")
+
 
     async def on_interaction(self, interaction: Interaction):
         if (
@@ -191,6 +200,28 @@ class AClient(Client):
         initialize_summary_data()
         update_summary_data("members_banned")
 
+    async def cache_image(session, attachment, cache_channel, message):
+        async with session.get(attachment.url) as response:
+            if response.status != 200:
+                return None
+
+            image_data = await response.read()
+            image_filename = attachment.filename
+            file = discord.File(io.BytesIO(image_data), filename=image_filename)
+
+            embed = discord.Embed(
+                title="Image Cached",
+                description=f"Image by {message.author.mention} in {message.channel.mention}",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="Message Link", value=f"[Click here](https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id})")
+            embed.set_image(url=f"attachment://{image_filename}")
+
+            cached_message = await cache_channel.send(file=file, embed=embed)
+            if cached_message.attachments:
+                return cached_message.attachments[0].url
+        return None
+
     async def on_message(self, message):
         if message.author.bot:
             return
@@ -202,25 +233,30 @@ class AClient(Client):
         update_summary_data("messages", channel_id=message.channel.id)
         update_summary_data("active_members", user_id=message.author.id)
 
-        if message.attachments:
-            cache_channel = self.get_channel(IMAGE_CACHE_CHANNEL)
-            if cache_channel:
-                async with aiohttp.ClientSession() as session:
-                    for attachment in message.attachments:
-                        if attachment.content_type and attachment.content_type.startswith('image/'):
-                            if attachment.size <= MAX_IMAGE_SIZE:
-                                async with session.get(attachment.url) as response:
-                                    if response.status == 200:
-                                        image_data = await response.read()
-                                        image_filename = attachment.filename
-                                        file = discord.File(io.BytesIO(image_data), filename=image_filename)
-                                        cached_message = await cache_channel.send(file=file)
-                                        if cached_message.attachments:
-                                            if message.id not in self.image_cache:
-                                                self.image_cache[message.id] = {}
-                                            self.image_cache[message.id][attachment.url] = cached_message.attachments[0].url
-                            else:
-                                logger.info(f"Skipped downloading {attachment.filename} as it exceeds the size limit of {MAX_IMAGE_SIZE / (1024 * 1024)} MB.")
+        if not message.attachments:
+            return
+
+        cache_channel = self.get_channel(IMAGE_CACHE_CHANNEL)
+        if not cache_channel:
+            return
+
+        async with aiohttp.ClientSession() as session:
+            for attachment in message.attachments:
+                if not attachment.content_type or not attachment.content_type.startswith('image/'):
+                    continue
+
+                if attachment.size > MAX_IMAGE_SIZE:
+                    print(f"Skipped downloading {attachment.filename} as it exceeds the size limit of {MAX_IMAGE_SIZE / (1024 * 1024)} MB.")
+                    continue
+
+                cached_url = await cache_image(session, attachment, cache_channel, message)
+                if cached_url:
+                    if message.id not in self.image_cache:
+                        self.image_cache[message.id] = {}
+                    self.image_cache[message.id][attachment.url] = {
+                        'url': cached_url,
+                        'timestamp': time.time()
+                    }
 
 
     async def on_reaction_add(self, reaction, user):
