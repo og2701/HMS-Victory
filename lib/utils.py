@@ -15,3 +15,10 @@ async def restrict_channel_for_new_members(message: discord.Message, channel_id:
             )
             return False
     return True
+
+
+def has_role(interaction: Interaction, role_id: int) -> bool:
+    return any(role.id == role_id for role in interaction.user.roles)
+
+def has_any_role(interaction: Interaction, role_ids: list[int]) -> bool:
+    return any(role.id in role_ids for role in interaction.user.roles)
