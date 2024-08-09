@@ -1,6 +1,7 @@
 from discord import app_commands, Interaction, Member
-from ..utils import has_any_role, has_role
-from ..commands import *
+from lib.utils import has_any_role, has_role
+from lib.commands import * show_iceberg
+
 import json
 
 MINISTER_ROLE_ID = 1250190944502943755
