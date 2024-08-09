@@ -30,12 +30,12 @@ async def on_message(client, message):
     if message.author.bot:
         return
 
-    if not await restrict_channel_for_new_members(message, POLITICS_CHANNEL_ID, 7, POLITICS_WHITELISTED_USER_IDS):
-        return
-
     initialize_summary_data()
     update_summary_data("messages", channel_id=message.channel.id)
     update_summary_data("active_members", user_id=message.author.id)
+
+    if not await restrict_channel_for_new_members(message, POLITICS_CHANNEL_ID, 7, POLITICS_WHITELISTED_USER_IDS):
+        return
 
     if message.attachments:
         cache_channel = client.get_channel(IMAGE_CACHE_CHANNEL)
