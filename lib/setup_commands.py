@@ -1,6 +1,6 @@
 from discord import app_commands, Interaction, Member
-from utils import has_any_role, has_role
-from commands import *
+from ..utils import has_any_role, has_role
+from ..commands import *
 import json
 
 MINISTER_ROLE_ID = 1250190944502943755
