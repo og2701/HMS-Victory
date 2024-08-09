@@ -4,8 +4,6 @@ from lib.commands import *
 from lib.summary import post_summary
 from lib.settings import POLITICS_WHITELISTED_USER_IDS
 
-import json
-
 MINISTER_ROLE_ID = 1250190944502943755
 CABINET_ROLE_ID = 959493505930121226
 BORDER_FORCE_ROLE_ID = 959500686746345542
@@ -89,7 +87,3 @@ def define_commands(tree, client):
         else:
             await user.add_roles(role)
             await interaction.response.send_message(f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True)
-
-def save_whitelist(whitelist):
-    with open("whitelist.json", "w") as f:
-        json.dump(whitelist, f)
