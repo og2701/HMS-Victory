@@ -1,6 +1,6 @@
 from discord import app_commands, Interaction, Member
 from lib.utils import has_any_role, has_role
-from lib.commands import * show_iceberg
+from lib.commands import *
 
 import json
 
