@@ -89,6 +89,9 @@ async def on_message_delete(client, message):
     if message.author.bot:
         return
 
+    initialize_summary_data()
+    update_summary_data("deleted_messages")
+
     async for entry in message.guild.audit_logs(action=discord.AuditLogAction.message_delete, limit=1):
         if entry.target.id == message.author.id and entry.extra.channel.id == message.channel.id:
             deleter = entry.user
