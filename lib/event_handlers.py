@@ -3,6 +3,7 @@ from discord import Interaction, InteractionType
 from lib.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.utils import restrict_channel_for_new_members
 from lib.log_functions import create_message_image, create_edited_message_image
+from lib.settings import POLITICS_WHITELISTED_USER_IDS
 import logging
 import os
 import aiohttp
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 MAX_IMAGE_SIZE = 5 * 1024 * 1024
 IMAGE_CACHE_CHANNEL = 1271188365244497971
 POLITICS_CHANNEL_ID = 1141097424849481799
-POLITICS_WHITELISTED_USER_IDS = []
+
 
 async def on_ready(client, tree, scheduler):
     global POLITICS_WHITELISTED_USER_IDS

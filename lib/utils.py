@@ -22,3 +22,14 @@ def has_role(interaction: Interaction, role_id: int) -> bool:
 
 def has_any_role(interaction: Interaction, role_ids: list[int]) -> bool:
     return any(role.id in role_ids for role in interaction.user.roles)
+
+def save_whitelist(whitelist):
+    with open("whitelist.json", "w") as f:
+        json.dump(whitelist, f)
+
+def load_whitelist():
+    try:
+        with open("whitelist.json", "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return []

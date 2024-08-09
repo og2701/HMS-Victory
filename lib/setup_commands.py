@@ -1,7 +1,8 @@
 from discord import app_commands, Interaction, Member
-from lib.utils import has_any_role, has_role
+from lib.utils import has_any_role, has_role, save_whitelist
 from lib.commands import *
 from lib.summary import post_summary
+from lib.settings import POLITICS_WHITELISTED_USER_IDS
 
 import json
 
@@ -9,7 +10,6 @@ MINISTER_ROLE_ID = 1250190944502943755
 CABINET_ROLE_ID = 959493505930121226
 BORDER_FORCE_ROLE_ID = 959500686746345542
 POLITICS_BAN_ROLE_ID = 1265295557115510868
-POLITICS_WHITELISTED_USER_IDS = []
 
 def define_commands(tree, client):
     @tree.command(
