@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import discord
+from discord import Interaction
 
 async def restrict_channel_for_new_members(message: discord.Message, channel_id: int, days_required: int = 7, whitelisted_user_ids: list[int] = []):
     if message.channel.id == channel_id:
