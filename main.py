@@ -53,5 +53,3 @@ client = AClient()
 tree = discord.app_commands.CommandTree(client)
 
 define_commands(tree, client)
-
-client.run('YOUR_BOT_TOKEN')
