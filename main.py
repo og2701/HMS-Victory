@@ -2,6 +2,7 @@ import discord
 from discord.ext import tasks
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import logging
+from lib.summary import post_summary
 
 from lib.event_handlers import *
 from lib.setup_commands import define_commands
@@ -48,6 +49,19 @@ class AClient(discord.Client):
 
     async def on_reaction_remove(self, reaction, user):
         await on_reaction_remove(reaction, user)
+
+    async def clear_image_cache(self):
+        self.image_cache.clear()
+        logger.info("Image cache cleared.")
+
+    async def daily_summary(self):
+        await post_summary(self, COMMONS_CHANNEL_ID, "daily")
+
+    async def weekly_summary(self):
+        await post_summary(self, COMMONS_CHANNEL_ID, "weekly")
+
+    async def monthly_summary(self):
+        await post_summary(self, COMMONS_CHANNEL_ID, "monthly")
 
 client = AClient()
 tree = discord.app_commands.CommandTree(client)
