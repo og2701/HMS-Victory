@@ -10,6 +10,8 @@ from lib.setup_commands import define_commands
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+COMMONS_CHANNEL_ID = 959501347571531776
+
 class AClient(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
