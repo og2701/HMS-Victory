@@ -8,6 +8,7 @@ import logging
 import os
 import aiohttp
 import io
+from apscheduler.triggers.cron import CronTrigger
 
 logger = logging.getLogger(__name__)
 
