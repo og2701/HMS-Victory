@@ -99,19 +99,22 @@ def aggregate_summaries(start_date, end_date):
 
     return aggregated_data
 
-async def post_summary(client, log_channel_id, frequency, channel_override=None):
+async def post_summary(client, log_channel_id, frequency, channel_override=None, date=None):
     log_channel = client.get_channel(log_channel_id) if channel_override is None else channel_override
     guild = log_channel.guild
     total_members = guild.member_count
+
+    if date is None:
+        date = datetime.now().strftime("%Y-%m-%d")
+
     if log_channel is not None:
         if frequency == "daily":
-            date = datetime.now().strftime("%Y-%m-%d")
             file_path = SUMMARY_DATA_FILE.format(date=date)
             with open(file_path, "r") as file:
                 data = json.load(file)
             title_color = "#7289da"  # Blue
 
-            previous_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            previous_date = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
             previous_file_path = SUMMARY_DATA_FILE.format(date=previous_date)
             if os.path.exists(previous_file_path):
                 with open(previous_file_path, "r") as previous_file:
@@ -123,12 +126,12 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None)
                 member_change_str = ""
                 member_change_color = "white"
         elif frequency == "weekly":
-            end_date = datetime.now() - timedelta(days=datetime.now().weekday() + 1)
+            end_date = datetime.strptime(date, "%Y-%m-%d")
             start_date = end_date - timedelta(days=6)
             data = aggregate_summaries(start_date, end_date)
             title_color = "#7CFC00"  # Light Green
         elif frequency == "monthly":
-            end_date = datetime.now().replace(day=1) - timedelta(days=1)
+            end_date = datetime.strptime(date, "%Y-%m-%d").replace(day=1) - timedelta(days=1)
             start_date = end_date.replace(day=1)
             data = aggregate_summaries(start_date, end_date)
             title_color = "#FFD700"  # Yellow
