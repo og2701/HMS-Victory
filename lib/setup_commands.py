@@ -62,30 +62,30 @@ def define_commands(tree, client):
         else:
             await interaction.response.send_message(f"{user.mention} is already in the whitelist.", ephemeral=True)
 
-@tree.command(name="post-daily-summary", description="Posts the daily summary in the current channel for a specific date")
-async def post_daily_summary(interaction: Interaction, date: str = None):
-    if not has_role(interaction, MINISTER_ROLE_ID):
-        await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
-        return
-    
-    if date is None:
-        date = datetime.now().strftime("%Y-%m-%d")
-    else:
-        try:
-            date_obj = datetime.strptime(date, "%Y-%m-%d")
-            date = date_obj.strftime("%Y-%m-%d")
-        except ValueError:
-            await interaction.response.send_message("Invalid date format. Please use YYYY-MM-DD.", ephemeral=True)
+    @tree.command(name="post-daily-summary", description="Posts the daily summary in the current channel for a specific date")
+    async def post_daily_summary(interaction: Interaction, date: str = None):
+        if not has_role(interaction, MINISTER_ROLE_ID):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+        
+        if date is None:
+            date = datetime.now().strftime("%Y-%m-%d")
+        else:
+            try:
+                date_obj = datetime.strptime(date, "%Y-%m-%d")
+                date = date_obj.strftime("%Y-%m-%d")
+            except ValueError:
+                await interaction.response.send_message("Invalid date format. Please use YYYY-MM-DD.", ephemeral=True)
+                return
+
+        summary_file_path = f"daily_summaries/daily_summary_{date}.json"
+        if not os.path.exists(summary_file_path):
+            await interaction.response.send_message(f"No summary available for {date}.", ephemeral=True)
             return
 
-    summary_file_path = f"daily_summaries/daily_summary_{date}.json"
-    if not os.path.exists(summary_file_path):
-        await interaction.response.send_message(f"No summary available for {date}.", ephemeral=True)
-        return
+        await post_summary(client, interaction.channel.id, "daily", interaction.channel, date)
 
-    await post_summary(client, interaction.channel.id, "daily", interaction.channel, date)
-
-    await interaction.response.send_message(f"Posted daily summary for {date}.", ephemeral=True)
+        await interaction.response.send_message(f"Posted daily summary for {date}.", ephemeral=True)
 
     @tree.command(name="politics-ban", description="Toggles politics ban for a member")
     async def manage_role_command(interaction: Interaction, user: Member):
