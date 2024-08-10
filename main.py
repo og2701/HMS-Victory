@@ -2,7 +2,7 @@ import discord
 from discord.ext import tasks
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import logging
-from lib.summary import post_summary
+from lib.summary import initialize_summary_data, update_summary_data, post_summary
 
 from lib.event_handlers import *
 from lib.setup_commands import define_commands
@@ -24,30 +24,64 @@ class AClient(discord.Client):
         await on_ready(self, tree, self.scheduler)
 
     async def on_message(self, message):
+        if message.author.bot:
+            return
+
+        initialize_summary_data()
+        update_summary_data("messages", channel_id=message.channel.id)
+        update_summary_data("active_members", user_id=message.author.id)
+
         await on_message(self, message)
 
     async def on_interaction(self, interaction):
         await on_interaction(interaction)
 
     async def on_member_join(self, member):
+        initialize_summary_data()
+        update_summary_data("members_joined")
+
         await on_member_join(member)
 
     async def on_member_remove(self, member):
+        initialize_summary_data()
+        update_summary_data("members_left")
+
         await on_member_remove(member)
 
     async def on_member_ban(self, guild, user):
+        initialize_summary_data()
+        update_summary_data("members_banned")
+
         await on_member_ban(guild, user)
 
     async def on_message_delete(self, message):
+        if message.author.bot:
+            return
+
+        initialize_summary_data()
+        update_summary_data("deleted_messages")
+
         await on_message_delete(self, message)
 
     async def on_message_edit(self, before, after):
         await on_message_edit(self, before, after)
 
     async def on_reaction_add(self, reaction, user):
+        if user.bot:
+            return
+        initialize_summary_data()
+        update_summary_data("reactions_added")
+        update_summary_data("reacting_members", user_id=user.id)
+
         await on_reaction_add(reaction, user)
 
     async def on_reaction_remove(self, reaction, user):
+        if user.bot:
+            return
+        initialize_summary_data()
+        update_summary_data("reactions_removed")
+        update_summary_data("reacting_members", user_id=user.id, remove=True)
+
         await on_reaction_remove(reaction, user)
 
     async def clear_image_cache(self):

@@ -34,13 +34,6 @@ async def on_ready(client, tree, scheduler):
     scheduler.start()
 
 async def on_message(client, message):
-    if message.author.bot:
-        return
-
-    initialize_summary_data()
-    update_summary_data("messages", channel_id=message.channel.id)
-    update_summary_data("active_members", user_id=message.author.id)
-
     if not await restrict_channel_for_new_members(message, POLITICS_CHANNEL_ID, 7, POLITICS_WHITELISTED_USER_IDS):
         return
 
@@ -81,24 +74,15 @@ async def on_interaction(interaction: Interaction):
             await handleRoleButtonInteraction(interaction)
 
 async def on_member_join(member):
-    initialize_summary_data()
-    update_summary_data("members_joined")
+    pass
 
 async def on_member_remove(member):
-    initialize_summary_data()
-    update_summary_data("members_left")
+    pass
 
 async def on_member_ban(guild, user):
-    initialize_summary_data()
-    update_summary_data("members_banned")
+    pass
 
 async def on_message_delete(client, message):
-    if message.author.bot:
-        return
-
-    initialize_summary_data()
-    update_summary_data("deleted_messages")
-
     async for entry in message.guild.audit_logs(action=discord.AuditLogAction.message_delete, limit=1):
         if entry.target.id == message.author.id and entry.extra.channel.id == message.channel.id:
             deleter = entry.user
@@ -172,15 +156,7 @@ async def on_message_edit(client, before, after):
             os.remove(image_file_path)
 
 async def on_reaction_add(reaction, user):
-    if user.bot:
-        return
-    initialize_summary_data()
-    update_summary_data("reactions_added")
-    update_summary_data("reacting_members", user_id=user.id)
+    pass
 
 async def on_reaction_remove(reaction, user):
-    if user.bot:
-        return
-    initialize_summary_data()
-    update_summary_data("reactions_removed")
-    update_summary_data("reacting_members", user_id=user.id, remove=True)
+    pass
