@@ -4,6 +4,7 @@ from lib.commands import *
 from lib.summary import post_summary
 from lib.settings import POLITICS_WHITELISTED_USER_IDS
 from datetime import datetime
+import os
 
 MINISTER_ROLE_ID = 1250190944502943755
 CABINET_ROLE_ID = 959493505930121226
