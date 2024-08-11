@@ -107,6 +107,9 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
     if date is None:
         date = datetime.now().strftime("%Y-%m-%d")
 
+    member_change_str = ""
+    member_change_color = "white"
+
     if log_channel is not None:
         if frequency == "daily":
             file_path = SUMMARY_DATA_FILE.format(date=date)
@@ -175,3 +178,4 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
             data["total_members"] = total_members
             with open(file_path, "w") as file:
                 json.dump(data, file)
+
