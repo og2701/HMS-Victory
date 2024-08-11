@@ -27,7 +27,7 @@ async def on_ready(client, tree, scheduler):
         logger.info(f"Command loaded: {command.name}")
 
     scheduler.add_job(client.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
-    scheduler.add_job(client.weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=15, timezone="Europe/London"))
+    scheduler.add_job(client.weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=1, timezone="Europe/London"))
     scheduler.add_job(client.monthly_summary, CronTrigger(day=1, hour=0, minute=2, timezone="Europe/London"))
     scheduler.add_job(client.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=0, timezone="Europe/London"))
 
