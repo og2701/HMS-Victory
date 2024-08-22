@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 import discord
 from lib.summary_html import create_summary_image
 import pytz
+import logging
+
 
 SUMMARY_DATA_FILE = "daily_summaries/daily_summary_{date}.json"
 DEPUTY_PM_ROLE_ID = 1268676483476361357
@@ -12,7 +14,7 @@ def initialize_summary_data():
     uk_timezone = pytz.timezone("Europe/London")
     date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
     file_path = SUMMARY_DATA_FILE.format(date=date)
-    print(file_path)
+    logging.info(file_path)
     
     if not os.path.exists(file_path):
         with open(file_path, "w") as file:
