@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 import discord
 from lib.summary_html import create_summary_image
 import pytz
-import logging
 
 
 SUMMARY_DATA_FILE = "daily_summaries/daily_summary_{date}.json"
