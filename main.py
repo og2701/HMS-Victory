@@ -93,14 +93,15 @@ class AClient(discord.Client):
         self.image_cache.clear()
         logger.info("Image cache cleared.")
 
-    async def daily_summary(self):
-        await post_summary(self, COMMONS_CHANNEL_ID, "daily")
+    async def daily_summary(self, date):
+        await post_summary(self, COMMONS_CHANNEL_ID, "daily", date=date)
 
-    async def weekly_summary(self):
-        await post_summary(self, COMMONS_CHANNEL_ID, "weekly")
+    async def weekly_summary(self, date):
+        await post_summary(self, COMMONS_CHANNEL_ID, "weekly", date=date)
 
-    async def monthly_summary(self):
-        await post_summary(self, COMMONS_CHANNEL_ID, "monthly")
+    async def monthly_summary(self, date):
+        await post_summary(self, COMMONS_CHANNEL_ID, "monthly", date=date)
+
 
 client = AClient()
 tree = discord.app_commands.CommandTree(client)
