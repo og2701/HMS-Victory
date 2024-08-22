@@ -3,13 +3,16 @@ import json
 from datetime import datetime, timedelta
 import discord
 from lib.summary_html import create_summary_image
+import pytz
 
 SUMMARY_DATA_FILE = "daily_summaries/daily_summary_{date}.json"
 DEPUTY_PM_ROLE_ID = 1268676483476361357
 
 def initialize_summary_data():
-    date = datetime.now().strftime("%Y-%m-%d")
+    uk_timezone = pytz.timezone("Europe/London")
+    date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
     file_path = SUMMARY_DATA_FILE.format(date=date)
+    
     if not os.path.exists(file_path):
         with open(file_path, "w") as file:
             json.dump({
@@ -34,6 +37,7 @@ def initialize_summary_data():
             data["total_messages"] = 0
         with open(file_path, "w") as file:
             json.dump(data, file)
+
 
 def update_summary_data(key, channel_id=None, user_id=None, remove=False):
     date = datetime.now().strftime("%Y-%m-%d")
