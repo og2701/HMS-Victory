@@ -14,7 +14,6 @@ def initialize_summary_data():
     uk_timezone = pytz.timezone("Europe/London")
     date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
     file_path = SUMMARY_DATA_FILE.format(date=date)
-    logging.info(file_path)
     
     if not os.path.exists(file_path):
         with open(file_path, "w") as file:
@@ -43,7 +42,8 @@ def initialize_summary_data():
 
 
 def update_summary_data(key, channel_id=None, user_id=None, remove=False):
-    date = datetime.now().strftime("%Y-%m-%d")
+    uk_timezone = pytz.timezone("Europe/London")
+    date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
     file_path = SUMMARY_DATA_FILE.format(date=date)
     with open(file_path, "r") as file:
         data = json.load(file)
@@ -112,7 +112,8 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
     total_members = guild.member_count
 
     if date is None:
-        date = datetime.now().strftime("%Y-%m-%d")
+        uk_timezone = pytz.timezone("Europe/London")
+        date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
 
     member_change_str = ""
     member_change_color = "white"

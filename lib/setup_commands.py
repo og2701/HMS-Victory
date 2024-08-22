@@ -5,6 +5,7 @@ from lib.summary import post_summary
 from lib.settings import POLITICS_WHITELISTED_USER_IDS
 from datetime import datetime
 import os
+import pytz
 
 MINISTER_ROLE_ID = 1250190944502943755
 CABINET_ROLE_ID = 959493505930121226
@@ -71,7 +72,8 @@ def define_commands(tree, client):
             return
         
         if date is None:
-            date = datetime.now().strftime("%Y-%m-%d")
+            uk_timezone = pytz.timezone("Europe/London")
+            date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
         else:
             try:
                 date_obj = datetime.strptime(date, "%Y-%m-%d")
