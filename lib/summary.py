@@ -12,6 +12,7 @@ def initialize_summary_data():
     uk_timezone = pytz.timezone("Europe/London")
     date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
     file_path = SUMMARY_DATA_FILE.format(date=date)
+    print(file_path)
     
     if not os.path.exists(file_path):
         with open(file_path, "w") as file:
