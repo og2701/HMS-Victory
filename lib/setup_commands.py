@@ -54,7 +54,7 @@ def define_commands(tree, client):
 
     @tree.command(name="add-whitelist", description="Adds a user to the whitelist for the politics channel")
     async def add_whitelist_command(interaction: Interaction, user: Member):
-        if not has_any_role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID]):
+        if not has_any_role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID, BORDER_FORCE_ROLE_ID]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
 
