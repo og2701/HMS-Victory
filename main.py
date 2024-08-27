@@ -3,6 +3,8 @@ from discord.ext import tasks
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import logging
 from lib.summary import initialize_summary_data, update_summary_data, post_summary
+import pytz
+from datetime import datetime, timedelta
 
 from lib.event_handlers import *
 from lib.setup_commands import define_commands
@@ -94,7 +96,10 @@ class AClient(discord.Client):
         logger.info("Image cache cleared.")
 
     async def daily_summary(self):
-        await post_summary(self, COMMONS_CHANNEL_ID, "daily")
+        uk_timezone = pytz.timezone("Europe/London")
+        yesterday = (datetime.now(uk_timezone) - timedelta(days=1)).strftime("%Y-%m-%d")
+        
+        await post_summary(self, COMMONS_CHANNEL_ID, "daily", date=yesterday)
 
     async def weekly_summary(self):
         await post_summary(self, COMMONS_CHANNEL_ID, "weekly")
