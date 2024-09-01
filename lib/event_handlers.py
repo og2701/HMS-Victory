@@ -163,10 +163,12 @@ async def on_reaction_remove(reaction, user):
     pass
 
 async def on_member_update(before, after):
+    # Channel for logging all updates
     updates_channel_id = 1279873633602244668
     updates_channel = after.guild.get_channel(updates_channel_id)
 
     if updates_channel is None:
+        logger.warning("Updates channel not found.")
         return
 
     embed = discord.Embed(
@@ -177,14 +179,7 @@ async def on_member_update(before, after):
 
     changes_detected = False
 
-    if before.name != after.name or before.discriminator != after.discriminator:
-        embed.add_field(name="Username Changed", value=f"**Before:** {before.name}#{before.discriminator}\n**After:** {after.name}#{after.discriminator}", inline=False)
-        changes_detected = True
-
-    if before.nick != after.nick:
-        embed.add_field(name="Nickname Changed", value=f"**Before:** {before.nick or 'None'}\n**After:** {after.nick or 'None'}", inline=False)
-        changes_detected = True
-
+    # Check for role change
     if before.roles != after.roles:
         before_roles = set(before.roles)
         after_roles = set(after.roles)
@@ -198,54 +193,32 @@ async def on_member_update(before, after):
             embed.add_field(name="Roles Removed", value=', '.join([role.name for role in removed_roles]), inline=False)
             changes_detected = True
 
-    if before.avatar != after.avatar:
-        embed.add_field(name="Avatar Changed", value=f"[View Avatar](https://cdn.discordapp.com/avatars/{after.id}/{after.avatar}.png?size=1024)" if after.avatar else "Removed avatar", inline=False)
-        if after.avatar:
-            embed.set_thumbnail(url=after.avatar.url)
-        changes_detected = True
+    # Correct checks for mute and deaf status
+    if before.voice is not None and after.voice is not None:
+        # Check server mute status
+        if before.voice.mute != after.voice.mute:
+            embed.add_field(
+                name="Server Mute Changed",
+                value=f"**Before:** {'Muted' if before.voice.mute else 'Unmuted'}\n**After:** {'Muted' if after.voice.mute else 'Unmuted'}",
+                inline=False
+            )
+            changes_detected = True
 
-    if before.status != after.status:
-        embed.add_field(name="Status Changed", value=f"**Before:** {before.status}\n**After:** {after.status}", inline=False)
-        changes_detected = True
+        # Check server deafen status
+        if before.voice.deaf != after.voice.deaf:
+            embed.add_field(
+                name="Server Deafen Changed",
+                value=f"**Before:** {'Deafened' if before.voice.deaf else 'Undeafened'}\n**After:** {'Deafened' if after.voice.deaf else 'Undeafened'}",
+                inline=False
+            )
+            changes_detected = True
 
-    if before.activity != after.activity:
-        before_activity = before.activity.name if before.activity else "None"
-        after_activity = after.activity.name if after.activity else "None"
-        embed.add_field(name="Activity Changed", value=f"**Before:** {before_activity}\n**After:** {after_activity}", inline=False)
-        changes_detected = True
-
-    if before.mute != after.mute:
-        embed.add_field(name="Server Mute Changed", value=f"**Before:** {'Muted' if before.mute else 'Unmuted'}\n**After:** {'Muted' if after.mute else 'Unmuted'}", inline=False)
-        changes_detected = True
-
-    if before.deaf != after.deaf:
-        embed.add_field(name="Server Deafen Changed", value=f"**Before:** {'Deafened' if before.deaf else 'Undeafened'}\n**After:** {'Deafened' if after.deaf else 'Undeafened'}", inline=False)
-        changes_detected = True
-
-    if before.voice and after.voice and before.voice.channel != after.voice.channel:
-        embed.add_field(name="Voice Channel Changed", value=f"**Before:** {before.voice.channel.name}\n**After:** {after.voice.channel.name}", inline=False)
-        changes_detected = True
-
-    if before.pending != after.pending:
-        embed.add_field(name="Pending Status Changed", value=f"**Before:** {'Pending' if before.pending else 'Not Pending'}\n**After:** {'Pending' if after.pending else 'Not Pending'}", inline=False)
-        changes_detected = True
-
-    if before.premium_since != after.premium_since:
-        if before.premium_since is None and after.premium_since is not None:
-            embed.add_field(name="Boost Status", value="Started Boosting", inline=False)
-        elif before.premium_since is not None and after.premium_since is None:
-            embed.add_field(name="Boost Status", value="Stopped Boosting", inline=False)
-        changes_detected = True
-
-    if before.timed_out_until != after.timed_out_until:
-        if after.timed_out_until is not None:
-            embed.add_field(name="Timeout Status", value=f"Timed out until {after.timed_out_until.strftime('%B %d, %Y at %H:%M UTC')}", inline=False)
-        else:
-            embed.add_field(name="Timeout Status", value="Timeout cleared", inline=False)
-        changes_detected = True
-
+    # If any changes were detected, send the embed to the updates channel
     if changes_detected:
         await updates_channel.send(embed=embed)
+        logger.info(f"Changes detected for {after.name}: {embed.to_dict()}")
+    else:
+        logger.info("No relevant changes detected.")
 
     await updates_channel.send(before, after)
 
