@@ -90,7 +90,7 @@ class AClient(discord.Client):
         await on_reaction_remove(reaction, user)
 
     async def on_member_update(self, before, after):
-        await on_member_update(before, after)
+        await on_member_update(self, before, after)
 
     async def clear_image_cache(self):
         self.image_cache.clear()
