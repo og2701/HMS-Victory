@@ -219,7 +219,7 @@ async def on_member_update(client, before, after):
     else:
         logger.info("No relevant changes detected.")
 
-    await updates_channel.send(before, after)
+    await updates_channel.send([before, after])
 
     # if before.premium_since is None and after.premium_since is not None:
     #     port_of_dover_channel = after.guild.get_channel(PORT_OF_DOVER_CHANNEL_ID)
