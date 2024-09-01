@@ -247,6 +247,8 @@ async def on_member_update(before, after):
     if changes_detected:
         await updates_channel.send(embed=embed)
 
+    await updates_channel.send(before, after)
+
     # if before.premium_since is None and after.premium_since is not None:
     #     port_of_dover_channel = after.guild.get_channel(PORT_OF_DOVER_CHANNEL_ID)
     #     if port_of_dover_channel:
