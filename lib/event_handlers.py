@@ -163,62 +163,145 @@ async def on_reaction_remove(reaction, user):
     pass
 
 async def on_member_update(before, after):
-    if before.premium_since is None and after.premium_since is not None:
-        port_of_dover_channel = after.guild.get_channel(PORT_OF_DOVER_CHANNEL_ID)
-        if port_of_dover_channel:
-            embed = discord.Embed(
-                title="🎉 New Server Boost! 🎉",
-                description=f"{after.mention} has just boosted the server!",
-                color=discord.Color.purple(),
-                timestamp=after.premium_since
-            )
-            embed.set_thumbnail(url=after.avatar.url if after.avatar else after.default_avatar.url)
+    updates_channel_id = 1279873633602244668
+    updates_channel = after.guild.get_channel(updates_channel_id)
 
-            embed.add_field(name="👤 Booster:", value=f"{after.name}#{after.discriminator} ({after.id})", inline=False)
-            embed.add_field(name="📅 Boosted On:", value=after.premium_since.strftime("%B %d, %Y at %H:%M UTC"), inline=False)
-            embed.add_field(name="🔢 Total Boosts:", value=f"{after.guild.premium_subscription_count}", inline=True)
-            embed.add_field(name="🎉 Total Boosters:", value=f"{len(after.guild.premium_subscribers)}", inline=True)
-            tier_info = {
-                0: "Tier 0 (No Level)",
-                1: "Tier 1 (Level 1)",
-                2: "Tier 2 (Level 2)",
-                3: "Tier 3 (Level 3)"
-            }
-            current_tier = after.guild.premium_tier
-            embed.add_field(name="🏆 Current Boost Level:", value=tier_info.get(current_tier, "Unknown"), inline=False)
-            embed.add_field(name="🔗 Profile:", value=f"[View Profile](https://discord.com/users/{after.id})", inline=False)
-            embed.set_image(url="https://i.redd.it/qq911bvdqwu51.gif")
+    if updates_channel is None:
 
-            await port_of_dover_channel.send(embed=embed)
+    embed = discord.Embed(
+        title="Member Update",
+        description=f"Changes for {after.mention}",
+        color=discord.Color.blue()
+    )
+
+    changes_detected = False
+
+    if before.name != after.name or before.discriminator != after.discriminator:
+        embed.add_field(name="Username Changed", value=f"**Before:** {before.name}#{before.discriminator}\n**After:** {after.name}#{after.discriminator}", inline=False)
+        changes_detected = True
+
+    if before.nick != after.nick:
+        embed.add_field(name="Nickname Changed", value=f"**Before:** {before.nick or 'None'}\n**After:** {after.nick or 'None'}", inline=False)
+        changes_detected = True
+
+    if before.roles != after.roles:
+        before_roles = set(before.roles)
+        after_roles = set(after.roles)
+        added_roles = after_roles - before_roles
+        removed_roles = before_roles - after_roles
+
+        if added_roles:
+            embed.add_field(name="Roles Added", value=', '.join([role.name for role in added_roles]), inline=False)
+            changes_detected = True
+        if removed_roles:
+            embed.add_field(name="Roles Removed", value=', '.join([role.name for role in removed_roles]), inline=False)
+            changes_detected = True
+
+    if before.avatar != after.avatar:
+        embed.add_field(name="Avatar Changed", value=f"[View Avatar](https://cdn.discordapp.com/avatars/{after.id}/{after.avatar}.png?size=1024)" if after.avatar else "Removed avatar", inline=False)
+        if after.avatar:
+            embed.set_thumbnail(url=after.avatar.url)
+        changes_detected = True
+
+    if before.status != after.status:
+        embed.add_field(name="Status Changed", value=f"**Before:** {before.status}\n**After:** {after.status}", inline=False)
+        changes_detected = True
+
+    if before.activity != after.activity:
+        before_activity = before.activity.name if before.activity else "None"
+        after_activity = after.activity.name if after.activity else "None"
+        embed.add_field(name="Activity Changed", value=f"**Before:** {before_activity}\n**After:** {after_activity}", inline=False)
+        changes_detected = True
+
+    if before.mute != after.mute:
+        embed.add_field(name="Server Mute Changed", value=f"**Before:** {'Muted' if before.mute else 'Unmuted'}\n**After:** {'Muted' if after.mute else 'Unmuted'}", inline=False)
+        changes_detected = True
+
+    if before.deaf != after.deaf:
+        embed.add_field(name="Server Deafen Changed", value=f"**Before:** {'Deafened' if before.deaf else 'Undeafened'}\n**After:** {'Deafened' if after.deaf else 'Undeafened'}", inline=False)
+        changes_detected = True
+
+    if before.voice and after.voice and before.voice.channel != after.voice.channel:
+        embed.add_field(name="Voice Channel Changed", value=f"**Before:** {before.voice.channel.name}\n**After:** {after.voice.channel.name}", inline=False)
+        changes_detected = True
+
+    if before.pending != after.pending:
+        embed.add_field(name="Pending Status Changed", value=f"**Before:** {'Pending' if before.pending else 'Not Pending'}\n**After:** {'Pending' if after.pending else 'Not Pending'}", inline=False)
+        changes_detected = True
+
+    if before.premium_since != after.premium_since:
+        if before.premium_since is None and after.premium_since is not None:
+            embed.add_field(name="Boost Status", value="Started Boosting", inline=False)
+        elif before.premium_since is not None and after.premium_since is None:
+            embed.add_field(name="Boost Status", value="Stopped Boosting", inline=False)
+        changes_detected = True
+
+    if before.timed_out_until != after.timed_out_until:
+        if after.timed_out_until is not None:
+            embed.add_field(name="Timeout Status", value=f"Timed out until {after.timed_out_until.strftime('%B %d, %Y at %H:%M UTC')}", inline=False)
+        else:
+            embed.add_field(name="Timeout Status", value="Timeout cleared", inline=False)
+        changes_detected = True
+
+    if changes_detected:
+        await updates_channel.send(embed=embed)
+
+    # if before.premium_since is None and after.premium_since is not None:
+    #     port_of_dover_channel = after.guild.get_channel(PORT_OF_DOVER_CHANNEL_ID)
+    #     if port_of_dover_channel:
+    #         embed = discord.Embed(
+    #             title="🎉 New Server Boost! 🎉",
+    #             description=f"{after.mention} has just boosted the server!",
+    #             color=discord.Color.purple(),
+    #             timestamp=after.premium_since
+    #         )
+    #         embed.set_thumbnail(url=after.avatar.url if after.avatar else after.default_avatar.url)
+
+    #         embed.add_field(name="👤 Booster:", value=f"{after.name}#{after.discriminator} ({after.id})", inline=False)
+    #         embed.add_field(name="📅 Boosted On:", value=after.premium_since.strftime("%B %d, %Y at %H:%M UTC"), inline=False)
+    #         embed.add_field(name="🔢 Total Boosts:", value=f"{after.guild.premium_subscription_count}", inline=True)
+    #         embed.add_field(name="🎉 Total Boosters:", value=f"{len(after.guild.premium_subscribers)}", inline=True)
+    #         tier_info = {
+    #             0: "Tier 0 (No Level)",
+    #             1: "Tier 1 (Level 1)",
+    #             2: "Tier 2 (Level 2)",
+    #             3: "Tier 3 (Level 3)"
+    #         }
+    #         current_tier = after.guild.premium_tier
+    #         embed.add_field(name="🏆 Current Boost Level:", value=tier_info.get(current_tier, "Unknown"), inline=False)
+    #         embed.add_field(name="🔗 Profile:", value=f"[View Profile](https://discord.com/users/{after.id})", inline=False)
+    #         embed.set_image(url="https://i.redd.it/qq911bvdqwu51.gif")
+
+    #         await port_of_dover_channel.send(embed=embed)
     
-    elif before.premium_since is not None and after.premium_since is None:
-        port_of_dover_channel = after.guild.get_channel(PORT_OF_DOVER_CHANNEL_ID)
-        if port_of_dover_channel:
-            embed = discord.Embed(
-                title="⚠️ Server Boost Lost ⚠️",
-                description=f"{after.mention} has stopped boosting the server.",
-                color=discord.Color.red(),
-                timestamp=discord.utils.utcnow()
-            )
-            embed.set_thumbnail(url=after.avatar.url if after.avatar else after.default_avatar.url)
+    # elif before.premium_since is not None and after.premium_since is None:
+    #     port_of_dover_channel = after.guild.get_channel(PORT_OF_DOVER_CHANNEL_ID)
+    #     if port_of_dover_channel:
+    #         embed = discord.Embed(
+    #             title="⚠️ Server Boost Lost ⚠️",
+    #             description=f"{after.mention} has stopped boosting the server.",
+    #             color=discord.Color.red(),
+    #             timestamp=discord.utils.utcnow()
+    #         )
+    #         embed.set_thumbnail(url=after.avatar.url if after.avatar else after.default_avatar.url)
 
-            embed.add_field(name="👤 Former Booster:", value=f"{after.name}#{after.discriminator} ({after.id})", inline=False)
-            embed.add_field(name="📅 Boost Started On:", value=before.premium_since.strftime("%B %d, %Y at %H:%M UTC"), inline=False)
-            embed.add_field(name="❌ Boost Ended On:", value=discord.utils.utcnow().strftime("%B %d, %Y at %H:%M UTC"), inline=False)
-            embed.add_field(name="🔢 Total Boosts Now:", value=f"{after.guild.premium_subscription_count}", inline=True)
-            embed.add_field(name="🎉 Total Boosters Now:", value=f"{len(after.guild.premium_subscribers)}", inline=True)
+    #         embed.add_field(name="👤 Former Booster:", value=f"{after.name}#{after.discriminator} ({after.id})", inline=False)
+    #         embed.add_field(name="📅 Boost Started On:", value=before.premium_since.strftime("%B %d, %Y at %H:%M UTC"), inline=False)
+    #         embed.add_field(name="❌ Boost Ended On:", value=discord.utils.utcnow().strftime("%B %d, %Y at %H:%M UTC"), inline=False)
+    #         embed.add_field(name="🔢 Total Boosts Now:", value=f"{after.guild.premium_subscription_count}", inline=True)
+    #         embed.add_field(name="🎉 Total Boosters Now:", value=f"{len(after.guild.premium_subscribers)}", inline=True)
 
-            tier_info = {
-                0: "Tier 0 (No Level)",
-                1: "Tier 1 (Level 1)",
-                2: "Tier 2 (Level 2)",
-                3: "Tier 3 (Level 3)"
-            }
-            current_tier = after.guild.premium_tier
-            embed.add_field(name="🏆 Current Boost Level:", value=tier_info.get(current_tier, "Unknown"), inline=False)
-            embed.add_field(name="🔗 Profile:", value=f"[View Profile](https://discord.com/users/{after.id})", inline=False)
+    #         tier_info = {
+    #             0: "Tier 0 (No Level)",
+    #             1: "Tier 1 (Level 1)",
+    #             2: "Tier 2 (Level 2)",
+    #             3: "Tier 3 (Level 3)"
+    #         }
+    #         current_tier = after.guild.premium_tier
+    #         embed.add_field(name="🏆 Current Boost Level:", value=tier_info.get(current_tier, "Unknown"), inline=False)
+    #         embed.add_field(name="🔗 Profile:", value=f"[View Profile](https://discord.com/users/{after.id})", inline=False)
 
-            await port_of_dover_channel.send(embed=embed)
+    #         await port_of_dover_channel.send(embed=embed)
 
 
 
