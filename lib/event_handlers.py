@@ -178,7 +178,6 @@ async def on_member_update(client, before, after):
     )
 
     embed.add_field(name="Username", value=after.name, inline=True)
-    embed.add_field(name="Discriminator", value=after.discriminator, inline=True)
     embed.add_field(name="User ID", value=str(after.id), inline=True)
     embed.add_field(name="Nickname", value=after.nick if after.nick else "None", inline=True)
     embed.add_field(name="Account Creation Date", value=after.created_at.strftime("%B %d, %Y at %H:%M UTC"), inline=True)
