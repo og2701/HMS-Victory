@@ -162,10 +162,9 @@ async def on_reaction_add(reaction, user):
 async def on_reaction_remove(reaction, user):
     pass
 
-async def on_member_update(before, after):
-    # Channel for logging all updates
+async def on_member_update(client, before, after):
     updates_channel_id = 1279873633602244668
-    updates_channel = after.guild.get_channel(updates_channel_id)
+    updates_channel = client.get_channel(updates_channel_id)
 
     if updates_channel is None:
         logger.warning("Updates channel not found.")
