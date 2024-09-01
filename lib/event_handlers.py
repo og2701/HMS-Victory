@@ -167,6 +167,7 @@ async def on_member_update(before, after):
     updates_channel = after.guild.get_channel(updates_channel_id)
 
     if updates_channel is None:
+        return
 
     embed = discord.Embed(
         title="Member Update",
