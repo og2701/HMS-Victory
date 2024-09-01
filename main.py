@@ -19,6 +19,7 @@ class AClient(discord.Client):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
+        intents.guilds = True
         super().__init__(intents=intents)
         self.synced = False
         self.scheduler = AsyncIOScheduler()
