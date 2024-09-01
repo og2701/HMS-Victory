@@ -173,8 +173,18 @@ async def on_member_update(client, before, after):
     embed = discord.Embed(
         title="Member Update",
         description=f"Changes for {after.mention}",
-        color=discord.Color.blue()
+        color=discord.Color.blue(),
+        timestamp=discord.utils.utcnow()
     )
+
+    embed.add_field(name="Username", value=after.name, inline=True)
+    embed.add_field(name="Discriminator", value=after.discriminator, inline=True)
+    embed.add_field(name="User ID", value=str(after.id), inline=True)
+    embed.add_field(name="Nickname", value=after.nick if after.nick else "None", inline=True)
+    embed.add_field(name="Account Creation Date", value=after.created_at.strftime("%B %d, %Y at %H:%M UTC"), inline=True)
+    embed.add_field(name="Join Date", value=after.joined_at.strftime("%B %d, %Y at %H:%M UTC"), inline=True)
+    embed.add_field(name="Profile Link", value=f"[View Profile](https://discord.com/users/{after.id})", inline=False)
+    embed.set_thumbnail(url=after.avatar.url if after.avatar else after.default_avatar.url)
 
     changes_detected = False
 
@@ -211,17 +221,17 @@ async def on_member_update(client, before, after):
     if before.premium_since is None and after.premium_since is not None:
         port_of_dover_channel = client.get_channel(PORT_OF_DOVER_CHANNEL_ID)
         if port_of_dover_channel:
-            embed = discord.Embed(
+            boost_embed = discord.Embed(
                 title="🎉 New Server Boost! 🎉",
                 description=f"{after.mention} has just boosted the server!",
                 color=discord.Color.purple(),
                 timestamp=after.premium_since
             )
-            embed.set_thumbnail(url=after.avatar.url if after.avatar else after.default_avatar.url)
-            embed.add_field(name="👤 Booster:", value=f"{after.name}#{after.discriminator} ({after.id})", inline=False)
-            embed.add_field(name="📅 Boosted On:", value=after.premium_since.strftime("%B %d, %Y at %H:%M UTC"), inline=False)
-            embed.add_field(name="🔢 Total Boosts:", value=f"{after.guild.premium_subscription_count}", inline=True)
-            embed.add_field(name="🎉 Total Boosters:", value=f"{len(after.guild.premium_subscribers)}", inline=True)
+            boost_embed.set_thumbnail(url=after.avatar.url if after.avatar else after.default_avatar.url)
+            boost_embed.add_field(name="👤 Booster:", value=f"{after.name}#{after.discriminator} ({after.id})", inline=False)
+            boost_embed.add_field(name="📅 Boosted On:", value=after.premium_since.strftime("%B %d, %Y at %H:%M UTC"), inline=False)
+            boost_embed.add_field(name="🔢 Total Boosts:", value=f"{after.guild.premium_subscription_count}", inline=True)
+            boost_embed.add_field(name="🎉 Total Boosters:", value=f"{len(after.guild.premium_subscribers)}", inline=True)
             tier_info = {
                 0: "Tier 0 (No Level)",
                 1: "Tier 1 (Level 1)",
@@ -229,27 +239,27 @@ async def on_member_update(client, before, after):
                 3: "Tier 3 (Level 3)"
             }
             current_tier = after.guild.premium_tier
-            embed.add_field(name="🏆 Current Boost Level:", value=tier_info.get(current_tier, "Unknown"), inline=False)
-            embed.add_field(name="🔗 Profile:", value=f"[View Profile](https://discord.com/users/{after.id})", inline=False)
-            embed.set_image(url="https://i.redd.it/qq911bvdqwu51.gif")
+            boost_embed.add_field(name="🏆 Current Boost Level:", value=tier_info.get(current_tier, "Unknown"), inline=False)
+            boost_embed.add_field(name="🔗 Profile:", value=f"[View Profile](https://discord.com/users/{after.id})", inline=False)
+            boost_embed.set_image(url="https://i.redd.it/qq911bvdqwu51.gif")
 
-            await port_of_dover_channel.send(embed=embed)
-    
+            await port_of_dover_channel.send(embed=boost_embed)
+
     elif before.premium_since is not None and after.premium_since is None:
         port_of_dover_channel = client.get_channel(PORT_OF_DOVER_CHANNEL_ID)
         if port_of_dover_channel:
-            embed = discord.Embed(
+            unboost_embed = discord.Embed(
                 title="⚠️ Server Boost Lost ⚠️",
                 description=f"{after.mention} has stopped boosting the server.",
                 color=discord.Color.red(),
                 timestamp=discord.utils.utcnow()
             )
-            embed.set_thumbnail(url=after.avatar.url if after.avatar else after.default_avatar.url)
-            embed.add_field(name="👤 Former Booster:", value=f"{after.name}#{after.discriminator} ({after.id})", inline=False)
-            embed.add_field(name="📅 Boost Started On:", value=before.premium_since.strftime("%B %d, %Y at %H:%M UTC"), inline=False)
-            embed.add_field(name="❌ Boost Ended On:", value=discord.utils.utcnow().strftime("%B %d, %Y at %H:%M UTC"), inline=False)
-            embed.add_field(name="🔢 Total Boosts Now:", value=f"{after.guild.premium_subscription_count}", inline=True)
-            embed.add_field(name="🎉 Total Boosters Now:", value=f"{len(after.guild.premium_subscribers)}", inline=True)
+            unboost_embed.set_thumbnail(url=after.avatar.url if after.avatar else after.default_avatar.url)
+            unboost_embed.add_field(name="👤 Former Booster:", value=f"{after.name}#{after.discriminator} ({after.id})", inline=False)
+            unboost_embed.add_field(name="📅 Boost Started On:", value=before.premium_since.strftime("%B %d, %Y at %H:%M UTC"), inline=False)
+            unboost_embed.add_field(name="❌ Boost Ended On:", value=discord.utils.utcnow().strftime("%B %d, %Y at %H:%M UTC"), inline=False)
+            unboost_embed.add_field(name="🔢 Total Boosts Now:", value=f"{after.guild.premium_subscription_count}", inline=True)
+            unboost_embed.add_field(name="🎉 Total Boosters Now:", value=f"{len(after.guild.premium_subscribers)}", inline=True)
             tier_info = {
                 0: "Tier 0 (No Level)",
                 1: "Tier 1 (Level 1)",
@@ -257,15 +267,16 @@ async def on_member_update(client, before, after):
                 3: "Tier 3 (Level 3)"
             }
             current_tier = after.guild.premium_tier
-            embed.add_field(name="🏆 Current Boost Level:", value=tier_info.get(current_tier, "Unknown"), inline=False)
-            embed.add_field(name="🔗 Profile:", value=f"[View Profile](https://discord.com/users/{after.id})", inline=False)
+            unboost_embed.add_field(name="🏆 Current Boost Level:", value=tier_info.get(current_tier, "Unknown"), inline=False)
+            unboost_embed.add_field(name="🔗 Profile:", value=f"[View Profile](https://discord.com/users/{after.id})", inline=False)
 
-            await port_of_dover_channel.send(embed=embed)
+            await port_of_dover_channel.send(embed=unboost_embed)
 
     if changes_detected:
         await updates_channel.send(embed=embed)
         logger.info(f"Changes detected for {after.name}: {embed.to_dict()}")
     else:
         logger.info("No relevant changes detected.")
+
 
 
