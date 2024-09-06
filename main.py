@@ -5,6 +5,8 @@ import logging
 from lib.summary import initialize_summary_data, update_summary_data, post_summary
 import pytz
 from datetime import datetime, timedelta
+import shutil
+import os
 
 from lib.event_handlers import *
 from lib.setup_commands import define_commands
@@ -14,10 +16,28 @@ logger = logging.getLogger(__name__)
 
 COMMONS_CHANNEL_ID = 959501347571531776
 BOT_SPAM_CHANNEL_ID = 968502541107228734
+UKPLACE_DATA_BACKUP_CHANNEL_ID = 1281734214756335757
 
 BALL_INSPECTOR_ROLE_ID = 1197712388493934692
 
 COUNTRYBALL_BOT_USER_ID = 999736048596816014
+
+async def zip_and_send_folder(client, folder_path, channel_id, zip_filename_prefix):
+    zip_file_path = f"{folder_path}.zip"
+    
+    if os.path.exists(folder_path):
+        shutil.make_archive(folder_path, 'zip', folder_path)
+        archive_channel = client.get_channel(channel_id)
+        
+        if archive_channel:
+            with open(zip_file_path, 'rb') as zip_file:
+                await archive_channel.send(file=discord.File(zip_file, f"{zip_filename_prefix}.zip"))
+            
+            logger.info(f"Sent archive '{zip_filename_prefix}.zip' to channel {archive_channel.name}.")
+
+        os.remove(zip_file_path)
+    else:
+        logger.warning(f"Folder '{folder_path}' does not exist.")
 
 class AClient(discord.Client):
     def __init__(self):
@@ -114,6 +134,13 @@ class AClient(discord.Client):
         yesterday = (datetime.now(uk_timezone) - timedelta(days=1)).strftime("%Y-%m-%d")
         
         await post_summary(self, COMMONS_CHANNEL_ID, "daily", date=yesterday)
+
+        await zip_and_send_folder(
+            client=self, 
+            folder_path='./daily_summaries', 
+            channel_id=UKPLACE_DATA_BACKUP_CHANNEL_ID, 
+            zip_filename_prefix=f"daily_summaries_as_of_{yesterday}"
+        )
 
     async def weekly_summary(self):
         await post_summary(self, COMMONS_CHANNEL_ID, "weekly")
