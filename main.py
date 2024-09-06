@@ -13,6 +13,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 COMMONS_CHANNEL_ID = 959501347571531776
+BOT_SPAM_CHANNEL_ID = 968502541107228734
+
+BALL_INSPECTOR_ROLE_ID = 1197712388493934692
+
+COUNTRYBALL_BOT_USER_ID = 999736048596816014
 
 class AClient(discord.Client):
     def __init__(self):
@@ -29,6 +34,14 @@ class AClient(discord.Client):
         await on_ready(self, tree, self.scheduler)
 
     async def on_message(self, message):
+        if message.author.id == COUNTRYBALL_BOT_USER_ID and message.content.startswith('A wild countryball appeared!'):
+
+            channel = client.get_channel(BOT_SPAM_CHANNEL_ID)
+
+            if channel:
+                await channel.send(f"<@&{BALL_INSPECTOR_ROLE_ID}> A wild countryball appeared!")
+                return
+
         if message.author.bot:
             return
 
