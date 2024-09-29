@@ -108,9 +108,3 @@ def define_commands(tree, client):
         else:
             await user.add_roles(role)
             await interaction.response.send_message(f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True)
-
-
-    @tree.command(name="profile_card", description="Generates a profile card image of a user")
-    async def profile_card(interaction: Interaction, user: discord.User):
-        await profile_card(interaction, user)
-
