@@ -8,4 +8,4 @@ from commands.canvas.screenshot import screenshotCanvas
 from commands.iceberg.add_to_iceberg import add_iceberg_text
 from commands.iceberg.get_iceberg import show_iceberg
 
-from commands.utils.profile_card import profile_card
+from commands.utils import profile_card
