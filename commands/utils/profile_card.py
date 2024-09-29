@@ -4,7 +4,7 @@ from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFont
 import io
 
-async def profile_card(interaction: Interaction, user: discord.User):
+async def profile_card(interaction: Interaction, user: discord.Member):
     """
     Generates a profile card image of a user.
 
