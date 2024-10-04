@@ -110,5 +110,5 @@ def define_commands(tree, client):
             await interaction.response.send_message(f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True)
 
     @tree.command(name="summarise", description="Summarise a user's messages with sass.")
-    async def summarise(interaction: Interaction, channel: discord.TextChannel = None, user: Member = None):
+    async def summarise(interaction: Interaction, channel: TextChannel = None, user: Member = None):
         await sassy_summary(interaction, channel, user)
