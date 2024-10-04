@@ -74,6 +74,7 @@ async def sassy_summary(interaction, channel=None, user=None):
         return
 
     estimated_tokens = estimate_tokens(input_text)
+    print(estimated_tokens)
     max_allowed_tokens = 120000
     if estimated_tokens > max_allowed_tokens:
         allowed_length = max_allowed_tokens * 4
