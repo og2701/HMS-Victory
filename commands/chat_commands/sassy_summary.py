@@ -106,7 +106,7 @@ async def sassy_summary(interaction, channel=None, user=None):
             temperature=0.7,
         )
         summary = response['choices'][0]['message']['content'].strip()
-                await progress_message.edit(
+        await progress_message.edit(
             content=(
                 f"Here's a summary of recent messages from {user.display_name} in {channel.mention}:\n\n"
                 f"{summary}"
