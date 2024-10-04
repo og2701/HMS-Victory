@@ -65,23 +65,19 @@ async def sassy_summary(interaction, channel=None, user=None):
     if user is None:
         user = interaction.user
 
-    progress_message = await interaction.followup.send(f"Fetching recent messages by {user.display_name} in {channel.name}...")
-
     user_messages = []
     await fetch_messages_with_context(channel, user, user_messages, total_limit=100, context_depth=2)
 
     input_text = "\n".join(user_messages)
     if len(input_text) == 0:
-        await progress_message.edit(content=f"{user.display_name} hasn't said anything interesting lately!")
+        await interaction.followup.send(f"{user.display_name} hasn't said anything interesting lately!")
         return
 
     estimated_tokens = estimate_tokens(input_text)
-    print(estimate_tokens)
     max_allowed_tokens = 120000
     if estimated_tokens > max_allowed_tokens:
         allowed_length = max_allowed_tokens * 4
         input_text = input_text[:allowed_length]
-        await progress_message.edit(content="Too much chatter! Trimming it down a bit.")
 
     try:
         response = openai.ChatCompletion.create(
@@ -106,11 +102,12 @@ async def sassy_summary(interaction, channel=None, user=None):
             temperature=0.7,
         )
         summary = response['choices'][0]['message']['content'].strip()
-        await progress_message.edit(
+        await interaction.followup.send(
             content=(
                 f"Here's a summary of recent messages from {user.display_name} in {channel.mention}:\n\n"
                 f"{summary}"
             )
         )
     except Exception as e:
-        await progress_message.edit(content=f"An error occurred: {str(e)}")
+        print(e)
+        await interaction.followup.send(content=f"An error occurred.")
