@@ -6,7 +6,9 @@ from lib.settings import POLITICS_WHITELISTED_USER_IDS
 from datetime import datetime
 import os
 import pytz
+from collections import defaultdict
 
+SERVER_BOOSTER_ROLE_ID = 959650957325635707
 MINISTER_ROLE_ID = 1250190944502943755
 CABINET_ROLE_ID = 959493505930121226
 BORDER_FORCE_ROLE_ID = 959500686746345542
@@ -109,6 +111,21 @@ def define_commands(tree, client):
             await user.add_roles(role)
             await interaction.response.send_message(f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True)
 
-    @tree.command(name="summarise", description="Summarise a user's messages with sass.")
+    @tree.command(name="summarise", description="Summarise a user's messages with sass")
     async def summarise(interaction: Interaction, channel: TextChannel = None, user: Member = None):
-        await sassy_summary(interaction, channel, user)
+        if not has_any_role(interaction, [SERVER_BOOSTER, BORDER_FORCE_ROLE_ID, CABINET_ROLE_ID, MINISTER_ROLE_ID]):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+
+        today = datetime.now().date()
+        usage_data = command_usage_tracker[interaction.user.id]
+
+        if usage_data['last_used'] != today:
+            usage_data['count'] = 0
+            usage_data['last_used'] = today
+
+        if usage_data['count'] >= 5:
+            await interaction.response.send_message("You've hit the daily limit of 5 usages for this command", ephemeral=True)
+            return
+
+        usage_data['count'] += 1
