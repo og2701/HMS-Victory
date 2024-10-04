@@ -116,6 +116,10 @@ def define_commands(tree, client):
         today = datetime.now().date()
         usage_data = command_usage_tracker[interaction.user.id]
 
+        if interaction.user.id == USERS.OGGERS:
+            await sassy_summary(interaction, channel, user)
+            return
+
         if usage_data['last_used'] != today:
             usage_data['count'] = 0
             usage_data['last_used'] = today
@@ -127,3 +131,4 @@ def define_commands(tree, client):
         usage_data['count'] += 1
 
         await sassy_summary(interaction, channel, user)
+
