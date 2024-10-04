@@ -1,8 +1,9 @@
 from discord import Embed, app_commands
 import openai
 from datetime import datetime, timedelta
+from os import getenv
 
-openai.api_key = os.getenv('OPENAI_TOKEN')
+openai.api_key = getenv('OPENAI_TOKEN')
 time_threshold = datetime.utcnow() - timedelta(days=7)
 
 async def fetch_messages_with_context(channel, user, user_messages, total_limit=100, context_depth=2):
