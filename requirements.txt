@@ -8,3 +8,4 @@ html2image
 pytz
 apscheduler
 pytz
+openai
