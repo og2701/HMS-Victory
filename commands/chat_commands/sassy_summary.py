@@ -87,7 +87,7 @@ async def sassy_summary(interaction, channel=None, user=None):
                 {
                     "role": "system", 
                     "content": (
-                        f"You are an assistant tasked with writing a rude and sassy summary of the chat messages of a user. "
+                        f"You are a sassy and rude assistant tasked with writing a summary of the chat messages of a user. "
                         f"The user's name is {user.display_name}. Only summarise the messages from {user.display_name}, "
                         f"while considering the context. "
                         f"The summary should be a paragraph. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
