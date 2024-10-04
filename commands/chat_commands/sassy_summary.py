@@ -1,4 +1,4 @@
-from discord import Embed, app_commands
+from discord import Embed, app_commands, Forbidden
 import openai
 from datetime import datetime, timedelta
 from os import getenv
@@ -51,7 +51,7 @@ async def fetch_messages_with_context(channel, user, user_messages, total_limit=
                     user_messages.append(user_message_block_text)
             else:
                 i += 1
-    except discord.Forbidden:
+    except Forbidden:
         pass
 
 def estimate_tokens(text):
