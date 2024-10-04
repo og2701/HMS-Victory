@@ -124,8 +124,8 @@ def define_commands(tree, client):
             usage_data['count'] = 0
             usage_data['last_used'] = today
 
-        if usage_data['count'] >= 5:
-            await interaction.response.send_message("You've hit the daily limit of 5 usages for this command", ephemeral=True)
+        if usage_data['count'] >= SUMMARISE_DAILY_LIMIT:
+            await interaction.response.send_message(f"You've hit the daily limit of {SUMMARISE_DAILY_LIMIT} usages for this command", ephemeral=True)
             return
 
         usage_data['count'] += 1
