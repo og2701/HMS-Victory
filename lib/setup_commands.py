@@ -125,3 +125,5 @@ def define_commands(tree, client):
             return
 
         usage_data['count'] += 1
+
+        await sassy_summary(interaction, channel, user)
