@@ -106,11 +106,11 @@ async def sassy_summary(interaction, channel=None, user=None):
             temperature=0.7,
         )
         summary = response['choices'][0]['message']['content'].strip()
-        embed = Embed(
-            title=f"Sassy Summary for {user.display_name}",
-            description=summary,
-            color=0xFFA500
+                await progress_message.edit(
+            content=(
+                f"Here's a summary of recent messages from {user.display_name} in {channel.mention}:\n\n"
+                f"{summary}"
+            )
         )
-        await progress_message.edit(content=None, embed=embed)
     except Exception as e:
         await progress_message.edit(content=f"An error occurred: {str(e)}")
