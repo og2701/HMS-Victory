@@ -65,7 +65,7 @@ async def sassy_summary(interaction, channel=None, user=None):
     if user is None:
         user = interaction.user
 
-    progress_message = await interaction.followup.send(f"Fetching sassy details on {user.display_name} in {channel.name}...")
+    progress_message = await interaction.followup.send(f"Fetching recent messages by {user.display_name} in {channel.name}...")
 
     user_messages = []
     await fetch_messages_with_context(channel, user, user_messages, total_limit=100, context_depth=2)
