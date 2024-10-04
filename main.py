@@ -2,7 +2,6 @@ import discord
 from discord.ext import tasks
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import logging
-from lib.summary import initialize_summary_data, update_summary_data, post_summary
 import pytz
 from datetime import datetime, timedelta
 import shutil
@@ -10,6 +9,8 @@ import os
 
 from lib.event_handlers import *
 from lib.setup_commands import define_commands
+from lib.settings import *
+from lib.summary import initialize_summary_data, update_summary_data, post_summary
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

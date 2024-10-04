@@ -2,8 +2,10 @@ import os
 import json
 from datetime import datetime, timedelta
 import discord
-from lib.summary_html import create_summary_image
 import pytz
+
+from lib.summary_html import create_summary_image
+from lib.settings import *
 
 
 SUMMARY_DATA_FILE = "daily_summaries/daily_summary_{date}.json"
