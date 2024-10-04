@@ -13,11 +13,6 @@ from apscheduler.triggers.cron import CronTrigger
 logger = logging.getLogger(__name__)
 
 MAX_IMAGE_SIZE = 5 * 1024 * 1024
-IMAGE_CACHE_CHANNEL = 1271188365244497971
-POLITICS_CHANNEL_ID = 1141097424849481799
-PORT_OF_DOVER_CHANNEL_ID = 1131633452022767698
-MEMBER_UPDATES_CHANNEL_ID = 1279873633602244668
-
 
 async def on_ready(client, tree, scheduler):
     global POLITICS_WHITELISTED_USER_IDS
@@ -36,11 +31,11 @@ async def on_ready(client, tree, scheduler):
     scheduler.start()
 
 async def on_message(client, message):
-    if not await restrict_channel_for_new_members(message, POLITICS_CHANNEL_ID, 7, POLITICS_WHITELISTED_USER_IDS):
+    if not await restrict_channel_for_new_members(message, CHANNELS.POLITICS, 7, POLITICS_WHITELISTED_USER_IDS):
         return
 
     if message.attachments:
-        cache_channel = client.get_channel(IMAGE_CACHE_CHANNEL)
+        cache_channel = client.get_channel(CHANNELS.IMAGE_CACHE)
         if cache_channel:
             async with aiohttp.ClientSession() as session:
                 for attachment in message.attachments:
@@ -164,7 +159,7 @@ async def on_reaction_remove(reaction, user):
     pass
 
 async def on_member_update(client, before, after):
-    updates_channel = client.get_channel(MEMBER_UPDATES_CHANNEL_ID)
+    updates_channel = client.get_channel(CHANNELS.MEMBER_UPDATES)
 
     if updates_channel is None:
         logger.warning("Updates channel not found.")
@@ -218,7 +213,7 @@ async def on_member_update(client, before, after):
             changes_detected = True
 
     if before.premium_since is None and after.premium_since is not None:
-        port_of_dover_channel = client.get_channel(PORT_OF_DOVER_CHANNEL_ID)
+        port_of_dover_channel = client.get_channel(CHANNELS.PORT_OF_DOVER)
         if port_of_dover_channel:
             boost_embed = discord.Embed(
                 title="🎉 New Server Boost! 🎉",
@@ -245,7 +240,7 @@ async def on_member_update(client, before, after):
             await port_of_dover_channel.send(embed=boost_embed)
 
     elif before.premium_since is not None and after.premium_since is None:
-        port_of_dover_channel = client.get_channel(PORT_OF_DOVER_CHANNEL_ID)
+        port_of_dover_channel = client.get_channel(CHANNELS.PORT_OF_DOVER)
         if port_of_dover_channel:
             unboost_embed = discord.Embed(
                 title="⚠️ Server Boost Lost ⚠️",

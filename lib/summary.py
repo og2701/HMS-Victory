@@ -7,7 +7,6 @@ import pytz
 
 
 SUMMARY_DATA_FILE = "daily_summaries/daily_summary_{date}.json"
-DEPUTY_PM_ROLE_ID = 1268676483476361357
 
 def initialize_summary_data():
     uk_timezone = pytz.timezone("Europe/London")
@@ -169,7 +168,7 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
         title = f"{frequency.capitalize()} Server Summary"
         image_path = await create_summary_image(summary_data, title, title_color)
 
-        role = guild.get_role(DEPUTY_PM_ROLE_ID)
+        role = guild.get_role(ROLES.DEPUTY_PM)
         if role:
             role_mention = role.mention
         else:

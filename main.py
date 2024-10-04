@@ -14,14 +14,6 @@ from lib.setup_commands import define_commands
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-COMMONS_CHANNEL_ID = 959501347571531776
-BOT_SPAM_CHANNEL_ID = 968502541107228734
-UKPLACE_DATA_BACKUP_CHANNEL_ID = 1281734214756335757
-
-BALL_INSPECTOR_ROLE_ID = 1197712388493934692
-
-COUNTRYBALL_BOT_USER_ID = 999736048596816014
-
 async def zip_and_send_folder(client, folder_path, channel_id, zip_filename_prefix):
     zip_file_path = f"{folder_path}.zip"
     
@@ -54,12 +46,12 @@ class AClient(discord.Client):
         await on_ready(self, tree, self.scheduler)
 
     async def on_message(self, message):
-        if message.author.id == COUNTRYBALL_BOT_USER_ID and message.content.startswith('A wild countryball appeared!'):
+        if message.author.id == USERS.COUNTRYBALL_BOT and message.content.startswith('A wild countryball appeared!'):
 
-            channel = client.get_channel(BOT_SPAM_CHANNEL_ID)
+            channel = client.get_channel(CHANNELS.BOT_SPAM)
 
             if channel:
-                await channel.send(f"<@&{BALL_INSPECTOR_ROLE_ID}> A wild countryball appeared!")
+                await channel.send(f"<@&{ROLES.BALL_INSPECTOR}> A wild countryball appeared!")
                 return
 
         if message.author.bot:
@@ -133,20 +125,20 @@ class AClient(discord.Client):
         uk_timezone = pytz.timezone("Europe/London")
         yesterday = (datetime.now(uk_timezone) - timedelta(days=1)).strftime("%Y-%m-%d")
         
-        await post_summary(self, COMMONS_CHANNEL_ID, "daily", date=yesterday)
+        await post_summary(self, CHANNELS.COMMONS, "daily", date=yesterday)
 
         await zip_and_send_folder(
             client=self, 
             folder_path='./daily_summaries', 
-            channel_id=UKPLACE_DATA_BACKUP_CHANNEL_ID, 
+            channel_id=CHANNELS.DATA_BACKUP, 
             zip_filename_prefix=f"daily_summaries_as_of_{yesterday}"
         )
 
     async def weekly_summary(self):
-        await post_summary(self, COMMONS_CHANNEL_ID, "weekly")
+        await post_summary(self, CHANNELS.COMMONS, "weekly")
 
     async def monthly_summary(self):
-        await post_summary(self, COMMONS_CHANNEL_ID, "monthly")
+        await post_summary(self, CHANNELS.COMMONS, "monthly")
 
 client = AClient()
 tree = discord.app_commands.CommandTree(client)

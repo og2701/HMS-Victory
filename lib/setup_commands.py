@@ -2,17 +2,10 @@ from discord import app_commands, Interaction, Member, TextChannel
 from lib.utils import has_any_role, has_role, save_whitelist
 from lib.commands import *
 from lib.summary import post_summary
-from lib.settings import POLITICS_WHITELISTED_USER_IDS
 from datetime import datetime
 import os
 import pytz
 from collections import defaultdict
-
-SERVER_BOOSTER_ROLE_ID = 959650957325635707
-MINISTER_ROLE_ID = 1250190944502943755
-CABINET_ROLE_ID = 959493505930121226
-BORDER_FORCE_ROLE_ID = 959500686746345542
-POLITICS_BAN_ROLE_ID = 1265295557115510868
 
 def define_commands(tree, client):
     @tree.command(
@@ -34,7 +27,7 @@ def define_commands(tree, client):
 
     @tree.command(name="role-react", description="Adds a reaction role to a message")
     async def role_react_command(interaction: Interaction):
-        if not has_any_role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID]):
+        if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
         await persistantRoleButtons(interaction)
@@ -45,7 +38,7 @@ def define_commands(tree, client):
 
     @tree.command(name="add-to-iceberg", description="Adds text to the iceberg image")
     async def add_to_iceberg_command(interaction: Interaction, text: str, level: int):
-        if not has_any_role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID]):
+        if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
         await add_iceberg_text(interaction, text, level)
@@ -56,7 +49,7 @@ def define_commands(tree, client):
 
     @tree.command(name="add-whitelist", description="Adds a user to the whitelist for the politics channel")
     async def add_whitelist_command(interaction: Interaction, user: Member):
-        if not has_any_role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID, BORDER_FORCE_ROLE_ID]):
+        if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
 
@@ -69,7 +62,7 @@ def define_commands(tree, client):
 
     @tree.command(name="post-daily-summary", description="Posts the daily summary in the current channel for a specific date")
     async def post_daily_summary(interaction: Interaction, date: str = None):
-        if not has_role(interaction, MINISTER_ROLE_ID):
+        if not has_role(interaction, ROLES.MINISTER):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
         
@@ -95,11 +88,11 @@ def define_commands(tree, client):
 
     @tree.command(name="politics-ban", description="Toggles politics ban for a member")
     async def manage_role_command(interaction: Interaction, user: Member):
-        if not has_any_role(interaction, [MINISTER_ROLE_ID, CABINET_ROLE_ID, BORDER_FORCE_ROLE_ID]):
+        if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
 
-        role = interaction.guild.get_role(POLITICS_BAN_ROLE_ID)
+        role = interaction.guild.get_role(ROLES.POLITICS_BAN)
         if not role:
             await interaction.response.send_message(f"Role with ID {role_id} not found.", ephemeral=True)
             return
@@ -113,7 +106,7 @@ def define_commands(tree, client):
 
     @tree.command(name="summarise", description="Summarise a user's messages with sass")
     async def summarise(interaction: Interaction, channel: TextChannel = None, user: Member = None):
-        if not has_any_role(interaction, [SERVER_BOOSTER, BORDER_FORCE_ROLE_ID, CABINET_ROLE_ID, MINISTER_ROLE_ID]):
+        if not has_any_role(interaction, [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
 
