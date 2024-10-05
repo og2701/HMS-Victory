@@ -170,12 +170,6 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
         title = f"{frequency.capitalize()} Server Summary"
         image_path = await create_summary_image(summary_data, title, title_color)
 
-        role = guild.get_role(ROLES.DEPUTY_PM)
-        if role:
-            role_mention = role.mention
-        else:
-            role_mention = ""
-
         try:
             with open(image_path, "rb") as f:
                 await log_channel.send(content=f"{role_mention}", file=discord.File(f, f"{frequency}_summary.png"))
