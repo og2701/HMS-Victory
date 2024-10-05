@@ -107,7 +107,7 @@ def define_commands(tree, client):
             await user.add_roles(role)
             await interaction.response.send_message(f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True)
 
-    @tree.command(name="summarise", description="Summarise a user's messages with sass")
+    @tree.command(name="roast", description="Roast a user based on recent messages in a channel")
     async def summarise(interaction: Interaction, channel: TextChannel = None, user: Member = None):
         if not has_any_role(interaction, [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
