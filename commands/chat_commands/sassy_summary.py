@@ -114,7 +114,6 @@ async def sassy_summary(interaction, channel=None, user=None):
         summary = response['choices'][0]['message']['content'].strip()
         await interaction.followup.send(
             content=(
-                f"Here's a summary of recent messages from {user.display_name} in {channel.mention}:\n\n"
                 f"{summary}"
             )
         )
