@@ -85,7 +85,7 @@ async def sassy_summary(interaction, channel=None, user=None):
     try:
         if user.id in SPECIFIED_USER_IDS:
             system_prompt = (
-                f"You are an assistant tasked with writing a very rude summary of the chat messages of a user with the intent of roasting/embarrassing them. "
+                f"You are an assistant tasked with writing a very rude and insulting summary of the chat messages of a user with the intent of roasting/embarrassing them. "
                 f"The user's name is {user.display_name}. Only summarise the messages from {user.display_name}, "
                 f"while considering the context. The summary should be a paragraph. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
                 f"Return only the paragraph and nothing else."
