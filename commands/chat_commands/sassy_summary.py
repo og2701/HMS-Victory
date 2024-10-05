@@ -83,20 +83,18 @@ async def sassy_summary(interaction, channel=None, user=None):
         input_text = input_text[:allowed_length]
 
     try:
-        if user.id in SPECIFIED_USER_IDS:
-            system_prompt = (
-                f"You are an assistant tasked with writing a very rude and insulting summary of the chat messages of a user with the intent of roasting/embarrassing them. "
-                f"The user's name is {user.display_name}. Only summarise the messages from {user.display_name}, "
-                f"while considering the context. The summary should be a paragraph. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
-                f"Return only the paragraph and nothing else."
-            )
-        else:
-            system_prompt = (
-                f"You are an assistant tasked with writing a rude and sassy and mildly offensive summary of the chat messages of a user. "
-                f"The user's name is {user.display_name}. Only summarise the messages from {user.display_name}, "
-                f"while considering the context. The summary should be a paragraph. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
-                f"Return only the paragraph and nothing else."
-            )
+        system_prompt = (
+            f"You are an assistant tasked with writing a very rude and insulting summary of the chat messages of a user with the intent of roasting/embarrassing them. "
+            f"The user's name is {user.display_name}. Only summarise the messages from {user.display_name}, "
+            f"while considering the context. The summary should be a paragraph. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
+            f"Return only the paragraph and nothing else."
+        )
+            # system_prompt = (
+            #     f"You are an assistant tasked with writing a rude and sassy and mildly offensive summary of the chat messages of a user. "
+            #     f"The user's name is {user.display_name}. Only summarise the messages from {user.display_name}, "
+            #     f"while considering the context. The summary should be a paragraph. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
+            #     f"Return only the paragraph and nothing else."
+            # )
 
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
