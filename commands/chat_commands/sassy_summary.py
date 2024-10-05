@@ -5,7 +5,7 @@ from os import getenv
 
 openai.api_key = getenv('OPENAI_TOKEN')
 
-SPECIFIED_USER_IDS = [404634271861571584, 797207976548499518, 772553171616006166]
+SPECIFIED_USER_IDS = [404634271861571584, 797207976548499518, 772553171616006166, 447010711936303115]
 time_threshold = datetime.utcnow() - timedelta(days=7)
 
 async def fetch_messages_with_context(channel, user, user_messages, total_limit=100, context_depth=2):
