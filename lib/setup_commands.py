@@ -132,3 +132,10 @@ def define_commands(tree, client):
 
         await sassy_summary(interaction, channel, user)
 
+    @tree.command(name="vc-control", description="Toggles server mute/deafen perms for a user")
+    async def vc_control(interaction: Interaction, user: Member):
+        if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+        await toggleMuteDeafenPermissions(interaction, user)
+
