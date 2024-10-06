@@ -14,34 +14,27 @@ async def toggleMuteDeafenPermissions(interaction, member):
         None
     """
 
-    initial_embed = Embed(
-        title="Toggle Permissions",
-        description=f"Toggling mute and deafen permissions for {member.display_name} in all 'permanent vc' channels.",
-        color=0xFFA500
-    )
-
-    await interaction.response.send_message(embed=initial_embed)
-
     category = interaction.guild.get_channel(959493057076666379)
 
     if category is not None and isinstance(category, CategoryChannel):
-        for channel in category.voice_channels:
-            current_perms = channel.permissions_for(member)
-            if current_perms.mute_members and current_perms.deafen_members:
-                await channel.set_permissions(member, overwrite=None)
-            else:
-                await channel.set_permissions(member, mute_members=True, deafen_members=True)
+        current_perms = category.permissions_for(member)
+        if current_perms.mute_members and current_perms.deafen_members:
+            await category.set_permissions(member, overwrite=None)
+            action = "removed"
+        else:
+            await category.set_permissions(member, mute_members=True, deafen_members=True)
+            action = "granted"
         
         confirmation_embed = Embed(
             title="Success",
-            description=f"Mute and deafen permissions for {member.display_name} have been toggled in all 'permanent vc' channels.",
+            description=f"Mute and deafen permissions for {member.display_name} have been {action} in the 'permanent vc' category.",
             color=0x00FF00
         )
-        await interaction.followup.send(embed=confirmation_embed)
+        await interaction.response.send_message(embed=confirmation_embed)
     else:
         error_embed = Embed(
             title="Error",
             description="Category 'permanent vc' (959493057076666379) not found.",
             color=0xFF0000
         )
-        await interaction.followup.send(embed=error_embed)
+        await interaction.response.send_message(embed=error_embed)
