@@ -21,13 +21,17 @@ async def toggleMuteDeafenPermissions(interaction, member):
         if current_perms.mute_members and current_perms.deafen_members:
             await category.set_permissions(member, overwrite=None)
             action = "removed"
+            for channel in category.voice_channels:
+                await channel.set_permissions(member, overwrite=None)
         else:
             await category.set_permissions(member, mute_members=True, deafen_members=True)
             action = "granted"
+            for channel in category.voice_channels:
+                await channel.set_permissions(member, mute_members=True, deafen_members=True)
         
         confirmation_embed = Embed(
             title="Success",
-            description=f"Mute and deafen permissions for {member.display_name} have been {action} in the 'permanent vc' category.",
+            description=f"Mute and deafen permissions for {member.display_name} have been {action} in the 'permanent vc' category and all voice channels under it.",
             color=0x00FF00
         )
         await interaction.response.send_message(embed=confirmation_embed)
