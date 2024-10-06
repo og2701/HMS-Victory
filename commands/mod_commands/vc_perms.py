@@ -24,7 +24,7 @@ async def toggleMuteDeafenPermissions(interaction, member):
 
     category = interaction.guild.get_channel(959493057076666379)
 
-    if category is not None and isinstance(category, discord.CategoryChannel):
+    if category is not None and isinstance(category, CategoryChannel):
         for channel in category.voice_channels:
             current_perms = channel.permissions_for(member)
             if current_perms.mute_members and current_perms.deafen_members:
