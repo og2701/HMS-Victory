@@ -1,4 +1,4 @@
-from discord import Embed
+from discord import Embed, CategoryChannel
 from discord.ext import commands
 
 async def toggleMuteDeafenPermissions(interaction, member):
