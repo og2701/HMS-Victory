@@ -72,24 +72,7 @@ async def on_interaction(interaction: Interaction):
             await handleRoleButtonInteraction(interaction)
 
 async def on_member_join(member):
-
-
-    bio = member.bio.lower() if member.bio else ""
-
-    flagged = [keyword for keyword in SCAM_KEYWORDS if keyword in bio]
-
-    if flagged:        
-        mod_channel = member.guild.get_channel(CHANNELS.POLICE)
-        if mod_channel:
-            embed = discord.Embed(
-                title="🚩 Potential Scammer Flagged",
-                description=f"**Username**: {member.name}#{member.discriminator}\n**User ID**: {member.id}",
-                color=discord.Color.red()
-            )
-            embed.add_field(name="Flagged Keywords", value=", ".join(flagged), inline=False)
-            embed.add_field(name="Bio", value=bio or "No bio provided", inline=False)
-            embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
-            await mod_channel.send(content="border force mention here", embed=embed)
+    pass
 
 async def on_member_remove(member):
     pass
