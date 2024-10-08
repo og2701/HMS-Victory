@@ -155,7 +155,7 @@ async def on_message_edit(client, before, after):
             os.remove(image_file_path)
 
 async def on_reaction_add(reaction, user):
-    if str(reaction.emoji) in flag_language_dict:
+    if str(reaction.emoji) in FLAG_LANGUAGE_MAPPINGS:
         message = reaction.message
         target_language = FLAG_LANGUAGE_MAPPINGS[str(reaction.emoji)]
 
