@@ -32,8 +32,8 @@ SUMMARISE_DAILY_LIMIT = 10
 
 FLAG_LANGUAGE_MAPPINGS = {
     "🏴󠁧󠁢󠁥󠁮󠁧󠁿": "English",  # England
-    "🏴": "Welsh",   # Wales
-    "🏴": "English",  # Scotland
+    "🏴󠁧󠁢󠁷󠁬󠁳󠁿": "Welsh",   # Wales
+    "🏴󠁧󠁢󠁳󠁣󠁴󠁿": "English",  # Scotland
     "🇦🇨": "English",  # Ascension Island
     "🇦🇩": "Catalan",  # Andorra
     "🇦🇪": "Arabic",  # United Arab Emirates
