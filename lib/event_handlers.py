@@ -155,14 +155,12 @@ async def on_message_edit(client, before, after):
             os.remove(image_file_path)
 
 async def on_reaction_add(reaction, user):
-    logger.info(reaction)
-    logger.info(str(reaction.emoji))
-    logger.info(str(reaction.emoji) in FLAG_LANGUAGE_MAPPINGS)
-    logger.info(str(reaction.emoji) in FLAG_LANGUAGE_MAPPINGS.keys())
     try:
         if str(reaction.emoji) in FLAG_LANGUAGE_MAPPINGS:
             message = reaction.message
             target_language = FLAG_LANGUAGE_MAPPINGS[str(reaction.emoji)]
+            logger.info(message)
+            logger.info(target_language)
 
             if message.content:
                 await translate_and_send(reaction, message, target_language)
