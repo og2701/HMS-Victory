@@ -20,6 +20,6 @@ async def translate_and_send(reaction, message, target_language, user):
         description=translated_text,
         color=discord.Color.blue()
     )
-    embed.set_footer(text=f"Requested by {user.nickname}")
+    embed.set_footer(text=f"Requested by {user.display_name}")
 
     await reaction.message.channel.send(embed=embed)
