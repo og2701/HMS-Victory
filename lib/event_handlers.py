@@ -156,6 +156,7 @@ async def on_message_edit(client, before, after):
 
 async def on_reaction_add(reaction, user):
     logger.info(reaction)
+    logger.info(str(reaction.emoji))
     try:
         if str(reaction.emoji) in FLAG_LANGUAGE_MAPPINGS:
             message = reaction.message
