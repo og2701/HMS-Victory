@@ -9,17 +9,21 @@ async def translate_and_send(reaction, message, target_language, user):
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": f"Translate the following message to {target_language}. Return only the translated message and nothing else"},
-            {"role": "user", "content": f"Translate the following message/text to {target_language}: {message.content}"}
+            {"role": "user", "content": f"Translate the following message/text: {message.content}"}
         ]
     )
 
     translated_text = response.choices[0].message['content'].strip()
 
     embed = discord.Embed(
-        title=f"Translation to {target_language}",
         description=translated_text,
-        color=discord.Color.blue()
+        color=discord.Color.dark_gold()
     )
-    embed.set_footer(text=f"Requested by {user.display_name}")
 
-    await reaction.message.channel.send(embed=embed)
+    embed.set_author(
+        name=user.display_name,
+        icon_url=user.avatar.url if user.avatar else user.default_avatar.url
+    )
+
+
+    await message.reply(embed=embed)
