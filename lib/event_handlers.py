@@ -163,15 +163,15 @@ async def on_reaction_add(reaction, user):
 
             for existing_reaction in message.reactions:
                 if str(existing_reaction.emoji) == str(reaction.emoji):
-                    users = await existing_reaction.users().flatten() 
+                    users = [u async for u in existing_reaction.users()] 
                     if user in users:
                         logger.info("Message has already been reacted to with this flag. Skipping translation.")
                         return
-
             if message.content:
                 await translate_and_send(reaction, message, target_language, message.author)
     except Exception as e:
         logger.error(f"Error in on_reaction_add: {e}")
+
 
 
 async def on_reaction_remove(reaction, user):
