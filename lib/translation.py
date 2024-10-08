@@ -9,7 +9,7 @@ async def translate_and_send(reaction, message, target_language, user):
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": f"Translate the following message to {target_language}. Return only the translated message and nothing else"},
-            {"role": "user", "content": message.content}
+            {"role": "user", "content": f"Translate the following message/text to {target_language}: {message.content}"}
         ]
     )
 
