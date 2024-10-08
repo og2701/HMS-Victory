@@ -6,6 +6,7 @@ import aiohttp
 import io
 from apscheduler.triggers.cron import CronTrigger
 
+from lib.translation import translate_and_send
 from lib.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.utils import restrict_channel_for_new_members
 from lib.log_functions import create_message_image, create_edited_message_image
@@ -154,7 +155,12 @@ async def on_message_edit(client, before, after):
             os.remove(image_file_path)
 
 async def on_reaction_add(reaction, user):
-    pass
+    if str(reaction.emoji) in flag_language_dict:
+        message = reaction.message
+        target_language = FLAG_LANGUAGE_MAPPINGS[str(reaction.emoji)]
+
+        if message.content:
+            await translate_and_send(reaction, message, target_language)
 
 async def on_reaction_remove(reaction, user):
     pass
