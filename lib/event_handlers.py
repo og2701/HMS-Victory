@@ -161,18 +161,16 @@ async def on_reaction_add(reaction, user):
             message = reaction.message
             target_language = FLAG_LANGUAGE_MAPPINGS[str(reaction.emoji)]
 
-            for existing_reaction in message.reactions:
-                if str(existing_reaction.emoji) == str(reaction.emoji):
-                    users = [u async for u in existing_reaction.users()] 
-                    if user in users:
-                        logger.info("Message has already been reacted to with this flag. Skipping translation.")
-                        return
+            users = [u async for u in reaction.users()]
+            
+            if len(users) > 1:
+                logger.info("Message has already been reacted to with this flag. Skipping translation.")
+                return
+
             if message.content:
                 await translate_and_send(reaction, message, target_language, message.author)
     except Exception as e:
         logger.error(f"Error in on_reaction_add: {e}")
-
-
 
 async def on_reaction_remove(reaction, user):
     pass
