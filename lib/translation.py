@@ -4,7 +4,7 @@ import discord
 
 openai.api_key = os.getenv("OPENAI_TOKEN")
 
-async def translate_and_send(reaction, message, target_language):
+async def translate_and_send(reaction, message, target_language, user):
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
@@ -20,6 +20,6 @@ async def translate_and_send(reaction, message, target_language):
         description=translated_text,
         color=discord.Color.blue()
     )
-    embed.set_footer(text=f"Requested by {reaction.user.display_name}")
+    embed.set_footer(text=f"Requested by {user.nickname}")
 
     await reaction.message.channel.send(embed=embed)
