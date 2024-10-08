@@ -106,8 +106,6 @@ class AClient(discord.Client):
 
         await on_reaction_add(reaction, user)
 
-        await on_reaction_add(reaction, user)
-
     async def on_reaction_remove(self, reaction, user):
         if user.bot:
             return

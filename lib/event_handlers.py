@@ -155,12 +155,20 @@ async def on_message_edit(client, before, after):
             os.remove(image_file_path)
 
 async def on_reaction_add(reaction, user):
-    if str(reaction.emoji) in FLAG_LANGUAGE_MAPPINGS:
-        message = reaction.message
-        target_language = FLAG_LANGUAGE_MAPPINGS[str(reaction.emoji)]
+    try:
+        if str(reaction.emoji) in FLAG_LANGUAGE_MAPPINGS:
+            message = reaction.message
+            target_language = FLAG_LANGUAGE_MAPPINGS[str(reaction.emoji)]
 
-        if message.content:
-            await translate_and_send(reaction, message, target_language)
+            if message.content:
+                await translate_and_send(reaction, message, target_language)
+            else:
+                print("Message has no content to translate.")
+        else:
+            print("Reaction is not a recognized flag.")
+    except Exception as e:
+        print(f"Error in on_reaction_add: {e}")
+
 
 async def on_reaction_remove(reaction, user):
     pass
