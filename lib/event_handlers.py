@@ -163,11 +163,11 @@ async def on_reaction_add(reaction, user):
             if message.content:
                 await translate_and_send(reaction, message, target_language)
             else:
-                print("Message has no content to translate.")
+                logger("Message has no content to translate.")
         else:
-            print("Reaction is not a recognized flag.")
+            logger("Reaction is not a recognized flag.")
     except Exception as e:
-        print(f"Error in on_reaction_add: {e}")
+        logger(f"Error in on_reaction_add: {e}")
 
 
 async def on_reaction_remove(reaction, user):
