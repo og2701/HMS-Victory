@@ -4,7 +4,7 @@ import discord
 
 openai.api_key = os.getenv("OPENAI_TOKEN")
 
-async def translate_and_send(reaction, message, target_language, user):
+async def translate_and_send(reaction, message, target_language, original_author):
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
@@ -19,11 +19,10 @@ async def translate_and_send(reaction, message, target_language, user):
         description=translated_text,
         color=discord.Color.dark_gold()
     )
-
+    
     embed.set_author(
-        name=user.display_name,
-        icon_url=user.avatar.url if user.avatar else user.default_avatar.url
+        name=original_author.display_name,
+        icon_url=original_author.avatar.url if original_author.avatar else original_author.default_avatar.url
     )
-
 
     await message.reply(embed=embed)

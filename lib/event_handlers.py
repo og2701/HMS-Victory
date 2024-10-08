@@ -155,6 +155,8 @@ async def on_message_edit(client, before, after):
             os.remove(image_file_path)
 
 async def on_reaction_add(reaction, user):
+    logger.info(reaction)
+    logger.info(str(reaction.emoji))
     is_in_mapping = str(reaction.emoji) in FLAG_LANGUAGE_MAPPINGS
     try:
         if is_in_mapping:
@@ -162,11 +164,9 @@ async def on_reaction_add(reaction, user):
             target_language = FLAG_LANGUAGE_MAPPINGS[str(reaction.emoji)]
 
             if message.content:
-                await translate_and_send(reaction, message, target_language, user)
+                await translate_and_send(reaction, message, target_language, message.author)
     except Exception as e:
         logger.error(f"Error in on_reaction_add: {e}")
-
-
 
 async def on_reaction_remove(reaction, user):
     pass
