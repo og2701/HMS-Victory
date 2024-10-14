@@ -202,7 +202,7 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
             "deleted_messages": data["deleted_messages"],
             "boosters_gained": data["boosters_gained"],
             "boosters_lost": data["boosters_lost"],
-            "top_channels": [(log_channel.guild.get_channel(int(channel_id)).name if log_channel.guild.get_channel(int(channel_id)) else "Unknown Channel", f"{count} <span style='color: {message_change_color.get(channel_id, 'white')};'>{message_change_str.get(channel_id, '')}</span>") for channel_id, count in top_channels],
+            "top_channels": [(log_channel.guild.get_channel(int(channel_id)).name if log_channel.guild.get_channel(int(channel_id)) else "Deleted Channel", f"{count} <span style='color: {message_change_color.get(channel_id, 'white')};'>{message_change_str.get(channel_id, '')}</span>") for channel_id, count in top_channels],
             "active_members": [(guild.get_member(int(user_id)).display_name if guild.get_member(int(user_id)) else "Unknown Member", count) for user_id, count in active_members],
             "reacting_members": [(guild.get_member(int(user_id)).display_name if guild.get_member(int(user_id)) else "Unknown Member", count) for user_id, count in reacting_members]
         }
