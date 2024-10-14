@@ -117,6 +117,8 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
 
     member_change_str = ""
     member_change_color = "white"
+    message_change_str = {}
+    message_change_color = {}
 
     if log_channel is not None:
         if frequency == "daily":
@@ -133,9 +135,21 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
                 member_change = total_members - previous_data["total_members"]
                 member_change_str = f" (+{member_change})" if member_change > 0 else f" ({member_change})"
                 member_change_color = "green" if member_change > 0 else "red"
+                
+                for channel_id, count in data["messages"].items():
+                    prev_count = previous_data["messages"].get(channel_id, 0)
+                    message_change = count - prev_count
+                    message_change_str[channel_id] = f" (+{message_change})" if message_change > 0 else f" ({message_change})"
+                    message_change_color[channel_id] = "green" if message_change > 0 else "red"
+                
+                total_message_change = data["total_messages"] - previous_data["total_messages"]
+                total_message_change_str = f" (+{total_message_change})" if total_message_change > 0 else f" ({total_message_change})"
+                total_message_change_color = "green" if total_message_change > 0 else "red"
             else:
                 member_change_str = ""
                 member_change_color = "white"
+                total_message_change_str = ""
+                total_message_change_color = "white"
         elif frequency == "weekly":
             end_date = datetime.strptime(date, "%Y-%m-%d")
             start_date = end_date - timedelta(days=6)
@@ -156,13 +170,13 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
             "members_joined": data["members_joined"],
             "members_left": data["members_left"],
             "members_banned": data["members_banned"],
-            "total_messages": data["total_messages"],
+            "total_messages": f"{data['total_messages']} <span style='color: {total_message_change_color};'>{total_message_change_str}</span>",
             "reactions_added": data["reactions_added"],
             "reactions_removed": data["reactions_removed"],
             "deleted_messages": data["deleted_messages"],
             "boosters_gained": data["boosters_gained"],
             "boosters_lost": data["boosters_lost"],
-            "top_channels": [(log_channel.guild.get_channel(int(channel_id)).name if log_channel.guild.get_channel(int(channel_id)) else "Unknown Channel", count) for channel_id, count in top_channels],
+            "top_channels": [(log_channel.guild.get_channel(int(channel_id)).name if log_channel.guild.get_channel(int(channel_id)) else "Unknown Channel", f"{count} <span style='color: {message_change_color.get(channel_id, 'white')};'>{message_change_str.get(channel_id, '')}</span>") for channel_id, count in top_channels],
             "active_members": [(guild.get_member(int(user_id)).display_name if guild.get_member(int(user_id)) else "Unknown Member", count) for user_id, count in active_members],
             "reacting_members": [(guild.get_member(int(user_id)).display_name if guild.get_member(int(user_id)) else "Unknown Member", count) for user_id, count in reacting_members]
         }
@@ -180,4 +194,3 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
             data["total_members"] = total_members
             with open(file_path, "w") as file:
                 json.dump(data, file)
-
