@@ -161,9 +161,11 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
             data = aggregate_summaries(start_date, end_date)
             title_color = "#FFD700"  # Yellow
 
-        active_members = sorted(data.get("active_members", {}).items(), key=lambda x: x[1], reverse=True)[:5]
-        reacting_members = sorted(data.get("reacting_members", {}).items(), key=lambda x: x[1], reverse=True)[:5]
-        top_channels = sorted(data.get("messages", {}).items(), key=lambda x: x[1], reverse=True)[:5]
+        top_n = 5 if frequency == "daily" else 10
+        
+        active_members = sorted(data.get("active_members", {}).items(), key=lambda x: x[1], reverse=True)[:top_n]
+        reacting_members = sorted(data.get("reacting_members", {}).items(), key=lambda x: x[1], reverse=True)[:top_n]
+        top_channels = sorted(data.get("messages", {}).items(), key=lambda x: x[1], reverse=True)[:top_n]
 
         summary_data = {
             "total_members": f"{total_members} <span style='color: {member_change_color};'>{member_change_str}</span>",
