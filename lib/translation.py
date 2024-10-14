@@ -25,4 +25,8 @@ async def translate_and_send(reaction, message, target_language, original_author
         icon_url=original_author.avatar.url if original_author.avatar else original_author.default_avatar.url
     )
 
+    embed.set_footer(
+        text=f"Translated to {target_language} | Requested by {reaction.user.display_name}"
+    )
+
     await message.reply(embed=embed)
