@@ -155,11 +155,35 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
             start_date = end_date - timedelta(days=6)
             data = aggregate_summaries(start_date, end_date)
             title_color = "#7CFC00"  # Light Green
+
+            prev_end_date = start_date - timedelta(days=1)
+            prev_start_date = prev_end_date - timedelta(days=6)
+            previous_data = aggregate_summaries(prev_start_date, prev_end_date)
+
         elif frequency == "monthly":
             end_date = datetime.strptime(date, "%Y-%m-%d").replace(day=1) - timedelta(days=1)
             start_date = end_date.replace(day=1)
             data = aggregate_summaries(start_date, end_date)
             title_color = "#FFD700"  # Yellow
+
+            prev_end_date = start_date - timedelta(days=1)
+            prev_start_date = prev_end_date.replace(day=1)
+            previous_data = aggregate_summaries(prev_start_date, prev_end_date)
+
+        if frequency in ["weekly", "monthly"]:
+            member_change = total_members - previous_data["total_members"]
+            member_change_str = f" (+{member_change})" if member_change > 0 else f" ({member_change})"
+            member_change_color = "green" if member_change > 0 else "red"
+            
+            total_message_change = data["total_messages"] - previous_data["total_messages"]
+            total_message_change_str = f" (+{total_message_change})" if total_message_change > 0 else f" ({total_message_change})"
+            total_message_change_color = "green" if total_message_change > 0 else "red"
+
+            for channel_id, count in data["messages"].items():
+                prev_count = previous_data["messages"].get(str(channel_id), 0)
+                message_change = count - prev_count
+                message_change_str[channel_id] = f" (+{message_change})" if message_change > 0 else f" ({message_change})"
+                message_change_color[channel_id] = "green" if message_change > 0 else "red"
 
         top_n = 5 if frequency == "daily" else 10
         
