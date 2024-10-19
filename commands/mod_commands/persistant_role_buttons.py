@@ -30,7 +30,6 @@ async def persistantRoleButtons(interaction: Interaction):
 
 
 async def handleRoleButtonInteraction(interaction: Interaction):
-    # Check if the interaction is of type component and access the component's custom ID via interaction.data
     if (
         interaction.type == InteractionType.component
         and "custom_id" in interaction.data
