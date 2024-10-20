@@ -1,7 +1,8 @@
 import discord
-from discord.ui import Modal, TextInput, Button, View
+from discord.ui import Button, View, Modal, TextInput
 from discord import ButtonStyle, Interaction, Forbidden
 import json
+import re
 
 persistent_views = {}
 
@@ -53,30 +54,42 @@ class RoleButtonView(View):
                 button = RoleButton(role_id=role_id, label=role_info["name"])
                 self.add_item(button)
 
-class RoleSelectionModal(Modal):
-    role_input = TextInput(label="Role Name or ID", placeholder="Enter the role name or ID", style=discord.TextStyle.short)
+class MessageLinkModal(Modal):
+    message_input = TextInput(
+        label="Message Link or ID",
+        placeholder="Enter the message link or ID",
+        style=discord.TextStyle.short
+    )
 
     def __init__(self, interaction: discord.Interaction):
-        super().__init__(title="Add Role Reaction")
+        super().__init__(title="Set Announcement Content")
         self.interaction = interaction
 
     async def on_submit(self, interaction: discord.Interaction):
-        role_input = self.role_input.value
-        guild = interaction.guild
-        role = discord.utils.get(guild.roles, name=role_input) or discord.utils.get(guild.roles, id=int(role_input))
+        message_input = self.message_input.value.strip()
+        message = None
 
-        if not role:
-            await interaction.response.send_message(f"Role '{role_input}' not found. Please try again.", ephemeral=True)
-            return
+        message_link_regex = re.compile(r"https://discord.com/channels/(?P<guild_id>\d+)/(?P<channel_id>\d+)/(?P<message_id>\d+)")
+        match = message_link_regex.match(message_input)
 
-        interaction.client.temp_data[interaction.user.id].setdefault("roles", {})[role.id] = {"name": role.name}
+        try:
+            if match:
+                channel_id = int(match.group("channel_id"))
+                message_id = int(match.group("message_id"))
+                channel = interaction.guild.get_channel(channel_id)
+                message = await channel.fetch_message(message_id)
+            else:
+                message_id = int(message_input)
+                message = await interaction.channel.fetch_message(message_id)
 
-        roles = interaction.client.temp_data[interaction.user.id]["roles"]
-        view = interaction.client.temp_data[interaction.user.id]["view"]
-        content = interaction.client.temp_data[interaction.user.id].get("content", "No content set.")
+            if message:
+                interaction.client.temp_data[interaction.user.id]["content"] = message.content
+                await interaction.response.send_message(f"Message content set successfully!", ephemeral=True)
+            else:
+                await interaction.response.send_message("Message not found. Please try again.", ephemeral=True)
 
-        message_content = f"Announcement: {content}\nRoles: {', '.join([r['name'] for r in roles.values()])}"
-        await interaction.response.edit_message(content=message_content, view=view)
+        except (ValueError, discord.NotFound):
+            await interaction.response.send_message("Invalid message ID or link. Please try again.", ephemeral=True)
 
 class AnnouncementSetupView(View):
     def __init__(self, interaction: discord.Interaction):
@@ -85,7 +98,7 @@ class AnnouncementSetupView(View):
 
     @discord.ui.button(label="Set Content", style=ButtonStyle.primary)
     async def set_content(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(AnnouncementContentModal(interaction))
+        await interaction.response.send_modal(MessageLinkModal(interaction))
 
     @discord.ui.button(label="Add Role Reaction", style=ButtonStyle.secondary)
     async def add_role_reaction(self, interaction: discord.Interaction, button: Button):
@@ -98,7 +111,6 @@ class AnnouncementSetupView(View):
         view = RoleButtonView(roles)
 
         preview_view = PreviewView(channel=interaction.client.temp_data[interaction.user.id]["channel"], roles=roles, content=content)
-
         await interaction.response.send_message(f"**Preview**\n\n{content}", view=preview_view, ephemeral=True)
 
 class PreviewView(View):
@@ -118,22 +130,6 @@ class PreviewView(View):
 
         interaction.client.add_view(view, message_id=message.id)
         await interaction.response.send_message("Announcement sent successfully!", ephemeral=True)
-
-class AnnouncementContentModal(Modal):
-    content_input = TextInput(label="Announcement Content", placeholder="Enter the announcement content", style=discord.TextStyle.long)
-
-    def __init__(self, interaction: discord.Interaction):
-        super().__init__(title="Set Announcement Content")
-        self.interaction = interaction
-
-    async def on_submit(self, interaction: discord.Interaction):
-        content = self.content_input.value
-        interaction.client.temp_data[interaction.user.id]["content"] = content
-
-        roles = interaction.client.temp_data[interaction.user.id].get("roles", {})
-        view = interaction.client.temp_data[interaction.user.id]["view"]
-        message_content = f"Announcement: {content}\nRoles: {', '.join([r['name'] for r in roles.values()])}"
-        await interaction.response.edit_message(content=message_content, view=view)
 
 async def setup_announcement_command(interaction, channel):
     interaction.client.temp_data[interaction.user.id] = {"channel": channel, "roles": {}}
