@@ -172,8 +172,6 @@ class PreviewView(View):
             if isinstance(child, Button):
                 child.disabled = True
 
-        await interaction.edit_original_response(content="Announcement sent successfully!", view=self)
-
         followup_message = await interaction.followup.send("Announcement sent successfully!", ephemeral=True)
         await followup_message.delete(delay=3)
 
