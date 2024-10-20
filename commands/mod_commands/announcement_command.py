@@ -146,7 +146,7 @@ class AnnouncementSetupView(View):
             if isinstance(child, Button):
                 child.disabled = True
 
-        await interaction.response.edit_message(content="Announcement setup completed. Here is the preview.", view=self)
+        await interaction.followup.send("Announcement setup completed. Here is the preview.", view=self)
 
         await interaction.followup.send(f"**Preview**\n\n{content}", view=preview_view, ephemeral=True)
 
@@ -161,12 +161,17 @@ class PreviewView(View):
     @discord.ui.button(label="Confirm and Send", style=ButtonStyle.primary)
     async def confirm_and_send(self, interaction: discord.Interaction, button: Button):
         view = RoleButtonView(self.roles)
-        message = await self.channel.send(content=self.content, view=view)
+        try:
+            message = await self.channel.send(content=self.content, view=view)
 
-        persistent_views[message.id] = self.roles
-        save_persistent_views()
+            persistent_views[message.id] = self.roles
+            save_persistent_views()
 
-        interaction.client.add_view(view, message_id=message.id)
+            interaction.client.add_view(view, message_id=message.id)
+            await interaction.followup.send("Announcement sent successfully!", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message("Failed to send the announcement. Please try again.", ephemeral=True)
+            print(e)
 
 async def setup_announcement_command(interaction, channel):
     if not hasattr(interaction.client, 'temp_data'):
