@@ -126,9 +126,6 @@ class AnnouncementSetupView(View):
         super().__init__(timeout=None)
         self.interaction = interaction
         self.user_id = interaction.user.id
-    def __init__(self, interaction: discord.Interaction):
-        super().__init__(timeout=None)
-        self.interaction = interaction
 
     @discord.ui.button(label="Set Content", style=ButtonStyle.primary)
     async def set_content(self, interaction: discord.Interaction, button: Button):
@@ -164,11 +161,6 @@ class PreviewView(View):
         self.roles = roles
         self.content = content
         self.user_id = user_id
-    def __init__(self, channel, roles, content):
-        super().__init__(timeout=None)
-        self.channel = channel
-        self.roles = roles
-        self.content = content
 
     @discord.ui.button(label="Confirm and Send", style=ButtonStyle.primary)
     async def confirm_and_send(self, interaction: discord.Interaction, button: Button):
