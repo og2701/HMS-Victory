@@ -146,9 +146,10 @@ class AnnouncementSetupView(View):
             if isinstance(child, Button):
                 child.disabled = True
 
-        await interaction.edit_original_response(content="Announcement setup completed. Here is the preview.", view=self)
+        await interaction.followup.send(content="Announcement setup completed. Here is the preview.", view=self, ephemeral=True)
 
         await interaction.followup.send(f"**Preview**\n\n{content}", view=preview_view, ephemeral=True)
+
 
 class PreviewView(View):
     def __init__(self, channel, roles, content):
