@@ -141,7 +141,14 @@ class AnnouncementSetupView(View):
         view = RoleButtonView(roles)
 
         preview_view = PreviewView(channel=interaction.client.temp_data[interaction.user.id]["channel"], roles=roles, content=content)
-        await interaction.response.send_message(f"**Preview**\n\n{content}", view=preview_view, ephemeral=True)
+
+        for child in self.children:
+            if isinstance(child, Button):
+                child.disabled = True
+
+        await interaction.edit_original_response(content="Announcement setup completed. Here is the preview.", view=self)
+
+        await interaction.followup.send(f"**Preview**\n\n{content}", view=preview_view, ephemeral=True)
 
 class PreviewView(View):
     def __init__(self, channel, roles, content):
@@ -159,26 +166,12 @@ class PreviewView(View):
         save_persistent_views()
 
         interaction.client.add_view(view, message_id=message.id)
-
-        for child in self.children:
-            if isinstance(child, Button):
-                child.disabled = True
-
-        await interaction.edit_original_response(content="Announcement sent successfully!", view=self)
-
-        followup_message = await interaction.followup.send("Announcement sent successfully!")
-        await followup_message.delete(delay=3)
-
-
+        await interaction.response.send_message("Announcement sent successfully!", ephemeral=True, delete_after=1)
 
 async def setup_announcement_command(interaction, channel):
-    if not hasattr(interaction.client, 'temp_data'):
-        interaction.client.temp_data = {}
-
     interaction.client.temp_data[interaction.user.id] = {"channel": channel, "roles": {}}
 
     setup_view = AnnouncementSetupView(interaction)
     interaction.client.temp_data[interaction.user.id]["view"] = setup_view
 
     await interaction.response.send_message("Announcement setup started. Use the buttons below to configure.", view=setup_view, ephemeral=True)
-
