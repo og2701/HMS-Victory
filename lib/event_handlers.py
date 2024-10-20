@@ -14,7 +14,7 @@ from lib.log_functions import create_message_image, create_edited_message_image
 from lib.settings import *
 
 from commands.mod_commands.persistant_role_buttons import persistantRoleButtons, handleRoleButtonInteraction
-from commands.mod_commands.announcement_command import load_persistent_views
+from commands.mod_commands.announcement_command import load_persistent_views, RoleButtonView
 
 logger = logging.getLogger(__name__)
 
