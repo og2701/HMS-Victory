@@ -139,3 +139,6 @@ def define_commands(tree, client):
             return
         await toggleMuteDeafenPermissions(interaction, user)
 
+    @tree.command(name="setup-announcement", description="Setup an announcement with optional role buttons.")
+    async def setup_announcement(interaction: Interaction, channel: TextChannel):
+        await setup_announcement_command(interaction, channel)

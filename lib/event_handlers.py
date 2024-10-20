@@ -5,6 +5,7 @@ import os
 import aiohttp
 import io
 from apscheduler.triggers.cron import CronTrigger
+import json
 
 from lib.translation import translate_and_send
 from lib.summary import initialize_summary_data, update_summary_data, post_summary
@@ -26,12 +27,24 @@ async def on_ready(client, tree, scheduler):
     for command in tree.get_commands():
         logger.info(f"Command loaded: {command.name}")
 
+    client.temp_data = {}
+
+    persistent_views = load_persistent_views()
+
+    for message_id, roles in persistent_views.items():
+        if isinstance(roles, dict):
+            view = RoleButtonView(roles)
+            client.add_view(view, message_id=message_id)
+
+    logger.info("Persistent views reattached and loaded.")
+
     scheduler.add_job(client.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
     scheduler.add_job(client.weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=1, timezone="Europe/London"))
     scheduler.add_job(client.monthly_summary, CronTrigger(day=1, hour=0, minute=2, timezone="Europe/London"))
     scheduler.add_job(client.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=0, timezone="Europe/London"))
 
     scheduler.start()
+
 
 async def on_message(client, message):
     if not await restrict_channel_for_new_members(message, CHANNELS.POLITICS, 7, POLITICS_WHITELISTED_USER_IDS):
