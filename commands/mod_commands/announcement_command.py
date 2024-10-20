@@ -84,12 +84,12 @@ class MessageLinkModal(Modal):
 
             if message:
                 interaction.client.temp_data[interaction.user.id]["content"] = message.content
-                await interaction.response.send_message(f"Message content set successfully!", ephemeral=True, delete_after=1)
+                await interaction.response.send_message(f"Message content set successfully!", ephemeral=True, delete_after=3)
             else:
-                await interaction.response.send_message("Message not found. Please try again.", ephemeral=True, delete_after=1)
+                await interaction.response.send_message("Message not found. Please try again.", ephemeral=True, delete_after=3)
 
         except (ValueError, discord.NotFound):
-            await interaction.response.send_message("Invalid message ID or link. Please try again.", ephemeral=True, delete_after=1)
+            await interaction.response.send_message("Invalid message ID or link. Please try again.", ephemeral=True, delete_after=3)
 
 class RoleSelectionModal(Modal):
     role_input = TextInput(
@@ -109,7 +109,7 @@ class RoleSelectionModal(Modal):
         role = discord.utils.get(guild.roles, name=role_input) or discord.utils.get(guild.roles, id=int(role_input))
 
         if not role:
-            await interaction.response.send_message(f"Role '{role_input}' not found. Please try again.", ephemeral=True)
+            await interaction.response.send_message(f"Role '{role_input}' not found. Please try again.", ephemeral=True, delete_after=3)
             return
 
         interaction.client.temp_data[interaction.user.id].setdefault("roles", {})[role.id] = {"name": role.name}
@@ -146,7 +146,7 @@ class AnnouncementSetupView(View):
             if isinstance(child, Button):
                 child.disabled = True
 
-        await interaction.followup.send(content="Announcement setup completed. Here is the preview.", view=self, ephemeral=True)
+        await interaction.response.edit_message(content="Announcement setup completed. Here is the preview.", view=self)
 
         await interaction.followup.send(f"**Preview**\n\n{content}", view=preview_view, ephemeral=True)
 
@@ -167,16 +167,20 @@ class PreviewView(View):
         save_persistent_views()
 
         interaction.client.add_view(view, message_id=message.id)
-        await interaction.response.send_message("Announcement sent successfully!", ephemeral=True, delete_after=1)
+
+        for child in self.children:
+            if isinstance(child, Button):
+                child.disabled = True
+
+        await interaction.edit_original_response(content="Announcement sent successfully!", view=self)
+
+        followup_message = await interaction.followup.send("Announcement sent successfully!", ephemeral=True)
+        await followup_message.delete(delay=3)
 
 async def setup_announcement_command(interaction, channel):
-    if not hasattr(interaction.client, 'temp_data'):
-        interaction.client.temp_data = {}
-
     interaction.client.temp_data[interaction.user.id] = {"channel": channel, "roles": {}}
 
     setup_view = AnnouncementSetupView(interaction)
     interaction.client.temp_data[interaction.user.id]["view"] = setup_view
 
     await interaction.response.send_message("Announcement setup started. Use the buttons below to configure.", view=setup_view, ephemeral=True)
-
