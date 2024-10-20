@@ -31,12 +31,12 @@ async def handle_role_button_interaction(interaction: Interaction):
                     await interaction.user.add_roles(role)
                     await interaction.response.send_message(f"Role {role.name} assigned.", ephemeral=True, delete_after=3)
             except Forbidden:
-                await interaction.response.send_message("I do not have permission to assign this role.", ephemeral=True)
+                await interaction.response.send_message("I do not have permission to assign this role.", ephemeral=True, delete_after=3)
             except Exception as e:
-                await interaction.response.send_message("An error occurred while assigning the role.", ephemeral=True)
+                await interaction.response.send_message("An error occurred while assigning the role.", ephemeral=True, delete_after=3)
                 print(e)
         else:
-            await interaction.response.send_message("Role not found.", ephemeral=True)
+            await interaction.response.send_message("Role not found.", ephemeral=True, delete_after=3)
 
 class RoleButton(Button):
     def __init__(self, role_id: int, label: str):
@@ -109,7 +109,7 @@ class RoleSelectionModal(Modal):
         role = discord.utils.get(guild.roles, name=role_input) or discord.utils.get(guild.roles, id=int(role_input))
 
         if not role:
-            await interaction.response.send_message(f"Role '{role_input}' not found. Please try again.", ephemeral=True)
+            await interaction.response.send_message(f"Role '{role_input}' not found. Please try again.", ephemeral=True, delete_after=3)
             return
 
         interaction.client.temp_data[interaction.user.id].setdefault("roles", {})[role.id] = {"name": role.name}
@@ -125,26 +125,45 @@ class AnnouncementSetupView(View):
     def __init__(self, interaction: discord.Interaction):
         super().__init__(timeout=None)
         self.interaction = interaction
+        self.user_id = interaction.user.id
+    def __init__(self, interaction: discord.Interaction):
+        super().__init__(timeout=None)
+        self.interaction = interaction
 
     @discord.ui.button(label="Set Content", style=ButtonStyle.primary)
     async def set_content(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("You are not authorised to use this button.", ephemeral=True, delete_after=3)
+            return
         await interaction.response.send_modal(MessageLinkModal(interaction))
 
     @discord.ui.button(label="Add Role Reaction", style=ButtonStyle.secondary)
     async def add_role_reaction(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("You are not authorised to use this button.", ephemeral=True, delete_after=3)
+            return
         await interaction.response.send_modal(RoleSelectionModal(interaction))
 
     @discord.ui.button(label="Preview", style=ButtonStyle.success)
     async def preview(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("You are not authorised to use this button.", ephemeral=True, delete_after=3)
+            return
         content = interaction.client.temp_data.get(interaction.user.id, {}).get("content", "No content set.")
         roles = interaction.client.temp_data.get(interaction.user.id, {}).get("roles", {})
-        view = PreviewView(channel=interaction.client.temp_data[interaction.user.id]["channel"], roles=roles, content=content)
+        view = PreviewView(channel=interaction.client.temp_data[interaction.user.id]["channel"], roles=roles, content=content, user_id=self.user_id)
 
         message_content = f"**Preview** {content}\nRoles: {', '.join([r['name'] for r in roles.values()])}"
         await interaction.response.edit_message(content=message_content, view=view)
 
 
 class PreviewView(View):
+    def __init__(self, channel, roles, content, user_id):
+        super().__init__(timeout=None)
+        self.channel = channel
+        self.roles = roles
+        self.content = content
+        self.user_id = user_id
     def __init__(self, channel, roles, content):
         super().__init__(timeout=None)
         self.channel = channel
@@ -153,6 +172,9 @@ class PreviewView(View):
 
     @discord.ui.button(label="Confirm and Send", style=ButtonStyle.primary)
     async def confirm_and_send(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("You are not authorised to use this button.", ephemeral=True, delete_after=3)
+            return
         view = RoleButtonView(self.roles)
         try:
             message = await self.channel.send(content=self.content, view=view)
@@ -163,7 +185,7 @@ class PreviewView(View):
             interaction.client.add_view(view, message_id=message.id)
             await interaction.response.edit_message(content="Announcement sent successfully!", view=None)
         except discord.errors.NotFound as e:
-            await interaction.followup.send("Failed to send the announcement due to an unknown webhook or interaction. Please try again.", ephemeral=True)
+            await interaction.followup.send("Failed to send the announcement due to an unknown webhook or interaction. Please try again.", ephemeral=True, delete_after=3)
             print(e)
         except Exception as e:
             await interaction.followup.send("Failed to send the announcement. Please try again.")
