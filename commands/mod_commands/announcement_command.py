@@ -172,9 +172,6 @@ class PreviewView(View):
             if isinstance(child, Button):
                 child.disabled = True
 
-        followup_message = await interaction.followup.send("Announcement sent successfully!", ephemeral=True)
-        await followup_message.delete(delay=3)
-
 async def setup_announcement_command(interaction, channel):
     interaction.client.temp_data[interaction.user.id] = {"channel": channel, "roles": {}}
 
