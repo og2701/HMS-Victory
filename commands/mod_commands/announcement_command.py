@@ -160,7 +160,11 @@ class PreviewView(View):
 
         interaction.client.add_view(view, message_id=message.id)
 
-        await interaction.followup.send("Announcement sent successfully!", delete_after=3)
+        await interaction.delete_original_response()
+
+        followup_message = await interaction.followup.send("Announcement sent successfully!")
+        await followup_message.delete(delay=3)
+
 
 
 async def setup_announcement_command(interaction, channel):
