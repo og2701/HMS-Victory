@@ -175,6 +175,9 @@ class PreviewView(View):
         await interaction.message.edit(view=self)
 
 async def setup_announcement_command(interaction, channel):
+    if not hasattr(interaction.client, 'temp_data'):
+        interaction.client.temp_data = {}
+
     interaction.client.temp_data[interaction.user.id] = {"channel": channel, "roles": {}}
 
     setup_view = AnnouncementSetupView(interaction)
