@@ -160,11 +160,13 @@ class PreviewView(View):
 
         interaction.client.add_view(view, message_id=message.id)
 
-        await interaction.delete_original_response()
+        try:
+            await interaction.edit_original_response(content="Announcement sent successfully!", view=None)
+        except discord.errors.NotFound:
+            logger.warning("Original interaction response not found; it might have already been deleted.")
 
         followup_message = await interaction.followup.send("Announcement sent successfully!")
         await followup_message.delete(delay=3)
-
 
 
 async def setup_announcement_command(interaction, channel):
