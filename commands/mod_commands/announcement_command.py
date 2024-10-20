@@ -91,6 +91,36 @@ class MessageLinkModal(Modal):
         except (ValueError, discord.NotFound):
             await interaction.response.send_message("Invalid message ID or link. Please try again.", ephemeral=True)
 
+class RoleSelectionModal(Modal):
+    role_input = TextInput(
+        label="Role Name or ID", 
+        placeholder="Enter the role name or ID", 
+        style=discord.TextStyle.short
+    )
+
+    def __init__(self, interaction: discord.Interaction):
+        super().__init__(title="Add Role Reaction")
+        self.interaction = interaction
+
+    async def on_submit(self, interaction: discord.Interaction):
+        role_input = self.role_input.value
+        guild = interaction.guild
+
+        role = discord.utils.get(guild.roles, name=role_input) or discord.utils.get(guild.roles, id=int(role_input))
+
+        if not role:
+            await interaction.response.send_message(f"Role '{role_input}' not found. Please try again.", ephemeral=True)
+            return
+
+        interaction.client.temp_data[interaction.user.id].setdefault("roles", {})[role.id] = {"name": role.name}
+
+        roles = interaction.client.temp_data[interaction.user.id]["roles"]
+        view = interaction.client.temp_data[interaction.user.id]["view"]
+        content = interaction.client.temp_data[interaction.user.id].get("content", "No content set.")
+
+        message_content = f"Announcement: {content}\nRoles: {', '.join([r['name'] for r in roles.values()])}"
+        await interaction.response.edit_message(content=message_content, view=view)
+
 class AnnouncementSetupView(View):
     def __init__(self, interaction: discord.Interaction):
         super().__init__(timeout=None)
