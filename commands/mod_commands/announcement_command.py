@@ -91,14 +91,29 @@ class AnnouncementSetupView(View):
     async def add_role_reaction(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_modal(RoleSelectionModal(interaction))
 
-    @discord.ui.button(label="Confirm", style=ButtonStyle.success)
-    async def confirm(self, interaction: discord.Interaction, button: Button):
+    @discord.ui.button(label="Preview", style=ButtonStyle.success)
+    async def preview(self, interaction: discord.Interaction, button: Button):
         content = interaction.client.temp_data.get(interaction.user.id, {}).get("content", "No content set.")
         roles = interaction.client.temp_data.get(interaction.user.id, {}).get("roles", {})
         view = RoleButtonView(roles)
-        message = await interaction.client.temp_data[interaction.user.id]["channel"].send(content=f"{content}", view=view)
 
-        persistent_views[message.id] = roles
+        preview_view = PreviewView(channel=interaction.client.temp_data[interaction.user.id]["channel"], roles=roles, content=content)
+
+        await interaction.response.send_message(f"**Preview**\n\n{content}", view=preview_view, ephemeral=True)
+
+class PreviewView(View):
+    def __init__(self, channel, roles, content):
+        super().__init__(timeout=None)
+        self.channel = channel
+        self.roles = roles
+        self.content = content
+
+    @discord.ui.button(label="Confirm and Send", style=ButtonStyle.primary)
+    async def confirm_and_send(self, interaction: discord.Interaction, button: Button):
+        view = RoleButtonView(self.roles)
+        message = await self.channel.send(content=self.content, view=view)
+
+        persistent_views[message.id] = self.roles
         save_persistent_views()
 
         interaction.client.add_view(view, message_id=message.id)
