@@ -172,6 +172,8 @@ class PreviewView(View):
             if isinstance(child, Button):
                 child.disabled = True
 
+        await interaction.message.edit(view=self)
+
 async def setup_announcement_command(interaction, channel):
     interaction.client.temp_data[interaction.user.id] = {"channel": channel, "roles": {}}
 
