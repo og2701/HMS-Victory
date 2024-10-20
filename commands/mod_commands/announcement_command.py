@@ -26,10 +26,10 @@ async def handle_role_button_interaction(interaction: Interaction):
             try:
                 if role in interaction.user.roles:
                     await interaction.user.remove_roles(role)
-                    await interaction.response.send_message(f"Role {role.name} removed.", ephemeral=True)
+                    await interaction.response.send_message(f"Role {role.name} removed.", ephemeral=True, delete_after=3)
                 else:
                     await interaction.user.add_roles(role)
-                    await interaction.response.send_message(f"Role {role.name} assigned.", ephemeral=True)
+                    await interaction.response.send_message(f"Role {role.name} assigned.", ephemeral=True, delete_after=3)
             except Forbidden:
                 await interaction.response.send_message("I do not have permission to assign this role.", ephemeral=True)
             except Exception as e:
@@ -84,12 +84,12 @@ class MessageLinkModal(Modal):
 
             if message:
                 interaction.client.temp_data[interaction.user.id]["content"] = message.content
-                await interaction.response.send_message(f"Message content set successfully!", ephemeral=True)
+                await interaction.response.send_message(f"Message content set successfully!", ephemeral=True, delete_after=1)
             else:
-                await interaction.response.send_message("Message not found. Please try again.", ephemeral=True)
+                await interaction.response.send_message("Message not found. Please try again.", ephemeral=True, delete_after=1)
 
         except (ValueError, discord.NotFound):
-            await interaction.response.send_message("Invalid message ID or link. Please try again.", ephemeral=True)
+            await interaction.response.send_message("Invalid message ID or link. Please try again.", ephemeral=True, delete_after=1)
 
 class RoleSelectionModal(Modal):
     role_input = TextInput(
@@ -159,7 +159,9 @@ class PreviewView(View):
         save_persistent_views()
 
         interaction.client.add_view(view, message_id=message.id)
-        await interaction.response.send_message("Announcement sent successfully!", ephemeral=True)
+
+        await interaction.edit_original_response(content="Announcement sent successfully!", view=None)
+
 
 async def setup_announcement_command(interaction, channel):
     interaction.client.temp_data[interaction.user.id] = {"channel": channel, "roles": {}}
