@@ -138,17 +138,10 @@ class AnnouncementSetupView(View):
     async def preview(self, interaction: discord.Interaction, button: Button):
         content = interaction.client.temp_data.get(interaction.user.id, {}).get("content", "No content set.")
         roles = interaction.client.temp_data.get(interaction.user.id, {}).get("roles", {})
-        view = RoleButtonView(roles)
+        view = PreviewView(channel=interaction.client.temp_data[interaction.user.id]["channel"], roles=roles, content=content)
 
-        preview_view = PreviewView(channel=interaction.client.temp_data[interaction.user.id]["channel"], roles=roles, content=content)
-
-        for child in self.children:
-            if isinstance(child, Button):
-                child.disabled = True
-
-        await interaction.response.edit_message(content="Announcement setup completed. Here is the preview.", view=self)
-
-        await interaction.followup.send(content=f"**Preview** {content}", view=preview_view, ephemeral=True)
+        message_content = f"**Preview** {content}\nRoles: {', '.join([r['name'] for r in roles.values()])}"
+        await interaction.response.edit_message(content=message_content, view=view)
 
 
 class PreviewView(View):
@@ -168,7 +161,7 @@ class PreviewView(View):
             save_persistent_views()
 
             interaction.client.add_view(view, message_id=message.id)
-            await interaction.followup.send("Announcement sent successfully!", ephemeral=True)
+            await interaction.response.edit_message(content="Announcement sent successfully!", view=None)
         except discord.errors.NotFound as e:
             await interaction.followup.send("Failed to send the announcement due to an unknown webhook or interaction. Please try again.", ephemeral=True)
             print(e)
