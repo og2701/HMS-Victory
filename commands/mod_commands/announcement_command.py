@@ -106,7 +106,11 @@ class RoleSelectionModal(Modal):
         role_input = self.role_input.value
         guild = interaction.guild
 
-        role = discord.utils.get(guild.roles, name=role_input) or discord.utils.get(guild.roles, id=int(role_input))
+        role = discord.utils.get(guild.roles, name=role_input)
+        try:
+            role = role or discord.utils.get(guild.roles, id=int(role_input))
+        except ValueError:
+            role = None
 
         if not role:
             await interaction.response.send_message(f"Role '{role_input}' not found. Please try again.", ephemeral=True, delete_after=3)
