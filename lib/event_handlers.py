@@ -22,14 +22,15 @@ MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
 async def on_ready(client, tree, scheduler):
     global POLITICS_WHITELISTED_USER_IDS
+
     if not client.synced:
         await tree.sync()
         client.synced = True
+    
     logger.info(f"Logged in as {client.user}")
-    for command in tree.get_commands():
-        logger.info(f"Command loaded: {command.name}")
 
-    client.temp_data = {}
+    if not hasattr(client, 'temp_data'):
+        client.temp_data = {}
 
     persistent_views = load_persistent_views()
 
@@ -39,6 +40,9 @@ async def on_ready(client, tree, scheduler):
             client.add_view(view, message_id=message_id)
 
     logger.info("Persistent views reattached and loaded.")
+
+    for command in tree.get_commands():
+        logger.info(f"Command loaded: {command.name}")
 
     scheduler.add_job(client.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
     scheduler.add_job(client.weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=1, timezone="Europe/London"))
