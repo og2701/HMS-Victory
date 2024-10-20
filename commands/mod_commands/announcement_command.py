@@ -170,10 +170,10 @@ class PreviewView(View):
             interaction.client.add_view(view, message_id=message.id)
             await interaction.followup.send("Announcement sent successfully!", ephemeral=True)
         except discord.errors.NotFound as e:
-            await interaction.response.send_message("Failed to send the announcement due to an unknown webhook or interaction. Please try again.", ephemeral=True)
+            await interaction.followup.send("Failed to send the announcement due to an unknown webhook or interaction. Please try again.", ephemeral=True)
             print(e)
         except Exception as e:
-            await interaction.response.send_message("Failed to send the announcement. Please try again.", ephemeral=True)
+            await interaction.followup.send("Failed to send the announcement. Please try again.")
             print(e)
 
 async def setup_announcement_command(interaction, channel):
@@ -185,4 +185,4 @@ async def setup_announcement_command(interaction, channel):
     setup_view = AnnouncementSetupView(interaction)
     interaction.client.temp_data[interaction.user.id]["view"] = setup_view
 
-    await interaction.response.send_message("Announcement setup started. Use the buttons below to configure.", view=setup_view, ephemeral=True)
+    await interaction.response.send_message("Announcement setup started. Use the buttons below to configure.", view=setup_view)
