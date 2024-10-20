@@ -141,4 +141,7 @@ def define_commands(tree, client):
 
     @tree.command(name="setup-announcement", description="Setup an announcement with optional role buttons.")
     async def setup_announcement(interaction: Interaction, channel: TextChannel):
+        if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
         await setup_announcement_command(interaction, channel)
