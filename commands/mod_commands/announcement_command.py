@@ -168,12 +168,6 @@ class PreviewView(View):
 
         interaction.client.add_view(view, message_id=message.id)
 
-        for child in self.children:
-            if isinstance(child, Button):
-                child.disabled = True
-
-        await interaction.message.edit(view=self)
-
 async def setup_announcement_command(interaction, channel):
     if not hasattr(interaction.client, 'temp_data'):
         interaction.client.temp_data = {}
