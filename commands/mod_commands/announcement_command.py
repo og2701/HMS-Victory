@@ -26,10 +26,10 @@ async def handle_role_button_interaction(interaction: Interaction):
             try:
                 if role in interaction.user.roles:
                     await interaction.user.remove_roles(role)
-                    await interaction.response.send_message(f"Role {role.name} removed.", ephemeral=True, delete_after=3)
+                    await interaction.response.send_message(f"Role {role.name} removed.", ephemeral=True)
                 else:
                     await interaction.user.add_roles(role)
-                    await interaction.response.send_message(f"Role {role.name} assigned.", ephemeral=True, delete_after=3)
+                    await interaction.response.send_message(f"Role {role.name} assigned.", ephemeral=True)
             except Forbidden:
                 await interaction.response.send_message("I do not have permission to assign this role.", ephemeral=True)
             except Exception as e:
@@ -84,12 +84,12 @@ class MessageLinkModal(Modal):
 
             if message:
                 interaction.client.temp_data[interaction.user.id]["content"] = message.content
-                await interaction.response.send_message(f"Message content set successfully!", ephemeral=True, delete_after=3)
+                await interaction.response.send_message(f"Message content set successfully!", ephemeral=True)
             else:
-                await interaction.response.send_message("Message not found. Please try again.", ephemeral=True, delete_after=3)
+                await interaction.response.send_message("Message not found. Please try again.", ephemeral=True)
 
         except (ValueError, discord.NotFound):
-            await interaction.response.send_message("Invalid message ID or link. Please try again.", ephemeral=True, delete_after=3)
+            await interaction.response.send_message("Invalid message ID or link. Please try again.", ephemeral=True)
 
 class RoleSelectionModal(Modal):
     role_input = TextInput(
@@ -109,7 +109,7 @@ class RoleSelectionModal(Modal):
         role = discord.utils.get(guild.roles, name=role_input) or discord.utils.get(guild.roles, id=int(role_input))
 
         if not role:
-            await interaction.response.send_message(f"Role '{role_input}' not found. Please try again.", ephemeral=True, delete_after=3)
+            await interaction.response.send_message(f"Role '{role_input}' not found. Please try again.", ephemeral=True)
             return
 
         interaction.client.temp_data[interaction.user.id].setdefault("roles", {})[role.id] = {"name": role.name}
@@ -169,6 +169,9 @@ class PreviewView(View):
 
             interaction.client.add_view(view, message_id=message.id)
             await interaction.followup.send("Announcement sent successfully!", ephemeral=True)
+        except discord.errors.NotFound as e:
+            await interaction.response.send_message("Failed to send the announcement due to an unknown webhook or interaction. Please try again.", ephemeral=True)
+            print(e)
         except Exception as e:
             await interaction.response.send_message("Failed to send the announcement. Please try again.", ephemeral=True)
             print(e)
