@@ -6,7 +6,7 @@ from PIL import Image, ImageChops
 import difflib
 from html2image import Html2Image
 
-hti = Html2Image(output_path='.')
+hti = Html2Image(output_path='.', browser_executable='/usr/bin/google-chrome')
 
 def trim(im):
     bg = Image.new(im.mode, im.size, (255, 255, 255))
