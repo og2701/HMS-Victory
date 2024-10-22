@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "Installing dependencies..."
-pip3 install -r /home/ubuntu/HMS-Victory/requirements.txt
+python3 -m pip install -r /home/ubuntu/HMS-Victory/requirements.txt
 
 while true
 do
