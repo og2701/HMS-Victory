@@ -8,4 +8,4 @@ html2image
 pytz
 apscheduler
 pytz
-openai
+openai==0.27.0
