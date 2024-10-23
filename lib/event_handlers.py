@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
+sticker_messages = {}
+
 async def on_ready(client, tree, scheduler):
     global POLITICS_WHITELISTED_USER_IDS
 
@@ -204,8 +206,9 @@ async def on_reaction_add(reaction, user):
                     reason = f"Timed out due to ':Shut:' reaction by {user.name}#{user.discriminator}."
                     duration = timedelta(minutes=5)
                     await message_author.timeout(discord.utils.utcnow() + duration, reason=reason)
-                    
-                    await reaction.message.reply(stickers=[discord.Object(id=1298758779428536361)])
+
+                    sticker_message = await reaction.message.reply(stickers=[discord.Object(id=1298758779428536361)])
+                    sticker_messages[reaction.message.id] = sticker_message.id
                     logger.info(f"User {message_author} was timed out for 5 minutes due to ':Shut:' reaction by {user}.")
                 except Exception as e:
                     logger.error(f"Failed to time out user {message_author}: {e}")
@@ -223,8 +226,17 @@ async def on_reaction_remove(reaction, user):
                 reason = f"Timeout removed due to ':Shut:' reaction being removed by {user.name}#{user.discriminator}."
                 await message_author.timeout(None, reason=reason)
                 logger.info(f"Timeout for user {message_author} was removed due to ':Shut:' reaction being removed by {user}.")
+
+                sticker_message_id = sticker_messages.get(reaction.message.id)
+                if sticker_message_id:
+                    sticker_message = await reaction.message.channel.fetch_message(sticker_message_id)
+                    await sticker_message.delete()
+                    del sticker_messages[reaction.message.id]
+                    logger.info(f"Deleted sticker message with ID {sticker_message_id} due to reaction being removed.")
+
             except Exception as e:
-                logger.error(f"Failed to remove timeout for user {message_author}: {e}")
+                logger.error(f"Failed to remove timeout or delete sticker message for user {message_author}: {e}")
+
 
 
 async def on_member_update(client, before, after):
