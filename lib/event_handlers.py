@@ -199,6 +199,9 @@ async def on_reaction_add(reaction, user):
                     reason = f"Timed out due to ':Shut:' reaction by {user.name}#{user.discriminator}."
                     duration = timedelta(minutes=5)
                     await message_author.timeout(discord.utils.utcnow() + duration, reason=reason)
+                    await reaction.message.channel.send(
+                        f"{message_author.mention} <:Shut:1298748043532701726>"
+                    )
                     logger.info(f"User {message_author} was timed out for 5 minutes due to ':Shut:' reaction by {user}.")
                 except Exception as e:
                     logger.error(f"Failed to time out user {message_author}: {e}")
