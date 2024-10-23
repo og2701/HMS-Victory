@@ -16,6 +16,8 @@ def define_commands(tree, client):
         description="Manages user roles by assigning a specified role to members who don't have it",
     )
     async def role_management(interaction: Interaction, role_name: str):
+        if interaction.user.id != USERS.OGGERS:
+            return;
         await updateRoleAssignments(interaction, role_name)
 
     @tree.command(
