@@ -208,7 +208,17 @@ async def on_reaction_add(reaction, user):
 
 
 async def on_reaction_remove(reaction, user):
-    pass
+    if ":Shut:" in str(reaction.emoji):
+        has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
+        if has_role:
+            message_author = reaction.message.author
+            try:
+                reason = f"Timeout removed due to ':Shut:' reaction being removed by {user.name}#{user.discriminator}."
+                await message_author.timeout(None, reason=reason)
+                logger.info(f"Timeout for user {message_author} was removed due to ':Shut:' reaction being removed by {user}.")
+            except Exception as e:
+                logger.error(f"Failed to remove timeout for user {message_author}: {e}")
+
 
 async def on_member_update(client, before, after):
     updates_channel = client.get_channel(CHANNELS.MEMBER_UPDATES)
