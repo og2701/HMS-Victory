@@ -189,8 +189,20 @@ async def on_reaction_add(reaction, user):
 
             if message.content:
                 await translate_and_send(reaction, message, target_language, message.author, user)
+
+        if str(reaction.emoji) == ":Shut:":
+            has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
+            if has_role:
+                message_author = reaction.message.author
+                try:
+                    await message_author.timeout_for(300, reason="Timed out due to ':Shut:' reaction by a staff member.")
+                    logger.info(f"User {message_author} was timed out for 5 minutes due to ':Shut:' reaction.")
+                except Exception as e:
+                    logger.error(f"Failed to time out user {message_author}: {e}")
+
     except Exception as e:
         logger.error(f"Error in on_reaction_add: {e}")
+
 
 
 async def on_reaction_remove(reaction, user):
