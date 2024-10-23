@@ -175,6 +175,7 @@ async def on_message_edit(client, before, after):
                 await log_channel.send(file=discord.File(f, "edited_message.png"), embed=embed)
             os.remove(image_file_path)
 
+
 async def on_reaction_add(reaction, user):
     is_in_mapping = str(reaction.emoji) in FLAG_LANGUAGE_MAPPINGS
     try:
@@ -197,15 +198,14 @@ async def on_reaction_add(reaction, user):
                 message_author = reaction.message.author
                 try:
                     reason = f"Timed out due to ':Shut:' reaction by {user.name}#{user.discriminator}."
-                    await message_author.edit(timeout=discord.utils.utcnow() + timedelta(minutes=5), reason=reason)
+                    duration = timedelta(minutes=5)
+                    await message_author.timeout(until=discord.utils.utcnow() + duration, reason=reason)
                     logger.info(f"User {message_author} was timed out for 5 minutes due to ':Shut:' reaction by {user}.")
                 except Exception as e:
                     logger.error(f"Failed to time out user {message_author}: {e}")
 
     except Exception as e:
         logger.error(f"Error in on_reaction_add: {e}")
-
-
 
 
 async def on_reaction_remove(reaction, user):
