@@ -195,12 +195,17 @@ async def on_reaction_add(reaction, user):
             has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
             if has_role:
                 message_author = reaction.message.author
+
+                if message_author.is_timed_out():
+                    logger.info(f"User {message_author} is already timed out. Skipping further actions.")
+                    return
+
                 try:
                     reason = f"Timed out due to ':Shut:' reaction by {user.name}#{user.discriminator}."
                     duration = timedelta(minutes=5)
                     await message_author.timeout(discord.utils.utcnow() + duration, reason=reason)
-                    await reaction.message.channel.send(
-                        f"{message_author.mention} <:Shut:1298748043532701726>"
+                    await reaction.message.reply(
+                        sticker=discord.Object(id=1298758779428536361)
                     )
                     logger.info(f"User {message_author} was timed out for 5 minutes due to ':Shut:' reaction by {user}.")
                 except Exception as e:
