@@ -195,8 +195,9 @@ async def on_reaction_add(reaction, user):
             if has_role:
                 message_author = reaction.message.author
                 try:
-                    await message_author.timeout_for(300, reason="Timed out due to ':Shut:' reaction by a staff member.")
-                    logger.info(f"User {message_author} was timed out for 5 minutes due to ':Shut:' reaction.")
+                    reason = f"Timed out due to ':Shut:' reaction by {user.name}#{user.discriminator}."
+                    await message_author.timeout_for(300, reason=reason)
+                    logger.info(f"User {message_author} was timed out for 5 minutes due to ':Shut:' reaction by {user}.")
                 except Exception as e:
                     logger.error(f"Failed to time out user {message_author}: {e}")
 
