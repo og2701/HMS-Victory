@@ -176,7 +176,6 @@ async def on_message_edit(client, before, after):
 
 async def on_reaction_add(reaction, user):
     is_in_mapping = str(reaction.emoji) in FLAG_LANGUAGE_MAPPINGS
-    logger.info(str(reaction.emoji))
     try:
         if is_in_mapping:
             message = reaction.message
@@ -191,7 +190,7 @@ async def on_reaction_add(reaction, user):
             if message.content:
                 await translate_and_send(reaction, message, target_language, message.author, user)
 
-        if str(reaction.emoji) == ":Shut:":
+        if ":Shut:" in str(reaction.emoji):
             has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
             if has_role:
                 message_author = reaction.message.author
