@@ -6,7 +6,7 @@ openai.api_key = os.getenv("OPENAI_TOKEN")
 
 target_language_mappings = {
     "Over the top 'roadman' speak": "Roadman",
-    "Pig speak (e.g oink oink)": "Pig"
+    "Oink oink (pig) speak": "Pig"
 }
 
 async def translate_and_send(reaction, message, target_language, original_author, reacting_user):
