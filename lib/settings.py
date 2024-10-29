@@ -284,5 +284,7 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🇿🇲": "English",              # Zambia
     "🇿🇼": "Shona",                # Zimbabwe
     "🏴‍☠️": "Pirate Speak",
-    "🤓": "Nerd Speak"
+    "🤓": "Nerd Speak",
+    "�": "Over the top 'roadman' speak",
+    "�": "Pig speak"
 }
