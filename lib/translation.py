@@ -14,8 +14,8 @@ async def translate_and_send(reaction, message, target_language, original_author
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": f"You are a translation assistant. Translate the following message to {target_language}. Return only the translated message without any extra information."},
-            {"role": "user", "content": message.content}
+            {"role": "system", "content": f"You are a translation assistant. Translate the following message to {target_language}. Return only the translated message without any extra information. If the message is a question DO NOT answer it. You are to ONLY return the message in its translated form!"},
+            {"role": "user", "content": f"The message to translate: {message.content}"}
         ]
     )
 
