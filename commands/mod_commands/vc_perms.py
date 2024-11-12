@@ -1,5 +1,6 @@
 from discord import Embed, CategoryChannel
 from discord.ext import commands
+from lib.settings import *
 
 async def toggleMuteDeafenPermissions(interaction, member):
     """
@@ -14,7 +15,7 @@ async def toggleMuteDeafenPermissions(interaction, member):
         None
     """
 
-    category = interaction.guild.get_channel(959493057076666379)
+    category = interaction.guild.get_channel(CATEGORIES.PERM_VC)
 
     if category is not None and isinstance(category, CategoryChannel):
         current_perms = category.permissions_for(member)
@@ -38,7 +39,7 @@ async def toggleMuteDeafenPermissions(interaction, member):
     else:
         error_embed = Embed(
             title="Error",
-            description="Category 'permanent vc' (959493057076666379) not found.",
+            description="Category 'permanent vc' not found.",
             color=0xFF0000
         )
         await interaction.response.send_message(embed=error_embed)

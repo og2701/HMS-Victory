@@ -40,6 +40,9 @@ class USERS:
 	OGGERS = 404634271861571584
 	COUNTRYBALL_BOT = 999736048596816014
 
+class CATEGORIES:
+	PERM_VC = 959493057076666379
+
 POLITICS_WHITELISTED_USER_IDS = load_whitelist()
 
 command_usage_tracker = defaultdict(lambda: {'count': 0, 'last_used': None})
