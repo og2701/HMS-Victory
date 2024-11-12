@@ -147,3 +147,17 @@ def define_commands(tree, client):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
         await setup_announcement_command(interaction, channel)
+
+    @tree.command(name="lockdown-vcs", description="Locks down all voice channels.")
+    async def lockdown_vcs_command(interaction: Interaction):
+        if not has_any_role(interaction, [ROLES.CABINET]):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+        await lockdown_vcs(interaction)
+
+    @tree.command(name="end-lockdown-vcs", description="Ends the lockdown on all voice channels.")
+    async def end_lockdown_vcs_command(interaction: Interaction):
+        if not has_any_role(interaction, [ROLES.CABINET]):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+        await end_lockdown_vcs(interaction)  

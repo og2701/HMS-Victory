@@ -112,7 +112,7 @@ async def on_message_delete(client, message):
     else:
         deleter = None
 
-    log_channel = client.get_channel(959723562892144690)
+    log_channel = client.get_channel(CHANNELS.LOGS)
     channel_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
     if log_channel is not None:
         if message.content:
@@ -160,7 +160,7 @@ async def on_message_edit(client, before, after):
     if before.author.bot:
         return
 
-    log_channel = client.get_channel(959723562892144690)
+    log_channel = client.get_channel(CHANNELS.LOGS)
     if log_channel is not None:
         image_file_path = await create_edited_message_image(before, after)
 
