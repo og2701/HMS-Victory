@@ -2,6 +2,12 @@ import asyncio
 from discord import Embed, VoiceChannel, Permissions
 from lib.settings import *
 
+allowed_roles = [
+    ROLES.DUKE, ROLES.MARQUESS, ROLES.EARL, ROLES.VISCOUNT, ROLES.BARON,
+    ROLES.KNIGHT, ROLES.LORD, ROLES.ESQUIRE, ROLES.GENTLEMAN, ROLES.YEOMAN,
+    ROLES.COMMONER, ROLES.FREEMAN, ROLES.PEASANT, ROLES.SERF
+]
+
 async def lockdown_vcs(interaction):
     """
     Locks down all voice channels in a specified category, removing members without specific roles and preventing re-entry.
@@ -12,12 +18,6 @@ async def lockdown_vcs(interaction):
     Returns:
         None
     """
-
-    allowed_roles = [
-        ROLES.DUKE, ROLES.MARQUESS, ROLES.EARL, ROLES.VISCOUNT, ROLES.BARON,
-        ROLES.KNIGHT, ROLES.LORD, ROLES.ESQUIRE, ROLES.GENTLEMAN, ROLES.YEOMAN,
-        ROLES.COMMONER, ROLES.FREEMAN, ROLES.PEASANT, ROLES.SERF
-    ]
     
     lockdown_embed = Embed(
         title="🚨 Voice Channel Lockdown 🚨",
