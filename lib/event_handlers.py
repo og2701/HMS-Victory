@@ -23,6 +23,9 @@ MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
 sticker_messages = {}
 
+def is_lockdown_active():
+    return os.path.exists(VC_LOCKDOWN_FILE)
+
 async def on_ready(client, tree, scheduler):
     global POLITICS_WHITELISTED_USER_IDS
 
@@ -358,6 +361,15 @@ async def on_member_update(client, before, after):
         logger.info(f"Changes detected for {after.name}: {embed.to_dict()}")
     else:
         logger.info("No relevant changes detected.")
+
+
+async def on_voice_state_update(member, before, after):
+    if not is_lockdown_active():
+        return
+
+    if after.channel and not before.channel:
+        if not any(role.id in VC_LOCKDOWN_WHITELIST for role in member.roles):
+            await member.edit(mute=True, deafen=True)
 
 
 

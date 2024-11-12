@@ -118,6 +118,9 @@ class AClient(discord.Client):
     async def on_member_update(self, before, after):
         await on_member_update(self, before, after)
 
+    async def on_voice_state_update(self, member, before, after):
+        await on_voice_state_update(member, before, after)
+
     async def clear_image_cache(self):
         self.image_cache.clear()
         logger.info("Image cache cleared.")
