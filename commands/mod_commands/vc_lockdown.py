@@ -1,11 +1,6 @@
+import asyncio
 from discord import Embed, VoiceChannel, Permissions
 from lib.settings import *
-
-allowed_roles = [
-    ROLES.DUKE, ROLES.MARQUESS, ROLES.EARL, ROLES.VISCOUNT, ROLES.BARON,
-    ROLES.KNIGHT, ROLES.LORD, ROLES.ESQUIRE, ROLES.GENTLEMAN, ROLES.YEOMAN,
-    ROLES.COMMONER, ROLES.FREEMAN, ROLES.PEASANT, ROLES.SERF
-]
 
 async def lockdown_vcs(interaction):
     """
@@ -17,12 +12,18 @@ async def lockdown_vcs(interaction):
     Returns:
         None
     """
+
+    allowed_roles = [
+        ROLES.DUKE, ROLES.MARQUESS, ROLES.EARL, ROLES.VISCOUNT, ROLES.BARON,
+        ROLES.KNIGHT, ROLES.LORD, ROLES.ESQUIRE, ROLES.GENTLEMAN, ROLES.YEOMAN,
+        ROLES.COMMONER, ROLES.FREEMAN, ROLES.PEASANT, ROLES.SERF
+    ]
     
     lockdown_embed = Embed(
         title="🚨 Voice Channel Lockdown 🚨",
         description=(
             "🔒 All voice channels in the specified category are now **restricted**.\n"
-            "Only members with authorised roles can join or stay in these voice channels.\n"
+            "Only members with authorized roles can join or stay in these voice channels.\n"
             "Members without permissions will be removed from VCs immediately."
         ),
         color=0xFF0000
@@ -45,19 +46,24 @@ async def lockdown_vcs(interaction):
     
     for channel in category.voice_channels:
         overwrite = channel.overwrites_for(guild.default_role)
-        overwrite.connect = False
-        await channel.set_permissions(guild.default_role, overwrite=overwrite)
+        if overwrite.connect != False:
+            overwrite.connect = False
+            await channel.set_permissions(guild.default_role, overwrite=overwrite)
+            await asyncio.sleep(1)
 
         for role_id in allowed_roles:
             role = guild.get_role(role_id)
             if role:
                 role_overwrite = channel.overwrites_for(role)
-                role_overwrite.connect = True
-                await channel.set_permissions(role, overwrite=role_overwrite)
+                if role_overwrite.connect != True:
+                    role_overwrite.connect = True
+                    await channel.set_permissions(role, overwrite=role_overwrite)
+                    await asyncio.sleep(1)
 
         for member in channel.members:
             if not any(role.id in allowed_roles for role in member.roles):
                 await member.move_to(None)
+                await asyncio.sleep(1)
 
 async def end_lockdown_vcs(interaction):
     """
@@ -86,7 +92,7 @@ async def end_lockdown_vcs(interaction):
     if logs_channel:
         await logs_channel.send(embed=end_lockdown_embed)
 
-    category_id = 959493057076666379
+    category_id = CATEGORIES.PERM_VC
     guild = interaction.guild
     category = guild.get_channel(category_id)
     
@@ -96,12 +102,16 @@ async def end_lockdown_vcs(interaction):
     
     for channel in category.voice_channels:
         overwrite = channel.overwrites_for(guild.default_role)
-        overwrite.connect = None
-        await channel.set_permissions(guild.default_role, overwrite=overwrite)
+        if overwrite.connect is not None:
+            overwrite.connect = None
+            await channel.set_permissions(guild.default_role, overwrite=overwrite)
+            await asyncio.sleep(1) 
 
         for role_id in allowed_roles:
             role = guild.get_role(role_id)
             if role:
                 role_overwrite = channel.overwrites_for(role)
-                role_overwrite.connect = None
-                await channel.set_permissions(role, overwrite=role_overwrite)
+                if role_overwrite.connect is not None:
+                    role_overwrite.connect = None
+                    await channel.set_permissions(role, overwrite=role_overwrite)
+                    await asyncio.sleep(1)
