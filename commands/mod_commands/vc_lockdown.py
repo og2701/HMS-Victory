@@ -17,7 +17,7 @@ async def lockdown_vcs(interaction):
     lockdown_embed = Embed(
         title="🚨 Voice Channel Lockdown Activated 🚨",
         description=(
-            "🔒 All voice channels are now restricted. Unauthorized members will be server-muted and deafened."
+            "🔒 All voice channels are now restricted. Unauthorised members will be server-muted and deafened."
         ),
         color=0xFF0000
     )
