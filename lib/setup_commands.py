@@ -157,7 +157,7 @@ def define_commands(tree, client):
 
     @tree.command(name="end-lockdown-vcs", description="Ends the lockdown on all voice channels.")
     async def end_lockdown_vcs_command(interaction: Interaction):
-        if not has_any_role(interaction, [ROLES.CABINET]):
+        if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
         await end_lockdown_vcs(interaction)  
