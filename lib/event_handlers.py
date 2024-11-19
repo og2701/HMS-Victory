@@ -272,9 +272,9 @@ async def on_member_update(client, before, after):
     mod_channel = client.get_channel(CHANNELS.POLICE_STATION)
     assigned_roles = {role.id for role in after.roles}
 
-   flagged = False
+    flagged = False
 
-   if recently_flagged_users[user_id]:
+    if recently_flagged_users[user_id]:
         flagged = True
 
     if not flagged all_onboarding_roles.issubset(assigned_roles):
