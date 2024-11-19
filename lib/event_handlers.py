@@ -23,6 +23,22 @@ MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
 sticker_messages = {}
 
+all_onboarding_roles = {
+    ROLES.BRITISH,
+    ROLES.ENGLISH,
+    ROLES.SCOTTISH,
+    ROLES.WELSH,
+    ROLES.NORTHERN_IRISH,
+    ROLES.COMMONWEALTH,
+    ROLES.VISITOR,
+}
+nationality_onboarding_roles = {
+    ROLES.ENGLISH,
+    ROLES.SCOTTISH,
+    ROLES.WELSH,
+    ROLES.NORTHERN_IRISH,
+}
+
 def is_lockdown_active():
     return os.path.exists(VC_LOCKDOWN_FILE)
 
@@ -250,6 +266,25 @@ async def on_reaction_remove(reaction, user):
 
 async def on_member_update(client, before, after):
     updates_channel = client.get_channel(CHANNELS.MEMBER_UPDATES)
+    assigned_roles = {role.id for role in after.roles}
+
+    if all_onboarding_roles.issubset(assigned_roles):
+        mod_channel = bot.get_channel(CHANNELS.POLICE_STATION)
+        if mod_channel:
+            await mod_channel.send(
+                f"🚩 **Potential bot detected:** {after.mention}\n"
+                f"Assigned themselves all onboarding roles: British, English, Scottish, Welsh, Northern Irish, Commonwealth, and Visitor. Please monitor."
+            )
+        return
+
+    if nationality_onboarding_roles.issubset(assigned_roles):
+        mod_channel = bot.get_channel(CHANNELS.POLICE_STATION)
+        if mod_channel:
+            await mod_channel.send(
+                f"🚩 **Potential bot detected:** {after.mention}\n"
+                f"Assigned themselves all nationality onboarding roles: English, Scottish, Welsh, and Northern Irish. Please monitor."
+            )
+        return
 
     if updates_channel is None:
         logger.warning("Updates channel not found.")
