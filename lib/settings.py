@@ -313,5 +313,5 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🏴‍☠️": "Pirate Speak",
     "🤓": "Nerd Speak",
     "🥷": "Over the top 'roadman' speak",
-    "🐷": "Oink oink (pig) speak"
+    "🎩": "Cockney rhyming slang"
 }
