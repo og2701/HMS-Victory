@@ -271,6 +271,7 @@ async def on_member_update(client, before, after):
     updates_channel = client.get_channel(CHANNELS.MEMBER_UPDATES)
     mod_channel = client.get_channel(CHANNELS.POLICE_STATION)
     assigned_roles = {role.id for role in after.roles}
+    user_id = after.id
 
     flagged = False
 
