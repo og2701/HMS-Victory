@@ -7,6 +7,7 @@ import aiohttp
 import io
 from apscheduler.triggers.cron import CronTrigger
 import json
+from collections import defaultdict
 
 from lib.translation import translate_and_send
 from lib.summary import initialize_summary_data, update_summary_data, post_summary
@@ -23,6 +24,8 @@ MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
 sticker_messages = {}
 
+recently_flagged_users = defaultdict(bool)
+
 all_onboarding_roles = {
     ROLES.BRITISH,
     ROLES.ENGLISH,
@@ -34,7 +37,7 @@ all_onboarding_roles = {
 }
 nationality_onboarding_roles = {
     ROLES.ENGLISH,
-    ROLES.SCOTTISH,
+    ROLES.SCOTTISH, 
     ROLES.WELSH,
     ROLES.NORTHERN_IRISH,
 }
@@ -266,25 +269,31 @@ async def on_reaction_remove(reaction, user):
 
 async def on_member_update(client, before, after):
     updates_channel = client.get_channel(CHANNELS.MEMBER_UPDATES)
+    mod_channel = client.get_channel(CHANNELS.POLICE_STATION)
     assigned_roles = {role.id for role in after.roles}
 
-    if all_onboarding_roles.issubset(assigned_roles):
-        mod_channel = client.get_channel(CHANNELS.POLICE_STATION)
+   flagged = False
+
+   if recently_flagged_users[user_id]:
+        flagged = True
+
+    if not flagged all_onboarding_roles.issubset(assigned_roles):
         if mod_channel:
             await mod_channel.send(
                 f"🚩 **Potential bot detected:** {after.mention}\n"
                 f"Assigned themselves all onboarding roles: British, English, Scottish, Welsh, Northern Irish, Commonwealth, and Visitor. Please monitor."
             )
-        return
+            recently_flagged_users[user_id] = True
+            flagged = True
 
-    if nationality_onboarding_roles.issubset(assigned_roles):
-        mod_channel = client.get_channel(CHANNELS.POLICE_STATION)
+    if not flagged and nationality_onboarding_roles.issubset(assigned_roles):
         if mod_channel:
             await mod_channel.send(
                 f"🚩 **Potential bot detected:** {after.mention}\n"
                 f"Assigned themselves all nationality onboarding roles: English, Scottish, Welsh, and Northern Irish. Please monitor."
             )
-        return
+            recently_flagged_users[user_id] = True
+            flagged = True
 
     if updates_channel is None:
         logger.warning("Updates channel not found.")
