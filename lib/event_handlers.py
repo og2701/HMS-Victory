@@ -269,7 +269,7 @@ async def on_member_update(client, before, after):
     assigned_roles = {role.id for role in after.roles}
 
     if all_onboarding_roles.issubset(assigned_roles):
-        mod_channel = bot.get_channel(CHANNELS.POLICE_STATION)
+        mod_channel = client.get_channel(CHANNELS.POLICE_STATION)
         if mod_channel:
             await mod_channel.send(
                 f"🚩 **Potential bot detected:** {after.mention}\n"
@@ -278,7 +278,7 @@ async def on_member_update(client, before, after):
         return
 
     if nationality_onboarding_roles.issubset(assigned_roles):
-        mod_channel = bot.get_channel(CHANNELS.POLICE_STATION)
+        mod_channel = client.get_channel(CHANNELS.POLICE_STATION)
         if mod_channel:
             await mod_channel.send(
                 f"🚩 **Potential bot detected:** {after.mention}\n"
