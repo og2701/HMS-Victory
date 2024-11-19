@@ -277,7 +277,7 @@ async def on_member_update(client, before, after):
     if recently_flagged_users[user_id]:
         flagged = True
 
-    if not flagged all_onboarding_roles.issubset(assigned_roles):
+    if not flagged and all_onboarding_roles.issubset(assigned_roles):
         if mod_channel:
             await mod_channel.send(
                 f"🚩 **Potential bot detected:** {after.mention}\n"
