@@ -270,31 +270,32 @@ async def on_reaction_remove(reaction, user):
 async def on_member_update(client, before, after):
     updates_channel = client.get_channel(CHANNELS.MEMBER_UPDATES)
     mod_channel = client.get_channel(CHANNELS.POLICE_STATION)
-    assigned_roles = {role.id for role in after.roles}
     user_id = after.id
 
-    flagged = False
+    before_roles = {role.id for role in before.roles}
+    after_roles = {role.id for role in after.roles}
+    newly_assigned_roles = after_roles - before_roles
 
     if recently_flagged_users[user_id]:
-        flagged = True
+        return
 
-    if not flagged and all_onboarding_roles.issubset(assigned_roles):
+    if all_onboarding_roles.issubset(after_roles) and all_onboarding_roles.intersection(newly_assigned_roles):
         if mod_channel:
             await mod_channel.send(
                 f"🚩 **Potential bot detected:** {after.mention}\n"
                 f"Assigned themselves all onboarding roles: British, English, Scottish, Welsh, Northern Irish, Commonwealth, and Visitor. Please monitor."
             )
             recently_flagged_users[user_id] = True
-            flagged = True
+            return
 
-    if not flagged and nationality_onboarding_roles.issubset(assigned_roles):
+    if nationality_onboarding_roles.issubset(after_roles) and nationality_onboarding_roles.intersection(newly_assigned_roles):
         if mod_channel:
             await mod_channel.send(
                 f"🚩 **Potential bot detected:** {after.mention}\n"
                 f"Assigned themselves all nationality onboarding roles: English, Scottish, Welsh, and Northern Irish. Please monitor."
             )
             recently_flagged_users[user_id] = True
-            flagged = True
+
 
     if updates_channel is None:
         logger.warning("Updates channel not found.")
