@@ -300,7 +300,7 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🇺🇦": "Ukrainian",            # Ukraine
     "🇺🇬": "Swahili",              # Uganda
     "🇺🇲": "English",              # U.S. Minor Outlying Islands
-    "🇺🇸": "English",              # United States
+    "🇺🇸": "Over the top american yank speak", # United States
     "🇺🇾": "Spanish",              # Uruguay
     "🇺🇿": "Uzbek",                # Uzbekistan
     "🇻🇦": "Italian",              # Vatican City
