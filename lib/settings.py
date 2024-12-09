@@ -68,7 +68,7 @@ VC_LOCKDOWN_WHITELIST = [
 FLAG_LANGUAGE_MAPPINGS = {
     "🏴󠁧󠁢󠁥󠁮󠁧󠁿": "English",               # England
     "🏴󠁧󠁢󠁷󠁬󠁳󠁿": "Welsh",                 # Wales
-    "🏴󠁧󠁢󠁳󠁣󠁴󠁿": "Scottish Gaelic",       # Scotland
+    # "🏴󠁧󠁢󠁳󠁣󠁴󠁿": "Scottish Gaelic",       # Scotland
     "🇦🇨": "English",              # Ascension Island
     "🇦🇩": "Catalan",              # Andorra
     "🇦🇪": "Arabic",               # United Arab Emirates
