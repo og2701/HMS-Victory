@@ -1,6 +1,6 @@
 import discord
 from discord import Interaction, InteractionType
-from datetime import timedelta
+from datetime import timedelta, datetime
 import logging
 import os
 import aiohttp
@@ -119,19 +119,30 @@ async def on_message(client, message):
             channel = guild.get_channel(channel_id)
             quoted_message = await channel.fetch_message(message_id)
 
-            reply_content = f"> {quoted_message.author}: {quoted_message.content}" if quoted_message.content else ""
+            timestamp = quoted_message.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            channel_name = channel.name
+            reply_content = f"> {quoted_message.author} in #{channel_name} at {timestamp}:\n"
 
-            if quoted_message.embeds:
+            if quoted_message.content:
+                reply_content += quoted_message.content
+
+            if quoted_message.attachments:
+                attachment = quoted_message.attachments[0]
+                if attachment.content_type and attachment.content_type.startswith("image/") and attachment.size <= MAX_IMAGE_SIZE:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(attachment.url) as response:
+                            if response.status == 200:
+                                image_data = await response.read()
+                                image_file = discord.File(io.BytesIO(image_data), filename=attachment.filename)
+                                reply = await message.channel.send(content=reply_content, file=image_file)
+                elif attachment.size > MAX_IMAGE_SIZE:
+                    reply = await message.channel.send(f"{reply_content}\nAttachment is too large to display (max {MAX_IMAGE_SIZE / (1024 * 1024)} MB).")
+                else:
+                    reply = await message.channel.send(f"{reply_content}\n[Attachment: {attachment.url}]")
+            elif quoted_message.embeds:
                 embed = quoted_message.embeds[0]
                 embed_copy = discord.Embed.from_dict(embed.to_dict())
                 reply = await message.channel.send(content=reply_content, embed=embed_copy)
-            elif quoted_message.attachments:
-                attachment = quoted_message.attachments[0]
-                if attachment.content_type and attachment.content_type.startswith("image/"):
-                    reply = await message.channel.send(content=reply_content)
-                    await message.channel.send(attachment.url)
-                else:
-                    reply = await message.channel.send(content=f"{reply_content}\n[Attachment: {attachment.url}]")
             else:
                 reply = await message.channel.send(reply_content)
 
@@ -147,7 +158,7 @@ async def on_message(client, message):
             try:
                 await client.wait_for("reaction_add", timeout=60.0, check=check)
                 await reply.delete()
-            except discord.TimeoutError:
+            except asyncio.TimeoutError:
                 await reply.clear_reactions()
         except Exception as e:
             logger.error(f"Error processing message link: {e}")
