@@ -8,6 +8,7 @@ import io
 from apscheduler.triggers.cron import CronTrigger
 import json
 from collections import defaultdict
+import asyncio
 
 from lib.translation import translate_and_send
 from lib.summary import initialize_summary_data, update_summary_data, post_summary
@@ -119,9 +120,10 @@ async def on_message(client, message):
             channel = guild.get_channel(channel_id)
             quoted_message = await channel.fetch_message(message_id)
 
-            timestamp = quoted_message.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            timestamp_unix = int(quoted_message.created_at.timestamp())
+            timestamp_formatted = f"<t:{timestamp_unix}:R>"
             channel_name = channel.name
-            reply_content = f"> {quoted_message.author} in #{channel_name} at {timestamp}:\n"
+            reply_content = f"> {quoted_message.author} in {channel_name} at {timestamp_formatted}:\n"
 
             if quoted_message.content:
                 reply_content += quoted_message.content
@@ -156,7 +158,7 @@ async def on_message(client, message):
                 )
 
             try:
-                await client.wait_for("reaction_add", timeout=60.0, check=check)
+                await client.wait_for("reaction_add", timeout=20.0, check=check)
                 await reply.delete()
             except asyncio.TimeoutError:
                 await reply.clear_reactions()
