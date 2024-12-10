@@ -119,7 +119,22 @@ async def on_message(client, message):
             channel = guild.get_channel(channel_id)
             quoted_message = await channel.fetch_message(message_id)
 
-            reply = await message.channel.send(f"> {quoted_message.author}: {quoted_message.content}")
+            reply_content = f"> {quoted_message.author}: {quoted_message.content}" if quoted_message.content else ""
+
+            if quoted_message.embeds:
+                embed = quoted_message.embeds[0]
+                embed_copy = discord.Embed.from_dict(embed.to_dict())
+                reply = await message.channel.send(content=reply_content, embed=embed_copy)
+            elif quoted_message.attachments:
+                attachment = quoted_message.attachments[0]
+                if attachment.content_type and attachment.content_type.startswith("image/"):
+                    reply = await message.channel.send(content=reply_content)
+                    await message.channel.send(attachment.url)
+                else:
+                    reply = await message.channel.send(content=f"{reply_content}\n[Attachment: {attachment.url}]")
+            else:
+                reply = await message.channel.send(reply_content)
+
             await reply.add_reaction("❌")
 
             def check(reaction, user):
