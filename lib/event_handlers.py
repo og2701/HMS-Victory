@@ -123,10 +123,10 @@ async def on_message(client, message):
             timestamp_unix = int(quoted_message.created_at.timestamp())
             timestamp_formatted = f"<t:{timestamp_unix}:f>"
             channel_name = channel.name
-            reply_content = f"> {quoted_message.author} in {channel_name} {timestamp_formatted}:\n"
+            reply_content = f"{quoted_message.author} in {channel_name} {timestamp_formatted}:\n"
 
             if quoted_message.content:
-                reply_content += quoted_message.content
+                reply_content += f"> {quoted_message.content}"
 
             if quoted_message.attachments:
                 attachment = quoted_message.attachments[0]
