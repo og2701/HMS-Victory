@@ -99,7 +99,7 @@ async def on_message(client, message):
                                         color=discord.Color.blue()
                                     )
                                     embed.add_field(name="Message Link", value=f"[Click here](https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id})")
-                                    embed.set_image(url=f"attachment://{image_filename}") 
+                                    embed.set_image(url=f"attachment://{image_filename}")
                                     cached_message = await cache_channel.send(embed=embed, file=file)
                                     if cached_message.embeds[0].image.url:
                                         if message.id not in client.image_cache:
@@ -107,6 +107,35 @@ async def on_message(client, message):
                                         client.image_cache[message.id][attachment.url] = cached_message.embeds[0].image.url
                         else:
                             logger.info(f"Skipped downloading {attachment.filename} as it exceeds the size limit of {MAX_IMAGE_SIZE / (1024 * 1024)} MB.")
+
+    if "discord.com/channels/" in message.content:
+        try:
+            link_parts = message.content.split("/")
+            guild_id = int(link_parts[4])
+            channel_id = int(link_parts[5])
+            message_id = int(link_parts[6])
+
+            guild = client.get_guild(guild_id)
+            channel = guild.get_channel(channel_id)
+            quoted_message = await channel.fetch_message(message_id)
+
+            reply = await message.channel.send(f"> {quoted_message.author}: {quoted_message.content}")
+            await reply.add_reaction("❌")
+
+            def check(reaction, user):
+                return (
+                    user == message.author
+                    and str(reaction.emoji) == "❌"
+                    and reaction.message.id == reply.id
+                )
+
+            try:
+                await client.wait_for("reaction_add", timeout=60.0, check=check)
+                await reply.delete()
+            except discord.TimeoutError:
+                await reply.clear_reactions()
+        except Exception as e:
+            logger.error(f"Error processing message link: {e}")
 
 async def on_interaction(interaction: Interaction):
     if (
