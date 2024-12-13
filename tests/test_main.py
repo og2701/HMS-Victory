@@ -26,8 +26,8 @@ class TestAClient(unittest.TestCase):
         client = AClient()
         client.synced = False
         client.user = AsyncMock()
-        client.user.id = 123  # Mock user ID
-        client.on_ready()  # This is an async function, but testing for call only
+        client.user.id = 123
+        client.on_ready()
         mock_tree.sync.assert_called_once()
 
     @patch("main.handleRoleButtonInteraction")
