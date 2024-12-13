@@ -161,6 +161,15 @@ async def on_message(client, message):
             channel_name = channel.name
             reply_content = f"@__{quoted_message.author}__ in *{channel_name}* {timestamp_formatted}:\n"
 
+            if channel_id == "INSERT POLICE STATION CHANNEL ID HERE":
+                was_there_a_bad_word = "blocked" in quoted_message.split("decision_outcome",1) 
+                if was_there_a_bad_word:
+                    the_bad_word_was = quoted_message.split("keyword_matched_content", 1)
+                    reply = await message.channel.send(
+                    content=f"My dude, the word {the_bad_word_was} is somewhat frowned upon here. Please revise your spelling or drown yourself in iced tea you fucking rebel yankwank flag shagging tossgoblin."
+                )
+
+
             if quoted_message.content:
                 reply_content += f"> {quoted_message.content}"
 
