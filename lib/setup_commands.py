@@ -17,7 +17,7 @@ def define_commands(tree, client):
     )
     async def role_management(interaction: Interaction, role_name: str):
         if interaction.user.id != USERS.OGGERS:
-            return;
+            return
         await updateRoleAssignments(interaction, role_name)
 
     @tree.command(
@@ -26,25 +26,33 @@ def define_commands(tree, client):
     async def colour_palette(interaction: Interaction, attachment_url: str):
         await colourPalette(interaction, attachment_url)
 
-    @tree.command(name="gridify", description="Adds a pixel art grid overlay to an image")
+    @tree.command(
+        name="gridify", description="Adds a pixel art grid overlay to an image"
+    )
     async def gridify_command(interaction: Interaction, attachment_url: str):
         await gridify(interaction, attachment_url)
 
     @tree.command(name="role-react", description="Adds a reaction role to a message")
     async def role_react_command(interaction: Interaction):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            await interaction.response.send_message(
+                "You do not have permission to use this command.", ephemeral=True
+            )
             return
         await persistantRoleButtons(interaction)
 
-    @tree.command(name="screenshot-canvas", description="Takes a screenshot of the current canvas")
+    @tree.command(
+        name="screenshot-canvas", description="Takes a screenshot of the current canvas"
+    )
     async def screenshot_canvas(interaction: Interaction, x: int = -770, y: int = 7930):
         await screenshotCanvas(interaction, x, y)
 
     @tree.command(name="add-to-iceberg", description="Adds text to the iceberg image")
     async def add_to_iceberg_command(interaction: Interaction, text: str, level: int):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            await interaction.response.send_message(
+                "You do not have permission to use this command.", ephemeral=True
+            )
             return
         await add_iceberg_text(interaction, text, level)
 
@@ -52,25 +60,41 @@ def define_commands(tree, client):
     async def show_iceberg_command(interaction: Interaction):
         await show_iceberg(interaction)
 
-    @tree.command(name="add-whitelist", description="Adds a user to the whitelist for the politics channel")
+    @tree.command(
+        name="add-whitelist",
+        description="Adds a user to the whitelist for the politics channel",
+    )
     async def add_whitelist_command(interaction: Interaction, user: Member):
-        if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+        if not has_any_role(
+            interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]
+        ):
+            await interaction.response.send_message(
+                "You do not have permission to use this command.", ephemeral=True
+            )
             return
 
         if user.id not in POLITICS_WHITELISTED_USER_IDS:
             POLITICS_WHITELISTED_USER_IDS.append(user.id)
             save_whitelist(POLITICS_WHITELISTED_USER_IDS)
-            await interaction.response.send_message(f"{user.mention} has been added to the whitelist.", ephemeral=True)
+            await interaction.response.send_message(
+                f"{user.mention} has been added to the whitelist.", ephemeral=True
+            )
         else:
-            await interaction.response.send_message(f"{user.mention} is already in the whitelist.", ephemeral=True)
+            await interaction.response.send_message(
+                f"{user.mention} is already in the whitelist.", ephemeral=True
+            )
 
-    @tree.command(name="post-daily-summary", description="Posts the daily summary in the current channel for a specific date")
+    @tree.command(
+        name="post-daily-summary",
+        description="Posts the daily summary in the current channel for a specific date",
+    )
     async def post_daily_summary(interaction: Interaction, date: str = None):
         if not has_role(interaction, ROLES.MINISTER):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            await interaction.response.send_message(
+                "You do not have permission to use this command.", ephemeral=True
+            )
             return
-        
+
         if date is None:
             uk_timezone = pytz.timezone("Europe/London")
             date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
@@ -79,40 +103,68 @@ def define_commands(tree, client):
                 date_obj = datetime.strptime(date, "%Y-%m-%d")
                 date = date_obj.strftime("%Y-%m-%d")
             except ValueError:
-                await interaction.response.send_message("Invalid date format. Please use YYYY-MM-DD.", ephemeral=True)
+                await interaction.response.send_message(
+                    "Invalid date format. Please use YYYY-MM-DD.", ephemeral=True
+                )
                 return
 
         summary_file_path = f"daily_summaries/daily_summary_{date}.json"
         if not os.path.exists(summary_file_path):
-            await interaction.response.send_message(f"No summary available for {date}.", ephemeral=True)
+            await interaction.response.send_message(
+                f"No summary available for {date}.", ephemeral=True
+            )
             return
 
-        await post_summary(client, interaction.channel.id, "daily", interaction.channel, date)
+        await post_summary(
+            client, interaction.channel.id, "daily", interaction.channel, date
+        )
 
-        await interaction.response.send_message(f"Posted daily summary for {date}.", ephemeral=True)
+        await interaction.response.send_message(
+            f"Posted daily summary for {date}.", ephemeral=True
+        )
 
     @tree.command(name="politics-ban", description="Toggles politics ban for a member")
     async def manage_role_command(interaction: Interaction, user: Member):
-        if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+        if not has_any_role(
+            interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]
+        ):
+            await interaction.response.send_message(
+                "You do not have permission to use this command.", ephemeral=True
+            )
             return
 
         role = interaction.guild.get_role(ROLES.POLITICS_BAN)
         if not role:
-            await interaction.response.send_message(f"Role with ID {role_id} not found.", ephemeral=True)
+            await interaction.response.send_message(
+                f"Role with ID {role_id} not found.", ephemeral=True
+            )
             return
-        
+
         if role in user.roles:
             await user.remove_roles(role)
-            await interaction.response.send_message(f"Role {role.name} has been removed from {user.mention}.", ephemeral=True)
+            await interaction.response.send_message(
+                f"Role {role.name} has been removed from {user.mention}.",
+                ephemeral=True,
+            )
         else:
             await user.add_roles(role)
-            await interaction.response.send_message(f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True)
+            await interaction.response.send_message(
+                f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True
+            )
 
-    @tree.command(name="roast", description="Roast a user based on recent messages in a channel")
-    async def summarise(interaction: Interaction, channel: TextChannel = None, user: Member = None):
-        if not has_any_role(interaction, [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER]):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+    @tree.command(
+        name="roast", description="Roast a user based on recent messages in a channel"
+    )
+    async def summarise(
+        interaction: Interaction, channel: TextChannel = None, user: Member = None
+    ):
+        if not has_any_role(
+            interaction,
+            [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER],
+        ):
+            await interaction.response.send_message(
+                "You do not have permission to use this command.", ephemeral=True
+            )
             return
 
         today = datetime.now().date()
@@ -122,42 +174,62 @@ def define_commands(tree, client):
             await sassy_summary(interaction, channel, user)
             return
 
-        if usage_data['last_used'] != today:
-            usage_data['count'] = 0
-            usage_data['last_used'] = today
+        if usage_data["last_used"] != today:
+            usage_data["count"] = 0
+            usage_data["last_used"] = today
 
-        if usage_data['count'] >= SUMMARISE_DAILY_LIMIT:
-            await interaction.response.send_message(f"You've hit the daily limit of {SUMMARISE_DAILY_LIMIT} usages for this command", ephemeral=True)
+        if usage_data["count"] >= SUMMARISE_DAILY_LIMIT:
+            await interaction.response.send_message(
+                f"You've hit the daily limit of {SUMMARISE_DAILY_LIMIT} usages for this command",
+                ephemeral=True,
+            )
             return
 
-        usage_data['count'] += 1
+        usage_data["count"] += 1
 
         await sassy_summary(interaction, channel, user)
 
-    @tree.command(name="vc-control", description="Toggles server mute/deafen perms for a user")
+    @tree.command(
+        name="vc-control", description="Toggles server mute/deafen perms for a user"
+    )
     async def vc_control(interaction: Interaction, user: Member):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            await interaction.response.send_message(
+                "You do not have permission to use this command.", ephemeral=True
+            )
             return
         await toggleMuteDeafenPermissions(interaction, user)
 
-    @tree.command(name="setup-announcement", description="Setup an announcement with optional role buttons.")
+    @tree.command(
+        name="setup-announcement",
+        description="Setup an announcement with optional role buttons.",
+    )
     async def setup_announcement(interaction: Interaction, channel: TextChannel):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            await interaction.response.send_message(
+                "You do not have permission to use this command.", ephemeral=True
+            )
             return
         await setup_announcement_command(interaction, channel)
 
     @tree.command(name="lockdown-vcs", description="Locks down all voice channels.")
     async def lockdown_vcs_command(interaction: Interaction):
         if not has_any_role(interaction, [ROLES.CABINET]):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            await interaction.response.send_message(
+                "You do not have permission to use this command.", ephemeral=True
+            )
             return
         await lockdown_vcs(interaction)
 
-    @tree.command(name="end-lockdown-vcs", description="Ends the lockdown on all voice channels.")
+    @tree.command(
+        name="end-lockdown-vcs", description="Ends the lockdown on all voice channels."
+    )
     async def end_lockdown_vcs_command(interaction: Interaction):
-        if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+        if not has_any_role(
+            interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]
+        ):
+            await interaction.response.send_message(
+                "You do not have permission to use this command.", ephemeral=True
+            )
             return
-        await end_lockdown_vcs(interaction)  
+        await end_lockdown_vcs(interaction)

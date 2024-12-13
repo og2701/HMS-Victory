@@ -14,8 +14,9 @@ LEVEL_BOUNDS = {
     3: ((4, 174), (404, 266)),
     4: ((7, 276), (402, 353)),
     5: ((5, 364), (404, 446)),
-    6: ((4, 456), (402, 525))
+    6: ((4, 456), (402, 525)),
 }
+
 
 def random_color_excluding_blue_and_dark():
     while True:
@@ -24,6 +25,7 @@ def random_color_excluding_blue_and_dark():
         b = random.randint(0, 100)
         if r > 100 or g > 100:
             return (r, g, b)
+
 
 async def show_iceberg(interaction):
     """
@@ -36,7 +38,9 @@ async def show_iceberg(interaction):
         None
     """
     if not os.path.exists(ICEBERG_IMAGE_PATH):
-        await interaction.response.send_message("The base iceberg image does not exist.", ephemeral=True)
+        await interaction.response.send_message(
+            "The base iceberg image does not exist.", ephemeral=True
+        )
         return
 
     img = Image.open(ICEBERG_IMAGE_PATH)
@@ -47,7 +51,9 @@ async def show_iceberg(interaction):
         font = ImageFont.truetype(FONT_PATH, font_size)
         print(f"Loaded font with size: {font_size}")
     except IOError:
-        print(f"Failed to load custom font. Falling back to default font with size: {font_size}")
+        print(
+            f"Failed to load custom font. Falling back to default font with size: {font_size}"
+        )
         font = ImageFont.load_default()
 
     shadow_color = "black"
@@ -61,9 +67,14 @@ async def show_iceberg(interaction):
 
     def get_text_position(text, bounds, existing_positions):
         text_bbox = font.getbbox(text)
-        text_width, text_height = text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1]
+        text_width, text_height = (
+            text_bbox[2] - text_bbox[0],
+            text_bbox[3] - text_bbox[1],
+        )
 
-        if text_width > (bounds[1][0] - bounds[0][0]) or text_height > (bounds[1][1] - bounds[0][1]):
+        if text_width > (bounds[1][0] - bounds[0][0]) or text_height > (
+            bounds[1][1] - bounds[0][1]
+        ):
             raise ValueError("Text is too large to fit within the bounds")
 
         max_attempts = 100
@@ -73,7 +84,10 @@ async def show_iceberg(interaction):
             new_position = (x, y, x + text_width, y + text_height)
 
             if not any(
-                pos[0] < new_position[2] and pos[2] > new_position[0] and pos[1] < new_position[3] and pos[3] > new_position[1]
+                pos[0] < new_position[2]
+                and pos[2] > new_position[0]
+                and pos[1] < new_position[3]
+                and pos[3] > new_position[1]
                 for pos in existing_positions
             ):
                 return x, y
@@ -91,8 +105,13 @@ async def show_iceberg(interaction):
                     text_color = random_color_excluding_blue_and_dark()
                     draw.text(pos, txt, font=font, fill=text_color)
                     text_bbox = font.getbbox(txt)
-                    text_width, text_height = text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1]
-                    positions.append((pos[0], pos[1], pos[0] + text_width, pos[1] + text_height))
+                    text_width, text_height = (
+                        text_bbox[2] - text_bbox[0],
+                        text_bbox[3] - text_bbox[1],
+                    )
+                    positions.append(
+                        (pos[0], pos[1], pos[0] + text_width, pos[1] + text_height)
+                    )
             except ValueError as e:
                 print(f"Skipping text '{txt}' because: {e}")
 

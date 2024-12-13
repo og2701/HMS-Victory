@@ -10,28 +10,32 @@ from lib.settings import *
 
 SUMMARY_DATA_FILE = "daily_summaries/daily_summary_{date}.json"
 
+
 def initialize_summary_data():
     uk_timezone = pytz.timezone("Europe/London")
     date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
     file_path = SUMMARY_DATA_FILE.format(date=date)
-    
+
     if not os.path.exists(file_path):
         with open(file_path, "w") as file:
-            json.dump({
-                "total_members": 0,
-                "members_joined": 0,
-                "members_left": 0,
-                "members_banned": 0,
-                "messages": {},
-                "total_messages": 0,
-                "reactions_added": 0,
-                "reactions_removed": 0,
-                "deleted_messages": 0,
-                "boosters_gained": 0,
-                "boosters_lost": 0,
-                "active_members": {},
-                "reacting_members": {}
-            }, file)
+            json.dump(
+                {
+                    "total_members": 0,
+                    "members_joined": 0,
+                    "members_left": 0,
+                    "members_banned": 0,
+                    "messages": {},
+                    "total_messages": 0,
+                    "reactions_added": 0,
+                    "reactions_removed": 0,
+                    "deleted_messages": 0,
+                    "boosters_gained": 0,
+                    "boosters_lost": 0,
+                    "active_members": {},
+                    "reacting_members": {},
+                },
+                file,
+            )
     else:
         with open(file_path, "r") as file:
             data = json.load(file)
@@ -69,6 +73,7 @@ def update_summary_data(key, channel_id=None, user_id=None, remove=False):
     with open(file_path, "w") as file:
         json.dump(data, file)
 
+
 def aggregate_summaries(start_date, end_date):
     aggregated_data = {
         "total_members": 0,
@@ -83,7 +88,7 @@ def aggregate_summaries(start_date, end_date):
         "boosters_gained": 0,
         "boosters_lost": 0,
         "active_members": {},
-        "reacting_members": {}
+        "reacting_members": {},
     }
 
     current_date = start_date
@@ -106,8 +111,15 @@ def aggregate_summaries(start_date, end_date):
 
     return aggregated_data
 
-async def post_summary(client, log_channel_id, frequency, channel_override=None, date=None):
-    log_channel = client.get_channel(log_channel_id) if channel_override is None else channel_override
+
+async def post_summary(
+    client, log_channel_id, frequency, channel_override=None, date=None
+):
+    log_channel = (
+        client.get_channel(log_channel_id)
+        if channel_override is None
+        else channel_override
+    )
     guild = log_channel.guild
     total_members = guild.member_count
 
@@ -127,24 +139,44 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
                 data = json.load(file)
             title_color = "#7289da"  # Blue
 
-            previous_date = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+            previous_date = (
+                datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)
+            ).strftime("%Y-%m-%d")
             previous_file_path = SUMMARY_DATA_FILE.format(date=previous_date)
             if os.path.exists(previous_file_path):
                 with open(previous_file_path, "r") as previous_file:
                     previous_data = json.load(previous_file)
                 member_change = total_members - previous_data["total_members"]
-                member_change_str = f" (+{member_change})" if member_change > 0 else f" ({member_change})"
+                member_change_str = (
+                    f" (+{member_change})"
+                    if member_change > 0
+                    else f" ({member_change})"
+                )
                 member_change_color = "green" if member_change > 0 else "red"
-                
+
                 for channel_id, count in data["messages"].items():
                     prev_count = previous_data["messages"].get(channel_id, 0)
                     message_change = count - prev_count
-                    message_change_str[channel_id] = f" (+{message_change})" if message_change > 0 else f" ({message_change})"
-                    message_change_color[channel_id] = "green" if message_change > 0 else "red"
-                
-                total_message_change = data["total_messages"] - previous_data["total_messages"]
-                total_message_change_str = f" (+{total_message_change})" if total_message_change > 0 else f" ({total_message_change})"
-                total_message_change_color = "green" if total_message_change > 0 else "red"
+                    message_change_str[channel_id] = (
+                        f" (+{message_change})"
+                        if message_change > 0
+                        else f" ({message_change})"
+                    )
+                    message_change_color[channel_id] = (
+                        "green" if message_change > 0 else "red"
+                    )
+
+                total_message_change = (
+                    data["total_messages"] - previous_data["total_messages"]
+                )
+                total_message_change_str = (
+                    f" (+{total_message_change})"
+                    if total_message_change > 0
+                    else f" ({total_message_change})"
+                )
+                total_message_change_color = (
+                    "green" if total_message_change > 0 else "red"
+                )
             else:
                 member_change_str = ""
                 member_change_color = "white"
@@ -161,7 +193,9 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
             previous_data = aggregate_summaries(prev_start_date, prev_end_date)
 
         elif frequency == "monthly":
-            end_date = datetime.strptime(date, "%Y-%m-%d").replace(day=1) - timedelta(days=1)
+            end_date = datetime.strptime(date, "%Y-%m-%d").replace(day=1) - timedelta(
+                days=1
+            )
             start_date = end_date.replace(day=1)
             data = aggregate_summaries(start_date, end_date)
             title_color = "#FFD700"  # Yellow
@@ -172,24 +206,44 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
 
         if frequency in ["weekly", "monthly"]:
             member_change = total_members - previous_data["total_members"]
-            member_change_str = f" (+{member_change})" if member_change > 0 else f" ({member_change})"
+            member_change_str = (
+                f" (+{member_change})" if member_change > 0 else f" ({member_change})"
+            )
             member_change_color = "green" if member_change > 0 else "red"
-            
-            total_message_change = data["total_messages"] - previous_data["total_messages"]
-            total_message_change_str = f" (+{total_message_change})" if total_message_change > 0 else f" ({total_message_change})"
+
+            total_message_change = (
+                data["total_messages"] - previous_data["total_messages"]
+            )
+            total_message_change_str = (
+                f" (+{total_message_change})"
+                if total_message_change > 0
+                else f" ({total_message_change})"
+            )
             total_message_change_color = "green" if total_message_change > 0 else "red"
 
             for channel_id, count in data["messages"].items():
                 prev_count = previous_data["messages"].get(str(channel_id), 0)
                 message_change = count - prev_count
-                message_change_str[channel_id] = f" (+{message_change})" if message_change > 0 else f" ({message_change})"
-                message_change_color[channel_id] = "green" if message_change > 0 else "red"
+                message_change_str[channel_id] = (
+                    f" (+{message_change})"
+                    if message_change > 0
+                    else f" ({message_change})"
+                )
+                message_change_color[channel_id] = (
+                    "green" if message_change > 0 else "red"
+                )
 
         top_n = 5 if frequency == "daily" else 10
-        
-        active_members = sorted(data.get("active_members", {}).items(), key=lambda x: x[1], reverse=True)[:top_n]
-        reacting_members = sorted(data.get("reacting_members", {}).items(), key=lambda x: x[1], reverse=True)[:top_n]
-        top_channels = sorted(data.get("messages", {}).items(), key=lambda x: x[1], reverse=True)[:top_n]
+
+        active_members = sorted(
+            data.get("active_members", {}).items(), key=lambda x: x[1], reverse=True
+        )[:top_n]
+        reacting_members = sorted(
+            data.get("reacting_members", {}).items(), key=lambda x: x[1], reverse=True
+        )[:top_n]
+        top_channels = sorted(
+            data.get("messages", {}).items(), key=lambda x: x[1], reverse=True
+        )[:top_n]
 
         summary_data = {
             "total_members": f"{total_members} <span style='color: {member_change_color};'>{member_change_str}</span>",
@@ -202,9 +256,33 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
             "deleted_messages": data["deleted_messages"],
             "boosters_gained": data["boosters_gained"],
             "boosters_lost": data["boosters_lost"],
-            "top_channels": [(log_channel.guild.get_channel(int(channel_id)).name if log_channel.guild.get_channel(int(channel_id)) else "Deleted Channel", f"{count} <span style='color: {message_change_color.get(channel_id, 'white')};'>{message_change_str.get(channel_id, '')}</span>") for channel_id, count in top_channels],
-            "active_members": [(guild.get_member(int(user_id)).display_name if guild.get_member(int(user_id)) else "Unknown Member", count) for user_id, count in active_members],
-            "reacting_members": [(guild.get_member(int(user_id)).display_name if guild.get_member(int(user_id)) else "Unknown Member", count) for user_id, count in reacting_members]
+            "top_channels": [
+                (
+                    log_channel.guild.get_channel(int(channel_id)).name
+                    if log_channel.guild.get_channel(int(channel_id))
+                    else "Deleted Channel",
+                    f"{count} <span style='color: {message_change_color.get(channel_id, 'white')};'>{message_change_str.get(channel_id, '')}</span>",
+                )
+                for channel_id, count in top_channels
+            ],
+            "active_members": [
+                (
+                    guild.get_member(int(user_id)).display_name
+                    if guild.get_member(int(user_id))
+                    else "Unknown Member",
+                    count,
+                )
+                for user_id, count in active_members
+            ],
+            "reacting_members": [
+                (
+                    guild.get_member(int(user_id)).display_name
+                    if guild.get_member(int(user_id))
+                    else "Unknown Member",
+                    count,
+                )
+                for user_id, count in reacting_members
+            ],
         }
 
         title = f"{frequency.capitalize()} Server Summary"
