@@ -3,17 +3,6 @@ import asyncio
 
 
 async def updateRoleAssignments(interaction, role_name: str):
-    """
-    Updates the role assignments for members in the guild.
-
-    Args:
-        interaction (discord.Interaction): The interaction that triggered the command.
-        role_name (str): The name of the role to update.
-
-    Returns:
-        None
-    """
-    # check if user has permission to manage roles
     if not interaction.user.guild_permissions.manage_guild:
         await interaction.response.send_message(
             "You do not have permission to use this command."
@@ -26,7 +15,6 @@ async def updateRoleAssignments(interaction, role_name: str):
         await interaction.response.send_message(f"Role '{role_name}' not found.")
         return
 
-    # get members without specified role
     members_without_role = [
         member for member in guild.members if role not in member.roles
     ]
@@ -83,7 +71,6 @@ async def updateRoleAssignments(interaction, role_name: str):
         delay = 1.2
         members_given_role = []
 
-        # batch add roles
         for i in range(0, len(members_without_role), batch_size):
             batch = members_without_role[i : i + batch_size]
 
