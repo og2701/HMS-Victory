@@ -7,7 +7,7 @@ async def persistantRoleButtons(interaction: Interaction):
     role_embed = Embed(
         title="Get Roles",
         description="Select the buttons below to assign yourself a role.",
-        color=0xFFA500,  # Orange color
+        color=0xFFA500,  # orange
     )
 
     view = View()
