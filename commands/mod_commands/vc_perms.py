@@ -2,6 +2,7 @@ from discord import Embed, CategoryChannel
 from discord.ext import commands
 from lib.settings import *
 
+
 async def toggleMuteDeafenPermissions(interaction, member):
     """
     This command toggles the specified user's permissions to server mute and deafen others in all voice channels
@@ -25,21 +26,25 @@ async def toggleMuteDeafenPermissions(interaction, member):
             for channel in category.voice_channels:
                 await channel.set_permissions(member, overwrite=None)
         else:
-            await category.set_permissions(member, mute_members=True, deafen_members=True)
+            await category.set_permissions(
+                member, mute_members=True, deafen_members=True
+            )
             action = "granted"
             for channel in category.voice_channels:
-                await channel.set_permissions(member, mute_members=True, deafen_members=True)
-        
+                await channel.set_permissions(
+                    member, mute_members=True, deafen_members=True
+                )
+
         confirmation_embed = Embed(
             title="Success",
             description=f"Mute and deafen permissions for {member.display_name} have been {action} in the 'permanent vc' category and all voice channels under it.",
-            color=0x00FF00
+            color=0x00FF00,
         )
         await interaction.response.send_message(embed=confirmation_embed)
     else:
         error_embed = Embed(
             title="Error",
             description="Category 'permanent vc' not found.",
-            color=0xFF0000
+            color=0xFF0000,
         )
         await interaction.response.send_message(embed=error_embed)
