@@ -47,6 +47,9 @@ class AClient(discord.Client):
         await on_ready(self, tree, self.scheduler)
 
     async def on_message(self, message):
+        if message.author.id == '999736048596816014' or message.author.id == 999736048596816014:
+            logger.info('MESSAGE FROM BALLSDEX 999736048596816014:')
+            logger.info(message.content)
         if message.author.id == USERS.COUNTRYBALL_BOT and "A wild countryball appeared!" in message.content:
             channel = client.get_channel(CHANNELS.BOT_SPAM)
             if channel:
