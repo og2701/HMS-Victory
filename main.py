@@ -47,16 +47,12 @@ class AClient(discord.Client):
         await on_ready(self, tree, self.scheduler)
 
     async def on_message(self, message):
-        if message.author.id == USERS.COUNTRYBALL_BOT and message.content.startswith('A wild countryball appeared!'):
-
+        if message.author.id == USERS.COUNTRYBALL_BOT and "A wild countryball appeared!" in message.content:
             channel = client.get_channel(CHANNELS.BOT_SPAM)
-
             if channel:
                 await channel.send(f"<@&{ROLES.BALL_INSPECTOR}> A wild countryball appeared!")
-                return
-
-        if message.author.bot:
             return
+
 
         initialize_summary_data()
         update_summary_data("messages", channel_id=message.channel.id)
