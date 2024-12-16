@@ -50,7 +50,7 @@ class AClient(discord.Client):
         if message.author.id == '999736048596816014' or message.author.id == 999736048596816014:
             logger.info('MESSAGE FROM BALLSDEX 999736048596816014:')
             logger.info(message.content)
-        if message.author.id == USERS.COUNTRYBALL_BOT and "A wild countryball appeared!" in message.content:
+        if message.author.id == USERS.COUNTRYBALL_BOT and "A wild countryball" in message.content:
             channel = client.get_channel(CHANNELS.BOT_SPAM)
             if channel:
                 await channel.send(f"<@&{ROLES.BALL_INSPECTOR}> A wild countryball appeared!")
