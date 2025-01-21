@@ -96,15 +96,18 @@ def aggregate_summaries(start_date, end_date):
             for key in aggregated_data.keys():
                 if key in ["messages", "active_members", "reacting_members"]:
                     for sub_key, count in daily_data.get(key, {}).items():
-                        if sub_key not in aggregated_data[key]:
-                            aggregated_data[key][sub_key] = 0
-                        aggregated_data[key][sub_key] += count
+                        aggregated_data[key][sub_key] = aggregated_data[key].get(sub_key, 0) + count
+
+                elif key == "total_members":
+                    aggregated_data["total_members"] = daily_data.get("total_members", 0)
+
                 else:
                     aggregated_data[key] += daily_data.get(key, 0)
 
         current_date += timedelta(days=1)
 
     return aggregated_data
+
 
 async def post_summary(client, log_channel_id, frequency, channel_override=None, date=None):
     log_channel = client.get_channel(log_channel_id) if channel_override is None else channel_override
