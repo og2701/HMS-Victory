@@ -91,7 +91,7 @@ def define_commands(tree, client):
 
         await interaction.response.send_message(f"Posted daily summary for {date}.", ephemeral=True)
 
-    @tree.command(name="post-last-weekly-summary", description="Posts last week's weekly summary (Mon–Sun).")
+    @tree.command(name="post-last-weekly-summary", description="Posts the most recently completed Monday–Sunday.")
     async def post_last_weekly_summary(interaction: Interaction):
         if not has_role(interaction, ROLES.MINISTER):
             await interaction.response.send_message("You do not have permission.", ephemeral=True)
@@ -99,14 +99,11 @@ def define_commands(tree, client):
         uk_timezone = pytz.timezone("Europe/London")
         now = datetime.now(uk_timezone)
         weekday = now.weekday()
-        days_since_monday = weekday
-        this_monday = now - timedelta(days=days_since_monday)
-        last_monday = this_monday - timedelta(days=7)
-        date_str = last_monday.strftime("%Y-%m-%d")
-
+        this_monday = now - timedelta(days=weekday)
+        date_str = this_monday.strftime("%Y-%m-%d")
         await post_summary(client, interaction.channel.id, "weekly", interaction.channel, date_str)
         await interaction.response.send_message(
-            f"Posted last week's summary (Mon–Sun) for the period ending on {date_str}.",
+            f"Posted last week's summary using {date_str} (covers the Monday–Sunday prior).",
             ephemeral=True
         )
 
