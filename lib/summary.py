@@ -3,10 +3,8 @@ import json
 from datetime import datetime, timedelta
 import discord
 import pytz
-
 from lib.summary_html import create_summary_image
 from lib.settings import *
-
 
 SUMMARY_DATA_FILE = "daily_summaries/daily_summary_{date}.json"
 
@@ -14,7 +12,6 @@ def initialize_summary_data():
     uk_timezone = pytz.timezone("Europe/London")
     date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
     file_path = SUMMARY_DATA_FILE.format(date=date)
-    
     if not os.path.exists(file_path):
         with open(file_path, "w") as file:
             json.dump({
@@ -40,14 +37,12 @@ def initialize_summary_data():
         with open(file_path, "w") as file:
             json.dump(data, file)
 
-
 def update_summary_data(key, channel_id=None, user_id=None, remove=False):
     uk_timezone = pytz.timezone("Europe/London")
     date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
     file_path = SUMMARY_DATA_FILE.format(date=date)
     with open(file_path, "r") as file:
         data = json.load(file)
-
     if key == "messages" and channel_id:
         if str(channel_id) not in data["messages"]:
             data["messages"][str(channel_id)] = 0
@@ -65,7 +60,6 @@ def update_summary_data(key, channel_id=None, user_id=None, remove=False):
             del data["reacting_members"][str(user_id)]
     else:
         data[key] += 1
-
     with open(file_path, "w") as file:
         json.dump(data, file)
 
@@ -85,44 +79,36 @@ def aggregate_summaries(start_date, end_date):
         "active_members": {},
         "reacting_members": {}
     }
-
     current_date = start_date
     while current_date <= end_date:
         file_path = SUMMARY_DATA_FILE.format(date=current_date.strftime("%Y-%m-%d"))
         if os.path.exists(file_path):
             with open(file_path, "r") as file:
                 daily_data = json.load(file)
-
             for key in aggregated_data.keys():
                 if key in ["messages", "active_members", "reacting_members"]:
                     for sub_key, count in daily_data.get(key, {}).items():
-                        aggregated_data[key][sub_key] = aggregated_data[key].get(sub_key, 0) + count
-
+                        if sub_key not in aggregated_data[key]:
+                            aggregated_data[key][sub_key] = 0
+                        aggregated_data[key][sub_key] += count
                 elif key == "total_members":
                     aggregated_data["total_members"] = daily_data.get("total_members", 0)
-
                 else:
                     aggregated_data[key] += daily_data.get(key, 0)
-
         current_date += timedelta(days=1)
-
     return aggregated_data
-
 
 async def post_summary(client, log_channel_id, frequency, channel_override=None, date=None):
     log_channel = client.get_channel(log_channel_id) if channel_override is None else channel_override
     guild = log_channel.guild
     total_members = guild.member_count
-
     if date is None:
         uk_timezone = pytz.timezone("Europe/London")
         date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
-
     member_change_str = ""
     member_change_color = "white"
     message_change_str = {}
     message_change_color = {}
-
     if log_channel is not None:
         if frequency == "daily":
             date_obj = datetime.strptime(date, "%Y-%m-%d")
@@ -152,9 +138,9 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
             else:
                 total_message_change_str = ""
                 total_message_change_color = "white"
-
         elif frequency == "weekly":
-            end_date = datetime.strptime(date, "%Y-%m-%d")
+            date_obj = datetime.strptime(date, "%Y-%m-%d")
+            end_date = date_obj - timedelta(days=1)
             start_date = end_date - timedelta(days=6)
             data = aggregate_summaries(start_date, end_date)
             title_color = "#7CFC00"
@@ -175,9 +161,10 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
                 message_change = count - prev_count
                 message_change_str[channel_id] = f" (+{message_change})" if message_change > 0 else f" ({message_change})"
                 message_change_color[channel_id] = "green" if message_change > 0 else "red"
-
         elif frequency == "monthly":
-            end_date = datetime.strptime(date, "%Y-%m-%d").replace(day=1) - timedelta(days=1)
+            date_obj = datetime.strptime(date, "%Y-%m-%d")
+            this_month_start = date_obj.replace(day=1)
+            end_date = this_month_start - timedelta(days=1)
             start_date = end_date.replace(day=1)
             data = aggregate_summaries(start_date, end_date)
             title_color = "#FFD700"
@@ -197,12 +184,10 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
                 message_change = count - prev_count
                 message_change_str[channel_id] = f" (+{message_change})" if message_change > 0 else f" ({message_change})"
                 message_change_color[channel_id] = "green" if message_change > 0 else "red"
-
         top_n = 5 if frequency == "daily" else 10
         active_members = sorted(data.get("active_members", {}).items(), key=lambda x: x[1], reverse=True)[:top_n]
         reacting_members = sorted(data.get("reacting_members", {}).items(), key=lambda x: x[1], reverse=True)[:top_n]
         top_channels = sorted(data.get("messages", {}).items(), key=lambda x: x[1], reverse=True)[:top_n]
-
         summary_data = {
             "total_members": f"{total_members} <span style='color: {member_change_color};'>{member_change_str}</span>",
             "members_joined": data["members_joined"],
@@ -238,14 +223,12 @@ async def post_summary(client, log_channel_id, frequency, channel_override=None,
                 for user_id, count in reacting_members
             ]
         }
-
         image_path = await create_summary_image(summary_data, title, title_color)
         try:
             with open(image_path, "rb") as f:
                 await log_channel.send(file=discord.File(f, f"{frequency}_summary.png"))
         finally:
             os.remove(image_path)
-
         if frequency == "daily":
             data["total_members"] = total_members
             with open(file_path, "w") as file:
