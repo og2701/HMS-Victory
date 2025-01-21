@@ -107,6 +107,20 @@ def define_commands(tree, client):
             ephemeral=True
         )
 
+    @tree.command(name="post-last-monthly-summary", description="Posts last month's monthly summary in the current channel.")
+    async def post_last_monthly_summary(interaction: Interaction):
+        if not has_role(interaction, ROLES.MINISTER):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+        uk_timezone = pytz.timezone("Europe/London")
+        now = datetime.now(uk_timezone)
+        current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        last_month_end = current_month_start - timedelta(days=1)
+        date_str = last_month_end.strftime("%Y-%m-%d")
+        await post_summary(client, interaction.channel.id, "monthly", interaction.channel, date_str)
+        await interaction.response.send_message(f"Posted last month's monthly summary for the period ending {date_str}.", ephemeral=True)
+
+
 
     @tree.command(name="politics-ban", description="Toggles politics ban for a member")
     async def manage_role_command(interaction: Interaction, user: Member):
