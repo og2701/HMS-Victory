@@ -91,6 +91,23 @@ def define_commands(tree, client):
 
         await interaction.response.send_message(f"Posted daily summary for {date}.", ephemeral=True)
 
+    @tree.command(name="post-previous-weekly-summary", description="Posts the previous week's summary in the current channel.")
+    async def post_previous_weekly_summary(interaction: Interaction):
+        if not has_role(interaction, ROLES.MINISTER):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+
+        uk_timezone = pytz.timezone("Europe/London")
+        date_obj = datetime.now(uk_timezone) - timedelta(days=1)
+        date_str = date_obj.strftime("%Y-%m-%d")
+
+        await post_summary(client, interaction.channel.id, "weekly", interaction.channel, date_str)
+        await interaction.response.send_message(
+            f"Posted weekly summary for the 7-day period ending on {date_str}.", 
+            ephemeral=True
+        )
+
+
     @tree.command(name="politics-ban", description="Toggles politics ban for a member")
     async def manage_role_command(interaction: Interaction, user: Member):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
