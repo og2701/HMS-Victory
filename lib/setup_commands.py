@@ -91,34 +91,32 @@ def define_commands(tree, client):
 
         await interaction.response.send_message(f"Posted daily summary for {date}.", ephemeral=True)
 
-    @tree.command(name="post-previous-weekly-summary", description="Posts the previous week's summary in the current channel.")
-    async def post_previous_weekly_summary(interaction: Interaction):
+    @tree.command(name="post-last-weekly-summary", description="Posts last week's weekly summary.")
+    async def post_last_weekly_summary(interaction: Interaction):
         if not has_role(interaction, ROLES.MINISTER):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
-            return
-
-        uk_timezone = pytz.timezone("Europe/London")
-        date_obj = datetime.now(uk_timezone) - timedelta(days=1)
-        date_str = date_obj.strftime("%Y-%m-%d")
-
-        await post_summary(client, interaction.channel.id, "weekly", interaction.channel, date_str)
-        await interaction.response.send_message(
-            f"Posted weekly summary for the 7-day period ending on {date_str}.", 
-            ephemeral=True
-        )
-
-    @tree.command(name="post-last-monthly-summary", description="Posts last month's monthly summary in the current channel.")
-    async def post_last_monthly_summary(interaction: Interaction):
-        if not has_role(interaction, ROLES.MINISTER):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            await interaction.response.send_message("You do not have permission.", ephemeral=True)
             return
         uk_timezone = pytz.timezone("Europe/London")
         now = datetime.now(uk_timezone)
-        current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        last_month_end = current_month_start - timedelta(days=1)
-        date_str = last_month_end.strftime("%Y-%m-%d")
+        weekday = now.weekday()
+        days_to_monday = (0 - weekday) % 7
+        next_monday = now + timedelta(days=days_to_monday)
+        date_str = next_monday.strftime("%Y-%m-%d")
+        await post_summary(client, interaction.channel.id, "weekly", interaction.channel, date_str)
+        await interaction.response.send_message(f"Posted last week's weekly summary (using {date_str}).", ephemeral=True)
+
+    @tree.command(name="post-last-monthly-summary", description="Posts last month's monthly summary.")
+    async def post_last_monthly_summary(interaction: Interaction):
+        if not has_role(interaction, ROLES.MINISTER):
+            await interaction.response.send_message("You do not have permission.", ephemeral=True)
+            return
+        uk_timezone = pytz.timezone("Europe/London")
+        now = datetime.now(uk_timezone)
+        this_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        date_str = this_month_start.strftime("%Y-%m-%d")
         await post_summary(client, interaction.channel.id, "monthly", interaction.channel, date_str)
-        await interaction.response.send_message(f"Posted last month's monthly summary for the period ending {date_str}.", ephemeral=True)
+        await interaction.response.send_message(f"Posted last month's monthly summary ({date_str}).", ephemeral=True)
+
 
 
 
