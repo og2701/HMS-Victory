@@ -218,3 +218,10 @@ def define_commands(tree, client):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
         await end_lockdown_vcs(interaction)  
+
+    @tree.command(name="toggle-anti-raid", description="Toggles automatic timeout and quarantine for new joins.")
+    async def toggle_anti_raid(interaction: Interaction):
+        if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+        await toggle_anti_raid(interaction)  

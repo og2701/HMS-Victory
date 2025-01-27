@@ -18,6 +18,7 @@ from lib.settings import *
 
 from commands.mod_commands.persistant_role_buttons import persistantRoleButtons, handleRoleButtonInteraction
 from commands.mod_commands.announcement_command import load_persistent_views, RoleButtonView
+from commands.mod_commands.anti_raid import handle_new_member_anti_raid
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +176,7 @@ async def on_interaction(interaction: Interaction):
             await handleRoleButtonInteraction(interaction)
 
 async def on_member_join(member):
-    pass
+    await handle_new_member_anti_raid(member)
 
 async def on_member_remove(member):
     pass
