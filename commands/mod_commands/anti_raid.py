@@ -45,6 +45,6 @@ async def handle_new_member_anti_raid(member: discord.Member):
             quarantine_role = member.guild.get_role(QUARANTINE_ROLE_ID)
             if quarantine_role:
                 await member.add_roles(quarantine_role)
-            await member.timeout(discord.utils.utcnow() + discord.utils.timedelta(minutes=1440))
+            # await member.timeout(discord.utils.utcnow() + discord.utils.timedelta(minutes=1440))
         except Exception as e:
             print(e)
