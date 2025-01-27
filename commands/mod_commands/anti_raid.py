@@ -37,7 +37,7 @@ async def toggle_anti_raid(interaction: Interaction):
         )
 
     embed.set_footer(text=f"Triggered by {interaction.user.name}")
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.response.send_message(embed=embed)
 
 async def handle_new_member_anti_raid(member: discord.Member):
     if is_anti_raid_enabled():
