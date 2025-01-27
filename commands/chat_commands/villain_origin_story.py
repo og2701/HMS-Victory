@@ -81,42 +81,41 @@ async def origin_story(interaction, channel=None, user=None):
     if estimated_tokens > max_allowed_tokens:
         allowed_length = max_allowed_tokens * 4
         input_text = input_text[:allowed_length]
-
+    
     try:
         system_prompt = (
-            f"You are an assistant tasked with writing a villain origin story for a discord user based on their recent messages. "
-            f"The user's name is {user.display_name}. Write the villain origin story of {user.display_name}, "
-            f"while considering the context. The origin story should be a paragraph. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
+            f"You are an assistant tasked with writing a dramatic and entertaining description of a fight between two Discord users. "
+            f"The first user is {user.display_name}, and the second user is someone they've interacted with based on the provided chat history. "
+            f"The fight description should include their conflict's cause and any underlying tensions inferred from their messages. "
+            f"Write it as a paragraph, making it engaging and humorous. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
             f"Return only the paragraph and nothing else."
         )
-            # system_prompt = (
-            #     f"You are an assistant tasked with writing a rude and sassy and mildly offensive summary of the chat messages of a user. "
-            #     f"The user's name is {user.display_name}. Only summarise the messages from {user.display_name}, "
-            #     f"while considering the context. The summary should be a paragraph. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
-            #     f"Return only the paragraph and nothing else."
-            # )
 
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[
                 {
-                    "role": "system", 
+                    "role": "system",
                     "content": system_prompt
                 },
                 {
-                    "role": "user", 
-                    "content": f"Write a villain origin story based on the following messages from {user.display_name}:\n{input_text}"
+                    "role": "user",
+                    "content": (
+                        f"Based on the chat history, write a dramatic fight scenario between {user.display_name} "
+                        f"and another user they’ve interacted with. Provide reasons for their beef inferred from the following messages:\n{input_text}"
+                    )
                 }
             ],
             max_tokens=500,
-            temperature=0.7,
+            temperature=0.8,
         )
-        summary = response['choices'][0]['message']['content'].strip()
+        fight_description = response['choices'][0]['message']['content'].strip()
         await interaction.followup.send(
             content=(
-                f"{summary}"
+                f"{fight_description}"
             )
         )
+
     except Exception as e:
         print(e)
         await interaction.followup.send(content=f"An error occurred.")
