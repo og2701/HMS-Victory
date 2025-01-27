@@ -59,7 +59,7 @@ async def fetch_messages_with_context(channel, user, user_messages, total_limit=
 def estimate_tokens(text):
     return len(text.split())
 
-async def sassy_summary(interaction, channel=None, user=None):
+async def roast(interaction, channel=None, user=None):
     await interaction.response.defer(thinking=True)
 
     if channel is None:
