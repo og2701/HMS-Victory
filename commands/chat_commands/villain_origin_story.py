@@ -86,10 +86,12 @@ async def origin_story(interaction, channel=None, user=None):
         system_prompt = (
             f"You are an assistant tasked with writing a dramatic argument between two Discord users. "
             f"The first user is {user.display_name}, and the second user is someone they've interacted with based on the provided chat history. "
-            f"The argument should include quotes from both users, accurately reflecting their speech style and personality inferred from their chat messages. "
-            f"The insults should be witty and tailored to their personalities or quirks, and the reason for the argument should be based on the context of their interactions. "
-            f"Make the description entertaining, humorous, and filled with over-the-top drama. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
-            f"Return only the argument and nothing else."
+            f"The argument should follow this structure: {user.display_name} speaks first, the second user responds, and they alternate. "
+            f"{user.display_name} should have three messages in total, while the second user has two. "
+            f"Include accurate quotes that reflect their speech styles and personality, inferred from the chat history. "
+            f"The argument should feature witty insults and humor, and the reason for the argument should be inferred from the context of their chat interactions. "
+            f"The argument should be engaging and entertaining. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
+            f"Return only the formatted dialogue and nothing else."
         )
 
         response = openai.ChatCompletion.create(
@@ -103,7 +105,9 @@ async def origin_story(interaction, channel=None, user=None):
                     "role": "user",
                     "content": (
                         f"Based on the chat history, write a dramatic argument between {user.display_name} "
-                        f"and another user they’ve interacted with. Include quotes, witty insults, and reasons for the beef inferred from the following messages:\n{input_text}"
+                        f"and another user they’ve interacted with. Use the structure: "
+                        f"{user.display_name} speaks first, followed by the second user, alternating for five messages total. "
+                        f"Include quotes, insults, and reasons for the beef inferred from the following messages:\n{input_text}"
                     )
                 }
             ],
@@ -116,6 +120,7 @@ async def origin_story(interaction, channel=None, user=None):
                 f"{argument_description}"
             )
         )
+
 
     except Exception as e:
         print(e)
