@@ -12,3 +12,4 @@ from commands.iceberg.add_to_iceberg import add_iceberg_text
 from commands.iceberg.get_iceberg import show_iceberg
 
 from commands.chat_commands.roast import roast
+from commands.chat_commands.villain_origin_story import origin_story

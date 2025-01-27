@@ -59,7 +59,7 @@ async def fetch_messages_with_context(channel, user, user_messages, total_limit=
 def estimate_tokens(text):
     return len(text.split())
 
-async def roast(interaction, channel=None, user=None):
+async def origin_story(interaction, channel=None, user=None):
     await interaction.response.defer(thinking=True)
 
     if channel is None:
@@ -84,9 +84,9 @@ async def roast(interaction, channel=None, user=None):
 
     try:
         system_prompt = (
-            f"You are an assistant tasked with writing a very rude and insulting summary of the chat messages of a user with the intent of embarrassing them. "
-            f"The user's name is {user.display_name}. Only summarise the messages from {user.display_name}, "
-            f"while considering the context. The summary should be a paragraph. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
+            f"You are an assistant tasked with writing a villain origin story for a discord user based on their recent messages. "
+            f"The user's name is {user.display_name}. Write the villain origin story of {user.display_name}, "
+            f"while considering the context. The origin story should be a paragraph. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
             f"Return only the paragraph and nothing else."
         )
             # system_prompt = (
@@ -105,7 +105,7 @@ async def roast(interaction, channel=None, user=None):
                 },
                 {
                     "role": "user", 
-                    "content": f"Summarise the following messages from {user.display_name}:\n{input_text}"
+                    "content": f"Write a villain origin story based on the following messages from {user.display_name}:\n{input_text}"
                 }
             ],
             max_tokens=500,
