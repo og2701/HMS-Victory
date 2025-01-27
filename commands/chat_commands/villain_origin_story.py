@@ -84,13 +84,13 @@ async def origin_story(interaction, channel=None, user=None):
     
     try:
         system_prompt = (
-            f"You are an assistant tasked with writing a dramatic argument between two Discord users. "
+            f"You are an assistant tasked with writing a lighthearted but dramatic argument between two Discord users. "
             f"The first user is {user.display_name}, and the second user is someone they've interacted with based on the provided chat history. "
             f"The argument should follow this structure: {user.display_name} speaks first, the second user responds, and they alternate. "
             f"{user.display_name} should have three messages in total, while the second user has two. "
-            f"Include accurate quotes that reflect their speech styles and personality, inferred from the chat history. "
-            f"The argument should feature witty insults and humor, and the reason for the argument should be inferred from the context of their chat interactions. "
-            f"The argument should be engaging and entertaining. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
+            f"Quotes must reflect their personalities and speech styles, inferred from the chat history, but avoid sensitive topics like dating, politics, or anything inappropriate. "
+            f"The insults should be witty, fun, and entirely playful—focused on harmless topics such as hobbies, quirks, or behavior in the server. "
+            f"The argument should be entertaining and accessible for all ages. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
             f"Return only the formatted dialogue and nothing else."
         )
 
@@ -104,15 +104,16 @@ async def origin_story(interaction, channel=None, user=None):
                 {
                     "role": "user",
                     "content": (
-                        f"Based on the chat history, write a dramatic argument between {user.display_name} "
+                        f"Based on the chat history, write a lighthearted argument between {user.display_name} "
                         f"and another user they’ve interacted with. Use the structure: "
                         f"{user.display_name} speaks first, followed by the second user, alternating for five messages total. "
-                        f"Include quotes, insults, and reasons for the beef inferred from the following messages:\n{input_text}"
+                        f"Ensure the argument is humorous, includes witty insults, and avoids sensitive or inappropriate topics. "
+                        f"Infer the reason for their argument from the following messages:\n{input_text}"
                     )
                 }
             ],
             max_tokens=500,
-            temperature=0.9,
+            temperature=0.8,
         )
         argument_description = response['choices'][0]['message']['content'].strip()
         await interaction.followup.send(
@@ -120,6 +121,7 @@ async def origin_story(interaction, channel=None, user=None):
                 f"{argument_description}"
             )
         )
+
 
 
     except Exception as e:
