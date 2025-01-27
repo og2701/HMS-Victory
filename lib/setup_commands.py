@@ -151,7 +151,7 @@ def define_commands(tree, client):
         usage_data = command_usage_tracker[interaction.user.id]
 
         if interaction.user.id == USERS.OGGERS:
-            await sassy_summary(interaction, channel, user)
+            await roast(interaction, channel, user)
             return
 
         if usage_data['last_used'] != today:
@@ -164,7 +164,7 @@ def define_commands(tree, client):
 
         usage_data['count'] += 1
 
-        await sassy_summary(interaction, channel, user)
+        await roast(interaction, channel, user)
 
     @tree.command(name="vc-control", description="Toggles server mute/deafen perms for a user")
     async def vc_control(interaction: Interaction, user: Member):

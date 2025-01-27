@@ -11,4 +11,4 @@ from commands.canvas.screenshot import screenshotCanvas
 from commands.iceberg.add_to_iceberg import add_iceberg_text
 from commands.iceberg.get_iceberg import show_iceberg
 
-from commands.chat_commands.sassy_summary import sassy_summary
+from commands.chat_commands.roast import roast
