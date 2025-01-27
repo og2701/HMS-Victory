@@ -225,3 +225,19 @@ def define_commands(tree, client):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
         await toggle_anti_raid(interaction)  
+
+    @tree.command(name="toggle-quarantine", description="Add or remove the quarantine role from a user.")
+    async def toggle_quarantine_command(interaction: Interaction, user: Member):
+        if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+        quarantine_role = interaction.guild.get_role(962009285116710922)
+        if not quarantine_role:
+            await interaction.response.send_message("Quarantine role not found.", ephemeral=True)
+            return
+        if quarantine_role in user.roles:
+            await user.remove_roles(quarantine_role)
+            await interaction.response.send_message(f"{user.mention} has been removed from quarantine.", ephemeral=True)
+        else:
+            await user.add_roles(quarantine_role)
+            await interaction.response.send_message(f"{user.mention} has been placed in quarantine.", ephemeral=True)
