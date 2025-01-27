@@ -84,12 +84,12 @@ async def origin_story(interaction, channel=None, user=None):
     
     try:
         system_prompt = (
-            f"You are an assistant tasked with writing a vivid and entertaining description of an argument between two members. "
+            f"You are an assistant tasked with writing a dramatic argument between two Discord users. "
             f"The first user is {user.display_name}, and the second user is someone they've interacted with based on the provided chat history. "
-            f"The description should include inferred reasons for their argument and dialogue with made-up quotes from both parties. "
-            f"The quotes should reflect their personalities and communication style as observed from the chat history. "
-            f"Write it as a paragraph and make it engaging. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
-            f"Return only the paragraph and nothing else."
+            f"The argument should include quotes from both users, accurately reflecting their speech style and personality inferred from their chat messages. "
+            f"The insults should be witty and tailored to their personalities or quirks, and the reason for the argument should be based on the context of their interactions. "
+            f"Make the description entertaining, humorous, and filled with over-the-top drama. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
+            f"Return only the argument and nothing else."
         )
 
         response = openai.ChatCompletion.create(
@@ -102,14 +102,13 @@ async def origin_story(interaction, channel=None, user=None):
                 {
                     "role": "user",
                     "content": (
-                        f"Based on the chat history, write a description of an argument between {user.display_name} "
-                        f"and another user they’ve interacted with. Include inferred reasons for their argument and made-up quotes "
-                        f"that align with their personalities and communication style from the following messages:\n{input_text}"
+                        f"Based on the chat history, write a dramatic argument between {user.display_name} "
+                        f"and another user they’ve interacted with. Include quotes, witty insults, and reasons for the beef inferred from the following messages:\n{input_text}"
                     )
                 }
             ],
             max_tokens=500,
-            temperature=0.8,
+            temperature=0.9,
         )
         argument_description = response['choices'][0]['message']['content'].strip()
         await interaction.followup.send(
@@ -117,7 +116,6 @@ async def origin_story(interaction, channel=None, user=None):
                 f"{argument_description}"
             )
         )
-
 
     except Exception as e:
         print(e)
