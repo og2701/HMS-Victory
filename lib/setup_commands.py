@@ -176,7 +176,7 @@ def define_commands(tree, client):
         usage_data = command_usage_tracker[interaction.user.id]
 
         if interaction.user.id == USERS.OGGERS:
-            await roast(interaction, channel, user)
+            await origin_story(interaction, channel, user)
             return
 
         if usage_data['last_used'] != today:
