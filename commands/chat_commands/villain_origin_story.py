@@ -84,10 +84,11 @@ async def origin_story(interaction, channel=None, user=None):
     
     try:
         system_prompt = (
-            f"You are an assistant tasked with writing a dramatic and entertaining description of a fight between two Discord users. "
+            f"You are an assistant tasked with writing a vivid and entertaining description of an argument between two members. "
             f"The first user is {user.display_name}, and the second user is someone they've interacted with based on the provided chat history. "
-            f"The fight description should include their conflict's cause and any underlying tensions inferred from their messages. "
-            f"Write it as a paragraph, making it engaging and humorous. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
+            f"The description should include inferred reasons for their argument and dialogue with made-up quotes from both parties. "
+            f"The quotes should reflect their personalities and communication style as observed from the chat history. "
+            f"Write it as a paragraph and make it engaging. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
             f"Return only the paragraph and nothing else."
         )
 
@@ -101,20 +102,22 @@ async def origin_story(interaction, channel=None, user=None):
                 {
                     "role": "user",
                     "content": (
-                        f"Based on the chat history, write a dramatic fight scenario between {user.display_name} "
-                        f"and another user they’ve interacted with. Provide reasons for their beef inferred from the following messages:\n{input_text}"
+                        f"Based on the chat history, write a description of an argument between {user.display_name} "
+                        f"and another user they’ve interacted with. Include inferred reasons for their argument and made-up quotes "
+                        f"that align with their personalities and communication style from the following messages:\n{input_text}"
                     )
                 }
             ],
             max_tokens=500,
             temperature=0.8,
         )
-        fight_description = response['choices'][0]['message']['content'].strip()
+        argument_description = response['choices'][0]['message']['content'].strip()
         await interaction.followup.send(
             content=(
-                f"{fight_description}"
+                f"{argument_description}"
             )
         )
+
 
     except Exception as e:
         print(e)
