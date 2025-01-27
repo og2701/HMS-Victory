@@ -166,7 +166,7 @@ def define_commands(tree, client):
 
         await roast(interaction, channel, user)
 
-    @tree.command(name="beef", description="Generate a dramatic and entertaining fight scenario between a user and another they've interacted with, based on recent messages in a channel.")
+    @tree.command(name="beef", description="Generate a dramatic fight scenario between two users from chat history.")
     async def summarise(interaction: Interaction, channel: TextChannel = None, user: Member = None):
         if not has_any_role(interaction, [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
