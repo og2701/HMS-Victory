@@ -321,5 +321,6 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🏴‍☠️": "Pirate Speak",
     "🤓": "Nerd Speak",
     "🥷": "Over the top 'roadman' speak",
-    "🎩": "British 'rp'/posh talk - 'the queens english'"
+    "🎩": "British 'rp'/posh talk - 'the queens english'",
+    "🏰": "Olde English"
 }
