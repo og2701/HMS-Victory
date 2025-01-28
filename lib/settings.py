@@ -322,5 +322,5 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🤓": "Nerd Speak",
     "🥷": "Over the top 'roadman' speak",
     "🎩": "British 'rp'/posh talk - 'the queens english'",
-    "🏰": "Olde English"
+    "🏰": "Medieval/Olde English - Early Modern English or Elizabethan English commonly associated with the works of Shakespeare and the King James Bible"
 }
