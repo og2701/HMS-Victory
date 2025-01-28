@@ -178,7 +178,7 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🇮🇸": "Icelandic",            # Iceland
     "🇮🇹": "Italian",              # Italy
     "🇯🇪": "English",              # Jersey
-    "🇯🇲": "English",              # Jamaica
+    "🇯🇲": "Jamaican Patois",              # Jamaica
     "🇯🇴": "Arabic",               # Jordan
     "🇯🇵": "Japanese",             # Japan
     "🇰🇪": "Swahili",              # Kenya
