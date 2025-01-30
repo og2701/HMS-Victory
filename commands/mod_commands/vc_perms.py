@@ -1,45 +1,40 @@
-from discord import Embed, CategoryChannel
+from discord import Embed
 from discord.ext import commands
 from lib.settings import *
 
 async def toggleMuteDeafenPermissions(interaction, member):
     """
-    This command toggles the specified user's permissions to server mute and deafen others in all voice channels
-    under the 'permanent vc' category.
+    This command toggles the specified user's role to grant or remove mute/deafen permissions.
 
     Args:
         interaction (discord.Interaction): The interaction that triggered the command.
-        member (discord.Member): The user whose mute and deafen permissions will be toggled.
+        member (discord.Member): The user whose role will be toggled.
 
     Returns:
         None
     """
 
-    category = interaction.guild.get_channel(CATEGORIES.PERM_VC)
+    role_id = ROLES.VOICE_CHAT_WARDEN
+    role = interaction.guild.get_role(role_id)
 
-    if category is not None and isinstance(category, CategoryChannel):
-        current_perms = category.permissions_for(member)
-        if current_perms.mute_members and current_perms.deafen_members:
-            await category.set_permissions(member, overwrite=None)
+    if role is not None:
+        if role in member.roles:
+            await member.remove_roles(role)
             action = "removed"
-            for channel in category.voice_channels:
-                await channel.set_permissions(member, overwrite=None)
         else:
-            await category.set_permissions(member, mute_members=True, deafen_members=True)
+            await member.add_roles(role)
             action = "granted"
-            for channel in category.voice_channels:
-                await channel.set_permissions(member, mute_members=True, deafen_members=True)
-        
+
         confirmation_embed = Embed(
             title="Success",
-            description=f"Mute and deafen permissions for {member.display_name} have been {action} in the 'permanent vc' category and all voice channels under it.",
+            description=f"The `Voice Chat Warden` permissions have been {action} for {member.display_name}.",
             color=0x00FF00
         )
         await interaction.response.send_message(embed=confirmation_embed)
     else:
         error_embed = Embed(
             title="Error",
-            description="Category 'permanent vc' not found.",
+            description="Role not found.",
             color=0xFF0000
         )
         await interaction.response.send_message(embed=error_embed)
