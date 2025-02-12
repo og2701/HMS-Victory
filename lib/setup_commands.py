@@ -241,3 +241,21 @@ def define_commands(tree, client):
         else:
             await user.add_roles(quarantine_role)
             await interaction.response.send_message(f"{user.mention} has been placed in quarantine.", ephemeral=True)
+
+    @tree.command(name="embed-perms", description="Toggles embed perms for a member")
+    async def manage_role_command(interaction: Interaction, user: Member):
+        if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+
+        role = interaction.guild.get_role(ROLES.EMBED_PERMS)
+        if not role:
+            await interaction.response.send_message(f"Role with ID {role_id} not found.", ephemeral=True)
+            return
+        
+        if role in user.roles:
+            await user.remove_roles(role)
+            await interaction.response.send_message(f"Role {role.name} has been removed from {user.mention}.", ephemeral=True)
+        else:
+            await user.add_roles(role)
+            await interaction.response.send_message(f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True)
