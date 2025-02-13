@@ -177,6 +177,10 @@ async def on_interaction(interaction: Interaction):
 
 async def on_member_join(member):
     await handle_new_member_anti_raid(member)
+    await asyncio.sleep(300)
+    role = member.guild.get_role(ROLES.MEMBER)
+    if role:
+        await member.add_roles(role)
 
 async def on_member_remove(member):
     pass
