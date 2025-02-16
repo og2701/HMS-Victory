@@ -58,7 +58,7 @@ async def restore_role_permissions(guild: discord.Guild):
         except Exception as e:
             print(f"Failed to restore permissions for some roles: {e}")
         
-        await asyncio.sleep(1)  # Prevent hitting rate limits
+        await asyncio.sleep(1)
 
 async def disable_role_permissions(guild: discord.Guild):
     backup_role_permissions(guild)
@@ -80,7 +80,7 @@ async def disable_role_permissions(guild: discord.Guild):
         except Exception as e:
             print(f"Failed to disable permissions for some roles: {e}")
         
-        await asyncio.sleep(1)  # Prevent hitting rate limits
+        await asyncio.sleep(1)
 
 async def send_backup_file(guild: discord.Guild):
     channel = guild.get_channel(ANTI_RAID_LOG_CHANNEL_ID)
@@ -88,6 +88,7 @@ async def send_backup_file(guild: discord.Guild):
         await channel.send("Backup of role permissions before enabling anti-raid:", file=discord.File(PERMISSIONS_BACKUP_FILE))
 
 async def toggle_anti_raid(interaction: Interaction):
+    await interaction.response.defer()
     active = is_anti_raid_enabled()
     
     if active:
@@ -109,7 +110,7 @@ async def toggle_anti_raid(interaction: Interaction):
         )
     
     embed.set_footer(text=f"Triggered by {interaction.user.name}")
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
 
 async def handle_new_member_anti_raid(member: discord.Member):
     if is_anti_raid_enabled():
