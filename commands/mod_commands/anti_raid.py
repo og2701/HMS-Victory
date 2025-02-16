@@ -1,6 +1,7 @@
 import discord
 import os
 import json
+import asyncio
 from discord import Embed
 from discord.app_commands import CommandTree, Command
 from discord.interactions import Interaction
@@ -10,6 +11,7 @@ ANTI_RAID_FILE = "anti_raid_active"
 PERMISSIONS_BACKUP_FILE = "role_permissions_backup.json"
 QUARANTINE_ROLE_ID = 962009285116710922
 ANTI_RAID_LOG_CHANNEL_ID = 1172677237988929646
+BATCH_SIZE = 10
 
 def is_anti_raid_enabled():
     return os.path.exists(ANTI_RAID_FILE)
@@ -26,7 +28,6 @@ def backup_role_permissions(guild: discord.Guild):
     
     for role in guild.roles:
         role_permissions[role.id] = {
-            "use_application_commands": role.permissions.use_application_commands,
             "use_external_apps": role.permissions.use_external_apps
         }
     
@@ -40,35 +41,46 @@ async def restore_role_permissions(guild: discord.Guild):
     with open(PERMISSIONS_BACKUP_FILE, "r") as f:
         role_permissions = json.load(f)
     
-    for role in guild.roles:
-        if str(role.id) in role_permissions:
+    roles = [role for role in guild.roles if str(role.id) in role_permissions]
+    
+    for i in range(0, len(roles), BATCH_SIZE):
+        batch = roles[i:i + BATCH_SIZE]
+        tasks = []
+        for role in batch:
             permissions = role.permissions
             permissions.update(
-                use_application_commands=role_permissions[str(role.id)]["use_application_commands"],
                 use_external_apps=role_permissions[str(role.id)]["use_external_apps"]
             )
-            try:
-                await role.edit(permissions=permissions)
-            except Exception as e:
-                channel = guild.get_channel(CHANNELS.POLICE_STATION)
-                if channel:
-                    await channel.send(f"Failed to restore permissions for {role.name}: {e}")
+            tasks.append(role.edit(permissions=permissions))
+        
+        try:
+            await asyncio.gather(*tasks)
+        except Exception as e:
+            print(f"Failed to restore permissions for some roles: {e}")
+        
+        await asyncio.sleep(1)  # Prevent hitting rate limits
 
 async def disable_role_permissions(guild: discord.Guild):
     backup_role_permissions(guild)
     
-    for role in guild.roles:
-        permissions = role.permissions
-        permissions.update(
-            use_application_commands=False,
-            use_external_apps=False
-        )
+    roles = [role for role in guild.roles]
+    
+    for i in range(0, len(roles), BATCH_SIZE):
+        batch = roles[i:i + BATCH_SIZE]
+        tasks = []
+        for role in batch:
+            permissions = role.permissions
+            permissions.update(
+                use_external_apps=False
+            )
+            tasks.append(role.edit(permissions=permissions))
+        
         try:
-            await role.edit(permissions=permissions)
+            await asyncio.gather(*tasks)
         except Exception as e:
-            channel = guild.get_channel(CHANNELS.POLICE_STATION)
-            if channel:
-                await channel.send(f"Failed to disable permissions for {role.name}: {e}")
+            print(f"Failed to disable permissions for some roles: {e}")
+        
+        await asyncio.sleep(1)  # Prevent hitting rate limits
 
 async def send_backup_file(guild: discord.Guild):
     channel = guild.get_channel(ANTI_RAID_LOG_CHANNEL_ID)
