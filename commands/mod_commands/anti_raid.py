@@ -33,7 +33,7 @@ def backup_role_permissions(guild: discord.Guild):
     with open(PERMISSIONS_BACKUP_FILE, "w") as f:
         json.dump(role_permissions, f)
 
-def restore_role_permissions(guild: discord.Guild):
+async def restore_role_permissions(guild: discord.Guild):
     if not os.path.exists(PERMISSIONS_BACKUP_FILE):
         return
     
