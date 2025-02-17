@@ -11,6 +11,7 @@ from lib.event_handlers import *
 from lib.setup_commands import define_commands
 from lib.settings import *
 from lib.summary import initialize_summary_data, update_summary_data, post_summary
+from lib.on_message_functions import *
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -53,6 +54,9 @@ class AClient(discord.Client):
                 await channel.send(f"<@&{ROLES.BALL_INSPECTOR}> A wild countryball appeared!")
             return
 
+        if message.author.id == 557628352828014614 and message.embeds:
+            await handle_ticket_closed_message(bot, message)
+            return
 
         if message.author.bot:
             return
