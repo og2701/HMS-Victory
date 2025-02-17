@@ -11,13 +11,13 @@ async def handle_ticket_closed_message(bot, message):
         collected_messages = []
         users_involved = set()
         async for msg in message.channel.history(limit=1000, oldest_first=True):
-            collected_messages.append(msg.content)
+            collected_messages.append(f"{msg.author.display_name}: {msg.content}")
             users_involved.add(msg.author.display_name)
         chat_text = "\n".join(collected_messages)
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "user", "content": f"Summarise the following conversation, return only the summary and nothing else:\n{chat_text}\nSummary:"}
+                {"role": "user", "content": f"Summarise the following conversation concisely, highlighting key points and context. Return only the summary and nothing else:\n{chat_text}\nSummary:"}
             ],
             temperature=0.7,
             max_tokens=200
