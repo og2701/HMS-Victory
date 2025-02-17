@@ -36,8 +36,7 @@ async def handle_ticket_closed_message(bot, message):
         summary = response.choices[0].message.content.strip()
         destination_channel = bot.get_channel(CHANNELS.POLICE_STATION)
         
-        e = discord.Embed(title="Chat Summary", description=summary, color=0x00FF00)
-        e.add_field(name="Channel Name", value=message.channel.name, inline=False)
+        e = discord.Embed(title=f"Support ticket ({message.channel.name}) summary", description=summary, color=0x00FF00)
         e.add_field(name="Users Involved", value=", ".join(users_involved), inline=False)
         e.timestamp = message.created_at
         
