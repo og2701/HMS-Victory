@@ -14,18 +14,29 @@ async def handle_ticket_closed_message(bot, message):
             collected_messages.append(f"{msg.author.display_name}: {msg.content}")
             users_involved.add(msg.author.display_name)
         chat_text = "\n".join(collected_messages)
+
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "user", "content": f"Summarise the following conversation concisely, highlighting key points and context. Return only the summary and nothing else:\n{chat_text}\nSummary:"}
+                {
+                    "role": "user",
+                    "content": (
+                        "Summarize the following support ticket conversation in no more than two lines, "
+                        "focusing only on key points relevant to the resolution. Return only the summary:\n"
+                        f"{chat_text}\nSummary:"
+                    )
+                }
             ],
             temperature=0.7,
-            max_tokens=200
+            max_tokens=60
         )
+        
         summary = response.choices[0].message.content.strip()
         destination_channel = bot.get_channel(CHANNELS.POLICE_STATION)
+        
         e = discord.Embed(title="Chat Summary", description=summary, color=0x00FF00)
         e.add_field(name="Channel Name", value=message.channel.name, inline=False)
         e.add_field(name="Users Involved", value=", ".join(users_involved), inline=False)
         e.timestamp = message.created_at
+        
         await destination_channel.send(embed=e)
