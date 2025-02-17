@@ -21,14 +21,16 @@ async def handle_ticket_closed_message(bot, message):
                 {
                     "role": "user",
                     "content": (
-                        "Summarize the following support ticket conversation in no more than two lines, "
-                        "focusing only on key points relevant to the resolution. Return only the summary:\n"
+                        "Summarize the following support ticket conversation in no more than four lines, "
+                        "focusing only on key points relevant to the resolution."
+                        "The purpose of this summary is so that moderators of the discord server can quickly get up to date with what happend in this support ticket"
+                        "Return only the summary:\n"
                         f"{chat_text}\nSummary:"
                     )
                 }
             ],
             temperature=0.7,
-            max_tokens=60
+            max_tokens=100
         )
         
         summary = response.choices[0].message.content.strip()
