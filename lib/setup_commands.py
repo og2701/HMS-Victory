@@ -166,30 +166,30 @@ def define_commands(tree, client):
 
         await roast(interaction, channel, user)
 
-    @tree.command(name="beef", description="Generate a dramatic fight scenario between two users from chat history.")
-    async def summarise(interaction: Interaction, channel: TextChannel = None, user: Member = None):
-        if not has_any_role(interaction, [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER]):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
-            return
+    # @tree.command(name="beef", description="Generate a dramatic fight scenario between two users from chat history.")
+    # async def summarise(interaction: Interaction, channel: TextChannel = None, user: Member = None):
+    #     if not has_any_role(interaction, [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER]):
+    #         await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+    #         return
 
-        today = datetime.now().date()
-        usage_data = command_usage_tracker[interaction.user.id]
+    #     today = datetime.now().date()
+    #     usage_data = command_usage_tracker[interaction.user.id]
 
-        if interaction.user.id == USERS.OGGERS:
-            await origin_story(interaction, channel, user)
-            return
+    #     if interaction.user.id == USERS.OGGERS:
+    #         await origin_story(interaction, channel, user)
+    #         return
 
-        if usage_data['last_used'] != today:
-            usage_data['count'] = 0
-            usage_data['last_used'] = today
+    #     if usage_data['last_used'] != today:
+    #         usage_data['count'] = 0
+    #         usage_data['last_used'] = today
 
-        if usage_data['count'] >= SUMMARISE_DAILY_LIMIT:
-            await interaction.response.send_message(f"You've hit the daily limit of {SUMMARISE_DAILY_LIMIT} usages for this command", ephemeral=True)
-            return
+    #     if usage_data['count'] >= SUMMARISE_DAILY_LIMIT:
+    #         await interaction.response.send_message(f"You've hit the daily limit of {SUMMARISE_DAILY_LIMIT} usages for this command", ephemeral=True)
+    #         return
 
-        usage_data['count'] += 1
+    #     usage_data['count'] += 1
 
-        await roast(interaction, channel, user)
+    #     await roast(interaction, channel, user)
 
     @tree.command(name="vc-control", description="Toggles server mute/deafen perms for a user")
     async def vc_control(interaction: Interaction, user: Member):
