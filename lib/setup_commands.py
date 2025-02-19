@@ -143,7 +143,7 @@ def define_commands(tree, client):
 
     @tree.command(name="roast", description="Roast a user based on recent messages in a channel")
     async def summarise(interaction: Interaction, channel: TextChannel = None, user: Member = None):
-        if not has_any_role(interaction, [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER]):
+        if not has_any_role(interaction, [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER, ROLES.PCSO]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
 
