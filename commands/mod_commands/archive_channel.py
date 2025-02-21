@@ -79,7 +79,7 @@ async def archive_channel(interaction: discord.Interaction, bot):
         color=0xFFA500,
     )
     msg = await channel.send(embed=embed, view=view)
-    target_timestamp = time.time() + 86400
+    target_timestamp = time.time() + 3
     persistent_views[f"archive_{channel.id}"] = {"msg_id": msg.id, "move_timestamp": target_timestamp}
     save_persistent_views(persistent_views)
     
