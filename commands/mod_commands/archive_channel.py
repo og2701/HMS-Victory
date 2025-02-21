@@ -2,6 +2,7 @@ import discord
 import asyncio
 import json
 import time
+import copy
 
 from lib.utils import load_persistent_views, save_persistent_views
 from lib.settings import *
@@ -63,7 +64,7 @@ async def archive_channel(interaction: discord.Interaction, bot):
 
     for target, overwrite in channel.overwrites.items():
         if isinstance(target, discord.Role):
-            new_overwrite = overwrite.copy()
+            new_overwrite = copy.copy(overwrite)
             new_overwrite.send_messages = False
             await channel.set_permissions(target, overwrite=new_overwrite)
 
