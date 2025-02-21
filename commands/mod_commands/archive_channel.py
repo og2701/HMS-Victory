@@ -2,7 +2,7 @@ import discord
 import asyncio
 import json
 
-from lib.utils import *
+from lib.utils import load_persistent_views, save_persistent_views
 from lib.settings import *
 
 ARCHIVIST_ROLE_ID = 1281602571416375348
@@ -36,12 +36,11 @@ async def archive_channel(interaction: discord.Interaction, bot):
         await interaction.response.send_message(embed=error_embed, ephemeral=True)
         return
 
-    await channel.edit(overwrites={})
-    archive_role = guild.get_role(ARCHIVIST_ROLE_ID)
-    overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False, send_messages=False)}
-    if archive_role:
-        overwrites[archive_role] = discord.PermissionOverwrite(view_channel=True, send_messages=False)
-    await channel.edit(overwrites=overwrites)
+    for target, overwrite in channel.overwrites.items():
+        if isinstance(target, discord.Role):
+            new_overwrite = overwrite.copy()
+            new_overwrite.send_messages = False
+            await channel.set_permissions(target, overwrite=new_overwrite)
 
     view = ArchiveButtonView(bot)
     bot.add_view(view)
@@ -63,7 +62,13 @@ async def archive_channel(interaction: discord.Interaction, bot):
     await asyncio.sleep(3)
     archive_category = guild.get_channel(ARCHIVE_CATEGORY_ID)
     if archive_category and isinstance(archive_category, discord.CategoryChannel):
-        await channel.edit(category=archive_category)
+        new_overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False, send_messages=False)
+        }
+        archive_role = guild.get_role(ARCHIVIST_ROLE_ID)
+        if archive_role:
+            new_overwrites[archive_role] = discord.PermissionOverwrite(view_channel=True, send_messages=False)
+        await channel.edit(overwrites=new_overwrites, category=archive_category)
         move_embed = discord.Embed(
             title="Channel Moved to Archive",
             description="This channel has been moved to the archive category.",
