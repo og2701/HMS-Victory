@@ -12,14 +12,14 @@ import asyncio
 
 from lib.translation import translate_and_send
 from lib.summary import initialize_summary_data, update_summary_data, post_summary
-from lib.utils import restrict_channel_for_new_members
+from lib.utils import *
 from lib.log_functions import create_message_image, create_edited_message_image
 from lib.settings import *
 
 from commands.mod_commands.persistant_role_buttons import persistantRoleButtons, handleRoleButtonInteraction
-from commands.mod_commands.announcement_command import load_persistent_views, RoleButtonView
+from commands.mod_commands.announcement_command import RoleButtonView
 from commands.mod_commands.anti_raid import handle_new_member_anti_raid
-from commands.mod_commands.archive_channel import ArchiveButtonView
+from commands.mod_commands.archive_channel import ArchiveButtonView, schedule_archive_move
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +63,12 @@ async def on_ready(client, tree, scheduler):
     persistent_views = load_persistent_views()
 
     for key, value in persistent_views.items():
-        if key.startswith("archive_"):
-            client.add_view(ArchiveButtonView(client), message_id=value)
+        if key.startswith("archive_") and isinstance(data, dict) and "move_timestamp" in data:
+            channel_id = int(key.split("_")[1])
+            channel = client.get_channel(channel_id)
+            if channel:
+                target_timestamp = data["move_timestamp"]
+                asyncio.create_task(schedule_archive_move(channel, channel.guild, target_timestamp, client))
         elif isinstance(value, dict):
             view = RoleButtonView(value)
             client.add_view(view, message_id=key)
