@@ -66,9 +66,10 @@ async def on_ready(client, tree, scheduler):
             channel_id = int(key.split("_")[1])
             channel = client.get_channel(channel_id)
             if channel:
-                client.add_view(ArchiveButtonView(client), message_id=value["msg_id"])
+                client.add_view(ArchiveButtonView(client, channel_id), message_id=value["msg_id"])
                 target_timestamp = value["move_timestamp"]
                 asyncio.create_task(schedule_archive_move(channel, channel.guild, target_timestamp, client))
+
         elif isinstance(value, dict):
             view = RoleButtonView(value)
             client.add_view(view, message_id=key)
