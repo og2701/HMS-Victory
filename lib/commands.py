@@ -4,6 +4,7 @@ from commands.mod_commands.vc_perms import toggleMuteDeafenPermissions
 from commands.mod_commands.announcement_command import setup_announcement_command
 from commands.mod_commands.vc_lockdown import lockdown_vcs,  end_lockdown_vcs
 from commands.mod_commands.anti_raid import toggle_anti_raid, handle_new_member_anti_raid
+from commands.mod_commands.archive_channel import archive_channel
 
 from commands.art_functions.colour_palette import colourPalette
 from commands.art_functions.grid import gridify

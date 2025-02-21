@@ -259,3 +259,13 @@ def define_commands(tree, client):
         else:
             await user.add_roles(role)
             await interaction.response.send_message(f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True)
+
+
+
+    @tree.command(name="archive-channel", description="Archive the current channel.")
+    async def archive_channel_command(interaction: discord.Interaction):
+        if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+        await archive_channel(interaction, interaction.client)
+

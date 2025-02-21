@@ -19,6 +19,7 @@ from lib.settings import *
 from commands.mod_commands.persistant_role_buttons import persistantRoleButtons, handleRoleButtonInteraction
 from commands.mod_commands.announcement_command import load_persistent_views, RoleButtonView
 from commands.mod_commands.anti_raid import handle_new_member_anti_raid
+from commands.mod_commands.archive_channel import ArchiveButtonView
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +62,12 @@ async def on_ready(client, tree, scheduler):
 
     persistent_views = load_persistent_views()
 
-    for message_id, roles in persistent_views.items():
-        if isinstance(roles, dict):
-            view = RoleButtonView(roles)
-            client.add_view(view, message_id=message_id)
+    for key, value in persistent_views.items():
+        if key.startswith("archive_"):
+            client.add_view(ArchiveButtonView(client), message_id=value)
+        elif isinstance(value, dict):
+            view = RoleButtonView(value)
+            client.add_view(view, message_id=key)
 
     logger.info("Persistent views reattached and loaded.")
 

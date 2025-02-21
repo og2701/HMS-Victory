@@ -3,19 +3,9 @@ from discord.ui import Button, View, Modal, TextInput
 from discord import ButtonStyle, Interaction, Forbidden
 import json
 import re
+from lib.utils import *
 
-persistent_views = {}
-
-def load_persistent_views():
-    try:
-        with open("persistent_views.json", "r") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
-
-def save_persistent_views():
-    with open("persistent_views.json", "w") as f:
-        json.dump(persistent_views, f)
+persistent_views = load_persistent_views()
 
 async def handle_role_button_interaction(interaction: Interaction):
     custom_id = interaction.data["custom_id"]
@@ -176,7 +166,7 @@ class PreviewView(View):
             message = await self.channel.send(content=self.content, view=view)
 
             persistent_views[message.id] = self.roles
-            save_persistent_views()
+            save_persistent_views(persistent_views)
 
             interaction.client.add_view(view, message_id=message.id)
             await interaction.response.edit_message(content="Announcement sent successfully!", view=None)

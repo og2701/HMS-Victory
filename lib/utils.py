@@ -2,6 +2,9 @@ from datetime import datetime, timezone
 import discord
 from discord import Interaction
 import json
+import os
+
+PERSISTENT_VIEWS_FILE = "persistent_views.json"
 
 async def restrict_channel_for_new_members(message: discord.Message, channel_id: int, days_required: int = 7, whitelisted_user_ids: list[int] = []):
     if message.channel.id == channel_id:
@@ -34,3 +37,14 @@ def load_whitelist():
             return json.load(f)
     except FileNotFoundError:
         return []
+
+def load_persistent_views():
+    try:
+        with open(PERSISTENT_VIEWS_FILE, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+def save_persistent_views(data):
+    with open(PERSISTENT_VIEWS_FILE, "w") as f:
+        json.dump(data, f)
