@@ -263,7 +263,7 @@ def define_commands(tree, client):
 
 
     @tree.command(name="archive-channel", description="Archive the current channel.")
-    async def archive_channel_command(interaction: discord.Interaction):
+    async def archive_channel_command(interaction: Interaction):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
