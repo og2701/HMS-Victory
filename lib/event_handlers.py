@@ -61,17 +61,18 @@ async def on_ready(client, tree, scheduler):
         client.temp_data = {}
 
     persistent_views = load_persistent_views()
-
     for key, value in persistent_views.items():
-        if key.startswith("archive_") and isinstance(value, dict) and "move_timestamp" in value:
+        if key.startswith("archive_") and isinstance(value, dict) and "move_timestamp" in value and "msg_id" in value:
             channel_id = int(key.split("_")[1])
             channel = client.get_channel(channel_id)
             if channel:
+                client.add_view(ArchiveButtonView(client), message_id=value["msg_id"])
                 target_timestamp = value["move_timestamp"]
                 asyncio.create_task(schedule_archive_move(channel, channel.guild, target_timestamp, client))
         elif isinstance(value, dict):
             view = RoleButtonView(value)
             client.add_view(view, message_id=key)
+
 
     logger.info("Persistent views reattached and loaded.")
 
