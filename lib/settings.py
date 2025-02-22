@@ -71,27 +71,27 @@ VC_LOCKDOWN_WHITELIST = [
 ]
 
 FLAG_LANGUAGE_MAPPINGS = {
-    "🏴󠁧󠁢󠁥󠁮󠁧󠁿": "English",               # England
+    "🏴󠁧󠁢󠁥󠁮󠁧󠁿": "British English",               # England
     "🏴󠁧󠁢󠁷󠁬󠁳󠁿": "Welsh",                 # Wales
     # "🏴󠁧󠁢󠁳󠁣󠁴󠁿": "Scottish Gaelic",       # Scotland
-    "🇦🇨": "English",              # Ascension Island
+    "🇦🇨": "British English",              # Ascension Island
     "🇦🇩": "Catalan",              # Andorra
     "🇦🇪": "Arabic",               # United Arab Emirates
     "🇦🇫": "Pashto",                # Afghanistan
-    "🇦🇬": "English",              # Antigua and Barbuda
-    "🇦🇮": "English",              # Anguilla
+    "🇦🇬": "British English",              # Antigua and Barbuda
+    "🇦🇮": "British English",              # Anguilla
     "🇦🇱": "Albanian",             # Albania
     "🇦🇲": "Armenian",             # Armenia
     "🇦🇴": "Portuguese",           # Angola
     "🇦🇷": "Spanish",              # Argentina
     "🇦🇸": "Samoan",               # American Samoa
     "🇦🇹": "German",               # Austria
-    "🇦🇺": "English",              # Australia
+    "🇦🇺": "British English",              # Australia
     "🇦🇼": "Papiamento",           # Aruba
     "🇦🇽": "Swedish",              # Åland Islands
     "🇦🇿": "Azerbaijani",          # Azerbaijan
     "🇧🇦": "Bosnian",              # Bosnia and Herzegovina
-    "🇧🇧": "English",              # Barbados
+    "🇧🇧": "British English",              # Barbados
     "🇧🇩": "Bengali",              # Bangladesh
     "🇧🇪": "Dutch",                # Belgium
     "🇧🇫": "French",               # Burkina Faso
@@ -100,42 +100,42 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🇧🇮": "Kirundi",              # Burundi
     "🇧🇯": "French",               # Benin
     "🇧🇱": "French",               # Saint Barthélemy
-    "🇧🇲": "English",              # Bermuda
+    "🇧🇲": "British English",              # Bermuda
     "🇧🇳": "Malay",                # Brunei
     "🇧🇴": "Spanish",              # Bolivia
     "🇧🇶": "Dutch",                # Caribbean Netherlands
     "🇧🇷": "Portuguese",           # Brazil
-    "🇧🇸": "English",              # Bahamas
+    "🇧🇸": "British English",              # Bahamas
     "🇧🇹": "Dzongkha",             # Bhutan
     "🇧🇻": "Norwegian",            # Bouvet Island
-    "🇧🇼": "English",              # Botswana
+    "🇧🇼": "British English",              # Botswana
     "🇧🇾": "Belarusian",           # Belarus
-    "🇧🇿": "English",              # Belize
-    "🇨🇦": "English",              # Canada
-    "🇨🇨": "English",              # Cocos (Keeling) Islands
+    "🇧🇿": "British English",              # Belize
+    "🇨🇦": "British English",              # Canada
+    "🇨🇨": "British English",              # Cocos (Keeling) Islands
     "🇨🇩": "French",               # Democratic Republic of the Congo
     "🇨🇫": "French",               # Central African Republic
     "🇨🇬": "French",               # Republic of the Congo
     "🇨🇭": "German",               # Switzerland
     "🇨🇮": "French",               # Côte d'Ivoire
-    "🇨🇰": "English",              # Cook Islands
+    "🇨🇰": "British English",              # Cook Islands
     "🇨🇱": "Spanish",              # Chile
     "🇨🇲": "French",               # Cameroon
     "🇨🇳": "Mandarin Chinese",     # China
     "🇨🇴": "Spanish",              # Colombia
-    "🇨🇵": "English",              # Clipperton Island
+    "🇨🇵": "British English",              # Clipperton Island
     "🇨🇷": "Spanish",              # Costa Rica
     "🇨🇺": "Spanish",              # Cuba
     "🇨🇻": "Portuguese",           # Cape Verde
     "🇨🇼": "Papiamento",           # Curaçao
-    "🇨🇽": "English",              # Christmas Island
+    "🇨🇽": "British English",              # Christmas Island
     "🇨🇾": "Greek",                # Cyprus
     "🇨🇿": "Czech",                # Czech Republic
     "🇩🇪": "German",               # Germany
-    "🇩🇬": "English",              # Diego Garcia
+    "🇩🇬": "British English",              # Diego Garcia
     "🇩🇯": "French",               # Djibouti
     "🇩🇰": "Danish",               # Denmark
-    "🇩🇲": "English",              # Dominica
+    "🇩🇲": "British English",              # Dominica
     "🇩🇴": "Spanish",              # Dominican Republic
     "🇩🇿": "Arabic",               # Algeria
     "🇪🇨": "Spanish",              # Ecuador
@@ -145,64 +145,64 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🇪🇸": "Spanish",              # Spain
     "🇪🇹": "Amharic",              # Ethiopia
     "🇫🇮": "Finnish",              # Finland
-    "🇫🇯": "English",              # Fiji
-    "🇫🇰": "English",              # Falkland Islands
-    "🇫🇲": "English",              # Micronesia
+    "🇫🇯": "British English",              # Fiji
+    "🇫🇰": "British English",              # Falkland Islands
+    "🇫🇲": "British English",              # Micronesia
     "🇫🇴": "Faroese",              # Faroe Islands
     "🇫🇷": "French",               # France
     "🇬🇦": "French",               # Gabon
-    "🇬🇧": "English",              # United Kingdom
-    "🇬🇩": "English",              # Grenada
+    "🇬🇧": "British English",              # United Kingdom
+    "🇬🇩": "British English",              # Grenada
     "🇬🇪": "Georgian",             # Georgia
     "🇬🇫": "French",               # French Guiana
-    "🇬🇬": "English",              # Guernsey
-    "🇬🇭": "English",              # Ghana
-    "🇬🇮": "English",              # Gibraltar
+    "🇬🇬": "British English",              # Guernsey
+    "🇬🇭": "British English",              # Ghana
+    "🇬🇮": "British English",              # Gibraltar
     "🇬🇱": "Greenlandic",          # Greenland
-    "🇬🇲": "English",              # Gambia
+    "🇬🇲": "British English",              # Gambia
     "🇬🇳": "French",               # Guinea
     "🇬🇵": "French",               # Guadeloupe
     "🇬🇶": "Spanish",              # Equatorial Guinea
     "🇬🇷": "Greek",                # Greece
     "🇬🇹": "Spanish",              # Guatemala
-    "🇬🇺": "English",              # Guam
+    "🇬🇺": "British English",              # Guam
     "🇬🇼": "Portuguese",           # Guinea-Bissau
-    "🇬🇾": "English",              # Guyana
+    "🇬🇾": "British English",              # Guyana
     "🇭🇰": "Chinese",              # Hong Kong
     "🇭🇳": "Spanish",              # Honduras
     "🇭🇷": "Croatian",             # Croatia
     "🇭🇹": "Haitian Creole",       # Haiti
     "🇭🇺": "Hungarian",            # Hungary
     "🇮🇩": "Indonesian",           # Indonesia
-    "🇮🇪": "English",              # Ireland
+    "🇮🇪": "British English",              # Ireland
     "🇮🇱": "Hebrew",               # Israel
-    "🇮🇲": "English",              # Isle of Man
+    "🇮🇲": "British English",              # Isle of Man
     "🇮🇳": "Hindi",                # India
     "🇮🇶": "Arabic",               # Iraq
     "🇮🇷": "Persian",              # Iran
     "🇮🇸": "Icelandic",            # Iceland
     "🇮🇹": "Italian",              # Italy
-    "🇯🇪": "English",              # Jersey
+    "🇯🇪": "British English",              # Jersey
     "🇯🇲": "Jamaican Patois",      # Jamaica
     "🇯🇴": "Arabic",               # Jordan
     "🇯🇵": "Japanese",             # Japan
     "🇰🇪": "Swahili",              # Kenya
     "🇰🇬": "Kyrgyz",               # Kyrgyzstan
     "🇰🇭": "Khmer",                # Cambodia
-    "🇰🇮": "English",              # Kiribati
+    "🇰🇮": "British English",              # Kiribati
     "🇰🇲": "Comorian",             # Comoros
-    "🇰🇳": "English",              # Saint Kitts and Nevis
+    "🇰🇳": "British English",              # Saint Kitts and Nevis
     "🇰🇵": "Korean",               # North Korea
     "🇰🇷": "Korean",               # South Korea
     "🇰🇼": "Arabic",               # Kuwait
-    "🇰🇾": "English",              # Cayman Islands
+    "🇰🇾": "British English",              # Cayman Islands
     "🇰🇿": "Kazakh",               # Kazakhstan
     "🇱🇦": "Lao",                  # Laos
     "🇱🇧": "Arabic",               # Lebanon
-    "🇱🇨": "English",              # Saint Lucia
+    "🇱🇨": "British English",              # Saint Lucia
     "🇱🇮": "German",               # Liechtenstein
     "🇱🇰": "Sinhala",              # Sri Lanka
-    "🇱🇷": "English",              # Liberia
+    "🇱🇷": "British English",              # Liberia
     "🇱🇸": "Sesotho",              # Lesotho
     "🇱🇹": "Lithuanian",           # Lithuania
     "🇱🇺": "Luxembourgish",        # Luxembourg
@@ -220,39 +220,39 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🇲🇲": "Burmese",              # Myanmar
     "🇲🇳": "Mongolian",            # Mongolia
     "🇲🇴": "Chinese",              # Macau
-    "🇲🇵": "English",              # Northern Mariana Islands
+    "🇲🇵": "British English",              # Northern Mariana Islands
     "🇲🇶": "French",               # Martinique
     "🇲🇷": "Arabic",               # Mauritania
-    "🇲🇸": "English",              # Montserrat
+    "🇲🇸": "British English",              # Montserrat
     "🇲🇹": "Maltese",              # Malta
-    "🇲🇺": "English",              # Mauritius
+    "🇲🇺": "British English",              # Mauritius
     "🇲🇻": "Dhivehi",              # Maldives
-    "🇲🇼": "English",              # Malawi
+    "🇲🇼": "British English",              # Malawi
     "🇲🇽": "Spanish",              # Mexico
     "🇲🇾": "Malay",                # Malaysia
     "🇲🇿": "Portuguese",           # Mozambique
-    "🇳🇦": "English",              # Namibia
+    "🇳🇦": "British English",              # Namibia
     "🇳🇨": "French",               # New Caledonia
     "🇳🇪": "French",               # Niger
-    "🇳🇫": "English",              # Norfolk Island
-    "🇳🇬": "English",              # Nigeria
+    "🇳🇫": "British English",              # Norfolk Island
+    "🇳🇬": "British English",              # Nigeria
     "🇳🇮": "Spanish",              # Nicaragua
     "🇳🇱": "Dutch",                # Netherlands
     "🇳🇴": "Norwegian",            # Norway
     "🇳🇵": "Nepali",               # Nepal
     "🇳🇷": "Nauruan",              # Nauru
-    "🇳🇺": "English",              # Niue
-    "🇳🇿": "English",              # New Zealand
+    "🇳🇺": "British English",              # Niue
+    "🇳🇿": "British English",              # New Zealand
     "🇴🇲": "Arabic",               # Oman
     "🇵🇦": "Spanish",              # Panama
     "🇵🇪": "Spanish",              # Peru
     "🇵🇫": "French",               # French Polynesia
-    "🇵🇬": "English",              # Papua New Guinea
+    "🇵🇬": "British English",              # Papua New Guinea
     "🇵🇭": "Filipino",             # Philippines
     "🇵🇰": "Urdu",                 # Pakistan
     "🇵🇱": "Polish",               # Poland
     "🇵🇲": "French",               # Saint Pierre and Miquelon
-    "🇵🇳": "English",              # Pitcairn Islands
+    "🇵🇳": "British English",              # Pitcairn Islands
     "🇵🇷": "Spanish",              # Puerto Rico
     "🇵🇸": "Arabic",               # Palestine
     "🇵🇹": "Portuguese",           # Portugal
@@ -265,28 +265,28 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🇷🇺": "Russian",              # Russia
     "🇷🇼": "Kinyarwanda",          # Rwanda
     "🇸🇦": "Arabic",               # Saudi Arabia
-    "🇸🇧": "English",              # Solomon Islands
+    "🇸🇧": "British English",              # Solomon Islands
     "🇸🇨": "Seselwa",              # Seychelles
     "🇸🇩": "Arabic",               # Sudan
     "🇸🇪": "Swedish",              # Sweden
-    "🇸🇬": "English",              # Singapore
-    "🇸🇭": "English",              # Saint Helena
+    "🇸🇬": "British English",              # Singapore
+    "🇸🇭": "British English",              # Saint Helena
     "🇸🇮": "Slovene",              # Slovenia
     "🇸🇯": "Norwegian",            # Svalbard and Jan Mayen
     "🇸🇰": "Slovak",               # Slovakia
-    "🇸🇱": "English",              # Sierra Leone
+    "🇸🇱": "British English",              # Sierra Leone
     "🇸🇲": "Italian",              # San Marino
     "🇸🇳": "French",               # Senegal
     "🇸🇴": "Somali",               # Somalia
     "🇸🇷": "Dutch",                # Suriname
-    "🇸🇸": "English",              # South Sudan
+    "🇸🇸": "British English",              # South Sudan
     "🇸🇹": "Portuguese",           # São Tomé and Príncipe
     "🇸🇻": "Spanish",              # El Salvador
     "🇸🇽": "Dutch",                # Sint Maarten
     "🇸🇾": "Arabic",               # Syria
     "🇸🇿": "Swazi",                # Eswatini
-    "🇹🇦": "English",              # Tristan da Cunha
-    "🇹🇨": "English",              # Turks and Caicos Islands
+    "🇹🇦": "British English",              # Tristan da Cunha
+    "🇹🇨": "British English",              # Turks and Caicos Islands
     "🇹🇩": "French",               # Chad
     "🇹🇫": "French",               # French Southern Territories
     "🇹🇬": "French",               # Togo
@@ -298,21 +298,21 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🇹🇳": "Arabic",               # Tunisia
     "🇹🇴": "Tongan",               # Tonga
     "🇹🇷": "Turkish",              # Turkey
-    "🇹🇹": "English",              # Trinidad and Tobago
+    "🇹🇹": "British English",              # Trinidad and Tobago
     "🇹🇻": "Tuvaluan",             # Tuvalu
     "🇹🇼": "Mandarin Chinese",     # Taiwan
     "🇹🇿": "Swahili",              # Tanzania
     "🇺🇦": "Ukrainian",            # Ukraine
     "🇺🇬": "Swahili",              # Uganda
-    "🇺🇲": "English",              # U.S. Minor Outlying Islands
+    "🇺🇲": "British English",              # U.S. Minor Outlying Islands
     "🇺🇸": "Over the top american yank speak", # United States
     "🇺🇾": "Spanish",              # Uruguay
     "🇺🇿": "Uzbek",                # Uzbekistan
     "🇻🇦": "Italian",              # Vatican City
-    "🇻🇨": "English",              # Saint Vincent and the Grenadines
+    "🇻🇨": "British English",              # Saint Vincent and the Grenadines
     "🇻🇪": "Spanish",              # Venezuela
-    "🇻🇬": "English",              # British Virgin Islands
-    "🇻🇮": "English",              # U.S. Virgin Islands
+    "🇻🇬": "British English",              # British Virgin Islands
+    "🇻🇮": "British English",              # U.S. Virgin Islands
     "🇻🇳": "Vietnamese",           # Vietnam
     "🇻🇺": "Bislama",              # Vanuatu
     "🇼🇫": "French",               # Wallis and Futuna
@@ -321,7 +321,7 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🇾🇪": "Arabic",               # Yemen
     "🇾🇹": "French",               # Mayotte
     "🇿🇦": "Zulu",                 # South Africa
-    "🇿🇲": "English",              # Zambia
+    "🇿🇲": "British English",              # Zambia
     "🇿🇼": "Shona",                # Zimbabwe
     "🏴‍☠️": "Pirate Speak",
     "🤓": "Nerd Speak",
