@@ -119,61 +119,65 @@ async def on_message(client, message):
                         else:
                             logger.info(f"Skipped downloading {attachment.filename} as it exceeds the size limit of {MAX_IMAGE_SIZE / (1024 * 1024)} MB.")
 
-    if "discord.com/channels/" in message.content:
-        try:
-            link_parts = message.content.split("/")
-            guild_id = int(link_parts[4])
-            channel_id = int(link_parts[5])
-            message_id = int(link_parts[6])
-
-            guild = client.get_guild(guild_id)
-            channel = guild.get_channel(channel_id)
-            quoted_message = await channel.fetch_message(message_id)
-
-            timestamp_unix = int(quoted_message.created_at.timestamp())
-            timestamp_formatted = f"<t:{timestamp_unix}:f>"
-            channel_name = channel.name
-            reply_content = f"@__{quoted_message.author}__ in *{channel_name}* {timestamp_formatted}:\n"
-
-            if quoted_message.content:
-                reply_content += f"> {quoted_message.content}"
-
-            if quoted_message.attachments:
-                attachment = quoted_message.attachments[0]
-                if attachment.content_type and attachment.content_type.startswith("image/") and attachment.size <= MAX_IMAGE_SIZE:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(attachment.url) as response:
-                            if response.status == 200:
-                                image_data = await response.read()
-                                image_file = discord.File(io.BytesIO(image_data), filename=attachment.filename)
-                                reply = await message.channel.send(content=reply_content, file=image_file)
-                elif attachment.size > MAX_IMAGE_SIZE:
-                    reply = await message.channel.send(f"{reply_content}\nAttachment is too large to display (max {MAX_IMAGE_SIZE / (1024 * 1024)} MB).")
-                else:
-                    reply = await message.channel.send(f"{reply_content}\n[Attachment: {attachment.url}]")
-            elif quoted_message.embeds:
-                embed = quoted_message.embeds[0]
-                embed_copy = discord.Embed.from_dict(embed.to_dict())
-                reply = await message.channel.send(content=reply_content, embed=embed_copy)
-            else:
-                reply = await message.channel.send(reply_content)
-
-            await reply.add_reaction("❌")
-
-            def check(reaction, user):
-                return (
-                    user == message.author
-                    and str(reaction.emoji) == "❌"
-                    and reaction.message.id == reply.id
-                )
-
+    message_links = [part for part in message.content.split() if "discord.com/channels/" in part]
+    if message_links:
+        for link in message_links:
             try:
-                await client.wait_for("reaction_add", timeout=20.0, check=check)
-                await reply.delete()
-            except asyncio.TimeoutError:
-                await reply.clear_reactions()
-        except Exception as e:
-            logger.error(f"Error processing message link: {e}")
+                link_parts = link.split("/")
+                guild_id = int(link_parts[4])
+                channel_id = int(link_parts[5])
+                message_id = int(link_parts[6])
+
+                guild = client.get_guild(guild_id)
+                channel = guild.get_channel(channel_id)
+                quoted_message = await channel.fetch_message(message_id)
+
+                timestamp_unix = int(quoted_message.created_at.timestamp())
+                timestamp_formatted = f"<t:{timestamp_unix}:f>"
+                channel_name = channel.name
+                reply_content = f"@__{quoted_message.author}__ in *{channel_name}* {timestamp_formatted}:\n"
+
+                filtered_content = quoted_message.content.replace("@everyone", "[everyone]").replace("@here", "[here]")
+                if filtered_content:
+                    reply_content += f"> {filtered_content}"
+
+                if quoted_message.attachments:
+                    attachment = quoted_message.attachments[0]
+                    if attachment.content_type and attachment.content_type.startswith("image/") and attachment.size <= MAX_IMAGE_SIZE:
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(attachment.url) as response:
+                                if response.status == 200:
+                                    image_data = await response.read()
+                                    image_file = discord.File(io.BytesIO(image_data), filename=attachment.filename)
+                                    reply = await message.channel.send(content=reply_content, file=image_file)
+                    elif attachment.size > MAX_IMAGE_SIZE:
+                        reply = await message.channel.send(f"{reply_content}\nAttachment is too large to display (max {MAX_IMAGE_SIZE / (1024 * 1024)} MB).")
+                    else:
+                        reply = await message.channel.send(f"{reply_content}\n[Attachment: {attachment.url}]")
+                elif quoted_message.embeds:
+                    embed = quoted_message.embeds[0]
+                    embed_copy = discord.Embed.from_dict(embed.to_dict())
+                    reply = await message.channel.send(content=reply_content, embed=embed_copy)
+                else:
+                    reply = await message.channel.send(reply_content)
+
+                await reply.add_reaction("❌")
+
+                def check(reaction, user):
+                    return (
+                        user == message.author
+                        and str(reaction.emoji) == "❌"
+                        and reaction.message.id == reply.id
+                    )
+
+                try:
+                    await client.wait_for("reaction_add", timeout=20.0, check=check)
+                    await reply.delete()
+                except asyncio.TimeoutError:
+                    await reply.clear_reactions()
+            except Exception as e:
+                logger.error(f"Error processing message link: {e}")
+
 
 async def on_interaction(interaction: Interaction):
     if (
