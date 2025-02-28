@@ -3,18 +3,45 @@ from datetime import datetime, timedelta
 import os
 import pytz
 from collections import defaultdict
+import inspect
+from functools import wraps
 
 from lib.settings import *
 from lib.utils import has_any_role, has_role, save_whitelist
 from lib.commands import *
 from lib.summary import post_summary
 
+def log_usage(func):
+    @wraps(func)
+    async def wrapper(interaction: Interaction, *args, **kwargs):
+        signature = inspect.signature(func)
+        bound_args = signature.bind(interaction, *args, **kwargs)
+        bound_args.apply_defaults()
+
+        param_str = ", ".join(
+            f"{name}={value}"
+            for name, value in bound_args.arguments.items()
+            if name != "interaction"
+        )
+
+        channel = interaction.client.get_channel(CHANNELS.BOT_USAGE_LOG)
+        if channel:
+            uk_tz = pytz.timezone("Europe/London")
+            now = datetime.now(uk_tz).strftime("%Y-%m-%d %H:%M:%S")
+            await channel.send(
+                f"{now} - {interaction.user} (ID {interaction.user.id}) "
+                f"used /{interaction.command.name} in {interaction.channel.mention} "
+                f"with args: {param_str}"
+            )
+        return await func(interaction, *args, **kwargs)
+    return wrapper
 
 def define_commands(tree, client):
     @tree.command(
         name="role-manage",
         description="Manages user roles by assigning a specified role to members who don't have it",
     )
+    @log_usage
     async def role_management(interaction: Interaction, role_name: str):
         if interaction.user.id != USERS.OGGERS:
             return;
@@ -23,14 +50,17 @@ def define_commands(tree, client):
     @tree.command(
         name="colour-palette", description="Generates a colour palette from an image"
     )
+    @log_usage
     async def colour_palette(interaction: Interaction, attachment_url: str):
         await colourPalette(interaction, attachment_url)
 
     @tree.command(name="gridify", description="Adds a pixel art grid overlay to an image")
+    @log_usage
     async def gridify_command(interaction: Interaction, attachment_url: str):
         await gridify(interaction, attachment_url)
 
     @tree.command(name="role-react", description="Adds a reaction role to a message")
+    @log_usage
     async def role_react_command(interaction: Interaction):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -38,10 +68,12 @@ def define_commands(tree, client):
         await persistantRoleButtons(interaction)
 
     @tree.command(name="screenshot-canvas", description="Takes a screenshot of the current canvas")
+    @log_usage
     async def screenshot_canvas(interaction: Interaction, x: int = -770, y: int = 7930):
         await screenshotCanvas(interaction, x, y)
 
     @tree.command(name="add-to-iceberg", description="Adds text to the iceberg image")
+    @log_usage
     async def add_to_iceberg_command(interaction: Interaction, text: str, level: int):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -49,10 +81,12 @@ def define_commands(tree, client):
         await add_iceberg_text(interaction, text, level)
 
     @tree.command(name="show-iceberg", description="Shows the iceberg image")
+    @log_usage
     async def show_iceberg_command(interaction: Interaction):
         await show_iceberg(interaction)
 
     @tree.command(name="add-whitelist", description="Adds a user to the whitelist for the politics channel")
+    @log_usage
     async def add_whitelist_command(interaction: Interaction, user: Member):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -66,6 +100,7 @@ def define_commands(tree, client):
             await interaction.response.send_message(f"{user.mention} is already in the whitelist.", ephemeral=True)
 
     @tree.command(name="post-daily-summary", description="Posts the daily summary in the current channel for a specific date")
+    @log_usage
     async def post_daily_summary(interaction: Interaction, date: str = None):
         if not has_role(interaction, ROLES.MINISTER):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -92,6 +127,7 @@ def define_commands(tree, client):
         await interaction.response.send_message(f"Posted daily summary for {date}.", ephemeral=True)
 
     @tree.command(name="post-last-weekly-summary", description="Posts the most recently completed Monday–Sunday.")
+    @log_usage
     async def post_last_weekly_summary(interaction: Interaction):
         if not has_role(interaction, ROLES.MINISTER):
             await interaction.response.send_message("You do not have permission.", ephemeral=True)
@@ -109,6 +145,7 @@ def define_commands(tree, client):
 
 
     @tree.command(name="post-last-monthly-summary", description="Posts last month's monthly summary.")
+    @log_usage
     async def post_last_monthly_summary(interaction: Interaction):
         if not has_role(interaction, ROLES.MINISTER):
             await interaction.response.send_message("You do not have permission.", ephemeral=True)
@@ -124,6 +161,7 @@ def define_commands(tree, client):
 
 
     @tree.command(name="politics-ban", description="Toggles politics ban for a member")
+    @log_usage
     async def manage_role_command(interaction: Interaction, user: Member):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -142,6 +180,7 @@ def define_commands(tree, client):
             await interaction.response.send_message(f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True)
 
     @tree.command(name="roast", description="Roast a user based on recent messages in a channel")
+    @log_usage
     async def summarise(interaction: Interaction, channel: TextChannel = None, user: Member = None):
         if not has_any_role(interaction, [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER, ROLES.PCSO]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -167,6 +206,7 @@ def define_commands(tree, client):
         await roast(interaction, channel, user)
 
     # @tree.command(name="beef", description="Generate a dramatic fight scenario between two users from chat history.")
+    # @log_usage
     # async def summarise(interaction: Interaction, channel: TextChannel = None, user: Member = None):
     #     if not has_any_role(interaction, [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER]):
     #         await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -192,6 +232,7 @@ def define_commands(tree, client):
     #     await roast(interaction, channel, user)
 
     @tree.command(name="vc-control", description="Toggles server mute/deafen perms for a user")
+    @log_usage
     async def vc_control(interaction: Interaction, user: Member):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -199,6 +240,7 @@ def define_commands(tree, client):
         await toggleMuteDeafenPermissions(interaction, user)
 
     @tree.command(name="setup-announcement", description="Setup an announcement with optional role buttons.")
+    @log_usage
     async def setup_announcement(interaction: Interaction, channel: TextChannel):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -206,6 +248,7 @@ def define_commands(tree, client):
         await setup_announcement_command(interaction, channel)
 
     @tree.command(name="lockdown-vcs", description="Locks down all voice channels.")
+    @log_usage
     async def lockdown_vcs_command(interaction: Interaction):
         if not has_any_role(interaction, [ROLES.CABINET]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -213,6 +256,7 @@ def define_commands(tree, client):
         await lockdown_vcs(interaction)
 
     @tree.command(name="end-lockdown-vcs", description="Ends the lockdown on all voice channels.")
+    @log_usage
     async def end_lockdown_vcs_command(interaction: Interaction):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -220,6 +264,7 @@ def define_commands(tree, client):
         await end_lockdown_vcs(interaction)  
 
     @tree.command(name="toggle-anti-raid", description="Toggles automatic timeout and quarantine for new joins.")
+    @log_usage
     async def toggle_anti_raid_command(interaction: Interaction):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -227,6 +272,7 @@ def define_commands(tree, client):
         await toggle_anti_raid(interaction)  
 
     @tree.command(name="toggle-quarantine", description="Add or remove the quarantine role from a user.")
+    @log_usage
     async def toggle_quarantine_command(interaction: Interaction, user: Member):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -243,6 +289,7 @@ def define_commands(tree, client):
             await interaction.response.send_message(f"{user.mention} has been placed in quarantine.", ephemeral=True)
 
     @tree.command(name="embed-perms", description="Toggles embed perms for a member")
+    @log_usage
     async def manage_role_command(interaction: Interaction, user: Member):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
@@ -261,8 +308,8 @@ def define_commands(tree, client):
             await interaction.response.send_message(f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True)
 
 
-
     @tree.command(name="archive-channel", description="Archive the current channel.")
+    @log_usage
     async def archive_channel_command(interaction: Interaction):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)

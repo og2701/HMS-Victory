@@ -538,7 +538,6 @@ async def on_member_update(client, before, after):
     else:
         logger.info("No relevant changes detected.")
 
-
 async def on_voice_state_update(member, before, after):
     if not is_lockdown_active():
         return
