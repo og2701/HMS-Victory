@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
 sticker_messages = {}
-
 recently_flagged_users = defaultdict(bool)
 
 all_onboarding_roles = {
@@ -45,11 +44,30 @@ nationality_onboarding_roles = {
     ROLES.NORTHERN_IRISH,
 }
 
+FORUM_CHANNEL_ID = 1341451323249266711
+THREAD_MESSAGES_FILE = "thread_messages.json"
+ADDED_USERS_FILE = "added_users.json"
+
+def load_json(filename):
+    if os.path.exists(filename):
+        with open(filename, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_json(filename, data):
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=4)
+
 def is_lockdown_active():
     return os.path.exists(VC_LOCKDOWN_FILE)
 
 async def on_ready(client, tree, scheduler):
     global POLITICS_WHITELISTED_USER_IDS
+
+    if not hasattr(client, "thread_messages"):
+        client.thread_messages = load_json(THREAD_MESSAGES_FILE)
+    if not hasattr(client, "added_users"):
+        client.added_users = load_json(ADDED_USERS_FILE)
 
     if not client.synced:
         await tree.sync()
@@ -74,7 +92,6 @@ async def on_ready(client, tree, scheduler):
             view = RoleButtonView(value)
             client.add_view(view, message_id=key)
 
-
     logger.info("Persistent views reattached and loaded.")
 
     for command in tree.get_commands():
@@ -86,7 +103,6 @@ async def on_ready(client, tree, scheduler):
     scheduler.add_job(client.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=0, timezone="Europe/London"))
 
     scheduler.start()
-
 
 async def on_message(client, message):
     if not await restrict_channel_for_new_members(message, CHANNELS.POLITICS, 7, POLITICS_WHITELISTED_USER_IDS):
@@ -177,6 +193,52 @@ async def on_message(client, message):
                     await reply.clear_reactions()
             except Exception as e:
                 logger.error(f"Error processing message link: {e}")
+
+    if message.author.bot:
+        return
+
+    guild = message.guild
+    if guild is None:
+        return
+
+    forum_channel = guild.get_channel(FORUM_CHANNEL_ID)
+    if forum_channel and isinstance(forum_channel, discord.ForumChannel):
+        user_id = str(message.author.id)
+        for thread in forum_channel.threads:
+            thread_id = str(thread.id)
+
+            if thread_id in client.added_users and user_id in client.added_users[thread_id]:
+                continue
+
+            try:
+                if thread_id in client.thread_messages:
+                    msg_id = client.thread_messages[thread_id]
+                    try:
+                        existing_msg = await thread.fetch_message(msg_id)
+                    except discord.NotFound:
+                        existing_msg = None
+                else:
+                    existing_msg = None
+
+                if existing_msg is None:
+                    new_msg = await thread.send(".")
+                    client.thread_messages[thread_id] = new_msg.id
+                    save_json(THREAD_MESSAGES_FILE, client.thread_messages)
+                    existing_msg = new_msg
+
+                await existing_msg.edit(content=f"{message.author.mention}")
+                logger.info(f"Silently added {message.author} to {thread.name}")
+
+                if thread_id not in client.added_users:
+                    client.added_users[thread_id] = []
+                client.added_users[thread_id].append(user_id)
+                save_json(ADDED_USERS_FILE, client.added_users)
+
+                await asyncio.sleep(1)
+                await existing_msg.edit(content=".")
+
+            except discord.HTTPException as e:
+                logger.warning(f"Failed to add {message.author} to {thread.name}: {e}")
 
 
 async def on_interaction(interaction: Interaction):
@@ -279,9 +341,7 @@ async def on_reaction_add(reaction, user):
         if is_in_mapping:
             message = reaction.message
             target_language = FLAG_LANGUAGE_MAPPINGS[str(reaction.emoji)]
-
             users = [u async for u in reaction.users()]
-
             if len(users) > 1:
                 logger.info("Message has already been reacted to with this flag. Skipping translation.")
                 return
@@ -293,7 +353,6 @@ async def on_reaction_add(reaction, user):
             has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
             if has_role:
                 message_author = reaction.message.author
-
                 if message_author.is_timed_out():
                     logger.info(f"User {message_author} is already timed out. Skipping further actions.")
                     return
@@ -312,7 +371,6 @@ async def on_reaction_add(reaction, user):
     except Exception as e:
         logger.error(f"Error in on_reaction_add: {e}")
 
-
 async def on_reaction_remove(reaction, user):
     if ":Shut:" in str(reaction.emoji):
         has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
@@ -324,7 +382,6 @@ async def on_reaction_remove(reaction, user):
                     return
 
                 sticker_message_id, initiating_mod_id = sticker_message_info
-
                 if initiating_mod_id != user.id:
                     logger.info(f"Reaction removal ignored as {user} did not initiate the timeout.")
                     return
@@ -369,7 +426,6 @@ async def on_member_update(client, before, after):
                 f"Assigned themselves all nationality onboarding roles: English, Scottish, Welsh, and Northern Irish. Please monitor."
             )
             recently_flagged_users[user_id] = True
-
 
     if updates_channel is None:
         logger.warning("Updates channel not found.")
@@ -490,6 +546,3 @@ async def on_voice_state_update(member, before, after):
     if after.channel and not before.channel:
         if not any(role.id in VC_LOCKDOWN_WHITELIST for role in member.roles):
             await member.edit(mute=True, deafen=True)
-
-
-
