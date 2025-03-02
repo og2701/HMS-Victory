@@ -39,11 +39,8 @@ async def handleRoleButtonInteraction(interaction: Interaction):
         if custom_id.startswith("role_"):
             role_id = custom_id.split("_")[1]
                 
-            print(interaction)
-
             if interaction.guild_id == None:
                 guild = interaction._client.get_guild(GUILD_ID)
-                print(guild)
             else:
                 guild = interaction.guild
 
