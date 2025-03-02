@@ -9,5 +9,3 @@ commands/dev
 data/updated_iceberg.png
 data/iceberg_texts.json
 config.py
-
-*.DS_Store
