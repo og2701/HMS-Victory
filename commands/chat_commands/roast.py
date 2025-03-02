@@ -1,8 +1,7 @@
+from discord import Embed, Forbidden
 import openai
-import asyncio
 from datetime import datetime, timedelta
 from os import getenv
-from discord import Embed, Forbidden, HTTPException
 from lib.utils import fetch_messages_with_context, estimate_tokens
 from lib.settings import *
 
@@ -11,7 +10,7 @@ openai.api_key = getenv("OPENAI_TOKEN")
 time_threshold = datetime.utcnow() - timedelta(days=7)
 
 async def roast(interaction, channel=None, user=None):
-    await interaction.response.defer(thinking=True)
+    await interaction.response.defer()
     
     if channel is None:
         channel = interaction.channel
@@ -20,7 +19,7 @@ async def roast(interaction, channel=None, user=None):
 
     user_messages = []
     await fetch_messages_with_context(channel, user, user_messages, total_limit=250, context_depth=2)
-
+    
     input_text = "\n".join(user_messages)
     if len(input_text) == 0:
         await channel.send(f"{user.display_name} hasn't said anything interesting lately!")
@@ -55,23 +54,7 @@ async def roast(interaction, channel=None, user=None):
         )
 
         summary = response["choices"][0]["message"]["content"].strip()
-        await send_message_with_retry(channel, summary)
-
+        await channel.send(summary)
     except Exception as e:
         print(e)
-        await send_message_with_retry(channel, "An error occurred.")
-
-async def send_message_with_retry(channel, content):
-    retry_delay = 5
-    for _ in range(5):
-        try:
-            await channel.send(content)
-            break
-        except HTTPException as e:
-            if e.status == 429:
-                print("Rate limited. Retrying...")
-                await asyncio.sleep(retry_delay)
-                retry_delay *= 2
-            else:
-                print(f"Error sending message: {e}")
-                break
+        await channel.send("An error occurred.")

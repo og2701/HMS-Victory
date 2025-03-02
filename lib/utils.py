@@ -191,16 +191,12 @@ def get_text_position(font, text, bounds, existing_positions, max_attempts=100):
             return (x, y)
     return None
 
-import asyncio
-import discord
-from datetime import datetime, timedelta
-
 async def fetch_messages_with_context(channel, user, user_messages, total_limit=100, context_depth=2):
+    """Fetches messages from a channel, grouping a user's messages along with a few preceding messages as context"""
     try:
         user_message_count = 0
         message_history = []
-
-        async for message in channel.history(limit=500, after=datetime.utcnow() - timedelta(days=7), oldest_first=True):
+        async for message in channel.history(limit=None, after=datetime.utcnow() - timedelta(days=7), oldest_first=True):
             if message.author.bot:
                 continue
             message_history.append(message)
@@ -208,8 +204,6 @@ async def fetch_messages_with_context(channel, user, user_messages, total_limit=
                 user_message_count += 1
                 if user_message_count >= total_limit:
                     break
-            await asyncio.sleep(0.1)
-
         i = 0
         while i < len(message_history):
             message = message_history[i]
@@ -239,13 +233,8 @@ async def fetch_messages_with_context(channel, user, user_messages, total_limit=
                     user_messages.append(user_message_block_text)
             else:
                 i += 1
-
     except discord.Forbidden:
-        print("Bot lacks permissions to fetch messages.")
-    except discord.HTTPException as e:
-        print(f"HTTP Exception: {e}")
-        await asyncio.sleep(5)
-
+        pass
 
 def estimate_tokens(text):
     """Estimates token count by splitting text by whitespace"""
