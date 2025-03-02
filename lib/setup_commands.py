@@ -16,7 +16,7 @@ def log_usage(func):
     """Decorator to log command usage"""
 
     @wraps(func)
-    async def wrapper(interaction: Interaction, *args: Any, **kwargs: Any):
+    async def wrapper(interaction: Interaction, *args, **kwargs):
         signature = inspect.signature(func)
         bound_args = signature.bind(interaction, *args, **kwargs)
         bound_args.apply_defaults()
