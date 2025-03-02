@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import discord
-from discord import app_commands, Interaction, Member, TextChannel
+from discord import Member
 from discord import Interaction
 import json
 import os
