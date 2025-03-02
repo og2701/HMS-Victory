@@ -17,13 +17,11 @@ from lib.utils import (
 )
 
 def define_commands(tree, client):
-    """Defines slash commands for HMS Victory."""
+    """Defines slash commands for HMS Victory"""
     def command(name: str, description: str, checks: list = None):
         def decorator(func):
             async def wrapper(*args, **kwargs):
-                # Retrieve the interaction from the first argument.
                 interaction: Interaction = args[0]
-                # Check permissions if any checks were provided.
                 if checks:
                     for check in checks:
                         if not check(interaction):
@@ -31,7 +29,6 @@ def define_commands(tree, client):
                                 "You do not have permission to use this command.", ephemeral=True
                             )
                             return
-                # Log usage.
                 sig = inspect.signature(func)
                 bound_args = sig.bind(*args, **kwargs)
                 bound_args.apply_defaults()
@@ -117,12 +114,7 @@ def define_commands(tree, client):
         if not role:
             await interaction.response.send_message(f"Role with ID {ROLES.POLITICS_BAN} not found.", ephemeral=True)
             return
-        if role in user.roles:
-            await user.remove_roles(role)
-            await interaction.response.send_message(f"Role {role.name} has been removed from {user.mention}.", ephemeral=True)
-        else:
-            await user.add_roles(role)
-            await interaction.response.send_message(f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True)
+        await toggle_user_role(interaction, user, role)
 
     @command("roast", "Roast a user based on recent messages in a channel", checks=[lambda i: has_any_role(i, [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER, ROLES.PCSO])])
     async def roast_command(interaction: Interaction, channel: TextChannel = None, user: Member = None):
