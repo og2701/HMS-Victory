@@ -20,7 +20,6 @@ from commands.mod_commands.persistant_role_buttons import (
     persistantRoleButtons,
     handleRoleButtonInteraction,
 )
-from commands.mod_commands.announcement_command import RoleButtonView
 from commands.mod_commands.anti_raid import handle_new_member_anti_raid
 from commands.mod_commands.archive_channel import (
     ArchiveButtonView,
