@@ -1,6 +1,7 @@
 from lib.utils import load_whitelist
 from collections import defaultdict
 
+GUILD_ID = 959493056242008184
 
 class ROLES:
     DEPUTY_PM = 960538130761527386
