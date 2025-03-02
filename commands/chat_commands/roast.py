@@ -10,7 +10,7 @@ openai.api_key = getenv("OPENAI_TOKEN")
 time_threshold = datetime.utcnow() - timedelta(days=7)
 
 async def roast(interaction, channel=None, user=None):
-    await interaction.response.defer()
+    await interaction.response.defer(thinking=True)
     
     if channel is None:
         channel = interaction.channel
