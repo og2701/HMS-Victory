@@ -1,6 +1,7 @@
 from discord import Embed, ButtonStyle, Interaction, Forbidden, InteractionType
 from discord.ui import View, Button
 from config import ROLE_BUTTONS
+from lib.settings import GUILD_ID
 
 
 async def persistantRoleButtons(interaction: Interaction):
@@ -37,18 +38,33 @@ async def handleRoleButtonInteraction(interaction: Interaction):
         custom_id = interaction.data["custom_id"]
         if custom_id.startswith("role_"):
             role_id = custom_id.split("_")[1]
-            role = interaction.guild.get_role(int(role_id))
+                
+            if interaction.guild_id == None:
+                guild = interaction._client.get_guild(GUILD_ID)
+            else:
+                guild = interaction.guild
+
+            if hasattr(interaction.user, "guild"):
+                member = interaction.user
+            else:
+                member = guild.get_member(interaction.user.id)
+
+            if member == None:
+                return await interaction.response.send_message("Failed to find member (are you in the UK place server?)")
+
+
+            role = guild.get_role(int(role_id))
             if role:
                 try:
-                    if role in interaction.user.roles:
-                        await interaction.user.remove_roles(role)
+                    if role in member.roles:
+                        await member.remove_roles(role)
                         await interaction.response.send_message(
-                            f"Role {role.name} removed.", ephemeral=True
+                            f"Role **{role.name}** removed.", ephemeral=True
                         )
                     else:
-                        await interaction.user.add_roles(role)
+                        await member.add_roles(role)
                         await interaction.response.send_message(
-                            f"Role {role.name} assigned.", ephemeral=True
+                            f"Role **{role.name}** assigned.", ephemeral=True
                         )
                 except Forbidden:
                     await interaction.response.send_message(
