@@ -16,22 +16,28 @@ from lib.on_message_functions import *
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 async def zip_and_send_folder(client, folder_path, channel_id, zip_filename_prefix):
     zip_file_path = f"{folder_path}.zip"
-    
+
     if os.path.exists(folder_path):
-        shutil.make_archive(folder_path, 'zip', folder_path)
+        shutil.make_archive(folder_path, "zip", folder_path)
         archive_channel = client.get_channel(channel_id)
-        
+
         if archive_channel:
-            with open(zip_file_path, 'rb') as zip_file:
-                await archive_channel.send(file=discord.File(zip_file, f"{zip_filename_prefix}.zip"))
-            
-            logger.info(f"Sent archive '{zip_filename_prefix}.zip' to channel {archive_channel.name}.")
+            with open(zip_file_path, "rb") as zip_file:
+                await archive_channel.send(
+                    file=discord.File(zip_file, f"{zip_filename_prefix}.zip")
+                )
+
+            logger.info(
+                f"Sent archive '{zip_filename_prefix}.zip' to channel {archive_channel.name}."
+            )
 
         os.remove(zip_file_path)
     else:
         logger.warning(f"Folder '{folder_path}' does not exist.")
+
 
 class AClient(discord.Client):
     def __init__(self):
@@ -48,10 +54,15 @@ class AClient(discord.Client):
         await on_ready(self, tree, self.scheduler)
 
     async def on_message(self, message):
-        if message.author.id == USERS.COUNTRYBALL_BOT and "A wild countryball" in message.content:
+        if (
+            message.author.id == USERS.COUNTRYBALL_BOT
+            and "A wild countryball" in message.content
+        ):
             channel = client.get_channel(CHANNELS.BOT_SPAM)
             if channel:
-                await channel.send(f"<@&{ROLES.BALL_INSPECTOR}> A wild countryball appeared!")
+                await channel.send(
+                    f"<@&{ROLES.BALL_INSPECTOR}> A wild countryball appeared!"
+                )
             return
 
         if message.author.id == 557628352828014614 and message.embeds:
@@ -63,7 +74,7 @@ class AClient(discord.Client):
 
         if message.type == discord.MessageType.auto_moderation_action:
             for role in message.author.roles:
-                if (role.id == ROLES.DONT_DM_WHEN_MESSAGE_BLOCKED):
+                if role.id == ROLES.DONT_DM_WHEN_MESSAGE_BLOCKED:
                     return
 
             embed = message.embeds[0]
@@ -74,7 +85,7 @@ class AClient(discord.Client):
             await message.author.send(
                 f"<@{message.author.id}>, your message in <#{channel_id}> was blocked due to it containing **{rule_name}**, the flagged word is ||{bad_word}||"
             )
-            
+
             return
 
         initialize_summary_data()
@@ -147,14 +158,14 @@ class AClient(discord.Client):
     async def daily_summary(self):
         uk_timezone = pytz.timezone("Europe/London")
         yesterday = (datetime.now(uk_timezone) - timedelta(days=1)).strftime("%Y-%m-%d")
-        
+
         await post_summary(self, CHANNELS.COMMONS, "daily", date=yesterday)
 
         await zip_and_send_folder(
-            client=self, 
-            folder_path='./daily_summaries', 
-            channel_id=CHANNELS.DATA_BACKUP, 
-            zip_filename_prefix=f"daily_summaries_as_of_{yesterday}"
+            client=self,
+            folder_path="./daily_summaries",
+            channel_id=CHANNELS.DATA_BACKUP,
+            zip_filename_prefix=f"daily_summaries_as_of_{yesterday}",
         )
 
     async def weekly_summary(self):
@@ -162,6 +173,7 @@ class AClient(discord.Client):
 
     async def monthly_summary(self):
         await post_summary(self, CHANNELS.COMMONS, "monthly")
+
 
 client = AClient()
 tree = discord.app_commands.CommandTree(client)

@@ -10,6 +10,7 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 
+
 async def screenshotCanvas(interaction, x: int = -770, y: int = 7930):
     """
     Takes a screenshot of a specific coordinate on pixelcanvas.io and sends it in the chat.
@@ -27,7 +28,7 @@ async def screenshotCanvas(interaction, x: int = -770, y: int = 7930):
     initial_embed = Embed(
         title="Processing your request...",
         description="Please wait while I capture the screenshot.",
-        color=0xFFA500
+        color=0xFFA500,
     )
     await interaction.response.send_message(embed=initial_embed)
 
@@ -38,23 +39,24 @@ async def screenshotCanvas(interaction, x: int = -770, y: int = 7930):
             embed = Embed(
                 title="Screenshot from Pixelcanvas",
                 description=f"Here is the screenshot from the coordinates ({x}, {y}).",
-                color=0xFFA500
+                color=0xFFA500,
             )
             embed.set_image(url="attachment://screenshot.png")
-            
+
             await interaction.delete_original_response()
-            
+
             await interaction.followup.send(file=file, embed=embed)
         except Exception as e:
             logging.error(f"Error capturing screenshot: {e}")
             error_embed = Embed(
                 title="Error",
                 description="An error occurred while capturing the screenshot. Please try again later.",
-                color=0xFF0000
+                color=0xFF0000,
             )
             await interaction.followup.send(embed=error_embed)
         finally:
             os.remove(tmp.name)
+
 
 async def capture_screenshot(x, y, filepath):
     options = Options()
