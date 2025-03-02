@@ -53,6 +53,21 @@ FORUM_CHANNEL_ID = 1341451323249266711
 THREAD_MESSAGES_FILE = "thread_messages.json"
 ADDED_USERS_FILE = "added_users.json"
 
+def reattach_persistent_views(client):
+    from commands.mod_commands.announcement_command import RoleButtonView
+    persistent_views = load_persistent_views()
+    for key, value in persistent_views.items():
+        if key.startswith("archive_") and isinstance(value, dict) and "move_timestamp" in value and "msg_id" in value:
+            channel_id = int(key.split("_")[1])
+            channel = client.get_channel(channel_id)
+            if channel:
+                client.add_view(ArchiveButtonView(client, channel_id), message_id=value["msg_id"])
+                target_timestamp = value["move_timestamp"]
+                asyncio.create_task(schedule_archive_move(channel, channel.guild, target_timestamp, client))
+        elif isinstance(value, dict):
+            view = RoleButtonView(value)
+            client.add_view(view, message_id=key)
+
 def schedule_client_jobs(client, scheduler):
     """Schedules periodic summary and cache clearing jobs"""
     scheduler.add_job(
