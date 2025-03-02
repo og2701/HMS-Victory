@@ -155,9 +155,6 @@ class AClient(discord.Client):
 
         await on_reaction_remove(reaction, user)
 
-    async def on_member_update(self, before, after):
-        await on_member_update(self, before, after)
-
     async def on_voice_state_update(self, member, before, after):
         await on_voice_state_update(member, before, after)
 
