@@ -61,6 +61,21 @@ class AClient(discord.Client):
         if message.author.bot:
             return
 
+        if message.type == discord.MessageType.auto_moderation_action:
+            for role in message.author.roles:
+                if (role.id == ROLES.DONT_DM_WHEN_MESSAGE_BLOCKED):
+                    return
+
+            embed = message.embeds[0]
+            rule_name = embed.fields[0].value
+            channel_id = embed.fields[1].value
+            bad_word = embed.fields[4].value
+
+            await message.author.send(
+                f"<@{message.author.id}>, your message in <#{channel_id}> was blocked due to it containing **{rule_name}**, the flagged word is ||{bad_word}||"
+            )
+            
+            return
 
         initialize_summary_data()
         update_summary_data("messages", channel_id=message.channel.id)
