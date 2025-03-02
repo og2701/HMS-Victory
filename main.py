@@ -82,8 +82,18 @@ class AClient(discord.Client):
             channel_id = embed.fields[1].value
             bad_word = embed.fields[4].value
 
+            button = discord.ui.Button(
+                    custom_id = f"role_{ROLES.DONT_DM_WHEN_MESSAGE_BLOCKED}",
+                    label = "Toggle DMs when a message is blocked",
+                    style = discord.ButtonStyle.primary
+                )
+            
+            view = discord.ui.View(timeout=None)
+            view.add_item(button)
+
             await message.author.send(
-                f"<@{message.author.id}>, your message in <#{channel_id}> was blocked due to it containing **{rule_name}**, the flagged word is ||{bad_word}||"
+                f"<@{message.author.id}>, your message in <#{channel_id}> was blocked due to it containing **{rule_name}**, the flagged word is ||{bad_word}||",
+                view = view
             )
 
             return
