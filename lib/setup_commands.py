@@ -433,10 +433,10 @@ def define_commands(tree, client):
 
     @tree.command(name="archive-channel", description="Archive the current channel.")
     @log_usage
-    async def archive_channel_command(interaction: Interaction):
+    async def archive_channel_command(interaction: Interaction, seconds: Optional[int] = 86400):
         if not has_any_role(interaction, [ROLES.MINISTER, ROLES.CABINET]):
             await interaction.response.send_message(
                 "You do not have permission to use this command.", ephemeral=True
             )
             return
-        await archive_channel(interaction, interaction.client)
+        await archive_channel(interaction, interaction.client, seconds)
