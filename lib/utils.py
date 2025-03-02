@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 import discord
-from discord import Member
 from discord import Interaction
 import json
 import os
