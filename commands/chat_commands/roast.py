@@ -2,36 +2,47 @@ from discord import Embed, Forbidden
 import openai
 from datetime import datetime, timedelta
 from os import getenv
-from lib.utils import fetch_messages_with_context, estimate_tokens, handle_roast_command
+from lib.utils import fetch_messages_with_context, estimate_tokens
+from lib.settings import *
 
 openai.api_key = getenv("OPENAI_TOKEN")
 
 time_threshold = datetime.utcnow() - timedelta(days=7)
 
-async def roast(interaction, channel=None, user=None):
+async def roast_or_compliment(interaction, channel=None, user=None):
     await interaction.response.defer(thinking=True)
+    
     if channel is None:
         channel = interaction.channel
     if user is None:
         user = interaction.user
+
     user_messages = []
     await fetch_messages_with_context(channel, user, user_messages, total_limit=100, context_depth=2)
+    
     input_text = "\n".join(user_messages)
     if len(input_text) == 0:
         await interaction.followup.send(f"{user.display_name} hasn't said anything interesting lately!")
         return
+    
     estimated_tokens = estimate_tokens(input_text)
     max_allowed_tokens = 120000
+
     if estimated_tokens > max_allowed_tokens:
         allowed_length = max_allowed_tokens * 4
         input_text = input_text[:allowed_length]
+
+    is_special_user = user.id== USERS.OGGERS
+    
+    system_prompt = (
+        f"You are an assistant tasked with {'writing a highly flattering and positive summary' if is_special_user else 'writing a very rude and insulting summary'} "
+        f"of the chat messages of a user. {'Your goal is to make the user feel appreciated and admired.' if is_special_user else 'Your goal is to embarrass them.'} "
+        f"The user's name is {user.display_name}. Only summarise the messages from {user.display_name}, while considering the context. "
+        f"The summary should be a paragraph. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
+        f"Return only the paragraph and nothing else."
+    )
+
     try:
-        system_prompt = (
-            f"You are an assistant tasked with writing a very rude and insulting summary of the chat messages of a user with the intent of embarrassing them. "
-            f"The user's name is {user.display_name}. Only summarise the messages from {user.display_name}, "
-            f"while considering the context. The summary should be a paragraph. The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
-            f"Return only the paragraph and nothing else."
-        )
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[
@@ -41,6 +52,7 @@ async def roast(interaction, channel=None, user=None):
             max_tokens=500,
             temperature=0.7,
         )
+
         summary = response["choices"][0]["message"]["content"].strip()
         await interaction.followup.send(summary)
     except Exception as e:
