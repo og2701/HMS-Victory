@@ -4,7 +4,6 @@ import os
 import pytz
 import inspect
 from functools import wraps
-from typing import Any
 
 from lib.settings import *
 from lib.utils import *
@@ -16,7 +15,7 @@ def log_usage(func):
     """Decorator to log command usage"""
 
     @wraps(func)
-    async def wrapper(interaction: Interaction, *args: Any, **kwargs: Any):
+    async def wrapper(interaction: Interaction, *args, **kwargs):
         signature = inspect.signature(func)
         bound_args = signature.bind(interaction, *args, **kwargs)
         bound_args.apply_defaults()
@@ -49,7 +48,7 @@ def command_group(name, description, checks=None):
     def decorator(func):
         @app_commands.command(name=name, description=description)
         @log_usage
-        async def wrapper(interaction: Interaction, *args: Any, **kwargs: Any):
+        async def wrapper(interaction: Interaction, *args, **kwargs):
             for check in checks:
                 if not check(interaction):
                     await interaction.response.send_message(
@@ -65,7 +64,7 @@ def command_group(name, description, checks=None):
 def is_owner(interaction: Interaction):
     return interaction.user.id == USERS.OGGERS
 
-def has_required_roles(interaction: Interaction, roles: list[int]):
+def has_required_roles(interaction: Interaction, roles):
     return has_any_role(interaction, roles)
 
 
