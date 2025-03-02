@@ -6,8 +6,6 @@ import os
 import pytz
 import random
 
-from commands.mod_commands.announcement_command import RoleButtonView
-
 PERSISTENT_VIEWS_FILE = "persistent_views.json"
 
 async def restrict_channel_for_new_members(
