@@ -55,6 +55,45 @@ def save_persistent_views(data):
     with open(PERSISTENT_VIEWS_FILE, "w") as f:
         json.dump(data, f)
 
+def load_json(filename):
+    """Loads JSON data from a file"""
+    if os.path.exists(filename):
+        with open(filename, "r") as f:
+            return json.load(f)
+    return {}
+
+
+def save_json(filename, data):
+    """Saves JSON data to a file"""
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=4)
+
+
+def is_lockdown_active():
+    """Checks whether a lockdown is active"""
+    return os.path.exists(VC_LOCKDOWN_FILE)
+
+
+def reattach_persistent_views(client):
+    """Reattaches persistent views and schedules archive moves"""
+    persistent_views = load_persistent_views()
+    for key, value in persistent_views.items():
+        if (
+            key.startswith("archive_")
+            and isinstance(value, dict)
+            and "move_timestamp" in value
+            and "msg_id" in value
+        ):
+            channel_id = int(key.split("_")[1])
+            channel = client.get_channel(channel_id)
+            if channel:
+                client.add_view(ArchiveButtonView(client, channel_id), message_id=value["msg_id"])
+                target_timestamp = value["move_timestamp"]
+                asyncio.create_task(schedule_archive_move(channel, channel.guild, target_timestamp, client))
+        elif isinstance(value, dict):
+            view = RoleButtonView(value)
+            client.add_view(view, message_id=key)
+
 async def toggle_user_role(interaction: Interaction, user: Member, role):
     """Toggles a given role for a user"""
     if role in user.roles:
