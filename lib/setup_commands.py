@@ -1,3 +1,4 @@
+from typing import Any
 from discord import app_commands, Interaction, Member, TextChannel
 from datetime import datetime, timedelta
 import os
@@ -19,7 +20,7 @@ from lib.utils import (
 def log_usage(func):
     """Decorator to log command usage for HMS Victory."""
     @wraps(func)
-    async def wrapper(interaction: Interaction, *args, **kwargs):
+    async def wrapper(interaction: Interaction, *args: Any, **kwargs: Any) -> Any:
         signature = inspect.signature(func)
         bound_args = signature.bind(interaction, *args, **kwargs)
         bound_args.apply_defaults()
@@ -34,9 +35,9 @@ def log_usage(func):
 
 def define_commands(tree, client):
     """Defines slash commands for HMS Victory."""
-    def command(name, description, checks=None):
+    def command(name: str, description: str, checks: list = None):
         def decorator(func):
-            async def wrapper(interaction: Interaction, *args, **kwargs):
+            async def wrapper(interaction: Interaction, *args: Any, **kwargs: Any) -> Any:
                 if checks:
                     for check in checks:
                         if not check(interaction):
