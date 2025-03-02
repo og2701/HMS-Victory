@@ -9,7 +9,7 @@ openai.api_key = getenv("OPENAI_TOKEN")
 
 time_threshold = datetime.utcnow() - timedelta(days=7)
 
-async def roast_or_compliment(interaction, channel=None, user=None):
+async def roast(interaction, channel=None, user=None):
     await interaction.response.defer(thinking=True)
     
     if channel is None:
