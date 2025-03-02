@@ -16,34 +16,38 @@ from lib.utils import (
     save_whitelist,
 )
 
-def log_usage(func):
-    """Decorator to log command usage for HMS Victory."""
-    @wraps(func)
-    async def wrapper(interaction: Interaction, *args, **kwargs):
-        signature = inspect.signature(func)
-        bound_args = signature.bind(interaction, *args, **kwargs)
-        bound_args.apply_defaults()
-        param_str = ", ".join(f"{name}={value}" for name, value in bound_args.arguments.items() if name != "interaction")
-        channel = interaction.client.get_channel(CHANNELS.BOT_USAGE_LOG)
-        if channel:
-            uk_tz = pytz.timezone("Europe/London")
-            now = datetime.now(uk_tz).strftime("%Y-%m-%d %H:%M:%S")
-            await channel.send(f"{now} - {interaction.user} (ID {interaction.user.id}) used /{interaction.command.name} in {interaction.channel.mention} with args: {param_str}")
-        return await func(interaction, *args, **kwargs)
-    return wrapper
-
 def define_commands(tree, client):
     """Defines slash commands for HMS Victory."""
     def command(name: str, description: str, checks: list = None):
         def decorator(func):
-            async def wrapper(interaction: Interaction, *args, **kwargs):
+            async def wrapper(*args, **kwargs):
+                # Retrieve the interaction from the first argument.
+                interaction: Interaction = args[0]
+                # Check permissions if any checks were provided.
                 if checks:
                     for check in checks:
                         if not check(interaction):
-                            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+                            await interaction.response.send_message(
+                                "You do not have permission to use this command.", ephemeral=True
+                            )
                             return
-                return await func(interaction, *args, **kwargs)
-            return tree.command(name=name, description=description)(log_usage(wrapper))
+                # Log usage.
+                sig = inspect.signature(func)
+                bound_args = sig.bind(*args, **kwargs)
+                bound_args.apply_defaults()
+                param_str = ", ".join(
+                    f"{name}={value}" for name, value in bound_args.arguments.items() if name != "interaction"
+                )
+                channel = interaction.client.get_channel(CHANNELS.BOT_USAGE_LOG)
+                if channel:
+                    uk_tz = pytz.timezone("Europe/London")
+                    now = datetime.now(uk_tz).strftime("%Y-%m-%d %H:%M:%S")
+                    await channel.send(
+                        f"{now} - {interaction.user} (ID {interaction.user.id}) used /{interaction.command.name} in {interaction.channel.mention} with args: {param_str}"
+                    )
+                return await func(*args, **kwargs)
+            wrapper.__signature__ = inspect.signature(func)
+            return tree.command(name=name, description=description)(wrapper)
         return decorator
 
     @command("role-manage", "Manages user roles by assigning a specified role to members who don't have it")
