@@ -2,10 +2,11 @@ import requests
 import base64
 import html
 import uuid
+from config import CHROME_PATH
 from PIL import Image, ImageChops
 from html2image import Html2Image
 
-hti = Html2Image(output_path='.', browser_executable='/usr/bin/google-chrome')
+hti = Html2Image(output_path='.', browser_executable=CHROME_PATH)
 
 def trim(im):
     bg = Image.new(im.mode, im.size, im.getpixel((0,0)))

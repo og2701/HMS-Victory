@@ -1,3 +1,5 @@
+CHROME_PATH = "chromium"
+
 ROLE_BUTTONS = {
     "1132280073379123311": {
         "name": "Soldier 💂 ",

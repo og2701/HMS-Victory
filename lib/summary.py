@@ -1,5 +1,6 @@
 import os
 import json
+import shutil
 from datetime import datetime, timedelta
 import discord
 import pytz
@@ -7,12 +8,43 @@ from lib.summary_html import create_summary_image
 from lib.settings import *
 
 SUMMARY_DATA_FILE = "daily_summaries/daily_summary_{date}.json"
+SUMMARY_BACKUP_DATA_FILE = "daily_summaries/daily_summary_{date}_{time}.bak.json"
 
-def initialize_summary_data():
+def get_file_path():
     uk_timezone = pytz.timezone("Europe/London")
     date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
     file_path = SUMMARY_DATA_FILE.format(date=date)
-    if not os.path.exists(file_path):
+
+    return file_path
+
+def load_summary_data():
+    uk_timezone = pytz.timezone("Europe/London")
+    file_path = get_file_path()
+
+    for i in range(1, 3):
+        if not os.path.isfile(file_path):
+            print("Daily summary file was not created")
+            initialize_summary_data(True)
+            continue
+        with open(file_path, "r") as file:
+            try:
+                return json.load(file)
+            except:
+                date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
+                time = datetime.now(uk_timezone).strftime("%H-%M-%S")
+                backup_file_path = SUMMARY_BACKUP_DATA_FILE.format(date=date,time=time)
+
+                shutil.copyfile(file_path, backup_file_path)
+
+                print("Failed to load summary data, saved current contents of {0} to {1} and created a new file.".format(file_path, backup_file_path))
+                initialize_summary_data(True)
+    
+    return {}
+
+def initialize_summary_data(force_init=False):
+    file_path = get_file_path()
+
+    if not os.path.exists(file_path) or force_init:
         with open(file_path, "w") as file:
             json.dump({
                 "total_members": 0,
@@ -30,19 +62,18 @@ def initialize_summary_data():
                 "reacting_members": {}
             }, file)
     else:
-        with open(file_path, "r") as file:
-            data = json.load(file)
+        data = load_summary_data()
+
         if "total_messages" not in data:
             data["total_messages"] = 0
         with open(file_path, "w") as file:
             json.dump(data, file)
 
 def update_summary_data(key, channel_id=None, user_id=None, remove=False):
-    uk_timezone = pytz.timezone("Europe/London")
-    date = datetime.now(uk_timezone).strftime("%Y-%m-%d")
-    file_path = SUMMARY_DATA_FILE.format(date=date)
-    with open(file_path, "r") as file:
-        data = json.load(file)
+    file_path = get_file_path()
+
+    data = load_summary_data()
+
     if key == "messages" and channel_id:
         if str(channel_id) not in data["messages"]:
             data["messages"][str(channel_id)] = 0
