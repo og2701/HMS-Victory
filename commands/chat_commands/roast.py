@@ -11,10 +11,10 @@ openai.api_key = getenv("OPENAI_TOKEN")
 time_threshold = datetime.utcnow() - timedelta(days=7)
 
 async def roast(interaction, channel=None, user=None):
-    await interaction.response.defer(thinking=True)
+    await interaction.response.defer(thinking=True) 
     
     if channel is None:
-        channel = interaction.channel  # Ensure we use the command execution channel
+        channel = interaction.channel 
     if user is None:
         user = interaction.user
 
@@ -24,6 +24,7 @@ async def roast(interaction, channel=None, user=None):
     input_text = "\n".join(user_messages)
     if len(input_text) == 0:
         await interaction.channel.send(f"{user.display_name} hasn't said anything interesting lately!")
+        await interaction.delete_original_response()
         return
     
     estimated_tokens = estimate_tokens(input_text)
@@ -56,10 +57,12 @@ async def roast(interaction, channel=None, user=None):
 
         summary = response["choices"][0]["message"]["content"].strip()
         await send_message_with_retry(interaction.channel, summary)
+        await interaction.delete_original_response() 
 
     except Exception as e:
         print(e)
         await send_message_with_retry(interaction.channel, "An error occurred.")
+        await interaction.delete_original_response()
 
 async def send_message_with_retry(channel, content):
     retry_delay = 5
