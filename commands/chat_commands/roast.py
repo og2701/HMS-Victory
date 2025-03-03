@@ -19,21 +19,21 @@ thinking_messages = [
 ]
 
 async def roast(interaction, channel=None, user=None):
-    thinking_text = random.choice(thinking_messages)
-    thinking_message = await interaction.channel.send(thinking_text)
-
     if channel is None:
         channel = interaction.channel
     if user is None:
         user = interaction.user
+
+    thinking_text = random.choice(thinking_messages)
+    
+    await interaction.response.send_message(thinking_text, ephemeral=False)
 
     user_messages = []
     await fetch_messages_with_context(channel, user, user_messages, total_limit=100, context_depth=2)
     
     input_text = "\n".join(user_messages)
     if len(input_text) == 0:
-        await thinking_message.delete()
-        await interaction.channel.send(f"{user.display_name} hasn't said anything interesting lately!")
+        await interaction.followup.send(f"{user.display_name} hasn't said anything interesting lately!")
         return
     
     estimated_tokens = estimate_tokens(input_text)
@@ -65,9 +65,5 @@ async def roast(interaction, channel=None, user=None):
         )
 
         summary = response["choices"][0]["message"]["content"].strip()
-        await thinking_message.delete()
-        await interaction.channel.send(summary)
-    except Exception as e:
-        print(e)
-        await thinking_message.delete()
-        await interaction.channel.send("An error occurred.")
+        await interaction.followup.send(summary)
+    except Exceptio
