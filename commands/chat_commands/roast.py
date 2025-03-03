@@ -26,7 +26,6 @@ async def roast(interaction, channel=None, user=None):
 
     thinking_text = random.choice(thinking_messages)
     
-    # Respond immediately to the interaction to avoid timeout
     await interaction.response.send_message(thinking_text, ephemeral=False)
 
     user_messages = []
