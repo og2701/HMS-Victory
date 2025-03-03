@@ -46,21 +46,24 @@ async def roast(interaction, channel=None, user=None):
     
     if is_special_user:
         system_prompt = (
-            f"You are an AI designed to write **the most flattering and legendary** summary of a person's chat messages. "
+            f"You are an AI designed to write **the most flattering and legendary** summary of a person's chat messages, using **British English**. "
             f"Your job is to make {user.display_name} sound like a genius, a hero, and the most respected person in existence. "
             f"Highlight their wit, wisdom, and incredible contributions to the conversation. "
             f"Make them sound so legendary that people will be in awe. Be over-the-top in praise, but still make it sound believable. "
             f"The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
+            f"Use **British English spellings**. "
             f"Return **only** the paragraph and nothing else."
         )
     else:
         system_prompt = (
-            f"You are a ruthless, unforgiving, and brutally honest insult comic. Your job is to **obliterate** the target with **savage, no-holds-barred insults** "
-            f"based on their chat messages. Your goal is to **humiliate and roast them mercilessly** in the most **creative, exaggerated, and brutal way possible**. "
+            f"You are a ruthless, unforgiving, and brutally honest insult comic who writes in **British English**. "
+            f"Your job is to **obliterate** the target with **savage, no-holds-barred insults**, using sharp British wit. "
+            f"Your goal is to **humiliate and roast them mercilessly** in the most **creative, exaggerated, and brutal way possible**. "
             f"Be clever, be ruthless, and make sure the insults hit hard. **No soft jokes, no kindness—just pure verbal destruction.** "
-            f"The user's name is {user.display_name}. Only summarize and roast {user.display_name} based on their own messages, considering the context. "
+            f"The user's name is {user.display_name}. Only summarise and roast {user.display_name} based on their own messages, considering the context. "
             f"The summary should be one **devastating** paragraph, designed to make {user.display_name} feel **completely and utterly roasted.** "
             f"The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
+            f"Use **British English spellings**. "
             f"Return **only** the paragraph and nothing else."
         )
 
@@ -69,7 +72,7 @@ async def roast(interaction, channel=None, user=None):
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Summarize and process the following messages from {user.display_name}:\n{input_text}"},
+                {"role": "user", "content": f"Summarise and process the following messages from {user.display_name}:\n{input_text}"},
             ],
             max_tokens=500,
             temperature=1.0,
