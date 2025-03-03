@@ -1,3 +1,4 @@
+import random
 from discord import Embed, Forbidden
 import openai
 from datetime import datetime, timedelta
@@ -9,9 +10,18 @@ openai.api_key = getenv("OPENAI_TOKEN")
 
 time_threshold = datetime.utcnow() - timedelta(days=7)
 
+thinking_messages = [
+    "Formulating the roast...",
+    "Figuring out how to insult you...",
+    "Sharpening my words...",
+    "Roasting in progress...",
+    "Downloading premium insults...",
+]
+
 async def roast(interaction, channel=None, user=None):
-    await interaction.response.defer(thinking=True)
-    
+    thinking_text = random.choice(thinking_messages)
+    thinking_message = await interaction.channel.send(thinking_text)
+
     if channel is None:
         channel = interaction.channel
     if user is None:
@@ -22,7 +32,8 @@ async def roast(interaction, channel=None, user=None):
     
     input_text = "\n".join(user_messages)
     if len(input_text) == 0:
-        await interaction.followup.send(f"{user.display_name} hasn't said anything interesting lately!")
+        await thinking_message.delete()
+        await interaction.channel.send(f"{user.display_name} hasn't said anything interesting lately!")
         return
     
     estimated_tokens = estimate_tokens(input_text)
@@ -32,7 +43,7 @@ async def roast(interaction, channel=None, user=None):
         allowed_length = max_allowed_tokens * 4
         input_text = input_text[:allowed_length]
 
-    is_special_user = user.id== USERS.OGGERS
+    is_special_user = user.id == USERS.OGGERS
     
     system_prompt = (
         f"You are an assistant tasked with {'writing a highly flattering and positive summary' if is_special_user else 'writing a very rude and insulting summary'} "
@@ -54,7 +65,9 @@ async def roast(interaction, channel=None, user=None):
         )
 
         summary = response["choices"][0]["message"]["content"].strip()
-        await interaction.followup.send(summary)
+        await thinking_message.delete()
+        await interaction.channel.send(summary)
     except Exception as e:
         print(e)
-        await interaction.followup.send("An error occurred.")
+        await thinking_message.delete()
+        await interaction.channel.send("An error occurred.")
