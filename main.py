@@ -92,7 +92,7 @@ class AClient(discord.Client):
             view.add_item(button)
 
             await message.author.send(
-                f"<@{message.author.id}>, your message in <#{channel_id}> was blocked due to it containing **{rule_name}**, the flagged word is ||{bad_word}||",
+                f"<@{message.author.id}>, your message in <#{channel_id}> was blocked due to it triggering **{rule_name}**, the flagged word is ||{bad_word}||",
                 view = view
             )
 
