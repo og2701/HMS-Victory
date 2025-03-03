@@ -26,6 +26,7 @@ async def roast(interaction, channel=None, user=None):
 
     thinking_text = random.choice(thinking_messages)
     
+    # Respond immediately to the interaction to avoid timeout
     await interaction.response.send_message(thinking_text, ephemeral=False)
 
     user_messages = []
@@ -66,4 +67,6 @@ async def roast(interaction, channel=None, user=None):
 
         summary = response["choices"][0]["message"]["content"].strip()
         await interaction.followup.send(summary)
-    except Exceptio
+    except Exception as e:
+        print(e)
+        await interaction.followup.send("An error occurred.")
