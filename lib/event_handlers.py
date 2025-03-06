@@ -245,15 +245,30 @@ async def on_ready(client, tree, scheduler):
 
 async def on_message(client, message):
     """Handles new message events, including attachments, message links, and forum thread onboarding"""
-    if not await restrict_channel_for_new_members(
-        message, CHANNELS.POLITICS, 7, POLITICS_WHITELISTED_USER_IDS
-    ):
+    if not await restrict_channel_for_new_members(message, CHANNELS.POLITICS, 7, POLITICS_WHITELISTED_USER_IDS):
         return
+
+    if not hasattr(client, "xp_system"):
+        from xp_system import XPSystem
+        client.xp_system = XPSystem()
+    await client.xp_system.update_xp(message)
+    
     await process_message_attachments(client, message)
     await process_message_links(client, message)
     if message.author.bot:
         return
     await process_forum_threads(client, message)
+
+
+
+async def on_message(client, message):
+    if message.author.bot:
+        return
+
+    await process_message_attachments(client, message)
+    await process_message_links(client, message)
+    await process_forum_threads(client, message)
+
 
 
 async def on_interaction(interaction: Interaction):
