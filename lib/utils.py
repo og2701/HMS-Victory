@@ -274,25 +274,6 @@ def encode_image_to_data_uri(image_path):
     encoded = base64.b64encode(data).decode("utf-8")
     return f"data:image/png;base64,{encoded}"
 
-def get_average_brightness(image_path: str) -> float:
-    from PIL import Image
-    with Image.open(image_path).convert("RGB") as img:
-        pixels = list(img.getdata())
-    total_lum = 0
-    for r, g, b in pixels:
-        total_lum += (0.299*r + 0.587*g + 0.114*b)
-    return total_lum / len(pixels)
-
-def pick_color_scheme(bg_path: str):
-    brightness = get_average_brightness(bg_path)
-    if brightness < 128:
-        text_color = "#FFFFFF"
-        box_bg_color = "rgba(0, 0, 0, 0.7)"
-    else:
-        text_color = "#000000"
-        box_bg_color = "rgba(255, 255, 255, 0.7)"
-    return text_color, box_bg_color
-
 async def generate_rank_card(interaction: Interaction, member: Member) -> discord.File:
     if not hasattr(interaction.client, "xp_system"):
         from xp_system import XPSystem
@@ -344,15 +325,9 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
 
     user_id_str = str(member.id)
     custom_bg_filename = CUSTOM_RANK_BACKGROUNDS.get(user_id_str, "unionjack.png")
-    background_path = os.path.join("data", custom_bg_filename)
-
-    text_color, box_bg_color = pick_color_scheme(background_path)
-
+    background_path = os.path.join("data", "rank_cards", custom_bg_filename)
     background_data_uri = encode_image_to_data_uri(background_path)
-
     html_content = html_content.replace("{unionjack}", background_data_uri)
-    html_content = html_content.replace("{text_color}", text_color)
-    html_content = html_content.replace("{box_bg_color}", box_bg_color)
 
     size = (1600, 1000)
     output_file = f"{uuid.uuid4()}.png"
