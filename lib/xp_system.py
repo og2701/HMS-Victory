@@ -1,4 +1,6 @@
 import discord
+import time
+import random
 from lib.utils import load_json, save_json
 from lib.settings import *
 
@@ -6,6 +8,7 @@ class XPSystem:
     def __init__(self):
         self.xp_data = {}
         self.load_data()
+        self.last_xp_time = {}
 
     def load_data(self):
         data = load_json(XP_FILE)
@@ -31,23 +34,29 @@ class XPSystem:
                 break
         return role_id
 
-    async def update_xp(self, message: discord.Message, amount: int = 10):
+    async def update_xp(self, message: discord.Message):
         user_id = str(message.author.id)
-        self.xp_data[user_id] = self.xp_data.get(user_id, 0) + amount
-        new_role_id = self.get_role_for_xp(self.xp_data[user_id])
-        if new_role_id:
-            guild = message.guild
-            new_role = guild.get_role(new_role_id)
-            if new_role:
-                role_ids = [rid for _, rid in CHAT_LEVEL_ROLE_THRESHOLDS]
-                roles_to_remove = [r for r in message.author.roles if r.id in role_ids]
-                if roles_to_remove:
-                    pass
-                    # await message.author.remove_roles(*roles_to_remove)
-                if new_role not in message.author.roles:
-                    pass
-                    # await message.author.add_roles(new_role)
-        self.save_data()
+        now = time.time()
+        if user_id not in self.last_xp_time or (now - self.last_xp_time[user_id]) >= 120:
+            xp_gain = random.randint(10, 20)
+            self.xp_data[user_id] = self.xp_data.get(user_id, 0) + xp_gain
+            self.last_xp_time[user_id] = now
+
+            new_role_id = self.get_role_for_xp(self.xp_data[user_id])
+            if new_role_id:
+                guild = message.guild
+                new_role = guild.get_role(new_role_id)
+                if new_role:
+                    role_ids = [rid for _, rid in CHAT_LEVEL_ROLE_THRESHOLDS]
+                    roles_to_remove = [r for r in message.author.roles if r.id in role_ids]
+                    if roles_to_remove:
+                        pass
+                        # await message.author.remove_roles(*roles_to_remove)
+                    if new_role not in message.author.roles:
+                        pass
+                        # await message.author.add_roles(new_role)
+
+            self.save_data()
 
     def get_rank(self, user_id: str):
         sorted_xp = sorted(self.xp_data.items(), key=lambda x: x[1], reverse=True)
