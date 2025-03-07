@@ -5,30 +5,36 @@
   <title>Leaderboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    .leaderboard-bg {
-      background: url('{unionjack}') no-repeat center center;
-      background-size: cover;
-      border-radius: 16px;
-      overflow: hidden;
-      padding: 1.5rem;
-    }
-    .gradient-border {
-      border-radius: 16px;
-      background: linear-gradient(90deg, #ff4d4d, #ffcc00);
+    body {
       margin: 0;
+      padding: 0;
+      background: #111;
+    }
+    .container {
+      display: inline-block;
+      background: linear-gradient(90deg, #ff4d4d, #ffcc00);
+      border-radius: 16px;
       padding: 1rem;
     }
-    .inner-content {
-      background: rgba(0, 0, 0, 0.6);
+    .content {
+      background: rgba(0, 0, 0, 0.7);
       border-radius: 12px;
-      padding: 1.5rem;
+      padding: 1rem;
+      color: white;
+      display: inline-block;
+    }
+    .title {
+      text-align: center;
+      font-size: 1.25rem;
+      font-weight: bold;
+      margin-bottom: 1rem;
     }
   </style>
 </head>
-<body class="bg-gray-900 m-0">
-  <div class="gradient-border">
-    <div class="leaderboard-bg inner-content text-white">
-      <h2 class="text-center text-xl font-bold mb-4">UKP Leaderboard</h2>
+<body>
+  <div class="container">
+    <div class="content">
+      <div class="title">UKP Leaderboard</div>
       {{ LEADERBOARD_ROWS }}
     </div>
   </div>
