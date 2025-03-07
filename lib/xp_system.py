@@ -10,7 +10,6 @@ from lib.utils import load_json, save_json
 from lib.settings import *
 from lib.rank_constants import *
 from config import CHROME_PATH
-
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 
 def trim(im: Image.Image) -> Image.Image:
@@ -123,6 +122,7 @@ class XPSystem:
     async def generate_leaderboard_image(self, guild: discord.Guild, data_slice, offset):
         with open("templates/leaderboard.html", "r", encoding="utf-8") as f:
             html_template = f.read()
+
         columns = [[] for _ in range(4)]
         for i, (user_id, xp) in enumerate(data_slice):
             col_index = i // 5
@@ -135,7 +135,10 @@ class XPSystem:
                 display_name = "Unknown"
                 avatar_url = "https://cdn.discordapp.com/embed/avatars/0.png"
             columns[col_index].append((rank, display_name, xp, avatar_url))
-        full_html = ""
+
+        # Instead of a grid, use a single row of four flex columns
+        # so items won't overlap
+        full_html = '<div class="flex justify-center space-x-8">'
         for col_list in columns:
             col_html = ""
             for rank, display_name, xp, avatar_url in col_list:
@@ -151,14 +154,17 @@ class XPSystem:
                   </div>
                 </div>
                 """
-            full_html += f'<div class="flex flex-col space-y-2">{col_html}</div>'
-        grid_html = f'<div class="grid grid-cols-4 gap-4">{full_html}</div>'
-        html_content = html_template.replace("{{ LEADERBOARD_ROWS }}", grid_html)
+            full_html += f'<div class="flex flex-col">{col_html}</div>'
+        full_html += '</div>'
+
+        html_content = html_template.replace("{{ LEADERBOARD_ROWS }}", full_html)
+
         output_path = f"{uuid.uuid4()}.png"
-        hti.screenshot(html_str=html_content, save_as=output_path, size=(1400, 1400))
+        hti.screenshot(html_str=html_content, save_as=output_path, size=(1400, 900))
         image = Image.open(output_path)
         image = trim(image)
         image.save(output_path)
+
         with open(output_path, "rb") as f:
             image_bytes = io.BytesIO(f.read())
         os.remove(output_path)
