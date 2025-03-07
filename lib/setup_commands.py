@@ -154,13 +154,13 @@ def define_commands(tree, client):
     async def archive_channel_command(interaction: Interaction, seconds: int = 86400):
         await archive_channel(interaction, interaction.client, seconds)
 
-    @command("rank", "Displays your XP and rank in the server")
-    async def rank_command(interaction: Interaction, member: Member = None):
-        if member is None:
-            member = interaction.user
-        xp_system = interaction.client.xp_system
-        rank, xp = xp_system.get_rank(str(member.id))
-        if rank is None:
-            await interaction.response.send_message(f"{member.mention} is not ranked yet.", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"{member.mention} has {xp} XP and is rank #{rank} in the server.")
+    # @command("rank", "Displays your XP and rank in the server")
+    # async def rank_command(interaction: Interaction, member: Member = None):
+    #     if member is None:
+    #         member = interaction.user
+    #     xp_system = interaction.client.xp_system
+    #     rank, xp = xp_system.get_rank(str(member.id))
+    #     if rank is None:
+    #         await interaction.response.send_message(f"{member.mention} is not ranked yet.", ephemeral=True)
+    #     else:
+    #         await interaction.response.send_message(f"{member.mention} has {xp} XP and is rank #{rank} in the server.")
