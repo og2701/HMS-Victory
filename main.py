@@ -18,25 +18,34 @@ logger = logging.getLogger(__name__)
 
 
 async def zip_and_send_folder(client, folder_path, channel_id, zip_filename_prefix):
-    zip_file_path = f"{folder_path}.zip"
-
-    if os.path.exists(folder_path):
-        shutil.make_archive(folder_path, "zip", folder_path)
-        archive_channel = client.get_channel(channel_id)
-
-        if archive_channel:
-            with open(zip_file_path, "rb") as zip_file:
-                await archive_channel.send(
-                    file=discord.File(zip_file, f"{zip_filename_prefix}.zip")
-                )
-
-            logger.info(
-                f"Sent archive '{zip_filename_prefix}.zip' to channel {archive_channel.name}."
-            )
-
-        os.remove(zip_file_path)
-    else:
+    if not os.path.exists(folder_path):
         logger.warning(f"Folder '{folder_path}' does not exist.")
+        return
+
+    archive_channel = client.get_channel(channel_id)
+    if not archive_channel:
+        logger.warning(f"Channel ID {channel_id} not found.")
+        return
+
+    logger.info(f"Creating in-memory ZIP for {folder_path}...")
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for root, _, files in os.walk(folder_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                archive_name = os.path.relpath(file_path, start=folder_path)
+                zipf.write(file_path, archive_name)
+
+    zip_buffer.seek(0)
+
+    logger.info(f"Sending archive '{zip_filename_prefix}.zip' to channel {archive_channel.name}...")
+
+    await archive_channel.send(
+        file=discord.File(fp=zip_buffer, filename=f"{zip_filename_prefix}.zip")
+    )
+
+    logger.info("Backup complete.")
 
 
 class AClient(discord.Client):
@@ -182,6 +191,7 @@ class AClient(discord.Client):
         await post_summary(self, CHANNELS.COMMONS, "monthly")
 
     async def backup_bot(self):
+        logger.info("Backing up bot...")
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         await zip_and_send_folder(
             client=self,
@@ -189,7 +199,6 @@ class AClient(discord.Client):
             channel_id=CHANNELS.DATA_BACKUP,
             zip_filename_prefix=f"full_bot_backup_as_of_{timestamp}",
         )
-
 
 
 
