@@ -262,23 +262,34 @@ def estimate_tokens(text):
     return len(text.split())
 
 def render_html_to_image(html: str) -> io.BytesIO:
-    hti = Html2Image(output_path=tempfile.gettempdir())
-    output_file = "rank.png"
-    hti.screenshot(html_str=html, save_as=output_file)
-    file_path = os.path.join(tempfile.gettempdir(), output_file)
+    unique_filename = f"{uuid.uuid4()}.png"
+    temp_dir = tempfile.gettempdir()
+    file_path = os.path.join(temp_dir, unique_filename)
+    
+    hti = Html2Image(output_path=temp_dir)
+    hti.screenshot(html_str=html, save_as=unique_filename)
+    
+    timeout = 5.0
+    while not os.path.exists(file_path) and timeout > 0:
+        time.sleep(0.5)
+        timeout -= 0.5
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+    
     with open(file_path, "rb") as f:
         img_bytes = io.BytesIO(f.read())
+    
+    os.remove(file_path)
+    
     return img_bytes
 
 async def generate_rank_card(interaction: Interaction, member: Member) -> discord.File:
     xp_system = interaction.client.xp_system
 
     rank, current_xp = xp_system.get_rank(str(member.id))
-    if rank is None:
-        rank_display = "Unranked"
+    rank_display = f"#{rank}" if rank is not None else "Unranked"
+    if current_xp is None:
         current_xp = 0
-    else:
-        rank_display = f"#{rank}"
 
     next_threshold = None
     for threshold, _ in CHAT_LEVEL_ROLE_THRESHOLDS:
@@ -287,7 +298,6 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
             break
     if next_threshold is None:
         next_threshold = current_xp
-
     progress_percent = (current_xp / next_threshold) * 100 if next_threshold > 0 else 100
 
     template_path = os.path.join("templates", "rank_card.html")
