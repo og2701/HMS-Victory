@@ -16,6 +16,9 @@
       border-radius: 16px;
       padding: 1rem;
       background: linear-gradient(90deg, #ff4d4d, #ffcc00);
+      width: 90vw;
+      max-width: 2400px;
+      margin: auto;
     }
     .inner-content {
       background: rgba(0, 0, 0, 0.6);
@@ -25,7 +28,7 @@
   </style>
 </head>
 <body class="min-h-screen bg-gray-900 flex items-center justify-center">
-  <div class="w-96 gradient-border">
+  <div class="gradient-border">
     <div class="leaderboard-bg inner-content text-white">
       <h2 class="text-center text-xl font-bold mb-4">UKP Leaderboard</h2>
       {{ LEADERBOARD_ROWS }}
