@@ -221,30 +221,26 @@ async def on_ready(client, tree, scheduler):
     if not hasattr(client, "thread_messages"):
         client.thread_messages = load_json(THREAD_MESSAGES_FILE)
         logger.info("Loaded thread messages")
-        await asyncio.sleep(1)
     if not hasattr(client, "added_users"):
         client.added_users = load_json(ADDED_USERS_FILE)
         logger.info("Loaded added users")
-        await asyncio.sleep(1)
     if not client.synced:
         await tree.sync()
         client.synced = True
         logger.info("Synced client")
-        await asyncio.sleep(1)
     logger.info(f"Logged in as {client.user}")
     if not hasattr(client, "temp_data"):
         client.temp_data = {}
         logger.info("Initialised temp data")
-        await asyncio.sleep(1)
     if not hasattr(client, "xp_system"):
         from lib.xp_system import XPSystem
         client.xp_system = XPSystem()
         logger.info("XP system initialised")
-        await asyncio.sleep(1)
     reattach_persistent_views(client)
     logger.info("Persistent views reattached and loaded.")
     for command in tree.get_commands():
         logger.info(f"Command loaded: {command.name}")
+        await asyncio.sleep(0.1)
     schedule_client_jobs(client, scheduler)
     logger.info(f"{client.user} setup complete")
     await client.backup_bot()
