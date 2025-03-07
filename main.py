@@ -60,6 +60,39 @@ async def zip_and_send_folder(client, folder_path, channel_id, zip_filename_pref
     logger.info("Backup complete.")
 
 
+async def send_json_files(client, folder_path, channel_id):
+    if not os.path.exists(folder_path):
+        logger.warning(f"Folder '{folder_path}' does not exist.")
+        return
+
+    archive_channel = client.get_channel(channel_id)
+    if not archive_channel:
+        logger.warning(f"Channel ID {channel_id} not found.")
+        return
+
+    json_files = [f for f in os.listdir(folder_path) if f.endswith(".json") and os.path.isfile(os.path.join(folder_path, f))]
+    
+    if not json_files:
+        logger.info("No JSON files found to upload.")
+        return
+
+    logger.info(f"Found {len(json_files)} JSON files. Uploading...")
+
+    for file_name in json_files:
+        file_path = os.path.join(folder_path, file_name)
+
+        if os.path.getsize(file_path) > 8 * 1024 * 1024:
+            logger.warning(f"Skipping {file_name} - File too large for Discord.")
+            continue
+
+        async with aiofiles.open(file_path, "rb") as f:
+            await archive_channel.send(file=discord.File(f, filename=file_name))
+            logger.info(f"Uploaded {file_name}.")
+
+    logger.info("All JSON files uploaded.")
+
+
+
 class AClient(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
@@ -205,11 +238,10 @@ class AClient(discord.Client):
     async def backup_bot(self):
         logger.info("Backing up bot...")
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        await zip_and_send_folder(
+        await send_json_files(
             client=self,
             folder_path="./",
-            channel_id=CHANNELS.DATA_BACKUP,
-            zip_filename_prefix=f"full_bot_backup_as_of_{timestamp}",
+            channel_id=CHANNELS.DATA_BACKUP
         )
 
 
