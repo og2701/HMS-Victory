@@ -272,14 +272,22 @@ def render_html_to_image(html: str) -> io.BytesIO:
     file_path = os.path.join(temp_dir, unique_filename)
     logger.info(f"Rendering HTML to image with filename {unique_filename} in {temp_dir}")
     logger.info(f"HTML content length: {len(html)}")
-    hti = Html2Image(output_path=temp_dir)
+
+    # Optionally specify the chrome_path from an environment variable if needed.
+    chrome_path = os.getenv("CHROME_PATH")  # e.g. '/usr/bin/chromium-browser'
+    if chrome_path:
+        logger.info(f"Using chrome_path from environment: {chrome_path}")
+        hti = Html2Image(output_path=temp_dir, chrome_path=chrome_path)
+    else:
+        logger.info("Using default chrome path")
+        hti = Html2Image(output_path=temp_dir)
+
     try:
         hti.screenshot(html_str=html, save_as=unique_filename)
     except Exception as e:
         logger.error(f"Error during html2image.screenshot: {e}")
         raise
 
-    # Immediately list files in the temp directory after screenshot
     files = os.listdir(temp_dir)
     logger.info(f"Files in temp directory after screenshot: {files}")
     
