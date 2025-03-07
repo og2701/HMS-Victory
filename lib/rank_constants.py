@@ -1,4 +1,4 @@
-from lib.settings import ROLES
+from constants import *
 
 CHAT_LEVEL_ROLE_THRESHOLDS = [
     (1000, ROLES.SERF),
