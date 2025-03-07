@@ -18,6 +18,12 @@ from lib.rank_constants import *
 from config import CHROME_PATH
 
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
+hti.browser.flags += [
+    "--force-device-scale-factor=2",
+    "--disable-gpu",
+    "--disable-software-rasterizer",
+    "--no-sandbox"
+]
 
 logger = logging.getLogger(__name__)
 
@@ -332,12 +338,7 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
     size = (1600, 1000)
     output_file = f"{uuid.uuid4()}.png"
     try:
-        hti.screenshot(
-            html_str=html_content,
-            save_as=output_file,
-            size=(1600, 1000),
-            custom_flags=["--force-device-scale-factor=2"]
-        )
+        hti.screenshot(html_str=html_content, save_as=output_file, size=size)
     except Exception as e:
         raise Exception(f"Error taking screenshot: {e}")
     try:
