@@ -5,6 +5,11 @@ import json
 import os
 import pytz
 import random
+import io
+import tempfile
+from html2image import Html2Image
+from lib.settings import *
+
 
 PERSISTENT_VIEWS_FILE = "persistent_views.json"
 
@@ -239,3 +244,46 @@ async def fetch_messages_with_context(channel, user, user_messages, total_limit=
 def estimate_tokens(text):
     """Estimates token count by splitting text by whitespace"""
     return len(text.split())
+
+def render_html_to_image(html: str) -> io.BytesIO:
+    hti = Html2Image(output_path=tempfile.gettempdir())
+    output_file = "rank.png"
+    hti.screenshot(html_str=html, save_as=output_file)
+    file_path = os.path.join(tempfile.gettempdir(), output_file)
+    with open(file_path, "rb") as f:
+        img_bytes = io.BytesIO(f.read())
+    return img_bytes
+
+async def generate_rank_card(interaction: Interaction, member: Member) -> discord.File:
+    xp_system = interaction.client.xp_system
+
+    rank, current_xp = xp_system.get_rank(str(member.id))
+    if rank is None:
+        rank_display = "Unranked"
+        current_xp = 0
+    else:
+        rank_display = f"#{rank}"
+
+    next_threshold = None
+    for threshold, _ in CHAT_LEVEL_ROLE_THRESHOLDS:
+        if current_xp < threshold:
+            next_threshold = threshold
+            break
+    if next_threshold is None:
+        next_threshold = current_xp
+
+    progress_percent = (current_xp / next_threshold) * 100 if next_threshold > 0 else 100
+
+    template_path = os.path.join("templates", "rank_card.html")
+    with open(template_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+
+    html_content = html_content.replace("{profile_pic}", str(member.display_avatar.url))
+    html_content = html_content.replace("{username}", member.display_name)
+    html_content = html_content.replace("{rank}", rank_display)
+    html_content = html_content.replace("{current_xp}", str(current_xp))
+    html_content = html_content.replace("{next_threshold}", str(next_threshold))
+    html_content = html_content.replace("{progress_percent}", f"{progress_percent}%")
+
+    image_bytes = render_html_to_image(html_content)
+    return discord.File(fp=image_bytes, filename="rank.png")
