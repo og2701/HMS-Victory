@@ -12,7 +12,6 @@
       border-radius: 16px;
       overflow: hidden;
       padding: 1.5rem;
-      color: {text_color};
     }
     .profile-img-container {
       width: 88px;
@@ -30,16 +29,8 @@
       height: 80px;
       border-radius: 50%;
     }
-    .info-box {
-      background: {box_bg_color};
-      padding: 10px;
-      border-radius: 8px;
-      margin-top: 1rem;
-      width: 100%;
-      text-align: center;
-    }
     .progress-container {
-      background-color: {box_bg_color};
+      background-color: rgba(0, 0, 0, 0.5);
       border-radius: 10px;
       padding: 2px;
       position: relative;
@@ -51,14 +42,18 @@
       border-radius: 10px;
       height: 100%;
     }
-    .xp-box {
-      background: {box_bg_color};
+    .xp-box,
+    .name-box,
+    .rank-box {
+      background: rgba(0, 0, 0, 0.7);
       padding: 5px 10px;
       border-radius: 8px;
       display: inline-block;
       margin-top: 0.5rem;
     }
-    .xp-text {
+    .xp-text,
+    .name-text,
+    .rank-text {
       font-weight: bold;
     }
     .role-label {
@@ -66,9 +61,10 @@
       font-weight: bold;
       position: absolute;
       top: -26px;
+      color: white;
+      background: rgba(0, 0, 0, 0.7);
       padding: 2px 4px;
       border-radius: 4px;
-      background: {box_bg_color};
     }
     .current-role {
       left: 0;
@@ -79,20 +75,22 @@
   </style>
 </head>
 <body class="flex items-center justify-center min-h-screen bg-gray-900">
-  <div class="w-96 rank-card shadow-lg flex flex-col items-center relative text-center">
+  <div class="w-96 rank-card shadow-lg flex flex-col items-center relative text-center text-white">
     <div class="profile-img-container">
       <img src="{profile_pic}" alt="Profile Picture" class="profile-img" />
     </div>
-    <div class="info-box">
-      <h2 class="text-xl font-bold">{username}</h2>
-      <p class="text-sm">Rank: {rank}</p>
-    </div>
+    <p class="name-box">
+      <span class="name-text">{username}</span>
+    </p>
+    <p class="rank-box">
+      <span class="rank-text">Rank: {rank}</span>
+    </p>
     <div class="w-full progress-container">
       <div class="role-label current-role">{current_role}</div>
       {next_role_html}
       <div class="progress-bar" style="width: {progress_percent};"></div>
     </div>
-    <p class="text-xs xp-box">
+    <p class="text-xs text-gray-300 xp-box">
       <span class="xp-text">XP: {xp_display}</span>
     </p>
   </div>
