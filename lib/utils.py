@@ -8,7 +8,7 @@ import random
 import io
 import tempfile
 from html2image import Html2Image
-from lib.settings import *
+from lib.settings import CHAT_LEVEL_ROLE_THRESHOLDS
 
 
 PERSISTENT_VIEWS_FILE = "persistent_views.json"
