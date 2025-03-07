@@ -325,7 +325,7 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
 
     user_id_str = str(member.id)
     custom_bg_filename = CUSTOM_RANK_BACKGROUNDS.get(user_id_str, "unionjack.png")
-    background_path = os.path.join("data", custom_bg_filename)
+    background_path = os.path.join("data", "rank_cards", custom_bg_filename)
     background_data_uri = encode_image_to_data_uri(background_path)
     html_content = html_content.replace("{unionjack}", background_data_uri)
 
