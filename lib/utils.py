@@ -271,22 +271,29 @@ def render_html_to_image(html: str) -> io.BytesIO:
     temp_dir = tempfile.gettempdir()
     file_path = os.path.join(temp_dir, unique_filename)
     logger.info(f"Rendering HTML to image with filename {unique_filename} in {temp_dir}")
+    logger.info(f"HTML content length: {len(html)}")
     hti = Html2Image(output_path=temp_dir)
     try:
         hti.screenshot(html_str=html, save_as=unique_filename)
     except Exception as e:
         logger.error(f"Error during html2image.screenshot: {e}")
         raise
+
+    # Immediately list files in the temp directory after screenshot
     files = os.listdir(temp_dir)
     logger.info(f"Files in temp directory after screenshot: {files}")
+    
     timeout = 10.0
     while not os.path.exists(file_path) and timeout > 0:
         logger.info(f"Waiting for file {file_path} to appear. Remaining timeout: {timeout}")
         time.sleep(0.5)
         timeout -= 0.5
+        
     if not os.path.exists(file_path):
         logger.error(f"File not found after waiting: {file_path}")
-        raise FileNotFoundError(f"File not found: {file_path}. Check that html2image is installed correctly and that the HTML renders without errors.")
+        raise FileNotFoundError(
+            f"File not found: {file_path}. Check that html2image is installed correctly, that the HTML renders without errors, and that your system has a working headless browser."
+        )
     logger.info(f"File found: {file_path}")
     with open(file_path, "rb") as f:
         img_bytes = io.BytesIO(f.read())
