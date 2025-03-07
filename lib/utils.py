@@ -9,7 +9,10 @@ import io
 import tempfile
 import time
 import uuid
+import logging
 from html2image import Html2Image
+
+logger = logging.getLogger(__name__)
 
 CHAT_LEVEL_ROLE_THRESHOLDS = [
     (1000, 1226311204281122926),   # SERF
@@ -267,22 +270,25 @@ def render_html_to_image(html: str) -> io.BytesIO:
     unique_filename = f"{uuid.uuid4()}.png"
     temp_dir = tempfile.gettempdir()
     file_path = os.path.join(temp_dir, unique_filename)
-    
+    logger.info(f"Rendering HTML to image with filename {unique_filename} in {temp_dir}")
     hti = Html2Image(output_path=temp_dir)
-    hti.screenshot(html_str=html, save_as=unique_filename)
-    
-    timeout = 5.0
+    try:
+        hti.screenshot(html_str=html, save_as=unique_filename)
+    except Exception as e:
+        logger.error(f"Error during html2image.screenshot: {e}")
+        raise
+    timeout = 10.0
     while not os.path.exists(file_path) and timeout > 0:
         time.sleep(0.5)
         timeout -= 0.5
     if not os.path.exists(file_path):
-        raise FileNotFoundError(f"File not found: {file_path}")
-    
+        logger.error(f"File not found after waiting: {file_path}")
+        raise FileNotFoundError(f"File not found: {file_path}. Check that html2image is installed correctly and that the HTML renders without errors.")
+    logger.info(f"File found: {file_path}")
     with open(file_path, "rb") as f:
         img_bytes = io.BytesIO(f.read())
-    
     os.remove(file_path)
-    
+    logger.info(f"Temporary file {file_path} removed")
     return img_bytes
 
 async def generate_rank_card(interaction: Interaction, member: Member) -> discord.File:
@@ -290,12 +296,10 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
         from xp_system import XPSystem
         interaction.client.xp_system = XPSystem()
     xp_system = interaction.client.xp_system
-
     rank, current_xp = xp_system.get_rank(str(member.id))
     rank_display = f"#{rank}" if rank is not None else "Unranked"
     if current_xp is None:
         current_xp = 0
-
     next_threshold = None
     for threshold, _ in CHAT_LEVEL_ROLE_THRESHOLDS:
         if current_xp < threshold:
@@ -304,17 +308,17 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
     if next_threshold is None:
         next_threshold = current_xp
     progress_percent = (current_xp / next_threshold) * 100 if next_threshold > 0 else 100
-
     template_path = os.path.join("templates", "rank_card.html")
+    logger.info(f"Loading HTML template from {template_path}")
     with open(template_path, "r", encoding="utf-8") as f:
         html_content = f.read()
-
     html_content = html_content.replace("{profile_pic}", str(member.display_avatar.url))
     html_content = html_content.replace("{username}", member.display_name)
     html_content = html_content.replace("{rank}", rank_display)
     html_content = html_content.replace("{current_xp}", str(current_xp))
     html_content = html_content.replace("{next_threshold}", str(next_threshold))
     html_content = html_content.replace("{progress_percent}", f"{progress_percent}%")
-
+    logger.info("Rendering rank card HTML to image")
     image_bytes = render_html_to_image(html_content)
+    logger.info("Rank card image rendered successfully")
     return discord.File(fp=image_bytes, filename="rank.png")
