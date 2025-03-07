@@ -18,6 +18,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+MAX_PART_SIZE = 8 * 1024 * 1024 #8mb
+
 async def zip_and_send_folder(client, folder_path, channel_id, zip_filename_prefix):
     if not os.path.exists(folder_path):
         logger.warning(f"Folder '{folder_path}' does not exist.")
@@ -38,13 +40,22 @@ async def zip_and_send_folder(client, folder_path, channel_id, zip_filename_pref
                 archive_name = os.path.relpath(file_path, start=folder_path)
                 zipf.write(file_path, archive_name)
 
-    zip_buffer.seek(0)
+    zip_buffer.seek(0) 
 
-    logger.info(f"Sending archive '{zip_filename_prefix}.zip' to channel {archive_channel.name}...")
+    file_number = 1
+    while True:
+        chunk = zip_buffer.read(MAX_PART_SIZE)
+        if not chunk:
+            break 
 
-    await archive_channel.send(
-        file=discord.File(fp=zip_buffer, filename=f"{zip_filename_prefix}.zip")
-    )
+        part_filename = f"{zip_filename_prefix}_part{file_number}.zip"
+        part_buffer = io.BytesIO(chunk)
+        part_buffer.seek(0)
+
+        await archive_channel.send(file=discord.File(fp=part_buffer, filename=part_filename))
+        logger.info(f"Sent part {file_number}: {part_filename}")
+
+        file_number += 1
 
     logger.info("Backup complete.")
 
