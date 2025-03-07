@@ -10,25 +10,6 @@ command_usage_tracker = defaultdict(lambda: {"count": 0, "last_used": None})
 
 SUMMARISE_DAILY_LIMIT = 10
 
-VC_LOCKDOWN_FILE = "vc_lockdown_status.txt"
-VC_LOCKDOWN_WHITELIST = [
-    ROLES.DUKE,
-    ROLES.MARQUESS,
-    ROLES.EARL,
-    ROLES.VISCOUNT,
-    ROLES.BARON,
-    ROLES.KNIGHT,
-    ROLES.LORD,
-    ROLES.ESQUIRE,
-    ROLES.GENTLEMAN,
-    ROLES.YEOMAN,
-    ROLES.COMMONER,
-    ROLES.FREEMAN,
-    ROLES.PEASANT,
-    ROLES.SERF,
-]
-
-
 CUSTOM_RANK_BACKGROUNDS = {
     # "USER_ID_STRING": "custom_background_filename.png",
 }
