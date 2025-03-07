@@ -160,3 +160,11 @@ def define_commands(tree, client):
             member = interaction.user
         file = await generate_rank_card(interaction, member)
         await interaction.response.send_message(file=file)
+
+    @command("leaderboard", "Displays a paginated leaderboard of top XP holders (in increments of 30).")
+    async def leaderboard_command(interaction: Interaction):
+        if not hasattr(client, "xp_system"):
+            from lib.xp_system import XPSystem
+            client.xp_system = XPSystem()
+
+        await client.xp_system.handle_leaderboard_command(interaction)
