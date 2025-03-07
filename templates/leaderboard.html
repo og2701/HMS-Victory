@@ -3,36 +3,35 @@
 <head>
   <meta charset="UTF-8" />
   <title>Leaderboard</title>
-  <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body {
       margin: 0;
       padding: 0;
-      background: #111;
+      background: #000;
     }
-    .container {
+    .gradient-border {
       display: inline-block;
+      border-radius: 8px;
       background: linear-gradient(90deg, #ff4d4d, #ffcc00);
-      border-radius: 16px;
-      padding: 1rem;
+      padding: 8px;
     }
     .content {
-      background: rgba(0, 0, 0, 0.7);
-      border-radius: 12px;
-      padding: 1rem;
-      color: white;
       display: inline-block;
+      background: rgba(0, 0, 0, 0.8);
+      border-radius: 6px;
+      padding: 16px;
+      color: #fff;
     }
     .title {
-      text-align: center;
-      font-size: 1.25rem;
       font-weight: bold;
-      margin-bottom: 1rem;
+      margin-bottom: 12px;
+      text-align: center;
+      font-size: 20px;
     }
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="gradient-border">
     <div class="content">
       <div class="title">UKP Leaderboard</div>
       {{ LEADERBOARD_ROWS }}
