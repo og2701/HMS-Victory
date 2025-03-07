@@ -246,7 +246,8 @@ async def on_ready(client, tree, scheduler):
     for command in tree.get_commands():
         logger.info(f"Command loaded: {command.name}")
     schedule_client_jobs(client, scheduler)
-    logger.info(f"{client.user} setup complete")
+    logger.info(f"{client.user} setup complete. Backing up...")
+    await asyncio.create_task(client.backup_bot())
 
 
 async def on_message(client, message):
