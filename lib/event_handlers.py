@@ -263,18 +263,6 @@ async def on_message(client, message):
     await process_forum_threads(client, message)
 
 
-
-async def on_message(client, message):
-    if message.author.bot:
-        return
-
-    await client.xp_system.update_xp(message)
-    await process_message_attachments(client, message)
-    await process_message_links(client, message)
-    await process_forum_threads(client, message)
-
-
-
 async def on_interaction(interaction: Interaction):
     """Handles component interactions for role buttons"""
     if interaction.type == InteractionType.component and "custom_id" in interaction.data:
