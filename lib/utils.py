@@ -281,11 +281,14 @@ def trim(im):
     return im
 
 def read_html_template(file_path):
-    try:
-        with open(file_path, "r", encoding="utf-8") as file:
-            return file.read()
-    except Exception as e:
-        raise Exception(f"Error reading HTML template {file_path}: {e}")
+    with open(file_path, "r", encoding="utf-8") as file:
+        return file.read()
+
+def encode_image_to_data_uri(image_path):
+    with open(image_path, "rb") as img_file:
+        data = img_file.read()
+    encoded = base64.b64encode(data).decode("utf-8")
+    return f"data:image/png;base64,{encoded}"
 
 def calculate_estimated_height(content, line_height=20, base_height=100):
     message_lines = content.split("\n")
@@ -299,12 +302,10 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
         from xp_system import XPSystem
         interaction.client.xp_system = XPSystem()
     xp_system = interaction.client.xp_system
-
     rank, current_xp = xp_system.get_rank(str(member.id))
     rank_display = f"#{rank}" if rank is not None else "Unranked"
     if current_xp is None:
         current_xp = 0
-
     next_threshold = None
     for threshold, _ in CHAT_LEVEL_ROLE_THRESHOLDS:
         if current_xp < threshold:
@@ -313,7 +314,6 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
     if next_threshold is None:
         next_threshold = current_xp
     progress_percent = (current_xp / next_threshold) * 100 if next_threshold > 0 else 100
-
     template_path = os.path.join("templates", "rank_card.html")
     html_content = read_html_template(template_path)
     html_content = html_content.replace("{profile_pic}", str(member.display_avatar.url))
@@ -322,7 +322,9 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
     html_content = html_content.replace("{current_xp}", str(current_xp))
     html_content = html_content.replace("{next_threshold}", str(next_threshold))
     html_content = html_content.replace("{progress_percent}", f"{progress_percent}%")
-
+    unionjack_path = os.path.join("data", "unionjack.png")
+    unionjack_data_uri = encode_image_to_data_uri(unionjack_path)
+    html_content = html_content.replace("{unionjack}", unionjack_data_uri)
     size = (800, 500)
     output_file = f"{uuid.uuid4()}.png"
     try:
