@@ -95,15 +95,28 @@ class XPSystem:
         now = time.time()
         if user_id not in self.last_xp_time or (now - self.last_xp_time[user_id]) >= 120:
             gain = random.randint(10, 20)
-            self.xp_data[user_id] = self.xp_data.get(user_id, 0) + gain
+            prev_xp = self.xp_data.get(user_id, 0)
+            self.xp_data[user_id] = prev_xp + gain
             self.last_xp_time[user_id] = now
             new_role_id = self.get_role_for_xp(self.xp_data[user_id])
             if new_role_id:
                 guild = message.guild
                 new_role = guild.get_role(new_role_id)
                 if new_role:
-                    pass
+                    rank_ids = [rid for _, rid in CHAT_LEVEL_ROLE_THRESHOLDS]
+                    old_roles = [r for r in message.author.roles if r.id in rank_ids]
+                    if new_role not in message.author.roles:
+                        if old_roles:
+                            await message.author.remove_roles(*old_roles)
+                        await message.author.add_roles(new_role)
+                        embed = discord.Embed(
+                            description=f"{message.author.mention} has progressed to **{new_role.name}**!",
+                            color=discord.Color.green()
+                        )
+                        await message.channel.send(embed=embed)
             self.save_data()
+
+
 
     def get_rank(self, user_id: str):
         sorted_xp = sorted(self.xp_data.items(), key=lambda x: x[1], reverse=True)
