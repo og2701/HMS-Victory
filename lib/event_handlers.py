@@ -226,9 +226,6 @@ async def process_forum_threads(client, message):
 
 async def on_ready(client, tree, scheduler):
     """Initializes the bot on startup by syncing commands, reattaching persistent views, and scheduling jobs"""
-    if not hasattr(client, "xp_system"):
-        from xp_system import XPSystem
-        client.xp_system = XPSystem()
     if not hasattr(client, "thread_messages"):
         client.thread_messages = load_json(THREAD_MESSAGES_FILE)
     if not hasattr(client, "added_users"):
