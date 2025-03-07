@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.tailwindcss.com"></script>
   <title>Rank Card</title>
   <style>
@@ -73,17 +73,17 @@
 <body class="flex items-center justify-center min-h-screen bg-gray-900">
   <div class="w-96 rank-card shadow-lg flex flex-col items-center relative text-center text-white">
     <div class="profile-img-container">
-      <img src="{profile_pic}" alt="Profile Picture" class="profile-img">
+      <img src="{profile_pic}" alt="Profile Picture" class="profile-img" />
     </div>
     <h2 class="mt-4 text-xl font-bold">{username}</h2>
     <p class="text-gray-300 text-sm">Rank: {rank}</p>
     <div class="w-full progress-container">
       <div class="role-label current-role">{current_role}</div>
-      <div class="role-label next-role">{next_role}</div>
+      {next_role_html}
       <div class="progress-bar" style="width: {progress_percent};"></div>
     </div>
     <p class="text-xs text-gray-300 xp-box">
-      <span class="xp-text">XP: {current_xp} / {next_threshold}</span>
+      <span class="xp-text">XP: {xp_display}</span>
     </p>
   </div>
 </body>
