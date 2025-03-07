@@ -256,6 +256,8 @@ async def on_message(client, message):
     if not await restrict_channel_for_new_members(message, CHANNELS.POLITICS, 7, POLITICS_WHITELISTED_USER_IDS):
         return
 
+    await client.xp_system.update_xp(message)
+
     await process_message_attachments(client, message)
     await process_message_links(client, message)
     if message.author.bot:
