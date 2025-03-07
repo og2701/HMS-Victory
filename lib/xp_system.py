@@ -9,6 +9,7 @@ from html2image import Html2Image
 from lib.utils import load_json, save_json
 from lib.settings import *
 from lib.rank_constants import *
+from config import CHROME_PATH
 
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 
