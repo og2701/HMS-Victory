@@ -6,6 +6,7 @@ import pytz
 from datetime import datetime, timedelta
 import shutil
 import os
+import zipfile
 
 from lib.event_handlers import *
 from lib.setup_commands import define_commands
