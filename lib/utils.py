@@ -11,6 +11,7 @@ import tempfile
 import time
 import uuid
 import logging
+import base64
 from html2image import Html2Image
 
 from config import CHROME_PATH
