@@ -72,7 +72,7 @@ async def send_json_files(client, folder_path, channel_id):
         return
 
     json_files = [f for f in os.listdir(folder_path) if f.endswith(".json") and os.path.isfile(os.path.join(folder_path, f))]
-    
+
     if not json_files:
         logger.info("No JSON files found to upload.")
         return
@@ -86,11 +86,12 @@ async def send_json_files(client, folder_path, channel_id):
             logger.warning(f"Skipping {file_name} - File too large for Discord.")
             continue
 
-        async with aiofiles.open(file_path, "rb") as f:
-            await archive_channel.send(file=discord.File(f, filename=file_name))
+        with open(file_path, "rb") as file:
+            await archive_channel.send(file=discord.File(file, filename=file_name))
             logger.info(f"Uploaded {file_name}.")
 
     logger.info("All JSON files uploaded.")
+
 
 
 
