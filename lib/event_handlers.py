@@ -237,7 +237,7 @@ async def on_ready(client, tree, scheduler):
     if not hasattr(client, "temp_data"):
         client.temp_data = {}
     if not hasattr(client, "xp_system"):
-        from xp_system import XPSystem
+        from lib.xp_system import XPSystem
         client.xp_system = XPSystem()
         logger.info("XP system initialized.")
     reattach_persistent_views(client)
