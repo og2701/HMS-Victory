@@ -181,6 +181,17 @@ class AClient(discord.Client):
     async def monthly_summary(self):
         await post_summary(self, CHANNELS.COMMONS, "monthly")
 
+    async def backup_bot(self):
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        await zip_and_send_folder(
+            client=self,
+            folder_path="../HMS-Victory",
+            channel_id=CHANNELS.DATA_BACKUP,
+            zip_filename_prefix=f"full_bot_backup_as_of_{timestamp}",
+        )
+
+
+
 
 client = AClient()
 tree = discord.app_commands.CommandTree(client)

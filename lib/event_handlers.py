@@ -70,21 +70,11 @@ def reattach_persistent_views(client):
 
 def schedule_client_jobs(client, scheduler):
     """Schedules periodic summary and cache clearing jobs"""
-    scheduler.add_job(
-        client.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London")
-    )
-    scheduler.add_job(
-        client.weekly_summary,
-        CronTrigger(day_of_week="mon", hour=0, minute=1, timezone="Europe/London"),
-    )
-    scheduler.add_job(
-        client.monthly_summary,
-        CronTrigger(day=1, hour=0, minute=2, timezone="Europe/London"),
-    )
-    scheduler.add_job(
-        client.clear_image_cache,
-        CronTrigger(day_of_week="sun", hour=0, minute=0, timezone="Europe/London"),
-    )
+    scheduler.add_job(client.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
+    scheduler.add_job(client.weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=1, timezone="Europe/London"))
+    scheduler.add_job(client.monthly_summary, CronTrigger(day=1, hour=0, minute=2, timezone="Europe/London"))
+    scheduler.add_job(client.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=0, timezone="Europe/London"))
+    scheduler.add_job(client.backup_bot, CronTrigger(minute="*/30", timezone="Europe/London"))
     scheduler.start()
 
 
@@ -264,6 +254,7 @@ async def on_message(client, message):
     if message.author.bot:
         return
 
+    await client.xp_system.update_xp(message)
     await process_message_attachments(client, message)
     await process_message_links(client, message)
     await process_forum_threads(client, message)
