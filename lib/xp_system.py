@@ -32,12 +32,14 @@ class LeaderboardView(discord.ui.View):
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
 
     def get_slice(self):
-        return self.sorted_data[self.offset:self.offset + self.PAGE_SIZE]
+        return self.sorted_data[self.offset : self.offset + self.PAGE_SIZE]
 
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.offset = max(0, self.offset - self.PAGE_SIZE)
-        file = await self.xp_system.generate_leaderboard_image(self.guild, self.get_slice(), self.offset)
+        file = await self.xp_system.generate_leaderboard_image(
+            self.guild, self.get_slice(), self.offset
+        )
         button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
         start = self.offset + 1
@@ -52,7 +54,9 @@ class LeaderboardView(discord.ui.View):
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         max_offset = max(0, len(self.sorted_data) - self.PAGE_SIZE)
         self.offset = min(max_offset, self.offset + self.PAGE_SIZE)
-        file = await self.xp_system.generate_leaderboard_image(self.guild, self.get_slice(), self.offset)
+        file = await self.xp_system.generate_leaderboard_image(
+            self.guild, self.get_slice(), self.offset
+        )
         button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
         self.previous_button.disabled = (self.offset == 0)
         start = self.offset + 1
@@ -120,9 +124,10 @@ class XPSystem:
     async def generate_leaderboard_image(self, guild: discord.Guild, data_slice, offset):
         with open("templates/leaderboard.html", "r", encoding="utf-8") as f:
             template = f.read()
-        left_items = []
-        right_items = []
-        for i, (user_id, xp) in enumerate(data_slice):
+
+        left_col = []
+        right_col = []
+        for i, (user_id, xp_val) in enumerate(data_slice):
             rank = offset + i + 1
             member = guild.get_member(int(user_id))
             if member:
@@ -132,53 +137,61 @@ class XPSystem:
                 name = "Unknown"
                 avatar = "https://cdn.discordapp.com/embed/avatars/0.png"
             if i < 10:
-                left_items.append((rank, name, xp, avatar))
+                left_col.append((rank, name, xp_val, avatar))
             else:
-                right_items.append((rank, name, xp, avatar))
+                right_col.append((rank, name, xp_val, avatar))
+
         left_html = ""
-        for rank, name, xp_val, avatar_url in left_items:
+        for rank, name, xp_points, avatar_url in left_col:
             left_html += f"""
-            <div style="display:flex; align-items:center; background:rgba(0,0,0,0.5); margin-bottom:8px; padding:8px; border-radius:8px;">
+            <div style="display:flex; align-items:center; background:rgba(0,0,0,0.5); border-radius:8px; margin-bottom:8px; padding:8px;">
               <p style="margin-right:8px; font-weight:bold;">#{rank}</p>
               <div style="width:48px; height:48px; border-radius:9999px; overflow:hidden;">
                 <img src="{avatar_url}" style="width:100%; height:100%; object-fit:cover;" />
               </div>
               <div style="margin-left:8px;">
                 <p style="font-weight:bold;">{name}</p>
-                <p style="color:#ccc; font-size:0.8rem;">XP: {xp_val}</p>
+                <p style="color:#ccc; font-size:0.8rem;">XP: {xp_points}</p>
               </div>
             </div>
             """
+
         right_html = ""
-        for rank, name, xp_val, avatar_url in right_items:
+        for rank, name, xp_points, avatar_url in right_col:
             right_html += f"""
-            <div style="display:flex; align-items:center; background:rgba(0,0,0,0.5); margin-bottom:8px; padding:8px; border-radius:8px;">
+            <div style="display:flex; align-items:center; background:rgba(0,0,0,0.5); border-radius:8px; margin-bottom:8px; padding:8px;">
               <p style="margin-right:8px; font-weight:bold;">#{rank}</p>
               <div style="width:48px; height:48px; border-radius:9999px; overflow:hidden;">
                 <img src="{avatar_url}" style="width:100%; height:100%; object-fit:cover;" />
               </div>
               <div style="margin-left:8px;">
                 <p style="font-weight:bold;">{name}</p>
-                <p style="color:#ccc; font-size:0.8rem;">XP: {xp_val}</p>
+                <p style="color:#ccc; font-size:0.8rem;">XP: {xp_points}</p>
               </div>
             </div>
             """
-        final_html = f"""
-        <div style="display:flex; gap:1.5rem;">
-          <div style="display:flex; flex-direction:column;">{left_html}</div>
-          <div style="display:flex; flex-direction:column;">{right_html}</div>
+
+        combined_html = f"""
+        <div style="display:flex; gap:2rem;">
+          <div style="display:flex; flex-direction:column;">
+            {left_html}
+          </div>
+          <div style="display:flex; flex-direction:column;">
+            {right_html}
+          </div>
         </div>
         """
-        html = template.replace("{{ LEADERBOARD_ROWS }}", final_html)
-        path = f"{uuid.uuid4()}.png"
-        hti.screenshot(html_str=html, save_as=path, size=(1600, 1000))
-        image = Image.open(path)
-        image = trim(image)
-        image.save(path)
-        with open(path, "rb") as f:
-            img_bytes = io.BytesIO(f.read())
-        os.remove(path)
-        return discord.File(fp=img_bytes, filename="leaderboard.png")
+
+        final_html = template.replace("{{ LEADERBOARD_ROWS }}", combined_html)
+        out = f"{uuid.uuid4()}.png"
+        hti.screenshot(html_str=final_html, save_as=out, size=(1100, 800))
+        img = Image.open(out)
+        img = trim(img)
+        img.save(out)
+        with open(out, "rb") as f:
+            result = io.BytesIO(f.read())
+        os.remove(out)
+        return discord.File(fp=result, filename="leaderboard.png")
 
     async def handle_leaderboard_command(self, interaction: discord.Interaction):
         all_data = self.get_all_sorted_xp()
@@ -186,10 +199,10 @@ class XPSystem:
             await interaction.response.send_message("No XP data found.")
             return
         view = LeaderboardView(self, interaction.guild, all_data)
-        first_slice = all_data[:LeaderboardView.PAGE_SIZE]
+        first_slice = all_data[:20]
         file = await self.generate_leaderboard_image(interaction.guild, first_slice, 0)
         total = len(all_data)
-        showing = min(LeaderboardView.PAGE_SIZE, total)
+        showing = min(20, total)
         await interaction.response.send_message(
             content=f"Showing ranks 1–{showing} of {total}",
             file=file,
