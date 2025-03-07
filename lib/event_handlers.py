@@ -8,7 +8,7 @@ import io
 import json
 import asyncio
 from collections import defaultdict
-from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.cron import CronTrigger, IntervalTrigger
 
 from lib.translation import translate_and_send
 from lib.summary import initialize_summary_data, update_summary_data, post_summary
