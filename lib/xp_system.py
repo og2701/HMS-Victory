@@ -113,7 +113,7 @@ class XPSystem:
                             description=f"{message.author.mention} has progressed to **{new_role.name}**!",
                             color=discord.Color.green()
                         )
-                        # await message.channel.send(embed=embed)
+                        await message.channel.send(embed=embed)
             self.save_data()
 
 
