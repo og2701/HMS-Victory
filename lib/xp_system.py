@@ -9,52 +9,58 @@ from html2image import Html2Image
 from lib.utils import load_json, save_json
 from lib.settings import *
 from lib.rank_constants import *
-from config import CHROME_PATH
 
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 
-def trim(im):
+def trim(im: Image.Image) -> Image.Image:
     bg = Image.new(im.mode, im.size, im.getpixel((0, 0)))
     diff = ImageChops.difference(im, bg)
     diff = ImageChops.add(diff, diff, 2.0, -100)
     bbox = diff.getbbox()
-    if bbox:
-        return im.crop(bbox)
-    return im
+    return im.crop(bbox) if bbox else im
 
 class LeaderboardView(discord.ui.View):
+    PAGE_SIZE = 20
+
     def __init__(self, xp_system, guild, sorted_data):
         super().__init__(timeout=None)
         self.xp_system = xp_system
         self.guild = guild
         self.sorted_data = sorted_data
         self.offset = 0
-        self.previous_button.disabled = self.offset == 0
-        self.next_button.disabled = self.offset + 30 >= len(self.sorted_data)
+        self.previous_button.disabled = (self.offset == 0)
+        self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
 
     def get_slice(self):
-        return self.sorted_data[self.offset:self.offset+30]
+        start = self.offset
+        end = start + self.PAGE_SIZE
+        return self.sorted_data[start:end]
 
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.offset = max(0, self.offset - 30)
-        button.disabled = self.offset == 0
-        self.next_button.disabled = self.offset + 30 >= len(self.sorted_data)
-        file = await self.xp_system.generate_leaderboard_image(self.guild, self.get_slice())
+        self.offset = max(0, self.offset - self.PAGE_SIZE)
+        file = await self.xp_system.generate_leaderboard_image(self.guild, self.get_slice(), self.offset)
+        button.disabled = (self.offset == 0)
+        self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
+        start_rank = self.offset + 1
+        end_rank = min(self.offset + self.PAGE_SIZE, len(self.sorted_data))
         await interaction.response.edit_message(
-            content=f"Showing ranks {self.offset+1}–{min(self.offset+30,len(self.sorted_data))} of {len(self.sorted_data)}",
+            content=f"Showing ranks {start_rank}–{end_rank} of {len(self.sorted_data)}",
             attachments=[file],
             view=self
         )
 
     @discord.ui.button(label="Next", style=discord.ButtonStyle.blurple)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.offset = min(len(self.sorted_data) - 30, self.offset + 30)
-        self.previous_button.disabled = self.offset == 0
-        button.disabled = self.offset + 30 >= len(self.sorted_data)
-        file = await self.xp_system.generate_leaderboard_image(self.guild, self.get_slice())
+        max_offset = max(0, len(self.sorted_data) - self.PAGE_SIZE)
+        self.offset = min(max_offset, self.offset + self.PAGE_SIZE)
+        file = await self.xp_system.generate_leaderboard_image(self.guild, self.get_slice(), self.offset)
+        button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
+        self.previous_button.disabled = (self.offset == 0)
+        start_rank = self.offset + 1
+        end_rank = min(self.offset + self.PAGE_SIZE, len(self.sorted_data))
         await interaction.response.edit_message(
-            content=f"Showing ranks {self.offset+1}–{min(self.offset+30,len(self.sorted_data))} of {len(self.sorted_data)}",
+            content=f"Showing ranks {start_rank}–{end_rank} of {len(self.sorted_data)}",
             attachments=[file],
             view=self
         )
@@ -62,8 +68,8 @@ class LeaderboardView(discord.ui.View):
 class XPSystem:
     def __init__(self):
         self.xp_data = {}
-        self.load_data()
         self.last_xp_time = {}
+        self.load_data()
 
     def load_data(self):
         data = load_json(XP_FILE)
@@ -101,15 +107,7 @@ class XPSystem:
                 guild = message.guild
                 new_role = guild.get_role(new_role_id)
                 if new_role:
-                    role_ids = [rid for _, rid in CHAT_LEVEL_ROLE_THRESHOLDS]
-                    roles_to_remove = [r for r in message.author.roles if r.id in role_ids]
-                    if roles_to_remove:
-                        pass
-                        # await message.author.remove_roles(*roles_to_remove)
-                    if new_role not in message.author.roles:
-                        pass
-                        # await message.author.add_roles(new_role)
-
+                    pass
             self.save_data()
 
     def get_rank(self, user_id: str):
@@ -122,11 +120,12 @@ class XPSystem:
     def get_all_sorted_xp(self):
         return sorted(self.xp_data.items(), key=lambda x: x[1], reverse=True)
 
-    async def generate_leaderboard_image(self, guild: discord.Guild, data_slice):
+    async def generate_leaderboard_image(self, guild: discord.Guild, data_slice, offset):
         with open("templates/leaderboard.html", "r", encoding="utf-8") as f:
             html_template = f.read()
         rows_html = ""
-        for user_id, xp in data_slice:
+        for i, (user_id, xp) in enumerate(data_slice, start=1):
+            rank = offset + i
             member = guild.get_member(int(user_id))
             if member:
                 display_name = member.display_name
@@ -140,14 +139,14 @@ class XPSystem:
                 <img src="{avatar_url}" class="w-full h-full object-cover" />
               </div>
               <div class="ml-3">
-                <p class="text-sm font-bold">{display_name}</p>
+                <p class="text-sm font-bold">#{rank} {display_name}</p>
                 <p class="text-xs text-gray-300">XP: {xp}</p>
               </div>
             </div>
             """
         html_content = html_template.replace("{{ LEADERBOARD_ROWS }}", rows_html)
         output_path = f"{uuid.uuid4()}.png"
-        hti.screenshot(html_str=html_content, save_as=output_path, size=(800, 1000))
+        hti.screenshot(html_str=html_content, save_as=output_path, size=(1000, 1400))
         image = Image.open(output_path)
         image = trim(image)
         image.save(output_path)
@@ -162,10 +161,12 @@ class XPSystem:
             await interaction.response.send_message("No XP data found.")
             return
         view = LeaderboardView(self, interaction.guild, sorted_data)
-        data_slice = sorted_data[:30]
-        file = await self.generate_leaderboard_image(interaction.guild, data_slice)
+        first_slice = sorted_data[:LeaderboardView.PAGE_SIZE]
+        file = await self.generate_leaderboard_image(interaction.guild, first_slice, 0)
+        total_count = len(sorted_data)
+        showing_count = min(LeaderboardView.PAGE_SIZE, total_count)
         await interaction.response.send_message(
-            content=f"Showing ranks 1–{min(30, len(sorted_data))} of {len(sorted_data)}",
+            content=f"Showing ranks 1–{showing_count} of {total_count}",
             file=file,
             view=view
         )
