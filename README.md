@@ -89,15 +89,6 @@ The HMS Victory bot has various commands, categorized by required user permissio
 *   `/gridify` `attachment_url: str`: Adds a pixel art grid to an image.
 *   `/colour-palette` `attachment_url: str`: Generates a colour palette from an image.
 
-### Deprecated
-
-These commands are still in the code, but are either replaced by other commands or used only in specific events.
-
-*   `/role-react`: *Deprecated*, replaced by announcement command and persistent role buttons.
-*   `/toggle-anti-raid`: *Deprecated*, only works if enabled by using the command.
-*   `/toggle-quarantine`: *Deprecated*, only works if enabled by `/toggle-anti-raid`.
-*   `/end-lockdown-vcs`: *Deprecated*, only works if enabled by `/lockdown-vcs`.
-
 ## Event Handlers
 
 The bot includes event handlers that perform actions automatically:
