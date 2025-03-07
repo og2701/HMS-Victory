@@ -1,6 +1,6 @@
 from lib.utils import load_whitelist
 from collections import defaultdict
-from constants import *
+from lib.constants import *
 
 GUILD_ID = 959493056242008184
 
