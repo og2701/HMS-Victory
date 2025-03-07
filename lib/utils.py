@@ -296,33 +296,54 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
         from xp_system import XPSystem
         interaction.client.xp_system = XPSystem()
     xp_system = interaction.client.xp_system
+
     rank, current_xp = xp_system.get_rank(str(member.id))
     rank_display = f"#{rank}" if rank is not None else "Unranked"
     if current_xp is None:
         current_xp = 0
+
+    current_role_id = None
+    next_role_id = None
     next_threshold = None
-    for threshold, _ in CHAT_LEVEL_ROLE_THRESHOLDS:
-        if current_xp < threshold:
+    for threshold, role_id in CHAT_LEVEL_ROLE_THRESHOLDS:
+        if current_xp >= threshold:
+            current_role_id = role_id
+        else:
+            next_role_id = role_id
             next_threshold = threshold
             break
-    if next_threshold is None:
-        next_threshold = current_xp
-    progress_percent = (current_xp / next_threshold) * 100 if next_threshold > 0 else 100
+
+    progress_percent = (current_xp / next_threshold) * 100 if next_threshold and next_threshold > 0 else 100
+
+    current_role_name = "None"
+    next_role_name = "Max"
+    if current_role_id:
+        current_role = interaction.guild.get_role(current_role_id)
+        if current_role:
+            current_role_name = current_role.name
+        else:
+            current_role_name = str(current_role_id)
+    if next_role_id:
+        next_role = interaction.guild.get_role(next_role_id)
+        if next_role:
+            next_role_name = next_role.name
+        else:
+            next_role_name = str(next_role_id)
+
     template_path = os.path.join("templates", "rank_card.html")
     html_content = read_html_template(template_path)
     html_content = html_content.replace("{profile_pic}", str(member.display_avatar.url))
     html_content = html_content.replace("{username}", member.display_name)
     html_content = html_content.replace("{rank}", rank_display)
     html_content = html_content.replace("{current_xp}", str(current_xp))
-    html_content = html_content.replace("{next_threshold}", str(next_threshold))
+    html_content = html_content.replace("{next_threshold}", str(next_threshold) if next_threshold else "N/A")
     html_content = html_content.replace("{progress_percent}", f"{progress_percent}%")
+    html_content = html_content.replace("{current_role}", current_role_name)
+    html_content = html_content.replace("{next_role}", next_role_name)
     unionjack_path = os.path.join("data", "unionjack.png")
-    import base64
-    with open(unionjack_path, "rb") as f:
-        unionjack_data = f.read()
-    unionjack_data_uri = f"data:image/png;base64,{base64.b64encode(unionjack_data).decode('utf-8')}"
+    unionjack_data_uri = encode_image_to_data_uri(unionjack_path)
     html_content = html_content.replace("{unionjack}", unionjack_data_uri)
-    
+
     size = (1600, 1000)
     output_file = f"{uuid.uuid4()}.png"
     try:
