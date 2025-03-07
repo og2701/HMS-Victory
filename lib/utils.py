@@ -313,33 +313,34 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
             next_threshold = threshold
             break
 
-    progress_percent = (current_xp / next_threshold) * 100 if next_threshold and next_threshold > 0 else 100
+    if next_threshold is None:
+        progress_percent = 100
+        xp_display = str(current_xp)
+        next_role_html = ""
+    else:
+        progress_percent = (current_xp / next_threshold) * 100 if next_threshold > 0 else 100
+        xp_display = f"{current_xp} / {next_threshold}"
+        next_role = interaction.guild.get_role(next_role_id) if next_role_id else None
+        next_role_name = next_role.name if next_role else "Max"
+        next_role_html = f'<div class="role-label next-role">{next_role_name}</div>'
 
     current_role_name = "None"
-    next_role_name = "Max"
     if current_role_id:
         current_role = interaction.guild.get_role(current_role_id)
         if current_role:
             current_role_name = current_role.name
-        else:
-            current_role_name = str(current_role_id)
-    if next_role_id:
-        next_role = interaction.guild.get_role(next_role_id)
-        if next_role:
-            next_role_name = next_role.name
-        else:
-            next_role_name = str(next_role_id)
 
     template_path = os.path.join("templates", "rank_card.html")
     html_content = read_html_template(template_path)
+
     html_content = html_content.replace("{profile_pic}", str(member.display_avatar.url))
     html_content = html_content.replace("{username}", member.display_name)
     html_content = html_content.replace("{rank}", rank_display)
-    html_content = html_content.replace("{current_xp}", str(current_xp))
-    html_content = html_content.replace("{next_threshold}", str(next_threshold) if next_threshold else "N/A")
+    html_content = html_content.replace("{xp_display}", xp_display)
     html_content = html_content.replace("{progress_percent}", f"{progress_percent}%")
     html_content = html_content.replace("{current_role}", current_role_name)
-    html_content = html_content.replace("{next_role}", next_role_name)
+    html_content = html_content.replace("{next_role_html}", next_role_html)
+
     unionjack_path = os.path.join("data", "unionjack.png")
     unionjack_data_uri = encode_image_to_data_uri(unionjack_path)
     html_content = html_content.replace("{unionjack}", unionjack_data_uri)
