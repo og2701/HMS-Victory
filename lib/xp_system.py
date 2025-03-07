@@ -123,9 +123,9 @@ class XPSystem:
     async def generate_leaderboard_image(self, guild: discord.Guild, data_slice, offset):
         with open("templates/leaderboard.html", "r", encoding="utf-8") as f:
             html_template = f.read()
-        columns = [[] for _ in range(4)]
+        columns = [[] for _ in range(2)]
         for i, (user_id, xp) in enumerate(data_slice):
-            col_index = i // 5
+            col_index = i // 10
             rank = offset + (i + 1)
             member = guild.get_member(int(user_id))
             if member:
@@ -135,27 +135,27 @@ class XPSystem:
                 display_name = "Unknown"
                 avatar_url = "https://cdn.discordapp.com/embed/avatars/0.png"
             columns[col_index].append((rank, display_name, xp, avatar_url))
-        final_html = '<div style="display: flex; justify-content: center; gap: 2rem;">'
+        container_html = "<div style='width:2200px; margin:auto; display:flex; justify-content:center; gap:2rem;'>"
         for col_list in columns:
             col_html = ""
             for rank, display_name, xp, avatar_url in col_list:
                 col_html += f"""
-                <div style="display: flex; align-items: center; margin-bottom: 1rem; background-color: rgba(0,0,0,0.5); padding: 0.5rem; border-radius: 0.5rem; width: 300px;">
-                  <p style="margin-right: 1rem; font-weight: bold;">#{rank}</p>
-                  <div style="width: 48px; height: 48px; border-radius: 9999px; overflow: hidden;">
-                    <img src="{avatar_url}" style="width: 100%; height: 100%; object-fit: cover;" />
+                <div style="display:flex; align-items:center; margin-bottom:16px; background-color:rgba(0,0,0,0.5); border-radius:8px; padding:8px; width: 300px;">
+                  <p style="margin-right:12px; font-weight:bold;">#{rank}</p>
+                  <div style="width:48px; height:48px; border-radius:9999px; overflow:hidden;">
+                    <img src="{avatar_url}" style="width:100%; height:100%; object-fit:cover;" />
                   </div>
-                  <div style="margin-left: 0.75rem;">
-                    <p style="font-weight: bold;">{display_name}</p>
-                    <p style="color: #ccc; font-size: 0.8rem;">XP: {xp}</p>
+                  <div style="margin-left:12px;">
+                    <p style="font-weight:bold;">{display_name}</p>
+                    <p style="color:#ccc; font-size:0.8rem;">XP: {xp}</p>
                   </div>
                 </div>
                 """
-            final_html += f'<div style="display: flex; flex-direction: column;">{col_html}</div>'
-        final_html += '</div>'
-        html_content = html_template.replace("{{ LEADERBOARD_ROWS }}", final_html)
+            container_html += f"<div style='display:flex; flex-direction:column;'>{col_html}</div>"
+        container_html += "</div>"
+        html_content = html_template.replace("{{ LEADERBOARD_ROWS }}", container_html)
         output_path = f"{uuid.uuid4()}.png"
-        hti.screenshot(html_str=html_content, save_as=output_path, size=(2200, 1000))
+        hti.screenshot(html_str=html_content, save_as=output_path, size=(1600, 1000))
         image = Image.open(output_path)
         image = trim(image)
         image.save(output_path)
