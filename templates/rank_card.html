@@ -42,18 +42,14 @@
       border-radius: 10px;
       height: 100%;
     }
-    .xp-box,
-    .name-box,
-    .rank-box {
+    .xp-box {
       background: rgba(0, 0, 0, 0.7);
       padding: 5px 10px;
       border-radius: 8px;
       display: inline-block;
       margin-top: 0.5rem;
     }
-    .xp-text,
-    .name-text,
-    .rank-text {
+    .xp-text {
       font-weight: bold;
     }
     .role-label {
@@ -79,12 +75,8 @@
     <div class="profile-img-container">
       <img src="{profile_pic}" alt="Profile Picture" class="profile-img" />
     </div>
-    <p class="name-box">
-      <span class="name-text">{username}</span>
-    </p>
-    <p class="rank-box">
-      <span class="rank-text">Rank: {rank}</span>
-    </p>
+    <h2 class="mt-4 text-xl font-bold">{username}</h2>
+    <p class="text-gray-300 text-sm">Rank: {rank}</p>
     <div class="w-full progress-container">
       <div class="role-label current-role">{current_role}</div>
       {next_role_html}
