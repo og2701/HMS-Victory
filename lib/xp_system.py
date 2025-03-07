@@ -135,27 +135,27 @@ class XPSystem:
                 display_name = "Unknown"
                 avatar_url = "https://cdn.discordapp.com/embed/avatars/0.png"
             columns[col_index].append((rank, display_name, xp, avatar_url))
-        full_html = '<div class="flex justify-center space-x-8">'
+        final_html = '<div style="display: flex; justify-content: center; gap: 2rem;">'
         for col_list in columns:
             col_html = ""
             for rank, display_name, xp, avatar_url in col_list:
                 col_html += f"""
-                <div class="flex items-center p-2 bg-gray-800 bg-opacity-70 rounded-lg mb-2">
-                  <p class="text-sm font-bold mr-3">#{rank}</p>
-                  <div class="w-12 h-12 rounded-full overflow-hidden">
-                    <img src="{avatar_url}" class="w-full h-full object-cover" />
+                <div style="display: flex; align-items: center; margin-bottom: 1rem; background-color: rgba(0,0,0,0.5); padding: 0.5rem; border-radius: 0.5rem; width: 300px;">
+                  <p style="margin-right: 1rem; font-weight: bold;">#{rank}</p>
+                  <div style="width: 48px; height: 48px; border-radius: 9999px; overflow: hidden;">
+                    <img src="{avatar_url}" style="width: 100%; height: 100%; object-fit: cover;" />
                   </div>
-                  <div class="ml-3">
-                    <p class="text-sm font-bold">{display_name}</p>
-                    <p class="text-xs text-gray-300">XP: {xp}</p>
+                  <div style="margin-left: 0.75rem;">
+                    <p style="font-weight: bold;">{display_name}</p>
+                    <p style="color: #ccc; font-size: 0.8rem;">XP: {xp}</p>
                   </div>
                 </div>
                 """
-            full_html += f'<div class="flex flex-col w-80">{col_html}</div>'
-        full_html += '</div>'
-        html_content = html_template.replace("{{ LEADERBOARD_ROWS }}", full_html)
+            final_html += f'<div style="display: flex; flex-direction: column;">{col_html}</div>'
+        final_html += '</div>'
+        html_content = html_template.replace("{{ LEADERBOARD_ROWS }}", final_html)
         output_path = f"{uuid.uuid4()}.png"
-        hti.screenshot(html_str=html_content, save_as=output_path, size=(2000, 1000))
+        hti.screenshot(html_str=html_content, save_as=output_path, size=(2200, 1000))
         image = Image.open(output_path)
         image = trim(image)
         image.save(output_path)
