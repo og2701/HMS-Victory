@@ -12,6 +12,10 @@ import uuid
 import logging
 from html2image import Html2Image
 
+from config import CHROME_PATH
+
+hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
+
 logger = logging.getLogger(__name__)
 
 CHAT_LEVEL_ROLE_THRESHOLDS = [
@@ -266,58 +270,40 @@ def estimate_tokens(text):
     """Estimates token count by splitting text by whitespace"""
     return len(text.split())
 
-def render_html_to_image(html: str) -> io.BytesIO:
-    unique_filename = f"{uuid.uuid4()}.png"
-    temp_dir = tempfile.gettempdir()
-    file_path = os.path.join(temp_dir, unique_filename)
-    logger.info(f"Rendering HTML to image with filename {unique_filename} in {temp_dir}")
-    logger.info(f"HTML content length: {len(html)}")
+def trim(im):
+    bg = Image.new(im.mode, im.size, im.getpixel((0, 0)))
+    diff = ImageChops.difference(im, bg)
+    diff = ImageChops.add(diff, diff, 2.0, -100)
+    bbox = diff.getbbox()
+    if bbox:
+        return im.crop(bbox)
+    return im
 
-    # Optionally specify the chrome_path from an environment variable if needed.
-    chrome_path = os.getenv("CHROME_PATH")  # e.g. '/usr/bin/chromium-browser'
-    if chrome_path:
-        logger.info(f"Using chrome_path from environment: {chrome_path}")
-        hti = Html2Image(output_path=temp_dir, chrome_path=chrome_path)
-    else:
-        logger.info("Using default chrome path")
-        hti = Html2Image(output_path=temp_dir)
-
+def read_html_template(file_path):
     try:
-        hti.screenshot(html_str=html, save_as=unique_filename)
+        with open(file_path, "r", encoding="utf-8") as file:
+            return file.read()
     except Exception as e:
-        logger.error(f"Error during html2image.screenshot: {e}")
-        raise
+        raise Exception(f"Error reading HTML template {file_path}: {e}")
 
-    files = os.listdir(temp_dir)
-    logger.info(f"Files in temp directory after screenshot: {files}")
-    
-    timeout = 10.0
-    while not os.path.exists(file_path) and timeout > 0:
-        logger.info(f"Waiting for file {file_path} to appear. Remaining timeout: {timeout}")
-        time.sleep(0.5)
-        timeout -= 0.5
-        
-    if not os.path.exists(file_path):
-        logger.error(f"File not found after waiting: {file_path}")
-        raise FileNotFoundError(
-            f"File not found: {file_path}. Check that html2image is installed correctly, that the HTML renders without errors, and that your system has a working headless browser."
-        )
-    logger.info(f"File found: {file_path}")
-    with open(file_path, "rb") as f:
-        img_bytes = io.BytesIO(f.read())
-    os.remove(file_path)
-    logger.info(f"Temporary file {file_path} removed")
-    return img_bytes
+def calculate_estimated_height(content, line_height=20, base_height=100):
+    message_lines = content.split("\n")
+    total_lines = sum(len(line) // 80 + 1 for line in message_lines)
+    content_height = line_height * total_lines
+    estimated_height = max(base_height, content_height + 100)
+    return estimated_height
 
 async def generate_rank_card(interaction: Interaction, member: Member) -> discord.File:
     if not hasattr(interaction.client, "xp_system"):
         from xp_system import XPSystem
         interaction.client.xp_system = XPSystem()
     xp_system = interaction.client.xp_system
+
     rank, current_xp = xp_system.get_rank(str(member.id))
     rank_display = f"#{rank}" if rank is not None else "Unranked"
     if current_xp is None:
         current_xp = 0
+
     next_threshold = None
     for threshold, _ in CHAT_LEVEL_ROLE_THRESHOLDS:
         if current_xp < threshold:
@@ -326,17 +312,29 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
     if next_threshold is None:
         next_threshold = current_xp
     progress_percent = (current_xp / next_threshold) * 100 if next_threshold > 0 else 100
+
     template_path = os.path.join("templates", "rank_card.html")
-    logger.info(f"Loading HTML template from {template_path}")
-    with open(template_path, "r", encoding="utf-8") as f:
-        html_content = f.read()
+    html_content = read_html_template(template_path)
     html_content = html_content.replace("{profile_pic}", str(member.display_avatar.url))
     html_content = html_content.replace("{username}", member.display_name)
     html_content = html_content.replace("{rank}", rank_display)
     html_content = html_content.replace("{current_xp}", str(current_xp))
     html_content = html_content.replace("{next_threshold}", str(next_threshold))
     html_content = html_content.replace("{progress_percent}", f"{progress_percent}%")
-    logger.info("Rendering rank card HTML to image")
-    image_bytes = render_html_to_image(html_content)
-    logger.info("Rank card image rendered successfully")
+
+    size = (800, 500)
+    output_file = f"{uuid.uuid4()}.png"
+    try:
+        hti.screenshot(html_str=html_content, save_as=output_file, size=size)
+    except Exception as e:
+        raise Exception(f"Error taking screenshot: {e}")
+    try:
+        image = Image.open(output_file)
+        image = trim(image)
+        image.save(output_file)
+    except Exception as e:
+        raise Exception(f"Error processing image: {e}")
+    with open(output_file, "rb") as f:
+        image_bytes = io.BytesIO(f.read())
+    os.remove(output_file)
     return discord.File(fp=image_bytes, filename="rank.png")
