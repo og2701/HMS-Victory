@@ -220,23 +220,23 @@ async def on_ready(client, tree, scheduler):
     """Initializes the bot on startup by syncing commands, reattaching persistent views, and scheduling jobs"""
     if not hasattr(client, "thread_messages"):
         client.thread_messages = load_json(THREAD_MESSAGES_FILE)
-        asyncio.sleep(1)
+        await asyncio.sleep(1)
     if not hasattr(client, "added_users"):
         client.added_users = load_json(ADDED_USERS_FILE)
-        asyncio.sleep(1)
+        await asyncio.sleep(1)
     if not client.synced:
         await tree.sync()
         client.synced = True
-        asyncio.sleep(1)
+        await asyncio.sleep(1)
     logger.info(f"Logged in as {client.user}")
     if not hasattr(client, "temp_data"):
         client.temp_data = {}
-        asyncio.sleep(1)
+        await asyncio.sleep(1)
     if not hasattr(client, "xp_system"):
         from lib.xp_system import XPSystem
         client.xp_system = XPSystem()
         logger.info("XP system initialized.")
-        asyncio.sleep(1)
+        await asyncio.sleep(1)
     reattach_persistent_views(client)
     logger.info("Persistent views reattached and loaded.")
     for command in tree.get_commands():
