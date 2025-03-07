@@ -226,6 +226,9 @@ async def process_forum_threads(client, message):
 
 async def on_ready(client, tree, scheduler):
     """Initializes the bot on startup by syncing commands, reattaching persistent views, and scheduling jobs"""
+    if not hasattr(client, "xp_system"):
+        from xp_system import XPSystem
+        client.xp_system = XPSystem()
     if not hasattr(client, "thread_messages"):
         client.thread_messages = load_json(THREAD_MESSAGES_FILE)
     if not hasattr(client, "added_users"):
@@ -248,11 +251,6 @@ async def on_message(client, message):
     if not await restrict_channel_for_new_members(message, CHANNELS.POLITICS, 7, POLITICS_WHITELISTED_USER_IDS):
         return
 
-    if not hasattr(client, "xp_system"):
-        from xp_system import XPSystem
-        client.xp_system = XPSystem()
-    await client.xp_system.update_xp(message)
-    
     await process_message_attachments(client, message)
     await process_message_links(client, message)
     if message.author.bot:
