@@ -43,7 +43,6 @@ class LeaderboardView(discord.ui.View):
         start = self.offset + 1
         end = min(self.offset + self.PAGE_SIZE, len(self.sorted_data))
         await interaction.response.edit_message(
-            content=f"Showing ranks {start}–{end} of {len(self.sorted_data)}",
             attachments=[file],
             view=self
         )
@@ -58,7 +57,6 @@ class LeaderboardView(discord.ui.View):
         start = self.offset + 1
         end = min(self.offset + self.PAGE_SIZE, len(self.sorted_data))
         await interaction.response.edit_message(
-            content=f"Showing ranks {start}–{end} of {len(self.sorted_data)}",
             attachments=[file],
             view=self
         )
@@ -180,7 +178,6 @@ class XPSystem:
         total = len(data)
         showing = min(20, total)
         await interaction.response.send_message(
-            content=f"Showing ranks 1–{showing} of {total}",
             file=file,
             view=view
         )
