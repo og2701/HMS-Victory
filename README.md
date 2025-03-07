@@ -118,5 +118,3 @@ The bot includes event handlers that perform actions automatically:
 *   There's a scheduled job to create/post daily server summaries, zip daily summary files, and post weekly/monthly summaries. It also includes a backup job.
 *   Image caching stores images sent in the server for faster logging of deleted images.
 *   The bot uses `apscheduler` for scheduling.
-
-This README provides a comprehensive overview of the HMS Victory bot.  For questions or issues, consult the code or contact the bot's maintainers.
