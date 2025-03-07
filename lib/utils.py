@@ -13,30 +13,13 @@ import uuid
 import logging
 import base64
 from html2image import Html2Image
+from lib.rank_constants import *
 
 from config import CHROME_PATH
 
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 
 logger = logging.getLogger(__name__)
-
-CHAT_LEVEL_ROLE_THRESHOLDS = [
-    (1000, 1226311204281122926),   # SERF
-    (2500, 1228860092200386571),   # PEASANT
-    (5000, 1226311235537080340),   # FREEMAN
-    (10000, 1195060173346177065),   # COMMONER
-    (15000, 1226311471269675018),   # YEOMAN
-    (20000, 1195060260956807280),   # GENTLEMAN
-    (25000, 1226312063941607525),   # ESQUIRE
-    (50000, 1226312237766021216),   # KNIGHT
-    (70000, 1226312266430021674),   # BARON
-    (100000, 1226309228315017226),  # VISCOUNT
-    (150000, 1226304907750150264),  # EARL
-    (200000, 1226304808257065155),  # MARQUESS
-    (250000, 1226304695086219345),  # DUKE
-]
-
-
 
 PERSISTENT_VIEWS_FILE = "persistent_views.json"
 
@@ -332,7 +315,6 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
 
     template_path = os.path.join("templates", "rank_card.html")
     html_content = read_html_template(template_path)
-
     html_content = html_content.replace("{profile_pic}", str(member.display_avatar.url))
     html_content = html_content.replace("{username}", member.display_name)
     html_content = html_content.replace("{rank}", rank_display)
@@ -341,9 +323,11 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
     html_content = html_content.replace("{current_role}", current_role_name)
     html_content = html_content.replace("{next_role_html}", next_role_html)
 
-    unionjack_path = os.path.join("data", "unionjack.png")
-    unionjack_data_uri = encode_image_to_data_uri(unionjack_path)
-    html_content = html_content.replace("{unionjack}", unionjack_data_uri)
+    user_id_str = str(member.id)
+    custom_bg_filename = CUSTOM_RANK_BACKGROUNDS.get(user_id_str, "unionjack.png")
+    background_path = os.path.join("data", custom_bg_filename)
+    background_data_uri = encode_image_to_data_uri(background_path)
+    html_content = html_content.replace("{unionjack}", background_data_uri)
 
     size = (1600, 1000)
     output_file = f"{uuid.uuid4()}.png"
@@ -357,6 +341,7 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
         image.save(output_file)
     except Exception as e:
         raise Exception(f"Error processing image: {e}")
+
     with open(output_file, "rb") as f:
         image_bytes = io.BytesIO(f.read())
     os.remove(output_file)

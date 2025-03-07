@@ -3,6 +3,7 @@ import time
 import random
 from lib.utils import load_json, save_json
 from lib.settings import *
+from lib.rank_constants import *
 
 class XPSystem:
     def __init__(self):
