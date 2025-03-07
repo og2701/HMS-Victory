@@ -1,3 +1,4 @@
+from config import CHROME_PATH
 import discord
 import os
 import io
@@ -9,7 +10,6 @@ from html2image import Html2Image
 from lib.utils import load_json, save_json
 from lib.settings import *
 from lib.rank_constants import *
-from config import CHROME_PATH
 
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 
@@ -151,12 +151,11 @@ class XPSystem:
                   </div>
                 </div>
                 """
-            full_html += f'<div class="flex flex-col">{col_html}</div>'
+            full_html += f'<div class="flex flex-col w-80">{col_html}</div>'
         full_html += '</div>'
         html_content = html_template.replace("{{ LEADERBOARD_ROWS }}", full_html)
         output_path = f"{uuid.uuid4()}.png"
-        # Increase width so columns are not cut off
-        hti.screenshot(html_str=html_content, save_as=output_path, size=(1600, 1000))
+        hti.screenshot(html_str=html_content, save_as=output_path, size=(2000, 1000))
         image = Image.open(output_path)
         image = trim(image)
         image.save(output_path)
