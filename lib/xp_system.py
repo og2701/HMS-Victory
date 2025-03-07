@@ -1,3 +1,5 @@
+# lib/xp_system.py
+
 import discord
 import os
 import io
@@ -9,7 +11,6 @@ from html2image import Html2Image
 from lib.utils import load_json, save_json
 from lib.settings import *
 from lib.rank_constants import *
-from config import CHROME_PATH
 
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 
@@ -22,7 +23,6 @@ def trim(im: Image.Image) -> Image.Image:
 
 class LeaderboardView(discord.ui.View):
     PAGE_SIZE = 20
-
     def __init__(self, xp_system, guild, sorted_data):
         super().__init__(timeout=None)
         self.xp_system = xp_system
@@ -124,9 +124,10 @@ class XPSystem:
     async def generate_leaderboard_image(self, guild: discord.Guild, data_slice, offset):
         with open("templates/leaderboard.html", "r", encoding="utf-8") as f:
             html_template = f.read()
-        rows_html = ""
-        for i, (user_id, xp) in enumerate(data_slice, start=1):
-            rank = offset + i
+        columns = [[] for _ in range(4)]
+        for i, (user_id, xp) in enumerate(data_slice):
+            col_index = i // 5
+            rank = offset + (i + 1)
             member = guild.get_member(int(user_id))
             if member:
                 display_name = member.display_name
@@ -134,20 +135,28 @@ class XPSystem:
             else:
                 display_name = "Unknown"
                 avatar_url = "https://cdn.discordapp.com/embed/avatars/0.png"
-            rows_html += f"""
-            <div class="flex items-center p-2 bg-gray-800 bg-opacity-70 rounded-lg mb-2">
-              <div class="w-12 h-12 rounded-full overflow-hidden">
-                <img src="{avatar_url}" class="w-full h-full object-cover" />
-              </div>
-              <div class="ml-3">
-                <p class="text-sm font-bold">#{rank} {display_name}</p>
-                <p class="text-xs text-gray-300">XP: {xp}</p>
-              </div>
-            </div>
-            """
-        html_content = html_template.replace("{{ LEADERBOARD_ROWS }}", rows_html)
+            columns[col_index].append((rank, display_name, xp, avatar_url))
+        full_html = ""
+        for col_list in columns:
+            col_html = ""
+            for rank, display_name, xp, avatar_url in col_list:
+                col_html += f"""
+                <div class="flex items-center p-2 bg-gray-800 bg-opacity-70 rounded-lg mb-2">
+                  <p class="text-sm font-bold mr-3">#{rank}</p>
+                  <div class="w-12 h-12 rounded-full overflow-hidden">
+                    <img src="{avatar_url}" class="w-full h-full object-cover" />
+                  </div>
+                  <div class="ml-3">
+                    <p class="text-sm font-bold">{display_name}</p>
+                    <p class="text-xs text-gray-300">XP: {xp}</p>
+                  </div>
+                </div>
+                """
+            full_html += f'<div class="flex flex-col space-y-2">{col_html}</div>'
+        grid_html = f'<div class="grid grid-cols-4 gap-4">{full_html}</div>'
+        html_content = html_template.replace("{{ LEADERBOARD_ROWS }}", grid_html)
         output_path = f"{uuid.uuid4()}.png"
-        hti.screenshot(html_str=html_content, save_as=output_path, size=(1000, 1400))
+        hti.screenshot(html_str=html_content, save_as=output_path, size=(1400, 1400))
         image = Image.open(output_path)
         image = trim(image)
         image.save(output_path)
