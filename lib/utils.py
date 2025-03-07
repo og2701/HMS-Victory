@@ -13,7 +13,7 @@ import uuid
 import logging
 import base64
 from html2image import Html2Image
-from rank_constants import *
+from lib.rank_constants import *
 
 from config import CHROME_PATH
 
