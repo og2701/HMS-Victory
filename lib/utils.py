@@ -3,6 +3,7 @@ import discord
 from discord import Interaction, Member, TextChannel
 import json
 import os
+from PIL import Image, ImageChops
 import pytz
 import random
 import io
