@@ -7,6 +7,7 @@ import pytz
 import random
 import io
 import tempfile
+import time
 import uuid
 from html2image import Html2Image
 
