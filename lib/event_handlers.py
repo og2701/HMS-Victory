@@ -236,6 +236,10 @@ async def on_ready(client, tree, scheduler):
     logger.info(f"Logged in as {client.user}")
     if not hasattr(client, "temp_data"):
         client.temp_data = {}
+    if not hasattr(client, "xp_system"):
+        from xp_system import XPSystem
+        client.xp_system = XPSystem()
+        logger.info("XP system initialized.")
     reattach_persistent_views(client)
     logger.info("Persistent views reattached and loaded.")
     for command in tree.get_commands():
