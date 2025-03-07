@@ -123,9 +123,9 @@ class XPSystem:
     async def generate_leaderboard_image(self, guild: discord.Guild, data_slice, offset):
         with open("templates/leaderboard.html", "r", encoding="utf-8") as f:
             html_template = f.read()
-        columns = [[] for _ in range(2)]
+        left_col = []
+        right_col = []
         for i, (user_id, xp) in enumerate(data_slice):
-            col_index = i // 10
             rank = offset + (i + 1)
             member = guild.get_member(int(user_id))
             if member:
@@ -134,28 +134,47 @@ class XPSystem:
             else:
                 display_name = "Unknown"
                 avatar_url = "https://cdn.discordapp.com/embed/avatars/0.png"
-            columns[col_index].append((rank, display_name, xp, avatar_url))
-        flex_html = "<div style='display:flex; flex-direction:row; gap:2rem; flex-wrap:nowrap;'>"
-        for col_list in columns:
-            col_html = ""
-            for rank, display_name, xp, avatar_url in col_list:
-                col_html += f"""
-                <div style="display:flex; align-items:center; margin-bottom:16px; background-color:rgba(0,0,0,0.5); border-radius:8px; padding:8px;">
-                  <p style="margin-right:12px; font-weight:bold;">#{rank}</p>
-                  <div style="width:48px; height:48px; border-radius:9999px; overflow:hidden;">
-                    <img src="{avatar_url}" style="width:100%; height:100%; object-fit:cover;" />
-                  </div>
-                  <div style="margin-left:12px;">
-                    <p style="font-weight:bold;">{display_name}</p>
-                    <p style="color:#ccc; font-size:0.8rem;">XP: {xp}</p>
-                  </div>
-                </div>
-                """
-            flex_html += f"<div style='display:flex; flex-direction:column;'>{col_html}</div>"
-        flex_html += "</div>"
-        html_content = html_template.replace("{{ LEADERBOARD_ROWS }}", flex_html)
+            if i < 10:
+                left_col.append((rank, display_name, xp, avatar_url))
+            else:
+                right_col.append((rank, display_name, xp, avatar_url))
+        left_html = ""
+        for rank, display_name, xp, avatar_url in left_col:
+            left_html += f"""
+            <div style="display:flex; align-items:center; background-color:rgba(0,0,0,0.5); border-radius:8px; margin-bottom:16px; padding:8px;">
+              <p style="margin-right:12px; font-weight:bold;">#{rank}</p>
+              <div style="width:48px; height:48px; border-radius:9999px; overflow:hidden;">
+                <img src="{avatar_url}" style="width:100%; height:100%; object-fit:cover;" />
+              </div>
+              <div style="margin-left:12px;">
+                <p style="font-weight:bold;">{display_name}</p>
+                <p style="color:#ccc; font-size:0.8rem;">XP: {xp}</p>
+              </div>
+            </div>
+            """
+        right_html = ""
+        for rank, display_name, xp, avatar_url in right_col:
+            right_html += f"""
+            <div style="display:flex; align-items:center; background-color:rgba(0,0,0,0.5); border-radius:8px; margin-bottom:16px; padding:8px;">
+              <p style="margin-right:12px; font-weight:bold;">#{rank}</p>
+              <div style="width:48px; height:48px; border-radius:9999px; overflow:hidden;">
+                <img src="{avatar_url}" style="width:100%; height:100%; object-fit:cover;" />
+              </div>
+              <div style="margin-left:12px;">
+                <p style="font-weight:bold;">{display_name}</p>
+                <p style="color:#ccc; font-size:0.8rem;">XP: {xp}</p>
+              </div>
+            </div>
+            """
+        combined_html = f"""
+        <div style="display:flex; gap:2rem;">
+          <div style="display:flex; flex-direction:column;">{left_html}</div>
+          <div style="display:flex; flex-direction:column;">{right_html}</div>
+        </div>
+        """
+        html_content = html_template.replace("{{ LEADERBOARD_ROWS }}", combined_html)
         output_path = f"{uuid.uuid4()}.png"
-        hti.screenshot(html_str=html_content, save_as=output_path, size=(1200, 1000))
+        hti.screenshot(html_str=html_content, save_as=output_path, size=(1800, 1000))
         image = Image.open(output_path)
         image = trim(image)
         image.save(output_path)
