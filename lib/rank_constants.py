@@ -20,6 +20,7 @@ XP_FILE = "chat_leaderboard.json"
 
 CUSTOM_RANK_BACKGROUNDS = {
     # "USER_ID_STRING": "custom_background_filename.png",
-    "404634271861571584": "oggers.png"
+    "404634271861571584": "oggers.png",
+    "347842997641281536": "blank.png"
 }
 
