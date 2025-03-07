@@ -185,7 +185,7 @@ class AClient(discord.Client):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         await zip_and_send_folder(
             client=self,
-            folder_path="../HMS-Victory",
+            folder_path="./",
             channel_id=CHANNELS.DATA_BACKUP,
             zip_filename_prefix=f"full_bot_backup_as_of_{timestamp}",
         )
