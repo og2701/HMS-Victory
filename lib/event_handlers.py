@@ -248,6 +248,11 @@ async def on_ready(client, tree, scheduler):
 
 async def on_message(client, message):
     """Handles new message events, including attachments, message links, and forum thread onboarding"""
+    if not hasattr(client, "xp_system"):
+        from lib.xp_system import XPSystem
+        client.xp_system = XPSystem()
+        logger.info("XP system initialised")
+
     if not await restrict_channel_for_new_members(message, CHANNELS.POLITICS, 7, POLITICS_WHITELISTED_USER_IDS):
         return
 

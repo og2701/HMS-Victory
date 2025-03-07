@@ -285,6 +285,9 @@ def render_html_to_image(html: str) -> io.BytesIO:
     return img_bytes
 
 async def generate_rank_card(interaction: Interaction, member: Member) -> discord.File:
+    if not hasattr(interaction.client, "xp_system"):
+        from xp_system import XPSystem
+        interaction.client.xp_system = XPSystem()
     xp_system = interaction.client.xp_system
 
     rank, current_xp = xp_system.get_rank(str(member.id))
