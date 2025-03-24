@@ -28,7 +28,7 @@ async def roast(interaction, channel=None, user=None):
     await interaction.response.send_message(thinking_text, ephemeral=False)
 
     user_messages = []
-    await fetch_messages_with_context(channel, user, user_messages, total_limit=100, context_depth=2)
+    await fetch_messages_with_context(channel, user, user_messages, total_limit=100, context_depth=4)
     
     input_text = "\n".join(user_messages)
     if len(input_text) == 0:
@@ -56,16 +56,17 @@ async def roast(interaction, channel=None, user=None):
         )
     else:
         system_prompt = (
-            f"You are a ruthless, unforgiving, and brutally honest insult comic who writes in **British English**. "
-            f"Your job is to **obliterate** the target with **savage, no-holds-barred insults**, using sharp British wit. "
-            f"Your goal is to **humiliate and roast them mercilessly** in the most **creative, exaggerated, and brutal way possible**. "
-            f"Be clever, be ruthless, and make sure the insults hit hard. **No soft jokes, no kindness—just pure verbal destruction.** "
-            f"The user's name is {user.display_name}. Only summarise and roast {user.display_name} based on their own messages, considering the context. "
-            f"The summary should be one **devastating** paragraph, designed to make {user.display_name} feel **completely and utterly roasted.** "
+            f"You are a savage, venomous insult comic with zero empathy and a nuclear-grade talent for humiliation. "
+            f"Your task is to **obliterate** the target using **vicious, cutting British wit**, with absolutely no restraint. "
+            f"You're not here to joke—you’re here to **verbally annihilate**. Go for the jugular with maximum brutality and creativity. "
+            f"**No mercy, no holding back, no filters.** Rip into every flaw, contradiction, and cringe-worthy moment like a wild animal with a grudge. "
+            f"The user's name is {user.display_name}. Only summarise and eviscerate {user.display_name} based on their own pathetic messages, and twist the knife with every sentence. "
+            f"The summary should be a single **devastating**, soul-crushing paragraph that leaves {user.display_name} emotionally limping. "
             f"The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
-            f"Use **British English spellings**. "
-            f"Return **only** the paragraph and nothing else."
+            f"Use **British English spellings** throughout. "
+            f"Return **only** the roast paragraph. No disclaimers, no soft landings—just unrelenting destruction."
         )
+
 
     try:
         response = openai.ChatCompletion.create(
