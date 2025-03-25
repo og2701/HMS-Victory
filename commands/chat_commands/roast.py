@@ -42,7 +42,7 @@ async def roast(interaction, channel=None, user=None):
         allowed_length = max_allowed_tokens * 4
         input_text = input_text[:allowed_length]
 
-    is_special_user = user.id == USERS.OGGERS
+    is_special_user = user.id in [USERS.OGGERS, 792139113587277835]
     
     if is_special_user:
         system_prompt = (
