@@ -9,7 +9,6 @@ from lib.commands import *
 from lib.utils import *
 from lib.summary import post_summary
 from lib.shutcoin import get_shutcoins, set_shutcoins
-from lib.rank_card import *
 
 def define_commands(tree, client):
     """Defines slash commands for HMS Victory"""
