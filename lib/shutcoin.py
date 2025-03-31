@@ -1,6 +1,8 @@
 import os
 import json
 
+SHUTCOIN_ENABLED = True
+
 def load_json(filename):
     if os.path.exists(filename):
         with open(filename, "r") as f:

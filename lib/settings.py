@@ -4,8 +4,6 @@ from lib.constants import *
 
 GUILD_ID = 959493056242008184
 
-SHUTCOIN_ENABLED = True
-
 POLITICS_WHITELISTED_USER_IDS = load_whitelist()
 
 command_usage_tracker = defaultdict(lambda: {"count": 0, "last_used": None})

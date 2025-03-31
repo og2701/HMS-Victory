@@ -17,7 +17,7 @@ from lib.summary import initialize_summary_data, update_summary_data, post_summa
 from lib.utils import *
 from lib.log_functions import create_message_image, create_edited_message_image
 from lib.settings import *
-from lib.shutcoin import can_use_shutcoin, remove_shutcoin
+from lib.shutcoin import can_use_shutcoin, remove_shutcoin, SHUTCOIN_ENABLED
 
 from commands.mod_commands.persistant_role_buttons import (
     persistantRoleButtons,
