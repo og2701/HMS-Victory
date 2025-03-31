@@ -9,7 +9,7 @@ from html2image import Html2Image
 from lib.rank_constants import *
 from lib.shutcoin import get_shutcoins
 from lib.settings import *
-from lib.utils import *
+
 
 hti = Html2Image()
 
