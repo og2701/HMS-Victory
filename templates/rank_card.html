@@ -68,17 +68,18 @@
       right: 0;
     }
     .shutcoin-container {
-    display: flex;
-    align-items: center;
-    background: rgba(0, 0, 0, 0.7);
-    padding: 6px 10px;
-    border-radius: 8px;
+      display: flex;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 6px 12px;
+      border-radius: 10px;
     }
-  .shutcoin-icon {
-    width: 20px;
-    height: 20px;
-    margin-right: 6px;
+    .shutcoin-icon {
+      width: 40px;
+      height: 40px;
+      margin-right: 8px;
     }
+
   </style>
 </head>
 <body class="flex items-center justify-center min-h-screen bg-gray-900">
@@ -96,7 +97,7 @@
     <p class="text-xs text-gray-300 xp-box">
       <span class="xp-text">XP: {xp_display}</span>
     </p>
-    <div class="absolute bottom-4 left-4">
+    <div class="absolute top-4 left-4">
       {shutcoin_html}
     </div>
   </div>
