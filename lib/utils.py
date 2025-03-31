@@ -14,7 +14,7 @@ import logging
 import base64
 from html2image import Html2Image
 from lib.rank_constants import *
-from lib.shutcoin import get_shutcoins
+from lib.shutcoin import get_shutcoins, SHUTCOIN_ENABLED
 from lib.settings import *
 
 from config import CHROME_PATH
