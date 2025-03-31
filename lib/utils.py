@@ -334,7 +334,15 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
     shutcoin_html = ""
     if SHUTCOIN_ENABLED:
         shutcoin_count = get_shutcoins(member.id)
-        shutcoin_html = f'<p class="text-xs text-gray-300 xp-box"><span class="xp-text">Shutcoins: {shutcoin_count}</span></p>'
+        shutcoin_icon_path = os.path.join("data", "shutcoin.png")
+        shutcoin_icon_data_uri = encode_image_to_data_uri(shutcoin_icon_path)
+        shutcoin_html = f'''
+        <div class="shutcoin-container">
+          <img src="{shutcoin_icon_data_uri}" alt="Shutcoin" class="shutcoin-icon" />
+          <span class="xp-text">{shutcoin_count}</span>
+        </div>
+        '''
+
     html_content = html_content.replace("{shutcoin_html}", shutcoin_html)
 
     user_id_str = str(member.id)
