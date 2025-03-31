@@ -1,4 +1,4 @@
-from discord import app_commands, Interaction, Member, TextChannel
+from discord import app_commands, Interaction, Member, TextChannel, Embed
 from datetime import datetime, timedelta
 import os
 import pytz
@@ -8,6 +8,7 @@ from lib.settings import *
 from lib.commands import *
 from lib.utils import *
 from lib.summary import post_summary
+from lib.shutcoin import get_shutcoins, set_shutcoins
 
 def define_commands(tree, client):
     """Defines slash commands for HMS Victory"""
@@ -168,3 +169,13 @@ def define_commands(tree, client):
             client.xp_system = XPSystem()
 
         await client.xp_system.handle_leaderboard_command(interaction)
+
+    if SHUTCOIN_ENABLED:
+        @command("set-shutcoins", "Sets a user's total Shutcoins.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
+        async def set_shutcoins_command(interaction: Interaction, user: Member, amount: int):
+            old_amount = get_shutcoins(user.id)
+            set_shutcoins(user.id, amount)
+            new_amount = get_shutcoins(user.id)
+            embed = Embed(title="Shutcoin Update", description=f"{user.mention}'s Shutcoins were updated from {old_amount} to {new_amount}")
+            embed.set_footer(text=f"by {interaction.user.display_name}")
+            await interaction.response.send_message(embed=embed)

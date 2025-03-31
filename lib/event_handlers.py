@@ -17,6 +17,7 @@ from lib.summary import initialize_summary_data, update_summary_data, post_summa
 from lib.utils import *
 from lib.log_functions import create_message_image, create_edited_message_image
 from lib.settings import *
+from lib.shutcoin import can_use_shutcoin, remove_shutcoin
 
 from commands.mod_commands.persistant_role_buttons import (
     persistantRoleButtons,
@@ -383,25 +384,41 @@ async def handle_flag_reaction(reaction, message, user):
     if message.content:
         await translate_and_send(reaction, message, target_language, message.author, user)
 
-
 async def handle_shut_reaction(reaction, user):
     """Handles ':Shut:' reaction for timeout"""
     has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
-    if not has_role:
-        return
     message_author = reaction.message.author
     if message_author.is_timed_out():
         logger.info(f"User {message_author} is already timed out. Skipping further actions.")
         return
+
     try:
         reason = f"Timed out due to ':Shut:' reaction by {user.name}#{user.discriminator}."
-        duration = timedelta(minutes=5)
+        
+        if not SHUTCOIN_ENABLED:
+            if has_role:
+                duration = timedelta(minutes=5)
+                await message_author.timeout(discord.utils.utcnow() + duration, reason=reason)
+                sticker_message = await reaction.message.reply(stickers=[discord.Object(id=1298758779428536361)])
+                sticker_messages[reaction.message.id] = (sticker_message.id, user.id)
+                logger.info(f"User {message_author} timed out for {duration} by {user} (Shutcoin disabled).")
+            return
+        
+        if has_role:
+            duration = timedelta(minutes=5)
+        else:
+            if not can_use_shutcoin(user.id): return
+            removed = remove_shutcoin(user.id)
+            if not removed: return
+            duration = timedelta(seconds=30)
+
         await message_author.timeout(discord.utils.utcnow() + duration, reason=reason)
         sticker_message = await reaction.message.reply(stickers=[discord.Object(id=1298758779428536361)])
         sticker_messages[reaction.message.id] = (sticker_message.id, user.id)
-        logger.info(f"User {message_author} was timed out for 5 minutes due to ':Shut:' reaction by {user}.")
+        logger.info(f"User {message_author} was timed out for {duration} due to ':Shut:' reaction by {user}.")
     except Exception as e:
         logger.error(f"Failed to time out user {message_author}: {e}")
+
 
 
 async def on_reaction_add(reaction, user):
