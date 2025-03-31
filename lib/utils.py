@@ -14,6 +14,8 @@ import logging
 import base64
 from html2image import Html2Image
 from lib.rank_constants import *
+from lib.shutcoin import get_shutcoins
+from lib.settings import *
 
 from config import CHROME_PATH
 
@@ -284,8 +286,8 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
     if not hasattr(interaction.client, "xp_system"):
         from xp_system import XPSystem
         interaction.client.xp_system = XPSystem()
-    xp_system = interaction.client.xp_system
 
+    xp_system = interaction.client.xp_system
     rank, current_xp = xp_system.get_rank(str(member.id))
     rank_display = f"#{rank}" if rank is not None else "Unranked"
     if current_xp is None:
@@ -329,6 +331,12 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
     html_content = html_content.replace("{current_role}", current_role_name)
     html_content = html_content.replace("{next_role_html}", next_role_html)
 
+    shutcoin_html = ""
+    if SHUTCOIN_ENABLED:
+        shutcoin_count = get_shutcoins(member.id)
+        shutcoin_html = f'<p class="text-xs text-gray-300 xp-box"><span class="xp-text">Shutcoins: {shutcoin_count}</span></p>'
+    html_content = html_content.replace("{shutcoin_html}", shutcoin_html)
+
     user_id_str = str(member.id)
     custom_bg_filename = CUSTOM_RANK_BACKGROUNDS.get(user_id_str, "unionjack.png")
     background_path = os.path.join("data", "rank_cards", custom_bg_filename)
@@ -341,6 +349,7 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
         hti.screenshot(html_str=html_content, save_as=output_file, size=size)
     except Exception as e:
         raise Exception(f"Error taking screenshot: {e}")
+
     try:
         image = Image.open(output_file)
         image = trim(image)
