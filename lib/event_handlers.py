@@ -384,6 +384,11 @@ async def handle_flag_reaction(reaction, message, user):
     if message.content:
         await translate_and_send(reaction, message, target_language, message.author, user)
 
+def save_shut_count(user_id):
+    data = load_json("shut_counts.json")
+    data[str(user_id)] = data.get(str(user_id), 0) + 1
+    save_json("shut_counts.json", data)
+
 async def handle_shut_reaction(reaction, user):
     """Handles ':Shut:' reaction for timeout"""
     has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
@@ -391,10 +396,8 @@ async def handle_shut_reaction(reaction, user):
     if message_author.is_timed_out():
         logger.info(f"User {message_author} is already timed out. Skipping further actions.")
         return
-
     try:
         reason = f"Timed out due to ':Shut:' reaction by {user.name}#{user.discriminator}."
-        
         if not SHUTCOIN_ENABLED:
             if has_role:
                 duration = timedelta(minutes=5)
@@ -402,22 +405,25 @@ async def handle_shut_reaction(reaction, user):
                 sticker_message = await reaction.message.reply(stickers=[discord.Object(id=1298758779428536361)])
                 sticker_messages[reaction.message.id] = (sticker_message.id, user.id)
                 logger.info(f"User {message_author} timed out for {duration} by {user} (Shutcoin disabled).")
+                save_shut_count(message_author.id)
             return
-        
         if has_role:
             duration = timedelta(minutes=5)
         else:
-            if not can_use_shutcoin(user.id): return
+            if not can_use_shutcoin(user.id):
+                return
             removed = remove_shutcoin(user.id)
-            if not removed: return
+            if not removed:
+                return
             duration = timedelta(seconds=30)
-
         await message_author.timeout(discord.utils.utcnow() + duration, reason=reason)
         sticker_message = await reaction.message.reply(stickers=[discord.Object(id=1298758779428536361)])
         sticker_messages[reaction.message.id] = (sticker_message.id, user.id)
         logger.info(f"User {message_author} was timed out for {duration} due to ':Shut:' reaction by {user}.")
+        save_shut_count(message_author.id)
     except Exception as e:
         logger.error(f"Failed to time out user {message_author}: {e}")
+
 
 
 
