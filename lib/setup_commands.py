@@ -9,7 +9,7 @@ from lib.commands import *
 from lib.utils import *
 from lib.summary import post_summary
 from lib.shutcoin import get_shutcoins, set_shutcoins
-from lib.prediction_system import BetButtons, prediction_embed, _save
+from lib.prediction_system import Prediction, BetButtons, prediction_embed, _save
 
 def define_commands(tree, client):
     """Defines slash commands for HMS Victory"""
@@ -183,7 +183,6 @@ def define_commands(tree, client):
 
     @command("pred-create","Create a BritBucks prediction",checks=[lambda i: has_any_role(i,[ROLES.MINISTER,ROLES.CABINET])])
     async def pred_create(interaction:Interaction,title:str,opt1:str,opt2:str,duration:int=300):
-        from lib.prediction_system import Prediction,BetButtons,prediction_embed,_save
         end=discord.utils.utcnow().timestamp()+duration
         p=Prediction(0,title,opt1,opt2,end)
         embed,bar=prediction_embed(p)
@@ -195,7 +194,6 @@ def define_commands(tree, client):
 
     @command("pred-lock","Lock a prediction early",checks=[lambda i: has_any_role(i,[ROLES.MINISTER,ROLES.CABINET])])
     async def pred_lock(interaction:Interaction,message_id:str):
-        from lib.prediction_system import prediction_embed,_save
         p=interaction.client.predictions.get(int(message_id))
         if not p: return await interaction.response.send_message("Unknown pred.",ephemeral=True)
         p.locked=True
@@ -207,7 +205,6 @@ def define_commands(tree, client):
 
     @command("pred-resolve","Close and pay out",checks=[lambda i: has_any_role(i,[ROLES.MINISTER,ROLES.CABINET])])
     async def pred_resolve(interaction:Interaction,message_id:str,winner:int):
-        from lib.prediction_system import prediction_embed,_save
         p=interaction.client.predictions.pop(int(message_id),None)
         if not p: return await interaction.response.send_message("Unknown pred.",ephemeral=True)
         p.resolve(winner)
