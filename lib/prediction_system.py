@@ -6,6 +6,19 @@ def _load(): return json.load(open(PRED_FILE)) if os.path.exists(PRED_FILE) else
 
 def _save(d): json.dump(d,open(PRED_FILE,"w"),indent=4)
 
+
+def prediction_embed(pred:Prediction):
+    t1,t2=pred.totals()
+    total=t1+t2
+    pct1=f"{int(t1/total*100) if total else 50}%"
+    pct2=f"{int(t2/total*100) if total else 50}%"
+    e=discord.Embed(title=pred.title)
+    e.add_field(name=pred.opt1,value=f"{pct1} – {t1:,}",inline=True)
+    e.add_field(name=pred.opt2,value=f"{pct2} – {t2:,}",inline=True)
+    bar=int((t1/total if total else 0.5)*20)
+    e.description="█"*bar+"░"*(20-bar)
+    return e
+
 class Prediction:
     def __init__(self,msg_id,title,opt1,opt2,end_ts):
         self.msg_id=msg_id; self.title=title; self.opt1=opt1; self.opt2=opt2

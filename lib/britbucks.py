@@ -1,6 +1,4 @@
 import os, json
-from lib.prediction_system import Prediction
-
 BRITBUCKS_FILE="britbucks.json"
 
 SHOP={"shutcoin":1000}
@@ -22,18 +20,6 @@ def remove_bb(uid,amt):
     bal=get_bb(uid)
     if amt>bal: return False
     set_bb(uid,bal-amt); return True
-
-def prediction_embed(pred:Prediction):
-    t1,t2=pred.totals()
-    total=t1+t2
-    pct1=f"{int(t1/total*100) if total else 50}%"
-    pct2=f"{int(t2/total*100) if total else 50}%"
-    e=discord.Embed(title=pred.title)
-    e.add_field(name=pred.opt1,value=f"{pct1} – {t1:,}",inline=True)
-    e.add_field(name=pred.opt2,value=f"{pct2} – {t2:,}",inline=True)
-    bar=int((t1/total if total else 0.5)*20)
-    e.description="█"*bar+"░"*(20-bar)
-    return e
 
 class BetModal(discord.ui.Modal,title="Place your bet"):
     amount=discord.ui.TextInput(label="Amount",placeholder="Number ≤100000")
