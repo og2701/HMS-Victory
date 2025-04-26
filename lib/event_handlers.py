@@ -56,6 +56,20 @@ FORUM_CHANNEL_ID = 1341451323249266711
 THREAD_MESSAGES_FILE = "thread_messages.json"
 ADDED_USERS_FILE = "added_users.json"
 
+async def sweep_predictions():
+    now=discord.utils.utcnow().timestamp()
+    dirty=False
+    for p in client.predictions.values():
+        if not p.locked and p.end_ts<=now:
+            p.locked=True
+            channel=client.get_channel(CHANNELS.BOT_SPAM)
+            try:
+                msg=await channel.fetch_message(p.msg_id)
+                await msg.edit(embed=prediction_embed(p),view=None)
+            except: pass
+            dirty=True
+    if dirty: _save({k:v.to_dict() for k,v in client.predictions.items()})
+
 def reattach_persistent_views(client):
     from commands.mod_commands.announcement_command import RoleButtonView
     persistent_views = load_persistent_views()
@@ -78,6 +92,7 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(client.monthly_summary, CronTrigger(day=1, hour=0, minute=2, timezone="Europe/London"))
     scheduler.add_job(client.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=0, timezone="Europe/London"))
     scheduler.add_job(client.backup_bot, IntervalTrigger(minutes=30, timezone="Europe/London"))
+    scheduler.add_job(sweep_predictions,IntervalTrigger(seconds=30))
     scheduler.start()
 
 
@@ -244,6 +259,7 @@ async def on_ready(client, tree, scheduler):
         await asyncio.sleep(0.1)
     schedule_client_jobs(client, scheduler)
     logger.info(f"{client.user} setup complete")
+    await refresh_live_stages(client)
     await client.backup_bot()
 
 
@@ -464,9 +480,46 @@ async def on_reaction_remove(reaction, user):
 
 
 async def on_voice_state_update(member, before, after):
-    """Mutes and deafens members joining a voice channel during lockdown"""
-    if not is_lockdown_active():
-        return
-    if after.channel and not before.channel:
+    if after.channel and not before.channel and is_lockdown_active():
         if not any(role.id in VC_LOCKDOWN_WHITELIST for role in member.roles):
             await member.edit(mute=True, deafen=True)
+
+    stage_events = getattr(member._client, 'stage_events', {})
+    stage_join_times = getattr(member._client, 'stage_join_times', {})
+
+    if after.channel and after.channel.id in stage_events and before.channel != after.channel:
+        stage_join_times[member.id] = discord.utils.utcnow()
+
+    if before.channel and before.channel.id in stage_events and (not after.channel or after.channel.id not in stage_events):
+        start = stage_join_times.pop(member.id, None)
+        if start:
+            elapsed = (discord.utils.utcnow() - start).total_seconds()
+            bonus = (int(elapsed) // 600) * 10
+            if bonus:
+                add_bb(member.id, bonus)
+
+
+async def refresh_live_stages(client):
+    guild = client.get_guild(GUILD_ID)
+    if not guild:
+        return
+    for ch in guild.stage_channels:
+        if ch.instance is not None:
+            client.stage_events.add(ch.id)
+
+
+async def on_stage_instance_create(stage_instance):
+    stage_instance.guild._state._get_client().stage_events.add(stage_instance.channel.id)
+
+async def on_stage_instance_delete(stage_instance):
+    client = stage_instance.guild._state._get_client()
+    ch_id = stage_instance.channel.id
+    for m in stage_instance.channel.members:
+        start = client.stage_join_times.pop(m.id, None)
+        if start:
+            secs = (discord.utils.utcnow() - start).total_seconds()
+            bonus = (int(secs) // 600) * 10
+            if bonus:
+                add_bb(m.id, bonus)
+    client.stage_events.discard(ch_id)
+

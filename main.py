@@ -93,8 +93,6 @@ async def send_json_files(client, folder_path, channel_id):
     logger.info("All JSON files uploaded.")
 
 
-
-
 class AClient(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
@@ -105,6 +103,9 @@ class AClient(discord.Client):
         self.synced = False
         self.scheduler = AsyncIOScheduler()
         self.image_cache = {}
+        self.stage_events=set()
+        self.stage_join_times={}
+        self.predictions={int(k):Prediction.from_dict(v) for k,v in _load().items()}
 
     async def on_ready(self):
         await on_ready(self, tree, self.scheduler)
@@ -213,6 +214,12 @@ class AClient(discord.Client):
 
     async def on_voice_state_update(self, member, before, after):
         await on_voice_state_update(member, before, after)
+
+    async def on_stage_instance_create(self, stage_instance):
+        await on_stage_instance_create(stage_instance)
+
+    async def on_stage_instance_delete(self, stage_instance):
+        await on_stage_instance_delete(stage_instance)
 
     async def clear_image_cache(self):
         self.image_cache.clear()

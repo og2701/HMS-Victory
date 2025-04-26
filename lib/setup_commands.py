@@ -179,3 +179,52 @@ def define_commands(tree, client):
             embed = Embed(title="Shutcoin Update", description=f"{user.mention}'s Shutcoins were updated from {old_amount} to {new_amount}")
             embed.set_footer(text=f"by {interaction.user.display_name}")
             await interaction.response.send_message(embed=embed)
+
+    @command("event-start","Marks a stage channel as an active event",checks=[lambda i: has_any_role(i,[ROLES.MINISTER,ROLES.CABINET])])
+    async def event_start(interaction:Interaction, channel:discord.StageChannel):
+        interaction.client.stage_events.add(channel.id)
+        await interaction.response.send_message(f"{channel.mention} marked as live event.")
+
+    @command("event-end","Ends an active Stage event",checks=[lambda i: has_any_role(i,[ROLES.MINISTER,ROLES.CABINET])])
+    async def event_end(interaction:Interaction, channel:discord.StageChannel):
+        interaction.client.stage_events.discard(channel.id)
+        await interaction.response.send_message(f"{channel.mention} un-marked; awarding final BritBucks.")
+        for uid, t in list(interaction.client.stage_join_times.items()):
+            if uid in [m.id for m in channel.members]:
+                secs=(discord.utils.utcnow()-t).total_seconds()
+                bonus=(int(secs)//600)*10
+                if bonus: add_bb(uid,bonus)
+                interaction.client.stage_join_times.pop(uid,None)
+
+    @command("pred-create","Create a BritBucks prediction",checks=[lambda i: has_any_role(i,[ROLES.MINISTER,ROLES.CABINET])])
+    async def pred_create(interaction:Interaction,title:str,opt1:str,opt2:str,duration:int=300):
+        end=discord.utils.utcnow().timestamp()+duration
+        embed=discord.Embed(title=title)
+        embed.add_field(name=opt1,value="50 % – 0",inline=True)
+        embed.add_field(name=opt2,value="50 % – 0",inline=True)
+        msg=await interaction.channel.send(embed=embed,view=BetButtons(None))
+        p=Prediction(msg.id,title,opt1,opt2,end)
+        interaction.client.predictions[msg.id]=p
+        await msg.edit(embed=prediction_embed(p),view=BetButtons(p))
+        await interaction.response.send_message("Prediction opened.",ephemeral=True)
+
+    @command("pred-lock","Lock a prediction early",checks=[lambda i: has_any_role(i,[ROLES.MINISTER,ROLES.CABINET])])
+    async def pred_lock(interaction:Interaction,message_id:str):
+        p=interaction.client.predictions.get(int(message_id))
+        if not p: return await interaction.response.send_message("Unknown pred.",ephemeral=True)
+        p.locked=True
+        msg=await interaction.channel.fetch_message(int(message_id))
+        await msg.edit(embed=prediction_embed(p),view=None)
+        await interaction.response.send_message("Locked.",ephemeral=True)
+        _save({k:v.to_dict() for k,v in interaction.client.predictions.items()})
+
+    @command("pred-resolve","Close and pay out",checks=[lambda i: has_any_role(i,[ROLES.MINISTER,ROLES.CABINET])])
+    async def pred_resolve(interaction:Interaction,message_id:str,winner:int):
+        p=interaction.client.predictions.pop(int(message_id),None)
+        if not p: return await interaction.response.send_message("Unknown pred.",ephemeral=True)
+        p.resolve(winner)
+        msg=await interaction.channel.fetch_message(int(message_id))
+        p.locked=True
+        await msg.edit(embed=prediction_embed(p),view=None)
+        await interaction.response.send_message("Resolved and paid.",ephemeral=True)
+        _save({k:v.to_dict() for k,v in interaction.client.predictions.items()})
