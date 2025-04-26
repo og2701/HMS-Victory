@@ -56,19 +56,22 @@ FORUM_CHANNEL_ID = 1341451323249266711
 THREAD_MESSAGES_FILE = "thread_messages.json"
 ADDED_USERS_FILE = "added_users.json"
 
-async def sweep_predictions():
-    now=discord.utils.utcnow().timestamp()
-    dirty=False
+async def sweep_predictions(client):
+    from lib.prediction_system import prediction_embed, _save
+    now   = discord.utils.utcnow().timestamp()
+    dirty = False
     for p in client.predictions.values():
-        if not p.locked and p.end_ts<=now:
-            p.locked=True
-            channel=client.get_channel(CHANNELS.BOT_SPAM)
+        if not p.locked and p.end_ts <= now:
+            p.locked = True
             try:
-                msg=await channel.fetch_message(p.msg_id)
-                await msg.edit(embed=prediction_embed(p),view=None)
-            except: pass
-            dirty=True
-    if dirty: _save({k:v.to_dict() for k,v in client.predictions.items()})
+                channel = client.get_channel(CHANNELS.BOT_SPAM)
+                msg     = await channel.fetch_message(p.msg_id)
+                await msg.edit(embed=prediction_embed(p), view=None)
+            except Exception:
+                pass
+            dirty = True
+    if dirty:
+        _save({k: v.to_dict() for k, v in client.predictions.items()})
 
 def reattach_persistent_views(client):
     from commands.mod_commands.announcement_command import RoleButtonView
@@ -92,7 +95,7 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(client.monthly_summary, CronTrigger(day=1, hour=0, minute=2, timezone="Europe/London"))
     scheduler.add_job(client.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=0, timezone="Europe/London"))
     scheduler.add_job(client.backup_bot, IntervalTrigger(minutes=30, timezone="Europe/London"))
-    scheduler.add_job(sweep_predictions,IntervalTrigger(seconds=30))
+    scheduler.add_job(lambda: sweep_predictions(client), IntervalTrigger(seconds=30))
     scheduler.start()
 
 
@@ -484,8 +487,11 @@ async def on_voice_state_update(member, before, after):
         if not any(role.id in VC_LOCKDOWN_WHITELIST for role in member.roles):
             await member.edit(mute=True, deafen=True)
 
-    stage_events = getattr(member._client, 'stage_events', {})
-    stage_join_times = getattr(member._client, 'stage_join_times', {})
+    client = member._state._get_client()
+    stage_events      = getattr(client, 'stage_events', set())
+    if not hasattr(client, 'stage_join_times'):
+        client.stage_join_times = {}
+    stage_join_times  = client.stage_join_times
 
     if after.channel and after.channel.id in stage_events and before.channel != after.channel:
         stage_join_times[member.id] = discord.utils.utcnow()
