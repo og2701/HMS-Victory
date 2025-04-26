@@ -337,26 +337,26 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
         shutcoin_count = get_shutcoins(member.id)
         shutcoin_icon_path = os.path.join("data", "shutcoin.png")
         shutcoin_icon_data_uri = encode_image_to_data_uri(shutcoin_icon_path)
-        shutcoin_html = f'''
-        <div class="shutcoin-container">
-          <img src="{shutcoin_icon_data_uri}" alt="Shutcoin" class="shutcoin-icon" />
-          <span class="xp-text">{shutcoin_count}</span>
+        shutcoin_html = f"""
+        <div class="coin-box">
+          <img src="{shutcoin_icon_data_uri}" class="coin-icon"/>
+          <span class="xp-text">{shutcoin_count:,}</span>
         </div>
-        '''
+        """
 
     html_content = html_content.replace("{shutcoin_html}", shutcoin_html)
 
     britbuck_html = ""
     bb_count = get_bb(member.id)
     if bb_count:
-        britbuck_icon_path = os.path.join("data", "britbuck.png")   # square ~64 px icon
+        britbuck_icon_path = os.path.join("data", "britbuck.png")
         britbuck_icon_uri  = encode_image_to_data_uri(britbuck_icon_path)
-        britbuck_html = f'''
-        <div class="britbuck-container">
-          <img src="{britbuck_icon_uri}" alt="BritBuck" class="britbuck-icon" />
-          <span class="xp-text">{bb_count:,}</span>
+        britbuck_html = f"""
+        <div class="coin-box">
+          <img src="{britbuck_icon_uri}" class="coin-icon"/>
+          <span class="xp-text">{britbuck_amount:,}</span>
         </div>
-        '''
+        """
     html_content = html_content.replace("{britbuck_html}", britbuck_html)
 
     user_id_str = str(member.id)
