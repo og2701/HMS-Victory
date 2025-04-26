@@ -336,27 +336,25 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
     if SHUTCOIN_ENABLED:
         shutcoin_count = get_shutcoins(member.id)
         shutcoin_icon_path = os.path.join("data", "shutcoin.png")
-        shutcoin_icon_data_uri = encode_image_to_data_uri(shutcoin_icon_path)
-        shutcoin_html = f"""
+        shutcoin_icon_uri = encode_image_to_data_uri(shutcoin_icon_path)
+        shutcoin_html = f'''
         <div class="coin-box">
-          <img src="{shutcoin_icon_data_uri}" class="coin-icon"/>
+          <img src="{shutcoin_icon_uri}" class="coin-icon" />
           <span class="xp-text">{shutcoin_count:,}</span>
         </div>
-        """
+        '''
+
+    britbuck_amount = get_bb(member.id)
+    britbuck_icon_path = os.path.join("data", "britbuck.png")
+    britbuck_icon_uri = encode_image_to_data_uri(britbuck_icon_path)
+    britbuck_html = f'''
+    <div class="coin-box">
+      <img src="{britbuck_icon_uri}" class="coin-icon" />
+      <span class="xp-text">{britbuck_amount:,}</span>
+    </div>
+    '''
 
     html_content = html_content.replace("{shutcoin_html}", shutcoin_html)
-
-    britbuck_html = ""
-    bb_count = get_bb(member.id)
-    if bb_count:
-        britbuck_icon_path = os.path.join("data", "britbuck.png")
-        britbuck_icon_uri  = encode_image_to_data_uri(britbuck_icon_path)
-        britbuck_html = f"""
-        <div class="coin-box">
-          <img src="{britbuck_icon_uri}" class="coin-icon"/>
-          <span class="xp-text">{britbuck_amount:,}</span>
-        </div>
-        """
     html_content = html_content.replace("{britbuck_html}", britbuck_html)
 
     user_id_str = str(member.id)
@@ -367,17 +365,10 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
 
     size = (1600, 1000)
     output_file = f"{uuid.uuid4()}.png"
-    try:
-        hti.screenshot(html_str=html_content, save_as=output_file, size=size)
-    except Exception as e:
-        raise Exception(f"Error taking screenshot: {e}")
-
-    try:
-        image = Image.open(output_file)
-        image = trim(image)
-        image.save(output_file)
-    except Exception as e:
-        raise Exception(f"Error processing image: {e}")
+    hti.screenshot(html_str=html_content, save_as=output_file, size=size)
+    image = Image.open(output_file)
+    image = trim(image)
+    image.save(output_file)
 
     with open(output_file, "rb") as f:
         image_bytes = io.BytesIO(f.read())
