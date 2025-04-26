@@ -1,4 +1,4 @@
-import os, json
+import os, json, discord
 BRITBUCKS_FILE="britbucks.json"
 
 SHOP={"shutcoin":1000}
