@@ -16,6 +16,7 @@ from html2image import Html2Image
 from lib.rank_constants import *
 from lib.shutcoin import get_shutcoins, SHUTCOIN_ENABLED
 from lib.settings import *
+from lib.britbucks import get_bb
 
 from config import CHROME_PATH
 
@@ -344,6 +345,19 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
         '''
 
     html_content = html_content.replace("{shutcoin_html}", shutcoin_html)
+
+    britbuck_html = ""
+    bb_count = get_bb(member.id)
+    if bb_count:
+        britbuck_icon_path = os.path.join("data", "britbuck.png")   # square ~64 px icon
+        britbuck_icon_uri  = encode_image_to_data_uri(britbuck_icon_path)
+        britbuck_html = f'''
+        <div class="britbuck-container">
+          <img src="{britbuck_icon_uri}" alt="BritBuck" class="britbuck-icon" />
+          <span class="xp-text">{bb_count:,}</span>
+        </div>
+        '''
+    html_content = html_content.replace("{britbuck_html}", britbuck_html)
 
     user_id_str = str(member.id)
     custom_bg_filename = CUSTOM_RANK_BACKGROUNDS.get(user_id_str, "unionjack.png")
