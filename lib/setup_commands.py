@@ -180,22 +180,6 @@ def define_commands(tree, client):
             embed.set_footer(text=f"by {interaction.user.display_name}")
             await interaction.response.send_message(embed=embed)
 
-    @command("event-start","Marks a stage channel as an active event",checks=[lambda i: has_any_role(i,[ROLES.MINISTER,ROLES.CABINET])])
-    async def event_start(interaction:Interaction, channel:discord.StageChannel):
-        interaction.client.stage_events.add(channel.id)
-        await interaction.response.send_message(f"{channel.mention} marked as live event.")
-
-    @command("event-end","Ends an active Stage event",checks=[lambda i: has_any_role(i,[ROLES.MINISTER,ROLES.CABINET])])
-    async def event_end(interaction:Interaction, channel:discord.StageChannel):
-        interaction.client.stage_events.discard(channel.id)
-        await interaction.response.send_message(f"{channel.mention} un-marked; awarding final BritBucks.")
-        for uid, t in list(interaction.client.stage_join_times.items()):
-            if uid in [m.id for m in channel.members]:
-                secs=(discord.utils.utcnow()-t).total_seconds()
-                bonus=(int(secs)//600)*10
-                if bonus: add_bb(uid,bonus)
-                interaction.client.stage_join_times.pop(uid,None)
-
     @command("pred-create","Create a BritBucks prediction",checks=[lambda i: has_any_role(i,[ROLES.MINISTER,ROLES.CABINET])])
     async def pred_create(interaction:Interaction,title:str,opt1:str,opt2:str,duration:int=300):
         end=discord.utils.utcnow().timestamp()+duration
