@@ -18,6 +18,7 @@ from lib.utils import *
 from lib.log_functions import create_message_image, create_edited_message_image
 from lib.settings import *
 from lib.shutcoin import can_use_shutcoin, remove_shutcoin, SHUTCOIN_ENABLED
+from lib.prediction_system import prediction_embed, _save
 
 from commands.mod_commands.persistant_role_buttons import (
     persistantRoleButtons,
@@ -57,7 +58,6 @@ THREAD_MESSAGES_FILE = "thread_messages.json"
 ADDED_USERS_FILE = "added_users.json"
 
 async def sweep_predictions(client):
-    from lib.prediction_system import prediction_embed, _save
     now   = discord.utils.utcnow().timestamp()
     dirty = False
     for p in client.predictions.values():
@@ -66,7 +66,8 @@ async def sweep_predictions(client):
             try:
                 channel = client.get_channel(CHANNELS.BOT_SPAM)
                 msg     = await channel.fetch_message(p.msg_id)
-                await msg.edit(embed=prediction_embed(p), view=None)
+                embed, bar = prediction_embed(p)
+                await msg.edit(embed=embed, attachments=[bar], view=None)
             except Exception:
                 pass
             dirty = True
