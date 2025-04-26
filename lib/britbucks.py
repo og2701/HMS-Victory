@@ -1,4 +1,6 @@
 import os, json
+from lib.prediction_system import Prediction
+
 BRITBUCKS_FILE="britbucks.json"
 
 SHOP={"shutcoin":1000}
