@@ -182,39 +182,58 @@ def define_commands(tree, client):
             embed.set_footer(text=f"by {interaction.user.display_name}")
             await interaction.response.send_message(embed=embed)
 
-    @command("pred-create","Create a BritBucks prediction",checks=[lambda i: has_any_role(i,[ROLES.MINISTER,ROLES.CABINET])])
-    async def pred_create(interaction:Interaction,title:str,opt1:str,opt2:str,duration:int=300):
-        end=discord.utils.utcnow().timestamp()+duration
-        p=Prediction(0,title,opt1,opt2,end)
-        embed,bar=prediction_embed(p)
-        msg=await interaction.channel.send(embed=embed,files=[bar],view=BetButtons(p))
-        p.msg_id=msg.id
-        interaction.client.predictions[msg.id]=p
-        _save({k:v.to_dict() for k,v in interaction.client.predictions.items()})
-        await interaction.response.send_message("Prediction opened.",ephemeral=True)
+    @command("pred-create", "Create a BritBucks prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
+    async def pred_create(interaction: Interaction, title: str, opt1: str, opt2: str, duration: int = 300):
+        end_ts = discord.utils.utcnow().timestamp() + duration
+        p      = Prediction(0, title, opt1, opt2, end_ts)
+        embed, bar = prediction_embed(p)
+        msg = await interaction.channel.send(embed=embed, files=[bar], view=BetButtons(p))
+        p.msg_id = msg.id
+        interaction.client.predictions[msg.id] = p
+        _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
+        await interaction.response.send_message("Prediction opened.", ephemeral=True)
 
-    @command("pred-lock","Lock a prediction early",checks=[lambda i: has_any_role(i,[ROLES.MINISTER,ROLES.CABINET])])
-    async def pred_lock(interaction:Interaction,message_id:str):
-        p=interaction.client.predictions.get(int(message_id))
-        if not p: return await interaction.response.send_message("Unknown pred.",ephemeral=True)
-        p.locked=True
-        msg=await interaction.channel.fetch_message(int(message_id))
-        embed,bar=prediction_embed(p)
-        await msg.edit(embed=embed,attachments=[bar],view=None)
-        _save({k:v.to_dict() for k,v in interaction.client.predictions.items()})
-        await interaction.response.send_message("Locked.",ephemeral=True)
+    @command("pred-lock", "Lock a prediction early", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
+    async def pred_lock(interaction: Interaction, message_id: str):
+        p = interaction.client.predictions.get(int(message_id))
+        if not p:
+            return await interaction.response.send_message("Unknown prediction.", ephemeral=True)
+        p.locked = True
+        msg = await interaction.channel.fetch_message(int(message_id))
+        embed, bar = prediction_embed(p)
+        await msg.edit(embed=embed, attachments=[bar], view=None)
+        _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
+        await interaction.response.send_message("Locked.", ephemeral=True)
 
-    @command("pred-resolve","Close and pay out",checks=[lambda i: has_any_role(i,[ROLES.MINISTER,ROLES.CABINET])])
-    async def pred_resolve(interaction:Interaction,message_id:str,winner:int):
-        p=interaction.client.predictions.pop(int(message_id),None)
-        if not p: return await interaction.response.send_message("Unknown pred.",ephemeral=True)
-        p.resolve(winner)
-        p.locked=True
-        msg=await interaction.channel.fetch_message(int(message_id))
-        embed,bar=prediction_embed(p)
-        await msg.edit(embed=embed,attachments=[bar],view=None)
-        _save({k:v.to_dict() for k,v in interaction.client.predictions.items()})
-        await interaction.response.send_message("Resolved and paid.",ephemeral=True)
+    @command("pred-resolve", "Close and pay out", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
+    async def pred_resolve(interaction: Interaction, message_id: str, winner: int):
+        p = interaction.client.predictions.pop(int(message_id), None)
+        if not p:
+            return await interaction.response.send_message("Unknown prediction.", ephemeral=True)
+
+        payouts = p.resolve(winner)
+        p.locked = True
+
+        msg          = await interaction.channel.fetch_message(int(message_id))
+        embed, bar   = prediction_embed(p)
+        await msg.edit(embed=embed, attachments=[bar], view=None)
+
+        win_side   = p.opt1 if winner == 1 else p.opt2
+        total_pot  = sum(p.totals())
+        summary    = discord.Embed(
+            title=f"🏁 Prediction settled: **{win_side}** wins!",
+            description=f"Total pot: **{total_pot:,}** BritBucks",
+            color=discord.Color.green()
+        )
+        for uid, amount in sorted(payouts.items(), key=lambda x: x[1], reverse=True):
+            member = interaction.guild.get_member(uid)
+            name   = member.display_name if member else str(uid)
+            summary.add_field(name=name, value=f"won **{amount:,}**", inline=False)
+
+        await interaction.channel.send(embed=summary)
+        _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
+        await interaction.response.send_message("Resolved and paid.", ephemeral=True)
+
 
     @command("bb-set", "Sets a user's BritBucks balance.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def bb_set(interaction: Interaction, user: Member, amount: int):
