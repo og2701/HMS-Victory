@@ -1,12 +1,7 @@
 import discord
 from discord import Interaction, InteractionType
 from datetime import timedelta, datetime
-import logging
-import os
-import aiohttp
-import io
-import json
-import asyncio
+import logging, os, aiohttp, io, json, asyncio
 from collections import defaultdict
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -18,7 +13,7 @@ from lib.log_functions import create_message_image, create_edited_message_image
 from lib.settings import *
 from lib.shutcoin import can_use_shutcoin, remove_shutcoin, SHUTCOIN_ENABLED
 from lib.prediction_system import prediction_embed, _save
-from lib.britbucks import add_bb
+from lib.britbucks import add_bb, remove_bb
 
 from commands.mod_commands.persistant_role_buttons import (
     persistantRoleButtons,
@@ -31,6 +26,7 @@ from commands.mod_commands.archive_channel import (
 )
 
 logger = logging.getLogger(__name__)
+logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
 
 MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
@@ -57,6 +53,7 @@ FORUM_CHANNEL_ID = 1341451323249266711
 THREAD_MESSAGES_FILE = "thread_messages.json"
 ADDED_USERS_FILE = "added_users.json"
 
+
 async def sweep_predictions(client):
     now = discord.utils.utcnow().timestamp()
     dirty = False
@@ -66,7 +63,7 @@ async def sweep_predictions(client):
             try:
                 channel = client.get_channel(CHANNELS.BOT_SPAM)
                 msg = await channel.fetch_message(p.msg_id)
-                embed, bar = prediction_embed(p)
+                embed, bar = prediction_embed(p, client)
                 await msg.edit(embed=embed, attachments=[bar], view=None)
             except Exception:
                 pass
@@ -74,14 +71,17 @@ async def sweep_predictions(client):
     if dirty:
         _save({k: v.to_dict() for k, v in client.predictions.items()})
 
+
 async def sweep_stage_bonus(client):
     now = discord.utils.utcnow()
     for uid, start in list(client.stage_join_times.items()):
         elapsed = (now - start).total_seconds()
-        segments = int(elapsed // 600)
-        if segments > 0:
-            add_bb(uid, segments * 10)
-            client.stage_join_times[uid] = start + timedelta(seconds=segments * 600)
+        minutes = int(elapsed // 60)
+        if minutes:
+            bonus = minutes * 10
+            add_bb(uid, bonus)
+            client.stage_join_times[uid] = now
+
 
 def reattach_persistent_views(client):
     from commands.mod_commands.announcement_command import RoleButtonView
@@ -98,6 +98,7 @@ def reattach_persistent_views(client):
             view = RoleButtonView(value)
             client.add_view(view, message_id=key)
 
+
 def schedule_client_jobs(client, scheduler):
     scheduler.add_job(client.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
     scheduler.add_job(client.weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=1, timezone="Europe/London"))
@@ -107,6 +108,7 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(sweep_predictions, IntervalTrigger(seconds=30), args=[client])
     scheduler.add_job(sweep_stage_bonus, IntervalTrigger(seconds=60), args=[client])
     scheduler.start()
+
 
 async def process_message_attachments(client, message):
     if message.attachments:
@@ -140,6 +142,7 @@ async def process_message_attachments(client, message):
                             logger.info(
                                 f"Skipped downloading {attachment.filename} as it exceeds the size limit of {MAX_IMAGE_SIZE / (1024 * 1024)} MB."
                             )
+
 
 async def process_message_links(client, message):
     message_links = [part for part in message.content.split() if "discord.com/channels/" in part]
@@ -188,12 +191,14 @@ async def process_message_links(client, message):
                 else:
                     reply = await message.channel.send(reply_content)
                 await reply.add_reaction("❌")
+
                 def check(reaction, user):
                     return (
                         user == message.author
                         and str(reaction.emoji) == "❌"
                         and reaction.message.id == reply.id
                     )
+
                 try:
                     await client.wait_for("reaction_add", timeout=20.0, check=check)
                     await reply.delete()
@@ -201,6 +206,7 @@ async def process_message_links(client, message):
                     await reply.clear_reactions()
             except Exception as e:
                 logger.error(f"Error processing message link: {e}")
+
 
 async def process_forum_threads(client, message):
     guild = message.guild
@@ -238,11 +244,14 @@ async def process_forum_threads(client, message):
             except discord.HTTPException as e:
                 logger.warning(f"Failed to add {message.author} to {thread.name}: {e}")
 
+
 async def on_ready(client, tree, scheduler):
     if not hasattr(client, "thread_messages"):
         client.thread_messages = load_json(THREAD_MESSAGES_FILE)
+        logger.info("Loaded thread messages")
     if not hasattr(client, "added_users"):
         client.added_users = load_json(ADDED_USERS_FILE)
+        logger.info("Loaded added users")
     if not client.synced:
         await tree.sync()
         client.synced = True
@@ -274,6 +283,7 @@ async def on_message(client, message):
 
     if not await restrict_channel_for_new_members(message, CHANNELS.POLITICS, 7, POLITICS_WHITELISTED_USER_IDS):
         return
+
     await client.xp_system.update_xp(message)
     await process_message_attachments(client, message)
     await process_message_links(client, message)
@@ -281,11 +291,13 @@ async def on_message(client, message):
         return
     await process_forum_threads(client, message)
 
+
 async def on_interaction(interaction: Interaction):
     if interaction.type == InteractionType.component and "custom_id" in interaction.data:
         custom_id = interaction.data["custom_id"]
         if custom_id.startswith("role_"):
             await handleRoleButtonInteraction(interaction)
+
 
 async def on_member_join(member):
     await handle_new_member_anti_raid(member)
@@ -293,11 +305,14 @@ async def on_member_join(member):
     if role:
         await member.add_roles(role)
 
+
 async def on_member_remove(member):
     pass
 
+
 async def on_member_ban(guild, user):
     pass
+
 
 async def on_message_delete(client, message):
     async for entry in message.guild.audit_logs(
@@ -354,6 +369,7 @@ async def on_message_delete(client, message):
                     attachment_embed.add_field(name="Channel Link", value=f"[Click here]({attachment_link})")
                     await log_channel.send(embed=attachment_embed)
 
+
 async def on_message_edit(client, before, after):
     if before.author.bot:
         return
@@ -375,6 +391,7 @@ async def on_message_edit(client, before, after):
                 )
             os.remove(image_file_path)
 
+
 async def handle_flag_reaction(reaction, message, user):
     target_language = FLAG_LANGUAGE_MAPPINGS.get(str(reaction.emoji))
     if not target_language:
@@ -386,10 +403,12 @@ async def handle_flag_reaction(reaction, message, user):
     if message.content:
         await translate_and_send(reaction, message, target_language, message.author, user)
 
+
 def save_shut_count(user_id):
     data = load_json("shut_counts.json")
     data[str(user_id)] = data.get(str(user_id), 0) + 1
     save_json("shut_counts.json", data)
+
 
 async def handle_shut_reaction(reaction, user):
     has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
@@ -425,6 +444,7 @@ async def handle_shut_reaction(reaction, user):
     except Exception as e:
         logger.error(f"Failed to time out user {message_author}: {e}")
 
+
 async def on_reaction_add(reaction, user):
     try:
         if str(reaction.emoji) in FLAG_LANGUAGE_MAPPINGS:
@@ -433,6 +453,7 @@ async def on_reaction_add(reaction, user):
             await handle_shut_reaction(reaction, user)
     except Exception as e:
         logger.error(f"Error in on_reaction_add: {e}")
+
 
 async def on_reaction_remove(reaction, user):
     if ":Shut:" in str(reaction.emoji):
@@ -457,6 +478,7 @@ async def on_reaction_remove(reaction, user):
             except Exception as e:
                 logger.error(f"Failed to remove timeout or delete sticker message for user {message_author}: {e}")
 
+
 async def on_voice_state_update(member, before, after):
     if after.channel and not before.channel and is_lockdown_active():
         if not any(role.id in VC_LOCKDOWN_WHITELIST for role in member.roles):
@@ -479,6 +501,7 @@ async def on_voice_state_update(member, before, after):
             if bonus:
                 add_bb(member.id, bonus)
 
+
 async def refresh_live_stages(client):
     guild = client.get_guild(GUILD_ID)
     if not guild:
@@ -487,9 +510,10 @@ async def refresh_live_stages(client):
         if ch.instance is not None:
             client.stage_events.add(ch.id)
 
+
 async def on_stage_instance_create(stage_instance):
-    logger.info('Created stage instance')
     stage_instance.guild._state._get_client().stage_events.add(stage_instance.channel.id)
+
 
 async def on_stage_instance_delete(stage_instance):
     client = stage_instance.guild._state._get_client()
