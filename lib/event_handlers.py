@@ -96,7 +96,6 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(client.monthly_summary, CronTrigger(day=1, hour=0, minute=2, timezone="Europe/London"))
     scheduler.add_job(client.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=0, timezone="Europe/London"))
     scheduler.add_job(client.backup_bot, IntervalTrigger(minutes=30, timezone="Europe/London"))
-    scheduler.add_job(lambda: sweep_predictions(client), IntervalTrigger(seconds=30))
     scheduler.add_job(sweep_predictions, IntervalTrigger(seconds=30, args=[client])
     scheduler.start()
 
