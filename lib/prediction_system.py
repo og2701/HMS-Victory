@@ -103,7 +103,7 @@ def prediction_embed(pred: Prediction, client: discord.Client | None = None) -> 
     e.add_field(
         name=pred.opt1,
         value=(
-            f"{CASH} **{_fmt_money(t1)}** ({int(pct1*100)}%)\n"
+            f"{CASH} **{_fmt_money(t1)}** `{int(pct1*100)}%`\n"
             f"{TROPHY} **{_odds(t1,t2,1):.2f}x**\n"
             f"{USER} {len(pred.bets[1])}\n"
             f"{MEDAL} {_top_bettor(pred.bets[1], client)}"
@@ -113,7 +113,7 @@ def prediction_embed(pred: Prediction, client: discord.Client | None = None) -> 
     e.add_field(
         name=pred.opt2,
         value=(
-            f"{CASH} **{_fmt_money(t2)}** ({int(pct2*100)}%)\n"
+            f"{CASH} **{_fmt_money(t2)}** `{int(pct2*100)}%`\n"
             f"{TROPHY} **{_odds(t1,t2,2):.2f}x**\n"
             f"{USER} {len(pred.bets[2])}\n"
             f"{MEDAL} {_top_bettor(pred.bets[2], client)}"
