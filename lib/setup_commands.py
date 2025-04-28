@@ -214,26 +214,27 @@ def define_commands(tree, client):
         payouts = p.resolve(winner)
         p.locked = True
 
-        msg          = await interaction.channel.fetch_message(int(message_id))
-        embed, bar   = prediction_embed(p)
+        msg         = await interaction.channel.fetch_message(int(message_id))
+        embed, bar  = prediction_embed(p)
         await msg.edit(embed=embed, attachments=[bar], view=None)
 
-        win_side   = p.opt1 if winner == 1 else p.opt2
-        total_pot  = sum(p.totals())
-        summary    = discord.Embed(
+        win_side = p.opt1 if winner == 1 else p.opt2
+        lines    = [
+            f"**{(interaction.guild.get_member(uid) or uid).display_name}** "
+            f"won **{amt:,}**"
+            for uid, amt in sorted(payouts.items(), key=lambda x: x[1], reverse=True)
+        ]
+        descr = "\n".join(lines) or "*No-one won – nobody backed the winner*"
+
+        summary = discord.Embed(
             title=f"🏁 Prediction settled: **{win_side}** wins!",
-            description=f"Total pot: **{total_pot:,}** BritBucks",
+            description=descr,
             color=discord.Color.green()
         )
-        for uid, amount in sorted(payouts.items(), key=lambda x: x[1], reverse=True):
-            member = interaction.guild.get_member(uid)
-            name   = member.display_name if member else str(uid)
-            summary.add_field(name=name, value=f"won **{amount:,}**", inline=False)
 
-        await interaction.channel.send(embed=summary)
+        await msg.reply(embed=summary, mention_author=False)
         _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
         await interaction.response.send_message("Resolved and paid.", ephemeral=True)
-
 
     @command("bb-set", "Sets a user's BritBucks balance.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def bb_set(interaction: Interaction, user: Member, amount: int):

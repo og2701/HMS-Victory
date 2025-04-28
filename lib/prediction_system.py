@@ -56,15 +56,18 @@ class Prediction:
         p = Prediction(d["msg_id"], d["title"], d["opt1"], d["opt2"], d["end"])
         p.bets, p.locked = d["bets"], d["locked"]
         return p
-# ──────────────────────────────────────────────────────────────────────────────
 def _progress_png(pct: float) -> io.BytesIO:
     W, H = 400, 18
-    img  = Image.new("RGB", (W, H), (54, 57, 63))
-    ImageDraw.Draw(img).rectangle([0, 0, int(W * pct), H], fill=(88, 101, 242))
+    green   = (46, 204, 113)
+    blurple = (88, 101, 242)
+
+    img = Image.new("RGB", (W, H), blurple)
+    ImageDraw.Draw(img).rectangle([0, 0, int(W * pct), H], fill=green)
     buff = io.BytesIO()
     img.save(buff, format="PNG")
     buff.seek(0)
     return buff
+
 
 CASH  = "💰"
 TROPHY= "🏆"
