@@ -78,6 +78,7 @@ async def award_stage_bonuses(client):
         if minutes:
             add_bb(uid, minutes * 10)
             client.stage_join_times[uid] = now
+            logger.info(f"[STAGE] +{bonus} BB → {uid}")
 
 def reattach_persistent_views(client):
     from commands.mod_commands.announcement_command import RoleButtonView
