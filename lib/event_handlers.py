@@ -475,7 +475,7 @@ async def on_voice_state_update(member, before, after):
         start = stage_join_times.pop(member.id, None)
         if start:
             elapsed = (discord.utils.utcnow() - start).total_seconds()
-            bonus = (int(elapsed) // 600) * 10
+            bonus = (int(elapsed) // 60) * 10
             if bonus:
                 add_bb(member.id, bonus)
 
@@ -488,6 +488,7 @@ async def refresh_live_stages(client):
             client.stage_events.add(ch.id)
 
 async def on_stage_instance_create(stage_instance):
+    logger.info('Created stage instance')
     stage_instance.guild._state._get_client().stage_events.add(stage_instance.channel.id)
 
 async def on_stage_instance_delete(stage_instance):
@@ -497,7 +498,7 @@ async def on_stage_instance_delete(stage_instance):
         start = client.stage_join_times.pop(m.id, None)
         if start:
             secs = (discord.utils.utcnow() - start).total_seconds()
-            bonus = (int(secs) // 600) * 10
+            bonus = (int(secs) // 60) * 10
             if bonus:
                 add_bb(m.id, bonus)
     client.stage_events.discard(ch_id)
