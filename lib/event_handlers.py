@@ -71,17 +71,13 @@ async def sweep_predictions(client):
     if dirty:
         _save({k: v.to_dict() for k, v in client.predictions.items()})
 
-
-async def sweep_stage_bonus(client):
+async def award_stage_bonuses(client):
     now = discord.utils.utcnow()
     for uid, start in list(client.stage_join_times.items()):
-        elapsed = (now - start).total_seconds()
-        minutes = int(elapsed // 60)
+        minutes = int((now - start).total_seconds() // 60)
         if minutes:
-            bonus = minutes * 10
-            add_bb(uid, bonus)
+            add_bb(uid, minutes * 10)
             client.stage_join_times[uid] = now
-
 
 def reattach_persistent_views(client):
     from commands.mod_commands.announcement_command import RoleButtonView
@@ -106,7 +102,7 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(client.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=0, timezone="Europe/London"))
     scheduler.add_job(client.backup_bot, IntervalTrigger(minutes=30, timezone="Europe/London"))
     scheduler.add_job(sweep_predictions, IntervalTrigger(seconds=30), args=[client])
-    scheduler.add_job(sweep_stage_bonus, IntervalTrigger(seconds=60), args=[client])
+    scheduler.add_job(award_stage_bonuses, IntervalTrigger(seconds=60), args=[client])
     scheduler.start()
 
 
@@ -492,6 +488,7 @@ async def on_voice_state_update(member, before, after):
 
     if after.channel and after.channel.id in stage_events and before.channel != after.channel:
         stage_join_times[member.id] = discord.utils.utcnow()
+        logger.info(f"[STAGE] join: {member} at {after.channel.name}")
 
     if before.channel and before.channel.id in stage_events and (not after.channel or after.channel.id not in stage_events):
         start = stage_join_times.pop(member.id, None)
