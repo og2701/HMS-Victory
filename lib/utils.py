@@ -345,7 +345,7 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
         '''
 
     britbuck_amount = get_bb(member.id)
-    britbuck_icon_path = os.path.join("data", "britbuck.png")
+    britbuck_icon_path = os.path.join("data", "ukpence.png")
     britbuck_icon_uri = encode_image_to_data_uri(britbuck_icon_path)
     britbuck_html = f'''
     <div class="coin-box">
