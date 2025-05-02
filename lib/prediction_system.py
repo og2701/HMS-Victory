@@ -1,6 +1,6 @@
 import json, os, io, discord
 from PIL import Image, ImageDraw
-from lib.britbucks import add_bb, remove_bb
+from lib.ukpence import add_bb, remove_bb
 
 PRED_FILE = "predictions.json"
 

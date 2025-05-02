@@ -10,7 +10,7 @@ from lib.utils import *
 from lib.summary import post_summary
 from lib.shutcoin import get_shutcoins, set_shutcoins
 from lib.prediction_system import Prediction, BetButtons, prediction_embed, _save
-from lib.britbucks import get_bb, set_bb, add_bb
+from lib.ukpence import get_bb, set_bb, add_bb
 
 def define_commands(tree, client):
     """Defines slash commands for HMS Victory"""
@@ -182,7 +182,7 @@ def define_commands(tree, client):
             embed.set_footer(text=f"by {interaction.user.display_name}")
             await interaction.response.send_message(embed=embed)
 
-    @command("pred-create", "Create a BritBucks prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
+    @command("pred-create", "Create a UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def pred_create(interaction: Interaction, title: str, opt1: str, opt2: str, duration: int = 300):
         end_ts = discord.utils.utcnow().timestamp() + duration
         p      = Prediction(0, title, opt1, opt2, end_ts)
@@ -236,27 +236,27 @@ def define_commands(tree, client):
         _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
         await interaction.response.send_message("Resolved and paid.", ephemeral=True)
 
-    @command("bb-set", "Sets a user's BritBucks balance.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
+    @command("bb-set", "Sets a user's UKPence balance.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def bb_set(interaction: Interaction, user: Member, amount: int):
         old = get_bb(user.id)
         set_bb(user.id, amount)
         new = get_bb(user.id)
         embed = Embed(
-            title="BritBucks Balance Updated",
-            description=f"{user.mention}'s BritBucks were updated "
+            title="UKPence Balance Updated",
+            description=f"{user.mention}'s UKPence were updated "
                         f"from **{old:,}** to **{new:,}**",
             color=discord.Color.gold(),
         ).set_footer(text=f"by {interaction.user.display_name}")
         await interaction.response.send_message(embed=embed)
 
-    @command("bb-add", "Adds BritBucks to a user.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
+    @command("bb-add", "Adds UKPence to a user.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def bb_add(interaction: Interaction, user: Member, amount: int):
         old = get_bb(user.id)
         add_bb(user.id, amount)
         new = get_bb(user.id)
         embed = Embed(
-            title="BritBucks Added",
-            description=f"**{amount:,}** BritBucks added to {user.mention}\n"
+            title="UKPence Added",
+            description=f"**{amount:,}** UKPence added to {user.mention}\n"
                         f"Balance: **{old:,} → {new:,}**",
             color=discord.Color.gold(),
         ).set_footer(text=f"by {interaction.user.display_name}")
