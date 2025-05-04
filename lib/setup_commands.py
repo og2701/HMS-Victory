@@ -265,6 +265,7 @@ def define_commands(tree, client):
 
     @command("richlist", "Displays a leaderboard of users with the most UKPence")
     async def richlist_command(interaction: Interaction):
-
-        file = generate_richlist_image(interaction.guild)
-        await interaction.response.send_message(file=file)
+        if not hasattr(interaction.client, "xp_system"):
+            from lib.xp_system import XPSystem
+            interaction.client.xp_system = XPSystem()
+        await interaction.client.xp_system.handle_richlist_command(interaction)
