@@ -388,13 +388,22 @@ def generate_richlist_image(guild, limit=30):
             f"<span>{amt:,}</span>"
             f"</div>"
         )
+
     tmpl = read_html_template(os.path.join("templates", "leaderboard.html"))
     html = tmpl.replace("{{ LEADERBOARD_ROWS }}", rows)
-    fn = f"/tmp/{uuid.uuid4()}.png"
-    hti.screenshot(html_str=html, save_as=fn, size=(1600, 1000))
-    img = Image.open(fn)
+
+    original_path = hti.output_path
+    hti.output_path = "/tmp"
+    filename = f"{uuid.uuid4()}.png"
+    hti.screenshot(html_str=html, save_as=filename, size=(1600, 1000))
+    hti.output_path = original_path
+
+    full_path = os.path.join("/tmp", filename)
+
+    img = Image.open(full_path)
     img = trim(img)
-    img.save(fn)
-    f = File(fn, filename="richlist.png")
-    os.remove(fn)
-    return f
+    img.save(full_path)
+
+    file = File(full_path, filename="richlist.png")
+    os.remove(full_path)
+    return file
