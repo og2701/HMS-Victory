@@ -375,10 +375,9 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
     os.remove(output_file)
     return discord.File(fp=image_bytes, filename="rank.png")
 
-def generate_richlist_image(guild: discord.Guild, limit: int = 30) -> discord.File:
+def generate_richlist_image(guild, limit=30):
     data = _load()
     top = sorted(data.items(), key=lambda x: x[1], reverse=True)[:limit]
-
     rows = ""
     for idx, (uid, amt) in enumerate(top, start=1):
         member = guild.get_member(int(uid))
@@ -389,17 +388,13 @@ def generate_richlist_image(guild: discord.Guild, limit: int = 30) -> discord.Fi
             f"<span>{amt:,}</span>"
             f"</div>"
         )
-
     tmpl = read_html_template(os.path.join("templates", "leaderboard.html"))
     html = tmpl.replace("{{ LEADERBOARD_ROWS }}", rows)
-
-    filename = f"{uuid.uuid4()}.png"
-    hti.screenshot(html_str=html, save_as=filename, size=(800, 600))
-
-    img = Image.open(filename)
+    fn = f"/tmp/{uuid.uuid4()}.png"
+    hti.screenshot(html_str=html, save_as=fn, size=(1600, 1000))
+    img = Image.open(fn)
     img = trim(img)
-    img.save(filename)
-
-    file = discord.File(filename, filename="richlist.png")
-    os.remove(filename)
-    return file
+    img.save(fn)
+    f = File(fn, filename="richlist.png")
+    os.remove(fn)
+    return f
