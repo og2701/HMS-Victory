@@ -153,8 +153,6 @@ class XPSystem:
                         await message.channel.send(embed=embed)
             self.save_data()
 
-
-
     def get_rank(self, user_id: str):
         sorted_xp = sorted(self.xp_data.items(), key=lambda x: x[1], reverse=True)
         for i, (uid, score) in enumerate(sorted_xp, start=1):
