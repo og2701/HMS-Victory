@@ -11,6 +11,7 @@ from lib.utils import load_json, save_json
 from lib.settings import *
 from lib.rank_constants import *
 
+
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 
 def trim(im: Image.Image) -> Image.Image:
@@ -60,6 +61,42 @@ class LeaderboardView(discord.ui.View):
             attachments=[file],
             view=self
         )
+
+class RichListView(discord.ui.View):
+    PAGE_SIZE = 20
+
+    def __init__(self, xp_system, guild, sorted_data):
+        super().__init__(timeout=None)
+        self.xp_system = xp_system
+        self.guild = guild
+        self.sorted_data = sorted_data
+        self.offset = 0
+        self.previous_button.disabled = True
+        self.next_button.disabled = (len(self.sorted_data) <= self.PAGE_SIZE)
+
+    def get_slice(self):
+        return self.sorted_data[self.offset : self.offset + self.PAGE_SIZE]
+
+    @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
+    async def previous_button(self, interaction, button):
+        self.offset = max(0, self.offset - self.PAGE_SIZE)
+        file = await self.xp_system.generate_richlist_image(
+            self.guild, self.get_slice(), self.offset
+        )
+        self.previous_button.disabled = (self.offset == 0)
+        self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
+        await interaction.response.edit_message(attachments=[file], view=self)
+
+    @discord.ui.button(label="Next", style=discord.ButtonStyle.blurple)
+    async def next_button(self, interaction, button):
+        max_off = max(0, len(self.sorted_data) - self.PAGE_SIZE)
+        self.offset = min(max_off, self.offset + self.PAGE_SIZE)
+        file = await self.xp_system.generate_richlist_image(
+            self.guild, self.get_slice(), self.offset
+        )
+        self.previous_button.disabled = (self.offset == 0)
+        self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
+        await interaction.response.edit_message(attachments=[file], view=self)
 
 class XPSystem:
     def __init__(self):
@@ -194,3 +231,67 @@ class XPSystem:
             file=file,
             view=view
         )
+
+    def get_all_balances(self):
+            data = _load()
+            return sorted(data.items(), key=lambda x: x[1], reverse=True)
+
+        async def generate_richlist_image(self, guild, data_slice, offset):
+            with open("templates/leaderboard.html", "r", encoding="utf-8") as f:
+                template = f.read()
+
+            left_html, right_html = "", ""
+            for i, (uid, bal) in enumerate(data_slice):
+                rank = offset + i + 1
+                member = guild.get_member(int(uid))
+                name = member.display_name if member else "Unknown"
+                avatar = (
+                    member.display_avatar.url
+                    if member
+                    else "https://cdn.discordapp.com/embed/avatars/0.png"
+                )
+                block = f"""
+                <div class="flex items-center mb-2 bg-black/50 rounded p-2">
+                  <p class="mr-3 font-bold">#{rank}</p>
+                  <div class="w-12 h-12 rounded-full overflow-hidden">
+                    <img src="{avatar}" class="w-full h-full object-cover" />
+                  </div>
+                  <div class="ml-3">
+                    <p class="font-bold">{name}</p>
+                    <p class="text-gray-300 text-sm">UKPence: {bal:,}</p>
+                  </div>
+                </div>
+                """
+                if i < self.RichListView.PAGE_SIZE // 2:
+                    left_html += block
+                else:
+                    right_html += block
+
+            two_col = f"""
+            <div class="flex space-x-6">
+              <div class="flex flex-col">{left_html}</div>
+              <div class="flex flex-col">{right_html}</div>
+            </div>
+            """
+
+            final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
+            path = f"{uuid.uuid4()}.png"
+            hti.screenshot(html_str=final_html, save_as=path, size=(1200, 1200))
+
+            img = Image.open(path)
+            img = trim(img)
+            img.save(path)
+
+            with open(path, "rb") as f:
+                buf = io.BytesIO(f.read())
+            os.remove(path)
+            return discord.File(fp=buf, filename="richlist.png")
+
+        async def handle_richlist_command(self, interaction: discord.Interaction):
+            data = self.get_all_balances()
+            if not data:
+                return await interaction.response.send_message("No UKPence data found.")
+            view = RichListView(self, interaction.guild, data)
+            first_slice = data[: RichListView.PAGE_SIZE]
+            file = await self.generate_richlist_image(interaction.guild, first_slice, 0)
+            await interaction.response.send_message(file=file, view=view)
