@@ -374,3 +374,32 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
         image_bytes = io.BytesIO(f.read())
     os.remove(output_file)
     return discord.File(fp=image_bytes, filename="rank.png")
+
+def generate_richlist_image(guild: discord.Guild, limit: int = 30) -> discord.File:
+    data = _load()
+    top = sorted(data.items(), key=lambda x: x[1], reverse=True)[:limit]
+
+    rows = ""
+    for idx, (uid, amt) in enumerate(top, start=1):
+        member = guild.get_member(int(uid))
+        name = member.display_name if member else uid
+        rows += (
+            f"<div class='flex justify-between py-1'>"
+            f"<span>#{idx} {name}</span>"
+            f"<span>{amt:,}</span>"
+            f"</div>"
+        )
+
+    tmpl = read_html_template(os.path.join("templates", "leaderboard.html"))
+    html = tmpl.replace("{{ LEADERBOARD_ROWS }}", rows)
+
+    filename = f"{uuid.uuid4()}.png"
+    hti.screenshot(html_str=html, save_as=filename, size=(800, 600))
+
+    img = Image.open(filename)
+    img = trim(img)
+    img.save(filename)
+
+    file = discord.File(filename, filename="richlist.png")
+    os.remove(filename)
+    return file

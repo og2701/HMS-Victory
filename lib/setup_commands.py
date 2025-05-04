@@ -261,3 +261,10 @@ def define_commands(tree, client):
             color=discord.Color.gold(),
         ).set_footer(text=f"by {interaction.user.display_name}")
         await interaction.response.send_message(embed=embed)
+
+
+    @command("richlist", "Displays a leaderboard of users with the most UKPence")
+    async def richlist_command(interaction: Interaction):
+
+        file = generate_richlist_image(interaction.guild)
+        await interaction.response.send_message(file=file)
