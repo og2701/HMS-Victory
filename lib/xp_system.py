@@ -10,7 +10,21 @@ from html2image import Html2Image
 from lib.settings import *
 from lib.rank_constants import *
 from lib.ukpence import get_bb, _load
-from lib.utils import load_json, save_json
+
+
+
+def load_json(filename):
+    """Loads JSON data from a file"""
+    if os.path.exists(filename):
+        with open(filename, "r") as f:
+            return json.load(f)
+    return {}
+
+
+def save_json(filename, data):
+    """Saves JSON data to a file"""
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=4)
 
 
 
