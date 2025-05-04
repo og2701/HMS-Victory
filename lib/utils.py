@@ -16,7 +16,7 @@ from html2image import Html2Image
 from lib.rank_constants import *
 from lib.shutcoin import get_shutcoins, SHUTCOIN_ENABLED
 from lib.settings import *
-from lib.ukpence import get_bb
+from lib.ukpence import get_bb, _load
 
 from config import CHROME_PATH
 
