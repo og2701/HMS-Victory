@@ -234,62 +234,62 @@ class XPSystem:
             data = _load()
             return sorted(data.items(), key=lambda x: x[1], reverse=True)
 
-        async def generate_richlist_image(self, guild, data_slice, offset):
-            with open("templates/leaderboard.html", "r", encoding="utf-8") as f:
-                template = f.read()
+    async def generate_richlist_image(self, guild, data_slice, offset):
+        with open("templates/leaderboard.html", "r", encoding="utf-8") as f:
+            template = f.read()
 
-            left_html, right_html = "", ""
-            for i, (uid, bal) in enumerate(data_slice):
-                rank = offset + i + 1
-                member = guild.get_member(int(uid))
-                name = member.display_name if member else "Unknown"
-                avatar = (
-                    member.display_avatar.url
-                    if member
-                    else "https://cdn.discordapp.com/embed/avatars/0.png"
-                )
-                block = f"""
-                <div class="flex items-center mb-2 bg-black/50 rounded p-2">
-                  <p class="mr-3 font-bold">#{rank}</p>
-                  <div class="w-12 h-12 rounded-full overflow-hidden">
-                    <img src="{avatar}" class="w-full h-full object-cover" />
-                  </div>
-                  <div class="ml-3">
-                    <p class="font-bold">{name}</p>
-                    <p class="text-gray-300 text-sm">UKPence: {bal:,}</p>
-                  </div>
-                </div>
-                """
-                if i < self.RichListView.PAGE_SIZE // 2:
-                    left_html += block
-                else:
-                    right_html += block
-
-            two_col = f"""
-            <div class="flex space-x-6">
-              <div class="flex flex-col">{left_html}</div>
-              <div class="flex flex-col">{right_html}</div>
+        left_html, right_html = "", ""
+        for i, (uid, bal) in enumerate(data_slice):
+            rank = offset + i + 1
+            member = guild.get_member(int(uid))
+            name = member.display_name if member else "Unknown"
+            avatar = (
+                member.display_avatar.url
+                if member
+                else "https://cdn.discordapp.com/embed/avatars/0.png"
+            )
+            block = f"""
+            <div class="flex items-center mb-2 bg-black/50 rounded p-2">
+              <p class="mr-3 font-bold">#{rank}</p>
+              <div class="w-12 h-12 rounded-full overflow-hidden">
+                <img src="{avatar}" class="w-full h-full object-cover" />
+              </div>
+              <div class="ml-3">
+                <p class="font-bold">{name}</p>
+                <p class="text-gray-300 text-sm">UKPence: {bal:,}</p>
+              </div>
             </div>
             """
+            if i < self.RichListView.PAGE_SIZE // 2:
+                left_html += block
+            else:
+                right_html += block
 
-            final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
-            path = f"{uuid.uuid4()}.png"
-            hti.screenshot(html_str=final_html, save_as=path, size=(1200, 1200))
+        two_col = f"""
+        <div class="flex space-x-6">
+          <div class="flex flex-col">{left_html}</div>
+          <div class="flex flex-col">{right_html}</div>
+        </div>
+        """
 
-            img = Image.open(path)
-            img = trim(img)
-            img.save(path)
+        final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
+        path = f"{uuid.uuid4()}.png"
+        hti.screenshot(html_str=final_html, save_as=path, size=(1200, 1200))
 
-            with open(path, "rb") as f:
-                buf = io.BytesIO(f.read())
-            os.remove(path)
-            return discord.File(fp=buf, filename="richlist.png")
+        img = Image.open(path)
+        img = trim(img)
+        img.save(path)
 
-        async def handle_richlist_command(self, interaction: discord.Interaction):
-            data = self.get_all_balances()
-            if not data:
-                return await interaction.response.send_message("No UKPence data found.")
-            view = RichListView(self, interaction.guild, data)
-            first_slice = data[: RichListView.PAGE_SIZE]
-            file = await self.generate_richlist_image(interaction.guild, first_slice, 0)
-            await interaction.response.send_message(file=file, view=view)
+        with open(path, "rb") as f:
+            buf = io.BytesIO(f.read())
+        os.remove(path)
+        return discord.File(fp=buf, filename="richlist.png")
+
+    async def handle_richlist_command(self, interaction: discord.Interaction):
+        data = self.get_all_balances()
+        if not data:
+            return await interaction.response.send_message("No UKPence data found.")
+        view = RichListView(self, interaction.guild, data)
+        first_slice = data[: RichListView.PAGE_SIZE]
+        file = await self.generate_richlist_image(interaction.guild, first_slice, 0)
+        await interaction.response.send_message(file=file, view=view)
