@@ -235,7 +235,6 @@ class XPSystem:
             template = f.read()
 
         left_html, right_html = "", ""
-        from xp_system import RichListView  # ensure we reference the top‑level class
         half = RichListView.PAGE_SIZE // 2
 
         for i, (uid, bal) in enumerate(data_slice):
