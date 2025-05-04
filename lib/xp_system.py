@@ -5,6 +5,7 @@ import io
 import uuid
 import time
 import random
+import json
 from PIL import Image, ImageChops
 from html2image import Html2Image
 from lib.settings import *
