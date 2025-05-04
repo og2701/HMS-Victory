@@ -1,6 +1,6 @@
 from datetime import datetime, timezone, timedelta
 import discord
-from discord import Interaction, Member, TextChannel
+from discord import Interaction, Member, TextChannel, File
 import json
 import os
 from PIL import Image, ImageChops
