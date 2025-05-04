@@ -379,13 +379,19 @@ def generate_richlist_image(guild, limit=30):
     data = _load()
     top = sorted(data.items(), key=lambda x: x[1], reverse=True)[:limit]
     rows = ""
-    for idx, (uid, amt) in enumerate(top, start=1):
-        member = guild.get_member(int(uid))
-        name = member.display_name if member else uid
+    for idx in range(1, limit + 1):
+        if idx <= len(top):
+            uid, amt = top[idx - 1]
+            member = guild.get_member(int(uid))
+            name = member.display_name if member else uid
+            amt_text = f"{amt:,}"
+        else:
+            name = "&nbsp;"
+            amt_text = "&nbsp;"
         rows += (
             f"<div class='flex justify-between py-1'>"
             f"<span>#{idx} {name}</span>"
-            f"<span>{amt:,}</span>"
+            f"<span>{amt_text}</span>"
             f"</div>"
         )
 
@@ -398,12 +404,11 @@ def generate_richlist_image(guild, limit=30):
     hti.screenshot(html_str=html, save_as=filename, size=(1600, 1000))
     hti.output_path = original_path
 
-    full_path = os.path.join("/tmp", filename)
-
-    img = Image.open(full_path)
+    full = os.path.join("/tmp", filename)
+    img = Image.open(full)
     img = trim(img)
-    img.save(full_path)
+    img.save(full)
 
-    file = File(full_path, filename="richlist.png")
-    os.remove(full_path)
+    file = File(full, filename="richlist.png")
+    os.remove(full)
     return file
