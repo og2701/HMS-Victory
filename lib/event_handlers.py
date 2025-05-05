@@ -53,6 +53,8 @@ FORUM_CHANNEL_ID = 1341451323249266711
 THREAD_MESSAGES_FILE = "thread_messages.json"
 ADDED_USERS_FILE = "added_users.json"
 
+STAGE_UKPENCE_MULTIPLIER = 1
+
 
 async def sweep_predictions(client):
     now = discord.utils.utcnow().timestamp()
@@ -76,9 +78,9 @@ async def award_stage_bonuses(client):
     for uid, start in list(client.stage_join_times.items()):
         minutes = int((now - start).total_seconds() // 60)
         if minutes:
-            add_bb(uid, minutes * 10)
+            add_bb(uid, minutes * STAGE_UKPENCE_MULTIPLIER)
             client.stage_join_times[uid] = now
-            logger.info(f"[STAGE] +{minutes * 10} BB → {uid}")
+            logger.info(f"[STAGE] +{minutes * STAGE_UKPENCE_MULTIPLIER} BB → {uid}")
 
 
 def reattach_persistent_views(client):
@@ -496,7 +498,7 @@ async def on_voice_state_update(member, before, after):
         start = stage_join_times.pop(member.id, None)
         if start:
             elapsed = (discord.utils.utcnow() - start).total_seconds()
-            bonus = (int(elapsed) // 60) * 10
+            bonus = (int(elapsed) // 60) * STAGE_UKPENCE_MULTIPLIER
             if bonus:
                 add_bb(member.id, bonus)
 
@@ -521,7 +523,7 @@ async def on_stage_instance_delete(stage_instance):
         start = client.stage_join_times.pop(m.id, None)
         if start:
             secs = (discord.utils.utcnow() - start).total_seconds()
-            bonus = (int(secs) // 60) * 10
+            bonus = (int(secs) // 60) * STAGE_UKPENCE_MULTIPLIER
             if bonus:
                 add_bb(m.id, bonus)
     client.stage_events.discard(ch_id)
