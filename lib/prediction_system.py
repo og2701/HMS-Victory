@@ -105,16 +105,19 @@ def prediction_embed(pred: Prediction, client: discord.Client | None = None) -> 
     total = t1 + t2 or 1
     pct1 = t1 / total
     pct2 = 1 - pct1
-    time_line = f"⏰ closes <t:{int(pred.end_ts)}:R>" if not pred.locked else "🔒 **locked**"
+    now = discord.utils.utcnow().timestamp()
+    if pred.locked:
+        time_line = "🔒 **locked**"
+    else:
+        time_line = f"⏰ closes <t:{int(pred.end_ts)}:R>" if pred.end_ts and pred.end_ts > now else "🔓 **unlocked**"
     e = discord.Embed(title=pred.title, description=time_line)
-
     e.add_field(
         name=pred.opt1,
         value=(
             f"{CASH} **{_fmt_money(t1)}** `{int(pct1*100)}%`\n"
             f"{TROPHY} **{_odds(t1,t2,1):.2f}x**\n"
-            f"{USER} {len(pred.bets[1])}\n"
-            f"{MEDAL} {_top_bettor(pred.bets[1], client)}"
+            f"{USER} {len(pred.bets.get(1, {}))}\n"
+            f"{MEDAL} {_top_bettor(pred.bets.get(1, {}), client)}"
         ),
         inline=True,
     )
@@ -123,8 +126,8 @@ def prediction_embed(pred: Prediction, client: discord.Client | None = None) -> 
         value=(
             f"{CASH} **{_fmt_money(t2)}** `{int(pct2*100)}%`\n"
             f"{TROPHY} **{_odds(t1,t2,2):.2f}x**\n"
-            f"{USER} {len(pred.bets[2])}\n"
-            f"{MEDAL} {_top_bettor(pred.bets[2], client)}"
+            f"{USER} {len(pred.bets.get(2, {}))}\n"
+            f"{MEDAL} {_top_bettor(pred.bets.get(2, {}), client)}"
         ),
         inline=True,
     )
@@ -199,16 +202,17 @@ class PredAdminView(discord.ui.View):
         if not self.pred.locked:
             return await interaction.response.send_message("Already unlocked.", ephemeral=True)
         self.pred.locked = False
+        self.pred.end_ts = 0
         msg = await interaction.channel.fetch_message(self.pred.msg_id)
         embed, bar = prediction_embed(self.pred, self.client)
         await msg.edit(embed=embed, attachments=[bar], view=BetButtons(self.pred))
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
-        await interaction.response.send_message("🟢 Unlocked.", ephemeral=True)
+        await interaction.response.send_message("🔓 Unlocked.", ephemeral=True)
 
     @discord.ui.button(label="Draw", style=discord.ButtonStyle.secondary)
     async def draw(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         for side in (1, 2):
-            for uid, amt in self.pred.bets[side].items():
+            for uid, amt in self.pred.bets.get(side, {}).items():
                 add_bb(uid, amt)
         self.pred.locked = True
         self.pred.bets = {1: {}, 2: {}}
@@ -240,11 +244,7 @@ class PredAdminView(discord.ui.View):
             for uid, amt in sorted(payouts.items(), key=lambda x: x[1], reverse=True)
         ]
         descr = "\n".join(lines) or "*Nobody backed the winner*"
-        summary = discord.Embed(
-            title=f"🏁 Prediction settled: **{win_side}** wins!",
-            description=descr,
-            color=0x2ECC71
-        )
+        summary = discord.Embed(title=f"🏁 Prediction settled: **{win_side}** wins!", description=descr, color=0x2ECC71)
         await msg.reply(embed=summary, mention_author=False)
         self.client.predictions.pop(self.pred.msg_id, None)
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
