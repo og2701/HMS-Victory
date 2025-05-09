@@ -183,7 +183,7 @@ def define_commands(tree, client):
             embed.set_footer(text=f"by {interaction.user.display_name}")
             await interaction.response.send_message(embed=embed)
 
-    @command("pred-create", "Create a UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
+    @command("pred-create", "Create a UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
     async def pred_create(interaction: Interaction, title: str, opt1: str, opt2: str, duration: int = 300):
         end_ts = discord.utils.utcnow().timestamp() + duration
         p      = Prediction(0, title, opt1, opt2, end_ts)
@@ -194,14 +194,14 @@ def define_commands(tree, client):
         _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
         await interaction.response.send_message("Prediction opened.", ephemeral=True)
 
-    @command("pred-admin", "Admin controls for a UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def pred_admin(interaction: Interaction, message_id: int):
-        p = interaction.client.predictions.get(message_id)
+    @command("pred-admin", "Lock, resolve, or draw an existing UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    async def pred_admin(interaction: Interaction, message_id: str):
+        mid = int(message_id)
+        p = interaction.client.predictions.get(mid)
         if not p:
             return await interaction.response.send_message("Unknown prediction ID.", ephemeral=True)
         view = PredAdminView(p, interaction.client)
         await interaction.response.send_message("Prediction admin controls", view=view, ephemeral=True)
-
 
     @command("bb-set", "Sets a user's UKPence balance.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def bb_set(interaction: Interaction, user: Member, amount: int):
