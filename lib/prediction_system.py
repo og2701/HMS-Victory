@@ -138,9 +138,13 @@ class BetModal(discord.ui.Modal, title="Place your bet"):
         except ValueError:
             return await interaction.response.send_message("Enter a valid integer.", ephemeral=True)
         if self.pred.stake(interaction.user.id, self.side, stake):
+            user_total = self.pred.bets[self.side][interaction.user.id]
             embed, bar = prediction_embed(self.pred, interaction.client)
             await interaction.message.edit(embed=embed, attachments=[bar])
-            await interaction.response.send_message("Bet placed!", ephemeral=True)
+            await interaction.response.send_message(
+                f"✅ Bet placed! You now have **{_fmt_money(user_total)}** on **{self.pred.opt1 if self.side==1 else self.pred.opt2}**.",
+                ephemeral=True
+            )
             _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
         else:
             await interaction.response.send_message("Bet failed.", ephemeral=True)
@@ -163,3 +167,22 @@ class BetButtons(discord.ui.View):
         if self.pred.locked:
             return await interaction.response.send_message("Betting locked.", ephemeral=True)
         await interaction.response.send_modal(BetModal(self.pred, 2))
+
+    @discord.ui.button(label="Call Draw", style=discord.ButtonStyle.secondary)
+    async def draw(self, interaction: discord.Interaction, _btn: discord.ui.Button):
+        if self.pred.locked:
+            return await interaction.response.send_message("This prediction is already closed.", ephemeral=True)
+
+        for side in (1, 2):
+            for uid, amt in self.pred.bets[side].items():
+                add_bb(uid, amt)
+
+        self.pred.locked = True
+        self.pred.bets = {1: {}, 2: {}}
+
+        msg = await interaction.channel.fetch_message(self.pred.msg_id)
+        embed, bar = prediction_embed(self.pred, interaction.client)
+        await msg.edit(embed=embed, attachments=[bar], view=None)
+        _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
+
+        await interaction.response.send_message("🟡 All bets have been refunded (draw).", ephemeral=True)
