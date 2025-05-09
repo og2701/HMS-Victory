@@ -183,10 +183,10 @@ def define_commands(tree, client):
             embed.set_footer(text=f"by {interaction.user.display_name}")
             await interaction.response.send_message(embed=embed)
 
-    @command("pred-create", "Create a UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
-    async def pred_create(interaction: Interaction, title: str, opt1: str, opt2: str, duration: int = 300):
-        end_ts = discord.utils.utcnow().timestamp() + duration
-        p      = Prediction(0, title, opt1, opt2, end_ts)
+    @command("pred-create", "Create a UKPence prediction (duration is in minutes)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    async def pred_create(interaction: Interaction, title: str, opt1: str, opt2: str, duration: int = 5):
+        end_ts = discord.utils.utcnow().timestamp() + duration * 60
+        p = Prediction(0, title, opt1, opt2, end_ts)
         embed, bar = prediction_embed(p)
         msg = await interaction.channel.send(embed=embed, files=[bar], view=BetButtons(p))
         p.msg_id = msg.id
