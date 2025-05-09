@@ -29,12 +29,12 @@ class Prediction:
         return True
 
     def totals(self) -> tuple[int, int]:
-        return sum(self.bets[1].values()), sum(self.bets[2].values())
+        return sum(self.bets.get(1, {}).values()), sum(self.bets.get(2, {}).values())
 
     def resolve(self, win_side: int) -> dict[int, int]:
         lose_side = 2 if win_side == 1 else 1
-        lose_pool = sum(self.bets[lose_side].values())
-        win_total = sum(self.bets[win_side].values())
+        lose_pool = sum(self.bets.get(lose_side, {}).values())
+        win_total = sum(self.bets.get(win_side, {}).values())
         payouts = {}
         if win_total == 0:
             return payouts
@@ -46,12 +46,16 @@ class Prediction:
         return payouts
 
     def to_dict(self) -> dict:
+        bets_dump = {
+            str(side): {str(uid): amt for uid, amt in pool.items()}
+            for side, pool in self.bets.items()
+        }
         return {
             "msg_id": self.msg_id,
             "title": self.title,
             "opt1": self.opt1,
             "opt2": self.opt2,
-            "bets": self.bets,
+            "bets": bets_dump,
             "locked": self.locked,
             "end": self.end_ts,
         }
@@ -59,7 +63,11 @@ class Prediction:
     @staticmethod
     def from_dict(d: dict):
         p = Prediction(d["msg_id"], d["title"], d["opt1"], d["opt2"], d["end"])
-        p.bets, p.locked = d["bets"], d["locked"]
+        p.bets = {
+            int(side): {int(uid): amt for uid, amt in pool.items()}
+            for side, pool in d["bets"].items()
+        }
+        p.locked = d["locked"]
         return p
 
 def _progress_png(pct: float) -> io.BytesIO:
