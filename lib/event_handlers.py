@@ -13,7 +13,7 @@ from lib.log_functions import create_message_image, create_edited_message_image
 from lib.settings import *
 from lib.shutcoin import can_use_shutcoin, remove_shutcoin, SHUTCOIN_ENABLED
 from lib.prediction_system import prediction_embed, _save
-from lib.ukpence import add_bb, remove_bb
+from lib.ukpence import add_bb, remove_bb, ensure_bb
 
 from commands.mod_commands.persistant_role_buttons import (
     persistantRoleButtons,
@@ -285,6 +285,7 @@ async def on_message(client, message):
         return
 
     await client.xp_system.update_xp(message)
+    ensure_bb(message.author.id)
     await process_message_attachments(client, message)
     await process_message_links(client, message)
     if message.author.bot:

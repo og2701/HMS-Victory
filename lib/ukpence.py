@@ -9,6 +9,12 @@ def _load():
 def _save(d):
     json.dump(d, open(UKPENCE_FILE, "w"), indent=4)
 
+def ensure_bb(uid):
+    d = _load()
+    if str(uid) not in d:
+        d[str(uid)] = 20
+        _save(d)
+
 def get_bb(uid):             return _load().get(str(uid), 0)
 def set_bb(uid, amt):        d=_load(); d[str(uid)] = amt; _save(d)
 def add_bb(uid, amt):        set_bb(uid, get_bb(uid) + amt)
