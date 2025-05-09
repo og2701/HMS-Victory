@@ -11,6 +11,7 @@ from lib.summary import post_summary
 from lib.shutcoin import get_shutcoins, set_shutcoins
 from lib.prediction_system import Prediction, BetButtons, prediction_embed, _save
 from lib.ukpence import get_bb, set_bb, add_bb
+from typing import Optional
 
 def define_commands(tree, client):
     """Defines slash commands for HMS Victory"""
