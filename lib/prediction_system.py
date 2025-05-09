@@ -229,4 +229,16 @@ class PredAdminView(discord.ui.View):
         await msg.edit(embed=embed, attachments=[bar], view=None)
         lines = [
             f"**{(interaction.guild.get_member(uid) or uid).display_name}** won **{amt:,}**"
-            for uid, amt in sorted(payouts.items(), key=lambda
+            for uid, amt in sorted(payouts.items(), key=lambda x: x[1], reverse=True)
+        ]
+        descr = "\n".join(lines) or "*Nobody backed the winner*"
+        summary = discord.Embed(
+            title=f"🏁 Prediction settled: **{win_side}** wins!",
+            description=descr,
+            color=0x2ECC71
+        )
+        await msg.reply(embed=summary, mention_author=False)
+        self.client.predictions.pop(self.pred.msg_id, None)
+        _save({k: v.to_dict() for k, v in self.client.predictions.items()})
+        await interaction.response.send_message("✅ Resolved & paid out.", ephemeral=True)
+        self.stop()
