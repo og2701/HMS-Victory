@@ -168,21 +168,65 @@ class BetButtons(discord.ui.View):
             return await interaction.response.send_message("Betting locked.", ephemeral=True)
         await interaction.response.send_modal(BetModal(self.pred, 2))
 
-    @discord.ui.button(label="Call Draw", style=discord.ButtonStyle.secondary)
-    async def draw(self, interaction: discord.Interaction, _btn: discord.ui.Button):
-        if self.pred.locked:
-            return await interaction.response.send_message("This prediction is already closed.", ephemeral=True)
 
+class PredAdminView(discord.ui.View):
+    def __init__(self, pred: Prediction, client: discord.Client):
+        super().__init__(timeout=600)
+        self.pred = pred
+        self.client = client
+
+    @discord.ui.button(label="Lock", style=discord.ButtonStyle.danger)
+    async def lock(self, interaction: discord.Interaction, _btn: discord.ui.Button):
+        if self.pred.locked:
+            return await interaction.response.send_message("Already locked.", ephemeral=True)
+        self.pred.locked = True
+        msg = await interaction.channel.fetch_message(self.pred.msg_id)
+        embed, bar = prediction_embed(self.pred, self.client)
+        await msg.edit(embed=embed, attachments=[bar], view=None)
+        _save({k: v.to_dict() for k, v in self.client.predictions.items()})
+        await interaction.response.send_message("🔒 Locked.", ephemeral=True)
+
+    @discord.ui.button(label="Unlock", style=discord.ButtonStyle.success)
+    async def unlock(self, interaction: discord.Interaction, _btn: discord.ui.Button):
+        if not self.pred.locked:
+            return await interaction.response.send_message("Already unlocked.", ephemeral=True)
+        self.pred.locked = False
+        msg = await interaction.channel.fetch_message(self.pred.msg_id)
+        embed, bar = prediction_embed(self.pred, self.client)
+        await msg.edit(embed=embed, attachments=[bar], view=BetButtons(self.pred))
+        _save({k: v.to_dict() for k, v in self.client.predictions.items()})
+        await interaction.response.send_message("🟢 Unlocked.", ephemeral=True)
+
+    @discord.ui.button(label="Draw", style=discord.ButtonStyle.secondary)
+    async def draw(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         for side in (1, 2):
             for uid, amt in self.pred.bets[side].items():
                 add_bb(uid, amt)
-
         self.pred.locked = True
         self.pred.bets = {1: {}, 2: {}}
-
         msg = await interaction.channel.fetch_message(self.pred.msg_id)
-        embed, bar = prediction_embed(self.pred, interaction.client)
+        embed, bar = prediction_embed(self.pred, self.client)
         await msg.edit(embed=embed, attachments=[bar], view=None)
-        _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
+        self.client.predictions.pop(self.pred.msg_id, None)
+        _save({k: v.to_dict() for k, v in self.client.predictions.items()})
+        await interaction.response.send_message("🟡 Draw called – all bets refunded.", ephemeral=True)
+        self.stop()
 
-        await interaction.response.send_message("🟡 All bets have been refunded (draw).", ephemeral=True)
+    @discord.ui.button(label="Winner: Option 1", style=discord.ButtonStyle.primary)
+    async def win1(self, interaction: discord.Interaction, _btn: discord.ui.Button):
+        await self._resolve(interaction, 1)
+
+    @discord.ui.button(label="Winner: Option 2", style=discord.ButtonStyle.primary)
+    async def win2(self, interaction: discord.Interaction, _btn: discord.ui.Button):
+        await self._resolve(interaction, 2)
+
+    async def _resolve(self, interaction: discord.Interaction, winner: int):
+        payouts = self.pred.resolve(winner)
+        win_side = self.pred.opt1 if winner == 1 else self.pred.opt2
+        self.pred.locked = True
+        msg = await interaction.channel.fetch_message(self.pred.msg_id)
+        embed, bar = prediction_embed(self.pred, self.client)
+        await msg.edit(embed=embed, attachments=[bar], view=None)
+        lines = [
+            f"**{(interaction.guild.get_member(uid) or uid).display_name}** won **{amt:,}**"
+            for uid, amt in sorted(payouts.items(), key=lambda

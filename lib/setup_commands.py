@@ -194,63 +194,14 @@ def define_commands(tree, client):
         _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
         await interaction.response.send_message("Prediction opened.", ephemeral=True)
 
-    @command("pred-admin", "Lock, resolve, or draw an existing UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    @app_commands.choices(action=[
-            app_commands.Choice(name="Lock",    value="lock"),
-            app_commands.Choice(name="Resolve", value="resolve"),
-            app_commands.Choice(name="Draw",    value="draw"),
-        ])
-    async def pred_admin(
-        interaction: Interaction,
-        action:     app_commands.Choice[str],
-        message_id: int,
-        winner:     Optional[int] = None
-    ):
-        client = interaction.client
-        p = client.predictions.get(message_id)
+    @command("pred-admin", "Admin controls for a UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
+    async def pred_admin(interaction: Interaction, message_id: int):
+        p = interaction.client.predictions.get(message_id)
         if not p:
             return await interaction.response.send_message("Unknown prediction ID.", ephemeral=True)
+        view = PredAdminView(p, interaction.client)
+        await interaction.response.send_message("Prediction admin controls", view=view, ephemeral=True)
 
-        if action.value == "lock":
-            p.locked = True
-            msg = await interaction.channel.fetch_message(message_id)
-            embed, bar = prediction_embed(p, client)
-            await msg.edit(embed=embed, attachments=[bar], view=None)
-            _save({k: v.to_dict() for k, v in client.predictions.items()})
-            return await interaction.response.send_message("🔒 Prediction locked.", ephemeral=True)
-
-        if action.value == "resolve":
-            if winner not in (1, 2):
-                return await interaction.response.send_message("To resolve, specify winner as 1 or 2.", ephemeral=True)
-            client.predictions.pop(message_id)
-            payouts = p.resolve(winner)
-            p.locked = True
-            msg = await interaction.channel.fetch_message(message_id)
-            embed, bar = prediction_embed(p, client)
-            await msg.edit(embed=embed, attachments=[bar], view=None)
-            win_side = p.opt1 if winner == 1 else p.opt2
-            lines = [
-                f"**{(interaction.guild.get_member(uid) or uid).display_name}** won **{amt:,}**"
-                for uid, amt in sorted(payouts.items(), key=lambda x: x[1], reverse=True)
-            ]
-            descr = "\n".join(lines) or "*Nobody backed the winner*"
-            summary = Embed(title=f"🏁 Prediction settled: **{win_side}** wins!", description=descr, color=0x2ECC71)
-            await msg.reply(embed=summary, mention_author=False)
-            _save({k: v.to_dict() for k, v in client.predictions.items()})
-            return await interaction.response.send_message("✅ Resolved & paid out.", ephemeral=True)
-
-        if action.value == "draw":
-            for side in (1, 2):
-                for uid, amt in p.bets[side].items():
-                    add_bb(uid, amt)
-            p.locked = True
-            p.bets = {1: {}, 2: {}}
-            msg = await interaction.channel.fetch_message(message_id)
-            embed, bar = prediction_embed(p, client)
-            await msg.edit(embed=embed, attachments=[bar], view=None)
-            client.predictions.pop(message_id)
-            _save({k: v.to_dict() for k, v in client.predictions.items()})
-            return await interaction.response.send_message("🟡 Draw called—everyone refunded.", ephemeral=True)
 
     @command("bb-set", "Sets a user's UKPence balance.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def bb_set(interaction: Interaction, user: Member, amount: int):
