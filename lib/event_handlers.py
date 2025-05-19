@@ -14,6 +14,7 @@ from lib.settings import *
 from lib.shutcoin import can_use_shutcoin, remove_shutcoin, SHUTCOIN_ENABLED
 from lib.prediction_system import prediction_embed, _save
 from lib.ukpence import add_bb, remove_bb, ensure_bb
+from lib.prediction_system import prediction_embed, _save, _load, Prediction, BetButtons
 
 from commands.mod_commands.persistant_role_buttons import (
     persistantRoleButtons,
@@ -265,6 +266,13 @@ async def on_ready(client, tree, scheduler):
         client.xp_system = XPSystem()
         logger.info("XP system initialised")
     reattach_persistent_views(client)
+    loaded = _load()
+    client.predictions = {}
+    for msg_id_str, pd in loaded.items():
+        p = Prediction.from_dict(pd)
+        client.predictions[p.msg_id] = p
+        if not p.locked:
+            client.add_view(BetButtons(p), message_id=p.msg_id)
     logger.info("Persistent views reattached and loaded.")
     for command in tree.get_commands():
         logger.info(f"Command loaded: {command.name}")
