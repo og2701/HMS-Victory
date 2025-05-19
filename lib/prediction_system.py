@@ -167,13 +167,13 @@ class BetButtons(discord.ui.View):
         self.bet1.label = f"Bet on {pred.opt1}"
         self.bet2.label = f"Bet on {pred.opt2}"
 
-    @discord.ui.button(label="opt1", style=discord.ButtonStyle.success)
+    @discord.ui.button(custom_id="prediction:bet1", style=discord.ButtonStyle.success)
     async def bet1(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         if self.pred.locked:
             return await interaction.response.send_message("Betting locked.", ephemeral=True)
         await interaction.response.send_modal(BetModal(self.pred, 1))
 
-    @discord.ui.button(label="opt2", style=discord.ButtonStyle.primary)
+    @discord.ui.button(custom_id="prediction:bet2", style=discord.ButtonStyle.primary)
     async def bet2(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         if self.pred.locked:
             return await interaction.response.send_message("Betting locked.", ephemeral=True)
