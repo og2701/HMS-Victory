@@ -111,18 +111,10 @@ async def cleanup_thread_members(client):
         return
 
     for thread in forum_channel.threads:
-        mc = thread.member_count or 0
-        logger.info(f"[CLEANUP] {thread.name} has {mc} members")
-        if mc <= 900:
-            continue
-
         members = []
         after = None
         while True:
-            try:
-                chunk = await thread.fetch_members(after=after)
-            except TypeError:
-                chunk = await thread.fetch_members()
+            chunk = await thread.fetch_members(after=after)   # each call gives ≤100
             if not chunk:
                 break
             members.extend(chunk)
@@ -130,25 +122,32 @@ async def cleanup_thread_members(client):
             if len(chunk) < 100:
                 break
 
-        member_ids = {m.id for m in members}
-        last_active = {uid: None for uid in member_ids}
+        total = len(members)
+        logger.info(f"[CLEANUP] {thread.name} has {total} members")
+        if total <= 900:
+            continue
+
+        last_active = {m.id: None for m in members}
 
         async for msg in thread.history(limit=None, oldest_first=False):
             uid = msg.author.id
-            if uid in last_active and (last_active[uid] is None or msg.created_at > last_active[uid]):
+            ts = last_active.get(uid)
+            if ts is None or msg.created_at > ts:
                 last_active[uid] = msg.created_at
-            if msg.created_at < cutoff and all(ts is not None and ts < cutoff for ts in last_active.values()):
+            if msg.created_at < cutoff and all(t is not None and t < cutoff for t in last_active.values()):
                 break
 
-        inactive_ids = [uid for uid, ts in last_active.items() if ts is None or ts < cutoff]
-        logger.info(f"[CLEANUP] {len(inactive_ids)}/{len(member_ids)} inactive in {thread.name}")
-        for uid in inactive_ids:
+        inactive = [uid for uid, ts in last_active.items() if ts is None or ts < cutoff]
+        logger.info(f"[CLEANUP] {len(inactive)}/{total} inactive in {thread.name}")
+
+        for uid in inactive:
             try:
                 await thread.remove_user(discord.Object(id=uid))
                 logger.info(f"[CLEANUP] Removed {uid} from {thread.name}")
                 await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"[CLEANUP] Failed to remove {uid}: {e}")
+
 
 def schedule_client_jobs(client, scheduler):
     scheduler.add_job(client.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
