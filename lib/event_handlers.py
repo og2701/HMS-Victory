@@ -111,8 +111,17 @@ async def cleanup_thread_members(client):
         return
 
     for thread in forum_channel.threads:
-        await thread.fetch_members()
-        member_ids = {m.id for m in thread.members}
+        logger.info(f"[CLEANUP] Scanning {thread.name} ({thread.id})  mc={thread.member_count}")
+        members = []
+        after = None
+        while True:
+            chunk = await thread.fetch_members(limit=100, after=after)
+            if not chunk:
+                break
+            members.extend(chunk)
+            after = chunk[-1]
+
+        member_ids = {m.id for m in members}
         last_active = {uid: None for uid in member_ids}
 
         async for msg in thread.history(limit=None, oldest_first=False):
@@ -125,15 +134,13 @@ async def cleanup_thread_members(client):
         inactive_ids = [uid for uid, ts in last_active.items() if ts is None or ts < cutoff]
         logger.info(f"[CLEANUP] {len(inactive_ids)}/{len(member_ids)} inactive in {thread.name}")
         for uid in inactive_ids:
-            user = guild.get_member(uid)
-            if not user:
-                continue
             try:
-                await thread.remove_user(user)
-                logger.info(f"[CLEANUP] Removed {user} from {thread.name}")
+                await thread.remove_user(discord.Object(id=uid))
+                logger.info(f"[CLEANUP] Removed {uid} from {thread.name}")
                 await asyncio.sleep(1)
             except Exception as e:
-                logger.error(f"[CLEANUP] Failed to remove {user}: {e}")
+                logger.error(f"[CLEANUP] Failed to remove {uid}: {e}")
+
 
 
 def schedule_client_jobs(client, scheduler):
