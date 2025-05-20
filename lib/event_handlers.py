@@ -56,6 +56,7 @@ ADDED_USERS_FILE = "added_users.json"
 
 STAGE_UKPENCE_MULTIPLIER = 1
 
+MAX_THREAD_USERS = 975
 
 async def sweep_predictions(client):
     now = discord.utils.utcnow().timestamp()
@@ -99,33 +100,42 @@ def reattach_persistent_views(client):
             view = RoleButtonView(value)
             client.add_view(view, message_id=key)
 
+
 async def cleanup_thread_members(client):
     cutoff = discord.utils.utcnow() - timedelta(days=30)
     guild = client.get_guild(GUILD_ID)
     if not guild:
         return
+
     forum_channel = guild.get_channel(FORUM_CHANNEL_ID)
     if not isinstance(forum_channel, discord.ForumChannel):
         return
+
     bot_id = client.user.id
+
     for thread in forum_channel.threads:
         try:
             members = await thread.fetch_members()
         except discord.HTTPException:
             continue
+
         total = len(members)
         logger.info(f"[CLEANUP] {thread.name} has {total} members")
-        if total <= 950:
+        if total <= MAX_THREAD_USERS:
             continue
+
         active_ids = set()
         async for msg in thread.history(limit=None, oldest_first=False):
             if msg.created_at < cutoff:
                 break
             active_ids.add(msg.author.id)
+
         inactive_ids = [m.id for m in members if m.id not in active_ids]
-        remove_quota = total - 949
+        remove_quota = total - MAX_THREAD_USERS + 1
         targets = inactive_ids[:remove_quota]
+
         logger.info(f"[CLEANUP] Removing {len(targets)} users from {thread.name}")
+
         for uid in targets:
             try:
                 await thread.remove_user(discord.Object(id=uid))
@@ -139,6 +149,7 @@ async def cleanup_thread_members(client):
                         break
             except discord.HTTPException:
                 continue
+
 
 
 def schedule_client_jobs(client, scheduler):
