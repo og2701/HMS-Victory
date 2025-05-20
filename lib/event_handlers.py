@@ -103,58 +103,42 @@ async def cleanup_thread_members(client):
     cutoff = discord.utils.utcnow() - timedelta(days=30)
     guild = client.get_guild(GUILD_ID)
     if not guild:
-        logger.warning("[CLEANUP] Guild not found")
         return
-
     forum_channel = guild.get_channel(FORUM_CHANNEL_ID)
     if not isinstance(forum_channel, discord.ForumChannel):
-        logger.warning("[CLEANUP] Forum channel not found or wrong type")
         return
-
     bot_id = client.user.id
-
     for thread in forum_channel.threads:
         try:
             members = await thread.fetch_members()
-        except discord.HTTPException as e:
-            logger.error(f"[CLEANUP] Cannot fetch members for {thread.name}: {e}")
+        except discord.HTTPException:
             continue
-
         total = len(members)
         logger.info(f"[CLEANUP] {thread.name} has {total} members")
-        if total <= 900:
+        if total <= 950:
             continue
-
-        # ----- who has spoken in the last 30 days? -----
-        active_ids: set[int] = set()
+        active_ids = set()
         async for msg in thread.history(limit=None, oldest_first=False):
             if msg.created_at < cutoff:
                 break
             active_ids.add(msg.author.id)
-
         inactive_ids = [m.id for m in members if m.id not in active_ids]
-        logger.info(f"[CLEANUP] {len(inactive_ids)}/{total} inactive in {thread.name}")
-
-        # ----- kick and delete system messages -----
-        for uid in inactive_ids:
+        remove_quota = total - 949
+        targets = inactive_ids[:remove_quota]
+        logger.info(f"[CLEANUP] Removing {len(targets)} users from {thread.name}")
+        for uid in targets:
             try:
-                # await thread.remove_user(discord.Object(id=uid))
-                logger.info(f"[CLEANUP] Removed {uid} from {thread.name}")
-                await asyncio.sleep(0.6)                    # rate-limit guard
-
-                # delete the “removed from the thread” system message
+                await thread.remove_user(discord.Object(id=uid))
+                await asyncio.sleep(0.6)
                 async for sys_msg in thread.history(limit=4):
-                    if (sys_msg.author.id == bot_id
-                            and "removed" in sys_msg.content  # simple text check
-                            and str(uid) in sys_msg.content):
+                    if sys_msg.author.id == bot_id and str(uid) in sys_msg.content:
                         try:
                             await sys_msg.delete()
                         except Exception:
                             pass
                         break
-            except discord.HTTPException as e:
-                logger.error(f"[CLEANUP] Failed to remove {uid}: {e}")
-
+            except discord.HTTPException:
+                continue
 
 
 def schedule_client_jobs(client, scheduler):
