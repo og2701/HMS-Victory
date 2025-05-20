@@ -111,24 +111,15 @@ async def cleanup_thread_members(client):
         return
 
     for thread in forum_channel.threads:
-        mc = thread.member_count or 0
-        logger.info(f"[CLEANUP] {thread.name} has {mc} members")
-        if mc <= 900:
-            continue
-
+        logger.info(f"[CLEANUP] Scanning {thread.name} ({thread.id})  mc={thread.member_count}")
         members = []
         after = None
         while True:
-            try:
-                chunk = await thread.fetch_members(after=after)
-            except TypeError:
-                chunk = await thread.fetch_members()
+            chunk = await thread.fetch_members(limit=100, after=after)
             if not chunk:
                 break
             members.extend(chunk)
             after = chunk[-1]
-            if len(chunk) < 100:
-                break
 
         member_ids = {m.id for m in members}
         last_active = {uid: None for uid in member_ids}
@@ -149,6 +140,8 @@ async def cleanup_thread_members(client):
                 await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"[CLEANUP] Failed to remove {uid}: {e}")
+
+
 
 def schedule_client_jobs(client, scheduler):
     scheduler.add_job(client.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
