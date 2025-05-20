@@ -111,19 +111,15 @@ async def cleanup_thread_members(client):
         return
 
     for thread in forum_channel.threads:
-        members = []
-        after = None
-        while True:
-            chunk = await thread.fetch_members(after=after)   # each call gives ≤100
-            if not chunk:
-                break
-            members.extend(chunk)
-            after = chunk[-1]
-            if len(chunk) < 100:
-                break
+        try:
+            members = await thread.fetch_members()
+        except discord.HTTPException as e:
+            logger.error(f"[CLEANUP] Could not fetch members for {thread.name}: {e}")
+            continue
 
         total = len(members)
-        logger.info(f"[CLEANUP] {thread.name} has {total} members")
+        logger.info(f"[CLEANUP] {thread.name} has {total} members "
+                    f"(member_count field said {thread.member_count})")
         if total <= 900:
             continue
 
@@ -134,7 +130,8 @@ async def cleanup_thread_members(client):
             ts = last_active.get(uid)
             if ts is None or msg.created_at > ts:
                 last_active[uid] = msg.created_at
-            if msg.created_at < cutoff and all(t is not None and t < cutoff for t in last_active.values()):
+            if msg.created_at < cutoff and all(t is not None and t < cutoff
+                                               for t in last_active.values()):
                 break
 
         inactive = [uid for uid, ts in last_active.items() if ts is None or ts < cutoff]
@@ -145,7 +142,7 @@ async def cleanup_thread_members(client):
                 await thread.remove_user(discord.Object(id=uid))
                 logger.info(f"[CLEANUP] Removed {uid} from {thread.name}")
                 await asyncio.sleep(1)
-            except Exception as e:
+            except discord.HTTPException as e:
                 logger.error(f"[CLEANUP] Failed to remove {uid}: {e}")
 
 
