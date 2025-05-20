@@ -99,6 +99,42 @@ def reattach_persistent_views(client):
             view = RoleButtonView(value)
             client.add_view(view, message_id=key)
 
+async def cleanup_thread_members(client):
+    cutoff = discord.utils.utcnow() - timedelta(days=30)
+    guild = client.get_guild(GUILD_ID)
+    if not guild:
+        logger.warning("[CLEANUP] Guild not found")
+        return
+    forum_channel = guild.get_channel(FORUM_CHANNEL_ID)
+    if not isinstance(forum_channel, discord.ForumChannel):
+        logger.warning("[CLEANUP] Forum channel not found or wrong type")
+        return
+
+    for thread in forum_channel.threads:
+        logger.info(f"[CLEANUP] Scanning thread {thread.name} ({thread.id})")
+        await thread.fetch_members()
+        member_ids = {m.id for m in thread.members}
+        last_active = {uid: cutoff for uid in member_ids}
+
+        async for msg in thread.history(limit=None, oldest_first=False):
+            uid = msg.author.id
+            if uid in last_active and msg.created_at > last_active[uid]:
+                last_active[uid] = msg.created_at
+            if all(ts > cutoff for ts in last_active.values()):
+                break
+
+        inactive_ids = [uid for uid, ts in last_active.items() if ts < cutoff]
+        logger.info(f"[CLEANUP] {len(inactive_ids)} inactive users found in {thread.name}")
+        for uid in inactive_ids:
+            user = guild.get_member(uid)
+            if user:
+                try:
+                    await thread.remove_user(user)
+                    logger.info(f"[CLEANUP] Removed {user} from {thread.name}")
+                    await asyncio.sleep(1)
+                except Exception as e:
+                    logger.error(f"[CLEANUP] Failed to remove {user}: {e}")
+
 
 def schedule_client_jobs(client, scheduler):
     scheduler.add_job(client.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
@@ -108,6 +144,8 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(client.backup_bot, IntervalTrigger(minutes=30, timezone="Europe/London"))
     scheduler.add_job(sweep_predictions, IntervalTrigger(seconds=30), args=[client])
     scheduler.add_job(award_stage_bonuses, IntervalTrigger(seconds=60), args=[client])
+    scheduler.add_job(cleanup_thread_members, CronTrigger(hour=3, minute=0, timezone="Europe/London"), args=[client])
+
     scheduler.start()
 
 
