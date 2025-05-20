@@ -144,7 +144,7 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(client.backup_bot, IntervalTrigger(minutes=30, timezone="Europe/London"))
     scheduler.add_job(sweep_predictions, IntervalTrigger(seconds=30), args=[client])
     scheduler.add_job(award_stage_bonuses, IntervalTrigger(seconds=60), args=[client])
-    scheduler.add_job(cleanup_thread_members, CronTrigger(hour=3, minute=0, timezone="Europe/London"), args=[client])
+    scheduler.add_job(cleanup_thread_members, IntervalTrigger(days=1, timezone="Europe/London"), args=[client], next_run_time=discord.utils.utcnow())
 
     scheduler.start()
 
