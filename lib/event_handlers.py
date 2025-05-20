@@ -111,29 +111,29 @@ async def cleanup_thread_members(client):
         return
 
     for thread in forum_channel.threads:
-        logger.info(f"[CLEANUP] Scanning thread {thread.name} ({thread.id})")
         await thread.fetch_members()
         member_ids = {m.id for m in thread.members}
-        last_active = {uid: cutoff for uid in member_ids}
+        last_active = {uid: None for uid in member_ids}
 
         async for msg in thread.history(limit=None, oldest_first=False):
             uid = msg.author.id
-            if uid in last_active and msg.created_at > last_active[uid]:
+            if uid in last_active and (last_active[uid] is None or msg.created_at > last_active[uid]):
                 last_active[uid] = msg.created_at
-            if all(ts > cutoff for ts in last_active.values()):
+            if msg.created_at < cutoff and all(ts is not None and ts < cutoff for ts in last_active.values()):
                 break
 
-        inactive_ids = [uid for uid, ts in last_active.items() if ts < cutoff]
-        logger.info(f"[CLEANUP] {len(inactive_ids)} inactive users found in {thread.name}")
+        inactive_ids = [uid for uid, ts in last_active.items() if ts is None or ts < cutoff]
+        logger.info(f"[CLEANUP] {len(inactive_ids)}/{len(member_ids)} inactive in {thread.name}")
         for uid in inactive_ids:
             user = guild.get_member(uid)
-            if user:
-                try:
-                    await thread.remove_user(user)
-                    logger.info(f"[CLEANUP] Removed {user} from {thread.name}")
-                    await asyncio.sleep(1)
-                except Exception as e:
-                    logger.error(f"[CLEANUP] Failed to remove {user}: {e}")
+            if not user:
+                continue
+            try:
+                await thread.remove_user(user)
+                logger.info(f"[CLEANUP] Removed {user} from {thread.name}")
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"[CLEANUP] Failed to remove {user}: {e}")
 
 
 def schedule_client_jobs(client, scheduler):
