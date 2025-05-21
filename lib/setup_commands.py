@@ -210,44 +210,22 @@ def define_commands(tree, client):
 
     @command("preds-to-resolve", "Shows all locked predictions still in memory")
     async def preds_to_resolve(interaction: Interaction):
-        await interaction.response.defer(ephemeral=True)
-
-        unresolved = []
-        cleaned = False
-        client = interaction.client
-
-        for p in list(client.predictions.values()):
-            if not p.locked:
-                continue
-
-            ch = client.get_channel(p.channel_id or interaction.channel.id)
-            try:
-                if ch:
-                    await ch.fetch_message(p.msg_id)
-                    await asyncio.sleep(0.25)
-                unresolved.append(p)
-            except discord.NotFound:
-                client.predictions.pop(p.msg_id, None)
-                cleaned = True
-            except discord.HTTPException:
-                continue
-
-        if cleaned:
-            _save({k: v.to_dict() for k, v in client.predictions.items()})
-
+        unresolved = [
+            p for p in interaction.client.predictions.values()
+            if p.locked
+        ]
         if not unresolved:
-            await interaction.followup.send(
-                "✅ All predictions have been resolved or cleared.", ephemeral=True
-            )
+            await interaction.response.send_message("✅ All predictions have been resolved.", ephemeral=True)
             return
 
         header = "**Preds left to resolve:**"
         lines = []
         for p in unresolved:
-            link = f"https://discord.com/channels/{GUILD_ID}/{p.channel_id}/{p.msg_id}"
+            link = f"https://discord.com/channels/{GUILD_ID}/{p.channel_id or interaction.channel.id}/{p.msg_id}"
             lines.append(f"`{p.title}` | `{p.msg_id}` | [jump]({link})")
 
-        chunks, current = [], header
+        chunks = []
+        current = header
         for line in lines:
             if len(current) + len(line) + 1 > 2000:
                 chunks.append(current)
@@ -256,10 +234,10 @@ def define_commands(tree, client):
                 current += "\n" + line
         chunks.append(current)
 
-        # send paginated chunks
-        await interaction.followup.send(chunks[0], ephemeral=True)
+        await interaction.response.send_message(chunks[0], ephemeral=True)
         for chunk in chunks[1:]:
             await interaction.followup.send(chunk, ephemeral=True)
+
 
 
 
