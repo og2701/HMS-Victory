@@ -55,6 +55,7 @@ THREAD_MESSAGES_FILE = "thread_messages.json"
 ADDED_USERS_FILE = "added_users.json"
 
 STAGE_UKPENCE_MULTIPLIER = 1
+SERVER_BOOSTER_UKP_DAILY_BONUS = 30
 
 MAX_THREAD_USERS = 975
 
@@ -150,6 +151,11 @@ async def cleanup_thread_members(client):
             except discord.HTTPException:
                 continue
 
+async def award_booster_bonus(client):
+    for guild in client.guilds:
+        for member in guild.members:
+            if any(role.id == ROLES.SERVER_BOOSTER for role in member.roles):
+                add_bb(member.id, SERVER_BOOSTER_UKP_DAILY_BONUS)
 
 
 def schedule_client_jobs(client, scheduler):
@@ -161,6 +167,7 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(sweep_predictions, IntervalTrigger(seconds=30), args=[client])
     scheduler.add_job(award_stage_bonuses, IntervalTrigger(seconds=60), args=[client])
     scheduler.add_job(cleanup_thread_members, IntervalTrigger(days=1, timezone="Europe/London"), args=[client], next_run_time=discord.utils.utcnow())
+    scheduler.add_job(award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client])
 
     scheduler.start()
 
