@@ -217,13 +217,26 @@ def define_commands(tree, client):
             await interaction.response.send_message("✅ All predictions have been resolved.", ephemeral=True)
             return
 
-        lines = ["**Preds left to resolve:**"]
+        header = "**Preds left to resolve:**"
+        lines = []
         for p in unresolved:
             link = f"https://discord.com/channels/{GUILD_ID}/{p.channel_id or interaction.channel.id}/{p.msg_id}"
             lines.append(f"`{p.title}` | `{p.msg_id}` | [jump]({link})")
 
-        msg = "\n".join(lines)
-        await interaction.response.send_message(msg, ephemeral=True)
+        chunks = []
+        current = header
+        for line in lines:
+            if len(current) + len(line) + 1 > 2000:
+                chunks.append(current)
+                current = line
+            else:
+                current += "\n" + line
+        chunks.append(current)
+
+        await interaction.response.send_message(chunks[0], ephemeral=True)
+        for chunk in chunks[1:]:
+            await interaction.followup.send(chunk, ephemeral=True)
+
 
 
     # @command("bb-set", "Sets a user's UKPence balance.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
