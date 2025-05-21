@@ -179,12 +179,12 @@ class BetButtons(discord.ui.View):
         btn1 = discord.ui.Button(
             label=f"Bet on {pred.opt1}",
             style=discord.ButtonStyle.success,
-            custom_id=f"prediction:{pred.msg_id}:bet1:{uuid.uuid4().hex}",
+            custom_id = f"prediction:{pred.msg_id}:bet1"
         )
         btn2 = discord.ui.Button(
             label=f"Bet on {pred.opt2}",
             style=discord.ButtonStyle.primary,
-            custom_id=f"prediction:{pred.msg_id}:bet2:{uuid.uuid4().hex}",
+            custom_id = f"prediction:{pred.msg_id}:bet2"
         )
 
         async def btn1_cb(interaction: discord.Interaction):
@@ -226,7 +226,8 @@ class PredAdminView(discord.ui.View):
         self.pred.end_ts = None
         msg = await interaction.channel.fetch_message(self.pred.msg_id)
         embed, bar = prediction_embed(self.pred, self.client)
-        await msg.edit(embed=embed, attachments=[bar], view=BetButtons(self.pred))
+        await msg.edit(embed=embed, attachments=[bar], view=None)
+        client.add_view(BetButtons(self.pred), message_id=self.pred.msg_id)
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
         await interaction.response.send_message("🔓 Unlocked.", ephemeral=True)
 
