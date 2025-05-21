@@ -164,20 +164,35 @@ class BetButtons(discord.ui.View):
     def __init__(self, pred: Prediction):
         super().__init__(timeout=None)
         self.pred = pred
-        self.bet1.label = f"Bet on {pred.opt1}"
-        self.bet2.label = f"Bet on {pred.opt2}"
 
-    @discord.ui.button(custom_id="prediction:bet1", style=discord.ButtonStyle.success)
-    async def bet1(self, interaction: discord.Interaction, _btn: discord.ui.Button):
-        if self.pred.locked:
-            return await interaction.response.send_message("Betting locked.", ephemeral=True)
-        await interaction.response.send_modal(BetModal(self.pred, 1))
+        async def _handler(interaction: discord.Interaction, side: int):
+            if self.pred.locked:
+                await interaction.response.send_message("Betting locked.", ephemeral=True)
+                return
+            await interaction.response.send_modal(BetModal(self.pred, side))
 
-    @discord.ui.button(custom_id="prediction:bet2", style=discord.ButtonStyle.primary)
-    async def bet2(self, interaction: discord.Interaction, _btn: discord.ui.Button):
-        if self.pred.locked:
-            return await interaction.response.send_message("Betting locked.", ephemeral=True)
-        await interaction.response.send_modal(BetModal(self.pred, 2))
+        btn1 = discord.ui.Button(
+            label=f"Bet on {pred.opt1}",
+            style=discord.ButtonStyle.success,
+            custom_id=f"prediction:{pred.msg_id}:bet1",
+        )
+        btn2 = discord.ui.Button(
+            label=f"Bet on {pred.opt2}",
+            style=discord.ButtonStyle.primary,
+            custom_id=f"prediction:{pred.msg_id}:bet2",
+        )
+
+        async def btn1_cb(interaction: discord.Interaction):
+            await _handler(interaction, 1)
+
+        async def btn2_cb(interaction: discord.Interaction):
+            await _handler(interaction, 2)
+
+        btn1.callback = btn1_cb
+        btn2.callback = btn2_cb
+
+        self.add_item(btn1)
+        self.add_item(btn2)
 
 
 class PredAdminView(discord.ui.View):
