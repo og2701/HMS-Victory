@@ -203,31 +203,31 @@ def define_commands(tree, client):
         view = PredAdminView(p, interaction.client)
         await interaction.response.send_message("Prediction admin controls", view=view, ephemeral=True)
 
-    @command("bb-set", "Sets a user's UKPence balance.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def bb_set(interaction: Interaction, user: Member, amount: int):
-        old = get_bb(user.id)
-        set_bb(user.id, amount)
-        new = get_bb(user.id)
-        embed = Embed(
-            title="UKPence Balance Updated",
-            description=f"{user.mention}'s UKPence were updated "
-                        f"from **{old:,}** to **{new:,}**",
-            color=discord.Color.gold(),
-        ).set_footer(text=f"by {interaction.user.display_name}")
-        await interaction.response.send_message(embed=embed)
+    # @command("bb-set", "Sets a user's UKPence balance.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
+    # async def bb_set(interaction: Interaction, user: Member, amount: int):
+    #     old = get_bb(user.id)
+    #     set_bb(user.id, amount)
+    #     new = get_bb(user.id)
+    #     embed = Embed(
+    #         title="UKPence Balance Updated",
+    #         description=f"{user.mention}'s UKPence were updated "
+    #                     f"from **{old:,}** to **{new:,}**",
+    #         color=discord.Color.gold(),
+    #     ).set_footer(text=f"by {interaction.user.display_name}")
+    #     await interaction.response.send_message(embed=embed)
 
-    @command("bb-add", "Adds UKPence to a user.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def bb_add(interaction: Interaction, user: Member, amount: int):
-        old = get_bb(user.id)
-        add_bb(user.id, amount)
-        new = get_bb(user.id)
-        embed = Embed(
-            title="UKPence Added",
-            description=f"**{amount:,}** UKPence added to {user.mention}\n"
-                        f"Balance: **{old:,} → {new:,}**",
-            color=discord.Color.gold(),
-        ).set_footer(text=f"by {interaction.user.display_name}")
-        await interaction.response.send_message(embed=embed)
+    # @command("bb-add", "Adds UKPence to a user.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
+    # async def bb_add(interaction: Interaction, user: Member, amount: int):
+    #     old = get_bb(user.id)
+    #     add_bb(user.id, amount)
+    #     new = get_bb(user.id)
+    #     embed = Embed(
+    #         title="UKPence Added",
+    #         description=f"**{amount:,}** UKPence added to {user.mention}\n"
+    #                     f"Balance: **{old:,} → {new:,}**",
+    #         color=discord.Color.gold(),
+    #     ).set_footer(text=f"by {interaction.user.display_name}")
+    #     await interaction.response.send_message(embed=embed)
 
 
     @command("richlist", "Displays a leaderboard of users with the most UKPence")
