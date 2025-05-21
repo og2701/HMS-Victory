@@ -222,12 +222,17 @@ class PredAdminView(discord.ui.View):
     async def unlock(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         if not self.pred.locked:
             return await interaction.response.send_message("Already unlocked.", ephemeral=True)
+
         self.pred.locked = False
         self.pred.end_ts = None
+
         msg = await interaction.channel.fetch_message(self.pred.msg_id)
         embed, bar = prediction_embed(self.pred, self.client)
-        await msg.edit(embed=embed, attachments=[bar], view=None)
-        self.client.add_view(BetButtons(self.pred), message_id=self.pred.msg_id)
+        view = BetButtons(self.pred)
+
+        await msg.edit(embed=embed, attachments=[bar], view=view)
+        self.client.add_view(view, message_id=self.pred.msg_id)
+
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
         await interaction.response.send_message("🔓 Unlocked.", ephemeral=True)
 
