@@ -107,10 +107,13 @@ def prediction_embed(pred: Prediction, client: discord.Client | None = None) -> 
     pct1 = t1 / total
     pct2 = 1 - pct1
     now = discord.utils.utcnow().timestamp()
-    if pred.locked or (pred.end_ts and pred.end_ts <= now):
+    if pred.locked:
         time_line = "🔒 **locked**"
-    else:
+    elif pred.end_ts and pred.end_ts > now:
         time_line = f"⏰ closes <t:{int(pred.end_ts)}:R>"
+    else:
+        time_line = "🔓 **unlocked**"
+
 
     e = discord.Embed(title=pred.title, description=time_line)
     e.add_field(
@@ -178,7 +181,6 @@ class BetButtons(discord.ui.View):
             style=discord.ButtonStyle.success,
             custom_id=f"prediction:{pred.msg_id}:bet1:{uuid.uuid4().hex}",
         )
-
         btn2 = discord.ui.Button(
             label=f"Bet on {pred.opt2}",
             style=discord.ButtonStyle.primary,
@@ -196,6 +198,7 @@ class BetButtons(discord.ui.View):
 
         self.add_item(btn1)
         self.add_item(btn2)
+
 
 
 class PredAdminView(discord.ui.View):
@@ -220,7 +223,7 @@ class PredAdminView(discord.ui.View):
         if not self.pred.locked:
             return await interaction.response.send_message("Already unlocked.", ephemeral=True)
         self.pred.locked = False
-        self.pred.end_ts = 0
+        self.pred.end_ts = None
         msg = await interaction.channel.fetch_message(self.pred.msg_id)
         embed, bar = prediction_embed(self.pred, self.client)
         await msg.edit(embed=embed, attachments=[bar], view=BetButtons(self.pred))

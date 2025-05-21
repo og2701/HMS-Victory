@@ -63,7 +63,7 @@ async def sweep_predictions(client):
     now = discord.utils.utcnow().timestamp()
     dirty = False
     for p in client.predictions.values():
-        if not p.locked and p.end_ts <= now:
+        if not p.locked and p.end_ts and p.end_ts <= now:
             p.locked = True
             try:
                 channel = client.get_channel(CHANNELS.BOT_SPAM)
