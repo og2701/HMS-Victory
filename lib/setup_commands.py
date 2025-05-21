@@ -219,6 +219,8 @@ def define_commands(tree, client):
                 ch = interaction.client.get_channel(p.channel_id or interaction.channel.id)
                 if ch:
                     await ch.fetch_message(p.msg_id)
+                    await asyncio.sleep(0.25)
+
                 unresolved.append(p)
             except discord.NotFound:
                 interaction.client.predictions.pop(p.msg_id, None)
