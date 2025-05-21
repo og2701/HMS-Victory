@@ -577,9 +577,17 @@ async def refresh_live_stages(client):
     guild = client.get_guild(GUILD_ID)
     if not guild:
         return
+    now = discord.utils.utcnow()
     for ch in guild.stage_channels:
         if ch.instance is not None:
             client.stage_events.add(ch.id)
+            for member in ch.members:
+                if not hasattr(client, "stage_join_times"):
+                    client.stage_join_times = {}
+                if member.id not in client.stage_join_times:
+                    client.stage_join_times[member.id] = now
+                    logger.info(f"[STAGE] backfilled join: {member} in {ch.name}")
+
 
 
 async def on_stage_instance_create(stage_instance):
