@@ -208,7 +208,7 @@ def define_commands(tree, client):
         view = PredAdminView(p, interaction.client)
         await interaction.response.send_message("Prediction admin controls", view=view, ephemeral=True)
 
-    @command("preds-to-resolve", "Shows all locked predictions still in memory")
+    @command("preds-to-resolve", "Shows all locked predictions still in memory", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
     async def preds_to_resolve(interaction: Interaction):
         unresolved = [
             p for p in interaction.client.predictions.values()
