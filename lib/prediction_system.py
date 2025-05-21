@@ -227,7 +227,7 @@ class PredAdminView(discord.ui.View):
         msg = await interaction.channel.fetch_message(self.pred.msg_id)
         embed, bar = prediction_embed(self.pred, self.client)
         await msg.edit(embed=embed, attachments=[bar], view=None)
-        client.add_view(BetButtons(self.pred), message_id=self.pred.msg_id)
+        self.client.add_view(BetButtons(self.pred), message_id=self.pred.msg_id)
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
         await interaction.response.send_message("🔓 Unlocked.", ephemeral=True)
 
