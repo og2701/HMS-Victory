@@ -1,5 +1,6 @@
 import json, os, io, discord
 from PIL import Image, ImageDraw
+import uuid
 from lib.ukpence import add_bb, remove_bb
 
 PRED_FILE = "predictions.json"
@@ -106,10 +107,11 @@ def prediction_embed(pred: Prediction, client: discord.Client | None = None) -> 
     pct1 = t1 / total
     pct2 = 1 - pct1
     now = discord.utils.utcnow().timestamp()
-    if pred.locked:
+    if pred.locked or (pred.end_ts and pred.end_ts <= now):
         time_line = "🔒 **locked**"
     else:
-        time_line = f"⏰ closes <t:{int(pred.end_ts)}:R>" if pred.end_ts and pred.end_ts > now else "🔓 **unlocked**"
+        time_line = f"⏰ closes <t:{int(pred.end_ts)}:R>"
+
     e = discord.Embed(title=pred.title, description=time_line)
     e.add_field(
         name=pred.opt1,
@@ -174,12 +176,13 @@ class BetButtons(discord.ui.View):
         btn1 = discord.ui.Button(
             label=f"Bet on {pred.opt1}",
             style=discord.ButtonStyle.success,
-            custom_id=f"prediction:{pred.msg_id}:bet1",
+            custom_id=f"prediction:{pred.msg_id}:bet1:{uuid.uuid4().hex}",
         )
+
         btn2 = discord.ui.Button(
             label=f"Bet on {pred.opt2}",
             style=discord.ButtonStyle.primary,
-            custom_id=f"prediction:{pred.msg_id}:bet2",
+            custom_id=f"prediction:{pred.msg_id}:bet2:{uuid.uuid4().hex}",
         )
 
         async def btn1_cb(interaction: discord.Interaction):
