@@ -66,10 +66,11 @@ async def sweep_predictions(client):
         if not p.locked and p.end_ts and p.end_ts <= now:
             p.locked = True
             try:
-                channel = client.get_channel(CHANNELS.BOT_SPAM)
-                msg = await channel.fetch_message(p.msg_id)
-                embed, bar = prediction_embed(p, client)
-                await msg.edit(embed=embed, attachments=[bar], view=None)
+                ch = client.get_channel(p.channel_id) if p.channel_id else client.get_channel(CHANNELS.BOT_SPAM)
+                if ch:
+                    msg = await ch.fetch_message(p.msg_id)
+                    embed, bar = prediction_embed(p, client)
+                    await msg.edit(embed=embed, attachments=[bar], view=None)
             except Exception:
                 pass
             dirty = True

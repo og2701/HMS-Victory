@@ -12,8 +12,9 @@ def _save(d: dict) -> None:
     json.dump(d, open(PRED_FILE, "w"), indent=4)
 
 class Prediction:
-    def __init__(self, msg_id: int, title: str, opt1: str, opt2: str, end_ts: float):
+    def __init__(self, msg_id: int, title: str, opt1: str, opt2: str, end_ts: float, channel_id: int | None = None):
         self.msg_id = msg_id
+        self.channel_id = channel_id
         self.title = title
         self.opt1 = opt1
         self.opt2 = opt2
@@ -47,12 +48,10 @@ class Prediction:
         return payouts
 
     def to_dict(self) -> dict:
-        bets_dump = {
-            str(side): {str(uid): amt for uid, amt in pool.items()}
-            for side, pool in self.bets.items()
-        }
+        bets_dump = {str(side): {str(uid): amt for uid, amt in pool.items()} for side, pool in self.bets.items()}
         return {
             "msg_id": self.msg_id,
+            "channel_id": self.channel_id,
             "title": self.title,
             "opt1": self.opt1,
             "opt2": self.opt2,
@@ -61,15 +60,14 @@ class Prediction:
             "end": self.end_ts,
         }
 
+
     @staticmethod
     def from_dict(d: dict):
-        p = Prediction(d["msg_id"], d["title"], d["opt1"], d["opt2"], d["end"])
-        p.bets = {
-            int(side): {int(uid): amt for uid, amt in pool.items()}
-            for side, pool in d["bets"].items()
-        }
+        p = Prediction(d["msg_id"], d["title"], d["opt1"], d["opt2"], d["end"], d.get("channel_id"))
+        p.bets = {int(side): {int(uid): amt for uid, amt in pool.items()} for side, pool in d["bets"].items()}
         p.locked = d["locked"]
         return p
+
 
 def _progress_png(pct: float) -> io.BytesIO:
     W, H = 400, 18
@@ -113,6 +111,7 @@ def prediction_embed(pred: Prediction, client: discord.Client | None = None) -> 
         time_line = f"⏰ closes <t:{int(pred.end_ts)}:R>"
     else:
         time_line = "🔓 **unlocked**"
+
 
 
     e = discord.Embed(title=pred.title, description=time_line)
