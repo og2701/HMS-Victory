@@ -207,6 +207,25 @@ def define_commands(tree, client):
         view = PredAdminView(p, interaction.client)
         await interaction.response.send_message("Prediction admin controls", view=view, ephemeral=True)
 
+    @command("preds-to-resolve", "Shows all locked predictions still in memory")
+    async def preds_to_resolve(interaction: Interaction):
+        unresolved = [
+            p for p in interaction.client.predictions.values()
+            if p.locked
+        ]
+        if not unresolved:
+            await interaction.response.send_message("✅ All predictions have been resolved.", ephemeral=True)
+            return
+
+        lines = ["**Preds left to resolve:**"]
+        for p in unresolved:
+            link = f"https://discord.com/channels/{GUILD_ID}/{p.channel_id or interaction.channel.id}/{p.msg_id}"
+            lines.append(f"`{p.title}` | `{p.msg_id}` | [jump]({link})")
+
+        msg = "\n".join(lines)
+        await interaction.response.send_message(msg, ephemeral=True)
+
+
     # @command("bb-set", "Sets a user's UKPence balance.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     # async def bb_set(interaction: Interaction, user: Member, amount: int):
     #     old = get_bb(user.id)
