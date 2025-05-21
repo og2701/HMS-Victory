@@ -209,12 +209,28 @@ def define_commands(tree, client):
 
     @command("preds-to-resolve", "Shows all locked predictions still in memory")
     async def preds_to_resolve(interaction: Interaction):
-        unresolved = [
-            p for p in interaction.client.predictions.values()
-            if p.locked
-        ]
+        unresolved = []
+        cleaned = False
+
+        for p in list(interaction.client.predictions.values()):
+            if not p.locked:
+                continue
+            try:
+                ch = interaction.client.get_channel(p.channel_id or interaction.channel.id)
+                if ch:
+                    await ch.fetch_message(p.msg_id)
+                unresolved.append(p)
+            except discord.NotFound:
+                interaction.client.predictions.pop(p.msg_id, None)
+                cleaned = True
+            except discord.HTTPException:
+                continue
+
+        if cleaned:
+            _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
+
         if not unresolved:
-            await interaction.response.send_message("✅ All predictions have been resolved.", ephemeral=True)
+            await interaction.response.send_message("✅ All predictions have been resolved or cleared.", ephemeral=True)
             return
 
         header = "**Preds left to resolve:**"
