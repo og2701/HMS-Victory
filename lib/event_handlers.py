@@ -57,7 +57,7 @@ ADDED_USERS_FILE = "added_users.json"
 STAGE_UKPENCE_MULTIPLIER = 1
 SERVER_BOOSTER_UKP_DAILY_BONUS = 30
 
-MAX_THREAD_USERS = 975
+MAX_THREAD_USERS = 990
 
 async def sweep_predictions(client):
     now = discord.utils.utcnow().timestamp()
