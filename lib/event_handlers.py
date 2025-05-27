@@ -360,7 +360,7 @@ async def on_message(client, message):
     await process_message_links(client, message)
     if message.author.bot:
         return
-    await process_forum_threads(client, message)
+    # await process_forum_threads(client, message)
 
 
 async def on_interaction(interaction: Interaction):
