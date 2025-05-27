@@ -171,7 +171,7 @@ class XPSystem:
             template = f.read()
 
         left_html, right_html = "", ""
-        half = self.PAGE_SIZE // 2
+        half = len(data_slice) // 2
 
         for i, (uid, xp_val) in enumerate(data_slice):
             rank = offset + i + 1
