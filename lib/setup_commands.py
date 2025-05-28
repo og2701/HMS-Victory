@@ -11,7 +11,7 @@ from lib.utils import *
 from lib.summary import post_summary
 from lib.shutcoin import get_shutcoins, set_shutcoins
 from lib.prediction_system import Prediction, BetButtons, prediction_embed, _save, PredAdminView
-from lib.ukpence import get_bb, set_bb, add_bb
+from lib.ukpence import get_bb, set_bb, add_bb, remove_bb
 from typing import Optional
 
 def define_commands(tree, client):
@@ -237,6 +237,22 @@ def define_commands(tree, client):
         await interaction.response.send_message(chunks[0], ephemeral=True)
         for chunk in chunks[1:]:
             await interaction.followup.send(chunk, ephemeral=True)
+
+    @command("pay", "Transfer UKPence to another member")
+    async def pay_command(interaction: Interaction, recipient: Member, amount: int):
+        if amount <= 0:
+            return await interaction.response.send_message("Enter a positive amount.", ephemeral=True)
+        if recipient.id == interaction.user.id:
+            return await interaction.response.send_message("You cannot pay yourself.", ephemeral=True)
+        if not remove_bb(interaction.user.id, amount):
+            return await interaction.response.send_message("Insufficient UKPence.", ephemeral=True)
+        add_bb(recipient.id, amount)
+        embed = Embed(
+            title="UKPence Transfer",
+            description=f"{interaction.user.mention} paid **{amount:,}** UKPence to {recipient.mention}",
+            color=discord.Color.gold(),
+        )
+        await interaction.response.send_message(embed=embed)
 
 
 
