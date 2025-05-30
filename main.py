@@ -12,7 +12,8 @@ import json
 
 from lib.event_handlers import *
 from lib.setup_commands import define_commands
-from lib.settings import * from lib.summary import initialize_summary_data, update_summary_data, post_summary
+from lib.settings import * 
+from lib.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.on_message_functions import *
 from lib.prediction_system import Prediction, _load as load_predictions, _save as save_predictions
 from lib.ukpence import add_bb, _load as load_ukpence_data 
