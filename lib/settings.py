@@ -11,6 +11,7 @@ command_usage_tracker = defaultdict(lambda: {"count": 0, "last_used": None})
 SUMMARISE_DAILY_LIMIT = 10
 
 ECONOMY_METRICS_FILE = "economy_metrics.json"
+BALANCE_SNAPSHOT_DIR = "balance_snapshots"
 
 CUSTOM_RANK_BACKGROUNDS = {
     # "USER_ID_STRING": "custom_background_filename.png",
