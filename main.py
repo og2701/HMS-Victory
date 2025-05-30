@@ -18,6 +18,9 @@ from lib.on_message_functions import *
 from lib.prediction_system import Prediction, _load, _save
 from lib.ukpence import add_bb 
 from lib.constants import CHANNELS
+from lib.ukpence import add_bb, _load as load_ukpence_data
+from lib.settings import ECONOMY_METRICS_FILE, CHANNELS
+from lib.economy_stats_html import create_economy_stats_image
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -256,50 +259,71 @@ class AClient(discord.Client):
 
         summary_file_path = f"daily_summaries/daily_summary_{yesterday_str}.json"
         awarded_users_for_log = []
+        total_chat_rewards_this_cycle = 0
+        num_to_reward = 5
+        flat_reward_amount = 50
 
         if os.path.exists(summary_file_path):
             try:
                 with open(summary_file_path, "r") as file:
-                    daily_data = json.load(file)
+                    daily_data_content = json.load(file)
+                active_members_data = daily_data_content.get("active_members", {})
+                
+                if active_members_data:
+                    sorted_active_members = sorted(active_members_data.items(), key=lambda item: item[1], reverse=True)
+                    
+                    log_channel = self.get_channel(CHANNELS.LOGS) 
+                    num_rewarded_actually = 0
+
+                    for i, (user_id_str, message_count) in enumerate(sorted_active_members):
+                        if i < num_to_reward: 
+                            user_id = int(user_id_str)
+                            add_bb(user_id, flat_reward_amount) 
+                            num_rewarded_actually += 1
+                            awarded_user_info = f"User ID {user_id} (Top {i+1} chatter, {message_count} messages): +{flat_reward_amount} UKPence"
+                            awarded_users_for_log.append(awarded_user_info)
+                        else:
+                            break
+                    total_chat_rewards_this_cycle = num_rewarded_actually * flat_reward_amount
+                    
+                    if awarded_users_for_log and log_channel:
+                        log_message = f"Top {num_rewarded_actually} Chatter Rewards for {yesterday_str} ({flat_reward_amount} UKP each):\n" + "\n".join(awarded_users_for_log)
+                        logger.info(log_message) 
+                        try:
+                            await log_channel.send(f"```{log_message}```")
+                        except Exception as e:
+                            logger.error(f"Failed to send top chatter reward log to Discord: {e}")
+                    elif active_members_data:
+                         logger.info(f"Fewer than {num_to_reward} chatters on {yesterday_str}. Total chat rewards: {total_chat_rewards_this_cycle} UKP")
+                else:
+                    logger.info(f"No active members data in {summary_file_path} for {yesterday_str}. No chat rewards.")
             except json.JSONDecodeError:
                 logger.error(f"Could not decode JSON from {summary_file_path}. Skipping top chatter rewards for {yesterday_str}.")
-                daily_data = {}
-            
-            active_members_data = daily_data.get("active_members", {})
-            if active_members_data:
-                sorted_active_members = sorted(active_members_data.items(), key=lambda item: item[1], reverse=True)
-
-                reward_amount = 50  # Flat reward for top 5
-                num_to_reward = 5   # Number of top chatters to reward
-
-                log_channel_target_id = CHANNELS.LOGS 
-                log_channel = self.get_channel(log_channel_target_id)
-
-                for i, (user_id_str, message_count) in enumerate(sorted_active_members):
-                    if i < num_to_reward: 
-                        user_id = int(user_id_str)
-                        add_bb(user_id, reward_amount) 
-                        
-                        awarded_user_info = f"User ID {user_id} (Top {i+1} chatter, {message_count} messages): +{reward_amount} UKPence"
-                        awarded_users_for_log.append(awarded_user_info)
-                    else:
-                        break 
-                
-                if awarded_users_for_log and log_channel:
-                    log_message = f"Top {num_to_reward} Chatter Rewards for {yesterday_str}:\n" + "\n".join(awarded_users_for_log)
-                    logger.info(log_message) 
-                    try:
-                        await log_channel.send(f"```{log_message}```")
-                    except Exception as e:
-                        logger.error(f"Failed to send top chatter reward log to Discord: {e}")
-                elif not awarded_users_for_log and active_members_data :
-                     logger.info(f"Fewer than {num_to_reward} chatters on {yesterday_str}, or no one eligible for rewards.")
-                elif not active_members_data: #This case is covered by the outer 'if active_members_data:'
-                     logger.info(f"No active members data found in {summary_file_path} for {yesterday_str}. No rewards distributed.")
-            else:
-                logger.info(f"No active members data found in {summary_file_path} for {yesterday_str}. No rewards distributed.")
+            except Exception as e:
+                logger.error(f"Error processing chat rewards for {yesterday_str}: {e}")
         else:
-            logger.warning(f"No summary data file found at {summary_file_path} for {yesterday_str}. Skipping top chatter rewards.")
+            logger.warning(f"No summary data file at {summary_file_path} for {yesterday_str}. Skipping top chatter rewards.")
+
+        metrics_data = {}
+        if os.path.exists(ECONOMY_METRICS_FILE):
+            with open(ECONOMY_METRICS_FILE, "r") as f:
+                try:
+                    metrics_data = json.load(f)
+                except json.JSONDecodeError:
+                    logger.error(f"Error decoding {ECONOMY_METRICS_FILE}. Starting fresh for {yesterday_str} metrics.")
+        
+        day_metrics = metrics_data.get(yesterday_str, {})
+        day_metrics["chat_rewards_total"] = total_chat_rewards_this_cycle
+        
+        current_ukpence_balances = load_ukpence_data()
+        total_circulation_at_eod = sum(current_ukpence_balances.values())
+        day_metrics["total_circulation_end_of_day"] = total_circulation_at_eod
+        
+        metrics_data[yesterday_str] = day_metrics
+
+        with open(ECONOMY_METRICS_FILE, "w") as f:
+            json.dump(metrics_data, f, indent=4)
+        logger.info(f"Logged economy metrics for {yesterday_str}: ChatRewards={total_chat_rewards_this_cycle}, TotalCirculationEOD={total_circulation_at_eod}")
 
         await post_summary(self, CHANNELS.COMMONS, "daily", date=yesterday_str)
 
@@ -323,6 +347,35 @@ class AClient(discord.Client):
             folder_path="./", 
             channel_id=CHANNELS.DATA_BACKUP
         )
+
+
+    async def post_daily_economy_stats(self):
+        logger.info("Attempting to post daily UKPence economy stats...")
+        try:
+            guild = self.get_guild(GUILD_ID)
+            if not guild:
+                logger.error("Daily economy stats: Primary guild not found.")
+                return
+
+            image_path = await create_economy_stats_image(guild) 
+
+            if image_path and os.path.exists(image_path):
+                bot_spam_channel_id = CHANNELS.BOT_SPAM
+                bot_spam_channel = self.get_channel(bot_spam_channel_id)
+
+                if bot_spam_channel:
+                    with open(image_path, "rb") as f_img:
+                        discord_file = discord.File(f_img, filename="ukpeconomy_daily.png")
+                        await bot_spam_channel.send(file=discord_file)
+                    logger.info(f"Successfully posted daily economy stats to #{bot_spam_channel.name}")
+                else:
+                    logger.error(f"Daily economy stats: CHANNELS.BOT_SPAM (ID: {bot_spam_channel_id}) not found.")
+
+                os.remove(image_path)
+            else:
+                logger.error("Daily economy stats: Failed to generate or find the economy stats image.")
+        except Exception as e:
+            logger.error(f"Error in post_daily_economy_stats: {e}", exc_info=True)
 
 
 client = AClient()

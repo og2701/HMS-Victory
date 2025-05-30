@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>UKPence Economy Stats</title>
+    <style>
+        body {
+            margin: 0; padding: 25px; background-color: #2c2f33; font-family: Arial, sans-serif; color: #dcddde;
+            width: 750px; /* Fixed width for the image */
+            box-sizing: border-box;
+        }
+        .container {
+            border: 2px solid #4CAF50; /* Green accent */
+            border-radius: 10px; padding: 20px; background-color: #23272a;
+        }
+        .header { font-size: 28px; font-weight: bold; color: #4CAF50; margin-bottom: 20px; text-align: center; }
+        .section { margin-bottom: 20px; }
+        .section-title { 
+            font-size: 20px; font-weight: bold; color: #4CAF50; margin-top: 20px; 
+            margin-bottom: 12px; border-bottom: 1px solid #444; padding-bottom: 6px;
+        }
+        .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 15px; }
+        .stat-item { background-color: #2c2f33; padding: 15px; border-radius: 8px; border: 1px solid #383c40; }
+        .stat-item .label { font-size: 14px; color: #99aab5; margin-bottom: 5px; }
+        .stat-item strong { color: #88dd88; font-size: 18px; display: block; } /* Lighter green for values */
+        .user-list { list-style-type: none; padding-left: 0; margin-top: 5px; }
+        .user-list li { background-color: #2f3136; margin-bottom: 6px; padding: 10px; border-radius: 5px; font-size: 15px; display: flex; justify-content: space-between; }
+        .user-list .rank { font-weight: bold; color: #4CAF50; margin-right: 10px;}
+        .user-list .name { flex-grow: 1; }
+        .user-list .balance { font-weight: bold; color: #FFFFFF; } /* White for balance */
+
+        .footer { font-size: 12px; color: #72767d; text-align: center; margin-top: 25px; }
+        .growth-positive { color: #33cc33; } /* Bright green for positive growth */
+        .growth-negative { color: #cc3333; } /* Bright red for negative growth */
+        .growth-neutral { color: #dcddde; } /* Default text color for neutral growth */
+         hr { border: none; border-top: 1px solid #444; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">📊 UKPence Economy Status</div>
+
+        <div class="section">
+            <div class="section-title">Overall Snapshot</div>
+            <div class="stat-grid">
+                <div class="stat-item">
+                    <div class="label">Total in Circulation</div>
+                    <strong>{total_ukpence} UKP</strong>
+                </div>
+                <div class="stat-item">
+                    <div class="label">UKPence Holders</div>
+                    <strong>{num_holders}</strong>
+                </div>
+                <div class="stat-item">
+                    <div class="label">Average Balance (All Holders)</div>
+                    <strong>{average_ukpence} UKP</strong>
+                </div>
+                <div class="stat-item">
+                    <div class="label">Avg Balance (>0 UKP Holders)</div>
+                    <strong>{average_ukpence_active} UKP</strong>
+                </div>
+                 <div class="stat-item">
+                    <div class="label">Growth (vs EOD Yesterday)</div>
+                    <strong class="{growth_class}">{economy_growth_percentage}</strong>
+                </div>
+            </div>
+        </div>
+        <hr>
+        <div class="section">
+            <div class="section-title">Yesterday's Economic Activity ({yesterday_date})</div>
+            <div class="stat-grid">
+                <div class="stat-item">
+                    <div class="label">Chat Rewards Injected</div>
+                    <strong>{chat_rewards_yesterday} UKP</strong>
+                </div>
+                <div class="stat-item">
+                    <div class="label">Booster Bonuses Injected</div>
+                    <strong>{booster_rewards_yesterday} UKP</strong>
+                </div>
+            </div>
+        </div>
+        <hr>
+        <div class="section">
+            <div class="section-title">🏆 Top 5 Richest Users</div>
+            <ul class="user-list">
+                {top_richest_users_html}
+            </ul>
+        </div>
+        <hr>
+        <div class="section">
+            <div class="section-title">💸 UKPence Distribution (among holders)</div>
+            <ul class="user-list">
+                {distribution_html}
+            </ul>
+        </div>
+        
+        <div class="footer">Generated on: {current_datetime_uk}</div>
+    </div>
+</body>
+</html>

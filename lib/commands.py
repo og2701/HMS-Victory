@@ -20,3 +20,5 @@ from commands.iceberg.add_to_iceberg import add_iceberg_text
 from commands.iceberg.get_iceberg import show_iceberg
 
 from commands.chat_commands.roast import roast
+
+from commands.economy.economy_state import handle_ukpeconomy_command

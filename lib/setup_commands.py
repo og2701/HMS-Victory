@@ -291,3 +291,8 @@ def define_commands(tree, client):
             from lib.xp_system import XPSystem
             interaction.client.xp_system = XPSystem()
         await interaction.client.xp_system.handle_richlist_command(interaction)
+
+
+    @command("ukpeconomy", "Shows the current state of the UKPence economy as an image.")
+    async def ukpeconomy_command_def(interaction: Interaction):
+        await handle_ukpeconomy_command(interaction)

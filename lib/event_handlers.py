@@ -1,7 +1,7 @@
 import discord
 from discord import Interaction, InteractionType
 from datetime import timedelta, datetime
-import logging, os, aiohttp, io, json, asyncio
+import logging, os, aiohttp, io, json, asyncio, pytz
 from collections import defaultdict
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -153,11 +153,37 @@ async def cleanup_thread_members(client):
                 continue
 
 async def award_booster_bonus(client):
-    for guild in client.guilds:
-        for member in guild.members:
-            if any(role.id == ROLES.SERVER_BOOSTER for role in member.roles):
-                add_bb(member.id, SERVER_BOOSTER_UKP_DAILY_BONUS)
+    total_booster_rewards_awarded_this_cycle = 0
+    guild = client.get_guild(GUILD_ID)
+    if not guild:
+        logger.error("award_booster_bonus: Guild not found.")
+        return
 
+    for member in guild.members:
+        if any(role.id == ROLES.SERVER_BOOSTER for role in member.roles):
+            add_bb(member.id, SERVER_BOOSTER_UKP_DAILY_BONUS)
+            total_booster_rewards_awarded_this_cycle += SERVER_BOOSTER_UKP_DAILY_BONUS
+            
+    logger.info(f"Total UKPence from booster bonuses awarded: {total_booster_rewards_awarded_this_cycle}")
+
+    uk_timezone = pytz.timezone("Europe/London")
+    target_date_str = (datetime.now(uk_timezone) - timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    metrics_data = {}
+    if os.path.exists(ECONOMY_METRICS_FILE):
+        with open(ECONOMY_METRICS_FILE, "r") as f:
+            try:
+                metrics_data = json.load(f)
+            except json.JSONDecodeError:
+                logger.error(f"Error decoding {ECONOMY_METRICS_FILE}. Starting fresh for {target_date_str} booster metrics.")
+                
+    day_metrics = metrics_data.get(target_date_str, {})
+    day_metrics["booster_rewards_total"] = total_booster_rewards_awarded_this_cycle
+    metrics_data[target_date_str] = day_metrics
+    
+    with open(ECONOMY_METRICS_FILE, "w") as f:
+        json.dump(metrics_data, f, indent=4)
+    logger.info(f"Logged booster rewards for {target_date_str}: {total_booster_rewards_awarded_this_cycle} UKP")
 
 def schedule_client_jobs(client, scheduler):
     scheduler.add_job(client.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
@@ -171,7 +197,6 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client])
 
     scheduler.start()
-
 
 async def process_message_attachments(client, message):
     if message.attachments:
