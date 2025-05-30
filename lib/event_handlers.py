@@ -59,6 +59,28 @@ SERVER_BOOSTER_UKP_DAILY_BONUS = 30
 
 MAX_THREAD_USERS = 990
 
+def _update_daily_metric_file(date_str, key, value_to_add_or_set, is_total_value=False):
+    metrics_data = {}
+    if os.path.exists(ECONOMY_METRICS_FILE):
+        with open(ECONOMY_METRICS_FILE, "r") as f:
+            try:
+                metrics_data = json.load(f)
+            except json.JSONDecodeError:
+                logger.error(f"Error decoding {ECONOMY_METRICS_FILE} while updating {key}.")
+    
+    day_metrics = metrics_data.get(date_str, {})
+    if is_total_value:
+        day_metrics[key] = value_to_add_or_set
+    else: # Incremental addition
+        current_value = day_metrics.get(key, 0)
+        day_metrics[key] = current_value + value_to_add_or_set
+    
+    metrics_data[date_str] = day_metrics
+    
+    with open(ECONOMY_METRICS_FILE, "w") as f:
+        json.dump(metrics_data, f, indent=4)
+    
+
 async def sweep_predictions(client):
     now = discord.utils.utcnow().timestamp()
     dirty = False
@@ -79,12 +101,25 @@ async def sweep_predictions(client):
 
 async def award_stage_bonuses(client):
     now = discord.utils.utcnow()
-    for uid, start in list(client.stage_join_times.items()):
-        minutes = int((now - start).total_seconds() // 60)
-        if minutes:
-            add_bb(uid, minutes * STAGE_UKPENCE_MULTIPLIER)
-            client.stage_join_times[uid] = now
-            logger.info(f"[STAGE] +{minutes * STAGE_UKPENCE_MULTIPLIER} BB → {uid}")
+    if not hasattr(client, 'stage_join_times'):
+        client.stage_join_times = {}
+    
+    uk_timezone = pytz.timezone("Europe/London")
+    current_date_str = datetime.now(uk_timezone).strftime("%Y-%m-%d")
+    total_awarded_this_call = 0
+
+    for uid, start_time in list(client.stage_join_times.items()):
+        minutes = int((now - start_time).total_seconds() // 60)
+        if minutes > 0: 
+            bonus_awarded = minutes * STAGE_UKPENCE_MULTIPLIER
+            add_bb(uid, bonus_awarded)
+            client.stage_join_times[uid] = now 
+            logger.info(f"[STAGE CRON] +{bonus_awarded} UKP → User {uid} for {minutes} mins.")
+            total_awarded_this_call += bonus_awarded
+    
+    if total_awarded_this_call > 0:
+        _update_daily_metric_file(current_date_str, "stage_rewards_total", total_awarded_this_call)
+        logger.info(f"[STAGE CRON] Logged {total_awarded_this_call} to stage_rewards_total for {current_date_str}.")
 
 
 def reattach_persistent_views(client):
@@ -167,35 +202,31 @@ async def award_booster_bonus(client):
     logger.info(f"Total UKPence from booster bonuses awarded: {total_booster_rewards_awarded_this_cycle}")
 
     uk_timezone = pytz.timezone("Europe/London")
-    target_date_str = (datetime.now(uk_timezone) - timedelta(days=1)).strftime("%Y-%m-%d")
+    now = datetime.now(uk_timezone)
+    yesterday_str_for_bonus = (now - timedelta(days=1)).strftime("%Y-%m-%d") 
+    today_str_for_sod_snapshot = now.strftime("%Y-%m-%d") 
     
-    metrics_data = {}
-    if os.path.exists(ECONOMY_METRICS_FILE):
-        with open(ECONOMY_METRICS_FILE, "r") as f:
-            try:
-                metrics_data = json.load(f)
-            except json.JSONDecodeError:
-                logger.error(f"Error decoding {ECONOMY_METRICS_FILE}. Starting fresh for {target_date_str} booster metrics.")
-                
-    day_metrics = metrics_data.get(target_date_str, {})
-    day_metrics["booster_rewards_total"] = total_booster_rewards_awarded_this_cycle
-    metrics_data[target_date_str] = day_metrics
+    _update_daily_metric_file(yesterday_str_for_bonus, "booster_rewards_total", total_booster_rewards_awarded_this_cycle, is_total_value=True)
     
-    with open(ECONOMY_METRICS_FILE, "w") as f:
-        json.dump(metrics_data, f, indent=4)
-    logger.info(f"Logged booster rewards for {target_date_str}: {total_booster_rewards_awarded_this_cycle} UKP")
+    current_balances_after_booster = load_ukpence_data()
+    sod_circulation_today = sum(current_balances_after_booster.values())
+    _update_daily_metric_file(today_str_for_sod_snapshot, "total_circulation_start_of_day", sod_circulation_today, is_total_value=True)
+    
+    logger.info(f"Logged booster rewards for {yesterday_str_for_bonus} ({total_booster_rewards_awarded_this_cycle} UKP) and SOD circulation for {today_str_for_sod_snapshot} ({sod_circulation_today} UKP).")
+
 
 def schedule_client_jobs(client, scheduler):
-    scheduler.add_job(client.daily_summary, CronTrigger(hour=0, minute=0, timezone="Europe/London"))
-    scheduler.add_job(client.weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=1, timezone="Europe/London"))
-    scheduler.add_job(client.monthly_summary, CronTrigger(day=1, hour=0, minute=2, timezone="Europe/London"))
-    scheduler.add_job(client.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=0, timezone="Europe/London"))
+    scheduler.add_job(award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client], id="award_booster_bonus_job", name="Award Daily Booster UKPence & Log SOD Circulation")
+    scheduler.add_job(client.daily_summary, CronTrigger(hour=0, minute=1, timezone="Europe/London"), id="daily_summary_job", name="Daily Summary, Chat Rewards & Economy Metrics")
+    scheduler.add_job(client.post_daily_economy_stats, CronTrigger(hour=0, minute=5, timezone="Europe/London"), id="post_daily_economy_stats_job", name="Post Daily UKPence Economy Stats")
+    
+    scheduler.add_job(client.weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=2, timezone="Europe/London"))
+    scheduler.add_job(client.monthly_summary, CronTrigger(day=1, hour=0, minute=3, timezone="Europe/London"))
+    scheduler.add_job(client.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=4, timezone="Europe/London"))
     scheduler.add_job(client.backup_bot, IntervalTrigger(minutes=30, timezone="Europe/London"))
     scheduler.add_job(sweep_predictions, IntervalTrigger(seconds=30), args=[client])
-    scheduler.add_job(award_stage_bonuses, IntervalTrigger(seconds=60), args=[client])
-    scheduler.add_job(cleanup_thread_members, IntervalTrigger(days=1, timezone="Europe/London"), args=[client], next_run_time=discord.utils.utcnow())
-    scheduler.add_job(award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client])
-    scheduler.add_job(client.post_daily_economy_stats, CronTrigger(hour=0, minute=5, timezone="Europe/London"), id="post_daily_economy_stats_job", name="Post Daily UKPence Economy Stats")
+    scheduler.add_job(award_stage_bonuses, IntervalTrigger(minutes=1), args=[client], id="award_stage_bonuses_interval", name="Award Stage UKPence (Interval)") # Runs every minute
+    scheduler.add_job(cleanup_thread_members, IntervalTrigger(days=1, timezone="Europe/London"), args=[client], next_run_time=discord.utils.utcnow() + timedelta(minutes=5))
 
     scheduler.start()
 
@@ -624,11 +655,26 @@ async def on_stage_instance_create(stage_instance):
 async def on_stage_instance_delete(stage_instance):
     client = stage_instance.guild._state._get_client()
     ch_id = stage_instance.channel.id
-    for m in stage_instance.channel.members:
+    
+    uk_timezone = pytz.timezone("Europe/London")
+    current_date_str = datetime.now(uk_timezone).strftime("%Y-%m-%d")
+    total_awarded_on_delete = 0
+
+    if not hasattr(client, 'stage_join_times'): 
+        client.stage_join_times = {}
+
+    for m in stage_instance.channel.members: 
         start = client.stage_join_times.pop(m.id, None)
         if start:
             secs = (discord.utils.utcnow() - start).total_seconds()
             bonus = (int(secs) // 60) * STAGE_UKPENCE_MULTIPLIER
-            if bonus:
+            if bonus > 0:
                 add_bb(m.id, bonus)
+                logger.info(f"[STAGE END] +{bonus} UKP → User {m.id} for stage end in {stage_instance.channel.name}.")
+                total_awarded_on_delete += bonus
+    
+    if total_awarded_on_delete > 0:
+        _update_daily_metric_file(current_date_str, "stage_rewards_total", total_awarded_on_delete)
+        logger.info(f"[STAGE END] Logged {total_awarded_on_delete} to stage_rewards_total for {current_date_str} from instance delete.")
+
     client.stage_events.discard(ch_id)

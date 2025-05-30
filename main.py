@@ -7,26 +7,21 @@ from datetime import datetime, timedelta
 import shutil
 import os
 import zipfile
-import io
-import json
+import io 
+import json 
 
 from lib.event_handlers import *
 from lib.setup_commands import define_commands
-from lib.settings import *
-from lib.summary import initialize_summary_data, update_summary_data, post_summary
+from lib.settings import * from lib.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.on_message_functions import *
-from lib.prediction_system import Prediction, _load, _save
-from lib.ukpence import add_bb 
-from lib.constants import CHANNELS
-from lib.ukpence import add_bb, _load as load_ukpence_data
-from lib.settings import ECONOMY_METRICS_FILE, CHANNELS
-from lib.economy_stats_html import create_economy_stats_image
+from lib.prediction_system import Prediction, _load as load_predictions, _save as save_predictions
+from lib.ukpence import add_bb, _load as load_ukpence_data 
+from lib.economy_stats_html import create_economy_stats_image # New import
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-MAX_PART_SIZE = 8 * 1024 * 1024 #8mb
+MAX_PART_SIZE = 8 * 1024 * 1024
 
 async def zip_and_send_folder(client, folder_path, channel_id, zip_filename_prefix):
     if not os.path.exists(folder_path):
@@ -112,7 +107,7 @@ class AClient(discord.Client):
         self.image_cache = {}
         self.stage_events=set()
         self.stage_join_times={}
-        self.predictions={int(k):Prediction.from_dict(v) for k,v in _load().items()}
+        self.predictions={int(k):Prediction.from_dict(v) for k,v in load_predictions().items()}
 
     async def on_ready(self):
         await on_ready(self, tree, self.scheduler)
@@ -129,7 +124,7 @@ class AClient(discord.Client):
                 )
             return
 
-        if message.author.id == 557628352828014614 and message.embeds: # User ID for "Ticket Tool" bot
+        if message.author.id == 557628352828014614 and message.embeds: 
             await handle_ticket_closed_message(self, message)
             return
 
@@ -194,28 +189,23 @@ class AClient(discord.Client):
     async def on_member_join(self, member):
         initialize_summary_data()
         update_summary_data("members_joined")
-
         await on_member_join(member)
 
     async def on_member_remove(self, member):
         initialize_summary_data()
         update_summary_data("members_left")
-
         await on_member_remove(member)
 
     async def on_member_ban(self, guild, user):
         initialize_summary_data()
         update_summary_data("members_banned")
-
         await on_member_ban(guild, user)
 
     async def on_message_delete(self, message):
         if message.author.bot:
             return
-
         initialize_summary_data()
         update_summary_data("deleted_messages")
-
         await on_message_delete(self, message)
 
     async def on_message_edit(self, before, after):
@@ -227,7 +217,6 @@ class AClient(discord.Client):
         initialize_summary_data()
         update_summary_data("reactions_added")
         update_summary_data("reacting_members", user_id=user.id)
-
         await on_reaction_add(reaction, user)
 
     async def on_reaction_remove(self, reaction, user):
@@ -236,7 +225,6 @@ class AClient(discord.Client):
         initialize_summary_data()
         update_summary_data("reactions_removed")
         update_summary_data("reacting_members", user_id=user.id, remove=True)
-
         await on_reaction_remove(reaction, user)
 
     async def on_voice_state_update(self, member, before, after):
@@ -271,10 +259,8 @@ class AClient(discord.Client):
                 
                 if active_members_data:
                     sorted_active_members = sorted(active_members_data.items(), key=lambda item: item[1], reverse=True)
-                    
                     log_channel = self.get_channel(CHANNELS.LOGS) 
                     num_rewarded_actually = 0
-
                     for i, (user_id_str, message_count) in enumerate(sorted_active_members):
                         if i < num_to_reward: 
                             user_id = int(user_id_str)
@@ -300,7 +286,7 @@ class AClient(discord.Client):
             except json.JSONDecodeError:
                 logger.error(f"Could not decode JSON from {summary_file_path}. Skipping top chatter rewards for {yesterday_str}.")
             except Exception as e:
-                logger.error(f"Error processing chat rewards for {yesterday_str}: {e}")
+                logger.error(f"Error processing chat rewards for {yesterday_str}: {e}", exc_info=True)
         else:
             logger.warning(f"No summary data file at {summary_file_path} for {yesterday_str}. Skipping top chatter rewards.")
 
@@ -310,7 +296,7 @@ class AClient(discord.Client):
                 try:
                     metrics_data = json.load(f)
                 except json.JSONDecodeError:
-                    logger.error(f"Error decoding {ECONOMY_METRICS_FILE}. Starting fresh for {yesterday_str} metrics.")
+                    logger.error(f"Error decoding {ECONOMY_METRICS_FILE}. Data for {yesterday_str} might be incomplete.")
         
         day_metrics = metrics_data.get(yesterday_str, {})
         day_metrics["chat_rewards_total"] = total_chat_rewards_this_cycle
@@ -323,7 +309,21 @@ class AClient(discord.Client):
 
         with open(ECONOMY_METRICS_FILE, "w") as f:
             json.dump(metrics_data, f, indent=4)
-        logger.info(f"Logged economy metrics for {yesterday_str}: ChatRewards={total_chat_rewards_this_cycle}, TotalCirculationEOD={total_circulation_at_eod}")
+        logger.info(f"Finalized economy metrics for {yesterday_str}: ChatRewards={day_metrics.get('chat_rewards_total', 'N/A')}, TotalCircEOD={total_circulation_at_eod}")
+
+        if not os.path.exists(BALANCE_SNAPSHOT_DIR):
+            try:
+                os.makedirs(BALANCE_SNAPSHOT_DIR)
+                logger.info(f"Created balance snapshot directory: {BALANCE_SNAPSHOT_DIR}")
+            except OSError as e:
+                logger.error(f"Could not create balance snapshot directory {BALANCE_SNAPSHOT_DIR}: {e}")
+        
+        if os.path.exists(BALANCE_SNAPSHOT_DIR):
+            snapshot_filename = f"ukpence_balances_{yesterday_str}.json"
+            snapshot_path = os.path.join(BALANCE_SNAPSHOT_DIR, snapshot_filename)
+            with open(snapshot_path, "w") as f_snap:
+                json.dump(current_ukpence_balances, f_snap, indent=4)
+            logger.info(f"Saved UKPence balance snapshot for {yesterday_str} to {snapshot_path}")
 
         await post_summary(self, CHANNELS.COMMONS, "daily", date=yesterday_str)
 
@@ -333,6 +333,34 @@ class AClient(discord.Client):
             channel_id=CHANNELS.DATA_BACKUP,
             zip_filename_prefix=f"daily_summaries_as_of_{yesterday_str}",
         )
+
+    async def post_daily_economy_stats(self):
+        logger.info("Attempting to post daily UKPence economy stats...")
+        try:
+            guild = self.get_guild(GUILD_ID) 
+            if not guild:
+                logger.error("Daily economy stats: Primary guild not found.")
+                return
+
+            image_path = await create_economy_stats_image(guild) 
+            
+            if image_path and os.path.exists(image_path):
+                bot_spam_channel_id = CHANNELS.BOT_SPAM 
+                bot_spam_channel = self.get_channel(bot_spam_channel_id)
+                
+                if bot_spam_channel:
+                    with open(image_path, "rb") as f_img:
+                        discord_file = discord.File(f_img, filename="ukpeconomy_daily.png")
+                        await bot_spam_channel.send(file=discord_file)
+                    logger.info(f"Successfully posted daily economy stats to #{bot_spam_channel.name}")
+                else:
+                    logger.error(f"Daily economy stats: CHANNELS.BOT_SPAM (ID: {bot_spam_channel_id}) not found.")
+                
+                os.remove(image_path)
+            else:
+                logger.error("Daily economy stats: Failed to generate or find the economy stats image.")
+        except Exception as e:
+            logger.error(f"Error in post_daily_economy_stats: {e}", exc_info=True)
 
     async def weekly_summary(self):
         await post_summary(self, CHANNELS.COMMONS, "weekly")
@@ -347,36 +375,6 @@ class AClient(discord.Client):
             folder_path="./", 
             channel_id=CHANNELS.DATA_BACKUP
         )
-
-
-    async def post_daily_economy_stats(self):
-        logger.info("Attempting to post daily UKPence economy stats...")
-        try:
-            guild = self.get_guild(GUILD_ID)
-            if not guild:
-                logger.error("Daily economy stats: Primary guild not found.")
-                return
-
-            image_path = await create_economy_stats_image(guild) 
-
-            if image_path and os.path.exists(image_path):
-                bot_spam_channel_id = CHANNELS.BOT_SPAM
-                bot_spam_channel = self.get_channel(bot_spam_channel_id)
-
-                if bot_spam_channel:
-                    with open(image_path, "rb") as f_img:
-                        discord_file = discord.File(f_img, filename="ukpeconomy_daily.png")
-                        await bot_spam_channel.send(file=discord_file)
-                    logger.info(f"Successfully posted daily economy stats to #{bot_spam_channel.name}")
-                else:
-                    logger.error(f"Daily economy stats: CHANNELS.BOT_SPAM (ID: {bot_spam_channel_id}) not found.")
-
-                os.remove(image_path)
-            else:
-                logger.error("Daily economy stats: Failed to generate or find the economy stats image.")
-        except Exception as e:
-            logger.error(f"Error in post_daily_economy_stats: {e}", exc_info=True)
-
 
 client = AClient()
 tree = discord.app_commands.CommandTree(client)
