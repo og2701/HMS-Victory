@@ -17,7 +17,7 @@ from lib.summary import initialize_summary_data, update_summary_data, post_summa
 from lib.on_message_functions import *
 from lib.prediction_system import Prediction, _load, _save
 from lib.ukpence import add_bb 
-from lib.constants import GUILD_ID, CHANNELS
+from lib.constants import CHANNELS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
