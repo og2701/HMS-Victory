@@ -195,6 +195,7 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(award_stage_bonuses, IntervalTrigger(seconds=60), args=[client])
     scheduler.add_job(cleanup_thread_members, IntervalTrigger(days=1, timezone="Europe/London"), args=[client], next_run_time=discord.utils.utcnow())
     scheduler.add_job(award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client])
+    scheduler.add_job(client.post_daily_economy_stats, CronTrigger(hour=0, minute=5, timezone="Europe/London"), id="post_daily_economy_stats_job", name="Post Daily UKPence Economy Stats")
 
     scheduler.start()
 
