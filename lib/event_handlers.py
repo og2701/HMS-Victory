@@ -13,7 +13,7 @@ from lib.log_functions import create_message_image, create_edited_message_image
 from lib.settings import *
 from lib.shutcoin import can_use_shutcoin, remove_shutcoin, SHUTCOIN_ENABLED
 from lib.prediction_system import prediction_embed, _save
-from lib.ukpence import add_bb, remove_bb, ensure_bb
+from lib.ukpence import add_bb, remove_bb, ensure_bb, _load as load_ukpence_data
 from lib.prediction_system import prediction_embed, _save, _load, Prediction, BetButtons
 
 from commands.mod_commands.persistant_role_buttons import (
@@ -71,7 +71,7 @@ def _update_daily_metric_file(date_str, key, value_to_add_or_set, is_total_value
     day_metrics = metrics_data.get(date_str, {})
     if is_total_value:
         day_metrics[key] = value_to_add_or_set
-    else: # Incremental addition
+    else: 
         current_value = day_metrics.get(key, 0)
         day_metrics[key] = current_value + value_to_add_or_set
     
@@ -79,7 +79,7 @@ def _update_daily_metric_file(date_str, key, value_to_add_or_set, is_total_value
     
     with open(ECONOMY_METRICS_FILE, "w") as f:
         json.dump(metrics_data, f, indent=4)
-    
+
 
 async def sweep_predictions(client):
     now = discord.utils.utcnow().timestamp()
@@ -100,26 +100,28 @@ async def sweep_predictions(client):
         _save({k: v.to_dict() for k, v in client.predictions.items()})
 
 async def award_stage_bonuses(client):
-    now = discord.utils.utcnow()
+    now_utc = discord.utils.utcnow()
     if not hasattr(client, 'stage_join_times'):
         client.stage_join_times = {}
     
     uk_timezone = pytz.timezone("Europe/London")
+
     current_date_str = datetime.now(uk_timezone).strftime("%Y-%m-%d")
     total_awarded_this_call = 0
 
-    for uid, start_time in list(client.stage_join_times.items()):
-        minutes = int((now - start_time).total_seconds() // 60)
+    for uid, start_time_utc in list(client.stage_join_times.items()):
+        minutes = int((now_utc - start_time_utc).total_seconds() // 60)
         if minutes > 0: 
             bonus_awarded = minutes * STAGE_UKPENCE_MULTIPLIER
             add_bb(uid, bonus_awarded)
-            client.stage_join_times[uid] = now 
-            logger.info(f"[STAGE CRON] +{bonus_awarded} UKP → User {uid} for {minutes} mins.")
+            client.stage_join_times[uid] = now_utc - timedelta(seconds=((now_utc - start_time_utc).total_seconds() % 60))
+            logger.info(f"[STAGE CRON] +{bonus_awarded} UKP → User {uid} for {minutes} full mins.")
             total_awarded_this_call += bonus_awarded
     
     if total_awarded_this_call > 0:
         _update_daily_metric_file(current_date_str, "stage_rewards_total", total_awarded_this_call)
-        logger.info(f"[STAGE CRON] Logged {total_awarded_this_call} to stage_rewards_total for {current_date_str}.")
+        logger.info(f"[STAGE CRON] Added {total_awarded_this_call} to stage_rewards_total for {current_date_str}.")
+
 
 
 def reattach_persistent_views(client):
@@ -663,10 +665,11 @@ async def on_stage_instance_delete(stage_instance):
     if not hasattr(client, 'stage_join_times'): 
         client.stage_join_times = {}
 
+    now_utc = discord.utils.utcnow()
     for m in stage_instance.channel.members: 
-        start = client.stage_join_times.pop(m.id, None)
-        if start:
-            secs = (discord.utils.utcnow() - start).total_seconds()
+        start_time_utc = client.stage_join_times.pop(m.id, None)
+        if start_time_utc:
+            secs = (now_utc - start_time_utc).total_seconds()
             bonus = (int(secs) // 60) * STAGE_UKPENCE_MULTIPLIER
             if bonus > 0:
                 add_bb(m.id, bonus)
@@ -675,6 +678,6 @@ async def on_stage_instance_delete(stage_instance):
     
     if total_awarded_on_delete > 0:
         _update_daily_metric_file(current_date_str, "stage_rewards_total", total_awarded_on_delete)
-        logger.info(f"[STAGE END] Logged {total_awarded_on_delete} to stage_rewards_total for {current_date_str} from instance delete.")
+        logger.info(f"[STAGE END] Added {total_awarded_on_delete} to stage_rewards_total for {current_date_str} from instance delete.")
 
     client.stage_events.discard(ch_id)
