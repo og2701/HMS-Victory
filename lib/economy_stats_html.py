@@ -189,8 +189,7 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
     )
 
     image_filename = f"{uuid.uuid4()}.png"
-    # Set a larger default height to ensure content fits before trim if auto-height is tricky
-    hti.screenshot(html_str=formatted_html, save_as=image_filename, size=(750, 1000)) 
+    hti.screenshot(html_str=formatted_html, save_as=image_filename, size=(750, 2000)) 
     
     try:
         img = Image.open(image_filename)
