@@ -1,6 +1,8 @@
 import discord
 from discord import Interaction
 import os
+import logging
+logger = logging.getLogger(__name__) 
 
 from lib.economy_stats_html import create_economy_stats_image
 
@@ -16,5 +18,5 @@ async def handle_ukpeconomy_command(interaction: Interaction):
         else:
             await interaction.followup.send("Sorry, couldn't generate the economy stats image.", ephemeral=True)
     except Exception as e:
-        print(f"Error in handle_ukpeconomy_command: {e}")
-        await interaction.followup.send("An error occurred while generating economy stats.", ephemeral=True)
+        logger.error(f"Error in handle_ukpeconomy_command during /ukpeconomy: {e}", exc_info=True)
+        await interaction.followup.send("An error occurred while generating economy stats. Please check bot logs for details.", ephemeral=True)
