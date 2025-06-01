@@ -72,14 +72,17 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
     actual_holders_with_balance = sum(1 for balance in ukpence_data_current.values() if balance > 0)
     average_ukpence_active = total_ukpence / actual_holders_with_balance if actual_holders_with_balance > 0 else 0
 
-    sorted_balances_for_median = sorted(list(ukpence_data_current.values()))
-    median_ukpence_balance = 0
-    if sorted_balances_for_median:
-        mid = len(sorted_balances_for_median) // 2
-        if len(sorted_balances_for_median) % 2 == 1:
-            median_ukpence_balance = sorted_balances_for_median[mid]
+    balances_for_median_calc = [b for b in ukpence_data_current.values() if b > 20] 
+    median_ukpence_balance = 0 
+    
+    if balances_for_median_calc:
+        balances_for_median_calc.sort()
+        n = len(balances_for_median_calc)
+        mid = n // 2
+        if n % 2 == 1:
+            median_ukpence_balance = balances_for_median_calc[mid]
         else:
-            median_ukpence_balance = (sorted_balances_for_median[mid - 1] + sorted_balances_for_median[mid]) / 2.0
+            median_ukpence_balance = (balances_for_median_calc[mid - 1] + balances_for_median_calc[mid]) / 2.0
 
     sorted_balances_for_top = sorted(ukpence_data_current.items(), key=lambda item: item[1], reverse=True)
     top_5_richest = sorted_balances_for_top[:5]
@@ -134,7 +137,7 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
 
     biggest_earner_name, biggest_earner_amount, biggest_earner_change_class = "N/A", "N/A", "change-neutral"
     biggest_loser_name, biggest_loser_amount, biggest_loser_change_class = "N/A", "N/A", "change-neutral"
-
+    
     dist_brackets = {
         "1-1,000 UKP": 0, "1,001-10,000 UKP": 0,
         "10,001-100,000 UKP": 0, "100,001+ UKP": 0,
@@ -146,9 +149,7 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
         elif 1001 <= balance <= 10000: dist_brackets["1,001-10,000 UKP"] += 1
         elif 10001 <= balance <= 100000: dist_brackets["10,001-100,000 UKP"] += 1
         else: dist_brackets["100,001+ UKP"] += 1
-
-    uk_timezone = pytz.timezone("Europe/London")
-    
+        
     top_richest_html_parts = []
     for i, (user_id_str, balance) in enumerate(top_5_richest):
         member_display_name = f"User ID {user_id_str}"
