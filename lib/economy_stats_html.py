@@ -153,10 +153,27 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
     top_richest_html_parts = []
     for i, (user_id_str, balance) in enumerate(top_5_richest):
         member_display_name = f"User ID {user_id_str}"
+        avatar_url = "https://cdn.discordapp.com/embed/avatars/0.png"
+
         if guild:
             member = guild.get_member(int(user_id_str))
-            if member: member_display_name = discord.utils.escape_markdown(member.display_name)
-        top_richest_html_parts.append(f"<li><span class='rank'>#{i+1}</span> <span class='name'>{member_display_name}</span> <span class='balance'>{balance:,} UKP</span></li>")
+            if member:
+                member_display_name = discord.utils.escape_markdown(member.display_name)
+                if member.display_avatar:
+                    avatar_url = str(member.display_avatar.url)
+                elif member.avatar:
+                    avatar_url = str(member.avatar.url)
+
+        top_richest_html_parts.append(
+            f"<li>"
+            f"<div class='user-details-left'>"
+            f"<span class='rank'>#{i+1}</span>"
+            f"<img src='{avatar_url}' class='list-avatar' alt='{member_display_name} avatar' />"
+            f"<span class='name'>{member_display_name}</span>"
+            f"</div>"
+            f"<span class='balance'>{balance:,} UKP</span>"
+            f"</li>"
+        )
     top_richest_users_html = "\n".join(top_richest_html_parts) if top_richest_html_parts else "<li>No UKPence data.</li>"
 
     distribution_html_parts = [f"<li><span class='name'>{bracket}</span> <span class='balance'>{count} users</span></li>" for bracket, count in dist_brackets.items() if count > 0]

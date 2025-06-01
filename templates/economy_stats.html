@@ -26,18 +26,52 @@
         .stat-item strong {{ color: #88dd88; font-size: 18px; display: block; }}
         .stat-item .sub-value {{ font-size: 13px; color: #b0b0b0; margin-top: 3px; }}
 
-        .user-list {{ list-style-type: none; padding-left: 0; margin-top: 5px; }}
-        .user-list li {{ background-color: #2f3136; margin-bottom: 6px; padding: 10px; border-radius: 5px; font-size: 15px; display: flex; justify-content: space-between; align-items: center;}}
-        .user-list .rank {{ font-weight: bold; color: #4CAF50; margin-right: 10px;}}
-        .user-list .name {{ flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px;}}
-        .user-list .balance {{ font-weight: bold; color: #FFFFFF; }}
+        .user-list li {{
+            background-color: #2f3136;
+            margin-bottom: 6px;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 15px;
+            display: flex;
+            justify-content: space-between; 
+            align-items: center;
+        }}
+        .user-details-left {{ 
+            display: flex;
+            align-items: center;
+            min-width: 0; 
+            flex-shrink: 1; 
+            overflow: hidden; 
+        }}
+        .user-list .rank {{
+            font-weight: bold;
+            color: #4CAF50;
+            margin-right: 8px; 
+        }}
+        .list-avatar {{
+            width: 32px;  
+            height: 32px; 
+            border-radius: 50%; 
+            margin-right: 8px; 
+        }}
+        .user-list .name {{
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 250px; 
+        }}
+        .user-list .balance {{
+            font-weight: bold;
+            color: #FFFFFF;
+            margin-left: 10px; 
+            white-space: nowrap;
+        }}
         
         .footer {{ font-size: 12px; color: #72767d; text-align: center; margin-top: 25px; }}
         .growth-positive, .change-positive {{ color: #33cc33 !important; }}
         .growth-negative, .change-negative {{ color: #cc3333 !important; }}
         .growth-neutral, .change-neutral {{ color: #dcddde !important; }}
         hr {{ border: none; border-top: 1px solid #444; margin: 20px 0; }}
-        .two-col-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }}
     </style>
 </head>
 <body>
