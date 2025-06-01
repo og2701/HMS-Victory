@@ -115,7 +115,7 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
              economy_growth_percentage_str = "+∞%"
              growth_class = "growth-positive"
         else:
-             economy_growth_percentage_str = "0.00%"x
+             economy_growth_percentage_str = "0.00%"
 
     yesterday_balances = load_balance_snapshot(yesterday_str_key)
     biggest_earner_name, biggest_earner_amount, biggest_earner_change_class = "N/A", "N/A", "change-neutral"
