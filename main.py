@@ -242,98 +242,138 @@ class AClient(discord.Client):
         logger.info("Image cache cleared.")
 
     async def daily_summary(self):
-        uk_timezone = pytz.timezone("Europe/London")
-        yesterday_dt = datetime.now(uk_timezone) - timedelta(days=1)
-        yesterday_str = yesterday_dt.strftime("%Y-%m-%d")
+            uk_timezone = pytz.timezone("Europe/London")
+            yesterday_dt = datetime.now(uk_timezone) - timedelta(days=1)
+            yesterday_str = yesterday_dt.strftime("%Y-%m-%d")
 
-        summary_file_path = f"daily_summaries/daily_summary_{yesterday_str}.json"
-        awarded_users_for_log = []
-        total_chat_rewards_this_cycle = 0
-        num_to_reward = 5
-        flat_reward_amount = 50
+            summary_file_path = f"daily_summaries/daily_summary_{yesterday_str}.json"
+            awarded_users_for_log = []
+            total_chat_rewards_this_cycle = 0
+            num_to_reward = 5
+            flat_reward_amount = 50
 
-        if os.path.exists(summary_file_path):
-            try:
-                with open(summary_file_path, "r") as file:
-                    daily_data_content = json.load(file)
-                active_members_data = daily_data_content.get("active_members", {})
-                
-                if active_members_data:
-                    sorted_active_members = sorted(active_members_data.items(), key=lambda item: item[1], reverse=True)
-                    log_channel = self.get_channel(CHANNELS.LOGS) 
-                    num_rewarded_actually = 0
-                    for i, (user_id_str, message_count) in enumerate(sorted_active_members):
-                        if i < num_to_reward: 
-                            user_id = int(user_id_str)
-                            add_bb(user_id, flat_reward_amount) 
-                            num_rewarded_actually += 1
-                            awarded_user_info = f"User ID {user_id} (Top {i+1} chatter, {message_count} messages): +{flat_reward_amount} UKPence"
-                            awarded_users_for_log.append(awarded_user_info)
-                        else:
-                            break
-                    total_chat_rewards_this_cycle = num_rewarded_actually * flat_reward_amount
-                    
-                    if awarded_users_for_log and log_channel:
-                        log_message = f"Top {num_rewarded_actually} Chatter Rewards for {yesterday_str} ({flat_reward_amount} UKP each):\n" + "\n".join(awarded_users_for_log)
-                        logger.info(log_message) 
-                        try:
-                            await log_channel.send(f"```{log_message}```")
-                        except Exception as e:
-                            logger.error(f"Failed to send top chatter reward log to Discord: {e}")
-                    elif active_members_data:
-                         logger.info(f"Fewer than {num_to_reward} chatters on {yesterday_str}. Total chat rewards: {total_chat_rewards_this_cycle} UKP")
-                else:
-                    logger.info(f"No active members data in {summary_file_path} for {yesterday_str}. No chat rewards.")
-            except json.JSONDecodeError:
-                logger.error(f"Could not decode JSON from {summary_file_path}. Skipping top chatter rewards for {yesterday_str}.")
-            except Exception as e:
-                logger.error(f"Error processing chat rewards for {yesterday_str}: {e}", exc_info=True)
-        else:
-            logger.warning(f"No summary data file at {summary_file_path} for {yesterday_str}. Skipping top chatter rewards.")
-
-        metrics_data = {}
-        if os.path.exists(ECONOMY_METRICS_FILE):
-            with open(ECONOMY_METRICS_FILE, "r") as f:
+            user_total_event_impact_yesterday = defaultdict(int)
+            
+            daily_summary_content = {}
+            if os.path.exists(summary_file_path):
                 try:
-                    metrics_data = json.load(f)
+                    with open(summary_file_path, "r") as file:
+                        daily_summary_content = json.load(file)
+                    active_members_data = daily_summary_content.get("active_members", {})
+                    
+                    if active_members_data:
+                        sorted_active_members = sorted(active_members_data.items(), key=lambda item: item[1], reverse=True)
+                        log_channel = self.get_channel(CHANNELS.LOGS) 
+                        num_rewarded_actually = 0
+                        for i, (user_id_str, message_count) in enumerate(sorted_active_members):
+                            if i < num_to_reward: 
+                                user_id = int(user_id_str)
+                                add_bb(user_id, flat_reward_amount) 
+                                user_total_event_impact_yesterday[user_id_str] += flat_reward_amount
+                                num_rewarded_actually += 1
+                                awarded_user_info = f"User ID {user_id} (Top {i+1} chatter, {message_count} messages): +{flat_reward_amount} UKPence"
+                                awarded_users_for_log.append(awarded_user_info)
+                            else:
+                                break
+                        total_chat_rewards_this_cycle = num_rewarded_actually * flat_reward_amount
+                        
+                        if awarded_users_for_log and log_channel:
+                            log_message = f"Top {num_rewarded_actually} Chatter Rewards for {yesterday_str} ({flat_reward_amount} UKP each):\n" + "\n".join(awarded_users_for_log)
+                            logger.info(log_message) 
+                            try:
+                                await log_channel.send(f"```{log_message}```")
+                            except Exception as e:
+                                logger.error(f"Failed to send top chatter reward log to Discord: {e}")
+                        elif active_members_data :
+                             logger.info(f"Fewer than {num_to_reward} chatters on {yesterday_str}. Total chat rewards: {total_chat_rewards_this_cycle} UKP")
+
+                    else:
+                        logger.info(f"No active members data in {summary_file_path} for {yesterday_str}. No chat rewards.")
                 except json.JSONDecodeError:
-                    logger.error(f"Error decoding {ECONOMY_METRICS_FILE}. Data for {yesterday_str} might be incomplete.")
-        
-        day_metrics = metrics_data.get(yesterday_str, {})
-        day_metrics["chat_rewards_total"] = total_chat_rewards_this_cycle
-        
-        current_ukpence_balances = load_ukpence_data()
-        total_circulation_at_eod = sum(current_ukpence_balances.values())
-        day_metrics["total_circulation_end_of_day"] = total_circulation_at_eod
-        
-        metrics_data[yesterday_str] = day_metrics
+                    logger.error(f"Could not decode JSON from {summary_file_path}. Skipping top chatter rewards for {yesterday_str}.")
+                except Exception as e:
+                    logger.error(f"Error processing chat rewards for {yesterday_str}: {e}", exc_info=True)
+            else:
+                logger.warning(f"No summary data file at {summary_file_path} for {yesterday_str}. Skipping top chatter rewards.")
 
-        with open(ECONOMY_METRICS_FILE, "w") as f:
-            json.dump(metrics_data, f, indent=4)
-        logger.info(f"Finalized economy metrics for {yesterday_str}: ChatRewards={day_metrics.get('chat_rewards_total', 'N/A')}, TotalCircEOD={total_circulation_at_eod}")
+            if hasattr(self, 'temp_daily_specific_rewards') and yesterday_str in self.temp_daily_specific_rewards:
+                specific_events_for_yesterday = self.temp_daily_specific_rewards[yesterday_str]
+                for event_info in specific_events_for_yesterday:
+                    user_total_event_impact_yesterday[event_info["user_id"]] += event_info["amount"]
+                
+                if yesterday_str in self.temp_daily_specific_rewards:
+                    del self.temp_daily_specific_rewards[yesterday_str]
+                if hasattr(self, 'temp_daily_specific_rewards') and not self.temp_daily_specific_rewards:
+                    try:
+                        del self.temp_daily_specific_rewards
+                    except AttributeError:
+                        pass # Should not happen if hasattr was true
+            
+            top_event_earner_id = None
+            top_event_earner_amount = 0
+            top_event_loser_id = None
+            top_event_loser_amount = 0
 
-        if not os.path.exists(BALANCE_SNAPSHOT_DIR):
-            try:
-                os.makedirs(BALANCE_SNAPSHOT_DIR)
-                logger.info(f"Created balance snapshot directory: {BALANCE_SNAPSHOT_DIR}")
-            except OSError as e:
-                logger.error(f"Could not create balance snapshot directory {BALANCE_SNAPSHOT_DIR}: {e}")
-        
-        if os.path.exists(BALANCE_SNAPSHOT_DIR):
-            snapshot_filename = f"ukpence_balances_{yesterday_str}.json"
-            snapshot_path = os.path.join(BALANCE_SNAPSHOT_DIR, snapshot_filename)
-            with open(snapshot_path, "w") as f_snap:
-                json.dump(current_ukpence_balances, f_snap, indent=4)
-            logger.info(f"Saved UKPence balance snapshot for {yesterday_str} to {snapshot_path}")
+            if user_total_event_impact_yesterday:
+                positive_impacts = {uid: val for uid, val in user_total_event_impact_yesterday.items() if val > 0}
+                if positive_impacts:
+                    top_event_earner_id = max(positive_impacts, key=positive_impacts.get)
+                    top_event_earner_amount = positive_impacts[top_event_earner_id]
 
-        await post_summary(self, CHANNELS.COMMONS, "daily", date=yesterday_str)
+                negative_impacts = {uid: val for uid, val in user_total_event_impact_yesterday.items() if val < 0}
+                if negative_impacts:
+                    top_event_loser_id = min(negative_impacts, key=negative_impacts.get)
+                    top_event_loser_amount = negative_impacts[top_event_loser_id]
 
-        await zip_and_send_folder(
-            client=self,
-            folder_path="./daily_summaries",
-            channel_id=CHANNELS.DATA_BACKUP,
-            zip_filename_prefix=f"daily_summaries_as_of_{yesterday_str}",
-        )
+            metrics_data = {}
+            if os.path.exists(ECONOMY_METRICS_FILE):
+                with open(ECONOMY_METRICS_FILE, "r") as f:
+                    try:
+                        metrics_data = json.load(f)
+                    except json.JSONDecodeError:
+                        logger.error(f"Error decoding {ECONOMY_METRICS_FILE}. Data for {yesterday_str} might be incomplete.")
+            
+            day_metrics = metrics_data.get(yesterday_str, {})
+            day_metrics["chat_rewards_total"] = total_chat_rewards_this_cycle
+            
+            if top_event_earner_id and top_event_earner_amount > 0:
+                day_metrics["top_event_earner_id"] = top_event_earner_id
+                day_metrics["top_event_earner_amount"] = top_event_earner_amount
+            
+            if top_event_loser_id and top_event_loser_amount < 0:
+                day_metrics["top_event_loser_id"] = top_event_loser_id
+                day_metrics["top_event_loser_amount"] = top_event_loser_amount
+            
+            current_ukpence_balances = load_ukpence_data()
+            day_metrics["total_circulation_end_of_day"] = sum(current_ukpence_balances.values())
+            metrics_data[yesterday_str] = day_metrics
+
+            with open(ECONOMY_METRICS_FILE, "w") as f:
+                json.dump(metrics_data, f, indent=4)
+            logger.info(f"Finalized economy metrics for {yesterday_str}, including top event earner/loser: Earner ID {top_event_earner_id} ({top_event_earner_amount}), Loser ID {top_event_loser_id} ({top_event_loser_amount})")
+
+            if not os.path.exists(BALANCE_SNAPSHOT_DIR):
+                try:
+                    os.makedirs(BALANCE_SNAPSHOT_DIR)
+                except OSError as e:
+                    logger.error(f"Could not create balance snapshot directory {BALANCE_SNAPSHOT_DIR}: {e}")
+            
+            if os.path.exists(BALANCE_SNAPSHOT_DIR):
+                snapshot_filename = f"ukpence_balances_{yesterday_str}.json"
+                snapshot_path = os.path.join(BALANCE_SNAPSHOT_DIR, snapshot_filename)
+                with open(snapshot_path, "w") as f_snap:
+                    json.dump(current_ukpence_balances, f_snap, indent=4)
+                logger.info(f"Saved UKPence balance snapshot for {yesterday_str} to {snapshot_path}")
+
+            await post_summary(self, CHANNELS.COMMONS, "daily", date=yesterday_str)
+
+            await zip_and_send_folder(
+                client=self,
+                folder_path="./daily_summaries",
+                channel_id=CHANNELS.DATA_BACKUP,
+                zip_filename_prefix=f"daily_summaries_as_of_{yesterday_str}",
+            )
+            
 
     async def post_daily_economy_stats(self):
         logger.info("Attempting to post daily UKPence economy stats...")
