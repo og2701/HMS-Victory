@@ -134,6 +134,20 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
 
     biggest_earner_name, biggest_earner_amount, biggest_earner_change_class = "N/A", "N/A", "change-neutral"
     biggest_loser_name, biggest_loser_amount, biggest_loser_change_class = "N/A", "N/A", "change-neutral"
+
+    dist_brackets = {
+        "1-1,000 UKP": 0, "1,001-10,000 UKP": 0,
+        "10,001-100,000 UKP": 0, "100,001+ UKP": 0,
+        "Zero Balance (in file)": 0 
+    }
+    for balance in ukpence_data_current.values():
+        if balance == 0: dist_brackets["Zero Balance (in file)"] +=1
+        elif 1 <= balance <= 1000: dist_brackets["1-1,000 UKP"] += 1
+        elif 1001 <= balance <= 10000: dist_brackets["1,001-10,000 UKP"] += 1
+        elif 10001 <= balance <= 100000: dist_brackets["10,001-100,000 UKP"] += 1
+        else: dist_brackets["100,001+ UKP"] += 1
+
+    uk_timezone = pytz.timezone("Europe/London")
     
     top_richest_html_parts = []
     for i, (user_id_str, balance) in enumerate(top_5_richest):
