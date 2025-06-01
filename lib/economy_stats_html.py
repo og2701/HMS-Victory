@@ -180,7 +180,7 @@ async def create_economy_stats_image(guild: discord.Guild) -> str | None:
     )
 
     image_filename = f"{uuid.uuid4()}.png"
-    hti.screenshot(html_str=formatted_html, save_as=image_filename, size=(750, 1))
+    hti.screenshot(html_str=formatted_html, save_as=image_filename, size=(750, 2500))
 
     try:
         img = Image.open(image_filename)
