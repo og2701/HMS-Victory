@@ -254,6 +254,26 @@ def define_commands(tree, client):
         )
         await interaction.response.send_message(embed=embed)
 
+        pay_log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "payer_id": str(interaction.user.id),
+            "recipient_id": str(recipient.id),
+            "amount": amount
+        }
+        PAY_LOG_FILE = "pay_log.json"
+
+        pay_data = []
+        if os.path.exists(PAY_LOG_FILE):
+            with open(PAY_LOG_FILE, "r") as f_log_read:
+                try:
+                    pay_data = json.load(f_log_read)
+                except json.JSONDecodeError:
+                    pass
+        pay_data.append(pay_log_entry)
+        with open(PAY_LOG_FILE, "w") as f_log_write:
+            json.dump(pay_data, f_log_write, indent=4)
+
+
 
 
 

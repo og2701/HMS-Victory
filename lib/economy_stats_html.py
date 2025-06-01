@@ -13,9 +13,12 @@ from config import CHROME_PATH
 
 try:
     from lib.settings import ECONOMY_METRICS_FILE, BALANCE_SNAPSHOT_DIR
+    from lib.rank_constants import CHAT_LEVEL_ROLE_THRESHOLDS, XP_FILE
 except ImportError:
     ECONOMY_METRICS_FILE = "economy_metrics.json"
     BALANCE_SNAPSHOT_DIR = "balance_snapshots"
+    CHAT_LEVEL_ROLE_THRESHOLDS = [] 
+    XP_FILE = "chat_leaderboard.json"
 
 
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
@@ -41,7 +44,6 @@ def trim(image: Image.Image) -> Image.Image:
         return image
 
 
-
 def get_daily_metrics(date_str: str):
     if not os.path.exists(ECONOMY_METRICS_FILE):
         return {}
@@ -63,6 +65,36 @@ def load_balance_snapshot(date_str: str):
     except (json.JSONDecodeError, FileNotFoundError):
         return None
 
+def get_user_xp_data():
+    if os.path.exists(XP_FILE):
+        with open(XP_FILE, "r") as f:
+            try:
+                data = json.load(f)
+                if "rankings" in data:
+                    return {entry["user_id"]: entry["score"] for entry in data["rankings"]}
+            except json.JSONDecodeError:
+                print(f"Error decoding {XP_FILE}")
+    return {}
+
+def get_rank_tier_name_from_xp(xp_val, guild: discord.Guild):
+    role_id_for_xp = None
+    for threshold, role_id in sorted(CHAT_LEVEL_ROLE_THRESHOLDS, key=lambda x: x[0]):
+        if xp_val >= threshold:
+            role_id_for_xp = role_id
+        else:
+            break 
+    
+    if role_id_for_xp:
+        role = guild.get_role(role_id_for_xp)
+        return role.name if role else "Unknown Rank"
+    
+    if xp_val > 0 and CHAT_LEVEL_ROLE_THRESHOLDS and xp_val < CHAT_LEVEL_ROLE_THRESHOLDS[0][0]:
+        return "Below Lowest Rank" 
+    elif xp_val == 0 and CHAT_LEVEL_ROLE_THRESHOLDS and 0 < CHAT_LEVEL_ROLE_THRESHOLDS[0][0]:
+        return "No XP / Below Lowest Rank"
+    return "Unranked" 
+
+
 async def create_economy_stats_image(guild: discord.Guild) -> str:
     ukpence_data_current = load_ukpence_data()
     
@@ -75,6 +107,74 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
 
     sorted_balances = sorted(ukpence_data_current.items(), key=lambda item: item[1], reverse=True)
     top_5_richest = sorted_balances[:5]
+
+    num_top_users_for_concentration = 5 
+    top_n_balances = [balance for _, balance in sorted_balances[:num_top_users_for_concentration]]
+    wealth_of_top_n = sum(top_n_balances)
+    percentage_held_by_top_n = (wealth_of_top_n / total_ukpence * 100) if total_ukpence > 0 else 0
+    
+    high_roller_threshold = 100000 
+    high_rollers_count = sum(1 for balance in ukpence_data_current.values() if balance >= high_roller_threshold)
+
+    user_xp_data = get_user_xp_data() 
+    xp_wealth_by_tier = {} 
+    
+    rank_tier_definitions = {}
+    for threshold, role_id in CHAT_LEVEL_ROLE_THRESHOLDS:
+        role = guild.get_role(role_id)
+        if role:
+            rank_tier_definitions[threshold] = role.name
+        else: 
+            rank_tier_definitions[threshold] = f"Rank ID {role_id}"
+
+
+    for user_id_str, balance in ukpence_data_current.items():
+        user_xp = user_xp_data.get(user_id_str, 0)
+        
+        current_tier_name = "Unranked" 
+        for threshold, name in sorted(rank_tier_definitions.items(), reverse=True):
+            if user_xp >= threshold:
+                current_tier_name = name
+                break
+        else: 
+            if user_xp > 0: 
+                 current_tier_name = "Below Lowest Rank" 
+
+        if current_tier_name not in xp_wealth_by_tier:
+            xp_wealth_by_tier[current_tier_name] = {"total_ukp": 0, "user_count": 0, "balances": []}
+        xp_wealth_by_tier[current_tier_name]["total_ukp"] += balance
+        xp_wealth_by_tier[current_tier_name]["user_count"] += 1
+        xp_wealth_by_tier[current_tier_name]["balances"].append(balance)
+
+    avg_ukp_per_rank_tier_html_parts = []
+    
+    avg_xp_wealth = {}
+    for tier, data in xp_wealth_by_tier.items():
+        if data["user_count"] > 0:
+            avg_xp_wealth[tier] = data["total_ukp"] / data["user_count"]
+        else:
+            avg_xp_wealth[tier] = 0
+
+    role_name_to_threshold = {name: thresh for thresh, name in rank_tier_definitions.items()}
+    if "Unranked" not in role_name_to_threshold: role_name_to_threshold["Unranked"] = -1 
+    if "Below Lowest Rank" not in role_name_to_threshold: role_name_to_threshold["Below Lowest Rank"] = -2
+
+    sorted_tiers_for_display = sorted(
+        avg_xp_wealth.keys(),
+        key=lambda t: role_name_to_threshold.get(t, float('inf')), 
+        reverse=True 
+    )
+
+    for tier_name in sorted_tiers_for_display:
+        data = xp_wealth_by_tier[tier_name]
+        avg_balance_for_tier = avg_xp_wealth[tier_name]
+        user_count_for_tier = data["user_count"]
+        if user_count_for_tier > 0: 
+            avg_ukp_per_rank_tier_html_parts.append(
+                f"<li><span class='name'>{tier_name} ({user_count_for_tier} users)</span> <span class='balance'>Avg: {avg_balance_for_tier:,.2f} UKP</span></li>"
+            )
+    
+    avg_ukp_per_rank_tier_html = "\n".join(avg_ukp_per_rank_tier_html_parts) if avg_ukp_per_rank_tier_html_parts else "<li>No XP rank data to display.</li>"
 
     dist_brackets = {
         "1-1,000 UKP": 0, "1,001-10,000 UKP": 0,
@@ -98,7 +198,6 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
     chat_rewards_yesterday = yesterday_metrics.get("chat_rewards_total", 0)
     booster_rewards_yesterday = yesterday_metrics.get("booster_rewards_total", 0)
     stage_rewards_yesterday = yesterday_metrics.get("stage_rewards_total", 0)
-    total_injected_yesterday = chat_rewards_yesterday + booster_rewards_yesterday + stage_rewards_yesterday
 
     today_metrics_start_of_day = get_daily_metrics(today_str_key)
     total_circulation_start_of_today = today_metrics_start_of_day.get("total_circulation_start_of_day")
@@ -109,18 +208,17 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
         if total_circulation_start_of_today > 0:
             growth = ((total_ukpence - total_circulation_start_of_today) / total_circulation_start_of_today) * 100
             economy_growth_percentage_str = f"{growth:+.2f}%"
-            if growth > 0.005: growth_class = "growth-positive"
-            elif growth < -0.005: growth_class = "growth-negative"
+            if growth > 0.005: growth_class = "growth-positive" 
+            elif growth < -0.005: growth_class = "growth-negative" 
         elif total_ukpence > 0:
              economy_growth_percentage_str = "+∞%"
              growth_class = "growth-positive"
-        else:
+        else: 
              economy_growth_percentage_str = "0.00%"
 
-    yesterday_balances = load_balance_snapshot(yesterday_str_key)
     biggest_earner_name, biggest_earner_amount, biggest_earner_change_class = "N/A", "N/A", "change-neutral"
     biggest_loser_name, biggest_loser_amount, biggest_loser_change_class = "N/A", "N/A", "change-neutral"
-
+    
     top_richest_html_parts = []
     for i, (user_id_str, balance) in enumerate(top_5_richest):
         member_display_name = f"User ID {user_id_str}"
@@ -144,20 +242,32 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
         economy_growth_percentage=economy_growth_percentage_str,
         growth_class=growth_class,
         yesterday_date=yesterday_dt.strftime("%d %B %Y"),
-        total_injected_yesterday=f"{total_injected_yesterday:,}",
+        
+        chat_rewards_yesterday=f"{chat_rewards_yesterday:,}",
+        booster_rewards_yesterday=f"{booster_rewards_yesterday:,}",
+        stage_rewards_yesterday=f"{stage_rewards_yesterday:,}",
+
         biggest_earner_name=discord.utils.escape_markdown(str(biggest_earner_name)),
         biggest_earner_amount=str(biggest_earner_amount),
         biggest_earner_change_class=biggest_earner_change_class,
         biggest_loser_name=discord.utils.escape_markdown(str(biggest_loser_name)),
         biggest_loser_amount=str(biggest_loser_amount),
         biggest_loser_change_class=biggest_loser_change_class,
+        
         top_richest_users_html=top_richest_users_html,
         distribution_html=distribution_html,
-        current_datetime_uk=now_dt.strftime("%d %B %Y, %H:%M:%S %Z")
+        current_datetime_uk=now_dt.strftime("%d %B %Y, %H:%M:%S %Z"),
+
+        wealth_concentration_top_5_percentage=f"{percentage_held_by_top_n:.2f}%",
+        wealth_concentration_top_5_amount=f"{wealth_of_top_n:,}",
+        num_top_users_concentration=num_top_users_for_concentration,
+        high_rollers_count=str(high_rollers_count),
+        high_roller_threshold=f"{high_roller_threshold:,}",
+        avg_ukp_per_rank_tier_html=avg_ukp_per_rank_tier_html
     )
 
     image_filename = f"{uuid.uuid4()}.png"
-    hti.screenshot(html_str=formatted_html, save_as=image_filename, size=(750, 2000)) 
+    hti.screenshot(html_str=formatted_html, save_as=image_filename, size=(750, 2200)) 
     
     try:
         img = Image.open(image_filename)

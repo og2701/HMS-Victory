@@ -52,12 +52,24 @@
                 <div class="stat-item"><div class="label">Avg Balance (All Holders)</div><strong>{average_ukpence} UKP</strong></div>
                 <div class="stat-item"><div class="label">Avg Balance (>0 UKP Holders)</div><strong>{average_ukpence_active} UKP</strong></div>
                 <div class="stat-item"><div class="label">Growth Today (Since Start)</div><strong class="{growth_class}">{economy_growth_percentage}</strong></div>
+                <div class="stat-item">
+                    <div class="label">Wealth Held by Top {num_top_users_concentration}</div>
+                    <strong>{wealth_concentration_top_5_percentage}</strong>
+                    <span class="sub-value">({wealth_concentration_top_5_amount} UKP)</span>
+                </div>
+                <div class="stat-item">
+                    <div class="label">"High Rollers" (>{high_roller_threshold} UKP)</div>
+                    <strong>{high_rollers_count} Users</strong>
+                </div>
             </div>
         </div>
         <hr>
         <div class="section">
             <div class="section-title">Yesterday's Activity ({yesterday_date})</div>
-            <div class="stat-grid" style="grid-template-columns: 1fr;"> <div class="stat-item"><div class="label">Total UKP Injected (Chat, Boost, Stage)</div><strong>{total_injected_yesterday} UKP</strong></div>
+            <div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));"> 
+                <div class="stat-item"><div class="label">Chat Rewards Injected</div><strong>{chat_rewards_yesterday} UKP</strong></div>
+                <div class="stat-item"><div class="label">Booster Bonuses Injected</div><strong>{booster_rewards_yesterday} UKP</strong></div>
+                <div class="stat-item"><div class="label">Stage Rewards Injected</div><strong>{stage_rewards_yesterday} UKP</strong></div>
             </div>
         </div>
         <hr>
@@ -65,6 +77,13 @@
             <div class="section-title">🏆 Top 5 Richest Users</div>
             <ul class="user-list">
                 {top_richest_users_html}
+            </ul>
+        </div>
+        <hr>
+        <div class="section">
+            <div class="section-title">💰 Average UKPence by XP Rank Tier</div>
+            <ul class="user-list">
+                {avg_ukp_per_rank_tier_html}
             </ul>
         </div>
         <hr>
