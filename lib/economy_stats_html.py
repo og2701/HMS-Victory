@@ -21,18 +21,25 @@ except ImportError:
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 
 
-def trim(im: Image.Image) -> Image.Image:
-    bg_color = im.getpixel((0,0)) if im.mode == 'RGBA' else (255,255,255)
-    bg = Image.new(im.mode, im.size, bg_color) 
-    diff = ImageChops.difference(im, bg)
-    if im.mode == 'RGBA':
-        alpha = im.split()[-1]
-        diff = ImageChops.add(diff, diff, 2.0, -100)
-        diff = ImageChops.multiply(diff, alpha)
+def trim(image: Image.Image) -> Image.Image:
+    if image.mode == "RGBA":
+        bbox = image.getbbox()
+    elif image.mode == "RGB":
+        bg_color = image.getpixel((0, 0))
+        bg_image = Image.new(image.mode, image.size, bg_color)
+        diff_image = ImageChops.difference(image, bg_image)
+        gray_diff = diff_image.convert('L')
+        thresholded_diff = gray_diff.point(lambda x: 255 if x > 10 else 0)
+        bbox = thresholded_diff.getbbox()
     else:
-        diff = ImageChops.add(diff, diff, 2.0, -100)
-    bbox = diff.getbbox()
-    return im.crop(bbox) if bbox else im
+        temp_image = image.convert("RGBA")
+        bbox = temp_image.getbbox()
+
+    if bbox:
+        return image.crop(bbox)
+    else:
+        return image
+
 
 
 def get_daily_metrics(date_str: str):
