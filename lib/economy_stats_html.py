@@ -13,12 +13,9 @@ from config import CHROME_PATH
 
 try:
     from lib.settings import ECONOMY_METRICS_FILE, BALANCE_SNAPSHOT_DIR
-    from lib.rank_constants import CHAT_LEVEL_ROLE_THRESHOLDS, XP_FILE
 except ImportError:
     ECONOMY_METRICS_FILE = "economy_metrics.json"
     BALANCE_SNAPSHOT_DIR = "balance_snapshots"
-    CHAT_LEVEL_ROLE_THRESHOLDS = [] 
-    XP_FILE = "chat_leaderboard.json"
 
 
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
@@ -65,36 +62,6 @@ def load_balance_snapshot(date_str: str):
     except (json.JSONDecodeError, FileNotFoundError):
         return None
 
-def get_user_xp_data():
-    if os.path.exists(XP_FILE):
-        with open(XP_FILE, "r") as f:
-            try:
-                data = json.load(f)
-                if "rankings" in data:
-                    return {entry["user_id"]: entry["score"] for entry in data["rankings"]}
-            except json.JSONDecodeError:
-                print(f"Error decoding {XP_FILE}")
-    return {}
-
-def get_rank_tier_name_from_xp(xp_val, guild: discord.Guild):
-    role_id_for_xp = None
-    for threshold, role_id in sorted(CHAT_LEVEL_ROLE_THRESHOLDS, key=lambda x: x[0]):
-        if xp_val >= threshold:
-            role_id_for_xp = role_id
-        else:
-            break 
-    
-    if role_id_for_xp:
-        role = guild.get_role(role_id_for_xp)
-        return role.name if role else "Unknown Rank"
-    
-    if xp_val > 0 and CHAT_LEVEL_ROLE_THRESHOLDS and xp_val < CHAT_LEVEL_ROLE_THRESHOLDS[0][0]:
-        return "Below Lowest Rank" 
-    elif xp_val == 0 and CHAT_LEVEL_ROLE_THRESHOLDS and 0 < CHAT_LEVEL_ROLE_THRESHOLDS[0][0]:
-        return "No XP / Below Lowest Rank"
-    return "Unranked" 
-
-
 async def create_economy_stats_image(guild: discord.Guild) -> str:
     ukpence_data_current = load_ukpence_data()
     
@@ -105,94 +72,43 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
     actual_holders_with_balance = sum(1 for balance in ukpence_data_current.values() if balance > 0)
     average_ukpence_active = total_ukpence / actual_holders_with_balance if actual_holders_with_balance > 0 else 0
 
-    sorted_balances = sorted(ukpence_data_current.items(), key=lambda item: item[1], reverse=True)
-    top_5_richest = sorted_balances[:5]
+    sorted_balances_for_median = sorted(list(ukpence_data_current.values()))
+    median_ukpence_balance = 0
+    if sorted_balances_for_median:
+        mid = len(sorted_balances_for_median) // 2
+        if len(sorted_balances_for_median) % 2 == 1:
+            median_ukpence_balance = sorted_balances_for_median[mid]
+        else:
+            median_ukpence_balance = (sorted_balances_for_median[mid - 1] + sorted_balances_for_median[mid]) / 2.0
+
+    sorted_balances_for_top = sorted(ukpence_data_current.items(), key=lambda item: item[1], reverse=True)
+    top_5_richest = sorted_balances_for_top[:5]
 
     num_top_users_for_concentration = 5 
-    top_n_balances = [balance for _, balance in sorted_balances[:num_top_users_for_concentration]]
-    wealth_of_top_n = sum(top_n_balances)
+    top_n_balances_values = [balance for _, balance in sorted_balances_for_top[:num_top_users_for_concentration]]
+    wealth_of_top_n = sum(top_n_balances_values)
     percentage_held_by_top_n = (wealth_of_top_n / total_ukpence * 100) if total_ukpence > 0 else 0
     
     high_roller_threshold = 100000 
     high_rollers_count = sum(1 for balance in ukpence_data_current.values() if balance >= high_roller_threshold)
-
-    user_xp_data = get_user_xp_data() 
-    xp_wealth_by_tier = {} 
-    
-    rank_tier_definitions = {}
-    for threshold, role_id in CHAT_LEVEL_ROLE_THRESHOLDS:
-        role = guild.get_role(role_id)
-        if role:
-            rank_tier_definitions[threshold] = role.name
-        else: 
-            rank_tier_definitions[threshold] = f"Rank ID {role_id}"
-
-
-    for user_id_str, balance in ukpence_data_current.items():
-        user_xp = user_xp_data.get(user_id_str, 0)
-        
-        current_tier_name = "Unranked" 
-        for threshold, name in sorted(rank_tier_definitions.items(), reverse=True):
-            if user_xp >= threshold:
-                current_tier_name = name
-                break
-        else: 
-            if user_xp > 0: 
-                 current_tier_name = "Below Lowest Rank" 
-
-        if current_tier_name not in xp_wealth_by_tier:
-            xp_wealth_by_tier[current_tier_name] = {"total_ukp": 0, "user_count": 0, "balances": []}
-        xp_wealth_by_tier[current_tier_name]["total_ukp"] += balance
-        xp_wealth_by_tier[current_tier_name]["user_count"] += 1
-        xp_wealth_by_tier[current_tier_name]["balances"].append(balance)
-
-    avg_ukp_per_rank_tier_html_parts = []
-    
-    avg_xp_wealth = {}
-    for tier, data in xp_wealth_by_tier.items():
-        if data["user_count"] > 0:
-            avg_xp_wealth[tier] = data["total_ukp"] / data["user_count"]
-        else:
-            avg_xp_wealth[tier] = 0
-
-    role_name_to_threshold = {name: thresh for thresh, name in rank_tier_definitions.items()}
-    if "Unranked" not in role_name_to_threshold: role_name_to_threshold["Unranked"] = -1 
-    if "Below Lowest Rank" not in role_name_to_threshold: role_name_to_threshold["Below Lowest Rank"] = -2
-
-    sorted_tiers_for_display = sorted(
-        avg_xp_wealth.keys(),
-        key=lambda t: role_name_to_threshold.get(t, float('inf')), 
-        reverse=True 
-    )
-
-    for tier_name in sorted_tiers_for_display:
-        data = xp_wealth_by_tier[tier_name]
-        avg_balance_for_tier = avg_xp_wealth[tier_name]
-        user_count_for_tier = data["user_count"]
-        if user_count_for_tier > 0: 
-            avg_ukp_per_rank_tier_html_parts.append(
-                f"<li><span class='name'>{tier_name} ({user_count_for_tier} users)</span> <span class='balance'>Avg: {avg_balance_for_tier:,.2f} UKP</span></li>"
-            )
-    
-    avg_ukp_per_rank_tier_html = "\n".join(avg_ukp_per_rank_tier_html_parts) if avg_ukp_per_rank_tier_html_parts else "<li>No XP rank data to display.</li>"
-
-    dist_brackets = {
-        "1-1,000 UKP": 0, "1,001-10,000 UKP": 0,
-        "10,001-100,000 UKP": 0, "100,001+ UKP": 0,
-        "Zero Balance (in file)": 0 
-    }
-    for balance in ukpence_data_current.values():
-        if balance == 0: dist_brackets["Zero Balance (in file)"] +=1
-        elif 1 <= balance <= 1000: dist_brackets["1-1,000 UKP"] += 1
-        elif 1001 <= balance <= 10000: dist_brackets["1,001-10,000 UKP"] += 1
-        elif 10001 <= balance <= 100000: dist_brackets["10,001-100,000 UKP"] += 1
-        else: dist_brackets["100,001+ UKP"] += 1
 
     uk_timezone = pytz.timezone("Europe/London")
     now_dt = datetime.now(uk_timezone)
     today_str_key = now_dt.strftime("%Y-%m-%d")
     yesterday_dt = now_dt - timedelta(days=1)
     yesterday_str_key = yesterday_dt.strftime("%Y-%m-%d")
+
+    net_ukpence_change_absolute_str = "N/A"
+    net_ukpence_change_class = "change-neutral"
+    yesterday_balances_snapshot_data = load_balance_snapshot(yesterday_str_key)
+    if yesterday_balances_snapshot_data:
+        total_ukpence_yesterday_snapshot = sum(yesterday_balances_snapshot_data.values())
+        net_change_value = total_ukpence - total_ukpence_yesterday_snapshot
+        net_ukpence_change_absolute_str = f"{net_change_value:+,} UKP"
+        if net_change_value > 0:
+            net_ukpence_change_class = "change-positive"
+        elif net_change_value < 0:
+            net_ukpence_change_class = "change-negative"
     
     yesterday_metrics = get_daily_metrics(yesterday_str_key)
     chat_rewards_yesterday = yesterday_metrics.get("chat_rewards_total", 0)
@@ -263,7 +179,10 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
         num_top_users_concentration=num_top_users_for_concentration,
         high_rollers_count=str(high_rollers_count),
         high_roller_threshold=f"{high_roller_threshold:,}",
-        avg_ukp_per_rank_tier_html=avg_ukp_per_rank_tier_html
+        
+        median_ukpence_balance=f"{median_ukpence_balance:,.2f}",
+        net_ukpence_change_absolute_str=net_ukpence_change_absolute_str,
+        net_ukpence_change_class=net_ukpence_change_class
     )
 
     image_filename = f"{uuid.uuid4()}.png"

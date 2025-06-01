@@ -61,6 +61,14 @@
                     <div class="label">"High Rollers" (>{high_roller_threshold} UKP)</div>
                     <strong>{high_rollers_count} Users</strong>
                 </div>
+                <div class="stat-item">
+                    <div class="label">Median UKPence Balance</div>
+                    <strong>{median_ukpence_balance} UKP</strong>
+                </div>
+                <div class="stat-item">
+                    <div class="label">Net Change (Since Last Snapshot)</div>
+                    <strong class="{net_ukpence_change_class}">{net_ukpence_change_absolute_str}</strong>
+                </div>
             </div>
         </div>
         <hr>
@@ -77,13 +85,6 @@
             <div class="section-title">🏆 Top 5 Richest Users</div>
             <ul class="user-list">
                 {top_richest_users_html}
-            </ul>
-        </div>
-        <hr>
-        <div class="section">
-            <div class="section-title">💰 Average UKPence by XP Rank Tier</div>
-            <ul class="user-list">
-                {avg_ukp_per_rank_tier_html}
             </ul>
         </div>
         <hr>
