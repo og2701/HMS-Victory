@@ -196,37 +196,26 @@ async def award_booster_bonus(client):
         logger.error("award_booster_bonus: Guild not found.")
         return
 
-    uk_timezone = pytz.timezone("Europe/London")
-    now_in_uk = datetime.now(uk_timezone)
-    yesterday_str_for_bonus = (now_in_uk - timedelta(days=1)).strftime("%Y-%m-%d")
-    
-    SERVER_BOOSTER_UKP_DAILY_BONUS = 30 
-
-    if not hasattr(client, 'temp_daily_specific_rewards'):
-        client.temp_daily_specific_rewards = {}
-    
-    if yesterday_str_for_bonus not in client.temp_daily_specific_rewards:
-        client.temp_daily_specific_rewards[yesterday_str_for_bonus] = []
-
     for member in guild.members:
         if any(role.id == ROLES.SERVER_BOOSTER for role in member.roles):
             add_bb(member.id, SERVER_BOOSTER_UKP_DAILY_BONUS)
             total_booster_rewards_awarded_this_cycle += SERVER_BOOSTER_UKP_DAILY_BONUS
             
-            client.temp_daily_specific_rewards[yesterday_str_for_bonus].append({
-                "user_id": str(member.id),
-                "amount": SERVER_BOOSTER_UKP_DAILY_BONUS,
-                "type": "Booster Bonus"
-            })
-            
-    logger.info(f"Total UKPence from booster bonuses awarded for {yesterday_str_for_bonus}: {total_booster_rewards_awarded_this_cycle}")
+    logger.info(f"Total UKPence from booster bonuses awarded: {total_booster_rewards_awarded_this_cycle}")
+
+    uk_timezone = pytz.timezone("Europe/London")
+    now = datetime.now(uk_timezone)
+    yesterday_str_for_bonus = (now - timedelta(days=1)).strftime("%Y-%m-%d") 
+    today_str_for_sod_snapshot = now.strftime("%Y-%m-%d") 
+    
     _update_daily_metric_file(yesterday_str_for_bonus, "booster_rewards_total", total_booster_rewards_awarded_this_cycle, is_total_value=True)
     
-    today_str_for_sod_snapshot = now_in_uk.strftime("%Y-%m-%d")
     current_balances_after_booster = load_ukpence_data()
     sod_circulation_today = sum(current_balances_after_booster.values())
     _update_daily_metric_file(today_str_for_sod_snapshot, "total_circulation_start_of_day", sod_circulation_today, is_total_value=True)
-    logger.info(f"Logged booster rewards for {yesterday_str_for_bonus} and SOD circulation for {today_str_for_sod_snapshot}.")
+    
+    logger.info(f"Logged booster rewards for {yesterday_str_for_bonus} ({total_booster_rewards_awarded_this_cycle} UKP) and SOD circulation for {today_str_for_sod_snapshot} ({sod_circulation_today} UKP).")
+
 
 def schedule_client_jobs(client, scheduler):
     scheduler.add_job(award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client], id="award_booster_bonus_job", name="Award Daily Booster UKPence & Log SOD Circulation")

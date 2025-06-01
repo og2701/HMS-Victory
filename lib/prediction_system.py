@@ -258,70 +258,21 @@ class PredAdminView(discord.ui.View):
     async def win2(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         await self._resolve(interaction, 2)
 
-async def _resolve(self, interaction: discord.Interaction, winner_side_int: int):
-        if not self.pred.locked:
-            self.pred.locked = True
-
-        payouts = self.pred.resolve(winner_side_int)
-        win_side_text = self.pred.opt1 if winner_side_int == 1 else self.pred.opt2
-        lose_side_int = 3 - winner_side_int
-
-        uk_timezone = pytz.timezone("Europe/London")
-        activity_date_str = datetime.now(uk_timezone).strftime("%Y-%m-%d") 
-
-        if not hasattr(interaction.client, 'temp_daily_specific_rewards'):
-            interaction.client.temp_daily_specific_rewards = {}
-        if activity_date_str not in interaction.client.temp_daily_specific_rewards:
-            interaction.client.temp_daily_specific_rewards[activity_date_str] = []
-
-        for user_id, total_received in payouts.items():
-            original_stake = self.pred.bets[winner_side_int].get(user_id, 0)
-            net_gain = total_received - original_stake
-            if net_gain != 0: 
-                interaction.client.temp_daily_specific_rewards[activity_date_str].append({
-                    "user_id": str(user_id),
-                    "amount": net_gain,
-                    "type": f"Prediction Win ('{self.pred.title}')"
-                })
-        
-        losing_bets_on_other_side = self.pred.bets.get(lose_side_int, {})
-        for user_id, stake_lost in losing_bets_on_other_side.items():
-            if stake_lost != 0:
-                interaction.client.temp_daily_specific_rewards[activity_date_str].append({
-                    "user_id": str(user_id),
-                    "amount": -stake_lost,
-                    "type": f"Prediction Loss ('{self.pred.title}')"
-                })
-        
-        try:
-            msg = await interaction.channel.fetch_message(self.pred.msg_id)
-            embed, bar = prediction_embed(self.pred, self.client)
-            await msg.edit(embed=embed, attachments=[bar] if bar else [], view=None)
-
-            payout_lines = []
-            if payouts:
-                 for uid_winner, amt_total_returned in sorted(payouts.items(), key=lambda x: x[1], reverse=True):
-                    stake_winner = self.pred.bets[winner_side_int].get(uid_winner, 0)
-                    profit = amt_total_returned - stake_winner
-                    member_display = f"<@{uid_winner}>" 
-                    guild_member = interaction.guild.get_member(uid_winner)
-                    if guild_member: member_display = guild_member.display_name
-                    payout_lines.append(f"**{member_display}** received **{_fmt_money(amt_total_returned)}** UKP (Profit: **{_fmt_money(profit)}** UKP)")
-            else: 
-                if not self.pred.bets.get(winner_side_int) and self.pred.bets.get(lose_side_int):
-                    payout_lines.append("*No one backed the winner. Losing bets were refunded.*")
-                else: 
-                    payout_lines.append("*No winning bets to pay out.*")
-
-
-            descr = "\n".join(payout_lines) if payout_lines else "*No payouts processed.*"
-            summary_embed_color = 0x2ECC71 if payouts and any(payouts.values()) else 0xFFA500 
-            summary_embed = discord.Embed(title=f"🏁 Prediction Settled: **{win_side_text}** Wins!", description=descr, color=summary_embed_color)
-            await msg.reply(embed=summary_embed, mention_author=False)
-        except Exception as e:
-            logger.error(f"Error during message update/reply in _resolve for pred {self.pred.msg_id}: {e}")
-
+    async def _resolve(self, interaction: discord.Interaction, winner: int):
+        payouts = self.pred.resolve(winner)
+        win_side = self.pred.opt1 if winner == 1 else self.pred.opt2
+        self.pred.locked = True
+        msg = await interaction.channel.fetch_message(self.pred.msg_id)
+        embed, bar = prediction_embed(self.pred, self.client)
+        await msg.edit(embed=embed, attachments=[bar], view=None)
+        lines = [
+            f"**{(interaction.guild.get_member(uid) or uid).display_name}** won **{amt:,}**"
+            for uid, amt in sorted(payouts.items(), key=lambda x: x[1], reverse=True)
+        ]
+        descr = "\n".join(lines) or "*Nobody backed the winner*"
+        summary = discord.Embed(title=f"🏁 Prediction settled: **{win_side}** wins!", description=descr, color=0x2ECC71)
+        await msg.reply(embed=summary, mention_author=False)
         self.client.predictions.pop(self.pred.msg_id, None)
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
-        await interaction.response.send_message(f"✅ Prediction '{self.pred.title}' resolved. Winners: {win_side_text}. Outcomes logged.", ephemeral=True)
+        await interaction.response.send_message("✅ Resolved & paid out.", ephemeral=True)
         self.stop()
