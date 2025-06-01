@@ -206,84 +206,59 @@ class PredAdminView(discord.ui.View):
         self.pred = pred
         self.client = client
 
-    @discord.ui.button(label="Lock Betting", style=discord.ButtonStyle.danger, row=0)
+    @discord.ui.button(label="Lock", style=discord.ButtonStyle.danger)
     async def lock(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         if self.pred.locked:
-            return await interaction.response.send_message("Prediction is already locked.", ephemeral=True)
+            return await interaction.response.send_message("Already locked.", ephemeral=True)
         self.pred.locked = True
-        try:
-            msg = await interaction.channel.fetch_message(self.pred.msg_id)
-            embed, bar = prediction_embed(self.pred, self.client)
-            await msg.edit(embed=embed, attachments=[bar] if bar else [], view=None) 
-        except Exception as e:
-            logger.error(f"Failed to update message on lock for pred {self.pred.msg_id}: {e}")
+        msg = await interaction.channel.fetch_message(self.pred.msg_id)
+        embed, bar = prediction_embed(self.pred, self.client)
+        await msg.edit(embed=embed, attachments=[bar], view=None)
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
-        await interaction.response.send_message("🔒 Betting locked. Buttons removed from original message.", ephemeral=True)
-        self.stop()
+        await interaction.response.send_message("🔒 Locked.", ephemeral=True)
 
-    @discord.ui.button(label="Unlock Betting", style=discord.ButtonStyle.success, row=0)
+    @discord.ui.button(label="Unlock", style=discord.ButtonStyle.success)
     async def unlock(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         if not self.pred.locked:
-            return await interaction.response.send_message("Prediction is already unlocked.", ephemeral=True)
+            return await interaction.response.send_message("Already unlocked.", ephemeral=True)
+
         self.pred.locked = False
-        
-        try:
-            msg = await interaction.channel.fetch_message(self.pred.msg_id)
-            embed, bar = prediction_embed(self.pred, self.client)
-            view = BetButtons(self.pred) 
-            self.client.add_view(view, message_id=self.pred.msg_id)
-            await msg.edit(embed=embed, attachments=[bar] if bar else [], view=view)
-        except Exception as e:
-            logger.error(f"Failed to update message on unlock for pred {self.pred.msg_id}: {e}")
+        self.pred.end_ts = None
+
+        msg = await interaction.channel.fetch_message(self.pred.msg_id)
+        embed, bar = prediction_embed(self.pred, self.client)
+        view = BetButtons(self.pred)
+
+        await msg.edit(embed=embed, attachments=[bar], view=view)
+        self.client.add_view(view, message_id=self.pred.msg_id)
 
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
-        await interaction.response.send_message("🔓 Betting unlocked. Buttons re-added to original message.", ephemeral=True)
-        self.stop()
+        await interaction.response.send_message("🔓 Unlocked.", ephemeral=True)
 
-    @discord.ui.button(label="Call a Draw", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Draw", style=discord.ButtonStyle.secondary)
     async def draw(self, interaction: discord.Interaction, _btn: discord.ui.Button):
-        if not self.pred.locked:
-            self.pred.locked = True
-
-        activity_date_str = datetime.now(pytz.timezone("Europe/London")).strftime("%Y-%m-%d")
-        if not hasattr(interaction.client, 'temp_daily_specific_rewards'):
-            interaction.client.temp_daily_specific_rewards = {}
-        if activity_date_str not in interaction.client.temp_daily_specific_rewards:
-            interaction.client.temp_daily_specific_rewards[activity_date_str] = []
-
-        refund_log_entry = {"type": f"Prediction Draw Refund ('{self.pred.title}')", "details": []}
-
-        for side_bets in self.pred.bets.values():
-            for uid, amt in side_bets.items():
-                add_bb(uid, amt) 
-                refund_log_entry["details"].append(f"User {uid} refunded {amt}")
-        
-        if refund_log_entry["details"]:
-             interaction.client.temp_daily_specific_rewards[activity_date_str].append(refund_log_entry)
-        
-        self.pred.bets = {1: {}, 2: {}} 
-        try:
-            msg = await interaction.channel.fetch_message(self.pred.msg_id)
-            embed, bar = prediction_embed(self.pred, self.client) 
-            await msg.edit(embed=embed, attachments=[bar] if bar else [], view=None)
-            await msg.reply("🟡 This prediction has been called a draw. All bets refunded.", mention_author=False)
-        except Exception as e:
-            logger.error(f"Failed to update message on draw for pred {self.pred.msg_id}: {e}")
-
+        for side in (1, 2):
+            for uid, amt in self.pred.bets.get(side, {}).items():
+                add_bb(uid, amt)
+        self.pred.locked = True
+        self.pred.bets = {1: {}, 2: {}}
+        msg = await interaction.channel.fetch_message(self.pred.msg_id)
+        embed, bar = prediction_embed(self.pred, self.client)
+        await msg.edit(embed=embed, attachments=[bar], view=None)
         self.client.predictions.pop(self.pred.msg_id, None)
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
-        await interaction.response.send_message("🟡 Draw called – all bets refunded and logged.", ephemeral=True)
+        await interaction.response.send_message("🟡 Draw called – all bets refunded.", ephemeral=True)
         self.stop()
 
-    @discord.ui.button(label="Winner: Option 1", style=discord.ButtonStyle.primary, row=2)
+    @discord.ui.button(label="Winner: Option 1", style=discord.ButtonStyle.primary)
     async def win1(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         await self._resolve(interaction, 1)
 
-    @discord.ui.button(label="Winner: Option 2", style=discord.ButtonStyle.primary, row=2)
+    @discord.ui.button(label="Winner: Option 2", style=discord.ButtonStyle.primary)
     async def win2(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         await self._resolve(interaction, 2)
 
-    async def _resolve(self, interaction: discord.Interaction, winner_side_int: int):
+async def _resolve(self, interaction: discord.Interaction, winner_side_int: int):
         if not self.pred.locked:
             self.pred.locked = True
 
@@ -292,7 +267,7 @@ class PredAdminView(discord.ui.View):
         lose_side_int = 3 - winner_side_int
 
         uk_timezone = pytz.timezone("Europe/London")
-        activity_date_str = datetime.now(uk_timezone).strftime("%Y-%m-%d")
+        activity_date_str = datetime.now(uk_timezone).strftime("%Y-%m-%d") 
 
         if not hasattr(interaction.client, 'temp_daily_specific_rewards'):
             interaction.client.temp_daily_specific_rewards = {}
@@ -302,7 +277,7 @@ class PredAdminView(discord.ui.View):
         for user_id, total_received in payouts.items():
             original_stake = self.pred.bets[winner_side_int].get(user_id, 0)
             net_gain = total_received - original_stake
-            if net_gain != 0:
+            if net_gain != 0: 
                 interaction.client.temp_daily_specific_rewards[activity_date_str].append({
                     "user_id": str(user_id),
                     "amount": net_gain,
