@@ -21,24 +21,41 @@ except ImportError:
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 
 
-def trim(image: Image.Image) -> Image.Image:
+def trim(image: Image.Image, border_pixels: int = 10) -> Image.Image:
+    original_width, original_height = image.size
+    intermediate_bbox = None
+
     if image.mode == "RGBA":
-        bbox = image.getbbox()
+        intermediate_bbox = image.getbbox()
     elif image.mode == "RGB":
         bg_color = image.getpixel((0, 0))
         bg_image = Image.new(image.mode, image.size, bg_color)
         diff_image = ImageChops.difference(image, bg_image)
         gray_diff = diff_image.convert('L')
-        thresholded_diff = gray_diff.point(lambda x: 255 if x > 10 else 0)
-        bbox = thresholded_diff.getbbox()
+        thresholded_mask = gray_diff.point(lambda x: 255 if x > 10 else 0)
+        intermediate_bbox = thresholded_mask.getbbox()
     else:
-        temp_image = image.convert("RGBA")
-        bbox = temp_image.getbbox()
+        try:
+            temp_image = image.convert("RGBA")
+            intermediate_bbox = temp_image.getbbox()
+        except Exception:
+            intermediate_bbox = None
 
-    if bbox:
-        return image.crop(bbox)
+    if intermediate_bbox:
+        content_left, content_top, content_right, content_bottom = intermediate_bbox
+        
+        final_left = max(0, content_left - border_pixels)
+        final_top = max(0, content_top - border_pixels)
+        final_right = min(original_width, content_right + border_pixels)
+        final_bottom = min(original_height, content_bottom + border_pixels)
+
+        if final_right > final_left and final_bottom > final_top:
+            return image.crop((final_left, final_top, final_right, final_bottom))
+        else:
+            return image.crop(intermediate_bbox)
     else:
         return image
+
 
 
 
