@@ -1,4 +1,4 @@
-CHROME_PATH = "/snap/bin/chromium"
+CHROME_PATH = "/usr/bin/google-chrome"
 
 ROLE_BUTTONS = {
     "1132280073379123311": {
