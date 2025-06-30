@@ -217,14 +217,14 @@ class XPSystem:
         os.remove(path)
         return discord.File(fp=buf, filename="leaderboard.png")
 
-    async def handle_leaderboard_command(self, interaction: discord.Interaction):
-        data = self.get_all_sorted_xp()
-        if not data:
-            return await interaction.response.send_message("No XP data found.")
-        view = LeaderboardView(self, interaction.guild, data)
-        first = data[: LeaderboardView.PAGE_SIZE]
-        file = await self.generate_leaderboard_image(interaction.guild, first, 0)
-        await interaction.response.send_message(file=file, view=view)
+        async def handle_leaderboard_command(self, interaction: discord.Interaction):
+            data = self.get_all_sorted_xp()
+            if not data:
+                return await interaction.followup.send("No XP data found.")
+            view = LeaderboardView(self, interaction.guild, data)
+            first = data[: LeaderboardView.PAGE_SIZE]
+            file = await self.generate_leaderboard_image(interaction.guild, first, 0)
+            await interaction.followup.send(file=file, view=view)
 
     def get_all_balances(self):
         data = _load()
@@ -280,8 +280,8 @@ class XPSystem:
     async def handle_richlist_command(self, interaction: discord.Interaction):
         data = self.get_all_balances()
         if not data:
-            return await interaction.response.send_message("No UKPence data found.")
+            return await interaction.followup.send("No UKPence data found.")
         view = RichListView(self, interaction.guild, data)
         first = data[: RichListView.PAGE_SIZE]
         file = await self.generate_richlist_image(interaction.guild, first, 0)
-        await interaction.response.send_message(file=file, view=view)
+        await interaction.followup.send(file=file, view=view)

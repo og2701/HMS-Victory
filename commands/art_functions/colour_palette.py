@@ -6,7 +6,7 @@ from html2image import Html2Image
 import base64
 
 async def colourPalette(interaction, attachment_url: str):
-    initial_message = await interaction.response.send_message("Processing image to extract color palette...")
+    await interaction.followup.send("Processing image to extract color palette...")
     async with aiohttp.ClientSession() as session:
         async with session.get(attachment_url, headers={"User-Agent": "YourBotName"}) as resp:
             if resp.status != 200:
@@ -95,4 +95,4 @@ async def colourPalette(interaction, attachment_url: str):
         buffer = io.BytesIO(f.read())
     buffer.seek(0)
     file = File(buffer, filename="palette_image.png")
-    await interaction.edit_original_response(content="Here is the extracted colour palette:", attachments=[file])
+    await interaction.followup.send(content="Here is the extracted colour palette:", file=file)

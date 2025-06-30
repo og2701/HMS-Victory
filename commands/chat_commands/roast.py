@@ -25,7 +25,7 @@ async def roast(interaction, channel=None, user=None):
         user = interaction.user
 
     thinking_text = random.choice(thinking_messages)
-    await interaction.response.send_message(thinking_text, ephemeral=False)
+    await interaction.followup.send(thinking_text, ephemeral=False)
 
     user_messages = []
     await fetch_messages_with_context(channel, user, user_messages, total_limit=100, context_depth=4)
