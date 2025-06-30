@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UKPlace Weather Report</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
+
+        :root {
+            --ukp-blue: #00247D;
+            --ukp-red: #CF142B;
+            --ukp-white: #FFFFFF;
+            --ukp-accent: #F44336;
+            --background: #23272a;
+            --text-primary: #dcddde;
+            --text-secondary: #b9bbbe;
+            --card-background: #2f3136;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: var(--background);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 20px;
+            width: 550px; /* Fixed width for the image */
+        }
+
+        .container {
+            background-color: var(--card-background);
+            border-radius: 15px;
+            padding: 20px;
+            border-top: 5px solid var(--ukp-accent);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        }
+
+        header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0 0 5px 0;
+            color: var(--ukp-white);
+        }
+
+        header p {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin: 0 0 20px 0;
+            border-bottom: 1px solid #4f545c;
+            padding-bottom: 15px;
+        }
+
+        .weather-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .weather-card {
+            background-color: #3a3d42;
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .weather-card h2 {
+            font-size: 18px;
+            margin: 0 0 10px 0;
+            color: var(--ukp-white);
+        }
+
+        .weather-icon {
+            width: 60px;
+            height: 60px;
+            margin-bottom: 10px;
+        }
+
+        .temperature {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--ukp-white);
+        }
+
+        .description {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-top: 5px;
+            text-transform: capitalize;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>UKPlace Weather Report</h1>
+            <p>Current weather conditions across the United Kingdom</p>
+        </header>
+        <div class="weather-grid">
+            {{ weather_cards }}
+        </div>
+    </div>
+</body>
+</html>

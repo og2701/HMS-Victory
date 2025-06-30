@@ -316,3 +316,8 @@ def define_commands(tree, client):
     @command("ukpeconomy", "Shows the current state of the UKPence economy as an image.")
     async def ukpeconomy_command_def(interaction: Interaction):
         await handle_ukpeconomy_command(interaction)
+
+
+    @command(name="weather", description="Shows a weather report for the UK")
+    async def weather(interaction: discord.Interaction):
+        await weather_command(interaction)
