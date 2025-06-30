@@ -329,4 +329,10 @@ def define_commands(tree, client):
     @command("ukpeconomy", "Shows the current state of the UKPence economy as an image.")
     async def ukpeconomy_command_def(interaction: Interaction):
         await interaction.response.defer()
-        await handle_ukpeconomy_command(interaction)
+        
+        file_to_send = await handle_ukpeconomy_command(interaction)
+        
+        if file_to_send:
+            await interaction.followup.send(file=file_to_send)
+        else:
+            await interaction.followup.send("An error occurred while generating the economy stats.", ephemeral=True)

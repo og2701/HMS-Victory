@@ -6,17 +6,17 @@ logger = logging.getLogger(__name__)
 
 from lib.economy_stats_html import create_economy_stats_image
 
-async def handle_ukpeconomy_command(interaction: Interaction):
-    await interaction.response.defer(ephemeral=False) 
+async def handle_ukpeconomy_command(interaction: discord.Interaction) -> discord.File | None:
     try:
         image_path = await create_economy_stats_image(interaction.guild)
         if image_path and os.path.exists(image_path):
             with open(image_path, "rb") as f:
                 discord_file = discord.File(f, filename="ukpeconomy_stats.png")
-                await interaction.followup.send(file=discord_file)
             os.remove(image_path)
+            return discord_file
         else:
-            await interaction.followup.send("Sorry, couldn't generate the economy stats image.", ephemeral=True)
+            logger.error("Economy stats image path not found or does not exist.")
+            return None
     except Exception as e:
-        logger.error(f"Error in handle_ukpeconomy_command during /ukpeconomy: {e}", exc_info=True)
-        await interaction.followup.send("An error occurred while generating economy stats. Please check bot logs for details.", ephemeral=True)
+        logger.error(f"Error in handle_ukpeconomy_command: {e}", exc_info=True)
+        return None
