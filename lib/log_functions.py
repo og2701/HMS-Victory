@@ -11,12 +11,26 @@ hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 
 
 def trim(im):
-    bg = Image.new(im.mode, im.size, (255, 255, 255))
-    diff = ImageChops.difference(im, bg)
+    if 'A' not in im.getbands():
+        bg = Image.new(im.mode, im.size, (255, 255, 255))
+        diff = ImageChops.difference(im, bg)
+        diff = ImageChops.add(diff, diff, 2.0, -100)
+        bbox = diff.getbbox()
+        if bbox:
+            return im.crop(bbox)
+        return im
+
+    bg = Image.new('RGB', im.size, (255, 255, 255))
+    bg.paste(im, mask=im.getchannel('A'))
+
+    white_bg_for_diff = Image.new('RGB', im.size, (255, 255, 255))
+    diff = ImageChops.difference(bg, white_bg_for_diff)
     diff = ImageChops.add(diff, diff, 2.0, -100)
     bbox = diff.getbbox()
+
     if bbox:
         return im.crop(bbox)
+
     return im
 
 
