@@ -29,7 +29,7 @@ def read_html_template(file_path):
         return ""
 
 
-def calculate_estimated_height(content, line_height=20, base_height=100):
+def calculate_estimated_height(content, line_height=20, base_height=200):
     message_lines = content.split("\n")
     total_lines = sum(len(line) // 80 + 1 for line in message_lines)
     content_height = line_height * total_lines
