@@ -53,10 +53,12 @@ def define_commands(tree, client):
 
     @command("colour-palette", "Generates a colour palette from an image")
     async def colour_palette(interaction: Interaction, attachment_url: str):
+        await interaction.response.defer()
         await colourPalette(interaction, attachment_url)
 
     @command("gridify", "Adds a pixel art grid overlay to an image")
     async def gridify_command(interaction: Interaction, attachment_url: str):
+        await interaction.response.defer()
         await gridify(interaction, attachment_url)
 
     @command("role-react", "Adds a reaction role to a message", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
@@ -65,14 +67,17 @@ def define_commands(tree, client):
 
     @command("screenshot-canvas", "Takes a screenshot of the current canvas")
     async def screenshot_canvas(interaction: Interaction, x: int = -770, y: int = 7930):
+        await interaction.response.defer()
         await screenshotCanvas(interaction, x, y)
 
     @command("add-to-iceberg", "Adds text to the iceberg image", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def add_to_iceberg_command(interaction: Interaction, text: str, level: int):
+        await interaction.response.defer()
         await add_iceberg_text(interaction, text, level)
 
     @command("show-iceberg", "Shows the iceberg image")
     async def show_iceberg_command(interaction: Interaction):
+        await interaction.response.defer()
         await show_iceberg(interaction)
 
     @command("add-whitelist", "Adds a user to the whitelist for the politics channel", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
@@ -87,22 +92,25 @@ def define_commands(tree, client):
 
     @command("post-daily-summary", "Posts the daily summary in the current channel for a specific date", checks=[lambda i: has_role(i, ROLES.MINISTER)])
     async def post_daily_summary(interaction: Interaction, date: str = None):
+        await interaction.response.defer(ephemeral=True)
         formatted_date = await validate_and_format_date(interaction, date)
         if formatted_date is None:
             return
         summary_file_path = f"daily_summaries/daily_summary_{formatted_date}.json"
         if not os.path.exists(summary_file_path):
-            await interaction.response.send_message(f"No summary available for {formatted_date}.", ephemeral=True)
+            await interaction.followup.send(f"No summary available for {formatted_date}.", ephemeral=True)
             return
         await post_summary(client, interaction.channel.id, "daily", interaction.channel, formatted_date)
-        await interaction.response.send_message(f"Posted daily summary for {formatted_date}.", ephemeral=True)
+        await interaction.followup.send(f"Posted daily summary for {formatted_date}.", ephemeral=True)
 
     @command("post-last-weekly-summary", "Posts the most recently completed Monday–Sunday.", checks=[lambda i: has_role(i, ROLES.MINISTER)])
     async def post_last_weekly_summary(interaction: Interaction):
+        await interaction.response.defer(ephemeral=True)
         await post_summary_helper(interaction, "weekly")
 
     @command("post-last-monthly-summary", "Posts last month's monthly summary.", checks=[lambda i: has_role(i, ROLES.MINISTER)])
     async def post_last_monthly_summary(interaction: Interaction):
+        await interaction.response.defer(ephemeral=True)
         await post_summary_helper(interaction, "monthly")
 
     @command("politics-ban", "Toggles politics ban for a member", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
@@ -116,6 +124,7 @@ def define_commands(tree, client):
 
     @command("roast", "Roast a user based on recent messages in a channel", checks=[lambda i: has_any_role(i, [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER, ROLES.PCSO])])
     async def roast_command(interaction: Interaction, channel: TextChannel = None, user: Member = None):
+        await interaction.response.defer()
         await handle_roast_command(interaction, channel, user)
 
     @command("vc-control", "Toggles server mute/deafen perms for a user", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
@@ -157,17 +166,20 @@ def define_commands(tree, client):
 
     @command("archive-channel", "Archive the current channel.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def archive_channel_command(interaction: Interaction, seconds: int = 86400):
+        await interaction.response.defer()
         await archive_channel(interaction, interaction.client, seconds)
 
     @command("rank", "Displays your XP and rank in the server")
     async def rank_command(interaction: Interaction, member: Member = None):
+        await interaction.response.defer()
         if member is None:
             member = interaction.user
         file = await generate_rank_card(interaction, member)
-        await interaction.response.send_message(file=file)
+        await interaction.followup.send(file=file)
 
     @command("leaderboard", "Displays a paginated leaderboard of top XP holders (in increments of 30).")
     async def leaderboard_command(interaction: Interaction):
+        await interaction.response.defer()
         if not hasattr(client, "xp_system"):
             from lib.xp_system import XPSystem
             client.xp_system = XPSystem()
@@ -307,6 +319,7 @@ def define_commands(tree, client):
 
     @command("richlist", "Displays a leaderboard of users with the most UKPence")
     async def richlist_command(interaction: Interaction):
+        await interaction.response.defer()
         if not hasattr(interaction.client, "xp_system"):
             from lib.xp_system import XPSystem
             interaction.client.xp_system = XPSystem()
@@ -315,4 +328,5 @@ def define_commands(tree, client):
 
     @command("ukpeconomy", "Shows the current state of the UKPence economy as an image.")
     async def ukpeconomy_command_def(interaction: Interaction):
+        await interaction.response.defer()
         await handle_ukpeconomy_command(interaction)
