@@ -1,4 +1,4 @@
-CHROME_PATH = "chromium"
+CHROME_PATH = "/usr/bin/chromium-browser"
 
 ROLE_BUTTONS = {
     "1132280073379123311": {
