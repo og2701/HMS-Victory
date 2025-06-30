@@ -284,21 +284,24 @@ def encode_image_to_data_uri(image_path):
     encoded = base64.b64encode(data).decode("utf-8")
     return f"data:image/png;base64,{encoded}"
 
-async def generate_rank_card(interaction: Interaction, member: Member) -> discord.File:
+async def generate_rank_card(interaction: discord.Interaction, member: discord.Member) -> discord.File:
+    logger.info(f"Initiating rank card generation for {member.display_name} (ID: {member.id})")
     try:
         if not hasattr(interaction.client, "xp_system"):
+            logger.warning("XPSystem not found on client. Initializing now.")
             from xp_system import XPSystem
             interaction.client.xp_system = XPSystem()
-
         xp_system = interaction.client.xp_system
+        logger.debug("XPSystem has been accessed.")
+
         rank, current_xp = xp_system.get_rank(str(member.id))
         rank_display = f"#{rank}" if rank is not None else "Unranked"
         if current_xp is None:
             current_xp = 0
+            logger.warning(f"No XP data for {member.id}, defaulting to 0.")
+        logger.info(f"Data for {member.display_name}: Rank={rank_display}, XP={current_xp}")
 
-        current_role_id = None
-        next_role_id = None
-        next_threshold = None
+        current_role_id, next_role_id, next_threshold = None, None, None
         for threshold, role_id in CHAT_LEVEL_ROLE_THRESHOLDS:
             if current_xp >= threshold:
                 current_role_id = role_id
@@ -306,6 +309,7 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
                 next_role_id = role_id
                 next_threshold = threshold
                 break
+        logger.debug(f"Role state: current_role_id={current_role_id}, next_role_id={next_role_id}, next_threshold={next_threshold}")
 
         if next_threshold is None:
             progress_percent = 100
@@ -317,15 +321,19 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
             next_role = interaction.guild.get_role(next_role_id) if next_role_id else None
             next_role_name = next_role.name if next_role else "Max"
             next_role_html = f'<div class="role-label next-role">{next_role_name}</div>'
+        logger.info(f"Progress calculated: {progress_percent:.2f}%")
 
         current_role_name = "None"
         if current_role_id:
             current_role = interaction.guild.get_role(current_role_id)
             if current_role:
                 current_role_name = current_role.name
+        logger.info(f"Current role set to: {current_role_name}")
 
         template_path = os.path.join("templates", "rank_card.html")
+        logger.debug(f"Reading template from {template_path}")
         html_content = read_html_template(template_path)
+
         html_content = html_content.replace("{profile_pic}", str(member.display_avatar.url))
         html_content = html_content.replace("{username}", member.display_name)
         html_content = html_content.replace("{rank}", rank_display)
@@ -333,28 +341,21 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
         html_content = html_content.replace("{progress_percent}", f"{progress_percent}%")
         html_content = html_content.replace("{current_role}", current_role_name)
         html_content = html_content.replace("{next_role_html}", next_role_html)
+        logger.debug("Main HTML content has been populated.")
 
         shutcoin_html = ""
         if SHUTCOIN_ENABLED:
             shutcoin_count = get_shutcoins(member.id)
             shutcoin_icon_path = os.path.join("data", "shutcoin.png")
             shutcoin_icon_uri = encode_image_to_data_uri(shutcoin_icon_path)
-            shutcoin_html = f'''
-            <div class="coin-box">
-              <img src="{shutcoin_icon_uri}" class="coin-icon" />
-              <span class="xp-text">{shutcoin_count:,}</span>
-            </div>
-            '''
+            shutcoin_html = f'<div class="coin-box"><img src="{shutcoin_icon_uri}" class="coin-icon" /><span class="xp-text">{shutcoin_count:,}</span></div>'
+            logger.debug(f"Shutcoin HTML populated with count: {shutcoin_count}")
 
         britbuck_amount = get_bb(member.id)
         britbuck_icon_path = os.path.join("data", "ukpence.png")
         britbuck_icon_uri = encode_image_to_data_uri(britbuck_icon_path)
-        britbuck_html = f'''
-        <div class="coin-box">
-          <img src="{britbuck_icon_uri}" class="coin-icon" />
-          <span class="xp-text">{britbuck_amount:,}</span>
-        </div>
-        '''
+        britbuck_html = f'<div class="coin-box"><img src="{britbuck_icon_uri}" class="coin-icon" /><span class="xp-text">{britbuck_amount:,}</span></div>'
+        logger.debug(f"UKPence HTML populated with amount: {britbuck_amount}")
 
         html_content = html_content.replace("{shutcoin_html}", shutcoin_html)
         html_content = html_content.replace("{britbuck_html}", britbuck_html)
@@ -362,23 +363,32 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
         user_id_str = str(member.id)
         custom_bg_filename = CUSTOM_RANK_BACKGROUNDS.get(user_id_str, "unionjack.png")
         background_path = os.path.join("data", "rank_cards", custom_bg_filename)
+        logger.info(f"Using background image: {custom_bg_filename}")
         background_data_uri = encode_image_to_data_uri(background_path)
         html_content = html_content.replace("{unionjack}", background_data_uri)
 
         size = (1600, 1000)
         output_file = f'{uuid.uuid4()}.png'
+        logger.info(f"Preparing to screenshot HTML to {output_file} with size {size}")
+
         hti.screenshot(html_str=html_content, save_as=output_file, size=size)
+        logger.info(f"Screenshot successful. Image saved to {output_file}")
+
         image = Image.open(output_file)
+        logger.debug("Image opened with Pillow for trimming.")
         image = trim(image)
+        logger.debug("Image trimmed.")
         image.save(output_file)
+        logger.debug("Trimmed image saved.")
 
         with open(output_file, "rb") as f:
             image_bytes = io.BytesIO(f.read())
+        logger.info("Image read into memory buffer for Discord.")
         os.remove(output_file)
+        logger.info(f"Temporary file {output_file} removed.")
         return discord.File(fp=image_bytes, filename="rank.png")
+
     except Exception as e:
-        print("!!! A HIDDEN ERROR OCCURRED IN generate_rank_card !!!")
-        print(f"The specific error is: {e}")
-        print("Full traceback of the hidden error:")
-        traceback.print_exc()
+        logger.critical(f"An unrecoverable error occurred in generate_rank_card for {member.display_name}: {e}")
+        logger.critical(traceback.format_exc())
         return None
