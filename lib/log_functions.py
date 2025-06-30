@@ -29,7 +29,7 @@ def read_html_template(file_path):
         return ""
 
 
-def calculate_estimated_height(content, line_height=20, base_height=200):
+def calculate_estimated_height(content, line_height=20, base_height=100):
     message_lines = content.split("\n")
     total_lines = sum(len(line) // 80 + 1 for line in message_lines)
     content_height = line_height * total_lines
@@ -65,7 +65,8 @@ async def create_message_image(message, title):
 
     output_path = f"{uuid.uuid4()}.png"
     hti.screenshot(
-        html_str=html_content, save_as=output_path, size=(800, estimated_height)
+    html_str=html_content,
+    save_as=image_file_path
     )
     image = Image.open(output_path)
     image = trim(image)
