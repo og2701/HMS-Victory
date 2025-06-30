@@ -65,8 +65,7 @@ async def create_message_image(message, title):
 
     output_path = f"{uuid.uuid4()}.png"
     hti.screenshot(
-    html_str=html_content,
-    save_as=image_file_path
+        html_str=html_content, save_as=output_path, size=(800, estimated_height)
     )
     image = Image.open(output_path)
     image = trim(image)
