@@ -366,7 +366,7 @@ async def generate_rank_card(interaction: Interaction, member: Member) -> discor
         html_content = html_content.replace("{unionjack}", background_data_uri)
 
         size = (1600, 1000)
-        output_file = f"{uuid.uuid4()}.png"
+        output_file = f'/home/ubuntu/HMS-Victory/{uuid.uuid4()}.png'
         hti.screenshot(html_str=html_content, save_as=output_file, size=size)
         image = Image.open(output_file)
         image = trim(image)
