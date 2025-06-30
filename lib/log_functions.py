@@ -11,14 +11,14 @@ hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 
 
 def trim(im):
-    if im.mode != "RGB":
-        im = im.convert("RGB")
-    bg_colour = im.getpixel((0, 0))
-    bg = Image.new("RGB", im.size, bg_colour)
+    bg = Image.new(im.mode, im.size, (255, 255, 255))
     diff = ImageChops.difference(im, bg)
-    diff = ImageChops.add(diff, diff)
+    diff = ImageChops.add(diff, diff, 2.0, -100)
     bbox = diff.getbbox()
-    return im.crop(bbox) if bbox else im
+    if bbox:
+        return im.crop(bbox)
+    return im
+
 
 def read_html_template(file_path):
     try:
@@ -29,7 +29,7 @@ def read_html_template(file_path):
         return ""
 
 
-def calculate_estimated_height(content, line_height=20, base_height=100):
+def calculate_estimated_height(content, line_height=20, base_height=1000):
     message_lines = content.split("\n")
     total_lines = sum(len(line) // 80 + 1 for line in message_lines)
     content_height = line_height * total_lines
