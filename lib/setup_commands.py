@@ -124,8 +124,7 @@ def define_commands(tree, client):
 
     @command("roast", "Roast a user based on recent messages in a channel", checks=[lambda i: has_any_role(i, [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER, ROLES.PCSO])])
     async def roast_command(interaction: Interaction, channel: TextChannel = None, user: Member = None):
-        await interaction.response.defer()
-        await handle_roast_command(interaction, channel, user)
+        await roast(interaction, channel, user)
 
     @command("vc-control", "Toggles server mute/deafen perms for a user", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def vc_control(interaction: Interaction, user: Member):

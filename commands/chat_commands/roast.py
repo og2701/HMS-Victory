@@ -1,10 +1,10 @@
 import random
-from discord import Embed, Forbidden
+from discord import Embed, Forbidden, TextChannel, Member
 import openai
 from datetime import datetime, timedelta
 from os import getenv
 from lib.utils import fetch_messages_with_context, estimate_tokens
-from lib.settings import *
+from lib.settings import USERS, SUMMARISE_DAILY_LIMIT, command_usage_tracker
 
 openai.api_key = getenv("OPENAI_TOKEN")
 
@@ -18,13 +18,29 @@ thinking_messages = [
     "Downloading premium insults...",
 ]
 
-async def roast(interaction, channel=None, user=None):
+async def roast(interaction, channel: TextChannel = None, user: Member = None):
     if channel is None:
         channel = interaction.channel
     if user is None:
         user = interaction.user
 
+    today = datetime.now().date()
+    usage_data = command_usage_tracker[interaction.user.id]
+
+    if interaction.user.id != USERS.OGGERS:
+        if usage_data["last_used"] != today:
+            usage_data["count"] = 0
+            usage_data["last_used"] = today
+
+        if usage_data["count"] >= SUMMARISE_DAILY_LIMIT:
+            await interaction.response.send_message(
+                f"You've hit the daily limit of {SUMMARISE_DAILY_LIMIT} usages for this command", ephemeral=True
+            )
+            return
+        usage_data["count"] += 1
+
     thinking_text = random.choice(thinking_messages)
+    await interaction.response.defer()
     await interaction.followup.send(thinking_text, ephemeral=False)
 
     user_messages = []

@@ -123,26 +123,6 @@ async def validate_and_format_date(interaction: Interaction, date_str: str = Non
         await interaction.response.send_message("Invalid date format. Please use YYYY-MM-DD.", ephemeral=True)
         return None
 
-async def handle_roast_command(interaction: Interaction, channel: TextChannel, user: Member):
-    """Handles the roast command, including usage limits"""
-    from lib.commands import roast
-    from lib.settings import USERS, SUMMARISE_DAILY_LIMIT, command_usage_tracker
-    today = datetime.now().date()
-    usage_data = command_usage_tracker[interaction.user.id]
-    if interaction.user.id == USERS.OGGERS:
-        await roast(interaction, channel, user)
-        return
-    if usage_data["last_used"] != today:
-        usage_data["count"] = 0
-        usage_data["last_used"] = today
-    if usage_data["count"] >= SUMMARISE_DAILY_LIMIT:
-        await interaction.response.send_message(
-            f"You've hit the daily limit of {SUMMARISE_DAILY_LIMIT} usages for this command", ephemeral=True
-        )
-        return
-    usage_data["count"] += 1
-    await roast(interaction, channel, user)
-
 async def post_summary_helper(interaction: Interaction, summary_type: str):
     """Helper function to post weekly/monthly summaries based on type"""
     from lib.summary import post_summary
