@@ -22,5 +22,3 @@ from commands.iceberg.get_iceberg import show_iceberg
 from commands.chat_commands.roast import roast
 
 from commands.economy.economy_state import handle_ukpeconomy_command
-
-from commands.utility.weather import weather_command
