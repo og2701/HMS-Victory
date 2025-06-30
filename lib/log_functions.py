@@ -6,8 +6,6 @@ from PIL import Image, ImageChops
 from config import CHROME_PATH
 import difflib
 from html2image import Html2Image
-import os
-from .image_utils import trim_image
 
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 
@@ -40,30 +38,40 @@ def calculate_estimated_height(content, line_height=20, base_height=100):
 
 
 async def create_message_image(message, title):
-    output_path = "/tmp/hms-victory-logs"
-    if not os.path.exists(output_path):
-        os.makedirs(output_path)
+    avatar_url = (
+        message.author.avatar.url
+        if message.author.avatar
+        else message.author.default_avatar.url
+    )
+    response = requests.get(avatar_url)
+    avatar_base64 = base64.b64encode(response.content).decode("utf-8")
+    avatar_data_url = f"data:image/png;base64,{avatar_base64}"
 
-    image_file_path = os.path.join(output_path, f"deleted_message_{message.id}.png")
+    escaped_content = html.escape(message.content)
+    estimated_height = calculate_estimated_height(escaped_content)
+
+    border_color = message.author.color.to_rgb()
+    display_name = message.author.display_name
+    created_at = message.created_at.strftime("%H:%M")
 
     html_content = read_html_template("templates/deleted_message.html").format(
         title=title,
-        display_name=message.author.display_name,
-        avatar_data_url=get_avatar_data_url(message.author),
-        created_at=message.created_at.strftime('%H:%M'),
-        content=message.content,
-        border_color=get_role_color(message.author)
+        border_color=border_color,
+        avatar_data_url=avatar_data_url,
+        display_name=display_name,
+        created_at=created_at,
+        content=escaped_content,
     )
 
-    hti = Html2Image(output_path=output_path)
-
+    output_path = f"{uuid.uuid4()}.png"
     hti.screenshot(
-        html_str=html_content,
-        save_as=os.path.basename(image_file_path)
+    html_str=html_content,
+    save_as=image_file_path
     )
-
-    trim_image(image_file_path)
-    return image_file_path
+    image = Image.open(output_path)
+    image = trim(image)
+    image.save(output_path)
+    return output_path
 
 
 def highlight_diff(before, after):
