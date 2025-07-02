@@ -75,3 +75,5 @@ VC_LOCKDOWN_WHITELIST = [
     ROLES.PEASANT,
     ROLES.SERF,
 ]
+
+OVERNIGHT_MUTE_FILE = "overnight_mute.txt"

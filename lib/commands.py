@@ -11,6 +11,7 @@ from commands.mod_commands.anti_raid import (
     handle_new_member_anti_raid,
 )
 from commands.mod_commands.archive_channel import archive_channel
+from commands.mod_commands.overnight_mute import toggle_overnight_mute
 
 from commands.art_functions.colour_palette import colourPalette
 from commands.art_functions.grid import gridify

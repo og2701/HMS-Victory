@@ -335,3 +335,8 @@ def define_commands(tree, client):
             await interaction.followup.send(file=file_to_send)
         else:
             await interaction.followup.send("An error occurred while generating the economy stats.", ephemeral=True)
+
+
+    @command("toggle-visitor-overnight-mute", "Toggles the overnight mute for visitors", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
+    async def toggle_overnight_mute_command(interaction: Interaction):
+        await toggle_overnight_mute(interaction)

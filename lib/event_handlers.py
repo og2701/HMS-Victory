@@ -25,6 +25,7 @@ from commands.mod_commands.archive_channel import (
     ArchiveButtonView,
     schedule_archive_move,
 )
+from commands.mod_commands.overnight_mute import mute_visitors, unmute_visitors
 
 logger = logging.getLogger(__name__)
 logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
@@ -229,6 +230,9 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(sweep_predictions, IntervalTrigger(seconds=30), args=[client])
     scheduler.add_job(award_stage_bonuses, IntervalTrigger(minutes=1), args=[client], id="award_stage_bonuses_interval", name="Award Stage UKPence (Interval)") # Runs every minute
     scheduler.add_job(cleanup_thread_members, IntervalTrigger(days=1, timezone="Europe/London"), args=[client], next_run_time=discord.utils.utcnow() + timedelta(minutes=5))
+
+    scheduler.add_job(mute_visitors, CronTrigger(hour=2, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="mute_visitors_job", name="Mute visitors overnight")
+    scheduler.add_job(unmute_visitors, CronTrigger(hour=6, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="unmute_visitors_job", name="Unmute visitors in the morning")
 
     scheduler.start()
 
