@@ -231,7 +231,7 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(award_stage_bonuses, IntervalTrigger(minutes=1), args=[client], id="award_stage_bonuses_interval", name="Award Stage UKPence (Interval)") # Runs every minute
     scheduler.add_job(cleanup_thread_members, IntervalTrigger(days=1, timezone="Europe/London"), args=[client], next_run_time=discord.utils.utcnow() + timedelta(minutes=5))
 
-    scheduler.add_job(mute_visitors, CronTrigger(hour=2, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="mute_visitors_job", name="Mute visitors overnight")
+    scheduler.add_job(mute_visitors, CronTrigger(hour=3, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="mute_visitors_job", name="Mute visitors overnight")
     scheduler.add_job(unmute_visitors, CronTrigger(hour=6, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="unmute_visitors_job", name="Unmute visitors in the morning")
 
     scheduler.start()
