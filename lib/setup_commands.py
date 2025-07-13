@@ -130,6 +130,10 @@ def define_commands(tree, client):
     async def vc_control(interaction: Interaction, user: Member):
         await toggleMuteDeafenPermissions(interaction, user)
 
+    @command("vc-ban", "Toggles the VC Ban role for a user", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLE.BORDER_FORCE])])
+    async def vc_ban_command(interaction: Interaction, user: Member):
+        await vc_ban(interaction, user)
+
     @command("setup-announcement", "Setup an announcement with optional role buttons", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def setup_announcement(interaction: Interaction, channel: TextChannel):
         await setup_announcement_command(interaction, channel)

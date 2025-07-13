@@ -12,6 +12,7 @@ from commands.mod_commands.anti_raid import (
 )
 from commands.mod_commands.archive_channel import archive_channel
 from commands.mod_commands.overnight_mute import toggle_overnight_mute
+from commands.mod_commands.vc_ban import vc_ban
 
 from commands.art_functions.colour_palette import colourPalette
 from commands.art_functions.grid import gridify
