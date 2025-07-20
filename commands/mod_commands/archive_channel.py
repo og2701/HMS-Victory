@@ -1,6 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+from lib.log_functions import log_message
 
 ARCHIVIST_ROLE_ID = 1281602571416375348
 ARCHIVE_CATEGORY_ID = 962003831313555537
@@ -38,11 +39,15 @@ class ArchiveChannel(commands.Cog):
                 color=0x00FF00
             )
             await channel_to_archive.send(embed=embed)
+            
+            log_text = f"Channel '{channel_to_archive.name}' was moved to archives by {interaction.user.name}."
+            log_message(log_text)
 
             await interaction.followup.send(f"Channel #{channel_to_archive.name} has been successfully archived.", ephemeral=True)
 
         except Exception as e:
             await interaction.followup.send(f"An error occurred while archiving the channel: {e}", ephemeral=True)
+            log_message(f"Error archiving channel: {e}")
 
 async def setup(bot):
     await bot.add_cog(ArchiveChannel(bot))
