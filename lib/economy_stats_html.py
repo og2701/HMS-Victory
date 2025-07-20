@@ -12,7 +12,7 @@ from lib.ukpence import _load as load_ukpence_data
 from config import CHROME_PATH
 
 try:
-    from lib.settings import ECONOMY_METRICS_FILE, BALANCE_SNAPSHOT_DIR
+    from config import ECONOMY_METRICS_FILE, BALANCE_SNAPSHOT_DIR
 except ImportError:
     ECONOMY_METRICS_FILE = "economy_metrics.json"
     BALANCE_SNAPSHOT_DIR = "balance_snapshots"

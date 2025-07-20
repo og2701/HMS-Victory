@@ -2,7 +2,7 @@ import os
 from discord import File
 from PIL import Image, ImageDraw, ImageFont
 import json
-from lib.settings import *
+from config import *
 from lib.utils import random_color_excluding_blue_and_dark, get_text_position
 
 ICEBERG_IMAGE_PATH = "data/image.png"

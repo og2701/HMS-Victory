@@ -4,7 +4,7 @@ import json
 import asyncio
 from discord import Embed
 from discord.interactions import Interaction
-from lib.settings import *
+from config import *
 from lib.utils import set_file_status  # Reuse our file toggle utility
 
 ANTI_RAID_FILE = "anti_raid_active"

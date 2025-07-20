@@ -1,8 +1,8 @@
 import discord
 from discord import Embed
 import asyncio
-from lib.settings import *
-from lib.rank_constants import *
+from config import *
+from config import *
 from lib.utils import set_file_status, send_embed_to_channels, edit_voice_channel_members
 
 async def lockdown_vcs(interaction):

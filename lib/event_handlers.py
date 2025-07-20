@@ -10,7 +10,7 @@ from lib.translation import translate_and_send
 from lib.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.utils import *
 from lib.log_functions import create_message_image, create_edited_message_image
-from lib.settings import *
+from config import *
 from lib.shutcoin import can_use_shutcoin, remove_shutcoin, SHUTCOIN_ENABLED
 from lib.prediction_system import prediction_embed, _save
 from lib.ukpence import add_bb, remove_bb, ensure_bb, _load as load_ukpence_data
@@ -29,6 +29,7 @@ from commands.mod_commands.overnight_mute import mute_visitors, unmute_visitors
 
 logger = logging.getLogger(__name__)
 logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
+POLITICS_WHITELISTED_USER_IDS = load_whitelist()
 
 MAX_IMAGE_SIZE = 5 * 1024 * 1024
 

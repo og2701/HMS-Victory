@@ -1,5 +1,5 @@
 from discord import Embed
-from lib.constants import ROLES
+from config import ROLES
 from lib.utils import toggle_user_role
 
 async def vc_ban(interaction, member):

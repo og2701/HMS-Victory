@@ -8,8 +8,8 @@ import random
 import json
 from PIL import Image, ImageChops
 from html2image import Html2Image
-from lib.settings import *
-from lib.rank_constants import *
+from config import *
+from config import *
 from lib.ukpence import get_bb, _load
 
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)

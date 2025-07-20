@@ -1,7 +1,7 @@
 import discord
 from discord import Embed, ButtonStyle, Interaction, Forbidden
 from discord.ui import View, Button
-from lib.settings import GUILD_ID
+from config import GUILD_ID
 from lib.utils import load_persistent_views, save_persistent_views
 
 persistent_views = load_persistent_views()

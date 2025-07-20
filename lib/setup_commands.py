@@ -5,7 +5,7 @@ import pytz
 import inspect
 import asyncio
 from functools import wraps
-from lib.settings import *
+from config import *
 from lib.commands import *
 from lib.utils import *
 from lib.summary import post_summary
@@ -82,7 +82,7 @@ def define_commands(tree, client):
 
     @command("add-whitelist", "Adds a user to the whitelist for the politics channel", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
     async def add_whitelist_command(interaction: Interaction, user: Member):
-        from lib.settings import POLITICS_WHITELISTED_USER_IDS
+        from config import POLITICS_WHITELISTED_USER_IDS
         if user.id not in POLITICS_WHITELISTED_USER_IDS:
             POLITICS_WHITELISTED_USER_IDS.append(user.id)
             save_whitelist(POLITICS_WHITELISTED_USER_IDS)
@@ -115,7 +115,7 @@ def define_commands(tree, client):
 
     @command("politics-ban", "Toggles politics ban for a member", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
     async def politics_ban_command(interaction: Interaction, user: Member):
-        from lib.settings import ROLES
+        from config import ROLES
         role = interaction.guild.get_role(ROLES.POLITICS_BAN)
         if not role:
             await interaction.response.send_message(f"Role with ID {ROLES.POLITICS_BAN} not found.", ephemeral=True)
@@ -160,7 +160,7 @@ def define_commands(tree, client):
 
     @command("embed-perms", "Toggles embed perms for a member", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
     async def embed_perms_command(interaction: Interaction, user: Member):
-        from lib.settings import ROLES
+        from config import ROLES
         role = interaction.guild.get_role(ROLES.EMBED_PERMS)
         if not role:
             await interaction.response.send_message(f"Role with ID {ROLES.EMBED_PERMS} not found.", ephemeral=True)

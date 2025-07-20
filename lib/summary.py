@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import discord
 import pytz
 from lib.summary_html import create_summary_image
-from lib.settings import *
+from config import *
 
 SUMMARY_DATA_FILE = "daily_summaries/daily_summary_{date}.json"
 SUMMARY_BACKUP_DATA_FILE = "daily_summaries/daily_summary_{date}_{time}.bak.json"

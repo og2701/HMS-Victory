@@ -4,7 +4,7 @@ import json
 import time
 import copy
 from lib.utils import load_persistent_views, save_persistent_views
-from lib.settings import *
+from config import *
 
 ARCHIVIST_ROLE_ID = 1281602571416375348
 ARCHIVE_CATEGORY_ID = 962003831313555537

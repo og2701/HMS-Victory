@@ -4,7 +4,7 @@ import openai
 from datetime import datetime, timedelta
 from os import getenv
 from lib.utils import fetch_messages_with_context, estimate_tokens
-from lib.settings import USERS, SUMMARISE_DAILY_LIMIT, command_usage_tracker
+from config import USERS, SUMMARISE_DAILY_LIMIT, command_usage_tracker
 
 openai.api_key = getenv("OPENAI_TOKEN")
 

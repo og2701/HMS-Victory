@@ -1,7 +1,7 @@
 import discord
 import openai
 import os
-from lib.settings import *
+from config import *
 
 openai.api_key = os.getenv("OPENAI_TOKEN")
 

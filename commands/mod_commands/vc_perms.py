@@ -1,5 +1,5 @@
 from discord import Embed
-from lib.settings import *
+from config import *
 from lib.utils import toggle_user_role
 
 async def toggleMuteDeafenPermissions(interaction, member):

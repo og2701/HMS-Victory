@@ -1,6 +1,6 @@
 import discord
 import os
-from lib.settings import ROLES, CHANNELS, OVERNIGHT_MUTE_FILE
+from config import ROLES, CHANNELS, OVERNIGHT_MUTE_FILE
 from lib.utils import set_file_status
 
 async def mute_visitors(guild):
