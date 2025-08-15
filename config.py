@@ -18,6 +18,7 @@ OVERNIGHT_MUTE_FILE = "overnight_mute.txt"
 
 # --- Whitelists & Trackers ---
 command_usage_tracker = defaultdict(lambda: {"count": 0, "last_used": None})
+POLITICS_WHITELISTED_USER_IDS = []
 
 # --- Role IDs ---
 class ROLES:
