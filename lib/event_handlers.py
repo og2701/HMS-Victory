@@ -415,8 +415,8 @@ async def on_message(client, message):
         client.xp_system = XPSystem()
         logger.info("XP system initialised")
 
-    if not await restrict_channel_for_new_members(message, CHANNELS.POLITICS, 7, POLITICS_WHITELISTED_USER_IDS):
-        return
+    # if not await restrict_channel_for_new_members(message, CHANNELS.POLITICS, 7, POLITICS_WHITELISTED_USER_IDS):
+    #     return
 
     await client.xp_system.update_xp(message)
     ensure_bb(message.author.id)
