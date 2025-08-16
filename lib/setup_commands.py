@@ -15,7 +15,6 @@ from lib.ukpence import get_bb, set_bb, add_bb, remove_bb
 from typing import Optional
 
 def define_commands(tree, client):
-    """Defines slash commands for HMS Victory"""
     def command(name: str, description: str, checks: list = None):
         def decorator(func):
             async def wrapper(*args, **kwargs):
@@ -82,10 +81,11 @@ def define_commands(tree, client):
 
     @command("add-whitelist", "Adds a user to the whitelist for the politics channel", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
     async def add_whitelist_command(interaction: Interaction, user: Member):
-        from config import POLITICS_WHITELISTED_USER_IDS
-        if user.id not in POLITICS_WHITELISTED_USER_IDS:
-            POLITICS_WHITELISTED_USER_IDS.append(user.id)
-            save_whitelist(POLITICS_WHITELISTED_USER_IDS)
+        from lib.utils import load_whitelist, save_whitelist
+        current_whitelist = load_whitelist()
+        if user.id not in current_whitelist:
+            current_whitelist.append(user.id)
+            save_whitelist(current_whitelist)
             await interaction.response.send_message(f"{user.mention} has been added to the whitelist.", ephemeral=True)
         else:
             await interaction.response.send_message(f"{user.mention} is already in the whitelist.", ephemeral=True)
@@ -133,7 +133,7 @@ def define_commands(tree, client):
     @command("vc-ban", "Toggles the VC Ban role for a user", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
     async def vc_ban_command(interaction: Interaction, user: Member):
         await vc_ban(interaction, user)
-    
+
     @command("video-ban", "Toggles the Video Ban role for a user", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
     async def video_ban_command(interaction: Interaction, user: Member):
         await video_ban(interaction, user)
@@ -291,38 +291,6 @@ def define_commands(tree, client):
         pay_data.append(pay_log_entry)
         with open(PAY_LOG_FILE, "w") as f_log_write:
             json.dump(pay_data, f_log_write, indent=4)
-
-
-
-
-
-
-    # @command("bb-set", "Sets a user's UKPence balance.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    # async def bb_set(interaction: Interaction, user: Member, amount: int):
-    #     old = get_bb(user.id)
-    #     set_bb(user.id, amount)
-    #     new = get_bb(user.id)
-    #     embed = Embed(
-    #         title="UKPence Balance Updated",
-    #         description=f"{user.mention}'s UKPence were updated "
-    #                     f"from **{old:,}** to **{new:,}**",
-    #         color=discord.Color.gold(),
-    #     ).set_footer(text=f"by {interaction.user.display_name}")
-    #     await interaction.response.send_message(embed=embed)
-
-    # @command("bb-add", "Adds UKPence to a user.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    # async def bb_add(interaction: Interaction, user: Member, amount: int):
-    #     old = get_bb(user.id)
-    #     add_bb(user.id, amount)
-    #     new = get_bb(user.id)
-    #     embed = Embed(
-    #         title="UKPence Added",
-    #         description=f"**{amount:,}** UKPence added to {user.mention}\n"
-    #                     f"Balance: **{old:,} → {new:,}**",
-    #         color=discord.Color.gold(),
-    #     ).set_footer(text=f"by {interaction.user.display_name}")
-    #     await interaction.response.send_message(embed=embed)
-
 
     @command("richlist", "Displays a leaderboard of users with the most UKPence")
     async def richlist_command(interaction: Interaction):
