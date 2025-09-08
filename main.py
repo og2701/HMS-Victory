@@ -17,44 +17,59 @@ from config import *
 from lib.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.on_message_functions import *
 from lib.prediction_system import Prediction, _load as load_predictions, _save as save_predictions
-from lib.ukpence import add_bb, get_all_balances
+from lib.ukpence import add_bb, get_all_balances as load_ukpence_data
 from lib.economy_stats_html import create_economy_stats_image
-from lib.database import init_db
+from database import init_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MAX_PART_SIZE = 8 * 1024 * 1024
 
-async def restore_database_if_missing(client):
+
+async def restore_database_if_missing():
     if not os.path.exists('database.db'):
-        logger.warning("database.db not found. Attempting to restore from backup channel...")
-        archive_channel = await client.fetch_channel(CHANNELS.DATA_BACKUP)
-        if not archive_channel:
-            logger.error(f"Backup channel with ID {CHANNELS.DATA_BACKUP} not found. Cannot restore database.")
-            logger.info("Creating a new empty database.")
+        logger.warning("database.db not found. Attempting to restore from backup...")
+        
+        # We need a temporary client to fetch the backup
+        intents = discord.Intents.default()
+        temp_client = discord.Client(intents=intents)
+        
+        bot_token = os.getenv("DISCORD_TOKEN")
+        if not bot_token:
+            logger.error("Bot token not found in environment variables. Cannot restore database. Creating a new one.")
             init_db()
             return
-
-        async for message in archive_channel.history(limit=100):
-            if message.attachments:
-                for attachment in message.attachments:
-                    if attachment.filename.endswith('.db'):
-                        logger.info(f"Found latest database backup: {attachment.filename}")
-                        try:
-                            async with aiohttp.ClientSession() as session:
-                                async with session.get(attachment.url) as resp:
-                                    if resp.status == 200:
-                                        with open('database.db', 'wb') as f:
-                                            f.write(await resp.read())
-                                        logger.info("Successfully restored database.db from backup.")
-                                        return
-                        except Exception as e:
-                            logger.error(f"Failed to download or save the database backup: {e}")
+            
+        try:
+            # Login the temporary client
+            await temp_client.login(bot_token)
+            
+            archive_channel = await temp_client.fetch_channel(CHANNELS.DATA_BACKUP)
+            
+            latest_backup = None
+            async for message in archive_channel.history(limit=100):
+                if message.attachments:
+                    for attachment in message.attachments:
+                        if attachment.filename.startswith('database_backup_') and attachment.filename.endswith('.db'):
+                            latest_backup = attachment
                             break
-        
-        logger.warning("No database backup found in the last 100 messages. Creating a new empty database.")
-        init_db()
+                if latest_backup:
+                    break
+            
+            if latest_backup:
+                logger.info(f"Found latest database backup: {latest_backup.filename}")
+                await latest_backup.save('database.db')
+                logger.info("Successfully restored database.db from backup.")
+            else:
+                logger.warning("No database backup found in the last 100 messages. Creating a new empty database.")
+                init_db()
+
+        except Exception as e:
+            logger.error(f"Failed during database restore: {e}. Creating a new database.")
+            init_db()
+        finally:
+            await temp_client.close()
 
 
 async def zip_and_send_folder(client, folder_path, channel_id, zip_filename_prefix):
@@ -335,7 +350,7 @@ class AClient(discord.Client):
         day_metrics = metrics_data.get(yesterday_str, {})
         day_metrics["chat_rewards_total"] = total_chat_rewards_this_cycle
 
-        current_ukpence_balances = get_all_balances()
+        current_ukpence_balances = load_ukpence_data()
         total_circulation_at_eod = sum(current_ukpence_balances.values())
         day_metrics["total_circulation_end_of_day"] = total_circulation_at_eod
 
@@ -425,8 +440,5 @@ define_commands(tree, client)
 
 async def main():
     async with client:
-        await restore_database_if_missing(client)
+        await restore_database_if_missing()
         await client.start(os.getenv("DISCORD_TOKEN"))
-
-if __name__ == "__main__":
-    asyncio.run(main())
