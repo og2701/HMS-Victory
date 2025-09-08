@@ -8,7 +8,7 @@ import pytz
 from PIL import Image, ImageChops
 from html2image import Html2Image
 
-from lib.ukpence import _load as load_ukpence_data
+from lib.ukpence import get_all_balances as load_ukpence_data
 from config import CHROME_PATH
 
 try:
