@@ -10,3 +10,4 @@ apscheduler
 pytz
 openai==0.27.0
 aiofiles
+db-sqlite3

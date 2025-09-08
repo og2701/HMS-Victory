@@ -1,29 +1,21 @@
-import os
-import json
+import sqlite3
 
 SHUTCOIN_ENABLED = True
 
-def load_json(filename):
-    if os.path.exists(filename):
-        with open(filename, "r") as f:
-            return json.load(f)
-    return {}
-
-
-def save_json(filename, data):
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=4)
-
-SHUTCOIN_FILE = "shutcoins.json"
-
 def get_shutcoins(user_id):
-    data = load_json(SHUTCOIN_FILE)
-    return data.get(str(user_id), 0)
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    c.execute("SELECT balance FROM shutcoins WHERE user_id = ?", (str(user_id),))
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else 0
 
 def set_shutcoins(user_id, amount):
-    data = load_json(SHUTCOIN_FILE)
-    data[str(user_id)] = amount
-    save_json(SHUTCOIN_FILE, data)
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO shutcoins (user_id, balance) VALUES (?, ?)", (str(user_id), amount))
+    conn.commit()
+    conn.close()
 
 def add_shutcoins(user_id, amount):
     current = get_shutcoins(user_id)

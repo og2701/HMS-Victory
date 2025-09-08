@@ -1,23 +1,33 @@
-import os, json
+import sqlite3
 
-UKPENCE_FILE = "ukpence.json"
 SHOP = {"shutcoin": 1000}
 
-def _load():
-    return json.load(open(UKPENCE_FILE)) if os.path.exists(UKPENCE_FILE) else {}
-
-def _save(d):
-    json.dump(d, open(UKPENCE_FILE, "w"), indent=4)
-
 def ensure_bb(uid):
-    d = _load()
-    if str(uid) not in d:
-        d[str(uid)] = 20
-        _save(d)
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(uid),))
+    if c.fetchone() is None:
+        c.execute("INSERT INTO ukpence (user_id, balance) VALUES (?, ?)", (str(uid), 20))
+    conn.commit()
+    conn.close()
 
-def get_bb(uid):             return _load().get(str(uid), 0)
-def set_bb(uid, amt):        d=_load(); d[str(uid)] = amt; _save(d)
-def add_bb(uid, amt):        set_bb(uid, get_bb(uid) + amt)
+def get_bb(uid):
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(uid),))
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else 0
+
+def set_bb(uid, amt):
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO ukpence (user_id, balance) VALUES (?, ?)", (str(uid), amt))
+    conn.commit()
+    conn.close()
+
+def add_bb(uid, amt):
+    set_bb(uid, get_bb(uid) + amt)
 
 def remove_bb(uid, amt):
     bal = get_bb(uid)

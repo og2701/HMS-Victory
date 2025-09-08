@@ -5,24 +5,13 @@ import io
 import uuid
 import time
 import random
-import json
+import sqlite3
 from PIL import Image, ImageChops
 from html2image import Html2Image
 from config import *
-from config import *
-from lib.ukpence import get_bb, _load
+from lib.ukpence import get_bb
 
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
-
-def load_json(filename):
-    if os.path.exists(filename):
-        with open(filename, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_json(filename, data):
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=4)
 
 def trim(im: Image.Image) -> Image.Image:
     bg = Image.new(im.mode, im.size, im.getpixel((0, 0)))
@@ -104,24 +93,6 @@ class RichListView(discord.ui.View):
         await interaction.response.edit_message(attachments=[file], view=self)
 
 class XPSystem:
-    def __init__(self):
-        self.xp_data = {}
-        self.last_xp_time = {}
-        self.load_data()
-
-    def load_data(self):
-        data = load_json(XP_FILE)
-        if "rankings" in data:
-            self.xp_data = {e["user_id"]: e["score"] for e in data["rankings"]}
-        else:
-            self.xp_data = {}
-
-    def save_data(self):
-        rankings = []
-        for i, (uid, score) in enumerate(sorted(self.xp_data.items(), key=lambda x: x[1], reverse=True), start=1):
-            rankings.append({"rank": i, "score": score, "user_id": uid})
-        save_json(XP_FILE, {"rankings": rankings})
-
     def get_role_for_xp(self, xp):
         role_id = None
         for threshold, rid in CHAT_LEVEL_ROLE_THRESHOLDS:
@@ -134,11 +105,22 @@ class XPSystem:
     async def update_xp(self, message: discord.Message):
         user_id = str(message.author.id)
         now = time.time()
-        if user_id not in self.last_xp_time or (now - self.last_xp_time[user_id]) >= 120:
+        
+        conn = sqlite3.connect('database.db')
+        c = conn.cursor()
+        c.execute("SELECT xp, last_xp_time FROM xp WHERE user_id = ?", (user_id,))
+        result = c.fetchone()
+        
+        current_xp = result[0] if result else 0
+        last_xp_time = result[1] if result else 0
+
+        if (now - last_xp_time) >= 120:
             gain = random.randint(10, 20)
-            self.xp_data[user_id] = self.xp_data.get(user_id, 0) + gain
-            self.last_xp_time[user_id] = now
-            new_role_id = self.get_role_for_xp(self.xp_data[user_id])
+            new_xp = current_xp + gain
+            c.execute("INSERT OR REPLACE INTO xp (user_id, xp, last_xp_time) VALUES (?, ?, ?)", (user_id, new_xp, now))
+            conn.commit()
+            
+            new_role_id = self.get_role_for_xp(new_xp)
             if new_role_id:
                 guild = message.guild
                 new_role = guild.get_role(new_role_id)
@@ -154,17 +136,27 @@ class XPSystem:
                             color=discord.Color.green()
                         )
                         await message.channel.send(embed=embed)
-            self.save_data()
+        conn.close()
 
     def get_rank(self, user_id: str):
-        sorted_xp = sorted(self.xp_data.items(), key=lambda x: x[1], reverse=True)
+        conn = sqlite3.connect('database.db')
+        c = conn.cursor()
+        c.execute("SELECT user_id, xp FROM xp ORDER BY xp DESC")
+        sorted_xp = c.fetchall()
+        conn.close()
+        
         for i, (uid, score) in enumerate(sorted_xp, start=1):
             if uid == user_id:
                 return i, score
         return None, 0
 
     def get_all_sorted_xp(self):
-        return sorted(self.xp_data.items(), key=lambda x: x[1], reverse=True)
+        conn = sqlite3.connect('database.db')
+        c = conn.cursor()
+        c.execute("SELECT user_id, xp FROM xp ORDER BY xp DESC")
+        sorted_xp = c.fetchall()
+        conn.close()
+        return sorted_xp
 
     async def generate_leaderboard_image(self, guild: discord.Guild, data_slice, offset):
         with open("templates/leaderboard.html", "r", encoding="utf-8") as f:
@@ -227,8 +219,12 @@ class XPSystem:
         await interaction.followup.send(file=file, view=view)
 
     def get_all_balances(self):
-        data = _load()
-        return sorted(data.items(), key=lambda x: x[1], reverse=True)
+        conn = sqlite3.connect('database.db')
+        c = conn.cursor()
+        c.execute("SELECT user_id, balance FROM ukpence ORDER BY balance DESC")
+        balances = c.fetchall()
+        conn.close()
+        return balances
 
     async def generate_richlist_image(self, guild, data_slice, offset):
         with open("templates/leaderboard.html", "r", encoding="utf-8") as f:
