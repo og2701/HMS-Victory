@@ -2,6 +2,14 @@ import sqlite3
 
 SHOP = {"shutcoin": 1000}
 
+def get_all_balances():
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    c.execute("SELECT user_id, balance FROM ukpence")
+    balances = {str(row[0]): row[1] for row in c.fetchall()}
+    conn.close()
+    return balances
+
 def ensure_bb(uid):
     conn = sqlite3.connect('database.db')
     c = conn.cursor()

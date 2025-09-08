@@ -7,16 +7,16 @@ from datetime import datetime, timedelta
 import shutil
 import os
 import zipfile
-import io 
-import json 
+import io
+import json
 
 from lib.event_handlers import *
 from lib.setup_commands import define_commands
-from config import * 
+from config import *
 from lib.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.on_message_functions import *
 from lib.prediction_system import Prediction, _load as load_predictions, _save as save_predictions
-from lib.ukpence import add_bb, _load as load_ukpence_data 
+from lib.ukpence import add_bb, get_all_balances
 from lib.economy_stats_html import create_economy_stats_image
 
 logging.basicConfig(level=logging.INFO)
@@ -44,13 +44,13 @@ async def zip_and_send_folder(client, folder_path, channel_id, zip_filename_pref
                 archive_name = os.path.relpath(file_path, start=folder_path)
                 zipf.write(file_path, archive_name)
 
-    zip_buffer.seek(0) 
+    zip_buffer.seek(0)
 
     file_number = 1
     while True:
         chunk = zip_buffer.read(MAX_PART_SIZE)
         if not chunk:
-            break 
+            break
 
         part_filename = f"{zip_filename_prefix}_part{file_number}.zip"
         part_buffer = io.BytesIO(chunk)
@@ -125,7 +125,7 @@ class AClient(discord.Client):
                 )
             return
 
-        if message.author.id == 557628352828014614 and message.embeds: 
+        if message.author.id == 557628352828014614 and message.embeds:
             await handle_ticket_closed_message(self, message)
             return
 
@@ -133,17 +133,17 @@ class AClient(discord.Client):
             return
 
         if message.type == discord.MessageType.auto_moderation_action:
-            target_user_id_str = None 
+            target_user_id_str = None
             if message.embeds:
                 embed = message.embeds[0]
                 for field in embed.fields:
-                    if field.name.lower() == "user": 
+                    if field.name.lower() == "user":
                         import re
                         match = re.search(r"<@!?(\d+)>", field.value)
                         if match:
                             target_user_id_str = match.group(1)
                         break
-            
+
             target_user = None
             if target_user_id_str:
                 try:
@@ -152,12 +152,12 @@ class AClient(discord.Client):
                     logger.warning(f"Could not find user for automod DM: {target_user_id_str}")
 
             if target_user:
-                member = message.guild.get_member(target_user.id) 
+                member = message.guild.get_member(target_user.id)
                 if member and any(role.id == ROLES.DONT_DM_WHEN_MESSAGE_BLOCKED for role in member.roles):
-                    return 
+                    return
 
                 rule_name = embed.fields[0].value
-                channel_mention = embed.fields[1].value 
+                channel_mention = embed.fields[1].value
                 bad_word = embed.fields[4].value
 
                 button = discord.ui.Button(
@@ -165,7 +165,7 @@ class AClient(discord.Client):
                         label = "Toggle DMs when a message is blocked",
                         style = discord.ButtonStyle.primary
                     )
-                
+
                 view = discord.ui.View(timeout=None)
                 view.add_item(button)
 
@@ -257,25 +257,25 @@ class AClient(discord.Client):
                 with open(summary_file_path, "r") as file:
                     daily_data_content = json.load(file)
                 active_members_data = daily_data_content.get("active_members", {})
-                
+
                 if active_members_data:
                     sorted_active_members = sorted(active_members_data.items(), key=lambda item: item[1], reverse=True)
-                    log_channel = self.get_channel(CHANNELS.LOGS) 
+                    log_channel = self.get_channel(CHANNELS.LOGS)
                     num_rewarded_actually = 0
                     for i, (user_id_str, message_count) in enumerate(sorted_active_members):
-                        if i < num_to_reward: 
+                        if i < num_to_reward:
                             user_id = int(user_id_str)
-                            add_bb(user_id, flat_reward_amount) 
+                            add_bb(user_id, flat_reward_amount)
                             num_rewarded_actually += 1
                             awarded_user_info = f"User ID {user_id} (Top {i+1} chatter, {message_count} messages): +{flat_reward_amount} UKPence"
                             awarded_users_for_log.append(awarded_user_info)
                         else:
                             break
                     total_chat_rewards_this_cycle = num_rewarded_actually * flat_reward_amount
-                    
+
                     if awarded_users_for_log and log_channel:
                         log_message = f"Top {num_rewarded_actually} Chatter Rewards for {yesterday_str} ({flat_reward_amount} UKP each):\n" + "\n".join(awarded_users_for_log)
-                        logger.info(log_message) 
+                        logger.info(log_message)
                         try:
                             await log_channel.send(f"```{log_message}```")
                         except Exception as e:
@@ -298,14 +298,14 @@ class AClient(discord.Client):
                     metrics_data = json.load(f)
                 except json.JSONDecodeError:
                     logger.error(f"Error decoding {ECONOMY_METRICS_FILE}. Data for {yesterday_str} might be incomplete.")
-        
+
         day_metrics = metrics_data.get(yesterday_str, {})
         day_metrics["chat_rewards_total"] = total_chat_rewards_this_cycle
-        
-        current_ukpence_balances = load_ukpence_data()
+
+        current_ukpence_balances = get_all_balances()
         total_circulation_at_eod = sum(current_ukpence_balances.values())
         day_metrics["total_circulation_end_of_day"] = total_circulation_at_eod
-        
+
         metrics_data[yesterday_str] = day_metrics
 
         with open(ECONOMY_METRICS_FILE, "w") as f:
@@ -318,7 +318,7 @@ class AClient(discord.Client):
                 logger.info(f"Created balance snapshot directory: {BALANCE_SNAPSHOT_DIR}")
             except OSError as e:
                 logger.error(f"Could not create balance snapshot directory {BALANCE_SNAPSHOT_DIR}: {e}")
-        
+
         if os.path.exists(BALANCE_SNAPSHOT_DIR):
             snapshot_filename = f"ukpence_balances_{yesterday_str}.json"
             snapshot_path = os.path.join(BALANCE_SNAPSHOT_DIR, snapshot_filename)
@@ -338,17 +338,17 @@ class AClient(discord.Client):
     async def post_daily_economy_stats(self):
         logger.info("Attempting to post daily UKPence economy stats...")
         try:
-            guild = self.get_guild(GUILD_ID) 
+            guild = self.get_guild(GUILD_ID)
             if not guild:
                 logger.error("Daily economy stats: Primary guild not found.")
                 return
 
-            image_path = await create_economy_stats_image(guild) 
-            
+            image_path = await create_economy_stats_image(guild)
+
             if image_path and os.path.exists(image_path):
-                bot_spam_channel_id = CHANNELS.BOT_SPAM 
+                bot_spam_channel_id = CHANNELS.BOT_SPAM
                 bot_spam_channel = self.get_channel(bot_spam_channel_id)
-                
+
                 if bot_spam_channel:
                     with open(image_path, "rb") as f_img:
                         discord_file = discord.File(f_img, filename="ukpeconomy_daily.png")
@@ -356,7 +356,7 @@ class AClient(discord.Client):
                     logger.info(f"Successfully posted daily economy stats to #{bot_spam_channel.name}")
                 else:
                     logger.error(f"Daily economy stats: CHANNELS.BOT_SPAM (ID: {bot_spam_channel_id}) not found.")
-                
+
                 os.remove(image_path)
             else:
                 logger.error("Daily economy stats: Failed to generate or find the economy stats image.")
@@ -368,12 +368,20 @@ class AClient(discord.Client):
 
     async def monthly_summary(self):
         await post_summary(self, CHANNELS.COMMONS, "monthly")
+        
+    async def backup_database(self):
+        logger.info("Backing up database...")
+        channel = self.get_channel(CHANNELS.DATA_BACKUP)
+        if channel:
+            with open('database.db', 'rb') as f:
+                await channel.send(file=discord.File(f, f'database_backup_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.db'))
+            logger.info("Database backup sent to Discord.")
 
     async def backup_bot(self):
         logger.info("Backing up bot...")
         await send_json_files(
             client=self,
-            folder_path="./", 
+            folder_path="./",
             channel_id=CHANNELS.DATA_BACKUP
         )
 

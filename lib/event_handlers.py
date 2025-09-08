@@ -13,7 +13,7 @@ from lib.log_functions import create_message_image, create_edited_message_image
 from config import *
 from lib.shutcoin import can_use_shutcoin, remove_shutcoin, SHUTCOIN_ENABLED
 from lib.prediction_system import prediction_embed, _save
-from lib.ukpence import add_bb, remove_bb, ensure_bb, _load as load_ukpence_data
+from lib.ukpence import add_bb, remove_bb, ensure_bb, get_all_balances as load_ukpence_data
 from lib.prediction_system import prediction_embed, _save, _load, Prediction, BetButtons
 
 from commands.mod_commands.persistant_role_buttons import (
@@ -69,16 +69,16 @@ def _update_daily_metric_file(date_str, key, value_to_add_or_set, is_total_value
                 metrics_data = json.load(f)
             except json.JSONDecodeError:
                 logger.error(f"Error decoding {ECONOMY_METRICS_FILE} while updating {key}.")
-    
+
     day_metrics = metrics_data.get(date_str, {})
     if is_total_value:
         day_metrics[key] = value_to_add_or_set
-    else: 
+    else:
         current_value = day_metrics.get(key, 0)
         day_metrics[key] = current_value + value_to_add_or_set
-    
+
     metrics_data[date_str] = day_metrics
-    
+
     with open(ECONOMY_METRICS_FILE, "w") as f:
         json.dump(metrics_data, f, indent=4)
 
@@ -105,7 +105,7 @@ async def award_stage_bonuses(client):
     now_utc = discord.utils.utcnow()
     if not hasattr(client, 'stage_join_times'):
         client.stage_join_times = {}
-    
+
     uk_timezone = pytz.timezone("Europe/London")
 
     current_date_str = datetime.now(uk_timezone).strftime("%Y-%m-%d")
@@ -113,13 +113,13 @@ async def award_stage_bonuses(client):
 
     for uid, start_time_utc in list(client.stage_join_times.items()):
         minutes = int((now_utc - start_time_utc).total_seconds() // 60)
-        if minutes > 0: 
+        if minutes > 0:
             bonus_awarded = minutes * STAGE_UKPENCE_MULTIPLIER
             add_bb(uid, bonus_awarded)
             client.stage_join_times[uid] = now_utc - timedelta(seconds=((now_utc - start_time_utc).total_seconds() % 60))
             logger.info(f"[STAGE CRON] +{bonus_awarded} UKP → User {uid} for {minutes} full mins.")
             total_awarded_this_call += bonus_awarded
-    
+
     if total_awarded_this_call > 0:
         _update_daily_metric_file(current_date_str, "stage_rewards_total", total_awarded_this_call)
         logger.info(f"[STAGE CRON] Added {total_awarded_this_call} to stage_rewards_total for {current_date_str}.")
@@ -202,20 +202,20 @@ async def award_booster_bonus(client):
         if any(role.id == ROLES.SERVER_BOOSTER for role in member.roles):
             add_bb(member.id, SERVER_BOOSTER_UKP_DAILY_BONUS)
             total_booster_rewards_awarded_this_cycle += SERVER_BOOSTER_UKP_DAILY_BONUS
-            
+
     logger.info(f"Total UKPence from booster bonuses awarded: {total_booster_rewards_awarded_this_cycle}")
 
     uk_timezone = pytz.timezone("Europe/London")
     now = datetime.now(uk_timezone)
-    yesterday_str_for_bonus = (now - timedelta(days=1)).strftime("%Y-%m-%d") 
-    today_str_for_sod_snapshot = now.strftime("%Y-%m-%d") 
-    
+    yesterday_str_for_bonus = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    today_str_for_sod_snapshot = now.strftime("%Y-%m-%d")
+
     _update_daily_metric_file(yesterday_str_for_bonus, "booster_rewards_total", total_booster_rewards_awarded_this_cycle, is_total_value=True)
-    
+
     current_balances_after_booster = load_ukpence_data()
     sod_circulation_today = sum(current_balances_after_booster.values())
     _update_daily_metric_file(today_str_for_sod_snapshot, "total_circulation_start_of_day", sod_circulation_today, is_total_value=True)
-    
+
     logger.info(f"Logged booster rewards for {yesterday_str_for_bonus} ({total_booster_rewards_awarded_this_cycle} UKP) and SOD circulation for {today_str_for_sod_snapshot} ({sod_circulation_today} UKP).")
 
 
@@ -223,7 +223,7 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client], id="award_booster_bonus_job", name="Award Daily Booster UKPence & Log SOD Circulation")
     scheduler.add_job(client.daily_summary, CronTrigger(hour=0, minute=1, timezone="Europe/London"), id="daily_summary_job", name="Daily Summary, Chat Rewards & Economy Metrics")
     scheduler.add_job(client.post_daily_economy_stats, CronTrigger(hour=0, minute=5, timezone="Europe/London"), id="post_daily_economy_stats_job", name="Post Daily UKPence Economy Stats")
-    
+
     scheduler.add_job(client.weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=2, timezone="Europe/London"))
     scheduler.add_job(client.monthly_summary, CronTrigger(day=1, hour=0, minute=3, timezone="Europe/London"))
     scheduler.add_job(client.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=4, timezone="Europe/London"))
@@ -234,6 +234,8 @@ def schedule_client_jobs(client, scheduler):
 
     scheduler.add_job(mute_visitors, CronTrigger(hour=3, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="mute_visitors_job", name="Mute visitors overnight")
     scheduler.add_job(unmute_visitors, CronTrigger(hour=7, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="unmute_visitors_job", name="Unmute visitors in the morning")
+    
+    scheduler.add_job(client.backup_database, IntervalTrigger(minutes=120, timezone="Europe/London"), id="backup_database_job", name="Backup SQLite Database")
 
     scheduler.start()
 
@@ -662,16 +664,16 @@ async def on_stage_instance_create(stage_instance):
 async def on_stage_instance_delete(stage_instance):
     client = stage_instance.guild._state._get_client()
     ch_id = stage_instance.channel.id
-    
+
     uk_timezone = pytz.timezone("Europe/London")
     current_date_str = datetime.now(uk_timezone).strftime("%Y-%m-%d")
     total_awarded_on_delete = 0
 
-    if not hasattr(client, 'stage_join_times'): 
+    if not hasattr(client, 'stage_join_times'):
         client.stage_join_times = {}
 
     now_utc = discord.utils.utcnow()
-    for m in stage_instance.channel.members: 
+    for m in stage_instance.channel.members:
         start_time_utc = client.stage_join_times.pop(m.id, None)
         if start_time_utc:
             secs = (now_utc - start_time_utc).total_seconds()
@@ -680,7 +682,7 @@ async def on_stage_instance_delete(stage_instance):
                 add_bb(m.id, bonus)
                 logger.info(f"[STAGE END] +{bonus} UKP → User {m.id} for stage end in {stage_instance.channel.name}.")
                 total_awarded_on_delete += bonus
-    
+
     if total_awarded_on_delete > 0:
         _update_daily_metric_file(current_date_str, "stage_rewards_total", total_awarded_on_delete)
         logger.info(f"[STAGE END] Added {total_awarded_on_delete} to stage_rewards_total for {current_date_str} from instance delete.")
