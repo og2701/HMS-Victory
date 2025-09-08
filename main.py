@@ -9,6 +9,7 @@ import os
 import zipfile
 import io
 import json
+import aiohttp
 
 from lib.event_handlers import *
 from lib.setup_commands import define_commands
@@ -18,11 +19,43 @@ from lib.on_message_functions import *
 from lib.prediction_system import Prediction, _load as load_predictions, _save as save_predictions
 from lib.ukpence import add_bb, get_all_balances
 from lib.economy_stats_html import create_economy_stats_image
+from database import init_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MAX_PART_SIZE = 8 * 1024 * 1024
+
+async def restore_database_if_missing(client):
+    if not os.path.exists('database.db'):
+        logger.warning("database.db not found. Attempting to restore from backup channel...")
+        archive_channel = await client.fetch_channel(CHANNELS.DATA_BACKUP)
+        if not archive_channel:
+            logger.error(f"Backup channel with ID {CHANNELS.DATA_BACKUP} not found. Cannot restore database.")
+            logger.info("Creating a new empty database.")
+            init_db()
+            return
+
+        async for message in archive_channel.history(limit=100):
+            if message.attachments:
+                for attachment in message.attachments:
+                    if attachment.filename.endswith('.db'):
+                        logger.info(f"Found latest database backup: {attachment.filename}")
+                        try:
+                            async with aiohttp.ClientSession() as session:
+                                async with session.get(attachment.url) as resp:
+                                    if resp.status == 200:
+                                        with open('database.db', 'wb') as f:
+                                            f.write(await resp.read())
+                                        logger.info("Successfully restored database.db from backup.")
+                                        return
+                        except Exception as e:
+                            logger.error(f"Failed to download or save the database backup: {e}")
+                            break
+        
+        logger.warning("No database backup found in the last 100 messages. Creating a new empty database.")
+        init_db()
+
 
 async def zip_and_send_folder(client, folder_path, channel_id, zip_filename_prefix):
     if not os.path.exists(folder_path):
@@ -368,7 +401,7 @@ class AClient(discord.Client):
 
     async def monthly_summary(self):
         await post_summary(self, CHANNELS.COMMONS, "monthly")
-        
+
     async def backup_database(self):
         logger.info("Backing up database...")
         channel = self.get_channel(CHANNELS.DATA_BACKUP)
@@ -389,3 +422,11 @@ client = AClient()
 tree = discord.app_commands.CommandTree(client)
 
 define_commands(tree, client)
+
+async def main():
+    async with client:
+        await restore_database_if_missing(client)
+        await client.start(os.getenv("DISCORD_TOKEN"))
+
+if __name__ == "__main__":
+    asyncio.run(main())
