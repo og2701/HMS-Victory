@@ -19,7 +19,7 @@ from lib.on_message_functions import *
 from lib.prediction_system import Prediction, _load as load_predictions, _save as save_predictions
 from lib.ukpence import add_bb, get_all_balances
 from lib.economy_stats_html import create_economy_stats_image
-from database import init_db
+from lib.database import init_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
