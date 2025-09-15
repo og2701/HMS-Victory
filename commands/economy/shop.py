@@ -201,6 +201,7 @@ async def handle_shop_command(interaction: discord.Interaction):
     item_list = []
     for item in items[:10]:  # Show first 10 items
         affordable = "✅" if user_balance >= item.price else "❌"
+        quantity = item.get_quantity()
 
         display_name = item.get_display_name()
         item_list.append(f"{affordable} **{display_name}** - {item.price} UKPence - {quantity} remaining")
