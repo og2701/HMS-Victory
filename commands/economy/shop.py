@@ -172,8 +172,8 @@ async def handle_shop_command(interaction: discord.Interaction):
     user_balance = get_bb(interaction.user.id)
 
     shop_embed = discord.Embed(
-        title="🛒 HMS Victory Shop",
-        description="Purchase items using your UKPence! Select an item below to see details and purchase.",
+        title="🛒 UKPlace Shop",
+        description="Purchase items using your UKPence. Select an item below to see details and purchase.",
         color=0x0099ff
     )
 
@@ -183,10 +183,8 @@ async def handle_shop_command(interaction: discord.Interaction):
         inline=True
     )
 
-    shop_embed.add_field(
-        name="ℹ️ How to Earn UKPence",
-        value="• Daily chat rewards (top chatters)\n• Server boosting bonus\n• Participating in voice stages",
-        inline=False
+    shop_embed.set_footer(
+        text="ℹ️ How to Earn UKPence: Daily chat rewards (top chatters), Server boosting bonus, Participating in voice stages"
     )
 
     items = get_shop_items()
@@ -204,18 +202,8 @@ async def handle_shop_command(interaction: discord.Interaction):
     for item in items[:10]:  # Show first 10 items
         affordable = "✅" if user_balance >= item.price else "❌"
 
-        # Check stock status
-        quantity = item.get_quantity()
-        if quantity is not None and quantity <= 0:
-            stock_emoji = "🔴"
-            affordable = "❌"
-        elif quantity is not None and quantity <= 5:
-            stock_emoji = "⚠️"
-        else:
-            stock_emoji = "✅"
-
         display_name = item.get_display_name()
-        item_list.append(f"{affordable}{stock_emoji} **{display_name}** - {item.price} UKPence")
+        item_list.append(f"{affordable} **{display_name}** - {item.price} UKPence - {quantity} remaining")
 
     shop_embed.add_field(
         name="🛍️ Available Items (Select below for more)",
