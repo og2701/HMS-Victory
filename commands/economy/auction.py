@@ -1,5 +1,4 @@
 import discord
-from discord import Interaction, TextStyle
 from discord.ui import Modal, TextInput, View, Button
 from datetime import datetime, timedelta
 import asyncio
@@ -22,7 +21,7 @@ class CreateAuctionModal(Modal, title="Create New Auction"):
     description = TextInput(
         label="Description",
         placeholder="Detailed description of the item...",
-        style=TextStyle.paragraph,
+        style=discord.TextStyle.paragraph,
         required=True,
         max_length=500
     )
@@ -41,7 +40,7 @@ class CreateAuctionModal(Modal, title="Create New Auction"):
         max_length=3
     )
 
-    async def on_submit(self, interaction: Interaction):
+    async def on_submit(self, interaction: discord.Interaction):
         try:
             starting_bid = int(self.starting_bid.value)
             duration = int(self.duration.value)
@@ -98,7 +97,7 @@ class BidModal(Modal, title="Place Bid"):
         max_length=10
     )
 
-    async def on_submit(self, interaction: Interaction):
+    async def on_submit(self, interaction: discord.Interaction):
         try:
             bid_amount = int(self.bid_amount.value)
 
@@ -135,7 +134,7 @@ class AuctionView(View):
         self.auction_id = auction_id
 
     @discord.ui.button(label="Place Bid", style=discord.ButtonStyle.primary, emoji="💰")
-    async def place_bid(self, interaction: Interaction, button: Button):
+    async def place_bid(self, interaction: discord.Interaction, button: discord.ui.Button):
         auction = AuctionManager.get_auction(self.auction_id)
         if not auction:
             await interaction.response.send_message("❌ Auction not found!", ephemeral=True)
@@ -161,7 +160,7 @@ class AuctionView(View):
         await interaction.response.send_modal(modal)
 
     @discord.ui.button(label="View History", style=discord.ButtonStyle.secondary, emoji="📊")
-    async def view_history(self, interaction: Interaction, button: Button):
+    async def view_history(self, interaction: discord.Interaction, button: discord.ui.Button):
         history = AuctionManager.get_auction_history(self.auction_id)
 
         if not history:
@@ -236,7 +235,7 @@ def create_auction_embed(auction_id: int) -> Optional[discord.Embed]:
     embed.set_footer(text="Note: You cannot bid if you won an auction in the last 7 days")
     return embed
 
-async def handle_auction_create_command(interaction: Interaction):
+async def handle_auction_create_command(interaction: discord.Interaction):
     """
     Create a new auction (Staff only).
 
@@ -255,7 +254,7 @@ async def handle_auction_create_command(interaction: Interaction):
     modal = CreateAuctionModal()
     await interaction.response.send_modal(modal)
 
-async def handle_auction_list_command(interaction: Interaction):
+async def handle_auction_list_command(interaction: discord.Interaction):
     """
     List all active auctions.
 
@@ -294,7 +293,7 @@ async def handle_auction_list_command(interaction: Interaction):
     embed.description = "\n".join(auction_list)
     await interaction.response.send_message(embed=embed)
 
-async def handle_auction_end_command(interaction: Interaction, auction_id: int):
+async def handle_auction_end_command(interaction: discord.Interaction, auction_id: int):
     """
     Manually end an auction (Staff only).
 

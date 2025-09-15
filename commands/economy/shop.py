@@ -1,5 +1,4 @@
 import discord
-from discord import Interaction, SelectOption
 from discord.ui import Select, View, Button
 from typing import List
 from lib.shop_items import get_shop_items, get_shop_item_by_id, ShopItem
@@ -21,7 +20,7 @@ class ShopItemSelect(Select):
                 stock_info = ""
                 description = f"{item.price} UKPence - {item.description[:50]}..."
 
-            options.append(SelectOption(
+            options.append(discord.SelectOption(
                 label=item.get_display_name(),
                 description=description[:100],  # Discord limit
                 value=item.id,
@@ -36,7 +35,7 @@ class ShopItemSelect(Select):
         )
         self.items = {item.id: item for item in items}
 
-    async def callback(self, interaction: Interaction):
+    async def callback(self, interaction: discord.Interaction):
         selected_item = self.items[self.values[0]]
 
         # Check if user can purchase this item
@@ -71,7 +70,7 @@ class PurchaseConfirmationView(View):
         self.item = item
 
     @discord.ui.button(label="Confirm Purchase", style=discord.ButtonStyle.green, emoji="✅")
-    async def confirm_purchase(self, interaction: Interaction, button: Button):
+    async def confirm_purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
         ensure_bb(interaction.user.id)
         user_balance = get_bb(interaction.user.id)
 
@@ -143,7 +142,7 @@ class PurchaseConfirmationView(View):
             )
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red, emoji="❌")
-    async def cancel_purchase(self, interaction: Interaction, button: Button):
+    async def cancel_purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("❌ Purchase cancelled.", ephemeral=True)
 
 class ShopView(View):
@@ -159,7 +158,7 @@ class ShopView(View):
         for item in self.children:
             item.disabled = True
 
-async def handle_shop_command(interaction: Interaction):
+async def handle_shop_command(interaction: discord.Interaction):
     """
     Display the server shop where users can purchase items with UKPence.
 
