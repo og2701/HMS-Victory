@@ -333,7 +333,7 @@ def define_commands(tree, client):
     async def shop_command(interaction: Interaction):
         await handle_shop_command(interaction)
 
-    @command("auction-create", "Create a new auction (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    @command("auction-create", "Create a new auction (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def auction_create_command(interaction: Interaction):
         await handle_auction_create_command(interaction)
 
@@ -341,30 +341,30 @@ def define_commands(tree, client):
     async def auction_list_command(interaction: Interaction):
         await handle_auction_list_command(interaction)
 
-    @command("auction-end", "Manually end an auction (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    @command("auction-end", "Manually end an auction (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def auction_end_command(interaction: Interaction, auction_id: int):
         await handle_auction_end_command(interaction, auction_id)
 
-    @command("inventory-status", "View current shop inventory status (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    @command("inventory-status", "View current shop inventory status (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def inventory_status_command(interaction: Interaction):
         await handle_inventory_status_command(interaction)
 
-    @command("add-stock", "Add stock to a shop item (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    @command("add-stock", "Add stock to a shop item (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def add_stock_command(interaction: Interaction, item_id: str, quantity: int):
         await handle_add_stock_command(interaction, item_id, quantity)
 
-    @command("set-stock", "Set exact stock quantity for a shop item (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    @command("set-stock", "Set exact stock quantity for a shop item (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def set_stock_command(interaction: Interaction, item_id: str, quantity: int):
         await handle_set_stock_command(interaction, item_id, quantity)
 
-    @command("setup-inventory", "Configure inventory settings for an item (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    @command("setup-inventory", "Configure inventory settings for an item (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def setup_inventory_command(interaction: Interaction, item_id: str, initial_qty: int, max_qty: int = None):
         await handle_setup_inventory_command(interaction, item_id, initial_qty, max_qty)
 
-    @command("purchase-history", "View purchase history (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    @command("purchase-history", "View purchase history (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def purchase_history_command(interaction: Interaction, target: str = None):
         await handle_purchase_history_command(interaction, target)
 
-    @command("restock", "Manually trigger auto-restock for all items (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    @command("restock", "Manually trigger auto-restock for all items (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def restock_command(interaction: Interaction):
         await handle_restock_command(interaction)

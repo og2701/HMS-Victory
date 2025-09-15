@@ -100,8 +100,8 @@ class RoleItem(ShopItem):
 class ShutcoinItem(ShopItem):
     """Shop item for purchasing Shutcoins."""
 
-    def __init__(self, id: str, name: str, description: str, price: int, amount: int, use_inventory: bool = False):
-        super().__init__(id, name, description, price, use_inventory)  # Currency items usually don't use inventory
+    def __init__(self, id: str, name: str, description: str, price: int, amount: int, use_inventory: bool = True):
+        super().__init__(id, name, description, price, use_inventory)
         self.amount = amount
 
     async def execute(self, interaction) -> str:
