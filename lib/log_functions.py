@@ -6,27 +6,13 @@ from PIL import Image, ImageChops
 from config import CHROME_PATH
 import difflib
 from html2image import Html2Image
+from lib.image_processing import trim_image
+from lib.file_operations import read_html_template
 
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 
-
 def trim(im):
-    bg = Image.new(im.mode, im.size, (255, 255, 255))
-    diff = ImageChops.difference(im, bg)
-    diff = ImageChops.add(diff, diff, 2.0, -100)
-    bbox = diff.getbbox()
-    if bbox:
-        return im.crop(bbox)
-    return im
-
-
-def read_html_template(file_path):
-    try:
-        with open(file_path, "r") as file:
-            return file.read()
-    except Exception as e:
-        print(f"Error reading HTML template {file_path}: {e}")
-        return ""
+    return trim_image(im)
 
 
 def calculate_estimated_height(content, line_height=20, base_height=1000):
