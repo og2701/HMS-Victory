@@ -7,9 +7,8 @@ from datetime import datetime, timedelta
 import pytz
 from PIL import Image, ImageChops
 from html2image import Html2Image
-from lib.image_processing import trim_image
 
-from lib.economy_manager import get_all_balances as load_ukpence_data
+from lib.ukpence import get_all_balances as load_ukpence_data
 from config import CHROME_PATH
 
 try:
@@ -23,7 +22,23 @@ hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 
 
 def trim(image: Image.Image) -> Image.Image:
-    return trim_image(image)
+    if image.mode == "RGBA":
+        bbox = image.getbbox()
+    elif image.mode == "RGB":
+        bg_color = image.getpixel((0, 0))
+        bg_image = Image.new(image.mode, image.size, bg_color)
+        diff_image = ImageChops.difference(image, bg_image)
+        gray_diff = diff_image.convert('L')
+        thresholded_diff = gray_diff.point(lambda x: 255 if x > 10 else 0)
+        bbox = thresholded_diff.getbbox()
+    else:
+        temp_image = image.convert("RGBA")
+        bbox = temp_image.getbbox()
+
+    if bbox:
+        return image.crop(bbox)
+    else:
+        return image
 
 
 def get_daily_metrics(date_str: str):

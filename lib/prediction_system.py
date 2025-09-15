@@ -1,7 +1,7 @@
 import json, os, io, discord
 from PIL import Image, ImageDraw
 import uuid
-from lib.economy_manager import add_bb, remove_bb
+from lib.ukpence import add_bb, remove_bb
 
 PRED_FILE = "predictions.json"
 

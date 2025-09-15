@@ -9,7 +9,7 @@ import sqlite3
 from PIL import Image, ImageChops
 from html2image import Html2Image
 from config import *
-from lib.economy_manager import get_bb
+from lib.ukpence import get_bb
 
 hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
 

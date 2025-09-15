@@ -17,7 +17,7 @@ from config import *
 from lib.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.on_message_functions import *
 from lib.prediction_system import Prediction, _load as load_predictions, _save as save_predictions
-from lib.economy_manager import add_bb, get_all_balances as load_ukpence_data
+from lib.ukpence import add_bb, get_all_balances as load_ukpence_data
 from lib.economy_stats_html import create_economy_stats_image
 from database import init_db
 
