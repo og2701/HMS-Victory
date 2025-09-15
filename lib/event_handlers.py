@@ -379,10 +379,10 @@ async def process_forum_threads(client, message):
 
 async def on_ready(client, tree, scheduler):
     if not hasattr(client, "thread_messages"):
-        client.thread_messages = load_json(THREAD_MESSAGES_FILE)
+        client.thread_messages = load_json_file(THREAD_MESSAGES_FILE)
         logger.info("Loaded thread messages")
     if not hasattr(client, "added_users"):
-        client.added_users = load_json(ADDED_USERS_FILE)
+        client.added_users = load_json_file(ADDED_USERS_FILE)
         logger.info("Loaded added users")
     if not client.synced:
         await tree.sync()
