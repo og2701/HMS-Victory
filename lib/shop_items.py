@@ -165,15 +165,9 @@ class MessageHighlightItem(ShopItem):
 class VIPCaseItem(ShopItem):
     """VIP Role case with CS:GO-style gambling mechanic."""
 
-    def __init__(self):
-        super().__init__(
-            "vip_case",
-            "VIP Role Case",
-            "Open a case for a chance to win the VIP role! Contains various rewards and risks.",
-            3000,
-            use_inventory=False
-        )
-        self.vip_role_id = 1417558416637034658
+    def __init__(self, id: str, name: str, description: str, price: int, vip_role_id: int, use_inventory: bool = False):
+        super().__init__(id, name, description, price, use_inventory)
+        self.vip_role_id = vip_role_id
 
         # Define possible outcomes with weights (higher weight = more likely)
         self.outcomes = [
@@ -391,7 +385,7 @@ SHOP_ITEMS: List[ShopItem] = [
     ShutcoinItem("shutcoin", "1 Shutcoin", "Get a Shutcoin for the ability to silence a member for 30s", 100, 1),
 
     # VIP Case - Gambling item
-    VIPCaseItem(),
+    VIPCaseItem("vip_case", "VIP Role Case", "Open a case for a chance to win the VIP role! Contains various rewards and risks.", 3000, ROLES.VIP),
 
     # Role Items (using actual role IDs from config)
     # RoleItem("ball_inspector", "Ball Inspector", "Get the prestigious Ball Inspector role", 200, ROLES.BALL_INSPECTOR),
