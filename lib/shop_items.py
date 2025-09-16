@@ -235,9 +235,13 @@ class VIPCaseSpinView(View):
     async def spin_callback(self, interaction: discord.Interaction):
         """Handle the spin button press."""
         if self.spinning:
+            await interaction.response.defer()
             return
 
         self.spinning = True
+
+        # Defer and then update to disable the button
+        await interaction.response.defer()
 
         # Disable the button
         for item in self.children:

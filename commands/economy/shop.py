@@ -113,7 +113,6 @@ class PurchaseConfirmationView(View):
                         )
                     return
 
-                    title="Purchase Successful! ✅",
                 # For VIP Role Case, the interaction is handled in the execute method
                 if self.item.name != "VIP Role Case":
                     embed = discord.Embed(
