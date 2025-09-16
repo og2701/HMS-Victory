@@ -215,7 +215,7 @@ class VIPCaseSpinView(View):
 
     async def start_spin(self, interaction):
         """Start the spinning animation."""
-        self.spinning = True
+        self.spinning = False  # Not spinning yet, just showing the button
 
         # Create initial embed
         embed = discord.Embed(
@@ -229,8 +229,8 @@ class VIPCaseSpinView(View):
         spin_button.callback = self.spin_callback
         self.add_item(spin_button)
 
-        # Send the initial message
-        await interaction.followup.send(embed=embed, view=self, ephemeral=True)
+        # Send the initial message and store reference
+        self.message = await interaction.followup.send(embed=embed, view=self, ephemeral=True)
 
     async def spin_callback(self, interaction: discord.Interaction):
         """Handle the spin button press."""
@@ -240,7 +240,7 @@ class VIPCaseSpinView(View):
 
         self.spinning = True
 
-        # Defer and then update to disable the button
+        # Respond to the button interaction
         await interaction.response.defer()
 
         # Disable the button
@@ -306,7 +306,7 @@ class VIPCaseSpinView(View):
                 color=item["color"] if i == len(spin_sequence) - 1 else 0xffff00
             )
 
-            await interaction.edit_original_response(embed=embed, view=self)
+            await self.message.edit(embed=embed, view=self)
 
             if i < len(spin_sequence) - 1:
                 await asyncio.sleep(delay)
@@ -373,7 +373,7 @@ class VIPCaseSpinView(View):
             try_again_button.callback = self.try_again_callback
             self.add_item(try_again_button)
 
-        await interaction.edit_original_response(embed=result_embed, view=self)
+        await self.message.edit(embed=result_embed, view=self)
 
     async def try_again_callback(self, interaction: discord.Interaction):
         """Handle try again button."""
