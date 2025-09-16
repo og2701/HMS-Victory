@@ -1,8 +1,12 @@
 import discord
+from discord.ui import View, Button
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
+import asyncio
+import random
+from datetime import timedelta
 from config import ROLES, CHANNELS
-from lib.economy_manager import add_shutcoins
+from lib.economy_manager import add_shutcoins, add_bb
 from lib.shop_inventory import ShopInventory
 
 class ShopItem(ABC):
@@ -158,10 +162,236 @@ class MessageHighlightItem(ShopItem):
             await staff_channel.send(embed=embed)
         return "Your Message Highlight purchase has been processed! Staff will contact you about submitting your message."
 
+class VIPCaseItem(ShopItem):
+    """VIP Role case with CS:GO-style gambling mechanic."""
+
+    def __init__(self):
+        super().__init__(
+            "vip_case",
+            "VIP Role Case",
+            "Open a case for a chance to win the VIP role! Contains various rewards and risks.",
+            3000,
+            use_inventory=False
+        )
+        self.vip_role_id = 1417558416637034658
+
+        # Define possible outcomes with weights (higher weight = more likely)
+        self.outcomes = [
+            {"type": "vip", "weight": 5, "emoji": "💎", "color": 0x00ff00, "label": "VIP ROLE"},
+            {"type": "timeout", "weight": 15, "duration": 1, "emoji": "⏱️", "color": 0xff9900, "label": "1min timeout"},
+            {"type": "timeout", "weight": 10, "duration": 5, "emoji": "⏰", "color": 0xff6600, "label": "5min timeout"},
+            {"type": "timeout", "weight": 8, "duration": 10, "emoji": "🕐", "color": 0xff3300, "label": "10min timeout"},
+            {"type": "timeout", "weight": 5, "duration": 30, "emoji": "🕰️", "color": 0xff0000, "label": "30min timeout"},
+            {"type": "shutcoins", "weight": 12, "amount": 5, "emoji": "🪙", "color": 0xffd700, "label": "5 Shutcoins"},
+            {"type": "shutcoins", "weight": 8, "amount": 10, "emoji": "💰", "color": 0xffd700, "label": "10 Shutcoins"},
+            {"type": "cashback", "weight": 10, "percent": 25, "emoji": "💸", "color": 0x00ffff, "label": "25% cashback"},
+            {"type": "cashback", "weight": 8, "percent": 50, "emoji": "💵", "color": 0x00ffff, "label": "50% cashback"},
+            {"type": "cashback", "weight": 5, "percent": 75, "emoji": "💴", "color": 0x00ffff, "label": "75% cashback"},
+            {"type": "nothing", "weight": 14, "emoji": "❌", "color": 0x808080, "label": "Nothing"},
+        ]
+
+    def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
+        # Check if user already has VIP role
+        vip_role = user.guild.get_role(self.vip_role_id)
+        if vip_role and vip_role in user.roles:
+            return False, "You already have the VIP role!"
+        return True, ""
+
+    async def execute(self, interaction) -> str:
+        # Create the spinning case view
+        view = VIPCaseSpinView(self.outcomes, self.vip_role_id, self.price)
+
+        # Start the spin
+        await view.start_spin(interaction)
+
+        # Return a placeholder message (actual result will be in the view)
+        return "Case opening started!"
+
+class VIPCaseSpinView(View):
+    """Interactive view for the VIP case spinning animation."""
+
+    def __init__(self, outcomes, vip_role_id, price):
+        super().__init__(timeout=60)
+        self.outcomes = outcomes
+        self.vip_role_id = vip_role_id
+        self.price = price
+        self.result = None
+        self.spinning = False
+        self.message = None
+
+    async def start_spin(self, interaction):
+        """Start the spinning animation."""
+        self.spinning = True
+
+        # Create initial embed
+        embed = discord.Embed(
+            title="🎰 VIP Role Case Opening",
+            description="Press SPIN to try your luck!",
+            color=0xffff00
+        )
+
+        # Add the spin button
+        spin_button = Button(label="SPIN", style=discord.ButtonStyle.primary, emoji="🎲")
+        spin_button.callback = self.spin_callback
+        self.add_item(spin_button)
+
+        # Send the initial message
+        await interaction.followup.send(embed=embed, view=self, ephemeral=True)
+
+    async def spin_callback(self, interaction: discord.Interaction):
+        """Handle the spin button press."""
+        if self.spinning:
+            return
+
+        self.spinning = True
+
+        # Disable the button
+        for item in self.children:
+            item.disabled = True
+
+        # Start the spinning animation
+        await self.animate_spin(interaction)
+
+    async def animate_spin(self, interaction: discord.Interaction):
+        """Animate the spinning case."""
+        # Calculate weights and select outcome
+        total_weight = sum(outcome["weight"] for outcome in self.outcomes)
+        rand = random.random() * total_weight
+
+        current_weight = 0
+        selected_outcome = None
+        for outcome in self.outcomes:
+            current_weight += outcome["weight"]
+            if rand <= current_weight:
+                selected_outcome = outcome
+                break
+
+        if not selected_outcome:
+            selected_outcome = self.outcomes[-1]  # Fallback to "nothing"
+
+        # Create a sequence of items to "spin" through
+        spin_sequence = []
+        for _ in range(30):  # 30 items in the spin
+            # Add random items for the spinning effect
+            spin_sequence.append(random.choice(self.outcomes))
+
+        # Place the winning item near the end (but with some randomness)
+        win_position = random.randint(25, 29)
+        spin_sequence[win_position] = selected_outcome
+
+        # Animate the spin
+        for i in range(len(spin_sequence)):
+            item = spin_sequence[i]
+
+            # Create spinning display
+            if i < len(spin_sequence) - 5:
+                # Fast spin at the beginning
+                delay = 0.1
+            else:
+                # Slow down near the end
+                delay = 0.3 + (i - (len(spin_sequence) - 5)) * 0.2
+
+            # Show current item with surrounding items
+            display_items = []
+            for j in range(-2, 3):  # Show 5 items
+                idx = (i + j) % len(spin_sequence)
+                curr_item = spin_sequence[idx]
+                if j == 0:
+                    # Highlight center item
+                    display_items.append(f"**→ {curr_item['emoji']} {curr_item['label']} ←**")
+                else:
+                    display_items.append(f"{curr_item['emoji']} {curr_item['label']}")
+
+            embed = discord.Embed(
+                title="🎰 VIP Role Case - SPINNING...",
+                description="```\n" + " | ".join(display_items) + "\n```",
+                color=item["color"] if i == len(spin_sequence) - 1 else 0xffff00
+            )
+
+            await interaction.edit_original_response(embed=embed, view=self)
+
+            if i < len(spin_sequence) - 1:
+                await asyncio.sleep(delay)
+
+        # Process the result
+        await self.process_result(interaction, selected_outcome)
+
+    async def process_result(self, interaction: discord.Interaction, outcome):
+        """Process the winning outcome."""
+        result_embed = discord.Embed(
+            title="🎰 VIP Role Case - RESULT",
+            color=outcome["color"]
+        )
+
+        if outcome["type"] == "vip":
+            # Winner! Give them the VIP role
+            vip_role = interaction.guild.get_role(self.vip_role_id)
+            if vip_role:
+                await interaction.user.add_roles(vip_role)
+                result_embed.description = f"🎉 **JACKPOT!** 🎉\n\n{outcome['emoji']} You won the **VIP ROLE**! {outcome['emoji']}\n\nCongratulations!"
+
+                # Log the win
+                log_channel = interaction.guild.get_channel(1197572903294730270)  # BOT_USAGE_LOG
+                if log_channel:
+                    log_embed = discord.Embed(
+                        title="🎰 VIP Case - JACKPOT WIN",
+                        color=0x00ff00
+                    )
+                    log_embed.add_field(name="Winner", value=interaction.user.mention, inline=True)
+                    log_embed.add_field(name="Prize", value="VIP Role", inline=True)
+                    await log_channel.send(embed=log_embed)
+            else:
+                result_embed.description = "Error: VIP role not found. Please contact staff."
+
+        elif outcome["type"] == "timeout":
+            # Apply timeout
+            duration = timedelta(minutes=outcome["duration"])
+            try:
+                await interaction.user.timeout(duration, reason="VIP Case outcome")
+                result_embed.description = f"{outcome['emoji']} You got a **{outcome['duration']} minute timeout**!\n\nBetter luck next time!"
+            except discord.Forbidden:
+                result_embed.description = f"{outcome['emoji']} You would have gotten a {outcome['duration']} minute timeout, but I don't have permission!"
+
+        elif outcome["type"] == "shutcoins":
+            # Award shutcoins
+            add_shutcoins(interaction.user.id, outcome["amount"])
+            result_embed.description = f"{outcome['emoji']} You won **{outcome['amount']} Shutcoins**!\n\nNot bad!"
+
+        elif outcome["type"] == "cashback":
+            # Give partial refund
+            refund_amount = int(self.price * outcome["percent"] / 100)
+            add_bb(interaction.user.id, refund_amount)
+            result_embed.description = f"{outcome['emoji']} You got **{outcome['percent']}% cashback**!\n\n+{refund_amount} UKPence returned!"
+
+        else:  # nothing
+            result_embed.description = f"{outcome['emoji']} You got **nothing**...\n\nBetter luck next time!"
+
+        # Clear the view
+        self.clear_items()
+
+        # Add a "Try Again" button if they didn't win VIP
+        if outcome["type"] != "vip":
+            try_again_button = Button(label="Try Again (3000 UKPence)", style=discord.ButtonStyle.secondary, emoji="🔄")
+            try_again_button.callback = self.try_again_callback
+            self.add_item(try_again_button)
+
+        await interaction.edit_original_response(embed=result_embed, view=self)
+
+    async def try_again_callback(self, interaction: discord.Interaction):
+        """Handle try again button."""
+        # This will trigger a new purchase through the shop system
+        await interaction.response.send_message(
+            "Please use the `/shop` command to purchase another VIP Case!",
+            ephemeral=True
+        )
+
 # Shop Items Registry
 SHOP_ITEMS: List[ShopItem] = [
     # Currency Items
     ShutcoinItem("shutcoin", "1 Shutcoin", "Get a Shutcoin for the ability to silence a member for 30s", 100, 1),
+
+    # VIP Case - Gambling item
+    VIPCaseItem(),
 
     # Role Items (using actual role IDs from config)
     # RoleItem("ball_inspector", "Ball Inspector", "Get the prestigious Ball Inspector role", 200, ROLES.BALL_INSPECTOR),
