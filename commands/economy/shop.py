@@ -90,6 +90,10 @@ class PurchaseConfirmationView(View):
         # Process the purchase
         if remove_bb(interaction.user.id, self.item.price):
             try:
+                # Defer the response first for items that need more time
+                if self.item.name == "VIP Role Case":
+                    await interaction.response.defer(ephemeral=True)
+
                 # Use the new purchase method that handles inventory
                 success, result_message = await self.item.purchase(str(interaction.user.id), interaction)
 
@@ -97,23 +101,32 @@ class PurchaseConfirmationView(View):
                     # Refund if purchase failed
                     from lib.economy_manager import add_bb
                     add_bb(interaction.user.id, self.item.price)
-                    await interaction.response.send_message(
-                        f"❌ Purchase failed: {result_message}",
-                        ephemeral=True
-                    )
+                    if self.item.name == "VIP Role Case":
+                        await interaction.followup.send(
+                            f"❌ Purchase failed: {result_message}",
+                            ephemeral=True
+                        )
+                    else:
+                        await interaction.response.send_message(
+                            f"❌ Purchase failed: {result_message}",
+                            ephemeral=True
+                        )
                     return
 
-                embed = discord.Embed(
                     title="Purchase Successful! ✅",
-                    description=result_message,
-                    color=0x00ff00
-                )
-                embed.add_field(
-                    name="Remaining Balance",
-                    value=f"{get_bb(interaction.user.id)} UKPence",
-                    inline=False
-                )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                # For VIP Role Case, the interaction is handled in the execute method
+                if self.item.name != "VIP Role Case":
+                    embed = discord.Embed(
+                        title="Purchase Successful! ✅",
+                        description=result_message,
+                        color=0x00ff00
+                    )
+                    embed.add_field(
+                        name="Remaining Balance",
+                        value=f"{get_bb(interaction.user.id)} UKPence",
+                        inline=False
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
 
                 # Log the purchase
                 log_channel = interaction.guild.get_channel(1197572903294730270)  # BOT_USAGE_LOG
@@ -131,10 +144,16 @@ class PurchaseConfirmationView(View):
                 # Refund on error
                 from lib.economy_manager import add_bb
                 add_bb(interaction.user.id, self.item.price)
-                await interaction.response.send_message(
-                    f"❌ An error occurred during purchase. Your UKPence has been refunded.\nError: {str(e)}",
-                    ephemeral=True
-                )
+                if self.item.name == "VIP Role Case":
+                    await interaction.followup.send(
+                        f"❌ An error occurred during purchase. Your UKPence has been refunded.\nError: {str(e)}",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"❌ An error occurred during purchase. Your UKPence has been refunded.\nError: {str(e)}",
+                        ephemeral=True
+                    )
         else:
             await interaction.response.send_message(
                 "❌ Payment failed. Please try again.",
