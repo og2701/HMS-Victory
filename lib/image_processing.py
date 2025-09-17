@@ -14,22 +14,25 @@ hti.browser.flags += [
     "--no-sandbox"
 ]
 
-def _normalize_color(color) -> tuple[int, int, int]:
-    if isinstance(color, int):
-        return (color, color, color)
-    if len(color) == 1:
-        return (color[0], color[0], color[0])
-    return tuple(color[:3])
-
-
-def trim_image(im: Image.Image, tolerance: int = 4) -> Image.Image:
-    bg_color = im.getpixel((0, 0))
+def trim_image(im: Image.Image, tolerance: int = 6) -> Image.Image:
+    """Trim near-white margins from a rendered HTML screenshot."""
     rgb_image = im.convert("RGB")
-    bg = Image.new("RGB", rgb_image.size, _normalize_color(bg_color))
-    diff = ImageChops.difference(rgb_image, bg).convert("L")
+
+    white_bg = Image.new("RGB", rgb_image.size, (255, 255, 255))
+    diff_white = ImageChops.difference(rgb_image, white_bg).convert("L")
     if tolerance > 0:
-        diff = diff.point(lambda p: 255 if p > tolerance else 0)
-    bbox = diff.getbbox()
+        diff_white = diff_white.point(lambda p: 255 if p > tolerance else 0)
+    bbox = diff_white.getbbox()
+
+    if not bbox:
+        # Fallback: use the top-left pixel as background reference
+        bg_color = rgb_image.getpixel((0, 0))
+        bg_image = Image.new("RGB", rgb_image.size, bg_color)
+        diff_bg = ImageChops.difference(rgb_image, bg_image).convert("L")
+        if tolerance > 0:
+            diff_bg = diff_bg.point(lambda p: 255 if p > tolerance else 0)
+        bbox = diff_bg.getbbox()
+
     return im.crop(bbox) if bbox else im
 
 def encode_image_to_data_uri(image_path: str) -> str:
