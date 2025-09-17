@@ -170,18 +170,20 @@ class VIPCaseItem(ShopItem):
         self.vip_role_id = vip_role_id
 
         # Define possible outcomes with weights (higher weight = more likely)
+        # Total weight = 100, so VIP at weight 10 = 10% chance
         self.outcomes = [
-            {"type": "vip", "weight": 5, "emoji": "💎", "color": 0x00ff00, "label": "VIP ROLE"},
+            {"type": "vip", "weight": 10, "emoji": "💎", "color": 0x00ff00, "label": "VIP ROLE"},
             {"type": "timeout", "weight": 15, "duration": 1, "emoji": "⏱️", "color": 0xff9900, "label": "1min timeout"},
             {"type": "timeout", "weight": 10, "duration": 5, "emoji": "⏰", "color": 0xff6600, "label": "5min timeout"},
             {"type": "timeout", "weight": 8, "duration": 10, "emoji": "🕐", "color": 0xff3300, "label": "10min timeout"},
             {"type": "timeout", "weight": 5, "duration": 30, "emoji": "🕰️", "color": 0xff0000, "label": "30min timeout"},
             {"type": "shutcoins", "weight": 12, "amount": 5, "emoji": "🪙", "color": 0xffd700, "label": "5 Shutcoins"},
             {"type": "shutcoins", "weight": 8, "amount": 10, "emoji": "💰", "color": 0xffd700, "label": "10 Shutcoins"},
-            {"type": "cashback", "weight": 10, "percent": 25, "emoji": "💸", "color": 0x00ffff, "label": "25% cashback"},
-            {"type": "cashback", "weight": 8, "percent": 50, "emoji": "💵", "color": 0x00ffff, "label": "50% cashback"},
-            {"type": "cashback", "weight": 5, "percent": 75, "emoji": "💴", "color": 0x00ffff, "label": "75% cashback"},
-            {"type": "nothing", "weight": 14, "emoji": "❌", "color": 0x808080, "label": "Nothing"},
+            {"type": "cashback", "weight": 8, "percent": 25, "emoji": "💸", "color": 0x00ffff, "label": "25% cashback"},
+            {"type": "cashback", "weight": 6, "percent": 50, "emoji": "💵", "color": 0x00ffff, "label": "50% cashback"},
+            {"type": "cashback", "weight": 4, "percent": 75, "emoji": "💴", "color": 0x00ffff, "label": "75% cashback"},
+            {"type": "cashback", "weight": 2, "percent": 100, "emoji": "💎💵", "color": 0x00ff88, "label": "100% CASHBACK"},
+            {"type": "nothing", "weight": 12, "emoji": "❌", "color": 0x808080, "label": "Nothing"},
         ]
 
     def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
@@ -229,8 +231,8 @@ class VIPCaseSpinView(View):
         spin_button.callback = self.spin_callback
         self.add_item(spin_button)
 
-        # Send the initial message and store reference
-        self.message = await interaction.followup.send(embed=embed, view=self, ephemeral=True)
+        # Send the initial message and store reference (public so everyone can see)
+        self.message = await interaction.followup.send(embed=embed, view=self, ephemeral=False)
 
     async def spin_callback(self, interaction: discord.Interaction):
         """Handle the spin button press."""
@@ -277,34 +279,70 @@ class VIPCaseSpinView(View):
         win_position = random.randint(25, 29)
         spin_sequence[win_position] = selected_outcome
 
-        # Animate the spin
+        # Animate the spin with sleeker design
         for i in range(len(spin_sequence)):
             item = spin_sequence[i]
 
-            # Create spinning display
-            if i < len(spin_sequence) - 5:
-                # Fast spin at the beginning
-                delay = 0.1
+            # Progressive speed control
+            if i < 10:
+                delay = 0.08  # Very fast start
+            elif i < 20:
+                delay = 0.12  # Medium speed
+            elif i < 25:
+                delay = 0.2   # Slowing down
             else:
-                # Slow down near the end
-                delay = 0.3 + (i - (len(spin_sequence) - 5)) * 0.2
+                delay = 0.4 + (i - 25) * 0.15  # Very slow finish
 
-            # Show current item with surrounding items
+            # Create sleeker spinning display with visual slot machine effect
             display_items = []
-            for j in range(-2, 3):  # Show 5 items
+            for j in range(-2, 3):  # Show 5 items in reel
                 idx = (i + j) % len(spin_sequence)
                 curr_item = spin_sequence[idx]
-                if j == 0:
-                    # Highlight center item
-                    display_items.append(f"**→ {curr_item['emoji']} {curr_item['label']} ←**")
+
+                if j == -2 or j == 2:
+                    # Fade items on edges
+                    display_items.append(f"⬜ {curr_item['emoji']} ⬜")
+                elif j == -1 or j == 1:
+                    # Side items
+                    display_items.append(f"🔸 {curr_item['emoji']} {curr_item['label']} 🔸")
                 else:
-                    display_items.append(f"{curr_item['emoji']} {curr_item['label']}")
+                    # Center highlight - winning position
+                    if i == len(spin_sequence) - 1:
+                        # Final result - extra flashy
+                        display_items.append(f"✨🎯 **{curr_item['emoji']} {curr_item['label']} {curr_item['emoji']}** 🎯✨")
+                    else:
+                        # Spinning center
+                        display_items.append(f"🎲 **{curr_item['emoji']} {curr_item['label']}** 🎲")
+
+            # Create visual separator and frame
+            reel_display = "\n".join([
+                "╔══════════════════════════════════╗",
+                f"║  {display_items[0]:^30}  ║",
+                f"║  {display_items[1]:^30}  ║",
+                f"║  {display_items[2]:^30}  ║",
+                f"║  {display_items[3]:^30}  ║",
+                f"║  {display_items[4]:^30}  ║",
+                "╚══════════════════════════════════╝"
+            ])
+
+            # Dynamic title and color
+            if i == len(spin_sequence) - 1:
+                title = f"🎰 RESULT: {selected_outcome['emoji']} {selected_outcome['label']} {selected_outcome['emoji']}"
+                color = selected_outcome["color"]
+            else:
+                spin_chars = ["🎰", "🎲", "🎯", "✨"]
+                title = f"{spin_chars[i % len(spin_chars)]} VIP Role Case - SPINNING..."
+                color = 0xffff00
 
             embed = discord.Embed(
-                title="🎰 VIP Role Case - SPINNING...",
-                description="```\n" + " | ".join(display_items) + "\n```",
-                color=item["color"] if i == len(spin_sequence) - 1 else 0xffff00
+                title=title,
+                description=f"```\n{reel_display}\n```",
+                color=color
             )
+
+            # Add progress indicator
+            progress = "🟩" * (i // 3) + "⬜" * (10 - (i // 3))
+            embed.add_field(name="Progress", value=progress, inline=False)
 
             await self.message.edit(embed=embed, view=self)
 
