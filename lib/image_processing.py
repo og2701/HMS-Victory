@@ -23,8 +23,9 @@ def trim_image(im: Image.Image, tolerance: int = 6) -> Image.Image:
     if tolerance > 0:
         diff_white = diff_white.point(lambda p: 255 if p > tolerance else 0)
     bbox = diff_white.getbbox()
+    full_bbox = (0, 0, im.width, im.height)
 
-    if not bbox:
+    if not bbox or bbox == full_bbox:
         # Fallback: use the top-left pixel as background reference
         bg_color = rgb_image.getpixel((0, 0))
         bg_image = Image.new("RGB", rgb_image.size, bg_color)
@@ -33,7 +34,7 @@ def trim_image(im: Image.Image, tolerance: int = 6) -> Image.Image:
             diff_bg = diff_bg.point(lambda p: 255 if p > tolerance else 0)
         bbox = diff_bg.getbbox()
 
-    return im.crop(bbox) if bbox else im
+    return im.crop(bbox) if bbox and bbox != full_bbox else im
 
 def encode_image_to_data_uri(image_path: str) -> str:
     with open(image_path, "rb") as img_file:
