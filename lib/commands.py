@@ -25,3 +25,13 @@ from commands.iceberg.get_iceberg import show_iceberg
 from commands.chat_commands.roast import roast
 
 from commands.economy.economy_state import handle_ukpeconomy_command
+from commands.economy.shop import handle_shop_command
+from commands.economy.auction import handle_auction_create_command, handle_auction_list_command, handle_auction_end_command
+from commands.economy.inventory_commands import (
+    handle_inventory_status_command,
+    handle_add_stock_command,
+    handle_set_stock_command,
+    handle_setup_inventory_command,
+    handle_purchase_history_command,
+    handle_restock_command
+)
