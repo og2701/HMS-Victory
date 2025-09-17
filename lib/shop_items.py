@@ -550,17 +550,28 @@ class CustomEmojiStickerView(View):
 
         # Check if the chosen type still has space
         guild = interaction.guild
+        emoji_count = len(guild.emojis)
+        sticker_count = len(guild.stickers)
+        emoji_limit = guild.emoji_limit
+        sticker_limit = guild.sticker_limit
+
         if self.choice == "emoji":
-            if len(guild.emojis) >= guild.emoji_limit:
+            # Allow if we're not at the theoretical Discord maximum (even if over the reported limit)
+            # Discord's maximum is around 500 emojis regardless of boost level in practice
+            if emoji_count >= 500:
                 await interaction.response.send_message(
-                    f"❌ Server emoji limit reached ({len(guild.emojis)}/{guild.emoji_limit}). Please choose sticker instead.",
+                    f"❌ Server emoji limit reached ({emoji_count}/~500 max). Please choose sticker instead.",
                     ephemeral=True
                 )
                 return
+            # Warn if over the boost-based limit but still allow
+            elif emoji_count >= emoji_limit:
+                # Continue but show a warning - Discord sometimes allows more than the reported limit
+                pass
         else:  # sticker
-            if len(guild.stickers) >= guild.sticker_limit:
+            if sticker_count >= sticker_limit:
                 await interaction.response.send_message(
-                    f"❌ Server sticker limit reached ({len(guild.stickers)}/{guild.sticker_limit}). Please choose emoji instead.",
+                    f"❌ Server sticker limit reached ({sticker_count}/{sticker_limit}). Please choose emoji instead.",
                     ephemeral=True
                 )
                 return
@@ -809,14 +820,18 @@ class CustomEmojiStickerItem(ShopItem):
         if not can_purchase:
             return False, reason
 
-        # Check server limits - only warn if both are at capacity
+        # Check server limits - only warn if both are at practical capacity
         emoji_count = len(user.guild.emojis)
         sticker_count = len(user.guild.stickers)
         emoji_limit = user.guild.emoji_limit
         sticker_limit = user.guild.sticker_limit
 
-        if emoji_count >= emoji_limit and sticker_count >= sticker_limit:
-            return False, f"Server has reached both emoji limit ({emoji_count}/{emoji_limit}) and sticker limit ({sticker_count}/{sticker_limit})"
+        # Use practical limits: ~500 for emojis (Discord's real max), boost limit for stickers
+        emoji_at_capacity = emoji_count >= 500
+        sticker_at_capacity = sticker_count >= sticker_limit
+
+        if emoji_at_capacity and sticker_at_capacity:
+            return False, f"Server has reached both emoji capacity ({emoji_count}/~500) and sticker limit ({sticker_count}/{sticker_limit})"
 
         return True, ""
 
@@ -836,9 +851,14 @@ class CustomEmojiStickerItem(ShopItem):
             color=0xff6600
         )
 
+        # Show more realistic emoji capacity info
+        emoji_status = f"{emoji_count}/{emoji_limit}"
+        if emoji_count > emoji_limit:
+            emoji_status += f" (over boost limit, ~500 max)"
+
         embed.add_field(
             name="📊 Server Capacity",
-            value=f"**Emojis:** {emoji_count}/{emoji_limit}\n**Stickers:** {sticker_count}/{sticker_limit}",
+            value=f"**Emojis:** {emoji_status}\n**Stickers:** {sticker_count}/{sticker_limit}",
             inline=False
         )
 
