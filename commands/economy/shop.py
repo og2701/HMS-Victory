@@ -90,6 +90,10 @@ class PurchaseConfirmationView(View):
         # Process the purchase
         if remove_bb(interaction.user.id, self.item.price):
             try:
+                # Deposit the UKPence into the bank
+                from lib.bank_manager import BankManager
+                BankManager.deposit(self.item.price, f"Purchase of {self.item.name}")
+
                 # Defer the response first for items that need more time
                 if self.item.name == "VIP Role Case":
                     await interaction.response.defer(ephemeral=True)
@@ -98,8 +102,9 @@ class PurchaseConfirmationView(View):
                 success, result_message = await self.item.purchase(str(interaction.user.id), interaction)
 
                 if not success:
-                    # Refund if purchase failed
+                    # Refund if purchase failed - withdraw from bank and refund to user
                     from lib.economy_manager import add_bb
+                    BankManager.withdraw(self.item.price, f"Refund for failed purchase of {self.item.name}")
                     add_bb(interaction.user.id, self.item.price)
                     if self.item.name == "VIP Role Case":
                         await interaction.followup.send(
@@ -140,8 +145,9 @@ class PurchaseConfirmationView(View):
                     await log_channel.send(embed=log_embed)
 
             except Exception as e:
-                # Refund on error
+                # Refund on error - withdraw from bank and refund to user
                 from lib.economy_manager import add_bb
+                BankManager.withdraw(self.item.price, f"Refund for error in purchase of {self.item.name}")
                 add_bb(interaction.user.id, self.item.price)
                 if self.item.name == "VIP Role Case":
                     await interaction.followup.send(

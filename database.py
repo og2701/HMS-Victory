@@ -76,6 +76,19 @@ def init_db():
             purchase_time INTEGER NOT NULL
         )
     ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS bank (
+            id INTEGER PRIMARY KEY,
+            balance INTEGER NOT NULL DEFAULT 0,
+            total_revenue INTEGER NOT NULL DEFAULT 0,
+            last_updated INTEGER NOT NULL DEFAULT 0
+        )
+    ''')
+    # Initialize the bank with a single row if it doesn't exist
+    c.execute('''
+        INSERT OR IGNORE INTO bank (id, balance, total_revenue, last_updated)
+        VALUES (1, 0, 0, 0)
+    ''')
     conn.commit()
     conn.close()
 

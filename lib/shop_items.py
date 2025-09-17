@@ -393,8 +393,10 @@ class VIPCaseSpinView(View):
             result_embed.description = f"{outcome['emoji']} {self.user.mention} won **{outcome['amount']} Shutcoins**!\n\nNot bad!"
 
         elif outcome["type"] == "cashback":
-            # Give partial refund
+            # Give partial refund from the bank
             refund_amount = int(self.price * outcome["percent"] / 100)
+            from lib.bank_manager import BankManager
+            BankManager.withdraw(refund_amount, f"Cashback payout to {self.user.display_name}")
             add_bb(interaction.user.id, refund_amount)
             result_embed.description = f"{outcome['emoji']} {self.user.mention} got **{outcome['percent']}% cashback**!\n\n+{refund_amount} UKPence returned!"
 
