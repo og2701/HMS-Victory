@@ -11,7 +11,8 @@ hti.browser.flags += [
     "--force-device-scale-factor=2",
     "--disable-gpu",
     "--disable-software-rasterizer",
-    "--no-sandbox"
+    "--no-sandbox",
+    "--default-background-color=white"
 ]
 
 def trim_image(im: Image.Image, tolerance: int = 6) -> Image.Image:
