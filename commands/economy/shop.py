@@ -95,7 +95,7 @@ class PurchaseConfirmationView(View):
                 BankManager.deposit(self.item.price, f"Purchase of {self.item.name}")
 
                 # Defer the response first for items that need more time
-                if self.item.name == "VIP Role Case":
+                if self.item.name in ["VIP Role Case", "Custom Emoji/Sticker"]:
                     await interaction.response.defer(ephemeral=True)
 
                 # Use the new purchase method that handles inventory
@@ -106,7 +106,7 @@ class PurchaseConfirmationView(View):
                     from lib.economy_manager import add_bb
                     BankManager.withdraw(self.item.price, f"Refund for failed purchase of {self.item.name}")
                     add_bb(interaction.user.id, self.item.price)
-                    if self.item.name == "VIP Role Case":
+                    if self.item.name in ["VIP Role Case", "Custom Emoji/Sticker"]:
                         await interaction.followup.send(
                             f"❌ Purchase failed: {result_message}",
                             ephemeral=True
@@ -118,8 +118,8 @@ class PurchaseConfirmationView(View):
                         )
                     return
 
-                # For VIP Role Case, the interaction is handled in the execute method
-                if self.item.name != "VIP Role Case":
+                # For special items, the interaction is handled in the execute method
+                if self.item.name not in ["VIP Role Case", "Custom Emoji/Sticker"]:
                     embed = discord.Embed(
                         title="Purchase Successful! ✅",
                         description=result_message,
@@ -149,7 +149,7 @@ class PurchaseConfirmationView(View):
                 from lib.economy_manager import add_bb
                 BankManager.withdraw(self.item.price, f"Refund for error in purchase of {self.item.name}")
                 add_bb(interaction.user.id, self.item.price)
-                if self.item.name == "VIP Role Case":
+                if self.item.name in ["VIP Role Case", "Custom Emoji/Sticker"]:
                     await interaction.followup.send(
                         f"❌ An error occurred during purchase. Your UKPence has been refunded.\nError: {str(e)}",
                         ephemeral=True
