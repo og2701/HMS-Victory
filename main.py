@@ -157,6 +157,7 @@ class AClient(discord.Client):
         self.stage_events=set()
         self.stage_join_times={}
         self.predictions={int(k):Prediction.from_dict(v) for k,v in load_predictions().items()}
+        self._pending_uploads = {}  # For custom emoji/sticker uploads
 
     async def on_ready(self):
         await on_ready(self, tree, self.scheduler)

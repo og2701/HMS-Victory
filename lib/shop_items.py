@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
 import asyncio
 import random
+import aiohttp
+import io
 from datetime import timedelta
 from config import ROLES, CHANNELS
 from lib.economy_manager import add_shutcoins, add_bb
@@ -636,6 +638,163 @@ class CustomEmojiStickerView(View):
                 }
 
         modal = UploadModal(self.choice)
+        await interaction.response.send_modal(modal)
+
+class EmojiStickerApprovalView(View):
+    """View for cabinet channel approval of custom emoji/sticker requests."""
+
+    def __init__(self, user: discord.Member, upload_data: dict, file_data: bytes, filename: str):
+        super().__init__(timeout=86400)  # 24 hours timeout
+        self.user = user
+        self.upload_data = upload_data  # Contains type, name, description
+        self.file_data = file_data
+        self.filename = filename
+
+    @discord.ui.button(label="Approve", style=discord.ButtonStyle.green, emoji="✅")
+    async def approve_request(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check if user has cabinet permissions
+        if not any(role.id == ROLES.CABINET for role in interaction.user.roles):
+            await interaction.response.send_message("❌ Only cabinet members can approve this request.", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+
+        try:
+            guild = interaction.guild
+            success = False
+            result_message = ""
+
+            if self.upload_data['type'] == 'emoji':
+                # Create custom emoji
+                emoji = await guild.create_custom_emoji(
+                    name=self.upload_data['name'],
+                    image=self.file_data,
+                    reason=f"Approved by {interaction.user.name} - purchased by {self.user.name}"
+                )
+                success = True
+                result_message = f"✅ Custom emoji `:{emoji.name}:` {emoji} has been approved and added to the server!"
+
+            else:  # sticker
+                # Create custom sticker
+                sticker = await guild.create_sticker(
+                    name=self.upload_data['name'],
+                    description=self.upload_data.get('description', self.upload_data['name']),
+                    emoji='🎨',  # Default emoji for sticker
+                    file=discord.File(io.BytesIO(self.file_data), filename=self.filename),
+                    reason=f"Approved by {interaction.user.name} - purchased by {self.user.name}"
+                )
+                success = True
+                result_message = f"✅ Custom sticker '{sticker.name}' has been approved and added to the server!"
+
+            if success:
+                # Update the embed to show approval
+                embed = discord.Embed(
+                    title="✅ Custom Emoji/Sticker - APPROVED",
+                    description=result_message,
+                    color=0x00ff00
+                )
+                embed.add_field(name="Approved by", value=interaction.user.mention, inline=True)
+                embed.add_field(name="Purchaser", value=self.user.mention, inline=True)
+                embed.add_field(name="Type", value=self.upload_data['type'].title(), inline=True)
+                embed.add_field(name="Name", value=self.upload_data['name'], inline=True)
+
+                if self.upload_data.get('description'):
+                    embed.add_field(name="Description", value=self.upload_data['description'], inline=True)
+
+                # Disable all buttons
+                for item in self.children:
+                    item.disabled = True
+
+                await interaction.edit_original_response(embed=embed, view=self)
+
+                # Notify the user
+                try:
+                    await self.user.send(result_message)
+                except discord.Forbidden:
+                    # User has DMs disabled, that's okay
+                    pass
+
+        except discord.HTTPException as e:
+            error_msg = f"❌ Failed to create {self.upload_data['type']}: {str(e)}"
+            await interaction.followup.send(error_msg, ephemeral=True)
+
+    @discord.ui.button(label="Deny", style=discord.ButtonStyle.red, emoji="❌")
+    async def deny_request(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check if user has cabinet permissions
+        if not any(role.id == ROLES.CABINET for role in interaction.user.roles):
+            await interaction.response.send_message("❌ Only cabinet members can deny this request.", ephemeral=True)
+            return
+
+        # Create a modal for denial reason
+        class DenyReasonModal(discord.ui.Modal):
+            def __init__(self, approval_view):
+                super().__init__(title="Deny Custom Emoji/Sticker Request")
+                self.approval_view = approval_view
+
+                self.reason_input = discord.ui.TextInput(
+                    label="Reason for denial",
+                    placeholder="Enter the reason why this request is being denied...",
+                    required=True,
+                    max_length=200,
+                    style=discord.TextStyle.paragraph
+                )
+                self.add_item(self.reason_input)
+
+            async def on_submit(self, modal_interaction: discord.Interaction):
+                await modal_interaction.response.defer()
+
+                # Process the refund
+                from lib.shop_items import SHOP_ITEMS
+                from lib.economy_manager import add_bb
+                from lib.bank_manager import BankManager
+
+                # Find the custom emoji/sticker item price
+                refund_amount = 3500  # Default price for custom emoji/sticker
+                for item in SHOP_ITEMS:
+                    if item.id == "custom_emoji_sticker":
+                        refund_amount = item.price
+                        break
+
+                # Withdraw from bank and refund to user
+                BankManager.withdraw(refund_amount, f"Refund for denied {self.approval_view.upload_data['type']} request")
+                add_bb(self.approval_view.user.id, refund_amount)
+
+                # Update the embed to show denial
+                embed = discord.Embed(
+                    title="❌ Custom Emoji/Sticker - DENIED",
+                    description=f"Request has been denied and {refund_amount} UKPence has been refunded.",
+                    color=0xff0000
+                )
+                embed.add_field(name="Denied by", value=modal_interaction.user.mention, inline=True)
+                embed.add_field(name="Purchaser", value=self.approval_view.user.mention, inline=True)
+                embed.add_field(name="Type", value=self.approval_view.upload_data['type'].title(), inline=True)
+                embed.add_field(name="Name", value=self.approval_view.upload_data['name'], inline=True)
+                embed.add_field(name="Reason", value=self.reason_input.value, inline=False)
+                embed.add_field(name="Refund", value=f"{refund_amount} UKPence", inline=True)
+
+                # Disable all buttons
+                for item in self.approval_view.children:
+                    item.disabled = True
+
+                await modal_interaction.edit_original_response(embed=embed, view=self.approval_view)
+
+                # Notify the user of denial and refund
+                try:
+                    user_embed = discord.Embed(
+                        title="❌ Custom Emoji/Sticker Request Denied",
+                        description=f"Your request for a custom {self.approval_view.upload_data['type']} has been denied.",
+                        color=0xff0000
+                    )
+                    user_embed.add_field(name="Name", value=self.approval_view.upload_data['name'], inline=True)
+                    user_embed.add_field(name="Reason", value=self.reason_input.value, inline=False)
+                    user_embed.add_field(name="Refund", value=f"You have been refunded {refund_amount} UKPence", inline=False)
+
+                    await self.approval_view.user.send(embed=user_embed)
+                except discord.Forbidden:
+                    # User has DMs disabled, that's okay
+                    pass
+
+        modal = DenyReasonModal(self)
         await interaction.response.send_modal(modal)
 
 class CustomEmojiStickerItem(ShopItem):
