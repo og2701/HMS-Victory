@@ -354,7 +354,7 @@ class VIPCaseSpinView(View):
     async def process_result(self, interaction: discord.Interaction, outcome):
         """Process the winning outcome."""
         result_embed = discord.Embed(
-            title="🎰 VIP Role Case - RESULT",
+            title=f"🎰 {self.user.display_name}'s VIP Role Case - RESULT",
             color=outcome["color"]
         )
 
@@ -363,7 +363,7 @@ class VIPCaseSpinView(View):
             vip_role = interaction.guild.get_role(self.vip_role_id)
             if vip_role:
                 await interaction.user.add_roles(vip_role)
-                result_embed.description = f"🎉 **JACKPOT!** 🎉\n\n{outcome['emoji']} You won the **VIP ROLE**! {outcome['emoji']}\n\nCongratulations!"
+                result_embed.description = f"🎉 **JACKPOT!** 🎉\n\n{self.user.mention} won the **VIP ROLE**! {outcome['emoji']}\n\nCongratulations!"
 
                 # Log the win
                 log_channel = interaction.guild.get_channel(1197572903294730270)  # BOT_USAGE_LOG
@@ -383,23 +383,23 @@ class VIPCaseSpinView(View):
             duration = timedelta(minutes=outcome["duration"])
             try:
                 await interaction.user.timeout(duration, reason="VIP Case outcome")
-                result_embed.description = f"{outcome['emoji']} You got a **{outcome['duration']} minute timeout**!\n\nBetter luck next time!"
+                result_embed.description = f"{outcome['emoji']} {self.user.mention} got a **{outcome['duration']} minute timeout**!\n\nBetter luck next time!"
             except discord.Forbidden:
-                result_embed.description = f"{outcome['emoji']} You would have gotten a {outcome['duration']} minute timeout, but I don't have permission!"
+                result_embed.description = f"{outcome['emoji']} {self.user.mention} would have gotten a {outcome['duration']} minute timeout, but I don't have permission!"
 
         elif outcome["type"] == "shutcoins":
             # Award shutcoins
             add_shutcoins(interaction.user.id, outcome["amount"])
-            result_embed.description = f"{outcome['emoji']} You won **{outcome['amount']} Shutcoins**!\n\nNot bad!"
+            result_embed.description = f"{outcome['emoji']} {self.user.mention} won **{outcome['amount']} Shutcoins**!\n\nNot bad!"
 
         elif outcome["type"] == "cashback":
             # Give partial refund
             refund_amount = int(self.price * outcome["percent"] / 100)
             add_bb(interaction.user.id, refund_amount)
-            result_embed.description = f"{outcome['emoji']} You got **{outcome['percent']}% cashback**!\n\n+{refund_amount} UKPence returned!"
+            result_embed.description = f"{outcome['emoji']} {self.user.mention} got **{outcome['percent']}% cashback**!\n\n+{refund_amount} UKPence returned!"
 
         else:  # nothing
-            result_embed.description = f"{outcome['emoji']} You got **nothing**...\n\nBetter luck next time!"
+            result_embed.description = f"{outcome['emoji']} {self.user.mention} got **nothing**...\n\nBetter luck next time!"
 
         # Clear the view
         self.clear_items()

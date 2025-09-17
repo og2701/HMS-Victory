@@ -215,16 +215,16 @@ async def handle_purchase_history_command(interaction: discord.Interaction, targ
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 async def handle_restock_command(interaction: discord.Interaction):
-    """Manually trigger auto-restock for all eligible items"""
+    """Restock all items to their maximum quantity"""
     restocked_items = ShopInventory.auto_restock_items()
 
     if not restocked_items:
-        await interaction.response.send_message("📦 No items needed restocking.", ephemeral=True)
+        await interaction.response.send_message("📦 All items are already at maximum stock.", ephemeral=True)
         return
 
     embed = discord.Embed(
-        title="✅ Manual Restock Complete",
-        description=f"Restocked {len(restocked_items)} items:",
+        title="✅ Restock Complete",
+        description=f"Restocked {len(restocked_items)} items to maximum quantity:",
         color=0x00ff00
     )
 
@@ -234,7 +234,7 @@ async def handle_restock_command(interaction: discord.Interaction):
         shop_item = shop_items.get(item_id)
         item_name = shop_item.name if shop_item else item_id
         quantity = ShopInventory.get_quantity(item_id)
-        restock_list.append(f"• **{item_name}** - Now has {quantity} in stock")
+        restock_list.append(f"• **{item_name}** - Restocked to {quantity}")
 
     embed.description += "\n" + "\n".join(restock_list)
     await interaction.response.send_message(embed=embed, ephemeral=True)

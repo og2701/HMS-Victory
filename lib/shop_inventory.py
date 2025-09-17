@@ -129,34 +129,31 @@ class ShopInventory:
 
     @staticmethod
     def auto_restock_items() -> List[str]:
-        """Perform auto-restocking for eligible items. Returns list of restocked item IDs."""
+        """Perform restocking for all items to their max quantity. Returns list of restocked item IDs."""
         conn = sqlite3.connect('database.db')
         c = conn.cursor()
 
         current_time = int(time.time())
-        day_ago = current_time - 86400  # 24 hours
 
-        # Find items that need restocking (auto_restock=1, last_restock > 24h ago)
+        # Find all items with max_quantity set (these are restockable items)
         c.execute('''
-            SELECT item_id, quantity, max_quantity, restock_amount, last_restock
+            SELECT item_id, quantity, max_quantity
             FROM shop_inventory
-            WHERE auto_restock = 1 AND last_restock < ?
-        ''', (day_ago,))
+            WHERE max_quantity IS NOT NULL AND quantity < max_quantity
+        ''')
 
         items_to_restock = c.fetchall()
         restocked_items = []
 
-        for item_id, current_qty, max_qty, restock_amt, last_restock in items_to_restock:
-            if max_qty is None or current_qty < max_qty:
-                new_quantity = min(current_qty + restock_amt, max_qty) if max_qty else current_qty + restock_amt
+        for item_id, current_qty, max_qty in items_to_restock:
+            # Set to max quantity
+            c.execute('''
+                UPDATE shop_inventory
+                SET quantity = ?, last_restock = ?
+                WHERE item_id = ?
+            ''', (max_qty, current_time, item_id))
 
-                c.execute('''
-                    UPDATE shop_inventory
-                    SET quantity = ?, last_restock = ?
-                    WHERE item_id = ?
-                ''', (new_quantity, current_time, item_id))
-
-                restocked_items.append(item_id)
+            restocked_items.append(item_id)
 
         conn.commit()
         conn.close()
