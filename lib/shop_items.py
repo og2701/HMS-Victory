@@ -195,7 +195,7 @@ class VIPCaseItem(ShopItem):
 
     async def execute(self, interaction) -> str:
         # Create the spinning case view
-        view = VIPCaseSpinView(self.outcomes, self.vip_role_id, self.price)
+        view = VIPCaseSpinView(self.outcomes, self.vip_role_id, self.price, interaction.user)
 
         # Start the spin
         await view.start_spin(interaction)
@@ -206,11 +206,12 @@ class VIPCaseItem(ShopItem):
 class VIPCaseSpinView(View):
     """Interactive view for the VIP case spinning animation."""
 
-    def __init__(self, outcomes, vip_role_id, price):
+    def __init__(self, outcomes, vip_role_id, price, user):
         super().__init__(timeout=60)
         self.outcomes = outcomes
         self.vip_role_id = vip_role_id
         self.price = price
+        self.user = user
         self.result = None
         self.spinning = False
         self.message = None
@@ -222,7 +223,7 @@ class VIPCaseSpinView(View):
         # Create initial embed
         embed = discord.Embed(
             title="🎰 VIP Role Case Opening",
-            description="Press SPIN to try your luck!",
+            description=f"{self.user.mention} is opening a VIP Role Case!\n\nPress SPIN to try your luck!",
             color=0xffff00
         )
 
@@ -331,7 +332,7 @@ class VIPCaseSpinView(View):
                 color = selected_outcome["color"]
             else:
                 spin_chars = ["🎰", "🎲", "🎯", "✨"]
-                title = f"{spin_chars[i % len(spin_chars)]} VIP Role Case - SPINNING..."
+                title = f"{spin_chars[i % len(spin_chars)]} {self.user.display_name}'s VIP Role Case - SPINNING..."
                 color = 0xffff00
 
             embed = discord.Embed(
@@ -415,19 +416,62 @@ class VIPCaseSpinView(View):
 
     async def try_again_callback(self, interaction: discord.Interaction):
         """Handle try again button."""
-        # This will trigger a new purchase through the shop system
-        await interaction.response.send_message(
-            "Please use the `/shop` command to purchase another VIP Case!",
-            ephemeral=True
+        # Import here to avoid circular import
+        from commands.economy.shop import PurchaseConfirmationView
+        from lib.economy_manager import get_bb
+
+        # Check if user is the original purchaser
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message(
+                "Only the original purchaser can use the Try Again button!",
+                ephemeral=True
+            )
+            return
+
+        # Check balance first
+        balance = get_bb(interaction.user.id)
+        if balance < self.price:
+            await interaction.response.send_message(
+                f"❌ Insufficient funds! You need {self.price} UKPence but only have {balance} UKPence.",
+                ephemeral=True
+            )
+            return
+
+        # Get the VIP Case item from the shop items registry
+        vip_case_item = None
+        for item in SHOP_ITEMS:
+            if item.id == "vip_case":
+                vip_case_item = item
+                break
+
+        if not vip_case_item:
+            await interaction.response.send_message(
+                "❌ Error: VIP Case item not found in shop!",
+                ephemeral=True
+            )
+            return
+
+        # Create and send the purchase confirmation view
+        view = PurchaseConfirmationView(vip_case_item)
+
+        embed = discord.Embed(
+            title="Confirm Purchase",
+            color=0xffa500
         )
+        embed.add_field(name="Item", value=vip_case_item.name, inline=False)
+        embed.add_field(name="Description", value=vip_case_item.description, inline=False)
+        embed.add_field(name="Price", value=f"{vip_case_item.price} UKPence", inline=True)
+        embed.add_field(name="Your Balance", value=f"{balance} UKPence", inline=True)
+
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 # Shop Items Registry
 SHOP_ITEMS: List[ShopItem] = [
     # Currency Items
     ShutcoinItem("shutcoin", "1 Shutcoin", "Get a Shutcoin for the ability to silence a member for 30s", 100, 1),
 
-    # VIP Case - Gambling item
-    VIPCaseItem("vip_case", "VIP Role Case", "Open a case for a chance to win the VIP role! Contains various rewards and risks.", 3000, ROLES.VIP),
+    # VIP Case - Gambling item (with inventory tracking)
+    VIPCaseItem("vip_case", "VIP Role Case", "Open a case for a chance to win the VIP role! Contains various rewards and risks.", 3000, ROLES.VIP, use_inventory=True),
 
     # Role Items (using actual role IDs from config)
     # RoleItem("ball_inspector", "Ball Inspector", "Get the prestigious Ball Inspector role", 200, ROLES.BALL_INSPECTOR),
