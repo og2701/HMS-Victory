@@ -14,10 +14,21 @@ hti.browser.flags += [
     "--no-sandbox"
 ]
 
-def trim_image(im: Image.Image) -> Image.Image:
-    bg = Image.new(im.mode, im.size, im.getpixel((0, 0)))
-    diff = ImageChops.difference(im, bg)
-    diff = ImageChops.add(diff, diff, 2.0, -100)
+def _normalize_color(color) -> tuple[int, int, int]:
+    if isinstance(color, int):
+        return (color, color, color)
+    if len(color) == 1:
+        return (color[0], color[0], color[0])
+    return tuple(color[:3])
+
+
+def trim_image(im: Image.Image, tolerance: int = 4) -> Image.Image:
+    bg_color = im.getpixel((0, 0))
+    rgb_image = im.convert("RGB")
+    bg = Image.new("RGB", rgb_image.size, _normalize_color(bg_color))
+    diff = ImageChops.difference(rgb_image, bg).convert("L")
+    if tolerance > 0:
+        diff = diff.point(lambda p: 255 if p > tolerance else 0)
     bbox = diff.getbbox()
     return im.crop(bbox) if bbox else im
 
@@ -30,12 +41,12 @@ def encode_image_to_data_uri(image_path: str) -> str:
 def screenshot_html(html_str: str, size: tuple[int, int] = (1600, 1000)) -> io.BytesIO:
     """Render HTML into a trimmed PNG and return the bytes buffer."""
     output_file = f"{uuid.uuid4()}.png"
+    buffer = io.BytesIO()
     try:
         hti.screenshot(html_str=html_str, save_as=output_file, size=size)
 
         with Image.open(output_file) as image:
             trimmed = trim_image(image)
-            buffer = io.BytesIO()
             trimmed.save(buffer, format="PNG")
             buffer.seek(0)
     finally:

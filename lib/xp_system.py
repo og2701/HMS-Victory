@@ -23,16 +23,20 @@ class LeaderboardView(discord.ui.View):
 
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         self.offset = max(0, self.offset - self.PAGE_SIZE)
         file = await self.xp_system.generate_leaderboard_image(
             self.guild, self.get_slice(), self.offset
         )
         self.previous_button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
-        await interaction.response.edit_message(attachments=[file], view=self)
+        await interaction.edit_original_response(attachments=[file], view=self)
 
     @discord.ui.button(label="Next", style=discord.ButtonStyle.blurple)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         max_off = max(0, len(self.sorted_data) - self.PAGE_SIZE)
         self.offset = min(max_off, self.offset + self.PAGE_SIZE)
         file = await self.xp_system.generate_leaderboard_image(
@@ -40,7 +44,7 @@ class LeaderboardView(discord.ui.View):
         )
         self.previous_button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
-        await interaction.response.edit_message(attachments=[file], view=self)
+        await interaction.edit_original_response(attachments=[file], view=self)
 
 class RichListView(discord.ui.View):
     PAGE_SIZE = 20
@@ -59,16 +63,20 @@ class RichListView(discord.ui.View):
 
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         self.offset = max(0, self.offset - self.PAGE_SIZE)
         file = await self.xp_system.generate_richlist_image(
             self.guild, self.get_slice(), self.offset
         )
         self.previous_button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
-        await interaction.response.edit_message(attachments=[file], view=self)
+        await interaction.edit_original_response(attachments=[file], view=self)
 
     @discord.ui.button(label="Next", style=discord.ButtonStyle.blurple)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         max_off = max(0, len(self.sorted_data) - self.PAGE_SIZE)
         self.offset = min(max_off, self.offset + self.PAGE_SIZE)
         file = await self.xp_system.generate_richlist_image(
@@ -76,7 +84,7 @@ class RichListView(discord.ui.View):
         )
         self.previous_button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
-        await interaction.response.edit_message(attachments=[file], view=self)
+        await interaction.edit_original_response(attachments=[file], view=self)
 
 class XPSystem:
     def get_role_for_xp(self, xp):
