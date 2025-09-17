@@ -1,24 +1,10 @@
-from config import CHROME_PATH
 import discord
-import os
-import io
-import uuid
 import time
 import random
 import sqlite3
-from PIL import Image, ImageChops
-from html2image import Html2Image
 from config import *
 from lib.economy_manager import get_bb
-
-hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
-
-def trim(im: Image.Image) -> Image.Image:
-    bg = Image.new(im.mode, im.size, im.getpixel((0, 0)))
-    diff = ImageChops.difference(im, bg)
-    diff = ImageChops.add(diff, diff, 2.0, -100)
-    bbox = diff.getbbox()
-    return im.crop(bbox) if bbox else im
+from lib.image_processing import screenshot_html
 
 class LeaderboardView(discord.ui.View):
     PAGE_SIZE = 20
@@ -198,16 +184,8 @@ class XPSystem:
         </div>
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
-        path = f"{uuid.uuid4()}.png"
-        hti.screenshot(html_str=final_html, save_as=path, size=(1200, 1200))
-
-        img = Image.open(path)
-        img = trim(img)
-        img.save(path)
-
-        buf = io.BytesIO(open(path, "rb").read())
-        os.remove(path)
-        return discord.File(fp=buf, filename="leaderboard.png")
+        image_buffer = screenshot_html(final_html, size=(1200, 1200))
+        return discord.File(fp=image_buffer, filename="leaderboard.png")
 
     async def handle_leaderboard_command(self, interaction: discord.Interaction):
         data = self.get_all_sorted_xp()
@@ -262,16 +240,8 @@ class XPSystem:
         </div>
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
-        path = f"{uuid.uuid4()}.png"
-        hti.screenshot(html_str=final_html, save_as=path, size=(1200, 1200))
-
-        img = Image.open(path)
-        img = trim(img)
-        img.save(path)
-
-        buf = io.BytesIO(open(path, "rb").read())
-        os.remove(path)
-        return discord.File(fp=buf, filename="richlist.png")
+        image_buffer = screenshot_html(final_html, size=(1200, 1200))
+        return discord.File(fp=image_buffer, filename="richlist.png")
 
     async def handle_richlist_command(self, interaction: discord.Interaction):
         data = self.get_all_balances()

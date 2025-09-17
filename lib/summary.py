@@ -337,12 +337,10 @@ async def post_summary(
                 for user_id, count in reacting_members
             ],
         }
-        image_path = await create_summary_image(summary_data, title, title_color)
-        try:
-            with open(image_path, "rb") as f:
-                await log_channel.send(file=discord.File(f, f"{frequency}_summary.png"))
-        finally:
-            os.remove(image_path)
+        image_buffer = await create_summary_image(summary_data, title, title_color)
+        await log_channel.send(
+            file=discord.File(image_buffer, filename=f"{frequency}_summary.png")
+        )
         if frequency == "daily":
             data["total_members"] = total_members
             with open(file_path, "w") as file:

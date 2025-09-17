@@ -27,19 +27,22 @@ def encode_image_to_data_uri(image_path: str) -> str:
     encoded = base64.b64encode(data).decode("utf-8")
     return f"data:image/png;base64,{encoded}"
 
-def screenshot_html(html_str: str, size: tuple[int, int] = (1600, 1000)) -> bytes:
-    output_file = f'{uuid.uuid4()}.png'
-    hti.screenshot(html_str=html_str, save_as=output_file, size=size)
+def screenshot_html(html_str: str, size: tuple[int, int] = (1600, 1000)) -> io.BytesIO:
+    """Render HTML into a trimmed PNG and return the bytes buffer."""
+    output_file = f"{uuid.uuid4()}.png"
+    try:
+        hti.screenshot(html_str=html_str, save_as=output_file, size=size)
 
-    image = Image.open(output_file)
-    image = trim_image(image)
-    image.save(output_file)
+        with Image.open(output_file) as image:
+            trimmed = trim_image(image)
+            buffer = io.BytesIO()
+            trimmed.save(buffer, format="PNG")
+            buffer.seek(0)
+    finally:
+        if os.path.exists(output_file):
+            os.remove(output_file)
 
-    with open(output_file, "rb") as f:
-        image_bytes = io.BytesIO(f.read())
-
-    os.remove(output_file)
-    return image_bytes
+    return buffer
 
 def calculate_text_dimensions(font, text: str) -> tuple[int, int]:
     text_bbox = font.getbbox(text)

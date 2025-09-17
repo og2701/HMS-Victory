@@ -1,18 +1,10 @@
-import requests
 import base64
-import html
-import uuid
-from PIL import Image, ImageChops
-from config import CHROME_PATH
 import difflib
-from html2image import Html2Image
-from lib.image_processing import trim_image
+import html
+import requests
+
+from lib.image_processing import screenshot_html
 from lib.file_operations import read_html_template
-
-hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
-
-def trim(im):
-    return trim_image(im)
 
 
 def calculate_estimated_height(content, line_height=20, base_height=1000):
@@ -49,14 +41,7 @@ async def create_message_image(message, title):
         content=escaped_content,
     )
 
-    output_path = f"{uuid.uuid4()}.png"
-    hti.screenshot(
-        html_str=html_content, save_as=output_path, size=(800, estimated_height)
-    )
-    image = Image.open(output_path)
-    image = trim(image)
-    image.save(output_path)
-    return output_path
+    return screenshot_html(html_content, size=(800, estimated_height))
 
 
 def highlight_diff(before, after):
@@ -127,11 +112,4 @@ async def create_edited_message_image(before, after):
         after_content=highlighted_after_content,
     )
 
-    output_path = f"{uuid.uuid4()}.png"
-    hti.screenshot(
-        html_str=html_content, save_as=output_path, size=(800, estimated_height)
-    )
-    image = Image.open(output_path)
-    image = trim(image)
-    image.save(output_path)
-    return output_path
+    return screenshot_html(html_content, size=(800, estimated_height))

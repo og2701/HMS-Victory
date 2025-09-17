@@ -470,7 +470,7 @@ async def on_message_delete(client, message):
     channel_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
     if log_channel is not None:
         if message.content:
-            image_file_path = await create_message_image(message, "Deleted Message")
+            image_buffer = await create_message_image(message, "Deleted Message")
             description = f"Message by {message.author.mention} ({message.author.id}) deleted in {message.channel.mention}."
             if deleter and deleter != message.author:
                 description += f"\nDeleted by {deleter.mention} ({deleter.id})."
@@ -481,12 +481,11 @@ async def on_message_delete(client, message):
             )
             embed.add_field(name="Channel Link", value=f"[Click here]({channel_link})")
             embed.set_image(url="attachment://deleted_message.png")
-            if image_file_path is not None:
-                with open(image_file_path, "rb") as f:
-                    await log_channel.send(
-                        file=discord.File(f, "deleted_message.png"), embed=embed
-                    )
-                os.remove(image_file_path)
+            if image_buffer is not None:
+                await log_channel.send(
+                    file=discord.File(image_buffer, filename="deleted_message.png"),
+                    embed=embed,
+                )
         for attachment in message.attachments:
             attachment_link = client.image_cache.get(message.id, {}).get(attachment.url)
             if attachment_link:
@@ -515,7 +514,7 @@ async def on_message_edit(client, before, after):
         return
     log_channel = client.get_channel(CHANNELS.LOGS)
     if log_channel is not None:
-        image_file_path = await create_edited_message_image(before, after)
+        image_buffer = await create_edited_message_image(before, after)
         message_link = f"https://discord.com/channels/{before.guild.id}/{before.channel.id}/{after.id}"
         embed = discord.Embed(
             title="Message Edited",
@@ -524,12 +523,11 @@ async def on_message_edit(client, before, after):
         )
         embed.add_field(name="Message Link", value=f"[Click here]({message_link})")
         embed.set_image(url="attachment://edited_message.png")
-        if image_file_path is not None:
-            with open(image_file_path, "rb") as f:
-                await log_channel.send(
-                    file=discord.File(f, "edited_message.png"), embed=embed
-                )
-            os.remove(image_file_path)
+        if image_buffer is not None:
+            await log_channel.send(
+                file=discord.File(image_buffer, filename="edited_message.png"),
+                embed=embed,
+            )
 
 
 async def handle_flag_reaction(reaction, message, user):
