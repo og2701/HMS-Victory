@@ -26,10 +26,7 @@ from commands.economy.inventory_commands import (
     handle_restock_command
 )
 from commands.economy.bank_commands import (
-    handle_bank_status_command,
-    handle_bank_withdraw_command,
-    handle_bank_deposit_command,
-    handle_bank_set_command
+    handle_bank_status_command
 )
 
 def define_commands(tree, client):
@@ -378,15 +375,3 @@ def define_commands(tree, client):
     @command("bank-status", "View server bank status (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def bank_status_command(interaction: Interaction):
         await handle_bank_status_command(interaction)
-
-    @command("bank-withdraw", "Withdraw UKPence from bank to your balance (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def bank_withdraw_command(interaction: Interaction, amount: int):
-        await handle_bank_withdraw_command(interaction, amount)
-
-    @command("bank-deposit", "Deposit UKPence from your balance to bank (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def bank_deposit_command(interaction: Interaction, amount: int):
-        await handle_bank_deposit_command(interaction, amount)
-
-    @command("bank-set", "Set bank balance to specific amount (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def bank_set_command(interaction: Interaction, amount: int):
-        await handle_bank_set_command(interaction, amount)
