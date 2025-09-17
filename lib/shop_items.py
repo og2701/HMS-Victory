@@ -546,6 +546,23 @@ class CustomEmojiStickerView(View):
 
         self.choice = select.values[0]
 
+        # Check if the chosen type still has space
+        guild = interaction.guild
+        if self.choice == "emoji":
+            if len(guild.emojis) >= guild.emoji_limit:
+                await interaction.response.send_message(
+                    f"❌ Server emoji limit reached ({len(guild.emojis)}/{guild.emoji_limit}). Please choose sticker instead.",
+                    ephemeral=True
+                )
+                return
+        else:  # sticker
+            if len(guild.stickers) >= guild.sticker_limit:
+                await interaction.response.send_message(
+                    f"❌ Server sticker limit reached ({len(guild.stickers)}/{guild.sticker_limit}). Please choose emoji instead.",
+                    ephemeral=True
+                )
+                return
+
         embed = discord.Embed(
             title=f"Custom {'Emoji' if self.choice == 'emoji' else 'Sticker'} Upload",
             description=f"Please upload your {'emoji' if self.choice == 'emoji' else 'sticker'} file and provide a name.",
@@ -633,12 +650,14 @@ class CustomEmojiStickerItem(ShopItem):
         if not can_purchase:
             return False, reason
 
-        # Check server limits
-        if len(user.guild.emojis) >= user.guild.emoji_limit:
-            return False, f"Server has reached emoji limit ({user.guild.emoji_limit})"
+        # Check server limits - only warn if both are at capacity
+        emoji_count = len(user.guild.emojis)
+        sticker_count = len(user.guild.stickers)
+        emoji_limit = user.guild.emoji_limit
+        sticker_limit = user.guild.sticker_limit
 
-        if len(user.guild.stickers) >= user.guild.sticker_limit:
-            return False, f"Server has reached sticker limit ({user.guild.sticker_limit})"
+        if emoji_count >= emoji_limit and sticker_count >= sticker_limit:
+            return False, f"Server has reached both emoji limit ({emoji_count}/{emoji_limit}) and sticker limit ({sticker_count}/{sticker_limit})"
 
         return True, ""
 
@@ -646,10 +665,22 @@ class CustomEmojiStickerItem(ShopItem):
         # Create the selection view
         view = CustomEmojiStickerView(interaction.user)
 
+        guild = interaction.guild
+        emoji_count = len(guild.emojis)
+        sticker_count = len(guild.stickers)
+        emoji_limit = guild.emoji_limit
+        sticker_limit = guild.sticker_limit
+
         embed = discord.Embed(
             title="🎨 Custom Emoji/Sticker Purchase",
             description="Choose whether you want to add a custom emoji or sticker to the server!",
             color=0xff6600
+        )
+
+        embed.add_field(
+            name="📊 Server Capacity",
+            value=f"**Emojis:** {emoji_count}/{emoji_limit}\n**Stickers:** {sticker_count}/{sticker_limit}",
+            inline=False
         )
 
         # Send via followup since this is after the purchase
