@@ -465,6 +465,198 @@ class VIPCaseSpinView(View):
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+class RoastAccessItem(ShopItem):
+    """Shop item for purchasing roast command access."""
+
+    def __init__(self, id: str, name: str, description: str, price: int, use_inventory: bool = True):
+        super().__init__(id, name, description, price, use_inventory)
+
+    def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
+        # Check parent class conditions first (including inventory)
+        can_purchase, reason = super().can_purchase(user)
+        if not can_purchase:
+            return False, reason
+
+        # Check if user already has server booster role or any roast access role
+        from config import ROLES
+        roast_roles = [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER, ROLES.PCSO]
+
+        for role_id in roast_roles:
+            role = user.guild.get_role(role_id)
+            if role and role in user.roles:
+                return False, "You already have access to the roast command!"
+
+        return True, ""
+
+    async def execute(self, interaction) -> str:
+        # Give them a special "Roast Access" role that grants access
+        # First check if the role exists, if not we need to create it
+        from config import ROLES
+
+        # Look for existing roast access role
+        roast_access_role = None
+        for role in interaction.guild.roles:
+            if role.name == "Roast Access":
+                roast_access_role = role
+                break
+
+        # If role doesn't exist, create it
+        if not roast_access_role:
+            roast_access_role = await interaction.guild.create_role(
+                name="Roast Access",
+                reason="Purchased roast access from shop",
+                color=0xff6600,
+                mentionable=False
+            )
+
+        # Add role to user
+        await interaction.user.add_roles(roast_access_role)
+        return f"You now have access to the `/roast` command! Use it wisely..."
+
+class CustomEmojiStickerView(View):
+    """Interactive view for custom emoji/sticker purchase."""
+
+    def __init__(self, user):
+        super().__init__(timeout=300)
+        self.user = user
+        self.choice = None
+        self.file_attachment = None
+
+    @discord.ui.select(
+        placeholder="Choose what to add to the server...",
+        options=[
+            discord.SelectOption(
+                label="Custom Emoji",
+                description="Add a custom emoji to the server",
+                emoji="😀",
+                value="emoji"
+            ),
+            discord.SelectOption(
+                label="Custom Sticker",
+                description="Add a custom sticker to the server",
+                emoji="🏷️",
+                value="sticker"
+            )
+        ]
+    )
+    async def choice_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message("Only the purchaser can use this!", ephemeral=True)
+            return
+
+        self.choice = select.values[0]
+
+        embed = discord.Embed(
+            title=f"Custom {'Emoji' if self.choice == 'emoji' else 'Sticker'} Upload",
+            description=f"Please upload your {'emoji' if self.choice == 'emoji' else 'sticker'} file and provide a name.",
+            color=0x00ff00
+        )
+
+        if self.choice == "emoji":
+            embed.add_field(
+                name="Requirements",
+                value="• File must be PNG, JPG, or GIF\n• Max 256KB\n• Recommended: 128x128px\n• Name must be 2-32 characters (alphanumeric + underscores)",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="Requirements",
+                value="• File must be PNG, GIF, or Lottie JSON\n• Max 512KB for static, 512KB for animated\n• Name must be 2-30 characters\n• Description is optional",
+                inline=False
+            )
+
+        # Clear the select and add file upload instructions
+        self.clear_items()
+
+        upload_button = Button(label=f"Upload {'Emoji' if self.choice == 'emoji' else 'Sticker'}", style=discord.ButtonStyle.primary, emoji="📁")
+        upload_button.callback = self.upload_callback
+        self.add_item(upload_button)
+
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def upload_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message("Only the purchaser can use this!", ephemeral=True)
+            return
+
+        # Create a modal for name input
+        class UploadModal(discord.ui.Modal):
+            def __init__(self, choice):
+                super().__init__(title=f"Upload Custom {'Emoji' if choice == 'emoji' else 'Sticker'}")
+                self.choice = choice
+
+                self.name_input = discord.ui.TextInput(
+                    label=f"{'Emoji' if choice == 'emoji' else 'Sticker'} Name",
+                    placeholder=f"Enter name for your {'emoji' if choice == 'emoji' else 'sticker'}",
+                    min_length=2,
+                    max_length=32 if choice == 'emoji' else 30
+                )
+                self.add_item(self.name_input)
+
+                if choice == 'sticker':
+                    self.description_input = discord.ui.TextInput(
+                        label="Sticker Description (Optional)",
+                        placeholder="Enter description for your sticker",
+                        required=False,
+                        max_length=100
+                    )
+                    self.add_item(self.description_input)
+
+            async def on_submit(self, modal_interaction: discord.Interaction):
+                await modal_interaction.response.send_message(
+                    f"Now please upload your {'emoji' if self.choice == 'emoji' else 'sticker'} file as an attachment in your next message. "
+                    f"I'll process it automatically when you send it.",
+                    ephemeral=True
+                )
+
+                # Store the modal data for later use
+                modal_interaction.client._pending_uploads = getattr(modal_interaction.client, '_pending_uploads', {})
+                modal_interaction.client._pending_uploads[modal_interaction.user.id] = {
+                    'type': self.choice,
+                    'name': self.name_input.value,
+                    'description': getattr(self, 'description_input', None) and self.description_input.value,
+                    'waiting': True
+                }
+
+        modal = UploadModal(self.choice)
+        await interaction.response.send_modal(modal)
+
+class CustomEmojiStickerItem(ShopItem):
+    """Shop item for adding custom emoji or sticker to server."""
+
+    def __init__(self, id: str, name: str, description: str, price: int, use_inventory: bool = True):
+        super().__init__(id, name, description, price, use_inventory)
+
+    def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
+        # Check parent class conditions first (including inventory)
+        can_purchase, reason = super().can_purchase(user)
+        if not can_purchase:
+            return False, reason
+
+        # Check server limits
+        if len(user.guild.emojis) >= user.guild.emoji_limit:
+            return False, f"Server has reached emoji limit ({user.guild.emoji_limit})"
+
+        if len(user.guild.stickers) >= user.guild.sticker_limit:
+            return False, f"Server has reached sticker limit ({user.guild.sticker_limit})"
+
+        return True, ""
+
+    async def execute(self, interaction) -> str:
+        # Create the selection view
+        view = CustomEmojiStickerView(interaction.user)
+
+        embed = discord.Embed(
+            title="🎨 Custom Emoji/Sticker Purchase",
+            description="Choose whether you want to add a custom emoji or sticker to the server!",
+            color=0xff6600
+        )
+
+        # Send via followup since this is after the purchase
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+        return "Custom emoji/sticker purchase initiated! Check the message above to continue."
+
 # Shop Items Registry
 SHOP_ITEMS: List[ShopItem] = [
     # Currency Items
@@ -473,10 +665,14 @@ SHOP_ITEMS: List[ShopItem] = [
     # VIP Case - Gambling item (with inventory tracking)
     VIPCaseItem("vip_case", "VIP Role Case", "Open a case for a chance to win the VIP role! Contains various rewards and risks.", 3000, ROLES.VIP, use_inventory=True),
 
+    # Service Items
+    RoastAccessItem("roast_access", "Roast Access", "Get access to the /roast command (if not already a server booster)", 500, use_inventory=True),
+    CustomEmojiStickerItem("custom_emoji_sticker", "Custom Emoji/Sticker", "Add a custom emoji or sticker to the server", 3500, use_inventory=True),
+
     # Role Items (using actual role IDs from config)
     # RoleItem("ball_inspector", "Ball Inspector", "Get the prestigious Ball Inspector role", 200, ROLES.BALL_INSPECTOR),
 
-    # Service Items
+    # Other Service Items
     # PersonalVCItem("personal_vc", "Personal Voice Channel", "Get your own private voice channel for 30 days", 1000),
     # CustomStatusItem("custom_status", "Custom Status", "Get a custom status/title displayed with your name", 500),
     # MessageHighlightItem("message_highlight", "Message Highlight", "Have your message highlighted in server announcements", 300),

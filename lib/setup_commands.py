@@ -137,7 +137,22 @@ def define_commands(tree, client):
             return
         await toggle_user_role(interaction, user, role)
 
-    @command("roast", "Roast a user based on recent messages in a channel", checks=[lambda i: has_any_role(i, [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER, ROLES.PCSO])])
+    def has_roast_access(interaction):
+        """Check if user has roast command access (including purchased access)"""
+        user = interaction.user
+        # Check standard roles
+        standard_roles = [ROLES.SERVER_BOOSTER, ROLES.BORDER_FORCE, ROLES.CABINET, ROLES.MINISTER, ROLES.PCSO]
+        if has_any_role(interaction, standard_roles):
+            return True
+
+        # Check for purchased "Roast Access" role
+        for role in user.roles:
+            if role.name == "Roast Access":
+                return True
+
+        return False
+
+    @command("roast", "Roast a user based on recent messages in a channel", checks=[has_roast_access])
     async def roast_command(interaction: Interaction, channel: TextChannel = None, user: Member = None):
         await roast(interaction, channel, user)
 
