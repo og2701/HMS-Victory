@@ -270,80 +270,78 @@ class VIPCaseSpinView(View):
         if not selected_outcome:
             selected_outcome = self.outcomes[-1]  # Fallback to "nothing"
 
-        # Create a sequence of items to "spin" through
+        # Shorter, faster animation with mobile-friendly display
+        # Create a sequence of items to spin through (20 items for quicker result)
         spin_sequence = []
-        for _ in range(30):  # 30 items in the spin
-            # Add random items for the spinning effect
+        for _ in range(20):  # Reduced from 30 for faster spinning
             spin_sequence.append(random.choice(self.outcomes))
 
-        # Place the winning item near the end (but with some randomness)
-        win_position = random.randint(25, 29)
+        # Place winning item near end
+        win_position = random.randint(16, 19)  # Adjusted for 20 items
         spin_sequence[win_position] = selected_outcome
 
-        # Animate the spin with sleeker design
         for i in range(len(spin_sequence)):
             item = spin_sequence[i]
 
-            # Progressive speed control
-            if i < 10:
-                delay = 0.08  # Very fast start
-            elif i < 20:
-                delay = 0.12  # Medium speed
-            elif i < 25:
-                delay = 0.2   # Slowing down
+            # Faster speed control
+            if i < 8:
+                delay = 0.05  # Very fast start
+            elif i < 14:
+                delay = 0.08  # Medium speed
+            elif i < 17:
+                delay = 0.12   # Slowing down
             else:
-                delay = 0.4 + (i - 25) * 0.15  # Very slow finish
+                delay = 0.2 + (i - 17) * 0.1  # Slower finish
 
-            # Create sleeker spinning display with visual slot machine effect
+            # Simpler mobile-friendly display
             display_items = []
-            for j in range(-2, 3):  # Show 5 items in reel
+            for j in range(-1, 2):  # Show only 3 items for mobile
                 idx = (i + j) % len(spin_sequence)
                 curr_item = spin_sequence[idx]
 
-                if j == -2 or j == 2:
-                    # Fade items on edges
-                    display_items.append(f"⬜ {curr_item['emoji']} ⬜")
-                elif j == -1 or j == 1:
-                    # Side items
-                    display_items.append(f"🔸 {curr_item['emoji']} {curr_item['label']} 🔸")
-                else:
-                    # Center highlight - winning position
+                if j == 0:
+                    # Center item - no extra asterisks
                     if i == len(spin_sequence) - 1:
-                        # Final result - extra flashy
-                        display_items.append(f"✨🎯 **{curr_item['emoji']} {curr_item['label']} {curr_item['emoji']}** 🎯✨")
+                        # Final result
+                        display_items.append(f"➤ {curr_item['emoji']} {curr_item['label']} ⬅")
                     else:
-                        # Spinning center
-                        display_items.append(f"🎲 **{curr_item['emoji']} {curr_item['label']}** 🎲")
+                        # Spinning
+                        display_items.append(f"▶ {curr_item['emoji']} {curr_item['label']} ◀")
+                else:
+                    # Side items - simpler display
+                    display_items.append(f"  {curr_item['emoji']} {curr_item['label']}")
 
-            # Create visual separator and frame
+            # Simple mobile-friendly frame
             reel_display = "\n".join([
-                "╔══════════════════════════════════╗",
-                f"║  {display_items[0]:^30}  ║",
-                f"║  {display_items[1]:^30}  ║",
-                f"║  {display_items[2]:^30}  ║",
-                f"║  {display_items[3]:^30}  ║",
-                f"║  {display_items[4]:^30}  ║",
-                "╚══════════════════════════════════╝"
+                "━━━━━━━━━━━━━━━━━",
+                display_items[0],
+                display_items[1],  # Center item
+                display_items[2],
+                "━━━━━━━━━━━━━━━━━"
             ])
 
-            # Dynamic title and color
+            # Dynamic title
             if i == len(spin_sequence) - 1:
-                title = f"🎰 RESULT: {selected_outcome['emoji']} {selected_outcome['label']} {selected_outcome['emoji']}"
+                title = f"🎰 WINNER: {selected_outcome['emoji']} {selected_outcome['label']}"
                 color = selected_outcome["color"]
+                # Add final flash effect
+                embed = discord.Embed(
+                    title=title,
+                    description=f"```\n{reel_display}\n```\n**{self.user.mention} got: {selected_outcome['emoji']} {selected_outcome['label']}!**",
+                    color=color
+                )
             else:
-                spin_chars = ["🎰", "🎲", "🎯", "✨"]
-                title = f"{spin_chars[i % len(spin_chars)]} {self.user.display_name}'s VIP Role Case - SPINNING..."
+                title = f"🎰 {self.user.display_name}'s Spin"
                 color = 0xffff00
+                embed = discord.Embed(
+                    title=title,
+                    description=f"```\n{reel_display}\n```",
+                    color=color
+                )
 
-            embed = discord.Embed(
-                title=title,
-                description=f"```\n{reel_display}\n```",
-                color=color
-            )
-
-            # Add progress indicator
-            progress = "🟩" * (i // 3) + "⬜" * (10 - (i // 3))
-            embed.add_field(name="Progress", value=progress, inline=False)
+                # Simpler progress bar
+                progress = "█" * (i * 10 // len(spin_sequence)) + "░" * (10 - (i * 10 // len(spin_sequence)))
+                embed.add_field(name="Progress", value=progress, inline=False)
 
             await self.message.edit(embed=embed, view=self)
 
