@@ -41,7 +41,12 @@ def encode_image_to_data_uri(image_path: str) -> str:
     encoded = base64.b64encode(data).decode("utf-8")
     return f"data:image/png;base64,{encoded}"
 
-def screenshot_html(html_str: str, size: tuple[int, int] = (1600, 1000)) -> io.BytesIO:
+def screenshot_html(
+    html_str: str,
+    size: tuple[int, int] = (1600, 1000),
+    *,
+    apply_trim: bool = True
+) -> io.BytesIO:
     """Render HTML into a trimmed PNG and return the bytes buffer."""
     output_file = f"{uuid.uuid4()}.png"
     buffer = io.BytesIO()
@@ -49,8 +54,8 @@ def screenshot_html(html_str: str, size: tuple[int, int] = (1600, 1000)) -> io.B
         hti.screenshot(html_str=html_str, save_as=output_file, size=size)
 
         with Image.open(output_file) as image:
-            trimmed = trim_image(image)
-            trimmed.save(buffer, format="PNG")
+            processed = trim_image(image) if apply_trim else image.copy()
+            processed.save(buffer, format="PNG")
             buffer.seek(0)
     finally:
         if os.path.exists(output_file):

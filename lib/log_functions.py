@@ -1,9 +1,11 @@
 import base64
 import difflib
 import html
+import io
+from PIL import Image
 import requests
 
-from lib.image_processing import screenshot_html
+from lib.image_processing import screenshot_html, trim_image
 from lib.file_operations import read_html_template
 
 
@@ -41,7 +43,13 @@ async def create_message_image(message, title):
         content=escaped_content,
     )
 
-    return screenshot_html(html_content, size=(800, estimated_height))
+    buffer = screenshot_html(html_content, size=(800, estimated_height), apply_trim=False)
+    with Image.open(buffer) as img:
+        trimmed = trim_image(img)
+        output = io.BytesIO()
+        trimmed.save(output, format="PNG")
+        output.seek(0)
+    return output
 
 
 def highlight_diff(before, after):
@@ -112,4 +120,10 @@ async def create_edited_message_image(before, after):
         after_content=highlighted_after_content,
     )
 
-    return screenshot_html(html_content, size=(800, estimated_height))
+    buffer = screenshot_html(html_content, size=(800, estimated_height), apply_trim=False)
+    with Image.open(buffer) as img:
+        trimmed = trim_image(img)
+        output = io.BytesIO()
+        trimmed.save(output, format="PNG")
+        output.seek(0)
+    return output
