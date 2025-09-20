@@ -45,7 +45,7 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
     actual_holders_with_balance = sum(1 for balance in ukpence_data_current.values() if balance > 0)
     average_ukpence_active = total_ukpence / actual_holders_with_balance if actual_holders_with_balance > 0 else 0
 
-    balances_for_median_calc = [b for b in ukpence_data_current.values() if b > 20] 
+    balances_for_median_calc = [b for b in ukpence_data_current.values() if b > 500]
     median_ukpence_balance = 0 
     
     if balances_for_median_calc:

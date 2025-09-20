@@ -424,7 +424,9 @@ async def on_message(client, message):
         return
 
     await client.xp_system.update_xp(message)
-    ensure_bb(message.author.id)
+
+    if not message.author.bot and message.type != discord.MessageType.new_member:
+        ensure_bb(message.author.id)
     await process_message_attachments(client, message)
     await process_message_links(client, message)
     if message.author.bot:
