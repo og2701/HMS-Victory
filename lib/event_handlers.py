@@ -34,6 +34,12 @@ logger = logging.getLogger(__name__)
 logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
 POLITICS_WHITELISTED_USER_IDS = load_whitelist()
 
+
+def set_politics_whitelist(user_ids: list[int]) -> None:
+    """Replace the cached politics whitelist with the latest user ids."""
+    global POLITICS_WHITELISTED_USER_IDS
+    POLITICS_WHITELISTED_USER_IDS = list(user_ids)
+
 MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
 sticker_messages = {}

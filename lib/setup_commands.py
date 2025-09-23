@@ -90,6 +90,8 @@ def define_commands(tree, client):
         if user.id not in current_whitelist:
             current_whitelist.append(user.id)
             save_whitelist(current_whitelist)
+            from lib.event_handlers import set_politics_whitelist
+            set_politics_whitelist(current_whitelist)
             await interaction.response.send_message(f"{user.mention} has been added to the whitelist.", ephemeral=True)
         else:
             await interaction.response.send_message(f"{user.mention} is already in the whitelist.", ephemeral=True)
