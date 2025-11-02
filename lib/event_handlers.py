@@ -248,7 +248,118 @@ def schedule_client_jobs(client, scheduler):
 
     scheduler.start()
 
+async def process_pending_emoji_sticker_uploads(client, message):
+    """Process pending emoji/sticker uploads from shop purchases."""
+    if not message.attachments:
+        return False
+
+    # Check if user has pending uploads
+    pending_uploads = getattr(client, '_pending_uploads', {})
+    user_upload = pending_uploads.get(message.author.id)
+
+    if not user_upload or not user_upload.get('waiting'):
+        return False
+
+    # Process the upload
+    attachment = message.attachments[0]  # Take the first attachment
+
+    # Validate file type based on upload type
+    upload_type = user_upload['type']
+    valid_types = []
+    max_size = 0
+
+    if upload_type == 'emoji':
+        valid_types = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif']
+        max_size = 256 * 1024  # 256KB
+    else:  # sticker
+        valid_types = ['image/png', 'image/gif', 'application/json']  # JSON for Lottie
+        max_size = 512 * 1024  # 512KB
+
+    # Check file type
+    if attachment.content_type not in valid_types:
+        await message.reply(
+            f"❌ Invalid file type for {upload_type}. "
+            f"Accepted types: {', '.join(valid_types)}"
+        )
+        return True
+
+    # Check file size
+    if attachment.size > max_size:
+        await message.reply(
+            f"❌ File too large for {upload_type}. "
+            f"Maximum size: {max_size // 1024}KB, your file: {attachment.size // 1024}KB"
+        )
+        return True
+
+    try:
+        # Download the file
+        async with aiohttp.ClientSession() as session:
+            async with session.get(attachment.url) as response:
+                if response.status == 200:
+                    file_data = await response.read()
+
+                    # Send approval request to cabinet channel
+                    cabinet_channel = client.get_channel(CHANNELS.CABINET)
+                    if cabinet_channel:
+                        from lib.shop_items import EmojiStickerApprovalView
+
+                        embed = discord.Embed(
+                            title="🎨 Custom Emoji/Sticker Approval Required",
+                            description=f"{message.author.mention} has uploaded a {upload_type} for approval.",
+                            color=0xffa500
+                        )
+                        embed.add_field(name="User", value=message.author.mention, inline=True)
+                        embed.add_field(name="Type", value=upload_type.title(), inline=True)
+                        embed.add_field(name="Name", value=user_upload['name'], inline=True)
+
+                        if user_upload.get('description'):
+                            embed.add_field(name="Description", value=user_upload['description'], inline=True)
+
+                        embed.add_field(name="File Size", value=f"{attachment.size // 1024}KB", inline=True)
+                        embed.add_field(name="File Type", value=attachment.content_type, inline=True)
+
+                        embed.set_image(url=attachment.url)
+                        embed.set_footer(text="Cabinet members can approve or deny this request.")
+
+                        # Create approval view
+                        view = EmojiStickerApprovalView(
+                            user=message.author,
+                            upload_data=user_upload,
+                            file_data=file_data,
+                            filename=attachment.filename
+                        )
+
+                        await cabinet_channel.send(embed=embed, view=view)
+
+                        # Notify user that their request is pending approval
+                        await message.reply(
+                            f"✅ Your {upload_type} '{user_upload['name']}' has been submitted for approval! "
+                            f"Cabinet members will review it and you'll be notified of the decision."
+                        )
+
+                        # Mark as no longer waiting (processed)
+                        user_upload['waiting'] = False
+
+                        return True
+                    else:
+                        await message.reply("❌ Could not find cabinet channel for approval.")
+                        return True
+                else:
+                    await message.reply("❌ Failed to download your file. Please try again.")
+                    return True
+
+    except Exception as e:
+        logger.error(f"Error processing emoji/sticker upload: {e}")
+        await message.reply("❌ An error occurred while processing your upload. Please try again.")
+        return True
+
+    return False
+
 async def process_message_attachments(client, message):
+    # First check for pending emoji/sticker uploads
+    if await process_pending_emoji_sticker_uploads(client, message):
+        return  # Upload was processed, don't continue with normal image caching
+
     if message.attachments:
         cache_channel = client.get_channel(CHANNELS.IMAGE_CACHE)
         if cache_channel:

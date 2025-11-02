@@ -71,6 +71,14 @@ The HMS Victory bot has various commands, categorized by required user permissio
 *   `/add-whitelist` `user: Member`: Adds a user to the whitelist for the politics channel.
 *   `/politics-ban` `user: Member`: Toggles the "Politics Ban" role, preventing access to the politics channel.
 *   `/embed-perms` `user: Member`: Toggles embed permissions for a user.
+*   `/auction-create`: Create a new auction for high-value items.
+*   `/auction-end` `auction_id: int`: Manually end an active auction.
+*   `/inventory-status`: View current shop inventory status and stock levels.
+*   `/add-stock` `item_id: str`, `quantity: int`: Add stock to a shop item.
+*   `/set-stock` `item_id: str`, `quantity: int`: Set exact stock quantity for a shop item.
+*   `/setup-inventory` `item_id: str`, `initial_qty: int`, `max_qty: int (optional)`: Configure inventory settings for an item.
+*   `/purchase-history` `target: str (optional)`: View purchase history (optionally filtered by user or item).
+*   `/restock`: Manually trigger auto-restock for all eligible items.
 
 ### Cabinet
 
@@ -88,6 +96,11 @@ The HMS Victory bot has various commands, categorized by required user permissio
 *   `/screenshot-canvas` `x: int = -770`, `y: int = 7930`: Takes a screenshot of the pixelcanvas.io canvas at the given coordinates.
 *   `/gridify` `attachment_url: str`: Adds a pixel art grid to an image.
 *   `/colour-palette` `attachment_url: str`: Generates a colour palette from an image.
+*   `/shop`: Browse and purchase items with UKPence.
+*   `/auction-list`: View all active auctions.
+*   `/pay` `recipient: Member`, `amount: int`: Transfer UKPence to another member.
+*   `/richlist`: Display leaderboard of users with the most UKPence.
+*   `/ukpeconomy`: Show current state of the UKPence economy as an image.
 
 ## Event Handlers
 
