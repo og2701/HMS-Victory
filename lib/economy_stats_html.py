@@ -1,29 +1,17 @@
 import discord
 import json
 import os
-import io
-import uuid
 from datetime import datetime, timedelta
 import pytz
-from PIL import Image, ImageChops
-from html2image import Html2Image
-from lib.image_processing import trim_image
+from lib.image_processing import screenshot_html
 
 from lib.economy_manager import get_all_balances as load_ukpence_data
-from config import CHROME_PATH
 
 try:
     from config import ECONOMY_METRICS_FILE, BALANCE_SNAPSHOT_DIR
 except ImportError:
     ECONOMY_METRICS_FILE = "economy_metrics.json"
     BALANCE_SNAPSHOT_DIR = "balance_snapshots"
-
-
-hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
-
-
-def trim(image: Image.Image) -> Image.Image:
-    return trim_image(image)
 
 
 def get_daily_metrics(date_str: str):
@@ -57,7 +45,7 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
     actual_holders_with_balance = sum(1 for balance in ukpence_data_current.values() if balance > 0)
     average_ukpence_active = total_ukpence / actual_holders_with_balance if actual_holders_with_balance > 0 else 0
 
-    balances_for_median_calc = [b for b in ukpence_data_current.values() if b > 20] 
+    balances_for_median_calc = [b for b in ukpence_data_current.values() if b > 250]
     median_ukpence_balance = 0 
     
     if balances_for_median_calc:
@@ -202,14 +190,4 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
         net_ukpence_change_class=net_ukpence_change_class
     )
 
-    image_filename = f"{uuid.uuid4()}.png"
-    hti.screenshot(html_str=formatted_html, save_as=image_filename, size=(750, 2200)) 
-    
-    try:
-        img = Image.open(image_filename)
-        img = trim(img) 
-        img.save(image_filename)
-    except Exception as e:
-        print(f"Error trimming image {image_filename}: {e}")
-
-    return image_filename
+    return screenshot_html(formatted_html, size=(750, 2200))

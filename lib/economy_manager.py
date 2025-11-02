@@ -57,7 +57,7 @@ class UKPenceManager:
         c = conn.cursor()
         c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(user_id),))
         if c.fetchone() is None:
-            c.execute("INSERT INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), 20))
+            c.execute("INSERT INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), 250))
         conn.commit()
         conn.close()
 

@@ -11,5 +11,4 @@ data/iceberg_texts.json
 config.py
 
 *.json
-
 database.db

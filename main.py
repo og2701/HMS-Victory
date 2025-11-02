@@ -392,21 +392,20 @@ class AClient(discord.Client):
                 logger.error("Daily economy stats: Primary guild not found.")
                 return
 
-            image_path = await create_economy_stats_image(guild)
+            image_buffer = await create_economy_stats_image(guild)
 
-            if image_path and os.path.exists(image_path):
+            if image_buffer is not None:
                 bot_spam_channel_id = CHANNELS.BOT_SPAM
                 bot_spam_channel = self.get_channel(bot_spam_channel_id)
 
                 if bot_spam_channel:
-                    with open(image_path, "rb") as f_img:
-                        discord_file = discord.File(f_img, filename="ukpeconomy_daily.png")
-                        await bot_spam_channel.send(file=discord_file)
+                    discord_file = discord.File(
+                        image_buffer, filename="ukpeconomy_daily.png"
+                    )
+                    await bot_spam_channel.send(file=discord_file)
                     logger.info(f"Successfully posted daily economy stats to #{bot_spam_channel.name}")
                 else:
                     logger.error(f"Daily economy stats: CHANNELS.BOT_SPAM (ID: {bot_spam_channel_id}) not found.")
-
-                os.remove(image_path)
             else:
                 logger.error("Daily economy stats: Failed to generate or find the economy stats image.")
         except Exception as e:

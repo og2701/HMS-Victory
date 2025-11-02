@@ -14,12 +14,27 @@ hti.browser.flags += [
     "--no-sandbox"
 ]
 
-def trim_image(im: Image.Image) -> Image.Image:
-    bg = Image.new(im.mode, im.size, im.getpixel((0, 0)))
-    diff = ImageChops.difference(im, bg)
-    diff = ImageChops.add(diff, diff, 2.0, -100)
-    bbox = diff.getbbox()
-    return im.crop(bbox) if bbox else im
+def trim_image(im: Image.Image, tolerance: int = 6) -> Image.Image:
+    """Trim near-white margins from a rendered HTML screenshot."""
+    rgb_image = im.convert("RGB")
+
+    white_bg = Image.new("RGB", rgb_image.size, (255, 255, 255))
+    diff_white = ImageChops.difference(rgb_image, white_bg).convert("L")
+    if tolerance > 0:
+        diff_white = diff_white.point(lambda p: 255 if p > tolerance else 0)
+    bbox = diff_white.getbbox()
+    full_bbox = (0, 0, im.width, im.height)
+
+    if not bbox or bbox == full_bbox:
+        # Fallback: use the top-left pixel as background reference
+        bg_color = rgb_image.getpixel((0, 0))
+        bg_image = Image.new("RGB", rgb_image.size, bg_color)
+        diff_bg = ImageChops.difference(rgb_image, bg_image).convert("L")
+        if tolerance > 0:
+            diff_bg = diff_bg.point(lambda p: 255 if p > tolerance else 0)
+        bbox = diff_bg.getbbox()
+
+    return im.crop(bbox) if bbox and bbox != full_bbox else im
 
 def encode_image_to_data_uri(image_path: str) -> str:
     with open(image_path, "rb") as img_file:
@@ -27,19 +42,27 @@ def encode_image_to_data_uri(image_path: str) -> str:
     encoded = base64.b64encode(data).decode("utf-8")
     return f"data:image/png;base64,{encoded}"
 
-def screenshot_html(html_str: str, size: tuple[int, int] = (1600, 1000)) -> bytes:
-    output_file = f'{uuid.uuid4()}.png'
-    hti.screenshot(html_str=html_str, save_as=output_file, size=size)
+def screenshot_html(
+    html_str: str,
+    size: tuple[int, int] = (1600, 1000),
+    *,
+    apply_trim: bool = True
+) -> io.BytesIO:
+    """Render HTML into a trimmed PNG and return the bytes buffer."""
+    output_file = f"{uuid.uuid4()}.png"
+    buffer = io.BytesIO()
+    try:
+        hti.screenshot(html_str=html_str, save_as=output_file, size=size)
 
-    image = Image.open(output_file)
-    image = trim_image(image)
-    image.save(output_file)
+        with Image.open(output_file) as image:
+            processed = trim_image(image) if apply_trim else image.copy()
+            processed.save(buffer, format="PNG")
+            buffer.seek(0)
+    finally:
+        if os.path.exists(output_file):
+            os.remove(output_file)
 
-    with open(output_file, "rb") as f:
-        image_bytes = io.BytesIO(f.read())
-
-    os.remove(output_file)
-    return image_bytes
+    return buffer
 
 def calculate_text_dimensions(font, text: str) -> tuple[int, int]:
     text_bbox = font.getbbox(text)

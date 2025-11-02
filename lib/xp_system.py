@@ -1,24 +1,10 @@
-from config import CHROME_PATH
 import discord
-import os
-import io
-import uuid
 import time
 import random
 import sqlite3
-from PIL import Image, ImageChops
-from html2image import Html2Image
 from config import *
 from lib.economy_manager import get_bb
-
-hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
-
-def trim(im: Image.Image) -> Image.Image:
-    bg = Image.new(im.mode, im.size, im.getpixel((0, 0)))
-    diff = ImageChops.difference(im, bg)
-    diff = ImageChops.add(diff, diff, 2.0, -100)
-    bbox = diff.getbbox()
-    return im.crop(bbox) if bbox else im
+from lib.image_processing import screenshot_html
 
 class LeaderboardView(discord.ui.View):
     PAGE_SIZE = 20
@@ -37,16 +23,20 @@ class LeaderboardView(discord.ui.View):
 
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         self.offset = max(0, self.offset - self.PAGE_SIZE)
         file = await self.xp_system.generate_leaderboard_image(
             self.guild, self.get_slice(), self.offset
         )
         self.previous_button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
-        await interaction.response.edit_message(attachments=[file], view=self)
+        await interaction.edit_original_response(attachments=[file], view=self)
 
     @discord.ui.button(label="Next", style=discord.ButtonStyle.blurple)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         max_off = max(0, len(self.sorted_data) - self.PAGE_SIZE)
         self.offset = min(max_off, self.offset + self.PAGE_SIZE)
         file = await self.xp_system.generate_leaderboard_image(
@@ -54,7 +44,7 @@ class LeaderboardView(discord.ui.View):
         )
         self.previous_button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
-        await interaction.response.edit_message(attachments=[file], view=self)
+        await interaction.edit_original_response(attachments=[file], view=self)
 
 class RichListView(discord.ui.View):
     PAGE_SIZE = 20
@@ -73,16 +63,20 @@ class RichListView(discord.ui.View):
 
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         self.offset = max(0, self.offset - self.PAGE_SIZE)
         file = await self.xp_system.generate_richlist_image(
             self.guild, self.get_slice(), self.offset
         )
         self.previous_button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
-        await interaction.response.edit_message(attachments=[file], view=self)
+        await interaction.edit_original_response(attachments=[file], view=self)
 
     @discord.ui.button(label="Next", style=discord.ButtonStyle.blurple)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         max_off = max(0, len(self.sorted_data) - self.PAGE_SIZE)
         self.offset = min(max_off, self.offset + self.PAGE_SIZE)
         file = await self.xp_system.generate_richlist_image(
@@ -90,7 +84,7 @@ class RichListView(discord.ui.View):
         )
         self.previous_button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
-        await interaction.response.edit_message(attachments=[file], view=self)
+        await interaction.edit_original_response(attachments=[file], view=self)
 
 class XPSystem:
     def get_role_for_xp(self, xp):
@@ -198,16 +192,8 @@ class XPSystem:
         </div>
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
-        path = f"{uuid.uuid4()}.png"
-        hti.screenshot(html_str=final_html, save_as=path, size=(1200, 1200))
-
-        img = Image.open(path)
-        img = trim(img)
-        img.save(path)
-
-        buf = io.BytesIO(open(path, "rb").read())
-        os.remove(path)
-        return discord.File(fp=buf, filename="leaderboard.png")
+        image_buffer = screenshot_html(final_html, size=(1200, 1200))
+        return discord.File(fp=image_buffer, filename="leaderboard.png")
 
     async def handle_leaderboard_command(self, interaction: discord.Interaction):
         data = self.get_all_sorted_xp()
@@ -262,16 +248,8 @@ class XPSystem:
         </div>
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
-        path = f"{uuid.uuid4()}.png"
-        hti.screenshot(html_str=final_html, save_as=path, size=(1200, 1200))
-
-        img = Image.open(path)
-        img = trim(img)
-        img.save(path)
-
-        buf = io.BytesIO(open(path, "rb").read())
-        os.remove(path)
-        return discord.File(fp=buf, filename="richlist.png")
+        image_buffer = screenshot_html(final_html, size=(1200, 1200))
+        return discord.File(fp=image_buffer, filename="richlist.png")
 
     async def handle_richlist_command(self, interaction: discord.Interaction):
         data = self.get_all_balances()
