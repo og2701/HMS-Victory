@@ -5,7 +5,7 @@ import io
 from PIL import Image
 import requests
 
-from lib.core.image_processing import screenshot_html, encode_image_to_data_uri
+from lib.core.image_processing import screenshot_html, trim_image, encode_image_to_data_uri
 from lib.core.file_operations import read_html_template
 
 
