@@ -126,8 +126,13 @@ def aggregate_summaries(start_date, end_date):
     while current_date <= end_date:
         file_path = SUMMARY_DATA_FILE.format(date=current_date.strftime("%Y-%m-%d"))
         if os.path.exists(file_path):
-            with open(file_path, "r") as file:
-                daily_data = json.load(file)
+            try:
+                with open(file_path, "r") as file:
+                    daily_data = json.load(file)
+            except (json.JSONDecodeError, ValueError) as e:
+                print(f"Warning: Corrupted or empty JSON file: {file_path}. Skipping. Error: {e}")
+                current_date += timedelta(days=1)
+                continue
             for key in aggregated_data.keys():
                 if key in ["messages", "active_members", "reacting_members"]:
                     for sub_key, count in daily_data.get(key, {}).items():
