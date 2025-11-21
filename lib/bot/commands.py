@@ -3,10 +3,7 @@ from commands.moderation.persistant_role_buttons import persistantRoleButtons
 from commands.moderation.vc_perms import toggleMuteDeafenPermissions
 from commands.moderation.announcement_command import setup_announcement_command
 from commands.moderation.vc_lockdown import lockdown_vcs, end_lockdown_vcs
-from commands.moderation.anti_raid import (
-    toggle_anti_raid,
-    is_anti_raid_active,
-)
+from commands.moderation.anti_raid import toggle_anti_raid, is_anti_raid_enabled
 from commands.moderation.archive_channel import archive_channel
 from commands.moderation.overnight_mute import toggle_overnight_mute
 from commands.moderation.vc_ban import vc_ban
