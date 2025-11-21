@@ -1,8 +1,5 @@
 from commands.moderation.role_management import updateRoleAssignments
-from commands.moderation.persistant_role_buttons import (
-    persistantRoleButtons,
-    PersistantRoleButtonsView,
-)
+from commands.moderation.persistant_role_buttons import persistantRoleButtons
 from commands.moderation.vc_perms import toggleMuteDeafenPermissions
 from commands.moderation.announcement_command import setup_announcement_command
 from commands.moderation.vc_lockdown import lockdown_vcs, end_lockdown_vcs

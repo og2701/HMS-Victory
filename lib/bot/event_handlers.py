@@ -22,10 +22,7 @@ from lib.economy.prediction_system import prediction_embed, _save
 from lib.economy.economy_manager import add_bb, remove_bb, ensure_bb, get_all_balances as load_ukpence_data
 from lib.economy.prediction_system import prediction_embed, _save, _load, Prediction, BetButtons
 
-from commands.moderation.persistant_role_buttons import (
-    PersistantRoleButtonsView,
-    load_button_configs,
-)
+from commands.moderation.persistant_role_buttons import handleRoleButtonInteraction
 from commands.moderation.anti_raid import handle_new_member_anti_raid
 from commands.moderation.archive_channel import (
     AutoArchiveView,
