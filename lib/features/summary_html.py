@@ -1,4 +1,4 @@
-from lib.core.image_processing import encode_image_to_data_uri
+from lib.core.image_processing import encode_image_to_data_uri, screenshot_html
 from lib.core.file_operations import read_html_template
 
 
