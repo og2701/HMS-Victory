@@ -1,6 +1,6 @@
 import discord
-from lib.shop_inventory import ShopInventory
-from lib.shop_items import get_shop_items, get_shop_item_by_id
+from lib.economy.shop_inventory import ShopInventory
+from lib.economy.shop_items import get_shop_items, get_shop_item_by_id
 from config import ROLES, CHANNELS
 from datetime import datetime
 from typing import Optional

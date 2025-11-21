@@ -1,8 +1,8 @@
 import discord
 from discord.ui import Select, View, Button
 from typing import List
-from lib.shop_items import get_shop_items, get_shop_item_by_id, ShopItem
-from lib.economy_manager import get_bb, remove_bb, ensure_bb
+from lib.economy.shop_items import get_shop_items, get_shop_item_by_id, ShopItem
+from lib.economy.economy_manager import get_bb, remove_bb, ensure_bb
 
 class ShopItemSelect(Select):
     def __init__(self, items: List[ShopItem]):
@@ -91,7 +91,7 @@ class PurchaseConfirmationView(View):
         if remove_bb(interaction.user.id, self.item.price):
             try:
                 # Deposit the UKPence into the bank
-                from lib.bank_manager import BankManager
+                from lib.economy.bank_manager import BankManager
                 BankManager.deposit(self.item.price, f"Purchase of {self.item.name}")
 
                 # Defer the response first for items that need more time
@@ -103,7 +103,7 @@ class PurchaseConfirmationView(View):
 
                 if not success:
                     # Refund if purchase failed - withdraw from bank and refund to user
-                    from lib.economy_manager import add_bb
+                    from lib.economy.economy_manager import add_bb
                     BankManager.withdraw(self.item.price, f"Refund for failed purchase of {self.item.name}")
                     add_bb(interaction.user.id, self.item.price)
                     if self.item.name in ["VIP Role Case", "Custom Emoji/Sticker"]:
@@ -146,7 +146,7 @@ class PurchaseConfirmationView(View):
 
             except Exception as e:
                 # Refund on error - withdraw from bank and refund to user
-                from lib.economy_manager import add_bb
+                from lib.economy.economy_manager import add_bb
                 BankManager.withdraw(self.item.price, f"Refund for error in purchase of {self.item.name}")
                 add_bb(interaction.user.id, self.item.price)
                 if self.item.name in ["VIP Role Case", "Custom Emoji/Sticker"]:

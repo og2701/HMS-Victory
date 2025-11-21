@@ -1,6 +1,6 @@
 import discord
-from lib.bank_manager import BankManager
-from lib.economy_manager import add_bb, get_bb
+from lib.economy.bank_manager import BankManager
+from lib.economy.economy_manager import add_bb, get_bb
 from config import CHANNELS
 from datetime import datetime
 from typing import Optional
