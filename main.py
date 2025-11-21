@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 MAX_PART_SIZE = 8 * 1024 * 1024
 
 
-from lib.core.backup_manager import restore_database_if_missing
+from lib.bot.backup_manager import restore_database_if_missing
 
 
 class AClient(discord.Client):

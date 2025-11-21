@@ -12,7 +12,7 @@ from config import *
 from lib.features.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.economy.economy_manager import add_bb, get_all_balances as load_ukpence_data
 from lib.economy.economy_stats_html import create_economy_stats_image
-from lib.core.backup_manager import zip_and_send_folder, backup_database, backup_bot
+from lib.bot.backup_manager import zip_and_send_folder, backup_database, backup_bot
 from lib.economy.prediction_system import prediction_embed, _save, _load, Prediction
 from commands.moderation.overnight_mute import mute_visitors, unmute_visitors
 
