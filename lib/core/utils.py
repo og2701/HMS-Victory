@@ -44,7 +44,7 @@ async def post_summary_helper(interaction: Interaction, summary_type: str):
         return
     client = interaction.client
     await post_summary(client, interaction.channel.id, summary_label, interaction.channel, date_str)
-    await interaction.response.send_message(message, ephemeral=True)
+    await interaction.followup.send(message, ephemeral=True)
 
 
 
