@@ -13,6 +13,7 @@ from lib.features.summary import initialize_summary_data, update_summary_data, p
 from lib.core.utils import post_summary_helper, generate_rank_card
 from lib.core.discord_helpers import has_role, has_any_role, restrict_channel_for_new_members, send_embed_to_channels, edit_voice_channel_members, fetch_messages_with_context, estimate_tokens
 from lib.core.file_operations import load_whitelist, save_whitelist, load_persistent_views, save_persistent_views, load_json_file, save_json_file, set_file_status, is_file_status_active
+from lib.core.utils import is_lockdown_active
 from lib.core.image_processing import trim_image, find_non_overlapping_position, random_color_excluding_blue_and_dark
 from lib.core.log_functions import create_message_image, create_edited_message_image
 from config import *
