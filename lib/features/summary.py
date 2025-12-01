@@ -171,16 +171,28 @@ async def post_summary(
             date_obj = datetime.strptime(date, "%Y-%m-%d")
             date_dd_mm_yyyy = date_obj.strftime("%d-%m-%Y")
             file_path = SUMMARY_DATA_FILE.format(date=date)
-            with open(file_path, "r") as file:
-                data = json.load(file)
+            try:
+                with open(file_path, "r") as file:
+                    data = json.load(file)
+            except (json.JSONDecodeError, ValueError):
+                if log_channel:
+                    await log_channel.send(f"⚠️ Could not load summary data for {date_dd_mm_yyyy} (file corrupted or empty).")
+                return
             previous_date_obj = date_obj - timedelta(days=1)
             previous_date = previous_date_obj.strftime("%Y-%m-%d")
             previous_file_path = SUMMARY_DATA_FILE.format(date=previous_date)
             title = f"Daily Server Summary - {date_dd_mm_yyyy}"
             title_color = "#7289da"
             if os.path.exists(previous_file_path):
-                with open(previous_file_path, "r") as previous_file:
-                    previous_data = json.load(previous_file)
+                try:
+                    with open(previous_file_path, "r") as previous_file:
+                        previous_data = json.load(previous_file)
+                except (json.JSONDecodeError, ValueError):
+                    previous_data = None
+            else:
+                previous_data = None
+
+            if previous_data:
                 member_change = total_members - previous_data["total_members"]
                 member_change_str = (
                     f" (+{member_change})"
