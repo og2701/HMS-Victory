@@ -3,7 +3,7 @@ from discord import Interaction
 import logging
 logger = logging.getLogger(__name__) 
 
-from lib.economy_stats_html import create_economy_stats_image
+from lib.economy.economy_stats_html import create_economy_stats_image
 
 async def handle_ukpeconomy_command(interaction: discord.Interaction) -> discord.File | None:
     try:

@@ -3,8 +3,8 @@ from discord.ui import Modal, TextInput, View, Button
 from datetime import datetime, timedelta
 import asyncio
 from typing import Optional
-from lib.auction_manager import AuctionManager
-from lib.economy_manager import get_bb, ensure_bb
+from lib.economy.auction_manager import AuctionManager
+from lib.economy.economy_manager import get_bb, ensure_bb
 from config import ROLES
 
 class CreateAuctionModal(Modal, title="Create New Auction"):
