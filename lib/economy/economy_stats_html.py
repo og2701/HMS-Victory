@@ -3,7 +3,7 @@ import json
 import os
 from datetime import datetime, timedelta
 import pytz
-from lib.core.image_processing import encode_image_to_data_uri
+from lib.core.image_processing import encode_image_to_data_uri, screenshot_html
 
 from lib.economy.economy_manager import get_all_balances as load_ukpence_data
 
