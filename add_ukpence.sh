@@ -10,7 +10,7 @@ do_work() {
     local amount="$3"
 
     if [ ! -f "$db_path" ]; then
-        echo "❌ Error: Database not found at $db_path"
+        echo "Error: Database not found at $db_path"
         exit 1
     fi
 
@@ -21,10 +21,10 @@ EOF
 
     if [ $? -eq 0 ]; then
         local new_balance=$(sqlite3 "$db_path" "SELECT balance FROM ukpence WHERE user_id = '$user_id';")
-        echo "✅ Successfully added $amount UKPence to user $user_id."
-        echo "💰 New balance: $new_balance UKPence"
+        echo "Successfully added $amount UKPence to user $user_id."
+        echo "New balance: $new_balance UKPence"
     else
-        echo "❌ Error: Failed to update database."
+        echo "Error: Failed to update database."
         exit 1
     fi
 }
