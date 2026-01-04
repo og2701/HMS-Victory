@@ -41,7 +41,7 @@ if [[ "$(readlink -f "$0")" == "$TARGET_PATH" ]]; then
 fi
 
 echo "--- HMS Victory Utility Setup ---"
-PROJECT_ROOT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 ACTUAL_DB_PATH="$PROJECT_ROOT/database.db"
 
 echo "Detected Project Root: $PROJECT_ROOT"
