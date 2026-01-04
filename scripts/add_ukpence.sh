@@ -21,9 +21,12 @@ UPDATE ukpence SET balance = balance + $amount WHERE user_id = '$user_id';
 EOF
 
     if [ $? -eq 0 ]; then
-        if [ -n "$log_path" ] && [ "$log_path" != "REPLACE_ME_WITH_LOG_PATH" ]; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') | ADD | User: $user_id | Amount: $amount | By: $(logname 2>/dev/null || whoami)" >> "$log_path" 2>/dev/null
+        # Logging
+        if [ "$log_path" != "REPLACE_ME_WITH_LOG_PATH" ] && [ -n "$log_path" ]; then
+            local current_user=$(whoami)
+            echo "$(date '+%Y-%m-%d %H:%M:%S') | ADD | User: $user_id | Amount: $amount | By: $current_user" >> "$log_path"
         fi
+        
         local new_balance=$(sqlite3 "$db_path" "SELECT balance FROM ukpence WHERE user_id = '$user_id';")
         echo "Successfully added $amount UKPence to user $user_id."
         echo "New balance: $new_balance UKPence"
@@ -56,15 +59,12 @@ echo "Installing $SCRIPT_NAME to $INSTALL_DIR..."
 TMP_SCRIPT="/tmp/$SCRIPT_NAME"
 cp "$0" "$TMP_SCRIPT"
 
-# Replace Database Path
-ESCAPED_DB_PATH=$(echo "$ACTUAL_DB_PATH" | sed 's/\//\\\//g')
-sed -i "s/REPLACE_ME_WITH_ACTUAL_PATH/$ESCAPED_DB_PATH/g" "$TMP_SCRIPT" 2>/dev/null || \
-sed -i "" "s/REPLACE_ME_WITH_ACTUAL_PATH/$ESCAPED_DB_PATH/g" "$TMP_SCRIPT"
+# Replace Paths using @ as delimiter to avoid path / conflicts
+sed -i "s@REPLACE_ME_WITH_ACTUAL_PATH@$ACTUAL_DB_PATH@g" "$TMP_SCRIPT" 2>/dev/null || \
+sed -i "" "s@REPLACE_ME_WITH_ACTUAL_PATH@$ACTUAL_DB_PATH@g" "$TMP_SCRIPT"
 
-# Replace Log Path
-ESCAPED_LOG_PATH=$(echo "$ACTUAL_LOG_PATH" | sed 's/\//\\\//g')
-sed -i "s/REPLACE_ME_WITH_LOG_PATH/$ESCAPED_LOG_PATH/g" "$TMP_SCRIPT" 2>/dev/null || \
-sed -i "" "s/REPLACE_ME_WITH_LOG_PATH/$ESCAPED_LOG_PATH/g" "$TMP_SCRIPT"
+sed -i "s@REPLACE_ME_WITH_LOG_PATH@$ACTUAL_LOG_PATH@g" "$TMP_SCRIPT" 2>/dev/null || \
+sed -i "" "s@REPLACE_ME_WITH_LOG_PATH@$ACTUAL_LOG_PATH@g" "$TMP_SCRIPT"
 
 sudo mkdir -p "$INSTALL_DIR"
 sudo touch "$ACTUAL_LOG_PATH"
@@ -75,5 +75,4 @@ sudo chmod +x "$TARGET_PATH"
 echo "Successfully installed $SCRIPT_NAME!"
 echo "Note: Database targeted at $ACTUAL_DB_PATH"
 echo "Note: Logs will be written to $ACTUAL_LOG_PATH"
-echo "You can now use '$SCRIPT_NAME <user_id> <amount>' from any terminal."
 echo "----------------------------------"
