@@ -21,8 +21,11 @@ UPDATE ukpence SET balance = balance + $amount WHERE user_id = '$user_id';
 EOF
 
     if [ $? -eq 0 ]; then
-        # Logging
-        if [ "$log_path" != "REPLACE_ME_WITH_LOG_PATH" ] && [ -n "$log_path" ]; then
+        # Logging - check against a protected string that won't be sed-replaced
+        local check_string="REPLACE_ME_WITH"
+        check_string+="_LOG_PATH"
+        
+        if [ "$log_path" != "$check_string" ] && [ -n "$log_path" ]; then
             local current_user=$(whoami)
             echo "$(date '+%Y-%m-%d %H:%M:%S') | ADD | User: $user_id | Amount: $amount | By: $current_user" >> "$log_path"
         fi
@@ -59,7 +62,7 @@ echo "Installing $SCRIPT_NAME to $INSTALL_DIR..."
 TMP_SCRIPT="/tmp/$SCRIPT_NAME"
 cp "$0" "$TMP_SCRIPT"
 
-# Replace Paths using @ as delimiter to avoid path / conflicts
+# Replace Paths using @ as delimiter
 sed -i "s@REPLACE_ME_WITH_ACTUAL_PATH@$ACTUAL_DB_PATH@g" "$TMP_SCRIPT" 2>/dev/null || \
 sed -i "" "s@REPLACE_ME_WITH_ACTUAL_PATH@$ACTUAL_DB_PATH@g" "$TMP_SCRIPT"
 
