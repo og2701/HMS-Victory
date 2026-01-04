@@ -17,7 +17,7 @@ from lib.core.utils import is_lockdown_active
 from lib.core.image_processing import trim_image, find_non_overlapping_position, random_color_excluding_blue_and_dark
 from lib.core.log_functions import create_message_image, create_edited_message_image
 from config import *
-from lib.core.constants import FLAG_LANGUAGE_MAPPINGS
+from lib.core.constants import FLAG_LANGUAGE_MAPPINGS, TRANSLATION_BLACKLIST_CHANNELS
 from lib.economy.economy_manager import can_use_shutcoin, remove_shutcoin, SHUTCOIN_ENABLED
 from lib.economy.prediction_system import prediction_embed, _save
 from lib.economy.economy_manager import add_bb, remove_bb, ensure_bb, get_all_balances as load_ukpence_data
@@ -498,6 +498,8 @@ async def on_message_edit(client, before, after):
 
 
 async def handle_flag_reaction(reaction, message, user):
+    if message.channel.id in TRANSLATION_BLACKLIST_CHANNELS:
+        return
     target_language = FLAG_LANGUAGE_MAPPINGS.get(str(reaction.emoji))
     if not target_language:
         return

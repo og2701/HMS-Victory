@@ -1,4 +1,4 @@
-from config import ROLES
+from config import ROLES, CHANNELS
 
 # --- XP & Rank System ---
 CHAT_LEVEL_ROLE_THRESHOLDS = [
@@ -47,3 +47,14 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🎩": "British 'rp'/posh talk - 'the queens english'",
     "🏰": "Medieval/Olde English",
 }
+
+# --- Translation Global Blacklist ---
+# Channels where translation reactions are ignored
+TRANSLATION_BLACKLIST_CHANNELS = [
+    CHANNELS.LOGS,
+    CHANNELS.IMAGE_CACHE,
+    CHANNELS.BOT_USAGE_LOG,
+    CHANNELS.CABINET,
+    CHANNELS.BOT_SPAM,
+]
+
