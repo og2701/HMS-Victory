@@ -11,13 +11,15 @@ class BankManager:
         if amount <= 0:
             return False
 
+        current_time = int(time.time())
+
         # Update bank balance and total revenue
         DatabaseManager.execute('''
             UPDATE bank
             SET balance = balance + ?,
-                total_revenue = total_revenue + ?,
-                last_updated = ?
-            WHERE id = 1
+            total_revenue = total_revenue + ?,
+            last_updated = ?
+        WHERE id = 1
         ''', (amount, amount, current_time))
 
         return True
