@@ -119,6 +119,12 @@ def init_db():
                 last_updated INTEGER NOT NULL DEFAULT 0
             )
         ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS daily_summaries (
+                date TEXT PRIMARY KEY,
+                data TEXT NOT NULL
+            )
+        ''')
         # Initialize the bank with a single row if it doesn't exist
         c.execute('''
             INSERT OR REPLACE INTO bank (id, balance, total_revenue, last_updated)
