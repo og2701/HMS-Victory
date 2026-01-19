@@ -186,4 +186,5 @@ define_commands(tree, client)
 async def main():
     async with client:
         await restore_database_if_missing()
+        init_db()
         await client.start(os.getenv("DISCORD_TOKEN"))
