@@ -21,6 +21,8 @@ from lib.economy.prediction_system import Prediction, _load as load_predictions,
 from lib.economy.economy_manager import add_bb, get_all_balances as load_ukpence_data
 from lib.economy.economy_stats_html import create_economy_stats_image
 from database import init_db
+from lib.core.americanisms import correct_americanisms
+from lib.core.webhook_utils import send_as_webhook
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -113,6 +115,38 @@ class AClient(discord.Client):
                 except discord.Forbidden:
                     logger.warning(f"Cannot DM user {target_user.id} (automod notification).")
             return
+
+    async def on_auto_moderation_action(self, payload: discord.AutoModerationAction):
+        """
+        Handles automod actions, specifically for Americanism correction.
+        """
+        if payload.rule_name == "Americanism Block":
+            guild = self.get_guild(payload.guild_id)
+            if not guild:
+                return
+            
+            channel = guild.get_channel(payload.channel_id)
+            if not isinstance(channel, discord.TextChannel):
+                return
+            
+            member = guild.get_member(payload.user_id)
+            if not member:
+                try:
+                    member = await guild.fetch_member(payload.user_id)
+                except discord.HTTPException:
+                    return
+
+            if not payload.content:
+                return
+
+            corrected_content = correct_americanisms(payload.content)
+            
+            # If nothing changed, don't send anything (shouldn't happen if rule triggered correctly)
+            if corrected_content == payload.content:
+                return
+
+            await send_as_webhook(channel, member, corrected_content)
+            logger.info(f"Corrected Americanism for {member.display_name} in {channel.name}")
 
         initialize_summary_data()
         update_summary_data("messages", channel_id=message.channel.id)
