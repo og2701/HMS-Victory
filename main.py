@@ -126,11 +126,17 @@ class AClient(discord.Client):
         """
         Handles automod actions, specifically for Americanism correction.
         """
-        if payload.rule_name == "Americanism Block":
-            guild = self.get_guild(payload.guild_id)
-            if not guild:
-                return
-            
+        guild = self.get_guild(payload.guild_id)
+        if not guild:
+            return
+
+        # Fetch the rule to check its name
+        try:
+            rule = await guild.fetch_automod_rule(payload.rule_id)
+        except discord.HTTPException:
+            return
+
+        if rule.name == "Americanism Block":
             channel = guild.get_channel(payload.channel_id)
             if not isinstance(channel, discord.TextChannel):
                 return
