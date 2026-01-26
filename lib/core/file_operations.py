@@ -3,6 +3,7 @@ import os
 from typing import Any
 
 PERSISTENT_VIEWS_FILE = "persistent_views.json"
+WEBHOOK_DELETIONS_FILE = "webhook_deletions.json"
 
 def load_json_file(filename: str) -> dict:
     if os.path.exists(filename):
@@ -34,6 +35,17 @@ def load_persistent_views() -> dict:
 
 def save_persistent_views(data: dict) -> None:
     with open(PERSISTENT_VIEWS_FILE, "w") as f:
+        json.dump(data, f)
+
+def load_webhook_deletions() -> dict:
+    try:
+        with open(WEBHOOK_DELETIONS_FILE, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+def save_webhook_deletions(data: dict) -> None:
+    with open(WEBHOOK_DELETIONS_FILE, "w") as f:
         json.dump(data, f)
 
 def set_file_status(file_path: str, active: bool) -> None:

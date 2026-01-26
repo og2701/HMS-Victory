@@ -12,7 +12,7 @@ from lib.core.translation import translate_and_send
 from lib.features.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.core.utils import post_summary_helper, generate_rank_card
 from lib.core.discord_helpers import has_role, has_any_role, restrict_channel_for_new_members, send_embed_to_channels, edit_voice_channel_members, fetch_messages_with_context, estimate_tokens
-from lib.core.file_operations import load_whitelist, save_whitelist, load_persistent_views, save_persistent_views, load_json_file, save_json_file, set_file_status, is_file_status_active
+from lib.core.file_operations import load_whitelist, save_whitelist, load_persistent_views, save_persistent_views, load_json_file, save_json_file, set_file_status, is_file_status_active, load_webhook_deletions, save_webhook_deletions
 from lib.core.utils import is_lockdown_active
 from lib.core.image_processing import trim_image, find_non_overlapping_position, random_color_excluding_blue_and_dark
 from lib.core.log_functions import create_message_image, create_edited_message_image
@@ -554,6 +554,24 @@ async def handle_shut_reaction(reaction, user):
 
 async def on_reaction_add(reaction, user):
     try:
+        # Check for Americanism correction deletion
+        if str(reaction.emoji) == "❌":
+            deletions = load_webhook_deletions()
+            message_id_str = str(reaction.message.id)
+            if message_id_str in deletions:
+                owner_id = deletions[message_id_str]
+                if user.id == owner_id:
+                    try:
+                        await reaction.message.delete()
+                        del deletions[message_id_str]
+                        save_webhook_deletions(deletions)
+                        logger.info(f"Deleted webhook message {message_id_str} on request from {user}")
+                    except discord.Forbidden:
+                        logger.warning(f"Could not delete webhook message {message_id_str} - lack of permissions.")
+                    except discord.NotFound:
+                        pass
+                    return
+
         if str(reaction.emoji) in FLAG_LANGUAGE_MAPPINGS:
             await handle_flag_reaction(reaction, reaction.message, user)
         if ":Shut:" in str(reaction.emoji):

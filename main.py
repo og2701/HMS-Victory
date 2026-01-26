@@ -22,6 +22,7 @@ from lib.economy.economy_stats_html import create_economy_stats_image
 from database import init_db
 from lib.core.americanisms import correct_americanisms
 from lib.core.webhook_utils import send_as_webhook
+from lib.core.file_operations import load_webhook_deletions, save_webhook_deletions
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -163,7 +164,16 @@ class AClient(discord.Client):
                 logger.info(f"Blocked invite link in corrected Americanism from {member.display_name}")
                 return
 
-            await send_as_webhook(channel, member, corrected_content)
+            webhook_msg = await send_as_webhook(channel, member, corrected_content)
+            if webhook_msg:
+                # Add a reaction so the user can delete it
+                await webhook_msg.add_reaction("❌")
+                
+                # Store the deletion mapping
+                deletions = load_webhook_deletions()
+                deletions[str(webhook_msg.id)] = payload.user_id
+                save_webhook_deletions(deletions)
+
             logger.info(f"[PID {os.getpid()}] Corrected Americanism for {member.display_name} in {channel.name}")
 
     async def on_interaction(self, interaction):
