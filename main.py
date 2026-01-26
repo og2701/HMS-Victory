@@ -16,7 +16,6 @@ from lib.features.on_message_functions import *
 from lib.bot.setup_commands import define_commands
 from config import *
 from lib.features.summary import initialize_summary_data, update_summary_data, post_summary
-from lib.bot.event_handlers import *
 from lib.economy.prediction_system import Prediction, _load as load_predictions, _save as save_predictions
 from lib.economy.economy_manager import add_bb, get_all_balances as load_ukpence_data
 from lib.economy.economy_stats_html import create_economy_stats_image
@@ -158,7 +157,7 @@ class AClient(discord.Client):
                 return
 
             await send_as_webhook(channel, member, corrected_content)
-            logger.info(f"Corrected Americanism for {member.display_name} in {channel.name}")
+            logger.info(f"[PID {os.getpid()}] Corrected Americanism for {member.display_name} in {channel.name}")
 
     async def on_interaction(self, interaction):
         await on_interaction(interaction)
