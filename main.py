@@ -156,6 +156,9 @@ class AClient(discord.Client):
             if corrected_content == payload.content:
                 return
 
+            # Add a small footer
+            corrected_content += f"\n\n-# HMS Victory Americanism removed"
+
             await send_as_webhook(channel, member, corrected_content)
             logger.info(f"[PID {os.getpid()}] Corrected Americanism for {member.display_name} in {channel.name}")
 
