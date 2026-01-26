@@ -48,6 +48,7 @@ AMERICAN_TO_BRITISH = {
     "theaters": "theatres",
     "unshakable": "unshakeable",
     "y all": "you all",
+    "ya'll": "you all",
     "yall": "you all",
     "y'all": "you all",
     "zucchini": "courgette",

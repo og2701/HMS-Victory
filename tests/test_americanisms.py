@@ -8,6 +8,7 @@ def test_corrections():
         ("That's my COLOR.", "That's my COLOUR."),
         ("I love shopping cart and soccer.", "I love trolley and football."),
         ("y'all are crazy.", "you all are crazy."),
+        ("ya'll are crazy.", "you all are crazy."),
         ("today all i did was sleep.", "today all i did was sleep."),
         ("why all the fuss?", "why all the fuss?"),
         ("Y'ALL ARE BRUZZ.", "YOU ALL ARE BROTHER."),
