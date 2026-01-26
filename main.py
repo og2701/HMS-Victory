@@ -136,6 +136,11 @@ class AClient(discord.Client):
             return
 
         if rule.name == "Americanism Block":
+            # Only respond to the block_message action to avoid duplicates if 
+            # there are multiple actions (e.g. block and alert)
+            if payload.action.type != discord.AutoModRuleActionType.block_message:
+                return
+
             channel = guild.get_channel(payload.channel_id)
             if not isinstance(channel, discord.TextChannel):
                 return
@@ -155,9 +160,6 @@ class AClient(discord.Client):
             # If nothing changed, don't send anything (shouldn't happen if rule triggered correctly)
             if corrected_content == payload.content:
                 return
-
-            # Add a small footer
-            corrected_content += f"\n\n-# HMS Victory Americanism removed"
 
             await send_as_webhook(channel, member, corrected_content)
             logger.info(f"[PID {os.getpid()}] Corrected Americanism for {member.display_name} in {channel.name}")
