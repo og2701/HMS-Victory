@@ -171,7 +171,11 @@ class AClient(discord.Client):
                 
                 # Store the deletion mapping
                 deletions = load_webhook_deletions()
-                deletions[str(webhook_msg.id)] = payload.user_id
+                deletions[str(webhook_msg.id)] = {
+                    "user_id": payload.user_id,
+                    "channel_id": payload.channel_id,
+                    "timestamp": discord.utils.utcnow().timestamp()
+                }
                 save_webhook_deletions(deletions)
 
             logger.info(f"[PID {os.getpid()}] Corrected Americanism for {member.display_name} in {channel.name}")

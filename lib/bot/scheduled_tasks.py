@@ -13,6 +13,7 @@ from lib.features.summary import initialize_summary_data, update_summary_data, p
 from lib.economy.economy_manager import add_bb, get_all_balances as load_ukpence_data
 from lib.economy.economy_stats_html import create_economy_stats_image
 from lib.bot.backup_manager import zip_and_send_folder, backup_database, backup_bot
+from lib.core.file_operations import load_webhook_deletions, save_webhook_deletions
 from lib.economy.prediction_system import prediction_embed, _save, _load, Prediction
 from commands.moderation.overnight_mute import mute_visitors, unmute_visitors
 
@@ -297,6 +298,53 @@ async def award_booster_bonus(client):
     logger.info(f"Logged booster rewards for {yesterday_str_for_bonus} ({total_booster_rewards_awarded_this_cycle} UKP) and SOD circulation for {today_str_for_sod_snapshot} ({sod_circulation_today} UKP).")
 
 
+async def cleanup_webhook_reactions(client):
+    """
+    Removes the ❌ reaction from corrected messages older than 1 hour.
+    """
+    deletions = load_webhook_deletions()
+    if not deletions:
+        return
+
+    now = datetime.now().timestamp()
+    one_hour_secs = 3600
+    dirty = False
+    
+    # We iterate over a copy of keys to allow deletion during iteration
+    for msg_id_str in list(deletions.keys()):
+        data = deletions[msg_id_str]
+        
+        # Skip if it's the old format (just an int), we'll let those sit 
+        # or handle them if we want, but better to just skip so as not to error.
+        if not isinstance(data, dict):
+            # Optionally remove old format entries after a while
+            continue
+            
+        timestamp = data.get("timestamp")
+        if not timestamp:
+            continue
+            
+        if now - timestamp > one_hour_secs:
+            # Try to find the message and remove its reaction
+            channel_id = data.get("channel_id")
+            if channel_id:
+                try:
+                    channel = client.get_channel(channel_id)
+                    if channel:
+                        msg = await channel.fetch_message(int(msg_id_str))
+                        await msg.clear_reaction("❌")
+                        logger.info(f"Removed ❌ reaction from message {msg_id_str} (expired).")
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                    logger.warning(f"Failed to clear reaction from message {msg_id_str}: {e}")
+            
+            del deletions[msg_id_str]
+            dirty = True
+            logger.info(f"Cleaned up deletion mapping for message {msg_id_str} (expired).")
+
+    if dirty:
+        save_webhook_deletions(deletions)
+
+
 def schedule_client_jobs(client, scheduler):
     scheduler.add_job(award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client], id="award_booster_bonus_job", name="Award Daily Booster UKPence & Log SOD Circulation")
     scheduler.add_job(daily_summary, CronTrigger(hour=0, minute=1, timezone="Europe/London"), args=[client], id="daily_summary_job", name="Daily Summary, Chat Rewards & Economy Metrics")
@@ -314,5 +362,6 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(unmute_visitors, CronTrigger(hour=7, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="unmute_visitors_job", name="Unmute visitors in the morning")
     
     scheduler.add_job(backup_database, IntervalTrigger(minutes=120, timezone="Europe/London"), args=[client], id="backup_database_job", name="Backup SQLite Database")
+    scheduler.add_job(cleanup_webhook_reactions, IntervalTrigger(minutes=15), args=[client], id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
 
     scheduler.start()

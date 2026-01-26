@@ -559,7 +559,9 @@ async def on_reaction_add(reaction, user):
             deletions = load_webhook_deletions()
             message_id_str = str(reaction.message.id)
             if message_id_str in deletions:
-                owner_id = deletions[message_id_str]
+                data = deletions[message_id_str]
+                # Support both old format (int) and new format (dict)
+                owner_id = data["user_id"] if isinstance(data, dict) else data
                 if user.id == owner_id:
                     try:
                         await reaction.message.delete()
