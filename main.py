@@ -116,7 +116,13 @@ class AClient(discord.Client):
                     logger.warning(f"Cannot DM user {target_user.id} (automod notification).")
             return
 
-    async def on_auto_moderation_action(self, payload: discord.AutoModerationAction):
+        initialize_summary_data()
+        update_summary_data("messages", channel_id=message.channel.id)
+        update_summary_data("active_members", user_id=message.author.id)
+
+        await on_message(self, message)
+
+    async def on_automod_action(self, payload: discord.AutoModAction):
         """
         Handles automod actions, specifically for Americanism correction.
         """
@@ -147,12 +153,6 @@ class AClient(discord.Client):
 
             await send_as_webhook(channel, member, corrected_content)
             logger.info(f"Corrected Americanism for {member.display_name} in {channel.name}")
-
-        initialize_summary_data()
-        update_summary_data("messages", channel_id=message.channel.id)
-        update_summary_data("active_members", user_id=message.author.id)
-
-        await on_message(self, message)
 
     async def on_interaction(self, interaction):
         await on_interaction(interaction)
