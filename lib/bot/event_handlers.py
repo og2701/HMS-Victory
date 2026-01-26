@@ -571,6 +571,13 @@ async def on_reaction_add(reaction, user):
                     except discord.NotFound:
                         pass
                     return
+                else:
+                    # Not the owner, remove their reaction
+                    try:
+                        await reaction.remove(user)
+                    except (discord.Forbidden, discord.HTTPException):
+                        pass
+                    return
 
         if str(reaction.emoji) in FLAG_LANGUAGE_MAPPINGS:
             await handle_flag_reaction(reaction, reaction.message, user)
