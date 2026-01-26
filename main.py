@@ -129,13 +129,8 @@ class AClient(discord.Client):
         if not guild:
             return
 
-        # Fetch the rule to check its name
-        try:
-            rule = await guild.fetch_automod_rule(payload.rule_id)
-        except discord.HTTPException:
-            return
-
-        if rule.name == "Americanism Block":
+        # Specifically target the Americanism Block rule by ID
+        if payload.rule_id == 1465347564978311242:
             # Only respond to the block_message action to avoid duplicates if 
             # there are multiple actions (e.g. block and alert)
             if payload.action.type != discord.AutoModRuleActionType.block_message:
@@ -159,6 +154,13 @@ class AClient(discord.Client):
             
             # If nothing changed, don't send anything (shouldn't happen if rule triggered correctly)
             if corrected_content == payload.content:
+                return
+
+            # Security: Prevent server invites from being sent via webhook
+            invite_patterns = [r"discord\.gg/\S+", r"discord\.com/invite/\S+"]
+            import re
+            if any(re.search(pattern, corrected_content.lower()) for pattern in invite_patterns):
+                logger.info(f"Blocked invite link in corrected Americanism from {member.display_name}")
                 return
 
             await send_as_webhook(channel, member, corrected_content)
