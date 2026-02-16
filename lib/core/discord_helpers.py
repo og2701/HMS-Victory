@@ -33,12 +33,12 @@ async def toggle_user_role(interaction: Interaction, user: Member, role: discord
     if role in user.roles:
         await user.remove_roles(role)
         await interaction.response.send_message(
-            f"Role {role.name} has been removed from {user.mention}.", ephemeral=True
+            f"Role {role.name} has been removed from {user.mention}."
         )
     else:
         await user.add_roles(role)
         await interaction.response.send_message(
-            f"Role {role.name} has been assigned to {user.mention}.", ephemeral=True
+            f"Role {role.name} has been assigned to {user.mention}."
             )
 
 async def validate_and_format_date(interaction: Interaction, date_str: Optional[str] = None) -> Optional[str]:
