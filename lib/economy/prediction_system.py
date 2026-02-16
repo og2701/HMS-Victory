@@ -262,17 +262,37 @@ class PredAdminView(discord.ui.View):
         payouts = self.pred.resolve(winner)
         win_side = self.pred.opt1 if winner == 1 else self.pred.opt2
         self.pred.locked = True
-        msg = await interaction.channel.fetch_message(self.pred.msg_id)
-        embed, bar = prediction_embed(self.pred, self.client)
-        await msg.edit(embed=embed, attachments=[bar], view=None)
-        lines = [
-            f"**{(interaction.guild.get_member(uid) or uid).display_name}** won **{amt:,}**"
-            for uid, amt in sorted(payouts.items(), key=lambda x: x[1], reverse=True)
-        ]
+        msg = None
+        try:
+            msg = await interaction.channel.fetch_message(self.pred.msg_id)
+            embed, bar = prediction_embed(self.pred, self.client)
+            await msg.edit(embed=embed, attachments=[bar], view=None)
+        except discord.NotFound:
+            pass  # Message was deleted, proceed with payout and summary
+
+        lines = []
+        for uid, amt in sorted(payouts.items(), key=lambda x: x[1], reverse=True):
+            member = interaction.guild.get_member(uid)
+            name = member.display_name if member else f"<@{uid}>"
+            lines.append(f"**{name}** won **{amt:,}**")
+
         descr = "\n".join(lines) or "*Nobody backed the winner*"
         summary = discord.Embed(title=f"🏁 Prediction settled: **{win_side}** wins!", description=descr, color=0x2ECC71)
-        await msg.reply(embed=summary, mention_author=False)
+
+        if msg:
+            await msg.reply(embed=summary, mention_author=False)
+        else:
+            await interaction.channel.send(content="Prediction resolved (original message deleted).", embed=summary)
+
         self.client.predictions.pop(self.pred.msg_id, None)
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
-        await interaction.response.send_message("✅ Resolved & paid out.", ephemeral=True)
+        
+        # If the interaction message (admin panel) is still valid, respond there too
+        try:
+             if not interaction.response.is_done():
+                 await interaction.response.send_message("✅ Resolved & paid out.", ephemeral=True)
+             else:
+                 await interaction.followup.send("✅ Resolved & paid out.", ephemeral=True)
+        except discord.NotFound:
+             pass # Admin interaction might be old/invalid too
         self.stop()
