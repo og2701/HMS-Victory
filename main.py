@@ -151,6 +151,10 @@ class AClient(discord.Client):
             if not payload.content:
                 return
 
+            # Check if the user is timed out to prevent bypass
+            if member.is_timed_out():
+                return
+
             corrected_content = correct_americanisms(payload.content)
             
             # If nothing changed, don't send anything (shouldn't happen if rule triggered correctly)
