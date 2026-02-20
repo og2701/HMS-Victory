@@ -19,7 +19,7 @@ user_translation_timestamps = defaultdict(list)
 user_cooldowns = {}
 
 TRANSLATION_LIMIT = 3
-TRANSLATION_WINDOW = 60  # seconds
+TRANSLATION_WINDOW = 120  # seconds
 COOLDOWN_DURATION = 600  # 10 minutes
 
 
