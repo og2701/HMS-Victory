@@ -1,6 +1,9 @@
 import os
+import time
 import openai
 import discord
+from config import CHANNELS
+from collections import defaultdict
 
 openai.api_key = os.getenv("OPENAI_TOKEN")
 
@@ -12,10 +15,65 @@ target_language_mappings = {
     "Medieval/Olde English - Early Modern English or Elizabethan English commonly associated with the works of Shakespeare and the King James Bible": "Olde English",
 }
 
+user_translation_timestamps = defaultdict(list)
+user_cooldowns = {}
+
+TRANSLATION_LIMIT = 3
+TRANSLATION_WINDOW = 60  # seconds
+COOLDOWN_DURATION = 600  # 10 minutes
+
 
 async def translate_and_send(
     reaction, message, target_language, original_author, reacting_user
 ):
+    user_id = reacting_user.id
+    current_time = time.time()
+
+    # Check if user is on cooldown
+    if user_id in user_cooldowns:
+        if current_time < user_cooldowns[user_id]:
+            try:
+                await reaction.remove(reacting_user)
+            except discord.Forbidden:
+                pass
+            return
+        else:
+            del user_cooldowns[user_id]
+
+    # Clean up old timestamps
+    user_translation_timestamps[user_id] = [
+        ts
+        for ts in user_translation_timestamps[user_id]
+        if current_time - ts < TRANSLATION_WINDOW
+    ]
+
+    # If limit reached, punish
+    if len(user_translation_timestamps[user_id]) > TRANSLATION_LIMIT:
+        user_cooldowns[user_id] = current_time + COOLDOWN_DURATION
+        police_channel = message.guild.get_channel(CHANNELS.POLICE_STATION)
+
+        if police_channel:
+            embed = discord.Embed(
+                title="🚨 Translation Spam Detected",
+                description=f"{reacting_user.mention} has been put on a {COOLDOWN_DURATION // 60}-minute cooldown for spamming translations.",
+                color=discord.Color.red(),
+            )
+            embed.add_field(name="Channel", value=message.channel.mention)
+            await police_channel.send(embed=embed)
+
+        try:
+            await reacting_user.send(
+                f"You have been put on a {COOLDOWN_DURATION // 60}-minute cooldown for spamming the translation feature. Please slow down and only use it when necessary."
+            )
+            await reaction.remove(reacting_user)
+        except Exception:
+            pass
+
+        return
+
+    # Log timestamp
+    user_translation_timestamps[user_id].append(current_time)
+
 
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
