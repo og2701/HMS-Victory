@@ -114,13 +114,28 @@ async def fetch_messages_with_context(
                     i += 1
 
                 user_message_block_text = "\n".join(user_message_block)
+
+                context_after = []
+                context_after_count = 0
+                k = i
+                while context_after_count < context_depth and k < len(message_history) and message_history[k].author != user:
+                    if not message_history[k].author.bot:
+                        context_after.append(message_history[k])
+                        context_after_count += 1
+                    k += 1
+
+                parts = []
                 if context:
-                    context_text = "\n".join(
-                        [f"{m.created_at.strftime('%Y-%m-%d %H:%M:%S')} - {m.author.display_name}: {m.content}" for m in context]
-                    )
-                    user_messages.append(f"Context:\n{context_text}\n{user_message_block_text}")
-                else:
-                    user_messages.append(user_message_block_text)
+                    context_text = "\n".join([f"{m.created_at.strftime('%Y-%m-%d %H:%M:%S')} - {m.author.display_name}: {m.content}" for m in context])
+                    parts.append(f"Context (Before):\n{context_text}")
+                
+                parts.append(f"Target User ({user.display_name}):\n{user_message_block_text}")
+                
+                if context_after:
+                    context_after_text = "\n".join([f"{m.created_at.strftime('%Y-%m-%d %H:%M:%S')} - {m.author.display_name}: {m.content}" for m in context_after])
+                    parts.append(f"Context (After/Reactions):\n{context_after_text}")
+                
+                user_messages.append("\n\n---\n".join(parts))
             else:
                 i += 1
     except discord.Forbidden:
