@@ -148,21 +148,43 @@ class BetModal(discord.ui.Modal, title="Place your bet"):
         self.side = side
 
     async def on_submit(self, interaction: discord.Interaction):
-        try:
-            stake = int(self.amount.value.replace(",", "").strip())
-        except ValueError:
-            return await interaction.response.send_message("Enter a valid integer.", ephemeral=True)
+        from lib.economy.economy_manager import get_bb
+
+        raw_val = self.amount.value.strip().lower()
+        stake = 0
+
+        if raw_val in ("all", "max"):
+            stake = min(get_bb(interaction.user.id), 100_000)
+        elif raw_val == "half":
+            stake = min(get_bb(interaction.user.id) // 2, 100_000)
+        elif raw_val.endswith("%") and raw_val[:-1].isdigit():
+            pct = min(max(int(raw_val[:-1]), 1), 100)
+            stake = min(int(get_bb(interaction.user.id) * (pct / 100.0)), 100_000)
+        else:
+            try:
+                stake = int(raw_val.replace(",", ""))
+            except ValueError:
+                return await interaction.response.send_message("Enter a valid amount (e.g., 500, 'all', 'half', '50%').", ephemeral=True)
+
+        if stake <= 0:
+            return await interaction.response.send_message("You must bet at least 1 coin.", ephemeral=True)
+
         if self.pred.stake(interaction.user.id, self.side, stake):
             user_total = self.pred.bets[self.side][interaction.user.id]
             embed, bar = prediction_embed(self.pred, interaction.client)
-            await interaction.message.edit(embed=embed, attachments=[bar])
+            
+            try:
+                await interaction.message.edit(embed=embed, attachments=[bar])
+            except discord.NotFound:
+                pass # Message was deleted by a mod while they were typing
+                
             await interaction.response.send_message(
                 f"✅ Bet placed! You now have **{_fmt_money(user_total)}** on **{self.pred.opt1 if self.side==1 else self.pred.opt2}**.",
                 ephemeral=True
             )
             _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
         else:
-            await interaction.response.send_message("Bet failed.", ephemeral=True)
+            await interaction.response.send_message("Bet failed. Check your balance or the bet limit (100k).", ephemeral=True)
 
 class BetButtons(discord.ui.View):
     def __init__(self, pred: Prediction):
