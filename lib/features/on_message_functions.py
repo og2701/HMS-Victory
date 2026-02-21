@@ -13,29 +13,50 @@ async def handle_ticket_closed_message(bot, message):
         and "Ticket Closed by" in embed.description
         and message.channel.category_id == CATEGORIES.TICKETS
     ):
+        staff_role_ids = {
+            ROLES.DEPUTY_PM,
+            ROLES.MINISTER,
+            ROLES.CABINET,
+            ROLES.BORDER_FORCE,
+            ROLES.PCSO,
+        }
+        
         collected_messages = []
         users_involved = set()
+        
         async for msg in message.channel.history(limit=1000, oldest_first=True):
-            collected_messages.append(f"{msg.author.display_name}: {msg.content}")
-            users_involved.add(msg.author.display_name)
+            if msg.author.bot:
+                tag = "[Bot]"
+            elif hasattr(msg.author, "roles") and any(role.id in staff_role_ids for role in msg.author.roles):
+                tag = "[Staff]"
+            else:
+                tag = "[User]"
+
+            collected_messages.append(f"{tag} {msg.author.display_name}: {msg.content}")
+            if not msg.author.bot:
+                users_involved.add(msg.author.display_name)
+                
         chat_text = "\n".join(collected_messages)
+
+        system_prompt = (
+            "You are an expert community manager summarizing Discord support tickets. "
+            "You have been provided a raw chat transcript between a [User] and server [Staff]. "
+            "Your job is to read the transcript and provide a highly concise summary (maximum 4 sentences) outlining exactly what happened. "
+            "You MUST clearly state: 1) What the [User]'s core issue or question was. 2) What the [Staff] did to help or respond. 3) The final outcome/resolution of the ticket. "
+            "Do not list the transcript verbatim. Do not include greetings. Speak directly about the issues."
+        )
 
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[
+                {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": (
-                        "Summarize the following support ticket conversation in no more than four lines, "
-                        "focusing only on key points relevant to the resolution."
-                        "The purpose of this summary is so that moderators of the discord server can quickly get up to date with what happend in this support ticket"
-                        "Return only the summary:\n"
-                        f"{chat_text}\nSummary:"
-                    ),
+                    "content": f"Transcript:\n{chat_text}\n\nSummary:"
                 }
             ],
             temperature=0.7,
-            max_tokens=100,
+            max_tokens=150,
         )
 
         summary = response.choices[0].message.content.strip()
