@@ -312,10 +312,6 @@ def define_commands(tree, client):
         )
         await interaction.response.send_message(embed=embed)
 
-    @command("wager", "Wager UKPence against another user on a custom topic")
-    async def wager_command(interaction: Interaction, opponent: Member, amount: int, topic: str):
-        await handle_wager_command(interaction, opponent, amount, topic)
-
         pay_log_entry = {
             "timestamp": datetime.utcnow().isoformat(),
             "payer_id": str(interaction.user.id),
@@ -334,6 +330,10 @@ def define_commands(tree, client):
         pay_data.append(pay_log_entry)
         with open(PAY_LOG_FILE, "w") as f_log_write:
             json.dump(pay_data, f_log_write, indent=4)
+
+    @command("wager", "Wager UKPence against another user on a custom topic")
+    async def wager_command(interaction: Interaction, opponent: Member, amount: int, topic: str):
+        await handle_wager_command(interaction, opponent, amount, topic)
 
     @command("richlist", "Displays a leaderboard of users with the most UKPence")
     async def richlist_command(interaction: Interaction):
