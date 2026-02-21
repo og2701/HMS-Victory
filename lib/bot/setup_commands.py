@@ -66,6 +66,13 @@ def define_commands(tree, client):
             return tree.command(name=name, description=description)(wrapper)
         return decorator
 
+    @app_commands.context_menu(name="Quote Message")
+    async def quote_context_menu(interaction: Interaction, message: discord.Message):
+        from commands.social.quote import handle_quote_context_menu
+        await handle_quote_context_menu(interaction, message)
+
+    tree.add_command(quote_context_menu)
+
     @command("role-manage", "Manages user roles by assigning a specified role to members who don't have it")
     async def role_management(interaction: Interaction, role_name: str):
         if interaction.user.id != USERS.OGGERS:
