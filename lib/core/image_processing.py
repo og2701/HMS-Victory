@@ -13,7 +13,10 @@ hti.browser.flags += [
     "--disable-gpu",
     "--disable-software-rasterizer",
     "--no-sandbox",
-    "--disable-dev-shm-usage"
+    "--disable-dev-shm-usage",
+    "--disable-logging",
+    "--log-level=3",
+    "--mute-audio"
 ]
 
 def trim_image(im: Image.Image, tolerance: int = 6) -> Image.Image:
