@@ -18,8 +18,15 @@ hti.browser.flags += [
     "--disable-dev-shm-usage",
     "--disable-logging",
     "--log-level=3",
-    "--mute-audio"
+    "--mute-audio",
+    "--disable-extensions",
+    "--disable-background-networking",
+    "--no-first-run",
+    "--disable-sync",
+    "--single-process" # Often saves memory on constrained EC2 micro instances
 ]
+
+screenshot_semaphore = asyncio.Semaphore(1)
 
 def trim_image(im: Image.Image, tolerance: int = 6) -> Image.Image:
     """Trim near-white margins from a rendered HTML screenshot."""
@@ -113,7 +120,8 @@ async def screenshot_html(
     apply_trim: bool = True
 ) -> io.BytesIO:
     """Render HTML into a trimmed PNG (non-blocking)."""
-    return await asyncio.to_thread(_screenshot_html_sync, html_str, size, apply_trim)
+    async with screenshot_semaphore:
+        return await asyncio.to_thread(_screenshot_html_sync, html_str, size, apply_trim)
 
 def calculate_text_dimensions(font, text: str) -> tuple[int, int]:
     text_bbox = font.getbbox(text)
