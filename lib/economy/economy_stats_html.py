@@ -3,7 +3,7 @@ import json
 import os
 from datetime import datetime, timedelta
 import pytz
-from lib.core.image_processing import encode_image_to_data_uri, screenshot_html
+from lib.core.image_processing import encode_image_to_data_uri, screenshot_html, get_avatar_data_uri
 
 from lib.economy.economy_manager import get_all_balances as load_ukpence_data
 
@@ -132,16 +132,15 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
             member = guild.get_member(int(user_id_str))
             if member:
                 member_display_name = discord.utils.escape_markdown(member.display_name)
-                if member.display_avatar:
-                    avatar_url = str(member.display_avatar.url)
-                elif member.avatar:
-                    avatar_url = str(member.avatar.url)
+                avatar_url = str(member.display_avatar.url)
+
+        avatar_data = await get_avatar_data_uri(guild.me._state._client, avatar_url)
 
         top_richest_html_parts.append(
             f"<li>"
             f"<div class='user-details-left'>"
             f"<span class='rank'>#{i+1}</span>"
-            f"<img src='{avatar_url}' class='list-avatar' alt='{member_display_name} avatar' />"
+            f"<img src='{avatar_data}' class='list-avatar' alt='{member_display_name} avatar' />"
             f"<span class='name'>{member_display_name}</span>"
             f"</div>"
             f"<span class='balance'>{balance:,} UKP</span>"

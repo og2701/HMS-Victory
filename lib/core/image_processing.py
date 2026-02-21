@@ -4,6 +4,7 @@ import io
 import os
 import uuid
 import random
+from functools import lru_cache
 from PIL import Image, ImageChops
 from html2image import Html2Image
 from config import CHROME_PATH
@@ -41,6 +42,42 @@ def trim_image(im: Image.Image, tolerance: int = 6) -> Image.Image:
         bbox = diff_bg.getbbox()
 
     return im.crop(bbox) if bbox and bbox != full_bbox else im
+
+@lru_cache(maxsize=100)
+def _get_cached_avatar_data_uri(url: str, b64_data: str) -> str:
+    """Cache the final data URI string."""
+    return f"data:image/png;base64,{b64_data}"
+
+async def get_avatar_data_uri(client, url: str) -> str:
+    """Fetch and cache avatar data URIs (limited to 100 entries for t3.micro)."""
+    # We use a simple hash of the URL to check if we've seen this specific avatar version
+    # Discord URLs include a hash, so this is perfect.
+    
+    # Check if already in cache (we'll use a manual check for the async part)
+    if not hasattr(client, "_avatar_cache"):
+        client._avatar_cache = {}
+    
+    if url in client._avatar_cache:
+        return client._avatar_cache[url]
+    
+    try:
+        async with client.session.get(url) as resp:
+            if resp.status == 200:
+                data = await resp.read()
+                b64_data = base64.b64encode(data).decode("utf-8")
+                data_uri = f"data:image/png;base64,{b64_data}"
+                
+                # Manual LRU logic to keep it simple and safe for t3.micro
+                if len(client._avatar_cache) >= 100:
+                    # Pop a random (or first) item if full
+                    client._avatar_cache.pop(next(iter(client._avatar_cache)))
+                
+                client._avatar_cache[url] = data_uri
+                return data_uri
+    except Exception as e:
+        print(f"Error fetching avatar {url}: {e}")
+    
+    return "https://cdn.discordapp.com/embed/avatars/0.png"
 
 def encode_image_to_data_uri(image_path: str) -> str:
     with open(image_path, "rb") as img_file:

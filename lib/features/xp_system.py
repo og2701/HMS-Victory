@@ -7,7 +7,7 @@ from database import DatabaseManager
 from config import *
 from lib.core.constants import CHAT_LEVEL_ROLE_THRESHOLDS
 from lib.economy.economy_manager import get_bb
-from lib.core.image_processing import screenshot_html
+from lib.core.image_processing import screenshot_html, get_avatar_data_uri
 from lib.core.file_operations import read_html_template
 
 class LeaderboardView(discord.ui.View):
@@ -192,15 +192,22 @@ class XPSystem:
         left_html, right_html = "", ""
         half = len(data_slice) // 2
 
+        # Pre-fetch missing members in bulk to improve performance on t3.micro
+        missing_uids = [uid for uid, _ in data_slice if guild.get_member(int(uid)) is None]
+        if missing_uids:
+            # We use query_members to fetch several at once if they are missing from cache
+            try:
+                await guild.query_members(user_ids=[int(uid) for uid in missing_uids], cache=True)
+            except:
+                pass
+
         for i, (uid, xp_val) in enumerate(data_slice):
             rank = offset + i + 1
             member = guild.get_member(int(uid))
-            if member:
-                name = member.display_name
-                avatar = member.display_avatar.url
-            else:
-                name = "Unknown"
-                avatar = "https://cdn.discordapp.com/embed/avatars/0.png"
+            name = member.display_name if member else "Unknown"
+            avatar_url = member.display_avatar.url if member else "https://cdn.discordapp.com/embed/avatars/0.png"
+            avatar = await get_avatar_data_uri(self.interaction.client if hasattr(self, "interaction") else guild.me._state._client, avatar_url)
+
             block = f"""
             <div class="flex items-center mb-2 bg-black/50 rounded p-2">
               <p class="mr-3 font-bold">#{rank}</p>
@@ -257,11 +264,21 @@ class XPSystem:
         left_html, right_html = "", ""
         half = RichListView.PAGE_SIZE // 2
 
+        # Pre-fetch missing members in bulk
+        missing_uids = [uid for uid, _ in data_slice if guild.get_member(int(uid)) is None]
+        if missing_uids:
+            try:
+                await guild.query_members(user_ids=[int(uid) for uid in missing_uids], cache=True)
+            except:
+                pass
+
         for i, (uid, bal) in enumerate(data_slice):
             rank = offset + i + 1
             member = guild.get_member(int(uid))
             name = member.display_name if member else "Unknown"
-            avatar = member.display_avatar.url if member else "https://cdn.discordapp.com/embed/avatars/0.png"
+            avatar_url = member.display_avatar.url if member else "https://cdn.discordapp.com/embed/avatars/0.png"
+            avatar = await get_avatar_data_uri(self.interaction.client if hasattr(self, "interaction") else guild.me._state._client, avatar_url)
+
             block = f"""
             <div class="flex items-center mb-2 bg-black/50 rounded p-2">
               <p class="mr-3 font-bold">#{rank}</p>

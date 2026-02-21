@@ -4,37 +4,37 @@ from contextlib import contextmanager
 DB_FILE = 'database.db'
 
 class DatabaseManager:
-    @staticmethod
-    @contextmanager
-    def get_connection():
-        conn = sqlite3.connect(DB_FILE)
-        conn.execute("PRAGMA journal_mode=WAL")
-        try:
-            yield conn
-        finally:
-            conn.close()
+    _connection = None
+
+    @classmethod
+    def get_connection(cls):
+        if cls._connection is None:
+            cls._connection = sqlite3.connect(DB_FILE, check_same_thread=False)
+            cls._connection.execute("PRAGMA journal_mode=WAL")
+            cls._connection.execute("PRAGMA synchronous=NORMAL")
+        return cls._connection
 
     @staticmethod
     def execute(query, params=()):
-        with DatabaseManager.get_connection() as conn:
-            c = conn.cursor()
-            c.execute(query, params)
-            conn.commit()
-            return c.lastrowid
+        conn = DatabaseManager.get_connection()
+        c = conn.cursor()
+        c.execute(query, params)
+        conn.commit()
+        return c.lastrowid
 
     @staticmethod
     def fetch_one(query, params=()):
-        with DatabaseManager.get_connection() as conn:
-            c = conn.cursor()
-            c.execute(query, params)
-            return c.fetchone()
+        conn = DatabaseManager.get_connection()
+        c = conn.cursor()
+        c.execute(query, params)
+        return c.fetchone()
 
     @staticmethod
     def fetch_all(query, params=()):
-        with DatabaseManager.get_connection() as conn:
-            c = conn.cursor()
-            c.execute(query, params)
-            return c.fetchall()
+        conn = DatabaseManager.get_connection()
+        c = conn.cursor()
+        c.execute(query, params)
+        return c.fetchall()
 
 def init_db():
     with DatabaseManager.get_connection() as conn:

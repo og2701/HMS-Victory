@@ -5,7 +5,7 @@ import io
 from PIL import Image
 import aiohttp
 
-from lib.core.image_processing import screenshot_html, trim_image, encode_image_to_data_uri
+from lib.core.image_processing import screenshot_html, trim_image, encode_image_to_data_uri, get_avatar_data_uri
 from lib.core.file_operations import read_html_template
 
 
@@ -19,17 +19,11 @@ def calculate_estimated_height(content, line_height=20, base_height=1000):
 
 async def create_message_image(client, message, title):
     avatar_url = (
-        message.author.avatar.url
-        if message.author.avatar
+        message.author.display_avatar.url
+        if message.author.display_avatar
         else message.author.default_avatar.url
     )
-    async with client.session.get(avatar_url) as resp:
-        if resp.status == 200:
-            avatar_content = await resp.read()
-            avatar_base64 = base64.b64encode(avatar_content).decode("utf-8")
-        else:
-            avatar_base64 = ""
-    avatar_data_url = f"data:image/png;base64,{avatar_base64}"
+    avatar_data_url = await get_avatar_data_uri(client, avatar_url)
 
     escaped_content = html.escape(message.content)
 
@@ -160,17 +154,11 @@ def highlight_diff(before, after):
 
 async def create_edited_message_image(client, before, after):
     avatar_url = (
-        before.author.avatar.url
-        if before.author.avatar
+        before.author.display_avatar.url
+        if before.author.display_avatar
         else before.author.default_avatar.url
     )
-    async with client.session.get(avatar_url) as resp:
-        if resp.status == 200:
-            avatar_content = await resp.read()
-            avatar_base64 = base64.b64encode(avatar_content).decode("utf-8")
-        else:
-            avatar_base64 = ""
-    avatar_data_url = f"data:image/png;base64,{avatar_base64}"
+    avatar_data_url = await get_avatar_data_uri(client, avatar_url)
 
     escaped_before_content = html.escape(before.content)
     escaped_after_content = html.escape(after.content)
@@ -289,17 +277,11 @@ async def create_edited_message_image(client, before, after):
 
 async def create_quote_image(client, message):
     avatar_url = (
-        message.author.avatar.url
-        if message.author.avatar
+        message.author.display_avatar.url
+        if message.author.display_avatar
         else message.author.default_avatar.url
     )
-    async with client.session.get(avatar_url) as resp:
-        if resp.status == 200:
-            avatar_content = await resp.read()
-            avatar_base64 = base64.b64encode(avatar_content).decode("utf-8")
-        else:
-            avatar_base64 = ""
-    avatar_data_url = f"data:image/png;base64,{avatar_base64}"
+    avatar_data_url = await get_avatar_data_uri(client, avatar_url)
 
     escaped_content = html.escape(message.content)
 
