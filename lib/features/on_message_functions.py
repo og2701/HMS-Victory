@@ -1,9 +1,9 @@
 import discord
-import openai
+from openai import AsyncOpenAI
 import os
 from config import *
 
-openai.api_key = os.getenv("OPENAI_TOKEN")
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_TOKEN"))
 
 
 async def handle_ticket_closed_message(bot, message):
@@ -58,7 +58,7 @@ async def handle_ticket_closed_message(bot, message):
             "Do not list the transcript verbatim. Do not include greetings. Speak directly about the issues."
         )
 
-        response = await openai.ChatCompletion.acreate(
+        response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},

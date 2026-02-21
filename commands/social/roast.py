@@ -1,7 +1,7 @@
 import random
 from collections import defaultdict
 from discord import Embed, Forbidden, TextChannel, Member
-import openai
+from openai import AsyncOpenAI
 from datetime import datetime, timedelta
 from os import getenv
 from lib.core.discord_helpers import fetch_messages_with_context, estimate_tokens
@@ -9,7 +9,7 @@ from config import USERS, SUMMARISE_DAILY_LIMIT
 
 command_usage_tracker = defaultdict(lambda: {"count": 0, "last_used": None})
 
-openai.api_key = getenv("OPENAI_TOKEN")
+client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"))
 
 time_threshold = datetime.utcnow() - timedelta(days=7)
 
@@ -87,7 +87,7 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
 
 
     try:
-        response = openai.ChatCompletion.create(
+        response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -97,7 +97,7 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
             temperature=1.0,
         )
 
-        summary = response["choices"][0]["message"]["content"].strip()
+        summary = response.choices[0].message.content.strip()
         await interaction.followup.send(summary)
     except Exception as e:
         print(e)

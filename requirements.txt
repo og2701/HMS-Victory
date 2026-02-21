@@ -8,6 +8,6 @@ html2image
 pytz
 apscheduler
 pytz
-openai==0.27.0
+openai>=1.12.0
 aiofiles
 db-sqlite3

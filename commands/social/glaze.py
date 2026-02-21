@@ -1,12 +1,12 @@
 import random
 from discord import TextChannel, Member
-import openai
+from openai import AsyncOpenAI
 from datetime import datetime
 from os import getenv
 from lib.core.discord_helpers import fetch_messages_with_context, estimate_tokens
 from config import USERS
 
-openai.api_key = getenv("OPENAI_TOKEN")
+client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"))
 
 thinking_messages = [
     "Formulating a compliment...",
@@ -57,7 +57,7 @@ async def glaze(interaction, channel: TextChannel = None, user: Member = None):
     )
 
     try:
-        response = openai.ChatCompletion.create(
+        response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -67,7 +67,7 @@ async def glaze(interaction, channel: TextChannel = None, user: Member = None):
             temperature=0.8,
         )
 
-        summary = response["choices"][0]["message"]["content"].strip()
+        summary = response.choices[0].message.content.strip()
         await interaction.followup.send(summary)
     except Exception as e:
         print(e)

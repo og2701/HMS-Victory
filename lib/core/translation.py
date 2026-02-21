@@ -1,11 +1,11 @@
 import os
 import time
-import openai
+from openai import AsyncOpenAI
 import discord
 from config import CHANNELS
 from collections import defaultdict
 
-openai.api_key = os.getenv("OPENAI_TOKEN")
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_TOKEN"))
 
 target_language_mappings = {
     "British English": "English",
@@ -75,7 +75,7 @@ async def translate_and_send(
     user_translation_timestamps[user_id].append(current_time)
 
 
-    response = openai.ChatCompletion.create(
+    response = await client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {
@@ -86,7 +86,7 @@ async def translate_and_send(
         ],
     )
 
-    translated_text = response.choices[0].message["content"].strip()
+    translated_text = response.choices[0].message.content.strip()
 
     embed = discord.Embed(description=translated_text, color=discord.Color.dark_gold())
 
