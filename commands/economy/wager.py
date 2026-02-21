@@ -171,7 +171,13 @@ class WagerProposalView(discord.ui.View):
             
         orig_embed = interaction.message.embeds[0]
         orig_embed.color = 0xE74C3C
-        orig_embed.title = "Wager Declined / Cancelled"
+        
+        if interaction.user.id == self.challenger.id:
+            orig_embed.title = "Wager Retracted"
+            orig_embed.description = f"{self.challenger.mention} retracted their wager against {self.opponent.mention}."
+        else:
+            orig_embed.title = "Wager Declined"
+            orig_embed.description = f"{self.opponent.mention} declined the wager from {self.challenger.mention}."
         
         await interaction.response.edit_message(embed=orig_embed, view=self)
 
