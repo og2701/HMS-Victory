@@ -59,7 +59,7 @@ class WagerDecisionView(discord.ui.View):
             challenger = interaction.guild.get_member(self.challenger_id) or await interaction.guild.fetch_member(self.challenger_id)
             opponent = interaction.guild.get_member(self.opponent_id) or await interaction.guild.fetch_member(self.opponent_id)
             
-            notification = f"The moderator {interaction.user.mention} has resolved your wager regarding: *{self.topic}*.\n{result_msg}"
+            notification = f"The PCSO {interaction.user.mention} has resolved your wager regarding: *{self.topic}*.\n{result_msg}"
             
             if challenger: await challenger.send(notification)
             if opponent: await opponent.send(notification)
