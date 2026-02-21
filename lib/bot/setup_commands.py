@@ -300,7 +300,8 @@ def define_commands(tree, client):
         lines = []
         for p in unresolved:
             status = "🔒 Locked" if p.locked else "🔓 Open"
-            link = f"https://discord.com/channels/{GUILD_ID}/{p.channel_id or interaction.channel.id}/{p.msg_id}"
+            guild_id = interaction.guild.id if interaction.guild else GUILD_ID
+            link = f"https://discord.com/channels/{guild_id}/{p.channel_id or interaction.channel.id}/{p.msg_id}"
             lines.append(f"`{p.title[:40]}` | `{status}` | [jump]({link})")
 
         chunks = []

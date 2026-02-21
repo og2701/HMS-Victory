@@ -362,6 +362,6 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(unmute_visitors, CronTrigger(hour=7, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="unmute_visitors_job", name="Unmute visitors in the morning")
     
     scheduler.add_job(backup_database, IntervalTrigger(minutes=120, timezone="Europe/London"), args=[client], id="backup_database_job", name="Backup SQLite Database")
-    scheduler.add_job(cleanup_webhook_reactions, IntervalTrigger(minutes=1), id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
+    scheduler.add_job(cleanup_webhook_reactions, IntervalTrigger(minutes=1), args=[client], id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
 
     scheduler.start()

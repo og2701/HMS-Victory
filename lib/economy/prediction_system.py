@@ -284,9 +284,12 @@ class PredAdminView(discord.ui.View):
         if self.pred.locked:
             return await interaction.response.send_message("Already locked.", ephemeral=True)
         self.pred.locked = True
-        msg = await interaction.channel.fetch_message(self.pred.msg_id)
-        embed, bar = prediction_embed(self.pred, self.client)
-        await msg.edit(embed=embed, attachments=[bar], view=None)
+        try:
+            msg = await interaction.channel.fetch_message(self.pred.msg_id)
+            embed, bar = prediction_embed(self.pred, self.client)
+            await msg.edit(embed=embed, attachments=[bar], view=None)
+        except discord.NotFound:
+            pass
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
         await interaction.response.send_message("🔒 Locked.", ephemeral=True)
 
@@ -298,12 +301,14 @@ class PredAdminView(discord.ui.View):
         self.pred.locked = False
         self.pred.end_ts = None
 
-        msg = await interaction.channel.fetch_message(self.pred.msg_id)
-        embed, bar = prediction_embed(self.pred, self.client)
-        view = BetButtons(self.pred)
-
-        await msg.edit(embed=embed, attachments=[bar], view=view)
-        self.client.add_view(view, message_id=self.pred.msg_id)
+        try:
+            msg = await interaction.channel.fetch_message(self.pred.msg_id)
+            embed, bar = prediction_embed(self.pred, self.client)
+            view = BetButtons(self.pred)
+            await msg.edit(embed=embed, attachments=[bar], view=view)
+            self.client.add_view(view, message_id=self.pred.msg_id)
+        except discord.NotFound:
+            pass
 
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
         await interaction.response.send_message("🔓 Unlocked.", ephemeral=True)
@@ -315,9 +320,12 @@ class PredAdminView(discord.ui.View):
                 add_bb(uid, amt)
         self.pred.locked = True
         self.pred.bets = {1: {}, 2: {}}
-        msg = await interaction.channel.fetch_message(self.pred.msg_id)
-        embed, bar = prediction_embed(self.pred, self.client)
-        await msg.edit(embed=embed, attachments=[bar], view=None)
+        try:
+            msg = await interaction.channel.fetch_message(self.pred.msg_id)
+            embed, bar = prediction_embed(self.pred, self.client)
+            await msg.edit(embed=embed, attachments=[bar], view=None)
+        except discord.NotFound:
+            pass
         self.client.predictions.pop(self.pred.msg_id, None)
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
         await interaction.response.send_message("🟡 Draw called – all bets refunded.", ephemeral=True)
