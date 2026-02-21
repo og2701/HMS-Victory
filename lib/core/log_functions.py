@@ -162,8 +162,60 @@ async def create_quote_image(message):
     display_name = message.author.display_name
     created_at = message.created_at.strftime("%Y-%m-%d %H:%M")
 
+    # Generate the CSS dynamically so we don't trip over Python's format() braces
+    css_styles = f"""
+        body {{
+            margin: 0;
+            padding: 0;
+            background-color: white;
+            font-family: Arial, sans-serif;
+        }}
+        .container {{
+            border-left: 4px solid rgb{border_color};
+            padding: 15px;
+            width: fit-content;
+            max-width: 600px;
+            display: inline-block;
+            background-color: #36393f;
+            color: #dcddde;
+            border-radius: 4px;
+        }}
+        .message-header {{
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }}
+        .avatar {{
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin-right: 12px;
+        }}
+        .username {{
+            color: rgb{border_color};
+            font-weight: bold;
+            font-size: 16px;
+            margin-right: 8px;
+        }}
+        .timestamp {{
+            color: #72767d;
+            font-size: 12px;
+        }}
+        .content {{
+            font-size: 15px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            margin-bottom: 10px;
+        }}
+        .attached-image {{
+            max-width: 100%;
+            border-radius: 4px;
+            margin-top: 8px;
+        }}
+    """
+
     html_content = read_html_template("templates/quote_message.html").format(
-        border_color=border_color,
+        css_styles=css_styles,
         avatar_data_url=avatar_data_url,
         display_name=display_name,
         created_at=created_at,
