@@ -2,6 +2,7 @@ import discord
 import time
 import random
 import io
+import asyncio
 from database import DatabaseManager
 from config import *
 from lib.core.constants import CHAT_LEVEL_ROLE_THRESHOLDS
@@ -25,10 +26,25 @@ class LeaderboardView(discord.ui.View):
         return self.sorted_data[self.offset : self.offset + self.PAGE_SIZE]
 
     async def _get_or_generate_image(self):
+        next_off = self.offset + self.PAGE_SIZE
+        if next_off < len(self.sorted_data) and next_off not in self.image_cache:
+            self.image_cache[next_off] = asyncio.create_task(
+                self.xp_system.generate_leaderboard_image(self.guild, self.sorted_data[next_off : next_off + self.PAGE_SIZE], next_off)
+            )
+
+        prev_off = self.offset - self.PAGE_SIZE
+        if prev_off >= 0 and prev_off not in self.image_cache:
+            self.image_cache[prev_off] = asyncio.create_task(
+                self.xp_system.generate_leaderboard_image(self.guild, self.sorted_data[prev_off : prev_off + self.PAGE_SIZE], prev_off)
+            )
+
         if self.offset not in self.image_cache:
             self.image_cache[self.offset] = await self.xp_system.generate_leaderboard_image(
                 self.guild, self.get_slice(), self.offset
             )
+        elif isinstance(self.image_cache[self.offset], asyncio.Task):
+            self.image_cache[self.offset] = await self.image_cache[self.offset]
+
         return discord.File(fp=io.BytesIO(self.image_cache[self.offset]), filename="leaderboard.png")
 
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
@@ -69,10 +85,25 @@ class RichListView(discord.ui.View):
         return self.sorted_data[self.offset : self.offset + self.PAGE_SIZE]
 
     async def _get_or_generate_image(self):
+        next_off = self.offset + self.PAGE_SIZE
+        if next_off < len(self.sorted_data) and next_off not in self.image_cache:
+            self.image_cache[next_off] = asyncio.create_task(
+                self.xp_system.generate_richlist_image(self.guild, self.sorted_data[next_off : next_off + self.PAGE_SIZE], next_off)
+            )
+
+        prev_off = self.offset - self.PAGE_SIZE
+        if prev_off >= 0 and prev_off not in self.image_cache:
+            self.image_cache[prev_off] = asyncio.create_task(
+                self.xp_system.generate_richlist_image(self.guild, self.sorted_data[prev_off : prev_off + self.PAGE_SIZE], prev_off)
+            )
+
         if self.offset not in self.image_cache:
             self.image_cache[self.offset] = await self.xp_system.generate_richlist_image(
                 self.guild, self.get_slice(), self.offset
             )
+        elif isinstance(self.image_cache[self.offset], asyncio.Task):
+            self.image_cache[self.offset] = await self.image_cache[self.offset]
+
         return discord.File(fp=io.BytesIO(self.image_cache[self.offset]), filename="richlist.png")
 
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
@@ -200,6 +231,14 @@ class XPSystem:
         first = data[: LeaderboardView.PAGE_SIZE]
         image_bytes = await self.generate_leaderboard_image(interaction.guild, first, 0)
         view.image_cache[0] = image_bytes
+        
+        if LeaderboardView.PAGE_SIZE < len(data):
+            next_off = LeaderboardView.PAGE_SIZE
+            slice_data = data[next_off : next_off + LeaderboardView.PAGE_SIZE]
+            view.image_cache[next_off] = asyncio.create_task(
+                self.generate_leaderboard_image(interaction.guild, slice_data, next_off)
+            )
+
         file = discord.File(fp=io.BytesIO(image_bytes), filename="leaderboard.png")
         await interaction.followup.send(file=file, view=view)
 
@@ -254,5 +293,13 @@ class XPSystem:
         first = data[: RichListView.PAGE_SIZE]
         image_bytes = await self.generate_richlist_image(interaction.guild, first, 0)
         view.image_cache[0] = image_bytes
+        
+        if RichListView.PAGE_SIZE < len(data):
+            next_off = RichListView.PAGE_SIZE
+            slice_data = data[next_off : next_off + RichListView.PAGE_SIZE]
+            view.image_cache[next_off] = asyncio.create_task(
+                self.generate_richlist_image(interaction.guild, slice_data, next_off)
+            )
+
         file = discord.File(fp=io.BytesIO(image_bytes), filename="richlist.png")
         await interaction.followup.send(file=file, view=view)
