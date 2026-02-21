@@ -1,6 +1,7 @@
 import discord
 import time
 import random
+import io
 from database import DatabaseManager
 from config import *
 from lib.core.constants import CHAT_LEVEL_ROLE_THRESHOLDS
@@ -16,20 +17,26 @@ class LeaderboardView(discord.ui.View):
         self.guild = guild
         self.sorted_data = sorted_data
         self.offset = 0
+        self.image_cache = {}
         self.previous_button.disabled = True
         self.next_button.disabled = (len(self.sorted_data) <= self.PAGE_SIZE)
 
     def get_slice(self):
         return self.sorted_data[self.offset : self.offset + self.PAGE_SIZE]
 
+    async def _get_or_generate_image(self):
+        if self.offset not in self.image_cache:
+            self.image_cache[self.offset] = await self.xp_system.generate_leaderboard_image(
+                self.guild, self.get_slice(), self.offset
+            )
+        return discord.File(fp=io.BytesIO(self.image_cache[self.offset]), filename="leaderboard.png")
+
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not interaction.response.is_done():
             await interaction.response.defer()
         self.offset = max(0, self.offset - self.PAGE_SIZE)
-        file = await self.xp_system.generate_leaderboard_image(
-            self.guild, self.get_slice(), self.offset
-        )
+        file = await self._get_or_generate_image()
         self.previous_button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
         await interaction.edit_original_response(attachments=[file], view=self)
@@ -40,9 +47,7 @@ class LeaderboardView(discord.ui.View):
             await interaction.response.defer()
         max_off = max(0, len(self.sorted_data) - self.PAGE_SIZE)
         self.offset = min(max_off, self.offset + self.PAGE_SIZE)
-        file = await self.xp_system.generate_leaderboard_image(
-            self.guild, self.get_slice(), self.offset
-        )
+        file = await self._get_or_generate_image()
         self.previous_button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
         await interaction.edit_original_response(attachments=[file], view=self)
@@ -56,20 +61,26 @@ class RichListView(discord.ui.View):
         self.guild = guild
         self.sorted_data = sorted_data
         self.offset = 0
+        self.image_cache = {}
         self.previous_button.disabled = True
         self.next_button.disabled = (len(self.sorted_data) <= self.PAGE_SIZE)
 
     def get_slice(self):
         return self.sorted_data[self.offset : self.offset + self.PAGE_SIZE]
 
+    async def _get_or_generate_image(self):
+        if self.offset not in self.image_cache:
+            self.image_cache[self.offset] = await self.xp_system.generate_richlist_image(
+                self.guild, self.get_slice(), self.offset
+            )
+        return discord.File(fp=io.BytesIO(self.image_cache[self.offset]), filename="richlist.png")
+
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not interaction.response.is_done():
             await interaction.response.defer()
         self.offset = max(0, self.offset - self.PAGE_SIZE)
-        file = await self.xp_system.generate_richlist_image(
-            self.guild, self.get_slice(), self.offset
-        )
+        file = await self._get_or_generate_image()
         self.previous_button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
         await interaction.edit_original_response(attachments=[file], view=self)
@@ -80,9 +91,7 @@ class RichListView(discord.ui.View):
             await interaction.response.defer()
         max_off = max(0, len(self.sorted_data) - self.PAGE_SIZE)
         self.offset = min(max_off, self.offset + self.PAGE_SIZE)
-        file = await self.xp_system.generate_richlist_image(
-            self.guild, self.get_slice(), self.offset
-        )
+        file = await self._get_or_generate_image()
         self.previous_button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
         await interaction.edit_original_response(attachments=[file], view=self)
@@ -181,7 +190,7 @@ class XPSystem:
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
         image_buffer = screenshot_html(final_html, size=(1200, 1200))
-        return discord.File(fp=image_buffer, filename="leaderboard.png")
+        return image_buffer.getvalue()
 
     async def handle_leaderboard_command(self, interaction: discord.Interaction):
         data = self.get_all_sorted_xp()
@@ -189,7 +198,9 @@ class XPSystem:
             return await interaction.followup.send("No XP data found.")
         view = LeaderboardView(self, interaction.guild, data)
         first = data[: LeaderboardView.PAGE_SIZE]
-        file = await self.generate_leaderboard_image(interaction.guild, first, 0)
+        image_bytes = await self.generate_leaderboard_image(interaction.guild, first, 0)
+        view.image_cache[0] = image_bytes
+        file = discord.File(fp=io.BytesIO(image_bytes), filename="leaderboard.png")
         await interaction.followup.send(file=file, view=view)
 
     def get_all_balances(self):
@@ -233,7 +244,7 @@ class XPSystem:
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
         image_buffer = screenshot_html(final_html, size=(1200, 1200))
-        return discord.File(fp=image_buffer, filename="richlist.png")
+        return image_buffer.getvalue()
 
     async def handle_richlist_command(self, interaction: discord.Interaction):
         data = self.get_all_balances()
@@ -241,5 +252,7 @@ class XPSystem:
             return await interaction.followup.send("No UKPence data found.")
         view = RichListView(self, interaction.guild, data)
         first = data[: RichListView.PAGE_SIZE]
-        file = await self.generate_richlist_image(interaction.guild, first, 0)
+        image_bytes = await self.generate_richlist_image(interaction.guild, first, 0)
+        view.image_cache[0] = image_bytes
+        file = discord.File(fp=io.BytesIO(image_bytes), filename="richlist.png")
         await interaction.followup.send(file=file, view=view)
