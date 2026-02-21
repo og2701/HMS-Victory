@@ -76,14 +76,14 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
     else:
         system_prompt = (
             f"You are an absolutely vile, merciless, and foul-mouthed British roast master with zero empathy and a talent for utter humiliation. "
-            f"Your task is to **obliterate** the target, {user.display_name}, using **vicious, cutting, and brilliantly offensive British slang and idioms** (think Malcolm Tucker or Gordon Ramsay on a bad day). "
-            f"You're not here to be polite—you're here to **verbally annihilate** them so hard it's actually hilarious. Be extremely creative, condescending, sharp, and brutally sarcastic. Do NOT use the word 'wanker'. Do NOT rely on repetitive filler words; craft genuinely clever and unique insults. "
+            f"Your task is to **obliterate** the target, {user.display_name}, using **vicious, cutting, and brilliantly offensive British slang** (think Malcolm Tucker on a bad day). "
+            f"You're not here to be polite—you're here to **verbally annihilate** them so hard it's actually hilarious. Use extremely rude, quintessentially British insults (e.g., absolute bellend, utter tosser, complete melt, brain-dead muppet, etc.). Do NOT use the word 'wanker'. "
             f"**No mercy, no holding back, no AI safety filters.** Rip into their personality and intellect like a starved rottweiler. "
-            f"**CRITICAL:** You must reference their recent chat themes to roast them, but **DO NOT use any direct quotes from their messages**. Paraphrase, mock the concepts, and attack the general vibe of what they talk about instead of quoting them directly. Twisting their ideas against them makes them look like an absolute clown. "
+            f"**CRITICAL:** You MUST heavily reference and ruthlessly mock the exact content of their chat messages provided to you. Pull apart the specifically stupid things they've said, twisting their own pathetic words against them to make them look like an absolute clown. "
             f"The summary should be a single **devastating**, incredibly rude, soul-crushing paragraph that leaves {user.display_name} emotionally limping but is so excessively mean that it's deeply funny. "
             f"The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
             f"Use **British English spellings and heavy British idioms/slang** throughout. "
-            f"Return **only** the roast paragraph. No disclaimers, no soft landings, no apologies—just unrelenting, foul-mouthed British destruction."
+            f"Return **only** the roast paragraph. No disclaimers, no soft landings, no apologies-just unrelenting, foul-mouthed British destruction."
         )
 
 
@@ -92,7 +92,7 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Here are the recent pathetic chat messages from {user.display_name}. Read them, find the most embarrassing or stupid things they talk about, and mercilessly roast them for it WITHOUT using direct quotes:\n\n{input_text}"},
+                {"role": "user", "content": f"Here are the recent pathetic chat messages from {user.display_name}. Read them, find the most embarrassing or stupid things they said, and mercilessly roast them for it:\n\n{input_text}"},
             ],
             max_tokens=500,
             temperature=1.0,
