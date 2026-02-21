@@ -165,6 +165,10 @@ def define_commands(tree, client):
     async def roast_command(interaction: Interaction, channel: TextChannel = None, user: Member = None):
         await roast(interaction, channel, user)
 
+    @command("glaze", "Overly praise a user based on recent messages (Oggers only)", checks=[lambda i: i.user.id == USERS.OGGERS])
+    async def glaze_command(interaction: Interaction, channel: TextChannel = None, user: Member = None):
+        await glaze(interaction, channel, user)
+
     @command("vc-control", "Toggles server mute/deafen perms for a user", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def vc_control(interaction: Interaction, user: Member):
         await toggleMuteDeafenPermissions(interaction, user)
