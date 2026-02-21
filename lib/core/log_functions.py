@@ -214,14 +214,14 @@ async def create_quote_image(message):
         }}
     """
 
-    html_content = read_html_template("templates/quote_message.html").format(
-        css_styles=css_styles,
-        avatar_data_url=avatar_data_url,
-        display_name=display_name,
-        created_at=created_at,
-        content=escaped_content,
-        attached_image_html=attached_image_html
-    )
+    html_content = read_html_template("templates/quote_message.html")
+    html_content = html_content.replace("{css_styles}", css_styles)
+    html_content = html_content.replace("{\n            css_styles\n        }", css_styles)
+    html_content = html_content.replace("{avatar_data_url}", avatar_data_url)
+    html_content = html_content.replace("{display_name}", display_name)
+    html_content = html_content.replace("{created_at}", created_at)
+    html_content = html_content.replace("{content}", escaped_content)
+    html_content = html_content.replace("{attached_image_html}", attached_image_html)
 
     buffer = screenshot_html(html_content, size=(650, estimated_height), apply_trim=False)
     with Image.open(buffer) as img:
