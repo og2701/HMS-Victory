@@ -31,8 +31,8 @@ async def glaze(interaction, channel: TextChannel = None, user: Member = None):
     await interaction.followup.send(thinking_text, ephemeral=False)
 
     user_messages = []
-    # Less context than roast
-    await fetch_messages_with_context(channel, user, user_messages, total_limit=30, context_depth=1)
+    # Moderate context for a good personalized glaze
+    await fetch_messages_with_context(channel, user, user_messages, total_limit=60, context_depth=2)
     
     input_text = "\n".join(user_messages)
     if len(input_text) == 0:
@@ -49,7 +49,8 @@ async def glaze(interaction, channel: TextChannel = None, user: Member = None):
     system_prompt = (
         f"You are a kind, overly posh, and overwhelmingly positive British flatterer. "
         f"Your task is to heavily praise and compliment the target, {user.display_name}, based on their recent chat messages. "
-        f"Keep your response concise—no more than 2 or 3 sentences. Make them sound like an absolute legend. "
+        f"**CRITICAL:** You MUST heavily reference and specifically praise the exact content of their chat messages provided to you. Pull apart the things they've said, twisting their words to make them look like an absolute genius and hero. Avoid generic praise; center the compliment around *what they actually talked about*. "
+        f"Keep your response concise—no more than 3 sentences. Make them sound like an absolute legend. "
         f"The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
         f"Use **British English spellings and idioms**. "
         f"Return **only** the compliment paragraph."
@@ -60,7 +61,7 @@ async def glaze(interaction, channel: TextChannel = None, user: Member = None):
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Here are the recent chat messages from {user.display_name}. Read them and provide a legendary, overly posh British compliment based on what they've said:\n\n{input_text}"},
+                {"role": "user", "content": f"Here are the recent chat messages from {user.display_name}. Read them, find specific things they said, and provide a legendary, overly posh British compliment directly based on those topics:\n\n{input_text}"},
             ],
             max_tokens=250,
             temperature=0.8,
