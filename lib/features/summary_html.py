@@ -62,4 +62,4 @@ async def create_summary_image(summary_data, title, title_color):
 
     estimated_height = calculate_estimated_height(html_content, base_height=400)
 
-    return screenshot_html(html_content, size=(800, estimated_height))
+    return await screenshot_html(html_content, size=(800, estimated_height))

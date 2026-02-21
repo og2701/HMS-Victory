@@ -1,4 +1,5 @@
 import base64
+import asyncio
 import io
 import os
 import uuid
@@ -47,13 +48,12 @@ def encode_image_to_data_uri(image_path: str) -> str:
     encoded = base64.b64encode(data).decode("utf-8")
     return f"data:image/png;base64,{encoded}"
 
-def screenshot_html(
+def _screenshot_html_sync(
     html_str: str,
     size: tuple[int, int] = (1600, 1000),
-    *,
     apply_trim: bool = True
 ) -> io.BytesIO:
-    """Render HTML into a trimmed PNG and return the bytes buffer."""
+    """Synchronous implementation of screenshot_html."""
     output_file = f"{uuid.uuid4()}.png"
     buffer = io.BytesIO()
     try:
@@ -68,6 +68,15 @@ def screenshot_html(
             os.remove(output_file)
 
     return buffer
+
+async def screenshot_html(
+    html_str: str,
+    size: tuple[int, int] = (1600, 1000),
+    *,
+    apply_trim: bool = True
+) -> io.BytesIO:
+    """Render HTML into a trimmed PNG (non-blocking)."""
+    return await asyncio.to_thread(_screenshot_html_sync, html_str, size, apply_trim)
 
 def calculate_text_dimensions(font, text: str) -> tuple[int, int]:
     text_bbox = font.getbbox(text)

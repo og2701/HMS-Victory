@@ -225,7 +225,7 @@ class XPSystem:
         </div>
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
-        image_buffer = screenshot_html(final_html, size=(1200, 1200))
+        image_buffer = await screenshot_html(final_html, size=(1200, 1200))
         return image_buffer.getvalue()
 
     async def handle_leaderboard_command(self, interaction: discord.Interaction):
@@ -286,7 +286,7 @@ class XPSystem:
         </div>
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
-        image_buffer = screenshot_html(final_html, size=(1200, 1200))
+        image_buffer = await screenshot_html(final_html, size=(1200, 1200))
         return image_buffer.getvalue()
 
     async def handle_richlist_command(self, interaction: discord.Interaction):

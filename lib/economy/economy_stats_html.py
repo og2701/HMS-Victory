@@ -152,10 +152,9 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
     distribution_html_parts = [f"<li><span class='name'>{bracket}</span> <span class='balance'>{count} users</span></li>" for bracket, count in dist_brackets.items() if count > 0]
     distribution_html = "\n".join(distribution_html_parts) if distribution_html_parts else "<li>No distribution data.</li>"
 
-    with open("templates/economy_stats.html", "r", encoding="utf-8") as f:
-        html_template = f.read()
+    template = read_html_template("templates/economy_stats.html")
     
-    formatted_html = html_template.format(
+    formatted_html = template.format(
         total_ukpence=f"{total_ukpence:,}",
         num_holders=str(num_holders),
         average_ukpence=f"{average_ukpence:,.2f}",
@@ -190,4 +189,4 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
         net_ukpence_change_class=net_ukpence_change_class
     )
 
-    return screenshot_html(formatted_html, size=(750, 2200))
+    return await screenshot_html(formatted_html, size=(750, 2200))
