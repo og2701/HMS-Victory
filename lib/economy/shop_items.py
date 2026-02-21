@@ -257,26 +257,39 @@ class VIPCaseSpinView(View):
 
     async def animate_spin(self, interaction: discord.Interaction):
         """Animate the spinning case."""
+        # Dynamically calculate weights based on current VIP role holders
+        vip_role = interaction.guild.get_role(self.vip_role_id)
+        current_vips = len(vip_role.members) if vip_role else 0
+        
+        dynamic_outcomes = []
+        for outcome in self.outcomes:
+            outcome_copy = outcome.copy()
+            if outcome_copy["type"] == "vip":
+                # Reduce weight by 2 for each current VIP, down to a minimum of 1
+                new_weight = max(1, outcome_copy["weight"] - (current_vips * 2))
+                outcome_copy["weight"] = new_weight
+            dynamic_outcomes.append(outcome_copy)
+
         # Calculate weights and select outcome
-        total_weight = sum(outcome["weight"] for outcome in self.outcomes)
+        total_weight = sum(outcome["weight"] for outcome in dynamic_outcomes)
         rand = random.random() * total_weight
 
         current_weight = 0
         selected_outcome = None
-        for outcome in self.outcomes:
+        for outcome in dynamic_outcomes:
             current_weight += outcome["weight"]
             if rand <= current_weight:
                 selected_outcome = outcome
                 break
 
         if not selected_outcome:
-            selected_outcome = self.outcomes[-1]  # Fallback to "nothing"
+            selected_outcome = dynamic_outcomes[-1]  # Fallback to "nothing"
 
         # Shorter, faster animation with mobile-friendly display
         # Create a sequence of items to spin through (20 items for quicker result)
         spin_sequence = []
         for _ in range(20):  # Reduced from 30 for faster spinning
-            spin_sequence.append(random.choice(self.outcomes))
+            spin_sequence.append(random.choice(dynamic_outcomes))
 
         # Place winning item near end
         win_position = random.randint(16, 19)  # Adjusted for 20 items
