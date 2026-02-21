@@ -240,6 +240,39 @@ class BetButtons(discord.ui.View):
 
 
 
+
+class PredSelectView(discord.ui.View):
+    def __init__(self, predictions: list[Prediction], client: discord.Client):
+        super().__init__(timeout=600)
+        self.predictions = sorted(predictions, key=lambda x: x.msg_id, reverse=True)[:25]
+        self.client = client
+
+        options = []
+        for p in self.predictions:
+            status = "🔒" if p.locked else "🔓"
+            options.append(discord.SelectOption(
+                label=f"{status} {p.title[:80]}",
+                description=f"ID: {p.msg_id} | {p.opt1} vs {p.opt2}",
+                value=str(p.msg_id)
+            ))
+
+        self.select = discord.ui.Select(
+            placeholder="Choose a prediction to manage...",
+            options=options
+        )
+        self.select.callback = self.on_select
+        self.add_item(self.select)
+
+    async def on_select(self, interaction: discord.Interaction):
+        mid = int(self.select.values[0])
+        p = self.client.predictions.get(mid)
+        if not p:
+            return await interaction.response.edit_message(content="❌ Prediction no longer found.", view=None)
+        
+        view = PredAdminView(p, self.client)
+        await interaction.response.edit_message(content=f"Managing: **{p.title}**", view=view)
+
+
 class PredAdminView(discord.ui.View):
     def __init__(self, pred: Prediction, client: discord.Client):
         super().__init__(timeout=600)

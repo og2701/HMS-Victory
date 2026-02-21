@@ -14,7 +14,7 @@ from lib.core.discord_helpers import has_role, has_any_role, toggle_user_role, r
 from lib.core.file_operations import load_whitelist, save_whitelist, set_file_status, is_file_status_active
 from lib.features.summary import post_summary
 from lib.economy.economy_manager import get_shutcoins, set_shutcoins
-from lib.economy.prediction_system import Prediction, BetButtons, prediction_embed, _save, PredAdminView
+from lib.economy.prediction_system import Prediction, BetButtons, prediction_embed, _save, PredAdminView, PredSelectView
 from lib.economy.economy_manager import get_bb, set_bb, add_bb, remove_bb
 from typing import Optional
 from commands.economy.shop import handle_shop_command
@@ -269,29 +269,39 @@ def define_commands(tree, client):
 
 
     @command("pred-admin", "Lock, resolve, or draw an existing UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
-    async def pred_admin(interaction: Interaction, message_id: str):
-        mid = int(message_id)
-        p = interaction.client.predictions.get(mid)
-        if not p:
-            return await interaction.response.send_message("Unknown prediction ID.", ephemeral=True)
-        view = PredAdminView(p, interaction.client)
-        await interaction.response.send_message("Prediction admin controls", view=view, ephemeral=True)
+    async def pred_admin(interaction: Interaction, message_id: Optional[str] = None):
+        if message_id:
+            try:
+                mid = int(message_id)
+            except ValueError:
+                return await interaction.response.send_message("Invalid message ID.", ephemeral=True)
+            
+            p = interaction.client.predictions.get(mid)
+            if not p:
+                return await interaction.response.send_message("Unknown prediction ID.", ephemeral=True)
+            view = PredAdminView(p, interaction.client)
+            await interaction.response.send_message(f"Managing: **{p.title}**", view=view, ephemeral=True)
+        else:
+            all_preds = list(interaction.client.predictions.values())
+            if not all_preds:
+                return await interaction.response.send_message("There are no active predictions.", ephemeral=True)
+            
+            view = PredSelectView(all_preds, interaction.client)
+            await interaction.response.send_message("Select a prediction to manage:", view=view, ephemeral=True)
 
-    @command("preds-to-resolve", "Shows all locked predictions still in memory", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    @command("preds-to-resolve", "Shows all unresolved predictions in memory", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
     async def preds_to_resolve(interaction: Interaction):
-        unresolved = [
-            p for p in interaction.client.predictions.values()
-            if p.locked
-        ]
+        unresolved = list(interaction.client.predictions.values())
         if not unresolved:
             await interaction.response.send_message("✅ All predictions have been resolved.", ephemeral=True)
             return
 
-        header = "**Preds left to resolve:**"
+        header = "**Unresolved Predictions:**"
         lines = []
         for p in unresolved:
+            status = "🔒 Locked" if p.locked else "🔓 Open"
             link = f"https://discord.com/channels/{GUILD_ID}/{p.channel_id or interaction.channel.id}/{p.msg_id}"
-            lines.append(f"`{p.title}` | `{p.msg_id}` | [jump]({link})")
+            lines.append(f"`{p.title[:40]}` | `{status}` | [jump]({link})")
 
         chunks = []
         current = header
