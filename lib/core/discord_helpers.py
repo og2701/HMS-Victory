@@ -81,7 +81,7 @@ async def fetch_messages_with_context(
     try:
         user_message_count = 0
         message_history = []
-        async for message in channel.history(limit=None, after=datetime.utcnow() - timedelta(days=7), oldest_first=True):
+        async for message in channel.history(limit=1000):
             if message.author.bot:
                 continue
             message_history.append(message)
@@ -89,6 +89,8 @@ async def fetch_messages_with_context(
                 user_message_count += 1
                 if user_message_count >= total_limit:
                     break
+
+        message_history.reverse()
 
         i = 0
         while i < len(message_history):

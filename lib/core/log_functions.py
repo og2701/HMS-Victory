@@ -127,3 +127,54 @@ async def create_edited_message_image(before, after):
         trimmed.save(output, format="PNG")
         output.seek(0)
     return output
+
+async def create_quote_image(message):
+    avatar_url = (
+        message.author.avatar.url
+        if message.author.avatar
+        else message.author.default_avatar.url
+    )
+    response = requests.get(avatar_url)
+    avatar_base64 = base64.b64encode(response.content).decode("utf-8")
+    avatar_data_url = f"data:image/png;base64,{avatar_base64}"
+
+    escaped_content = html.escape(message.content)
+
+    attached_image_html = ""
+    extra_height = 0
+    if message.attachments:
+        att = message.attachments[0]
+        if att.content_type and att.content_type.startswith("image/"):
+            try:
+                resp = requests.get(att.url)
+                if resp.status_code == 200:
+                    att_base64 = base64.b64encode(resp.content).decode("utf-8")
+                    content_type = att.content_type
+                    img_data_url = f"data:{content_type};base64,{att_base64}"
+                    attached_image_html = f'<img src="{img_data_url}" class="attached-image" />'
+                    extra_height = 400
+            except Exception as e:
+                print(f"Error downloading attachment for quote: {e}")
+
+    estimated_height = calculate_estimated_height(escaped_content) + extra_height + 50
+
+    border_color = message.author.color.to_rgb()
+    display_name = message.author.display_name
+    created_at = message.created_at.strftime("%Y-%m-%d %H:%M")
+
+    html_content = read_html_template("templates/quote_message.html").format(
+        border_color=border_color,
+        avatar_data_url=avatar_data_url,
+        display_name=display_name,
+        created_at=created_at,
+        content=escaped_content,
+        attached_image_html=attached_image_html
+    )
+
+    buffer = screenshot_html(html_content, size=(650, estimated_height), apply_trim=False)
+    with Image.open(buffer) as img:
+        trimmed = trim_image(img)
+        output = io.BytesIO()
+        trimmed.save(output, format="PNG")
+        output.seek(0)
+    return output

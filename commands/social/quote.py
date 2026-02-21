@@ -1,5 +1,6 @@
 import discord
 from discord import app_commands
+from lib.core.log_functions import create_quote_image
 
 async def handle_quote_context_menu(interaction: discord.Interaction, message: discord.Message):
     # Process the context menu action
@@ -15,32 +16,35 @@ async def handle_quote_context_menu(interaction: discord.Interaction, message: d
         await interaction.response.send_message("This message has nothing to quote.", ephemeral=True)
         return
 
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        image_buffer = await create_quote_image(message)
+    except Exception as e:
+        print(f"Error creating quote image: {e}")
+        await interaction.followup.send("Failed to generate quote image.", ephemeral=True)
+        return
+
     # Create the quote embed
     embed = discord.Embed(
-        description=message.content,
         color=discord.Color.gold(),
         timestamp=message.created_at
     )
     
-    embed.set_author(
-        name=f"{message.author.display_name} said:",
-        icon_url=message.author.display_avatar.url if message.author.display_avatar else None
-    )
-    
     embed.add_field(name="Original Message", value=f"[Jump to Message]({message.jump_url})")
 
-    # Handle attachments
-    if message.attachments:
-        # If it's an image, set it as the embed image
-        if message.attachments[0].content_type and message.attachments[0].content_type.startswith('image/'):
-            embed.set_image(url=message.attachments[0].url)
-        else:
-            embed.add_field(name="Attachment", value=message.attachments[0].url, inline=False)
+    # Handle attachments that aren't images (since images are in the screenshot)
+    has_image = any(a.content_type and a.content_type.startswith("image/") for a in message.attachments)
+    if message.attachments and not has_image:
+        embed.add_field(name="Attachment", value=message.attachments[0].url, inline=False)
 
-    await interaction.response.defer(ephemeral=True)
-    
+    embed.set_image(url="attachment://quote.png")
+
     try:
-        await thread.send(embed=embed)
+        await thread.send(
+            file=discord.File(image_buffer, filename="quote.png"),
+            embed=embed
+        )
         await interaction.followup.send("Message successfully quoted to the quotes thread!", ephemeral=True)
     except Exception as e:
         print(f"Error sending quote: {e}")
