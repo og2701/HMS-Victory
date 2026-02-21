@@ -132,7 +132,7 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         html_content = html_content.replace("{unionjack}", background_data_uri)
 
         size = (1600, 1000)
-        image_bytes = screenshot_html(html_content, size)
+        image_bytes = await screenshot_html(html_content, size)
         return discord.File(fp=image_bytes, filename="rank.png")
 
     except Exception as e:
