@@ -3,10 +3,6 @@ from discord import Interaction, InteractionType
 from datetime import timedelta, datetime
 import logging, os, aiohttp, io, json, asyncio, pytz
 from collections import defaultdict
-from discord import Interaction, InteractionType
-from datetime import timedelta, datetime
-import logging, os, aiohttp, io, json, asyncio, pytz
-from collections import defaultdict
 
 from lib.core.translation import translate_and_send
 from lib.features.summary import initialize_summary_data, update_summary_data, post_summary

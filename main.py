@@ -10,6 +10,7 @@ import zipfile
 import io
 import json
 import aiohttp
+from typing import Optional
 
 from lib.bot.event_handlers import *
 from lib.features.on_message_functions import *
