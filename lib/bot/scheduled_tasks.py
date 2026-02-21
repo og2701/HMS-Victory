@@ -300,14 +300,14 @@ async def award_booster_bonus(client):
 
 async def cleanup_webhook_reactions(client):
     """
-    Removes the ❌ reaction from corrected messages older than 1 hour.
+    Removes the ❌ reaction from corrected messages older than 1 minute.
     """
     deletions = load_webhook_deletions()
     if not deletions:
         return
 
     now = datetime.now().timestamp()
-    one_hour_secs = 3600
+    one_min_secs = 60
     dirty = False
     
     # We iterate over a copy of keys to allow deletion during iteration
@@ -324,7 +324,7 @@ async def cleanup_webhook_reactions(client):
         if not timestamp:
             continue
             
-        if now - timestamp > one_hour_secs:
+        if now - timestamp > one_min_secs:
             # Try to find the message and remove its reaction
             channel_id = data.get("channel_id")
             if channel_id:
@@ -362,6 +362,6 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(unmute_visitors, CronTrigger(hour=7, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="unmute_visitors_job", name="Unmute visitors in the morning")
     
     scheduler.add_job(backup_database, IntervalTrigger(minutes=120, timezone="Europe/London"), args=[client], id="backup_database_job", name="Backup SQLite Database")
-    scheduler.add_job(cleanup_webhook_reactions, IntervalTrigger(minutes=15), args=[client], id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
+    scheduler.add_job(cleanup_webhook_reactions, IntervalTrigger(minutes=1), id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
 
     scheduler.start()
