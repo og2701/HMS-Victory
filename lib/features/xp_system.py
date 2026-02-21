@@ -129,6 +129,9 @@ class RichListView(discord.ui.View):
         await interaction.edit_original_response(attachments=[file], view=self)
 
 class XPSystem:
+    def __init__(self, client=None):
+        self.client = client
+
     def get_role_for_xp(self, xp):
         role_id = None
         for threshold, rid in CHAT_LEVEL_ROLE_THRESHOLDS:
@@ -206,7 +209,7 @@ class XPSystem:
             member = guild.get_member(int(uid))
             name = member.display_name if member else "Unknown"
             avatar_url = member.display_avatar.url if member else "https://cdn.discordapp.com/embed/avatars/0.png"
-            avatar = await get_avatar_data_uri(self.interaction.client if hasattr(self, "interaction") else guild.me._state._client, avatar_url)
+            avatar = await get_avatar_data_uri(self.client, avatar_url)
 
             block = f"""
             <div class="flex items-center mb-2 bg-black/50 rounded p-2">
@@ -277,7 +280,7 @@ class XPSystem:
             member = guild.get_member(int(uid))
             name = member.display_name if member else "Unknown"
             avatar_url = member.display_avatar.url if member else "https://cdn.discordapp.com/embed/avatars/0.png"
-            avatar = await get_avatar_data_uri(self.interaction.client if hasattr(self, "interaction") else guild.me._state._client, avatar_url)
+            avatar = await get_avatar_data_uri(self.client, avatar_url)
 
             block = f"""
             <div class="flex items-center mb-2 bg-black/50 rounded p-2">

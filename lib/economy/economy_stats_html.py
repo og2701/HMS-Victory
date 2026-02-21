@@ -35,7 +35,7 @@ def load_balance_snapshot(date_str: str):
     except (json.JSONDecodeError, FileNotFoundError):
         return None
 
-async def create_economy_stats_image(guild: discord.Guild) -> str:
+async def create_economy_stats_image(guild: discord.Guild, client: discord.Client) -> str:
     ukpence_data_current = load_ukpence_data()
     
     total_ukpence = sum(ukpence_data_current.values())
@@ -134,7 +134,7 @@ async def create_economy_stats_image(guild: discord.Guild) -> str:
                 member_display_name = discord.utils.escape_markdown(member.display_name)
                 avatar_url = str(member.display_avatar.url)
 
-        avatar_data = await get_avatar_data_uri(guild.me._state._client, avatar_url)
+        avatar_data = await get_avatar_data_uri(client, avatar_url)
 
         top_richest_html_parts.append(
             f"<li>"

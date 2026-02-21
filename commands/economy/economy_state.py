@@ -7,7 +7,7 @@ from lib.economy.economy_stats_html import create_economy_stats_image
 
 async def handle_ukpeconomy_command(interaction: discord.Interaction) -> discord.File | None:
     try:
-        image_buffer = await create_economy_stats_image(interaction.guild)
+        image_buffer = await create_economy_stats_image(interaction.guild, interaction.client)
         if image_buffer is not None:
             return discord.File(image_buffer, filename="ukpeconomy_stats.png")
         else:

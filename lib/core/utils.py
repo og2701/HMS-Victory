@@ -54,7 +54,7 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         if not hasattr(interaction.client, "xp_system"):
             logger.warning("XPSystem not found on client. Initializing now.")
             from lib.features.xp_system import XPSystem
-            interaction.client.xp_system = XPSystem()
+            interaction.client.xp_system = XPSystem(interaction.client)
         xp_system = interaction.client.xp_system
         logger.debug("XPSystem has been accessed.")
 

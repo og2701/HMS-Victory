@@ -149,7 +149,7 @@ async def post_daily_economy_stats(client):
             logger.error("Daily economy stats: Primary guild not found.")
             return
 
-        image_buffer = await create_economy_stats_image(guild)
+        image_buffer = await create_economy_stats_image(guild, client)
 
         if image_buffer is not None:
             bot_spam_channel_id = CHANNELS.BOT_SPAM
