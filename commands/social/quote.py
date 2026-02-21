@@ -19,7 +19,7 @@ async def handle_quote_context_menu(interaction: discord.Interaction, message: d
     await interaction.response.defer(ephemeral=True)
 
     try:
-        image_buffer = await create_quote_image(message)
+        image_buffer = await create_quote_image(interaction.client, message)
     except Exception as e:
         import traceback
         traceback.print_exc()

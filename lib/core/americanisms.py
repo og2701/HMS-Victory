@@ -73,9 +73,27 @@ def correct_americanisms(text: str) -> str:
             return replacement.capitalize()
         return replacement
 
-    # Create a regex pattern to match whole words (case-insensitive)
-    # Sorting keys by length descending to match longer phrases first (e.g., 'shopping cart')
-    sorted_keys = sorted(AMERICAN_TO_BRITISH.keys(), key=len, reverse=True)
-    pattern = re.compile(r'\b(' + '|'.join(map(re.escape, sorted_keys)) + r')\b', re.IGNORECASE)
-    
-    return pattern.sub(replace, text)
+# Pre-compile the pattern at module level for performance
+_SORTED_KEYS = sorted(AMERICAN_TO_BRITISH.keys(), key=len, reverse=True)
+_PATTERN = re.compile(r'\b(' + '|'.join(map(re.escape, _SORTED_KEYS)) + r')\b', re.IGNORECASE)
+
+def correct_americanisms(text: str) -> str:
+    """
+    Corrects Americanisms in the given text to British English while preserving case.
+    """
+    def replace(match):
+        word = match.group(0)
+        lower_word = word.lower()
+        replacement = AMERICAN_TO_BRITISH.get(lower_word)
+        
+        if not replacement:
+            return word
+        
+        # Preserve casing
+        if word.isupper():
+            return replacement.upper()
+        if word[0].isupper():
+            return replacement.capitalize()
+        return replacement
+
+    return _PATTERN.sub(replace, text)

@@ -169,11 +169,16 @@ class XPSystem:
                         await message.channel.send(embed=embed)
 
     def get_rank(self, user_id: str):
-        sorted_xp = DatabaseManager.fetch_all("SELECT user_id, xp FROM xp ORDER BY xp DESC")
+        # Optimized SQL query to find rank: count users with more XP + 1
+        query = """
+            SELECT 
+                (SELECT COUNT(*) + 1 FROM xp WHERE xp > (SELECT xp FROM xp WHERE user_id = ?)),
+                (SELECT xp FROM xp WHERE user_id = ?)
+        """
+        result = DatabaseManager.fetch_one(query, (user_id, user_id))
         
-        for i, (uid, score) in enumerate(sorted_xp, start=1):
-            if uid == user_id:
-                return i, score
+        if result and result[1] is not None:
+            return result[0], result[1]
         return None, 0
 
     def get_all_sorted_xp(self):

@@ -1,9 +1,6 @@
-import base64
-import difflib
-import html
 import io
 from PIL import Image
-import requests
+import aiohttp
 
 from lib.core.image_processing import screenshot_html, trim_image, encode_image_to_data_uri
 from lib.core.file_operations import read_html_template
@@ -17,14 +14,18 @@ def calculate_estimated_height(content, line_height=20, base_height=1000):
     return estimated_height
 
 
-async def create_message_image(message, title):
+async def create_message_image(client, message, title):
     avatar_url = (
         message.author.avatar.url
         if message.author.avatar
         else message.author.default_avatar.url
     )
-    response = requests.get(avatar_url)
-    avatar_base64 = base64.b64encode(response.content).decode("utf-8")
+    async with client.session.get(avatar_url) as resp:
+        if resp.status == 200:
+            avatar_content = await resp.read()
+            avatar_base64 = base64.b64encode(avatar_content).decode("utf-8")
+        else:
+            avatar_base64 = ""
     avatar_data_url = f"data:image/png;base64,{avatar_base64}"
 
     escaped_content = html.escape(message.content)
@@ -35,13 +36,14 @@ async def create_message_image(message, title):
         att = message.attachments[0]
         if att.content_type and att.content_type.startswith("image/"):
             try:
-                resp = requests.get(att.url)
-                if resp.status_code == 200:
-                    att_base64 = base64.b64encode(resp.content).decode("utf-8")
-                    content_type = att.content_type
-                    img_data_url = f"data:{content_type};base64,{att_base64}"
-                    attached_image_html = f'<img src="{img_data_url}" class="attached-image" />'
-                    extra_height = 400
+                async with client.session.get(att.url) as resp:
+                    if resp.status == 200:
+                        att_content = await resp.read()
+                        att_base64 = base64.b64encode(att_content).decode("utf-8")
+                        content_type = att.content_type
+                        img_data_url = f"data:{content_type};base64,{att_base64}"
+                        attached_image_html = f'<img src="{img_data_url}" class="attached-image" />'
+                        extra_height = 400
             except Exception as e:
                 print(f"Error downloading attachment for deleted message log: {e}")
 
@@ -153,14 +155,18 @@ def highlight_diff(before, after):
     return "".join(highlighted_before), "".join(highlighted_after), changes_detected
 
 
-async def create_edited_message_image(before, after):
+async def create_edited_message_image(client, before, after):
     avatar_url = (
         before.author.avatar.url
         if before.author.avatar
         else before.author.default_avatar.url
     )
-    response = requests.get(avatar_url)
-    avatar_base64 = base64.b64encode(response.content).decode("utf-8")
+    async with client.session.get(avatar_url) as resp:
+        if resp.status == 200:
+            avatar_content = await resp.read()
+            avatar_base64 = base64.b64encode(avatar_content).decode("utf-8")
+        else:
+            avatar_base64 = ""
     avatar_data_url = f"data:image/png;base64,{avatar_base64}"
 
     escaped_before_content = html.escape(before.content)
@@ -171,23 +177,24 @@ async def create_edited_message_image(before, after):
     if not changes_detected:
         return None
 
-    def get_attached_image_html(message, error_context):
+    async def get_attached_image_html(message, error_context):
         if message.attachments:
             att = message.attachments[0]
             if att.content_type and att.content_type.startswith("image/"):
                 try:
-                    resp = requests.get(att.url)
-                    if resp.status_code == 200:
-                        att_base64 = base64.b64encode(resp.content).decode("utf-8")
-                        content_type = att.content_type
-                        img_data_url = f"data:{content_type};base64,{att_base64}"
-                        return f'<img src="{img_data_url}" class="attached-image" />', 400
+                    async with client.session.get(att.url) as resp:
+                        if resp.status == 200:
+                            att_content = await resp.read()
+                            att_base64 = base64.b64encode(att_content).decode("utf-8")
+                            content_type = att.content_type
+                            img_data_url = f"data:{content_type};base64,{att_base64}"
+                            return f'<img src="{img_data_url}" class="attached-image" />', 400
                 except Exception as e:
                     print(f"Error downloading attachment for {error_context}: {e}")
         return "", 0
 
-    before_attached_image_html, before_extra_height = get_attached_image_html(before, "edited message (before)")
-    after_attached_image_html, after_extra_height = get_attached_image_html(after, "edited message (after)")
+    before_attached_image_html, before_extra_height = await get_attached_image_html(before, "edited message (before)")
+    after_attached_image_html, after_extra_height = await get_attached_image_html(after, "edited message (after)")
 
     before_height = calculate_estimated_height(highlighted_before_content) + before_extra_height
     after_height = calculate_estimated_height(highlighted_after_content) + after_extra_height
@@ -277,14 +284,18 @@ async def create_edited_message_image(before, after):
         output.seek(0)
     return output
 
-async def create_quote_image(message):
+async def create_quote_image(client, message):
     avatar_url = (
         message.author.avatar.url
         if message.author.avatar
         else message.author.default_avatar.url
     )
-    response = requests.get(avatar_url)
-    avatar_base64 = base64.b64encode(response.content).decode("utf-8")
+    async with client.session.get(avatar_url) as resp:
+        if resp.status == 200:
+            avatar_content = await resp.read()
+            avatar_base64 = base64.b64encode(avatar_content).decode("utf-8")
+        else:
+            avatar_base64 = ""
     avatar_data_url = f"data:image/png;base64,{avatar_base64}"
 
     escaped_content = html.escape(message.content)
@@ -295,13 +306,14 @@ async def create_quote_image(message):
         att = message.attachments[0]
         if att.content_type and att.content_type.startswith("image/"):
             try:
-                resp = requests.get(att.url)
-                if resp.status_code == 200:
-                    att_base64 = base64.b64encode(resp.content).decode("utf-8")
-                    content_type = att.content_type
-                    img_data_url = f"data:{content_type};base64,{att_base64}"
-                    attached_image_html = f'<img src="{img_data_url}" class="attached-image" />'
-                    extra_height = 400
+                async with client.session.get(att.url) as resp:
+                    if resp.status == 200:
+                        att_content = await resp.read()
+                        att_base64 = base64.b64encode(att_content).decode("utf-8")
+                        content_type = att.content_type
+                        img_data_url = f"data:{content_type};base64,{att_base64}"
+                        attached_image_html = f'<img src="{img_data_url}" class="attached-image" />'
+                        extra_height = 400
             except Exception as e:
                 print(f"Error downloading attachment for quote: {e}")
 

@@ -444,7 +444,7 @@ async def on_message_delete(client, message):
     channel_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
     if log_channel is not None:
         if message.content:
-            image_buffer = await create_message_image(message, "Deleted Message")
+            image_buffer = await create_message_image(client, message, "Deleted Message")
             description = f"Message by {message.author.mention} ({message.author.id}) deleted in {message.channel.mention}."
             if deleter and deleter != message.author:
                 description += f"\nDeleted by {deleter.mention} ({deleter.id})."
@@ -488,7 +488,7 @@ async def on_message_edit(client, before, after):
         return
     log_channel = client.get_channel(CHANNELS.LOGS)
     if log_channel is not None:
-        image_buffer = await create_edited_message_image(before, after)
+        image_buffer = await create_edited_message_image(client, before, after)
         message_link = f"https://discord.com/channels/{before.guild.id}/{before.channel.id}/{after.id}"
         embed = discord.Embed(
             title="Message Edited",
