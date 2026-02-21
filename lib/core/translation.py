@@ -26,6 +26,9 @@ COOLDOWN_DURATION = 600  # 10 minutes
 async def translate_and_send(
     reaction, message, target_language, original_author, reacting_user
 ):
+    if original_author.bot:
+        return
+
     user_id = reacting_user.id
     current_time = time.time()
 
