@@ -360,7 +360,7 @@ async def on_ready(client, tree, scheduler):
         logger.info("Initialised temp data")
     if not hasattr(client, "xp_system"):
         from lib.features.xp_system import XPSystem
-        client.xp_system = XPSystem()
+        client.xp_system = XPSystem(client)
         logger.info("XP system initialised")
     reattach_persistent_views(client)
     loaded = _load()
@@ -385,7 +385,7 @@ async def on_ready(client, tree, scheduler):
 async def on_message(client, message):
     if not hasattr(client, "xp_system"):
         from lib.features.xp_system import XPSystem
-        client.xp_system = XPSystem()
+        client.xp_system = XPSystem(client)
         logger.info("XP system initialised")
 
     if not await restrict_channel_for_new_members(message, CHANNELS.POLITICS, 7, POLITICS_WHITELISTED_USER_IDS):

@@ -50,9 +50,9 @@ def _get_cached_avatar_data_uri(url: str, b64_data: str) -> str:
 
 async def get_avatar_data_uri(client, url: str) -> str:
     """Fetch and cache avatar data URIs (limited to 100 entries for t3.micro)."""
-    # We use a simple hash of the URL to check if we've seen this specific avatar version
-    # Discord URLs include a hash, so this is perfect.
-    
+    if client is None:
+        return url
+
     # Check if already in cache (we'll use a manual check for the async part)
     if not hasattr(client, "_avatar_cache"):
         client._avatar_cache = {}

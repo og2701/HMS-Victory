@@ -239,7 +239,7 @@ def define_commands(tree, client):
         await interaction.response.defer()
         if not hasattr(client, "xp_system"):
             from lib.features.xp_system import XPSystem
-            client.xp_system = XPSystem()
+            client.xp_system = XPSystem(client)
 
         await client.xp_system.handle_leaderboard_command(interaction)
 
@@ -361,8 +361,8 @@ def define_commands(tree, client):
     async def richlist_command(interaction: Interaction):
         await interaction.response.defer()
         if not hasattr(interaction.client, "xp_system"):
-            from lib.xp_system import XPSystem
-            interaction.client.xp_system = XPSystem()
+            from lib.features.xp_system import XPSystem
+            interaction.client.xp_system = XPSystem(interaction.client)
         await interaction.client.xp_system.handle_richlist_command(interaction)
 
 
