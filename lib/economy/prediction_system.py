@@ -1,6 +1,7 @@
 import json, os, io, discord
 from PIL import Image, ImageDraw
 import uuid
+from functools import lru_cache
 from lib.economy.economy_manager import add_bb, remove_bb
 
 PRED_FILE = "predictions.json"
@@ -69,15 +70,21 @@ class Prediction:
         return p
 
 
-def _progress_png(pct: float) -> io.BytesIO:
+@lru_cache(maxsize=101)
+def _progress_png_bytes(pct_int: int) -> bytes:
+    pct = pct_int / 100.0
     W, H = 400, 18
     green, blurple = (46, 204, 113), (88, 101, 242)
     img = Image.new("RGB", (W, H), blurple)
     ImageDraw.Draw(img).rectangle([0, 0, int(W * pct), H], fill=green)
     buff = io.BytesIO()
     img.save(buff, format="PNG")
-    buff.seek(0)
-    return buff
+    return buff.getvalue()
+
+def _progress_png(pct: float) -> io.BytesIO:
+    pct_int = int(pct * 100)
+    img_bytes = _progress_png_bytes(pct_int)
+    return io.BytesIO(img_bytes)
 
 CASH, TROPHY, USER, COIN, MEDAL = "💰", "🏆", "👥", "🪙", "🏅"
 

@@ -23,11 +23,15 @@ class ShutcoinManager:
 
     @staticmethod
     def remove_amount(user_id: int, amount: int = 1) -> bool:
-        current = ShutcoinManager.get_balance(user_id)
-        if current >= amount:
-            ShutcoinManager.set_balance(user_id, current - amount)
-            return True
-        return False
+        # Atomic update: only subtract if the balance is sufficient
+        with DatabaseManager.get_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                "UPDATE shutcoins SET balance = balance - ? WHERE user_id = ? AND balance >= ?",
+                (amount, str(user_id), amount)
+            )
+            conn.commit()
+            return c.rowcount > 0
 
     @staticmethod
     def can_afford(user_id: int, amount: int = 1) -> bool:
@@ -60,11 +64,15 @@ class UKPenceManager:
 
     @staticmethod
     def remove_amount(user_id: int, amount: int) -> bool:
-        balance = UKPenceManager.get_balance(user_id)
-        if amount > balance:
-            return False
-        UKPenceManager.set_balance(user_id, balance - amount)
-        return True
+        # Atomic update: only subtract if the balance is sufficient
+        with DatabaseManager.get_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                "UPDATE ukpence SET balance = balance - ? WHERE user_id = ? AND balance >= ?",
+                (amount, str(user_id), amount)
+            )
+            conn.commit()
+            return c.rowcount > 0
 
 class EconomyMetrics:
     ECONOMY_METRICS_FILE = "economy_metrics.json"

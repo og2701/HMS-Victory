@@ -8,6 +8,7 @@ from config import *
 from lib.core.constants import CHAT_LEVEL_ROLE_THRESHOLDS
 from lib.economy.economy_manager import get_bb
 from lib.core.image_processing import screenshot_html
+from lib.core.file_operations import read_html_template
 
 class LeaderboardView(discord.ui.View):
     PAGE_SIZE = 20
@@ -186,8 +187,7 @@ class XPSystem:
         return sorted_xp
 
     async def generate_leaderboard_image(self, guild: discord.Guild, data_slice, offset):
-        with open("templates/leaderboard.html", "r", encoding="utf-8") as f:
-            template = f.read()
+        template = read_html_template("templates/leaderboard.html")
 
         left_html, right_html = "", ""
         half = len(data_slice) // 2
@@ -252,8 +252,7 @@ class XPSystem:
         return balances
 
     async def generate_richlist_image(self, guild, data_slice, offset):
-        with open("templates/leaderboard.html", "r", encoding="utf-8") as f:
-            template = f.read()
+        template = read_html_template("templates/leaderboard.html")
 
         left_html, right_html = "", ""
         half = RichListView.PAGE_SIZE // 2
