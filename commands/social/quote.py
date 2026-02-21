@@ -21,6 +21,8 @@ async def handle_quote_context_menu(interaction: discord.Interaction, message: d
     try:
         image_buffer = await create_quote_image(message)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Error creating quote image: {e}")
         await interaction.followup.send("Failed to generate quote image.", ephemeral=True)
         return
