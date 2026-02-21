@@ -129,7 +129,7 @@ class WagerProposalView(discord.ui.View):
         
         embed = discord.Embed(
             title="⚔️ New Wager Needs Resolution",
-            description=f"A wager between {self.challenger.mention} and {self.opponent.mention} has been accepted.",
+            description=f"A wager between {self.challenger.mention} and {self.opponent.mention} has been accepted.\n\n**{self.challenger.display_name}** (*Challenger*) has bet against **{self.opponent.display_name}** (*Opponent*) on the following topic:",
             color=0xE67E22
         )
         embed.add_field(name="Topic", value=self.topic, inline=False)
