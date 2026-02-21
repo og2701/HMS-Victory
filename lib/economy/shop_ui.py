@@ -169,11 +169,9 @@ class PurchaseConfirmationView(View):
                         color=0x00ff00
                     )
                     embed.add_field(name="Remaining Balance", value=f"{get_bb(interaction.user.id)} UKPence", inline=False)
+                    embed.set_footer(text="You can purchase another or return to the shop.")
                     
-                    # Instead of an ephemeral popup, EDIT the shop embed to show success
-                    # Disable buttons so they can't double-buy without going back
-                    for child in self.children:
-                        child.disabled = True
+                    # We WANT them to be able to buy again or go back, so do NOT disable the buttons.
                     
                     if not interaction.response.is_done():
                         await interaction.response.edit_message(embed=embed, view=self)
