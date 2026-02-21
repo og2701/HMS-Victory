@@ -1,3 +1,6 @@
+import base64
+import difflib
+import html
 import io
 from PIL import Image
 import aiohttp
