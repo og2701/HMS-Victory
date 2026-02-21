@@ -1,58 +1,14 @@
 <!-- edited_message.html -->
 <html>
+
 <head>
     <style>
-        body {{
-            margin: 0;
-            padding: 0;
-            background-color: white;
-        }}
-        .container {{
-            border: 2px solid rgb{border_color};
-            padding: 10px;
-            width: fit-content;
-            display: inline-block;
-        }}
-        .title {{
-            font-size: 18px;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }}
-        .message {{
-            display: flex;
-            align-items: flex-start;
-            padding: 10px;
-            background-color: #36393f;
-            border-radius: 5px;
-            color: white;
-            font-family: Arial, sans-serif;
-            margin-bottom: 10px;
-        }}
-        .avatar {{
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            margin-right: 10px;
-        }}
-        .username {{
-            color: rgb{border_color};
-            font-weight: bold;
-            margin-right: 5px;
-        }}
-        .timestamp {{
-            color: #72767d;
-            font-size: 12px;
-        }}
-        .content {{
-            margin-top: 5px;
-            white-space: pre-wrap;
-        }}
-        .label {{
-            font-size: 14px;
-            margin-bottom: 5px;
-        }}
+        {
+            css_styles
+        }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="title">Edited Message</div>
@@ -63,6 +19,7 @@
                 <span class="username">{display_name}</span>
                 <span class="timestamp">Today at {before_created_at}</span>
                 <div class="content">{before_content}</div>
+                {before_attached_image_html}
             </div>
         </div>
         <div class="label">After:</div>
@@ -72,8 +29,10 @@
                 <span class="username">{display_name}</span>
                 <span class="timestamp">Today at {after_created_at}</span>
                 <div class="content">{after_content}</div>
+                {after_attached_image_html}
             </div>
         </div>
     </div>
 </body>
+
 </html>

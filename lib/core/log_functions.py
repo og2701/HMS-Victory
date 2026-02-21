@@ -28,20 +28,91 @@ async def create_message_image(message, title):
     avatar_data_url = f"data:image/png;base64,{avatar_base64}"
 
     escaped_content = html.escape(message.content)
-    estimated_height = calculate_estimated_height(escaped_content)
+
+    attached_image_html = ""
+    extra_height = 0
+    if message.attachments:
+        att = message.attachments[0]
+        if att.content_type and att.content_type.startswith("image/"):
+            try:
+                resp = requests.get(att.url)
+                if resp.status_code == 200:
+                    att_base64 = base64.b64encode(resp.content).decode("utf-8")
+                    content_type = att.content_type
+                    img_data_url = f"data:{content_type};base64,{att_base64}"
+                    attached_image_html = f'<img src="{img_data_url}" class="attached-image" />'
+                    extra_height = 400
+            except Exception as e:
+                print(f"Error downloading attachment for deleted message log: {e}")
+
+    estimated_height = calculate_estimated_height(escaped_content) + extra_height + 50
 
     border_color = message.author.color.to_rgb()
     display_name = message.author.display_name
     created_at = message.created_at.strftime("%H:%M")
 
-    html_content = read_html_template("templates/deleted_message.html").format(
-        title=title,
-        border_color=border_color,
-        avatar_data_url=avatar_data_url,
-        display_name=display_name,
-        created_at=created_at,
-        content=escaped_content,
-    )
+    css_styles = f"""
+        body {{
+            margin: 0;
+            padding: 0;
+            background-color: white;
+        }}
+        .container {{
+            border: 2px solid rgb{border_color};
+            padding: 10px;
+            width: fit-content;
+            display: inline-block;
+        }}
+        .title {{
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }}
+        .message {{
+            display: flex;
+            align-items: flex-start;
+            padding: 10px;
+            background-color: #36393f;
+            border-radius: 5px;
+            color: white;
+            font-family: Arial, sans-serif;
+        }}
+        .avatar {{
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }}
+        .username {{
+            color: rgb{border_color};
+            font-weight: bold;
+            margin-right: 5px;
+        }}
+        .timestamp {{
+            color: #72767d;
+            font-size: 12px;
+        }}
+        .content {{
+            margin-top: 5px;
+            white-space: pre-wrap;
+        }}
+        .attached-image {{
+            max-width: 100%;
+            border-radius: 4px;
+            margin-top: 8px;
+        }}
+    """
+
+    html_content = read_html_template("templates/deleted_message.html")
+    html_content = html_content.replace("{title}", title)
+    html_content = html_content.replace("{css_styles}", css_styles)
+    html_content = html_content.replace("{\n            css_styles\n        }", css_styles)
+    html_content = html_content.replace("{\n    css_styles\n}", css_styles)
+    html_content = html_content.replace("{avatar_data_url}", avatar_data_url)
+    html_content = html_content.replace("{display_name}", display_name)
+    html_content = html_content.replace("{created_at}", created_at)
+    html_content = html_content.replace("{content}", escaped_content)
+    html_content = html_content.replace("{attached_image_html}", attached_image_html)
 
     buffer = screenshot_html(html_content, size=(800, estimated_height), apply_trim=False)
     with Image.open(buffer) as img:
@@ -100,8 +171,26 @@ async def create_edited_message_image(before, after):
     if not changes_detected:
         return None
 
-    before_height = calculate_estimated_height(highlighted_before_content)
-    after_height = calculate_estimated_height(highlighted_after_content)
+    def get_attached_image_html(message, error_context):
+        if message.attachments:
+            att = message.attachments[0]
+            if att.content_type and att.content_type.startswith("image/"):
+                try:
+                    resp = requests.get(att.url)
+                    if resp.status_code == 200:
+                        att_base64 = base64.b64encode(resp.content).decode("utf-8")
+                        content_type = att.content_type
+                        img_data_url = f"data:{content_type};base64,{att_base64}"
+                        return f'<img src="{img_data_url}" class="attached-image" />', 400
+                except Exception as e:
+                    print(f"Error downloading attachment for {error_context}: {e}")
+        return "", 0
+
+    before_attached_image_html, before_extra_height = get_attached_image_html(before, "edited message (before)")
+    after_attached_image_html, after_extra_height = get_attached_image_html(after, "edited message (after)")
+
+    before_height = calculate_estimated_height(highlighted_before_content) + before_extra_height
+    after_height = calculate_estimated_height(highlighted_after_content) + after_extra_height
     content_height = before_height + after_height + 60
     estimated_height = max(150, content_height + 100)
 
@@ -110,15 +199,75 @@ async def create_edited_message_image(before, after):
     before_created_at = before.created_at.strftime("%H:%M")
     after_created_at = after.created_at.strftime("%H:%M")
 
-    html_content = read_html_template("templates/edited_message.html").format(
-        border_color=border_color,
-        avatar_data_url=avatar_data_url,
-        display_name=display_name,
-        before_created_at=before_created_at,
-        before_content=highlighted_before_content,
-        after_created_at=after_created_at,
-        after_content=highlighted_after_content,
-    )
+    css_styles = f"""
+        body {{
+            margin: 0;
+            padding: 0;
+            background-color: white;
+        }}
+        .container {{
+            border: 2px solid rgb{border_color};
+            padding: 10px;
+            width: fit-content;
+            display: inline-block;
+        }}
+        .title {{
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }}
+        .message {{
+            display: flex;
+            align-items: flex-start;
+            padding: 10px;
+            background-color: #36393f;
+            border-radius: 5px;
+            color: white;
+            font-family: Arial, sans-serif;
+            margin-bottom: 10px;
+        }}
+        .avatar {{
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }}
+        .username {{
+            color: rgb{border_color};
+            font-weight: bold;
+            margin-right: 5px;
+        }}
+        .timestamp {{
+            color: #72767d;
+            font-size: 12px;
+        }}
+        .content {{
+            margin-top: 5px;
+            white-space: pre-wrap;
+        }}
+        .label {{
+            font-size: 14px;
+            margin-bottom: 5px;
+        }}
+        .attached-image {{
+            max-width: 100%;
+            border-radius: 4px;
+            margin-top: 8px;
+        }}
+    """
+
+    html_content = read_html_template("templates/edited_message.html")
+    html_content = html_content.replace("{css_styles}", css_styles)
+    html_content = html_content.replace("{\n            css_styles\n        }", css_styles)
+    html_content = html_content.replace("{\n    css_styles\n}", css_styles)
+    html_content = html_content.replace("{avatar_data_url}", avatar_data_url)
+    html_content = html_content.replace("{display_name}", display_name)
+    html_content = html_content.replace("{before_created_at}", before_created_at)
+    html_content = html_content.replace("{before_content}", highlighted_before_content)
+    html_content = html_content.replace("{before_attached_image_html}", before_attached_image_html)
+    html_content = html_content.replace("{after_created_at}", after_created_at)
+    html_content = html_content.replace("{after_content}", highlighted_after_content)
+    html_content = html_content.replace("{after_attached_image_html}", after_attached_image_html)
 
     buffer = screenshot_html(html_content, size=(800, estimated_height), apply_trim=False)
     with Image.open(buffer) as img:
