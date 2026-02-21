@@ -227,15 +227,15 @@ def define_commands(tree, client):
 
         await client.xp_system.handle_leaderboard_command(interaction)
 
-    if SHUTCOIN_ENABLED:
-        @command("set-shutcoins", "Sets a user's total Shutcoins.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-        async def set_shutcoins_command(interaction: Interaction, user: Member, amount: int):
-            old_amount = get_shutcoins(user.id)
-            set_shutcoins(user.id, amount)
-            new_amount = get_shutcoins(user.id)
-            embed = Embed(title="Shutcoin Update", description=f"{user.mention}'s Shutcoins were updated from {old_amount} to {new_amount}")
-            embed.set_footer(text=f"by {interaction.user.display_name}")
-            await interaction.response.send_message(embed=embed)
+    # if SHUTCOIN_ENABLED:
+    #     @command("set-shutcoins", "Sets a user's total Shutcoins.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
+    #     async def set_shutcoins_command(interaction: Interaction, user: Member, amount: int):
+    #         old_amount = get_shutcoins(user.id)
+    #         set_shutcoins(user.id, amount)
+    #         new_amount = get_shutcoins(user.id)
+    #         embed = Embed(title="Shutcoin Update", description=f"{user.mention}'s Shutcoins were updated from {old_amount} to {new_amount}")
+    #         embed.set_footer(text=f"by {interaction.user.display_name}")
+    #         await interaction.response.send_message(embed=embed)
 
     @command("pred-create", "Create a UKPence prediction (duration is in minutes)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
     async def pred_create(interaction: Interaction, title: str, opt1: str, opt2: str, duration: int = 5):
