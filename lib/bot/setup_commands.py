@@ -30,6 +30,11 @@ from commands.economy.inventory_commands import (
 from commands.economy.bank_commands import (
     handle_bank_status_command
 )
+try:
+    from commands.economy.wager import handle_wager_command
+except ImportError:
+    pass
+from commands.economy.wager import handle_wager_command
 
 def define_commands(tree, client):
     def command(name: str, description: str, checks: list = None):
@@ -306,6 +311,10 @@ def define_commands(tree, client):
             color=discord.Color.gold(),
         )
         await interaction.response.send_message(embed=embed)
+
+    @command("wager", "Wager UKPence against another user on a custom topic")
+    async def wager_command(interaction: Interaction, opponent: Member, amount: int, topic: str):
+        await handle_wager_command(interaction, opponent, amount, topic)
 
         pay_log_entry = {
             "timestamp": datetime.utcnow().isoformat(),

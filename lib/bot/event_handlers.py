@@ -85,6 +85,13 @@ def reattach_persistent_views(client):
                 client.add_view(ArchiveButtonView(client, channel_id), message_id=value["msg_id"])
                 target_timestamp = value["move_timestamp"]
                 asyncio.create_task(schedule_archive_move(channel, channel.guild, target_timestamp, client))
+        elif isinstance(value, dict) and value.get("type") == "wager":
+            try:
+                from commands.economy.wager import WagerDecisionView
+                view = WagerDecisionView(value["challenger_id"], value["opponent_id"], value["amount"], value["topic"])
+                client.add_view(view, message_id=int(key))
+            except ImportError as e:
+                logger.error(f"Failed to import WagerDecisionView: {e}")
         elif isinstance(value, dict):
             view = RoleButtonView(value)
             client.add_view(view, message_id=key)
