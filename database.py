@@ -8,6 +8,7 @@ class DatabaseManager:
     @contextmanager
     def get_connection():
         conn = sqlite3.connect(DB_FILE)
+        conn.execute("PRAGMA journal_mode=WAL")
         try:
             yield conn
         finally:
@@ -141,6 +142,10 @@ def init_db():
             INSERT OR IGNORE INTO bank (id, balance, total_revenue, last_updated)
             VALUES (1, 0, 0, 0)
         ''')
+        # Performance Indexes
+        c.execute('CREATE INDEX IF NOT EXISTS idx_xp_score ON xp(xp DESC)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_ukpence_balance ON ukpence(balance DESC)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_summaries_date ON daily_summaries(date)')
         conn.commit()
 
 if __name__ == '__main__':

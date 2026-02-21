@@ -155,12 +155,19 @@ def aggregate_summaries(start_date, end_date):
         "active_members": {},
         "reacting_members": {},
     }
-    current_date = start_date
-    while current_date <= end_date:
-        date_str = current_date.strftime("%Y-%m-%d")
-        daily_data = load_summary_data(date_str)
-        
-        if daily_data:
+    
+    start_str = start_date.strftime("%Y-%m-%d")
+    end_str = end_date.strftime("%Y-%m-%d")
+    
+    # Efficiently fetch all days in the range in one go
+    rows = DatabaseManager.fetch_all(
+        "SELECT data FROM daily_summaries WHERE date BETWEEN ? AND ? ORDER BY date ASC",
+        (start_str, end_str)
+    )
+    
+    for row in rows:
+        try:
+            daily_data = json.loads(row[0])
             for key in aggregated_data.keys():
                 if key in ["messages", "active_members", "reacting_members"]:
                     for sub_key, count in daily_data.get(key, {}).items():
@@ -168,12 +175,13 @@ def aggregate_summaries(start_date, end_date):
                             aggregated_data[key][sub_key] = 0
                         aggregated_data[key][sub_key] += count
                 elif key == "total_members":
-                    aggregated_data["total_members"] = daily_data.get(
-                        "total_members", 0
-                    )
+                    # For total members, we take the value from the last day in the range
+                    aggregated_data["total_members"] = daily_data.get("total_members", 0)
                 else:
                     aggregated_data[key] += daily_data.get(key, 0)
-        current_date += timedelta(days=1)
+        except json.JSONDecodeError:
+            continue
+            
     return aggregated_data
 
 

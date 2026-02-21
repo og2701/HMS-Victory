@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Any
+from functools import lru_cache
 
 PERSISTENT_VIEWS_FILE = "persistent_views.json"
 WEBHOOK_DELETIONS_FILE = "webhook_deletions.json"
@@ -58,6 +59,7 @@ def set_file_status(file_path: str, active: bool) -> None:
 def is_file_status_active(file_path: str) -> bool:
     return os.path.exists(file_path)
 
+@lru_cache(maxsize=32)
 def read_html_template(file_path: str) -> str:
     with open(file_path, "r", encoding="utf-8") as file:
         return file.read()

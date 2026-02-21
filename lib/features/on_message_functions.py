@@ -58,7 +58,7 @@ async def handle_ticket_closed_message(bot, message):
             "Do not list the transcript verbatim. Do not include greetings. Speak directly about the issues."
         )
 
-        response = openai.ChatCompletion.create(
+        response = await openai.ChatCompletion.acreate(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
