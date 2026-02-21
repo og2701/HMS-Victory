@@ -88,7 +88,7 @@ def reattach_persistent_views(client):
         elif isinstance(value, dict) and value.get("type") == "wager":
             try:
                 from commands.economy.wager import WagerDecisionView
-                view = WagerDecisionView(value["challenger_id"], value["opponent_id"], value["amount"], value["topic"])
+                view = WagerDecisionView(value["challenger_id"], value["opponent_id"], value["amount"], value["topic"], value.get("challenger_name", "User A"), value.get("opponent_name", "User B"))
                 client.add_view(view, message_id=int(key))
             except ImportError as e:
                 logger.error(f"Failed to import WagerDecisionView: {e}")

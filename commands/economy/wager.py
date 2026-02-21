@@ -6,16 +6,20 @@ from lib.core.discord_helpers import has_any_role
 from lib.core.file_operations import load_persistent_views, save_persistent_views
 
 class WagerDecisionView(discord.ui.View):
-    def __init__(self, challenger_id: int, opponent_id: int, amount: int, topic: str):
+    def __init__(self, challenger_id: int, opponent_id: int, amount: int, topic: str, challenger_name: str, opponent_name: str):
         super().__init__(timeout=None)
         self.challenger_id = challenger_id
         self.opponent_id = opponent_id
         self.amount = amount
         self.topic = topic
+        self.challenger_name = challenger_name
+        self.opponent_name = opponent_name
         # Ensure unique persistent IDs for these buttons
         base_id = f"wager_{self.challenger_id}_{self.opponent_id}_{self.amount}"
         self.btn_challenger.custom_id = f"{base_id}_win_challenger"
+        self.btn_challenger.label = f"Winner: {str(self.challenger_name)[:15]}"
         self.btn_opponent.custom_id = f"{base_id}_win_opponent"
+        self.btn_opponent.label = f"Winner: {str(self.opponent_name)[:15]}"
         self.btn_draw.custom_id = f"{base_id}_draw"
 
     async def check_permissions(self, interaction: Interaction) -> bool:
@@ -68,13 +72,13 @@ class WagerDecisionView(discord.ui.View):
             del persistent_views[str(interaction.message.id)]
             save_persistent_views(persistent_views)
 
-    @discord.ui.button(label="Winner: Challenger", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Winner: User A", style=discord.ButtonStyle.success)
     async def btn_challenger(self, interaction: Interaction, button: discord.ui.Button):
         if not await self.check_permissions(interaction): return
         button.label = f"Winner: <@{self.challenger_id}>"
         await self.resolve(interaction, self.challenger_id)
 
-    @discord.ui.button(label="Winner: Opponent", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Winner: User B", style=discord.ButtonStyle.success)
     async def btn_opponent(self, interaction: Interaction, button: discord.ui.Button):
         if not await self.check_permissions(interaction): return
         button.label = f"Winner: <@{self.opponent_id}>"
@@ -121,7 +125,7 @@ class WagerProposalView(discord.ui.View):
             return
 
         pot = self.amount * 2
-        decision_view = WagerDecisionView(self.challenger.id, self.opponent.id, self.amount, self.topic)
+        decision_view = WagerDecisionView(self.challenger.id, self.opponent.id, self.amount, self.topic, self.challenger.display_name, self.opponent.display_name)
         
         embed = discord.Embed(
             title="⚔️ New Wager Needs Resolution",
@@ -144,7 +148,9 @@ class WagerProposalView(discord.ui.View):
             "challenger_id": self.challenger.id,
             "opponent_id": self.opponent.id,
             "amount": self.amount,
-            "topic": self.topic
+            "topic": self.topic,
+            "challenger_name": self.challenger.display_name,
+            "opponent_name": self.opponent.display_name
         }
         save_persistent_views(persistent_views)
         interaction.client.add_view(decision_view, message_id=msg.id)
