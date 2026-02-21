@@ -140,12 +140,16 @@ def prediction_embed(pred: Prediction, client: discord.Client | None = None) -> 
     return e, bar_file
 
 class BetModal(discord.ui.Modal, title="Place your bet"):
-    amount = discord.ui.TextInput(label="Amount (≤ 100 000)", placeholder="whole number")
+    amount = discord.ui.TextInput(label="Amount", placeholder="whole number")
 
-    def __init__(self, pred: Prediction, side: int):
+    def __init__(self, pred: Prediction, side: int, user_balance: int):
         super().__init__()
         self.pred = pred
         self.side = side
+        self.user_balance = user_balance
+        max_bet = min(user_balance, 100_000)
+        self.amount.label = f"Amount (Your Max: {_fmt_money(max_bet)})"
+        self.amount.placeholder = f"Current Balance: {_fmt_money(user_balance)}"
 
     async def on_submit(self, interaction: discord.Interaction):
         from lib.economy.economy_manager import get_bb
@@ -171,6 +175,7 @@ class BetModal(discord.ui.Modal, title="Place your bet"):
 
         if self.pred.stake(interaction.user.id, self.side, stake):
             user_total = self.pred.bets[self.side][interaction.user.id]
+            new_balance = get_bb(interaction.user.id)
             embed, bar = prediction_embed(self.pred, interaction.client)
             
             try:
@@ -179,12 +184,18 @@ class BetModal(discord.ui.Modal, title="Place your bet"):
                 pass # Message was deleted by a mod while they were typing
                 
             await interaction.response.send_message(
-                f"✅ Bet placed! You now have **{_fmt_money(user_total)}** on **{self.pred.opt1 if self.side==1 else self.pred.opt2}**.",
+                f"✅ Bet placed! You now have **{_fmt_money(user_total)}** on **{self.pred.opt1 if self.side==1 else self.pred.opt2}**.\n"
+                f"💰 Remaining Balance: **{_fmt_money(new_balance)}**",
                 ephemeral=True
             )
             _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
         else:
-            await interaction.response.send_message("Bet failed. Check your balance or the bet limit (100k).", ephemeral=True)
+            curr = get_bb(interaction.user.id)
+            await interaction.response.send_message(
+                f"❌ Bet failed. You have **{_fmt_money(curr)}** UKPence.\n"
+                "Ensure you have enough balance and aren't exceeding the **100,000** limit.", 
+                ephemeral=True
+            )
 
 class BetButtons(discord.ui.View):
     def __init__(self, pred: Prediction):
@@ -192,10 +203,17 @@ class BetButtons(discord.ui.View):
         self.pred = pred
 
         async def _handler(interaction: discord.Interaction, side: int):
+            from lib.economy.economy_manager import get_bb
             if self.pred.locked:
                 await interaction.response.send_message("Betting locked.", ephemeral=True)
                 return
-            await interaction.response.send_modal(BetModal(self.pred, side))
+            
+            bal = get_bb(interaction.user.id)
+            if bal <= 0:
+                await interaction.response.send_message("❌ You don't have any UKPence to bet!", ephemeral=True)
+                return
+
+            await interaction.response.send_modal(BetModal(self.pred, side, bal))
 
         btn1 = discord.ui.Button(
             label=f"Bet on {pred.opt1}",
