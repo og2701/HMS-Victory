@@ -6,25 +6,40 @@ import uuid
 import random
 from functools import lru_cache
 from PIL import Image, ImageChops
-from html2image import Html2Image
+import tempfile
+import logging
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 from config import CHROME_PATH
 
-hti = Html2Image(output_path=".", browser_executable=CHROME_PATH)
-hti.browser.flags += [
-    "--force-device-scale-factor=2",
-    "--disable-gpu",
-    "--disable-software-rasterizer",
-    "--no-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-logging",
-    "--log-level=3",
-    "--mute-audio",
-    "--disable-extensions",
-    "--disable-background-networking",
-    "--no-first-run",
-    "--disable-sync",
-    "--single-process" # Often saves memory on constrained EC2 micro instances
-]
+chrome_options = Options()
+
+if CHROME_PATH and os.path.exists(CHROME_PATH):
+    chrome_options.binary_location = CHROME_PATH
+
+chrome_options.add_argument("--headless")
+chrome_options.add_argument("--force-device-scale-factor=2")
+chrome_options.add_argument("--disable-gpu")
+chrome_options.add_argument("--disable-software-rasterizer")
+chrome_options.add_argument("--no-sandbox")
+chrome_options.add_argument("--disable-dev-shm-usage")
+chrome_options.add_argument("--disable-logging")
+chrome_options.add_argument("--log-level=3")
+chrome_options.add_argument("--mute-audio")
+chrome_options.add_argument("--disable-extensions")
+chrome_options.add_argument("--disable-background-networking")
+chrome_options.add_argument("--no-first-run")
+chrome_options.add_argument("--disable-sync")
+# Removing --single-process as it can cause renderer crashes
+
+try:
+    chrome_service = Service(ChromeDriverManager().install())
+    persistent_browser = webdriver.Chrome(service=chrome_service, options=chrome_options)
+except Exception as e:
+    logging.warning(f"Failed to use ChromeDriverManager, falling back to default driver: {e}")
+    persistent_browser = webdriver.Chrome(options=chrome_options)
 
 screenshot_semaphore = asyncio.Semaphore(1)
 
@@ -92,50 +107,62 @@ def encode_image_to_data_uri(image_path: str) -> str:
     encoded = base64.b64encode(data).decode("utf-8")
     return f"data:image/png;base64,{encoded}"
 
+from typing import Tuple
+
 def _screenshot_html_sync(
     html_str: str,
-    size: tuple[int, int] = (1600, 1000),
+    size: Tuple[int, int] = (1600, 1000),
     apply_trim: bool = True
 ) -> io.BytesIO:
     """Synchronous implementation of screenshot_html."""
-    output_file = f"{uuid.uuid4()}.png"
     buffer = io.BytesIO()
-    try:
-        hti.screenshot(html_str=html_str, save_as=output_file, size=size)
+    
+    with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as tmp:
+        tmp.write(html_str)
+        tmp_path = tmp.name
 
-        with Image.open(output_file) as image:
+    try:
+        persistent_browser.set_window_size(size[0], size[1])
+        persistent_browser.get(f"file://{os.path.abspath(tmp_path)}")
+        
+        png_bytes = persistent_browser.get_screenshot_as_png()
+
+        with Image.open(io.BytesIO(png_bytes)) as image:
             processed = trim_image(image) if apply_trim else image.copy()
             processed.save(buffer, format="PNG")
             buffer.seek(0)
     finally:
-        if os.path.exists(output_file):
-            os.remove(output_file)
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
     return buffer
 
 async def screenshot_html(
     html_str: str,
-    size: tuple[int, int] = (1600, 1000),
+    size: Tuple[int, int] = (1600, 1000),
     *,
     apply_trim: bool = True
 ) -> io.BytesIO:
     """Render HTML into a trimmed PNG (non-blocking)."""
     async with screenshot_semaphore:
-        return await asyncio.to_thread(_screenshot_html_sync, html_str, size, apply_trim)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _screenshot_html_sync, html_str, size, apply_trim)
 
-def calculate_text_dimensions(font, text: str) -> tuple[int, int]:
+def calculate_text_dimensions(font, text: str) -> Tuple[int, int]:
     text_bbox = font.getbbox(text)
     width = text_bbox[2] - text_bbox[0]
     height = text_bbox[3] - text_bbox[1]
     return width, height
 
+from typing import Tuple, Optional
+
 def find_non_overlapping_position(
     font,
     text: str,
-    bounds: tuple[tuple[int, int], tuple[int, int]],
+    bounds: Tuple[Tuple[int, int], Tuple[int, int]],
     existing_positions: list,
     max_attempts: int = 100
-) -> tuple[int, int] | None:
+) -> Optional[Tuple[int, int]]:
     text_width, text_height = calculate_text_dimensions(font, text)
 
     if text_width > (bounds[1][0] - bounds[0][0]) or text_height > (bounds[1][1] - bounds[0][1]):
