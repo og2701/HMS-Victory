@@ -397,6 +397,18 @@ async def on_message(client, message):
         ensure_bb(message.author.id)
     await process_message_attachments(client, message)
     await process_message_links(client, message)
+    
+    if message.content.lower().startswith("ukpadd"):
+        if has_role(message.author, ROLES.DEPUTY_PM):
+            try:
+                from lib.economy.bank_commands_ui import UKPAddUserSelectView
+                await message.reply(
+                    "Please select the members you want to give UKPence to:",
+                    view=UKPAddUserSelectView(message.author.id)
+                )
+            except Exception as e:
+                logger.error(f"Error launching UKPAddUserSelectView: {e}")
+
     if message.author.bot:
         return
     # await process_forum_threads(client, message)
