@@ -266,12 +266,10 @@ def define_commands(tree, client):
             allowed_mentions=discord.AllowedMentions(roles=True)
         )
         p.msg_id = msg.id
+        p.channel_id = msg.channel.id
         interaction.client.predictions[msg.id] = p
         _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
         await interaction.response.send_message("Prediction opened.", ephemeral=True)
-        p.msg_id = msg.id
-        p.channel_id = msg.channel.id
-        interaction.client.predictions[msg.id] = p
 
 
     @command("pred-admin", "Lock, resolve, or draw an existing UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])

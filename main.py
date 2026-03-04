@@ -64,13 +64,31 @@ class AClient(discord.Client):
         import asyncio
         from lib.economy.prediction_system import BetButtons, prediction_embed
         for p in list(self.predictions.values()):
-            if not p.locked and p.channel_id:
+            if not p.locked:
                 try:
-                    channel = self.get_channel(p.channel_id) or await self.fetch_channel(p.channel_id)
+                    channel = None
+                    if p.channel_id:
+                        channel = self.get_channel(p.channel_id) or await self.fetch_channel(p.channel_id)
+                    else:
+                        # Fallback: try to find it in the Polls channel or other likely places
+                        # For now, let's just try CHANNELS.POLLS if it exists in config
+                        if hasattr(CHANNELS, 'POLLS'):
+                            channel = self.get_channel(CHANNELS.POLLS) or await self.fetch_channel(CHANNELS.POLLS)
+                    
+                    if not channel:
+                        continue
+
                     msg = await channel.fetch_message(p.msg_id)
+                    # Update channel_id if it was missing
+                    if not p.channel_id:
+                        p.channel_id = msg.channel.id
+                        from lib.economy.prediction_system import _save as _save_preds
+                        _save_preds({k: v.to_dict() for k, v in self.predictions.items()})
+
                     embed, bar = prediction_embed(p, self)
                     await msg.edit(embed=embed, attachments=[bar], view=BetButtons(p))
                     logger.info(f"Updated live prediction {p.msg_id} with new view.")
+                    await asyncio.sleep(1) # Small delay to be polite to the API
                 except Exception as e:
                     logger.warning(f"Could not update prediction {p.msg_id}: {e}")
 
