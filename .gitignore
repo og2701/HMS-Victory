@@ -10,4 +10,4 @@ data/updated_iceberg.png
 data/iceberg_texts.json
 
 *.json
-database.db
+database.db*
