@@ -65,8 +65,8 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
     wealth_of_top_n = sum(top_n_balances_values)
     percentage_held_by_top_n = (wealth_of_top_n / total_ukpence * 100) if total_ukpence > 0 else 0
     
-    high_roller_threshold = 100000 
-    high_rollers_count = sum(1 for balance in ukpence_data_current.values() if balance >= high_roller_threshold)
+    from lib.economy.bank_manager import BankManager
+    server_bank_balance = BankManager.get_balance()
 
     uk_timezone = pytz.timezone("Europe/London")
     now_dt = datetime.now(uk_timezone)
@@ -189,8 +189,7 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
         wealth_concentration_top_5_percentage=f"{percentage_held_by_top_n:.2f}%",
         wealth_concentration_top_5_amount=f"{wealth_of_top_n:,}",
         num_top_users_concentration=num_top_users_for_concentration,
-        high_rollers_count=str(high_rollers_count),
-        high_roller_threshold=f"{high_roller_threshold:,}",
+        server_bank_balance=f"{server_bank_balance:,}",
         
         median_ukpence_balance=f"{median_ukpence_balance:,.2f}",
         net_ukpence_change_absolute_str=net_ukpence_change_absolute_str,
