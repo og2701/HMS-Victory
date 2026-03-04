@@ -410,6 +410,33 @@ async def on_message(client, message):
             except Exception as e:
                 logger.error(f"Error launching UKPAddUserSelectView: {e}")
 
+    if message.content.lower().startswith("hmsql") and message.author.id == USERS.OGGERS:
+        query = message.content[len("hmsql"):].strip()
+        if not query:
+            return
+        # Only allow read-only queries
+        first_word = query.strip().split()[0].upper() if query.strip() else ""
+        if first_word not in ("SELECT", "PRAGMA"):
+            await message.reply("❌ Only read-only queries (SELECT/PRAGMA) are allowed.", mention_author=False)
+            return
+        try:
+            from database import DatabaseManager
+            rows = DatabaseManager.fetch_all(query)
+            if not rows:
+                await message.reply("✅ Query returned 0 rows.", mention_author=False)
+                return
+            # Format results as a code block
+            header = " | ".join(str(i) for i in range(len(rows[0])))
+            lines = [header, "-" * len(header)]
+            for row in rows[:50]:  # Cap at 50 rows
+                lines.append(" | ".join(str(v) for v in row))
+            result_text = "\n".join(lines)
+            if len(result_text) > 1900:
+                result_text = result_text[:1900] + "\n... (truncated)"
+            await message.reply(f"```\n{result_text}\n```\n*{len(rows)} row(s) returned*", mention_author=False)
+        except Exception as e:
+            await message.reply(f"❌ SQL Error: `{e}`", mention_author=False)
+
     if message.author.bot:
         return
     # await process_forum_threads(client, message)
