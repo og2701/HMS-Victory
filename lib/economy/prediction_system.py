@@ -2,7 +2,8 @@ import json, os, io, discord
 from PIL import Image, ImageDraw
 import uuid
 from functools import lru_cache
-from lib.economy.economy_manager import add_bb, remove_bb
+from lib.economy.economy_manager import add_bb, remove_bb, get_bb
+from config import ROLES
 
 PRED_FILE = "predictions.json"
 
@@ -210,7 +211,6 @@ class BetButtons(discord.ui.View):
         self.pred = pred
 
         async def _handler(interaction: discord.Interaction, side: int):
-            from lib.economy.economy_manager import get_bb
             if self.pred.locked:
                 await interaction.response.send_message("Betting locked.", ephemeral=True)
                 return
@@ -244,6 +244,28 @@ class BetButtons(discord.ui.View):
 
         self.add_item(btn1)
         self.add_item(btn2)
+
+        # Notification toggle button
+        notif_btn = discord.ui.Button(
+            label="🔔 Pred Notifications",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"prediction:{pred.msg_id}:notif_toggle"
+        )
+
+        async def notif_cb(interaction: discord.Interaction):
+            role = interaction.guild.get_role(ROLES.PRED_NOTIFICATIONS)
+            if not role:
+                await interaction.response.send_message("Notification role not found.", ephemeral=True)
+                return
+            if role in interaction.user.roles:
+                await interaction.user.remove_roles(role)
+                await interaction.response.send_message("🔕 You will no longer be notified for new predictions.", ephemeral=True)
+            else:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message("🔔 You will be notified when new predictions are created!", ephemeral=True)
+
+        notif_btn.callback = notif_cb
+        self.add_item(notif_btn)
 
 
 

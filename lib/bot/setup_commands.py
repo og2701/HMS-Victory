@@ -258,7 +258,13 @@ def define_commands(tree, client):
         end_ts = discord.utils.utcnow().timestamp() + duration * 60
         p = Prediction(0, title, opt1, opt2, end_ts)
         embed, bar = prediction_embed(p)
-        msg = await interaction.channel.send(embed=embed, files=[bar], view=BetButtons(p))
+        msg = await interaction.channel.send(
+            content=f"<@&{ROLES.PRED_NOTIFICATIONS}>",
+            embed=embed,
+            files=[bar],
+            view=BetButtons(p),
+            allowed_mentions=discord.AllowedMentions(roles=True)
+        )
         p.msg_id = msg.id
         interaction.client.predictions[msg.id] = p
         _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})

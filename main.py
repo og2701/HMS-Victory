@@ -52,9 +52,27 @@ class AClient(discord.Client):
 
     async def setup_hook(self):
         self.session = aiohttp.ClientSession()
+        from lib.economy.prediction_system import BetButtons
+        for p in self.predictions.values():
+            if not p.locked:
+                self.add_view(BetButtons(p), message_id=p.msg_id)
+        logger.info("Persistent prediction views registered in setup_hook.")
 
     async def on_ready(self):
         await on_ready(self, tree, self.scheduler)
+        # Proactively update existing predictions to show the new button
+        import asyncio
+        from lib.economy.prediction_system import BetButtons, prediction_embed
+        for p in list(self.predictions.values()):
+            if not p.locked and p.channel_id:
+                try:
+                    channel = self.get_channel(p.channel_id) or await self.fetch_channel(p.channel_id)
+                    msg = await channel.fetch_message(p.msg_id)
+                    embed, bar = prediction_embed(p, self)
+                    await msg.edit(embed=embed, attachments=[bar], view=BetButtons(p))
+                    logger.info(f"Updated live prediction {p.msg_id} with new view.")
+                except Exception as e:
+                    logger.warning(f"Could not update prediction {p.msg_id}: {e}")
 
     async def on_message(self, message):
         if (

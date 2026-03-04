@@ -369,8 +369,6 @@ async def on_ready(client, tree, scheduler):
     for msg_id_str, pd in loaded.items():
         p = Prediction.from_dict(pd)
         client.predictions[p.msg_id] = p
-        if not p.locked:
-            client.add_view(BetButtons(p), message_id=p.msg_id)
     logger.info("Persistent views reattached and loaded.")
     for command in tree.get_commands():
         logger.info(f"Command loaded: {command.name}")
