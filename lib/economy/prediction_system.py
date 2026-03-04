@@ -285,6 +285,9 @@ class PredAdminView(discord.ui.View):
         super().__init__(timeout=600)
         self.pred = pred
         self.client = client
+        # Dynamically set button labels to actual option text
+        self.win1.label = f"Winner: {pred.opt1[:70]}"
+        self.win2.label = f"Winner: {pred.opt2[:70]}"
 
     @discord.ui.button(label="Lock", style=discord.ButtonStyle.danger)
     async def lock(self, interaction: discord.Interaction, _btn: discord.ui.Button):
