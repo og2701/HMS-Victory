@@ -126,6 +126,13 @@ def init_db():
                 data TEXT NOT NULL
             )
         ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS economy_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp INTEGER NOT NULL,
+                log_text TEXT NOT NULL
+            )
+        ''')
         # Initialize the bank with a single row if it doesn't exist
         c.execute('''
             INSERT OR REPLACE INTO bank (id, balance, total_revenue, last_updated)

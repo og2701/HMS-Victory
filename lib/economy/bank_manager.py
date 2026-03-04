@@ -11,42 +11,59 @@ class BankManager:
         if amount <= 0:
             return False
 
-        current_time = int(time.time())
+        now = int(time.time())
+        try:
+            with DatabaseManager.get_connection() as conn:
+                c = conn.cursor()
+                c.execute('''
+                    UPDATE bank
+                    SET balance = balance + ?, total_revenue = total_revenue + ?, last_updated = ?
+                    WHERE id = 1
+                ''', (amount, amount, now))
+                conn.commit()
 
-        # Update bank balance and total revenue
-        DatabaseManager.execute('''
-            UPDATE bank
-            SET balance = balance + ?,
-            total_revenue = total_revenue + ?,
-            last_updated = ?
-        WHERE id = 1
-        ''', (amount, amount, current_time))
-
-        return True
-
-    @staticmethod
-    def withdraw(amount: int, description: str = "Admin withdrawal") -> bool:
-        """Withdraw UKPence from the bank (admin only)"""
-        if amount <= 0:
+            log_text = f"🏦 **Bank Deposit**: `{amount}` UKP. **Reason**: {description}"
+            DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
+            logger.info(f"Bank deposit: {amount} UKP. Reason: {description}")
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Error depositing into bank: {e}")
             return False
 
-        # Check current balance
-        result = DatabaseManager.fetch_one('SELECT balance FROM bank WHERE id = 1')
+    @staticmethod
+    def withdraw(amount: int, description: str = "Unspecified Withdrawal") -> bool:
+        if amount < 0:
+            logger.warning(f"Attempted to withdraw negative amount from bank: {amount}")
+            return False
 
-        if not result or result[0] < amount:
-            return False  # Insufficient funds
+        now = int(time.time())
+        try:
+            with DatabaseManager.get_connection() as conn:
+                c = conn.cursor()
+                # Use a transaction to ensure balance doesn't go negative concurrently
+                c.execute('BEGIN TRANSACTION')
+                c.execute('SELECT balance FROM bank WHERE id = 1')
+                current_balance = c.fetchone()[0]
 
-        current_time = int(time.time())
+                if current_balance >= amount:
+                    c.execute('''
+                        UPDATE bank
+                        SET balance = balance - ?, last_updated = ?
+                        WHERE id = 1
+                    ''', (amount, now))
+                    c.execute('COMMIT')
 
-        # Update bank balance
-        DatabaseManager.execute('''
-            UPDATE bank
-            SET balance = balance - ?,
-                last_updated = ?
-            WHERE id = 1
-        ''', (amount, current_time))
-
-        return True
+                    log_text = f"📉 **Bank Withdrawal**: `{amount}` UKP. **Reason**: {description}"
+                    DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
+                    logger.info(f"Bank withdrawal: {amount} UKP. Reason: {description}")
+                    return True
+                else:
+                    c.execute('ROLLBACK')
+                    logger.warning(f"Insufficient funds in bank for withdrawal of {amount} UKP.")
+                    return False
+        except sqlite3.Error as e:
+            logger.error(f"Error withdrawing from bank: {e}")
+            return False
 
     @staticmethod
     def get_balance() -> int:
@@ -73,18 +90,28 @@ class BankManager:
             }
 
     @staticmethod
-    def set_balance(amount: int) -> bool:
-        """Set bank balance to specific amount (admin only)"""
+    def set_balance(amount: int, description: str = "Administrative adjustment") -> bool:
         if amount < 0:
+            logger.warning(f"Attempted to set bank balance to negative: {amount}")
             return False
-
-        current_time = int(time.time())
-
-        DatabaseManager.execute('''
-            UPDATE bank
-            SET balance = ?,
-                last_updated = ?
-            WHERE id = 1
-        ''', (amount, current_time))
-
-        return True
+            
+        now = int(time.time())
+        try:
+            old_balance = BankManager.get_balance()
+            with DatabaseManager.get_connection() as conn:
+                c = conn.cursor()
+                c.execute('''
+                    UPDATE bank 
+                    SET balance = ?, last_updated = ?
+                    WHERE id = 1
+                ''', (amount, now))
+                conn.commit()
+                
+            log_text = f"⚖️ **Bank Balance Set**: `{amount}` UKP (was `{old_balance}`). **Reason**: {description}"
+            DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
+            
+            logger.info(f"Bank balance reset to {amount} UKP")
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Error resetting bank balance: {e}")
+            return False

@@ -55,15 +55,21 @@ class UKPenceManager:
         return result[0] if result else 0
 
     @staticmethod
-    def set_balance(user_id: int, amount: int) -> None:
+    def set_balance(user_id: int, amount: int, reason: str = "Unspecified") -> None:
+        import time
+        now = int(time.time())
+        old_balance = UKPenceManager.get_balance(user_id)
         DatabaseManager.execute("INSERT OR REPLACE INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), amount))
+        log_text = f"⚖️ **User {user_id} Balance Set**: `{amount}` UKP (was `{old_balance}`). **Reason**: {reason}"
+        DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
+        
+    @staticmethod
+    def add_amount(user_id: int, amount: int, reason: str = "Unspecified") -> None:
+        current = UKPenceManager.get_balance(user_id)
+        UKPenceManager.set_balance(user_id, current + amount, reason=reason)
 
     @staticmethod
-    def add_amount(user_id: int, amount: int) -> None:
-        UKPenceManager.set_balance(user_id, UKPenceManager.get_balance(user_id) + amount)
-
-    @staticmethod
-    def remove_amount(user_id: int, amount: int) -> bool:
+    def remove_amount(user_id: int, amount: int, reason: str = "Unspecified") -> bool:
         # Atomic update: only subtract if the balance is sufficient
         with DatabaseManager.get_connection() as conn:
             c = conn.cursor()
@@ -71,8 +77,15 @@ class UKPenceManager:
                 "UPDATE ukpence SET balance = balance - ? WHERE user_id = ? AND balance >= ?",
                 (amount, str(user_id), amount)
             )
+            success = c.rowcount > 0
+            if success:
+                import time
+                now = int(time.time())
+                log_text = f"💸 **User {user_id} Paid**: `{amount}` UKP. **Reason**: {reason}"
+                c.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
+            
             conn.commit()
-            return c.rowcount > 0
+            return success
 
 class EconomyMetrics:
     ECONOMY_METRICS_FILE = "economy_metrics.json"
@@ -125,14 +138,14 @@ def can_use_shutcoin(user_id: int) -> bool:
 def get_bb(user_id: int) -> int:
     return UKPenceManager.get_balance(user_id)
 
-def set_bb(user_id: int, amount: int) -> None:
-    UKPenceManager.set_balance(user_id, amount)
+def set_bb(user_id: int, amount: int, reason: str = "Unspecified") -> None:
+    UKPenceManager.set_balance(user_id, amount, reason=reason)
 
-def add_bb(user_id: int, amount: int) -> None:
-    UKPenceManager.add_amount(user_id, amount)
+def add_bb(user_id: int, amount: int, reason: str = "Unspecified") -> None:
+    UKPenceManager.add_amount(user_id, amount, reason=reason)
 
-def remove_bb(user_id: int, amount: int) -> bool:
-    return UKPenceManager.remove_amount(user_id, amount)
+def remove_bb(user_id: int, amount: int, reason: str = "Unspecified") -> bool:
+    return UKPenceManager.remove_amount(user_id, amount, reason=reason)
 
 def ensure_bb(user_id: int) -> None:
     UKPenceManager.ensure_user(user_id)

@@ -386,4 +386,43 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(backup_database, IntervalTrigger(minutes=120, timezone="Europe/London"), args=[client], id="backup_database_job", name="Backup SQLite Database")
     scheduler.add_job(cleanup_webhook_reactions, IntervalTrigger(minutes=1), args=[client], id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
 
+    scheduler.add_job(process_economy_logs, IntervalTrigger(seconds=15), args=[client], id="process_economy_logs_interval", name="Process Economy Log Queue")
+
     scheduler.start()
+
+async def process_economy_logs(client):
+    try:
+        from database import DatabaseManager
+        logs = DatabaseManager.fetch_all("SELECT id, timestamp, log_text FROM economy_transactions ORDER BY id ASC LIMIT 15")
+        if not logs:
+            return
+            
+        bot_log_channel = client.get_channel(CHANNELS.BOT_USAGE_LOG)
+        if not bot_log_channel:
+            return
+            
+        ids_to_delete = []
+        messages_to_send = []
+        
+        for log_id, timestamp, text in logs:
+            formatted_msg = f"<t:{timestamp}:T> {text}"
+            messages_to_send.append(formatted_msg)
+            ids_to_delete.append(log_id)
+            
+        if messages_to_send:
+            combined_message = "\n".join(messages_to_send)
+            
+            # Send message safely avoiding 2k char limit
+            if len(combined_message) > 1900:
+                # Fallback to sending individually if the batch is somehow massive
+                for msg in messages_to_send:
+                    await bot_log_channel.send(msg)
+            else:
+                await bot_log_channel.send(combined_message)
+            
+            # Delete processed logs
+            placeholders = ",".join(["?"] * len(ids_to_delete))
+            DatabaseManager.execute(f"DELETE FROM economy_transactions WHERE id IN ({placeholders})", tuple(ids_to_delete))
+            
+    except Exception as e:
+        logger.error(f"Error processing economy logs queue: {e}")
