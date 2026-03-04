@@ -1,6 +1,9 @@
-from database import DatabaseManager
 import time
+import sqlite3
+import logging
 from typing import Dict, Any
+
+logger = logging.getLogger(__name__)
 
 class BankManager:
     """Manages the server's bank balance from shop purchases"""
