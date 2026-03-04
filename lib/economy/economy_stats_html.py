@@ -6,6 +6,8 @@ import pytz
 from lib.core.image_processing import encode_image_to_data_uri, screenshot_html, get_avatar_data_uri
 
 from lib.economy.economy_manager import get_all_balances as load_ukpence_data
+from database import DatabaseManager
+
 
 try:
     from config import ECONOMY_METRICS_FILE, BALANCE_SNAPSHOT_DIR
