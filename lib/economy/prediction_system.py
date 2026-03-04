@@ -247,7 +247,7 @@ class BetButtons(discord.ui.View):
 
         # Notification toggle button
         notif_btn = discord.ui.Button(
-            label="🔔 Pred Notifications",
+            label="🔔",
             style=discord.ButtonStyle.secondary,
             custom_id=f"prediction:{pred.msg_id}:notif_toggle"
         )
