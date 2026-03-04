@@ -151,7 +151,16 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
     distribution_html_parts = [f"<li><span class='name'>{bracket}</span> <span class='balance'>{count} users</span></li>" for bracket, count in dist_brackets.items() if count > 0]
     distribution_html = "\n".join(distribution_html_parts) if distribution_html_parts else "<li>No distribution data.</li>"
 
-    template = read_html_template("templates/economy_stats.html")
+    template_path = "templates/economy_stats.html"
+    try:
+        with open(template_path, "r", encoding="utf-8") as file:
+            template = file.read()
+    except FileNotFoundError:
+        logger.error(f"Failed to find economy stats template at {template_path}")
+        return None
+    except Exception as e:
+        logger.error(f"Error reading economy stats template: {e}")
+        return None
     
     formatted_html = template.format(
         total_ukpence=f"{total_ukpence:,}",

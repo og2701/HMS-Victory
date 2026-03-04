@@ -11,6 +11,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from config import *
 from lib.features.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.economy.economy_manager import add_bb, get_all_balances as load_ukpence_data
+from lib.economy.bank_manager import BankManager
 from lib.economy.economy_stats_html import create_economy_stats_image
 from lib.bot.backup_manager import zip_and_send_folder, backup_database, backup_bot
 from lib.core.file_operations import load_webhook_deletions, save_webhook_deletions
@@ -66,27 +67,34 @@ async def daily_summary(client):
             if active_members_data:
                 sorted_active_members = sorted(active_members_data.items(), key=lambda item: item[1], reverse=True)
                 log_channel = client.get_channel(CHANNELS.LOGS)
-                num_rewarded_actually = 0
-                for i, (user_id_str, message_count) in enumerate(sorted_active_members):
-                    if i < num_to_reward:
-                        user_id = int(user_id_str)
-                        add_bb(user_id, flat_reward_amount)
-                        num_rewarded_actually += 1
-                        awarded_user_info = f"User ID {user_id} (Top {i+1} chatter, {message_count} messages): +{flat_reward_amount} UKPence"
-                        awarded_users_for_log.append(awarded_user_info)
-                    else:
-                        break
+                num_rewarded_actually = min(len(sorted_active_members), num_to_reward)
                 total_chat_rewards_this_cycle = num_rewarded_actually * flat_reward_amount
+                
+                if total_chat_rewards_this_cycle > 0:
+                    withdrawal_success = BankManager.withdraw(total_chat_rewards_this_cycle, description=f"Top Chatters Reward for {yesterday_str}")
+                    if withdrawal_success:
+                        for i, (user_id_str, message_count) in enumerate(sorted_active_members):
+                            if i < num_to_reward:
+                                user_id = int(user_id_str)
+                                add_bb(user_id, flat_reward_amount)
+                                awarded_user_info = f"User ID {user_id} (Top {i+1} chatter, {message_count} messages): +{flat_reward_amount} UKPence"
+                                awarded_users_for_log.append(awarded_user_info)
+                            else:
+                                break
 
-                if awarded_users_for_log and log_channel:
-                    log_message = f"Top {num_rewarded_actually} Chatter Rewards for {yesterday_str} ({flat_reward_amount} UKP each):\n" + "\n".join(awarded_users_for_log)
-                    logger.info(log_message)
-                    try:
-                        await log_channel.send(f"```{log_message}```")
-                    except Exception as e:
-                        logger.error(f"Failed to send top chatter reward log to Discord: {e}")
+                        if awarded_users_for_log and log_channel:
+                            log_message = f"Top {num_rewarded_actually} Chatter Rewards for {yesterday_str} ({flat_reward_amount} UKP each):\n" + "\n".join(awarded_users_for_log)
+                            logger.info(log_message)
+                            try:
+                                await log_channel.send(f"```{log_message}```")
+                            except Exception as e:
+                                logger.error(f"Failed to send top chatter reward log to Discord: {e}")
+                    else:
+                        logger.error(f"Failed to withdraw {total_chat_rewards_this_cycle} UKP from BankManager for top chatter rewards on {yesterday_str}. Insufficient funds or database error.")
+                        if log_channel:
+                            await log_channel.send(f"⚠️ **Economy Alert**: The Server Bank has insufficient funds to pay the top chatters their daily {flat_reward_amount} UKPence reward for {yesterday_str}.")
                 elif active_members_data:
-                        logger.info(f"Fewer than {num_to_reward} chatters on {yesterday_str}. Total chat rewards: {total_chat_rewards_this_cycle} UKP")
+                    logger.info(f"Fewer than {num_to_reward} chatters on {yesterday_str}. Total chat rewards: {total_chat_rewards_this_cycle} UKP")
             else:
                 logger.info(f"No active members data in {summary_file_path} for {yesterday_str}. No chat rewards.")
         except json.JSONDecodeError:
@@ -210,10 +218,14 @@ async def award_stage_bonuses(client):
         minutes = int((now_utc - start_time_utc).total_seconds() // 60)
         if minutes > 0:
             bonus_awarded = minutes * STAGE_UKPENCE_MULTIPLIER
-            add_bb(uid, bonus_awarded)
-            client.stage_join_times[uid] = now_utc - timedelta(seconds=((now_utc - start_time_utc).total_seconds() % 60))
-            logger.info(f"[STAGE CRON] +{bonus_awarded} UKP → User {uid} for {minutes} full mins.")
-            total_awarded_this_call += bonus_awarded
+            if BankManager.withdraw(bonus_awarded, description=f"Stage Participation Reward ({minutes}m)"):
+                add_bb(uid, bonus_awarded)
+                client.stage_join_times[uid] = now_utc - timedelta(seconds=((now_utc - start_time_utc).total_seconds() % 60))
+                logger.info(f"[STAGE CRON] +{bonus_awarded} UKP → User {uid} for {minutes} full mins.")
+                total_awarded_this_call += bonus_awarded
+            else:
+                logger.error(f"[STAGE CRON] Failed to withdraw {bonus_awarded} UKP from BankManager for User {uid}. Insufficient funds or database error.")
+                # We do NOT update their client.stage_join_times[uid] so they keep their accumulated time and can try to claim it later when the bank has money.
 
     if total_awarded_this_call > 0:
         _update_daily_metric_file(current_date_str, "stage_rewards_total", total_awarded_this_call)
@@ -277,12 +289,22 @@ async def award_booster_bonus(client):
         logger.error("award_booster_bonus: Guild not found.")
         return
 
-    for member in guild.members:
-        if any(role.id == ROLES.SERVER_BOOSTER for role in member.roles):
-            add_bb(member.id, SERVER_BOOSTER_UKP_DAILY_BONUS)
-            total_booster_rewards_awarded_this_cycle += SERVER_BOOSTER_UKP_DAILY_BONUS
+    booster_ids = [member.id for member in guild.members if any(role.id == ROLES.SERVER_BOOSTER for role in member.roles)]
+    total_reward_needed = len(booster_ids) * SERVER_BOOSTER_UKP_DAILY_BONUS
 
-    logger.info(f"Total UKPence from booster bonuses awarded: {total_booster_rewards_awarded_this_cycle}")
+    if total_reward_needed > 0:
+        if BankManager.withdraw(total_reward_needed, description="Daily Server Booster Rewards"):
+            for member_id in booster_ids:
+                add_bb(member_id, SERVER_BOOSTER_UKP_DAILY_BONUS)
+                total_booster_rewards_awarded_this_cycle += SERVER_BOOSTER_UKP_DAILY_BONUS
+            logger.info(f"Total UKPence from booster bonuses awarded: {total_booster_rewards_awarded_this_cycle}")
+        else:
+            logger.error(f"Failed to withdraw {total_reward_needed} UKP from BankManager for Server Boosters. Insufficient funds or database error.")
+            log_channel = client.get_channel(CHANNELS.LOGS)
+            if log_channel:
+                await log_channel.send(f"⚠️ **Economy Alert**: The Server Bank has insufficient funds to pay server boosters their daily {SERVER_BOOSTER_UKP_DAILY_BONUS} UKPence reward.")
+    else:
+        logger.info("No server boosters to reward this cycle.")
 
     uk_timezone = pytz.timezone("Europe/London")
     now = datetime.now(uk_timezone)

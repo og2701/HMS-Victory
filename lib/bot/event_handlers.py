@@ -16,7 +16,8 @@ from config import *
 from lib.core.constants import FLAG_LANGUAGE_MAPPINGS, TRANSLATION_BLACKLIST_CHANNELS
 from lib.economy.economy_manager import can_use_shutcoin, remove_shutcoin, SHUTCOIN_ENABLED
 from lib.economy.prediction_system import prediction_embed, _save
-from lib.economy.economy_manager import add_bb, remove_bb, ensure_bb, get_all_balances as load_ukpence_data
+from lib.economy.economy_manager import add_bb, remove_bb, ensure_bb, get_bb, get_all_balances as load_ukpence_data
+from lib.economy.bank_manager import BankManager
 from lib.economy.prediction_system import prediction_embed, _save, _load, Prediction, BetButtons
 
 from commands.moderation.persistant_role_buttons import handleRoleButtonInteraction
@@ -429,7 +430,15 @@ async def on_member_join(member):
 
 
 async def on_member_remove(member):
-    pass
+    try:
+        current_balance = get_bb(member.id)
+        if current_balance > 0:
+            success = remove_bb(member.id, current_balance)
+            if success:
+                BankManager.deposit(current_balance, description=f"Reclaimed from left member {member.name}")
+                logger.info(f"Reclaimed {current_balance} UKPence from leaving member {member} and returned to the server bank.")
+    except Exception as e:
+        logger.error(f"Error handling UKPence extraction for leaving member {member}: {e}")
 
 
 async def on_member_ban(guild, user):
@@ -648,8 +657,14 @@ async def on_voice_state_update(member, before, after):
         if start:
             elapsed = (discord.utils.utcnow() - start).total_seconds()
             bonus = (int(elapsed) // 60) * STAGE_UKPENCE_MULTIPLIER
-            if bonus:
-                add_bb(member.id, bonus)
+            if bonus > 0:
+                if BankManager.withdraw(bonus, description=f"Stage Participation Reward ({int(elapsed)//60}m)"):
+                    add_bb(member.id, bonus)
+                    logger.info(f"[STAGE] +{bonus} UKP → User {member} for leaving stage {after.channel.name}")
+                else:
+                    logger.error(f"[STAGE] Failed to withdraw {bonus} UKP from BankManager for User {member}. Insufficient funds or database error.")
+                    # Keep their time accumulated so they don't lose it if the bank is broke
+                    stage_join_times[member.id] = start
 
 
 async def refresh_live_stages(client):
@@ -691,9 +706,14 @@ async def on_stage_instance_delete(stage_instance):
             secs = (now_utc - start_time_utc).total_seconds()
             bonus = (int(secs) // 60) * STAGE_UKPENCE_MULTIPLIER
             if bonus > 0:
-                add_bb(m.id, bonus)
-                logger.info(f"[STAGE END] +{bonus} UKP → User {m.id} for stage end in {stage_instance.channel.name}.")
-                total_awarded_on_delete += bonus
+                if BankManager.withdraw(bonus, description=f"Stage Participation Reward ({int(secs)//60}m)"):
+                    add_bb(m.id, bonus)
+                    logger.info(f"[STAGE END] +{bonus} UKP → User {m.id} for stage end in {stage_instance.channel.name}.")
+                    total_awarded_on_delete += bonus
+                else:
+                    logger.error(f"[STAGE END] Failed to withdraw {bonus} UKP from BankManager for User {m}. Insufficient funds or database error.")
+                    # Reinsert them into the cache so they retain their stage time
+                    client.stage_join_times[m.id] = start_time_utc
 
     if total_awarded_on_delete > 0:
         _update_daily_metric_file(current_date_str, "stage_rewards_total", total_awarded_on_delete)
