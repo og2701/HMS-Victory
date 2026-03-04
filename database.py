@@ -133,6 +133,13 @@ def init_db():
                 log_text TEXT NOT NULL
             )
         ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS circulation_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp INTEGER NOT NULL,
+                total_circulation INTEGER NOT NULL
+            )
+        ''')
         # Initialize the bank with a single row if it doesn't exist
         c.execute('''
             INSERT OR REPLACE INTO bank (id, balance, total_revenue, last_updated)

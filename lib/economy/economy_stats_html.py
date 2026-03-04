@@ -76,10 +76,27 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
 
     net_ukpence_change_absolute_str = "N/A"
     net_ukpence_change_class = "change-neutral"
-    yesterday_balances_snapshot_data = load_balance_snapshot(yesterday_str_key)
-    if yesterday_balances_snapshot_data:
-        total_ukpence_yesterday_snapshot = sum(yesterday_balances_snapshot_data.values())
-        net_change_value = total_ukpence - total_ukpence_yesterday_snapshot
+    
+    # Record current circulation snapshot
+    import time as _time
+    now_epoch = int(_time.time())
+    DatabaseManager.execute(
+        "INSERT INTO circulation_snapshots (timestamp, total_circulation) VALUES (?, ?)",
+        (now_epoch, total_ukpence)
+    )
+    # Clean up snapshots older than 48h to prevent table bloat
+    cutoff_48h = now_epoch - (48 * 3600)
+    DatabaseManager.execute("DELETE FROM circulation_snapshots WHERE timestamp < ?", (cutoff_48h,))
+    
+    # Find the closest snapshot to 24h ago
+    target_24h_ago = now_epoch - (24 * 3600)
+    snapshot_row = DatabaseManager.fetch_one(
+        "SELECT total_circulation FROM circulation_snapshots WHERE timestamp <= ? ORDER BY timestamp DESC LIMIT 1",
+        (target_24h_ago,)
+    )
+    if snapshot_row:
+        total_ukpence_24h_ago = snapshot_row[0]
+        net_change_value = total_ukpence - total_ukpence_24h_ago
         net_ukpence_change_absolute_str = f"{net_change_value:+,} UKP"
         if net_change_value > 0:
             net_ukpence_change_class = "change-positive"
