@@ -34,12 +34,12 @@ class WagerDecisionView(discord.ui.View):
 
         if winner_id is None:
             # Draw - refund both
-            add_bb(self.challenger_id, self.amount)
-            add_bb(self.opponent_id, self.amount)
+            add_bb(self.challenger_id, self.amount, reason="Wager cancelled/refund")
+            add_bb(self.opponent_id, self.amount, reason="Wager cancelled/refund")
             result_msg = f"🤝 **Wager Cancelled/Draw!** The pot of {pot:,} UKPence has been refunded to both <@{self.challenger_id}> and <@{self.opponent_id}>."
         else:
             # Winner takes all
-            add_bb(winner_id, pot)
+            add_bb(winner_id, pot, reason="Wager win")
             result_msg = f"🏆 **Wager Resolved!** <@{winner_id}> has won the {pot:,} UKPence pot against their opponent for: *{self.topic}*"
 
         # Disable all buttons
@@ -112,15 +112,15 @@ class WagerProposalView(discord.ui.View):
             return
 
         # Deduct from both
-        remove_bb(self.challenger.id, self.amount)
-        remove_bb(self.opponent.id, self.amount)
+        remove_bb(self.challenger.id, self.amount, reason="Wager stake")
+        remove_bb(self.opponent.id, self.amount, reason="Wager stake")
 
         # Send to Community Management
         cabinet_channel = interaction.guild.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
         if not cabinet_channel:
             # Fallback
-            add_bb(self.challenger.id, self.amount)
-            add_bb(self.opponent.id, self.amount)
+            add_bb(self.challenger.id, self.amount, reason="Wager declined/refund")
+            add_bb(self.opponent.id, self.amount, reason="Wager declined/refund")
             await interaction.response.send_message("Failed to find the moderation channel. Wager cancelled.", ephemeral=True)
             return
 

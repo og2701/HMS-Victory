@@ -60,7 +60,7 @@ class UKPenceManager:
         now = int(time.time())
         old_balance = UKPenceManager.get_balance(user_id)
         DatabaseManager.execute("INSERT OR REPLACE INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), amount))
-        log_text = f"⚖️ **User {user_id} Balance Set**: `{amount}` UKP (was `{old_balance}`). **Reason**: {reason}"
+        log_text = f"⚖️ <@{user_id}> balance set to `{amount:,}` UKP (was `{old_balance:,}`)|{reason}"
         DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
         
     @staticmethod
@@ -81,7 +81,7 @@ class UKPenceManager:
             if success:
                 import time
                 now = int(time.time())
-                log_text = f"💸 **User {user_id} Paid**: `{amount}` UKP. **Reason**: {reason}"
+                log_text = f"💸 <@{user_id}> paid `{amount:,}` UKP|{reason}"
                 c.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
             
             conn.commit()

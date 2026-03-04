@@ -22,7 +22,7 @@ class BankManager:
                 ''', (amount, amount, now))
                 conn.commit()
 
-            log_text = f"🏦 **Bank Deposit**: `{amount}` UKP. **Reason**: {description}"
+            log_text = f"🏦 Bank deposit: `{amount:,}` UKP|{description}"
             DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
             logger.info(f"Bank deposit: {amount} UKP. Reason: {description}")
             return True
@@ -53,7 +53,7 @@ class BankManager:
                     ''', (amount, now))
                     c.execute('COMMIT')
 
-                    log_text = f"📉 **Bank Withdrawal**: `{amount}` UKP. **Reason**: {description}"
+                    log_text = f"📉 Bank withdrawal: `{amount:,}` UKP|{description}"
                     DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
                     logger.info(f"Bank withdrawal: {amount} UKP. Reason: {description}")
                     return True
@@ -107,7 +107,7 @@ class BankManager:
                 ''', (amount, now))
                 conn.commit()
                 
-            log_text = f"⚖️ **Bank Balance Set**: `{amount}` UKP (was `{old_balance}`). **Reason**: {description}"
+            log_text = f"⚖️ Bank balance set to `{amount:,}` UKP (was `{old_balance:,}`)|{description}"
             DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
             
             logger.info(f"Bank balance reset to {amount} UKP")

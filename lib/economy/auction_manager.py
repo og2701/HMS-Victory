@@ -82,10 +82,10 @@ class AuctionManager:
 
         # Refund previous bidder if there was one
         if auction['current_bidder_id']:
-            add_bb(int(auction['current_bidder_id']), auction['current_bid'])
+            add_bb(int(auction['current_bidder_id']), auction['current_bid'], reason="Auction outbid/refund")
 
         # Take payment from new bidder
-        if not remove_bb(int(user_id), bid_amount):
+        if not remove_bb(int(user_id), bid_amount, reason="Auction bid"):
             return False, "Payment failed. Please try again."
 
         # Update auction

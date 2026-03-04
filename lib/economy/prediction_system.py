@@ -26,7 +26,7 @@ class Prediction:
     def stake(self, uid: int, side: int, amount: int) -> bool:
         if self.locked or side not in (1, 2) or uid in self.bets[3 - side]:
             return False
-        if amount > 100_000 or not remove_bb(uid, amount):
+        if amount > 100_000 or not remove_bb(uid, amount, reason="Prediction bet"):
             return False
         self.bets[side][uid] = self.bets[side].get(uid, 0) + amount
         return True
@@ -45,7 +45,7 @@ class Prediction:
             share = stake / win_total
             winnings = stake + int(share * lose_pool)
             payouts[uid] = winnings
-            add_bb(uid, winnings)
+            add_bb(uid, winnings, reason="Prediction win")
         return payouts
 
     def to_dict(self) -> dict:
@@ -324,7 +324,7 @@ class PredAdminView(discord.ui.View):
     async def draw(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         for side in (1, 2):
             for uid, amt in self.pred.bets.get(side, {}).items():
-                add_bb(uid, amt)
+                add_bb(uid, amt, reason="Prediction cancelled/refund")
         self.pred.locked = True
         self.pred.bets = {1: {}, 2: {}}
         try:

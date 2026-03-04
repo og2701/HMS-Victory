@@ -76,7 +76,7 @@ async def daily_summary(client):
                         for i, (user_id_str, message_count) in enumerate(sorted_active_members):
                             if i < num_to_reward:
                                 user_id = int(user_id_str)
-                                add_bb(user_id, flat_reward_amount)
+                                add_bb(user_id, flat_reward_amount, reason="Top chatter daily reward")
                                 awarded_user_info = f"User ID {user_id} (Top {i+1} chatter, {message_count} messages): +{flat_reward_amount} UKPence"
                                 awarded_users_for_log.append(awarded_user_info)
                             else:
@@ -219,7 +219,7 @@ async def award_stage_bonuses(client):
         if minutes > 0:
             bonus_awarded = minutes * STAGE_UKPENCE_MULTIPLIER
             if BankManager.withdraw(bonus_awarded, description=f"Stage Participation Reward ({minutes}m)"):
-                add_bb(uid, bonus_awarded)
+                add_bb(uid, bonus_awarded, reason="Stage participation reward")
                 client.stage_join_times[uid] = now_utc - timedelta(seconds=((now_utc - start_time_utc).total_seconds() % 60))
                 logger.info(f"[STAGE CRON] +{bonus_awarded} UKP → User {uid} for {minutes} full mins.")
                 total_awarded_this_call += bonus_awarded
@@ -295,7 +295,7 @@ async def award_booster_bonus(client):
     if total_reward_needed > 0:
         if BankManager.withdraw(total_reward_needed, description="Daily Server Booster Rewards"):
             for member_id in booster_ids:
-                add_bb(member_id, SERVER_BOOSTER_UKP_DAILY_BONUS)
+                add_bb(member_id, SERVER_BOOSTER_UKP_DAILY_BONUS, reason="Server booster daily bonus")
                 total_booster_rewards_awarded_this_cycle += SERVER_BOOSTER_UKP_DAILY_BONUS
             logger.info(f"Total UKPence from booster bonuses awarded: {total_booster_rewards_awarded_this_cycle}")
         else:
@@ -393,7 +393,8 @@ def schedule_client_jobs(client, scheduler):
 async def process_economy_logs(client):
     try:
         from database import DatabaseManager
-        logs = DatabaseManager.fetch_all("SELECT id, timestamp, log_text FROM economy_transactions ORDER BY id ASC LIMIT 15")
+        import discord
+        logs = DatabaseManager.fetch_all("SELECT id, timestamp, log_text FROM economy_transactions ORDER BY id ASC LIMIT 10")
         if not logs:
             return
             
@@ -402,25 +403,30 @@ async def process_economy_logs(client):
             return
             
         ids_to_delete = []
-        messages_to_send = []
+        
+        embed = discord.Embed(
+            title="💰 Economy Activity",
+            color=0x2ecc71
+        )
         
         for log_id, timestamp, text in logs:
-            formatted_msg = f"<t:{timestamp}:T> {text}"
-            messages_to_send.append(formatted_msg)
-            ids_to_delete.append(log_id)
-            
-        if messages_to_send:
-            combined_message = "\n".join(messages_to_send)
-            
-            # Send message safely avoiding 2k char limit
-            if len(combined_message) > 1900:
-                # Fallback to sending individually if the batch is somehow massive
-                for msg in messages_to_send:
-                    await bot_log_channel.send(msg)
+            # Parse log_text format: "emoji description|reason"
+            if "|" in text:
+                description_part, reason_part = text.rsplit("|", 1)
             else:
-                await bot_log_channel.send(combined_message)
+                description_part = text
+                reason_part = "Unspecified"
             
-            # Delete processed logs
+            embed.add_field(
+                name=f"<t:{timestamp}:T> — {reason_part.strip()}",
+                value=description_part.strip(),
+                inline=False
+            )
+            ids_to_delete.append(log_id)
+        
+        if ids_to_delete:
+            await bot_log_channel.send(embed=embed)
+            
             placeholders = ",".join(["?"] * len(ids_to_delete))
             DatabaseManager.execute(f"DELETE FROM economy_transactions WHERE id IN ({placeholders})", tuple(ids_to_delete))
             

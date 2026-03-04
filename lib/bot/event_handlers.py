@@ -433,7 +433,7 @@ async def on_member_remove(member):
     try:
         current_balance = get_bb(member.id)
         if current_balance > 0:
-            success = remove_bb(member.id, current_balance)
+            success = remove_bb(member.id, current_balance, reason="Left server - balance reclaimed")
             if success:
                 BankManager.deposit(current_balance, description=f"Reclaimed from left member {member.name}")
                 logger.info(f"Reclaimed {current_balance} UKPence from leaving member {member} and returned to the server bank.")
@@ -659,7 +659,7 @@ async def on_voice_state_update(member, before, after):
             bonus = (int(elapsed) // 60) * STAGE_UKPENCE_MULTIPLIER
             if bonus > 0:
                 if BankManager.withdraw(bonus, description=f"Stage Participation Reward ({int(elapsed)//60}m)"):
-                    add_bb(member.id, bonus)
+                    add_bb(member.id, bonus, reason="Stage participation reward")
                     logger.info(f"[STAGE] +{bonus} UKP → User {member} for leaving stage {after.channel.name}")
                 else:
                     logger.error(f"[STAGE] Failed to withdraw {bonus} UKP from BankManager for User {member}. Insufficient funds or database error.")
@@ -707,7 +707,7 @@ async def on_stage_instance_delete(stage_instance):
             bonus = (int(secs) // 60) * STAGE_UKPENCE_MULTIPLIER
             if bonus > 0:
                 if BankManager.withdraw(bonus, description=f"Stage Participation Reward ({int(secs)//60}m)"):
-                    add_bb(m.id, bonus)
+                    add_bb(m.id, bonus, reason="Stage ended - participation reward")
                     logger.info(f"[STAGE END] +{bonus} UKP → User {m.id} for stage end in {stage_instance.channel.name}.")
                     total_awarded_on_delete += bonus
                 else:

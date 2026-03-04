@@ -142,7 +142,7 @@ class PurchaseConfirmationView(View):
             return
 
         # Charge the user
-        if remove_bb(interaction.user.id, self.item.price):
+        if remove_bb(interaction.user.id, self.item.price, reason=f"Shop purchase: {self.item.name}"):
             try:
                 BankManager.deposit(self.item.price, f"Purchase of {self.item.name}")
 
@@ -153,7 +153,7 @@ class PurchaseConfirmationView(View):
                 if not success:
                     # Refund if backend purchase logic returned False
                     BankManager.withdraw(self.item.price, f"Refund for failed purchase of {self.item.name}")
-                    add_bb(interaction.user.id, self.item.price)
+                    add_bb(interaction.user.id, self.item.price, reason=f"Shop refund: {self.item.name} (out of stock)")
                     
                     if not interaction.response.is_done():
                         await interaction.response.send_message(f"❌ Purchase failed: {result_message}", ephemeral=True)
@@ -187,7 +187,7 @@ class PurchaseConfirmationView(View):
 
             except Exception as e:
                 BankManager.withdraw(self.item.price, f"Refund for error in purchase of {self.item.name}")
-                add_bb(interaction.user.id, self.item.price)
+                add_bb(interaction.user.id, self.item.price, reason=f"Shop refund: {self.item.name} (role grant failed)")
                 
                 error_msg = f"❌ An error occurred during purchase. Your UKPence has been refunded.\nError: {str(e)}"
                 if not interaction.response.is_done():
@@ -372,7 +372,7 @@ class VIPCaseSpinView(View):
         elif outcome["type"] == "cashback":
             refund_amount = int(self.price * outcome["percent"] / 100)
             BankManager.withdraw(refund_amount, f"Cashback payout to {self.user.display_name}")
-            add_bb(interaction.user.id, refund_amount)
+            add_bb(interaction.user.id, refund_amount, reason=f"Shop refund: {self.item.name}")
             result_embed.description = f"{outcome['emoji']} {self.user.mention} got **{outcome['percent']}% cashback**!\n\n+{refund_amount} UKPence returned!"
 
         else:
@@ -634,7 +634,7 @@ class EmojiStickerApprovalView(View):
                         break
 
                 BankManager.withdraw(refund_amount, f"Refund for denied {self.approval_view.upload_data['type']} request")
-                add_bb(self.approval_view.user.id, refund_amount)
+                add_bb(self.approval_view.user.id, refund_amount, reason="Custom role refund (denied)")
 
                 embed = discord.Embed(title="❌ Custom Emoji/Sticker - DENIED", description=f"Request has been denied and {refund_amount} UKPence has been refunded.", color=0xff0000)
                 embed.add_field(name="Denied by", value=modal_interaction.user.mention, inline=True)
