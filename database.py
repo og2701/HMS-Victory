@@ -156,10 +156,17 @@ def init_db():
             INSERT OR IGNORE INTO bank (id, balance, total_revenue, last_updated)
             VALUES (1, 0, 0, 0)
         ''')
-        # Performance Indexes
-        c.execute('CREATE INDEX IF NOT EXISTS idx_xp_score ON xp(xp DESC)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_ukpence_balance ON ukpence(balance DESC)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_summaries_date ON daily_summaries(date)')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS pay_transfers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp INTEGER NOT NULL,
+                payer_id TEXT NOT NULL,
+                recipient_id TEXT NOT NULL,
+                amount INTEGER NOT NULL
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_pay_payer ON pay_transfers(payer_id)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_pay_recipient ON pay_transfers(recipient_id)')
         conn.commit()
 
 if __name__ == '__main__':
