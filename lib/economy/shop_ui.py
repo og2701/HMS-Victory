@@ -13,80 +13,118 @@ if TYPE_CHECKING:
 from lib.economy.economy_manager import get_bb, remove_bb, ensure_bb, add_shutcoins, add_bb
 from lib.economy.bank_manager import BankManager
 
-class ShopMainView(View):
-    """The main view that shows the shop dropdown list."""
-    def __init__(self, items: List['ShopItem']):
+class ShopBrowserView(View):
+    """Paginated shop browser with 'Previous', 'Buy', and 'Next' buttons."""
+    def __init__(self, items: List['ShopItem'], user_id: int, current_page: int = 0):
         super().__init__(timeout=300)
         self.items = items
-        self.add_item(ShopItemSelect(items, self))
+        self.user_id = user_id
+        self.current_page = current_page
+        self._update_buttons()
 
-    async def on_timeout(self):
-        for item in self.children:
-            item.disabled = True
-        # Try to edit the message if we still have the context, but pass if we don't
-        pass
+    def _update_buttons(self):
+        self.clear_items()
+        
+        # Previous Button
+        prev_btn = Button(style=discord.ButtonStyle.secondary, emoji="◀️", disabled=(self.current_page == 0))
+        prev_btn.callback = self.prev_page
+        self.add_item(prev_btn)
+        
+        # Buy Button
+        current_item = self.items[self.current_page]
+        user_balance = get_bb(self.user_id)
+        quantity = current_item.get_quantity()
+        
+        can_afford = user_balance >= current_item.price
+        in_stock = quantity is None or quantity > 0
+        
+        buy_label = f"Buy ({current_item.price} UKP)"
+        buy_style = discord.ButtonStyle.green if (can_afford and in_stock) else discord.ButtonStyle.secondary
+        
+        buy_btn = Button(label=buy_label, style=buy_style, emoji="💳", disabled=not (can_afford and in_stock))
+        buy_btn.callback = self.buy_item
+        self.add_item(buy_btn)
+        
+        # Next Button
+        next_btn = Button(style=discord.ButtonStyle.secondary, emoji="▶️", disabled=(self.current_page == len(self.items) - 1))
+        next_btn.callback = self.next_page
+        self.add_item(next_btn)
 
-
-class ShopItemSelect(Select):
-    """The dropdown menu containing shop items."""
-    def __init__(self, items: List['ShopItem'], parent_view: ShopMainView):
-        options = []
-        for item in items[:25]:  # Discord limit of 25 options
-            quantity = item.get_quantity()
-            if quantity is not None and quantity <= 0:
-                stock_info = " (SOLD OUT)"
-                description = f"{item.price} UKPence - OUT OF STOCK"
-            elif quantity is not None and quantity <= 5:
-                stock_info = f" ({quantity} left)"
-                description = f"{item.price} UKPence - {item.description[:40]}... {stock_info}"
-            else:
-                stock_info = ""
-                description = f"{item.price} UKPence - {item.description[:50]}..."
-
-            options.append(discord.SelectOption(
-                label=item.get_display_name(),
-                description=description[:100],  
-                value=item.id,
-                emoji="🔴" if quantity is not None and quantity <= 0 else "✅"
-            ))
-
-        super().__init__(
-            placeholder="Choose an item to purchase...",
-            options=options,
-            min_values=1,
-            max_values=1
+    def _create_embed(self) -> discord.Embed:
+        current_item = self.items[self.current_page]
+        user_balance = get_bb(self.user_id)
+        quantity = current_item.get_quantity()
+        
+        embed = discord.Embed(
+            title="🛒 UKPlace Premium Shop",
+            color=0x2b2d31  # Discord dark theme color for glassmorphism illusion
         )
-        self.items = {item.id: item for item in items}
-        self.parent_view = parent_view
+        
+        stock_str = f"**{quantity}** remaining" if quantity is not None else "♾️ Unlimited"
+        if quantity is not None and quantity <= 0:
+            stock_str = "❌ **OUT OF STOCK**"
+        elif quantity is not None and quantity <= 5:
+            stock_str = f"⚠️ **Only {quantity} left!**"
+            
+        afford_emoji = "✅" if user_balance >= current_item.price else "❌"
+        
+        embed.description = (
+            f"**Item {self.current_page + 1} of {len(self.items)}**\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"### {current_item.name}\n"
+            f"> *{current_item.description}*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+        )
+        
+        embed.add_field(name="💰 Price", value=f"**{current_item.price}** UKPence", inline=True)
+        embed.add_field(name="📦 Stock", value=stock_str, inline=True)
+        embed.add_field(name="💳 Your Wallet", value=f"{afford_emoji} **{user_balance}** UKPence", inline=False)
+        
+        embed.set_footer(text="Use the buttons below to navigate and purchase.")
+        return embed
 
-    async def callback(self, interaction: discord.Interaction):
-        selected_item = self.items[self.values[0]]
+    async def prev_page(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
+        self.current_page = max(0, self.current_page - 1)
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self._create_embed(), view=self)
 
-        # Check if user can theoretically purchase this item
+    async def next_page(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
+        self.current_page = min(len(self.items) - 1, self.current_page + 1)
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self._create_embed(), view=self)
+
+    async def buy_item(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
+            
+        selected_item = self.items[self.current_page]
+        
+        # Check if user can jump into purchase logic
         can_purchase, reason = selected_item.can_purchase(interaction.user)
         if not can_purchase:
             await interaction.response.send_message(f"❌ Cannot purchase: {reason}", ephemeral=True)
             return
 
-        # Swap the view to the Purchase Detail View directly on the same message
-        detail_view = PurchaseConfirmationView(selected_item, self.parent_view)
+        detail_view = PurchaseConfirmationView(selected_item, self)
         
         embed = discord.Embed(
-            title="Confirm Purchase",
-            description=f"**{selected_item.get_display_name()}**\n{selected_item.description}",
+            title="💳 Confirm Purchase",
+            description=f"Are you sure you want to buy **{selected_item.name}**?\n\n> *{selected_item.description}*",
             color=0x00ff00
         )
-        embed.add_field(name="Price", value=f"{selected_item.price} UKPence", inline=True)
-        embed.add_field(name="Your Balance", value=f"{get_bb(interaction.user.id)} UKPence", inline=True)
-
-        quantity = selected_item.get_quantity()
-        if quantity is not None:
-            if quantity <= 5:
-                embed.add_field(name="⚠️ Stock", value=f"Only {quantity} remaining!", inline=True)
-            else:
-                embed.add_field(name="📦 Stock", value="In Stock", inline=True)
+        embed.add_field(name="Cost", value=f"{selected_item.price} UKPence", inline=True)
+        embed.add_field(name="Balance After Purchase", value=f"{get_bb(interaction.user.id) - selected_item.price} UKPence", inline=True)
 
         await interaction.response.edit_message(embed=embed, view=detail_view)
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        pass
 
 
 class PurchaseConfirmationView(View):
@@ -96,32 +134,14 @@ class PurchaseConfirmationView(View):
         self.item = item
         self.return_view = return_view
 
-    @discord.ui.button(label="Return to Shop", style=discord.ButtonStyle.secondary, emoji="🔙", row=1)
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, emoji="🔙", row=1)
     async def return_to_shop(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ensure_bb(interaction.user.id)
-        user_balance = get_bb(interaction.user.id)
-
-        shop_embed = discord.Embed(
-            title="🛒 UKPlace Shop",
-            description="Purchase items using your UKPence. Select an item below to see details and purchase.",
-            color=0x0099ff
-        )
-        shop_embed.add_field(name="💰 Your Balance", value=f"{user_balance} UKPence", inline=True)
-        shop_embed.set_footer(text="ℹ️ How to Earn UKPence: Daily chat rewards (top chatters), Server boosting bonus, Participating in voice stages")
-        
-        from lib.economy.shop_items import get_shop_items
-        items = get_shop_items()
-        item_list = []
-        for item in items[:10]:
-            affordable = "✅" if user_balance >= item.price else "❌"
-            quantity = item.get_quantity()
-            display_name = item.get_display_name()
-            item_list.append(f"{affordable} **{display_name}** - {item.price} UKPence - {quantity} remaining")
-
-        shop_embed.add_field(name="🛍️ Available Items (Select below for more)", value="\n".join(item_list), inline=False)
-        
-        # We spawn a fresh ShopMainView to reset the dropdown state cleanly
-        await interaction.response.edit_message(embed=shop_embed, view=ShopMainView(items))
+        if interaction.user.id != self.return_view.user_id:
+            return await interaction.response.send_message("This isn't your menu!", ephemeral=True)
+            
+        # Ensure fresh data when returning
+        self.return_view._update_buttons()
+        await interaction.response.edit_message(embed=self.return_view._create_embed(), view=self.return_view)
 
     @discord.ui.button(label="Confirm Purchase", style=discord.ButtonStyle.green, emoji="✅", row=0)
     async def confirm_purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -163,18 +183,17 @@ class PurchaseConfirmationView(View):
 
                 # If this is a normal item execution (not taking over UI like VIP Case)...
                 if self.item.name not in ["VIP Role Case", "Custom Emoji/Sticker"]:
-                    embed = discord.Embed(
-                        title="Purchase Successful! ✅",
-                        description=result_message,
-                        color=0x00ff00
-                    )
-                    embed.add_field(name="Remaining Balance", value=f"{get_bb(interaction.user.id)} UKPence", inline=False)
-                    embed.set_footer(text="You can purchase another or return to the shop.")
-                    
-                    # We WANT them to be able to buy again or go back, so do NOT disable the buttons.
+                    # Return to main browser but show a success ephemeral message
+                    self.return_view._update_buttons()
                     
                     if not interaction.response.is_done():
-                        await interaction.response.edit_message(embed=embed, view=self)
+                        await interaction.response.edit_message(embed=self.return_view._create_embed(), view=self.return_view)
+                        await interaction.followup.send(f"✅ **Purchase Successful!**\n{result_message}", ephemeral=True)
+                    else:
+                        await interaction.followup.send(f"✅ **Purchase Successful!**\n{result_message}", ephemeral=True)
+                        # Have to fetch the message to edit it since response is done
+                        msg = await interaction.original_response()
+                        await msg.edit(embed=self.return_view._create_embed(), view=self.return_view)
 
                 # Log the purchase
                 log_channel = interaction.guild.get_channel(1197572903294730270)  # BOT_USAGE_LOG
@@ -406,24 +425,14 @@ class VIPCaseSpinView(View):
             await interaction.response.send_message("❌ Error: VIP Case item not found in shop!", ephemeral=True)
             return
 
-        # Start a new main shop embed context
-        shop_embed = discord.Embed(title="🛒 UKPlace Shop", description="Purchase items using your UKPence. Select an item below to see details and purchase.", color=0x0099ff)
-        shop_embed.add_field(name="💰 Your Balance", value=f"{balance} UKPence", inline=True)
-        shop_embed.set_footer(text="ℹ️ How to Earn UKPence: Daily chat rewards (top chatters), Server boosting bonus, Participating in voice stages")
+        from lib.economy.shop_ui import ShopBrowserView
         
-        item_list = []
-        for item in items[:10]:
-            affordable = "✅" if balance >= item.price else "❌"
-            quantity = item.get_quantity()
-            display_name = item.get_display_name()
-            item_list.append(f"{affordable} **{display_name}** - {item.price} UKPence - {quantity} remaining")
-
-        shop_embed.add_field(name="🛍️ Available Items (Select below for more)", value="\n".join(item_list), inline=False)
-        main_view = ShopMainView(items)
+        current_page = next((i for i, item in enumerate(items) if item.id == "vip_case"), 0)
+        main_view = ShopBrowserView(items, interaction.user.id, current_page=current_page)
         
         detail_view = PurchaseConfirmationView(vip_case_item, main_view)
 
-        embed = discord.Embed(title="Confirm Purchase", description=f"**{vip_case_item.get_display_name()}**\n{vip_case_item.description}", color=0x00ff00)
+        embed = discord.Embed(title="💳 Confirm Purchase", description=f"Are you sure you want to buy **{vip_case_item.name}**?\n\n> *{vip_case_item.description}*", color=0x00ff00)
         embed.add_field(name="Price", value=f"{vip_case_item.price} UKPence", inline=True)
         embed.add_field(name="Your Balance", value=f"{balance} UKPence", inline=True)
 
