@@ -601,82 +601,86 @@ async def handle_shut_reaction(reaction, user):
         logger.error(f"Failed to time out user {message_author}: {e}")
 
 
+hof_lock = asyncio.Lock()
+
+
 async def check_hall_of_fame(client, payload):
-    hall_of_fame_data = load_json_file(HALL_OF_FAME_FILE) or []
-    
-    if str(payload.message_id) in hall_of_fame_data:
-        return
+    async with hof_lock:
+        hall_of_fame_data = load_json_file(HALL_OF_FAME_FILE) or []
         
-    channel = client.get_channel(payload.channel_id)
-    if not channel:
-        try:
-            channel = await client.fetch_channel(payload.channel_id)
-        except discord.NotFound:
-            logger.error(f"[HOF] Channel {payload.channel_id} not found.")
+        if str(payload.message_id) in hall_of_fame_data:
             return
             
-    try:
-        message = await channel.fetch_message(payload.message_id)
-    except discord.NotFound:
-        logger.error(f"[HOF] Message {payload.message_id} not found.")
-        return
-
-    total_reactions = sum(r.count for r in message.reactions)
-    logger.info(f"[HOF] Checking message {message.id}. Total reactions: {total_reactions}")
-
-    # Quick filter to avoid iterating through users if total reactions are less than 5
-    if total_reactions < 5:
-        return
-        
-    unique_reactors = set()
-    for r in message.reactions:
-        async for u in r.users():
-            unique_reactors.add(u.id)
-            
-    logger.info(f"[HOF] Unique reactors for {message.id}: {len(unique_reactors)}")
-
-    if len(unique_reactors) >= 5:
-        logger.info(f"[HOF] Message {message.id} qualified for Hall of Fame!")
-        hall_of_fame_data.append(str(message.id))
-        save_json_file(HALL_OF_FAME_FILE, hall_of_fame_data)
-        
-        thread = client.get_channel(CHANNELS.HALL_OF_FAME_THREAD)
-        if not thread:
+        channel = client.get_channel(payload.channel_id)
+        if not channel:
             try:
-                thread = await client.fetch_channel(CHANNELS.HALL_OF_FAME_THREAD)
+                channel = await client.fetch_channel(payload.channel_id)
             except discord.NotFound:
-                logger.error("Hall of Fame thread not found.")
+                logger.error(f"[HOF] Channel {payload.channel_id} not found.")
                 return
                 
-        embed = discord.Embed(
-            description=f"[Click here to jump to message]({message.jump_url})",
-            color=0xffd700, # Gold color
-            url=message.jump_url
-        )
-        embed.set_author(
-            name=message.author.display_name, 
-            icon_url=message.author.display_avatar.url if message.author.display_avatar else None,
-            url=message.jump_url
-        )
-        
-        # Generate quote image
         try:
-            image_buffer = await create_quote_image(client, message)
-            file = discord.File(image_buffer, filename="hof_quote.png")
-            embed.set_image(url="attachment://hof_quote.png")
-            await thread.send(content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!", embed=embed, file=file)
-        except Exception as e:
-            logger.error(f"[HOF] Error creating quote image: {e}")
-            # Fallback logic
-            embed.description = message.content
-            if message.attachments:
-                for attachment in message.attachments:
-                    if attachment.content_type and attachment.content_type.startswith("image/"):
-                        embed.set_image(url=attachment.url)
-                        break
-            await thread.send(content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!", embed=embed)
-        
-        logger.info(f"Message {message.id} sent to Hall of Fame.")
+            message = await channel.fetch_message(payload.message_id)
+        except discord.NotFound:
+            logger.error(f"[HOF] Message {payload.message_id} not found.")
+            return
+
+        total_reactions = sum(r.count for r in message.reactions)
+        # logger.info(f"[HOF] Checking message {message.id}. Total reactions: {total_reactions}")
+
+        # Quick filter to avoid iterating through users if total reactions are less than 5
+        if total_reactions < 5:
+            return
+            
+        unique_reactors = set()
+        for r in message.reactions:
+            async for u in r.users():
+                unique_reactors.add(u.id)
+                
+        # logger.info(f"[HOF] Unique reactors for {message.id}: {len(unique_reactors)}")
+
+        if len(unique_reactors) >= 5:
+            logger.info(f"[HOF] Message {message.id} qualified for Hall of Fame!")
+            hall_of_fame_data.append(str(message.id))
+            save_json_file(HALL_OF_FAME_FILE, hall_of_fame_data)
+            
+            thread = client.get_channel(CHANNELS.HALL_OF_FAME_THREAD)
+            if not thread:
+                try:
+                    thread = await client.fetch_channel(CHANNELS.HALL_OF_FAME_THREAD)
+                except discord.NotFound:
+                    logger.error("Hall of Fame thread not found.")
+                    return
+                    
+            embed = discord.Embed(
+                description=f"[Click here to jump to message]({message.jump_url})",
+                color=0xffd700, # Gold color
+                url=message.jump_url
+            )
+            embed.set_author(
+                name=message.author.display_name, 
+                icon_url=message.author.display_avatar.url if message.author.display_avatar else None,
+                url=message.jump_url
+            )
+            
+            # Generate quote image
+            try:
+                image_buffer = await create_quote_image(client, message)
+                file = discord.File(image_buffer, filename="hof_quote.png")
+                embed.set_image(url="attachment://hof_quote.png")
+                await thread.send(content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!", embed=embed, file=file)
+            except Exception as e:
+                logger.error(f"[HOF] Error creating quote image: {e}")
+                # Fallback logic
+                embed.description = f"{embed.description}\n\n{message.content}"
+                if message.attachments:
+                    for attachment in message.attachments:
+                        if attachment.content_type and attachment.content_type.startswith("image/"):
+                            embed.set_image(url=attachment.url)
+                            break
+                await thread.send(content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!", embed=embed)
+            
+            logger.info(f"Message {message.id} sent to Hall of Fame.")
 
 
 async def on_raw_reaction_add(client, payload):
