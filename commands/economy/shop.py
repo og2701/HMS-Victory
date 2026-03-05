@@ -4,8 +4,6 @@ from typing import List
 from lib.economy.shop_items import get_shop_items, get_shop_item_by_id, ShopItem
 from lib.economy.economy_manager import get_bb, remove_bb, ensure_bb
 
-from lib.economy.shop_ui import ShopMainView
-
 async def handle_shop_command(interaction: discord.Interaction):
     """
     Display the server shop where users can purchase items with UKPence.
