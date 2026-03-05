@@ -601,16 +601,26 @@ async def handle_shut_reaction(reaction, user):
         logger.error(f"Failed to time out user {message_author}: {e}")
 
 
-async def check_hall_of_fame(client, reaction, user):
-    message = reaction.message
-    
-    # Quick filter to avoid iterating through users if total reactions are less than 5
-    if sum(r.count for r in message.reactions) < 5:
-        return
-        
+async def check_hall_of_fame(client, payload):
     hall_of_fame_data = load_json_file(HALL_OF_FAME_FILE) or []
     
-    if str(message.id) in hall_of_fame_data:
+    if str(payload.message_id) in hall_of_fame_data:
+        return
+        
+    channel = client.get_channel(payload.channel_id)
+    if not channel:
+        try:
+            channel = await client.fetch_channel(payload.channel_id)
+        except discord.NotFound:
+            return
+            
+    try:
+        message = await channel.fetch_message(payload.message_id)
+    except discord.NotFound:
+        return
+
+    # Quick filter to avoid iterating through users if total reactions are less than 5
+    if sum(r.count for r in message.reactions) < 5:
         return
         
     unique_reactors = set()
@@ -649,6 +659,13 @@ async def check_hall_of_fame(client, reaction, user):
         logger.info(f"Message {message.id} sent to Hall of Fame.")
 
 
+async def on_raw_reaction_add(client, payload):
+    try:
+        await check_hall_of_fame(client, payload)
+    except Exception as e:
+        logger.error(f"Error in on_raw_reaction_add: {e}")
+
+
 async def on_reaction_add(reaction, user):
     try:
         # Check for Americanism correction deletion
@@ -682,11 +699,6 @@ async def on_reaction_add(reaction, user):
             await handle_flag_reaction(reaction, reaction.message, user)
         if ":Shut:" in str(reaction.emoji):
             await handle_shut_reaction(reaction, user)
-            
-        # Check Hall of Fame
-        if reaction.message.guild:
-            client = reaction.message.guild._state._get_client()
-            await check_hall_of_fame(client, reaction, user)
             
     except Exception as e:
         logger.error(f"Error in on_reaction_add: {e}")

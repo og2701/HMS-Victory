@@ -261,6 +261,11 @@ class AClient(discord.Client):
         update_summary_data("reacting_members", user_id=user.id)
         await on_reaction_add(reaction, user)
 
+    async def on_raw_reaction_add(self, payload):
+        if payload.member and payload.member.bot:
+            return
+        await on_raw_reaction_add(self, payload)
+
     async def on_reaction_remove(self, reaction, user):
         if user.bot:
             return
