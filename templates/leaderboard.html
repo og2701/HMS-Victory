@@ -1,43 +1,165 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
-  <title>Leaderboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@600;800&display=swap');
+
+    :root {
+      --glass: rgba(255, 255, 255, 0.03);
+      --glass-border: rgba(255, 255, 255, 0.1);
+      --accent-gold: #FFD700;
+      --accent-blue: #3b82f6;
+    }
+
     body {
       margin: 0;
-      padding: 0;
-      background: #000;
-      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+      padding: 40px;
+      background: radial-gradient(circle at top right, #1e293b, #0f172a, #020617);
+      font-family: 'Inter', sans-serif;
+      color: #f8fafc;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
     }
-    .gradient-border {
-      display: inline-block;
-      border-radius: 8px;
-      background: linear-gradient(135deg, #00247D 25%, #FFFFFF 40%, #CF142B 60%, #FFFFFF 75%, #00247D);
-      padding: 8px;
+
+    .glass-container {
+      background: var(--glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+      padding: 32px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      width: 100%;
+      max-width: 1000px;
+      position: relative;
+      overflow: hidden;
     }
-    .content {
-      display: inline-block;
-      background: rgba(0, 0, 0, 0.8);
-      border-radius: 6px;
-      padding: 16px;
-      color: #fff;
+
+    /* Subtle Union Jack Texture */
+    .glass-container::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url('https://www.transparenttextures.com/patterns/carbon-fibre.png');
+      opacity: 0.05;
+      pointer-events: none;
     }
-    .title {
-      font-weight: bold;
-      margin-bottom: 12px;
+
+    .header {
+      font-family: 'Outfit', sans-serif;
+      font-size: 2.5rem;
+      font-weight: 800;
       text-align: center;
-      font-size: 1.25rem;
+      margin-bottom: 32px;
+      background: linear-gradient(to bottom, #fff, #94a3b8);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.02em;
+    }
+
+    .leaderboard-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .leaderboard-item {
+      display: flex;
+      align-items: center;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 16px;
+      transition: transform 0.2s ease;
+    }
+
+    .rank-badge {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 600;
+      width: 40px;
+      color: #94a3b8;
+    }
+
+    .rank-1 .rank-badge {
+      color: var(--accent-gold);
+      font-size: 1.5rem;
+    }
+
+    .rank-2 .rank-badge {
+      color: #e2e8f0;
+      font-size: 1.3rem;
+    }
+
+    .rank-3 .rank-badge {
+      color: #cd7f32;
+      font-size: 1.2rem;
+    }
+
+    .avatar-container {
+      position: relative;
+      width: 56px;
+      height: 56px;
+      margin-right: 16px;
+    }
+
+    .avatar {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .rank-1 .avatar {
+      border-color: var(--accent-gold);
+      box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
+    }
+
+    .user-info {
+      flex-grow: 1;
+      min-width: 0;
+    }
+
+    .user-name {
+      font-weight: 600;
+      font-size: 1.05rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #f1f5f9;
+    }
+
+    .user-stats {
+      font-size: 0.875rem;
+      color: #94a3b8;
+      margin-top: 2px;
+    }
+
+    .stat-highlight {
+      color: var(--accent-blue);
+      font-weight: 600;
     }
   </style>
 </head>
+
 <body>
-  <div class="gradient-border">
-    <div class="content">
-      <div class="title">UKP Leaderboard</div>
+  <div class="glass-container">
+    <div class="header">Server Leaderboard</div>
+    <div class="leaderboard-grid">
       {{ LEADERBOARD_ROWS }}
     </div>
   </div>
 </body>
+
 </html>

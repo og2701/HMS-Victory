@@ -211,15 +211,18 @@ class XPSystem:
             avatar_url = member.display_avatar.url if member else "https://cdn.discordapp.com/embed/avatars/0.png"
             avatar = await get_avatar_data_uri(self.client, avatar_url)
 
+            # Determine rank class for specific styling (Gold, Silver, Bronze for top 3)
+            rank_class = f"rank-{rank}" if rank <= 3 else ""
+            
             block = f"""
-            <div class="flex items-center mb-2 bg-black/50 rounded p-2">
-              <p class="mr-3 font-bold">#{rank}</p>
-              <div class="w-12 h-12 rounded-full overflow-hidden">
-                <img src="{avatar}" class="w-full h-full object-cover" />
+            <div class="leaderboard-item {rank_class}">
+              <div class="rank-badge">#{rank}</div>
+              <div class="avatar-container">
+                <img src="{avatar}" class="avatar" />
               </div>
-              <div class="ml-3">
-                <p class="font-bold">{name}</p>
-                <p class="text-gray-300 text-sm">XP: {xp_val}</p>
+              <div class="user-info">
+                <div class="user-name">{name}</div>
+                <div class="user-stats">XP: <span class="stat-highlight">{xp_val:,}</span></div>
               </div>
             </div>
             """
@@ -282,15 +285,18 @@ class XPSystem:
             avatar_url = member.display_avatar.url if member else "https://cdn.discordapp.com/embed/avatars/0.png"
             avatar = await get_avatar_data_uri(self.client, avatar_url)
 
+            # Determine rank class for specific styling
+            rank_class = f"rank-{rank}" if rank <= 3 else ""
+            
             block = f"""
-            <div class="flex items-center mb-2 bg-black/50 rounded p-2">
-              <p class="mr-3 font-bold">#{rank}</p>
-              <div class="w-12 h-12 rounded-full overflow-hidden">
-                <img src="{avatar}" class="w-full h-full object-cover" />
+            <div class="leaderboard-item {rank_class}">
+              <div class="rank-badge">#{rank}</div>
+              <div class="avatar-container">
+                <img src="{avatar}" class="avatar" />
               </div>
-              <div class="ml-3">
-                <p class="font-bold">{name}</p>
-                <p class="text-gray-300 text-sm">UKPence: {bal:,}</p>
+              <div class="user-info">
+                <div class="user-name">{name}</div>
+                <div class="user-stats">UKPence: <span class="stat-highlight">{bal:,}</span></div>
               </div>
             </div>
             """

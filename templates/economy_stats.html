@@ -3,233 +3,232 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>UKPence Economy Stats</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        html,
-        body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@600;800&display=swap');
+
+        :root {
+            --glass: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-blue: #3b82f6;
         }
 
         body {
-            padding: 25px;
-            background-color: #2c2f33;
-            font-family: "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", Arial, sans-serif;
-            color: #dcddde;
-            width: 750px;
+            margin: 0;
+            padding: 40px;
+            background: radial-gradient(circle at top right, #1e293b, #0f172a, #020617);
+            font-family: 'Inter', sans-serif;
+            color: #f8fafc;
+            width: 850px;
             box-sizing: border-box;
         }
 
         .container {
-            border: 2px solid #4CAF50;
-            border-radius: 10px;
-            padding: 20px;
-            background-color: #23272a;
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 40px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
 
         .header {
-            font-size: 28px;
-            font-weight: bold;
-            color: #4CAF50;
-            margin-bottom: 20px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.25rem;
+            font-weight: 800;
             text-align: center;
-        }
-
-        .section {
-            margin-bottom: 15px;
+            margin-bottom: 40px;
+            background: linear-gradient(to bottom, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.02em;
         }
 
         .section-title {
-            font-size: 20px;
-            font-weight: bold;
-            color: #4CAF50;
-            margin-top: 15px;
-            margin-bottom: 12px;
-            border-bottom: 1px solid #444;
-            padding-bottom: 6px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #94a3b8;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .section-title::after {
+            content: '';
+            flex-grow: 1;
+            height: 1px;
+            background: var(--glass-border);
         }
 
         .stat-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 10px;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
         }
 
         .stat-item {
-            background-color: #2c2f33;
-            padding: 15px;
-            border-radius: 8px;
-            border: 1px solid #383c40;
-            text-align: center;
-        }
-
-        .stat-item .label {
-            font-size: 14px;
-            color: #99aab5;
-            margin-bottom: 5px;
-        }
-
-        .stat-item strong {
-            color: #88dd88;
-            font-size: 18px;
-            display: block;
-        }
-
-        .stat-item .sub-value {
-            font-size: 13px;
-            color: #b0b0b0;
-            margin-top: 3px;
-        }
-
-        .user-list li {
-            background-color: #2f3136;
-            margin-bottom: 6px;
-            padding: 10px;
-            border-radius: 5px;
-            font-size: 15px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 16px;
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            flex-direction: column;
+            gap: 8px;
         }
 
-        .user-details-left {
+        .stat-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+        }
+
+        .stat-value {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+
+        .stat-sub {
+            font-size: 0.75rem;
+            color: #94a3b8;
+        }
+
+        .user-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .user-item {
             display: flex;
             align-items: center;
-            min-width: 0;
-            flex-shrink: 1;
-            overflow: hidden;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        .user-list .rank {
-            font-weight: bold;
-            color: #4CAF50;
-            margin-right: 8px;
+        .user-rank {
+            width: 32px;
+            font-weight: 700;
+            color: var(--accent-blue);
         }
 
-        .list-avatar {
+        .user-avatar {
             width: 32px;
             height: 32px;
             border-radius: 50%;
-            margin-right: 8px;
+            margin-right: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        .user-list .name {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 250px;
+        .user-name {
+            flex-grow: 1;
+            font-weight: 600;
+            color: #e2e8f0;
         }
 
-        .user-list .balance {
-            font-weight: bold;
-            color: #FFFFFF;
-            margin-left: 10px;
-            white-space: nowrap;
+        .user-balance {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .growth-positive {
+            color: var(--accent-green);
+        }
+
+        .growth-negative {
+            color: var(--accent-red);
         }
 
         .footer {
-            font-size: 12px;
-            color: #72767d;
+            margin-top: 40px;
             text-align: center;
-            margin-top: 25px;
-        }
-
-        .growth-positive,
-        .change-positive {
-            color: #33cc33 !important;
-        }
-
-        .growth-negative,
-        .change-negative {
-            color: #cc3333 !important;
-        }
-
-        .growth-neutral,
-        .change-neutral {
-            color: #dcddde !important;
-        }
-
-        hr {
-            border: none;
-            border-top: 1px solid #444;
-            margin: 20px 0;
+            font-size: 0.75rem;
+            color: #475569;
         }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <div class="header">UKPence Economy Status</div>
+        <div class="header">UKPence Economy Dashboard</div>
+
         <div class="section">
-            <div class="section-title">Overall Snapshot</div>
+            <div class="section-title">Market Overview</div>
             <div class="stat-grid">
                 <div class="stat-item">
-                    <div class="label">Total in Circulation</div><strong>$total_ukpence UKP</strong>
+                    <div class="stat-label">Total Circulation</div>
+                    <div class="stat-value">$total_ukpence <span class="text-xs text-slate-500">UKP</span></div>
                 </div>
                 <div class="stat-item">
-                    <div class="label">UKPence Holders</div><strong>$num_holders</strong>
+                    <div class="stat-label">Currency Holders</div>
+                    <div class="stat-value">$num_holders</div>
                 </div>
                 <div class="stat-item">
-                    <div class="label">Avg Balance (All Holders)</div><strong>$average_ukpence UKP</strong>
+                    <div class="stat-label">Average Wealth</div>
+                    <div class="stat-value">$average_ukpence_active <span class="text-xs text-slate-500">UKP</span>
+                    </div>
                 </div>
                 <div class="stat-item">
-                    <div class="label">Avg Balance (&gt;0 UKP Holders)</div><strong>$average_ukpence_active UKP</strong>
+                    <div class="stat-label">Growth Today</div>
+                    <div class="stat-value $growth_class">$economy_growth_percentage</div>
                 </div>
                 <div class="stat-item">
-                    <div class="label">Growth Today (Since Start)</div>
-                    <strong class="$growth_class">$economy_growth_percentage</strong>
+                    <div class="stat-label">Top 5 Concentration</div>
+                    <div class="stat-value">$wealth_concentration_top_5_percentage</div>
+                    <div class="stat-sub">$wealth_concentration_top_5_amount UKP</div>
                 </div>
                 <div class="stat-item">
-                    <div class="label">Wealth Held by Top $num_top_users_concentration</div>
-                    <strong>$wealth_concentration_top_5_percentage</strong>
-                    <span class="sub-value">($wealth_concentration_top_5_amount UKP)</span>
-                </div>
-                <div class="stat-item">
-                    <div class="label">Server Bank Balance</div>
-                    <strong>$server_bank_balance UKP</strong>
-                </div>
-                <div class="stat-item">
-                    <div class="label">Median UKPence Balance</div>
-                    <strong>$median_ukpence_balance UKP</strong>
-                </div>
-                <div class="stat-item">
-                    <div class="label">Net Change (Last 24h)</div>
-                    <strong class="$net_ukpence_change_class">$net_ukpence_change_absolute_str</strong>
+                    <div class="stat-label">Server Bank</div>
+                    <div class="stat-value">$server_bank_balance <span class="text-xs text-slate-500">UKP</span></div>
                 </div>
             </div>
         </div>
-        <hr>
+
         <div class="section">
-            <div class="section-title">Yesterday's Activity ($yesterday_date)</div>
-            <div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+            <div class="section-title">Recent Injections (Yesterday)</div>
+            <div class="stat-grid" style="grid-template-columns: repeat(3, 1fr);">
                 <div class="stat-item">
-                    <div class="label">Chat Rewards Injected</div><strong>$chat_rewards_yesterday UKP</strong>
+                    <div class="stat-label">Chat Activity</div>
+                    <div class="stat-value">$chat_rewards_yesterday <span class="text-xs text-slate-500">UKP</span>
+                    </div>
                 </div>
                 <div class="stat-item">
-                    <div class="label">Booster Bonuses Injected</div><strong>$booster_rewards_yesterday UKP</strong>
+                    <div class="stat-label">Booster Bonuses</div>
+                    <div class="stat-value">$booster_rewards_yesterday <span class="text-xs text-slate-500">UKP</span>
+                    </div>
                 </div>
                 <div class="stat-item">
-                    <div class="label">Stage Rewards Injected</div><strong>$stage_rewards_yesterday UKP</strong>
+                    <div class="stat-label">Stage Events</div>
+                    <div class="stat-value">$stage_rewards_yesterday <span class="text-xs text-slate-500">UKP</span>
+                    </div>
                 </div>
             </div>
         </div>
-        <hr>
+
         <div class="section">
-            <div class="section-title">Top 5 Richest Users</div>
-            <ul class="user-list">
+            <div class="section-title">Wall of Wealth</div>
+            <div class="user-list">
                 $top_richest_users_html
-            </ul>
+            </div>
         </div>
-        <hr>
-        <div class="section">
-            <div class="section-title">UKPence Distribution (among holders)</div>
-            <ul class="user-list">
-                $distribution_html
-            </ul>
+
+        <div class="footer">
+            HMS Victory Intelligence Unit • Generated $current_datetime_uk
         </div>
-        <div class="footer">Generated on: $current_datetime_uk</div>
     </div>
 </body>
 

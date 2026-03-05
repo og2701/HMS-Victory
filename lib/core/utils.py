@@ -78,13 +78,12 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         if next_threshold is None:
             progress_percent = 100
             xp_display = str(current_xp)
-            next_role_html = ""
+            next_role_name = "MAX"
         else:
             progress_percent = (current_xp / next_threshold) * 100 if next_threshold > 0 else 100
             xp_display = f"{current_xp} / {next_threshold}"
             next_role = interaction.guild.get_role(next_role_id) if next_role_id else None
             next_role_name = next_role.name if next_role else "Max"
-            next_role_html = f'<div class="role-label next-role">{next_role_name}</div>'
         logger.info(f"Progress calculated: {progress_percent:.2f}%")
 
         current_role_name = "None"
@@ -100,11 +99,11 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
 
         html_content = html_content.replace("{profile_pic}", str(member.display_avatar.url))
         html_content = html_content.replace("{username}", member.display_name)
-        html_content = html_content.replace("{rank}", rank_display)
+        html_content = html_content.replace("{rank}", str(rank))
         html_content = html_content.replace("{xp_display}", xp_display)
         html_content = html_content.replace("{progress_percent}", f"{progress_percent}%")
         html_content = html_content.replace("{current_role}", current_role_name)
-        html_content = html_content.replace("{next_role_html}", next_role_html)
+        html_content = html_content.replace("{next_role_name}", next_role_name)
         logger.debug("Main HTML content has been populated.")
 
         shutcoin_html = ""

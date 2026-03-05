@@ -1,96 +1,226 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <script src="https://cdn.tailwindcss.com"></script>
-  <title>Rank Card</title>
   <style>
-    .rank-card{
-      background:url('{unionjack}') no-repeat center center;
-      background-size:cover;
-      border-radius:16px;
-      overflow:hidden;
-      padding:1.5rem;
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@700;900&display=swap');
+
+    :root {
+      --glass: rgba(255, 255, 255, 0.03);
+      --glass-border: rgba(255, 255, 255, 0.1);
+      --accent-gold: #FFD700;
+      --accent-blue: #3b82f6;
+      --victory-red: #ef4444;
     }
-    .profile-img-container{
-      width:88px;height:88px;border-radius:50%;
-      padding:4px;
-      background:linear-gradient(135deg,#00247D 25%,#FFFFFF 40%,#CF142B 60%,#FFFFFF 75%,#00247D);
-      display:flex;align-items:center;justify-content:center;
-      box-shadow:0 0 10px rgba(255,255,255,.8);
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      font-family: 'Inter', sans-serif;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 400px;
     }
-    .profile-img{width:80px;height:80px;border-radius:50%}
-    .progress-container{
-      background-color:rgba(0,0,0,.5);
-      border-radius:10px;
-      padding:2px;
-      position:relative;
-      margin-top:1rem;
-      height:24px;
+
+    .rank-card {
+      width: 500px;
+      height: 240px;
+      background: linear-gradient(135deg, #0f172a 0%, #020617 100%);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      padding: 24px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     }
-    .progress-bar{
-      background:linear-gradient(90deg,#ff4d4d,#ffcc00);
-      border-radius:10px;
-      height:100%;
+
+    /* Union Jack Texture Overlay */
+    .rank-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url('{unionjack}') no-repeat center center;
+      background-size: cover;
+      opacity: 0.15;
+      pointer-events: none;
+      mix-blend-mode: overlay;
     }
-    .xp-box{
-      background:rgba(0,0,0,.7);
-      padding:5px 10px;
-      border-radius:8px;
-      display:inline-block;
-      margin-top:.5rem;
+
+    /* Left Section: Avatar & Balances */
+    .left-panel {
+      flex: 0 0 140px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      z-index: 10;
     }
-    .xp-text{font-weight:bold}
-    .role-label{
-      font-size:.75rem;
-      font-weight:bold;
-      position:absolute;
-      top:-26px;
-      color:white;
-      background:rgba(0,0,0,.7);
-      padding:2px 4px;
-      border-radius:4px;
+
+    .avatar-glow {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      padding: 4px;
+      background: linear-gradient(135deg, var(--accent-blue), var(--victory-red), var(--accent-gold));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
     }
-    .current-role{left:0}
-    .next-role{right:0}
-    .currency-stack{
-      position:absolute;
-      top:16px;
-      left:16px;
-      display:flex;
-      flex-direction:column;
-      gap:6px;
+
+    .avatar {
+      width: 92px;
+      height: 92px;
+      border-radius: 50%;
+      border: 2px solid #000;
+      object-fit: cover;
     }
-    .coin-box{
-      display:flex;
-      align-items:center;
-      background:rgba(0,0,0,.65);
-      padding:4px 10px;
-      border-radius:10px;
+
+    .balance-chips {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
     }
-    .coin-icon{width:32px;height:32px;margin-right:8px}
-    .coin-box .xp-text{font-size:14px;font-weight:700}
+
+    /* Right Section: Info & Progress */
+    .main-panel {
+      flex: 1;
+      padding-left: 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      z-index: 10;
+    }
+
+    .user-header {
+      margin-bottom: 8px;
+    }
+
+    .username {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.75rem;
+      font-weight: 900;
+      background: linear-gradient(to bottom, #fff, #94a3b8);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 4px;
+    }
+
+    .rank-label {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1rem;
+      color: var(--accent-gold);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .progress-section {
+      width: 100%;
+    }
+
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 6px;
+    }
+
+    .progress-track {
+      height: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-blue), #6366f1);
+      box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+      border-radius: 6px;
+      transition: width 0.5s ease-out;
+    }
+
+    .xp-summary {
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.875rem;
+      color: #f1f5f9;
+      margin-top: 8px;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    .xp-value {
+      font-size: 1.125rem;
+      color: var(--accent-blue);
+      font-weight: 700;
+    }
+
+    .coin-box {
+      display: flex;
+      align-items: center;
+      background: var(--glass);
+      padding: 4px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--glass-border);
+      font-size: 0.75rem;
+      font-weight: 700;
+      gap: 6px;
+    }
+
+    .coin-icon {
+      width: 16px;
+      height: 16px;
+    }
   </style>
 </head>
-<body class="flex items-center justify-center min-h-screen bg-gray-900">
-  <div class="w-96 rank-card shadow-lg flex flex-col items-center relative text-center text-white">
-    <div class="currency-stack">
-      {shutcoin_html}
-      {britbuck_html}
+
+<body>
+  <div class="rank-card">
+    <div class="left-panel">
+      <div class="avatar-glow">
+        <img src="{profile_pic}" alt="Avatar" class="avatar" />
+      </div>
+      <div class="balance-chips">
+        {shutcoin_html}
+        {britbuck_html}
+      </div>
     </div>
-    <div class="profile-img-container">
-      <img src="{profile_pic}" alt="Profile Picture" class="profile-img" />
+    <div class="main-panel">
+      <div class="user-header">
+        <div class="rank-label">Rank #{rank}</div>
+        <div class="username">{username}</div>
+      </div>
+
+      <div class="progress-section">
+        <div class="progress-meta">
+          <span>{current_role}</span>
+          <span>{next_role_name}</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" style="width: {progress_percent};"></div>
+        </div>
+        <div class="xp-summary">
+          <span class="xp-value">{xp_display}</span>
+          <span class="text-slate-500 uppercase text-[10px] tracking-wider">Total XP</span>
+        </div>
+      </div>
     </div>
-    <h2 class="mt-4 text-xl font-bold">{username}</h2>
-    <p class="text-gray-300 text-sm">Rank: {rank}</p>
-    <div class="w-full progress-container">
-      <div class="role-label current-role">{current_role}</div>
-      {next_role_html}
-      <div class="progress-bar" style="width:{progress_percent};"></div>
-    </div>
-    <p class="text-xs text-gray-300 xp-box">
-      <span class="xp-text">XP: {xp_display}</span>
-    </p>
   </div>
 </body>
+
 </html>

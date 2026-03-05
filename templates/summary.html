@@ -1,77 +1,179 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
+
 <head>
+    <meta charset="UTF-8">
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body {{
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@600;800&display=swap');
+
+        :root {
+            --glass: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.1);
+
+            --accent: {
+                title_color
+            }
+
+            ;
+        }
+
+        body {
             margin: 0;
-            padding: 0;
-            background-color: #2c2f33;
-            font-family: Arial, sans-serif;
-            color: #dcddde;
-        }}
-        .container {{
-            border: 2px solid {title_color};
-            border-radius: 10px;
-            padding: 20px;
-            width: 90%;
-            margin: 0 auto;
+            padding: 40px;
+            background: radial-gradient(circle at top right, #1e293b, #0f172a, #020617);
+            font-family: 'Inter', sans-serif;
+            color: #f8fafc;
+            width: 1000px;
+            box-sizing: border-box;
+        }
+
+        .container {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 40px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            grid-template-columns: repeat(3, 1fr);
             gap: 20px;
-            background-color: #23272a;
-        }}
-        .title {{
+        }
+
+        .header {
             grid-column: 1 / -1;
-            font-size: 24px;
-            font-weight: bold;
-            color: {title_color};
-            margin-bottom: 20px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 800;
             text-align: center;
-        }}
-        .summary-item {{
-            background-color: #2c2f33;
-            border: 1px solid #99aab5;
-            border-radius: 8px;
+            margin-bottom: 20px;
+            color: var(--accent);
+            letter-spacing: -0.02em;
+        }
+
+        .summary-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
             padding: 20px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }}
-        .summary-item strong {{
-            color: {title_color};
-        }}
-        ul {{
-            margin: 0;
-            padding-left: 20px;
-            list-style-type: disc;
-        }}
-        li {{
-            margin-bottom: 5px;
-        }}
-        .half-width {{
-            grid-column: span 1;
-        }}
-        .full-width {{
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .item-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+        }
+
+        .item-value {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+
+        .full-width {
             grid-column: 1 / -1;
-        }}
+        }
+
+        .list-section {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            grid-column: 1 / -1;
+            margin-top: 20px;
+        }
+
+        .list-box {
+            background: rgba(255, 255, 255, 0.015);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 24px;
+        }
+
+        .list-title {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 16px;
+            color: var(--accent);
+            border-bottom: 1px solid var(--glass-border);
+            padding-bottom: 10px;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        li {
+            font-size: 0.9rem;
+            display: flex;
+            justify-content: space-between;
+            color: #e2e8f0;
+        }
+
+        li span {
+            font-weight: 600;
+            color: #94a3b8;
+        }
     </style>
 </head>
+
 <body>
     <div class="container">
-        <div class="title">{title}</div>
-        <div class="summary-item half-width"><strong>Total Members:</strong> {total_members}</div>
-        <div class="summary-item half-width"><strong>Members Joined:</strong> {members_joined}</div>
-        <div class="summary-item half-width"><strong>Members Left:</strong> {members_left}</div>
-        <div class="summary-item half-width"><strong>Total Messages:</strong> {total_messages}</div>
-        <div class="summary-item half-width"><strong>Reactions Added/Removed:</strong> {reactions_added} / {reactions_removed}</div>
-        <div class="summary-item half-width"><strong>Deleted Messages:</strong> {deleted_messages}</div>
-        <div class="summary-item half-width"><strong>Boosters (New/Lost):</strong> {boosters}</div>
-        <div class="summary-item full-width"><strong>Top Active Channels:</strong>
-            <ul>{top_channels}</ul>
+        <div class="header">{title}</div>
+
+        <div class="summary-item">
+            <div class="item-label">Total Members</div>
+            <div class="item-value">{total_members}</div>
         </div>
-        <div class="summary-item full-width"><strong>Top Active Members:</strong>
-            <ul>{active_members}</ul>
+        <div class="summary-item">
+            <div class="item-label">Joined Today</div>
+            <div class="item-value">{members_joined}</div>
         </div>
-        <div class="summary-item full-width"><strong>Top Reacting Members:</strong>
-            <ul>{reacting_members}</ul>
+        <div class="summary-item">
+            <div class="item-label">Left / Banned</div>
+            <div class="item-value">{members_left}</div>
+        </div>
+
+        <div class="summary-item">
+            <div class="item-label">Messages</div>
+            <div class="item-value">{total_messages}</div>
+        </div>
+        <div class="summary-item">
+            <div class="item-label">Reactions (±)</div>
+            <div class="item-value">{reactions_added} / {reactions_removed}</div>
+        </div>
+        <div class="summary-item">
+            <div class="item-label">Boosters (±)</div>
+            <div class="item-value">{boosters}</div>
+        </div>
+
+        <div class="list-section">
+            <div class="list-box">
+                <div class="list-title">Active Channels</div>
+                <ul>{top_channels}</ul>
+            </div>
+            <div class="list-box">
+                <div class="list-title">Most Active</div>
+                <ul>{active_members}</ul>
+            </div>
+            <div class="list-box">
+                <div class="list-title">Top Reactors</div>
+                <ul>{reacting_members}</ul>
+            </div>
         </div>
     </div>
 </body>
+
 </html>

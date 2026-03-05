@@ -27,19 +27,19 @@ async def create_summary_image(summary_data, title, title_color):
 
     top_channels_str = "\n".join(
         [
-            f"<li>{channel_name}: {count} messages</li>"
+            f"<li>{channel_name} <span>{count}</span></li>"
             for channel_name, count in top_channels
         ]
     )
     active_members_str = "\n".join(
         [
-            f"<li>{member_name}: {count} messages</li>"
+            f"<li>{member_name} <span>{count}</span></li>"
             for member_name, count in active_members
         ]
     )
     reacting_members_str = "\n".join(
         [
-            f"<li>{member_name}: {count} reactions</li>"
+            f"<li>{member_name} <span>{count}</span></li>"
             for member_name, count in reacting_members
         ]
     )

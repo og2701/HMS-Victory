@@ -162,19 +162,25 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
         avatar_data = await get_avatar_data_uri(client, avatar_url)
 
         top_richest_html_parts.append(
-            f"<li>"
-            f"<div class='user-details-left'>"
-            f"<span class='rank'>#{i+1}</span>"
-            f"<img src='{avatar_data}' class='list-avatar' alt='{member_display_name} avatar' />"
-            f"<span class='name'>{member_display_name}</span>"
+            f"<div class='user-item'>"
+            f"<div class='user-rank'>#{i+1}</div>"
+            f"<img src='{avatar_data}' class='user-avatar' alt='{member_display_name} avatar' />"
+            f"<div class='user-name'>{member_display_name}</div>"
+            f"<div class='user-balance'>{balance:,} UKP</div>"
             f"</div>"
-            f"<span class='balance'>{balance:,} UKP</span>"
-            f"</li>"
         )
-    top_richest_users_html = "\n".join(top_richest_html_parts) if top_richest_html_parts else "<li>No UKPence data.</li>"
+    top_richest_users_html = "\n".join(top_richest_html_parts) if top_richest_html_parts else "<div>No UKPence data.</div>"
 
-    distribution_html_parts = [f"<li><span class='name'>{bracket}</span> <span class='balance'>{count} users</span></li>" for bracket, count in dist_brackets.items() if count > 0]
-    distribution_html = "\n".join(distribution_html_parts) if distribution_html_parts else "<li>No distribution data.</li>"
+    distribution_html_parts = [
+        f"<div class='user-item'>"
+        f"<div class='user-name'>{bracket}</div>"
+        f"<div class='user-balance'>{count} users</div>"
+        f"</div>" 
+        for bracket, count in dist_brackets.items() if count > 0
+    ]
+    distribution_html = "\n".join(distribution_html_parts) if distribution_html_parts else "<div>No distribution data.</div>"
+
+    template_path = os.path.join("templates", "economy_stats.html")
 
     try:
         with open(template_path, "r", encoding="utf-8") as file:
