@@ -13,51 +13,135 @@ if TYPE_CHECKING:
 from lib.economy.economy_manager import get_bb, remove_bb, ensure_bb, add_shutcoins, add_bb
 from lib.economy.bank_manager import BankManager
 
-class ShopBrowserView(View):
-    """Paginated shop browser with 'Previous', 'Buy', and 'Next' buttons."""
-    def __init__(self, items: List['ShopItem'], user_id: int, current_page: int = 0):
+class ShopItemSelect(Select):
+    """Dropdown menu to select a shop item."""
+    def __init__(self, items: List['ShopItem']):
+        options = []
+        for i, item in enumerate(items):
+            quantity = item.get_quantity()
+            stock_str = f"{quantity} left" if quantity is not None else "Unlimited"
+            if quantity is not None and quantity <= 0:
+                stock_str = "OUT OF STOCK"
+            
+            emoji = "🛍️"
+            if item.use_inventory:
+                from lib.economy.shop_inventory import ShopInventory
+                item_info = ShopInventory.get_item_info(item.id)
+                if item_info and item_info['auto_restock']:
+                    emoji = "🔄"
+                elif item_info and item_info['max_quantity'] is not None:
+                    emoji = "⏳"
+                    
+            options.append(
+                discord.SelectOption(
+                    label=item.name,
+                    description=f"{item.price} UKP - {stock_str}",
+                    value=str(i),
+                    emoji=emoji
+                )
+            )
+        super().__init__(placeholder="Select an item to view details...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: 'ShopOverviewView' = self.view
+        if interaction.user.id != view.user_id:
+            return await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
+            
+        selected_index = int(self.values[0])
+        selected_item = view.items[selected_index]
+        
+        detail_view = ShopItemDetailView(view.items, selected_item, view.user_id)
+        
+        await interaction.response.edit_message(embed=detail_view._create_embed(), view=detail_view)
+
+class ShopOverviewView(View):
+    """The main shop view listing all items and a dropdown."""
+    def __init__(self, items: List['ShopItem'], user_id: int):
         super().__init__(timeout=300)
         self.items = items
         self.user_id = user_id
-        self.current_page = current_page
+        self.add_item(ShopItemSelect(items))
+
+    def _create_embed(self) -> discord.Embed:
+        user_balance = get_bb(self.user_id)
+        
+        embed = discord.Embed(
+            title="🛒 UKPlace Premium Shop",
+            description="Welcome to the shop! Select an item from the dropdown below to view details and purchase.",
+            color=0x2b2d31
+        )
+        
+        embed.add_field(name="💳 Your Wallet", value=f"**{user_balance}** UKPence", inline=False)
+        
+        item_list = []
+        from lib.economy.shop_inventory import ShopInventory
+        
+        for item in self.items:
+            quantity = item.get_quantity()
+            stock_str = f"**{quantity}** remaining" if quantity is not None else "♾️ Unlimited"
+            if quantity is not None and quantity <= 0:
+                stock_str = "❌ **OUT OF STOCK**"
+            elif quantity is not None and quantity <= 5:
+                stock_str = f"⚠️ **{quantity} left**"
+                
+            badge = ""
+            if item.use_inventory:
+                item_info = ShopInventory.get_item_info(item.id)
+                if item_info:
+                    if item_info['auto_restock']:
+                        badge = " 🔄"
+                    elif item_info['max_quantity'] is not None:
+                        badge = " ⏳"
+                        
+            item_list.append(f"• **{item.name}** - {item.price} UKP {badge} ({stock_str})")
+        
+        if item_list:
+            embed.description += "\n\n**Available Items:**\n" + "\n".join(item_list)
+            
+        embed.set_footer(text="🔄 Auto-Restocks | ⏳ Limited Time")
+        return embed
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        pass
+
+class ShopItemDetailView(View):
+    """View showing details of a specific item, with Buy and Back buttons."""
+    def __init__(self, all_items: List['ShopItem'], item: 'ShopItem', user_id: int):
+        super().__init__(timeout=300)
+        self.all_items = all_items
+        self.item = item
+        self.user_id = user_id
         self._update_buttons()
 
     def _update_buttons(self):
         self.clear_items()
         
-        # Previous Button
-        prev_btn = Button(style=discord.ButtonStyle.secondary, emoji="◀️", disabled=(self.current_page == 0))
-        prev_btn.callback = self.prev_page
-        self.add_item(prev_btn)
+        back_btn = Button(label="Back to Menu", style=discord.ButtonStyle.secondary, emoji="◀️")
+        back_btn.callback = self.go_back
+        self.add_item(back_btn)
         
-        # Buy Button
-        current_item = self.items[self.current_page]
         user_balance = get_bb(self.user_id)
-        quantity = current_item.get_quantity()
+        quantity = self.item.get_quantity()
         
-        can_afford = user_balance >= current_item.price
+        can_afford = user_balance >= self.item.price
         in_stock = quantity is None or quantity > 0
         
-        buy_label = f"Buy ({current_item.price} UKP)"
+        buy_label = f"Buy ({self.item.price} UKP)"
         buy_style = discord.ButtonStyle.green if (can_afford and in_stock) else discord.ButtonStyle.secondary
         
         buy_btn = Button(label=buy_label, style=buy_style, emoji="💳", disabled=not (can_afford and in_stock))
         buy_btn.callback = self.buy_item
         self.add_item(buy_btn)
-        
-        # Next Button
-        next_btn = Button(style=discord.ButtonStyle.secondary, emoji="▶️", disabled=(self.current_page == len(self.items) - 1))
-        next_btn.callback = self.next_page
-        self.add_item(next_btn)
 
     def _create_embed(self) -> discord.Embed:
-        current_item = self.items[self.current_page]
         user_balance = get_bb(self.user_id)
-        quantity = current_item.get_quantity()
+        quantity = self.item.get_quantity()
         
         embed = discord.Embed(
-            title="🛒 UKPlace Premium Shop",
-            color=0x2b2d31  # Discord dark theme color for glassmorphism illusion
+            title=f"🔎 Item Details: {self.item.name}",
+            color=0x2b2d31
         )
         
         stock_str = f"**{quantity}** remaining" if quantity is not None else "♾️ Unlimited"
@@ -66,13 +150,12 @@ class ShopBrowserView(View):
         elif quantity is not None and quantity <= 5:
             stock_str = f"⚠️ **Only {quantity} left!**"
             
-        afford_emoji = "✅" if user_balance >= current_item.price else "❌"
+        afford_emoji = "✅" if user_balance >= self.item.price else "❌"
         
-        # Check restock info
         badge = ""
-        if current_item.use_inventory:
+        if self.item.use_inventory:
             from lib.economy.shop_inventory import ShopInventory
-            item_info = ShopInventory.get_item_info(current_item.id)
+            item_info = ShopInventory.get_item_info(self.item.id)
             if item_info:
                 if item_info['auto_restock']:
                     badge = " 🔄 **Auto-Restocks**"
@@ -80,55 +163,42 @@ class ShopBrowserView(View):
                     badge = " ⏳ **Limited Time**"
 
         embed.description = (
-            f"**Item {self.current_page + 1} of {len(self.items)}**{badge}\n"
-            "━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"### {current_item.name}\n"
-            f"> *{current_item.description}*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"> *{self.item.description}*\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
         )
         
-        embed.add_field(name="💰 Price", value=f"**{current_item.price}** UKPence", inline=True)
-        embed.add_field(name="📦 Stock", value=stock_str, inline=True)
+        embed.add_field(name="💰 Price", value=f"**{self.item.price}** UKPence", inline=True)
+        embed.add_field(name="📦 Stock", value=stock_str + badge, inline=True)
         embed.add_field(name="💳 Your Wallet", value=f"{afford_emoji} **{user_balance}** UKPence", inline=False)
         
-        embed.set_footer(text="Use the buttons below to navigate and purchase.")
         return embed
 
-    async def prev_page(self, interaction: discord.Interaction):
+    async def go_back(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
-        self.current_page = max(0, self.current_page - 1)
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self._create_embed(), view=self)
-
-    async def next_page(self, interaction: discord.Interaction):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
-        self.current_page = min(len(self.items) - 1, self.current_page + 1)
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self._create_embed(), view=self)
+            
+        overview_view = ShopOverviewView(self.all_items, self.user_id)
+        await interaction.response.edit_message(embed=overview_view._create_embed(), view=overview_view)
 
     async def buy_item(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
             
-        selected_item = self.items[self.current_page]
-        
-        # Check if user can jump into purchase logic
-        can_purchase, reason = selected_item.can_purchase(interaction.user)
+        can_purchase, reason = self.item.can_purchase(interaction.user)
         if not can_purchase:
             await interaction.response.send_message(f"❌ Cannot purchase: {reason}", ephemeral=True)
             return
 
-        detail_view = PurchaseConfirmationView(selected_item, self)
+        detail_view = PurchaseConfirmationView(self.item, self)
         
         embed = discord.Embed(
             title="💳 Confirm Purchase",
-            description=f"Are you sure you want to buy **{selected_item.name}**?\n\n> *{selected_item.description}*",
+            description=f"Are you sure you want to buy **{self.item.name}**?\n\n> *{self.item.description}*",
             color=0x00ff00
         )
-        embed.add_field(name="Cost", value=f"{selected_item.price} UKPence", inline=True)
-        embed.add_field(name="Balance After Purchase", value=f"{get_bb(interaction.user.id) - selected_item.price} UKPence", inline=True)
+        embed.add_field(name="Cost", value=f"{self.item.price} UKPence", inline=True)
+        embed.add_field(name="Balance After Purchase", value=f"{get_bb(interaction.user.id) - self.item.price} UKPence", inline=True)
 
         await interaction.response.edit_message(embed=embed, view=detail_view)
 
@@ -436,10 +506,9 @@ class VIPCaseSpinView(View):
             await interaction.response.send_message("❌ Error: VIP Case item not found in shop!", ephemeral=True)
             return
 
-        from lib.economy.shop_ui import ShopBrowserView
+        from lib.economy.shop_ui import ShopOverviewView
         
-        current_page = next((i for i, item in enumerate(items) if item.id == "vip_case"), 0)
-        main_view = ShopBrowserView(items, interaction.user.id, current_page=current_page)
+        main_view = ShopOverviewView(items, interaction.user.id)
         
         detail_view = PurchaseConfirmationView(vip_case_item, main_view)
 
