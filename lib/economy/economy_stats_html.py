@@ -235,7 +235,7 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
     except Exception as e:
         logger.warning(f"[ECON DEBUG] Could not save debug HTML: {e}")
     
-    result = await screenshot_html(formatted_html, size=(1500, 2400))
+    result = await screenshot_html(formatted_html, size=(800, 1600))
     if result:
         logger.info(f"[ECON DEBUG] Screenshot result: BytesIO with {result.getbuffer().nbytes} bytes")
     else:
