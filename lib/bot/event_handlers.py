@@ -651,7 +651,6 @@ async def check_hall_of_fame(client, payload):
         embed = discord.Embed(
             description=f"[Click here to jump to message]({message.jump_url})",
             color=0xffd700, # Gold color
-            timestamp=message.created_at,
             url=message.jump_url
         )
         embed.set_author(
