@@ -367,6 +367,44 @@ async def cleanup_webhook_reactions(client):
         save_webhook_deletions(deletions)
 
 
+async def auto_restock_shop(client):
+    try:
+        from lib.economy.shop_inventory import ShopInventory
+        from lib.economy.shop_items import get_shop_items
+        
+        restocked_items = ShopInventory.auto_restock_items()
+        
+        if restocked_items:
+            # Log the restock
+            log_channel = client.get_channel(CHANNELS.BOT_USAGE_LOG)
+            if log_channel:
+                shop_items = {item.id: item for item in get_shop_items()}
+                
+                embed = discord.Embed(
+                    title="🔄 Automated Shop Restock",
+                    description=f"Restocked {len(restocked_items)} items.",
+                    color=0x00ff00
+                )
+                
+                restock_list = []
+                for item_id in restocked_items:
+                    shop_item = shop_items.get(item_id)
+                    item_name = shop_item.name if shop_item else item_id
+                    quantity = ShopInventory.get_quantity(item_id)
+                    restock_list.append(f"• **{item_name}** - New Quantity: {quantity}")
+                
+                # Truncate if too long (Discord limits)
+                description = "\n".join(restock_list)
+                if len(description) > 4000:
+                    description = description[:3990] + "..."
+                    
+                embed.description += "\n\n" + description
+                await log_channel.send(embed=embed)
+                logger.info(f"Automated restock completed for {len(restocked_items)} items.")
+    except Exception as e:
+        logger.error(f"Error during automated shop restock: {e}", exc_info=True)
+
+
 def schedule_client_jobs(client, scheduler):
     scheduler.add_job(award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client], id="award_booster_bonus_job", name="Award Daily Booster UKPence & Log SOD Circulation")
     scheduler.add_job(daily_summary, CronTrigger(hour=0, minute=1, timezone="Europe/London"), args=[client], id="daily_summary_job", name="Daily Summary, Chat Rewards & Economy Metrics")
@@ -387,6 +425,7 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(cleanup_webhook_reactions, IntervalTrigger(minutes=1), args=[client], id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
 
     scheduler.add_job(process_economy_logs, IntervalTrigger(seconds=15), args=[client], id="process_economy_logs_interval", name="Process Economy Log Queue")
+    scheduler.add_job(auto_restock_shop, IntervalTrigger(hours=12), args=[client], id="auto_restock_shop_interval", name="Automated Shop Restock")
 
     scheduler.start()
 

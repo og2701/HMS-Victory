@@ -91,27 +91,33 @@ class ShopInventory:
 
     @staticmethod
     def auto_restock_items() -> List[str]:
-        """Perform restocking for all items to their max quantity. Returns list of restocked item IDs."""
+        """Perform restocking for all auto-restock items by their restock amount. Returns list of restocked item IDs."""
         current_time = int(time.time())
 
-        # Find all items with max_quantity set (these are restockable items)
+        # Find all items with auto_restock enabled that are below max_quantity
         items_to_restock = DatabaseManager.fetch_all('''
-            SELECT item_id, quantity, max_quantity
+            SELECT item_id, quantity, max_quantity, restock_amount
             FROM shop_inventory
-            WHERE max_quantity IS NOT NULL AND quantity < max_quantity
+            WHERE auto_restock = 1 AND max_quantity IS NOT NULL AND quantity < max_quantity
         ''')
 
         restocked_items = []
 
-        for item_id, current_qty, max_qty in items_to_restock:
-            # Set to max quantity
-            DatabaseManager.execute('''
-                UPDATE shop_inventory
-                SET quantity = ?, last_restock = ?
-                WHERE item_id = ?
-            ''', (max_qty, current_time, item_id))
+        for item_id, current_qty, max_qty, restock_amt in items_to_restock:
+            if restock_amt <= 0:
+                continue
 
-            restocked_items.append(item_id)
+            new_qty = min(current_qty + restock_amt, max_qty)
+            
+            # Only update if the quantity actually increased
+            if new_qty > current_qty:
+                DatabaseManager.execute('''
+                    UPDATE shop_inventory
+                    SET quantity = ?, last_restock = ?
+                    WHERE item_id = ?
+                ''', (new_qty, current_time, item_id))
+
+                restocked_items.append(item_id)
 
         return restocked_items
 

@@ -68,8 +68,19 @@ class ShopBrowserView(View):
             
         afford_emoji = "✅" if user_balance >= current_item.price else "❌"
         
+        # Check restock info
+        badge = ""
+        if current_item.use_inventory:
+            from lib.economy.shop_inventory import ShopInventory
+            item_info = ShopInventory.get_item_info(current_item.id)
+            if item_info:
+                if item_info['auto_restock']:
+                    badge = " 🔄 **Auto-Restocks**"
+                elif item_info['max_quantity'] is not None:
+                    badge = " ⏳ **Limited Time**"
+
         embed.description = (
-            f"**Item {self.current_page + 1} of {len(self.items)}**\n"
+            f"**Item {self.current_page + 1} of {len(self.items)}**{badge}\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
             f"### {current_item.name}\n"
             f"> *{current_item.description}*\n"
