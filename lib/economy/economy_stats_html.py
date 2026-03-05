@@ -215,4 +215,4 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
         net_ukpence_change_class=net_ukpence_change_class
     )
 
-    return await screenshot_html(formatted_html, size=(750, 2200))
+    return await screenshot_html(formatted_html, size=(750, 2200), apply_trim=False)
