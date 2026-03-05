@@ -1,12 +1,15 @@
 import discord
 import json
 import os
+import logging
 from datetime import datetime, timedelta
 import pytz
 from lib.core.image_processing import encode_image_to_data_uri, screenshot_html, get_avatar_data_uri
 
 from lib.economy.economy_manager import get_all_balances as load_ukpence_data
 from database import DatabaseManager
+
+logger = logging.getLogger(__name__)
 
 
 try:
@@ -38,7 +41,9 @@ def load_balance_snapshot(date_str: str):
         return None
 
 async def create_economy_stats_image(guild: discord.Guild, client: discord.Client) -> str:
+    logger.info("[ECON DEBUG] create_economy_stats_image called")
     ukpence_data_current = load_ukpence_data()
+    logger.info(f"[ECON DEBUG] Loaded {len(ukpence_data_current)} balances")
     
     total_ukpence = sum(ukpence_data_current.values())
     num_holders = len(ukpence_data_current)
@@ -171,14 +176,18 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
     distribution_html = "\n".join(distribution_html_parts) if distribution_html_parts else "<li>No distribution data.</li>"
 
     template_path = "templates/economy_stats.html"
+    logger.info(f"[ECON DEBUG] Loading template from: {os.path.abspath(template_path)}")
+    logger.info(f"[ECON DEBUG] CWD: {os.getcwd()}")
+    logger.info(f"[ECON DEBUG] Template exists: {os.path.exists(template_path)}")
     try:
         with open(template_path, "r", encoding="utf-8") as file:
             template = file.read()
+        logger.info(f"[ECON DEBUG] Template loaded, length: {len(template)}")
     except FileNotFoundError:
-        logger.error(f"Failed to find economy stats template at {template_path}")
+        logger.error(f"[ECON DEBUG] Failed to find economy stats template at {template_path} (abs: {os.path.abspath(template_path)})")
         return None
     except Exception as e:
-        logger.error(f"Error reading economy stats template: {e}")
+        logger.error(f"[ECON DEBUG] Error reading economy stats template: {e}")
         return None
     
     formatted_html = template.format(
@@ -214,5 +223,20 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
         net_ukpence_change_absolute_str=net_ukpence_change_absolute_str,
         net_ukpence_change_class=net_ukpence_change_class
     )
-
-    return await screenshot_html(formatted_html, size=(750, 2200), apply_trim=False)
+    logger.info(f"[ECON DEBUG] Formatted HTML length: {len(formatted_html)}")
+    
+    # Save debug HTML to file for inspection
+    try:
+        debug_path = "debug_economy_stats.html"
+        with open(debug_path, "w", encoding="utf-8") as f:
+            f.write(formatted_html)
+        logger.info(f"[ECON DEBUG] Saved debug HTML to {os.path.abspath(debug_path)}")
+    except Exception as e:
+        logger.warning(f"[ECON DEBUG] Could not save debug HTML: {e}")
+    
+    result = await screenshot_html(formatted_html, size=(750, 2200), apply_trim=False)
+    if result:
+        logger.info(f"[ECON DEBUG] Screenshot result: BytesIO with {result.getbuffer().nbytes} bytes")
+    else:
+        logger.error("[ECON DEBUG] Screenshot returned None!")
+    return result
