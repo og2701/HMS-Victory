@@ -5,29 +5,33 @@
   <meta charset="UTF-8" />
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@700;900&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@600;800&display=swap');
 
     body {
       margin: 0;
       padding: 0;
-      background: transparent;
+      background: #000;
       font-family: 'Inter', sans-serif;
-      color: white;
+      color: #fff;
+      width: 800px;
+      height: 400px;
       display: flex;
       align-items: center;
       justify-content: center;
+      overflow: hidden;
     }
 
-    .rank-card {
-      width: 500px;
-      height: 240px;
+    .container {
+      position: relative;
+      width: 800px;
+      height: 400px;
       background: url('{unionjack}') no-repeat center center;
       background-size: cover;
-      border-radius: 20px;
-      position: relative;
+      border-radius: 24px;
       overflow: hidden;
       display: flex;
-      padding: 24px;
+      flex-direction: column;
+      justify-content: space-between;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     }
 
@@ -159,7 +163,7 @@
 </head>
 
 <body>
-  <div class="rank-card">
+  <div class="container">
     <div class="overlay"></div>
     <div class="left-panel">
       <div class="avatar-container">

@@ -237,7 +237,7 @@ class XPSystem:
           <div class="flex flex-col gap-2">{right_html}</div>
         </div>
         """
-        final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
+        final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col).replace("{{ TITLE }}", "HMS Victory UKPence Richlist")
         image_buffer = await screenshot_html(final_html, size=(1000, 1200))
         return image_buffer.getvalue()
 
@@ -311,7 +311,7 @@ class XPSystem:
           <div class="flex flex-col gap-2">{right_html}</div>
         </div>
         """
-        final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
+        final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col).replace("{{ TITLE }}", "HMS Victory UKPence Richlist")
         image_buffer = await screenshot_html(final_html, size=(1000, 1200))
         return image_buffer.getvalue()
 
