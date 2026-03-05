@@ -612,15 +612,20 @@ async def check_hall_of_fame(client, payload):
         try:
             channel = await client.fetch_channel(payload.channel_id)
         except discord.NotFound:
+            logger.error(f"[HOF] Channel {payload.channel_id} not found.")
             return
             
     try:
         message = await channel.fetch_message(payload.message_id)
     except discord.NotFound:
+        logger.error(f"[HOF] Message {payload.message_id} not found.")
         return
 
-    # Quick filter to avoid iterating through users if total reactions are less than 5
-    if sum(r.count for r in message.reactions) < 5:
+    total_reactions = sum(r.count for r in message.reactions)
+    logger.info(f"[HOF] Checking message {message.id}. Total reactions: {total_reactions}")
+
+    # Quick filter to avoid iterating through users if total reactions are less than 1
+    if total_reactions < 1:
         return
         
     unique_reactors = set()
@@ -628,7 +633,10 @@ async def check_hall_of_fame(client, payload):
         async for u in r.users():
             unique_reactors.add(u.id)
             
-    if len(unique_reactors) >= 5:
+    logger.info(f"[HOF] Unique reactors for {message.id}: {len(unique_reactors)}")
+
+    if len(unique_reactors) >= 1:
+        logger.info(f"[HOF] Message {message.id} qualified for Hall of Fame!")
         hall_of_fame_data.append(str(message.id))
         save_json_file(HALL_OF_FAME_FILE, hall_of_fame_data)
         
