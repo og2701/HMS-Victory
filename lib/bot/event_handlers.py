@@ -11,7 +11,7 @@ from lib.core.discord_helpers import has_role, has_any_role, restrict_channel_fo
 from lib.core.file_operations import load_whitelist, save_whitelist, load_persistent_views, save_persistent_views, load_json_file, save_json_file, set_file_status, is_file_status_active, load_webhook_deletions, save_webhook_deletions
 from lib.core.utils import is_lockdown_active
 from lib.core.image_processing import trim_image, find_non_overlapping_position, random_color_excluding_blue_and_dark
-from lib.core.log_functions import create_message_image, create_edited_message_image
+from lib.core.log_functions import create_message_image, create_edited_message_image, create_quote_image
 from config import *
 from lib.core.constants import FLAG_LANGUAGE_MAPPINGS, TRANSLATION_BLACKLIST_CHANNELS
 from lib.economy.economy_manager import can_use_shutcoin, remove_shutcoin, SHUTCOIN_ENABLED
@@ -656,14 +656,22 @@ async def check_hall_of_fame(client, payload):
         embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url if message.author.display_avatar else None)
         embed.add_field(name="Original Message", value=f"[Click to jump!]({message.jump_url})")
         
-        # Handle attachments
-        if message.attachments:
-            for attachment in message.attachments:
-                if attachment.content_type and attachment.content_type.startswith("image/"):
-                    embed.set_image(url=attachment.url)
-                    break # Just show the first image
-                    
-        await thread.send(content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!", embed=embed)
+        # Generate quote image
+        try:
+            image_buffer = await create_quote_image(client, message)
+            file = discord.File(image_buffer, filename="hof_quote.png")
+            embed.set_image(url="attachment://hof_quote.png")
+            await thread.send(content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!", embed=embed, file=file)
+        except Exception as e:
+            logger.error(f"[HOF] Error creating quote image: {e}")
+            # Fallback to no image or original attachment logic
+            if message.attachments:
+                for attachment in message.attachments:
+                    if attachment.content_type and attachment.content_type.startswith("image/"):
+                        embed.set_image(url=attachment.url)
+                        break
+            await thread.send(content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!", embed=embed)
+        
         logger.info(f"Message {message.id} sent to Hall of Fame.")
 
 
