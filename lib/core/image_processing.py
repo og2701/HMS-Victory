@@ -29,7 +29,7 @@ if CHROME_PATH and os.path.exists(CHROME_PATH):
     chrome_options.binary_location = CHROME_PATH
 
 chrome_options.add_argument("--headless")
-chrome_options.add_argument("--force-device-scale-factor=2")
+# Removed --force-device-scale-factor=2 as it quadruples memory usage on rendering
 chrome_options.add_argument("--disable-gpu")
 chrome_options.add_argument("--disable-software-rasterizer")
 chrome_options.add_argument("--no-sandbox")
@@ -43,17 +43,52 @@ chrome_options.add_argument("--no-first-run")
 chrome_options.add_argument("--disable-sync")
 chrome_options.add_argument("--remote-debugging-pipe") # More stable than port for headless
 
-try:
-    chrome_service = Service(ChromeDriverManager().install())
-    persistent_browser = webdriver.Chrome(service=chrome_service, options=chrome_options)
-except Exception as e:
-    logging.warning(f"Failed to use ChromeDriverManager, falling back to default driver: {e}")
-    persistent_browser = webdriver.Chrome(options=chrome_options)
+# Aggressive memory and disk optimizations for t3.micro
+chrome_options.add_argument("--disable-site-isolation-trials") # Saves significant per-tab memory
+chrome_options.add_argument("--js-flags=--max-old-space-size=256") # Cap JS heap
+chrome_options.add_argument("--disk-cache-size=1") # Prevent disk bloat
+chrome_options.add_argument("--disable-application-cache")
+chrome_options.add_argument("--disable-background-timer-throttling")
+chrome_options.add_argument("--incognito") # Don't persist session data to disk
+
+_browser = None
+_render_count = 0
+MAX_RENDERS_BEFORE_RESTART = 50
+
+def get_browser():
+    """Get the persistent browser instance, restarting it periodically to clear memory leaks."""
+    global _browser, _render_count
+    
+    if _browser is None or _render_count >= MAX_RENDERS_BEFORE_RESTART:
+        if _browser is not None:
+            logging.info(f"Restarting headless Chrome engine (reached {MAX_RENDERS_BEFORE_RESTART} renders) to clear memory.")
+            try:
+                _browser.quit()
+            except:
+                pass
+                
+        # Fast disk cleanup of Chrome user data
+        if os.path.exists(user_data_dir):
+            shutil.rmtree(user_data_dir, ignore_errors=True)
+        os.makedirs(user_data_dir, exist_ok=True)
+            
+        try:
+            chrome_service = Service(ChromeDriverManager().install())
+            _browser = webdriver.Chrome(service=chrome_service, options=chrome_options)
+        except Exception as e:
+            logging.warning(f"Failed to use ChromeDriverManager, falling back to default driver: {e}")
+            _browser = webdriver.Chrome(options=chrome_options)
+            
+        _render_count = 0
+        
+    _render_count += 1
+    return _browser
 
 def cleanup_browser():
+    global _browser
     try:
-        persistent_browser.quit()
-        # Still clean up the project-local data dir on clean exit to save space
+        if _browser:
+            _browser.quit()
         if os.path.exists(user_data_dir):
             shutil.rmtree(user_data_dir, ignore_errors=True)
     except:
@@ -142,10 +177,11 @@ def _screenshot_html_sync(
         tmp_path = tmp.name
 
     try:
-        persistent_browser.set_window_size(size[0], size[1])
-        persistent_browser.get(f"file://{os.path.abspath(tmp_path)}")
+        browser = get_browser()
+        browser.set_window_size(size[0], size[1])
+        browser.get(f"file://{os.path.abspath(tmp_path)}")
         
-        png_bytes = persistent_browser.get_screenshot_as_png()
+        png_bytes = browser.get_screenshot_as_png()
 
         with Image.open(io.BytesIO(png_bytes)) as image:
             processed = trim_image(image) if apply_trim else image.copy()
