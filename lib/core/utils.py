@@ -130,7 +130,7 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         background_data_uri = encode_image_to_data_uri(background_path)
         html_content = html_content.replace("{unionjack}", background_data_uri)
 
-        size = (850, 450)
+        size = (820, 420)
         image_bytes = await screenshot_html(html_content, size, apply_trim=False)
         return discord.File(fp=image_bytes, filename="rank.png")
 
