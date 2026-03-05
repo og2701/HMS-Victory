@@ -601,6 +601,54 @@ async def handle_shut_reaction(reaction, user):
         logger.error(f"Failed to time out user {message_author}: {e}")
 
 
+async def check_hall_of_fame(client, reaction, user):
+    message = reaction.message
+    
+    # Quick filter to avoid iterating through users if total reactions are less than 5
+    if sum(r.count for r in message.reactions) < 5:
+        return
+        
+    hall_of_fame_data = load_json_file(HALL_OF_FAME_FILE) or []
+    
+    if str(message.id) in hall_of_fame_data:
+        return
+        
+    unique_reactors = set()
+    for r in message.reactions:
+        async for u in r.users():
+            unique_reactors.add(u.id)
+            
+    if len(unique_reactors) >= 5:
+        hall_of_fame_data.append(str(message.id))
+        save_json_file(HALL_OF_FAME_FILE, hall_of_fame_data)
+        
+        thread = client.get_channel(CHANNELS.HALL_OF_FAME_THREAD)
+        if not thread:
+            try:
+                thread = await client.fetch_channel(CHANNELS.HALL_OF_FAME_THREAD)
+            except discord.NotFound:
+                logger.error("Hall of Fame thread not found.")
+                return
+                
+        embed = discord.Embed(
+            description=message.content,
+            color=0xffd700, # Gold color
+            timestamp=message.created_at
+        )
+        embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url if message.author.display_avatar else None)
+        embed.add_field(name="Original Message", value=f"[Click to jump!]({message.jump_url})")
+        
+        # Handle attachments
+        if message.attachments:
+            for attachment in message.attachments:
+                if attachment.content_type and attachment.content_type.startswith("image/"):
+                    embed.set_image(url=attachment.url)
+                    break # Just show the first image
+                    
+        await thread.send(content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!", embed=embed)
+        logger.info(f"Message {message.id} sent to Hall of Fame.")
+
+
 async def on_reaction_add(reaction, user):
     try:
         # Check for Americanism correction deletion
@@ -634,6 +682,12 @@ async def on_reaction_add(reaction, user):
             await handle_flag_reaction(reaction, reaction.message, user)
         if ":Shut:" in str(reaction.emoji):
             await handle_shut_reaction(reaction, user)
+            
+        # Check Hall of Fame
+        if reaction.message.guild:
+            client = reaction.message.guild._state._get_client()
+            await check_hall_of_fame(client, reaction, user)
+            
     except Exception as e:
         logger.error(f"Error in on_reaction_add: {e}")
 
