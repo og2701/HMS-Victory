@@ -649,6 +649,7 @@ async def check_hall_of_fame(client, payload):
                 return
                 
         embed = discord.Embed(
+            description=f"[Click here to jump to message]({message.jump_url})",
             color=0xffd700, # Gold color
             timestamp=message.created_at,
             url=message.jump_url
@@ -658,7 +659,6 @@ async def check_hall_of_fame(client, payload):
             icon_url=message.author.display_avatar.url if message.author.display_avatar else None,
             url=message.jump_url
         )
-        embed.set_footer(text="Click the author name to jump to the original message")
         
         # Generate quote image
         try:
