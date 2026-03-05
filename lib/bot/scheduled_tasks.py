@@ -427,7 +427,58 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(process_economy_logs, IntervalTrigger(seconds=15), args=[client], id="process_economy_logs_interval", name="Process Economy Log Queue")
     scheduler.add_job(auto_restock_shop, IntervalTrigger(hours=12), args=[client], id="auto_restock_shop_interval", name="Automated Shop Restock")
 
+    scheduler.add_job(apply_inactivity_tax, CronTrigger(day_of_week="fri", hour=0, minute=0, timezone="Europe/London"), args=[client], id="apply_inactivity_tax_job", name="Weekly Inactivity Tax")
     scheduler.start()
+
+async def apply_inactivity_tax(client):
+    try:
+        from database import DatabaseManager
+        import time
+        
+        now = int(time.time())
+        limit = now - (60 * 24 * 60 * 60) # 60 days
+        
+        # Find all users in ukpence who have an xp entry older than 60 days
+        query = """
+            SELECT u.user_id, u.balance 
+            FROM ukpence u
+            JOIN xp x ON u.user_id = x.user_id
+            WHERE x.last_xp_time > 0 
+            AND x.last_xp_time < ?
+            AND u.balance > 0
+        """
+        dormant_users = DatabaseManager.fetch_all(query, (limit,))
+        
+        if not dormant_users:
+            logger.info("[ECONOMY] No dormant users found for inactivity tax.")
+            return
+
+        total_reclaimed = 0
+        taxed_count = 0
+        
+        with DatabaseManager.get_connection() as conn:
+            c = conn.cursor()
+            for uid, balance in dormant_users:
+                tax_amount = int(balance * 0.05)
+                if tax_amount > 0:
+                    c.execute("UPDATE ukpence SET balance = balance - ? WHERE user_id = ?", (tax_amount, uid))
+                    total_reclaimed += tax_amount
+                    taxed_count += 1
+            
+            conn.commit()
+
+        if total_reclaimed > 0:
+            BankManager.deposit(total_reclaimed, description=f"Inactivity Tax (60+ days dormant) from {taxed_count} users")
+            logger.info(f"[ECONOMY] Inactivity Tax reclaimed {total_reclaimed} UKP from {taxed_count} users.")
+            
+            # Update specific metric if needed
+            current_date_str = datetime.now(pytz.timezone("Europe/London")).strftime("%Y-%m-%d")
+            _update_daily_metric_file(current_date_str, "inactivity_tax_total", total_reclaimed)
+        else:
+            logger.info("[ECONOMY] Inactivity tax run: no significant tax amounts to collect.")
+            
+    except Exception as e:
+        logger.error(f"Error applying inactivity tax: {e}", exc_info=True)
 
 async def process_economy_logs(client):
     try:

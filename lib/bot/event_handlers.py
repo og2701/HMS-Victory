@@ -800,7 +800,18 @@ async def refresh_live_stages(client):
 
 
 async def on_stage_instance_create(stage_instance):
-    stage_instance.guild._state._get_client().stage_events.add(stage_instance.channel.id)
+    client = stage_instance.guild._state._get_client()
+    client.stage_events.add(stage_instance.channel.id)
+    
+    # Backfill join times for everyone already in the channel
+    now = discord.utils.utcnow()
+    if not hasattr(client, 'stage_join_times'):
+        client.stage_join_times = {}
+        
+    for member in stage_instance.channel.members:
+        if member.id not in client.stage_join_times:
+            client.stage_join_times[member.id] = now
+            logger.info(f"[STAGE] Start-up backfill: {member} in {stage_instance.channel.name}")
 
 
 async def on_stage_instance_delete(stage_instance):

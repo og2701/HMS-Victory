@@ -47,7 +47,13 @@ class UKPenceManager:
     @staticmethod
     def ensure_user(user_id: int) -> None:
         if not DatabaseManager.fetch_one("SELECT balance FROM ukpence WHERE user_id = ?", (str(user_id),)):
-            DatabaseManager.execute("INSERT INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), 250))
+            from lib.economy.bank_manager import BankManager
+            amount = 10
+            if BankManager.withdraw(amount, description=f"New member bonus for <@{user_id}>"):
+                DatabaseManager.execute("INSERT INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), amount))
+            else:
+                # Fallback: create user with 0 if bank is empty
+                DatabaseManager.execute("INSERT INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), 0))
 
     @staticmethod
     def get_balance(user_id: int) -> int:
