@@ -232,13 +232,13 @@ class XPSystem:
                 right_html += block
 
         two_col = f"""
-        <div class="flex space-x-6">
-          <div class="flex flex-col">{left_html}</div>
-          <div class="flex flex-col">{right_html}</div>
+        <div class="flex gap-4">
+          <div class="flex flex-col gap-2">{left_html}</div>
+          <div class="flex flex-col gap-2">{right_html}</div>
         </div>
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
-        image_buffer = await screenshot_html(final_html, size=(1200, 1200))
+        image_buffer = await screenshot_html(final_html, size=(1000, 1200))
         return image_buffer.getvalue()
 
     async def handle_leaderboard_command(self, interaction: discord.Interaction):
@@ -306,13 +306,13 @@ class XPSystem:
                 right_html += block
 
         two_col = f"""
-        <div class="flex space-x-6">
-          <div class="flex flex-col">{left_html}</div>
-          <div class="flex flex-col">{right_html}</div>
+        <div class="flex gap-4">
+          <div class="flex flex-col gap-2">{left_html}</div>
+          <div class="flex flex-col gap-2">{right_html}</div>
         </div>
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col)
-        image_buffer = await screenshot_html(final_html, size=(1200, 1200))
+        image_buffer = await screenshot_html(final_html, size=(1000, 1200))
         return image_buffer.getvalue()
 
     async def handle_richlist_command(self, interaction: discord.Interaction):
