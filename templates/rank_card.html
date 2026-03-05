@@ -5,7 +5,11 @@
   <meta charset="UTF-8" />
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@600;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@600;800;900&display=swap');
+
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       margin: 0;
@@ -27,12 +31,15 @@
       height: 400px;
       background: url('{unionjack}') no-repeat center center;
       background-size: cover;
+      border: 4px solid #CF142B;
+      /* Union Jack Red */
       border-radius: 24px;
       overflow: hidden;
       display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      flex-direction: row;
+      /* Horizontal layout */
+      padding: 30px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
     }
 
     /* Dark overlay to make text readable over the flag */
@@ -42,122 +49,149 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: linear-gradient(90deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 60%, rgba(0, 0, 0, 0.7) 100%);
+      background: linear-gradient(90deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.6) 50%, rgba(0, 0, 0, 0.85) 100%);
       z-index: 1;
     }
 
     .left-panel {
-      flex: 0 0 130px;
+      flex: 0 0 160px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 12px;
+      justify-content: center;
+      gap: 20px;
       z-index: 10;
     }
 
     .avatar-container {
-      width: 100px;
-      height: 100px;
+      width: 130px;
+      height: 130px;
       border-radius: 50%;
-      padding: 3px;
+      padding: 4px;
       background: linear-gradient(135deg, #00247D 25%, #FFFFFF 40%, #CF142B 60%, #FFFFFF 75%, #00247D);
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
     }
 
     .avatar {
-      width: 94px;
-      height: 94px;
+      width: 100%;
+      height: 100%;
       border-radius: 50%;
       object-fit: cover;
+      border: 2px solid #000;
     }
 
     .main-panel {
       flex: 1;
-      padding-left: 20px;
+      padding-left: 30px;
       display: flex;
       flex-direction: column;
-      justify-content: space-between;
+      justify-content: center;
       z-index: 10;
     }
 
-    .username {
-      font-family: 'Outfit', sans-serif;
-      font-size: 1.8rem;
-      font-weight: 900;
-      color: #fff;
-      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-      margin-bottom: -2px;
+    .user-header {
+      margin-bottom: 25px;
     }
 
     .rank-label {
       font-family: 'Outfit', sans-serif;
-      font-size: 1rem;
+      font-size: 1.2rem;
       color: #FFD700;
-      font-weight: 700;
+      font-weight: 800;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.1em;
+      margin-bottom: 5px;
+    }
+
+    .username {
+      font-family: 'Outfit', sans-serif;
+      font-size: 2.8rem;
+      font-weight: 900;
+      color: #fff;
+      line-height: 1;
+      text-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+    }
+
+    .progress-section {
+      margin-top: 10px;
+      width: 100%;
     }
 
     .progress-meta {
       display: flex;
       justify-content: space-between;
-      font-size: 0.75rem;
+      font-size: 0.9rem;
       font-weight: 700;
       color: #e2e8f0;
-      margin-bottom: 4px;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
 
     .progress-track {
-      height: 10px;
-      background: rgba(0, 0, 0, 0.6);
-      border-radius: 5px;
+      height: 14px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 7px;
       overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(5px);
     }
 
     .progress-fill {
       height: 100%;
-      background: linear-gradient(90deg, #3b82f6, #6366f1);
-      border-radius: 5px;
+      background: linear-gradient(90deg, #CF142B, #FFFFFF, #00247D);
+      background-size: 200% 100%;
+      border-radius: 7px;
+      box-shadow: 0 0 10px rgba(207, 20, 43, 0.5);
     }
 
     .xp-summary {
       font-family: 'Outfit', sans-serif;
-      font-size: 0.85rem;
-      margin-top: 6px;
+      font-size: 1rem;
+      margin-top: 12px;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
     }
 
     .xp-value {
-      font-size: 1.1rem;
-      color: #3b82f6;
+      color: #fff;
+      font-weight: 900;
+      font-size: 1.4rem;
+    }
+
+    .xp-label {
+      color: #94a3b8;
+      font-size: 0.8rem;
+      text-transform: uppercase;
       font-weight: 700;
     }
 
     .balance-chips {
-      width: 100%;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 10px;
+      width: 100%;
     }
 
     .coin-box {
       display: flex;
       align-items: center;
-      background: rgba(0, 0, 0, 0.7);
-      padding: 4px 8px;
-      border-radius: 8px;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      font-size: 0.7rem;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 6px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
       font-weight: 700;
-      gap: 6px;
+      gap: 10px;
+      backdrop-filter: blur(5px);
     }
 
     .coin-icon {
-      width: 16px;
-      height: 16px;
+      width: 20px;
+      height: 20px;
     }
   </style>
 </head>
@@ -190,7 +224,7 @@
         </div>
         <div class="xp-summary">
           <span class="xp-value">{xp_display}</span>
-          <span style="color:#94a3b8; font-size: 10px; text-transform: uppercase;">Total XP</span>
+          <span class="xp-label">Total XP</span>
         </div>
       </div>
     </div>
