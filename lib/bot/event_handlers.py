@@ -649,12 +649,16 @@ async def check_hall_of_fame(client, payload):
                 return
                 
         embed = discord.Embed(
-            description=message.content,
             color=0xffd700, # Gold color
-            timestamp=message.created_at
+            timestamp=message.created_at,
+            url=message.jump_url
         )
-        embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url if message.author.display_avatar else None)
-        embed.add_field(name="Original Message", value=f"[Click to jump!]({message.jump_url})")
+        embed.set_author(
+            name=message.author.display_name, 
+            icon_url=message.author.display_avatar.url if message.author.display_avatar else None,
+            url=message.jump_url
+        )
+        embed.set_footer(text="Click the author name to jump to the original message")
         
         # Generate quote image
         try:
@@ -664,7 +668,8 @@ async def check_hall_of_fame(client, payload):
             await thread.send(content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!", embed=embed, file=file)
         except Exception as e:
             logger.error(f"[HOF] Error creating quote image: {e}")
-            # Fallback to no image or original attachment logic
+            # Fallback logic
+            embed.description = message.content
             if message.attachments:
                 for attachment in message.attachments:
                     if attachment.content_type and attachment.content_type.startswith("image/"):
