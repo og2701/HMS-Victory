@@ -14,7 +14,16 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from config import CHROME_PATH
 
+import shutil
+import atexit
+
+# Use a persistent user data directory to prevent Selenium from leaking temp profiles in /tmp
+user_data_dir = os.path.abspath(os.path.join(os.getcwd(), ".chrome_data"))
+if not os.path.exists(user_data_dir):
+    os.makedirs(user_data_dir, exist_ok=True)
+
 chrome_options = Options()
+chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
 
 if CHROME_PATH and os.path.exists(CHROME_PATH):
     chrome_options.binary_location = CHROME_PATH
@@ -32,7 +41,7 @@ chrome_options.add_argument("--disable-extensions")
 chrome_options.add_argument("--disable-background-networking")
 chrome_options.add_argument("--no-first-run")
 chrome_options.add_argument("--disable-sync")
-# Removing --single-process as it can cause renderer crashes
+chrome_options.add_argument("--remote-debugging-pipe") # More stable than port for headless
 
 try:
     chrome_service = Service(ChromeDriverManager().install())
@@ -40,6 +49,17 @@ try:
 except Exception as e:
     logging.warning(f"Failed to use ChromeDriverManager, falling back to default driver: {e}")
     persistent_browser = webdriver.Chrome(options=chrome_options)
+
+def cleanup_browser():
+    try:
+        persistent_browser.quit()
+        # Still clean up the project-local data dir on clean exit to save space
+        if os.path.exists(user_data_dir):
+            shutil.rmtree(user_data_dir, ignore_errors=True)
+    except:
+        pass
+
+atexit.register(cleanup_browser)
 
 screenshot_semaphore = asyncio.Semaphore(1)
 
