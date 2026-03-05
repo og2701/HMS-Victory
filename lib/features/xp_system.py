@@ -232,9 +232,9 @@ class XPSystem:
                 right_html += block
 
         two_col = f"""
-        <div class="flex gap-4">
-          <div class="flex flex-col gap-2">{left_html}</div>
-          <div class="flex flex-col gap-2">{right_html}</div>
+        <div class="flex gap-4 justify-center w-full">
+          <div class="flex flex-col gap-2 w-full max-w-[380px]">{left_html}</div>
+          <div class="flex flex-col gap-2 w-full max-w-[380px]">{right_html}</div>
         </div>
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col).replace("{{ TITLE }}", "HMS Victory XP Leaderboard")
@@ -306,9 +306,9 @@ class XPSystem:
                 right_html += block
 
         two_col = f"""
-        <div class="flex gap-4">
-          <div class="flex flex-col gap-2">{left_html}</div>
-          <div class="flex flex-col gap-2">{right_html}</div>
+        <div class="flex gap-4 justify-center w-full">
+          <div class="flex flex-col gap-2 w-full max-w-[380px]">{left_html}</div>
+          <div class="flex flex-col gap-2 w-full max-w-[380px]">{right_html}</div>
         </div>
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col).replace("{{ TITLE }}", "HMS Victory UKPence Richlist")
