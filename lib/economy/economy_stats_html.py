@@ -2,6 +2,7 @@ import discord
 import json
 import os
 import logging
+from string import Template
 from datetime import datetime, timedelta
 import pytz
 from lib.core.image_processing import encode_image_to_data_uri, screenshot_html, get_avatar_data_uri
@@ -190,7 +191,7 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
         logger.error(f"[ECON DEBUG] Error reading economy stats template: {e}")
         return None
     
-    formatted_html = template.format(
+    formatted_html = Template(template).substitute(
         total_ukpence=f"{total_ukpence:,}",
         num_holders=str(num_holders),
         average_ukpence=f"{average_ukpence:,.2f}",
