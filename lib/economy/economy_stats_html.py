@@ -176,19 +176,14 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
     distribution_html_parts = [f"<li><span class='name'>{bracket}</span> <span class='balance'>{count} users</span></li>" for bracket, count in dist_brackets.items() if count > 0]
     distribution_html = "\n".join(distribution_html_parts) if distribution_html_parts else "<li>No distribution data.</li>"
 
-    template_path = "templates/economy_stats.html"
-    logger.info(f"[ECON DEBUG] Loading template from: {os.path.abspath(template_path)}")
-    logger.info(f"[ECON DEBUG] CWD: {os.getcwd()}")
-    logger.info(f"[ECON DEBUG] Template exists: {os.path.exists(template_path)}")
     try:
         with open(template_path, "r", encoding="utf-8") as file:
             template = file.read()
-        logger.info(f"[ECON DEBUG] Template loaded, length: {len(template)}")
     except FileNotFoundError:
-        logger.error(f"[ECON DEBUG] Failed to find economy stats template at {template_path} (abs: {os.path.abspath(template_path)})")
+        logger.error(f"Failed to find economy stats template at {template_path}")
         return None
     except Exception as e:
-        logger.error(f"[ECON DEBUG] Error reading economy stats template: {e}")
+        logger.error(f"Error reading economy stats template: {e}")
         return None
     
     formatted_html = Template(template).substitute(
@@ -224,20 +219,4 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
         net_ukpence_change_absolute_str=net_ukpence_change_absolute_str,
         net_ukpence_change_class=net_ukpence_change_class
     )
-    logger.info(f"[ECON DEBUG] Formatted HTML length: {len(formatted_html)}")
-    
-    # Save debug HTML to file for inspection
-    try:
-        debug_path = "debug_economy_stats.html"
-        with open(debug_path, "w", encoding="utf-8") as f:
-            f.write(formatted_html)
-        logger.info(f"[ECON DEBUG] Saved debug HTML to {os.path.abspath(debug_path)}")
-    except Exception as e:
-        logger.warning(f"[ECON DEBUG] Could not save debug HTML: {e}")
-    
-    result = await screenshot_html(formatted_html, size=(800, 1600))
-    if result:
-        logger.info(f"[ECON DEBUG] Screenshot result: BytesIO with {result.getbuffer().nbytes} bytes")
-    else:
-        logger.error("[ECON DEBUG] Screenshot returned None!")
-    return result
+    return await screenshot_html(formatted_html, size=(800, 1600))
