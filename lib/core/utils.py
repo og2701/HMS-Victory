@@ -132,12 +132,16 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
             (user_id_str,)
         )
         
+        # Defaults
+        bg_file = CUSTOM_RANK_BACKGROUNDS.get(user_id_str, "unionjack.png")
+        primary_color, secondary_color, tertiary_color = '#CF142B', '#00247D', '#FFFFFF'
+        
         if customization:
-            bg_file, primary_color, secondary_color, tertiary_color = customization
-        else:
-            # Check the old hardcoded dictionary as a fallback for OG members
-            bg_file = CUSTOM_RANK_BACKGROUNDS.get(user_id_str, "unionjack.png")
-            primary_color, secondary_color, tertiary_color = '#CF142B', '#00247D', '#FFFFFF'
+            res_bg, res_p, res_s, res_t = customization
+            if res_bg: bg_file = res_bg
+            if res_p: primary_color = res_p
+            if res_s: secondary_color = res_s
+            if res_t: tertiary_color = res_t
 
         background_path = os.path.join("data", "rank_cards", bg_file)
         if not os.path.exists(background_path):
