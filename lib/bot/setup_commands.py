@@ -31,6 +31,10 @@ from commands.economy.bank_commands import (
     handle_bank_status_command
 )
 try:
+    from commands.social.rank_equip import handle_rank_equip_command
+except ImportError:
+    pass
+try:
     from commands.economy.wager import handle_wager_command
 except ImportError:
     pass
@@ -242,6 +246,10 @@ def define_commands(tree, client):
             client.xp_system = XPSystem(client)
 
         await client.xp_system.handle_leaderboard_command(interaction)
+
+    @command("rank-equip", "Equip your purchased rank backgrounds and color themes.")
+    async def rank_equip_command(interaction: Interaction):
+        await handle_rank_equip_command(interaction)
 
     # if SHUTCOIN_ENABLED:
     #     @command("set-shutcoins", "Sets a user's total Shutcoins.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])

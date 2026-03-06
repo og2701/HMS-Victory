@@ -29,10 +29,14 @@
       position: relative;
       width: 800px;
       height: 400px;
-      background: url('{unionjack}') no-repeat center center;
+      background: url('{bg_image}') no-repeat center center;
       background-size: cover;
-      border: 4px solid #CF142B;
-      /* Union Jack Red */
+
+      border: 4px solid {
+        primary_color
+      }
+
+      ;
       border-radius: 24px;
       overflow: hidden;
       display: flex;
@@ -68,11 +72,30 @@
       height: 130px;
       border-radius: 50%;
       padding: 4px;
-      background: linear-gradient(135deg, #00247D 25%, #FFFFFF 40%, #CF142B 60%, #FFFFFF 75%, #00247D);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+
+      background: linear-gradient(135deg, {
+        secondary_color
+      }
+
+      25%, {
+      tertiary_color
+    }
+
+    40%, {
+    primary_color
+    }
+
+    60%, {
+    tertiary_color
+    }
+
+    75%, {
+    secondary_color
+    });
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
     }
 
     .avatar {
@@ -143,10 +166,26 @@
 
     .progress-fill {
       height: 100%;
-      background: linear-gradient(90deg, #CF142B, #FFFFFF, #00247D);
-      background-size: 200% 100%;
-      border-radius: 7px;
-      box-shadow: 0 0 10px rgba(207, 20, 43, 0.5);
+
+      background: linear-gradient(90deg, {
+        primary_color
+      }
+
+      , {
+      tertiary_color
+    }
+
+    , {
+    secondary_color
+    });
+    background-size: 200% 100%;
+    border-radius: 7px;
+
+    box-shadow: 0 0 10px {
+      primary_color
+    }
+
+    80;
     }
 
     .xp-summary {

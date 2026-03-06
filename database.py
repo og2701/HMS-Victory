@@ -140,6 +140,15 @@ def init_db():
                 total_circulation INTEGER NOT NULL
             )
         ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS user_rank_customization (
+                user_id TEXT PRIMARY KEY,
+                background TEXT DEFAULT 'unionjack.png',
+                primary_color TEXT DEFAULT '#CF142B',
+                secondary_color TEXT DEFAULT '#00247D',
+                tertiary_color TEXT DEFAULT '#FFFFFF'
+            )
+        ''')
         # Initialize the bank with a single row if it doesn't exist
         c.execute('''
             INSERT OR REPLACE INTO bank (id, balance, total_revenue, last_updated)
