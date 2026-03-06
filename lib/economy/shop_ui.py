@@ -906,8 +906,7 @@ class RankCustomizationOverviewView(View):
         filename = f"preview_grid_{int(time.time())}.png"
         file = discord.File(fp=image_buffer, filename=filename)
         
-        embed = self._create_embed()
-        embed.set_image(url=f"attachment://{filename}")
+        embed = self._create_embed(image_filename=filename)
         if interaction.response.is_done():
             await interaction.followup.send(embed=embed, view=self, file=file, ephemeral=True)
         else:
