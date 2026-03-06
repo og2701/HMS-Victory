@@ -107,6 +107,9 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
             current_role = interaction.guild.get_role(current_role_id)
             if current_role:
                 current_role_name = current_role.name
+                # Special override: "Duke" -> "Duchess" for specific users
+                if current_role_id == ROLES.DUKE and member.id in [USERS.CHIN, USERS.CHERRY_BLOSSOM]:
+                    current_role_name = "Duchess"
         logger.info(f"Current role set to: {current_role_name}")
 
         from config import BASE_DIR
