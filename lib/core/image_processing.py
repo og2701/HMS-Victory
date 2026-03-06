@@ -256,9 +256,9 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
     """
     from PIL import ImageDraw, ImageFont, Image
     
-    preview_width = 400
-    preview_height = 200
-    padding = 20
+    preview_width = 600
+    preview_height = 300
+    padding = 30
     
     rows = (len(items) + cols - 1) // cols
     grid_width = (preview_width * cols) + (padding * (cols + 1))
@@ -274,13 +274,13 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
     try:
         font_path = os.path.join(BASE_DIR, "data", "fonts", "Outfit-Bold.ttf")
         if os.path.exists(font_path):
-            font = ImageFont.truetype(font_path, 40)
+            font = ImageFont.truetype(font_path, 55)
     except:
         pass
         
     if not font:
         try:
-            font = ImageFont.load_default(size=40)
+            font = ImageFont.load_default(size=55)
         except:
             font = ImageFont.load_default()
 
@@ -303,30 +303,30 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
             else:
                 preview = Image.new("RGBA", (preview_width, preview_height), (100, 100, 100))
                 p_draw = ImageDraw.Draw(preview)
-                p_draw.text((10, 80), f"MISSING:\n{item.bg_filename}", fill="white")
+                p_draw.text((20, 120), f"MISSING:\n{item.bg_filename}", fill="white")
         elif hasattr(item, 'primary'): # Color Theme
             preview = Image.new("RGBA", (preview_width, preview_height), (40, 44, 52))
             p_draw = ImageDraw.Draw(preview)
-            # Draw swatches
-            p_draw.rectangle([20, 40, 120, 140], fill=item.primary, outline="white", width=2)
-            p_draw.rectangle([140, 40, 240, 140], fill=item.secondary, outline="white", width=2)
-            p_draw.rectangle([260, 40, 360, 140], fill=item.tertiary, outline="white", width=2)
-            p_draw.text((20, 150), item.name, fill="white")
+            # Draw swatches (scaled for 600x300)
+            p_draw.rectangle([30, 60, 180, 210], fill=item.primary, outline="white", width=3)
+            p_draw.rectangle([210, 60, 360, 210], fill=item.secondary, outline="white", width=3)
+            p_draw.rectangle([390, 60, 540, 210], fill=item.tertiary, outline="white", width=3)
+            p_draw.text((30, 230), item.name, fill="white")
         else: # Reset or unknown
              # For reset, maybe show the standard union jack or a generic label
              preview = Image.new("RGBA", (preview_width, preview_height), (60, 60, 60))
              p_draw = ImageDraw.Draw(preview)
-             p_draw.text((preview_width//2 - 30, preview_height//2 - 10), "DEFAULT / RESET", fill="white")
+             p_draw.text((preview_width//2 - 100, preview_height//2 - 20), "DEFAULT / RESET", fill="white")
 
         if preview:
             canvas.paste(preview, (x, y), preview if preview.mode == 'RGBA' else None)
         
-        # Draw number badge
-        badge_size = 50
-        badge_x = x + 10
-        badge_y = y + 10
+        # Draw number badge (scaled)
+        badge_size = 70
+        badge_x = x + 15
+        badge_y = y + 15
         draw.ellipse([badge_x, badge_y, badge_x + badge_size, badge_y + badge_size], fill=(255, 0, 0))
-        draw.text((badge_x + 15, badge_y + 5), str(idx + 1), fill="white", font=font)
+        draw.text((badge_x + 20, badge_y + 5), str(idx + 1), fill="white", font=font)
 
     buffer = io.BytesIO()
     canvas.save(buffer, format="PNG")
