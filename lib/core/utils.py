@@ -95,7 +95,7 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         logger.info(f"Current role set to: {current_role_name}")
 
         from config import BASE_DIR
-        template_path = os.path.join("templates", "rank_card.html")
+        template_path = os.path.join(BASE_DIR, "templates", "rank_card.html")
         logger.debug(f"Reading template from {template_path}")
         html_content = read_html_template(template_path)
 
@@ -158,7 +158,7 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         html_content = safe_replace(html_content, "tertiary_color", tertiary_color)
 
         import time
-        size = (1000, 600)
+        size = (800, 400)
         image_bytes = await screenshot_html(html_content, size)
         filename = f"rank_{int(time.time())}.png"
         return discord.File(fp=image_bytes, filename=filename)
