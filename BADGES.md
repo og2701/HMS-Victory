@@ -1,7 +1,7 @@
 # HMS-Victory Badges Guide
 
 ### 🏆 Hall of Fame
-**Rarity**: Gold
+**Rarity**: Silver
 Awarded for getting a message into the Hall of Fame.
 
 ### 🛍️ First Purchase

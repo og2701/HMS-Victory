@@ -203,7 +203,7 @@ def init_db():
 
         # Initial badge data
         badges = [
-            ('hof', 'Hall of Fame', 'Get into the Hall of Fame', '🏆', 'Gold'),
+            ('hof', 'Hall of Fame', 'Get into the Hall of Fame', '🏆', 'Silver'),
             ('first_purchase', 'First Purchase', 'Purchase your first shop item', '🛍️', 'Bronze'),
             ('shutcoin_user', 'Shutcoin User', 'Use a shutcoin', '🤐', 'Bronze'),
             ('reply_chain', 'Chain Linker', 'Be part of a reply chain', '⛓️', 'Bronze'),

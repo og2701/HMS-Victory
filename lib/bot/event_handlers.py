@@ -603,6 +603,7 @@ def save_shut_count(user_id):
 
 
 async def handle_shut_reaction(reaction, user):
+    client = reaction.message._state._get_client()
     has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
     message_author = reaction.message.author
     if message_author.is_timed_out():
