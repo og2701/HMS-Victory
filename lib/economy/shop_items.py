@@ -431,24 +431,16 @@ class RankResetItem(ShopItem):
             
         current = DatabaseManager.fetch_one("SELECT * FROM user_rank_customization WHERE user_id = ?", (str(user.id),))
         if not current:
-            # If nothing in DB, check if they have a hardcoded custom background
-            from lib.core.constants import CUSTOM_RANK_BACKGROUNDS
-            if str(user.id) not in CUSTOM_RANK_BACKGROUNDS:
-                return False, "You are already using the default rank card."
+            return False, "You are already using your default rank card."
         return True, ""
 
     async def execute(self, interaction) -> str:
         user_id_str = str(interaction.user.id)
-        # Delete from DB completely to fall back to default
+        # Delete from DB completely to fall back to default logic 
+        # (which inherently respects CUSTOM_RANK_BACKGROUNDS in utils.py)
         DatabaseManager.execute("DELETE FROM user_rank_customization WHERE user_id = ?", (user_id_str,))
         
-        # If they happen to have a hardcoded OG background, we insert a row to override it with unionjack
-        from lib.core.constants import CUSTOM_RANK_BACKGROUNDS
-        if user_id_str in CUSTOM_RANK_BACKGROUNDS:
-             DatabaseManager.execute("INSERT INTO user_rank_customization (user_id, background, primary_color, secondary_color, tertiary_color) VALUES (?, ?, ?, ?, ?)", 
-                                    (user_id_str, 'unionjack.png', '#CF142B', '#00247D', '#FFFFFF'))
-             
-        return "Your rank card has been reset to the default Union Jack!"
+        return "Your rank card has been reset to your original default!"
 
 # Shop Items Registry
 SHOP_ITEMS: List[ShopItem] = [
