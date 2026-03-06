@@ -366,7 +366,11 @@ class RankBackgroundItem(ShopItem):
         if exists:
             DatabaseManager.execute("UPDATE user_rank_customization SET background = ? WHERE user_id = ?", (self.bg_filename, user_id_str))
         else:
-            DatabaseManager.execute("INSERT INTO user_rank_customization (user_id, background) VALUES (?, ?)", (user_id_str, self.bg_filename))
+            # We must set default colors if they don't exist, else they'll be left as NULL
+            DatabaseManager.execute(
+                "INSERT INTO user_rank_customization (user_id, background, primary_color, secondary_color, tertiary_color) VALUES (?, ?, ?, ?, ?)", 
+                (user_id_str, self.bg_filename, '#CF142B', '#00247D', '#FFFFFF')
+            )
         
         return f"Successfully equipped the **{self.name}** rank background!"
 
@@ -395,8 +399,10 @@ class RankColorThemeItem(ShopItem):
             DatabaseManager.execute("UPDATE user_rank_customization SET primary_color = ?, secondary_color = ?, tertiary_color = ? WHERE user_id = ?", 
                                     (self.primary, self.secondary, self.tertiary, user_id_str))
         else:
-            DatabaseManager.execute("INSERT INTO user_rank_customization (user_id, primary_color, secondary_color, tertiary_color) VALUES (?, ?, ?, ?)", 
-                                    (user_id_str, self.primary, self.secondary, self.tertiary))
+            DatabaseManager.execute(
+                "INSERT INTO user_rank_customization (user_id, background, primary_color, secondary_color, tertiary_color) VALUES (?, ?, ?, ?, ?)", 
+                (user_id_str, "unionjack.png", self.primary, self.secondary, self.tertiary)
+            )
         
         return f"Successfully equipped the **{self.name}** color theme!"
 
