@@ -392,10 +392,11 @@ class PredAdminView(discord.ui.View):
         descr = "\n".join(lines) or "*Nobody backed the winner*"
         summary = discord.Embed(title=f"🏁 Prediction settled: **{win_side}** wins!", description=descr, color=0x2ECC71)
 
+        mentions = " ".join([f"<@{uid}>" for uid in payouts.keys()])
         if msg:
-            await msg.reply(embed=summary, mention_author=False)
+            await msg.reply(content=mentions, embed=summary, mention_author=False)
         else:
-            await interaction.channel.send(content="Prediction resolved (original message deleted).", embed=summary)
+            await interaction.channel.send(content=f"{mentions}\nPrediction resolved (original message deleted).", embed=summary)
 
         self.client.predictions.pop(self.pred.msg_id, None)
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
