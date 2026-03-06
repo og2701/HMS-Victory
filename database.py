@@ -212,7 +212,7 @@ def init_db():
             ('stage_fan', 'Stage Fan', 'Attend a stage event for X amount of time', '🎭', 'Silver'),
             ('christmas', 'Christmas', 'Message on Christmas day', '🎅', 'Silver'),
             ('halloween', 'Halloween', 'Message on Halloween', '🎃', 'Silver'),
-            ('vc_legend', 'Chatterbox', 'One hour in a VC session', '📞', 'Silver'),
+            ('vc_legend', 'Chatterbox', 'One hour in a VC session', '🎙️', 'Silver'),
             ('screensharer', 'Sharing is Caring', 'Screenshare for 30 mins', '🖥️', 'Silver'),
             ('americanism_victim', "English (Simplified)", 'Caught by the Americanism filter', '🇺🇸', 'Bronze'),
             ('announcement_fast', 'Fast Hands', 'React to an announcement within 10 minutes', '📣', 'Silver'),

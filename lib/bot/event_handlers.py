@@ -477,10 +477,17 @@ async def on_interaction(interaction: Interaction):
 
 
 async def on_member_join(member):
-    await handle_new_member_anti_raid(member)
-    role = member.guild.get_role(ROLES.MEMBER)
-    if role:
-        await member.add_roles(role)
+    try:
+        await handle_new_member_anti_raid(member)
+        role = member.guild.get_role(ROLES.MEMBER)
+        if role:
+            await member.add_roles(role)
+    except discord.NotFound:
+        logger.info(f"Member {member.id} left before roles could be assigned.")
+    except discord.Forbidden:
+        logger.warning(f"Insufficient permissions to add role to {member.id}.")
+    except Exception as e:
+        logger.error(f"Error in on_member_join for {member.id}: {e}")
 
 
 async def on_member_remove(member):
@@ -660,8 +667,8 @@ async def check_hall_of_fame(client, payload):
         total_reactions = sum(r.count for r in message.reactions)
         # logger.info(f"[HOF] Checking message {message.id}. Total reactions: {total_reactions}")
 
-        # Quick filter to avoid iterating through users if total reactions are less than 5
-        if total_reactions < 5:
+        # Quick filter to avoid iterating through users if total reactions are less than 7
+        if total_reactions < 7:
             return
             
         unique_reactors = set()
@@ -671,7 +678,7 @@ async def check_hall_of_fame(client, payload):
                 
         # logger.info(f"[HOF] Unique reactors for {message.id}: {len(unique_reactors)}")
 
-        if len(unique_reactors) >= 5:
+        if len(unique_reactors) >= 7:
             logger.info(f"[HOF] Message {message.id} qualified for Hall of Fame! Relevant client: {client}")
             hall_of_fame_data.append(str(message.id))
             save_json_file(HALL_OF_FAME_FILE, hall_of_fame_data)

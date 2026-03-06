@@ -36,7 +36,7 @@ Awarded for messaging on Christmas day.
 **Rarity**: Silver
 Awarded for messaging on Halloween.
 
-### 📞 Chatterbox
+### 🎙️ Chatterbox
 **Rarity**: Silver
 Awarded for spending one hour in a VC session.
 
