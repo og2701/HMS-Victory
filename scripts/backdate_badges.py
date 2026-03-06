@@ -4,9 +4,23 @@ import sqlite3
 import discord
 import asyncio
 from datetime import datetime, timezone
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Attempt to load token from systemd service file if not in env
+if not os.getenv("DISCORD_TOKEN"):
+    service_file = "/etc/systemd/system/hms-victory.service"
+    if os.path.exists(service_file):
+        try:
+            with open(service_file, 'r') as f:
+                content = f.read()
+                match = re.search(r'Environment="DISCORD_TOKEN=([^"]+)"', content)
+                if match:
+                    os.environ["DISCORD_TOKEN"] = match.group(1)
+        except Exception as e:
+            print(f"Error reading systemd service file: {e}")
 
 
 # Add parent directory to path to import config and database
