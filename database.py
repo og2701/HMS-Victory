@@ -174,9 +174,63 @@ def init_db():
                 amount INTEGER NOT NULL
             )
         ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS badges (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                icon_path TEXT NOT NULL
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS user_badges (
+                user_id TEXT NOT NULL,
+                badge_id TEXT NOT NULL,
+                awarded_at INTEGER NOT NULL,
+                PRIMARY KEY (user_id, badge_id),
+                FOREIGN KEY (badge_id) REFERENCES badges (id)
+            )
+        ''')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_payer ON pay_transfers(payer_id)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_recipient ON pay_transfers(recipient_id)')
+        
+        # Initial badge data
+        badges = [
+            ('hof', 'Hall of Fame', 'Get into the Hall of Fame', 'hof.png'),
+            ('first_purchase', 'First Purchase', 'Purchase your first shop item', 'first_purchase.png'),
+            ('shutcoin_user', 'Shutcoin User', 'Use a shutcoin', 'shutcoin_user.png'),
+            ('reply_chain', 'Chain Linker', 'Be part of a reply chain', 'reply_chain.png'),
+            ('active_chatter', 'Active Chatter', 'Achieve a certain level of activity in a day', 'active_chatter.png'),
+            ('top_chatter', 'Elite Talker', 'One of the top 5 daily chatters', 'top_chatter.png'),
+            ('stage_fan', 'Stage Fan', 'Attend a stage event for X amount of time', 'stage_fan.png')
+        ]
+        for b_id, b_name, b_desc, b_icon in badges:
+            c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path) VALUES (?, ?, ?, ?)", 
+                      (b_id, b_name, b_desc, b_icon))
+        
         conn.commit()
 
 if __name__ == '__main__':
     init_db()
+
+def award_badge(user_id: str, badge_id: str):
+    import time
+    try:
+        DatabaseManager.execute(
+            "INSERT OR IGNORE INTO user_badges (user_id, badge_id, awarded_at) VALUES (?, ?, ?)",
+            (str(user_id), badge_id, int(time.time()))
+        )
+        return True
+    except Exception as e:
+        print(f"Error awarding badge: {e}")
+        return False
+
+def get_user_badges(user_id: str):
+    query = """
+        SELECT b.id, b.name, b.description, b.icon_path, ub.awarded_at
+        FROM badges b
+        JOIN user_badges ub ON b.id = ub.badge_id
+        WHERE ub.user_id = ?
+        ORDER BY ub.awarded_at ASC
+    """
+    return DatabaseManager.fetch_all(query, (str(user_id),))

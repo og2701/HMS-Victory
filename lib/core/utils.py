@@ -143,6 +143,16 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
             background_path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
         background_data_uri = encode_image_to_data_uri(background_path)
 
+        # Get badges
+        from database import get_user_badges
+        badges = get_user_badges(user_id_str)
+        badges_html = ""
+        for b_id, b_name, b_desc, icon_file, _ in badges:
+            badge_icon_path = os.path.join(BASE_DIR, "data", "badges", icon_file)
+            if os.path.exists(badge_icon_path):
+                badge_icon_uri = encode_image_to_data_uri(badge_icon_path)
+                badges_html += f'<div class="badge-item" title="{b_name}: {b_desc}"><img src="{badge_icon_uri}" class="badge-icon" /></div>'
+
         # Apply replacements
         html_content = safe_replace(html_content, "profile_pic", member.display_avatar.url)
         html_content = safe_replace(html_content, "username", member.display_name)
@@ -157,6 +167,7 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         html_content = safe_replace(html_content, "primary_color", primary_color)
         html_content = safe_replace(html_content, "secondary_color", secondary_color)
         html_content = safe_replace(html_content, "tertiary_color", tertiary_color)
+        html_content = safe_replace(html_content, "badges_html", badges_html)
 
         import time
         size = (1400, 1000)

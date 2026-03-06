@@ -45,6 +45,38 @@
       box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
     }
 
+    .badge-container {
+      position: absolute;
+      top: 25px;
+      right: 25px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 12px;
+      max-width: 400px;
+      z-index: 20;
+    }
+
+    .badge-item {
+      width: 42px;
+      height: 42px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(8px);
+      transition: transform 0.2s;
+    }
+
+    .badge-icon {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
     /* Dark overlay to make text readable over the flag */
     .overlay {
       position: absolute;
@@ -238,6 +270,9 @@
 <body>
   <div class="container">
     <div class="overlay"></div>
+    <div class="badge-container">
+      {badges_html}
+    </div>
     <div class="left-panel">
       <div class="avatar-container">
         <img src="{profile_pic}" alt="Avatar" class="avatar" />

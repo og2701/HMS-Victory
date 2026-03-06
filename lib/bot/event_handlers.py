@@ -13,6 +13,7 @@ from lib.core.utils import is_lockdown_active
 from lib.core.image_processing import trim_image, find_non_overlapping_position, random_color_excluding_blue_and_dark
 from lib.core.log_functions import create_message_image, create_edited_message_image, create_quote_image
 from config import *
+from database import DatabaseManager, award_badge
 from lib.core.constants import FLAG_LANGUAGE_MAPPINGS, TRANSLATION_BLACKLIST_CHANNELS
 from lib.economy.economy_manager import can_use_shutcoin, remove_shutcoin, SHUTCOIN_ENABLED
 from lib.economy.prediction_system import prediction_embed, _save
@@ -597,6 +598,8 @@ async def handle_shut_reaction(reaction, user):
         sticker_messages[reaction.message.id] = (sticker_message.id, user.id)
         logger.info(f"User {message_author} was timed out for {duration} due to ':Shut:' reaction by {user}.")
         save_shut_count(message_author.id)
+        if not has_role:
+            award_badge(user.id, 'shutcoin_user')
     except Exception as e:
         logger.error(f"Failed to time out user {message_author}: {e}")
 
@@ -681,6 +684,7 @@ async def check_hall_of_fame(client, payload):
                 await thread.send(content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!", embed=embed)
             
             logger.info(f"Message {message.id} sent to Hall of Fame.")
+            award_badge(message.author.id, 'hof')
 
 
 async def on_raw_reaction_add(client, payload):

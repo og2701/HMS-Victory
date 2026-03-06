@@ -13,6 +13,7 @@ from lib.features.summary import initialize_summary_data, update_summary_data, p
 from lib.economy.economy_manager import add_bb, get_all_balances as load_ukpence_data
 from lib.economy.bank_manager import BankManager
 from lib.economy.economy_stats_html import create_economy_stats_image
+from database import award_badge
 from lib.bot.backup_manager import zip_and_send_folder, backup_database, backup_bot
 from lib.core.file_operations import load_webhook_deletions, save_webhook_deletions
 from lib.economy.prediction_system import prediction_embed, _save, _load, Prediction
@@ -77,6 +78,9 @@ async def daily_summary(client):
                             if i < num_to_reward:
                                 user_id = int(user_id_str)
                                 add_bb(user_id, flat_reward_amount, reason="Top chatter daily reward")
+                                award_badge(user_id, 'top_chatter')
+                                if message_count >= 50:
+                                    award_badge(user_id, 'active_chatter')
                                 awarded_user_info = f"User ID {user_id} (Top {i+1} chatter, {message_count} messages): +{flat_reward_amount} UKPence"
                                 awarded_users_for_log.append(awarded_user_info)
                             else:
@@ -220,6 +224,7 @@ async def award_stage_bonuses(client):
             bonus_awarded = minutes * STAGE_UKPENCE_MULTIPLIER
             if BankManager.withdraw(bonus_awarded, description=f"Stage Participation Reward ({minutes}m)"):
                 add_bb(uid, bonus_awarded, reason="Stage participation reward")
+                award_badge(uid, 'stage_fan')
                 client.stage_join_times[uid] = now_utc - timedelta(seconds=((now_utc - start_time_utc).total_seconds() % 60))
                 logger.info(f"[STAGE CRON] +{bonus_awarded} UKP → User {uid} for {minutes} full mins.")
                 total_awarded_this_call += bonus_awarded

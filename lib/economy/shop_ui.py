@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 from lib.economy.economy_manager import get_bb, remove_bb, ensure_bb, add_shutcoins, add_bb
 from lib.economy.bank_manager import BankManager
+from database import award_badge
 from lib.core.image_processing import generate_shop_preview_grid, generate_shop_preview_grid_async
 import io
 
@@ -259,6 +260,7 @@ class PurchaseConfirmationView(View):
         if remove_bb(interaction.user.id, self.item.price, reason=f"Shop purchase: {self.item.name}"):
             try:
                 BankManager.deposit(self.item.price, f"Purchase of {self.item.name}")
+                award_badge(interaction.user.id, 'first_purchase') # Added line
 
                 # Execute item purchase logic
                 # We do not defer here because `execute` might need to edit the message (like VIPCase)

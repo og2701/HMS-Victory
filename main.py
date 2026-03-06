@@ -46,6 +46,8 @@ class AClient(discord.Client):
         self.image_cache = {}
         self.stage_events=set()
         self.stage_join_times={}
+        self.reply_chains = {} # user_id -> count
+        self.last_reply_user = None
         self.predictions={int(k):Prediction.from_dict(v) for k,v in load_predictions().items()}
         self._pending_uploads = {}  # For custom emoji/sticker uploads
         self.session: Optional[aiohttp.ClientSession] = None
@@ -160,6 +162,25 @@ class AClient(discord.Client):
         initialize_summary_data()
         update_summary_data("messages", channel_id=message.channel.id)
         update_summary_data("active_members", user_id=message.author.id)
+
+        # Reply chain logic
+        if message.reference and message.reference.message_id:
+            try:
+                referenced_msg = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
+                if referenced_msg and referenced_msg.author.id != message.author.id:
+                    # User replied to someone else, check if it's a chain
+                    if self.last_reply_user == referenced_msg.author.id:
+                        self.reply_chains[message.author.id] = self.reply_chains.get(message.author.id, 0) + 1
+                        if self.reply_chains[message.author.id] >= 3:
+                            from database import award_badge
+                            award_badge(message.author.id, 'reply_chain')
+                    else:
+                        self.reply_chains[message.author.id] = 1
+                    self.last_reply_user = message.author.id
+            except Exception:
+                pass
+        else:
+            self.last_reply_user = None
 
         await on_message(self, message)
 
