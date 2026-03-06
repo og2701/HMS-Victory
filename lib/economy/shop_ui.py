@@ -906,7 +906,7 @@ class RankCustomizationOverviewView(View):
         current_items = self.items[start_idx:end_idx]
         
         import time
-        image_buffer = await generate_shop_preview_grid_async(current_items, cols=2)
+        image_buffer = await generate_shop_preview_grid_async(current_items, cols=4)
         filename = f"preview_grid_{int(time.time())}.png"
         file = discord.File(fp=image_buffer, filename=filename)
         
