@@ -15,12 +15,13 @@ from database import DatabaseManager
 class ShopItem(ABC):
     """Abstract base class for all shop items."""
 
-    def __init__(self, id: str, name: str, description: str, price: int, use_inventory: bool = True):
+    def __init__(self, id: str, name: str, description: str, price: int, use_inventory: bool = True, show_in_shop: bool = True):
         self.id = id
         self.name = name
         self.description = description
         self.price = price
         self.use_inventory = use_inventory
+        self.show_in_shop = show_in_shop
 
     @abstractmethod
     async def execute(self, interaction) -> str:
@@ -322,10 +323,38 @@ class CustomEmojiStickerItem(ShopItem):
 
         return "Custom emoji/sticker purchase initiated! Check the message above to continue."
 
+class RankCustomizationMenuShopItem(ShopItem):
+    """A portal item that opens the Rank Customization sub-shop."""
+    def __init__(self, id: str, name: str, description: str, price: int):
+        super().__init__(id, name, description, price, use_inventory=False, show_in_shop=True)
+
+    def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
+        # RESTRICT TO OGGERS FOR TESTING (Owen's ID)
+        from config import USERS
+        if user.id != USERS.OGGERS:
+            return False, "This menu is currently undergoing testing and is restricted to the bot owner."
+        return True, ""
+        
+    async def execute(self, interaction) -> str:
+        from lib.economy.shop_ui import RankCustomizationOverviewView
+        
+        all_items = get_all_shop_items()
+        rank_items = [i for i in all_items if isinstance(i, (RankBackgroundItem, RankColorThemeItem, RankResetItem))]
+        
+        view = RankCustomizationOverviewView(rank_items, interaction.user.id)
+        embed = view._create_embed()
+        
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            
+        return "Opened the Rank Customization Menu!"
+
 class RankBackgroundItem(ShopItem):
     """Shop item for purchasing a custom rank background."""
     def __init__(self, id: str, name: str, description: str, price: int, bg_filename: str):
-        super().__init__(id, name, description, price, use_inventory=False)
+        super().__init__(id, name, description, price, use_inventory=False, show_in_shop=False)
         self.bg_filename = bg_filename
 
     def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
@@ -356,7 +385,7 @@ class RankBackgroundItem(ShopItem):
 class RankColorThemeItem(ShopItem):
     """Shop item for purchasing a custom rank color theme."""
     def __init__(self, id: str, name: str, description: str, price: int, primary: str, secondary: str, tertiary: str):
-        super().__init__(id, name, description, price, use_inventory=False)
+        super().__init__(id, name, description, price, use_inventory=False, show_in_shop=False)
         self.primary = primary
         self.secondary = secondary
         self.tertiary = tertiary
@@ -389,7 +418,7 @@ class RankColorThemeItem(ShopItem):
 class RankResetItem(ShopItem):
     """Shop item to reset rank customization back to default."""
     def __init__(self, id: str, name: str, description: str, price: int):
-        super().__init__(id, name, description, price, use_inventory=False)
+        super().__init__(id, name, description, price, use_inventory=False, show_in_shop=False)
 
     def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
         can_purchase, reason = super().can_purchase(user)
@@ -434,6 +463,7 @@ SHOP_ITEMS: List[ShopItem] = [
     CustomEmojiStickerItem("custom_emoji_sticker", "Custom Emoji/Sticker", "Add a custom emoji or sticker to the server", 3500, use_inventory=True),
 
     # Rank Customizations (Temporarily 1 UKP for Testing)
+    RankCustomizationMenuShopItem("rank_custom_menu", "Customise Rank Card", "Preview and choose different custom backgrounds and color themes for your rank card.", 0),
     RankResetItem("rank_custom_reset", "Reset Rank Card", "Reset your rank card background and colors to default", 0),
     RankBackgroundItem("rank_bg_space", "Cosmic Space Background", "A highly detailed cosmic space scene", 1, "rank_bg_space_1772807793835.png"),
     RankBackgroundItem("rank_bg_cyberpunk", "Cyberpunk Background", "A dark and rainy neon city street", 1, "rank_bg_cyberpunk_1772807811666.png"),

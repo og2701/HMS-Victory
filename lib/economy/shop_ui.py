@@ -50,7 +50,7 @@ class ShopItemSelect(Select):
         selected_index = int(self.values[0])
         selected_item = view.items[selected_index]
         
-        detail_view = ShopItemDetailView(view.items, selected_item, view.user_id)
+        detail_view = ShopItemDetailView(view.items, selected_item, view.user_id, parent_view_class=type(view))
         
         await interaction.response.edit_message(embed=detail_view._create_embed(), view=detail_view)
 
@@ -108,11 +108,12 @@ class ShopOverviewView(View):
 
 class ShopItemDetailView(View):
     """View showing details of a specific item, with Buy and Back buttons."""
-    def __init__(self, all_items: List['ShopItem'], item: 'ShopItem', user_id: int):
+    def __init__(self, all_items: List['ShopItem'], item: 'ShopItem', user_id: int, parent_view_class=None):
         super().__init__(timeout=300)
         self.all_items = all_items
         self.item = item
         self.user_id = user_id
+        self.parent_view_class = parent_view_class or ShopOverviewView
         self._update_buttons()
 
     def _update_buttons(self):
@@ -178,7 +179,7 @@ class ShopItemDetailView(View):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
             
-        overview_view = ShopOverviewView(self.all_items, self.user_id)
+        overview_view = self.parent_view_class(self.all_items, self.user_id)
         await interaction.response.edit_message(embed=overview_view._create_embed(), view=overview_view)
 
     async def buy_item(self, interaction: discord.Interaction):
@@ -750,3 +751,25 @@ class EmojiStickerApprovalView(View):
         await interaction.response.send_modal(DenyReasonModal(self))
 
 
+class RankCustomizationOverviewView(ShopOverviewView):
+    """Sub-shop view specifically for Rank Customizations."""
+    
+    def _create_embed(self) -> discord.Embed:
+        user_balance = get_bb(self.user_id)
+        
+        embed = discord.Embed(
+            title="🎨 Rank Card Customization Shop",
+            description="Welcome to the Rank Customization menu! Select a background or color theme from the dropdown below to view details and equip it.",
+            color=0x2b2d31
+        )
+        
+        embed.add_field(name="💳 Your Wallet", value=f"**{user_balance}** UKPence", inline=False)
+        
+        item_list = []
+        for item in self.items:
+            item_list.append(f"• **{item.name}** - {item.price} UKP")
+        
+        if item_list:
+            embed.description += "\n\n**Available Customizations:**\n" + "\n".join(item_list)
+            
+        return embed
