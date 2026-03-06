@@ -449,17 +449,39 @@ SHOP_ITEMS: List[ShopItem] = [
     RoastAccessItem("roast_access", "Roast Access", "Get access to the /roast command (if not already a server booster)", 500, use_inventory=True),
     CustomEmojiStickerItem("custom_emoji_sticker", "Custom Emoji/Sticker", "Add a custom emoji or sticker to the server", 3500, use_inventory=True),
 
-    # Rank Customizations (Temporarily 1 UKP for Testing)
+    # Rank Customizations
     RankCustomizationMenuShopItem("rank_custom_menu", "Customise Rank Card", "Preview and choose different custom backgrounds and color themes for your rank card.", 0),
     RankResetItem("rank_custom_reset", "Reset Rank Card", "Reset your rank card background and colors to default", 0),
-    RankBackgroundItem("rank_bg_space", "Cosmic Space Background", "A highly detailed cosmic space scene", 0, "rank_bg_space_1772807793835.png"),
-    RankBackgroundItem("rank_bg_cyberpunk", "Cyberpunk Background", "A dark and rainy neon city street", 0, "rank_bg_cyberpunk_1772807811666.png"),
-    RankBackgroundItem("rank_bg_anime", "Anime Blossom Background", "Tranquil cherry blossom grove at twilight", 0, "rank_bg_anime_1772807827201.png"),
-    RankBackgroundItem("rank_bg_pirate", "Pirate Ship Background", "Dramatic pirate ship at sea during a storm", 0, "rank_bg_pirate_1772807841224.png"),
-    RankColorThemeItem("rank_color_neon", "Neon Matrix Theme", "Green and black progress bar colors", 0, "#00FF00", "#003300", "#FFFFFF"),
-    RankColorThemeItem("rank_color_gold", "Imperial Gold Theme", "Gold and white progress bar colors", 0, "#FFD700", "#B8860B", "#FFFFFF"),
-    RankColorThemeItem("rank_color_synth", "Synthwave Theme", "Purple and pink progress bar colors", 0, "#FF00FF", "#800080", "#00FFFF"),
-    RankColorThemeItem("rank_color_mono", "Monochrome Theme", "Black, white, and gray progress bar colors", 0, "#FFFFFF", "#333333", "#AAAAAA"),
+
+    # --- UK THEMED (PRIORITY) ---
+    RankBackgroundItem("rank_bg_london", "London Night", "Cinematic night view of the London skyline and Big Ben", 0, "rank_bg_london_night.png"),
+    RankBackgroundItem("rank_bg_buckingham", "Buckingham Palace", "The majestic palace at sunset with royal guards", 0, "rank_bg_buckingham.png"),
+    RankBackgroundItem("rank_bg_spitfire", "Spitfire Battle", "WW2 Spitfire fighter plane over the English Channel", 0, "rank_bg_spitfire.png"),
+    RankBackgroundItem("rank_bg_cotswolds", "Cotswolds Countryside", "Peaceful English village with honey-stone cottages", 0, "rank_bg_cotswolds.png"),
+    RankBackgroundItem("rank_bg_white_cliffs", "White Cliffs of Dover", "Iconic white chalk cliffs meeting the deep blue sea", 0, "rank_bg_white_cliffs.png"),
+
+    RankColorThemeItem("rank_theme_london", "London Glow Theme", "Gold and Navy colors matching the London night", 0, "#FFD700", "#001F3F", "#FFFFFF"),
+    RankColorThemeItem("rank_theme_royal", "Royal Guard Theme", "Imperial Red and Gold matching the palace guards", 0, "#ED2939", "#B8860B", "#FFFFFF"),
+    RankColorThemeItem("rank_theme_country", "Countryside Theme", "Forest greens and earthy browns of rural England", 0, "#228B22", "#8B4513", "#F0FFF0"),
+    RankColorThemeItem("rank_theme_raf", "RAF Spitfire Theme", "Military olive and slate gray with gold accents", 0, "#4B5320", "#708090", "#FFD700"),
+
+    # --- VARIETY STYLES ---
+    RankBackgroundItem("rank_bg_lofi", "Lofi Bedroom", "Cozy lofi aesthetic bedroom with a sleeping cat", 0, "rank_bg_lofi.png"),
+    RankBackgroundItem("rank_bg_forest", "Enchanted Forest", "Ethereal forest with glowing mushrooms and mist", 0, "rank_bg_forest.png"),
+    RankBackgroundItem("rank_bg_vaporwave", "Vaporwave Retro", "Neon pink sunset with glitch art and palm trees", 0, "rank_bg_vaporwave.png"),
+    RankBackgroundItem("rank_bg_medieval", "Medieval Throne", "Grand stone throne room with flickering torches", 0, "rank_bg_medieval.png"),
+    RankBackgroundItem("rank_bg_underwater", "Underwater Reef", "Deep sea coral reef with glowing jellyfish", 0, "rank_bg_underwater.png"),
+
+    RankColorThemeItem("rank_theme_lofi", "Lofi Sunset Theme", "Purple and peach colors of a cozy sunset", 0, "#9370DB", "#FFA07A", "#4B0082"),
+    RankColorThemeItem("rank_theme_deepsea", "Deep Sea Theme", "Teal and navy blues of the ocean depths", 0, "#008080", "#000080", "#00FFFF"),
+    RankColorThemeItem("rank_theme_enchanted", "Enchanted Theme", "Lime greens and soft pinks of a fantasy grove", 0, "#32CD32", "#006400", "#FFB6C1"),
+    RankColorThemeItem("rank_theme_crimson", "Royal Crimson Theme", "Deep reds and gold for a regal look", 0, "#DC143C", "#8B0000", "#FFD700"),
+
+    # --- LEGACY OPTIONS ---
+    RankBackgroundItem("rank_bg_space", "Cosmic Space", "A highly detailed cosmic space scene", 0, "rank_bg_space_1772807793835.png"),
+    RankBackgroundItem("rank_bg_cyberpunk", "Cyberpunk Neon", "A dark and rainy neon city street", 0, "rank_bg_cyberpunk_1772807811666.png"),
+    RankBackgroundItem("rank_bg_anime", "Anime Blossom", "Tranquil cherry blossom grove at twilight", 0, "rank_bg_anime_1772807827201.png"),
+    RankBackgroundItem("rank_bg_pirate", "Pirate Storm", "Dramatic pirate ship at sea during a storm", 0, "rank_bg_pirate_1772807841224.png"),
 
     # Role Items (using actual role IDs from config)
     # RoleItem("ball_inspector", "Ball Inspector", "Get the prestigious Ball Inspector role", 200, ROLES.BALL_INSPECTOR),
