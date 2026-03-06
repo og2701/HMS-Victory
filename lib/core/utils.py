@@ -22,6 +22,21 @@ load_json = load_json_file
 save_json = save_json_file
 
 
+def get_twemoji_url(emoji_char: str) -> str:
+    """Convert an emoji character to its corresponding Twemoji CDN URL."""
+    # Handle both single emojis and sequences (like variation selectors or ZWJ)
+    codepoints = []
+    for char in emoji_char:
+        cp = ord(char)
+        # Skip variation selector-16 (fe0f) as Twemoji often omits it in the filename
+        if cp == 0xFE0F:
+            continue
+        codepoints.append(f"{cp:x}")
+    
+    codepoint_str = "-".join(codepoints)
+    return f"https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/{codepoint_str}.png"
+
+
 def is_lockdown_active():
     return is_file_status_active(VC_LOCKDOWN_FILE)
 
@@ -156,7 +171,8 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
                     badges_html += f'<div class="badge-item"><img src="{data_uri}" alt="{b_name}"></div>'
                 else:
                     # Assume it's a raw emoji
-                    badges_html += f'<div class="badge-item emoji">{icon}</div>'
+                    twemoji_url = get_twemoji_url(icon)
+                    badges_html += f'<div class="badge-item emoji"><img src="{twemoji_url}" alt="{b_name}"></div>'
         
         # Apply replacements
         html_content = safe_replace(html_content, "profile_pic", member.display_avatar.url)
