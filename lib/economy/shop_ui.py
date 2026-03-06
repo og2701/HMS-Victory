@@ -791,7 +791,7 @@ class RankCustomizationOverviewView(View):
         self.current_page = 0
         self._update_components()
 
-    def _create_embed(self) -> discord.Embed:
+    def _create_embed(self, image_filename: str = "preview_grid.png") -> discord.Embed:
         user_balance = get_bb(self.user_id)
         
         embed = discord.Embed(
