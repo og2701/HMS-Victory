@@ -897,6 +897,10 @@ class RankCustomizationOverviewView(View):
 
     async def initial_send(self, interaction: discord.Interaction):
         """Initial generation and sending of the customization menu."""
+        # Defer the response immediately so it doesn't timeout while generating the image
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+            
         start_idx = self.current_page * self.ITEMS_PER_PAGE
         end_idx = start_idx + self.ITEMS_PER_PAGE
         current_items = self.items[start_idx:end_idx]
@@ -907,9 +911,6 @@ class RankCustomizationOverviewView(View):
         file = discord.File(fp=image_buffer, filename=filename)
         
         embed = self._create_embed(image_filename=filename)
-        if interaction.response.is_done():
-            # fetch the message and edit it
-            msg = await interaction.original_response()
-            await msg.edit(embed=embed, view=self, attachments=[file])
-        else:
-            await interaction.response.edit_message(embed=embed, view=self, attachments=[file])
+        
+        msg = await interaction.original_response()
+        await msg.edit(embed=embed, view=self, attachments=[file])
