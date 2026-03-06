@@ -257,10 +257,10 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
     """
     from PIL import ImageDraw, ImageFont, Image
     
-    # Ultra-high resolution (1000x500 per item)
-    preview_width = 1000
-    preview_height = 500
-    padding = 50
+    # Ultra-high resolution (1200x600 per item)
+    preview_width = 1200
+    preview_height = 600
+    padding = 60
     
     rows = (len(items) + cols - 1) // cols
     grid_width = (preview_width * cols) + (padding * (cols + 1))
@@ -274,15 +274,15 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
     # Try to load a font for numbering
     font = None
     try:
-        font_path = os.path.join(BASE_DIR, "data", "fonts", "Outfit-Bold.ttf")
+        font_path = os.path.join(BASE_DIR, "data", "fluff.ttf")
         if os.path.exists(font_path):
-            font = ImageFont.truetype(font_path, 90)
+            font = ImageFont.truetype(font_path, 110)
     except:
         pass
         
     if not font:
         try:
-            font = ImageFont.load_default(size=90)
+            font = ImageFont.load_default(size=110)
         except:
             font = ImageFont.load_default()
 
@@ -305,15 +305,15 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
             else:
                 preview = Image.new("RGBA", (preview_width, preview_height), (100, 100, 100))
                 p_draw = ImageDraw.Draw(preview)
-                p_draw.text((30, 200), f"MISSING:\n{item.bg_filename}", fill="white", font=font)
+                p_draw.text((40, 250), f"MISSING:\n{item.bg_filename}", fill="white", font=font)
         elif hasattr(item, 'primary'): # Color Theme
             preview = Image.new("RGBA", (preview_width, preview_height), (40, 44, 52))
             p_draw = ImageDraw.Draw(preview)
-            # Draw swatches (scaled for 1000x500)
-            p_draw.rectangle([50, 100, 300, 350], fill=item.primary, outline="white", width=5)
-            p_draw.rectangle([350, 100, 600, 350], fill=item.secondary, outline="white", width=5)
-            p_draw.rectangle([650, 100, 900, 350], fill=item.tertiary, outline="white", width=5)
-            p_draw.text((50, 380), item.name, fill="white", font=font)
+            # Draw swatches (scaled for 1200x600)
+            p_draw.rectangle([60, 120, 360, 420], fill=item.primary, outline="white", width=6)
+            p_draw.rectangle([420, 120, 720, 420], fill=item.secondary, outline="white", width=6)
+            p_draw.rectangle([780, 120, 1080, 420], fill=item.tertiary, outline="white", width=6)
+            p_draw.text((60, 460), item.name, fill="white", font=font)
         else: # Reset or unknown
              # For reset, maybe show the standard union jack or a generic label
              preview = Image.new("RGBA", (preview_width, preview_height), (60, 60, 60))
@@ -324,11 +324,11 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
             canvas.paste(preview, (x, y), preview if preview.mode == 'RGBA' else None)
         
         # Draw number badge (scaled)
-        badge_size = 120
-        badge_x = x + 25
-        badge_y = y + 25
+        badge_size = 140
+        badge_x = x + 30
+        badge_y = y + 30
         draw.ellipse([badge_x, badge_y, badge_x + badge_size, badge_y + badge_size], fill=(255, 0, 0))
-        draw.text((badge_x + 35, badge_y + 10), str(idx + 1), fill="white", font=font)
+        draw.text((badge_x + 40, badge_y + 10), str(idx + 1), fill="white", font=font)
 
     buffer = io.BytesIO()
     canvas.save(buffer, format="PNG")

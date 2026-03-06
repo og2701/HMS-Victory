@@ -294,10 +294,14 @@ class PurchaseConfirmationView(View):
                             # Helper to handle the edit manually if needed
                             start_idx = self.return_view.current_page * self.return_view.ITEMS_PER_PAGE
                             current_items = self.return_view.items[start_idx:start_idx + self.return_view.ITEMS_PER_PAGE]
+                            import time
                             from lib.core.image_processing import generate_shop_preview_grid_async
-                            image_buffer = await generate_shop_preview_grid_async(current_items)
-                            file = discord.File(fp=image_buffer, filename="preview_grid.png")
-                            await msg.edit(embed=self.return_view._create_embed(), view=self.return_view, attachments=[file])
+                            image_buffer = await generate_shop_preview_grid_async(current_items, cols=1)
+                            filename = f"preview_grid_{int(time.time())}.png"
+                            file = discord.File(fp=image_buffer, filename=filename)
+                            new_embed = self.return_view._create_embed()
+                            new_embed.set_image(url=f"attachment://{filename}")
+                            await msg.edit(embed=new_embed, view=self.return_view, attachments=[file])
                         else:
                             await msg.edit(embed=self.return_view._create_embed(), view=self.return_view)
 
@@ -778,7 +782,7 @@ class EmojiStickerApprovalView(View):
 class RankCustomizationOverviewView(View):
     """Sub-shop view specifically for Rank Customizations, using paginated buttons."""
     
-    ITEMS_PER_PAGE = 5
+    ITEMS_PER_PAGE = 4
     
     def __init__(self, items: List['ShopItem'], user_id: int):
         super().__init__(timeout=300)
@@ -796,7 +800,7 @@ class RankCustomizationOverviewView(View):
             color=0x2b2d31
         )
         embed.add_field(name="💳 Your Wallet", value=f"**{user_balance}** UKPence", inline=False)
-        embed.set_image(url="attachment://preview_grid.png")
+        embed.set_image(url=f"attachment://{image_filename}")
         return embed
 
     async def _update_view(self, interaction: discord.Interaction):
@@ -811,11 +815,13 @@ class RankCustomizationOverviewView(View):
         for item in current_items:
             grid_items.append(item)
             
-        image_buffer = await generate_shop_preview_grid_async(grid_items)
-        file = discord.File(fp=image_buffer, filename="preview_grid.png")
+        import time
+        image_buffer = await generate_shop_preview_grid_async(grid_items, cols=1)
+        filename = f"preview_grid_{int(time.time())}.png"
+        file = discord.File(fp=image_buffer, filename=filename)
         
         self._update_components()
-        await interaction.response.edit_message(embed=self._create_embed(), view=self, attachments=[file])
+        await interaction.response.edit_message(embed=self._create_embed(image_filename=filename), view=self, attachments=[file])
 
     def _update_components(self):
         self.clear_items()
@@ -895,10 +901,13 @@ class RankCustomizationOverviewView(View):
         end_idx = start_idx + self.ITEMS_PER_PAGE
         current_items = self.items[start_idx:end_idx]
         
-        image_buffer = await generate_shop_preview_grid_async(current_items)
-        file = discord.File(fp=image_buffer, filename="preview_grid.png")
+        import time
+        image_buffer = await generate_shop_preview_grid_async(current_items, cols=1)
+        filename = f"preview_grid_{int(time.time())}.png"
+        file = discord.File(fp=image_buffer, filename=filename)
         
         embed = self._create_embed()
+        embed.set_image(url=f"attachment://{filename}")
         if interaction.response.is_done():
             await interaction.followup.send(embed=embed, view=self, file=file, ephemeral=True)
         else:
