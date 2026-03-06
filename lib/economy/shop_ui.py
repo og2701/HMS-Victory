@@ -840,34 +840,44 @@ class RankCustomizationOverviewView(View):
         end_idx = start_idx + self.ITEMS_PER_PAGE
         current_items = self.items[start_idx:end_idx]
         
-        # Add a button for each item on the current page
-        for i, item in enumerate(current_items):
-            # Create a localized callback to capture the specific item
-            async def make_callback(interaction: discord.Interaction, target_item=item):
-                if interaction.user.id != self.user_id:
-                    return await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
+        from discord.ui import Select
+        
+        # Create a Select menu for all items
+        options = []
+        for i, item in enumerate(self.items):
+            # A SelectOption needs a label, value, and description
+            options.append(discord.SelectOption(
+                label=f"[{i+1}] {item.name}",
+                description=f"{item.price} UKP - {item.description[:40]}...",
+                value=str(i)
+            ))
+            
+        select_menu = Select(placeholder="Select a customization to purchase...", options=options, row=0)
+        
+        async def select_callback(interaction: discord.Interaction):
+            if interaction.user.id != self.user_id:
+                return await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
                 
-                from lib.economy.shop_ui import PurchaseConfirmationView
-                detail_view = PurchaseConfirmationView(target_item, self)
-                embed = discord.Embed(
-                    title="💳 Confirm Purchase",
-                    description=f"Are you sure you want to buy **{target_item.name}**?\n\n> *{target_item.description}*",
-                    color=0x00ff00
-                )
-                embed.add_field(name="Cost", value=f"{target_item.price} UKPence", inline=True)
-                embed.add_field(name="Balance After Purchase", value=f"{get_bb(interaction.user.id) - target_item.price} UKPence", inline=True)
+            selected_idx = int(select_menu.values[0])
+            target_item = self.items[selected_idx]
+            
+            from lib.economy.shop_ui import PurchaseConfirmationView
+            detail_view = PurchaseConfirmationView(target_item, self)
+            embed = discord.Embed(
+                title="💳 Confirm Purchase",
+                description=f"Are you sure you want to buy **{target_item.name}**?\n\n> *{target_item.description}*",
+                color=0x00ff00
+            )
+            embed.add_field(name="Cost", value=f"{target_item.price} UKPence", inline=True)
+            embed.add_field(name="Balance After Purchase", value=f"{get_bb(interaction.user.id) - target_item.price} UKPence", inline=True)
 
-                await interaction.response.edit_message(embed=embed, view=detail_view, attachments=[])
+            await interaction.response.edit_message(embed=embed, view=detail_view, attachments=[])
             
-            btn = Button(label=f"[{i+1}] {item.name}", style=discord.ButtonStyle.primary, row=i // 3)
-            btn.callback = make_callback
-            self.add_item(btn)
-            
-        # Add Pagination Controls if necessary
-        total_pages = (len(self.items) - 1) // self.ITEMS_PER_PAGE + 1
+        select_menu.callback = select_callback
+        self.add_item(select_menu)
         
         # Back to Main Shop Button
-        back_btn = Button(label="Back to Shop", style=discord.ButtonStyle.secondary, row=2)
+        back_btn = Button(label="Back to Shop", style=discord.ButtonStyle.secondary, row=1)
         async def back_to_shop(interaction: discord.Interaction):
             if interaction.user.id != self.user_id: return
             from lib.economy.shop_items import get_shop_items
@@ -875,26 +885,6 @@ class RankCustomizationOverviewView(View):
             await interaction.response.edit_message(embed=shop_overview._create_embed(), view=shop_overview, attachments=[])
         back_btn.callback = back_to_shop
         self.add_item(back_btn)
-
-        if total_pages > 1:
-            prev_btn = Button(label="Previous", style=discord.ButtonStyle.secondary, disabled=(self.current_page == 0), row=4)
-            async def prev_callback(interaction: discord.Interaction):
-                if interaction.user.id != self.user_id: return
-                self.current_page -= 1
-                await self._update_view(interaction)
-            prev_btn.callback = prev_callback
-            self.add_item(prev_btn)
-            
-            next_btn = Button(label=f"Page {self.current_page + 1}/{total_pages}", style=discord.ButtonStyle.secondary, disabled=True, row=4)
-            self.add_item(next_btn)
-            
-            next_p_btn = Button(label="Next", style=discord.ButtonStyle.secondary, disabled=(self.current_page == total_pages - 1), row=4)
-            async def next_callback(interaction: discord.Interaction):
-                if interaction.user.id != self.user_id: return
-                self.current_page += 1
-                await self._update_view(interaction)
-            next_p_btn.callback = next_callback
-            self.add_item(next_p_btn)
 
     def _update_buttons(self):
         """Compatibility method for PurchaseConfirmationView."""
