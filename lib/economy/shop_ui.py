@@ -294,8 +294,8 @@ class PurchaseConfirmationView(View):
                             # Helper to handle the edit manually if needed
                             start_idx = self.return_view.current_page * self.return_view.ITEMS_PER_PAGE
                             current_items = self.return_view.items[start_idx:start_idx + self.return_view.ITEMS_PER_PAGE]
-                            from lib.core.image_processing import generate_shop_preview_grid
-                            image_buffer = await asyncio.get_event_loop().run_in_executor(None, generate_shop_preview_grid, current_items)
+                            from lib.core.image_processing import generate_shop_preview_grid_async
+                            image_buffer = await generate_shop_preview_grid_async(current_items)
                             file = discord.File(fp=image_buffer, filename="preview_grid.png")
                             await msg.edit(embed=self.return_view._create_embed(), view=self.return_view, attachments=[file])
                         else:
@@ -811,8 +811,7 @@ class RankCustomizationOverviewView(View):
         for item in current_items:
             grid_items.append(item)
             
-        loop = asyncio.get_event_loop()
-        image_buffer = await loop.run_in_executor(None, generate_shop_preview_grid, grid_items)
+        image_buffer = await generate_shop_preview_grid_async(grid_items)
         file = discord.File(fp=image_buffer, filename="preview_grid.png")
         
         self._update_components()
@@ -896,8 +895,7 @@ class RankCustomizationOverviewView(View):
         end_idx = start_idx + self.ITEMS_PER_PAGE
         current_items = self.items[start_idx:end_idx]
         
-        loop = asyncio.get_event_loop()
-        image_buffer = await loop.run_in_executor(None, generate_shop_preview_grid, current_items)
+        image_buffer = await generate_shop_preview_grid_async(current_items)
         file = discord.File(fp=image_buffer, filename="preview_grid.png")
         
         embed = self._create_embed()
