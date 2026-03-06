@@ -57,6 +57,34 @@ nationality_onboarding_roles = {
     ROLES.NORTHERN_IRISH,
 }
 
+async def on_member_update(before, after):
+    if not before.premium_since and after.premium_since:
+        await award_badge_with_notify(after._state._get_client(), after.id, 'server_booster')
+    
+    if after.premium_since:
+        days_boosting = (discord.utils.utcnow() - after.premium_since).days
+        if days_boosting >= 365:
+            await award_badge_with_notify(after._state._get_client(), after.id, 'yearly_booster')
+
+async def award_badge_with_notify(client, user_id: int, badge_id: str):
+    """Awards a badge and notifies the user via DM and logs to bot-usage-log."""
+    from database import award_badge, DatabaseManager
+    
+    newly_awarded = award_badge(user_id, badge_id)
+    if newly_awarded:
+        # Get badge info
+        badge_info = DatabaseManager.fetch_one("SELECT name, icon_path FROM badges WHERE id = ?", (badge_id,))
+        if not badge_info:
+            return
+        
+        badge_name, badge_emoji = badge_info
+        
+        # Log to bot-usage-log
+        log_channel = client.get_channel(CHANNELS.BOT_USAGE_LOG)
+        if log_channel:
+            user_mention = f"<@{user_id}>"
+            await log_channel.send(f"🎖️ **Badge Awarded**: {user_mention} just earned the **{badge_name}** {badge_emoji} badge!")
+
 FORUM_CHANNEL_ID = 1341451323249266711
 THREAD_MESSAGES_FILE = "thread_messages.json"
 ADDED_USERS_FILE = "added_users.json"
@@ -598,8 +626,9 @@ async def handle_shut_reaction(reaction, user):
         sticker_messages[reaction.message.id] = (sticker_message.id, user.id)
         logger.info(f"User {message_author} was timed out for {duration} due to ':Shut:' reaction by {user}.")
         save_shut_count(message_author.id)
+        await award_badge_with_notify(client, message_author.id, 'shut_victim')
         if not has_role:
-            award_badge(user.id, 'shutcoin_user')
+            await award_badge_with_notify(client, user.id, 'shutcoin_user')
     except Exception as e:
         logger.error(f"Failed to time out user {message_author}: {e}")
 
@@ -643,7 +672,7 @@ async def check_hall_of_fame(client, payload):
         # logger.info(f"[HOF] Unique reactors for {message.id}: {len(unique_reactors)}")
 
         if len(unique_reactors) >= 5:
-            logger.info(f"[HOF] Message {message.id} qualified for Hall of Fame!")
+            logger.info(f"[HOF] Message {message.id} qualified for Hall of Fame! Relevant client: {client}")
             hall_of_fame_data.append(str(message.id))
             save_json_file(HALL_OF_FAME_FILE, hall_of_fame_data)
             
@@ -684,12 +713,23 @@ async def check_hall_of_fame(client, payload):
                 await thread.send(content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!", embed=embed)
             
             logger.info(f"Message {message.id} sent to Hall of Fame.")
-            award_badge(message.author.id, 'hof')
+            await award_badge_with_notify(client, message.author.id, 'hof')
 
 
 async def on_raw_reaction_add(client, payload):
     try:
         await check_hall_of_fame(client, payload)
+        
+        # Announcement speed badges
+        if payload.channel_id in [CHANNELS.ANNOUNCEMENTS, CHANNELS.MINOR_ANNOUNCEMENTS]:
+            channel = client.get_channel(payload.channel_id)
+            if not channel: channel = await client.fetch_channel(payload.channel_id)
+            message = await channel.fetch_message(payload.message_id)
+            
+            time_diff = (discord.utils.utcnow() - message.created_at).total_seconds()
+            if time_diff <= 600: # 10 minutes
+                badge_id = 'announcement_fast' if payload.channel_id == CHANNELS.ANNOUNCEMENTS else 'minor_announcement_fast'
+                await award_badge_with_notify(client, payload.user_id, badge_id)
     except Exception as e:
         logger.error(f"Error in on_raw_reaction_add: {e}")
 
@@ -779,11 +819,35 @@ async def on_voice_state_update(member, before, after):
             if bonus > 0:
                 if BankManager.withdraw(bonus, description=f"Stage Participation Reward ({int(elapsed)//60}m)"):
                     add_bb(member.id, bonus, reason="Stage participation reward")
+                    await award_badge_with_notify(member._state._get_client(), member.id, 'stage_fan')
                     logger.info(f"[STAGE] +{bonus} UKP → User {member} for leaving stage {before.channel.name}")
                 else:
                     logger.error(f"[STAGE] Failed to withdraw {bonus} UKP from BankManager for User {member}. Insufficient funds or database error.")
                     # Keep their time accumulated so they don't lose it if the bank is broke
                     stage_join_times[member.id] = start
+
+    # --- VC and Screenshare Badges ---
+    if not hasattr(client, 'vc_starts'): client.vc_starts = {}
+    if not hasattr(client, 'stream_starts'): client.stream_starts = {}
+
+    # VC Legend: 1 hour in VC with others
+    if after.channel and not before.channel:
+        if len(after.channel.members) > 1:
+            client.vc_starts[member.id] = discord.utils.utcnow()
+    elif before.channel and not after.channel:
+        start = client.vc_starts.pop(member.id, None)
+        if start:
+            if (discord.utils.utcnow() - start).total_seconds() >= 3600:
+                await award_badge_with_notify(client, member.id, 'vc_legend')
+    
+    # Screensharer: 30 mins screenshare
+    if after.self_video and not before.self_video:
+        client.stream_starts[member.id] = discord.utils.utcnow()
+    elif before.self_video and not after.self_video:
+        start = client.stream_starts.pop(member.id, None)
+        if start:
+            if (discord.utils.utcnow() - start).total_seconds() >= 1800:
+                await award_badge_with_notify(client, member.id, 'screensharer')
 
 
 async def refresh_live_stages(client):

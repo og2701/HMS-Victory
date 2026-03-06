@@ -104,6 +104,10 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
 
         summary = response.choices[0].message.content.strip()
         await interaction.followup.send(summary)
+        
+        from lib.bot.event_handlers import award_badge_with_notify
+        await award_badge_with_notify(interaction.client, interaction.user.id, 'roaster')
+        await award_badge_with_notify(interaction.client, user.id, 'roast_victim')
     except Exception as e:
         print(e)
         await interaction.followup.send("An error occurred.")

@@ -78,9 +78,10 @@ async def daily_summary(client):
                             if i < num_to_reward:
                                 user_id = int(user_id_str)
                                 add_bb(user_id, flat_reward_amount, reason="Top chatter daily reward")
-                                award_badge(user_id, 'top_chatter')
+                                from lib.bot.event_handlers import award_badge_with_notify
+                                await award_badge_with_notify(client, user_id, 'top_chatter')
                                 if message_count >= 50:
-                                    award_badge(user_id, 'active_chatter')
+                                    await award_badge_with_notify(client, user_id, 'active_chatter')
                                 awarded_user_info = f"User ID {user_id} (Top {i+1} chatter, {message_count} messages): +{flat_reward_amount} UKPence"
                                 awarded_users_for_log.append(awarded_user_info)
                             else:
@@ -224,7 +225,8 @@ async def award_stage_bonuses(client):
             bonus_awarded = minutes * STAGE_UKPENCE_MULTIPLIER
             if BankManager.withdraw(bonus_awarded, description=f"Stage Participation Reward ({minutes}m)"):
                 add_bb(uid, bonus_awarded, reason="Stage participation reward")
-                award_badge(uid, 'stage_fan')
+                from lib.bot.event_handlers import award_badge_with_notify
+                await award_badge_with_notify(client, uid, 'stage_fan')
                 client.stage_join_times[uid] = now_utc - timedelta(seconds=((now_utc - start_time_utc).total_seconds() % 60))
                 logger.info(f"[STAGE CRON] +{bonus_awarded} UKP → User {uid} for {minutes} full mins.")
                 total_awarded_this_call += bonus_awarded

@@ -48,6 +48,7 @@ class AClient(discord.Client):
         self.stage_join_times={}
         self.reply_chains = {} # user_id -> count
         self.last_reply_user = None
+        self.message_repliers = {} # message_id -> set(user_ids)
         self.predictions={int(k):Prediction.from_dict(v) for k,v in load_predictions().items()}
         self._pending_uploads = {}  # For custom emoji/sticker uploads
         self.session: Optional[aiohttp.ClientSession] = None
@@ -163,22 +164,45 @@ class AClient(discord.Client):
         update_summary_data("messages", channel_id=message.channel.id)
         update_summary_data("active_members", user_id=message.author.id)
 
-        # Reply chain logic
+        # Holiday badges
+        now = datetime.now()
+        from lib.bot.event_handlers import award_badge_with_notify
+        if now.month == 12 and now.day == 25:
+            await award_badge_with_notify(self, message.author.id, 'christmas')
+        elif now.month == 10 and now.day == 31:
+            await award_badge_with_notify(self, message.author.id, 'halloween')
+
+        # Reply logic (Chain and Popular)
         if message.reference and message.reference.message_id:
             try:
                 referenced_msg = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
                 if referenced_msg and referenced_msg.author.id != message.author.id:
-                    # User replied to someone else, check if it's a chain
+                    # 1. Reply Chain (A -> B -> A -> B)
                     if self.last_reply_user == referenced_msg.author.id:
                         self.reply_chains[message.author.id] = self.reply_chains.get(message.author.id, 0) + 1
                         if self.reply_chains[message.author.id] >= 3:
-                            from database import award_badge
-                            award_badge(message.author.id, 'reply_chain')
+                            await award_badge_with_notify(self, message.author.id, 'reply_chain')
                     else:
                         self.reply_chains[message.author.id] = 1
                     self.last_reply_user = message.author.id
+
+                    # 2. Popular Badge (3 people reply to one message)
+                    ref_id = referenced_msg.id
+                    if ref_id not in self.message_repliers:
+                        self.message_repliers[ref_id] = set()
+                    self.message_repliers[ref_id].add(message.author.id)
+                    if len(self.message_repliers[ref_id]) >= 3:
+                        await award_badge_with_notify(self, referenced_msg.author.id, 'triple_reply')
+                        # Clean up to prevent multi-award
+                        del self.message_repliers[ref_id]
             except Exception:
                 pass
+        
+        # Cleanup old reply tracking
+        if len(self.message_repliers) > 1000:
+            # Simple LRU-ish cleanup: remove oldest 200 items
+            keys_to_del = list(self.message_repliers.keys())[:200]
+            for k in keys_to_del: del self.message_repliers[k]
         else:
             self.last_reply_user = None
 
@@ -223,6 +247,9 @@ class AClient(discord.Client):
             if corrected_content == payload.content:
                 return
 
+            from lib.bot.event_handlers import award_badge_with_notify
+            await award_badge_with_notify(self, member.id, 'americanism_victim')
+
             # Security: Prevent server invites from being sent via webhook
             invite_patterns = [r"discord\.gg/\S+", r"discord\.com/invite/\S+"]
             import re
@@ -248,6 +275,10 @@ class AClient(discord.Client):
 
     async def on_interaction(self, interaction):
         await on_interaction(interaction)
+
+    async def on_member_update(self, before, after):
+        from lib.bot.event_handlers import on_member_update
+        await on_member_update(before, after)
 
     async def on_member_join(self, member):
         initialize_summary_data()

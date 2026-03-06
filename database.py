@@ -20,7 +20,7 @@ class DatabaseManager:
         c = conn.cursor()
         c.execute(query, params)
         conn.commit()
-        return c.lastrowid
+        return c.rowcount
 
     @staticmethod
     def fetch_one(query, params=()):
@@ -202,7 +202,20 @@ def init_db():
             ('reply_chain', 'Chain Linker', 'Be part of a reply chain', '⛓️'),
             ('active_chatter', 'Active Chatter', 'Achieve a certain level of activity in a day', '⚡'),
             ('top_chatter', 'Elite Talker', 'One of the top 5 daily chatters', '🥇'),
-            ('stage_fan', 'Stage Fan', 'Attend a stage event for X amount of time', '🎭')
+            ('stage_fan', 'Stage Fan', 'Attend a stage event for X amount of time', '🎭'),
+            ('christmas', 'Christmas', 'Message on Christmas day', '🎅'),
+            ('halloween', 'Halloween', 'Message on Halloween', '🎃'),
+            ('vc_legend', 'Chatterbox', 'One hour in a VC session', '📞'),
+            ('screensharer', 'Sharing is Caring', 'Screenshare for 30 mins', '🖥️'),
+            ('americanism_victim', "English (Simplified)", 'Caught by the Americanism filter', '🇺🇸'),
+            ('announcement_fast', 'Fast Hands', 'React to an announcement within 10 minutes', '📣'),
+            ('minor_announcement_fast', 'Small Talker', 'React to a minor announcement within 10 minutes', '📢'),
+            ('roaster', 'Chef', 'Use the roast command', '🔥'),
+            ('roast_victim', 'Fried', 'Be targeted by a roast command', '💀'),
+            ('triple_reply', 'Popular', 'Have three people reply to one of your messages', '💬'),
+            ('shut_victim', 'Silences', 'Be shut by a shutcoin', '🔇'),
+            ('server_booster', 'Supporter', 'Boost the server', '💎'),
+            ('yearly_booster', 'Diamond Hands', 'Boost the server for a year', '👑')
         ]
         for b_id, b_name, b_desc, b_icon in badges:
             c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path) VALUES (?, ?, ?, ?)", 
@@ -216,11 +229,12 @@ if __name__ == '__main__':
 def award_badge(user_id: str, badge_id: str):
     import time
     try:
-        DatabaseManager.execute(
+        # returns rowcount: 1 if inserted, 0 if ignored
+        result = DatabaseManager.execute(
             "INSERT OR IGNORE INTO user_badges (user_id, badge_id, awarded_at) VALUES (?, ?, ?)",
             (str(user_id), badge_id, int(time.time()))
         )
-        return True
+        return result > 0
     except Exception as e:
         print(f"Error awarding badge: {e}")
         return False

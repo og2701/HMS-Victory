@@ -260,7 +260,8 @@ class PurchaseConfirmationView(View):
         if remove_bb(interaction.user.id, self.item.price, reason=f"Shop purchase: {self.item.name}"):
             try:
                 BankManager.deposit(self.item.price, f"Purchase of {self.item.name}")
-                award_badge(interaction.user.id, 'first_purchase') # Added line
+                from lib.bot.event_handlers import award_badge_with_notify
+                await award_badge_with_notify(interaction.client, interaction.user.id, 'first_purchase')
 
                 # Execute item purchase logic
                 # We do not defer here because `execute` might need to edit the message (like VIPCase)
