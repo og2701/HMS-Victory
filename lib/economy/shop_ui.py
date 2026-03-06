@@ -50,6 +50,11 @@ class ShopItemSelect(Select):
         selected_index = int(self.values[0])
         selected_item = view.items[selected_index]
         
+        # If the item is the Rank Customization portal, bypass the details/buy screen
+        if selected_item.id == "rank_custom_menu":
+            await selected_item.execute(interaction)
+            return
+            
         detail_view = ShopItemDetailView(view.items, selected_item, view.user_id, parent_view_class=type(view))
         
         await interaction.response.edit_message(embed=detail_view._create_embed(), view=detail_view)
@@ -751,25 +756,88 @@ class EmojiStickerApprovalView(View):
         await interaction.response.send_modal(DenyReasonModal(self))
 
 
-class RankCustomizationOverviewView(ShopOverviewView):
-    """Sub-shop view specifically for Rank Customizations."""
+class RankCustomizationOverviewView(View):
+    """Sub-shop view specifically for Rank Customizations, using paginated buttons."""
     
+    ITEMS_PER_PAGE = 5
+    
+    def __init__(self, items: List['ShopItem'], user_id: int):
+        super().__init__(timeout=300)
+        self.items = items
+        self.user_id = user_id
+        self.current_page = 0
+        self._update_components()
+
+    def _update_components(self):
+        self.clear_items()
+        
+        start_idx = self.current_page * self.ITEMS_PER_PAGE
+        end_idx = start_idx + self.ITEMS_PER_PAGE
+        current_items = self.items[start_idx:end_idx]
+        
+        # Add a button for each item on the current page
+        for item in current_items:
+            # Create a localized callback to capture the specific item
+            async def make_callback(interaction: discord.Interaction, target_item=item):
+                if interaction.user.id != self.user_id:
+                    return await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
+                
+                from lib.economy.shop_ui import PurchaseConfirmationView
+                detail_view = PurchaseConfirmationView(target_item, self)
+                embed = discord.Embed(
+                    title="💳 Confirm Purchase",
+                    description=f"Are you sure you want to buy **{target_item.name}**?\n\n> *{target_item.description}*",
+                    color=0x00ff00
+                )
+                embed.add_field(name="Cost", value=f"{target_item.price} UKPence", inline=True)
+                embed.add_field(name="Balance After Purchase", value=f"{get_bb(interaction.user.id) - target_item.price} UKPence", inline=True)
+
+                await interaction.response.edit_message(embed=embed, view=detail_view)
+            
+            btn = Button(label=f"{item.name} ({item.price} UKP)", style=discord.ButtonStyle.primary, row=len(self.children) % 4)
+            btn.callback = make_callback
+            self.add_item(btn)
+            
+        # Add Pagination Controls if necessary
+        total_pages = (len(self.items) - 1) // self.ITEMS_PER_PAGE + 1
+        if total_pages > 1:
+            prev_btn = Button(label="Previous", style=discord.ButtonStyle.secondary, disabled=(self.current_page == 0), row=4)
+            async def prev_callback(interaction: discord.Interaction):
+                if interaction.user.id != self.user_id: return
+                self.current_page -= 1
+                self._update_components()
+                await interaction.response.edit_message(embed=self._create_embed(), view=self)
+            prev_btn.callback = prev_callback
+            self.add_item(prev_btn)
+            
+            next_btn = Button(label=f"Page {self.current_page + 1}/{total_pages}", style=discord.ButtonStyle.secondary, disabled=True, row=4)
+            self.add_item(next_btn)
+            
+            next_p_btn = Button(label="Next", style=discord.ButtonStyle.secondary, disabled=(self.current_page == total_pages - 1), row=4)
+            async def next_callback(interaction: discord.Interaction):
+                if interaction.user.id != self.user_id: return
+                self.current_page += 1
+                self._update_components()
+                await interaction.response.edit_message(embed=self._create_embed(), view=self)
+            next_p_btn.callback = next_callback
+            self.add_item(next_p_btn)
+
+    def _update_buttons(self):
+        # Fallback method used by PurchaseConfirmationView when returning
+        self._update_components()
+
     def _create_embed(self) -> discord.Embed:
         user_balance = get_bb(self.user_id)
         
         embed = discord.Embed(
             title="🎨 Rank Card Customization Shop",
-            description="Welcome to the Rank Customization menu! Select a background or color theme from the dropdown below to view details and equip it.",
+            description="Welcome to the Rank Customization menu!\nClick a button below to equip or purchase a background/theme.",
             color=0x2b2d31
         )
-        
         embed.add_field(name="💳 Your Wallet", value=f"**{user_balance}** UKPence", inline=False)
-        
-        item_list = []
-        for item in self.items:
-            item_list.append(f"• **{item.name}** - {item.price} UKP")
-        
-        if item_list:
-            embed.description += "\n\n**Available Customizations:**\n" + "\n".join(item_list)
-            
         return embed
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        pass
