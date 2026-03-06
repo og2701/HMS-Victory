@@ -4,6 +4,10 @@ import sqlite3
 import discord
 import asyncio
 from datetime import datetime, timezone
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 # Add parent directory to path to import config and database
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
