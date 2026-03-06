@@ -157,9 +157,11 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         html_content = safe_replace(html_content, "secondary_color", secondary_color)
         html_content = safe_replace(html_content, "tertiary_color", tertiary_color)
 
-        size = (1000, 600)
+        import time
+        size = (1400, 840)
         image_bytes = await screenshot_html(html_content, size)
-        return discord.File(fp=image_bytes, filename="rank.png")
+        filename = f"rank_{int(time.time())}.png"
+        return discord.File(fp=image_bytes, filename=filename)
 
     except Exception as e:
         logger.critical(f"An unrecoverable error occurred in generate_rank_card for {member.display_name}: {e}")
