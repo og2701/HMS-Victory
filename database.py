@@ -196,13 +196,13 @@ def init_db():
         
         # Initial badge data
         badges = [
-            ('hof', 'Hall of Fame', 'Get into the Hall of Fame', 'hof.svg'),
-            ('first_purchase', 'First Purchase', 'Purchase your first shop item', 'first_purchase.svg'),
-            ('shutcoin_user', 'Shutcoin User', 'Use a shutcoin', 'shutcoin.svg'),
-            ('reply_chain', 'Chain Linker', 'Be part of a reply chain', 'reply_chain.svg'),
-            ('active_chatter', 'Active Chatter', 'Achieve a certain level of activity in a day', 'active_chatter.svg'),
-            ('top_chatter', 'Elite Talker', 'One of the top 5 daily chatters', 'top_chatter.svg'),
-            ('stage_fan', 'Stage Fan', 'Attend a stage event for X amount of time', 'stage_fan.svg')
+            ('hof', 'Hall of Fame', 'Get into the Hall of Fame', '🏆'),
+            ('first_purchase', 'First Purchase', 'Purchase your first shop item', '🛍️'),
+            ('shutcoin_user', 'Shutcoin User', 'Use a shutcoin', '🤐'),
+            ('reply_chain', 'Chain Linker', 'Be part of a reply chain', '⛓️'),
+            ('active_chatter', 'Active Chatter', 'Achieve a certain level of activity in a day', '⚡'),
+            ('top_chatter', 'Elite Talker', 'One of the top 5 daily chatters', '🥇'),
+            ('stage_fan', 'Stage Fan', 'Attend a stage event for X amount of time', '🎭')
         ]
         for b_id, b_name, b_desc, b_icon in badges:
             c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path) VALUES (?, ?, ?, ?)", 

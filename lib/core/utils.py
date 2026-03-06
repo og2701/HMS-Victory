@@ -14,7 +14,7 @@ from lib.core.image_processing import trim_image, encode_image_to_data_uri, scre
 from lib.core.file_operations import read_html_template, load_whitelist, save_whitelist, load_persistent_views, save_persistent_views, load_json_file, save_json_file, set_file_status, is_file_status_active
 from lib.core.discord_helpers import restrict_channel_for_new_members, has_role, has_any_role, toggle_user_role, validate_and_format_date, send_embed_to_channels, edit_voice_channel_members, fetch_messages_with_context, estimate_tokens
 from lib.economy.economy_manager import get_shutcoins, SHUTCOIN_ENABLED, get_bb
-from database import DatabaseManager
+from database import DatabaseManager, get_user_badges
 
 logger = logging.getLogger(__name__)
 
@@ -143,16 +143,21 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
             background_path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
         background_data_uri = encode_image_to_data_uri(background_path)
 
-        # Get badges
-        from database import get_user_badges
-        badges = get_user_badges(user_id_str)
+        # Add badges
         badges_html = ""
-        for b_id, b_name, b_desc, icon_file, _ in badges:
-            badge_icon_path = os.path.join(BASE_DIR, "data", "badges", icon_file)
-            if os.path.exists(badge_icon_path):
-                badge_icon_uri = encode_image_to_data_uri(badge_icon_path)
-                badges_html += f'<div class="badge-item" title="{b_name}: {b_desc}"><img src="{badge_icon_uri}" class="badge-icon" /></div>'
-
+        user_badges = get_user_badges(user_id_str)
+        if user_badges:
+            for badge in user_badges:
+                b_id, b_name, b_desc, icon, awarded_at = badge
+                # Check if it's a file path or a raw emoji
+                icon_file_path = os.path.join(BASE_DIR, "data", "badges", icon)
+                if os.path.exists(icon_file_path):
+                    data_uri = encode_image_to_data_uri(icon_file_path)
+                    badges_html += f'<div class="badge-item"><img src="{data_uri}" alt="{b_name}"></div>'
+                else:
+                    # Assume it's a raw emoji
+                    badges_html += f'<div class="badge-item emoji">{icon}</div>'
+        
         # Apply replacements
         html_content = safe_replace(html_content, "profile_pic", member.display_avatar.url)
         html_content = safe_replace(html_content, "username", member.display_name)
