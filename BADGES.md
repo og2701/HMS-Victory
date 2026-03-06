@@ -1,5 +1,33 @@
 # HMS-Victory Badges Guide
 
+### 💰 High Roller
+**Rarity**: Gold
+Awarded for reaching a balance of 100,000 UKPence.
+
+### 💸 Philanthropist
+**Rarity**: Silver
+Awarded for giving away a total of 10,000 UKPence using the `/pay` command.
+
+### 📉 Bankrupt
+**Rarity**: Bronze
+Awarded for reaching exactly 0 UKPence after having at least 1,000 UKPence previously.
+
+### 🛒 Shopaholic
+**Rarity**: Silver
+Awarded for purchasing 10 items from the bot's shop.
+
+### 🎉 Party Animal
+**Rarity**: Silver
+Awarded for attending 5 different Stage events.
+
+### 👻 Night Owl
+**Rarity**: Bronze
+Awarded for sending 100 messages between 2 AM and 5 AM UTC.
+
+### 🔒 The Warden
+**Rarity**: Gold
+Awarded for successfully using a Shutcoin on 10 different people.
+
 ### 🏆 Hall of Fame
 **Rarity**: Silver
 Awarded for getting a message into the Hall of Fame.
