@@ -359,14 +359,14 @@ async def process_forum_threads(client, message):
                 if existing_msg is None:
                     new_msg = await thread.send(".")
                     client.thread_messages[thread_id] = new_msg.id
-                    save_json(THREAD_MESSAGES_FILE, client.thread_messages)
+                    save_json_file(THREAD_MESSAGES_FILE, client.thread_messages)
                     existing_msg = new_msg
                 await existing_msg.edit(content=f"{message.author.mention}")
                 logger.info(f"Silently added {message.author} to {thread.name}")
                 if thread_id not in client.added_users:
                     client.added_users[thread_id] = []
                 client.added_users[thread_id].append(user_id)
-                save_json(ADDED_USERS_FILE, client.added_users)
+                save_json_file(ADDED_USERS_FILE, client.added_users)
                 await asyncio.sleep(1)
                 await existing_msg.edit(content=".")
             except discord.HTTPException as e:
@@ -597,9 +597,9 @@ async def handle_flag_reaction(reaction, message, user):
 
 
 def save_shut_count(user_id):
-    data = load_json("shut_counts.json")
+    data = load_json_file("shut_counts.json") or {}
     data[str(user_id)] = data.get(str(user_id), 0) + 1
-    save_json("shut_counts.json", data)
+    save_json_file("shut_counts.json", data)
 
 
 async def handle_shut_reaction(reaction, user):
