@@ -2,11 +2,33 @@ import base64
 import difflib
 import html
 import io
+import re
 from PIL import Image
 import aiohttp
 
 from lib.core.image_processing import screenshot_html, trim_image, encode_image_to_data_uri, get_avatar_data_uri
 from lib.core.file_operations import read_html_template
+
+async def replace_custom_emojis(client, text: str) -> str:
+    """Finds Discord custom emojis in the escaped text and replaces them with inline data URI <img> tags."""
+    pattern = re.compile(r'&lt;(a?):([a-zA-Z0-9_]+):([0-9]+)&gt;')
+    matches = pattern.findall(text)
+    if not matches:
+        return text
+        
+    for is_animated, name, emoji_id in set(matches):
+        ext = "gif" if is_animated == "a" else "png"
+        url = f"https://cdn.discordapp.com/emojis/{emoji_id}.{ext}"
+        
+        data_uri = await get_avatar_data_uri(client, url)
+        
+        img_tag = f'<img src="{data_uri}" alt=":{name}:" class="discord-emoji" style="width: 1.4em; height: 1.4em; vertical-align: middle; display: inline-block;" />'
+        
+        original_str = f"&lt;{is_animated}:{name}:{emoji_id}&gt;"
+        text = text.replace(original_str, img_tag)
+        
+    return text
+
 
 
 def calculate_estimated_height(content, line_height=20, base_height=1000):
@@ -26,6 +48,7 @@ async def create_message_image(client, message, title):
     avatar_data_url = await get_avatar_data_uri(client, avatar_url)
 
     escaped_content = html.escape(message.content)
+    escaped_content = await replace_custom_emojis(client, escaped_content)
 
     attached_image_html = ""
     extra_height = 0
@@ -165,6 +188,10 @@ async def create_edited_message_image(client, before, after):
     highlighted_before_content, highlighted_after_content, changes_detected = (
         highlight_diff(before.content, after.content)
     )
+    
+    highlighted_before_content = await replace_custom_emojis(client, highlighted_before_content)
+    highlighted_after_content = await replace_custom_emojis(client, highlighted_after_content)
+    
     if not changes_detected:
         return None
 
@@ -284,6 +311,7 @@ async def create_quote_image(client, message):
     avatar_data_url = await get_avatar_data_uri(client, avatar_url)
 
     escaped_content = html.escape(message.content)
+    escaped_content = await replace_custom_emojis(client, escaped_content)
 
     attached_image_html = ""
     extra_height = 0
