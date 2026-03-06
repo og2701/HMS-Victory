@@ -248,7 +248,7 @@ def award_badge(user_id: str, badge_id: str):
 
 def get_user_badges(user_id: str):
     query = """
-        SELECT b.id, b.name, b.description, b.icon_path, ub.awarded_at
+        SELECT b.id, b.name, b.description, b.icon_path, ub.awarded_at, b.rarity
         FROM badges b
         JOIN user_badges ub ON b.id = ub.badge_id
         WHERE ub.user_id = ?
