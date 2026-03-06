@@ -73,17 +73,40 @@ async def award_badge_with_notify(client, user_id: int, badge_id: str):
     newly_awarded = award_badge(user_id, badge_id)
     if newly_awarded:
         # Get badge info
-        badge_info = DatabaseManager.fetch_one("SELECT name, icon_path FROM badges WHERE id = ?", (badge_id,))
+        badge_info = DatabaseManager.fetch_one("SELECT name, description, icon_path, rarity FROM badges WHERE id = ?", (badge_id,))
         if not badge_info:
+            logger.warning(f"Badge ID '{badge_id}' not found in database.")
             return
         
-        badge_name, badge_emoji = badge_info
+        badge_name, badge_desc, badge_icon, badge_rarity = badge_info
         
         # Log to bot-usage-log
         log_channel = client.get_channel(CHANNELS.BOT_USAGE_LOG)
+        user_mention = f"<@{user_id}>"
         if log_channel:
-            user_mention = f"<@{user_id}>"
-            await log_channel.send(f"🎖️ **Badge Awarded**: {user_mention} just earned the **{badge_name}** {badge_emoji} badge!")
+            await log_channel.send(f"🎖️ **Badge Awarded**: {user_mention} just earned the **{badge_name}** {badge_icon} badge!")
+
+        # Notify User via DM
+        try:
+            user = client.get_user(user_id) or await client.fetch_user(user_id)
+            if user:
+                color_map = {"Gold": 0xFFD700, "Silver": 0xC0C0C0, "Bronze": 0xCD7F32}
+                embed = discord.Embed(
+                    title="🎖️ New Badge Earned!",
+                    description=f"Congratulations! You've just earned the **{badge_name}** badge.",
+                    color=color_map.get(badge_rarity, 0x3498db)
+                )
+                embed.add_field(name="Badge", value=f"{badge_icon} **{badge_name}**", inline=True)
+                embed.add_field(name="Rarity", value=badge_rarity, inline=True)
+                embed.add_field(name="Requirement", value=badge_desc, inline=False)
+                embed.set_footer(text="Check your /rank to see all your badges!")
+                
+                await user.send(embed=embed)
+                logger.info(f"Sent badge DM to {user_id} for '{badge_id}'")
+        except discord.Forbidden:
+            logger.warning(f"Could not DM user {user_id} about their new badge '{badge_id}' (DMs closed).")
+        except Exception as e:
+            logger.error(f"Error notifying user {user_id} about badge '{badge_id}': {e}")
 
 FORUM_CHANNEL_ID = 1341451323249266711
 THREAD_MESSAGES_FILE = "thread_messages.json"
@@ -780,14 +803,36 @@ async def on_raw_reaction_add(client, payload):
         
         # Announcement speed badges
         if payload.channel_id in [CHANNELS.ANNOUNCEMENTS, CHANNELS.MINOR_ANNOUNCEMENTS]:
+            is_announcement_channel = True
+        else:
+            # Check for Forum threads (parents)
             channel = client.get_channel(payload.channel_id)
             if not channel: channel = await client.fetch_channel(payload.channel_id)
+            
+            is_announcement_channel = False
+            if hasattr(channel, "parent_id") and channel.parent_id in [CHANNELS.ANNOUNCEMENTS, CHANNELS.MINOR_ANNOUNCEMENTS]:
+                is_announcement_channel = True
+                announcement_channel_id = channel.parent_id
+            else:
+                announcement_channel_id = payload.channel_id
+
+        if is_announcement_channel:
+            if not 'channel' in locals():
+                channel = client.get_channel(payload.channel_id)
+                if not channel: channel = await client.fetch_channel(payload.channel_id)
+            
             message = await channel.fetch_message(payload.message_id)
             
+            # 1. Don't award for reacting to your own message
+            if payload.user_id == message.author.id:
+                return
+
             time_diff = (discord.utils.utcnow() - message.created_at).total_seconds()
             if time_diff <= 600: # 10 minutes
-                badge_id = 'announcement_fast' if payload.channel_id == CHANNELS.ANNOUNCEMENTS else 'minor_announcement_fast'
+                badge_id = 'announcement_fast' if announcement_channel_id == CHANNELS.ANNOUNCEMENTS else 'minor_announcement_fast'
                 await award_badge_with_notify(client, payload.user_id, badge_id)
+            else:
+                logger.debug(f"User {payload.user_id} reacted too late for badge ({time_diff:.1f}s > 600s)")
     except Exception as e:
         logger.error(f"Error in on_raw_reaction_add: {e}")
 
