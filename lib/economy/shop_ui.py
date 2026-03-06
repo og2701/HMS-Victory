@@ -790,9 +790,9 @@ class EmojiStickerApprovalView(View):
 
 
 class RankCustomizationOverviewView(View):
-    """Sub-shop view specifically for Rank Customizations, using paginated buttons."""
+    """Sub-shop view specifically for Rank Customizations."""
     
-    ITEMS_PER_PAGE = 6
+    ITEMS_PER_PAGE = 25
     
     def __init__(self, items: List['ShopItem'], user_id: int):
         super().__init__(timeout=300)
@@ -918,6 +918,8 @@ class RankCustomizationOverviewView(View):
         
         embed = self._create_embed(image_filename=filename)
         if interaction.response.is_done():
-            await interaction.followup.send(embed=embed, view=self, file=file, ephemeral=True)
+            # fetch the message and edit it
+            msg = await interaction.original_response()
+            await msg.edit(embed=embed, view=self, attachments=[file])
         else:
-            await interaction.response.send_message(embed=embed, view=self, file=file, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[file])
