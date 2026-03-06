@@ -475,9 +475,13 @@ SHOP_ITEMS: List[ShopItem] = [
     # MessageHighlightItem("message_highlight", "Message Highlight", "Have your message highlighted in server announcements", 300),
 ]
 
-def get_shop_items() -> List[ShopItem]:
-    """Get all available shop items."""
+def get_all_shop_items() -> List[ShopItem]:
+    """Get literally all shop items including hidden ones."""
     return SHOP_ITEMS
+
+def get_shop_items() -> List[ShopItem]:
+    """Get all available shop items intended to be shown in the main shop view."""
+    return [item for item in SHOP_ITEMS if item.show_in_shop]
 
 def get_shop_item_by_id(item_id: str) -> Optional[ShopItem]:
     """Get a shop item by its ID."""
