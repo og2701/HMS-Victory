@@ -18,10 +18,11 @@ import io
 
 class ShopItemSelect(Select):
     """Dropdown menu to select a shop item."""
-    def __init__(self, items: List['ShopItem']):
+    def __init__(self, items: List['ShopItem'], user_id: int):
         options = []
         for i, item in enumerate(items):
             quantity = item.get_quantity()
+            price = item.get_price(user_id)
             stock_str = f"{quantity} left" if quantity is not None else "Unlimited"
             if quantity is not None and quantity <= 0:
                 stock_str = "OUT OF STOCK"
@@ -38,7 +39,7 @@ class ShopItemSelect(Select):
             options.append(
                 discord.SelectOption(
                     label=item.name,
-                    description=f"{item.price} UKP - {stock_str}",
+                    description=f"{price} UKP - {stock_str}",
                     value=str(i),
                     emoji=emoji
                 )
@@ -68,7 +69,7 @@ class ShopOverviewView(View):
         super().__init__(timeout=300)
         self.items = items
         self.user_id = user_id
-        self.add_item(ShopItemSelect(items))
+        self.add_item(ShopItemSelect(items, user_id))
 
     def _create_embed(self) -> discord.Embed:
         user_balance = get_bb(self.user_id)
@@ -101,7 +102,8 @@ class ShopOverviewView(View):
                     elif item_info['max_quantity'] is not None:
                         badge = " ⏳"
                         
-            item_list.append(f"• **{item.name}** - {item.price} UKP {badge} ({stock_str})")
+            price = item.get_price(self.user_id)
+            item_list.append(f"• **{item.name}** - {price} UKP {badge} ({stock_str})")
         
         if item_list:
             embed.description += "\n\n**Available Items:**\n" + "\n".join(item_list)
@@ -134,10 +136,10 @@ class ShopItemDetailView(View):
         user_balance = get_bb(self.user_id)
         quantity = self.item.get_quantity()
         
-        can_afford = user_balance >= self.item.price
+        can_afford = user_balance >= self.item.get_price(self.user_id)
         in_stock = quantity is None or quantity > 0
         
-        buy_label = f"Buy ({self.item.price} UKP)"
+        buy_label = f"Buy ({self.item.get_price(self.user_id)} UKP)"
         buy_style = discord.ButtonStyle.green if (can_afford and in_stock) else discord.ButtonStyle.secondary
         
         buy_btn = Button(label=buy_label, style=buy_style, emoji="💳", disabled=not (can_afford and in_stock))
@@ -159,7 +161,8 @@ class ShopItemDetailView(View):
         elif quantity is not None and quantity <= 5:
             stock_str = f"⚠️ **Only {quantity} left!**"
             
-        afford_emoji = "✅" if user_balance >= self.item.price else "❌"
+        price = self.item.get_price(self.user_id)
+        afford_emoji = "✅" if user_balance >= price else "❌"
         
         badge = ""
         if self.item.use_inventory:
@@ -177,7 +180,7 @@ class ShopItemDetailView(View):
             "━━━━━━━━━━━━━━━━━━━━━━\n"
         )
         
-        embed.add_field(name="💰 Price", value=f"**{self.item.price}** UKPence", inline=True)
+        embed.add_field(name="💰 Price", value=f"**{price}** UKPence", inline=True)
         embed.add_field(name="📦 Stock", value=stock_str + badge, inline=True)
         embed.add_field(name="💳 Your Wallet", value=f"{afford_emoji} **{user_balance}** UKPence", inline=False)
         
@@ -206,8 +209,9 @@ class ShopItemDetailView(View):
             description=f"Are you sure you want to buy **{self.item.name}**?\n\n> *{self.item.description}*",
             color=0x00ff00
         )
-        embed.add_field(name="Cost", value=f"{self.item.price} UKPence", inline=True)
-        embed.add_field(name="Balance After Purchase", value=f"{get_bb(interaction.user.id) - self.item.price} UKPence", inline=True)
+        price = self.item.get_price(interaction.user.id)
+        embed.add_field(name="Cost", value=f"{price} UKPence", inline=True)
+        embed.add_field(name="Balance After Purchase", value=f"{get_bb(interaction.user.id) - price} UKPence", inline=True)
 
         await interaction.response.edit_message(embed=embed, view=detail_view)
 
@@ -242,10 +246,11 @@ class PurchaseConfirmationView(View):
     async def confirm_purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
         ensure_bb(interaction.user.id)
         user_balance = get_bb(interaction.user.id)
+        price = self.item.get_price(interaction.user.id)
 
-        if user_balance < self.item.price:
+        if user_balance < price:
             await interaction.response.send_message(
-                f"❌ Insufficient funds! You need {self.item.price} UKPence but only have {user_balance}.",
+                f"❌ Insufficient funds! You need {price} UKPence but only have {user_balance}.",
                 ephemeral=True
             )
             return
@@ -257,9 +262,14 @@ class PurchaseConfirmationView(View):
             return
 
         # Charge the user
-        if remove_bb(interaction.user.id, self.item.price, reason=f"Shop purchase: {self.item.name}"):
+        deducted = True
+        if price > 0:
+            deducted = remove_bb(interaction.user.id, price, reason=f"Shop purchase: {self.item.name}")
+            
+        if deducted:
             try:
-                BankManager.deposit(self.item.price, f"Purchase of {self.item.name}")
+                if price > 0:
+                    BankManager.deposit(price, f"Purchase of {self.item.name}")
                 from lib.bot.event_handlers import award_badge_with_notify
                 await award_badge_with_notify(interaction.client, interaction.user.id, 'first_purchase')
                 
@@ -276,8 +286,9 @@ class PurchaseConfirmationView(View):
 
                 if not success:
                     # Refund if backend purchase logic returned False
-                    BankManager.withdraw(self.item.price, f"Refund for failed purchase of {self.item.name}")
-                    add_bb(interaction.user.id, self.item.price, reason=f"Shop refund: {self.item.name} (out of stock)")
+                    if price > 0:
+                        BankManager.withdraw(price, f"Refund for failed purchase of {self.item.name}")
+                        add_bb(interaction.user.id, price, reason=f"Shop refund: {self.item.name} (out of stock)")
                     
                     if not interaction.response.is_done():
                         await interaction.response.send_message(f"❌ Purchase failed: {result_message}", ephemeral=True)
@@ -793,6 +804,7 @@ class RankCustomisationOverviewView(View):
     """Sub-shop view specifically for Rank Customisations."""
     
     ITEMS_PER_PAGE = 25
+    _IMAGE_URL_CACHE = {}
     
     def __init__(self, items: List['ShopItem'], user_id: int):
         super().__init__(timeout=300)
@@ -810,15 +822,28 @@ class RankCustomisationOverviewView(View):
             color=0x2b2d31
         )
         embed.add_field(name="💳 Your Wallet", value=f"**{user_balance}** UKPence", inline=False)
-        embed.set_image(url=f"attachment://{image_filename}")
+        if image_filename:
+            embed.set_image(url=f"attachment://{image_filename}")
         return embed
 
     async def _update_view(self, interaction: discord.Interaction):
         """Helper to update the message with new embed, view, and file."""
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+            
         start_idx = self.current_page * self.ITEMS_PER_PAGE
         end_idx = start_idx + self.ITEMS_PER_PAGE
         current_items = self.items[start_idx:end_idx]
+        self._update_components()
         
+        if self.current_page in self.__class__._IMAGE_URL_CACHE:
+            url = self.__class__._IMAGE_URL_CACHE[self.current_page]
+            embed = self._create_embed(image_filename=None)
+            embed.set_image(url=url)
+            msg = await interaction.original_response()
+            await msg.edit(embed=embed, view=self, attachments=[])
+            return
+            
         # Generate the grid image for current items
         grid_pos = 1
         grid_items = []
@@ -830,8 +855,12 @@ class RankCustomisationOverviewView(View):
         filename = f"preview_grid_{int(time.time())}.png"
         file = discord.File(fp=image_buffer, filename=filename)
         
-        self._update_components()
-        await interaction.response.edit_message(embed=self._create_embed(image_filename=filename), view=self, attachments=[file])
+        embed = self._create_embed(image_filename=filename)
+        msg = await interaction.original_response()
+        edited_msg = await msg.edit(embed=embed, view=self, attachments=[file])
+        
+        if edited_msg.embeds and edited_msg.embeds[0].image:
+            self.__class__._IMAGE_URL_CACHE[self.current_page] = edited_msg.embeds[0].image.url
 
     def _update_components(self):
         self.clear_items()
@@ -846,9 +875,10 @@ class RankCustomisationOverviewView(View):
         options = []
         for i, item in enumerate(self.items):
             # A SelectOption needs a label, value, and description
+            price = item.get_price(self.user_id)
             options.append(discord.SelectOption(
                 label=f"[{i+1}] {item.name}",
-                description=f"{item.price} UKP - {item.description[:40]}...",
+                description=f"{price} UKP - {item.description[:40]}...",
                 value=str(i)
             ))
             
@@ -860,6 +890,7 @@ class RankCustomisationOverviewView(View):
                 
             selected_idx = int(select_menu.values[0])
             target_item = self.items[selected_idx]
+            price = target_item.get_price(interaction.user.id)
             
             from lib.economy.shop_ui import PurchaseConfirmationView
             detail_view = PurchaseConfirmationView(target_item, self)
@@ -868,8 +899,8 @@ class RankCustomisationOverviewView(View):
                 description=f"Are you sure you want to buy **{target_item.name}**?\n\n> *{target_item.description}*",
                 color=0x00ff00
             )
-            embed.add_field(name="Cost", value=f"{target_item.price} UKPence", inline=True)
-            embed.add_field(name="Balance After Purchase", value=f"{get_bb(interaction.user.id) - target_item.price} UKPence", inline=True)
+            embed.add_field(name="Cost", value=f"{price} UKPence", inline=True)
+            embed.add_field(name="Balance After Purchase", value=f"{get_bb(interaction.user.id) - price} UKPence", inline=True)
 
             await interaction.response.edit_message(embed=embed, view=detail_view, attachments=[])
             
@@ -905,6 +936,14 @@ class RankCustomisationOverviewView(View):
         end_idx = start_idx + self.ITEMS_PER_PAGE
         current_items = self.items[start_idx:end_idx]
         
+        if self.current_page in self.__class__._IMAGE_URL_CACHE:
+            url = self.__class__._IMAGE_URL_CACHE[self.current_page]
+            embed = self._create_embed(image_filename=None)
+            embed.set_image(url=url)
+            msg = await interaction.original_response()
+            await msg.edit(embed=embed, view=self, attachments=[])
+            return
+            
         import time
         image_buffer = await generate_shop_preview_grid_async(current_items, cols=5)
         filename = f"preview_grid_{int(time.time())}.png"
@@ -913,4 +952,6 @@ class RankCustomisationOverviewView(View):
         embed = self._create_embed(image_filename=filename)
         
         msg = await interaction.original_response()
-        await msg.edit(embed=embed, view=self, attachments=[file])
+        edited_msg = await msg.edit(embed=embed, view=self, attachments=[file])
+        if edited_msg.embeds and edited_msg.embeds[0].image:
+            self.__class__._IMAGE_URL_CACHE[self.current_page] = edited_msg.embeds[0].image.url

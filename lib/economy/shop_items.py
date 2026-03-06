@@ -21,7 +21,12 @@ class ShopItem(ABC):
         self.description = description
         self.price = price
         self.use_inventory = use_inventory
+        self.use_inventory = use_inventory
         self.show_in_shop = show_in_shop
+
+    def get_price(self, user_id: int) -> int:
+        """Get the effective price for a user."""
+        return self.price
 
     @abstractmethod
     async def execute(self, interaction) -> str:
@@ -348,6 +353,10 @@ class RankBackgroundItem(ShopItem):
         super().__init__(id, name, description, price, use_inventory=False, show_in_shop=False)
         self.bg_filename = bg_filename
 
+    def get_price(self, user_id: int) -> int:
+        from config import USERS
+        return 0 if user_id == USERS.OGGERS else self.price
+
     def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
         can_purchase, reason = super().can_purchase(user)
         if not can_purchase:
@@ -381,6 +390,10 @@ class RankColorThemeItem(ShopItem):
         self.primary = primary
         self.secondary = secondary
         self.tertiary = tertiary
+
+    def get_price(self, user_id: int) -> int:
+        from config import USERS
+        return 0 if user_id == USERS.OGGERS else self.price
 
     def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
         can_purchase, reason = super().can_purchase(user)
