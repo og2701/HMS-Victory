@@ -158,7 +158,7 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         html_content = safe_replace(html_content, "tertiary_color", tertiary_color)
 
         import time
-        size = (800, 400)
+        size = (1200, 600)
         image_bytes = await screenshot_html(html_content, size)
         filename = f"rank_{int(time.time())}.png"
         return discord.File(fp=image_bytes, filename=filename)
