@@ -47,7 +47,8 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
     await interaction.followup.send(thinking_text, ephemeral=False)
 
     user_messages = []
-    await fetch_messages_with_context(channel, user, user_messages, total_limit=10, context_depth=20)
+    user_messages = []
+    await fetch_messages_with_context(channel, user, user_messages, total_limit=30, context_depth=20)
     
     input_text = "\n".join(user_messages)
     if len(input_text) == 0:
@@ -79,11 +80,12 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         f"Your current target is {user.display_name}, but anyone else in the vicinity is fair game. Your objective is **complete psychological annihilation** in the shortest possible space. "
         f"Do not hold back. Your humor comes from being excessively mean, aggressively condescending, and finding the precise 'cringe' in their existence. "
         f"Use a massive, filthy array of British insults: complete oxygen thief, tragic weapon, braindead muppet, utter bellend, absolute melt, proper knobhead, absolute weapon, right wazzock, complete plonker, absolute dosser, massive pillock, utter wet wipe, absolute shambles, absolute nugget, total doughnut, right charlatan, absolute bin fire, tragic non-entity, complete and utter kerry-on, proper muppet, absolute waste of skin. "
-        f"**CRITICAL - USE THE DEEP CONTEXT:** "
-        f"1. **Analyze the Vibe**: Use the deep conversation history (20 messages of context!) to actually understand the stupid things {user.display_name} is saying. Twist their logic against them. "
-        f"2. **Social Failure**: Use `[Reactions: ...]` and channel names to prove they are a laughing stock. "
-        f"3. **CATCH STRAYS**: Frequently and savagely mock OTHER users in the context. If someone else is talking or reacting, execute them too. No one is safe. "
-        f"4. **BREVITY IS VITAL**: This must be a single, short, savage paragraph. Max 4-5 lines. Cut the filler, go straight for the throat. "
+        f"**CRITICAL - SELECT THE BEST AMMO:** "
+        f"1. **Quality over Recency**: You have been given a larger history (30 blocks!). Do NOT just roast local/recent stuff. Scan the entire history and **hand-pick the absolute best, most embarrassing, or most punchable things** to mock. Prioritize whatever makes for the most devastating roast. "
+        f"2. **Analyze the Vibe**: Use the deep conversation history (20 messages of context!) to actually understand the stupid things {user.display_name} is saying. Twist their logic against them. "
+        f"3. **Social Failure**: Use `[Reactions: ...]` and channel names to prove they are a laughing stock. "
+        f"4. **CATCH STRAYS**: Frequently and savagely mock OTHER users in the context. If someone else is talking or reacting, execute them too. No one is safe. "
+        f"5. **BREVITY IS VITAL**: This must be a single, short, savage paragraph. Max 4-5 lines. Cut the filler, go straight for the throat. "
         f"The roast must be a single **soul-crushing**, devastatingly concise and punchy paragraph of unrelenting British destruction. "
         f"The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
         f"Use **British English spellings and heavy, filthy British idioms/slang** throughout. "
