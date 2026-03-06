@@ -158,10 +158,21 @@ async def get_avatar_data_uri(client, url: str) -> str:
     return "https://cdn.discordapp.com/embed/avatars/0.png"
 
 def encode_image_to_data_uri(image_path: str) -> str:
+    ext = os.path.splitext(image_path)[1].lower()
+    mime_type = "image/png"  # Default
+    if ext == ".svg":
+        mime_type = "image/svg+xml"
+    elif ext == ".gif":
+        mime_type = "image/gif"
+    elif ext == ".webp":
+        mime_type = "image/webp"
+    elif ext in [".jpg", ".jpeg"]:
+        mime_type = "image/jpeg"
+
     with open(image_path, "rb") as img_file:
         data = img_file.read()
     encoded = base64.b64encode(data).decode("utf-8")
-    return f"data:image/png;base64,{encoded}"
+    return f"data:{mime_type};base64,{encoded}"
 
 from typing import Tuple
 
