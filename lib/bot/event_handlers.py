@@ -801,24 +801,28 @@ async def on_raw_reaction_add(client, payload):
         await check_hall_of_fame(client, payload)
         
         # Announcement speed badges
+        is_announcement_channel = False
+        announcement_channel_id = None
+
         if payload.channel_id in [CHANNELS.ANNOUNCEMENTS, CHANNELS.MINOR_ANNOUNCEMENTS]:
             is_announcement_channel = True
+            announcement_channel_id = payload.channel_id
         else:
             # Check for Forum threads (parents)
             channel = client.get_channel(payload.channel_id)
-            if not channel: channel = await client.fetch_channel(payload.channel_id)
+            if not channel: 
+                try:
+                    channel = await client.fetch_channel(payload.channel_id)
+                except discord.NotFound:
+                    channel = None
             
-            is_announcement_channel = False
-            if hasattr(channel, "parent_id") and channel.parent_id in [CHANNELS.ANNOUNCEMENTS, CHANNELS.MINOR_ANNOUNCEMENTS]:
+            if channel and hasattr(channel, "parent_id") and channel.parent_id in [CHANNELS.ANNOUNCEMENTS, CHANNELS.MINOR_ANNOUNCEMENTS]:
                 is_announcement_channel = True
                 announcement_channel_id = channel.parent_id
-            else:
-                announcement_channel_id = payload.channel_id
 
         if is_announcement_channel:
-            if not 'channel' in locals():
-                channel = client.get_channel(payload.channel_id)
-                if not channel: channel = await client.fetch_channel(payload.channel_id)
+            channel = client.get_channel(payload.channel_id)
+            if not channel: channel = await client.fetch_channel(payload.channel_id)
             
             message = await channel.fetch_message(payload.message_id)
             
