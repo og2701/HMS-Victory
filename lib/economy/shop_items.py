@@ -454,12 +454,14 @@ SHOP_ITEMS: List[ShopItem] = [
     RankBackgroundItem("rank_bg_edinburgh_pixel", "Pixel Edinburgh", "Vibrant and moody pixel art of Edinburgh Castle on a hill", 250, "rank_bg_edinburgh_pixel_1772822517002.png"),
     RankBackgroundItem("rank_bg_spitfire_vector", "Vector Spitfire", "Clean minimalist vector graphic of a Supermarine Spitfire", 250, "rank_bg_spitfire_vector_1772822538620.png"),
     RankBackgroundItem("rank_bg_royal_guard_anime", "Anime Royal Guard", "Epic dramatic anime artwork of a British royal guard with bagpipes", 250, "rank_bg_royal_guard_anime_1772822559487.png"),
+    RankBackgroundItem("rank_bg_wales", "Mount Snowdon", "Beautiful landscape illustration of Mount Snowdon in Wales", 250, "rank_bg_wales_1772822730240.png"),
+    RankBackgroundItem("rank_bg_nireland", "Giant's Causeway", "Epic pixel art of the Giant's Causeway in Northern Ireland", 250, "rank_bg_nireland_causeway_pixel_1772822836374.png"),
+    RankBackgroundItem("rank_bg_uk_carrier", "HMS Queen Elizabeth", "Sleek geometric illustration of a British aircraft carrier", 250, "rank_bg_uk_carrier_geo_1772822866110.png"),
 
     RankColorThemeItem("rank_theme_country", "Countryside Theme", "Forest greens and earthy browns of rural England", 100, "#228B22", "#8B4513", "#F0FFF0"),
 
     # --- VARIETY STYLES ---
     RankBackgroundItem("rank_bg_lofi", "Lofi Bedroom (PixelArt)", "Cozy lofi aesthetic bedroom in pixel art style", 250, "rank_bg_lofi.png"),
-    RankBackgroundItem("rank_bg_forest", "Enchanted Forest", "Ethereal forest with glowing mushrooms and mist", 250, "rank_bg_forest.png"),
     RankBackgroundItem("rank_bg_vaporwave", "Vaporwave Retro", "Neon pink sunset with glitch art and palm trees", 250, "rank_bg_vaporwave.png"),
     RankBackgroundItem("rank_bg_medieval", "Medieval Throne", "Grand stone throne room with flickering torches", 250, "rank_bg_medieval.png"),
     RankBackgroundItem("rank_bg_underwater", "Underwater Reef", "Deep sea coral reef with glowing jellyfish", 250, "rank_bg_underwater.png"),
@@ -472,10 +474,6 @@ SHOP_ITEMS: List[ShopItem] = [
     RankColorThemeItem("rank_theme_autumn", "Autumn Fall Theme", "Warm oranges and yellows of a crisp autumn day", 100, "#FF8C00", "#8B4513", "#FFD700"),
     RankColorThemeItem("rank_theme_monochrome", "Monochrome Stealth", "Sleek and stealthy blacks, greys, and whites", 100, "#1A1A1A", "#4D4D4D", "#FFFFFF"),
 
-    # --- LEGACY OPTIONS ---
-    RankBackgroundItem("rank_bg_space", "Cosmic Space", "A highly detailed cosmic space scene", 250, "rank_bg_space_1772807793835.png"),
-    RankBackgroundItem("rank_bg_cyberpunk", "Cyberpunk Neon", "A dark and rainy neon city street", 250, "rank_bg_cyberpunk_1772807811666.png"),
-    RankBackgroundItem("rank_bg_anime", "Anime Blossom", "Tranquil cherry blossom grove at twilight", 250, "rank_bg_anime_1772807827201.png"),
 
     # Role Items (using actual role IDs from config)
     # RoleItem("ball_inspector", "Ball Inspector", "Get the prestigious Ball Inspector role", 200, ROLES.BALL_INSPECTOR),
