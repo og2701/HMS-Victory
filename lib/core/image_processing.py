@@ -334,20 +334,61 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
         if preview:
             canvas.paste(preview, (x, y), preview if preview.mode == 'RGBA' else None)
         
-        # Draw number badge (scaled)
-        badge_size = 140
+        # Draw number badge (scaled for double digits)
+        badge_width = 160 if idx >= 9 else 140
+        badge_height = 140
         badge_x = x + 30
         badge_y = y + 30
-        draw.ellipse([badge_x, badge_y, badge_x + badge_size, badge_y + badge_size], fill=(255, 0, 0))
-        draw.text((badge_x + 40, badge_y + 10), str(idx + 1), fill="white", font=font)
+        draw.ellipse([badge_x, badge_y, badge_x + badge_width, badge_y + badge_height], fill=(255, 0, 0))
+        
+        # Center the text slightly better for double digits
+        text_x = badge_x + 25 if idx >= 9 else badge_x + 40
+        draw.text((text_x, badge_y + 10), str(idx + 1), fill="white", font=font)
 
     buffer = io.BytesIO()
     canvas.save(buffer, format="PNG")
     buffer.seek(0)
     return buffer
 
-async def generate_shop_preview_grid_async(items: list, cols: int = 2) -> io.BytesIO:
-    """Queued async wrapper for grid generation."""
+# Use LRU cache to keep the grid in memory for the life of the bot process
+# We convert items to a string representation for the cache key since objects aren't hashable
+@lru_cache(maxsize=4)
+def _getCachedShopPreview(items_str: str, cols: int) -> bytes:
+    """Helper to cache the raw bytes of the generated grid."""
+    import ast
+    # Reconstruct a simplified list of objects just for rendering
+    class DummyItem:
+        pass
+        
+    items = []
+    for item_dict in ast.literal_eval(items_str):
+        obj = DummyItem()
+        for k, v in item_dict.items():
+            setattr(obj, k, v)
+        items.append(obj)
+        
+    buffer = generate_shop_preview_grid(items, cols)
+    return buffer.getvalue()
+
+async def generate_shop_preview_grid_async(items: list, cols: int = 4) -> io.BytesIO:
+    """Queued async wrapper for grid generation with process-level caching."""
     async with rendering_lock:
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, generate_shop_preview_grid, items, cols)
+        
+        # Create a cacheable string representation of the items we care about for rendering
+        cacheable_items = []
+        for item in items:
+            cache_dict = {'name': item.name}
+            if hasattr(item, 'bg_filename'):
+                cache_dict['bg_filename'] = item.bg_filename
+            elif hasattr(item, 'primary'):
+                cache_dict['primary'] = item.primary
+                cache_dict['secondary'] = item.secondary
+                cache_dict['tertiary'] = item.tertiary
+            cacheable_items.append(cache_dict)
+            
+        items_str = str(cacheable_items)
+        
+        # Run the cached generation in executor
+        img_bytes = await loop.run_in_executor(None, _getCachedShopPreview, items_str, cols)
+        return io.BytesIO(img_bytes)
