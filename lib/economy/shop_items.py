@@ -329,10 +329,10 @@ class RankCustomizationMenuShopItem(ShopItem):
         super().__init__(id, name, description, price, use_inventory=False, show_in_shop=True)
 
     def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
-        # RESTRICT TO OGGERS FOR TESTING (Owen's ID)
-        from config import USERS
-        if user.id != USERS.OGGERS:
-            return False, "This menu is currently undergoing testing and is restricted to the bot owner."
+        # RESTRICT TO OGGERS AND DEPUTY PM
+        from config import USERS, ROLES
+        if user.id != USERS.OGGERS and user.get_role(ROLES.DEPUTY_PM) is None:
+            return False, "This menu is restricted to the bot owner and Deputy PM."
         return True, ""
         
     async def execute(self, interaction) -> str:
@@ -356,9 +356,9 @@ class RankBackgroundItem(ShopItem):
         can_purchase, reason = super().can_purchase(user)
         if not can_purchase:
             return False, reason
-        # RESTRICT TO OGGERS FOR TESTING (Owen's ID)
-        if user.id != USERS.OGGERS:
-            return False, "This item is currently undergoing testing and is restricted to the bot owner."
+        # RESTRICT TO OGGERS AND DEPUTY PM
+        if user.id != USERS.OGGERS and user.get_role(ROLES.DEPUTY_PM) is None:
+            return False, "This item is restricted to the bot owner and Deputy PM."
 
         # Check if they already have this background active
         current = DatabaseManager.fetch_one("SELECT background FROM user_rank_customization WHERE user_id = ?", (str(user.id),))
@@ -389,9 +389,9 @@ class RankColorThemeItem(ShopItem):
         can_purchase, reason = super().can_purchase(user)
         if not can_purchase:
             return False, reason
-        # RESTRICT TO OGGERS FOR TESTING (Owen's ID)
-        if user.id != USERS.OGGERS:
-            return False, "This item is currently undergoing testing and is restricted to the bot owner."
+        # RESTRICT TO OGGERS AND DEPUTY PM
+        if user.id != USERS.OGGERS and user.get_role(ROLES.DEPUTY_PM) is None:
+            return False, "This item is restricted to the bot owner and Deputy PM."
 
         current = DatabaseManager.fetch_one("SELECT primary_color, secondary_color, tertiary_color FROM user_rank_customization WHERE user_id = ?", (str(user.id),))
         if current and current[0] == self.primary and current[1] == self.secondary and current[2] == self.tertiary:
@@ -420,9 +420,9 @@ class RankResetItem(ShopItem):
         if not can_purchase:
             return False, reason
         
-        # RESTRICT TO OGGERS FOR TESTING
-        if user.id != USERS.OGGERS:
-            return False, "This item is currently undergoing testing and is restricted to the bot owner."
+        # RESTRICT TO OGGERS AND DEPUTY PM
+        if user.id != USERS.OGGERS and user.get_role(ROLES.DEPUTY_PM) is None:
+            return False, "This item is restricted to the bot owner and Deputy PM."
             
         current = DatabaseManager.fetch_one("SELECT * FROM user_rank_customization WHERE user_id = ?", (str(user.id),))
         if not current:
@@ -452,14 +452,14 @@ SHOP_ITEMS: List[ShopItem] = [
     # Rank Customizations (Temporarily 1 UKP for Testing)
     RankCustomizationMenuShopItem("rank_custom_menu", "Customise Rank Card", "Preview and choose different custom backgrounds and color themes for your rank card.", 0),
     RankResetItem("rank_custom_reset", "Reset Rank Card", "Reset your rank card background and colors to default", 0),
-    RankBackgroundItem("rank_bg_space", "Cosmic Space Background", "A highly detailed cosmic space scene", 1, "rank_bg_space_1772807793835.png"),
-    RankBackgroundItem("rank_bg_cyberpunk", "Cyberpunk Background", "A dark and rainy neon city street", 1, "rank_bg_cyberpunk_1772807811666.png"),
-    RankBackgroundItem("rank_bg_anime", "Anime Blossom Background", "Tranquil cherry blossom grove at twilight", 1, "rank_bg_anime_1772807827201.png"),
-    RankBackgroundItem("rank_bg_pirate", "Pirate Ship Background", "Dramatic pirate ship at sea during a storm", 1, "rank_bg_pirate_1772807841224.png"),
-    RankColorThemeItem("rank_color_neon", "Neon Matrix Theme", "Green and black progress bar colors", 1, "#00FF00", "#003300", "#FFFFFF"),
-    RankColorThemeItem("rank_color_gold", "Imperial Gold Theme", "Gold and white progress bar colors", 1, "#FFD700", "#B8860B", "#FFFFFF"),
-    RankColorThemeItem("rank_color_synth", "Synthwave Theme", "Purple and pink progress bar colors", 1, "#FF00FF", "#800080", "#00FFFF"),
-    RankColorThemeItem("rank_color_mono", "Monochrome Theme", "Black, white, and gray progress bar colors", 1, "#FFFFFF", "#333333", "#AAAAAA"),
+    RankBackgroundItem("rank_bg_space", "Cosmic Space Background", "A highly detailed cosmic space scene", 0, "rank_bg_space_1772807793835.png"),
+    RankBackgroundItem("rank_bg_cyberpunk", "Cyberpunk Background", "A dark and rainy neon city street", 0, "rank_bg_cyberpunk_1772807811666.png"),
+    RankBackgroundItem("rank_bg_anime", "Anime Blossom Background", "Tranquil cherry blossom grove at twilight", 0, "rank_bg_anime_1772807827201.png"),
+    RankBackgroundItem("rank_bg_pirate", "Pirate Ship Background", "Dramatic pirate ship at sea during a storm", 0, "rank_bg_pirate_1772807841224.png"),
+    RankColorThemeItem("rank_color_neon", "Neon Matrix Theme", "Green and black progress bar colors", 0, "#00FF00", "#003300", "#FFFFFF"),
+    RankColorThemeItem("rank_color_gold", "Imperial Gold Theme", "Gold and white progress bar colors", 0, "#FFD700", "#B8860B", "#FFFFFF"),
+    RankColorThemeItem("rank_color_synth", "Synthwave Theme", "Purple and pink progress bar colors", 0, "#FF00FF", "#800080", "#00FFFF"),
+    RankColorThemeItem("rank_color_mono", "Monochrome Theme", "Black, white, and gray progress bar colors", 0, "#FFFFFF", "#333333", "#AAAAAA"),
 
     # Role Items (using actual role IDs from config)
     # RoleItem("ball_inspector", "Ball Inspector", "Get the prestigious Ball Inspector role", 200, ROLES.BALL_INSPECTOR),
