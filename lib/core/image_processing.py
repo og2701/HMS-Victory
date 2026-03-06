@@ -247,3 +247,85 @@ def random_color_excluding_blue_and_dark():
             return (r, g, b)
 
 get_text_position = find_non_overlapping_position
+
+
+def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
+    """
+    Generate a stitched grid of previews for rank items.
+    Items should be a list of objects with type, name and relevant data.
+    """
+    from PIL import ImageDraw, ImageFont, Image
+    
+    preview_width = 400
+    preview_height = 200
+    padding = 20
+    
+    rows = (len(items) + cols - 1) // cols
+    grid_width = (preview_width * cols) + (padding * (cols + 1))
+    grid_height = (preview_height * rows) + (padding * (rows + 1))
+    
+    canvas = Image.new("RGB", (grid_width, grid_height), (30, 31, 34)) # Discord dark bg
+    draw = ImageDraw.Draw(canvas)
+    
+    # Try to load a font for numbering
+    font = None
+    try:
+        from config import BASE_DIR
+        font_path = os.path.join(BASE_DIR, "data", "fonts", "Outfit-Bold.ttf")
+        if os.path.exists(font_path):
+            font = ImageFont.truetype(font_path, 40)
+    except:
+        pass
+        
+    if not font:
+        try:
+            font = ImageFont.load_default(size=40)
+        except:
+            font = ImageFont.load_default()
+
+    for idx, item in enumerate(items):
+        row = idx // cols
+        col = idx % cols
+        
+        x = padding + col * (preview_width + padding)
+        y = padding + row * (preview_height + padding)
+        
+        # Create preview based on item type
+        preview = None
+        
+        # Detect item type by attributes
+        if hasattr(item, 'bg_filename'): # Background
+            bg_path = os.path.join("data", "rank_cards", item.bg_filename)
+            if os.path.exists(bg_path):
+                with Image.open(bg_path) as img:
+                    preview = img.convert("RGBA").resize((preview_width, preview_height), Image.Resampling.LANCZOS)
+            else:
+                preview = Image.new("RGBA", (preview_width, preview_height), (100, 100, 100))
+        elif hasattr(item, 'primary'): # Color Theme
+            preview = Image.new("RGBA", (preview_width, preview_height), (40, 44, 52))
+            p_draw = ImageDraw.Draw(preview)
+            # Draw swatches
+            p_draw.rectangle([20, 40, 120, 140], fill=item.primary, outline="white", width=2)
+            p_draw.rectangle([140, 40, 240, 140], fill=item.secondary, outline="white", width=2)
+            p_draw.rectangle([260, 40, 360, 140], fill=item.tertiary, outline="white", width=2)
+            p_draw.text((20, 150), item.name, fill="white")
+        else: # Reset or unknown
+             # For reset, maybe show the standard union jack or a generic label
+             preview = Image.new("RGBA", (preview_width, preview_height), (60, 60, 60))
+             p_draw = ImageDraw.Draw(preview)
+             p_draw.text((preview_width//2 - 30, preview_height//2 - 10), "DEFAULT / RESET", fill="white")
+
+        if preview:
+            canvas.paste(preview, (x, y), preview if preview.mode == 'RGBA' else None)
+        
+        # Draw number badge
+        badge_size = 50
+        badge_x = x + 10
+        badge_y = y + 10
+        draw.ellipse([badge_x, badge_y, badge_x + badge_size, badge_y + badge_size], fill=(255, 0, 0))
+        draw.text((badge_x + 15, badge_y + 5), str(idx + 1), fill="white", font=font)
+
+    buffer = io.BytesIO()
+    canvas.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer

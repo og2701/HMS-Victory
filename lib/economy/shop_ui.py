@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
 from lib.economy.economy_manager import get_bb, remove_bb, ensure_bb, add_shutcoins, add_bb
 from lib.economy.bank_manager import BankManager
+from lib.core.image_processing import generate_shop_preview_grid
+import io
 
 class ShopItemSelect(Select):
     """Dropdown menu to select a shop item."""
@@ -228,7 +230,12 @@ class PurchaseConfirmationView(View):
             
         # Ensure fresh data when returning
         self.return_view._update_buttons()
-        await interaction.response.edit_message(embed=self.return_view._create_embed(), view=self.return_view)
+        
+        # If the return view has a custom update method (like for rank customization grid), use it
+        if hasattr(self.return_view, "_update_view"):
+            await self.return_view._update_view(interaction)
+        else:
+            await interaction.response.edit_message(embed=self.return_view._create_embed(), view=self.return_view)
 
     @discord.ui.button(label="Confirm Purchase", style=discord.ButtonStyle.green, emoji="✅", row=0)
     async def confirm_purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -274,13 +281,25 @@ class PurchaseConfirmationView(View):
                     self.return_view._update_buttons()
                     
                     if not interaction.response.is_done():
-                        await interaction.response.edit_message(embed=self.return_view._create_embed(), view=self.return_view)
+                        if hasattr(self.return_view, "_update_view"):
+                            await self.return_view._update_view(interaction)
+                        else:
+                            await interaction.response.edit_message(embed=self.return_view._create_embed(), view=self.return_view)
                         await interaction.followup.send(f"✅ **Purchase Successful!**\n{result_message}", ephemeral=True)
                     else:
                         await interaction.followup.send(f"✅ **Purchase Successful!**\n{result_message}", ephemeral=True)
                         # Have to fetch the message to edit it since response is done
                         msg = await interaction.original_response()
-                        await msg.edit(embed=self.return_view._create_embed(), view=self.return_view)
+                        if hasattr(self.return_view, "_update_view"):
+                            # Helper to handle the edit manually if needed
+                            start_idx = self.return_view.current_page * self.return_view.ITEMS_PER_PAGE
+                            current_items = self.return_view.items[start_idx:start_idx + self.return_view.ITEMS_PER_PAGE]
+                            from lib.core.image_processing import generate_shop_preview_grid
+                            image_buffer = await asyncio.get_event_loop().run_in_executor(None, generate_shop_preview_grid, current_items)
+                            file = discord.File(fp=image_buffer, filename="preview_grid.png")
+                            await msg.edit(embed=self.return_view._create_embed(), view=self.return_view, attachments=[file])
+                        else:
+                            await msg.edit(embed=self.return_view._create_embed(), view=self.return_view)
 
                 # Log the purchase
                 log_channel = interaction.guild.get_channel(1197572903294730270)  # BOT_USAGE_LOG
@@ -768,6 +787,37 @@ class RankCustomizationOverviewView(View):
         self.current_page = 0
         self._update_components()
 
+    def _create_embed(self) -> discord.Embed:
+        user_balance = get_bb(self.user_id)
+        
+        embed = discord.Embed(
+            title="🎨 Rank Card Customization Shop",
+            description="Welcome to the Rank Customization menu!\n\n**Visual Preview Guide:**\nCheck the image below. Each item has a **red numbered circle** matching the buttons.",
+            color=0x2b2d31
+        )
+        embed.add_field(name="💳 Your Wallet", value=f"**{user_balance}** UKPence", inline=False)
+        embed.set_image(url="attachment://preview_grid.png")
+        return embed
+
+    async def _update_view(self, interaction: discord.Interaction):
+        """Helper to update the message with new embed, view, and file."""
+        start_idx = self.current_page * self.ITEMS_PER_PAGE
+        end_idx = start_idx + self.ITEMS_PER_PAGE
+        current_items = self.items[start_idx:end_idx]
+        
+        # Generate the grid image for current items
+        grid_pos = 1
+        grid_items = []
+        for item in current_items:
+            grid_items.append(item)
+            
+        loop = asyncio.get_event_loop()
+        image_buffer = await loop.run_in_executor(None, generate_shop_preview_grid, grid_items)
+        file = discord.File(fp=image_buffer, filename="preview_grid.png")
+        
+        self._update_components()
+        await interaction.response.edit_message(embed=self._create_embed(), view=self, attachments=[file])
+
     def _update_components(self):
         self.clear_items()
         
@@ -776,7 +826,7 @@ class RankCustomizationOverviewView(View):
         current_items = self.items[start_idx:end_idx]
         
         # Add a button for each item on the current page
-        for item in current_items:
+        for i, item in enumerate(current_items):
             # Create a localized callback to capture the specific item
             async def make_callback(interaction: discord.Interaction, target_item=item):
                 if interaction.user.id != self.user_id:
@@ -792,21 +842,31 @@ class RankCustomizationOverviewView(View):
                 embed.add_field(name="Cost", value=f"{target_item.price} UKPence", inline=True)
                 embed.add_field(name="Balance After Purchase", value=f"{get_bb(interaction.user.id) - target_item.price} UKPence", inline=True)
 
-                await interaction.response.edit_message(embed=embed, view=detail_view)
+                await interaction.response.edit_message(embed=embed, view=detail_view, attachments=[])
             
-            btn = Button(label=f"{item.name} ({item.price} UKP)", style=discord.ButtonStyle.primary, row=len(self.children) % 4)
+            btn = Button(label=f"[{i+1}] {item.name}", style=discord.ButtonStyle.primary, row=i // 3)
             btn.callback = make_callback
             self.add_item(btn)
             
         # Add Pagination Controls if necessary
         total_pages = (len(self.items) - 1) // self.ITEMS_PER_PAGE + 1
+        
+        # Back to Main Shop Button
+        back_btn = Button(label="Back to Shop", style=discord.ButtonStyle.secondary, row=2)
+        async def back_to_shop(interaction: discord.Interaction):
+            if interaction.user.id != self.user_id: return
+            from lib.economy.shop_items import get_shop_items
+            shop_overview = ShopOverviewView(get_shop_items(), self.user_id)
+            await interaction.response.edit_message(embed=shop_overview._create_embed(), view=shop_overview, attachments=[])
+        back_btn.callback = back_to_shop
+        self.add_item(back_btn)
+
         if total_pages > 1:
             prev_btn = Button(label="Previous", style=discord.ButtonStyle.secondary, disabled=(self.current_page == 0), row=4)
             async def prev_callback(interaction: discord.Interaction):
                 if interaction.user.id != self.user_id: return
                 self.current_page -= 1
-                self._update_components()
-                await interaction.response.edit_message(embed=self._create_embed(), view=self)
+                await self._update_view(interaction)
             prev_btn.callback = prev_callback
             self.add_item(prev_btn)
             
@@ -817,27 +877,31 @@ class RankCustomizationOverviewView(View):
             async def next_callback(interaction: discord.Interaction):
                 if interaction.user.id != self.user_id: return
                 self.current_page += 1
-                self._update_components()
-                await interaction.response.edit_message(embed=self._create_embed(), view=self)
+                await self._update_view(interaction)
             next_p_btn.callback = next_callback
             self.add_item(next_p_btn)
 
     def _update_buttons(self):
-        # Fallback method used by PurchaseConfirmationView when returning
+        """Compatibility method for PurchaseConfirmationView."""
         self._update_components()
-
-    def _create_embed(self) -> discord.Embed:
-        user_balance = get_bb(self.user_id)
-        
-        embed = discord.Embed(
-            title="🎨 Rank Card Customization Shop",
-            description="Welcome to the Rank Customization menu!\nClick a button below to equip or purchase a background/theme.",
-            color=0x2b2d31
-        )
-        embed.add_field(name="💳 Your Wallet", value=f"**{user_balance}** UKPence", inline=False)
-        return embed
 
     async def on_timeout(self):
         for item in self.children:
             item.disabled = True
         pass
+
+    async def initial_send(self, interaction: discord.Interaction):
+        """Initial generation and sending of the customization menu."""
+        start_idx = self.current_page * self.ITEMS_PER_PAGE
+        end_idx = start_idx + self.ITEMS_PER_PAGE
+        current_items = self.items[start_idx:end_idx]
+        
+        loop = asyncio.get_event_loop()
+        image_buffer = await loop.run_in_executor(None, generate_shop_preview_grid, current_items)
+        file = discord.File(fp=image_buffer, filename="preview_grid.png")
+        
+        embed = self._create_embed()
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=embed, view=self, file=file, ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=embed, view=self, file=file, ephemeral=True)

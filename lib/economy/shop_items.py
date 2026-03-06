@@ -342,12 +342,7 @@ class RankCustomizationMenuShopItem(ShopItem):
         rank_items = [i for i in all_items if isinstance(i, (RankBackgroundItem, RankColorThemeItem, RankResetItem))]
         
         view = RankCustomizationOverviewView(rank_items, interaction.user.id)
-        embed = view._create_embed()
-        
-        if interaction.response.is_done():
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-        else:
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await view.initial_send(interaction)
             
         return "Opened the Rank Customization Menu!"
 
