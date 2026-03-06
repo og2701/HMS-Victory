@@ -448,10 +448,12 @@ SHOP_ITEMS: List[ShopItem] = [
     # --- UK COLLECTION (ART STYLES) ---
     RankBackgroundItem("rank_bg_london_vibrant", "Cartoon London", "Vibrant cartoon-style illustration of London's skyline", 250, "rank_bg_london_cartoon.png"),
     RankBackgroundItem("rank_bg_cliffs_mini", "Minimalist Cliffs", "Geometric 2D vector art of the White Cliffs of Dover", 250, "rank_bg_white_cliffs_minimal.png"),
-    
     # --- UK THEMED (PRIORITY) ---
     RankBackgroundItem("rank_bg_cotswolds", "Cotswolds Countryside", "Peaceful English village with honey-stone cottages", 250, "rank_bg_cotswolds.png"),
     RankBackgroundItem("rank_bg_white_cliffs", "White Cliffs of Dover", "Iconic white chalk cliffs meeting the deep blue sea", 250, "rank_bg_white_cliffs.png"),
+    RankBackgroundItem("rank_bg_edinburgh_pixel", "Pixel Edinburgh", "Vibrant and moody pixel art of Edinburgh Castle on a hill", 250, "rank_bg_edinburgh_pixel_1772822517002.png"),
+    RankBackgroundItem("rank_bg_spitfire_vector", "Vector Spitfire", "Clean minimalist vector graphic of a Supermarine Spitfire", 250, "rank_bg_spitfire_vector_1772822538620.png"),
+    RankBackgroundItem("rank_bg_royal_guard_anime", "Anime Royal Guard", "Epic dramatic anime artwork of a British royal guard with bagpipes", 250, "rank_bg_royal_guard_anime_1772822559487.png"),
 
     RankColorThemeItem("rank_theme_country", "Countryside Theme", "Forest greens and earthy browns of rural England", 100, "#228B22", "#8B4513", "#F0FFF0"),
 
@@ -468,6 +470,7 @@ SHOP_ITEMS: List[ShopItem] = [
     RankColorThemeItem("rank_theme_crimson", "Royal Crimson Theme", "Deep reds and gold for a regal look", 100, "#DC143C", "#8B0000", "#FFD700"),
     RankColorThemeItem("rank_theme_mystic", "Mystic Purple Theme", "Neon purples and blues of a mystic aurora", 100, "#8A2BE2", "#4169E1", "#E0FFFF"),
     RankColorThemeItem("rank_theme_autumn", "Autumn Fall Theme", "Warm oranges and yellows of a crisp autumn day", 100, "#FF8C00", "#8B4513", "#FFD700"),
+    RankColorThemeItem("rank_theme_monochrome", "Monochrome Stealth", "Sleek and stealthy blacks, greys, and whites", 100, "#1A1A1A", "#4D4D4D", "#FFFFFF"),
 
     # --- LEGACY OPTIONS ---
     RankBackgroundItem("rank_bg_space", "Cosmic Space", "A highly detailed cosmic space scene", 250, "rank_bg_space_1772807793835.png"),

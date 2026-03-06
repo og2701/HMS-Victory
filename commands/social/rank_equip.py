@@ -5,7 +5,7 @@ from database import DatabaseManager
 from lib.economy.shop_items import get_shop_items, RankBackgroundItem, RankColorThemeItem
 
 class RankEquipSelect(Select):
-    """Dropdown to select an equipped customization."""
+    """Dropdown to select an equipped customisation."""
     def __init__(self, items: set, item_type: str, user_id: int):
         self.item_type = item_type
         self.user_id = user_id
@@ -22,7 +22,7 @@ class RankEquipSelect(Select):
                 label = shop_item.name if shop_item else bg
                 options.append(discord.SelectOption(label=label, value=bg, emoji="🖼️"))
         else:
-            placeholder = "Select a Color Theme to equip..."
+            placeholder = "Select a Colour Theme to equip..."
             for theme in items:
                 # Theme in DB is a concatenated string "primary,secondary,tertiary", we unpack to find shop item
                 primary, secondary, tertiary = theme.split(",")
@@ -55,7 +55,7 @@ class RankEquipSelect(Select):
                 DatabaseManager.execute("UPDATE user_rank_customization SET primary_color = ?, secondary_color = ?, tertiary_color = ? WHERE user_id = ?", (primary, secondary, tertiary, user_id_str))
             else:
                 DatabaseManager.execute("INSERT INTO user_rank_customization (user_id, primary_color, secondary_color, tertiary_color) VALUES (?, ?, ?, ?)", (user_id_str, primary, secondary, tertiary))
-            await interaction.response.send_message(f"✅ Color Theme updated! Use `/rank` to see it.", ephemeral=True)
+            await interaction.response.send_message(f"✅ Colour Theme updated! Use `/rank` to see it.", ephemeral=True)
 
 
 class RankEquipView(View):
@@ -77,7 +77,7 @@ async def handle_rank_equip_command(interaction: discord.Interaction):
     # Check shop_purchases for what the user owns
     purchases = DatabaseManager.fetch_all("SELECT item_id FROM shop_purchases WHERE user_id = ?", (user_id_str,))
     if not purchases:
-        return await interaction.response.send_message("You haven't purchased any rank customizations yet. Visit the `/shop`!", ephemeral=True)
+        return await interaction.response.send_message("You haven't purchased any rank customisations yet. Visit the `/shop`!", ephemeral=True)
 
     owned_item_ids = [p[0] for p in purchases]
     
@@ -94,7 +94,7 @@ async def handle_rank_equip_command(interaction: discord.Interaction):
             owned_themes.add(theme_str)
 
     if not owned_backgrounds and not owned_themes:
-        return await interaction.response.send_message("You don't own any eligible rank customizations. Visit the `/shop`!", ephemeral=True)
+        return await interaction.response.send_message("You don't own any eligible rank customisations. Visit the `/shop`!", ephemeral=True)
 
     # Let the user know they can equip defaults too
     owned_backgrounds.add("unionjack.png")
@@ -103,8 +103,8 @@ async def handle_rank_equip_command(interaction: discord.Interaction):
     view = RankEquipView(interaction.user.id, owned_backgrounds, owned_themes)
     
     embed = discord.Embed(
-        title="🎨 Equip Rank Customizations",
-        description="Select a background or color theme from the dropdowns below to equip to your `/rank` card.",
+        title="🎨 Equip Rank Customisations",
+        description="Select a background or colour theme from the dropdowns below to equip to your `/rank` card.",
         color=0x2b2d31
     )
     
