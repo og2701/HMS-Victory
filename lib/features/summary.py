@@ -394,5 +394,6 @@ async def post_summary(
             )
             # Legacy fallback
             if os.path.exists("daily_summaries"):
+                file_path = SUMMARY_DATA_FILE.format(date=date)
                 with open(file_path, "w") as file:
                     json.dump(data, file)

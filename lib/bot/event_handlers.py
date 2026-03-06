@@ -775,7 +775,7 @@ async def on_voice_state_update(member, before, after):
             if bonus > 0:
                 if BankManager.withdraw(bonus, description=f"Stage Participation Reward ({int(elapsed)//60}m)"):
                     add_bb(member.id, bonus, reason="Stage participation reward")
-                    logger.info(f"[STAGE] +{bonus} UKP → User {member} for leaving stage {after.channel.name}")
+                    logger.info(f"[STAGE] +{bonus} UKP → User {member} for leaving stage {before.channel.name}")
                 else:
                     logger.error(f"[STAGE] Failed to withdraw {bonus} UKP from BankManager for User {member}. Insufficient funds or database error.")
                     # Keep their time accumulated so they don't lose it if the bank is broke
