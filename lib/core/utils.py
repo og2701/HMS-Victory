@@ -14,6 +14,7 @@ from lib.core.image_processing import trim_image, encode_image_to_data_uri, scre
 from lib.core.file_operations import read_html_template, load_whitelist, save_whitelist, load_persistent_views, save_persistent_views, load_json_file, save_json_file, set_file_status, is_file_status_active
 from lib.core.discord_helpers import restrict_channel_for_new_members, has_role, has_any_role, toggle_user_role, validate_and_format_date, send_embed_to_channels, edit_voice_channel_members, fetch_messages_with_context, estimate_tokens
 from lib.economy.economy_manager import get_shutcoins, SHUTCOIN_ENABLED, get_bb
+from database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -124,11 +125,33 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         html_content = html_content.replace("{britbuck_html}", britbuck_html)
 
         user_id_str = str(member.id)
-        custom_bg_filename = CUSTOM_RANK_BACKGROUNDS.get(user_id_str, "unionjack.png")
-        background_path = os.path.join("data", "rank_cards", custom_bg_filename)
-        logger.info(f"Using background image: {custom_bg_filename}")
+        
+        # Load user customization
+        customization = DatabaseManager.fetch_one(
+            "SELECT background, primary_color, secondary_color, tertiary_color FROM user_rank_customization WHERE user_id = ?",
+            (user_id_str,)
+        )
+        
+        if customization:
+            bg_file, primary_color, secondary_color, tertiary_color = customization
+        else:
+            # Check the old hardcoded dictionary as a fallback for OG members
+            bg_file = CUSTOM_RANK_BACKGROUNDS.get(user_id_str, "unionjack.png")
+            primary_color, secondary_color, tertiary_color = '#CF142B', '#00247D', '#FFFFFF'
+
+        background_path = os.path.join("data", "rank_cards", bg_file)
+        if not os.path.exists(background_path):
+            logger.warning(f"Background file not found: {background_path}. Falling back to default.")
+            bg_file = "unionjack.png"
+            background_path = os.path.join("data", "rank_cards", bg_file)
+
+        logger.info(f"Using background image: {bg_file}")
         background_data_uri = encode_image_to_data_uri(background_path)
-        html_content = html_content.replace("{unionjack}", background_data_uri)
+        
+        html_content = html_content.replace("{bg_image}", background_data_uri)
+        html_content = html_content.replace("{primary_color}", primary_color)
+        html_content = html_content.replace("{secondary_color}", secondary_color)
+        html_content = html_content.replace("{tertiary_color}", tertiary_color)
 
         size = (1000, 600)
         image_bytes = await screenshot_html(html_content, size)

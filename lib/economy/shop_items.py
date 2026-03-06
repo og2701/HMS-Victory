@@ -7,9 +7,10 @@ import random
 import aiohttp
 import io
 from datetime import timedelta
-from config import ROLES, CHANNELS
+from config import ROLES, CHANNELS, USERS
 from lib.economy.economy_manager import add_shutcoins, add_bb
 from lib.economy.shop_inventory import ShopInventory
+from database import DatabaseManager
 
 class ShopItem(ABC):
     """Abstract base class for all shop items."""
@@ -321,6 +322,105 @@ class CustomEmojiStickerItem(ShopItem):
 
         return "Custom emoji/sticker purchase initiated! Check the message above to continue."
 
+class RankBackgroundItem(ShopItem):
+    """Shop item for purchasing a custom rank background."""
+    def __init__(self, id: str, name: str, description: str, price: int, bg_filename: str):
+        super().__init__(id, name, description, price, use_inventory=False)
+        self.bg_filename = bg_filename
+
+    def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
+        can_purchase, reason = super().can_purchase(user)
+        if not can_purchase:
+            return False, reason
+        # RESTRICT TO OGGERS FOR TESTING (Owen's ID)
+        if user.id != USERS.OGGERS:
+            return False, "This item is currently undergoing testing and is restricted to the bot owner."
+
+        # Check if they already have this background active
+        current = DatabaseManager.fetch_one("SELECT background FROM user_rank_customization WHERE user_id = ?", (str(user.id),))
+        if current and current[0] == self.bg_filename:
+            return False, "You already have this background equipped!"
+        return True, ""
+
+    async def execute(self, interaction) -> str:
+        user_id_str = str(interaction.user.id)
+        # Check if row exists, insert or update
+        exists = DatabaseManager.fetch_one("SELECT 1 FROM user_rank_customization WHERE user_id = ?", (user_id_str,))
+        if exists:
+            DatabaseManager.execute("UPDATE user_rank_customization SET background = ? WHERE user_id = ?", (self.bg_filename, user_id_str))
+        else:
+            DatabaseManager.execute("INSERT INTO user_rank_customization (user_id, background) VALUES (?, ?)", (user_id_str, self.bg_filename))
+        
+        return f"Successfully equipped the **{self.name}** rank background!"
+
+class RankColorThemeItem(ShopItem):
+    """Shop item for purchasing a custom rank color theme."""
+    def __init__(self, id: str, name: str, description: str, price: int, primary: str, secondary: str, tertiary: str):
+        super().__init__(id, name, description, price, use_inventory=False)
+        self.primary = primary
+        self.secondary = secondary
+        self.tertiary = tertiary
+
+    def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
+        can_purchase, reason = super().can_purchase(user)
+        if not can_purchase:
+            return False, reason
+        # RESTRICT TO OGGERS FOR TESTING (Owen's ID)
+        if user.id != USERS.OGGERS:
+            return False, "This item is currently undergoing testing and is restricted to the bot owner."
+
+        current = DatabaseManager.fetch_one("SELECT primary_color, secondary_color, tertiary_color FROM user_rank_customization WHERE user_id = ?", (str(user.id),))
+        if current and current[0] == self.primary and current[1] == self.secondary and current[2] == self.tertiary:
+            return False, "You already have this color theme equipped!"
+        return True, ""
+
+    async def execute(self, interaction) -> str:
+        user_id_str = str(interaction.user.id)
+        exists = DatabaseManager.fetch_one("SELECT 1 FROM user_rank_customization WHERE user_id = ?", (user_id_str,))
+        if exists:
+            DatabaseManager.execute("UPDATE user_rank_customization SET primary_color = ?, secondary_color = ?, tertiary_color = ? WHERE user_id = ?", 
+                                    (self.primary, self.secondary, self.tertiary, user_id_str))
+        else:
+            DatabaseManager.execute("INSERT INTO user_rank_customization (user_id, primary_color, secondary_color, tertiary_color) VALUES (?, ?, ?, ?)", 
+                                    (user_id_str, self.primary, self.secondary, self.tertiary))
+        
+        return f"Successfully equipped the **{self.name}** color theme!"
+
+class RankResetItem(ShopItem):
+    """Shop item to reset rank customization back to default."""
+    def __init__(self, id: str, name: str, description: str, price: int):
+        super().__init__(id, name, description, price, use_inventory=False)
+
+    def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
+        can_purchase, reason = super().can_purchase(user)
+        if not can_purchase:
+            return False, reason
+        
+        # RESTRICT TO OGGERS FOR TESTING
+        if user.id != USERS.OGGERS:
+            return False, "This item is currently undergoing testing and is restricted to the bot owner."
+            
+        current = DatabaseManager.fetch_one("SELECT * FROM user_rank_customization WHERE user_id = ?", (str(user.id),))
+        if not current:
+            # If nothing in DB, check if they have a hardcoded custom background
+            from lib.core.constants import CUSTOM_RANK_BACKGROUNDS
+            if str(user.id) not in CUSTOM_RANK_BACKGROUNDS:
+                return False, "You are already using the default rank card."
+        return True, ""
+
+    async def execute(self, interaction) -> str:
+        user_id_str = str(interaction.user.id)
+        # Delete from DB completely to fall back to default
+        DatabaseManager.execute("DELETE FROM user_rank_customization WHERE user_id = ?", (user_id_str,))
+        
+        # If they happen to have a hardcoded OG background, we insert a row to override it with unionjack
+        from lib.core.constants import CUSTOM_RANK_BACKGROUNDS
+        if user_id_str in CUSTOM_RANK_BACKGROUNDS:
+             DatabaseManager.execute("INSERT INTO user_rank_customization (user_id, background, primary_color, secondary_color, tertiary_color) VALUES (?, ?, ?, ?, ?)", 
+                                    (user_id_str, 'unionjack.png', '#CF142B', '#00247D', '#FFFFFF'))
+             
+        return "Your rank card has been reset to the default Union Jack!"
+
 # Shop Items Registry
 SHOP_ITEMS: List[ShopItem] = [
     # Currency Items
@@ -332,6 +432,17 @@ SHOP_ITEMS: List[ShopItem] = [
     # Service Items
     RoastAccessItem("roast_access", "Roast Access", "Get access to the /roast command (if not already a server booster)", 500, use_inventory=True),
     CustomEmojiStickerItem("custom_emoji_sticker", "Custom Emoji/Sticker", "Add a custom emoji or sticker to the server", 3500, use_inventory=True),
+
+    # Rank Customizations (Temporarily 1 UKP for Testing)
+    RankResetItem("rank_custom_reset", "Reset Rank Card", "Reset your rank card background and colors to default", 0),
+    RankBackgroundItem("rank_bg_space", "Cosmic Space Background", "A highly detailed cosmic space scene", 1, "rank_bg_space_1772807793835.png"),
+    RankBackgroundItem("rank_bg_cyberpunk", "Cyberpunk Background", "A dark and rainy neon city street", 1, "rank_bg_cyberpunk_1772807811666.png"),
+    RankBackgroundItem("rank_bg_anime", "Anime Blossom Background", "Tranquil cherry blossom grove at twilight", 1, "rank_bg_anime_1772807827201.png"),
+    RankBackgroundItem("rank_bg_pirate", "Pirate Ship Background", "Dramatic pirate ship at sea during a storm", 1, "rank_bg_pirate_1772807841224.png"),
+    RankColorThemeItem("rank_color_neon", "Neon Matrix Theme", "Green and black progress bar colors", 1, "#00FF00", "#003300", "#FFFFFF"),
+    RankColorThemeItem("rank_color_gold", "Imperial Gold Theme", "Gold and white progress bar colors", 1, "#FFD700", "#B8860B", "#FFFFFF"),
+    RankColorThemeItem("rank_color_synth", "Synthwave Theme", "Purple and pink progress bar colors", 1, "#FF00FF", "#800080", "#00FFFF"),
+    RankColorThemeItem("rank_color_mono", "Monochrome Theme", "Black, white, and gray progress bar colors", 1, "#FFFFFF", "#333333", "#AAAAAA"),
 
     # Role Items (using actual role IDs from config)
     # RoleItem("ball_inspector", "Ball Inspector", "Get the prestigious Ball Inspector role", 200, ROLES.BALL_INSPECTOR),
