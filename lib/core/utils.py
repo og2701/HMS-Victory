@@ -108,14 +108,15 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         if SHUTCOIN_ENABLED:
             try:
                 shutcoin_count = get_shutcoins(member.id)
-                shutcoin_icon_path = os.path.join("data", "shutcoin.png")
+                shutcoin_icon_path = os.path.join(BASE_DIR, "data", "shutcoin.png")
                 shutcoin_icon_uri = encode_image_to_data_uri(shutcoin_icon_path)
                 shutcoin_html = f'<div class="coin-box"><img src="{shutcoin_icon_uri}" class="coin-icon" /><span class="xp-text">{shutcoin_count:,}</span></div>'
             except Exception as e:
                 logger.error(f"Error getting shutcoins: {e}")
 
+        from config import BASE_DIR
         britbuck_amount = get_bb(member.id)
-        britbuck_icon_path = os.path.join("data", "ukpence.png")
+        britbuck_icon_path = os.path.join(BASE_DIR, "data", "ukpence.png")
         britbuck_icon_uri = encode_image_to_data_uri(britbuck_icon_path)
         britbuck_html = f'<div class="coin-box"><img src="{britbuck_icon_uri}" class="coin-icon" /><span class="xp-text">{britbuck_amount:,}</span></div>'
 
@@ -135,10 +136,10 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
             if res_s: secondary_color = res_s
             if res_t: tertiary_color = res_t
 
-        background_path = os.path.join("data", "rank_cards", bg_file)
+        background_path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
         if not os.path.exists(background_path):
             bg_file = "unionjack.png"
-            background_path = os.path.join("data", "rank_cards", bg_file)
+            background_path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
         background_data_uri = encode_image_to_data_uri(background_path)
 
         # Apply replacements

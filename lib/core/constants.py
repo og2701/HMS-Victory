@@ -10,11 +10,11 @@ CHAT_LEVEL_ROLE_THRESHOLDS = [
 ]
 
 CUSTOM_RANK_BACKGROUNDS = {
-    "404634271861571584": "oggers.png",
+    # "404634271861571584": "oggers.png",
     "347842997641281536": "blank.png",
-    "797207976548499518": "johnny.png",
-    "725155180680577066": "cherry.png",
-    "1204435534416580679": "gunner.png"
+    # "797207976548499518": "johnny.png",
+    # "725155180680577066": "cherry.png",
+    # "1204435534416580679": "gunner.png"
 }
 
 # --- Flag to Language Mappings for Translation ---
