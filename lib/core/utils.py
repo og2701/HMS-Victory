@@ -98,41 +98,33 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         logger.debug(f"Reading template from {template_path}")
         html_content = read_html_template(template_path)
 
-        html_content = html_content.replace("{profile_pic}", str(member.display_avatar.url))
-        html_content = html_content.replace("{username}", member.display_name)
-        html_content = html_content.replace("{rank}", str(rank))
-        html_content = html_content.replace("{xp_display}", xp_display)
-        html_content = html_content.replace("{progress_percent}", f"{progress_percent}%")
-        html_content = html_content.replace("{current_role}", current_role_name)
-        html_content = html_content.replace("{next_role_name}", next_role_name)
-        logger.debug("Main HTML content has been populated.")
+        import re
+        def safe_replace(content, key, value):
+            # Matches {key}, { key }, or { \n key \n }
+            pattern = r'\{\s*' + re.escape(key) + r'\s*\}'
+            return re.sub(pattern, str(value), content, flags=re.MULTILINE)
 
         shutcoin_html = ""
         if SHUTCOIN_ENABLED:
-            shutcoin_count = get_shutcoins(member.id)
-            shutcoin_icon_path = os.path.join("data", "shutcoin.png")
-            shutcoin_icon_uri = encode_image_to_data_uri(shutcoin_icon_path)
-            shutcoin_html = f'<div class="coin-box"><img src="{shutcoin_icon_uri}" class="coin-icon" /><span class="xp-text">{shutcoin_count:,}</span></div>'
-            logger.debug(f"Shutcoin HTML populated with count: {shutcoin_count}")
+            try:
+                shutcoin_count = get_shutcoins(member.id)
+                shutcoin_icon_path = os.path.join("data", "shutcoin.png")
+                shutcoin_icon_uri = encode_image_to_data_uri(shutcoin_icon_path)
+                shutcoin_html = f'<div class="coin-box"><img src="{shutcoin_icon_uri}" class="coin-icon" /><span class="xp-text">{shutcoin_count:,}</span></div>'
+            except Exception as e:
+                logger.error(f"Error getting shutcoins: {e}")
 
         britbuck_amount = get_bb(member.id)
         britbuck_icon_path = os.path.join("data", "ukpence.png")
         britbuck_icon_uri = encode_image_to_data_uri(britbuck_icon_path)
         britbuck_html = f'<div class="coin-box"><img src="{britbuck_icon_uri}" class="coin-icon" /><span class="xp-text">{britbuck_amount:,}</span></div>'
-        logger.debug(f"UKPence HTML populated with amount: {britbuck_amount}")
-
-        html_content = html_content.replace("{shutcoin_html}", shutcoin_html)
-        html_content = html_content.replace("{britbuck_html}", britbuck_html)
 
         user_id_str = str(member.id)
-        
-        # Load user customization
         customization = DatabaseManager.fetch_one(
             "SELECT background, primary_color, secondary_color, tertiary_color FROM user_rank_customization WHERE user_id = ?",
             (user_id_str,)
         )
         
-        # Defaults
         bg_file = CUSTOM_RANK_BACKGROUNDS.get(user_id_str, "unionjack.png")
         primary_color, secondary_color, tertiary_color = '#CF142B', '#00247D', '#FFFFFF'
         
@@ -145,17 +137,24 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
 
         background_path = os.path.join("data", "rank_cards", bg_file)
         if not os.path.exists(background_path):
-            logger.warning(f"Background file not found: {background_path}. Falling back to default.")
             bg_file = "unionjack.png"
             background_path = os.path.join("data", "rank_cards", bg_file)
-
-        logger.info(f"Using background image: {bg_file}")
         background_data_uri = encode_image_to_data_uri(background_path)
-        
-        html_content = html_content.replace("{bg_image}", background_data_uri)
-        html_content = html_content.replace("{primary_color}", primary_color)
-        html_content = html_content.replace("{secondary_color}", secondary_color)
-        html_content = html_content.replace("{tertiary_color}", tertiary_color)
+
+        # Apply replacements
+        html_content = safe_replace(html_content, "profile_pic", member.display_avatar.url)
+        html_content = safe_replace(html_content, "username", member.display_name)
+        html_content = safe_replace(html_content, "rank", rank)
+        html_content = safe_replace(html_content, "xp_display", xp_display)
+        html_content = safe_replace(html_content, "progress_percent", f"{progress_percent}%")
+        html_content = safe_replace(html_content, "current_role", current_role_name)
+        html_content = safe_replace(html_content, "next_role_name", next_role_name)
+        html_content = safe_replace(html_content, "shutcoin_html", shutcoin_html)
+        html_content = safe_replace(html_content, "britbuck_html", britbuck_html)
+        html_content = safe_replace(html_content, "bg_image", background_data_uri)
+        html_content = safe_replace(html_content, "primary_color", primary_color)
+        html_content = safe_replace(html_content, "secondary_color", secondary_color)
+        html_content = safe_replace(html_content, "tertiary_color", tertiary_color)
 
         size = (1000, 600)
         image_bytes = await screenshot_html(html_content, size)
