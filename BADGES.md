@@ -69,6 +69,7 @@ Awarded for being targeted by a roast command.
 Awarded for having three people reply to one of your messages.
 
 ### 🔇 Silenced
+**Rarity**: Bronze
 Awarded for being shut by a shutcoin.
 
 ### 💎 Supporter
