@@ -466,7 +466,7 @@ SHOP_ITEMS: List[ShopItem] = [
     RankBackgroundItem("rank_bg_white_cliffs", "White Cliffs of Dover", "Iconic white chalk cliffs meeting the deep blue sea", 250, "rank_bg_white_cliffs.png"),
     RankBackgroundItem("rank_bg_edinburgh_pixel", "Pixel Edinburgh", "Vibrant and moody pixel art of Edinburgh Castle on a hill", 250, "rank_bg_edinburgh_pixel_1772822517002.png"),
     RankBackgroundItem("rank_bg_spitfire_vector", "Vector Spitfire", "Clean minimalist vector graphic of a Supermarine Spitfire", 250, "rank_bg_spitfire_vector_1772822538620.png"),
-    RankBackgroundItem("rank_bg_royal_guard_anime", "Anime Royal Guard", "Epic dramatic anime artwork of a British royal guard with bagpipes", 250, "rank_bg_royal_guard_anime_1772822559487.png"),
+    RankBackgroundItem("rank_bg_national_flowers_pixel_art", "UK National Flowers", "Pixel art of the 4 national flowers of the UK countries", 250, "rank_bg_national_flowers_pixel_art_1772824236989.png"),
     RankBackgroundItem("rank_bg_wales", "Mount Snowdon", "Beautiful landscape illustration of Mount Snowdon in Wales", 250, "rank_bg_wales_1772822730240.png"),
     RankBackgroundItem("rank_bg_nireland", "Giant's Causeway", "Epic pixel art of the Giant's Causeway in Northern Ireland", 250, "rank_bg_nireland_causeway_pixel_1772822836374.png"),
     RankBackgroundItem("rank_bg_uk_carrier", "HMS Queen Elizabeth", "Sleek geometric illustration of a British aircraft carrier", 250, "rank_bg_uk_carrier_geo_1772822866110.png"),

@@ -851,16 +851,26 @@ class RankCustomisationOverviewView(View):
             grid_items.append(item)
             
         import time
+        from config import CHANNELS
         image_buffer = await generate_shop_preview_grid_async(grid_items, cols=5)
         filename = f"preview_grid_{int(time.time())}.png"
         file = discord.File(fp=image_buffer, filename=filename)
         
-        embed = self._create_embed(image_filename=filename)
-        msg = await interaction.original_response()
-        edited_msg = await msg.edit(embed=embed, view=self, attachments=[file])
-        
-        if edited_msg.embeds and edited_msg.embeds[0].image:
-            self.__class__._IMAGE_URL_CACHE[self.current_page] = edited_msg.embeds[0].image.url
+        # Upload to image cache channel for a permanent CDN URL
+        cache_channel = interaction.client.get_channel(CHANNELS.IMAGE_CACHE)
+        if cache_channel:
+            cache_msg = await cache_channel.send(file=file)
+            perm_url = cache_msg.attachments[0].url
+            self.__class__._IMAGE_URL_CACHE[self.current_page] = perm_url
+            
+            embed = self._create_embed(image_filename=None)
+            embed.set_image(url=perm_url)
+            msg = await interaction.original_response()
+            await msg.edit(embed=embed, view=self, attachments=[])
+        else:
+            embed = self._create_embed(image_filename=filename)
+            msg = await interaction.original_response()
+            await msg.edit(embed=embed, view=self, attachments=[file])
 
     def _update_components(self):
         self.clear_items()
@@ -945,13 +955,23 @@ class RankCustomisationOverviewView(View):
             return
             
         import time
+        from config import CHANNELS
         image_buffer = await generate_shop_preview_grid_async(current_items, cols=5)
         filename = f"preview_grid_{int(time.time())}.png"
         file = discord.File(fp=image_buffer, filename=filename)
         
-        embed = self._create_embed(image_filename=filename)
-        
-        msg = await interaction.original_response()
-        edited_msg = await msg.edit(embed=embed, view=self, attachments=[file])
-        if edited_msg.embeds and edited_msg.embeds[0].image:
-            self.__class__._IMAGE_URL_CACHE[self.current_page] = edited_msg.embeds[0].image.url
+        # Upload to image cache channel for a permanent CDN URL
+        cache_channel = interaction.client.get_channel(CHANNELS.IMAGE_CACHE)
+        if cache_channel:
+            cache_msg = await cache_channel.send(file=file)
+            perm_url = cache_msg.attachments[0].url
+            self.__class__._IMAGE_URL_CACHE[self.current_page] = perm_url
+            
+            embed = self._create_embed(image_filename=None)
+            embed.set_image(url=perm_url)
+            msg = await interaction.original_response()
+            await msg.edit(embed=embed, view=self, attachments=[])
+        else:
+            embed = self._create_embed(image_filename=filename)
+            msg = await interaction.original_response()
+            await msg.edit(embed=embed, view=self, attachments=[file])
