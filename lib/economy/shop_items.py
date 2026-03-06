@@ -329,10 +329,6 @@ class RankCustomizationMenuShopItem(ShopItem):
         super().__init__(id, name, description, price, use_inventory=False, show_in_shop=True)
 
     def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
-        # RESTRICT TO OGGERS AND DEPUTY PM
-        from config import USERS, ROLES
-        if user.id != USERS.OGGERS and user.get_role(ROLES.DEPUTY_PM) is None:
-            return False, "This menu is restricted to the bot owner and Deputy PM."
         return True, ""
         
     async def execute(self, interaction) -> str:
@@ -356,9 +352,6 @@ class RankBackgroundItem(ShopItem):
         can_purchase, reason = super().can_purchase(user)
         if not can_purchase:
             return False, reason
-        # RESTRICT TO OGGERS AND DEPUTY PM
-        if user.id != USERS.OGGERS and user.get_role(ROLES.DEPUTY_PM) is None:
-            return False, "This item is restricted to the bot owner and Deputy PM."
 
         # Check if they already have this background active
         current = DatabaseManager.fetch_one("SELECT background FROM user_rank_customization WHERE user_id = ?", (str(user.id),))
@@ -389,9 +382,6 @@ class RankColorThemeItem(ShopItem):
         can_purchase, reason = super().can_purchase(user)
         if not can_purchase:
             return False, reason
-        # RESTRICT TO OGGERS AND DEPUTY PM
-        if user.id != USERS.OGGERS and user.get_role(ROLES.DEPUTY_PM) is None:
-            return False, "This item is restricted to the bot owner and Deputy PM."
 
         current = DatabaseManager.fetch_one("SELECT primary_color, secondary_color, tertiary_color FROM user_rank_customization WHERE user_id = ?", (str(user.id),))
         if current and current[0] == self.primary and current[1] == self.secondary and current[2] == self.tertiary:
@@ -419,10 +409,6 @@ class RankResetItem(ShopItem):
         can_purchase, reason = super().can_purchase(user)
         if not can_purchase:
             return False, reason
-        
-        # RESTRICT TO OGGERS AND DEPUTY PM
-        if user.id != USERS.OGGERS and user.get_role(ROLES.DEPUTY_PM) is None:
-            return False, "This item is restricted to the bot owner and Deputy PM."
             
         current = DatabaseManager.fetch_one("SELECT * FROM user_rank_customization WHERE user_id = ?", (str(user.id),))
         if not current:
@@ -454,32 +440,32 @@ SHOP_ITEMS: List[ShopItem] = [
     RankResetItem("rank_custom_reset", "Reset Rank Card", "Reset your rank card background and colors to default", 0),
 
     # --- UK COLLECTION (ART STYLES) ---
-    RankBackgroundItem("rank_bg_london_vibrant", "Cartoon London", "Vibrant cartoon-style illustration of London's skyline", 0, "rank_bg_london_cartoon.png"),
-    RankBackgroundItem("rank_bg_cliffs_mini", "Minimalist Cliffs", "Geometric 2D vector art of the White Cliffs of Dover", 0, "rank_bg_white_cliffs_minimal.png"),
+    RankBackgroundItem("rank_bg_london_vibrant", "Cartoon London", "Vibrant cartoon-style illustration of London's skyline", 250, "rank_bg_london_cartoon.png"),
+    RankBackgroundItem("rank_bg_cliffs_mini", "Minimalist Cliffs", "Geometric 2D vector art of the White Cliffs of Dover", 250, "rank_bg_white_cliffs_minimal.png"),
     
     # --- UK THEMED (PRIORITY) ---
-    RankBackgroundItem("rank_bg_cotswolds", "Cotswolds Countryside", "Peaceful English village with honey-stone cottages", 0, "rank_bg_cotswolds.png"),
-    RankBackgroundItem("rank_bg_white_cliffs", "White Cliffs of Dover", "Iconic white chalk cliffs meeting the deep blue sea", 0, "rank_bg_white_cliffs.png"),
+    RankBackgroundItem("rank_bg_cotswolds", "Cotswolds Countryside", "Peaceful English village with honey-stone cottages", 250, "rank_bg_cotswolds.png"),
+    RankBackgroundItem("rank_bg_white_cliffs", "White Cliffs of Dover", "Iconic white chalk cliffs meeting the deep blue sea", 250, "rank_bg_white_cliffs.png"),
 
-    RankColorThemeItem("rank_theme_country", "Countryside Theme", "Forest greens and earthy browns of rural England", 0, "#228B22", "#8B4513", "#F0FFF0"),
+    RankColorThemeItem("rank_theme_country", "Countryside Theme", "Forest greens and earthy browns of rural England", 100, "#228B22", "#8B4513", "#F0FFF0"),
 
     # --- VARIETY STYLES ---
-    RankBackgroundItem("rank_bg_lofi", "Lofi Bedroom (PixelArt)", "Cozy lofi aesthetic bedroom in pixel art style", 0, "rank_bg_lofi.png"),
-    RankBackgroundItem("rank_bg_forest", "Enchanted Forest", "Ethereal forest with glowing mushrooms and mist", 0, "rank_bg_forest.png"),
-    RankBackgroundItem("rank_bg_vaporwave", "Vaporwave Retro", "Neon pink sunset with glitch art and palm trees", 0, "rank_bg_vaporwave.png"),
-    RankBackgroundItem("rank_bg_medieval", "Medieval Throne", "Grand stone throne room with flickering torches", 0, "rank_bg_medieval.png"),
-    RankBackgroundItem("rank_bg_underwater", "Underwater Reef", "Deep sea coral reef with glowing jellyfish", 0, "rank_bg_underwater.png"),
+    RankBackgroundItem("rank_bg_lofi", "Lofi Bedroom (PixelArt)", "Cozy lofi aesthetic bedroom in pixel art style", 250, "rank_bg_lofi.png"),
+    RankBackgroundItem("rank_bg_forest", "Enchanted Forest", "Ethereal forest with glowing mushrooms and mist", 250, "rank_bg_forest.png"),
+    RankBackgroundItem("rank_bg_vaporwave", "Vaporwave Retro", "Neon pink sunset with glitch art and palm trees", 250, "rank_bg_vaporwave.png"),
+    RankBackgroundItem("rank_bg_medieval", "Medieval Throne", "Grand stone throne room with flickering torches", 250, "rank_bg_medieval.png"),
+    RankBackgroundItem("rank_bg_underwater", "Underwater Reef", "Deep sea coral reef with glowing jellyfish", 250, "rank_bg_underwater.png"),
 
-    RankColorThemeItem("rank_theme_lofi", "Lofi Sunset Theme", "Purple and peach colors of a cozy sunset", 0, "#9370DB", "#FFA07A", "#4B0082"),
-    RankColorThemeItem("rank_theme_deepsea", "Deep Sea Theme", "Teal and navy blues of the ocean depths", 0, "#008080", "#000080", "#00FFFF"),
-    RankColorThemeItem("rank_theme_enchanted", "Enchanted Theme", "Lime greens and soft pinks of a fantasy grove", 0, "#32CD32", "#006400", "#FFB6C1"),
-    RankColorThemeItem("rank_theme_crimson", "Royal Crimson Theme", "Deep reds and gold for a regal look", 0, "#DC143C", "#8B0000", "#FFD700"),
+    RankColorThemeItem("rank_theme_lofi", "Lofi Sunset Theme", "Purple and peach colors of a cozy sunset", 100, "#9370DB", "#FFA07A", "#4B0082"),
+    RankColorThemeItem("rank_theme_deepsea", "Deep Sea Theme", "Teal and navy blues of the ocean depths", 100, "#008080", "#000080", "#00FFFF"),
+    RankColorThemeItem("rank_theme_enchanted", "Enchanted Theme", "Lime greens and soft pinks of a fantasy grove", 100, "#32CD32", "#006400", "#FFB6C1"),
+    RankColorThemeItem("rank_theme_crimson", "Royal Crimson Theme", "Deep reds and gold for a regal look", 100, "#DC143C", "#8B0000", "#FFD700"),
 
     # --- LEGACY OPTIONS ---
-    RankBackgroundItem("rank_bg_space", "Cosmic Space", "A highly detailed cosmic space scene", 0, "rank_bg_space_1772807793835.png"),
-    RankBackgroundItem("rank_bg_cyberpunk", "Cyberpunk Neon", "A dark and rainy neon city street", 0, "rank_bg_cyberpunk_1772807811666.png"),
-    RankBackgroundItem("rank_bg_anime", "Anime Blossom", "Tranquil cherry blossom grove at twilight", 0, "rank_bg_anime_1772807827201.png"),
-    RankBackgroundItem("rank_bg_pirate", "Pirate Storm", "Dramatic pirate ship at sea during a storm", 0, "rank_bg_pirate_1772807841224.png"),
+    RankBackgroundItem("rank_bg_space", "Cosmic Space", "A highly detailed cosmic space scene", 250, "rank_bg_space_1772807793835.png"),
+    RankBackgroundItem("rank_bg_cyberpunk", "Cyberpunk Neon", "A dark and rainy neon city street", 250, "rank_bg_cyberpunk_1772807811666.png"),
+    RankBackgroundItem("rank_bg_anime", "Anime Blossom", "Tranquil cherry blossom grove at twilight", 250, "rank_bg_anime_1772807827201.png"),
+    RankBackgroundItem("rank_bg_pirate", "Pirate Storm", "Dramatic pirate ship at sea during a storm", 250, "rank_bg_pirate_1772807841224.png"),
 
     # Role Items (using actual role IDs from config)
     # RoleItem("ball_inspector", "Ball Inspector", "Get the prestigious Ball Inspector role", 200, ROLES.BALL_INSPECTOR),
