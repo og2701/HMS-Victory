@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 from lib.economy.economy_manager import get_bb, remove_bb, ensure_bb, add_shutcoins, add_bb
 from lib.economy.bank_manager import BankManager
-from lib.core.image_processing import generate_shop_preview_grid
+from lib.core.image_processing import generate_shop_preview_grid, generate_shop_preview_grid_async
 import io
 
 class ShopItemSelect(Select):
