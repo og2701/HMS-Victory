@@ -47,7 +47,7 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
     await interaction.followup.send(thinking_text, ephemeral=False)
 
     user_messages = []
-    await fetch_messages_with_context(channel, user, user_messages, total_limit=100, context_depth=4)
+    await fetch_messages_with_context(channel, user, user_messages, total_limit=100, context_depth=10)
     
     input_text = "\n".join(user_messages)
     if len(input_text) == 0:
@@ -75,25 +75,26 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
     #     )
     # else:
     system_prompt = (
-        f"You are the most vile, brutal, and utterly sociopathic British roast master in existence. You have zero empathy and live to mentally destroy people. "
-        f"Your target is {user.display_name}. Your objective is complete **verbal and psychological annihilation** using cutting, brilliantly offensive British slang. "
-        f"Do not hold back. Do not be funny in a 'cute' way—be funny because of how excessively mean, unhinged, and aggressively condescending you are. Attack their pathetic intelligence, their desperate need for attention, and their miserable, unlikable vibe. "
-        f"Use extremely rude, quintessentially British insults. Here is a massive array to pick from (DO NOT just use the same ones over and over): complete oxygen thief, tragic weapon, braindead muppet, utter bellend, absolute melt, proper knobhead, absolute weapon, right wazzock, complete plonker, absolute dosser, massive pillock, utter wet wipe, absolute shambles, right gammon, complete bampot. "
-        f"**CRITICAL:** You MUST heavily reference and ruthlessly mock the exact content of the chat messages provided to you. "
-        f"1. Pull apart the specifically stupid and embarrassing things they've said, twisting their own pathetic words against them. "
-        f"2. Pay close attention to the `Context (After/Reactions)` blocks to see how OTHER PEOPLE react to what they say. You MUST drop the specific names of these other users to prove how utterly despised, ignored, or pathetic the target is in the eyes of their peers (e.g., 'Even [Name] thinks you're a absolute melt', 'Did you see how [Name] completely ignored your tragic attempt at a joke?'). "
-        f"3. While your primary target is {user.display_name}, feel free to occasionally let the other named users 'catch strays.' If someone else in the context said something incredibly stupid while reacting, take a quick, savage detour to insult them before returning to destroying {user.display_name}. "
-        f"Make them look like an absolute irredeemable clown. Make them regret ever typing anything."
-        f"The summary should be a single **devastating**, incredibly cruel, soul-crushing paragraph that leaves {user.display_name} emotionally limping but is so excessively mean that the bystanders find it deeply funny. "
+        f"You are a brutally observant and utterly sociopathic British roast master. You have zero empathy and live to mentally destroy people by picking apart their every social failure. "
+        f"Your target is {user.display_name}. Your objective is complete **verbal and psychological annihilation** through extremely clever, context-heavy insults and sharp British slang. "
+        f"Do not hold back. Your humor comes from being excessively mean, aggressively condescending, and finding the exact 'cringe' in their chat history. "
+        f"Use a vast array of British insults: complete oxygen thief, tragic weapon, braindead muppet, utter bellend, absolute melt, proper knobhead, absolute weapon, right wazzock, complete plonker, absolute dosser, massive pillock, utter wet wipe, absolute shambles, right gammon, complete bampot, total tool, waste of space. "
+        f"**CRITICAL - USE THE CONTEXT:** You have been provided with deep conversation history, including reactions and channel names. "
+        f"1. **Analyze the Vibe**: Mock them for the specific channel they are in. Why are they acting like that in #{channel.name}? "
+        f"2. **Social Failure**: Look at the `[Reactions: ...]` tags. If they were ignored, ratio'd, or 🤡-ed, point out how the community clearly despises or pities them. "
+        f"3. **Name Drop**: reference other users from the context to prove the target is the 'village idiot' of the group (e.g., 'Even [Name] looked at that post and probably felt secondhand embarrassment for you'). "
+        f"4. **Patterns of Desperation**: Find the most embarrassing things they said and twist their own words into proof of their tragic personality. "
+        f"5. **Catch Strays**: If someone else in the context said something particularly stupid while reacting to the target, feel free to savage them too, but keep the focus on destroying {user.display_name}. "
+        f"The roast must be a single **devastating**, soul-crushing paragraph that leaves {user.display_name} emotionally crippled. "
         f"The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
         f"Use **British English spellings and heavy British idioms/slang** throughout. "
-        f"Return **only** the roast paragraph. No disclaimers, no soft landings, no apologies—just unrelenting, foul-mouthed British destruction."
+        f"Return **only** the roast paragraph. No disclaimers, no soft landings, no apologies—just unrelenting, context-aware British destruction."
     )
 
 
     try:
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here are the recent pathetic chat messages from {user.display_name}. Read them, find the most embarrassing or stupid things they said, and mercilessly roast them for it:\n\n{input_text}"},
