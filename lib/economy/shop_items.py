@@ -465,7 +465,6 @@ SHOP_ITEMS: List[ShopItem] = [
     RankBackgroundItem("rank_bg_space", "Cosmic Space", "A highly detailed cosmic space scene", 250, "rank_bg_space_1772807793835.png"),
     RankBackgroundItem("rank_bg_cyberpunk", "Cyberpunk Neon", "A dark and rainy neon city street", 250, "rank_bg_cyberpunk_1772807811666.png"),
     RankBackgroundItem("rank_bg_anime", "Anime Blossom", "Tranquil cherry blossom grove at twilight", 250, "rank_bg_anime_1772807827201.png"),
-    RankBackgroundItem("rank_bg_pirate", "Pirate Storm", "Dramatic pirate ship at sea during a storm", 250, "rank_bg_pirate_1772807841224.png"),
 
     # Role Items (using actual role IDs from config)
     # RoleItem("ball_inspector", "Ball Inspector", "Get the prestigious Ball Inspector role", 200, ROLES.BALL_INSPECTOR),
