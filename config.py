@@ -1,4 +1,8 @@
 import os
+import sys
+
+# --- Base Directory for Absolute Paths ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- Core Bot Settings ---
 GUILD_ID = 959493056242008184

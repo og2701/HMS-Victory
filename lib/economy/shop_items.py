@@ -452,22 +452,16 @@ SHOP_ITEMS: List[ShopItem] = [
     # Rank Customizations
     RankCustomizationMenuShopItem("rank_custom_menu", "Customise Rank Card", "Preview and choose different custom backgrounds and color themes for your rank card.", 0),
     RankResetItem("rank_custom_reset", "Reset Rank Card", "Reset your rank card background and colors to default", 0),
+
     # --- UK COLLECTION (ART STYLES) ---
     RankBackgroundItem("rank_bg_london_vibrant", "Cartoon London", "Vibrant cartoon-style illustration of London's skyline", 0, "rank_bg_london_cartoon.png"),
-    RankBackgroundItem("rank_bg_uk_vector", "Vector Union Jack", "Minimalist vector graphic of the United Kingdom flag", 0, "rank_bg_uk_vector.png"),
     RankBackgroundItem("rank_bg_cliffs_mini", "Minimalist Cliffs", "Geometric 2D vector art of the White Cliffs of Dover", 0, "rank_bg_white_cliffs_minimal.png"),
     
     # --- UK THEMED (PRIORITY) ---
-    RankBackgroundItem("rank_bg_london", "London Night", "Cinematic night view of the London skyline and Big Ben", 0, "rank_bg_london_night.png"),
-    RankBackgroundItem("rank_bg_buckingham", "Buckingham Palace", "The majestic palace at sunset with royal guards", 0, "rank_bg_buckingham.png"),
-    RankBackgroundItem("rank_bg_spitfire", "Spitfire Battle", "WW2 Spitfire fighter plane over the English Channel", 0, "rank_bg_spitfire.png"),
     RankBackgroundItem("rank_bg_cotswolds", "Cotswolds Countryside", "Peaceful English village with honey-stone cottages", 0, "rank_bg_cotswolds.png"),
     RankBackgroundItem("rank_bg_white_cliffs", "White Cliffs of Dover", "Iconic white chalk cliffs meeting the deep blue sea", 0, "rank_bg_white_cliffs.png"),
 
-    RankColorThemeItem("rank_theme_london", "London Glow Theme", "Gold and Navy colors matching the London night", 0, "#FFD700", "#001F3F", "#FFFFFF"),
-    RankColorThemeItem("rank_theme_royal", "Royal Guard Theme", "Imperial Red and Gold matching the palace guards", 0, "#ED2939", "#B8860B", "#FFFFFF"),
     RankColorThemeItem("rank_theme_country", "Countryside Theme", "Forest greens and earthy browns of rural England", 0, "#228B22", "#8B4513", "#F0FFF0"),
-    RankColorThemeItem("rank_theme_raf", "RAF Spitfire Theme", "Military olive and slate gray with gold accents", 0, "#4B5320", "#708090", "#FFD700"),
 
     # --- VARIETY STYLES ---
     RankBackgroundItem("rank_bg_lofi", "Lofi Bedroom (PixelArt)", "Cozy lofi aesthetic bedroom in pixel art style", 0, "rank_bg_lofi.png"),

@@ -267,10 +267,11 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
     canvas = Image.new("RGB", (grid_width, grid_height), (30, 31, 34)) # Discord dark bg
     draw = ImageDraw.Draw(canvas)
     
+    from config import BASE_DIR
+
     # Try to load a font for numbering
     font = None
     try:
-        from config import BASE_DIR
         font_path = os.path.join(BASE_DIR, "data", "fonts", "Outfit-Bold.ttf")
         if os.path.exists(font_path):
             font = ImageFont.truetype(font_path, 40)
@@ -295,12 +296,14 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
         
         # Detect item type by attributes
         if hasattr(item, 'bg_filename'): # Background
-            bg_path = os.path.join("data", "rank_cards", item.bg_filename)
+            bg_path = os.path.join(BASE_DIR, "data", "rank_cards", item.bg_filename)
             if os.path.exists(bg_path):
                 with Image.open(bg_path) as img:
                     preview = img.convert("RGBA").resize((preview_width, preview_height), Image.Resampling.LANCZOS)
             else:
                 preview = Image.new("RGBA", (preview_width, preview_height), (100, 100, 100))
+                p_draw = ImageDraw.Draw(preview)
+                p_draw.text((10, 80), f"MISSING:\n{item.bg_filename}", fill="white")
         elif hasattr(item, 'primary'): # Color Theme
             preview = Image.new("RGBA", (preview_width, preview_height), (40, 44, 52))
             p_draw = ImageDraw.Draw(preview)
