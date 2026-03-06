@@ -179,7 +179,8 @@ def init_db():
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 description TEXT NOT NULL,
-                icon_path TEXT NOT NULL
+                icon_path TEXT NOT NULL,
+                rarity TEXT NOT NULL DEFAULT 'Bronze'
             )
         ''')
         c.execute('''
@@ -194,32 +195,38 @@ def init_db():
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_payer ON pay_transfers(payer_id)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_recipient ON pay_transfers(recipient_id)')
         
+        # Migration: Add rarity column if it doesn't exist
+        c.execute("PRAGMA table_info(badges)")
+        columns = [column[1] for column in c.fetchall()]
+        if 'rarity' not in columns:
+            c.execute("ALTER TABLE badges ADD COLUMN rarity TEXT NOT NULL DEFAULT 'Bronze'")
+
         # Initial badge data
         badges = [
-            ('hof', 'Hall of Fame', 'Get into the Hall of Fame', '🏆'),
-            ('first_purchase', 'First Purchase', 'Purchase your first shop item', '🛍️'),
-            ('shutcoin_user', 'Shutcoin User', 'Use a shutcoin', '🤐'),
-            ('reply_chain', 'Chain Linker', 'Be part of a reply chain', '⛓️'),
-            ('active_chatter', 'Active Chatter', 'Achieve a certain level of activity in a day', '⚡'),
-            ('top_chatter', 'Elite Talker', 'One of the top 5 daily chatters', '🥇'),
-            ('stage_fan', 'Stage Fan', 'Attend a stage event for X amount of time', '🎭'),
-            ('christmas', 'Christmas', 'Message on Christmas day', '🎅'),
-            ('halloween', 'Halloween', 'Message on Halloween', '🎃'),
-            ('vc_legend', 'Chatterbox', 'One hour in a VC session', '📞'),
-            ('screensharer', 'Sharing is Caring', 'Screenshare for 30 mins', '🖥️'),
-            ('americanism_victim', "English (Simplified)", 'Caught by the Americanism filter', '🇺🇸'),
-            ('announcement_fast', 'Fast Hands', 'React to an announcement within 10 minutes', '📣'),
-            ('minor_announcement_fast', 'Small Talker', 'React to a minor announcement within 10 minutes', '📢'),
-            ('roaster', 'Chef', 'Use the roast command', '🔥'),
-            ('roast_victim', 'Fried', 'Be targeted by a roast command', '💀'),
-            ('triple_reply', 'Popular', 'Have three people reply to one of your messages', '💬'),
-            ('shut_victim', 'Silences', 'Be shut by a shutcoin', '🔇'),
-            ('server_booster', 'Supporter', 'Boost the server', '💎'),
-            ('yearly_booster', 'Diamond Hands', 'Boost the server for a year', '👑')
+            ('hof', 'Hall of Fame', 'Get into the Hall of Fame', '🏆', 'Gold'),
+            ('first_purchase', 'First Purchase', 'Purchase your first shop item', '🛍️', 'Bronze'),
+            ('shutcoin_user', 'Shutcoin User', 'Use a shutcoin', '🤐', 'Bronze'),
+            ('reply_chain', 'Chain Linker', 'Be part of a reply chain', '⛓️', 'Bronze'),
+            ('active_chatter', 'Active Chatter', 'Achieve a certain level of activity in a day', '⚡', 'Bronze'),
+            ('top_chatter', 'Elite Talker', 'One of the top 5 daily chatters', '🥇', 'Silver'),
+            ('stage_fan', 'Stage Fan', 'Attend a stage event for X amount of time', '🎭', 'Silver'),
+            ('christmas', 'Christmas', 'Message on Christmas day', '🎅', 'Silver'),
+            ('halloween', 'Halloween', 'Message on Halloween', '🎃', 'Silver'),
+            ('vc_legend', 'Chatterbox', 'One hour in a VC session', '📞', 'Silver'),
+            ('screensharer', 'Sharing is Caring', 'Screenshare for 30 mins', '🖥️', 'Silver'),
+            ('americanism_victim', "English (Simplified)", 'Caught by the Americanism filter', '🇺🇸', 'Bronze'),
+            ('announcement_fast', 'Fast Hands', 'React to an announcement within 10 minutes', '📣', 'Silver'),
+            ('minor_announcement_fast', 'Small Talker', 'React to a minor announcement within 10 minutes', '📢', 'Silver'),
+            ('roaster', 'Chef', 'Use the roast command', '🔥', 'Silver'),
+            ('roast_victim', 'Fried', 'Be targeted by a roast command', '💀', 'Bronze'),
+            ('triple_reply', 'Popular', 'Have three people reply to one of your messages', '💬', 'Silver'),
+            ('shut_victim', 'Silences', 'Be shut by a shutcoin', '🔇', 'Bronze'),
+            ('server_booster', 'Supporter', 'Boost the server', '💎', 'Silver'),
+            ('yearly_booster', 'Diamond Hands', 'Boost the server for a year', '👑', 'Gold')
         ]
-        for b_id, b_name, b_desc, b_icon in badges:
-            c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path) VALUES (?, ?, ?, ?)", 
-                      (b_id, b_name, b_desc, b_icon))
+        for b_id, b_name, b_desc, b_icon, b_rarity in badges:
+            c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)", 
+                      (b_id, b_name, b_desc, b_icon, b_rarity))
         
         conn.commit()
 

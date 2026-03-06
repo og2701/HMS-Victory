@@ -58,16 +58,35 @@
     }
 
     .badge-item {
-      width: 44px;
-      height: 44px;
+      width: 48px;
+      height: 48px;
       display: flex;
       align-items: center;
       justify-content: center;
       transition: transform 0.2s;
+      border-radius: 8px;
+    }
+
+    .rarity-bronze {
+      border: 2px solid #cd7f32;
+      box-shadow: 0 0 10px rgba(205, 127, 50, 0.6);
+      background: rgba(205, 127, 50, 0.1);
+    }
+
+    .rarity-silver {
+      border: 2px solid #c0c0c0;
+      box-shadow: 0 0 15px rgba(192, 192, 192, 0.7);
+      background: rgba(192, 192, 192, 0.1);
+    }
+
+    .rarity-gold {
+      border: 2px solid #ffd700;
+      box-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+      background: rgba(255, 215, 0, 0.1);
     }
 
     .badge-item.emoji {
-      padding: 2px;
+      padding: 4px;
     }
 
     .badge-item img {
