@@ -3,7 +3,9 @@ import os
 import discord
 from dotenv import load_dotenv
 import logging
+import sys
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 load_dotenv()
 
 from lib.bot.event_handlers import create_quote_image
