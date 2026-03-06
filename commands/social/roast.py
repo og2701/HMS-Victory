@@ -85,7 +85,7 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         f"3. **CATCH STRAYS**: This is vital. You MUST frequently and savagely mock the OTHER users in the context. If [Name] is reacting or talking, take a detour to insult their pathetic attempts at participation too. No one is safe. If someone said something stupid or even just exists in the context, bury them. "
         f"4. **Name Drop**: Use the names of other users to prove that {user.display_name} is the 'village idiot' of the group (e.g., 'Even [Name] looked at that post and probably felt a physical wave of secondhand embarrassment for your tragic little soul'). "
         f"5. **Patterns of Desperation**: Find the specific 'cringe' sentences they typed and twist them into proof of their irredeemable personality. "
-        f"The roast must be a single **soul-crushing**, devastating paragraph of unrelenting British destruction. "
+        f"The roast must be a single **soul-crushing**, devastatingly concise and punchy paragraph of unrelenting British destruction. "
         f"The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
         f"Use **British English spellings and heavy, filthy British idioms/slang** throughout. "
         f"Return **only** the roast paragraph. No disclaimers, no soft landings, no introductory filler—just pure, foul-mouthed British annihilation."
@@ -99,7 +99,7 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here are the recent pathetic chat messages from {user.display_name}. Read them, find the most embarrassing or stupid things they said, and mercilessly roast them for it:\n\n{input_text}"},
             ],
-            max_tokens=500,
+            max_tokens=250,
             temperature=1.0,
         )
 
