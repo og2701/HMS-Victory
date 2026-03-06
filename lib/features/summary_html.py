@@ -27,38 +27,41 @@ async def create_summary_image(summary_data, title, title_color):
 
     top_channels_str = "\n".join(
         [
-            f"<li>{channel_name} <span>{count}</span></li>"
+            f"<li><span class='list-name'>{channel_name}</span><span class='list-value'>{count}</span></li>"
             for channel_name, count in top_channels
         ]
     )
     active_members_str = "\n".join(
         [
-            f"<li>{member_name} <span>{count}</span></li>"
+            f"<li><span class='list-name'>{member_name}</span><span class='list-value'>{count}</span></li>"
             for member_name, count in active_members
         ]
     )
     reacting_members_str = "\n".join(
         [
-            f"<li>{member_name} <span>{count}</span></li>"
+            f"<li><span class='list-name'>{member_name}</span><span class='list-value'>{count}</span></li>"
             for member_name, count in reacting_members
         ]
     )
 
-    html_content = read_html_template("templates/summary.html").format(
-        title=title,
-        title_color=title_color,
-        total_members=total_members,
-        members_joined=members_joined,
-        members_left=f"{members_left} ({members_banned} banned)",
-        total_messages=total_messages,
-        reactions_added=reactions_added,
-        reactions_removed=reactions_removed,
-        deleted_messages=deleted_messages,
-        boosters=f"{boosters_gained} / {boosters_lost}",
-        top_channels=top_channels_str,
-        active_members=active_members_str,
-        reacting_members=reacting_members_str,
-    )
+    html_content = read_html_template("templates/summary.html")
+    replacements = {
+        "{title}": str(title),
+        "{title_color}": str(title_color),
+        "{total_members}": str(total_members),
+        "{members_joined}": str(members_joined),
+        "{members_left}": f"{members_left} ({members_banned} banned)",
+        "{total_messages}": str(total_messages),
+        "{reactions_added}": str(reactions_added),
+        "{reactions_removed}": str(reactions_removed),
+        "{deleted_messages}": str(deleted_messages),
+        "{boosters}": f"{boosters_gained} / {boosters_lost}",
+        "{top_channels}": top_channels_str,
+        "{active_members}": active_members_str,
+        "{reacting_members}": reacting_members_str,
+    }
+    for key, value in replacements.items():
+        html_content = html_content.replace(key, value)
 
     estimated_height = calculate_estimated_height(html_content, base_height=400)
 

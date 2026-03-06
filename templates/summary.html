@@ -108,26 +108,23 @@
 
         li {
             font-size: 0.85rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            gap: 10px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
             color: #e2e8f0;
+            align-items: center;
         }
 
         .list-name {
+            white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            white-space: nowrap;
-            flex: 1;
-            min-width: 0;
         }
 
         .list-value {
             font-weight: 700;
             color: #94a3b8;
             white-space: nowrap;
-            flex-shrink: 0;
             text-align: right;
         }
     </style>
