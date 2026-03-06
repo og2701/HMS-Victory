@@ -93,12 +93,11 @@ async def award_badge_with_notify(client, user_id: int, badge_id: str):
                 color_map = {"Gold": 0xFFD700, "Silver": 0xC0C0C0, "Bronze": 0xCD7F32}
                 embed = discord.Embed(
                     title="🎖️ New Badge Earned!",
-                    description=f"Congratulations! You've just earned the **{badge_name}** badge.",
+                    description=f"Congratulations! You've just earned a new badge.",
                     color=color_map.get(badge_rarity, 0x3498db)
                 )
                 embed.add_field(name="Badge", value=f"{badge_icon} **{badge_name}**", inline=True)
                 embed.add_field(name="Rarity", value=badge_rarity, inline=True)
-                embed.add_field(name="Requirement", value=badge_desc, inline=False)
                 embed.set_footer(text="Check your /rank to see all your badges!")
                 
                 await user.send(embed=embed)
