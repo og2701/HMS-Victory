@@ -80,7 +80,37 @@ class BackdateClient(discord.Client):
                 purchase_count += 1
         print(f"Finished purchases: {purchase_count} awarded.")
 
-        # 3. Backdate Hall of Fame (if any)
+        # 3. Backdate High Roller
+        print("\n--- Checking High Rollers ---")
+        hr_count = 0
+        high_rollers = DatabaseManager.fetch_all("SELECT user_id FROM ukpence WHERE balance >= 100000")
+        for (hr_id,) in high_rollers:
+            if award_badge(hr_id, 'high_roller'):
+                print(f"Awarded 'High Roller' to user ID {hr_id}")
+                hr_count += 1
+        print(f"Finished high rollers: {hr_count} awarded.")
+
+        # 4. Backdate Philanthropist
+        print("\n--- Checking Philanthropists ---")
+        phil_count = 0
+        philanthropists = DatabaseManager.fetch_all("SELECT payer_id FROM pay_transfers GROUP BY payer_id HAVING SUM(amount) >= 10000")
+        for (phil_id,) in philanthropists:
+            if award_badge(phil_id, 'philanthropist'):
+                print(f"Awarded 'Philanthropist' to user ID {phil_id}")
+                phil_count += 1
+        print(f"Finished philanthropists: {phil_count} awarded.")
+
+        # 5. Backdate Shopaholic
+        print("\n--- Checking Shopaholics ---")
+        shopaholic_count = 0
+        shopaholics = DatabaseManager.fetch_all("SELECT user_id FROM shop_purchases GROUP BY user_id HAVING SUM(quantity) >= 10")
+        for (sh_id,) in shopaholics:
+            if award_badge(sh_id, 'shopaholic'):
+                print(f"Awarded 'Shopaholic' to user ID {sh_id}")
+                shopaholic_count += 1
+        print(f"Finished shopaholics: {shopaholic_count} awarded.")
+
+        # 6. Backdate Hall of Fame (if any)
         # Assuming HOF entries might be in user_badges already, but if we have a separate source:
         # For now, we'll just check if the hof badge was missed by anyone in the HOF list if it existed.
         

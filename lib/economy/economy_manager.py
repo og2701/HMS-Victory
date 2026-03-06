@@ -66,6 +66,11 @@ class UKPenceManager:
         now = int(time.time())
         old_balance = UKPenceManager.get_balance(user_id)
         DatabaseManager.execute("INSERT OR REPLACE INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), amount))
+        
+        if amount >= 100000 and old_balance < 100000:
+            from database import award_badge
+            award_badge(user_id, 'high_roller')
+            
         log_text = f"⚖️ <@{user_id}> balance set to `{amount:,}` UKP (was `{old_balance:,}`)|{reason}"
         DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
         
@@ -79,12 +84,22 @@ class UKPenceManager:
         # Atomic update: only subtract if the balance is sufficient
         with DatabaseManager.get_connection() as conn:
             c = conn.cursor()
+            
+            c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(user_id),))
+            res = c.fetchone()
+            old_balance = res[0] if res else 0
+
             c.execute(
                 "UPDATE ukpence SET balance = balance - ? WHERE user_id = ? AND balance >= ?",
                 (amount, str(user_id), amount)
             )
             success = c.rowcount > 0
             if success:
+                new_balance = old_balance - amount
+                if new_balance == 0 and old_balance >= 1000:
+                    from database import award_badge
+                    award_badge(user_id, 'bankrupt')
+                
                 import time
                 now = int(time.time())
                 log_text = f"💸 <@{user_id}> paid `{amount:,}` UKP|{reason}"

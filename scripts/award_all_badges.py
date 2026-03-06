@@ -20,7 +20,8 @@ def main():
         'halloween', 'vc_legend', 'screensharer', 'americanism_victim',
         'announcement_fast', 'minor_announcement_fast', 'roaster',
         'roast_victim', 'triple_reply', 'shut_victim', 'server_booster',
-        'yearly_booster'
+        'yearly_booster', 'high_roller', 'philanthropist', 'bankrupt',
+        'shopaholic', 'party_animal', 'night_owl', 'warden'
     ]
 
     print(f"Awarding all badges to user ID: {user_id}...")

@@ -262,6 +262,13 @@ class PurchaseConfirmationView(View):
                 BankManager.deposit(self.item.price, f"Purchase of {self.item.name}")
                 from lib.bot.event_handlers import award_badge_with_notify
                 await award_badge_with_notify(interaction.client, interaction.user.id, 'first_purchase')
+                
+                from database import DatabaseManager
+                total_purchased_res = DatabaseManager.fetch_one("SELECT SUM(quantity) FROM shop_purchases WHERE user_id = ?", (str(interaction.user.id),))
+                # Add 1 to account for the current purchase which might not be logged yet
+                total = (total_purchased_res[0] or 0) + 1
+                if total >= 10:
+                    await award_badge_with_notify(interaction.client, interaction.user.id, 'shopaholic')
 
                 # Execute item purchase logic
                 # We do not defer here because `execute` might need to edit the message (like VIPCase)

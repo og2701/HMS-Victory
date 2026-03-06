@@ -354,6 +354,15 @@ def define_commands(tree, client):
             "INSERT INTO pay_transfers (timestamp, payer_id, recipient_id, amount) VALUES (?, ?, ?, ?)",
             (now_ts, str(interaction.user.id), str(recipient.id), amount)
         )
+        
+        # Check philanthropist badge
+        total_paid_res = DatabaseManager.fetch_one(
+            "SELECT SUM(amount) FROM pay_transfers WHERE payer_id = ?", 
+            (str(interaction.user.id),)
+        )
+        if total_paid_res and total_paid_res[0] and total_paid_res[0] >= 10000:
+            from lib.bot.event_handlers import award_badge_with_notify
+            await award_badge_with_notify(interaction.client, interaction.user.id, 'philanthropist')
 
         pay_log_entry = {
             "timestamp": datetime.utcnow().isoformat(),

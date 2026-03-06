@@ -222,7 +222,14 @@ def init_db():
             ('triple_reply', 'Popular', 'Have three people reply to one of your messages', '💬', 'Silver'),
             ('shut_victim', 'Silences', 'Be shut by a shutcoin', '🔇', 'Bronze'),
             ('server_booster', 'Supporter', 'Boost the server', '💎', 'Silver'),
-            ('yearly_booster', 'Diamond Hands', 'Boost the server for a year', '👑', 'Gold')
+            ('yearly_booster', 'Diamond Hands', 'Boost the server for a year', '👑', 'Gold'),
+            ('high_roller', 'High Roller', 'Reach a balance of 100,000 UKPence', '💰', 'Gold'),
+            ('philanthropist', 'Philanthropist', 'Give away a total of 10,000 UKPence using the /pay command', '💸', 'Silver'),
+            ('bankrupt', 'Bankrupt', 'Reach exactly 0 UKPence after having at least 1,000 UKPence previously', '📉', 'Bronze'),
+            ('shopaholic', 'Shopaholic', 'Purchase 10 items from the bot''s shop', '🛒', 'Silver'),
+            ('party_animal', 'Party Animal', 'Attend 5 different Stage events', '🎉', 'Silver'),
+            ('night_owl', 'Night Owl', 'Send 100 messages between 2 AM and 5 AM UTC', '👻', 'Bronze'),
+            ('warden', 'The Warden', 'Successfully use a Shutcoin on 10 different people', '🔒', 'Gold')
         ]
         for b_id, b_name, b_desc, b_icon, b_rarity in badges:
             c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)", 

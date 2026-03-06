@@ -423,6 +423,12 @@ async def on_message(client, message):
 
     if not message.author.bot and message.type != discord.MessageType.new_member:
         ensure_bb(message.author.id)
+        try:
+            from lib.bot.event_handlers import track_night_owl, award_badge_with_notify
+            if track_night_owl(message.author.id) >= 100:
+                await award_badge_with_notify(client, message.author.id, 'night_owl')
+        except Exception as e:
+            logger.error(f"Error tracking night owl: {e}")
     await process_message_attachments(client, message)
     await process_message_links(client, message)
     
@@ -601,6 +607,40 @@ def save_shut_count(user_id):
     data[str(user_id)] = data.get(str(user_id), 0) + 1
     save_json_file("shut_counts.json", data)
 
+def track_warden(user_id: int, victim_id: int):
+    data = load_json_file("warden_targets.json") or {}
+    uid = str(user_id)
+    vid = str(victim_id)
+    if uid not in data:
+        data[uid] = []
+    if vid not in data[uid]:
+        data[uid].append(vid)
+        save_json_file("warden_targets.json", data)
+    return len(data[uid])
+
+def track_night_owl(user_id: int):
+    import datetime
+    now = datetime.datetime.utcnow()
+    if 2 <= now.hour < 5:
+        data = load_json_file("night_owl_counts.json") or {}
+        uid = str(user_id)
+        data[uid] = data.get(uid, 0) + 1
+        save_json_file("night_owl_counts.json", data)
+        return data[uid]
+    return 0
+
+def track_party_animal(user_id: int):
+    import datetime
+    data = load_json_file("party_animal_targets.json") or {}
+    uid = str(user_id)
+    date_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    if uid not in data:
+        data[uid] = []
+    if date_str not in data[uid]:
+        data[uid].append(date_str)
+        save_json_file("party_animal_targets.json", data)
+    return len(data[uid])
+
 
 async def handle_shut_reaction(reaction, user):
     client = reaction.message._state._get_client()
@@ -635,6 +675,12 @@ async def handle_shut_reaction(reaction, user):
         logger.info(f"User {message_author} was timed out for {duration} due to ':Shut:' reaction by {user}.")
         save_shut_count(message_author.id)
         await award_badge_with_notify(client, message_author.id, 'shut_victim')
+        
+        # Track warden badge logic here
+        warden_count = track_warden(user.id, message_author.id)
+        if warden_count >= 10:
+            await award_badge_with_notify(client, user.id, 'warden')
+            
         if not has_role:
             await award_badge_with_notify(client, user.id, 'shutcoin_user')
     except Exception as e:
@@ -828,6 +874,10 @@ async def on_voice_state_update(member, before, after):
                 if BankManager.withdraw(bonus, description=f"Stage Participation Reward ({int(elapsed)//60}m)"):
                     add_bb(member.id, bonus, reason="Stage participation reward")
                     await award_badge_with_notify(member._state._get_client(), member.id, 'stage_fan')
+                    
+                    if track_party_animal(member.id) >= 5:
+                        await award_badge_with_notify(member._state._get_client(), member.id, 'party_animal')
+                        
                     logger.info(f"[STAGE] +{bonus} UKP → User {member} for leaving stage {before.channel.name}")
                 else:
                     logger.error(f"[STAGE] Failed to withdraw {bonus} UKP from BankManager for User {member}. Insufficient funds or database error.")
@@ -910,6 +960,11 @@ async def on_stage_instance_delete(stage_instance):
             if bonus > 0:
                 if BankManager.withdraw(bonus, description=f"Stage Participation Reward ({int(secs)//60}m)"):
                     add_bb(m.id, bonus, reason="Stage ended - participation reward")
+                    await award_badge_with_notify(client, m.id, 'stage_fan')
+                    
+                    if track_party_animal(m.id) >= 5:
+                        await award_badge_with_notify(client, m.id, 'party_animal')
+                        
                     logger.info(f"[STAGE END] +{bonus} UKP → User {m.id} for stage end in {stage_instance.channel.name}.")
                     total_awarded_on_delete += bonus
                 else:
