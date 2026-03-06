@@ -452,7 +452,11 @@ SHOP_ITEMS: List[ShopItem] = [
     # Rank Customizations
     RankCustomizationMenuShopItem("rank_custom_menu", "Customise Rank Card", "Preview and choose different custom backgrounds and color themes for your rank card.", 0),
     RankResetItem("rank_custom_reset", "Reset Rank Card", "Reset your rank card background and colors to default", 0),
-
+    # --- UK COLLECTION (ART STYLES) ---
+    RankBackgroundItem("rank_bg_london_vibrant", "Cartoon London", "Vibrant cartoon-style illustration of London's skyline", 0, "rank_bg_london_cartoon.png"),
+    RankBackgroundItem("rank_bg_uk_vector", "Vector Union Jack", "Minimalist vector graphic of the United Kingdom flag", 0, "rank_bg_uk_vector.png"),
+    RankBackgroundItem("rank_bg_cliffs_mini", "Minimalist Cliffs", "Geometric 2D vector art of the White Cliffs of Dover", 0, "rank_bg_white_cliffs_minimal.png"),
+    
     # --- UK THEMED (PRIORITY) ---
     RankBackgroundItem("rank_bg_london", "London Night", "Cinematic night view of the London skyline and Big Ben", 0, "rank_bg_london_night.png"),
     RankBackgroundItem("rank_bg_buckingham", "Buckingham Palace", "The majestic palace at sunset with royal guards", 0, "rank_bg_buckingham.png"),
@@ -466,7 +470,7 @@ SHOP_ITEMS: List[ShopItem] = [
     RankColorThemeItem("rank_theme_raf", "RAF Spitfire Theme", "Military olive and slate gray with gold accents", 0, "#4B5320", "#708090", "#FFD700"),
 
     # --- VARIETY STYLES ---
-    RankBackgroundItem("rank_bg_lofi", "Lofi Bedroom", "Cozy lofi aesthetic bedroom with a sleeping cat", 0, "rank_bg_lofi.png"),
+    RankBackgroundItem("rank_bg_lofi", "Lofi Bedroom (PixelArt)", "Cozy lofi aesthetic bedroom in pixel art style", 0, "rank_bg_lofi.png"),
     RankBackgroundItem("rank_bg_forest", "Enchanted Forest", "Ethereal forest with glowing mushrooms and mist", 0, "rank_bg_forest.png"),
     RankBackgroundItem("rank_bg_vaporwave", "Vaporwave Retro", "Neon pink sunset with glitch art and palm trees", 0, "rank_bg_vaporwave.png"),
     RankBackgroundItem("rank_bg_medieval", "Medieval Throne", "Grand stone throne room with flickering torches", 0, "rank_bg_medieval.png"),
