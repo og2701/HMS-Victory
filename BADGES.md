@@ -22,7 +22,7 @@ Awarded for attending 5 different Stage events.
 
 ### 👻 Night Owl
 **Rarity**: Bronze
-Awarded for sending 100 messages between 2 AM and 5 AM UTC.
+Awarded for sending 100 messages between 2 AM and 5 AM UK time.
 
 ### 🔒 The Warden
 **Rarity**: Gold

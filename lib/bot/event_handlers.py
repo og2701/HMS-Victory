@@ -620,7 +620,9 @@ def track_warden(user_id: int, victim_id: int):
 
 def track_night_owl(user_id: int):
     import datetime
-    now = datetime.datetime.utcnow()
+    import pytz
+    uk_tz = pytz.timezone("Europe/London")
+    now = datetime.datetime.now(uk_tz)
     if 2 <= now.hour < 5:
         data = load_json_file("night_owl_counts.json") or {}
         uid = str(user_id)
@@ -631,9 +633,11 @@ def track_night_owl(user_id: int):
 
 def track_party_animal(user_id: int):
     import datetime
+    import pytz
     data = load_json_file("party_animal_targets.json") or {}
     uid = str(user_id)
-    date_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    uk_tz = pytz.timezone("Europe/London")
+    date_str = datetime.datetime.now(uk_tz).strftime("%Y-%m-%d")
     if uid not in data:
         data[uid] = []
     if date_str not in data[uid]:
