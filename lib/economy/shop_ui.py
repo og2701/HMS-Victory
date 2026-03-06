@@ -296,7 +296,7 @@ class PurchaseConfirmationView(View):
                             current_items = self.return_view.items[start_idx:start_idx + self.return_view.ITEMS_PER_PAGE]
                             import time
                             from lib.core.image_processing import generate_shop_preview_grid_async
-                            image_buffer = await generate_shop_preview_grid_async(current_items, cols=1)
+                            image_buffer = await generate_shop_preview_grid_async(current_items, cols=2)
                             filename = f"preview_grid_{int(time.time())}.png"
                             file = discord.File(fp=image_buffer, filename=filename)
                             new_embed = self.return_view._create_embed()
@@ -782,7 +782,7 @@ class EmojiStickerApprovalView(View):
 class RankCustomizationOverviewView(View):
     """Sub-shop view specifically for Rank Customizations, using paginated buttons."""
     
-    ITEMS_PER_PAGE = 4
+    ITEMS_PER_PAGE = 6
     
     def __init__(self, items: List['ShopItem'], user_id: int):
         super().__init__(timeout=300)
@@ -816,7 +816,7 @@ class RankCustomizationOverviewView(View):
             grid_items.append(item)
             
         import time
-        image_buffer = await generate_shop_preview_grid_async(grid_items, cols=1)
+        image_buffer = await generate_shop_preview_grid_async(grid_items, cols=2)
         filename = f"preview_grid_{int(time.time())}.png"
         file = discord.File(fp=image_buffer, filename=filename)
         
@@ -902,7 +902,7 @@ class RankCustomizationOverviewView(View):
         current_items = self.items[start_idx:end_idx]
         
         import time
-        image_buffer = await generate_shop_preview_grid_async(current_items, cols=1)
+        image_buffer = await generate_shop_preview_grid_async(current_items, cols=2)
         filename = f"preview_grid_{int(time.time())}.png"
         file = discord.File(fp=image_buffer, filename=filename)
         
