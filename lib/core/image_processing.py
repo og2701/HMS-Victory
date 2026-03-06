@@ -268,10 +268,10 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
     """
     from PIL import ImageDraw, ImageFont, Image
     
-    # Ultra-high resolution (1200x600 per item)
-    preview_width = 1200
-    preview_height = 600
-    padding = 60
+    # High resolution (600x300 per item) to make the image smaller for faster Discord uploads
+    preview_width = 600
+    preview_height = 300
+    padding = 30
     
     rows = (len(items) + cols - 1) // cols
     grid_width = (preview_width * cols) + (padding * (cols + 1))
@@ -287,13 +287,13 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
     try:
         font_path = os.path.join(BASE_DIR, "data", "fluff.ttf")
         if os.path.exists(font_path):
-            font = ImageFont.truetype(font_path, 110)
+            font = ImageFont.truetype(font_path, 55) # Scale font down 50%
     except:
         pass
         
     if not font:
         try:
-            font = ImageFont.load_default(size=110)
+            font = ImageFont.load_default(size=55)
         except:
             font = ImageFont.load_default()
 
@@ -320,11 +320,11 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
         elif hasattr(item, 'primary'): # Color Theme
             preview = Image.new("RGBA", (preview_width, preview_height), (40, 44, 52))
             p_draw = ImageDraw.Draw(preview)
-            # Draw swatches (scaled for 1200x600)
-            p_draw.rectangle([60, 120, 360, 420], fill=item.primary, outline="white", width=6)
-            p_draw.rectangle([420, 120, 720, 420], fill=item.secondary, outline="white", width=6)
-            p_draw.rectangle([780, 120, 1080, 420], fill=item.tertiary, outline="white", width=6)
-            p_draw.text((60, 460), item.name, fill="white", font=font)
+            # Draw swatches (scaled for 600x300)
+            p_draw.rectangle([30, 60, 180, 210], fill=item.primary, outline="white", width=3)
+            p_draw.rectangle([210, 60, 360, 210], fill=item.secondary, outline="white", width=3)
+            p_draw.rectangle([390, 60, 540, 210], fill=item.tertiary, outline="white", width=3)
+            p_draw.text((30, 230), item.name, fill="white", font=font)
         else: # Reset or unknown
              # For reset, maybe show the standard union jack or a generic label
              preview = Image.new("RGBA", (preview_width, preview_height), (60, 60, 60))
@@ -334,16 +334,16 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
         if preview:
             canvas.paste(preview, (x, y), preview if preview.mode == 'RGBA' else None)
         
-        # Draw number badge (scaled for double digits)
-        badge_width = 160 if idx >= 9 else 140
-        badge_height = 140
-        badge_x = x + 30
-        badge_y = y + 30
+        # Draw number badge (scaled for double digits at 50% size)
+        badge_width = 80 if idx >= 9 else 70
+        badge_height = 70
+        badge_x = x + 15
+        badge_y = y + 15
         draw.ellipse([badge_x, badge_y, badge_x + badge_width, badge_y + badge_height], fill=(255, 0, 0))
         
         # Center the text slightly better for double digits
-        text_x = badge_x + 25 if idx >= 9 else badge_x + 40
-        draw.text((text_x, badge_y + 10), str(idx + 1), fill="white", font=font)
+        text_x = badge_x + 12 if idx >= 9 else badge_x + 20
+        draw.text((text_x, badge_y + 5), str(idx + 1), fill="white", font=font)
 
     buffer = io.BytesIO()
     canvas.save(buffer, format="PNG")

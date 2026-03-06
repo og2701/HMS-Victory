@@ -323,8 +323,8 @@ class CustomEmojiStickerItem(ShopItem):
 
         return "Custom emoji/sticker purchase initiated! Check the message above to continue."
 
-class RankCustomizationMenuShopItem(ShopItem):
-    """A portal item that opens the Rank Customization sub-shop."""
+class RankCustomisationMenuShopItem(ShopItem):
+    """A portal item that opens the Rank Customisation sub-shop."""
     def __init__(self, id: str, name: str, description: str, price: int):
         super().__init__(id, name, description, price, use_inventory=False, show_in_shop=True)
 
@@ -332,15 +332,15 @@ class RankCustomizationMenuShopItem(ShopItem):
         return True, ""
         
     async def execute(self, interaction) -> str:
-        from lib.economy.shop_ui import RankCustomizationOverviewView
+        from lib.economy.shop_ui import RankCustomisationOverviewView
         
         all_items = get_all_shop_items()
         rank_items = [i for i in all_items if isinstance(i, (RankBackgroundItem, RankColorThemeItem, RankResetItem))]
         
-        view = RankCustomizationOverviewView(rank_items, interaction.user.id)
+        view = RankCustomisationOverviewView(rank_items, interaction.user.id)
         await view.initial_send(interaction)
             
-        return "Opened the Rank Customization Menu!"
+        return "Opened the Rank Customisation Menu!"
 
 class RankBackgroundItem(ShopItem):
     """Shop item for purchasing a custom rank background."""
@@ -441,9 +441,9 @@ SHOP_ITEMS: List[ShopItem] = [
     RoastAccessItem("roast_access", "Roast Access", "Get access to the /roast command (if not already a server booster)", 500, use_inventory=True),
     CustomEmojiStickerItem("custom_emoji_sticker", "Custom Emoji/Sticker", "Add a custom emoji or sticker to the server", 3500, use_inventory=True),
 
-    # Rank Customizations
-    RankCustomizationMenuShopItem("rank_custom_menu", "Customise Rank Card", "Preview and choose different custom backgrounds and color themes for your rank card.", 0),
-    RankResetItem("rank_custom_reset", "Reset Rank Card", "Reset your rank card background and colors to default", 0),
+    # Rank Customisations
+    RankCustomisationMenuShopItem("rank_custom_menu", "Customise Rank Card", "Preview and choose different custom backgrounds and colour themes for your rank card.", 0),
+    RankResetItem("rank_custom_reset", "Reset Rank Card", "Reset your rank card background and colours to default", 0),
 
     # --- UK COLLECTION (ART STYLES) ---
     RankBackgroundItem("rank_bg_london_vibrant", "Cartoon London", "Vibrant cartoon-style illustration of London's skyline", 250, "rank_bg_london_cartoon.png"),
@@ -466,6 +466,8 @@ SHOP_ITEMS: List[ShopItem] = [
     RankColorThemeItem("rank_theme_deepsea", "Deep Sea Theme", "Teal and navy blues of the ocean depths", 100, "#008080", "#000080", "#00FFFF"),
     RankColorThemeItem("rank_theme_enchanted", "Enchanted Theme", "Lime greens and soft pinks of a fantasy grove", 100, "#32CD32", "#006400", "#FFB6C1"),
     RankColorThemeItem("rank_theme_crimson", "Royal Crimson Theme", "Deep reds and gold for a regal look", 100, "#DC143C", "#8B0000", "#FFD700"),
+    RankColorThemeItem("rank_theme_mystic", "Mystic Purple Theme", "Neon purples and blues of a mystic aurora", 100, "#8A2BE2", "#4169E1", "#E0FFFF"),
+    RankColorThemeItem("rank_theme_autumn", "Autumn Fall Theme", "Warm oranges and yellows of a crisp autumn day", 100, "#FF8C00", "#8B4513", "#FFD700"),
 
     # --- LEGACY OPTIONS ---
     RankBackgroundItem("rank_bg_space", "Cosmic Space", "A highly detailed cosmic space scene", 250, "rank_bg_space_1772807793835.png"),

@@ -789,8 +789,8 @@ class EmojiStickerApprovalView(View):
         await interaction.response.send_modal(DenyReasonModal(self))
 
 
-class RankCustomizationOverviewView(View):
-    """Sub-shop view specifically for Rank Customizations."""
+class RankCustomisationOverviewView(View):
+    """Sub-shop view specifically for Rank Customisations."""
     
     ITEMS_PER_PAGE = 25
     
@@ -805,8 +805,8 @@ class RankCustomizationOverviewView(View):
         user_balance = get_bb(self.user_id)
         
         embed = discord.Embed(
-            title="🎨 Rank Card Customization Shop",
-            description="Welcome to the Rank Customization menu!\n\n**Visual Preview Guide:**\nCheck the image below. Each item has a **red numbered circle** matching the buttons.",
+            title="🎨 Rank Card Customisation Shop",
+            description="Welcome to the Rank Customisation menu!\n\n**Visual Preview Guide:**\nCheck the image below. Each item has a **red numbered circle** matching the buttons.",
             color=0x2b2d31
         )
         embed.add_field(name="💳 Your Wallet", value=f"**{user_balance}** UKPence", inline=False)
@@ -852,7 +852,7 @@ class RankCustomizationOverviewView(View):
                 value=str(i)
             ))
             
-        select_menu = Select(placeholder="Select a customization to purchase...", options=options, row=0)
+        select_menu = Select(placeholder="Select a customisation to purchase...", options=options, row=0)
         
         async def select_callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
@@ -896,7 +896,7 @@ class RankCustomizationOverviewView(View):
         pass
 
     async def initial_send(self, interaction: discord.Interaction):
-        """Initial generation and sending of the customization menu."""
+        """Initial generation and sending of the customisation menu."""
         # Defer the response immediately so it doesn't timeout while generating the image
         if not interaction.response.is_done():
             await interaction.response.defer()
