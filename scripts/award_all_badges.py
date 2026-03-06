@@ -16,7 +16,11 @@ def main():
 
     badges = [
         'hof', 'first_purchase', 'shutcoin_user', 'reply_chain', 
-        'active_chatter', 'top_chatter', 'stage_fan'
+        'active_chatter', 'top_chatter', 'stage_fan', 'christmas',
+        'halloween', 'vc_legend', 'screensharer', 'americanism_victim',
+        'announcement_fast', 'minor_announcement_fast', 'roaster',
+        'roast_victim', 'triple_reply', 'shut_victim', 'server_booster',
+        'yearly_booster'
     ]
 
     print(f"Awarding all badges to user ID: {user_id}...")
