@@ -76,7 +76,7 @@ async def fetch_messages_with_context(
     user: Member,
     user_messages: list,
     total_limit: int = 100,
-    context_depth: int = 2
+    context_depth: int = 4
 ) -> None:
     try:
         user_message_count = 0
@@ -108,8 +108,14 @@ async def fetch_messages_with_context(
 
                 user_message_block = []
                 while i < len(message_history) and message_history[i].author == user:
+                    msg = message_history[i]
+                    reactions_text = ""
+                    if msg.reactions:
+                        reactions = [f"{str(r.emoji)}x{r.count}" for r in msg.reactions]
+                        reactions_text = f" [Reactions: {', '.join(reactions)}]"
+                    
                     user_message_block.append(
-                        f"{message_history[i].created_at.strftime('%Y-%m-%d %H:%M:%S')} - {user.display_name}: {message_history[i].content}"
+                        f"{msg.created_at.strftime('%Y-%m-%d %H:%M:%S')} - {user.display_name}: {msg.content}{reactions_text}"
                     )
                     i += 1
 
@@ -126,14 +132,20 @@ async def fetch_messages_with_context(
 
                 parts = []
                 if context:
-                    context_text = "\n".join([f"{m.created_at.strftime('%Y-%m-%d %H:%M:%S')} - {m.author.display_name}: {m.content}" for m in context])
-                    parts.append(f"Context (Before):\n{context_text}")
+                    context_lines = []
+                    for m in context:
+                        r_text = f" [Reactions: {', '.join([f'{str(r.emoji)}x{r.count}' for r in m.reactions])}]" if m.reactions else ""
+                        context_lines.append(f"{m.created_at.strftime('%Y-%m-%d %H:%M:%S')} - {m.author.display_name}: {m.content}{r_text}")
+                    parts.append(f"Context (Before):\n" + "\n".join(context_lines))
                 
-                parts.append(f"Target User ({user.display_name}):\n{user_message_block_text}")
+                parts.append(f"Target User ({user.display_name}) in #{channel.name}:\n{user_message_block_text}")
                 
                 if context_after:
-                    context_after_text = "\n".join([f"{m.created_at.strftime('%Y-%m-%d %H:%M:%S')} - {m.author.display_name}: {m.content}" for m in context_after])
-                    parts.append(f"Context (After/Reactions):\n{context_after_text}")
+                    after_lines = []
+                    for m in context_after:
+                        r_text = f" [Reactions: {', '.join([f'{str(r.emoji)}x{r.count}' for r in m.reactions])}]" if m.reactions else ""
+                        after_lines.append(f"{m.created_at.strftime('%Y-%m-%d %H:%M:%S')} - {m.author.display_name}: {m.content}{r_text}")
+                    parts.append(f"Context (After/Reactions):\n" + "\n".join(after_lines))
                 
                 user_messages.append("\n\n---\n".join(parts))
             else:
