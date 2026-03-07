@@ -97,6 +97,7 @@ async def award_badge_with_notify(client, user_id: int, badge_id: str):
                     color=color_map.get(badge_rarity, 0x3498db)
                 )
                 embed.add_field(name="Badge", value=f"{badge_icon} **{badge_name}**", inline=True)
+                embed.add_field(name="How to earn", value=badge_desc, inline=True)
                 embed.add_field(name="Rarity", value=badge_rarity, inline=True)
                 embed.set_footer(text="Check your /rank to see all your badges!")
                 
