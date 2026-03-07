@@ -733,6 +733,8 @@ async def check_hall_of_fame(client, payload):
                 
         try:
             message = await channel.fetch_message(payload.message_id)
+            if message.author.bot:
+                return
         except discord.NotFound:
             logger.error(f"[HOF] Message {payload.message_id} not found.")
             return

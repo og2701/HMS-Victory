@@ -78,8 +78,8 @@ async def daily_summary(client):
                         for i, (user_id_str, message_count) in enumerate(sorted_active_members):
                             user_id = int(user_id_str)
                             
-                            # Award Active Chatter badge to EVERYONE with 50+ messages
-                            if message_count >= 50:
+                            # Award Active Chatter badge to EVERYONE with 200+ messages
+                            if message_count >= 200:
                                 await award_badge_with_notify(client, user_id, 'active_chatter')
                             
                             # Award Top Chatter rewards ONLY to top 5
@@ -90,7 +90,7 @@ async def daily_summary(client):
                                 awarded_users_for_log.append(awarded_user_info)
                             
                             # Break early if we've handled the top 5 AND there are no more potential active chatters
-                            if i >= num_to_reward and message_count < 50:
+                            if i >= num_to_reward and message_count < 200:
                                 break
 
                         if awarded_users_for_log and log_channel:

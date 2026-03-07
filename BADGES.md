@@ -46,7 +46,7 @@ Awarded for participating in a reply chain of 3 or more messages.
 
 ### ⚡ Active Chatter
 **Rarity**: Bronze
-Awarded for sending 50 or more messages in a single day.
+Awarded for sending 200 or more messages in a single day.
 
 ### 🥇 Elite Talker
 **Rarity**: Silver
