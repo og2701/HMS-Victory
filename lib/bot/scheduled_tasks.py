@@ -74,17 +74,23 @@ async def daily_summary(client):
                 if total_chat_rewards_this_cycle > 0:
                     withdrawal_success = BankManager.withdraw(total_chat_rewards_this_cycle, description=f"Top Chatters Reward for {yesterday_str}")
                     if withdrawal_success:
+                        from lib.bot.event_handlers import award_badge_with_notify
                         for i, (user_id_str, message_count) in enumerate(sorted_active_members):
+                            user_id = int(user_id_str)
+                            
+                            # Award Active Chatter badge to EVERYONE with 50+ messages
+                            if message_count >= 50:
+                                await award_badge_with_notify(client, user_id, 'active_chatter')
+                            
+                            # Award Top Chatter rewards ONLY to top 5
                             if i < num_to_reward:
-                                user_id = int(user_id_str)
                                 add_bb(user_id, flat_reward_amount, reason="Top chatter daily reward")
-                                from lib.bot.event_handlers import award_badge_with_notify
                                 await award_badge_with_notify(client, user_id, 'top_chatter')
-                                if message_count >= 50:
-                                    await award_badge_with_notify(client, user_id, 'active_chatter')
                                 awarded_user_info = f"User ID {user_id} (Top {i+1} chatter, {message_count} messages): +{flat_reward_amount} UKPence"
                                 awarded_users_for_log.append(awarded_user_info)
-                            else:
+                            
+                            # Break early if we've handled the top 5 AND there are no more potential active chatters
+                            if i >= num_to_reward and message_count < 50:
                                 break
 
                         if awarded_users_for_log and log_channel:
