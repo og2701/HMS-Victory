@@ -40,6 +40,9 @@ PERMISSIONS_BACKUP_FILE = os.path.join(JSON_DATA_DIR, "role_permissions_backup.j
 THREAD_MESSAGES_FILE = os.path.join(JSON_DATA_DIR, "thread_messages.json")
 ADDED_USERS_FILE = os.path.join(JSON_DATA_DIR, "added_users.json")
 ROAST_TARGET_FILE = os.path.join(JSON_DATA_DIR, "roast_targets.json")
+RECIPE_BOOK_FILE = os.path.join(JSON_DATA_DIR, "recipe_book.json")
+WEEKEND_WARRIOR_COUNTS_FILE = os.path.join(JSON_DATA_DIR, "weekend_warrior_counts.json")
+TOWN_CRIER_TRACKING_FILE = os.path.join(JSON_DATA_DIR, "town_crier_tracking.json")
 ICEBERG_DATA_FILE = os.path.join(DATA_DIR, "iceberg_texts.json")
 
 BALANCE_SNAPSHOT_DIR = "balance_snapshots"

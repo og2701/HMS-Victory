@@ -101,6 +101,23 @@ class AuctionManager:
             VALUES (?, ?, ?, ?)
         ''', (auction_id, user_id, bid_amount, int(datetime.now().timestamp())))
 
+        # Market Manipulator Check: Highest bidder on 3 active auctions
+        try:
+            active_bids = DatabaseManager.fetch_one('''
+                SELECT COUNT(*) FROM auctions 
+                WHERE current_bidder_id = ? AND is_active = 1
+            ''', (user_id,))
+            if active_bids and active_bids[0] >= 3:
+                # We need a client to award badge with notify. 
+                # This manager doesn't have one, but we can rely on the next message or manual award if needed,
+                # OR we can assume the caller will handle notifications if we return a flag.
+                # However, for simplicity and consistency with other managers in this bot,
+                # we'll try to find the client if possible, or just award it silently (it'll show up in /rank).
+                from database import award_badge
+                award_badge(user_id, 'market_manipulator')
+        except Exception:
+            pass
+
         return True, f"Bid placed successfully! You are now the highest bidder with {bid_amount} UKPence."
 
     @staticmethod

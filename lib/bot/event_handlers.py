@@ -486,6 +486,67 @@ async def on_message(client, message):
                         "author_id": message.author.id,
                         "count": 1
                     }
+            
+            # --- New Automatic Badges ---
+            
+            # 1. Town Crier (First message of the day)
+            today_str = now.strftime("%Y-%m-%d")
+            town_crier_data = load_json_file(TOWN_CRIER_TRACKING_FILE) or {}
+            if today_str not in town_crier_data:
+                town_crier_data[today_str] = str(message.author.id)
+                save_json_file(TOWN_CRIER_TRACKING_FILE, town_crier_data)
+                await award_badge_with_notify(client, message.author.id, 'town_crier')
+            
+            # 2. Global Citizen (5 channels in 5 mins)
+            if not hasattr(client, "global_citizen_tracking"):
+                client.global_citizen_tracking = {} # user_id -> {timestamp: [channel_ids]}
+            
+            gc_user = client.global_citizen_tracking.get(message.author.id, {"timestamp": time.time(), "channels": set()})
+            # Reset if more than 5 mins have passed since first tracked message in window
+            if time.time() - gc_user["timestamp"] > 300:
+                gc_user = {"timestamp": time.time(), "channels": set()}
+            
+            gc_user["channels"].add(message.channel.id)
+            client.global_citizen_tracking[message.author.id] = gc_user
+            
+            if len(gc_user["channels"]) >= 5:
+                await award_badge_with_notify(client, message.author.id, 'global_citizen')
+                # Optional: reset window after award to avoid multiple triggers
+                client.global_citizen_tracking[message.author.id] = {"timestamp": 0, "channels": set()}
+
+            # 3. Weekend Warrior (800 messages on a weekend)
+            # now.weekday() is 5 for Saturday, 6 for Sunday
+            if now.weekday() in (5, 6):
+                # We need a unique key for the specific weekend (e.g., Year-WeekNumber)
+                weekend_key = f"{now.isocalendar()[0]}-W{now.isocalendar()[1]}"
+                ww_data = load_json_file(WEEKEND_WARRIOR_COUNTS_FILE) or {}
+                if weekend_key not in ww_data:
+                    ww_data[weekend_key] = {}
+                
+                uid_str = str(message.author.id)
+                ww_data[weekend_key][uid_str] = ww_data[weekend_key].get(uid_str, 0) + 1
+                save_json_file(WEEKEND_WARRIOR_COUNTS_FILE, ww_data)
+                
+                if ww_data[weekend_key][uid_str] >= 800:
+                    await award_badge_with_notify(client, message.author.id, 'weekend_warrior')
+
+            # 4. Periodic Pillar Check (Every 50 messages)
+            if not hasattr(client, "message_since_pillar_check"):
+                client.message_since_pillar_check = defaultdict(int)
+            
+            client.message_since_pillar_check[message.author.id] += 1
+            if client.message_since_pillar_check[message.author.id] >= 50:
+                client.message_since_pillar_check[message.author.id] = 0
+                if hasattr(message.author, "joined_at") and message.author.joined_at:
+                    member_duration = discord.utils.utcnow() - message.author.joined_at
+                    days = member_duration.days
+                    if days >= 1825:
+                        await award_badge_with_notify(client, message.author.id, 'pillar_5')
+                    elif days >= 1095:
+                        await award_badge_with_notify(client, message.author.id, 'pillar_3')
+                    elif days >= 365:
+                        await award_badge_with_notify(client, message.author.id, 'pillar_1')
+
         except Exception as e:
             logger.error(f"Error tracking message activity badges: {e}")
     await process_message_attachments(client, message)
@@ -878,6 +939,10 @@ async def check_hall_of_fame(client, payload):
             
             logger.info(f"Message {message.id} sent to Hall of Fame.")
             await award_badge_with_notify(client, message.author.id, 'hof')
+        
+        # Local Legend Check (10 unique reactors)
+        if len(unique_reactors) >= 10:
+            await award_badge_with_notify(client, message.author.id, 'local_legend')
 
 
 async def on_raw_reaction_add(client, payload):

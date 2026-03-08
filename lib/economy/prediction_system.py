@@ -40,6 +40,7 @@ class Prediction:
         self.locked = False
         self.end_ts = end_ts
         self.last_bet_times = {} # uid -> timestamp
+        self.initial_balances = {} # uid -> balance before first bet on this pred
 
     def stake(self, uid: int, side: int, amount: int) -> bool:
         if self.locked or side not in (1, 2) or uid in self.bets[3 - side]:
@@ -47,6 +48,12 @@ class Prediction:
         side_name = self.opt1 if side == 1 else self.opt2
         if amount > 100_000 or not remove_bb(uid, amount, reason=f"Prediction bet: {self.title[:50]} ({side_name})"):
             return False
+            
+        if uid not in self.initial_balances:
+            # We add back the amount because remove_bb already took it, 
+            # and we want the balance BEFORE the bet.
+            self.initial_balances[uid] = get_bb(uid) + amount
+
         self.bets[side][uid] = self.bets[side].get(uid, 0) + amount
         import time
         self.last_bet_times[uid] = time.time()
@@ -73,6 +80,16 @@ class Prediction:
             payouts[uid] = payout
             add_bb(uid, payout, reason=f"Prediction win: {self.title[:50]}")
             
+            # Double or Nothing Check: Bet > 50% of balance
+            initial_bal = self.initial_balances.get(uid, 0)
+            if initial_bal > 0:
+                total_bet = self.bets[win_side].get(uid, 0)
+                if total_bet > (initial_bal / 2):
+                    # We can't award with notify easily here without a client,
+                    # but we'll award silently and it'll show in /rank.
+                    from database import award_badge
+                    award_badge(uid, 'double_or_nothing')
+            
         return payouts
 
     def to_dict(self) -> dict:
@@ -86,6 +103,7 @@ class Prediction:
             "bets": bets_dump,
             "locked": self.locked,
             "end": self.end_ts,
+            "initial_balances": {str(uid): bal for uid, bal in self.initial_balances.items()}
         }
 
 
@@ -94,6 +112,7 @@ class Prediction:
         p = Prediction(d["msg_id"], d["title"], d["opt1"], d["opt2"], d["end"], d.get("channel_id"))
         p.bets = {int(side): {int(uid): amt for uid, amt in pool.items()} for side, pool in d["bets"].items()}
         p.locked = d["locked"]
+        p.initial_balances = {int(uid): bal for uid, bal in d.get("initial_balances", {}).items()}
         return p
 
 
