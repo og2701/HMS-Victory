@@ -106,16 +106,13 @@ class UKPenceManager:
                 c.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
             
             conn.commit()
-            return success
 
 class EconomyMetrics:
-    ECONOMY_METRICS_FILE = "economy_metrics.json"
-
     @staticmethod
     def update_daily_metric(date_str: str, key: str, value_to_add_or_set: int, is_total_value: bool = False) -> None:
         metrics_data = {}
-        if os.path.exists(EconomyMetrics.ECONOMY_METRICS_FILE):
-            with open(EconomyMetrics.ECONOMY_METRICS_FILE, "r") as f:
+        if os.path.exists(ECONOMY_METRICS_FILE):
+            with open(ECONOMY_METRICS_FILE, "r") as f:
                 try:
                     metrics_data = json.load(f)
                 except json.JSONDecodeError:
@@ -130,15 +127,23 @@ class EconomyMetrics:
 
         metrics_data[date_str] = day_metrics
 
-        with open(EconomyMetrics.ECONOMY_METRICS_FILE, "w") as f:
+        with open(ECONOMY_METRICS_FILE, "w") as f:
             json.dump(metrics_data, f, indent=4)
 
     @staticmethod
     def get_daily_metrics(date_str: str) -> dict:
-        if os.path.exists(EconomyMetrics.ECONOMY_METRICS_FILE):
-            with open(EconomyMetrics.ECONOMY_METRICS_FILE, "r") as f:
+        if os.path.exists(ECONOMY_METRICS_FILE):
+            with open(ECONOMY_METRICS_FILE, "r") as f:
                 data = json.load(f)
                 return data.get(date_str, {})
+        return {}
+
+    @staticmethod
+    def get_all_metrics() -> dict:
+        if os.path.exists(ECONOMY_METRICS_FILE):
+            with open(ECONOMY_METRICS_FILE, "r") as f:
+                data = json.load(f)
+                return data
         return {}
 
 def get_shutcoins(user_id: int) -> int:

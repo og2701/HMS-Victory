@@ -1,22 +1,14 @@
-import json, os, io, discord
-from PIL import Image, ImageDraw
-import uuid
-from functools import lru_cache
-from lib.economy.economy_manager import add_bb, remove_bb, get_bb
-from config import ROLES
-
-PRED_FILE = "predictions.json"
+from config import ROLES, PREDICTIONS_FILE, PREDICTION_STREAKS_FILE
 
 def _load() -> dict:
-    return json.load(open(PRED_FILE)) if os.path.exists(PRED_FILE) else {}
+    return json.load(open(PREDICTIONS_FILE)) if os.path.exists(PREDICTIONS_FILE) else {}
 
 def _save(d: dict) -> None:
-    json.dump(d, open(PRED_FILE, "w"), indent=4)
+    json.dump(d, open(PREDICTIONS_FILE, "w"), indent=4)
 
 def track_prediction_streak(user_id: int, is_win: bool) -> tuple[int, int]:
     """Tracks a user's prediction streak. Returns (win_streak, lose_streak)."""
-    streak_file = "prediction_streaks.json"
-    data = json.load(open(streak_file)) if os.path.exists(streak_file) else {}
+    data = json.load(open(PREDICTION_STREAKS_FILE)) if os.path.exists(PREDICTION_STREAKS_FILE) else {}
     uid = str(user_id)
     
     if uid not in data:
@@ -29,7 +21,7 @@ def track_prediction_streak(user_id: int, is_win: bool) -> tuple[int, int]:
         data[uid]["lose_streak"] += 1
         data[uid]["win_streak"] = 0
         
-    json.dump(data, open(streak_file, "w"), indent=4)
+    json.dump(data, open(PREDICTION_STREAKS_FILE, "w"), indent=4)
     return data[uid]["win_streak"], data[uid]["lose_streak"]
 
 class Prediction:

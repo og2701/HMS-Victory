@@ -8,7 +8,7 @@ from config import *
 from lib.core.file_operations import set_file_status  # Reuse our file toggle utility
 
 ANTI_RAID_FILE = "anti_raid_active"
-PERMISSIONS_BACKUP_FILE = "role_permissions_backup.json"
+from config import PERMISSIONS_BACKUP_FILE
 QUARANTINE_ROLE_ID = 962009285116710922
 ANTI_RAID_LOG_CHANNEL_ID = 1172677237988929646
 BATCH_SIZE = 10

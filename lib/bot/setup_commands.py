@@ -377,7 +377,7 @@ def define_commands(tree, client):
             "recipient_id": str(recipient.id),
             "amount": amount
         }
-        PAY_LOG_FILE = "pay_log.json"
+        from config import PAY_LOG_FILE
         # ... logic for JSON backup ...
 
     @command("wager", "Wager UKPence against another user on a custom topic")

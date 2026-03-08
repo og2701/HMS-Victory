@@ -7,7 +7,7 @@ from lib.core.image_processing import random_color_excluding_blue_and_dark, get_
 
 ICEBERG_IMAGE_PATH = "data/image.png"
 UPDATED_IMAGE_PATH = "data/updated_iceberg.png"
-TEXT_DATA_FILE = "data/iceberg_texts.json"
+from config import ICEBERG_DATA_FILE as TEXT_DATA_FILE
 FONT_PATH = "data/fluff.ttf"
 LEVEL_BOUNDS = {
     1: ((4, 2), (404, 81)),

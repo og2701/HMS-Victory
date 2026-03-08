@@ -13,12 +13,38 @@ SHUTCOIN_ENABLED = True
 SUMMARISE_DAILY_LIMIT = 10
 
 # --- File Paths & Directories ---
-XP_FILE = "chat_leaderboard.json"
-ECONOMY_METRICS_FILE = "economy_metrics.json"
+DATA_DIR = os.path.join(BASE_DIR, "data")
+JSON_DATA_DIR = os.path.join(DATA_DIR, "json")
+
+# Ensure directories exist
+os.makedirs(JSON_DATA_DIR, exist_ok=True)
+os.makedirs("daily_summaries", exist_ok=True)
+os.makedirs("balance_snapshots", exist_ok=True)
+
+XP_FILE = os.path.join(JSON_DATA_DIR, "chat_leaderboard.json")
+ECONOMY_METRICS_FILE = os.path.join(JSON_DATA_DIR, "economy_metrics.json")
+HALL_OF_FAME_FILE = os.path.join(JSON_DATA_DIR, "hall_of_fame.json")
+PREDICTIONS_FILE = os.path.join(JSON_DATA_DIR, "predictions.json")
+PREDICTION_STREAKS_FILE = os.path.join(JSON_DATA_DIR, "prediction_streaks.json")
+ROAST_TARGETS_FILE = os.path.join(JSON_DATA_DIR, "roast_targets.json")
+WARDEN_TARGETS_FILE = os.path.join(JSON_DATA_DIR, "warden_targets.json")
+SHUT_COUNTS_FILE = os.path.join(JSON_DATA_DIR, "shut_counts.json")
+MORNING_PERSON_COUNTS_FILE = os.path.join(JSON_DATA_DIR, "morning_person_counts.json")
+NIGHT_OWL_COUNTS_FILE = os.path.join(JSON_DATA_DIR, "night_owl_counts.json")
+PARTY_ANIMAL_TARGETS_FILE = os.path.join(JSON_DATA_DIR, "party_animal_targets.json")
+PERSISTENT_VIEWS_FILE = os.path.join(JSON_DATA_DIR, "persistent_views.json")
+WEBHOOK_DELETIONS_FILE = os.path.join(JSON_DATA_DIR, "webhook_deletions.json")
+WHITELIST_FILE = os.path.join(JSON_DATA_DIR, "whitelist.json")
+PAY_LOG_FILE = os.path.join(JSON_DATA_DIR, "pay_log.json")
+PERMISSIONS_BACKUP_FILE = os.path.join(JSON_DATA_DIR, "role_permissions_backup.json")
+THREAD_MESSAGES_FILE = os.path.join(JSON_DATA_DIR, "thread_messages.json")
+ADDED_USERS_FILE = os.path.join(JSON_DATA_DIR, "added_users.json")
+ROAST_TARGET_FILE = os.path.join(JSON_DATA_DIR, "roast_targets.json")
+ICEBERG_DATA_FILE = os.path.join(DATA_DIR, "iceberg_texts.json")
+
 BALANCE_SNAPSHOT_DIR = "balance_snapshots"
-VC_LOCKDOWN_FILE = "vc_lockdown_status.txt"
-OVERNIGHT_MUTE_FILE = "overnight_mute.txt"
-HALL_OF_FAME_FILE = "hall_of_fame.json"
+VC_LOCKDOWN_FILE = os.path.join(JSON_DATA_DIR, "vc_lockdown_status.txt")
+OVERNIGHT_MUTE_FILE = os.path.join(JSON_DATA_DIR, "overnight_mute.txt")
 
 # --- Whitelists ---
 POLITICS_WHITELISTED_USER_IDS = []

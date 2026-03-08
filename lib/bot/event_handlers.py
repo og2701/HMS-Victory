@@ -109,8 +109,8 @@ async def award_badge_with_notify(client, user_id: int, badge_id: str):
             logger.error(f"Error notifying user {user_id} about badge '{badge_id}': {e}")
 
 FORUM_CHANNEL_ID = 1341451323249266711
-THREAD_MESSAGES_FILE = "thread_messages.json"
-ADDED_USERS_FILE = "added_users.json"
+THREAD_MESSAGES_FILE = THREAD_MESSAGES_FILE
+ADDED_USERS_FILE = ADDED_USERS_FILE
 
 STAGE_UKPENCE_MULTIPLIER = 1
 SERVER_BOOSTER_UKP_DAILY_BONUS = 10
@@ -643,19 +643,19 @@ async def handle_flag_reaction(reaction, message, user):
 
 
 def save_shut_count(user_id):
-    data = load_json_file("shut_counts.json") or {}
-    data[str(user_id)] = data.get(str(user_id), 0) + 1
-    save_json_file("shut_counts.json", data)
+    data = load_json_file(SHUT_COUNTS_FILE) or {}
+    data[user_id] = data.get(user_id, 0) + 1
+    save_json_file(SHUT_COUNTS_FILE, data)
 
 def track_warden(user_id: int, victim_id: int):
-    data = load_json_file("warden_targets.json") or {}
+    data = load_json_file(WARDEN_TARGETS_FILE) or {}
     uid = str(user_id)
     vid = str(victim_id)
     if uid not in data:
         data[uid] = []
     if vid not in data[uid]:
         data[uid].append(vid)
-        save_json_file("warden_targets.json", data)
+        save_json_file(WARDEN_TARGETS_FILE, data)
     return len(data[uid])
 
 def track_morning_person(user_id: int) -> int:
@@ -666,11 +666,10 @@ def track_morning_person(user_id: int) -> int:
     
     # 6 AM to 9 AM UK Time
     if 6 <= now.hour < 9:
-        data = load_json_file("morning_person_counts.json") or {}
-        uid = str(user_id)
-        data[uid] = data.get(uid, 0) + 1
-        save_json_file("morning_person_counts.json", data)
-        return data[uid]
+        data = load_json_file(MORNING_PERSON_COUNTS_FILE) or {}
+        data[user_id] = data.get(user_id, 0) + 1
+        save_json_file(MORNING_PERSON_COUNTS_FILE, data)
+        return data[user_id]
     return 0
 
 def track_night_owl(user_id: int):
@@ -679,17 +678,16 @@ def track_night_owl(user_id: int):
     uk_tz = pytz.timezone("Europe/London")
     now = datetime.datetime.now(uk_tz)
     if 2 <= now.hour < 5:
-        data = load_json_file("night_owl_counts.json") or {}
-        uid = str(user_id)
-        data[uid] = data.get(uid, 0) + 1
-        save_json_file("night_owl_counts.json", data)
-        return data[uid]
+        data = load_json_file(NIGHT_OWL_COUNTS_FILE) or {}
+        data[user_id] = data.get(user_id, 0) + 1
+        save_json_file(NIGHT_OWL_COUNTS_FILE, data)
+        return data[user_id]
     return 0
 
 def track_party_animal(user_id: int):
     import datetime
     import pytz
-    data = load_json_file("party_animal_targets.json") or {}
+    data = load_json_file(PARTY_ANIMAL_TARGETS_FILE) or {}
     uid = str(user_id)
     uk_tz = pytz.timezone("Europe/London")
     date_str = datetime.datetime.now(uk_tz).strftime("%Y-%m-%d")
@@ -697,12 +695,8 @@ def track_party_animal(user_id: int):
         data[uid] = []
     if date_str not in data[uid]:
         data[uid].append(date_str)
-        save_json_file("party_animal_targets.json", data)
+        save_json_file(PARTY_ANIMAL_TARGETS_FILE, data)
     return len(data[uid])
-
-
-async def handle_shut_reaction(reaction, user):
-    client = reaction.message._state._get_client()
     has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
     message_author = reaction.message.author
     if message_author.is_timed_out():

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 try:
     from config import ECONOMY_METRICS_FILE, BALANCE_SNAPSHOT_DIR
 except ImportError:
-    ECONOMY_METRICS_FILE = "economy_metrics.json"
+    from config import ECONOMY_METRICS_FILE
     BALANCE_SNAPSHOT_DIR = "balance_snapshots"
 
 

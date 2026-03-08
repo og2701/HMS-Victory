@@ -111,10 +111,11 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         await award_badge_with_notify(interaction.client, interaction.user.id, 'roaster')
         await award_badge_with_notify(interaction.client, user.id, 'roast_victim')
         
-        # Track target practice badge
+        # Track roast victim for "Target Practice" badge
+        from config import ROLES, ROAST_TARGETS_FILE
         import json
         import os
-        target_file = "roast_targets.json"
+        target_file = ROAST_TARGETS_FILE
         data = json.load(open(target_file)) if os.path.exists(target_file) else {}
         uid = str(user.id)
         data[uid] = data.get(uid, 0) + 1

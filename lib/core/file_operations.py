@@ -1,10 +1,4 @@
-import json
-import os
-from typing import Any
-from functools import lru_cache
-
-PERSISTENT_VIEWS_FILE = "persistent_views.json"
-WEBHOOK_DELETIONS_FILE = "webhook_deletions.json"
+from config import PERSISTENT_VIEWS_FILE, WEBHOOK_DELETIONS_FILE, WHITELIST_FILE
 
 def load_json_file(filename: str) -> dict:
     if os.path.exists(filename):
@@ -18,13 +12,13 @@ def save_json_file(filename: str, data: Any) -> None:
 
 def load_whitelist() -> list:
     try:
-        with open("whitelist.json", "r") as f:
+        with open(WHITELIST_FILE, "r") as f:
             return json.load(f)
     except FileNotFoundError:
         return []
 
 def save_whitelist(whitelist: list) -> None:
-    with open("whitelist.json", "w") as f:
+    with open(WHITELIST_FILE, "w") as f:
         json.dump(whitelist, f)
 
 def load_persistent_views() -> dict:
