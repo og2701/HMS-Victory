@@ -23,7 +23,8 @@ def main():
         'yearly_booster', 'high_roller', 'philanthropist', 'bankrupt',
         'shopaholic', 'party_animal', 'night_owl', 'warden',
         'oracle', 'unlucky', 'high_stakes', 'morning_person',
-        'target_practice', 'new_year_new_me', 'valentine'
+        'target_practice', 'new_year_new_me', 'valentine',
+        'april_fools', 'guy_fawkes'
     ]
 
     print(f"Awarding all badges to user ID: {user_id}...")

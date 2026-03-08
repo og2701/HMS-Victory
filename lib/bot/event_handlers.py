@@ -461,6 +461,12 @@ async def on_message(client, message):
             if now.month == 1 and now.day == 1 and now.hour == 0 and now.minute < 5:
                 await award_badge_with_notify(client, message.author.id, 'new_year_new_me')
                 
+            if now.month == 4 and now.day == 1:
+                await award_badge_with_notify(client, message.author.id, 'april_fools')
+                
+            if now.month == 11 and now.day == 5:
+                await award_badge_with_notify(client, message.author.id, 'guy_fawkes')
+                
         except Exception as e:
             logger.error(f"Error tracking message activity badges: {e}")
     await process_message_attachments(client, message)

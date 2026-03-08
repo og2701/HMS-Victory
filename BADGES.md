@@ -135,3 +135,11 @@ Awarded for sending a message within the first 5 minutes of the New Year (UK Tim
 ### 💖 Valentine
 **Rarity**: Silver
 Awarded for sending someone UKPence on Valentine's Day.
+
+### 🤡 April Fools
+**Rarity**: Silver
+Awarded for sending a message on April 1st.
+
+### 🎆 Guy Fawkes
+**Rarity**: Silver
+Awarded for sending a message on November 5th.
