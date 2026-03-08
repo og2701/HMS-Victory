@@ -495,7 +495,13 @@ async def on_message(client, message):
             if today_str not in town_crier_data:
                 town_crier_data[today_str] = str(message.author.id)
                 save_json_file(TOWN_CRIER_TRACKING_FILE, town_crier_data)
-                await award_badge_with_notify(client, message.author.id, 'town_crier')
+                
+                # Only award if it's reasonably early (before 5 AM)
+                # This prevents awarding it to the first chatter when the bot starts mid-day
+                if now.hour < 5:
+                    await award_badge_with_notify(client, message.author.id, 'town_crier')
+                else:
+                    logger.debug(f"Town Crier for {today_str} recorded but not awarded as it's past 5 AM ({now.hour}:{now.minute:02d})")
             
             # 2. Global Citizen (5 channels in 5 mins)
             if not hasattr(client, "global_citizen_tracking"):
