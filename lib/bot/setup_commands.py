@@ -112,8 +112,8 @@ def define_commands(tree, client):
         await interaction.response.defer()
         await show_iceberg(interaction)
 
-    @command("add-whitelist", "Adds a user to the whitelist for the politics channel", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
-    async def add_whitelist_command(interaction: Interaction, user: Member):
+    @command("politics-whitelist-add", "Adds a user to the whitelist for the politics channel", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    async def politics_whitelist_add(interaction: Interaction, user: Member):
         from lib.core.utils import load_whitelist, save_whitelist
         current_whitelist = load_whitelist()
         if user.id not in current_whitelist:
@@ -121,9 +121,22 @@ def define_commands(tree, client):
             save_whitelist(current_whitelist)
             from lib.bot.event_handlers import set_politics_whitelist
             set_politics_whitelist(current_whitelist)
-            await interaction.response.send_message(f"{user.mention} has been added to the whitelist.", ephemeral=True)
+            await interaction.response.send_message(f"{user.mention} has been added to the politics whitelist.", ephemeral=True)
         else:
-            await interaction.response.send_message(f"{user.mention} is already in the whitelist.", ephemeral=True)
+            await interaction.response.send_message(f"{user.mention} is already in the politics whitelist.", ephemeral=True)
+
+    @command("politics-whitelist-remove", "Removes a user from the whitelist for the politics channel", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    async def politics_whitelist_remove(interaction: Interaction, user: Member):
+        from lib.core.utils import load_whitelist, save_whitelist
+        current_whitelist = load_whitelist()
+        if user.id in current_whitelist:
+            current_whitelist.remove(user.id)
+            save_whitelist(current_whitelist)
+            from lib.bot.event_handlers import set_politics_whitelist
+            set_politics_whitelist(current_whitelist)
+            await interaction.response.send_message(f"{user.mention} has been removed from the politics whitelist.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"{user.mention} is not in the politics whitelist.", ephemeral=True)
 
     @command("post-daily-summary", "Posts the daily summary in the current channel for a specific date", checks=[lambda i: has_role(i, ROLES.MINISTER)])
     async def post_daily_summary(interaction: Interaction, date: str = None):
