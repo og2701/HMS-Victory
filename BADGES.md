@@ -140,6 +140,6 @@ Awarded for sending someone UKPence on Valentine's Day.
 **Rarity**: Silver
 Awarded for sending a message on April 1st.
 
-### 🎆 Guy Fawkes
+### 🧨 Guy Fawkes
 **Rarity**: Silver
 Awarded for sending a message on November 5th.
