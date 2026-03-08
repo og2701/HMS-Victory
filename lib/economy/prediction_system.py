@@ -1,3 +1,8 @@
+import json, os, io, discord
+from PIL import Image, ImageDraw
+import uuid
+from functools import lru_cache
+from lib.economy.economy_manager import add_bb, remove_bb, get_bb
 from config import ROLES, PREDICTIONS_FILE, PREDICTION_STREAKS_FILE
 
 def _load() -> dict:
@@ -48,19 +53,23 @@ class Prediction:
         return sum(self.bets.get(1, {}).values()), sum(self.bets.get(2, {}).values())
 
     def resolve(self, win_side: int) -> dict[int, int]:
-        lose_side = 2 if win_side == 1 else 1
-        lose_pool = sum(self.bets.get(lose_side, {}).values())
-        win_total = sum(self.bets.get(win_side, {}).values())
+        # This is used by PredAdminView._resolve
+        # Calculate winning payouts based on ratio
+        t1, t2 = self.totals()
+        win_total = t1 if win_side == 1 else t2
+        lose_total = t2 if win_side == 1 else t1
+        
         payouts = {}
         if win_total == 0:
             return payouts
-        # Distribute payouts and process streaks
-        from lib.bot.event_handlers import award_badge_with_notify
-        import asyncio
-
-        # We need the client to award badges, grab it from the first prediction entry if we can't find it normally
-        # However, resolve is called from PredAdminView._resolve where we DO have the client. Let's assume we can get it there instead.
-        # So we'll return a richer dict that includes the people who lost and who won so _resolve can handle badges.
+            
+        ratio = (win_total + lose_total) / win_total
+        
+        for uid, stake in self.bets.get(win_side, {}).items():
+            payout = int(stake * ratio)
+            payouts[uid] = payout
+            add_bb(uid, payout, reason=f"Prediction win: {self.title[:50]}")
+            
         return payouts
 
     def to_dict(self) -> dict:
@@ -235,6 +244,7 @@ class BetButtons(discord.ui.View):
                 await interaction.response.send_message("Betting locked.", ephemeral=True)
                 return
             
+            from lib.economy.economy_manager import get_bb
             bal = get_bb(interaction.user.id)
             if bal <= 0:
                 await interaction.response.send_message("❌ You don't have any UKPence to bet!", ephemeral=True)
