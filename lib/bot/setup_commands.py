@@ -364,6 +364,13 @@ def define_commands(tree, client):
             from lib.bot.event_handlers import award_badge_with_notify
             await award_badge_with_notify(interaction.client, interaction.user.id, 'philanthropist')
 
+        # Check Valentine badge
+        uk_tz = pytz.timezone("Europe/London")
+        now = datetime.now(uk_tz)
+        if now.month == 2 and now.day == 14:
+            from lib.bot.event_handlers import award_badge_with_notify
+            await award_badge_with_notify(interaction.client, interaction.user.id, 'valentine')
+
         pay_log_entry = {
             "timestamp": datetime.utcnow().isoformat(),
             "payer_id": str(interaction.user.id),

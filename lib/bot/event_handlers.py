@@ -447,11 +447,22 @@ async def on_message(client, message):
     if not message.author.bot and message.type != discord.MessageType.new_member:
         ensure_bb(message.author.id)
         try:
-            from lib.bot.event_handlers import track_night_owl, award_badge_with_notify
+            from lib.bot.event_handlers import track_night_owl, track_morning_person, award_badge_with_notify
             if track_night_owl(message.author.id) >= 100:
                 await award_badge_with_notify(client, message.author.id, 'night_owl')
+                
+            if track_morning_person(message.author.id) >= 50:
+                await award_badge_with_notify(client, message.author.id, 'morning_person')
+                
+            import datetime
+            import pytz
+            uk_tz = pytz.timezone("Europe/London")
+            now = datetime.datetime.now(uk_tz)
+            if now.month == 1 and now.day == 1 and now.hour == 0 and now.minute < 5:
+                await award_badge_with_notify(client, message.author.id, 'new_year_new_me')
+                
         except Exception as e:
-            logger.error(f"Error tracking night owl: {e}")
+            logger.error(f"Error tracking message activity badges: {e}")
     await process_message_attachments(client, message)
     await process_message_links(client, message)
     
@@ -640,6 +651,21 @@ def track_warden(user_id: int, victim_id: int):
         data[uid].append(vid)
         save_json_file("warden_targets.json", data)
     return len(data[uid])
+
+def track_morning_person(user_id: int) -> int:
+    import datetime
+    import pytz
+    uk_tz = pytz.timezone("Europe/London")
+    now = datetime.datetime.now(uk_tz)
+    
+    # 6 AM to 9 AM UK Time
+    if 6 <= now.hour < 9:
+        data = load_json_file("morning_person_counts.json") or {}
+        uid = str(user_id)
+        data[uid] = data.get(uid, 0) + 1
+        save_json_file("morning_person_counts.json", data)
+        return data[uid]
+    return 0
 
 def track_night_owl(user_id: int):
     import datetime

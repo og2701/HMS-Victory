@@ -21,7 +21,9 @@ def main():
         'announcement_fast', 'minor_announcement_fast', 'roaster',
         'roast_victim', 'triple_reply', 'shut_victim', 'server_booster',
         'yearly_booster', 'high_roller', 'philanthropist', 'bankrupt',
-        'shopaholic', 'party_animal', 'night_owl', 'warden'
+        'shopaholic', 'party_animal', 'night_owl', 'warden',
+        'oracle', 'unlucky', 'high_stakes', 'morning_person',
+        'target_practice', 'new_year_new_me', 'valentine'
     ]
 
     print(f"Awarding all badges to user ID: {user_id}...")

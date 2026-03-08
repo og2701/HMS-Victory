@@ -229,7 +229,14 @@ def init_db():
             ('shopaholic', 'Shopaholic', 'Purchase 10 items from the bot''s shop', '🛒', 'Silver'),
             ('party_animal', 'Party Animal', 'Attend 5 different Stage events', '🎉', 'Silver'),
             ('night_owl', 'Night Owl', 'Send 100 messages between 2 AM and 5 AM UK time', '👻', 'Bronze'),
-            ('warden', 'The Warden', 'Successfully use a Shutcoin on 10 different people', '🔒', 'Gold')
+            ('warden', 'The Warden', 'Successfully use a Shutcoin on 10 different people', '🔒', 'Gold'),
+            ('oracle', 'Oracle', 'Win 5 predictions in a row', '🔮', 'Gold'),
+            ('unlucky', 'Unlucky', 'Lose 5 predictions in a row', '🌧️', 'Bronze'),
+            ('high_stakes', 'High Stakes', 'Place a bet of over 5,000 UKPence on a single prediction', '🎰', 'Silver'),
+            ('morning_person', 'Morning Person', 'Send 50 messages between 6 AM and 9 AM UK time', '🌅', 'Bronze'),
+            ('target_practice', 'Target Practice', 'Be the target of the /roast command 10 or more times', '🎯', 'Bronze'),
+            ('new_year_new_me', 'New Year, New Me', 'Send a message within the first 5 minutes of the New Year (UK Time)', '🎆', 'Gold'),
+            ('valentine', 'Valentine', 'Send someone UKPence on Valentine\'s Day', '💖', 'Silver')
         ]
         for b_id, b_name, b_desc, b_icon, b_rarity in badges:
             c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)", 

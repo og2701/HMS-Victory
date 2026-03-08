@@ -107,3 +107,31 @@ Awarded for boosting the server.
 ### 👑 Diamond Hands
 **Rarity**: Gold
 Awarded for boosting the server for a year.
+
+### 🔮 Oracle
+**Rarity**: Gold
+Awarded for winning 5 predictions in a row.
+
+### 🌧️ Unlucky
+**Rarity**: Bronze
+Awarded for losing 5 predictions in a row.
+
+### 🎰 High Stakes
+**Rarity**: Silver
+Awarded for placing a bet of over 5,000 UKPence on a single prediction.
+
+### 🌅 Morning Person
+**Rarity**: Bronze
+Awarded for sending 50 messages between 6 AM and 9 AM UK time.
+
+### 🎯 Target Practice
+**Rarity**: Bronze
+Awarded for being the target of the `/roast` command 10 or more times.
+
+### 🎆 New Year, New Me
+**Rarity**: Gold
+Awarded for sending a message within the first 5 minutes of the New Year (UK Time).
+
+### 💖 Valentine
+**Rarity**: Silver
+Awarded for sending someone UKPence on Valentine's Day.

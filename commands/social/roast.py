@@ -110,6 +110,18 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         from lib.bot.event_handlers import award_badge_with_notify
         await award_badge_with_notify(interaction.client, interaction.user.id, 'roaster')
         await award_badge_with_notify(interaction.client, user.id, 'roast_victim')
+        
+        # Track target practice badge
+        import json
+        import os
+        target_file = "roast_targets.json"
+        data = json.load(open(target_file)) if os.path.exists(target_file) else {}
+        uid = str(user.id)
+        data[uid] = data.get(uid, 0) + 1
+        json.dump(data, open(target_file, "w"), indent=4)
+        if data[uid] >= 10:
+            await award_badge_with_notify(interaction.client, user.id, 'target_practice')
+
     except Exception as e:
         print(e)
         await interaction.followup.send("An error occurred.")

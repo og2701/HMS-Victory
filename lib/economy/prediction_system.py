@@ -13,6 +13,25 @@ def _load() -> dict:
 def _save(d: dict) -> None:
     json.dump(d, open(PRED_FILE, "w"), indent=4)
 
+def track_prediction_streak(user_id: int, is_win: bool) -> tuple[int, int]:
+    """Tracks a user's prediction streak. Returns (win_streak, lose_streak)."""
+    streak_file = "prediction_streaks.json"
+    data = json.load(open(streak_file)) if os.path.exists(streak_file) else {}
+    uid = str(user_id)
+    
+    if uid not in data:
+        data[uid] = {"win_streak": 0, "lose_streak": 0}
+        
+    if is_win:
+        data[uid]["win_streak"] += 1
+        data[uid]["lose_streak"] = 0
+    else:
+        data[uid]["lose_streak"] += 1
+        data[uid]["win_streak"] = 0
+        
+    json.dump(data, open(streak_file, "w"), indent=4)
+    return data[uid]["win_streak"], data[uid]["lose_streak"]
+
 class Prediction:
     def __init__(self, msg_id: int, title: str, opt1: str, opt2: str, end_ts: float, channel_id: int | None = None):
         self.msg_id = msg_id
@@ -43,12 +62,13 @@ class Prediction:
         payouts = {}
         if win_total == 0:
             return payouts
-        for uid, stake in self.bets[win_side].items():
-            share = stake / win_total
-            winnings = stake + int(share * lose_pool)
-            payouts[uid] = winnings
-            side_name = self.opt1 if win_side == 1 else self.opt2
-            add_bb(uid, winnings, reason=f"Prediction win: {self.title[:50]} ({side_name})")
+        # Distribute payouts and process streaks
+        from lib.bot.event_handlers import award_badge_with_notify
+        import asyncio
+
+        # We need the client to award badges, grab it from the first prediction entry if we can't find it normally
+        # However, resolve is called from PredAdminView._resolve where we DO have the client. Let's assume we can get it there instead.
+        # So we'll return a richer dict that includes the people who lost and who won so _resolve can handle badges.
         return payouts
 
     def to_dict(self) -> dict:
@@ -199,6 +219,12 @@ class BetModal(discord.ui.Modal, title="Place your bet"):
                 ephemeral=True
             )
             _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
+            
+            # High Stakes Badge
+            if stake >= 5000:
+                from lib.bot.event_handlers import award_badge_with_notify
+                await award_badge_with_notify(interaction.client, interaction.user.id, 'high_stakes')
+                
         else:
             curr = get_bb(interaction.user.id)
             await interaction.response.send_message(
@@ -402,6 +428,28 @@ class PredAdminView(discord.ui.View):
 
         self.client.predictions.pop(self.pred.msg_id, None)
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
+        
+        # Award streak badges
+        from lib.economy.prediction_system import track_prediction_streak
+        from lib.bot.event_handlers import award_badge_with_notify
+        import asyncio
+
+        lose_side = 2 if winner == 1 else 1
+
+        async def award_streaks():
+            # Process winners
+            for uid in self.pred.bets.get(winner, {}).keys():
+                win_streak, lose_streak = track_prediction_streak(uid, is_win=True)
+                if win_streak >= 5:
+                    await award_badge_with_notify(self.client, uid, 'oracle')
+            
+            # Process losers
+            for uid in self.pred.bets.get(lose_side, {}).keys():
+                win_streak, lose_streak = track_prediction_streak(uid, is_win=False)
+                if lose_streak >= 5:
+                    await award_badge_with_notify(self.client, uid, 'unlucky')
+
+        asyncio.create_task(award_streaks())
         
         # If the interaction message (admin panel) is still valid, respond there too
         try:
