@@ -667,9 +667,10 @@ def track_morning_person(user_id: int) -> int:
     # 6 AM to 9 AM UK Time
     if 6 <= now.hour < 9:
         data = load_json_file(MORNING_PERSON_COUNTS_FILE) or {}
-        data[user_id] = data.get(user_id, 0) + 1
+        uid = str(user_id)
+        data[uid] = data.get(uid, 0) + 1
         save_json_file(MORNING_PERSON_COUNTS_FILE, data)
-        return data[user_id]
+        return data[uid]
     return 0
 
 def track_night_owl(user_id: int):
@@ -679,9 +680,10 @@ def track_night_owl(user_id: int):
     now = datetime.datetime.now(uk_tz)
     if 2 <= now.hour < 5:
         data = load_json_file(NIGHT_OWL_COUNTS_FILE) or {}
-        data[user_id] = data.get(user_id, 0) + 1
+        uid = str(user_id)
+        data[uid] = data.get(uid, 0) + 1
         save_json_file(NIGHT_OWL_COUNTS_FILE, data)
-        return data[user_id]
+        return data[uid]
     return 0
 
 def track_party_animal(user_id: int):

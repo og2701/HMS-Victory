@@ -109,6 +109,7 @@ class UKPenceManager:
                 c.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
             
             conn.commit()
+            return success
 
 class EconomyMetrics:
     @staticmethod
