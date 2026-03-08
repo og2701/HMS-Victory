@@ -34,7 +34,7 @@ async def restore_database_if_missing():
             async for message in archive_channel.history(limit=100):
                 if message.attachments:
                     for attachment in message.attachments:
-                        if attachment.filename.startswith('database_backup_') and attachment.filename.endswith('.db'):
+                        if attachment.filename.startswith('database_backup_') and (attachment.filename.endswith('.db') or attachment.filename.endswith('.zip')):
                             latest_backup = attachment
                             break
                 if latest_backup:
@@ -42,8 +42,16 @@ async def restore_database_if_missing():
             
             if latest_backup:
                 logger.info(f"Found latest database backup: {latest_backup.filename}")
-                await latest_backup.save('database.db')
-                logger.info("Successfully restored database.db from backup.")
+                if latest_backup.filename.endswith('.zip'):
+                    zip_path = 'temp_backup.zip'
+                    await latest_backup.save(zip_path)
+                    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                        zip_ref.extractall('.')
+                    os.remove(zip_path)
+                    logger.info("Successfully extracted database from ZIP backup.")
+                else:
+                    await latest_backup.save('database.db')
+                    logger.info("Successfully restored database.db from backup.")
             else:
                 logger.warning("No database backup found in the last 100 messages. Creating a new empty database.")
                 init_db()
@@ -128,15 +136,33 @@ async def send_json_files(client, folder_path, channel_id):
 
 
 async def backup_database(client):
-    logger.info("Backing up database...")
+    logger.info("Backing up database to Discord...")
     channel = client.get_channel(CHANNELS.DATA_BACKUP)
-    if channel:
-        if os.path.exists('database.db'):
-            with open('database.db', 'rb') as f:
-                await channel.send(file=discord.File(f, f'database_backup_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.db'))
-            logger.info("Database backup sent to Discord.")
-        else:
-            logger.warning("database.db not found, skipping backup.")
+    if not channel:
+        logger.warning(f"Backup channel {CHANNELS.DATA_BACKUP} not found.")
+        return
+
+    db_files = ['database.db', 'database.db-shm', 'database.db-wal']
+    existing_files = [f for f in db_files if os.path.exists(f)]
+
+    if not existing_files:
+        logger.warning("No database files found for backup.")
+        return
+
+    try:
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for file in existing_files:
+                zipf.write(file, file)
+        
+        zip_buffer.seek(0)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"database_backup_{timestamp}.zip"
+        
+        await channel.send(file=discord.File(fp=zip_buffer, filename=filename))
+        logger.info(f"Database backup ({', '.join(existing_files)}) sent to Discord.")
+    except Exception as e:
+        logger.error(f"Error during database backup to Discord: {e}")
 
 async def backup_bot(client):
     logger.info("Backing up bot...")
