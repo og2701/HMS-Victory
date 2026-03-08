@@ -697,6 +697,8 @@ def track_party_animal(user_id: int):
         data[uid].append(date_str)
         save_json_file(PARTY_ANIMAL_TARGETS_FILE, data)
     return len(data[uid])
+async def handle_shut_reaction(reaction, user):
+    client = reaction.message._state._get_client()
     has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
     message_author = reaction.message.author
     if message_author.is_timed_out():
