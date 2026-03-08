@@ -182,6 +182,8 @@ class AClient(discord.Client):
                         self.reply_chains[message.author.id] = self.reply_chains.get(message.author.id, 0) + 1
                         if self.reply_chains[message.author.id] >= 3:
                             await award_badge_with_notify(self, message.author.id, 'reply_chain')
+                            # Reset chain for this user after awarding to prevent spam
+                            self.reply_chains[message.author.id] = 0
                     else:
                         self.reply_chains[message.author.id] = 1
                     self.last_reply_user = message.author.id
@@ -197,14 +199,21 @@ class AClient(discord.Client):
                         del self.message_repliers[ref_id]
             except Exception:
                 pass
+        else:
+            # Not a reply, so break the active chain
+            self.last_reply_user = None
         
-        # Cleanup old reply tracking
+        # Cleanup old reply tracking dictionaries to prevent memory leaks
         if len(self.message_repliers) > 1000:
             # Simple LRU-ish cleanup: remove oldest 200 items
             keys_to_del = list(self.message_repliers.keys())[:200]
-            for k in keys_to_del: del self.message_repliers[k]
-        else:
-            self.last_reply_user = None
+            for k in keys_to_del:
+                del self.message_repliers[k]
+                
+        if len(self.reply_chains) > 1000:
+            keys_to_del = list(self.reply_chains.keys())[:200]
+            for k in keys_to_del:
+                del self.reply_chains[k]
 
         await on_message(self, message)
 
