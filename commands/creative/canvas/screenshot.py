@@ -41,20 +41,32 @@ async def screenshotCanvas(interaction, x: int = -770, y: int = 7930):
             os.remove(tmp.name)
 
 async def capture_screenshot(x, y, filepath):
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920x1080")
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=options)
-    try:
-        url = f"https://pixelcanvas.io/@{x},{y},2"
-        driver.get(url)
-        await asyncio.sleep(5)
-        driver.save_screenshot(filepath)
-        return filepath
-    except Exception as e:
-        logging.error(f"Error in capture_screenshot: {e}")
-        raise
-    finally:
-        driver.quit()
+    from lib.core.image_processing import get_browser, rendering_lock
+    import time
+    
+    async with rendering_lock:
+        loop = asyncio.get_event_loop()
+        
+        def _capture_sync():
+            try:
+                browser = get_browser()
+                # Store original window size
+                original_size = browser.get_window_size()
+                browser.set_window_size(1920, 1080)
+                
+                url = f"https://pixelcanvas.io/@{x},{y},2"
+                browser.get(url)
+                
+                # Sleep to allow canvas to render
+                time.sleep(5) 
+                
+                browser.save_screenshot(filepath)
+                # Restore size
+                browser.set_window_size(original_size['width'], original_size['height'])
+                return filepath
+            except Exception as e:
+                logging.error(f"Error in capture_screenshot_sync: {e}")
+                raise
+                
+        # Run the synchronous webdriver code in a thread pool so it doesn't block the bot
+        return await loop.run_in_executor(None, _capture_sync)

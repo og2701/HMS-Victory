@@ -51,21 +51,35 @@ chrome_options.add_argument("--disable-application-cache")
 chrome_options.add_argument("--disable-background-timer-throttling")
 chrome_options.add_argument("--incognito") # Don't persist session data to disk
 
+import time
 _browser = None
 _render_count = 0
-MAX_RENDERS_BEFORE_RESTART = 50
+MAX_RENDERS_BEFORE_RESTART = 15
+MAX_IDLE_TIME_SECONDS = 180  # Shut down Chrome after 3 minutes of inactivity
+_last_render_time = 0
 
 def get_browser():
     """Get the persistent browser instance, restarting it periodically to clear memory leaks."""
-    global _browser, _render_count
+    global _browser, _render_count, _last_render_time
     
-    if _browser is None or _render_count >= MAX_RENDERS_BEFORE_RESTART:
+    current_time = time.time()
+    idle_time = current_time - _last_render_time
+    
+    # Needs restart if: reached max renders, OR has been idle too long (but is currently running)
+    needs_restart = _render_count >= MAX_RENDERS_BEFORE_RESTART or (_browser is not None and idle_time > MAX_IDLE_TIME_SECONDS)
+    
+    if _browser is None or needs_restart:
         if _browser is not None:
-            logging.info(f"Restarting headless Chrome engine (reached {MAX_RENDERS_BEFORE_RESTART} renders) to clear memory.")
+            reason = f"reached {MAX_RENDERS_BEFORE_RESTART} renders" if _render_count >= MAX_RENDERS_BEFORE_RESTART else f"idle for {idle_time:.0f}s"
+            logging.info(f"Restarting headless Chrome engine ({reason}) to clear memory.")
             try:
+                # Quit the driver cleanly to kill the underlying Chrome process
                 _browser.quit()
-            except:
-                pass
+            except Exception as e:
+                logging.warning(f"Error while quitting Chrome: {e}")
+            finally:
+                # GUARANTEE the reference is wiped so webdriver.Chrome() is forced to run again below
+                _browser = None
                 
         # Fast disk cleanup of Chrome user data
         if os.path.exists(user_data_dir):
@@ -82,6 +96,7 @@ def get_browser():
         _render_count = 0
         
     _render_count += 1
+    _last_render_time = time.time()
     return _browser
 
 def cleanup_browser():
@@ -89,10 +104,12 @@ def cleanup_browser():
     try:
         if _browser:
             _browser.quit()
+    except Exception as e:
+        logging.warning(f"Error while cleaning up Chrome on exit: {e}")
+    finally:
+        _browser = None
         if os.path.exists(user_data_dir):
             shutil.rmtree(user_data_dir, ignore_errors=True)
-    except:
-        pass
 
 atexit.register(cleanup_browser)
 
