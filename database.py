@@ -241,7 +241,16 @@ def init_db():
             ('guy_fawkes', 'Guy Fawkes', 'Send a message on November 5th', '🧨', 'Silver'),
             ('echo', 'Echo', '[REDACTED]', '🗣️', 'Secret'),
             ('lurker', 'Lurker', '[REDACTED]', '🪟', 'Secret'),
-            ('indecisive', 'Indecisive', '[REDACTED]', '⚖️', 'Secret')
+            ('indecisive', 'Indecisive', '[REDACTED]', '⚖️', 'Secret'),
+            ('market_manipulator', 'Market Manipulator', 'Be the highest bidder on 3 different active auctions at the same time', '🏦', 'Silver'),
+            ('double_or_nothing', 'Double or Nothing', 'Win a prediction where you bet more than 50% of your total balance', '🎲', 'Gold'),
+            ('local_legend', 'Local Legend', 'Have a single message receive 10 or more unique reactions', '🌟', 'Silver'),
+            ('town_crier', 'Town Crier', 'Post the first message of the day in the server', '🔔', 'Bronze'),
+            ('pillar_1', 'Pillar of the Community (1 Year)', 'Be a member of the server for at least 1 year', '🧱', 'Bronze'),
+            ('pillar_3', 'Pillar of the Community (3 Years)', 'Be a member of the server for at least 3 years', '🏛️', 'Silver'),
+            ('pillar_5', 'Pillar of the Community (5 Years)', 'Be a member of the server for at least 5 years', '🏰', 'Gold'),
+            ('weekend_warrior', 'Weekend Warrior', 'Send 800 or more messages over a single weekend', '⚔️', 'Silver'),
+            ('global_citizen', 'Global Citizen', 'Send messages in 5 different channels within 5 minutes', '🗺️', 'Bronze')
         ]
         for b_id, b_name, b_desc, b_icon, b_rarity in badges:
             c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)", 

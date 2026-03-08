@@ -110,7 +110,34 @@ class BackdateClient(discord.Client):
                 shopaholic_count += 1
         print(f"Finished shopaholics: {shopaholic_count} awarded.")
 
-        # 6. Backdate Hall of Fame (if any)
+        # 6. Backdate Pillar of the Community
+        print("\n--- Checking Pillar of the Community ---")
+        pillar_1_count = 0
+        pillar_3_count = 0
+        pillar_5_count = 0
+        
+        for member in guild.members:
+            if member.joined_at:
+                member_duration = now - member.joined_at
+                days = member_duration.days
+                
+                # Award tiered badges (database.award_badge handles uniqueness)
+                if days >= 1825: # 5 Years
+                    if award_badge(str(member.id), 'pillar_5'):
+                        print(f"Awarded 'Pillar of the Community (5 Years)' to {member.display_name}")
+                        pillar_5_count += 1
+                if days >= 1095: # 3 Years
+                    if award_badge(str(member.id), 'pillar_3'):
+                        print(f"Awarded 'Pillar of the Community (3 Years)' to {member.display_name}")
+                        pillar_3_count += 1
+                if days >= 365: # 1 Year
+                    if award_badge(str(member.id), 'pillar_1'):
+                        print(f"Awarded 'Pillar of the Community (1 Year)' to {member.display_name}")
+                        pillar_1_count += 1
+        
+        print(f"Finished Pillars: {pillar_1_count} (1Y), {pillar_3_count} (3Y), {pillar_5_count} (5Y).")
+
+        # 7. Backdate Hall of Fame (if any)
         # Assuming HOF entries might be in user_badges already, but if we have a separate source:
         # For now, we'll just check if the hof badge was missed by anyone in the HOF list if it existed.
         
