@@ -1,7 +1,7 @@
 import discord
 from discord import Interaction, InteractionType
 from datetime import timedelta, datetime
-import logging, os, aiohttp, io, json, asyncio, pytz
+import logging, os, aiohttp, io, json, asyncio, pytz, time
 from collections import defaultdict
 
 from lib.core.translation import translate_and_send
