@@ -24,7 +24,9 @@ def main():
         'shopaholic', 'party_animal', 'night_owl', 'warden',
         'oracle', 'unlucky', 'high_stakes', 'morning_person',
         'target_practice', 'new_year_new_me', 'valentine',
-        'april_fools', 'guy_fawkes', 'echo', 'lurker', 'indecisive'
+        'april_fools', 'guy_fawkes', 'echo', 'lurker', 'indecisive',
+        'market_manipulator', 'double_or_nothing', 'local_legend', 'town_crier',
+        'pillar_1', 'pillar_3', 'pillar_5', 'weekend_warrior', 'global_citizen'
     ]
 
     print(f"Awarding all badges to user ID: {user_id}...")
