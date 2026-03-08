@@ -12,3 +12,4 @@ data/iceberg_texts.json
 *.json
 database.db*
 .env
+venv/

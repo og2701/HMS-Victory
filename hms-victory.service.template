@@ -1,0 +1,21 @@
+[Unit]
+Description=HMS Victory Discord Bot
+After=network.target
+
+[Service]
+User={{USER}}
+Group={{USER}}
+WorkingDirectory={{WORKING_DIR}}
+# Load environment variables from .env file
+EnvironmentFile={{WORKING_DIR}}/.env
+ExecStart={{WORKING_DIR}}/venv/bin/python {{WORKING_DIR}}/run.py
+
+Restart=always
+RestartSec=5
+
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=hms-victory
+
+[Install]
+WantedBy=multi-user.target
