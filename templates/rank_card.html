@@ -85,6 +85,60 @@
       background: rgba(255, 215, 0, 0.1);
     }
 
+    .rarity-secret {
+      position: relative;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 2px;
+      z-index: 10;
+      border: none;
+      box-shadow: 0 0 15px rgba(255, 255, 255, 0.4);
+    }
+
+    .rarity-secret::before {
+      content: "";
+      position: absolute;
+      top: -2px;
+      left: -2px;
+      right: -2px;
+      bottom: -2px;
+      background: conic-gradient(from 0deg, #ff0000, #ff7300, #fffb00, #48ff00, #00ffd5, #002bff, #7a00ff, #ff00c8, #ff0000);
+      border-radius: 10px;
+      z-index: -1;
+      animation: rainbow-rotate 3s linear infinite;
+    }
+
+    .rarity-secret::after {
+      content: "";
+      position: absolute;
+      top: 1px;
+      left: 1px;
+      right: 1px;
+      bottom: 1px;
+      background: #000;
+      border-radius: 7px;
+      z-index: -1;
+    }
+
+    @keyframes rainbow-rotate {
+      from {
+        filter: hue-rotate(0deg);
+      }
+
+      to {
+        filter: hue-rotate(360deg);
+      }
+    }
+
+    .secret-badge-container {
+      position: absolute;
+      top: 25px;
+      left: 25px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      z-index: 20;
+    }
+
     .badge-item.emoji {
       padding: 4px;
     }
@@ -288,6 +342,9 @@
 <body>
   <div class="container">
     <div class="overlay"></div>
+    <div class="secret-badge-container">
+      {secret_badges_html}
+    </div>
     <div class="badge-container">
       {badges_html}
     </div>

@@ -163,10 +163,11 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
 
         # Add badges
         badges_html = ""
+        secret_badges_html = ""
         user_badges = get_user_badges(user_id_str)
         if user_badges:
-            # Sort by rarity: Gold (0), Silver (1), Bronze (2)
-            rarity_map = {"Gold": 0, "Silver": 1, "Bronze": 2}
+            # Sort by rarity: Secret (-1), Gold (0), Silver (1), Bronze (2)
+            rarity_map = {"Secret": -1, "Gold": 0, "Silver": 1, "Bronze": 2}
             user_badges.sort(key=lambda x: rarity_map.get(x[5], 3))
             
             for badge in user_badges:
@@ -175,13 +176,19 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
                 
                 # Check if it's a file path or a raw emoji
                 icon_file_path = os.path.join(BASE_DIR, "data", "badges", icon)
+                badge_inner_html = ""
                 if os.path.exists(icon_file_path):
                     data_uri = encode_image_to_data_uri(icon_file_path)
-                    badges_html += f'<div class="badge-item {rarity_class}"><img src="{data_uri}" alt="{b_name}"></div>'
+                    badge_inner_html = f'<div class="badge-item {rarity_class}"><img src="{data_uri}" alt="{b_name}"></div>'
                 else:
                     # Assume it's a raw emoji
                     twemoji_url = get_twemoji_url(icon)
-                    badges_html += f'<div class="badge-item emoji {rarity_class}"><img src="{twemoji_url}" alt="{b_name}"></div>'
+                    badge_inner_html = f'<div class="badge-item emoji {rarity_class}"><img src="{twemoji_url}" alt="{b_name}"></div>'
+                
+                if rarity == "Secret":
+                    secret_badges_html += badge_inner_html
+                else:
+                    badges_html += badge_inner_html
         
         # Apply replacements
         html_content = safe_replace(html_content, "profile_pic", member.display_avatar.url)
@@ -198,6 +205,7 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         html_content = safe_replace(html_content, "secondary_color", secondary_color)
         html_content = safe_replace(html_content, "tertiary_color", tertiary_color)
         html_content = safe_replace(html_content, "badges_html", badges_html)
+        html_content = safe_replace(html_content, "secret_badges_html", secret_badges_html)
 
         import time
         size = (1400, 1000)

@@ -467,6 +467,25 @@ async def on_message(client, message):
             if now.month == 11 and now.day == 5:
                 await award_badge_with_notify(client, message.author.id, 'guy_fawkes')
                 
+            # Echo Badge Logic
+            if not hasattr(client, "echo_tracking"):
+                client.echo_tracking = {} # channel_id -> {"content": str, "author_id": int, "count": int}
+            
+            channel_id = message.channel.id
+            current_content = message.content.strip().lower()
+            if current_content:
+                last_echo = client.echo_tracking.get(channel_id)
+                if last_echo and last_echo["content"] == current_content and last_echo["author_id"] != message.author.id:
+                    last_echo["count"] += 1
+                    last_echo["author_id"] = message.author.id # Update to current author for next echo
+                    if last_echo["count"] >= 3:
+                        await award_badge_with_notify(client, message.author.id, 'echo')
+                else:
+                    client.echo_tracking[channel_id] = {
+                        "content": current_content,
+                        "author_id": message.author.id,
+                        "count": 1
+                    }
         except Exception as e:
             logger.error(f"Error tracking message activity badges: {e}")
     await process_message_attachments(client, message)
@@ -551,6 +570,33 @@ async def on_member_remove(member):
 async def on_member_ban(guild, user):
     pass
 
+
+async def on_voice_state_update(member, before, after):
+    client = member._state._get_client()
+    if member.bot:
+        return
+
+    if not hasattr(client, "lurker_tracking"):
+        client.lurker_tracking = {} # user_id -> start_time
+
+    is_muted = after.self_mute or after.mute or after.self_deaf or after.deaf
+    was_muted = before.self_mute or before.mute or before.self_deaf or before.deaf
+    
+    # Joined or switched to muted state
+    if after.channel and is_muted:
+        if member.id not in client.lurker_tracking:
+            client.lurker_tracking[member.id] = datetime.datetime.now()
+            logger.debug(f"Started lurker tracking for {member.display_name}")
+    
+    # Left channel or unmuted
+    elif (not after.channel or not is_muted) and member.id in client.lurker_tracking:
+        start_time = client.lurker_tracking.pop(member.id)
+        duration = (datetime.datetime.now() - start_time).total_seconds()
+        
+        # 2 hours = 7200 seconds
+        if duration >= 7200:
+            await award_badge_with_notify(client, member.id, 'lurker')
+        logger.debug(f"Stopped lurker tracking for {member.display_name}. Duration: {duration}s")
 
 async def on_message_delete(client, message):
     async for entry in message.guild.audit_logs(

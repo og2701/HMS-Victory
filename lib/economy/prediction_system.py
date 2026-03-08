@@ -39,6 +39,7 @@ class Prediction:
         self.bets = {1: {}, 2: {}}
         self.locked = False
         self.end_ts = end_ts
+        self.last_bet_times = {} # uid -> timestamp
 
     def stake(self, uid: int, side: int, amount: int) -> bool:
         if self.locked or side not in (1, 2) or uid in self.bets[3 - side]:
@@ -47,6 +48,8 @@ class Prediction:
         if amount > 100_000 or not remove_bb(uid, amount, reason=f"Prediction bet: {self.title[:50]} ({side_name})"):
             return False
         self.bets[side][uid] = self.bets[side].get(uid, 0) + amount
+        import time
+        self.last_bet_times[uid] = time.time()
         return True
 
     def totals(self) -> tuple[int, int]:
@@ -354,6 +357,14 @@ class PredAdminView(discord.ui.View):
             pass
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
         await interaction.response.send_message("🔒 Locked.", ephemeral=True)
+        
+        # Indecisive Badge Logic
+        import time
+        now = time.time()
+        from lib.bot.event_handlers import award_badge_with_notify
+        for uid, bet_time in self.pred.last_bet_times.items():
+            if now - bet_time <= 10:
+                await award_badge_with_notify(self.client, uid, 'indecisive')
 
     @discord.ui.button(label="Unlock", style=discord.ButtonStyle.success)
     async def unlock(self, interaction: discord.Interaction, _btn: discord.ui.Button):

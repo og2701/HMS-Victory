@@ -238,7 +238,10 @@ def init_db():
             ('new_year_new_me', 'New Year, New Me', 'Send a message within the first 5 minutes of the New Year (UK Time)', '🎆', 'Gold'),
             ('valentine', 'Valentine', 'Send someone UKPence on Valentine\'s Day', '💖', 'Silver'),
             ('april_fools', 'April Fools', 'Send a message on April 1st', '🤡', 'Silver'),
-            ('guy_fawkes', 'Guy Fawkes', 'Send a message on November 5th', '🧨', 'Silver')
+            ('guy_fawkes', 'Guy Fawkes', 'Send a message on November 5th', '🧨', 'Silver'),
+            ('echo', 'Echo', '[REDACTED]', '🗣️', 'Secret'),
+            ('lurker', 'Lurker', '[REDACTED]', '🪟', 'Secret'),
+            ('indecisive', 'Indecisive', '[REDACTED]', '⚖️', 'Secret')
         ]
         for b_id, b_name, b_desc, b_icon, b_rarity in badges:
             c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)", 

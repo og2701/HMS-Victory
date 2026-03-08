@@ -143,3 +143,15 @@ Awarded for sending a message on April 1st.
 ### 🧨 Guy Fawkes
 **Rarity**: Silver
 Awarded for sending a message on November 5th.
+
+### 🗣️ Echo
+**Rarity**: Secret
+[REDACTED]
+
+### 🪟 Lurker
+**Rarity**: Secret
+[REDACTED]
+
+### ⚖️ Indecisive
+**Rarity**: Secret
+[REDACTED]
