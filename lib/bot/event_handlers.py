@@ -824,8 +824,8 @@ async def check_hall_of_fame(client, payload):
         total_reactions = sum(r.count for r in message.reactions)
         # logger.info(f"[HOF] Checking message {message.id}. Total reactions: {total_reactions}")
 
-        # Quick filter to avoid iterating through users if total reactions are less than 7
-        if total_reactions < 7:
+        # Quick filter to avoid iterating through users if total reactions are less than 6
+        if total_reactions < 6:
             return
             
         unique_reactors = set()
@@ -835,7 +835,7 @@ async def check_hall_of_fame(client, payload):
                 
         # logger.info(f"[HOF] Unique reactors for {message.id}: {len(unique_reactors)}")
 
-        if len(unique_reactors) >= 7:
+        if len(unique_reactors) >= 6:
             logger.info(f"[HOF] Message {message.id} qualified for Hall of Fame! Relevant client: {client}")
             hall_of_fame_data.append(str(message.id))
             save_json_file(HALL_OF_FAME_FILE, hall_of_fame_data)
