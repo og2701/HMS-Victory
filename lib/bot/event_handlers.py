@@ -812,6 +812,11 @@ async def check_hall_of_fame(client, payload):
             message = await channel.fetch_message(payload.message_id)
             if message.author.bot:
                 return
+            
+            # Prevent old messages from qualifying
+            if (discord.utils.utcnow() - message.created_at).days > 30:
+                logger.debug(f"[HOF] Skipping message {message.id} as it is too old (created {message.created_at}).")
+                return
         except discord.NotFound:
             logger.error(f"[HOF] Message {payload.message_id} not found.")
             return
