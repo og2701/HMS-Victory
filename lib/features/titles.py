@@ -24,6 +24,19 @@ TITLES = [
     "The HMS Victory Captain"
 ]
 
+class TitleLaunchView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=600)
+
+    @discord.ui.button(label="Open Title Manager", style=discord.ButtonStyle.primary)
+    async def open_manager(self, interaction: discord.Interaction, button: discord.ui.Button):
+        from config import USERS
+        if interaction.user.id != USERS.OGGERS:
+            return await interaction.response.send_message("❌ This is for the Grand Admiral only.", ephemeral=True)
+            
+        view = UserSelectionView()
+        await interaction.response.send_message("Select a user to give a title:", view=view, ephemeral=True)
+
 class TitleSelectionView(discord.ui.View):
     def __init__(self, target_member: discord.Member):
         super().__init__(timeout=600)

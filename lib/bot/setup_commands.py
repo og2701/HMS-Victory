@@ -452,8 +452,3 @@ def define_commands(tree, client):
     @command("bank-status", "View server bank status (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def bank_status_command(interaction: Interaction):
         await handle_bank_status_command(interaction)
-
-    @command("title-manage", "Manage user titles (Oggers only)", checks=[lambda i: i.user.id == USERS.OGGERS])
-    async def title_manage_command(interaction: Interaction):
-        from lib.features.titles import UserSelectionView
-        await interaction.response.send_message("Select a user to give a title:", view=UserSelectionView(), ephemeral=True)

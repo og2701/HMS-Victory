@@ -569,6 +569,17 @@ async def on_message(client, message):
             except Exception as e:
                 logger.error(f"Error launching UKPAddUserSelectView: {e}")
 
+    if message.content.lower().strip() == "titleadd" and message.author.id == USERS.OGGERS:
+        try:
+            await message.delete()
+            from lib.features.titles import TitleLaunchView
+            await message.channel.send(
+                "HMS Victory Title Management System",
+                view=TitleLaunchView()
+            )
+        except Exception as e:
+            logger.error(f"Error launching TitleLaunchView: {e}")
+
     if message.content.lower().startswith("hmsql") and message.author.id == USERS.OGGERS:
         query = message.content[len("hmsql"):].strip()
         if not query:
