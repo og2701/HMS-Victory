@@ -155,3 +155,68 @@ Awarded for sending a message on November 5th.
 ### ⚖️ Indecisive
 **Rarity**: Secret
 [REDACTED]
+
+---
+
+# 🏅 Rank Titles
+Titles are premium badges of honor displayed beneath a user's name on their `/rank` card. They are hand-awarded by the Grand Admiral to notable community members.
+
+### ⚓ The Grand Admiral
+Reserved for top-tier leadership and community pillars.
+
+### ☕ The Tea Drinker
+For consistent participants who embody the server's British spirit.
+
+### 👟 The Roadman
+For those who have mastered the local dialect and slang.
+
+### 🎖️ The Commonwealth Hero
+Awarded to exceptionally helpful and supportive community members.
+
+### 💂 The Royal Guard
+For those who stand watch and help maintain the server's order.
+
+### 🃏 The Village Idiot
+For the community's most iconic pranksters and jesters.
+
+### 🧠 The Mastermind
+For the winners of seasonal events and complex challenges.
+
+### 💰 The High Roller
+For the true elite of the HMS Victory economy.
+
+### 🦉 The Night Owl
+For the dedicated members who keep the chat alive after midnight.
+
+### 🌅 The Morning Star
+For those who lead the first conversations of the dawn.
+
+### 🏛️ The Pillar of Strength
+An honor for long-standing veterans of the community.
+
+### 🗺️ The Global Traveler
+Recognizing members participating from across the globe.
+
+### 🪙 The Master of Coin
+For savvy auction winners and economic powerhouses.
+
+### 🔮 The Oracle
+For those with an uncanny accuracy in the prediction markets.
+
+### 🔆 The Eternal Optimist
+For the dedicated players who never let a loss dampen their spirit.
+
+### 🛡️ The Silent Guardian
+For the most active and observant long-term lurkers.
+
+### 🍷 The Royal Wit
+For the sharpest, wittiest, and most eloquent members.
+
+### 📜 The King's Subject
+For loyal participants who never miss a server event.
+
+### 👑 The British Legend
+The highest honor for the most iconic community icons.
+
+### 🛳️ The HMS Victory Captain
+Reserved for those who have contributed significantly to the server's voyage.
