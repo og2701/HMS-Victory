@@ -24,6 +24,20 @@ TITLES = [
     "The HMS Victory Captain"
 ]
 
+class TitleLaunchView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=600)
+
+    @discord.ui.button(label="Open Title Manager", style=discord.ButtonStyle.primary)
+    async def open_manager(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # We check Oggers ID again just to be safe, though the initial trigger handles it
+        from config import USERS
+        if interaction.user.id != USERS.OGGERS:
+            return await interaction.response.send_message("❌ This is for the Grand Admiral only.", ephemeral=True)
+            
+        view = UserSelectionView()
+        await interaction.response.send_message("Select a user to give a title:", view=view, ephemeral=True)
+
 class TitleSelectionView(discord.ui.View):
     def __init__(self, target_member: discord.Member):
         super().__init__(timeout=600)
@@ -64,6 +78,8 @@ class TitleSelectionView(discord.ui.View):
                 )
             msg = f"✅ Set title for **{self.target_member.display_name}** to: `{title}`"
         
+        # Now we can just use send_message with ephemeral=True if we want a new message, 
+        # or edit the ephemeral message.
         await interaction.response.edit_message(content=msg, view=None)
 
 class UserSelectionView(discord.ui.View):
@@ -81,4 +97,5 @@ class UserSelectionView(discord.ui.View):
             return await interaction.response.send_message("❌ User not found in this guild.", ephemeral=True)
             
         view = TitleSelectionView(member)
+        # Edit the ephemeral message
         await interaction.response.edit_message(content=f"Selected **{member.display_name}**. Now choose a title:", view=view)
