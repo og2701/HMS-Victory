@@ -50,7 +50,14 @@ class TitleSelectionView(discord.ui.View):
             )
             msg = f"✅ Removed title from **{self.target_member.display_name}**."
         else:
-            # Check if record exists
+            # Enforce "one person per title" rule:
+            # 1. Clear this specific title from anyone else who might have it
+            DatabaseManager.execute(
+                "UPDATE user_rank_customization SET title = NULL WHERE title = ?",
+                (title,)
+            )
+            
+            # 2. Check if the target user already has a record for customization
             exists = DatabaseManager.fetch_one("SELECT 1 FROM user_rank_customization WHERE user_id = ?", (user_id,))
             if exists:
                 DatabaseManager.execute(
@@ -62,7 +69,7 @@ class TitleSelectionView(discord.ui.View):
                     "INSERT INTO user_rank_customization (user_id, title) VALUES (?, ?)",
                     (user_id, title)
                 )
-            msg = f"✅ Set title for **{self.target_member.display_name}** to: `{title}`"
+            msg = f"✅ Set title for **{self.target_member.display_name}** to: `{title}`.\n*(Note: This title has been removed from any previous holder)*"
         
         # Now we can just use send_message with ephemeral=True if we want a new message, 
         # or edit the ephemeral message.

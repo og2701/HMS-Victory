@@ -159,7 +159,7 @@ Awarded for sending a message on November 5th.
 ---
 
 # 🏅 Rank Titles
-Titles are premium badges of honor displayed beneath a user's name on their `/rank` card. They are hand-awarded by the Grand Admiral to notable community members.
+Titles are premium badges of honor displayed beneath a user's name on their `/rank` card. They are hand-awarded by the Grand Admiral to notable community members. Each title is **unique** and can only be held by one person at a time; assigning a title to a new user will automatically remove it from the previous holder.
 
 ### ⚓ The Grand Admiral
 Reserved for top-tier leadership and community pillars.
