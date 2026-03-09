@@ -151,7 +151,8 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         
         if customization:
             res_bg, res_p, res_s, res_t, res_title = customization
-            if res_bg: bg_file = res_bg
+            if res_bg and res_bg != 'unionjack.png': 
+                bg_file = res_bg
             if res_p: primary_color = res_p
             if res_s: secondary_color = res_s
             if res_t: tertiary_color = res_t
