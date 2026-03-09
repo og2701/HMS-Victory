@@ -162,61 +162,61 @@ Awarded for sending a message on November 5th.
 Titles are premium badges of honor displayed beneath a user's name on their `/rank` card. They are hand-awarded by the Grand Admiral to notable community members. Each title is **unique** and can only be held by one person at a time; assigning a title to a new user will automatically remove it from the previous holder.
 
 ### ⚓ The Grand Admiral
-Reserved for top-tier leadership and community pillars.
+The highest rank, reserved for the absolute leader of the fleet.
 
-### ☕ The Tea Drinker
-For consistent participants who embody the server's British spirit.
+### 🚢 Fleet Commander
+A prestigious title for those who command respect and lead major operations.
 
-### 👟 The Roadman
-For those who have mastered the local dialect and slang.
+### 🎖️ Rear Admiral
+A high-ranking officer responsible for strategic oversight.
 
-### 🎖️ The Commonwealth Hero
-Awarded to exceptionally helpful and supportive community members.
+### ⚓ Commodore
+A distinguished rank for veteran members who anchor the community.
 
-### 💂 The Royal Guard
-For those who stand watch and help maintain the server's order.
+### 👨‍✈️ Ship's Captain
+Awarded to those who take full charge of their domain and lead by example.
 
-### 🃏 The Village Idiot
-For the community's most iconic pranksters and jesters.
+### 🗡️ First Lieutenant
+The Captain's right hand, reliable and ready for action.
 
-### 🧠 The Mastermind
-For the winners of seasonal events and complex challenges.
+### 🧭 Sailing Master
+For those who navigate the server perfectly and know every corner.
 
-### 💰 The High Roller
-For the true elite of the HMS Victory economy.
+### ⚔️ Master at Arms
+Responsible for discipline and order within the ranks.
 
-### 🦉 The Night Owl
-For the dedicated members who keep the chat alive after midnight.
+### ⚓ Midshipman
+An officer in training, showing great potential and dedication.
 
-### 🌅 The Morning Star
-For those who lead the first conversations of the dawn.
+### ⚓ Able Seaman
+A reliable and hardworking member who keeps the ship running.
 
-### 🏛️ The Pillar of Strength
-An honor for long-standing veterans of the community.
+### 💣 Master Gunner
+For the most explosive and high-impact contributors.
 
-### 🗺️ The Global Traveler
-Recognizing members participating from across the globe.
+### 🩺 Ship's Surgeon
+The community healer, always ready to patch things up.
 
-### 🪙 The Master of Coin
-For savvy auction winners and economic powerhouses.
+### 💰 Purser
+In charge of the ship's stores and finances—the master of UKPence.
 
-### 🔮 The Oracle
-For those with an uncanny accuracy in the prediction markets.
+### 🔉 Boatswain
+The one who communicates orders and keeps everyone in sync.
 
-### 🔆 The Eternal Optimist
-For the dedicated players who never let a loss dampen their spirit.
+### ⚒️ Ship's Carpenter
+A creative force who builds and maintains the server's foundations.
 
-### 🛡️ The Silent Guardian
-For the most active and observant long-term lurkers.
+### 🐒 Powder Monkey
+A fast-moving, energetic member who provides the "ammunition" for chat.
 
-### 🍷 The Royal Wit
-For the sharpest, wittiest, and most eloquent members.
+### 🔭 Lookout Scout
+Always the first to spot new trends or incoming news.
 
-### 📜 The King's Subject
-For loyal participants who never miss a server event.
+### 🧹 Cabin Boy
+A junior role for those just starting their journey to greatness.
 
-### 👑 The British Legend
-The highest honor for the most iconic community icons.
+### 💂 Royal Marine
+For the most disciplined and combat-ready (or debate-ready) members.
 
-### 🛳️ The HMS Victory Captain
-Reserved for those who have contributed significantly to the server's voyage.
+### 🇬🇧 British Sea Legend
+A legendary figure whose name is etched into the history of HMS Victory.
