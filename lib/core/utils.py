@@ -141,19 +141,35 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
 
         user_id_str = str(member.id)
         customization = DatabaseManager.fetch_one(
-            "SELECT background, primary_color, secondary_color, tertiary_color FROM user_rank_customization WHERE user_id = ?",
+            "SELECT background, primary_color, secondary_color, tertiary_color, title FROM user_rank_customization WHERE user_id = ?",
             (user_id_str,)
         )
         
         bg_file = CUSTOM_RANK_BACKGROUNDS.get(user_id_str, "unionjack.png")
         primary_color, secondary_color, tertiary_color = '#CF142B', '#00247D', '#FFFFFF'
+        title = ""
         
         if customization:
-            res_bg, res_p, res_s, res_t = customization
+            res_bg, res_p, res_s, res_t, res_title = customization
             if res_bg: bg_file = res_bg
             if res_p: primary_color = res_p
             if res_s: secondary_color = res_s
             if res_t: tertiary_color = res_t
+            if res_title: title = res_title
+
+        # Username scaling
+        username = member.display_name
+        name_len = len(username)
+        if name_len <= 10:
+            username_font_size = "4.5rem"
+        elif name_len <= 15:
+            username_font_size = "3.5rem"
+        elif name_len <= 20:
+            username_font_size = "2.8rem"
+        else:
+            username_font_size = "2.2rem"
+            
+        title_display = "block" if title else "none"
 
         background_path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
         if not os.path.exists(background_path):
@@ -204,6 +220,9 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         html_content = safe_replace(html_content, "primary_color", primary_color)
         html_content = safe_replace(html_content, "secondary_color", secondary_color)
         html_content = safe_replace(html_content, "tertiary_color", tertiary_color)
+        html_content = safe_replace(html_content, "username_font_size", username_font_size)
+        html_content = safe_replace(html_content, "title", title)
+        html_content = safe_replace(html_content, "title_display", title_display)
         html_content = safe_replace(html_content, "badges_html", badges_html)
         html_content = safe_replace(html_content, "secret_badges_html", secret_badges_html)
 

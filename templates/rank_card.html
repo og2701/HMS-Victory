@@ -233,13 +233,62 @@
       margin-bottom: 5px;
     }
 
+    .username-container {
+      width: 680px;
+      overflow: hidden;
+    }
+
     .username {
       font-family: 'Outfit', sans-serif;
-      font-size: 4.5rem;
+
+      font-size: {
+        username_font_size
+      }
+
+      ;
       font-weight: 900;
       color: #fff;
       line-height: 1;
       text-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+      white-space: nowrap;
+    }
+
+    .title-banner {
+      display: {
+        title_display
+      }
+
+      ;
+      margin-top: 8px;
+      padding: 4px 16px;
+
+      background: linear-gradient(90deg, {
+        primary_color
+      }
+
+      44, transparent);
+
+    border-left: 4px solid {
+      primary_color
+    }
+
+    ;
+    border-radius: 4px;
+    font-family: 'Outfit',
+    sans-serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+
+    color: {
+      tertiary_color
+    }
+
+    ;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    width: max-content;
+    backdrop-filter: blur(4px);
+    box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.3);
     }
 
     .progress-section {
@@ -360,7 +409,10 @@
     <div class="main-panel">
       <div class="user-header">
         <div class="rank-label">Rank #{rank}</div>
-        <div class="username">{username}</div>
+        <div class="username-container">
+          <div class="username">{username}</div>
+        </div>
+        <div class="title-banner">{title}</div>
       </div>
 
       <div class="progress-section">

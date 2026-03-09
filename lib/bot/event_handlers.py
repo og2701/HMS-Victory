@@ -569,6 +569,16 @@ async def on_message(client, message):
             except Exception as e:
                 logger.error(f"Error launching UKPAddUserSelectView: {e}")
 
+    if message.content.lower().strip() == "titleadd" and message.author.id == USERS.OGGERS:
+        try:
+            from lib.features.titles import UserSelectionView
+            await message.reply(
+                "Select a user to give a title:",
+                view=UserSelectionView()
+            )
+        except Exception as e:
+            logger.error(f"Error launching UserSelectionView: {e}")
+
     if message.content.lower().startswith("hmsql") and message.author.id == USERS.OGGERS:
         query = message.content[len("hmsql"):].strip()
         if not query:

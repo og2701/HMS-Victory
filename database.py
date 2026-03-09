@@ -146,7 +146,8 @@ def init_db():
                 background TEXT DEFAULT 'unionjack.png',
                 primary_color TEXT DEFAULT '#CF142B',
                 secondary_color TEXT DEFAULT '#00247D',
-                tertiary_color TEXT DEFAULT '#FFFFFF'
+                tertiary_color TEXT DEFAULT '#FFFFFF',
+                title TEXT
             )
         ''')
         # Initialize the bank with a single row if it doesn't exist
@@ -200,6 +201,12 @@ def init_db():
         columns = [column[1] for column in c.fetchall()]
         if 'rarity' not in columns:
             c.execute("ALTER TABLE badges ADD COLUMN rarity TEXT NOT NULL DEFAULT 'Bronze'")
+
+        # Migration for user_rank_customization
+        c.execute("PRAGMA table_info(user_rank_customization)")
+        columns = [column[1] for column in c.fetchall()]
+        if 'title' not in columns:
+            c.execute("ALTER TABLE user_rank_customization ADD COLUMN title TEXT")
 
         # Initial badge data
         badges = [
