@@ -204,16 +204,27 @@ class XPSystem:
             except:
                 pass
 
+        user_ids = [str(uid) for uid, _ in data_slice]
+        titles_dict = {}
+        if user_ids:
+            placeholders = ','.join('?' * len(user_ids))
+            query = f"SELECT user_id, title FROM user_rank_customization WHERE title IS NOT NULL AND user_id IN ({placeholders})"
+            title_results = DatabaseManager.fetch_all(query, tuple(user_ids))
+            titles_dict = {row[0]: row[1] for row in title_results}
+
         for i, (uid, xp_val) in enumerate(data_slice):
             rank = offset + i + 1
             member = guild.get_member(int(uid))
             name = member.display_name if member else "Unknown"
+            title = titles_dict.get(str(uid))
             avatar_url = member.display_avatar.url if member else "https://cdn.discordapp.com/embed/avatars/0.png"
             avatar = await get_avatar_data_uri(self.client, avatar_url)
 
             # Determine rank class for specific styling (Gold, Silver, Bronze for top 3)
             rank_class = f"rank-{rank}" if rank <= 3 else ""
             
+            title_html = f'<div class="user-title" style="font-size: 0.85em; color: #b0b0b0; font-style: italic; margin-top: -2px;">{title}</div>' if title else ""
+
             block = f"""
             <div class="leaderboard-item {rank_class}">
               <div class="rank-badge">#{rank}</div>
@@ -221,7 +232,7 @@ class XPSystem:
                 <img src="{avatar}" class="avatar" />
               </div>
               <div class="user-info">
-                <div class="user-name">{name}</div>
+                <div class="user-name">{name}{title_html}</div>
                 <div class="user-stats">XP: <span class="stat-highlight">{xp_val:,}</span></div>
               </div>
             </div>
@@ -278,16 +289,27 @@ class XPSystem:
             except:
                 pass
 
+        user_ids = [str(uid) for uid, _ in data_slice]
+        titles_dict = {}
+        if user_ids:
+            placeholders = ','.join('?' * len(user_ids))
+            query = f"SELECT user_id, title FROM user_rank_customization WHERE title IS NOT NULL AND user_id IN ({placeholders})"
+            title_results = DatabaseManager.fetch_all(query, tuple(user_ids))
+            titles_dict = {row[0]: row[1] for row in title_results}
+
         for i, (uid, bal) in enumerate(data_slice):
             rank = offset + i + 1
             member = guild.get_member(int(uid))
             name = member.display_name if member else "Unknown"
+            title = titles_dict.get(str(uid))
             avatar_url = member.display_avatar.url if member else "https://cdn.discordapp.com/embed/avatars/0.png"
             avatar = await get_avatar_data_uri(self.client, avatar_url)
 
             # Determine rank class for specific styling
             rank_class = f"rank-{rank}" if rank <= 3 else ""
             
+            title_html = f'<div class="user-title" style="font-size: 0.85em; color: #b0b0b0; font-style: italic; margin-top: -2px;">{title}</div>' if title else ""
+
             block = f"""
             <div class="leaderboard-item {rank_class}">
               <div class="rank-badge">#{rank}</div>
@@ -295,7 +317,7 @@ class XPSystem:
                 <img src="{avatar}" class="avatar" />
               </div>
               <div class="user-info">
-                <div class="user-name">{name}</div>
+                <div class="user-name">{name}{title_html}</div>
                 <div class="user-stats">UKPence: <span class="stat-highlight">{bal:,}</span></div>
               </div>
             </div>

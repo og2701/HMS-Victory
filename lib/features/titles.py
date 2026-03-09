@@ -17,11 +17,11 @@ TITLES = [
     "Purser",
     "Boatswain",
     "Ship's Carpenter",
-    "Powder Monkey",
-    "Lookout Scout",
-    "Cabin Boy",
-    "Royal Marine",
-    "British Sea Legend"
+    "Cannon Fodder",
+    "Ship's Rat",
+    "Mutineer",
+    "Barnacle",
+    "Deck Scrubber"
 ]
 
 class TitleLaunchView(discord.ui.View):
