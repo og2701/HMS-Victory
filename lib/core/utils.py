@@ -176,6 +176,12 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
             bg_file = "unionjack.png"
             background_path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
         background_data_uri = encode_image_to_data_uri(background_path)
+        
+        # Encode title banner texture
+        title_banner_path = os.path.join(BASE_DIR, "data", "rank_cards", "title_banner_texture.png")
+        title_bg_uri = ""
+        if os.path.exists(title_banner_path):
+            title_bg_uri = encode_image_to_data_uri(title_banner_path)
 
         # Add badges
         badges_html = ""
@@ -223,6 +229,7 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         html_content = safe_replace(html_content, "username_font_size", username_font_size)
         html_content = safe_replace(html_content, "title", title)
         html_content = safe_replace(html_content, "title_display", title_display)
+        html_content = safe_replace(html_content, "title_bg", title_bg_uri)
         html_content = safe_replace(html_content, "badges_html", badges_html)
         html_content = safe_replace(html_content, "secret_badges_html", secret_badges_html)
 
