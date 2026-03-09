@@ -7,7 +7,8 @@ from database import DatabaseManager
 from config import *
 from lib.core.constants import CHAT_LEVEL_ROLE_THRESHOLDS
 from lib.economy.economy_manager import get_bb
-from lib.core.image_processing import screenshot_html, get_avatar_data_uri
+from lib.core.image_processing import screenshot_html, get_avatar_data_uri, encode_image_to_data_uri
+import os
 from lib.core.file_operations import read_html_template
 
 class LeaderboardView(discord.ui.View):
@@ -204,6 +205,12 @@ class XPSystem:
             except:
                 pass
 
+        # Encode title banner texture
+        title_banner_path = os.path.join(BASE_DIR, "data", "rank_cards", "title_banner_texture.png")
+        title_bg_uri = ""
+        if os.path.exists(title_banner_path):
+            title_bg_uri = encode_image_to_data_uri(title_banner_path)
+
         user_ids = [str(uid) for uid, _ in data_slice]
         titles_dict = {}
         if user_ids:
@@ -223,10 +230,11 @@ class XPSystem:
             # Determine rank class for specific styling (Gold, Silver, Bronze for top 3)
             rank_class = f"rank-{rank}" if rank <= 3 else ""
             
-            title_html = f'<div class="user-title" style="font-size: 0.85em; color: #b0b0b0; font-style: italic; margin-top: -2px;">{title}</div>' if title else ""
+            title_style = f"background: url('{title_bg_uri}') no-repeat center center; background-size: cover; border: 1px solid #D4AF37; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);" if title and title_bg_uri else ""
+            title_html = f'<div class="user-title" style="font-size: 0.85em; color: #FFD700; font-family: \'Outfit\', sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">{title}</div>' if title else ""
 
             block = f"""
-            <div class="leaderboard-item {rank_class}">
+            <div class="leaderboard-item {rank_class}" style="{title_style}">
               <div class="rank-badge">#{rank}</div>
               <div class="avatar-container">
                 <img src="{avatar}" class="avatar" />
@@ -289,6 +297,12 @@ class XPSystem:
             except:
                 pass
 
+        # Encode title banner texture
+        title_banner_path = os.path.join(BASE_DIR, "data", "rank_cards", "title_banner_texture.png")
+        title_bg_uri = ""
+        if os.path.exists(title_banner_path):
+            title_bg_uri = encode_image_to_data_uri(title_banner_path)
+
         user_ids = [str(uid) for uid, _ in data_slice]
         titles_dict = {}
         if user_ids:
@@ -308,10 +322,11 @@ class XPSystem:
             # Determine rank class for specific styling
             rank_class = f"rank-{rank}" if rank <= 3 else ""
             
-            title_html = f'<div class="user-title" style="font-size: 0.85em; color: #b0b0b0; font-style: italic; margin-top: -2px;">{title}</div>' if title else ""
+            title_style = f"background: url('{title_bg_uri}') no-repeat center center; background-size: cover; border: 1px solid #D4AF37; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);" if title and title_bg_uri else ""
+            title_html = f'<div class="user-title" style="font-size: 0.85em; color: #FFD700; font-family: \'Outfit\', sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">{title}</div>' if title else ""
 
             block = f"""
-            <div class="leaderboard-item {rank_class}">
+            <div class="leaderboard-item {rank_class}" style="{title_style}">
               <div class="rank-badge">#{rank}</div>
               <div class="avatar-container">
                 <img src="{avatar}" class="avatar" />
