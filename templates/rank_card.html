@@ -235,7 +235,7 @@
 
     .username-container {
       width: 680px;
-      overflow: hidden;
+      /* removed overflow: hidden to prevent clipping descenders */
     }
 
     .username {
@@ -246,11 +246,15 @@
       }
 
       ;
+
       font-weight: 900;
       color: #fff;
-      line-height: 1;
+      line-height: 1.2;
+      /* increased from 1 to allow descenders */
       text-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
       white-space: nowrap;
+      padding-bottom: 5px;
+      /* extra space for descenders */
     }
 
     .title-banner {
