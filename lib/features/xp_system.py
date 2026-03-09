@@ -5,7 +5,7 @@ import io
 import asyncio
 from database import DatabaseManager
 from config import *
-from lib.core.constants import CHAT_LEVEL_ROLE_THRESHOLDS
+from lib.core.constants import CHAT_LEVEL_ROLE_THRESHOLDS, CUSTOM_RANK_BACKGROUNDS
 from lib.economy.economy_manager import get_bb
 from lib.core.image_processing import screenshot_html, get_avatar_data_uri, encode_image_to_data_uri
 import os
@@ -212,29 +212,48 @@ class XPSystem:
             title_bg_uri = encode_image_to_data_uri(title_banner_path)
 
         user_ids = [str(uid) for uid, _ in data_slice]
-        titles_dict = {}
+        customizations = {}
         if user_ids:
             placeholders = ','.join('?' * len(user_ids))
-            query = f"SELECT user_id, title FROM user_rank_customization WHERE title IS NOT NULL AND user_id IN ({placeholders})"
-            title_results = DatabaseManager.fetch_all(query, tuple(user_ids))
-            titles_dict = {row[0]: row[1] for row in title_results}
+            query = f"SELECT user_id, title, background FROM user_rank_customization WHERE user_id IN ({placeholders})"
+            results = DatabaseManager.fetch_all(query, tuple(user_ids))
+            customizations = {row[0]: {'title': row[1], 'background': row[2]} for row in results}
 
         for i, (uid, xp_val) in enumerate(data_slice):
             rank = offset + i + 1
             member = guild.get_member(int(uid))
             name = member.display_name if member else "Unknown"
-            title = titles_dict.get(str(uid))
+            
+            uid_str = str(uid)
+            cust = customizations.get(uid_str, {})
+            title = cust.get('title')
+            db_bg = cust.get('background')
+            
+            bg_file = CUSTOM_RANK_BACKGROUNDS.get(uid_str)
+            if db_bg:
+                bg_file = db_bg
+                
+            has_custom_bg = bg_file is not None and bg_file != "unionjack.png"
+            
             avatar_url = member.display_avatar.url if member else "https://cdn.discordapp.com/embed/avatars/0.png"
             avatar = await get_avatar_data_uri(self.client, avatar_url)
 
             # Determine rank class for specific styling (Gold, Silver, Bronze for top 3)
             rank_class = f"rank-{rank}" if rank <= 3 else ""
             
-            title_style = f"background: url('{title_bg_uri}') no-repeat center center; background-size: cover; border: 1px solid #D4AF37; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);" if title and title_bg_uri else ""
+            box_style = ""
+            if has_custom_bg:
+                bg_path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
+                if os.path.exists(bg_path):
+                    bg_uri = encode_image_to_data_uri(bg_path)
+                    box_style = f"background: linear-gradient(90deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%), url('{bg_uri}') no-repeat center center; background-size: cover; border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);"
+            elif title and title_bg_uri:
+                box_style = f"background: url('{title_bg_uri}') no-repeat center center; background-size: cover; border: 1px solid #D4AF37; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);"
+
             title_html = f'<div class="user-title" style="font-size: 0.85em; color: #FFD700; font-family: \'Outfit\', sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">{title}</div>' if title else ""
 
             block = f"""
-            <div class="leaderboard-item {rank_class}" style="{title_style}">
+            <div class="leaderboard-item {rank_class}" style="{box_style}">
               <div class="rank-badge">#{rank}</div>
               <div class="avatar-container">
                 <img src="{avatar}" class="avatar" />
@@ -304,29 +323,48 @@ class XPSystem:
             title_bg_uri = encode_image_to_data_uri(title_banner_path)
 
         user_ids = [str(uid) for uid, _ in data_slice]
-        titles_dict = {}
+        customizations = {}
         if user_ids:
             placeholders = ','.join('?' * len(user_ids))
-            query = f"SELECT user_id, title FROM user_rank_customization WHERE title IS NOT NULL AND user_id IN ({placeholders})"
-            title_results = DatabaseManager.fetch_all(query, tuple(user_ids))
-            titles_dict = {row[0]: row[1] for row in title_results}
+            query = f"SELECT user_id, title, background FROM user_rank_customization WHERE user_id IN ({placeholders})"
+            results = DatabaseManager.fetch_all(query, tuple(user_ids))
+            customizations = {row[0]: {'title': row[1], 'background': row[2]} for row in results}
 
         for i, (uid, bal) in enumerate(data_slice):
             rank = offset + i + 1
             member = guild.get_member(int(uid))
             name = member.display_name if member else "Unknown"
-            title = titles_dict.get(str(uid))
+            
+            uid_str = str(uid)
+            cust = customizations.get(uid_str, {})
+            title = cust.get('title')
+            db_bg = cust.get('background')
+            
+            bg_file = CUSTOM_RANK_BACKGROUNDS.get(uid_str)
+            if db_bg:
+                bg_file = db_bg
+                
+            has_custom_bg = bg_file is not None and bg_file != "unionjack.png"
+            
             avatar_url = member.display_avatar.url if member else "https://cdn.discordapp.com/embed/avatars/0.png"
             avatar = await get_avatar_data_uri(self.client, avatar_url)
 
             # Determine rank class for specific styling
             rank_class = f"rank-{rank}" if rank <= 3 else ""
             
-            title_style = f"background: url('{title_bg_uri}') no-repeat center center; background-size: cover; border: 1px solid #D4AF37; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);" if title and title_bg_uri else ""
+            box_style = ""
+            if has_custom_bg:
+                bg_path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
+                if os.path.exists(bg_path):
+                    bg_uri = encode_image_to_data_uri(bg_path)
+                    box_style = f"background: linear-gradient(90deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%), url('{bg_uri}') no-repeat center center; background-size: cover; border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);"
+            elif title and title_bg_uri:
+                box_style = f"background: url('{title_bg_uri}') no-repeat center center; background-size: cover; border: 1px solid #D4AF37; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);"
+
             title_html = f'<div class="user-title" style="font-size: 0.85em; color: #FFD700; font-family: \'Outfit\', sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">{title}</div>' if title else ""
 
             block = f"""
-            <div class="leaderboard-item {rank_class}" style="{title_style}">
+            <div class="leaderboard-item {rank_class}" style="{box_style}">
               <div class="rank-badge">#{rank}</div>
               <div class="avatar-container">
                 <img src="{avatar}" class="avatar" />
