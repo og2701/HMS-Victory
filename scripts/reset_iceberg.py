@@ -11,7 +11,14 @@ def reset_iceberg():
         count = DatabaseManager.execute("DELETE FROM iceberg")
         # Reset autoincrement
         DatabaseManager.execute("DELETE FROM sqlite_sequence WHERE name='iceberg'")
-        print(f"✅ Successfully reset the iceberg. Removed {count} entries.")
+        
+        # Clear cache file
+        cache_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "iceberg_cache.png")
+        if os.path.exists(cache_path):
+            os.remove(cache_path)
+            print(f"✅ Successfully reset the iceberg. Removed {count} entries and cleared cache.")
+        else:
+            print(f"✅ Successfully reset the iceberg. Removed {count} entries.")
     except Exception as e:
         print(f"❌ Failed to reset iceberg data: {e}")
 

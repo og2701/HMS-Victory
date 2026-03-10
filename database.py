@@ -200,9 +200,25 @@ def init_db():
             CREATE TABLE IF NOT EXISTS iceberg (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 text TEXT NOT NULL,
-                level INTEGER NOT NULL
+                level INTEGER NOT NULL,
+                x INTEGER,
+                y INTEGER,
+                color TEXT,
+                rotation INTEGER DEFAULT 0
             )
         ''')
+        
+        # Migration: Add x, y, color, rotation if they don't exist
+        c.execute("PRAGMA table_info(iceberg)")
+        columns = [column[1] for column in c.fetchall()]
+        if 'x' not in columns:
+            c.execute("ALTER TABLE iceberg ADD COLUMN x INTEGER")
+        if 'y' not in columns:
+            c.execute("ALTER TABLE iceberg ADD COLUMN y INTEGER")
+        if 'color' not in columns:
+            c.execute("ALTER TABLE iceberg ADD COLUMN color TEXT")
+        if 'rotation' not in columns:
+            c.execute("ALTER TABLE iceberg ADD COLUMN rotation INTEGER DEFAULT 0")
         
         # Migration: Add rarity column if it doesn't exist
         c.execute("PRAGMA table_info(badges)")
