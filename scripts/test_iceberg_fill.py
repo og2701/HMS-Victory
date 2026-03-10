@@ -11,16 +11,12 @@ from commands.creative.iceberg.add_to_iceberg import add_iceberg_text, LEVEL_BOU
 
 # A list of random HMS Victory / Pirate / Ocean themed lore bits
 TEST_LORE = [
-    "Nelson's Ghost", "The Grog Stash", "Kraken in the Thames", "Ghost Ship sighting",
-    "Buried Treasure", "Mutiny on the Bounty", "Scurvy Cure", "The Black Spot",
-    "Davy Jones' Locker", "Mermaid Lagoon", "Siren Song", "Phantom Sails",
-    "The Admiral's Hat", "Cannonball Fever", "Shark Infested Waters", "Lost Map",
-    "Golden Gallon", "Skull and Crossbones", "Jolly Roger", "Rum Run",
-    "The Leviathan", "Bermuda Triangle", "St. Elmo's Fire", "Flying Dutchman",
-    "Marooned", "Walk the Plank", "Pieces of Eight", "Doubloons",
-    "The Kraken's Ink", "Poseidon's Trident", "Atlantis Ruins", "Sea Serpent",
-    "Cthulhu Rises", "Abyssal Plain", "Midnight Zone", "Twilight Zone",
-    "Sunken Cathedral", "Ghost Whales", "Shipwreck Graveyard", "Neon Jellyfish"
+    "Lorem", "Ipsum", "Dolor", "Sit", "Amet", "Consectetur", "Adipiscing", "Elit",
+    "Sed", "Do", "Eiusmod", "Tempor", "Incididunt", "Ut", "Labore", "Et",
+    "Dolore", "Magna", "Aliqua", "Ut", "Enim", "Ad", "Minim", "Veniam",
+    "Quis", "Nostrud", "Exercitation", "Ullamco", "Laboris", "Nisi",
+    "Ut", "Aliquip", "Ex", "Ea", "Commodo", "Consequat", "Duis", "Aute",
+    "Irure", "Dolor", "In", "Reprehenderit", "In", "Voluptate", "Velit"
 ]
 
 async def fill_iceberg(num_entries=20):
