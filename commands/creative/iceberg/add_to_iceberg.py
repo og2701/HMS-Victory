@@ -42,11 +42,12 @@ async def add_iceberg_text(interaction, text: str, level: int, show_image: bool 
         text_bbox = font.getbbox(t)
         w = text_bbox[2] - text_bbox[0]
         h = text_bbox[3] - text_bbox[1]
-        existing_positions.append((x, y, x + w, y + h))
+        # Account for shadow (2px) and general padding (5px) in collision detection
+        existing_positions.append((x - 2, y - 2, x + w + 7, y + h + 7))
 
     # 2. Calculate attributes for the NEW entry
     bounds = LEVEL_BOUNDS[level]
-    pos = get_text_position(font, text, bounds, existing_positions)
+    pos = get_text_position(font, text, bounds, existing_positions, padding=10)
     if not pos:
         if interaction.response.is_done():
             await interaction.followup.send("❌ Could not find a free spot for this text at this level. It might be too crowded!", ephemeral=True)
@@ -93,23 +94,32 @@ async def render_iceberg_cache():
     for text, x, y, color, rotation in rows:
         # Create a temporary transparent layer for the rotated text
         text_bbox = font.getbbox(text)
-        w = text_bbox[2] - text_bbox[0] + 10 # Buffer for rotation
-        h = text_bbox[3] - text_bbox[1] + 10 # Buffer for rotation
+        txt_w = text_bbox[2] - text_bbox[0]
+        txt_h = text_bbox[3] - text_bbox[1]
+        
+        # Buffer for rotation to avoid clipping
+        buffer = 20
+        w = txt_w + buffer * 2
+        h = txt_h + buffer * 2
         
         # Shadow
-        txt_img = Image.new("RGBA", (w*2, h*2), (0, 0, 0, 0))
+        txt_img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         d = ImageDraw.Draw(txt_img)
-        d.text((w/2, h/2), text, font=font, fill="black")
+        d.text((buffer, buffer), text, font=font, fill="black")
         rot_shadow = txt_img.rotate(rotation, resample=Image.BICUBIC, expand=1)
         
         # Color text
-        txt_img = Image.new("RGBA", (w*2, h*2), (0, 0, 0, 0))
+        txt_img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         d = ImageDraw.Draw(txt_img)
-        d.text((w/2, h/2), text, font=font, fill=color)
+        d.text((buffer, buffer), text, font=font, fill=color)
         rot_text = txt_img.rotate(rotation, resample=Image.BICUBIC, expand=1)
         
         # Paste shadow then text
-        img.paste(rot_shadow, (x - int(w/2) + shadow_offset[0], y - int(h/2) + shadow_offset[1]), rot_shadow)
-        img.paste(rot_text, (x - int(w/2), y - int(h/2)), rot_text)
+        # Subtract the rotation expansion/shift to align (buffer, buffer) to (x, y)
+        shift_x = (rot_text.width - w) // 2 + buffer
+        shift_y = (rot_text.height - h) // 2 + buffer
+        
+        img.paste(rot_shadow, (x - shift_x + shadow_offset[0], y - shift_y + shadow_offset[1]), rot_shadow)
+        img.paste(rot_text, (x - shift_x, y - shift_y), rot_text)
 
     img.save(ICEBERG_CACHE_PATH)

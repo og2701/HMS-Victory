@@ -246,17 +246,25 @@ def find_non_overlapping_position(
     text: str,
     bounds: Tuple[Tuple[int, int], Tuple[int, int]],
     existing_positions: list,
-    max_attempts: int = 100
+    max_attempts: int = 100,
+    padding: int = 8
 ) -> Optional[Tuple[int, int]]:
     text_width, text_height = calculate_text_dimensions(font, text)
+    
+    # Apply safety margin to bounds to prevent line crossing
+    safety_margin = 2
+    inner_bounds_min = (bounds[0][0] + safety_margin, bounds[0][1] + safety_margin)
+    inner_bounds_max = (bounds[1][0] - safety_margin, bounds[1][1] - safety_margin)
 
-    if text_width > (bounds[1][0] - bounds[0][0]) or text_height > (bounds[1][1] - bounds[0][1]):
+    if text_width > (inner_bounds_max[0] - inner_bounds_min[0]) or text_height > (inner_bounds_max[1] - inner_bounds_min[1]):
         raise ValueError("Text is too large to fit within the bounds")
 
     for _ in range(max_attempts):
-        x = random.randint(bounds[0][0], bounds[1][0] - text_width)
-        y = random.randint(bounds[0][1], bounds[1][1] - text_height)
-        new_position = (x, y, x + text_width, y + text_height)
+        x = random.randint(inner_bounds_min[0], inner_bounds_max[0] - text_width)
+        y = random.randint(inner_bounds_min[1], inner_bounds_max[1] - text_height)
+        
+        # New rect with padding for collision check
+        new_position = (x - padding, y - padding, x + text_width + padding, y + text_height + padding)
 
         if not any(
             pos[0] < new_position[2] and pos[2] > new_position[0] and

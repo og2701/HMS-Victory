@@ -4,9 +4,11 @@ import sys
 # Add parent directory to sys.path to import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database import DatabaseManager
+from database import DatabaseManager, init_db
 
 def reset_iceberg():
+    # Ensure database is initialized
+    init_db()
     try:
         count = DatabaseManager.execute("DELETE FROM iceberg")
         # Reset autoincrement

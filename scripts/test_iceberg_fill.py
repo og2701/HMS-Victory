@@ -31,7 +31,7 @@ async def fill_iceberg(num_entries=20):
     interaction = MockInteraction()
 
     for i in range(num_entries):
-        text = random.choice(TEST_LORE) + f" #{random.randint(100, 999)}"
+        text = random.choice(TEST_LORE)
         level = random.randint(1, 6)
         print(f"[{i+1}/{num_entries}] Adding '{text}' to Level {level}...")
         
