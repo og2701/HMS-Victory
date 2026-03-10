@@ -28,5 +28,5 @@ async def handle_shop_command(interaction: discord.Interaction):
         return
 
     from lib.economy.shop_ui import ShopOverviewView
-    view = ShopOverviewView(items, interaction.user.id)
+    view = ShopOverviewView(items, interaction.user.id, interaction.guild)
     await interaction.response.send_message(embed=view._create_embed(), view=view, ephemeral=True)

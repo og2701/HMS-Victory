@@ -18,11 +18,11 @@ import io
 
 class ShopItemSelect(Select):
     """Dropdown menu to select a shop item."""
-    def __init__(self, items: List['ShopItem'], user_id: int):
+    def __init__(self, items: List['ShopItem'], user_id: int, guild: Optional[discord.Guild] = None):
         options = []
         for i, item in enumerate(items):
             quantity = item.get_quantity()
-            price = item.get_price(user_id, interaction.guild)
+            price = item.get_price(user_id, guild)
             stock_str = f"{quantity} left" if quantity is not None else "Unlimited"
             if quantity is not None and quantity <= 0:
                 stock_str = "OUT OF STOCK"
@@ -70,7 +70,7 @@ class ShopOverviewView(View):
         self.items = items
         self.user_id = user_id
         self.guild = guild
-        self.add_item(ShopItemSelect(items, user_id))
+        self.add_item(ShopItemSelect(items, user_id, guild))
 
     def _create_embed(self) -> discord.Embed:
         user_balance = get_bb(self.user_id)
