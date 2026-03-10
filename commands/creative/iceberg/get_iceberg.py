@@ -7,7 +7,7 @@ from lib.core.image_processing import random_color_excluding_blue_and_dark, get_
 
 ICEBERG_IMAGE_PATH = "data/image.png"
 UPDATED_IMAGE_PATH = "data/updated_iceberg.png"
-from config import ICEBERG_DATA_FILE as TEXT_DATA_FILE
+from database import DatabaseManager
 FONT_PATH = "data/fluff.ttf"
 LEVEL_BOUNDS = {
     1: ((4, 2), (404, 81)),
@@ -33,11 +33,13 @@ async def show_iceberg(interaction):
 
     shadow_color = "black"
     shadow_offset = (2, 2)
-    if os.path.exists(TEXT_DATA_FILE):
-        with open(TEXT_DATA_FILE, "r") as f:
-            iceberg_texts = json.load(f)
-    else:
-        iceberg_texts = {str(i): [] for i in range(1, 7)}
+    
+    # Fetch all texts from database
+    rows = DatabaseManager.fetch_all("SELECT text, level FROM iceberg")
+    iceberg_texts = {str(i): [] for i in range(1, 7)}
+    for row in rows:
+        t, l = row
+        iceberg_texts[str(l)].append(t)
 
     positions = []
     for lvl, texts in iceberg_texts.items():

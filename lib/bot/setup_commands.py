@@ -102,12 +102,7 @@ def define_commands(tree, client):
         await interaction.response.defer()
         await screenshotCanvas(interaction, x, y)
 
-    @command("add-to-iceberg", "Adds text to the iceberg image", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def add_to_iceberg_command(interaction: Interaction, text: str, level: int):
-        await interaction.response.defer()
-        await add_iceberg_text(interaction, text, level)
-
-    @command("show-iceberg", "Shows the iceberg image")
+    @command("iceberg", "Shows the iceberg image")
     async def show_iceberg_command(interaction: Interaction):
         await interaction.response.defer()
         await show_iceberg(interaction)

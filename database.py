@@ -196,6 +196,14 @@ def init_db():
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_payer ON pay_transfers(payer_id)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_recipient ON pay_transfers(recipient_id)')
         
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS iceberg (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text TEXT NOT NULL,
+                level INTEGER NOT NULL
+            )
+        ''')
+        
         # Migration: Add rarity column if it doesn't exist
         c.execute("PRAGMA table_info(badges)")
         columns = [column[1] for column in c.fetchall()]

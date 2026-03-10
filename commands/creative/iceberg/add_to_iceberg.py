@@ -7,7 +7,7 @@ from lib.core.image_processing import random_color_excluding_blue_and_dark, get_
 
 ICEBERG_IMAGE_PATH = "data/image.png"
 UPDATED_IMAGE_PATH = "data/updated_iceberg.png"
-from config import ICEBERG_DATA_FILE as TEXT_DATA_FILE
+from database import DatabaseManager
 FONT_PATH = "data/fluff.ttf"
 LEVEL_BOUNDS = {
     1: ((4, 2), (404, 81)),
@@ -22,14 +22,15 @@ async def add_iceberg_text(interaction, text: str, level: int, show_image: bool 
     if level not in LEVEL_BOUNDS:
         await interaction.response.send_message("Invalid level. Please choose a level between 1 and 6.", ephemeral=True)
         return
-    if os.path.exists(TEXT_DATA_FILE):
-        with open(TEXT_DATA_FILE, "r") as f:
-            iceberg_texts = json.load(f)
-    else:
-        iceberg_texts = {str(i): [] for i in range(1, 7)}
-    iceberg_texts[str(level)].append(text)
-    with open(TEXT_DATA_FILE, "w") as f:
-        json.dump(iceberg_texts, f)
+    # Insert new text into database
+    DatabaseManager.execute("INSERT INTO iceberg (text, level) VALUES (?, ?)", (text, level))
+    
+    # Fetch all texts for rendering
+    rows = DatabaseManager.fetch_all("SELECT text, level FROM iceberg")
+    iceberg_texts = {str(i): [] for i in range(1, 7)}
+    for row in rows:
+        t, l = row
+        iceberg_texts[str(l)].append(t)
 
     img = Image.open(ICEBERG_IMAGE_PATH)
     draw = ImageDraw.Draw(img)
