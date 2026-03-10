@@ -92,10 +92,19 @@ class IcebergAddModal(discord.ui.Modal):
             if not staff_channel:
                 return await interaction.response.send_message("❌ Community Management channel not found. Contact staff.", ephemeral=True)
             
-            view = IcebergApprovalView(interaction.user, text, level, self.item.price)
+            # Save to database for persistence
+            cursor = DatabaseManager.get_connection().cursor()
+            cursor.execute(
+                "INSERT INTO pending_iceberg_submissions (user_id, text, level, price) VALUES (?, ?, ?, ?)",
+                (str(interaction.user.id), text, level, self.item.price)
+            )
+            DatabaseManager.get_connection().commit()
+            submission_id = cursor.lastrowid
+
+            view = IcebergApprovalView(submission_id)
             embed = discord.Embed(
                 title="🧊 Iceberg Submission Request",
-                description=f"User {interaction.user.mention} wants to add text to the iceberg.",
+                description=f"User {interaction.user.mention} wants to add text to the iceberg.\nID: `{submission_id}`",
                 color=0x00ffff
             )
             embed.add_field(name="Text", value=text, inline=False)
@@ -106,24 +115,35 @@ class IcebergAddModal(discord.ui.Modal):
             await interaction.response.send_message("✅ Your submission has been sent to staff for approval!", ephemeral=True)
 
 class IcebergApprovalView(View):
-    def __init__(self, user: discord.Member, text: str, level: int, price: int):
-        super().__init__(timeout=86400)
-        self.user = user
-        self.text = text
-        self.level = level
-        self.price = price
+    def __init__(self, submission_id: int):
+        super().__init__(timeout=None)
+        self.submission_id = submission_id
+        
+        # Add custom IDs for persistence
+        self.approve_button.custom_id = f"iceberg_approve:{submission_id}"
+        self.deny_button.custom_id = f"iceberg_deny:{submission_id}"
 
     @discord.ui.button(label="Approve", style=discord.ButtonStyle.green, emoji="✅")
-    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Only staff should approve (using CABINET role as proxy for CM here)
+    async def approve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not any(role.id in [ROLES.CABINET, ROLES.DEPUTY_PM] for role in interaction.user.roles):
             return await interaction.response.send_message("❌ Only staff can approve iceberg entries.", ephemeral=True)
         
         await interaction.response.defer()
         
+        # Fetch submission info
+        row = DatabaseManager.fetch_one("SELECT user_id, text, level, status FROM pending_iceberg_submissions WHERE id = ?", (self.submission_id,))
+        if not row or row[3] != 'pending':
+            return await interaction.followup.send("❌ Submission not found or already processed.", ephemeral=True)
+        
+        user_id, text, level, status = row
+        
         # Add to iceberg
         try:
-            await add_iceberg_text(interaction, self.text, self.level, show_image=False)
+            from commands.creative.iceberg.add_to_iceberg import add_iceberg_text
+            await add_iceberg_text(interaction, text, level, show_image=False)
+            
+            # Update database
+            DatabaseManager.execute("UPDATE pending_iceberg_submissions SET status = 'approved' WHERE id = ?", (self.submission_id,))
             
             embed = interaction.message.embeds[0]
             embed.title = "✅ Iceberg Submission - APPROVED"
@@ -135,34 +155,52 @@ class IcebergApprovalView(View):
             
             await interaction.edit_original_response(embed=embed, view=self)
             
+            # Notify user
             try:
-                await self.user.send(f"✅ Your iceberg submission `{self.text}` has been approved and added to the iceberg!")
+                user = await interaction.client.fetch_user(int(user_id))
+                if user:
+                    await user.send(f"✅ Your iceberg submission `{text}` has been approved and added to the iceberg!")
             except:
                 pass
         except Exception as e:
-            await interaction.followup.send(f"❌ Error adding to iceberg: {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ Error during approval: {e}", ephemeral=True)
 
     @discord.ui.button(label="Deny", style=discord.ButtonStyle.red, emoji="❌")
-    async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def deny_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not any(role.id in [ROLES.CABINET, ROLES.DEPUTY_PM] for role in interaction.user.roles):
             return await interaction.response.send_message("❌ Only staff can deny iceberg entries.", ephemeral=True)
         
+        await interaction.response.defer()
+
+        # Fetch submission info
+        row = DatabaseManager.fetch_one("SELECT user_id, text, price, status FROM pending_iceberg_submissions WHERE id = ?", (self.submission_id,))
+        if not row or row[3] != 'pending':
+            return await interaction.followup.send("❌ Submission not found or already processed.", ephemeral=True)
+        
+        user_id, text, price, status = row
+
+        # Update database
+        DatabaseManager.execute("UPDATE pending_iceberg_submissions SET status = 'denied' WHERE id = ?", (self.submission_id,))
+        
         # Refund
-        add_bb(self.user.id, self.price, reason="Iceberg submission denied")
+        add_bb(user_id, price)
         
         embed = interaction.message.embeds[0]
         embed.title = "❌ Iceberg Submission - DENIED"
         embed.color = 0xff0000
         embed.add_field(name="Denied By", value=interaction.user.mention, inline=False)
-        embed.add_field(name="Status", value="Refunded 10 UKPence", inline=False)
+        embed.add_field(name="Status", value="Refunded", inline=False)
         
         for item in self.children:
             item.disabled = True
         
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.edit_original_response(embed=embed, view=self)
         
+        # Notify user
         try:
-            await self.user.send(f"❌ Your iceberg submission `{self.text}` was denied. You have been refunded {self.price} UKPence.")
+            user = await interaction.client.fetch_user(int(user_id))
+            if user:
+                await user.send(f"❌ Your iceberg submission `{text}` was denied. You have been refunded {price} UKPence.")
         except:
             pass
 

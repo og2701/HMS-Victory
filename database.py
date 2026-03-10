@@ -219,6 +219,17 @@ def init_db():
             c.execute("ALTER TABLE iceberg ADD COLUMN color TEXT")
         if 'rotation' not in columns:
             c.execute("ALTER TABLE iceberg ADD COLUMN rotation INTEGER DEFAULT 0")
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS pending_iceberg_submissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                text TEXT NOT NULL,
+                level INTEGER NOT NULL,
+                price INTEGER NOT NULL,
+                status TEXT DEFAULT 'pending'
+            )
+        ''')
         
         # Migration: Add rarity column if it doesn't exist
         c.execute("PRAGMA table_info(badges)")

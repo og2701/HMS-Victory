@@ -59,6 +59,18 @@ class AClient(discord.Client):
         for p in self.predictions.values():
             if not p.locked:
                 self.add_view(BetButtons(p), message_id=p.msg_id)
+        
+        # Load persistent iceberg approval views
+        from database import DatabaseManager
+        from lib.economy.shop_items import IcebergApprovalView
+        try:
+            rows = DatabaseManager.fetch_all("SELECT id FROM pending_iceberg_submissions WHERE status = 'pending'")
+            for row in rows:
+                self.add_view(IcebergApprovalView(row[0]))
+            logger.info(f"Registered {len(rows)} persistent iceberg approval views.")
+        except Exception as e:
+            logger.warning(f"Could not load persistent iceberg views: {e}")
+
         logger.info("Persistent prediction views registered in setup_hook.")
 
     async def on_ready(self):

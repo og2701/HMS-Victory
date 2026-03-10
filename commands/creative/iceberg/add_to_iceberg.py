@@ -1,4 +1,5 @@
 import os
+import random
 from discord import File
 from PIL import Image, ImageDraw, ImageFont
 import json
