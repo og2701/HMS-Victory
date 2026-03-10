@@ -490,7 +490,7 @@ class RankCustomisationMenuShopItem(ShopItem):
         all_items = get_all_shop_items()
         rank_items = [i for i in all_items if isinstance(i, (RankBackgroundItem, RankColorThemeItem, RankResetItem))]
         
-        view = RankCustomisationOverviewView(rank_items, interaction.user.id)
+        view = RankCustomisationOverviewView(rank_items, interaction.user.id, interaction.guild)
         await view.initial_send(interaction)
             
         return "Opened the Rank Customisation Menu!"

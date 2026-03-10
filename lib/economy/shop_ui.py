@@ -103,7 +103,7 @@ class ShopOverviewView(View):
                     elif item_info['max_quantity'] is not None:
                         badge = " ⏳"
                         
-            price = item.get_price(self.user_id)
+            price = item.get_price(self.user_id, self.guild)
             item_list.append(f"• **{item.name}** - {price} UKP {badge} ({stock_str})")
         
         if item_list:
@@ -808,10 +808,11 @@ class RankCustomisationOverviewView(View):
     ITEMS_PER_PAGE = 25
     _IMAGE_URL_CACHE = {}
     
-    def __init__(self, items: List['ShopItem'], user_id: int):
+    def __init__(self, items: List['ShopItem'], user_id: int, guild: Optional[discord.Guild] = None):
         super().__init__(timeout=300)
         self.items = items
         self.user_id = user_id
+        self.guild = guild
         self.current_page = 0
         self._update_components()
 
@@ -887,7 +888,7 @@ class RankCustomisationOverviewView(View):
         options = []
         for i, item in enumerate(self.items):
             # A SelectOption needs a label, value, and description
-            price = item.get_price(self.user_id)
+            price = item.get_price(self.user_id, self.guild)
             options.append(discord.SelectOption(
                 label=f"[{i+1}] {item.name}",
                 description=f"{price} UKP - {item.description[:40]}...",
@@ -902,7 +903,7 @@ class RankCustomisationOverviewView(View):
                 
             selected_idx = int(select_menu.values[0])
             target_item = self.items[selected_idx]
-            price = target_item.get_price(interaction.user.id)
+            price = target_item.get_price(interaction.user.id, interaction.guild)
             
             from lib.economy.shop_ui import PurchaseConfirmationView
             detail_view = PurchaseConfirmationView(target_item, self)
@@ -924,7 +925,7 @@ class RankCustomisationOverviewView(View):
         async def back_to_shop(interaction: discord.Interaction):
             if interaction.user.id != self.user_id: return
             from lib.economy.shop_items import get_shop_items
-            shop_overview = ShopOverviewView(get_shop_items(), self.user_id)
+            shop_overview = ShopOverviewView(get_shop_items(), self.user_id, interaction.guild)
             await interaction.response.edit_message(embed=shop_overview._create_embed(), view=shop_overview, attachments=[])
         back_btn.callback = back_to_shop
         self.add_item(back_btn)
