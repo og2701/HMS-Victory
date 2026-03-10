@@ -93,10 +93,11 @@ class IcebergAddModal(discord.ui.Modal):
                 return await interaction.response.send_message("❌ Community Management channel not found. Contact staff.", ephemeral=True)
             
             # Save to database for persistence
+            actual_price = self.item.get_price(interaction.user.id, interaction.guild)
             cursor = DatabaseManager.get_connection().cursor()
             cursor.execute(
                 "INSERT INTO pending_iceberg_submissions (user_id, text, level, price) VALUES (?, ?, ?, ?)",
-                (str(interaction.user.id), text, level, self.item.price)
+                (str(interaction.user.id), text, level, actual_price)
             )
             DatabaseManager.get_connection().commit()
             submission_id = cursor.lastrowid
@@ -109,7 +110,7 @@ class IcebergAddModal(discord.ui.Modal):
             )
             embed.add_field(name="Text", value=text, inline=False)
             embed.add_field(name="Level", value=level, inline=True)
-            embed.add_field(name="Price Paid", value=f"{self.item.price} UKPence", inline=True)
+            embed.add_field(name="Price Paid", value=f"{actual_price} UKPence", inline=True)
             
             await staff_channel.send(embed=embed, view=view)
             await interaction.response.send_message("✅ Your submission has been sent to staff for approval!", ephemeral=True)
@@ -182,14 +183,15 @@ class IcebergApprovalView(View):
         # Update database
         DatabaseManager.execute("UPDATE pending_iceberg_submissions SET status = 'denied' WHERE id = ?", (self.submission_id,))
         
-        # Refund
-        add_bb(user_id, price)
+        # Refund only if they actually paid
+        if price > 0:
+            add_bb(user_id, price)
         
         embed = interaction.message.embeds[0]
         embed.title = "❌ Iceberg Submission - DENIED"
         embed.color = 0xff0000
         embed.add_field(name="Denied By", value=interaction.user.mention, inline=False)
-        embed.add_field(name="Status", value="Refunded", inline=False)
+        embed.add_field(name="Status", value=f"Refunded {price} UKPence" if price > 0 else "No refund (free submission)", inline=False)
         
         for item in self.children:
             item.disabled = True
@@ -200,7 +202,10 @@ class IcebergApprovalView(View):
         try:
             user = await interaction.client.fetch_user(int(user_id))
             if user:
-                await user.send(f"❌ Your iceberg submission `{text}` was denied. You have been refunded {price} UKPence.")
+                if price > 0:
+                    await user.send(f"❌ Your iceberg submission `{text}` was denied. You have been refunded {price} UKPence.")
+                else:
+                    await user.send(f"❌ Your iceberg submission `{text}` was denied.")
         except:
             pass
 
