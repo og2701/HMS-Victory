@@ -34,6 +34,29 @@ class ShopItem(ABC):
         """Execute the purchase action and return a success message."""
         pass
 
+    async def purchase(self, user_id: str, interaction) -> Tuple[bool, str]:
+        """Handle the complete purchase process including inventory management."""
+        # Check inventory before purchase
+        if self.use_inventory:
+            if not ShopInventory.consume_item(self.id, 1):
+                return False, "Item is out of stock or purchase failed."
+
+        try:
+            # Execute the item-specific logic
+            result_message = await self.execute(interaction)
+
+            # Record the purchase - use get_price for accurate logging (0 for boosters)
+            if self.use_inventory:
+                actual_price = self.get_price(int(user_id), interaction.guild)
+                ShopInventory.record_purchase(user_id, self.id, 1, actual_price)
+
+            return True, result_message
+        except Exception as e:
+            # Rollback inventory on error
+            if self.use_inventory:
+                ShopInventory.add_stock(self.id, 1)
+            raise e
+
     def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
         """Check if user can purchase this item. Returns (can_purchase, reason)."""
         # Check inventory if this item uses it
@@ -261,27 +284,6 @@ class IcebergAddItem(ShopItem):
                 return f"{self.name} (In Stock)"
         return self.name
 
-    async def purchase(self, user_id: str, interaction) -> Tuple[bool, str]:
-        """Handle the complete purchase process including inventory management"""
-        # Check inventory before purchase
-        if self.use_inventory:
-            if not ShopInventory.consume_item(self.id, 1):
-                return False, "Item is out of stock or purchase failed."
-
-        try:
-            # Execute the item-specific logic
-            result_message = await self.execute(interaction)
-
-            # Record the purchase
-            if self.use_inventory:
-                ShopInventory.record_purchase(user_id, self.id, 1, self.price)
-
-            return True, result_message
-        except Exception as e:
-            # Rollback inventory on error
-            if self.use_inventory:
-                ShopInventory.add_stock(self.id, 1)
-            raise e
 
 class RoleItem(ShopItem):
     """Shop item for purchasing Discord roles."""
