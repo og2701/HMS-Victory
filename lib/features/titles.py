@@ -1,5 +1,6 @@
 import discord
 from database import DatabaseManager
+from config import CHANNELS
 
 TITLES = [
     "The Grand Admiral",
@@ -101,6 +102,21 @@ class TitleSelectionView(discord.ui.View):
                     (user_id, title)
                 )
             msg = f"✅ Set title for **{self.target_member.display_name}** to: `{title}`.\n*(Note: This title has been removed from any previous holder)*"
+        
+        # Log to BOT_USAGE_LOG
+        log_channel = interaction.guild.get_channel(CHANNELS.BOT_USAGE_LOG)
+        if log_channel:
+            embed = discord.Embed(
+                title="Title Changed",
+                color=0x00ff00 if title != "REMOVE" else 0xff0000
+            )
+            embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
+            embed.add_field(name="Target User", value=self.target_member.mention, inline=True)
+            embed.add_field(name="Action", value="Set Title" if title != "REMOVE" else "Removed Title", inline=True)
+            if title != "REMOVE":
+                embed.add_field(name="Title", value=title, inline=True)
+            
+            await log_channel.send(embed=embed)
         
         # Now we can just use send_message with ephemeral=True if we want a new message, 
         # or edit the ephemeral message.
