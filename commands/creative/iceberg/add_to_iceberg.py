@@ -18,7 +18,7 @@ LEVEL_BOUNDS = {
     6: ((4, 456), (402, 525)),
 }
 
-async def add_iceberg_text(interaction, text: str, level: int):
+async def add_iceberg_text(interaction, text: str, level: int, show_image: bool = True):
     if level not in LEVEL_BOUNDS:
         await interaction.response.send_message("Invalid level. Please choose a level between 1 and 6.", ephemeral=True)
         return
@@ -58,5 +58,6 @@ async def add_iceberg_text(interaction, text: str, level: int):
             except ValueError as e:
                 print(f"Skipping text '{txt}' because: {e}")
     img.save(UPDATED_IMAGE_PATH)
-    file = File(UPDATED_IMAGE_PATH, filename="updated_iceberg.png")
-    await interaction.followup.send(file=file)
+    if show_image:
+        file = File(UPDATED_IMAGE_PATH, filename="updated_iceberg.png")
+        await interaction.followup.send(file=file)

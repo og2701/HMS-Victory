@@ -8,7 +8,7 @@ import aiohttp
 import io
 from datetime import timedelta
 from config import ROLES, CHANNELS, USERS
-from lib.economy.economy_manager import add_shutcoins, add_bb
+from lib.economy.economy_manager import add_shutcoins, add_bb, get_bb
 from lib.economy.shop_inventory import ShopInventory
 from database import DatabaseManager
 from commands.creative.iceberg.add_to_iceberg import add_iceberg_text
@@ -84,7 +84,7 @@ class IcebergAddModal(discord.ui.Modal):
         if self.is_free:
             # Boosters bypass approval
             await interaction.response.defer(ephemeral=True)
-            await add_iceberg_text(interaction, text, level)
+            await add_iceberg_text(interaction, text, level, show_image=False)
             await interaction.followup.send(f"✅ Your text `{text}` has been added to the iceberg (Level {level})!", ephemeral=True)
         else:
             # Others need approval
@@ -123,7 +123,7 @@ class IcebergApprovalView(View):
         
         # Add to iceberg
         try:
-            await add_iceberg_text(interaction, self.text, self.level)
+            await add_iceberg_text(interaction, self.text, self.level, show_image=False)
             
             embed = interaction.message.embeds[0]
             embed.title = "✅ Iceberg Submission - APPROVED"
