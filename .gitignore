@@ -13,3 +13,4 @@ data/iceberg_texts.json
 database.db*
 .env
 venv/
+data/iceberg_cache.png
