@@ -30,8 +30,12 @@ class TitleLaunchView(discord.ui.View):
 
     @discord.ui.button(label="Open Title Manager", style=discord.ButtonStyle.primary)
     async def open_manager(self, interaction: discord.Interaction, button: discord.ui.Button):
-        from config import USERS
-        if interaction.user.id != USERS.OGGERS:
+        from config import USERS, ROLES
+        
+        is_oggers = interaction.user.id == USERS.OGGERS
+        is_deputy_pm = any(role.id == ROLES.DEPUTY_PM for role in interaction.user.roles)
+        
+        if not (is_oggers or is_deputy_pm):
             return await interaction.response.send_message("❌ This is for the Grand Admiral only.", ephemeral=True)
             
         view = UserSelectionView()
