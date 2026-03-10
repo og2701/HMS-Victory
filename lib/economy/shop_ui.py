@@ -3,6 +3,7 @@ from discord.ui import Select, View, Button
 from typing import List, TYPE_CHECKING, Optional
 import random
 import asyncio
+import logging
 from datetime import timedelta
 
 # We use TYPE_CHECKING to avoid circular imports.
@@ -269,36 +270,50 @@ class PurchaseConfirmationView(View):
             deducted = remove_bb(interaction.user.id, price, reason=f"Shop purchase: {self.item.name}")
             
         if deducted:
+            if price > 0:
+                BankManager.deposit(price, f"Purchase of {self.item.name}")
+            from lib.bot.event_handlers import award_badge_with_notify
+            await award_badge_with_notify(interaction.client, interaction.user.id, 'first_purchase')
+            
+            from database import DatabaseManager
+            total_purchased_res = DatabaseManager.fetch_one("SELECT SUM(quantity) FROM shop_purchases WHERE user_id = ?", (str(interaction.user.id),))
+            # Add 1 to account for the current purchase which might not be logged yet
+            total = (total_purchased_res[0] or 0) + 1
+            if total >= 10:
+                await award_badge_with_notify(interaction.client, interaction.user.id, 'shopaholic')
+
+            # Execute item purchase logic
+            # We do not defer here because `execute` might need to edit the message (like VIPCase)
             try:
-                if price > 0:
-                    BankManager.deposit(price, f"Purchase of {self.item.name}")
-                from lib.bot.event_handlers import award_badge_with_notify
-                await award_badge_with_notify(interaction.client, interaction.user.id, 'first_purchase')
-                
-                from database import DatabaseManager
-                total_purchased_res = DatabaseManager.fetch_one("SELECT SUM(quantity) FROM shop_purchases WHERE user_id = ?", (str(interaction.user.id),))
-                # Add 1 to account for the current purchase which might not be logged yet
-                total = (total_purchased_res[0] or 0) + 1
-                if total >= 10:
-                    await award_badge_with_notify(interaction.client, interaction.user.id, 'shopaholic')
-
-                # Execute item purchase logic
-                # We do not defer here because `execute` might need to edit the message (like VIPCase)
                 success, result_message = await self.item.purchase(str(interaction.user.id), interaction)
+            except Exception as e:
+                logging.error(f"Shop execute error for {self.item.name} by {interaction.user}: {e}", exc_info=True)
+                # Refund since execute() failed
+                if price > 0:
+                    BankManager.withdraw(price, f"Refund for error in purchase of {self.item.name}")
+                    add_bb(interaction.user.id, price, reason=f"Shop refund: {self.item.name} (execute error: {type(e).__name__})")
+                
+                error_msg = f"❌ An error occurred during purchase. Your UKPence has been refunded.\nError: {str(e)}"
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(error_msg, ephemeral=True)
+                else:
+                    await interaction.followup.send(error_msg, ephemeral=True)
+                return
 
-                if not success:
-                    # Refund if backend purchase logic returned False
-                    if price > 0:
-                        BankManager.withdraw(price, f"Refund for failed purchase of {self.item.name}")
-                        add_bb(interaction.user.id, price, reason=f"Shop refund: {self.item.name} (out of stock)")
-                    
-                    if not interaction.response.is_done():
-                        await interaction.response.send_message(f"❌ Purchase failed: {result_message}", ephemeral=True)
-                    else:
-                        await interaction.followup.send(f"❌ Purchase failed: {result_message}", ephemeral=True)
-                    return
+            if not success:
+                # Refund if backend purchase logic returned False
+                if price > 0:
+                    BankManager.withdraw(price, f"Refund for failed purchase of {self.item.name}")
+                    add_bb(interaction.user.id, price, reason=f"Shop refund: {self.item.name} (out of stock)")
+                
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(f"❌ Purchase failed: {result_message}", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"❌ Purchase failed: {result_message}", ephemeral=True)
+                return
 
-                # If this is a normal item execution (not taking over UI like VIP Case)...
+            # Item was successfully granted — from here, errors are UI-only (don't refund)
+            try:
                 if self.item.name not in ["VIP Role Case", "Custom Emoji/Sticker"]:
                     # Return to main browser but show a success ephemeral message
                     self.return_view._update_buttons()
@@ -334,18 +349,11 @@ class PurchaseConfirmationView(View):
                     log_embed = discord.Embed(title="Shop Purchase", color=0x00ff00)
                     log_embed.add_field(name="User", value=interaction.user.mention, inline=True)
                     log_embed.add_field(name="Item", value=self.item.name, inline=True)
-                    log_embed.add_field(name="Price", value=f"{self.item.price} UKPence", inline=True)
+                    log_embed.add_field(name="Price", value=f"{price} UKPence", inline=True)
                     await log_channel.send(embed=log_embed)
-
             except Exception as e:
-                BankManager.withdraw(self.item.price, f"Refund for error in purchase of {self.item.name}")
-                add_bb(interaction.user.id, self.item.price, reason=f"Shop refund: {self.item.name} (role grant failed)")
-                
-                error_msg = f"❌ An error occurred during purchase. Your UKPence has been refunded.\nError: {str(e)}"
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(error_msg, ephemeral=True)
-                else:
-                    await interaction.followup.send(error_msg, ephemeral=True)
+                # UI/logging error after successful purchase — do NOT refund
+                logging.error(f"Shop post-purchase UI error for {self.item.name} by {interaction.user}: {e}", exc_info=True)
         else:
             await interaction.response.send_message("❌ Payment failed. Please try again.", ephemeral=True)
 
