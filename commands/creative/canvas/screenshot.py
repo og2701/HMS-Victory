@@ -16,7 +16,7 @@ async def screenshotCanvas(interaction, x: int = -770, y: int = 7930):
         description="Please wait while I capture the screenshot.",
         color=0xFFA500,
     )
-    await interaction.response.send_message(embed=initial_embed)
+    await interaction.followup.send(embed=initial_embed)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
         try:
             screenshot_path = await capture_screenshot(x, y, tmp.name)

@@ -59,4 +59,4 @@ async def add_iceberg_text(interaction, text: str, level: int):
                 print(f"Skipping text '{txt}' because: {e}")
     img.save(UPDATED_IMAGE_PATH)
     file = File(UPDATED_IMAGE_PATH, filename="updated_iceberg.png")
-    await interaction.response.send_message(file=file)
+    await interaction.followup.send(file=file)

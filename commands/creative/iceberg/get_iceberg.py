@@ -20,7 +20,7 @@ LEVEL_BOUNDS = {
 
 async def show_iceberg(interaction):
     if not os.path.exists(ICEBERG_IMAGE_PATH):
-        await interaction.response.send_message("The base iceberg image does not exist.", ephemeral=True)
+        await interaction.followup.send("The base iceberg image does not exist.", ephemeral=True)
         return
 
     img = Image.open(ICEBERG_IMAGE_PATH)
@@ -58,4 +58,4 @@ async def show_iceberg(interaction):
                 print(f"Skipping text '{txt}' because: {e}")
     img.save(UPDATED_IMAGE_PATH)
     file = File(UPDATED_IMAGE_PATH, filename="current_iceberg.png")
-    await interaction.response.send_message(file=file)
+    await interaction.followup.send(file=file)

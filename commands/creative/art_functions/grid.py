@@ -4,7 +4,6 @@ from io import BytesIO
 from PIL import Image, ImageDraw
 
 async def gridify(interaction, image_url):
-    await interaction.response.defer()
     async with aiohttp.ClientSession() as session:
         async with session.get(image_url) as resp:
             image_data = await resp.read()

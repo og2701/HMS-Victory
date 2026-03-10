@@ -569,7 +569,8 @@ async def on_message(client, message):
             except Exception as e:
                 logger.error(f"Error launching UKPAddUserSelectView: {e}")
 
-    if message.content.lower().strip() == "titleadd" and message.author.id == USERS.OGGERS:
+    is_deputy_pm = hasattr(message.author, "roles") and any(role.id == ROLES.DEPUTY_PM for role in message.author.roles)
+    if message.content.lower().strip() == "titleadd" and (message.author.id == USERS.OGGERS or is_deputy_pm):
         try:
             await message.delete()
             from lib.features.titles import TitleLaunchView
