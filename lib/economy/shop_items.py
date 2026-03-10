@@ -11,6 +11,7 @@ from config import ROLES, CHANNELS, USERS
 from lib.economy.economy_manager import add_shutcoins, add_bb
 from lib.economy.shop_inventory import ShopInventory
 from database import DatabaseManager
+from commands.creative.iceberg.add_to_iceberg import add_iceberg_text
 
 class ShopItem(ABC):
     """Abstract base class for all shop items."""
@@ -24,7 +25,7 @@ class ShopItem(ABC):
         self.use_inventory = use_inventory
         self.show_in_shop = show_in_shop
 
-    def get_price(self, user_id: int) -> int:
+    def get_price(self, user_id: int, guild: Optional[discord.Guild] = None) -> int:
         """Get the effective price for a user."""
         return self.price
 
@@ -48,6 +49,153 @@ class ShopItem(ABC):
         if self.use_inventory:
             return ShopInventory.get_quantity(self.id)
         return None
+
+class IcebergAddModal(discord.ui.Modal):
+    def __init__(self, item: 'IcebergAddItem', is_free: bool):
+        super().__init__(title="Add to Iceberg")
+        self.item = item
+        self.is_free = is_free
+        
+        self.text_input = discord.ui.TextInput(
+            label="Iceberg Text",
+            placeholder="What should be added?",
+            min_length=1,
+            max_length=50
+        )
+        self.level_input = discord.ui.TextInput(
+            label="Level (1-6)",
+            placeholder="1=Tip (Common), 6=Abyss (Deep Lore)",
+            min_length=1,
+            max_length=1
+        )
+        self.add_item(self.text_input)
+        self.add_item(self.level_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            level = int(self.level_input.value)
+            if not (1 <= level <= 6):
+                raise ValueError()
+        except ValueError:
+            return await interaction.response.send_message("❌ Level must be a number between 1 and 6.", ephemeral=True)
+
+        text = self.text_input.value
+        
+        if self.is_free:
+            # Boosters bypass approval
+            await interaction.response.defer(ephemeral=True)
+            await add_iceberg_text(interaction, text, level)
+            await interaction.followup.send(f"✅ Your text `{text}` has been added to the iceberg (Level {level})!", ephemeral=True)
+        else:
+            # Others need approval
+            staff_channel = interaction.guild.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
+            if not staff_channel:
+                return await interaction.response.send_message("❌ Community Management channel not found. Contact staff.", ephemeral=True)
+            
+            view = IcebergApprovalView(interaction.user, text, level, self.item.price)
+            embed = discord.Embed(
+                title="🧊 Iceberg Submission Request",
+                description=f"User {interaction.user.mention} wants to add text to the iceberg.",
+                color=0x00ffff
+            )
+            embed.add_field(name="Text", value=text, inline=False)
+            embed.add_field(name="Level", value=level, inline=True)
+            embed.add_field(name="Price Paid", value=f"{self.item.price} UKPence", inline=True)
+            
+            await staff_channel.send(embed=embed, view=view)
+            await interaction.response.send_message("✅ Your submission has been sent to staff for approval!", ephemeral=True)
+
+class IcebergApprovalView(View):
+    def __init__(self, user: discord.Member, text: str, level: int, price: int):
+        super().__init__(timeout=86400)
+        self.user = user
+        self.text = text
+        self.level = level
+        self.price = price
+
+    @discord.ui.button(label="Approve", style=discord.ButtonStyle.green, emoji="✅")
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Only staff should approve (using CABINET role as proxy for CM here)
+        if not any(role.id in [ROLES.CABINET, ROLES.DEPUTY_PM] for role in interaction.user.roles):
+            return await interaction.response.send_message("❌ Only staff can approve iceberg entries.", ephemeral=True)
+        
+        await interaction.response.defer()
+        
+        # Add to iceberg
+        try:
+            await add_iceberg_text(interaction, self.text, self.level)
+            
+            embed = interaction.message.embeds[0]
+            embed.title = "✅ Iceberg Submission - APPROVED"
+            embed.color = 0x00ff00
+            embed.add_field(name="Approved By", value=interaction.user.mention, inline=False)
+            
+            for item in self.children:
+                item.disabled = True
+            
+            await interaction.edit_original_response(embed=embed, view=self)
+            
+            try:
+                await self.user.send(f"✅ Your iceberg submission `{self.text}` has been approved and added to the iceberg!")
+            except:
+                pass
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error adding to iceberg: {e}", ephemeral=True)
+
+    @discord.ui.button(label="Deny", style=discord.ButtonStyle.red, emoji="❌")
+    async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not any(role.id in [ROLES.CABINET, ROLES.DEPUTY_PM] for role in interaction.user.roles):
+            return await interaction.response.send_message("❌ Only staff can deny iceberg entries.", ephemeral=True)
+        
+        # Refund
+        add_bb(self.user.id, self.price, reason="Iceberg submission denied")
+        
+        embed = interaction.message.embeds[0]
+        embed.title = "❌ Iceberg Submission - DENIED"
+        embed.color = 0xff0000
+        embed.add_field(name="Denied By", value=interaction.user.mention, inline=False)
+        embed.add_field(name="Status", value="Refunded 10 UKPence", inline=False)
+        
+        for item in self.children:
+            item.disabled = True
+        
+        await interaction.response.edit_message(embed=embed, view=self)
+        
+        try:
+            await self.user.send(f"❌ Your iceberg submission `{self.text}` was denied. You have been refunded {self.price} UKPence.")
+        except:
+            pass
+
+class IcebergAddItem(ShopItem):
+    def __init__(self, id: str, name: str, description: str, price: int):
+        super().__init__(id, name, description, price, use_inventory=False)
+
+    def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
+        # Boosters can always "purchase" (it's free for them)
+        if ROLES.SERVER_BOOSTER in [role.id for role in user.roles]:
+            return True, ""
+        
+        # Ensure they have enough money
+        balance = get_bb(user.id)
+        if balance < self.price:
+            return False, f"You need {self.price} UKPence to add to the iceberg."
+        
+        return True, ""
+
+    def get_price(self, user_id: int, guild: Optional[discord.Guild] = None) -> int:
+        # Boosters pay 0
+        from config import ROLES
+        if guild:
+            member = guild.get_member(user_id)
+            if member and ROLES.SERVER_BOOSTER in [role.id for role in member.roles]:
+                return 0
+        return self.price
+
+    async def execute(self, interaction: discord.Interaction) -> str:
+        is_booster = ROLES.SERVER_BOOSTER in [role.id for role in interaction.user.roles]
+        modal = IcebergAddModal(self, is_booster)
+        await interaction.response.send_modal(modal)
+        return "Submission modal opened!"
 
     def get_display_name(self) -> str:
         """Get display name with quantity info"""
@@ -457,6 +605,9 @@ SHOP_ITEMS: List[ShopItem] = [
     # Rank Customisations
     RankCustomisationMenuShopItem("rank_custom_menu", "Customise Rank Card", "Preview and choose different custom backgrounds and colour themes for your rank card.", 0),
     RankResetItem("rank_custom_reset", "Reset Rank Card", "Reset your rank card background and colours to default", 0),
+
+    # Iceberg
+    IcebergAddItem("iceberg_add", "Add to Iceberg", "Add your own text to the server iceberg! (Free for Boosters)", 10),
 
     # --- UK COLLECTION (ART STYLES) ---
     RankBackgroundItem("rank_bg_london_vibrant", "Cartoon London", "Vibrant cartoon-style illustration of London's skyline", 250, "rank_bg_london_cartoon.png"),

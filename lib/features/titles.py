@@ -42,7 +42,21 @@ class TitleSelectionView(discord.ui.View):
         super().__init__(timeout=600)
         self.target_member = target_member
         
-        options = [discord.SelectOption(label=title, value=title) for title in TITLES]
+        # Fetch current title holders
+        holders = DatabaseManager.fetch_all("SELECT user_id, title FROM user_rank_customization WHERE title IS NOT NULL")
+        title_to_user = {title: user_id for user_id, title in holders}
+        
+        options = []
+        for title in TITLES:
+            holder_id = title_to_user.get(title)
+            label = title
+            if holder_id:
+                holder = target_member.guild.get_member(int(holder_id))
+                holder_name = holder.display_name if holder else f"ID: {holder_id}"
+                label = f"{title} [ {holder_name} ]"
+            
+            options.append(discord.SelectOption(label=label, value=title))
+
         options.append(discord.SelectOption(label="[Remove Title]", value="REMOVE", description="Clears the user's title"))
         
         self.select = discord.ui.Select(

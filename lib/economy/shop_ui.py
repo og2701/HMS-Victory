@@ -22,7 +22,7 @@ class ShopItemSelect(Select):
         options = []
         for i, item in enumerate(items):
             quantity = item.get_quantity()
-            price = item.get_price(user_id)
+            price = item.get_price(user_id, interaction.guild)
             stock_str = f"{quantity} left" if quantity is not None else "Unlimited"
             if quantity is not None and quantity <= 0:
                 stock_str = "OUT OF STOCK"
@@ -59,16 +59,17 @@ class ShopItemSelect(Select):
             await selected_item.execute(interaction)
             return
             
-        detail_view = ShopItemDetailView(view.items, selected_item, view.user_id, parent_view_class=type(view))
+        detail_view = ShopItemDetailView(view.items, selected_item, view.user_id, interaction.guild, parent_view_class=type(view))
         
         await interaction.response.edit_message(embed=detail_view._create_embed(), view=detail_view)
 
 class ShopOverviewView(View):
     """The main shop view listing all items and a dropdown."""
-    def __init__(self, items: List['ShopItem'], user_id: int):
+    def __init__(self, items: List['ShopItem'], user_id: int, guild: Optional[discord.Guild] = None):
         super().__init__(timeout=300)
         self.items = items
         self.user_id = user_id
+        self.guild = guild
         self.add_item(ShopItemSelect(items, user_id))
 
     def _create_embed(self) -> discord.Embed:
@@ -118,11 +119,12 @@ class ShopOverviewView(View):
 
 class ShopItemDetailView(View):
     """View showing details of a specific item, with Buy and Back buttons."""
-    def __init__(self, all_items: List['ShopItem'], item: 'ShopItem', user_id: int, parent_view_class=None):
+    def __init__(self, all_items: List['ShopItem'], item: 'ShopItem', user_id: int, guild: Optional[discord.Guild] = None, parent_view_class=None):
         super().__init__(timeout=300)
         self.all_items = all_items
         self.item = item
         self.user_id = user_id
+        self.guild = guild
         self.parent_view_class = parent_view_class or ShopOverviewView
         self._update_buttons()
 
@@ -136,10 +138,10 @@ class ShopItemDetailView(View):
         user_balance = get_bb(self.user_id)
         quantity = self.item.get_quantity()
         
-        can_afford = user_balance >= self.item.get_price(self.user_id)
+        can_afford = user_balance >= self.item.get_price(self.user_id, self.guild)
         in_stock = quantity is None or quantity > 0
         
-        buy_label = f"Buy ({self.item.get_price(self.user_id)} UKP)"
+        buy_label = f"Buy ({self.item.get_price(self.user_id, self.guild)} UKP)"
         buy_style = discord.ButtonStyle.green if (can_afford and in_stock) else discord.ButtonStyle.secondary
         
         buy_btn = Button(label=buy_label, style=buy_style, emoji="💳", disabled=not (can_afford and in_stock))
@@ -161,7 +163,7 @@ class ShopItemDetailView(View):
         elif quantity is not None and quantity <= 5:
             stock_str = f"⚠️ **Only {quantity} left!**"
             
-        price = self.item.get_price(self.user_id)
+        price = self.item.get_price(self.user_id, self.guild)
         afford_emoji = "✅" if user_balance >= price else "❌"
         
         badge = ""
@@ -190,7 +192,7 @@ class ShopItemDetailView(View):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("This menu isn't for you!", ephemeral=True)
             
-        overview_view = self.parent_view_class(self.all_items, self.user_id)
+        overview_view = self.parent_view_class(self.all_items, self.user_id, self.guild)
         await interaction.response.edit_message(embed=overview_view._create_embed(), view=overview_view)
 
     async def buy_item(self, interaction: discord.Interaction):
@@ -209,7 +211,7 @@ class ShopItemDetailView(View):
             description=f"Are you sure you want to buy **{self.item.name}**?\n\n> *{self.item.description}*",
             color=0x00ff00
         )
-        price = self.item.get_price(interaction.user.id)
+        price = self.item.get_price(interaction.user.id, interaction.guild)
         embed.add_field(name="Cost", value=f"{price} UKPence", inline=True)
         embed.add_field(name="Balance After Purchase", value=f"{get_bb(interaction.user.id) - price} UKPence", inline=True)
 
@@ -246,7 +248,7 @@ class PurchaseConfirmationView(View):
     async def confirm_purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
         ensure_bb(interaction.user.id)
         user_balance = get_bb(interaction.user.id)
-        price = self.item.get_price(interaction.user.id)
+        price = self.item.get_price(interaction.user.id, interaction.guild)
 
         if user_balance < price:
             await interaction.response.send_message(
