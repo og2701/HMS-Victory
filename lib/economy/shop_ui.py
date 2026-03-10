@@ -1,6 +1,6 @@
 import discord
 from discord.ui import Select, View, Button
-from typing import List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING, Optional
 import random
 import asyncio
 from datetime import timedelta
