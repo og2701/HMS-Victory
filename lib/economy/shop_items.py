@@ -208,9 +208,19 @@ class IcebergAddItem(ShopItem):
     def __init__(self, id: str, name: str, description: str, price: int):
         super().__init__(id, name, description, price, use_inventory=False)
 
+    def _is_free(self, user: discord.Member) -> bool:
+        """Check if a user gets it for free (boosters, Deputy PM, Cabinet)."""
+        free_roles = {ROLES.SERVER_BOOSTER, ROLES.DEPUTY_PM, ROLES.CABINET}
+        return any(role.id in free_roles for role in user.roles)
+
+    def _skips_approval(self, user: discord.Member) -> bool:
+        """Check if a user skips the approval flow (staff only: Deputy PM, Cabinet)."""
+        staff_roles = {ROLES.DEPUTY_PM, ROLES.CABINET}
+        return any(role.id in staff_roles for role in user.roles)
+
     def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
-        # Boosters can always "purchase" (it's free for them)
-        if ROLES.SERVER_BOOSTER in [role.id for role in user.roles]:
+        # Free users can always "purchase"
+        if self._is_free(user):
             return True, ""
         
         # Ensure they have enough money
@@ -221,17 +231,16 @@ class IcebergAddItem(ShopItem):
         return True, ""
 
     def get_price(self, user_id: int, guild: Optional[discord.Guild] = None) -> int:
-        # Boosters pay 0
-        from config import ROLES
+        # Free users pay 0
         if guild:
             member = guild.get_member(user_id)
-            if member and ROLES.SERVER_BOOSTER in [role.id for role in member.roles]:
+            if member and self._is_free(member):
                 return 0
         return self.price
 
     async def execute(self, interaction: discord.Interaction) -> str:
-        is_booster = ROLES.SERVER_BOOSTER in [role.id for role in interaction.user.roles]
-        modal = IcebergAddModal(self, is_booster)
+        skips_approval = self._skips_approval(interaction.user)
+        modal = IcebergAddModal(self, skips_approval)
         await interaction.response.send_modal(modal)
         return "Submission modal opened!"
 
