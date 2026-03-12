@@ -5,10 +5,19 @@
   <meta charset="UTF-8" />
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@600;800;900&family=Noto+Sans+Math&family=Noto+Emoji:wght@700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@600;800;900&family=Noto+Sans+Math&family=Noto+Color+Emoji&display=swap');
 
     * {
       box-sizing: border-box;
+    }
+
+    /* Twemoji image styling */
+    img.emoji {
+       height: 1em;
+       width: 1em;
+       margin: 0 .05em 0 .1em;
+       vertical-align: -0.1em;
+       display: inline-block;
     }
 
     body {
@@ -425,6 +434,15 @@
       </div>
     </div>
   </div>
+  <script src="https://cdn.jsdelivr.net/npm/@twemoji/api@latest/dist/twemoji.min.js" crossorigin="anonymous"></script>
+  <script>
+    window.onload = function() {
+      twemoji.parse(document.body, {
+        folder: 'svg',
+        ext: '.svg'
+      });
+    };
+  </script>
 </body>
 
 </html>
