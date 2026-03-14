@@ -277,7 +277,7 @@ class XPSystem:
         </div>
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col).replace("{{ TITLE }}", "HMS Victory XP Leaderboard")
-        image_buffer = await screenshot_html(final_html, size=(1000, 1200))
+        image_buffer = await screenshot_html(final_html, size=(1200, 2000))
         return image_buffer.getvalue()
 
     async def handle_leaderboard_command(self, interaction: discord.Interaction):
@@ -389,7 +389,7 @@ class XPSystem:
         </div>
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col).replace("{{ TITLE }}", "HMS Victory UKPence Richlist")
-        image_buffer = await screenshot_html(final_html, size=(1000, 1200))
+        image_buffer = await screenshot_html(final_html, size=(1200, 2000))
         return image_buffer.getvalue()
 
     async def handle_richlist_command(self, interaction: discord.Interaction):
