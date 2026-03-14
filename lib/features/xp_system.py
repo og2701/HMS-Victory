@@ -250,7 +250,7 @@ class XPSystem:
             elif title and title_bg_uri:
                 box_style = f"background: url('{title_bg_uri}') no-repeat center center; background-size: cover; border: 1px solid #D4AF37; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);"
 
-            title_html = f'<div class="user-title" style="font-size: 0.85em; color: #FFD700; font-family: \'Outfit\', sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">{title}</div>' if title else ""
+            title_html = f'<div class="user-title">{title}</div>' if title else ""
 
             block = f"""
             <div class="leaderboard-item {rank_class}" style="{box_style}">
@@ -259,7 +259,8 @@ class XPSystem:
                 <img src="{avatar}" class="avatar" />
               </div>
               <div class="user-info">
-                <div class="user-name">{name}{title_html}</div>
+                <div class="user-name">{name}</div>
+                {title_html}
                 <div class="user-stats">XP: <span class="stat-highlight">{xp_val:,}</span></div>
               </div>
             </div>
@@ -361,7 +362,7 @@ class XPSystem:
             elif title and title_bg_uri:
                 box_style = f"background: url('{title_bg_uri}') no-repeat center center; background-size: cover; border: 1px solid #D4AF37; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);"
 
-            title_html = f'<div class="user-title" style="font-size: 0.85em; color: #FFD700; font-family: \'Outfit\', sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">{title}</div>' if title else ""
+            title_html = f'<div class="user-title">{title}</div>' if title else ""
 
             block = f"""
             <div class="leaderboard-item {rank_class}" style="{box_style}">
@@ -370,7 +371,8 @@ class XPSystem:
                 <img src="{avatar}" class="avatar" />
               </div>
               <div class="user-info">
-                <div class="user-name">{name}{title_html}</div>
+                <div class="user-name">{name}</div>
+                {title_html}
                 <div class="user-stats">UKPence: <span class="stat-highlight">{bal:,}</span></div>
               </div>
             </div>

@@ -104,15 +104,32 @@
 
     .user-name {
       font-weight: 700;
-      font-size: 1rem;
+      font-size: 1.1rem;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      max-width: 250px; /* Force truncation for long names */
+    }
+
+    .user-title {
+      font-size: 0.85rem;
+      color: #FFD700;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-top: 1px;
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 250px;
     }
 
     .user-stats {
       font-size: 0.85rem;
       color: #94a3b8;
+      margin-top: 2px;
     }
 
     .stat-highlight {
