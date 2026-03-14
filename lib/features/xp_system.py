@@ -246,9 +246,9 @@ class XPSystem:
                 bg_path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
                 if os.path.exists(bg_path):
                     bg_uri = encode_image_to_data_uri(bg_path)
-                    box_style = f"background: linear-gradient(90deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%), url('{bg_uri}') no-repeat center center; background-size: cover; border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);"
+                    box_style = f"background: linear-gradient(90deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%), url('{bg_uri}') no-repeat center center; background-size: cover; border: 1px solid rgba(255,255,255,0.3);"
             elif title and title_bg_uri:
-                box_style = f"background: url('{title_bg_uri}') no-repeat center center; background-size: cover; border: 1px solid #D4AF37; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);"
+                box_style = f"background: url('{title_bg_uri}') no-repeat center center; background-size: cover; border: 1px solid #D4AF37;"
 
             title_html = f'<div class="user-title">{title}</div>' if title else ""
 
@@ -358,9 +358,9 @@ class XPSystem:
                 bg_path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
                 if os.path.exists(bg_path):
                     bg_uri = encode_image_to_data_uri(bg_path)
-                    box_style = f"background: linear-gradient(90deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%), url('{bg_uri}') no-repeat center center; background-size: cover; border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);"
+                    box_style = f"background: linear-gradient(90deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%), url('{bg_uri}') no-repeat center center; background-size: cover; border: 1px solid rgba(255,255,255,0.3);"
             elif title and title_bg_uri:
-                box_style = f"background: url('{title_bg_uri}') no-repeat center center; background-size: cover; border: 1px solid #D4AF37; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);"
+                box_style = f"background: url('{title_bg_uri}') no-repeat center center; background-size: cover; border: 1px solid #D4AF37;"
 
             title_html = f'<div class="user-title">{title}</div>' if title else ""
 
