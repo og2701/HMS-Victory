@@ -127,7 +127,9 @@ def trim_image(im: Image.Image, tolerance: int = 6) -> Image.Image:
     bbox = diff_white.getbbox()
     full_bbox = (0, 0, im.width, im.height)
 
-    if not bbox or bbox == full_bbox:
+    # If original bbox is too large or invalid, or if the background is solid non-white
+    is_mostly_white = diff_white.histogram()[255] < (rgb_image.size[0] * rgb_image.size[1] * 0.1)
+    if not bbox or bbox == full_bbox or not is_mostly_white:
         # Fallback: use the top-left pixel as background reference
         bg_color = rgb_image.getpixel((0, 0))
         bg_image = Image.new("RGB", rgb_image.size, bg_color)
