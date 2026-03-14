@@ -8,6 +8,7 @@ from functools import lru_cache
 from PIL import Image, ImageChops
 import tempfile
 import logging
+import gc
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -54,7 +55,7 @@ chrome_options.add_argument("--incognito") # Don't persist session data to disk
 import time
 _browser = None
 _render_count = 0
-MAX_RENDERS_BEFORE_RESTART = 15
+MAX_RENDERS_BEFORE_RESTART = 5
 MAX_IDLE_TIME_SECONDS = 180  # Shut down Chrome after 3 minutes of inactivity
 _last_render_time = 0
 
@@ -218,6 +219,9 @@ def _screenshot_html_sync(
             processed = trim_image(image) if apply_trim else image.copy()
             processed.save(buffer, format="PNG")
             buffer.seek(0)
+            
+        # Aggressive memory cleanup for t3.micro
+        gc.collect()
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)

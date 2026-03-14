@@ -277,7 +277,7 @@ class XPSystem:
         </div>
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col).replace("{{ TITLE }}", "HMS Victory XP Leaderboard")
-        image_buffer = await screenshot_html(final_html, size=(1200, 2000))
+        image_buffer = await screenshot_html(final_html, size=(1000, 1400))
         return image_buffer.getvalue()
 
     async def handle_leaderboard_command(self, interaction: discord.Interaction):
@@ -288,13 +288,6 @@ class XPSystem:
         first = data[: LeaderboardView.PAGE_SIZE]
         image_bytes = await self.generate_leaderboard_image(interaction.guild, first, 0)
         view.image_cache[0] = image_bytes
-        
-        if LeaderboardView.PAGE_SIZE < len(data):
-            next_off = LeaderboardView.PAGE_SIZE
-            slice_data = data[next_off : next_off + LeaderboardView.PAGE_SIZE]
-            view.image_cache[next_off] = asyncio.create_task(
-                self.generate_leaderboard_image(interaction.guild, slice_data, next_off)
-            )
 
         file = discord.File(fp=io.BytesIO(image_bytes), filename="leaderboard.png")
         await interaction.followup.send(file=file, view=view)
@@ -389,7 +382,7 @@ class XPSystem:
         </div>
         """
         final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col).replace("{{ TITLE }}", "HMS Victory UKPence Richlist")
-        image_buffer = await screenshot_html(final_html, size=(1200, 2000))
+        image_buffer = await screenshot_html(final_html, size=(1000, 1400))
         return image_buffer.getvalue()
 
     async def handle_richlist_command(self, interaction: discord.Interaction):
@@ -400,13 +393,6 @@ class XPSystem:
         first = data[: RichListView.PAGE_SIZE]
         image_bytes = await self.generate_richlist_image(interaction.guild, first, 0)
         view.image_cache[0] = image_bytes
-        
-        if RichListView.PAGE_SIZE < len(data):
-            next_off = RichListView.PAGE_SIZE
-            slice_data = data[next_off : next_off + RichListView.PAGE_SIZE]
-            view.image_cache[next_off] = asyncio.create_task(
-                self.generate_richlist_image(interaction.guild, slice_data, next_off)
-            )
 
         file = discord.File(fp=io.BytesIO(image_bytes), filename="richlist.png")
         await interaction.followup.send(file=file, view=view)
