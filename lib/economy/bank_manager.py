@@ -10,7 +10,7 @@ class BankManager:
     """Manages the server's bank balance from shop purchases"""
 
     @staticmethod
-    def deposit(amount: int, description: str = "Shop purchase") -> bool:
+    def deposit(amount: float, description: str = "Shop purchase") -> bool:
         """Deposit UKPence into the bank"""
         if amount <= 0:
             return False
@@ -35,7 +35,7 @@ class BankManager:
             return False
 
     @staticmethod
-    def withdraw(amount: int, description: str = "Unspecified Withdrawal") -> bool:
+    def withdraw(amount: float, description: str = "Unspecified Withdrawal") -> bool:
         if amount < 0:
             logger.warning(f"Attempted to withdraw negative amount from bank: {amount}")
             return False
@@ -70,7 +70,7 @@ class BankManager:
             return False
 
     @staticmethod
-    def get_balance() -> int:
+    def get_balance() -> float:
         """Get current bank balance"""
         result = DatabaseManager.fetch_one('SELECT balance FROM bank WHERE id = 1')
         return result[0] if result else 0
@@ -94,7 +94,7 @@ class BankManager:
             }
 
     @staticmethod
-    def set_balance(amount: int, description: str = "Administrative adjustment") -> bool:
+    def set_balance(amount: float, description: str = "Administrative adjustment") -> bool:
         if amount < 0:
             logger.warning(f"Attempted to set bank balance to negative: {amount}")
             return False

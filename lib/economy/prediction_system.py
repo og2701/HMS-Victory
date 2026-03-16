@@ -68,16 +68,23 @@ class Prediction:
         t1, t2 = self.totals()
         win_total = t1 if win_side == 1 else t2
         lose_total = t2 if win_side == 1 else t1
+        pool_total = win_total + lose_total
         
         payouts = {}
         if win_total == 0:
+            # Nobody won, so everything goes back to the bank
+            if pool_total > 0:
+                from lib.economy.bank_manager import BankManager
+                BankManager.deposit(float(pool_total), description=f"Prediction unclaimed pool (No winners): {self.title[:50]}")
             return payouts
             
-        ratio = (win_total + lose_total) / win_total
+        ratio = pool_total / win_total
+        distributed_total = 0
         
         for uid, stake in self.bets.get(win_side, {}).items():
             payout = int(stake * ratio)
             payouts[uid] = payout
+            distributed_total += payout
             add_bb(uid, payout, reason=f"Prediction win: {self.title[:50]}")
             
             # Double or Nothing Check: Bet > 50% of balance
@@ -89,6 +96,12 @@ class Prediction:
                     # but we'll award silently and it'll show in /rank.
                     from database import award_badge
                     award_badge(uid, 'double_or_nothing')
+        
+        # Collect rounding dust
+        dust = pool_total - distributed_total
+        if dust > 0:
+            from lib.economy.bank_manager import BankManager
+            BankManager.deposit(float(dust), description=f"Prediction rounding dust: {self.title[:50]}")
             
         return payouts
 
