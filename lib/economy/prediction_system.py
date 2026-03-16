@@ -155,7 +155,7 @@ def _odds(t1: int, t2: int, side: int) -> float:
     win, lose = (t1, t2) if side == 1 else (t2, t1)
     return 0 if win == 0 else max((win + lose) / win, 1)
 
-def _top_bettor(bets: dict[int, int], client: discord.Client | None) -> str:
+def _top_bettor(bets: dict, client: Optional[discord.Client]) -> str:
     if not bets:
         return "-"
     uid = max(bets, key=bets.get)
@@ -166,7 +166,7 @@ def _top_bettor(bets: dict[int, int], client: discord.Client | None) -> str:
         name = f"<@{uid}>"
     return f"{name} {_fmt_money(bets[uid])}"
 
-def prediction_embed(pred: Prediction, client: discord.Client | None = None) -> tuple[discord.Embed, discord.File]:
+def prediction_embed(pred: Prediction, client: Optional[discord.Client] = None) -> Union[tuple, any]:
     t1, t2 = pred.totals()
     total = t1 + t2 or 1
     pct1 = t1 / total
