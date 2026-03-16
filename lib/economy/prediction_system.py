@@ -30,7 +30,7 @@ def track_prediction_streak(user_id: int, is_win: bool) -> tuple[int, int]:
     return data[uid]["win_streak"], data[uid]["lose_streak"]
 
 class Prediction:
-    def __init__(self, msg_id: int, title: str, opt1: str, opt2: str, end_ts: float, channel_id: int | None = None):
+    def __init__(self, msg_id: int, title: str, opt1: str, opt2: str, end_ts: float, channel_id: Optional[int] = None):
         self.msg_id = msg_id
         self.channel_id = channel_id
         self.title = title
