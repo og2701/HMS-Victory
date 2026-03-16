@@ -1,4 +1,5 @@
 import json, os, io, discord
+from typing import Optional, Union
 from PIL import Image, ImageDraw
 import uuid
 from functools import lru_cache
