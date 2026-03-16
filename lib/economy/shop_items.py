@@ -555,7 +555,7 @@ class RankBackgroundItem(ShopItem):
         super().__init__(id, name, description, price, use_inventory=False, show_in_shop=False)
         self.bg_filename = bg_filename
 
-    def get_price(self, user_id: int) -> int:
+    def get_price(self, user_id: int, guild: Optional[discord.Guild] = None) -> int:
         from config import USERS
         return 0 if user_id == USERS.OGGERS else self.price
 
@@ -593,7 +593,7 @@ class RankColorThemeItem(ShopItem):
         self.secondary = secondary
         self.tertiary = tertiary
 
-    def get_price(self, user_id: int) -> int:
+    def get_price(self, user_id: int, guild: Optional[discord.Guild] = None) -> int:
         from config import USERS
         return 0 if user_id == USERS.OGGERS else self.price
 
