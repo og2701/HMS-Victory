@@ -17,7 +17,7 @@ async def restrict_channel_for_new_members(
         if (join_date is None) or ((datetime.now(timezone.utc) - join_date).days < days_required):
             await message.delete()
             await message.channel.send(
-                f"{message.author.mention}, you need to be in the server for at least {days_required} days to use this channel. If you believe you should be whitelisted, please <#1143560594138595439>",
+                f"{message.author.mention}, you need to be in the server for at least {days_required} days to use this channel.",
                 delete_after=10,
             )
             return False
