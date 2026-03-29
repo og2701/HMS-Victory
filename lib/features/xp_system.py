@@ -156,9 +156,21 @@ class XPSystem:
             new_xp = current_xp + gain
             DatabaseManager.execute("INSERT OR REPLACE INTO xp (user_id, xp, last_xp_time) VALUES (?, ?, ?)", (user_id, new_xp, now))
             
-            # Award a small amount of UKP for activity to benefit less active/top-chatter members
-            from lib.economy.economy_manager import add_bb
-            add_bb(int(user_id), 1, reason="Chatting activity reward")
+            # Award UKP for activity with progressive reduction for wealthier users
+            balance = get_bb(int(user_id))
+            
+            # Determine reward chance based on balance (based on live server distribution)
+            if balance <= 500:
+                reward_chance = 1.0    # 100% chance (Avg 1.0 UKP)
+            elif balance <= 2000:
+                reward_chance = 0.5    # 50% chance (Avg 0.5 UKP)
+            elif balance <= 5000:
+                reward_chance = 0.25   # 25% chance (Avg 0.25 UKP)
+            else:
+                reward_chance = 0.1    # 10% chance (Avg 0.1 UKP)
+                
+            if random.random() < reward_chance:
+                add_bb(int(user_id), 1, reason="Chatting activity reward")
 
             new_role_id = self.get_role_for_xp(new_xp)
             if new_role_id:
