@@ -423,6 +423,7 @@ class PredAdminView(discord.ui.View):
     async def draw(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         for side in (1, 2):
             for uid, amt in self.pred.bets.get(side, {}).items():
+                # Bets were banked when staked (remove_bb to_bank=True), so refund from bank is correct
                 add_bb(uid, amt, reason=f"Prediction refund (Draw): {self.pred.title[:50]}")
         self.pred.locked = True
         self.pred.bets = {1: {}, 2: {}}

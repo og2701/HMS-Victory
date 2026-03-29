@@ -168,8 +168,7 @@ class XPSystem:
                 balance = get_bb(int(user_id))
                 reward_chance = max(0.1, 1.0 / (1.0 + balance / 500.0))
                 if random.random() < reward_chance:
-                    if BankManager.withdraw(1, description="Chatting activity reward"):
-                        add_bb(int(user_id), 1, reason="Chatting activity reward")
+                    add_bb(int(user_id), 1, reason="Chatting activity reward")
                 self._last_ukp_award[user_id] = now
 
             new_role_id = self.get_role_for_xp(new_xp)

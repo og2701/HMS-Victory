@@ -50,7 +50,7 @@ class UKPAddAmountModal(discord.ui.Modal, title="UKPence Handout"):
         if success:
             for member in self.selected_members:
                 ensure_bb(member.id)
-                add_bb(member.id, amount_val, reason="ukpadd (Deputy PM grant)")
+                add_bb(member.id, amount_val, reason="ukpadd (Deputy PM grant)", from_bank=False)
                 
             new_balance = BankManager.get_balance()
             

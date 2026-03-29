@@ -208,7 +208,7 @@ class IcebergApprovalView(View):
         
         # Refund only if they actually paid
         if price > 0:
-            add_bb(user_id, price)
+            add_bb(user_id, price, reason=f"Iceberg submission denied: {text[:50]}")
         
         embed = interaction.message.embeds[0]
         embed.title = "❌ Iceberg Submission - DENIED"

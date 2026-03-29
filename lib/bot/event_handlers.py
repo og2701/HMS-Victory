@@ -640,7 +640,6 @@ async def on_member_remove(member):
         if current_balance > 0:
             success = remove_bb(member.id, current_balance, reason="Left server - balance reclaimed")
             if success:
-                BankManager.deposit(current_balance, description=f"Reclaimed from left member {member.name}")
                 logger.info(f"Reclaimed {current_balance} UKPence from leaving member {member} and returned to the server bank.")
     except Exception as e:
         logger.error(f"Error handling UKPence extraction for leaving member {member}: {e}")
@@ -1090,8 +1089,7 @@ async def on_voice_state_update(member, before, after):
             elapsed = (discord.utils.utcnow() - start).total_seconds()
             bonus = (int(elapsed) // 60) * STAGE_UKPENCE_MULTIPLIER
             if bonus > 0:
-                if BankManager.withdraw(bonus, description=f"Stage Participation Reward ({int(elapsed)//60}m)"):
-                    add_bb(member.id, bonus, reason="Stage participation reward")
+                if add_bb(member.id, bonus, reason=f"Stage Participation Reward ({int(elapsed)//60}m)"):
                     await award_badge_with_notify(member._state._get_client(), member.id, 'stage_fan')
                     
                     if track_party_animal(member.id) >= 5:
@@ -1099,6 +1097,7 @@ async def on_voice_state_update(member, before, after):
                         
                     logger.info(f"[STAGE] +{bonus} UKP → User {member} for leaving stage {before.channel.name}")
                 else:
+                    logger.error(f"[STAGE] Bank insufficient for {bonus} UKP reward for User {member}.")
                     logger.error(f"[STAGE] Failed to withdraw {bonus} UKP from BankManager for User {member}. Insufficient funds or database error.")
                     # Keep their time accumulated so they don't lose it if the bank is broke
                     stage_join_times[member.id] = start
@@ -1177,8 +1176,7 @@ async def on_stage_instance_delete(stage_instance):
             secs = (now_utc - start_time_utc).total_seconds()
             bonus = (int(secs) // 60) * STAGE_UKPENCE_MULTIPLIER
             if bonus > 0:
-                if BankManager.withdraw(bonus, description=f"Stage Participation Reward ({int(secs)//60}m)"):
-                    add_bb(m.id, bonus, reason="Stage ended - participation reward")
+                if add_bb(m.id, bonus, reason=f"Stage Participation Reward ({int(secs)//60}m)"):
                     await award_badge_with_notify(client, m.id, 'stage_fan')
                     
                     if track_party_animal(m.id) >= 5:
@@ -1187,7 +1185,7 @@ async def on_stage_instance_delete(stage_instance):
                     logger.info(f"[STAGE END] +{bonus} UKP → User {m.id} for stage end in {stage_instance.channel.name}.")
                     total_awarded_on_delete += bonus
                 else:
-                    logger.error(f"[STAGE END] Failed to withdraw {bonus} UKP from BankManager for User {m}. Insufficient funds or database error.")
+                    logger.error(f"[STAGE END] Bank insufficient for {bonus} UKP reward for User {m}.")
                     # Reinsert them into the cache so they retain their stage time
                     client.stage_join_times[m.id] = start_time_utc
 

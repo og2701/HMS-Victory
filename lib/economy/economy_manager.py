@@ -50,13 +50,11 @@ class UKPenceManager:
     @staticmethod
     def ensure_user(user_id: int) -> None:
         if not DatabaseManager.fetch_one("SELECT balance FROM ukpence WHERE user_id = ?", (str(user_id),)):
-            from lib.economy.bank_manager import BankManager
             amount = 10
-            if BankManager.withdraw(amount, description=f"New member bonus for <@{user_id}>"):
-                DatabaseManager.execute("INSERT INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), amount))
-            else:
+            if not add_bb(user_id, amount, reason=f"New member welcome bonus"):
                 # Fallback: create user with 0 if bank is empty
-                DatabaseManager.execute("INSERT INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), 0))
+                DatabaseManager.execute("INSERT OR IGNORE INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), 0))
+    
 
     @staticmethod
     def get_balance(user_id: int) -> int:
@@ -171,11 +169,34 @@ def get_bb(user_id: int) -> int:
 def set_bb(user_id: int, amount: int, reason: str = "Unspecified") -> None:
     UKPenceManager.set_balance(user_id, amount, reason=reason)
 
-def add_bb(user_id: int, amount: int, reason: str = "Unspecified") -> None:
+def add_bb(user_id: int, amount: int, reason: str = "Unspecified", from_bank: bool = True) -> bool:
+    """Credit a user with UKP.
+    
+    from_bank=True (default): withdraws from the server bank first — UKP is conserved.
+    from_bank=False: pure user credit for p2p transfers (e.g. /pay, wager payout) where
+                     the sender's remove_bb already handled the bank side.
+    Returns True if successful, False if the bank couldn't cover it.
+    """
+    if from_bank:
+        from lib.economy.bank_manager import BankManager
+        if not BankManager.withdraw(amount, description=reason):
+            return False
     UKPenceManager.add_amount(user_id, amount, reason=reason)
+    return True
 
-def remove_bb(user_id: int, amount: int, reason: str = "Unspecified") -> bool:
-    return UKPenceManager.remove_amount(user_id, amount, reason=reason)
+def remove_bb(user_id: int, amount: int, reason: str = "Unspecified", to_bank: bool = True) -> bool:
+    """Debit a user of UKP.
+    
+    to_bank=True (default): deposits the deducted amount back to the server bank — UKP is conserved.
+    to_bank=False: pure user debit for p2p transfers (e.g. /pay, wager stake) where
+                   add_bb on the recipient handles the bank side.
+    Returns True if the user had sufficient funds, False otherwise.
+    """
+    success = UKPenceManager.remove_amount(user_id, amount, reason=reason)
+    if success and to_bank:
+        from lib.economy.bank_manager import BankManager
+        BankManager.deposit(amount, description=reason)
+    return success
 
 def ensure_bb(user_id: int) -> None:
     UKPenceManager.ensure_user(user_id)
