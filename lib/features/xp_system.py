@@ -6,7 +6,7 @@ import asyncio
 from database import DatabaseManager
 from config import *
 from lib.core.constants import CHAT_LEVEL_ROLE_THRESHOLDS, CUSTOM_RANK_BACKGROUNDS
-from lib.economy.economy_manager import get_bb
+from lib.economy.economy_manager import get_bb, add_bb
 from lib.core.image_processing import screenshot_html, get_avatar_data_uri, encode_image_to_data_uri
 import os
 from lib.core.file_operations import read_html_template
@@ -130,8 +130,11 @@ class RichListView(discord.ui.View):
         await interaction.edit_original_response(attachments=[file], view=self)
 
 class XPSystem:
+    UKP_COOLDOWN = 600  # 10 minutes between UKP chat rewards
+
     def __init__(self, client=None):
         self.client = client
+        self._last_ukp_award: dict[str, float] = {}  # user_id -> timestamp
 
     def get_role_for_xp(self, xp):
         role_id = None
@@ -156,21 +159,16 @@ class XPSystem:
             new_xp = current_xp + gain
             DatabaseManager.execute("INSERT OR REPLACE INTO xp (user_id, xp, last_xp_time) VALUES (?, ?, ?)", (user_id, new_xp, now))
             
-            # Award UKP for activity with progressive reduction for wealthier users
-            balance = get_bb(int(user_id))
-            
-            # Determine reward chance based on balance (based on live server distribution)
-            if balance <= 500:
-                reward_chance = 1.0    # 100% chance (Avg 1.0 UKP)
-            elif balance <= 2000:
-                reward_chance = 0.5    # 50% chance (Avg 0.5 UKP)
-            elif balance <= 5000:
-                reward_chance = 0.25   # 25% chance (Avg 0.25 UKP)
-            else:
-                reward_chance = 0.1    # 10% chance (Avg 0.1 UKP)
-                
-            if random.random() < reward_chance:
-                add_bb(int(user_id), 1, reason="Chatting activity reward")
+            # Award UKP on a separate 10-min cooldown with smooth wealth-based scaling.
+            # Smooth formula: max(0.1, 1 / (1 + balance / 500))
+            # Examples: 0 UKP=100%, 500=50%, 1000=33%, 2000=20%, 5000+=10%
+            last_ukp = self._last_ukp_award.get(user_id, 0)
+            if (now - last_ukp) >= self.UKP_COOLDOWN:
+                balance = get_bb(int(user_id))
+                reward_chance = max(0.1, 1.0 / (1.0 + balance / 500.0))
+                if random.random() < reward_chance:
+                    add_bb(int(user_id), 1, reason="Chatting activity reward")
+                self._last_ukp_award[user_id] = now
 
             new_role_id = self.get_role_for_xp(new_xp)
             if new_role_id:
