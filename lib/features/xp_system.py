@@ -156,6 +156,10 @@ class XPSystem:
             new_xp = current_xp + gain
             DatabaseManager.execute("INSERT OR REPLACE INTO xp (user_id, xp, last_xp_time) VALUES (?, ?, ?)", (user_id, new_xp, now))
             
+            # Award a small amount of UKP for activity to benefit less active/top-chatter members
+            from lib.economy.economy_manager import add_bb
+            add_bb(int(user_id), 1, reason="Chatting activity reward")
+
             new_role_id = self.get_role_for_xp(new_xp)
             if new_role_id:
                 guild = message.guild
