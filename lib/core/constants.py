@@ -24,7 +24,7 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🏴󠁧󠁢󠁥󠁮󠁧󠁿": "British English", "🏴󠁧󠁢󠁷󠁬󠁳󠁿": "Welsh", "🇺🇸": "Over the top american yank speak",
     "🇦🇩": "Catalan", "🇦🇪": "Arabic", "🇦🇫": "Pashto", "🇦🇱": "Albanian",
     "🇦🇲": "Armenian", "🇦🇴": "Portuguese", "🇦🇷": "Spanish", "🇦🇹": "German",
-    "🇦🇺": "Australian slang - use 'cunt' constantly as a term of endearment and general filler (e.g. 'ya mad cunt', 'sick cunt', 'ya fuckin cunt'), pepper in insults like 'dickhead', 'gronk', 'dog', 'dropkick', 'dero', 'flog', 'ya goose', 'muppet'", "🇦🇿": "Azerbaijani", "🇧🇦": "Bosnian", "🇧🇩": "Bengali",
+    "🇦🇺": "Australian bogan slang. Completely rewrite the message so every sentence is dripping in Australian insults and slang - do not just append words to the end. Weave 'cunt' naturally throughout as a filler and term of endearment (e.g. 'listen here ya cunt', 'deadset sick cunt', 'what ya on about cunt'). Replace words with Aussie equivalents and throw in insults like 'dickhead', 'gronk', 'dog', 'dropkick', 'dero', 'flog', 'ya goose', 'muppet' where they fit naturally", "🇦🇿": "Azerbaijani", "🇧🇦": "Bosnian", "🇧🇩": "Bengali",
     "🇧🇪": "Dutch", "🇧🇫": "French", "🇧🇬": "Bulgarian", "🇧🇭": "Arabic",
     "🇧🇷": "Portuguese", "🇧🇾": "Belarusian", "🇨🇦": "British English", "🇨🇭": "German",
     "🇨🇱": "Spanish", "🇨🇳": "Mandarin Chinese", "🇨🇴": "Spanish", "🇨🇷": "Spanish",

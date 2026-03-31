@@ -9,7 +9,7 @@ client = AsyncOpenAI(api_key=os.getenv("OPENAI_TOKEN"))
 
 target_language_mappings = {
     "British English": "English",
-    "Australian slang - use 'cunt' constantly as a term of endearment and general filler (e.g. 'ya mad cunt', 'sick cunt', 'ya fuckin cunt'), pepper in insults like 'dickhead', 'gronk', 'dog', 'dropkick', 'dero', 'flog', 'ya goose', 'muppet'": "🇦🇺 Aussie",
+    "Australian bogan slang. Completely rewrite the message so every sentence is dripping in Australian insults and slang - do not just append words to the end. Weave 'cunt' naturally throughout as a filler and term of endearment (e.g. 'listen here ya cunt', 'deadset sick cunt', 'what ya on about cunt'). Replace words with Aussie equivalents and throw in insults like 'dickhead', 'gronk', 'dog', 'dropkick', 'dero', 'flog', 'ya goose', 'muppet' where they fit naturally": "🇦🇺 Aussie",
     "Over the top 'roadman' speak": "Roadman",
     "British 'rp'/posh talk - 'the queens english'": "The Queen's English",
     "Over the top american yank speak": "Yank",
