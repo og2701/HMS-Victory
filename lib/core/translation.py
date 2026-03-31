@@ -9,7 +9,7 @@ client = AsyncOpenAI(api_key=os.getenv("OPENAI_TOKEN"))
 
 target_language_mappings = {
     "British English": "English",
-    "Australian slang - use 'cunt' constantly as a term of endearment and general filler (e.g. 'ya mad cunt', 'sick cunt', 'ya fuckin cunt'), pepper in insults like 'dickhead', 'gronk', 'dog', 'dropkick', 'dero', 'flog', 'ya goose', 'muppet'. After translating, convert the ENTIRE output to upside-down Unicode flip text using this exact mapping — a→ɐ b→q c→ɔ d→p e→ǝ f→ɟ g→ƃ h→ɥ i→ᴉ j→ɾ k→ʞ l→l m→ɯ n→u o→o p→d q→b r→ɹ s→s t→ʇ u→n v→ʌ w→ʍ x→x y→ʎ z→z A→∀ B→B C→Ɔ D→D E→Ǝ F→Ⅎ G→G H→H I→I J→ɾ K→K L→J M→W N→N O→O P→P Q→Q R→R S→S T→T U→∩ V→Λ W→M X→X Y→Y Z→Z .→˙ ,→' ?→¿ !→¡ — apply this to every single character so the whole message appears upside down": "🇦🇺 Aussie",
+    "Australian slang - use 'cunt' constantly as a term of endearment and general filler (e.g. 'ya mad cunt', 'sick cunt', 'ya fuckin cunt'), pepper in insults like 'dickhead', 'gronk', 'dog', 'dropkick', 'dero', 'flog', 'ya goose', 'muppet'": "🇦🇺 Aussie",
     "Over the top 'roadman' speak": "Roadman",
     "British 'rp'/posh talk - 'the queens english'": "The Queen's English",
     "Over the top american yank speak": "Yank",
