@@ -48,6 +48,7 @@ class UKPAddAmountModal(discord.ui.Modal, title="UKPence Handout"):
         success = BankManager.withdraw(total_cost, description=f"Handout by {interaction.user.name}")
         
         if success:
+            from config import CHANNELS
             for member in self.selected_members:
                 ensure_bb(member.id)
                 add_bb(member.id, amount_val, reason="ukpadd (Deputy PM grant)", from_bank=False)
@@ -69,6 +70,7 @@ class UKPAddAmountModal(discord.ui.Modal, title="UKPence Handout"):
             embed.set_footer(text=f"Authorized by Deputy PM {interaction.user.display_name}")
 
             await interaction.response.send_message(embed=embed, ephemeral=False)
+
         else:
             await interaction.response.send_message("❌ A database error occurred while trying to withdraw from the bank.", ephemeral=True)
 

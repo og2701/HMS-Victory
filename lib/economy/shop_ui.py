@@ -342,12 +342,15 @@ class PurchaseConfirmationView(View):
                             await msg.edit(embed=self.return_view._create_embed(), view=self.return_view)
 
                 # Log the purchase
-                log_channel = interaction.guild.get_channel(1197572903294730270)  # BOT_USAGE_LOG
+                log_channel = interaction.guild.get_channel(CHANNELS.BOT_USAGE_LOG)
                 if log_channel:
                     log_embed = discord.Embed(title="Shop Purchase", color=0x00ff00)
+                    log_embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
                     log_embed.add_field(name="User", value=interaction.user.mention, inline=True)
                     log_embed.add_field(name="Item", value=self.item.name, inline=True)
-                    log_embed.add_field(name="Price", value=f"{price} UKPence", inline=True)
+                    log_embed.add_field(name="Price", value=f"{price:,} UKPence", inline=True)
+                    log_embed.set_footer(text=f"User ID: {interaction.user.id}")
+                    log_embed.timestamp = discord.utils.utcnow()
                     await log_channel.send(embed=log_embed)
             except Exception as e:
                 # UI/logging error after successful purchase — do NOT refund
@@ -506,11 +509,14 @@ class VIPCaseSpinView(View):
             if vip_role:
                 await interaction.user.add_roles(vip_role)
                 result_embed.description = f"🎉 **JACKPOT!** 🎉\n\n{self.user.mention} won the **VIP ROLE**! {outcome['emoji']}\n\nCongratulations!"
-                log_channel = interaction.guild.get_channel(1197572903294730270)
+                log_channel = interaction.guild.get_channel(CHANNELS.BOT_USAGE_LOG)
                 if log_channel:
                     log_embed = discord.Embed(title="🎰 VIP Case - JACKPOT WIN", color=0x00ff00)
+                    log_embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
                     log_embed.add_field(name="Winner", value=interaction.user.mention, inline=True)
                     log_embed.add_field(name="Prize", value="VIP Role", inline=True)
+                    log_embed.set_footer(text=f"User ID: {interaction.user.id}")
+                    log_embed.timestamp = discord.utils.utcnow()
                     await log_channel.send(embed=log_embed)
             else:
                 result_embed.description = "Error: VIP role not found. Please contact staff."

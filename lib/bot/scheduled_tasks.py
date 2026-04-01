@@ -489,15 +489,14 @@ async def process_economy_logs(client):
             return
             
         bot_log_channel = client.get_channel(CHANNELS.BOT_USAGE_LOG)
-        if not bot_log_channel:
-            return
-            
-        ids_to_delete = []
+        economy_thread = client.get_channel(CHANNELS.ECONOMY_LOG_THREAD)
         
-        embed = discord.Embed(
-            title="💰 Economy Activity",
-            color=0x2ecc71
-        )
+        usage_embed = discord.Embed(title="💰 Economy Activity", color=0x2ecc71)
+        economy_embed = discord.Embed(title="📈 Chat Activity Rewards", color=0x3498db)
+        
+        usage_count = 0
+        economy_count = 0
+        ids_to_delete = []
         
         for log_id, timestamp, text in logs:
             # Parse log_text format: "emoji description|reason"
@@ -507,16 +506,25 @@ async def process_economy_logs(client):
                 description_part = text
                 reason_part = "Unspecified"
             
-            embed.add_field(
-                name=f"<t:{timestamp}:T> — {reason_part.strip()}",
-                value=description_part.strip(),
-                inline=False
-            )
+            reason_stripped = reason_part.strip()
+            field_name = f"<t:{timestamp}:T> — {reason_stripped}"
+            field_value = description_part.strip()
+            
+            if reason_stripped == "Chatting activity reward" and economy_thread:
+                economy_embed.add_field(name=field_name, value=field_value, inline=False)
+                economy_count += 1
+            elif bot_log_channel:
+                usage_embed.add_field(name=field_name, value=field_value, inline=False)
+                usage_count += 1
+                
             ids_to_delete.append(log_id)
         
         if ids_to_delete:
-            await bot_log_channel.send(embed=embed)
-            
+            if usage_count > 0 and bot_log_channel:
+                await bot_log_channel.send(embed=usage_embed)
+            if economy_count > 0 and economy_thread:
+                await economy_thread.send(embed=economy_embed)
+                
             placeholders = ",".join(["?"] * len(ids_to_delete))
             DatabaseManager.execute(f"DELETE FROM economy_transactions WHERE id IN ({placeholders})", tuple(ids_to_delete))
             
