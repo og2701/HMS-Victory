@@ -213,19 +213,6 @@ def _screenshot_html_sync(
         browser.set_window_size(size[0], size[1])
         browser.get(f"file://{os.path.abspath(tmp_path)}")
 
-        if apply_trim:
-            # Resize viewport to actual content dimensions to avoid whitespace
-            try:
-                dims = browser.execute_script(
-                    "var b = document.body; var d = document.documentElement;"
-                    "return [Math.max(b.scrollWidth, d.scrollWidth),"
-                    " Math.max(b.scrollHeight, d.scrollHeight)];"
-                )
-                if dims and dims[0] > 0 and dims[1] > 0:
-                    browser.set_window_size(dims[0], dims[1])
-            except Exception:
-                pass
-
         png_bytes = browser.get_screenshot_as_png()
 
         with Image.open(io.BytesIO(png_bytes)) as image:
