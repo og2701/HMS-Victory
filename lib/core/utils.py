@@ -121,7 +121,7 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         def safe_replace(content, key, value):
             # Matches {key}, { key }, or { \n key \n }
             pattern = r'\{\s*' + re.escape(key) + r'\s*\}'
-            return re.sub(pattern, str(value), content, flags=re.MULTILINE)
+            return re.sub(pattern, lambda _: str(value), content, flags=re.MULTILINE)
 
         shutcoin_html = ""
         if True: # Force enable for display, or use config explicitly

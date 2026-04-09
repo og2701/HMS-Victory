@@ -31,7 +31,7 @@ async def replace_custom_emojis(client, text: str) -> str:
 
 
 
-def calculate_estimated_height(content, line_height=20, base_height=1000):
+def calculate_estimated_height(content, line_height=20, base_height=250):
     message_lines = content.split("\n")
     total_lines = sum(len(line) // 80 + 1 for line in message_lines)
     content_height = line_height * total_lines

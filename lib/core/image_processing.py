@@ -212,7 +212,17 @@ def _screenshot_html_sync(
         browser = get_browser()
         browser.set_window_size(size[0], size[1])
         browser.get(f"file://{os.path.abspath(tmp_path)}")
-        
+
+        # Auto-resize viewport to actual content height to avoid excess whitespace
+        try:
+            content_height = browser.execute_script(
+                "return Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)"
+            )
+            if content_height and content_height < size[1]:
+                browser.set_window_size(size[0], content_height)
+        except Exception:
+            pass  # Fall back to original size if JS execution fails
+
         png_bytes = browser.get_screenshot_as_png()
 
         with Image.open(io.BytesIO(png_bytes)) as image:
