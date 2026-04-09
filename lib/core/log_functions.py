@@ -1,12 +1,10 @@
 import base64
 import difflib
 import html
-import io
 import re
-from PIL import Image
 import aiohttp
 
-from lib.core.image_processing import screenshot_html, trim_image, get_avatar_data_uri
+from lib.core.image_processing import screenshot_html, get_avatar_data_uri
 from lib.core.file_operations import read_html_template
 
 async def replace_custom_emojis(client, text: str) -> str:
@@ -136,13 +134,7 @@ async def create_message_image(client, message, title):
     html_content = html_content.replace("{content}", escaped_content)
     html_content = html_content.replace("{attached_image_html}", attached_image_html)
 
-    buffer = await screenshot_html(html_content, size=(500, estimated_height), apply_trim=False)
-    with Image.open(buffer) as img:
-        trimmed = trim_image(img)
-        output = io.BytesIO()
-        trimmed.save(output, format="PNG")
-        output.seek(0)
-    return output
+    return await screenshot_html(html_content, size=(800, estimated_height), element_selector=".container")
 
 
 def highlight_diff(before, after):
@@ -294,13 +286,7 @@ async def create_edited_message_image(client, before, after):
     html_content = html_content.replace("{after_content}", highlighted_after_content)
     html_content = html_content.replace("{after_attached_image_html}", after_attached_image_html)
 
-    buffer = await screenshot_html(html_content, size=(800, estimated_height), apply_trim=False)
-    with Image.open(buffer) as img:
-        trimmed = trim_image(img)
-        output = io.BytesIO()
-        trimmed.save(output, format="PNG")
-        output.seek(0)
-    return output
+    return await screenshot_html(html_content, size=(800, estimated_height), element_selector=".container")
 
 async def create_quote_image(client, message):
     avatar_url = (
@@ -397,10 +383,4 @@ async def create_quote_image(client, message):
     html_content = html_content.replace("{content}", escaped_content)
     html_content = html_content.replace("{attached_image_html}", attached_image_html)
 
-    buffer = await screenshot_html(html_content, size=(650, estimated_height), apply_trim=False)
-    with Image.open(buffer) as img:
-        trimmed = trim_image(img)
-        output = io.BytesIO()
-        trimmed.save(output, format="PNG")
-        output.seek(0)
-    return output
+    return await screenshot_html(html_content, size=(650, estimated_height), element_selector=".container")

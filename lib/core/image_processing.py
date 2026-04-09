@@ -199,11 +199,12 @@ from typing import Tuple
 def _screenshot_html_sync(
     html_str: str,
     size: Tuple[int, int] = (1600, 1000),
-    apply_trim: bool = True
+    apply_trim: bool = True,
+    element_selector: str = None
 ) -> io.BytesIO:
     """Synchronous implementation of screenshot_html."""
     buffer = io.BytesIO()
-    
+
     with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as tmp:
         tmp.write(html_str)
         tmp_path = tmp.name
@@ -213,13 +214,21 @@ def _screenshot_html_sync(
         browser.set_window_size(size[0], size[1])
         browser.get(f"file://{os.path.abspath(tmp_path)}")
 
-        png_bytes = browser.get_screenshot_as_png()
+        if element_selector:
+            from selenium.webdriver.common.by import By
+            element = browser.find_element(By.CSS_SELECTOR, element_selector)
+            png_bytes = element.screenshot_as_png
+        else:
+            png_bytes = browser.get_screenshot_as_png()
 
         with Image.open(io.BytesIO(png_bytes)) as image:
-            processed = trim_image(image) if apply_trim else image.copy()
+            if element_selector:
+                processed = image.copy()
+            else:
+                processed = trim_image(image) if apply_trim else image.copy()
             processed.save(buffer, format="PNG")
             buffer.seek(0)
-            
+
         # Aggressive memory cleanup for t3.micro
         gc.collect()
     finally:
@@ -232,12 +241,15 @@ async def screenshot_html(
     html_str: str,
     size: Tuple[int, int] = (1600, 1000),
     *,
-    apply_trim: bool = True
+    apply_trim: bool = True,
+    element_selector: str = None
 ) -> io.BytesIO:
     """Render HTML into a trimmed PNG (non-blocking, queued)."""
     async with rendering_lock:
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _screenshot_html_sync, html_str, size, apply_trim)
+        return await loop.run_in_executor(
+            None, _screenshot_html_sync, html_str, size, apply_trim, element_selector
+        )
 
 def calculate_text_dimensions(font, text: str) -> Tuple[int, int]:
     text_bbox = font.getbbox(text)
