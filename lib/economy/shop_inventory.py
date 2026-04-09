@@ -195,7 +195,7 @@ class ShopInventory:
     def setup_default_inventory():
         """Set up default inventory for existing shop items"""
         # Initialize the shutcoin item with unlimited quantity
-        ShopInventory.initialize_item("shutcoin", 999999, None, True, 100)
+        ShopInventory.initialize_item("shutcoin", 999999, None, True, 80)
 
         # Add some example limited items (uncomment and modify as needed)
         # ShopInventory.initialize_item("ball_inspector", 5, 10, True, 2)  # Limited role

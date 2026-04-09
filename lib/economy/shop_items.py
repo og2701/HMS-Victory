@@ -647,7 +647,7 @@ class RankResetItem(ShopItem):
 # Shop Items Registry
 SHOP_ITEMS: List[ShopItem] = [
     # Currency Items
-    ShutcoinItem("shutcoin", "1 Shutcoin", "Get a Shutcoin for the ability to silence a member for 30s", 100, 1),
+    ShutcoinItem("shutcoin", "1 Shutcoin", "Get a Shutcoin for the ability to silence a member for 30s", 80, 1),
 
     # VIP Case - Gambling item (with inventory tracking)
     VIPCaseItem("vip_case", "VIP Role Case", "Open a case for a chance to win the VIP role! Contains various rewards and risks.", 3000, ROLES.VIP, use_inventory=True),
