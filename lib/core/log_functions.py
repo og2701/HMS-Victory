@@ -80,8 +80,6 @@ async def create_message_image(client, message, title):
         .container {{
             border: 2px solid rgb{border_color};
             padding: 10px;
-            width: fit-content;
-            display: inline-block;
         }}
         .title {{
             font-size: 18px;
