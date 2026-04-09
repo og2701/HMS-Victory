@@ -696,6 +696,7 @@ async def on_message_delete(client, message):
             description = f"Message by {message.author.mention} ({message.author.id}) deleted in {message.channel.mention}."
             if deleter and deleter != message.author:
                 description += f"\nDeleted by {deleter.mention} ({deleter.id})."
+            description += f"\n\n>>> {message.content}"
             embed = discord.Embed(
                 title="Message Deleted",
                 description=description,
