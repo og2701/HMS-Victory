@@ -1,7 +1,7 @@
 import discord
 from discord import Interaction, InteractionType
 from datetime import timedelta, datetime
-import logging, os, aiohttp, io, json, asyncio, pytz, time
+import logging, os, aiohttp, io, json, asyncio, pytz, time, re
 from collections import defaultdict
 
 from lib.core.translation import translate_and_send
@@ -311,7 +311,7 @@ async def process_message_links(client, message):
                 timestamp_formatted = f"<t:{timestamp_unix}:f>"
                 channel_name = channel.name
                 reply_content = f"@__{quoted_message.author}__ in *{channel_name}* {timestamp_formatted}:\n"
-                filtered_content = quoted_message.content.replace("@everyone", "[everyone]").replace("@here", "[here]")
+                filtered_content = re.sub(r"<@&?\d+>", "", quoted_message.content).replace("@everyone", "[everyone]").replace("@here", "[here]").strip()
                 if filtered_content:
                     reply_content += f"> {filtered_content}"
                 if quoted_message.attachments:
