@@ -36,6 +36,10 @@ Awarded for getting a message into the Hall of Fame.
 **Rarity**: Bronze
 Awarded for purchasing your first item from the shop.
 
+### 🏦 Market Manipulator
+**Rarity**: Silver
+Awarded for being the highest bidder on 3 different active auctions at the same time.
+
 ### 🤐 Shutcoin User
 **Rarity**: Bronze
 Awarded for using a Shutcoin for the first time.
@@ -48,9 +52,33 @@ Awarded for participating in a reply chain of 3 or more messages.
 **Rarity**: Bronze
 Awarded for sending 200 or more messages in a single day.
 
+### 🔔 Town Crier
+**Rarity**: Bronze
+Awarded for posting the first message of the day in the server.
+
+### 🗺️ Global Citizen
+**Rarity**: Bronze
+Awarded for sending messages in 5 different channels within 5 minutes.
+
+### ⚔️ Weekend Warrior
+**Rarity**: Silver
+Awarded for sending 800 or more messages over a single weekend.
+
 ### 🥇 Elite Talker
 **Rarity**: Silver
 Awarded for being one of the top 5 daily chatters.
+
+### 🧱 Pillar of the Community (1 Year)
+**Rarity**: Bronze
+Awarded for being a member of the server for at least 1 year.
+
+### 🏛️ Pillar of the Community (3 Years)
+**Rarity**: Silver
+Awarded for being a member of the server for at least 3 years.
+
+### 🏰 Pillar of the Community (5 Years)
+**Rarity**: Gold
+Awarded for being a member of the server for at least 5 years.
 
 ### 🎭 Stage Fan
 **Rarity**: Silver
@@ -96,6 +124,10 @@ Awarded for being targeted by a roast command.
 **Rarity**: Silver
 Awarded for having three people reply to one of your messages.
 
+### 🌟 Local Legend
+**Rarity**: Silver
+Awarded for having a single message receive 10 or more unique reactions.
+
 ### 🔇 Silenced
 **Rarity**: Bronze
 Awarded for being shut by a shutcoin.
@@ -119,6 +151,10 @@ Awarded for losing 5 predictions in a row.
 ### 🎰 High Stakes
 **Rarity**: Silver
 Awarded for placing a bet of over 5,000 UKPence on a single prediction.
+
+### 🎲 Double or Nothing
+**Rarity**: Gold
+Awarded for winning a prediction where you bet more than 50% of your total balance.
 
 ### 🌅 Morning Person
 **Rarity**: Bronze
