@@ -14,7 +14,7 @@ from lib.core.discord_helpers import has_role, has_any_role, toggle_user_role, r
 from lib.core.file_operations import load_whitelist, save_whitelist, set_file_status, is_file_status_active
 from lib.features.summary import post_summary
 from lib.economy.economy_manager import get_shutcoins, set_shutcoins
-from lib.economy.prediction_system import Prediction, BetButtons, prediction_embed, _save, PredAdminView, PredSelectView
+from lib.economy.prediction_system import PredAdminView, PredSelectView, PredictionCreateModal
 from lib.economy.economy_manager import get_bb, set_bb, add_bb, remove_bb
 from typing import Optional
 from commands.economy.shop import handle_shop_command
@@ -256,23 +256,9 @@ def define_commands(tree, client):
     #         embed.set_footer(text=f"by {interaction.user.display_name}")
     #         await interaction.response.send_message(embed=embed)
 
-    @command("pred-create", "Create a UKPence prediction (duration is in minutes)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
-    async def pred_create(interaction: Interaction, title: str, opt1: str, opt2: str, duration: int = 5):
-        end_ts = discord.utils.utcnow().timestamp() + duration * 60
-        p = Prediction(0, title, opt1, opt2, end_ts)
-        embed, bar = prediction_embed(p)
-        msg = await interaction.channel.send(
-            content=f"<@&{ROLES.PRED_NOTIFICATIONS}>",
-            embed=embed,
-            files=[bar],
-            view=BetButtons(p),
-            allowed_mentions=discord.AllowedMentions(roles=True)
-        )
-        p.msg_id = msg.id
-        p.channel_id = msg.channel.id
-        interaction.client.predictions[msg.id] = p
-        _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
-        await interaction.response.send_message("Prediction opened.", ephemeral=True)
+    @command("pred-create", "Create a UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    async def pred_create(interaction: Interaction):
+        await interaction.response.send_modal(PredictionCreateModal())
 
 
     @command("pred-admin", "Lock, resolve, or draw an existing UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])

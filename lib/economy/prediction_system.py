@@ -507,3 +507,64 @@ class PredAdminView(discord.ui.View):
         except discord.NotFound:
              pass # Admin interaction might be old/invalid too
         self.stop()
+
+
+class PredictionCreateModal(discord.ui.Modal, title="Create Prediction"):
+    title_input = discord.ui.TextInput(
+        label="Title",
+        style=discord.TextStyle.long,
+        placeholder="The question/topic for the prediction",
+        required=True,
+        max_length=200,
+    )
+    opt1_input = discord.ui.TextInput(
+        label="Outcome 1",
+        style=discord.TextStyle.short,
+        default="Yes",
+        required=True,
+        max_length=80,
+    )
+    opt2_input = discord.ui.TextInput(
+        label="Outcome 2",
+        style=discord.TextStyle.short,
+        default="No",
+        required=True,
+        max_length=80,
+    )
+    duration_input = discord.ui.TextInput(
+        label="Duration (minutes)",
+        style=discord.TextStyle.short,
+        default="5",
+        required=True,
+        max_length=6,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            duration = int(self.duration_input.value.strip())
+            if duration <= 0:
+                raise ValueError
+        except ValueError:
+            return await interaction.response.send_message(
+                "Duration must be a positive integer (minutes).", ephemeral=True
+            )
+
+        title = self.title_input.value.strip()
+        opt1 = self.opt1_input.value.strip()
+        opt2 = self.opt2_input.value.strip()
+
+        end_ts = discord.utils.utcnow().timestamp() + duration * 60
+        p = Prediction(0, title, opt1, opt2, end_ts)
+        embed, bar = prediction_embed(p)
+        msg = await interaction.channel.send(
+            content=f"<@&{ROLES.PRED_NOTIFICATIONS}>",
+            embed=embed,
+            files=[bar],
+            view=BetButtons(p),
+            allowed_mentions=discord.AllowedMentions(roles=True),
+        )
+        p.msg_id = msg.id
+        p.channel_id = msg.channel.id
+        interaction.client.predictions[msg.id] = p
+        _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
+        await interaction.response.send_message("Prediction opened.", ephemeral=True)
