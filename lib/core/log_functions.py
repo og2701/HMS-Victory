@@ -320,13 +320,15 @@ async def create_quote_image(client, message):
     reply_html = ""
     replied = None
     if message.reference and message.reference.message_id:
-        replied = message.reference.resolved
-        if replied is None or isinstance(replied, discord.DeletedReferenceMessage):
+        resolved = message.reference.resolved
+        if isinstance(resolved, discord.Message):
+            replied = resolved
+        else:
             try:
                 replied = await message.channel.fetch_message(message.reference.message_id)
             except Exception:
                 replied = None
-    if replied and not isinstance(replied, discord.DeletedReferenceMessage):
+    if isinstance(replied, discord.Message):
         reply_avatar_url = (
             replied.author.display_avatar.url
             if replied.author.display_avatar
