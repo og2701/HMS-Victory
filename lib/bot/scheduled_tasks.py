@@ -14,7 +14,7 @@ from lib.economy.economy_manager import add_bb, get_all_balances as load_ukpence
 from lib.economy.bank_manager import BankManager
 from lib.economy.economy_stats_html import create_economy_stats_image
 from database import award_badge
-from lib.bot.backup_manager import zip_and_send_folder, backup_database, backup_bot
+from lib.bot.backup_manager import zip_and_send_folder, backup_database, backup_bot, backup_json_data
 from lib.core.file_operations import load_webhook_deletions, save_webhook_deletions
 from lib.economy.prediction_system import prediction_embed, _save, _load, Prediction
 from commands.moderation.overnight_mute import mute_visitors, unmute_visitors
@@ -422,6 +422,7 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(unmute_visitors, CronTrigger(hour=7, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="unmute_visitors_job", name="Unmute visitors in the morning")
     
     scheduler.add_job(backup_database, IntervalTrigger(minutes=5, timezone="Europe/London"), args=[client], id="backup_database_job", name="Backup SQLite Database")
+    scheduler.add_job(backup_json_data, IntervalTrigger(minutes=5, timezone="Europe/London"), args=[client], id="backup_json_data_job", name="Backup JSON State")
     scheduler.add_job(cleanup_webhook_reactions, IntervalTrigger(minutes=1), args=[client], id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
 
     scheduler.add_job(process_economy_logs, IntervalTrigger(seconds=15), args=[client], id="process_economy_logs_interval", name="Process Economy Log Queue")

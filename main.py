@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 MAX_PART_SIZE = 8 * 1024 * 1024
 
 
-from lib.bot.backup_manager import restore_database_if_missing
+from lib.bot.backup_manager import restore_database_if_missing, restore_json_if_missing
 
 
 class AClient(discord.Client):
@@ -369,5 +369,6 @@ define_commands(tree, client)
 async def main():
     async with client:
         await restore_database_if_missing()
+        await restore_json_if_missing()
         init_db()
         await client.start(os.getenv("DISCORD_TOKEN"))

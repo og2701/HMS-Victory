@@ -135,6 +135,101 @@ async def send_json_files(client, folder_path, channel_id):
     logger.info("All JSON files uploaded.")
 
 
+JSON_BACKUP_PREFIX = "json_backup_"
+JSON_BACKUP_DIRS = ["data/json", "daily_summaries"]
+
+
+async def restore_json_if_missing():
+    """If data/json is missing/empty on startup, restore the latest JSON backup from Discord."""
+    json_dir = "data/json"
+    has_contents = os.path.isdir(json_dir) and any(
+        f.endswith(".json") for f in os.listdir(json_dir)
+    )
+    if has_contents:
+        return
+
+    logger.warning("data/json is missing or empty. Attempting to restore from backup...")
+
+    intents = discord.Intents.default()
+    temp_client = discord.Client(intents=intents)
+
+    bot_token = os.getenv("DISCORD_TOKEN")
+    if not bot_token:
+        logger.error("Bot token not found. Cannot restore JSON backup.")
+        return
+
+    try:
+        await temp_client.login(bot_token)
+        archive_channel = await temp_client.fetch_channel(CHANNELS.DATA_BACKUP)
+
+        latest = None
+        async for message in archive_channel.history(limit=200):
+            for attachment in message.attachments:
+                if attachment.filename.startswith(JSON_BACKUP_PREFIX) and attachment.filename.endswith(".zip"):
+                    latest = attachment
+                    break
+            if latest:
+                break
+
+        if not latest:
+            logger.warning("No JSON backup found in last 200 messages.")
+            return
+
+        logger.info(f"Found latest JSON backup: {latest.filename}")
+        zip_path = "temp_json_backup.zip"
+        await latest.save(zip_path)
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(".")
+            logger.info("Successfully restored JSON data from backup.")
+        finally:
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+    except Exception as e:
+        logger.error(f"Failed during JSON restore: {e}")
+    finally:
+        await temp_client.close()
+
+
+async def backup_json_data(client):
+    """Zip all JSON state folders and upload to the data-backup channel."""
+    channel = client.get_channel(CHANNELS.DATA_BACKUP)
+    if not channel:
+        logger.warning(f"Backup channel {CHANNELS.DATA_BACKUP} not found.")
+        return
+
+    present_dirs = [d for d in JSON_BACKUP_DIRS if os.path.isdir(d)]
+    if not present_dirs:
+        logger.info("No JSON directories present to back up.")
+        return
+
+    try:
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for folder in present_dirs:
+                for root, _, files in os.walk(folder):
+                    for f in files:
+                        if not f.endswith(".json"):
+                            continue
+                        full = os.path.join(root, f)
+                        zipf.write(full, os.path.relpath(full, start="."))
+
+        zip_buffer.seek(0)
+        size = zip_buffer.getbuffer().nbytes
+        if size == 0:
+            logger.info("JSON backup archive is empty; skipping upload.")
+            return
+        if size > MAX_PART_SIZE:
+            logger.warning(f"JSON backup exceeds {MAX_PART_SIZE} bytes ({size}); upload may fail.")
+
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"{JSON_BACKUP_PREFIX}{timestamp}.zip"
+        await channel.send(file=discord.File(fp=zip_buffer, filename=filename))
+        logger.info(f"JSON backup sent to Discord: {filename} ({size} bytes).")
+    except Exception as e:
+        logger.error(f"Error during JSON backup: {e}")
+
+
 async def backup_database(client):
     logger.info("Backing up database to Discord...")
     channel = client.get_channel(CHANNELS.DATA_BACKUP)

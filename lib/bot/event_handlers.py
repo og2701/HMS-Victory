@@ -429,8 +429,9 @@ async def on_ready(client, tree, scheduler):
     schedule_client_jobs(client, scheduler)
     logger.info(f"{client.user} setup complete")
     await refresh_live_stages(client)
-    from lib.bot.backup_manager import backup_database
+    from lib.bot.backup_manager import backup_database, backup_json_data
     await backup_database(client)
+    await backup_json_data(client)
 
 
 async def on_message(client, message):
