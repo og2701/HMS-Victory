@@ -43,6 +43,20 @@ async def collect_media_files(message: discord.Message, size_limit: int) -> list
     return files
 
 
+async def _hof_post_exists(thread, jump_url: str) -> bool:
+    """Check whether the HOF thread still contains a bot post referencing `jump_url`."""
+    bot_id = thread.guild.me.id if thread.guild and thread.guild.me else None
+    async for hof_msg in thread.history(limit=None):
+        if bot_id and hof_msg.author.id != bot_id:
+            continue
+        if jump_url in (hof_msg.content or ""):
+            return True
+        for embed in hof_msg.embeds:
+            if embed.url == jump_url or (embed.description and jump_url in embed.description):
+                return True
+    return False
+
+
 async def regenerate_hof_images(client):
     """Walk the HOF thread and regenerate the quote image on each bot post so
     messages whose attached images were clipped get redrawn with the new sizing."""
@@ -113,11 +127,6 @@ async def handle_hof_context_menu(interaction: discord.Interaction, message: dis
 
     await interaction.response.defer(ephemeral=True)
 
-    hall_of_fame_data = load_json_file(HALL_OF_FAME_FILE) or []
-    if str(message.id) in hall_of_fame_data:
-        await interaction.followup.send("This message is already in the Hall of Fame.", ephemeral=True)
-        return
-
     client = interaction.client
     thread = client.get_channel(CHANNELS.HALL_OF_FAME_THREAD)
     if not thread:
@@ -127,45 +136,51 @@ async def handle_hof_context_menu(interaction: discord.Interaction, message: dis
             await interaction.followup.send("Hall of Fame thread not found.", ephemeral=True)
             return
 
-    embed = discord.Embed(
-        description=f"[Click here to jump to message]({message.jump_url})",
-        color=0xffd700,
-        url=message.jump_url,
-    )
-    embed.set_author(
-        name=message.author.display_name,
-        icon_url=message.author.display_avatar.url if message.author.display_avatar else None,
-        url=message.jump_url,
-    )
+    hall_of_fame_data = load_json_file(HALL_OF_FAME_FILE) or []
+    if str(message.id) in hall_of_fame_data:
+        if await _hof_post_exists(thread, message.jump_url):
+            await interaction.followup.send("This message is already in the Hall of Fame.", ephemeral=True)
+            return
+        logger.info(f"[HOF] {message.id} in JSON but missing from thread — re-adding.")
 
     size_limit = getattr(thread.guild, "filesize_limit", 25 * 1024 * 1024)
     media_files = await collect_media_files(message, size_limit)
+    announcement = f"🏆 {message.author.mention}'s message made it to the Hall of Fame!"
 
-    try:
-        image_buffer = await create_quote_image(client, message)
-        quote_file = discord.File(image_buffer, filename="hof_quote.png")
-        embed.set_image(url="attachment://hof_quote.png")
+    if not message.content.strip() and media_files:
         await thread.send(
-            content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!",
-            embed=embed,
-            files=[quote_file, *media_files],
-        )
-    except Exception as e:
-        print(f"[HOF] Error creating quote image: {e}")
-        embed.description = f"{embed.description}\n\n{message.content}"
-        if message.attachments:
-            for attachment in message.attachments:
-                if attachment.content_type and attachment.content_type.startswith("image/") and attachment.content_type != "image/gif":
-                    embed.set_image(url=attachment.url)
-                    break
-        await thread.send(
-            content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!",
-            embed=embed,
+            content=f"{announcement}\n[Jump to message]({message.jump_url})",
             files=media_files,
         )
+    else:
+        embed = discord.Embed(
+            description=f"[Click here to jump to message]({message.jump_url})",
+            color=0xffd700,
+            url=message.jump_url,
+        )
+        embed.set_author(
+            name=message.author.display_name,
+            icon_url=message.author.display_avatar.url if message.author.display_avatar else None,
+            url=message.jump_url,
+        )
+        try:
+            image_buffer = await create_quote_image(client, message)
+            quote_file = discord.File(image_buffer, filename="hof_quote.png")
+            embed.set_image(url="attachment://hof_quote.png")
+            await thread.send(content=announcement, embed=embed, files=[quote_file, *media_files])
+        except Exception as e:
+            logger.error(f"[HOF] Error creating quote image: {e}")
+            embed.description = f"{embed.description}\n\n{message.content}"
+            if message.attachments:
+                for attachment in message.attachments:
+                    if attachment.content_type and attachment.content_type.startswith("image/") and attachment.content_type != "image/gif":
+                        embed.set_image(url=attachment.url)
+                        break
+            await thread.send(content=announcement, embed=embed, files=media_files)
 
-    hall_of_fame_data.append(str(message.id))
-    save_json_file(HALL_OF_FAME_FILE, hall_of_fame_data)
+    if str(message.id) not in hall_of_fame_data:
+        hall_of_fame_data.append(str(message.id))
+        save_json_file(HALL_OF_FAME_FILE, hall_of_fame_data)
 
     from lib.bot.event_handlers import award_badge_with_notify
     await award_badge_with_notify(client, message.author.id, 'hof')
