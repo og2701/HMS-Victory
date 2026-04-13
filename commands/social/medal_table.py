@@ -13,7 +13,7 @@ PAGE_SIZE = 20
 EXCLUDED_USER_IDS = {"818885214189256714"}  # ogme02 test account
 
 
-def _fetch_medal_table():
+def _fetch_medal_table(guild=None):
     rows = DatabaseManager.fetch_all(
         """
         SELECT ub.user_id, b.rarity, COUNT(*)
@@ -23,9 +23,13 @@ def _fetch_medal_table():
         GROUP BY ub.user_id, b.rarity
         """
     )
+    member_ids = {str(m.id) for m in guild.members} if guild else None
     tallies: dict[str, dict[str, int]] = {}
     for user_id, rarity, count in rows:
-        if str(user_id) in EXCLUDED_USER_IDS:
+        uid_str = str(user_id)
+        if uid_str in EXCLUDED_USER_IDS:
+            continue
+        if member_ids is not None and uid_str not in member_ids:
             continue
         t = tallies.setdefault(user_id, {"Gold": 0, "Silver": 0, "Bronze": 0})
         t[rarity] = count
@@ -158,7 +162,7 @@ class MedalTableView(View):
 
 async def handle_medal_table_command(interaction: Interaction):
     await interaction.response.defer()
-    table = _fetch_medal_table()
+    table = _fetch_medal_table(interaction.guild)
     if not table:
         return await interaction.followup.send("No badges have been awarded yet.", ephemeral=True)
 
