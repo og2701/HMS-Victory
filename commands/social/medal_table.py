@@ -114,7 +114,7 @@ def _render_html(interaction: Interaction, table: list, page: int) -> str:
 
 async def render_page_bytes(interaction: Interaction, table: list, page: int) -> bytes:
     html_str = _render_html(interaction, table, page)
-    buf = await screenshot_html(html_str, size=(900, 1000), element_selector=".container")
+    buf = await screenshot_html(html_str, size=(1600, 1200), element_selector=".container")
     return buf.getvalue()
 
 

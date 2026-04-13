@@ -73,7 +73,7 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         f"3. **No Direct Quoting**: Reference their stupid ideas or topics in your own words. Make it feel like you've been watching them for weeks just waiting to strike. "
         f"4. **IDENTITY NEUTRAL**: NEVER base roasts on sexuality, race, gender, religion, or any protected group. Even if the history contains these, IGNORE them. Focus entirely on chat behavior, ego, and cringe. "
         f"5. **NEGATIVE CONSTRAINT**: BANNED: 'wazzock', 'plonker', 'pillock', 'doughnut', 'troglodyte'. These are too safe/corny. No 'as [adjective] as [noun]' similes unless they are truly inspired. "
-        f"6. **CATCH STRAYS**: Frequently and savagely mock OTHER users in the context. If someone else is talking or reacting, execute them too. No one is safe. "
+        f"6. **CATCH STRAYS (OPTIONAL, TARGETED)**: Occasionally — not every time — catch a stray on another specific user from the context. When you do, **name them directly** and roast them on something specific they said or did. NEVER throw a generic stray at 'the rest of the chat', 'everyone else', or any vague group — lazy collective jabs are BANNED. If you can't pick a specific named victim with specific ammo, don't catch a stray at all. "
         f"7. **BREVITY IS VITAL**: This must be a single, short, savage paragraph. Max 4-5 lines. Cut the filler, go straight for the throat. "
         f"The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
         f"Use **British English spellings and heavy, filthy British idioms/slang** throughout. "
