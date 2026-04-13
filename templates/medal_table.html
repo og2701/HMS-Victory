@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #0f1115;
+      font-family: 'Inter', -apple-system, Segoe UI, Arial, sans-serif;
+      color: #f2f4f8;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      width: 820px;
+      background: linear-gradient(180deg, #181c24 0%, #12151c 100%);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.4);
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .title-bar {
+      display: flex;
+      align-items: center;
+      padding: 22px 28px;
+      background: linear-gradient(90deg, #1b2030 0%, #141821 100%);
+      border-bottom: 3px solid #D4AF37;
+    }
+    .title-bar .accent {
+      width: 8px; height: 40px;
+      background: linear-gradient(180deg, #FFD54A 0%, #C9A227 100%);
+      border-radius: 4px;
+      margin-right: 18px;
+    }
+    .title-bar h1 {
+      margin: 0;
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+    }
+    .title-bar .sub {
+      margin-left: auto;
+      font-size: 15px;
+      color: #8b94a8;
+      font-weight: 600;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 22px;
+    }
+    thead tr {
+      background: #1f2431;
+      color: #c2cada;
+      font-weight: 700;
+      font-size: 17px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+    thead th {
+      padding: 16px 10px;
+      text-align: center;
+      border-bottom: 2px solid rgba(255,255,255,0.08);
+    }
+    thead th.rank-col { width: 72px; }
+    thead th.name-col { text-align: left; padding-left: 24px; }
+    thead th.total-col { width: 90px; }
+
+    .medal-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      font-weight: 800;
+      font-size: 15px;
+      color: #1a1a1a;
+      box-shadow: inset 0 -2px 0 rgba(0,0,0,0.25), 0 2px 4px rgba(0,0,0,0.3);
+    }
+    .medal-pill.gold   { background: radial-gradient(circle at 30% 30%, #FFE27A, #D4AF37); }
+    .medal-pill.silver { background: radial-gradient(circle at 30% 30%, #F2F4F8, #B8C0CC); }
+    .medal-pill.bronze { background: radial-gradient(circle at 30% 30%, #E3A679, #A05A2C); color: #2a1810; }
+
+    tbody tr {
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      transition: background 0.1s;
+    }
+    tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+    tbody tr.top-1 { background: linear-gradient(90deg, rgba(255,215,74,0.12), transparent 70%); }
+    tbody tr.top-2 { background: linear-gradient(90deg, rgba(200,210,225,0.10), transparent 70%); }
+    tbody tr.top-3 { background: linear-gradient(90deg, rgba(205,127,70,0.12), transparent 70%); }
+
+    td {
+      padding: 14px 10px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    td.rank {
+      font-weight: 700;
+      font-size: 22px;
+      color: #8b94a8;
+    }
+    td.rank .rank-medal {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      font-weight: 800;
+      font-size: 18px;
+      color: #1a1a1a;
+      box-shadow: inset 0 -2px 0 rgba(0,0,0,0.25), 0 2px 4px rgba(0,0,0,0.35);
+    }
+    td.rank .rank-medal.gold   { background: radial-gradient(circle at 30% 30%, #FFE27A, #D4AF37); }
+    td.rank .rank-medal.silver { background: radial-gradient(circle at 30% 30%, #F2F4F8, #B8C0CC); }
+    td.rank .rank-medal.bronze { background: radial-gradient(circle at 30% 30%, #E3A679, #A05A2C); color: #2a1810; }
+
+    td.name {
+      text-align: left;
+      padding-left: 24px;
+      font-weight: 600;
+      font-size: 22px;
+      color: #f2f4f8;
+      max-width: 320px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    td.count {
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+      font-size: 24px;
+    }
+    td.gold-count   { color: #FFD54A; }
+    td.silver-count { color: #D8DEEA; }
+    td.bronze-count { color: #D89060; }
+    td.total {
+      font-weight: 800;
+      font-size: 24px;
+      color: #f2f4f8;
+      background: rgba(255,255,255,0.03);
+    }
+
+    .footer {
+      padding: 14px 28px;
+      font-size: 14px;
+      color: #8b94a8;
+      display: flex;
+      justify-content: space-between;
+      background: #141821;
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="title-bar">
+      <div class="accent"></div>
+      <h1>Badge Medal Table</h1>
+      <div class="sub">{{ SUBTITLE }}</div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th class="rank-col">#</th>
+          <th class="name-col">Member</th>
+          <th><span class="medal-pill gold">G</span></th>
+          <th><span class="medal-pill silver">S</span></th>
+          <th><span class="medal-pill bronze">B</span></th>
+          <th class="total-col">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{ ROWS }}
+      </tbody>
+    </table>
+    <div class="footer">
+      <span>{{ FOOTER_LEFT }}</span>
+      <span>{{ FOOTER_RIGHT }}</span>
+    </div>
+  </div>
+</body>
+</html>
