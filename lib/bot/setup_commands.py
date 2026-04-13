@@ -30,6 +30,7 @@ from commands.economy.inventory_commands import (
 from commands.economy.bank_commands import (
     handle_bank_status_command
 )
+from commands.social.medal_table import handle_medal_table_command
 try:
     from commands.social.rank_equip import handle_rank_equip_command
 except ImportError:
@@ -440,3 +441,7 @@ def define_commands(tree, client):
     @command("bank-status", "View server bank status (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def bank_status_command(interaction: Interaction):
         await handle_bank_status_command(interaction)
+
+    @command("medal-table", "Olympic-style leaderboard of badge holders by gold/silver/bronze count")
+    async def medal_table_command(interaction: Interaction):
+        await handle_medal_table_command(interaction)
