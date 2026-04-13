@@ -216,24 +216,41 @@ def _screenshot_html_sync(
 
         if element_selector:
             from selenium.webdriver.common.by import By
-            element = browser.find_element(By.CSS_SELECTOR, element_selector)
-            # Wait for images inside the element to finish loading so height is accurate
+            from selenium.webdriver.support.ui import WebDriverWait
+            import base64 as _b64
+            # Wait for images inside the page to finish loading so layout is final
             try:
-                browser.execute_script(
-                    "return Promise.all(Array.from(document.images).filter(i=>!i.complete)"
-                    ".map(i=>new Promise(r=>{i.onload=i.onerror=r})));"
+                WebDriverWait(browser, 5).until(
+                    lambda b: b.execute_script(
+                        "return Array.from(document.images).every(i => i.complete)"
+                    )
                 )
             except Exception:
                 pass
-            # Resize the window if the element overflows the current viewport,
-            # otherwise the element screenshot gets clipped.
-            size_info = element.size
-            needed_w = max(size[0], int(size_info["width"]) + 40)
-            needed_h = int(size_info["height"]) + 40
-            if needed_w > size[0] or needed_h > size[1]:
-                browser.set_window_size(needed_w, needed_h)
-                element = browser.find_element(By.CSS_SELECTOR, element_selector)
-            png_bytes = element.screenshot_as_png
+            element = browser.find_element(By.CSS_SELECTOR, element_selector)
+            rect = browser.execute_script(
+                "const r = arguments[0].getBoundingClientRect();"
+                "return {x: r.left + window.scrollX, y: r.top + window.scrollY,"
+                " w: r.width, h: r.height};",
+                element,
+            )
+            # CDP capture with captureBeyondViewport handles elements taller
+            # than the viewport without clipping.
+            cdp_result = browser.execute_cdp_cmd(
+                "Page.captureScreenshot",
+                {
+                    "format": "png",
+                    "clip": {
+                        "x": rect["x"],
+                        "y": rect["y"],
+                        "width": rect["w"],
+                        "height": rect["h"],
+                        "scale": 1,
+                    },
+                    "captureBeyondViewport": True,
+                },
+            )
+            png_bytes = _b64.b64decode(cdp_result["data"])
         else:
             png_bytes = browser.get_screenshot_as_png()
 
