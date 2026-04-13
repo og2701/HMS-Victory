@@ -53,25 +53,40 @@ def _build_embed(interaction: Interaction, table: list, page: int) -> Embed:
     start = page * PAGE_SIZE
     slice_ = table[start:start + PAGE_SIZE]
 
-    name_width = 18
-    lines = [
-        f"{'#':>3}  {'Member':<{name_width}} {'🥇':>3} {'🥈':>3} {'🥉':>3} {'Σ':>4}",
-        "─" * (3 + 2 + name_width + 1 + 3 + 1 + 3 + 1 + 3 + 1 + 4),
-    ]
+    name_w = 22
+    col_w = 5  # per medal column
+    rank_w = 4
+
+    def row(rank, name, g, s, b, total):
+        return (
+            f"{rank:<{rank_w}}  "
+            f"{name:<{name_w}}"
+            f"{g:>{col_w}}"
+            f"{s:>{col_w}}"
+            f"{b:>{col_w}}"
+            f"{total:>{col_w + 1}}"
+        )
+
+    header = row("#", "Member", "G", "S", "B", "Σ")
+    sep = "─" * len(header)
+
+    body_lines = []
+    medal_prefix = {1: "🥇", 2: "🥈", 3: "🥉"}
     for idx, (uid, g, s, b, total) in enumerate(slice_, start=start + 1):
         name = _resolve_name(interaction, uid)
-        if len(name) > name_width:
-            name = name[: name_width - 1] + "…"
-        lines.append(f"{idx:>3}  {name:<{name_width}} {g:>3} {s:>3} {b:>3} {total:>4}")
+        if len(name) > name_w - 1:
+            name = name[: name_w - 2] + "…"
+        rank_label = medal_prefix.get(idx, str(idx))
+        body_lines.append(row(rank_label, name, g, s, b, total))
 
-    body = "```\n" + "\n".join(lines) + "\n```"
+    table_text = "```\n" + header + "\n" + sep + "\n" + "\n".join(body_lines) + "\n```"
 
     embed = Embed(
-        title="🏅 Badge Medal Table",
-        description=body,
+        title="🏅  Badge Medal Table",
+        description=table_text,
         color=0xFFD700,
     )
-    embed.set_footer(text=f"Page {page + 1}/{total_pages} • {len(table)} ranked members")
+    embed.set_footer(text=f"Page {page + 1}/{total_pages}  •  {len(table):,} ranked members  •  Ranked by 🥇 → 🥈 → 🥉")
     return embed
 
 
