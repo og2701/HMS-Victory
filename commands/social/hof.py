@@ -1,4 +1,5 @@
 import asyncio
+import io
 import re
 import logging
 import discord
@@ -9,6 +10,37 @@ from lib.core.file_operations import load_json_file, save_json_file
 logger = logging.getLogger(__name__)
 
 JUMP_URL_RE = re.compile(r"https?://(?:\w+\.)?discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)")
+
+
+def _is_playable_media(att: discord.Attachment) -> bool:
+    ct = (att.content_type or "").lower()
+    if ct.startswith("video/"):
+        return True
+    if ct == "image/gif":
+        return True
+    name = (att.filename or "").lower()
+    return name.endswith((".mp4", ".mov", ".webm", ".gif"))
+
+
+async def collect_media_files(message: discord.Message, size_limit: int) -> list[discord.File]:
+    """Download video/gif attachments from `message` and return them as discord.File
+    objects so they can be re-uploaded inline in the HOF post."""
+    files: list[discord.File] = []
+    if not message.attachments:
+        return files
+    for att in message.attachments:
+        if not _is_playable_media(att):
+            continue
+        if att.size and att.size > size_limit:
+            logger.info(f"[HOF] Skipping {att.filename}: {att.size} > limit {size_limit}")
+            continue
+        try:
+            data = await att.read()
+        except (discord.HTTPException, discord.NotFound) as e:
+            logger.warning(f"[HOF] Failed to download {att.filename}: {e}")
+            continue
+        files.append(discord.File(io.BytesIO(data), filename=att.filename, spoiler=att.is_spoiler()))
+    return files
 
 
 async def regenerate_hof_images(client):
@@ -55,7 +87,9 @@ async def regenerate_hof_images(client):
             file = discord.File(image_buffer, filename="hof_quote.png")
             new_embed = embed.copy()
             new_embed.set_image(url="attachment://hof_quote.png")
-            await hof_msg.edit(embed=new_embed, attachments=[file])
+            size_limit = getattr(thread.guild, "filesize_limit", 25 * 1024 * 1024)
+            media_files = await collect_media_files(original, size_limit)
+            await hof_msg.edit(embed=new_embed, attachments=[file, *media_files])
             fixed += 1
         except Exception as e:
             logger.error(f"[HOF] edit failed for {hof_msg.id}: {e}")
@@ -104,26 +138,30 @@ async def handle_hof_context_menu(interaction: discord.Interaction, message: dis
         url=message.jump_url,
     )
 
+    size_limit = getattr(thread.guild, "filesize_limit", 25 * 1024 * 1024)
+    media_files = await collect_media_files(message, size_limit)
+
     try:
         image_buffer = await create_quote_image(client, message)
-        file = discord.File(image_buffer, filename="hof_quote.png")
+        quote_file = discord.File(image_buffer, filename="hof_quote.png")
         embed.set_image(url="attachment://hof_quote.png")
         await thread.send(
             content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!",
             embed=embed,
-            file=file,
+            files=[quote_file, *media_files],
         )
     except Exception as e:
         print(f"[HOF] Error creating quote image: {e}")
         embed.description = f"{embed.description}\n\n{message.content}"
         if message.attachments:
             for attachment in message.attachments:
-                if attachment.content_type and attachment.content_type.startswith("image/"):
+                if attachment.content_type and attachment.content_type.startswith("image/") and attachment.content_type != "image/gif":
                     embed.set_image(url=attachment.url)
                     break
         await thread.send(
             content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!",
             embed=embed,
+            files=media_files,
         )
 
     hall_of_fame_data.append(str(message.id))
