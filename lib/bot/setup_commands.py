@@ -77,6 +77,13 @@ def define_commands(tree, client):
 
     tree.add_command(quote_context_menu)
 
+    @app_commands.context_menu(name="Add to Hall of Fame")
+    async def hof_context_menu(interaction: Interaction, message: discord.Message):
+        from commands.social.hof import handle_hof_context_menu
+        await handle_hof_context_menu(interaction, message)
+
+    tree.add_command(hof_context_menu)
+
     @command("role-manage", "Manages user roles by assigning a specified role to members who don't have it")
     async def role_management(interaction: Interaction, role_name: str):
         if interaction.user.id != USERS.OGGERS:

@@ -3,6 +3,7 @@ import difflib
 import html
 import re
 import aiohttp
+import discord
 
 from lib.core.image_processing import screenshot_html, get_avatar_data_uri
 from lib.core.file_operations import read_html_template
@@ -316,6 +317,38 @@ async def create_quote_image(client, message):
             except Exception as e:
                 print(f"Error downloading attachment for quote: {e}")
 
+    reply_html = ""
+    replied = None
+    if message.reference and message.reference.message_id:
+        replied = message.reference.resolved
+        if replied is None or isinstance(replied, discord.DeletedReferenceMessage):
+            try:
+                replied = await message.channel.fetch_message(message.reference.message_id)
+            except Exception:
+                replied = None
+    if replied and not isinstance(replied, discord.DeletedReferenceMessage):
+        reply_avatar_url = (
+            replied.author.display_avatar.url
+            if replied.author.display_avatar
+            else replied.author.default_avatar.url
+        )
+        reply_avatar_data = await get_avatar_data_uri(client, reply_avatar_url)
+        reply_author_color = replied.author.color.to_rgb() if hasattr(replied.author, "color") else (114, 118, 125)
+        reply_text = replied.content or ("[attachment]" if replied.attachments else "[embed]")
+        reply_text = html.escape(reply_text).replace("\n", " ")
+        if len(reply_text) > 120:
+            reply_text = reply_text[:117] + "&hellip;"
+        reply_text = await replace_custom_emojis(client, reply_text)
+        reply_html = (
+            f'<div class="reply-preview">'
+            f'<span class="reply-spine"></span>'
+            f'<img src="{reply_avatar_data}" class="reply-avatar" />'
+            f'<span class="reply-username" style="color: rgb{reply_author_color};">{html.escape(replied.author.display_name)}</span>'
+            f'<span class="reply-content">{reply_text}</span>'
+            f'</div>'
+        )
+        extra_height += 30
+
     estimated_height = calculate_estimated_height(escaped_content) + extra_height + 50
 
     border_color = message.author.color.to_rgb()
@@ -372,6 +405,33 @@ async def create_quote_image(client, message):
             border-radius: 4px;
             margin-top: 8px;
         }}
+        .reply-preview {{
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+            color: #b9bbbe;
+            margin-bottom: 6px;
+            padding-left: 8px;
+            border-left: 2px solid #4f545c;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }}
+        .reply-avatar {{
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }}
+        .reply-username {{
+            font-weight: bold;
+            margin-right: 6px;
+        }}
+        .reply-content {{
+            color: #b9bbbe;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }}
     """
 
     html_content = read_html_template("templates/quote_message.html")
@@ -382,5 +442,6 @@ async def create_quote_image(client, message):
     html_content = html_content.replace("{created_at}", created_at)
     html_content = html_content.replace("{content}", escaped_content)
     html_content = html_content.replace("{attached_image_html}", attached_image_html)
+    html_content = html_content.replace("{reply_html}", reply_html)
 
     return await screenshot_html(html_content, size=(650, estimated_height), element_selector=".container")

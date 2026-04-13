@@ -217,6 +217,22 @@ def _screenshot_html_sync(
         if element_selector:
             from selenium.webdriver.common.by import By
             element = browser.find_element(By.CSS_SELECTOR, element_selector)
+            # Wait for images inside the element to finish loading so height is accurate
+            try:
+                browser.execute_script(
+                    "return Promise.all(Array.from(document.images).filter(i=>!i.complete)"
+                    ".map(i=>new Promise(r=>{i.onload=i.onerror=r})));"
+                )
+            except Exception:
+                pass
+            # Resize the window if the element overflows the current viewport,
+            # otherwise the element screenshot gets clipped.
+            size_info = element.size
+            needed_w = max(size[0], int(size_info["width"]) + 40)
+            needed_h = int(size_info["height"]) + 40
+            if needed_w > size[0] or needed_h > size[1]:
+                browser.set_window_size(needed_w, needed_h)
+                element = browser.find_element(By.CSS_SELECTOR, element_selector)
             png_bytes = element.screenshot_as_png
         else:
             png_bytes = browser.get_screenshot_as_png()
