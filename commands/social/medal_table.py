@@ -24,12 +24,12 @@ BRONZE = (205, 127, 70)
 TOP_ROW_ACCENT = (52, 58, 74)
 
 # Layout
-IMG_W = 900
-ROW_H = 52
-HEADER_H = 64
-TITLE_H = 80
-FOOTER_H = 44
-PADDING = 24
+IMG_W = 760
+ROW_H = 66
+HEADER_H = 60
+TITLE_H = 86
+FOOTER_H = 46
+PADDING = 20
 
 FONT_PATHS = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -119,11 +119,11 @@ def render_page(interaction: Interaction, table: list, page: int) -> bytes:
     img = Image.new("RGB", (IMG_W, img_h), BG_COLOR)
     draw = ImageDraw.Draw(img)
 
-    title_font = _load_font(34)
-    header_font = _load_font(20)
-    row_font = _load_font(22)
-    num_font = _load_font(24, mono=True)
-    small_font = _load_font(16)
+    title_font = _load_font(40)
+    header_font = _load_font(24)
+    row_font = _load_font(28)
+    num_font = _load_font(28, mono=True)
+    small_font = _load_font(18)
 
     # Title bar
     _rounded_rect(draw, (PADDING, PADDING // 2, IMG_W - PADDING, TITLE_H), radius=14, fill=CARD_COLOR)
@@ -132,13 +132,13 @@ def render_page(interaction: Interaction, table: list, page: int) -> bytes:
     draw.text((PADDING + 32, PADDING // 2 + 20), "Badge Medal Table", fill=TEXT_COLOR, font=title_font)
 
     # Column geometry
-    col_rank_x = PADDING + 24
-    col_name_x = PADDING + 90
-    col_total_x = IMG_W - PADDING - 40
-    col_bronze_x = col_total_x - 100
-    col_silver_x = col_bronze_x - 100
-    col_gold_x = col_silver_x - 100
-    col_name_max = col_gold_x - col_name_x - 20
+    col_rank_x = PADDING + 20
+    col_name_x = PADDING + 80
+    col_total_x = IMG_W - PADDING - 44
+    col_bronze_x = col_total_x - 80
+    col_silver_x = col_bronze_x - 70
+    col_gold_x = col_silver_x - 70
+    col_name_max = col_gold_x - col_name_x - 40
 
     # Header
     header_y = TITLE_H + PADDING // 2
@@ -153,7 +153,7 @@ def render_page(interaction: Interaction, table: list, page: int) -> bytes:
         (col_silver_x, SILVER, "S"),
         (col_bronze_x, BRONZE, "B"),
     ]:
-        r = 13
+        r = 16
         cy = header_text_y + 10
         draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=color)
         draw.text((cx, cy), letter, fill=(30, 30, 30), font=header_font, anchor="mm")
@@ -174,8 +174,8 @@ def render_page(interaction: Interaction, table: list, page: int) -> bytes:
         mid_y = (y0 + y1) // 2
         medal_color = {1: GOLD, 2: SILVER, 3: BRONZE}.get(rank)
         if medal_color:
-            r = 16
-            cx = col_rank_x + 10
+            r = 20
+            cx = col_rank_x + 12
             draw.ellipse((cx - r, mid_y - r, cx + r, mid_y + r), fill=medal_color)
             draw.text((cx, mid_y), str(rank), fill=(30, 30, 30), font=header_font, anchor="mm")
         else:
