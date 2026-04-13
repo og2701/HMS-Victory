@@ -9,7 +9,8 @@ from database import DatabaseManager
 from lib.core.file_operations import read_html_template
 from lib.core.image_processing import screenshot_html
 
-PAGE_SIZE = 10
+PAGE_SIZE = 20
+EXCLUDED_USER_IDS = {"818885214189256714"}  # ogme02 test account
 
 
 def _fetch_medal_table():
@@ -24,6 +25,8 @@ def _fetch_medal_table():
     )
     tallies: dict[str, dict[str, int]] = {}
     for user_id, rarity, count in rows:
+        if str(user_id) in EXCLUDED_USER_IDS:
+            continue
         t = tallies.setdefault(user_id, {"Gold": 0, "Silver": 0, "Bronze": 0})
         t[rarity] = count
 
@@ -32,7 +35,21 @@ def _fetch_medal_table():
         for uid, t in tallies.items()
     ]
     table.sort(key=lambda r: (r[1], r[2], r[3], r[4]), reverse=True)
-    return table
+
+    # Assign competition ranks (1224): tied rows share a rank, next rank skips.
+    ranks = []
+    prev_key = None
+    prev_rank = 0
+    for i, row in enumerate(table):
+        key = (row[1], row[2], row[3])
+        rank = prev_rank if key == prev_key else i + 1
+        ranks.append(rank)
+        prev_key, prev_rank = key, rank
+
+    # Flag shared ranks so the renderer can prefix them with "=".
+    from collections import Counter
+    counts = Counter(ranks)
+    return [(rank, counts[rank] > 1, *row) for rank, row in zip(ranks, table)]
 
 
 def _resolve_name(interaction: Interaction, user_id: str) -> str:
@@ -49,14 +66,15 @@ def _resolve_name(interaction: Interaction, user_id: str) -> str:
     return f"User {user_id}"
 
 
-def _rank_cell(rank: int) -> str:
+def _rank_cell(rank: int, shared: bool) -> str:
+    prefix = "=" if shared else ""
     if rank == 1:
-        return '<span class="rank-medal gold">1</span>'
+        return f'<span class="rank-medal gold">{prefix}1</span>'
     if rank == 2:
-        return '<span class="rank-medal silver">2</span>'
+        return f'<span class="rank-medal silver">{prefix}2</span>'
     if rank == 3:
-        return '<span class="rank-medal bronze">3</span>'
-    return str(rank)
+        return f'<span class="rank-medal bronze">{prefix}3</span>'
+    return f"{prefix}{rank}"
 
 
 def _render_html(interaction: Interaction, table: list, page: int) -> str:
@@ -66,13 +84,12 @@ def _render_html(interaction: Interaction, table: list, page: int) -> str:
     slice_ = table[start:start + PAGE_SIZE]
 
     rows_html = []
-    for i, (uid, g, s, b, total) in enumerate(slice_):
-        rank = start + i + 1
+    for rank, shared, uid, g, s, b, total in slice_:
         name = html.escape(_resolve_name(interaction, uid))
         row_class = f"top-{rank}" if rank <= 3 else ""
         rows_html.append(
             f'<tr class="{row_class}">'
-            f'<td class="rank">{_rank_cell(rank)}</td>'
+            f'<td class="rank">{_rank_cell(rank, shared)}</td>'
             f'<td class="name">{name}</td>'
             f'<td class="count gold-count">{g}</td>'
             f'<td class="count silver-count">{s}</td>'
