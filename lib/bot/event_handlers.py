@@ -432,9 +432,6 @@ async def on_ready(client, tree, scheduler):
     from lib.bot.backup_manager import backup_database
     await backup_database(client)
 
-    from commands.social.hof import regenerate_hof_images
-    asyncio.create_task(regenerate_hof_images(client))
-
 
 async def on_message(client, message):
     if not hasattr(client, "xp_system"):
