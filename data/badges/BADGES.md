@@ -142,7 +142,7 @@ Awarded for boosting the server for a year.
 
 ### 🔮 Oracle
 **Rarity**: Gold
-Awarded for winning 5 predictions in a row.
+Awarded for winning 7 predictions in a row.
 
 ### 🌧️ Unlucky
 **Rarity**: Bronze

@@ -487,7 +487,7 @@ class PredAdminView(discord.ui.View):
             # Process winners
             for uid in self.pred.bets.get(winner, {}).keys():
                 win_streak, lose_streak = track_prediction_streak(uid, is_win=True)
-                if win_streak >= 5:
+                if win_streak >= 7:
                     await award_badge_with_notify(self.client, uid, 'oracle')
             
             # Process losers

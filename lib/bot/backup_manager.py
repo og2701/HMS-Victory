@@ -136,7 +136,7 @@ async def send_json_files(client, folder_path, channel_id):
 
 
 JSON_BACKUP_PREFIX = "json_backup_"
-JSON_BACKUP_DIRS = ["data/json", "daily_summaries"]
+JSON_BACKUP_DIRS = ["data/json", "daily_summaries", "balance_snapshots"]
 
 
 async def restore_json_if_missing():

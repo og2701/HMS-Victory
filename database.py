@@ -272,7 +272,7 @@ def init_db():
             ('party_animal', 'Party Animal', 'Attend 5 different Stage events', '🎉', 'Silver'),
             ('night_owl', 'Night Owl', 'Send 100 messages between 2 AM and 5 AM UK time', '👻', 'Bronze'),
             ('warden', 'The Warden', 'Successfully use a Shutcoin on 10 different people', '🔒', 'Gold'),
-            ('oracle', 'Oracle', 'Win 5 predictions in a row', '🔮', 'Gold'),
+            ('oracle', 'Oracle', 'Win 7 predictions in a row', '🔮', 'Gold'),
             ('unlucky', 'Unlucky', 'Lose 5 predictions in a row', '🌧️', 'Bronze'),
             ('high_stakes', 'High Stakes', 'Place a bet of over 5,000 UKPence on a single prediction', '🎰', 'Silver'),
             ('morning_person', 'Morning Person', 'Send 50 messages between 6 AM and 9 AM UK time', '🌅', 'Bronze'),
