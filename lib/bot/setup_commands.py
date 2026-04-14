@@ -19,14 +19,6 @@ from lib.economy.economy_manager import get_bb, set_bb, add_bb, remove_bb
 from typing import Optional
 from commands.economy.shop import handle_shop_command
 from commands.economy.auction import handle_auction_create_command, handle_auction_list_command, handle_auction_end_command
-from commands.economy.inventory_commands import (
-    handle_inventory_status_command,
-    handle_add_stock_command,
-    handle_set_stock_command,
-    handle_setup_inventory_command,
-    handle_purchase_history_command,
-    handle_restock_command
-)
 from commands.economy.bank_commands import (
     handle_bank_status_command
 )
@@ -413,30 +405,6 @@ def define_commands(tree, client):
     @command("auction-end", "Manually end an auction (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def auction_end_command(interaction: Interaction, auction_id: int):
         await handle_auction_end_command(interaction, auction_id)
-
-    @command("inventory-status", "View current shop inventory status (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def inventory_status_command(interaction: Interaction):
-        await handle_inventory_status_command(interaction)
-
-    @command("add-stock", "Add stock to a shop item (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def add_stock_command(interaction: Interaction, item_id: str, quantity: int):
-        await handle_add_stock_command(interaction, item_id, quantity)
-
-    @command("set-stock", "Set exact stock quantity for a shop item (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def set_stock_command(interaction: Interaction, item_id: str, quantity: int):
-        await handle_set_stock_command(interaction, item_id, quantity)
-
-    @command("setup-inventory", "Configure inventory settings for an item (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def setup_inventory_command(interaction: Interaction, item_id: str, initial_qty: int, max_qty: int = None):
-        await handle_setup_inventory_command(interaction, item_id, initial_qty, max_qty)
-
-    @command("purchase-history", "View purchase history (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def purchase_history_command(interaction: Interaction, target: str = None):
-        await handle_purchase_history_command(interaction, target)
-
-    @command("restock", "Manually trigger auto-restock for all items (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def restock_command(interaction: Interaction):
-        await handle_restock_command(interaction)
 
     @command("bank-status", "View server bank status (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def bank_status_command(interaction: Interaction):

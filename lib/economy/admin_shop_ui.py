@@ -1,4 +1,6 @@
 import logging
+from datetime import datetime
+
 import discord
 from discord.ui import View, Select, Button, Modal, TextInput
 
@@ -6,6 +8,40 @@ from lib.economy.shop_inventory import ShopInventory
 from lib.economy.shop_items import get_all_shop_items, get_shop_item_by_id
 
 logger = logging.getLogger(__name__)
+
+
+def _format_purchase_history_embed(item_id=None, limit: int = 15) -> discord.Embed:
+    purchases = ShopInventory.get_purchase_history(None, item_id, limit)
+    title = f"📜 Purchases — {item_id}" if item_id else "📜 Recent Purchases"
+    embed = discord.Embed(title=title, color=0x0099ff)
+    if not purchases:
+        embed.description = "_No purchases recorded._"
+        return embed
+    lines = []
+    for p in purchases:
+        ts = datetime.fromtimestamp(p["purchase_time"]).strftime("%m/%d %H:%M")
+        item = get_shop_item_by_id(p["item_id"])
+        name = item.name if item else p["item_id"]
+        lines.append(f"`{ts}` <@{p['user_id']}> bought **{name}** for {p['price_paid']} UKP")
+    embed.description = "\n".join(lines)
+    embed.set_footer(text=f"Showing last {len(lines)}")
+    return embed
+
+
+def _format_restock_result_embed(restocked_ids: list[str]) -> discord.Embed:
+    if not restocked_ids:
+        return discord.Embed(title="📦 Restock", description="All items already at max stock.", color=0x95a5a6)
+    items_by_id = {item.id: item for item in get_all_shop_items()}
+    lines = []
+    for item_id in restocked_ids:
+        item = items_by_id.get(item_id)
+        name = item.name if item else item_id
+        lines.append(f"• **{name}** → {ShopInventory.get_quantity(item_id)}")
+    return discord.Embed(
+        title="✅ Restock Complete",
+        description=f"Restocked {len(restocked_ids)} items:\n" + "\n".join(lines),
+        color=0x00ff00,
+    )
 
 
 def _format_item_embed(item, viewer_id: int) -> discord.Embed:
@@ -148,6 +184,12 @@ class AdminShopItemView(View):
         ShopInventory.initialize_item(self.item_id, 0, None, False, 0)
         await self._refresh(interaction)
 
+    @discord.ui.button(label="History", style=discord.ButtonStyle.secondary, row=1)
+    async def history(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_message(
+            embed=_format_purchase_history_embed(self.item_id), ephemeral=True
+        )
+
     @discord.ui.button(label="◀ Back", style=discord.ButtonStyle.danger, row=1)
     async def back(self, interaction: discord.Interaction, button: Button):
         view = AdminShopLaunchView(self.user_id)
@@ -185,3 +227,18 @@ class AdminShopLaunchView(View):
         super().__init__(timeout=300)
         self.user_id = user_id
         self.add_item(_ItemSelect(user_id))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Not for you.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="Restock All Now", style=discord.ButtonStyle.success, row=1)
+    async def restock_all(self, interaction: discord.Interaction, button: Button):
+        restocked = ShopInventory.auto_restock_items()
+        await interaction.response.send_message(embed=_format_restock_result_embed(restocked), ephemeral=True)
+
+    @discord.ui.button(label="Recent Purchases", style=discord.ButtonStyle.secondary, row=1)
+    async def recent_purchases(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_message(embed=_format_purchase_history_embed(), ephemeral=True)
