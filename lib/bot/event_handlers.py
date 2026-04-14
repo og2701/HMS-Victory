@@ -434,6 +434,45 @@ async def on_ready(client, tree, scheduler):
     await backup_json_data(client)
 
 
+async def mirror_voice_message(client, message):
+    """Re-upload any voice-note attachment to the deletion log channel so it survives deletion."""
+    if message.author.bot or not message.attachments:
+        return
+    if not getattr(message.flags, "voice", False):
+        return
+    log_channel = client.get_channel(CHANNELS.VOICE_LOG_THREAD)
+    if log_channel is None:
+        try:
+            log_channel = await client.fetch_channel(CHANNELS.VOICE_LOG_THREAD)
+        except (discord.NotFound, discord.Forbidden):
+            return
+    size_limit = getattr(message.guild, "filesize_limit", 25 * 1024 * 1024) if message.guild else 25 * 1024 * 1024
+    files = []
+    for att in message.attachments:
+        if att.size and att.size > size_limit:
+            continue
+        try:
+            data = await att.read()
+        except (discord.HTTPException, discord.NotFound) as e:
+            logger.warning(f"[voice-mirror] download failed for {att.filename}: {e}")
+            continue
+        import io
+        files.append(discord.File(io.BytesIO(data), filename=att.filename))
+    if not files:
+        return
+    try:
+        await log_channel.send(
+            content=(
+                f"🎙 Voice message from {message.author.mention} in {message.channel.mention} "
+                f"([jump]({message.jump_url}))"
+            ),
+            files=files,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+    except discord.HTTPException as e:
+        logger.warning(f"[voice-mirror] send failed: {e}")
+
+
 async def on_message(client, message):
     if not hasattr(client, "xp_system"):
         from lib.features.xp_system import XPSystem
@@ -442,6 +481,8 @@ async def on_message(client, message):
 
     if not await restrict_channel_for_new_members(message, CHANNELS.POLITICS, 7, POLITICS_WHITELISTED_USER_IDS):
         return
+
+    await mirror_voice_message(client, message)
 
     await client.xp_system.update_xp(message)
 
@@ -571,6 +612,17 @@ async def on_message(client, message):
                 logger.error(f"Error launching UKPAddUserSelectView: {e}")
 
     is_deputy_pm = hasattr(message.author, "roles") and any(role.id == ROLES.DEPUTY_PM for role in message.author.roles)
+    if message.content.lower().strip() == "shopadmin" and message.author.id == USERS.OGGERS:
+        try:
+            await message.delete()
+            from lib.economy.admin_shop_ui import AdminShopLaunchView
+            await message.channel.send(
+                "**Shop Admin** — pick an item:",
+                view=AdminShopLaunchView(message.author.id),
+            )
+        except Exception as e:
+            logger.error(f"Error launching AdminShopLaunchView: {e}")
+
     if message.content.lower().strip() == "titleadd" and (message.author.id == USERS.OGGERS or is_deputy_pm):
         try:
             await message.delete()

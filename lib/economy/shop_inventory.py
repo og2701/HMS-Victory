@@ -90,6 +90,31 @@ class ShopInventory:
         return True
 
     @staticmethod
+    def update_settings(item_id: str, max_quantity: Optional[int] = ..., auto_restock: Optional[bool] = None,
+                        restock_amount: Optional[int] = None) -> bool:
+        """Update inventory settings without resetting quantity. Pass `...` to leave a field unchanged.
+        max_quantity accepts None explicitly (means unlimited)."""
+        if not DatabaseManager.fetch_one('SELECT item_id FROM shop_inventory WHERE item_id = ?', (item_id,)):
+            return False
+
+        sets, params = [], []
+        if max_quantity is not ...:
+            sets.append('max_quantity = ?')
+            params.append(max_quantity)
+        if auto_restock is not None:
+            sets.append('auto_restock = ?')
+            params.append(1 if auto_restock else 0)
+        if restock_amount is not None:
+            sets.append('restock_amount = ?')
+            params.append(restock_amount)
+
+        if not sets:
+            return True
+        params.append(item_id)
+        DatabaseManager.execute(f'UPDATE shop_inventory SET {", ".join(sets)} WHERE item_id = ?', tuple(params))
+        return True
+
+    @staticmethod
     def auto_restock_items() -> List[str]:
         """Perform restocking for all auto-restock items by their restock amount. Returns list of restocked item IDs."""
         current_time = int(time.time())
