@@ -8,8 +8,8 @@ from lib.economy.shop_items import get_all_shop_items, get_shop_item_by_id
 logger = logging.getLogger(__name__)
 
 
-def _format_item_embed(item) -> discord.Embed:
-    info = ShopInventory.get_item_info(item.item_id) or {}
+def _format_item_embed(item, viewer_id: int) -> discord.Embed:
+    info = ShopInventory.get_item_info(item.id) or {}
     qty = info.get("quantity")
     max_qty = info.get("max_quantity")
     auto = info.get("auto_restock", False)
@@ -20,8 +20,8 @@ def _format_item_embed(item) -> discord.Embed:
         description=item.description or "_no description_",
         color=0x5865f2,
     )
-    embed.add_field(name="Item ID", value=f"`{item.item_id}`", inline=True)
-    embed.add_field(name="Price", value=f"{item.get_price()} UKP", inline=True)
+    embed.add_field(name="Item ID", value=f"`{item.id}`", inline=True)
+    embed.add_field(name="Price", value=f"{item.get_price(viewer_id)} UKP", inline=True)
     embed.add_field(name="Visible in shop", value="Yes" if item.show_in_shop else "No", inline=True)
     embed.add_field(name="Stock", value=str(qty) if qty is not None else "—", inline=True)
     embed.add_field(name="Max", value="∞" if max_qty is None else str(max_qty), inline=True)
@@ -80,7 +80,7 @@ class AdminShopItemView(View):
         if not item:
             await interaction.response.edit_message(content="Item missing.", embed=None, view=None)
             return
-        await interaction.response.edit_message(embed=_format_item_embed(item), view=self)
+        await interaction.response.edit_message(embed=_format_item_embed(item, self.user_id), view=self)
 
     @discord.ui.button(label="Set Stock", style=discord.ButtonStyle.primary, row=0)
     async def set_stock(self, interaction: discord.Interaction, button: Button):
@@ -88,7 +88,7 @@ class AdminShopItemView(View):
             if not ShopInventory.set_stock(self.item_id, value):
                 await modal_interaction.response.send_message("Item not initialized.", ephemeral=True)
                 return
-            await modal_interaction.response.edit_message(embed=_format_item_embed(self._item()), view=self)
+            await modal_interaction.response.edit_message(embed=_format_item_embed(self._item(), self.user_id), view=self)
         await interaction.response.send_modal(_IntModal(
             title=f"Set stock — {self.item_id}",
             label="New stock quantity",
@@ -104,7 +104,7 @@ class AdminShopItemView(View):
             if not ok:
                 await modal_interaction.response.send_message("Item not initialized.", ephemeral=True)
                 return
-            await modal_interaction.response.edit_message(embed=_format_item_embed(self._item()), view=self)
+            await modal_interaction.response.edit_message(embed=_format_item_embed(self._item(), self.user_id), view=self)
         await interaction.response.send_modal(_IntModal(
             title=f"Set max — {self.item_id}",
             label="Max quantity (blank = unlimited)",
@@ -120,7 +120,7 @@ class AdminShopItemView(View):
             if not ok:
                 await modal_interaction.response.send_message("Item not initialized.", ephemeral=True)
                 return
-            await modal_interaction.response.edit_message(embed=_format_item_embed(self._item()), view=self)
+            await modal_interaction.response.edit_message(embed=_format_item_embed(self._item(), self.user_id), view=self)
         await interaction.response.send_modal(_IntModal(
             title=f"Set restock — {self.item_id}",
             label="Amount added per 12h tick",
@@ -159,12 +159,12 @@ class _ItemSelect(Select):
         self.user_id = user_id
         options = []
         for item in get_all_shop_items()[:25]:
-            info = ShopInventory.get_item_info(item.item_id)
+            info = ShopInventory.get_item_info(item.id)
             qty_label = f"{info['quantity']}" + (f"/{info['max_quantity']}" if info and info["max_quantity"] is not None else "") if info else "uninit"
             options.append(discord.SelectOption(
                 label=item.name[:100],
-                value=item.item_id,
-                description=f"id={item.item_id} · stock={qty_label}"[:100],
+                value=item.id,
+                description=f"id={item.id} · stock={qty_label}"[:100],
             ))
         super().__init__(placeholder="Select a shop item to manage…", options=options, min_values=1, max_values=1)
 
@@ -176,8 +176,8 @@ class _ItemSelect(Select):
         if not item:
             await interaction.response.send_message("Item not found.", ephemeral=True)
             return
-        view = AdminShopItemView(self.user_id, item.item_id)
-        await interaction.response.edit_message(content=None, embed=_format_item_embed(item), view=view)
+        view = AdminShopItemView(self.user_id, item.id)
+        await interaction.response.edit_message(content=None, embed=_format_item_embed(item, self.user_id), view=view)
 
 
 class AdminShopLaunchView(View):
