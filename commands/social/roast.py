@@ -48,7 +48,7 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
 
     user_messages = []
     user_messages = []
-    await fetch_messages_with_context(channel, user, user_messages, total_limit=50, context_depth=20)
+    await fetch_messages_with_context(channel, user, user_messages, total_limit=150, context_depth=20, history_limit=5000)
     
     input_text = "\n".join(user_messages)
     if len(input_text) == 0:

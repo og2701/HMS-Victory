@@ -76,12 +76,13 @@ async def fetch_messages_with_context(
     user: Member,
     user_messages: list,
     total_limit: int = 100,
-    context_depth: int = 8
+    context_depth: int = 8,
+    history_limit: int = 1000
 ) -> None:
     try:
         user_message_count = 0
         message_history = []
-        async for message in channel.history(limit=1000):
+        async for message in channel.history(limit=history_limit):
             if message.author.bot:
                 continue
             message_history.append(message)
