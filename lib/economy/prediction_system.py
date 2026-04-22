@@ -161,7 +161,7 @@ def _top_bettor(bets: dict, client: Optional[discord.Client]) -> str:
     uid = max(bets, key=bets.get)
     if client:
         user = client.get_user(uid)
-        name = user.display_name if user else f"{uid}"
+        name = discord.utils.escape_markdown(user.display_name) if user else f"{uid}"
     else:
         name = f"<@{uid}>"
     return f"{name} {_fmt_money(bets[uid])}"
@@ -461,7 +461,7 @@ class PredAdminView(discord.ui.View):
         lines = []
         for uid, amt in sorted(payouts.items(), key=lambda x: x[1], reverse=True):
             member = interaction.guild.get_member(uid)
-            name = member.display_name if member else f"<@{uid}>"
+            name = discord.utils.escape_markdown(member.display_name) if member else f"<@{uid}>"
             lines.append(f"**{name}** won **{amt:,}**")
 
         descr = "\n".join(lines) or "*Nobody backed the winner*"

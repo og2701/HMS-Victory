@@ -93,6 +93,12 @@ def get_browser():
         except Exception as e:
             logging.warning(f"Failed to use ChromeDriverManager, falling back to default driver: {e}")
             _browser = webdriver.Chrome(options=chrome_options)
+        
+        # Warm up Chrome so the first real render doesn't fail
+        try:
+            _browser.get("about:blank")
+        except Exception:
+            pass
             
         _render_count = 0
         
@@ -203,72 +209,89 @@ def _screenshot_html_sync(
     element_selector: str = None
 ) -> io.BytesIO:
     """Synchronous implementation of screenshot_html."""
-    buffer = io.BytesIO()
+    global _browser, _render_count
 
     with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as tmp:
         tmp.write(html_str)
         tmp_path = tmp.name
 
-    try:
-        browser = get_browser()
-        browser.set_window_size(size[0], size[1])
-        browser.get(f"file://{os.path.abspath(tmp_path)}")
+    last_err = None
+    for attempt in range(2):
+        try:
+            buffer = io.BytesIO()
+            browser = get_browser()
+            browser.set_window_size(size[0], size[1])
+            browser.get(f"file://{os.path.abspath(tmp_path)}")
 
-        if element_selector:
-            from selenium.webdriver.common.by import By
-            from selenium.webdriver.support.ui import WebDriverWait
-            import base64 as _b64
-            # Wait for images inside the page to finish loading so layout is final
-            try:
-                WebDriverWait(browser, 5).until(
-                    lambda b: b.execute_script(
-                        "return Array.from(document.images).every(i => i.complete)"
-                    )
-                )
-            except Exception:
-                pass
-            element = browser.find_element(By.CSS_SELECTOR, element_selector)
-            rect = browser.execute_script(
-                "const r = arguments[0].getBoundingClientRect();"
-                "return {x: r.left + window.scrollX, y: r.top + window.scrollY,"
-                " w: r.width, h: r.height};",
-                element,
-            )
-            # CDP capture with captureBeyondViewport handles elements taller
-            # than the viewport without clipping.
-            cdp_result = browser.execute_cdp_cmd(
-                "Page.captureScreenshot",
-                {
-                    "format": "png",
-                    "clip": {
-                        "x": rect["x"],
-                        "y": rect["y"],
-                        "width": rect["w"],
-                        "height": rect["h"],
-                        "scale": 1,
-                    },
-                    "captureBeyondViewport": True,
-                },
-            )
-            png_bytes = _b64.b64decode(cdp_result["data"])
-        else:
-            png_bytes = browser.get_screenshot_as_png()
-
-        with Image.open(io.BytesIO(png_bytes)) as image:
             if element_selector:
-                processed = image.copy()
+                from selenium.webdriver.common.by import By
+                from selenium.webdriver.support.ui import WebDriverWait
+                import base64 as _b64
+                # Wait for images inside the page to finish loading so layout is final
+                try:
+                    WebDriverWait(browser, 5).until(
+                        lambda b: b.execute_script(
+                            "return Array.from(document.images).every(i => i.complete)"
+                        )
+                    )
+                except Exception:
+                    pass
+                element = browser.find_element(By.CSS_SELECTOR, element_selector)
+                rect = browser.execute_script(
+                    "const r = arguments[0].getBoundingClientRect();"
+                    "return {x: r.left + window.scrollX, y: r.top + window.scrollY,"
+                    " w: r.width, h: r.height};",
+                    element,
+                )
+                # CDP capture with captureBeyondViewport handles elements taller
+                # than the viewport without clipping.
+                cdp_result = browser.execute_cdp_cmd(
+                    "Page.captureScreenshot",
+                    {
+                        "format": "png",
+                        "clip": {
+                            "x": rect["x"],
+                            "y": rect["y"],
+                            "width": rect["w"],
+                            "height": rect["h"],
+                            "scale": 1,
+                        },
+                        "captureBeyondViewport": True,
+                    },
+                )
+                png_bytes = _b64.b64decode(cdp_result["data"])
             else:
-                processed = trim_image(image) if apply_trim else image.copy()
-            processed.save(buffer, format="PNG")
-            buffer.seek(0)
+                png_bytes = browser.get_screenshot_as_png()
 
-        # Aggressive memory cleanup for t3.micro
-        gc.collect()
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+            with Image.open(io.BytesIO(png_bytes)) as image:
+                if element_selector:
+                    processed = image.copy()
+                else:
+                    processed = trim_image(image) if apply_trim else image.copy()
+                processed.save(buffer, format="PNG")
+                buffer.seek(0)
 
-    return buffer
+            # Aggressive memory cleanup for t3.micro
+            gc.collect()
+
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+            return buffer
+
+        except Exception as e:
+            last_err = e
+            if attempt == 0:
+                logging.warning(f"Screenshot attempt failed ({e}), restarting Chrome and retrying...")
+                # Force browser restart on next get_browser() call
+                _render_count = MAX_RENDERS_BEFORE_RESTART
+            else:
+                logging.error(f"Screenshot retry also failed: {e}")
+
+    # Cleanup temp file if both attempts failed
+    if os.path.exists(tmp_path):
+        os.remove(tmp_path)
+    raise last_err
 
 async def screenshot_html(
     html_str: str,

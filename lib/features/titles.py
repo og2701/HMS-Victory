@@ -57,7 +57,7 @@ class TitleSelectionView(discord.ui.View):
             label = title
             if holder_id:
                 holder = target_member.guild.get_member(int(holder_id))
-                holder_name = holder.display_name if holder else f"ID: {holder_id}"
+                holder_name = discord.utils.escape_markdown(holder.display_name) if holder else f"ID: {holder_id}"
                 label = f"{title} [ {holder_name} ]"
             
             options.append(discord.SelectOption(label=label, value=title))
@@ -65,7 +65,7 @@ class TitleSelectionView(discord.ui.View):
         options.append(discord.SelectOption(label="[Remove Title]", value="REMOVE", description="Clears the user's title"))
         
         self.select = discord.ui.Select(
-            placeholder=f"Choose a title for {target_member.display_name}...",
+            placeholder=f"Choose a title for {discord.utils.escape_markdown(target_member.display_name)}...",
             options=options
         )
         self.select.callback = self.on_select
@@ -80,7 +80,7 @@ class TitleSelectionView(discord.ui.View):
                 "UPDATE user_rank_customization SET title = NULL WHERE user_id = ?",
                 (user_id,)
             )
-            msg = f"✅ Removed title from **{self.target_member.display_name}**."
+            msg = f"✅ Removed title from **{discord.utils.escape_markdown(self.target_member.display_name)}**."
         else:
             # Enforce "one person per title" rule:
             # 1. Clear this specific title from anyone else who might have it
@@ -101,7 +101,7 @@ class TitleSelectionView(discord.ui.View):
                     "INSERT INTO user_rank_customization (user_id, title) VALUES (?, ?)",
                     (user_id, title)
                 )
-            msg = f"✅ Set title for **{self.target_member.display_name}** to: `{title}`.\n*(Note: This title has been removed from any previous holder)*"
+            msg = f"✅ Set title for **{discord.utils.escape_markdown(self.target_member.display_name)}** to: `{title}`.\n*(Note: This title has been removed from any previous holder)*"
         
         # Log to BOT_USAGE_LOG
         log_channel = interaction.guild.get_channel(CHANNELS.BOT_USAGE_LOG)
@@ -138,4 +138,4 @@ class UserSelectionView(discord.ui.View):
             
         view = TitleSelectionView(member)
         # Edit the ephemeral message
-        await interaction.response.edit_message(content=f"Selected **{member.display_name}**. Now choose a title:", view=view)
+        await interaction.response.edit_message(content=f"Selected **{discord.utils.escape_markdown(member.display_name)}**. Now choose a title:", view=view)

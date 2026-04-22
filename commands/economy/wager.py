@@ -50,7 +50,7 @@ class WagerDecisionView(discord.ui.View):
         embed.color = 0x2ECC71 if winner_id else 0x95A5A6
         embed.title = "Wager Resolved"
         embed.add_field(name="Resolution", value=result_msg, inline=False)
-        embed.set_footer(text=f"Resolved by {interaction.user.display_name}")
+        embed.set_footer(text=f"Resolved by {discord.utils.escape_markdown(interaction.user.display_name)}")
 
         await interaction.response.edit_message(embed=embed, view=self)
 
@@ -125,11 +125,11 @@ class WagerProposalView(discord.ui.View):
             return
 
         pot = self.amount * 2
-        decision_view = WagerDecisionView(self.challenger.id, self.opponent.id, self.amount, self.topic, self.challenger.display_name, self.opponent.display_name)
+        decision_view = WagerDecisionView(self.challenger.id, self.opponent.id, self.amount, self.topic, discord.utils.escape_markdown(self.challenger.display_name), discord.utils.escape_markdown(self.opponent.display_name))
         
         embed = discord.Embed(
             title="⚔️ New Wager Needs Resolution",
-            description=f"A wager between {self.challenger.mention} and {self.opponent.mention} has been accepted.\n\n**{self.challenger.display_name}** (*Challenger*) has bet against **{self.opponent.display_name}** (*Opponent*) on the following topic:",
+            description=f"A wager between {self.challenger.mention} and {self.opponent.mention} has been accepted.\n\n**{discord.utils.escape_markdown(self.challenger.display_name)}** (*Challenger*) has bet against **{discord.utils.escape_markdown(self.opponent.display_name)}** (*Opponent*) on the following topic:",
             color=0xE67E22
         )
         embed.add_field(name="Topic", value=self.topic, inline=False)
@@ -149,8 +149,8 @@ class WagerProposalView(discord.ui.View):
             "opponent_id": self.opponent.id,
             "amount": self.amount,
             "topic": self.topic,
-            "challenger_name": self.challenger.display_name,
-            "opponent_name": self.opponent.display_name
+            "challenger_name": discord.utils.escape_markdown(self.challenger.display_name),
+            "opponent_name": discord.utils.escape_markdown(self.opponent.display_name)
         }
         save_persistent_views(persistent_views)
         interaction.client.add_view(decision_view, message_id=msg.id)
@@ -214,7 +214,7 @@ async def handle_wager_command(interaction: Interaction, opponent: Member, amoun
     )
     embed.add_field(name="Topic", value=topic, inline=False)
     embed.add_field(name="Amount", value=f"{amount:,} UKPence (Pot: {amount*2:,})", inline=False)
-    embed.set_footer(text=f"{opponent.display_name} has 5 minutes to accept.")
+    embed.set_footer(text=f"{discord.utils.escape_markdown(opponent.display_name)} has 5 minutes to accept.")
 
     view = WagerProposalView(interaction.user, opponent, amount, topic)
     await interaction.response.send_message(content=opponent.mention, embed=embed, view=view)
