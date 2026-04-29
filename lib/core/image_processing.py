@@ -55,7 +55,7 @@ chrome_options.add_argument("--incognito") # Don't persist session data to disk
 import time
 _browser = None
 _render_count = 0
-MAX_RENDERS_BEFORE_RESTART = 5
+MAX_RENDERS_BEFORE_RESTART = 2
 MAX_IDLE_TIME_SECONDS = 180  # Shut down Chrome after 3 minutes of inactivity
 _last_render_time = 0
 
