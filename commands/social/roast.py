@@ -113,8 +113,4 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
 
     except Exception as e:
         print(e)
-        import openai
-        if isinstance(e, openai.RateLimitError):
-            await interaction.followup.send("OpenAI rate limit hit — try again in a minute.")
-        else:
-            await interaction.followup.send(f"An error occurred: `{type(e).__name__}`")
+        await interaction.followup.send("An error occurred.")
