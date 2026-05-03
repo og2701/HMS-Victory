@@ -9,7 +9,7 @@ from config import USERS, SUMMARISE_DAILY_LIMIT
 
 command_usage_tracker = defaultdict(lambda: {"count": 0, "last_used": None})
 
-client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"))
+client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"), max_retries=5, timeout=60.0)
 
 time_threshold = datetime.utcnow() - timedelta(days=7)
 
@@ -113,4 +113,8 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
 
     except Exception as e:
         print(e)
-        await interaction.followup.send("An error occurred.")
+        import openai
+        if isinstance(e, openai.RateLimitError):
+            await interaction.followup.send("OpenAI rate limit hit — try again in a minute.")
+        else:
+            await interaction.followup.send(f"An error occurred: `{type(e).__name__}`")
