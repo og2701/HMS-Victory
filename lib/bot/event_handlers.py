@@ -922,26 +922,34 @@ async def handle_shut_reaction(reaction, user):
         logger.error(f"Failed to time out user {message_author}: {e}")
 
 
-async def handle_mega_shut_reaction(reaction, user):
-    """24-hour timeout triggered by :megashut: reaction. Only USERS.OGGERS can use this."""
-    if user.id != USERS.OGGERS:
+async def handle_bedtime_reaction(reaction, user):
+    """Timeout until next 7 AM UK time, triggered by :bedtime: reaction. Cabinet/Border Force only."""
+    has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
+    if not has_role:
         return
     client = reaction.message._state._get_client()
     message_author = reaction.message.author
     if message_author.is_timed_out():
-        logger.info(f"User {message_author} is already timed out. Skipping MegaShut.")
+        logger.info(f"User {message_author} is already timed out. Skipping bedtime.")
         return
     try:
-        duration = timedelta(hours=24)
-        reason = f"Timed out for 24h due to ':megashut:' reaction by {user.name}#{user.discriminator}."
+        uk_tz = pytz.timezone("Europe/London")
+        now_uk = datetime.now(uk_tz)
+        next_7am = now_uk.replace(hour=7, minute=0, second=0, microsecond=0)
+        if now_uk >= next_7am:
+            next_7am += timedelta(days=1)
+        duration = next_7am - now_uk
+        reason = f"Bedtime! Timed out until 7 AM UK by {user.name}#{user.discriminator}."
         await message_author.timeout(discord.utils.utcnow() + duration, reason=reason)
-        sticker_message = await reaction.message.reply(stickers=[discord.Object(id=1500630388173832222)])
+        sticker_message = await reaction.message.reply(stickers=[discord.Object(id=1500885911293136916)])
         sticker_messages[reaction.message.id] = (sticker_message.id, user.id)
-        logger.info(f"User {message_author} was timed out for 24h due to ':megashut:' reaction by {user}.")
+        hours, remainder = divmod(int(duration.total_seconds()), 3600)
+        mins = remainder // 60
+        logger.info(f"User {message_author} sent to bed for {hours}h{mins}m (until 7 AM UK) by {user}.")
         save_shut_count(message_author.id)
         await award_badge_with_notify(client, message_author.id, 'shut_victim')
     except Exception as e:
-        logger.error(f"Failed to MegaShut user {message_author}: {e}")
+        logger.error(f"Failed to bedtime user {message_author}: {e}")
 
 
 hof_lock = asyncio.Lock()
@@ -1113,8 +1121,8 @@ async def on_reaction_add(reaction, user):
 
         if str(reaction.emoji) in FLAG_LANGUAGE_MAPPINGS:
             await handle_flag_reaction(reaction, reaction.message, user)
-        if ":megashut:" in str(reaction.emoji):
-            await handle_mega_shut_reaction(reaction, user)
+        if ":bedtime:" in str(reaction.emoji):
+            await handle_bedtime_reaction(reaction, user)
         elif ":Shut:" in str(reaction.emoji):
             await handle_shut_reaction(reaction, user)
             
@@ -1125,9 +1133,10 @@ async def on_reaction_add(reaction, user):
 async def on_reaction_remove(reaction, user):
     emoji_str = str(reaction.emoji)
 
-    # megashut undo — only Oggers
-    if ":megashut:" in emoji_str:
-        if user.id == USERS.OGGERS:
+    # bedtime undo — Cabinet/Border Force only, same mod who applied it
+    if ":bedtime:" in emoji_str:
+        has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
+        if has_role:
             message_author = reaction.message.author
             try:
                 sticker_message_info = sticker_messages.get(reaction.message.id)
@@ -1135,15 +1144,16 @@ async def on_reaction_remove(reaction, user):
                     return
                 sticker_message_id, initiating_mod_id = sticker_message_info
                 if initiating_mod_id != user.id:
+                    logger.info(f"Bedtime reaction removal ignored as {user} did not initiate the timeout.")
                     return
-                reason = f"Timeout removed due to ':megashut:' reaction being removed by {user.name}#{user.discriminator}."
+                reason = f"Bedtime timeout removed by {user.name}#{user.discriminator}."
                 await message_author.timeout(None, reason=reason)
-                logger.info(f"Timeout for user {message_author} was removed due to ':megashut:' reaction being removed by {user}.")
+                logger.info(f"Bedtime timeout for user {message_author} was removed by {user}.")
                 sticker_message = await reaction.message.channel.fetch_message(sticker_message_id)
                 await sticker_message.delete()
                 del sticker_messages[reaction.message.id]
             except Exception as e:
-                logger.error(f"Failed to remove MegaShut timeout for user {message_author}: {e}")
+                logger.error(f"Failed to remove bedtime timeout for user {message_author}: {e}")
         return
 
     if ":Shut:" in emoji_str:
