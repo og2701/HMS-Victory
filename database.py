@@ -237,6 +237,21 @@ def init_db():
         columns = [column[1] for column in c.fetchall()]
         if 'deny_reason' not in columns:
             c.execute("ALTER TABLE pending_iceberg_submissions ADD COLUMN deny_reason TEXT")
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS shut_counts (
+                user_id TEXT PRIMARY KEY,
+                count INTEGER NOT NULL DEFAULT 0
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS warden_targets (
+                user_id TEXT NOT NULL,
+                victim_id TEXT NOT NULL,
+                PRIMARY KEY (user_id, victim_id)
+            )
+        ''')
         
         # Migration: Add rarity column if it doesn't exist
         c.execute("PRAGMA table_info(badges)")

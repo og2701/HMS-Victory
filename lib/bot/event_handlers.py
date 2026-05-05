@@ -821,20 +821,21 @@ async def handle_flag_reaction(reaction, message, user):
 
 
 def save_shut_count(user_id):
-    data = load_json_file(SHUT_COUNTS_FILE) or {}
-    data[user_id] = data.get(user_id, 0) + 1
-    save_json_file(SHUT_COUNTS_FILE, data)
+    DatabaseManager.execute(
+        "INSERT INTO shut_counts (user_id, count) VALUES (?, 1) ON CONFLICT(user_id) DO UPDATE SET count = count + 1",
+        (str(user_id),)
+    )
 
 def track_warden(user_id: int, victim_id: int):
-    data = load_json_file(WARDEN_TARGETS_FILE) or {}
     uid = str(user_id)
     vid = str(victim_id)
-    if uid not in data:
-        data[uid] = []
-    if vid not in data[uid]:
-        data[uid].append(vid)
-        save_json_file(WARDEN_TARGETS_FILE, data)
-    return len(data[uid])
+    # INSERT OR IGNORE so duplicates are silently skipped
+    DatabaseManager.execute(
+        "INSERT OR IGNORE INTO warden_targets (user_id, victim_id) VALUES (?, ?)",
+        (uid, vid)
+    )
+    row = DatabaseManager.fetch_one("SELECT COUNT(*) FROM warden_targets WHERE user_id = ?", (uid,))
+    return row[0] if row else 0
 
 def track_morning_person(user_id: int) -> int:
     import datetime
