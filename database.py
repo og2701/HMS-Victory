@@ -227,9 +227,16 @@ def init_db():
                 text TEXT NOT NULL,
                 level INTEGER NOT NULL,
                 price INTEGER NOT NULL,
-                status TEXT DEFAULT 'pending'
+                status TEXT DEFAULT 'pending',
+                deny_reason TEXT
             )
         ''')
+
+        # Migration: Add deny_reason column if it doesn't exist
+        c.execute("PRAGMA table_info(pending_iceberg_submissions)")
+        columns = [column[1] for column in c.fetchall()]
+        if 'deny_reason' not in columns:
+            c.execute("ALTER TABLE pending_iceberg_submissions ADD COLUMN deny_reason TEXT")
         
         # Migration: Add rarity column if it doesn't exist
         c.execute("PRAGMA table_info(badges)")

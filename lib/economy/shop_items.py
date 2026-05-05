@@ -193,44 +193,71 @@ class IcebergApprovalView(View):
     async def deny_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not any(role.id in [ROLES.CABINET, ROLES.DEPUTY_PM] for role in interaction.user.roles):
             return await interaction.response.send_message("❌ Only staff can deny iceberg entries.", ephemeral=True)
-        
-        await interaction.response.defer()
 
-        # Fetch submission info
+        # Fetch submission info before opening modal
         row = DatabaseManager.fetch_one("SELECT user_id, text, price, status FROM pending_iceberg_submissions WHERE id = ?", (self.submission_id,))
         if not row or row[3] != 'pending':
-            return await interaction.followup.send("❌ Submission not found or already processed.", ephemeral=True)
-        
-        user_id, text, price, status = row
+            return await interaction.response.send_message("❌ Submission not found or already processed.", ephemeral=True)
 
-        # Update database
-        DatabaseManager.execute("UPDATE pending_iceberg_submissions SET status = 'denied' WHERE id = ?", (self.submission_id,))
-        
-        # Refund only if they actually paid
-        if price > 0:
-            add_bb(user_id, price, reason=f"Iceberg submission denied: {text[:50]}")
-        
-        embed = interaction.message.embeds[0]
-        embed.title = "❌ Iceberg Submission - DENIED"
-        embed.color = 0xff0000
-        embed.add_field(name="Denied By", value=interaction.user.mention, inline=False)
-        embed.add_field(name="Status", value=f"Refunded {price} UKPence" if price > 0 else "No refund (free submission)", inline=False)
-        
-        for item in self.children:
-            item.disabled = True
-        
-        await interaction.edit_original_response(embed=embed, view=self)
-        
-        # Notify user
-        try:
-            user = await interaction.client.fetch_user(int(user_id))
-            if user:
+        class IcebergDenyReasonModal(discord.ui.Modal):
+            def __init__(modal_self):
+                super().__init__(title="Deny Iceberg Submission")
+                modal_self.reason_input = discord.ui.TextInput(
+                    label="Reason for denial",
+                    placeholder="Enter the reason why this submission is being denied...",
+                    required=True,
+                    max_length=200,
+                    style=discord.TextStyle.paragraph
+                )
+                modal_self.add_item(modal_self.reason_input)
+
+            async def on_submit(modal_self, modal_interaction: discord.Interaction):
+                await modal_interaction.response.defer()
+
+                # Re-fetch to guard against race conditions
+                row = DatabaseManager.fetch_one("SELECT user_id, text, price, status FROM pending_iceberg_submissions WHERE id = ?", (self.submission_id,))
+                if not row or row[3] != 'pending':
+                    return await modal_interaction.followup.send("❌ Submission not found or already processed.", ephemeral=True)
+
+                user_id, text, price, status = row
+                reason = modal_self.reason_input.value
+
+                # Update database with reason
+                DatabaseManager.execute("UPDATE pending_iceberg_submissions SET status = 'denied', deny_reason = ? WHERE id = ?", (reason, self.submission_id,))
+
+                # Refund only if they actually paid
                 if price > 0:
-                    await user.send(f"❌ Your iceberg submission `{text}` was denied. You have been refunded {price} UKPence.")
-                else:
-                    await user.send(f"❌ Your iceberg submission `{text}` was denied.")
-        except:
-            pass
+                    add_bb(user_id, price, reason=f"Iceberg submission denied: {text[:50]}")
+
+                embed = modal_interaction.message.embeds[0]
+                embed.title = "❌ Iceberg Submission - DENIED"
+                embed.color = 0xff0000
+                embed.add_field(name="Denied By", value=modal_interaction.user.mention, inline=False)
+                embed.add_field(name="Reason", value=reason, inline=False)
+                embed.add_field(name="Status", value=f"Refunded {price} UKPence" if price > 0 else "No refund (free submission)", inline=False)
+
+                for item in self.children:
+                    item.disabled = True
+
+                await modal_interaction.edit_original_response(embed=embed, view=self)
+
+                # Notify user
+                try:
+                    user = await modal_interaction.client.fetch_user(int(user_id))
+                    if user:
+                        deny_embed = discord.Embed(
+                            title="❌ Iceberg Submission Denied",
+                            description=f"Your submission `{text}` was denied.",
+                            color=0xff0000
+                        )
+                        deny_embed.add_field(name="Reason", value=reason, inline=False)
+                        if price > 0:
+                            deny_embed.add_field(name="Refund", value=f"You have been refunded {price} UKPence", inline=False)
+                        await user.send(embed=deny_embed)
+                except:
+                    pass
+
+        await interaction.response.send_modal(IcebergDenyReasonModal())
 
 class IcebergAddItem(ShopItem):
     def __init__(self, id: str, name: str, description: str, price: int):
