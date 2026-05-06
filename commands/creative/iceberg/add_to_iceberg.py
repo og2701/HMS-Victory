@@ -53,12 +53,14 @@ async def add_iceberg_text(interaction, text: str, level: int, show_image: bool 
         if pos:
             break
 
+    # Last resort: place randomly within bounds even if it overlaps
     if not pos:
-        if interaction.response.is_done():
-            await interaction.followup.send("❌ Could not find a free spot for this text at this level. It might be too crowded!", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ Could not find a free spot for this text at this level. It might be too crowded!", ephemeral=True)
-        return False
+        text_bbox = font.getbbox(text)
+        tw = text_bbox[2] - text_bbox[0]
+        th = text_bbox[3] - text_bbox[1]
+        x = random.randint(bounds[0][0], max(bounds[0][0], bounds[1][0] - tw))
+        y = random.randint(bounds[0][1], max(bounds[0][1], bounds[1][1] - th))
+        pos = (x, y)
 
     color_tuple = random_color_excluding_blue_and_dark()
     color_hex = '#%02x%02x%02x' % color_tuple
