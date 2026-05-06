@@ -252,6 +252,13 @@ def init_db():
                 PRIMARY KEY (user_id, victim_id)
             )
         ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS roast_targets (
+                user_id TEXT PRIMARY KEY,
+                count INTEGER NOT NULL DEFAULT 0
+            )
+        ''')
         
         # Migration: Add rarity column if it doesn't exist
         c.execute("PRAGMA table_info(badges)")

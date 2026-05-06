@@ -100,15 +100,14 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         await award_badge_with_notify(interaction.client, user.id, 'roast_victim')
         
         # Track roast victim for "Target Practice" badge
-        from config import ROLES, ROAST_TARGETS_FILE
-        import json
-        import os
-        target_file = ROAST_TARGETS_FILE
-        data = json.load(open(target_file)) if os.path.exists(target_file) else {}
+        from database import DatabaseManager
         uid = str(user.id)
-        data[uid] = data.get(uid, 0) + 1
-        json.dump(data, open(target_file, "w"), indent=4)
-        if data[uid] >= 10:
+        DatabaseManager.execute(
+            "INSERT INTO roast_targets (user_id, count) VALUES (?, 1) ON CONFLICT(user_id) DO UPDATE SET count = count + 1",
+            (uid,)
+        )
+        row = DatabaseManager.fetch_one("SELECT count FROM roast_targets WHERE user_id = ?", (uid,))
+        if row and row[0] >= 10:
             await award_badge_with_notify(interaction.client, user.id, 'target_practice')
 
     except Exception as e:
