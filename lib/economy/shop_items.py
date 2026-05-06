@@ -164,7 +164,11 @@ class IcebergApprovalView(View):
         # Add to iceberg
         try:
             from commands.creative.iceberg.add_to_iceberg import add_iceberg_text
-            await add_iceberg_text(interaction, text, level, show_image=False)
+            success = await add_iceberg_text(interaction, text, level, show_image=False)
+            
+            if not success:
+                # add_iceberg_text already sent an ephemeral error, don't mark as approved
+                return
             
             # Update database
             DatabaseManager.execute("UPDATE pending_iceberg_submissions SET status = 'approved' WHERE id = ?", (self.submission_id,))
@@ -177,7 +181,7 @@ class IcebergApprovalView(View):
             for item in self.children:
                 item.disabled = True
             
-            await interaction.edit_original_response(embed=embed, view=self)
+            await interaction.message.edit(embed=embed, view=self)
             
             # Notify user
             try:

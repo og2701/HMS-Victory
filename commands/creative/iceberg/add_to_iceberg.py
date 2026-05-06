@@ -25,7 +25,7 @@ async def add_iceberg_text(interaction, text: str, level: int, show_image: bool 
             await interaction.followup.send("Invalid level. Please choose a level between 1 and 6.", ephemeral=True)
         else:
             await interaction.response.send_message("Invalid level. Please choose a level between 1 and 6.", ephemeral=True)
-        return
+        return False
 
     # 1. Fetch all existing entries to find a non-overlapping position
     rows = DatabaseManager.fetch_all("SELECT x, y, text, level FROM iceberg WHERE x IS NOT NULL")
@@ -53,7 +53,7 @@ async def add_iceberg_text(interaction, text: str, level: int, show_image: bool 
             await interaction.followup.send("❌ Could not find a free spot for this text at this level. It might be too crowded!", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Could not find a free spot for this text at this level. It might be too crowded!", ephemeral=True)
-        return
+        return False
 
     color_tuple = random_color_excluding_blue_and_dark()
     color_hex = '#%02x%02x%02x' % color_tuple
@@ -75,6 +75,8 @@ async def add_iceberg_text(interaction, text: str, level: int, show_image: bool 
             await interaction.followup.send(file=file)
         else:
             await interaction.followup.send("✅ Added to iceberg, but cache rendering failed. Use /iceberg to view.")
+
+    return True
 
 async def render_iceberg_cache():
     """Renders all iceberg entries and saves to ICEBERG_CACHE_PATH."""
