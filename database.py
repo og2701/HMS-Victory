@@ -271,9 +271,15 @@ def init_db():
                 duration_minutes INTEGER NOT NULL,
                 scheduled_ts INTEGER NOT NULL,
                 status TEXT NOT NULL DEFAULT 'pending',
-                created_at INTEGER NOT NULL
+                created_at INTEGER NOT NULL,
+                cm_message_id TEXT
             )
         ''')
+
+        c.execute("PRAGMA table_info(scheduled_predictions)")
+        columns = [column[1] for column in c.fetchall()]
+        if 'cm_message_id' not in columns:
+            c.execute("ALTER TABLE scheduled_predictions ADD COLUMN cm_message_id TEXT")
 
         # Migration: Add rarity column if it doesn't exist
         c.execute("PRAGMA table_info(badges)")

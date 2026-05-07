@@ -718,7 +718,7 @@ class PredictionScheduleModal(discord.ui.Modal, title="Schedule Prediction"):
         )
 
         cm_channel = interaction.client.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
-        if cm_channel is not None:
+        if cm_channel is not None and sched_id is not None:
             embed = discord.Embed(
                 title="📅 Prediction Scheduled",
                 description=f"**{title}**\n*{opt1}* vs *{opt2}*",
@@ -730,13 +730,77 @@ class PredictionScheduleModal(discord.ui.Modal, title="Schedule Prediction"):
             embed.add_field(name="Scheduled by", value=interaction.user.mention, inline=True)
             embed.set_footer(text=f"ID #{sched_id}")
             try:
-                await cm_channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                cm_msg = await cm_channel.send(
+                    embed=embed,
+                    view=CancelScheduledPredView(sched_id),
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                from database import DatabaseManager
+                DatabaseManager.execute(
+                    "UPDATE scheduled_predictions SET cm_message_id = ? WHERE id = ?",
+                    (str(cm_msg.id), sched_id),
+                )
             except Exception:
                 import logging
                 logging.getLogger(__name__).warning(
                     f"Could not send scheduled-pred announcement to COMMUNITY_MANAGEMENT.",
                     exc_info=True,
                 )
+
+
+class CancelScheduledPredView(discord.ui.View):
+    """Persistent view with a Cancel button shown on the COMMUNITY_MANAGEMENT
+    announcement message for a scheduled prediction."""
+    def __init__(self, sched_id: int):
+        super().__init__(timeout=None)
+        self.sched_id = sched_id
+        self.cancel_button.custom_id = f"sched_pred_cancel:{sched_id}"
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not any(role.id in [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO] for role in interaction.user.roles):
+            return await interaction.response.send_message(
+                "❌ Only staff can cancel scheduled predictions.", ephemeral=True
+            )
+
+        from database import DatabaseManager
+        row = DatabaseManager.fetch_one(
+            "SELECT status FROM scheduled_predictions WHERE id = ?", (self.sched_id,)
+        )
+        if not row:
+            return await interaction.response.send_message(
+                f"Scheduled prediction #{self.sched_id} not found.", ephemeral=True
+            )
+        if row[0] != 'pending':
+            for item in self.children:
+                item.disabled = True
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                pass
+            return await interaction.response.send_message(
+                f"Already {row[0]} — nothing to cancel.", ephemeral=True
+            )
+
+        DatabaseManager.execute(
+            "UPDATE scheduled_predictions SET status = 'cancelled' WHERE id = ?", (self.sched_id,)
+        )
+        scheduler = getattr(interaction.client, "scheduler", None)
+        if scheduler is not None:
+            try:
+                scheduler.remove_job(f"scheduled_pred_{self.sched_id}")
+            except Exception:
+                pass
+
+        for item in self.children:
+            item.disabled = True
+
+        embed = interaction.message.embeds[0] if interaction.message.embeds else discord.Embed()
+        embed.title = "🗑️ Prediction Scheduled (Cancelled)"
+        embed.color = 0x99AAB5
+        embed.add_field(name="Cancelled by", value=interaction.user.mention, inline=True)
+
+        await interaction.response.edit_message(embed=embed, view=self)
 
 
 async def post_scheduled_prediction(client: discord.Client, sched_id: int) -> bool:
@@ -746,13 +810,13 @@ async def post_scheduled_prediction(client: discord.Client, sched_id: int) -> bo
     from database import DatabaseManager
 
     row = DatabaseManager.fetch_one(
-        "SELECT channel_id, title, opt1, opt2, duration_minutes, status FROM scheduled_predictions WHERE id = ?",
+        "SELECT channel_id, title, opt1, opt2, duration_minutes, status, cm_message_id FROM scheduled_predictions WHERE id = ?",
         (sched_id,),
     )
     if not row:
         logger.warning(f"Scheduled pred {sched_id} not found.")
         return False
-    channel_id, title, opt1, opt2, duration, status = row
+    channel_id, title, opt1, opt2, duration, status, cm_message_id = row
     if status != 'pending':
         logger.info(f"Scheduled pred {sched_id} not pending (status={status}); skipping.")
         return False
@@ -794,4 +858,23 @@ async def post_scheduled_prediction(client: discord.Client, sched_id: int) -> bo
         "UPDATE scheduled_predictions SET status = 'posted' WHERE id = ?", (sched_id,)
     )
     logger.info(f"Posted scheduled prediction {sched_id} as msg {msg.id} in channel {msg.channel.id}.")
+
+    if cm_message_id:
+        try:
+            cm_channel = client.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
+            if cm_channel is not None:
+                cm_msg = await cm_channel.fetch_message(int(cm_message_id))
+                disabled_view = CancelScheduledPredView(sched_id)
+                for item in disabled_view.children:
+                    item.disabled = True
+                cm_embed = cm_msg.embeds[0] if cm_msg.embeds else discord.Embed()
+                cm_embed.title = "✅ Prediction Scheduled (Posted)"
+                cm_embed.color = 0x57F287
+                jump = f"https://discord.com/channels/{msg.guild.id}/{msg.channel.id}/{msg.id}" if msg.guild else None
+                if jump:
+                    cm_embed.add_field(name="Live message", value=f"[jump]({jump})", inline=True)
+                await cm_msg.edit(embed=cm_embed, view=disabled_view)
+        except Exception as e:
+            logger.warning(f"Could not update CM announcement for scheduled pred {sched_id}: {e}")
+
     return True

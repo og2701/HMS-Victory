@@ -71,6 +71,18 @@ class AClient(discord.Client):
         except Exception as e:
             logger.warning(f"Could not load persistent iceberg views: {e}")
 
+        # Load persistent scheduled-prediction cancel views
+        from lib.economy.prediction_system import CancelScheduledPredView
+        try:
+            sched_rows = DatabaseManager.fetch_all(
+                "SELECT id, cm_message_id FROM scheduled_predictions WHERE status = 'pending' AND cm_message_id IS NOT NULL"
+            )
+            for sched_id, cm_msg_id in sched_rows:
+                self.add_view(CancelScheduledPredView(sched_id), message_id=int(cm_msg_id))
+            logger.info(f"Registered {len(sched_rows)} persistent scheduled-pred cancel views.")
+        except Exception as e:
+            logger.warning(f"Could not load persistent scheduled-pred views: {e}")
+
         logger.info("Persistent prediction views registered in setup_hook.")
 
     async def on_ready(self):
