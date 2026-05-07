@@ -283,42 +283,8 @@ def define_commands(tree, client):
             await interaction.response.send_message("Select a prediction to manage:", view=view, ephemeral=True)
 
     @command("pred-schedule", "Schedule a UKPence prediction to post later in a chosen channel", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
-    async def pred_schedule(interaction: Interaction, channel: TextChannel, when: str):
-        """`when` accepts: minutes from now, "YYYY-MM-DD HH:MM" in UK time, or a Discord timestamp like <t:1715116200:F>."""
-        import re
-        when = when.strip()
-        now_uk = datetime.now(pytz.timezone("Europe/London"))
-        scheduled_ts: Optional[int] = None
-
-        ts_match = re.fullmatch(r"<t:(\d+)(?::[A-Za-z])?>", when)
-        if ts_match:
-            scheduled_ts = int(ts_match.group(1))
-        else:
-            try:
-                mins = int(when)
-                if mins <= 0:
-                    return await interaction.response.send_message(
-                        "If passing minutes, the value must be a positive integer.", ephemeral=True
-                    )
-                scheduled_ts = int((now_uk + timedelta(minutes=mins)).timestamp())
-            except ValueError:
-                try:
-                    naive = datetime.strptime(when, "%Y-%m-%d %H:%M")
-                    aware = pytz.timezone("Europe/London").localize(naive)
-                    scheduled_ts = int(aware.timestamp())
-                except ValueError:
-                    return await interaction.response.send_message(
-                        "`when` must be one of: minutes from now (e.g. `30`), `YYYY-MM-DD HH:MM` in UK time, "
-                        "or a Discord timestamp like `<t:1715116200:F>` (generate one at https://hammertime.cyou).",
-                        ephemeral=True,
-                    )
-
-        if scheduled_ts <= int(now_uk.timestamp()):
-            return await interaction.response.send_message(
-                "Scheduled time must be in the future.", ephemeral=True
-            )
-
-        await interaction.response.send_modal(PredictionScheduleModal(channel.id, scheduled_ts))
+    async def pred_schedule(interaction: Interaction, channel: TextChannel):
+        await interaction.response.send_modal(PredictionScheduleModal(channel.id))
 
     @command("pred-scheduled-list", "List pending scheduled predictions", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
     async def pred_scheduled_list(interaction: Interaction):

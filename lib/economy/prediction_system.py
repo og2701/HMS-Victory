@@ -509,6 +509,44 @@ class PredAdminView(discord.ui.View):
         self.stop()
 
 
+def _parse_post_time(value: str) -> int:
+    """Parse the 'when to post' field. Accepts:
+      - integer minutes from now
+      - "YYYY-MM-DD HH:MM" in Europe/London
+      - a Discord timestamp like "<t:1715116200:F>"
+    Returns a unix timestamp. Raises ValueError on bad input or past time."""
+    import re, pytz
+    from datetime import datetime, timedelta
+    value = value.strip()
+    now_uk = datetime.now(pytz.timezone("Europe/London"))
+
+    ts_match = re.fullmatch(r"<t:(\d+)(?::[A-Za-z])?>", value)
+    if ts_match:
+        scheduled_ts = int(ts_match.group(1))
+    else:
+        try:
+            mins = int(value)
+            if mins <= 0:
+                raise ValueError("Minutes from now must be a positive integer.")
+            scheduled_ts = int((now_uk + timedelta(minutes=mins)).timestamp())
+        except ValueError as int_err:
+            if "positive integer" in str(int_err):
+                raise
+            try:
+                naive = datetime.strptime(value, "%Y-%m-%d %H:%M")
+            except ValueError:
+                raise ValueError(
+                    "Post time must be one of: minutes from now (e.g. `30`), "
+                    "`YYYY-MM-DD HH:MM` in UK time, or a Discord timestamp like `<t:1715116200:F>`."
+                )
+            aware = pytz.timezone("Europe/London").localize(naive)
+            scheduled_ts = int(aware.timestamp())
+
+    if scheduled_ts <= int(now_uk.timestamp()):
+        raise ValueError("Post time must be in the future.")
+    return scheduled_ts
+
+
 def _resolve_end_ts(value: str, reference_ts: float) -> float:
     """Parse duration field as either minutes (int) or absolute UK end time
     (`YYYY-MM-DD HH:MM`). Returns absolute end timestamp. Raises ValueError on
@@ -595,10 +633,9 @@ class PredictionCreateModal(discord.ui.Modal, title="Create Prediction"):
 
 
 class PredictionScheduleModal(discord.ui.Modal, title="Schedule Prediction"):
-    def __init__(self, channel_id: int, scheduled_ts: int):
+    def __init__(self, channel_id: int):
         super().__init__()
         self._channel_id = channel_id
-        self._scheduled_ts = scheduled_ts
 
     title_input = discord.ui.TextInput(
         label="Title",
@@ -621,6 +658,13 @@ class PredictionScheduleModal(discord.ui.Modal, title="Schedule Prediction"):
         required=True,
         max_length=80,
     )
+    when_input = discord.ui.TextInput(
+        label="Post when? (mins / YYYY-MM-DD HH:MM UK)",
+        style=discord.TextStyle.short,
+        placeholder="30  or  2026-05-08 19:30  or  <t:1715116200:F>",
+        required=True,
+        max_length=40,
+    )
     duration_input = discord.ui.TextInput(
         label="Minutes or end time YYYY-MM-DD HH:MM",
         style=discord.TextStyle.short,
@@ -631,10 +675,14 @@ class PredictionScheduleModal(discord.ui.Modal, title="Schedule Prediction"):
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            end_ts = _resolve_end_ts(self.duration_input.value, float(self._scheduled_ts))
+            scheduled_ts = _parse_post_time(self.when_input.value)
         except ValueError as e:
             return await interaction.response.send_message(str(e), ephemeral=True)
-        duration = max(1, int(round((end_ts - self._scheduled_ts) / 60)))
+        try:
+            end_ts = _resolve_end_ts(self.duration_input.value, float(scheduled_ts))
+        except ValueError as e:
+            return await interaction.response.send_message(str(e), ephemeral=True)
+        duration = max(1, int(round((end_ts - scheduled_ts) / 60)))
 
         title = self.title_input.value.strip()
         opt1 = self.opt1_input.value.strip()
@@ -645,14 +693,14 @@ class PredictionScheduleModal(discord.ui.Modal, title="Schedule Prediction"):
         now_ts = int(time.time())
         DatabaseManager.execute(
             "INSERT INTO scheduled_predictions (channel_id, creator_id, title, opt1, opt2, duration_minutes, scheduled_ts, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
-            (str(self._channel_id), str(interaction.user.id), title, opt1, opt2, duration, self._scheduled_ts, now_ts),
+            (str(self._channel_id), str(interaction.user.id), title, opt1, opt2, duration, scheduled_ts, now_ts),
         )
         row = DatabaseManager.fetch_one("SELECT last_insert_rowid()")
         sched_id = row[0] if row else None
 
         from apscheduler.triggers.date import DateTrigger
         from datetime import datetime, timezone
-        run_at = datetime.fromtimestamp(self._scheduled_ts, tz=timezone.utc)
+        run_at = datetime.fromtimestamp(scheduled_ts, tz=timezone.utc)
         scheduler = getattr(interaction.client, "scheduler", None)
         if scheduler is not None and sched_id is not None:
             scheduler.add_job(
@@ -665,7 +713,7 @@ class PredictionScheduleModal(discord.ui.Modal, title="Schedule Prediction"):
             )
 
         await interaction.response.send_message(
-            f"✅ Prediction #{sched_id} scheduled for <t:{self._scheduled_ts}:F> (<t:{self._scheduled_ts}:R>) in <#{self._channel_id}>.",
+            f"✅ Prediction #{sched_id} scheduled for <t:{scheduled_ts}:F> (<t:{scheduled_ts}:R>) in <#{self._channel_id}>.",
             ephemeral=True,
         )
 
