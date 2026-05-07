@@ -4,7 +4,7 @@ from PIL import Image, ImageDraw
 import uuid
 from functools import lru_cache
 from lib.economy.economy_manager import add_bb, remove_bb, get_bb
-from config import ROLES, PREDICTIONS_FILE, PREDICTION_STREAKS_FILE
+from config import ROLES, CHANNELS, PREDICTIONS_FILE, PREDICTION_STREAKS_FILE
 
 def _load() -> dict:
     return json.load(open(PREDICTIONS_FILE)) if os.path.exists(PREDICTIONS_FILE) else {}
@@ -716,6 +716,27 @@ class PredictionScheduleModal(discord.ui.Modal, title="Schedule Prediction"):
             f"✅ Prediction #{sched_id} scheduled for <t:{scheduled_ts}:F> (<t:{scheduled_ts}:R>) in <#{self._channel_id}>.",
             ephemeral=True,
         )
+
+        cm_channel = interaction.client.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
+        if cm_channel is not None:
+            embed = discord.Embed(
+                title="📅 Prediction Scheduled",
+                description=f"**{title}**\n*{opt1}* vs *{opt2}*",
+                color=0x5865F2,
+            )
+            embed.add_field(name="Posts in", value=f"<#{self._channel_id}>", inline=True)
+            embed.add_field(name="Posts at", value=f"<t:{scheduled_ts}:F> (<t:{scheduled_ts}:R>)", inline=True)
+            embed.add_field(name="Betting closes", value=f"{duration} min after post", inline=True)
+            embed.add_field(name="Scheduled by", value=interaction.user.mention, inline=True)
+            embed.set_footer(text=f"ID #{sched_id}")
+            try:
+                await cm_channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"Could not send scheduled-pred announcement to COMMUNITY_MANAGEMENT.",
+                    exc_info=True,
+                )
 
 
 async def post_scheduled_prediction(client: discord.Client, sched_id: int) -> bool:
