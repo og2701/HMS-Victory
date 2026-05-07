@@ -429,7 +429,40 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(auto_restock_shop, IntervalTrigger(hours=12), args=[client], id="auto_restock_shop_interval", name="Automated Shop Restock")
 
     scheduler.add_job(apply_inactivity_tax, CronTrigger(day_of_week="fri", hour=0, minute=0, timezone="Europe/London"), args=[client], id="apply_inactivity_tax_job", name="Weekly Inactivity Tax")
+
+    _register_pending_scheduled_predictions(client, scheduler)
+
     scheduler.start()
+
+
+def _register_pending_scheduled_predictions(client, scheduler):
+    """On boot, re-register every pending scheduled prediction with APScheduler.
+    Past-due rows fire shortly after startup via misfire_grace_time."""
+    try:
+        from database import DatabaseManager
+        from apscheduler.triggers.date import DateTrigger
+        from datetime import datetime, timezone
+        from lib.economy.prediction_system import post_scheduled_prediction
+
+        rows = DatabaseManager.fetch_all(
+            "SELECT id, scheduled_ts FROM scheduled_predictions WHERE status = 'pending'"
+        )
+        now_ts = int(discord.utils.utcnow().timestamp())
+        for sched_id, scheduled_ts in rows:
+            run_ts = max(scheduled_ts, now_ts + 30)  # if past due, run shortly after startup
+            run_at = datetime.fromtimestamp(run_ts, tz=timezone.utc)
+            scheduler.add_job(
+                post_scheduled_prediction,
+                DateTrigger(run_date=run_at),
+                args=[client, sched_id],
+                id=f"scheduled_pred_{sched_id}",
+                name=f"Scheduled Prediction #{sched_id}",
+                misfire_grace_time=3600,
+                replace_existing=True,
+            )
+        logger.info(f"Registered {len(rows)} pending scheduled predictions.")
+    except Exception as e:
+        logger.error(f"Failed to register pending scheduled predictions: {e}", exc_info=True)
 
 async def apply_inactivity_tax(client):
     try:

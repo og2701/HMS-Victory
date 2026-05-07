@@ -259,7 +259,22 @@ def init_db():
                 count INTEGER NOT NULL DEFAULT 0
             )
         ''')
-        
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS scheduled_predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                creator_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                opt1 TEXT NOT NULL,
+                opt2 TEXT NOT NULL,
+                duration_minutes INTEGER NOT NULL,
+                scheduled_ts INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at INTEGER NOT NULL
+            )
+        ''')
+
         # Migration: Add rarity column if it doesn't exist
         c.execute("PRAGMA table_info(badges)")
         columns = [column[1] for column in c.fetchall()]

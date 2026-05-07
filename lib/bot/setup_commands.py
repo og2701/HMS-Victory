@@ -14,7 +14,7 @@ from lib.core.discord_helpers import has_role, has_any_role, toggle_user_role, r
 from lib.core.file_operations import load_whitelist, save_whitelist, set_file_status, is_file_status_active
 from lib.features.summary import post_summary
 from lib.economy.economy_manager import get_shutcoins, set_shutcoins
-from lib.economy.prediction_system import PredAdminView, PredSelectView, PredictionCreateModal
+from lib.economy.prediction_system import PredAdminView, PredSelectView, PredictionCreateModal, PredictionScheduleModal
 from lib.economy.economy_manager import get_bb, set_bb, add_bb, remove_bb
 from typing import Optional
 from commands.economy.shop import handle_shop_command
@@ -281,6 +281,88 @@ def define_commands(tree, client):
             
             view = PredSelectView(all_preds, interaction.client)
             await interaction.response.send_message("Select a prediction to manage:", view=view, ephemeral=True)
+
+    @command("pred-schedule", "Schedule a UKPence prediction to post later in a chosen channel", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    async def pred_schedule(interaction: Interaction, channel: TextChannel, when: str):
+        """`when` accepts: minutes from now, "YYYY-MM-DD HH:MM" in UK time, or a Discord timestamp like <t:1715116200:F>."""
+        import re
+        when = when.strip()
+        now_uk = datetime.now(pytz.timezone("Europe/London"))
+        scheduled_ts: Optional[int] = None
+
+        ts_match = re.fullmatch(r"<t:(\d+)(?::[A-Za-z])?>", when)
+        if ts_match:
+            scheduled_ts = int(ts_match.group(1))
+        else:
+            try:
+                mins = int(when)
+                if mins <= 0:
+                    return await interaction.response.send_message(
+                        "If passing minutes, the value must be a positive integer.", ephemeral=True
+                    )
+                scheduled_ts = int((now_uk + timedelta(minutes=mins)).timestamp())
+            except ValueError:
+                try:
+                    naive = datetime.strptime(when, "%Y-%m-%d %H:%M")
+                    aware = pytz.timezone("Europe/London").localize(naive)
+                    scheduled_ts = int(aware.timestamp())
+                except ValueError:
+                    return await interaction.response.send_message(
+                        "`when` must be one of: minutes from now (e.g. `30`), `YYYY-MM-DD HH:MM` in UK time, "
+                        "or a Discord timestamp like `<t:1715116200:F>` (generate one at https://hammertime.cyou).",
+                        ephemeral=True,
+                    )
+
+        if scheduled_ts <= int(now_uk.timestamp()):
+            return await interaction.response.send_message(
+                "Scheduled time must be in the future.", ephemeral=True
+            )
+
+        await interaction.response.send_modal(PredictionScheduleModal(channel.id, scheduled_ts))
+
+    @command("pred-scheduled-list", "List pending scheduled predictions", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    async def pred_scheduled_list(interaction: Interaction):
+        from database import DatabaseManager
+        rows = DatabaseManager.fetch_all(
+            "SELECT id, channel_id, title, scheduled_ts, duration_minutes, creator_id FROM scheduled_predictions WHERE status = 'pending' ORDER BY scheduled_ts ASC"
+        )
+        if not rows:
+            return await interaction.response.send_message("No pending scheduled predictions.", ephemeral=True)
+
+        lines = ["**Pending Scheduled Predictions:**"]
+        for sched_id, channel_id, title, scheduled_ts, duration, creator_id in rows:
+            short_title = title if len(title) <= 60 else title[:57] + "..."
+            lines.append(
+                f"`#{sched_id}` <t:{scheduled_ts}:F> (<t:{scheduled_ts}:R>) in <#{channel_id}> "
+                f"by <@{creator_id}> — duration {duration}m — *{discord.utils.escape_markdown(short_title)}*"
+            )
+        out = "\n".join(lines)
+        if len(out) > 2000:
+            out = out[:1990] + "\n…"
+        await interaction.response.send_message(out, ephemeral=True)
+
+    @command("pred-scheduled-cancel", "Cancel a pending scheduled prediction by id", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    async def pred_scheduled_cancel(interaction: Interaction, sched_id: int):
+        from database import DatabaseManager
+        row = DatabaseManager.fetch_one(
+            "SELECT status FROM scheduled_predictions WHERE id = ?", (sched_id,)
+        )
+        if not row:
+            return await interaction.response.send_message(f"No scheduled prediction with id {sched_id}.", ephemeral=True)
+        if row[0] != 'pending':
+            return await interaction.response.send_message(
+                f"Scheduled prediction #{sched_id} is not pending (status={row[0]}).", ephemeral=True
+            )
+        DatabaseManager.execute(
+            "UPDATE scheduled_predictions SET status = 'cancelled' WHERE id = ?", (sched_id,)
+        )
+        scheduler = getattr(interaction.client, "scheduler", None)
+        if scheduler is not None:
+            try:
+                scheduler.remove_job(f"scheduled_pred_{sched_id}")
+            except Exception:
+                pass
+        await interaction.response.send_message(f"🗑️ Scheduled prediction #{sched_id} cancelled.", ephemeral=True)
 
     @command("preds-to-resolve", "Shows all unresolved predictions in memory", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
     async def preds_to_resolve(interaction: Interaction):

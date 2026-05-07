@@ -509,6 +509,34 @@ class PredAdminView(discord.ui.View):
         self.stop()
 
 
+def _resolve_end_ts(value: str, reference_ts: float) -> float:
+    """Parse duration field as either minutes (int) or absolute UK end time
+    (`YYYY-MM-DD HH:MM`). Returns absolute end timestamp. Raises ValueError on
+    bad input or non-positive duration."""
+    import pytz
+    from datetime import datetime
+    value = value.strip()
+    try:
+        mins = int(value)
+        if mins <= 0:
+            raise ValueError("duration must be positive")
+        return reference_ts + mins * 60
+    except ValueError as int_err:
+        if "positive" in str(int_err):
+            raise
+    try:
+        naive = datetime.strptime(value, "%Y-%m-%d %H:%M")
+    except ValueError:
+        raise ValueError(
+            "End time must be a positive integer (minutes) or `YYYY-MM-DD HH:MM` in UK time."
+        )
+    aware = pytz.timezone("Europe/London").localize(naive)
+    end_ts = aware.timestamp()
+    if end_ts <= reference_ts:
+        raise ValueError("End time must be in the future, after the prediction posts.")
+    return end_ts
+
+
 class PredictionCreateModal(discord.ui.Modal, title="Create Prediction"):
     title_input = discord.ui.TextInput(
         label="Title",
@@ -532,28 +560,24 @@ class PredictionCreateModal(discord.ui.Modal, title="Create Prediction"):
         max_length=80,
     )
     duration_input = discord.ui.TextInput(
-        label="Duration (minutes)",
+        label="Minutes or end time YYYY-MM-DD HH:MM",
         style=discord.TextStyle.short,
         default="5",
         required=True,
-        max_length=6,
+        max_length=20,
     )
 
     async def on_submit(self, interaction: discord.Interaction):
+        now_ts = discord.utils.utcnow().timestamp()
         try:
-            duration = int(self.duration_input.value.strip())
-            if duration <= 0:
-                raise ValueError
-        except ValueError:
-            return await interaction.response.send_message(
-                "Duration must be a positive integer (minutes).", ephemeral=True
-            )
+            end_ts = _resolve_end_ts(self.duration_input.value, now_ts)
+        except ValueError as e:
+            return await interaction.response.send_message(str(e), ephemeral=True)
 
         title = self.title_input.value.strip()
         opt1 = self.opt1_input.value.strip()
         opt2 = self.opt2_input.value.strip()
 
-        end_ts = discord.utils.utcnow().timestamp() + duration * 60
         p = Prediction(0, title, opt1, opt2, end_ts)
         embed, bar = prediction_embed(p)
         msg = await interaction.channel.send(
@@ -568,3 +592,137 @@ class PredictionCreateModal(discord.ui.Modal, title="Create Prediction"):
         interaction.client.predictions[msg.id] = p
         _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
         await interaction.response.send_message("Prediction opened.", ephemeral=True)
+
+
+class PredictionScheduleModal(discord.ui.Modal, title="Schedule Prediction"):
+    def __init__(self, channel_id: int, scheduled_ts: int):
+        super().__init__()
+        self._channel_id = channel_id
+        self._scheduled_ts = scheduled_ts
+
+    title_input = discord.ui.TextInput(
+        label="Title",
+        style=discord.TextStyle.long,
+        placeholder="The question/topic for the prediction",
+        required=True,
+        max_length=200,
+    )
+    opt1_input = discord.ui.TextInput(
+        label="Outcome 1",
+        style=discord.TextStyle.short,
+        default="Yes",
+        required=True,
+        max_length=80,
+    )
+    opt2_input = discord.ui.TextInput(
+        label="Outcome 2",
+        style=discord.TextStyle.short,
+        default="No",
+        required=True,
+        max_length=80,
+    )
+    duration_input = discord.ui.TextInput(
+        label="Minutes or end time YYYY-MM-DD HH:MM",
+        style=discord.TextStyle.short,
+        default="5",
+        required=True,
+        max_length=20,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            end_ts = _resolve_end_ts(self.duration_input.value, float(self._scheduled_ts))
+        except ValueError as e:
+            return await interaction.response.send_message(str(e), ephemeral=True)
+        duration = max(1, int(round((end_ts - self._scheduled_ts) / 60)))
+
+        title = self.title_input.value.strip()
+        opt1 = self.opt1_input.value.strip()
+        opt2 = self.opt2_input.value.strip()
+
+        from database import DatabaseManager
+        import time
+        now_ts = int(time.time())
+        DatabaseManager.execute(
+            "INSERT INTO scheduled_predictions (channel_id, creator_id, title, opt1, opt2, duration_minutes, scheduled_ts, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+            (str(self._channel_id), str(interaction.user.id), title, opt1, opt2, duration, self._scheduled_ts, now_ts),
+        )
+        row = DatabaseManager.fetch_one("SELECT last_insert_rowid()")
+        sched_id = row[0] if row else None
+
+        from apscheduler.triggers.date import DateTrigger
+        from datetime import datetime, timezone
+        run_at = datetime.fromtimestamp(self._scheduled_ts, tz=timezone.utc)
+        scheduler = getattr(interaction.client, "scheduler", None)
+        if scheduler is not None and sched_id is not None:
+            scheduler.add_job(
+                post_scheduled_prediction,
+                DateTrigger(run_date=run_at),
+                args=[interaction.client, sched_id],
+                id=f"scheduled_pred_{sched_id}",
+                name=f"Scheduled Prediction #{sched_id}",
+                misfire_grace_time=3600,
+            )
+
+        await interaction.response.send_message(
+            f"✅ Prediction #{sched_id} scheduled for <t:{self._scheduled_ts}:F> (<t:{self._scheduled_ts}:R>) in <#{self._channel_id}>.",
+            ephemeral=True,
+        )
+
+
+async def post_scheduled_prediction(client: discord.Client, sched_id: int) -> bool:
+    """Post a prediction that was previously scheduled. Returns True on success."""
+    import logging
+    logger = logging.getLogger(__name__)
+    from database import DatabaseManager
+
+    row = DatabaseManager.fetch_one(
+        "SELECT channel_id, title, opt1, opt2, duration_minutes, status FROM scheduled_predictions WHERE id = ?",
+        (sched_id,),
+    )
+    if not row:
+        logger.warning(f"Scheduled pred {sched_id} not found.")
+        return False
+    channel_id, title, opt1, opt2, duration, status = row
+    if status != 'pending':
+        logger.info(f"Scheduled pred {sched_id} not pending (status={status}); skipping.")
+        return False
+
+    channel = client.get_channel(int(channel_id))
+    if channel is None:
+        try:
+            channel = await client.fetch_channel(int(channel_id))
+        except Exception as e:
+            logger.error(f"Scheduled pred {sched_id}: cannot fetch channel {channel_id}: {e}")
+            DatabaseManager.execute(
+                "UPDATE scheduled_predictions SET status = 'failed' WHERE id = ?", (sched_id,)
+            )
+            return False
+
+    end_ts = discord.utils.utcnow().timestamp() + duration * 60
+    p = Prediction(0, title, opt1, opt2, end_ts)
+    embed, bar = prediction_embed(p, client)
+    try:
+        msg = await channel.send(
+            content=f"<@&{ROLES.PRED_NOTIFICATIONS}>",
+            embed=embed,
+            files=[bar],
+            view=BetButtons(p),
+            allowed_mentions=discord.AllowedMentions(roles=True),
+        )
+    except Exception as e:
+        logger.error(f"Scheduled pred {sched_id}: send failed: {e}")
+        DatabaseManager.execute(
+            "UPDATE scheduled_predictions SET status = 'failed' WHERE id = ?", (sched_id,)
+        )
+        return False
+
+    p.msg_id = msg.id
+    p.channel_id = msg.channel.id
+    client.predictions[msg.id] = p
+    _save({k: v.to_dict() for k, v in client.predictions.items()})
+    DatabaseManager.execute(
+        "UPDATE scheduled_predictions SET status = 'posted' WHERE id = ?", (sched_id,)
+    )
+    logger.info(f"Posted scheduled prediction {sched_id} as msg {msg.id} in channel {msg.channel.id}.")
+    return True
