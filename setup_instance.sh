@@ -44,6 +44,7 @@ if [ ! -f ".env" ]; then
         cat <<EOF > .env
 DISCORD_TOKEN=your_token_here
 OPENAI_TOKEN=your_openai_token_here
+GEMINI_TOKEN=your_gemini_token_here
 CHROME_PATH=/usr/bin/google-chrome-stable
 EOF
         echo "Created basic .env. PLEASE FILL IT IN."
