@@ -112,7 +112,15 @@ async def _call_gemini(session, system_prompt, user_parts):
         return None, f"unexpected response: {body}"
 
 
-async def handle_ticket_closed_message(bot, message):
+def _log_task_exception(task):
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc:
+        log.exception("Ticket summary task failed", exc_info=exc)
+
+
+def handle_ticket_closed_message(bot, message):
     if not message.embeds:
         return
     embed = message.embeds[0]
@@ -123,6 +131,12 @@ async def handle_ticket_closed_message(bot, message):
     ):
         return
 
+    task = asyncio.create_task(_summarise_closed_ticket(bot, message))
+    task.add_done_callback(_log_task_exception)
+
+
+async def _summarise_closed_ticket(bot, message):
+    embed = message.embeds[0]
     ticket_creator_id = await _identify_ticket_creator(message.channel)
     ticket_creator_name = None
     closer_match = re.search(r"Ticket Closed by\s+<@!?(\d{10,25})>", embed.description)

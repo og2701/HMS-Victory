@@ -132,7 +132,7 @@ class AClient(discord.Client):
             return
 
         if message.author.id == 557628352828014614 and message.embeds:
-            await handle_ticket_closed_message(self, message)
+            handle_ticket_closed_message(self, message)
             return
 
         if message.author.bot:
