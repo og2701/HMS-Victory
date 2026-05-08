@@ -1,22 +1,14 @@
 import asyncio
 import base64
 import logging
-import os
 import re
 
-import aiohttp
 import discord
 
 from config import *
+from lib.core.gemini import gemini_generate
 
 log = logging.getLogger(__name__)
-
-GEMINI_API_KEY = os.getenv("GEMINI_TOKEN")
-GEMINI_MODEL = "gemini-2.5-flash-lite"
-GEMINI_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/"
-    f"{GEMINI_MODEL}:generateContent"
-)
 
 IMAGE_MIME_TYPES = {
     "png": "image/png",
@@ -79,37 +71,6 @@ async def _fetch_image_part(attachment):
             "data": base64.standard_b64encode(data).decode("ascii"),
         }
     }
-
-
-async def _call_gemini(session, system_prompt, user_parts):
-    if not GEMINI_API_KEY:
-        return None, "GEMINI_TOKEN not configured"
-
-    payload = {
-        "system_instruction": {"parts": [{"text": system_prompt}]},
-        "contents": [{"role": "user", "parts": user_parts}],
-        "generationConfig": {
-            "temperature": 0.4,
-            "maxOutputTokens": 600,
-        },
-    }
-    try:
-        async with session.post(
-            GEMINI_URL,
-            params={"key": GEMINI_API_KEY},
-            json=payload,
-            timeout=aiohttp.ClientTimeout(total=90),
-        ) as resp:
-            body = await resp.json()
-            if resp.status != 200:
-                return None, f"HTTP {resp.status}: {body}"
-    except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-        return None, f"request failed: {exc}"
-
-    try:
-        return body["candidates"][0]["content"]["parts"][0]["text"].strip(), None
-    except (KeyError, IndexError, TypeError):
-        return None, f"unexpected response: {body}"
 
 
 def _log_task_exception(task):
@@ -220,13 +181,11 @@ async def _summarise_closed_ticket(bot, message):
     user_parts = [{"text": f"Transcript:\n{chat_text}\n\nSummary:"}]
     user_parts.extend(image_parts)
 
-    session = getattr(bot, "session", None) or aiohttp.ClientSession()
-    own_session = session is not getattr(bot, "session", None)
-    try:
-        summary, err = await _call_gemini(session, system_prompt, user_parts)
-    finally:
-        if own_session:
-            await session.close()
+    summary, err = await gemini_generate(
+        getattr(bot, "session", None),
+        system_prompt,
+        user_parts,
+    )
 
     if err:
         log.warning("Ticket summary generation failed: %s", err)

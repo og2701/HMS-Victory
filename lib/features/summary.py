@@ -1,12 +1,179 @@
 import os
+import re
 import json
 import shutil
+import logging
 from datetime import datetime, timedelta
 import discord
 import pytz
 from lib.features.summary_html import create_summary_image
+from lib.core.gemini import gemini_generate
 from config import *
 from database import DatabaseManager
+
+log = logging.getLogger(__name__)
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_html(value):
+    if not isinstance(value, str):
+        return value
+    return _HTML_TAG_RE.sub("", value).strip()
+
+
+def _format_stats_for_prompt(summary_data):
+    """Render summary_data as a plain-text stats block for the LLM."""
+    lines = [
+        f"Total members: {_strip_html(summary_data['total_members'])}",
+        f"Members joined: {summary_data['members_joined']}",
+        f"Members left: {summary_data['members_left']}",
+        f"Members banned: {summary_data['members_banned']}",
+        f"Total messages: {_strip_html(summary_data['total_messages'])}",
+        f"Reactions added: {summary_data['reactions_added']}",
+        f"Reactions removed: {summary_data['reactions_removed']}",
+        f"Deleted messages: {summary_data['deleted_messages']}",
+        f"Boosters gained: {summary_data['boosters_gained']}",
+        f"Boosters lost: {summary_data['boosters_lost']}",
+    ]
+
+    if summary_data.get("top_channels"):
+        lines.append("Top channels (messages):")
+        for name, count in summary_data["top_channels"]:
+            lines.append(f"  - #{name}: {_strip_html(count)}")
+
+    if summary_data.get("active_members"):
+        lines.append("Most active members (messages):")
+        for name, count in summary_data["active_members"]:
+            lines.append(f"  - {name}: {count}")
+
+    if summary_data.get("reacting_members"):
+        lines.append("Top reactors:")
+        for name, count in summary_data["reacting_members"]:
+            lines.append(f"  - {name}: {count}")
+
+    return "\n".join(lines)
+
+
+def _format_previous_for_prompt(previous_data, guild, top_n):
+    """Render the raw previous-period data dict as a comparison block."""
+    if not previous_data or not previous_data.get("total_messages") and not previous_data.get("messages"):
+        return None
+
+    lines = [
+        f"Total members: {previous_data.get('total_members', 0)}",
+        f"Members joined: {previous_data.get('members_joined', 0)}",
+        f"Members left: {previous_data.get('members_left', 0)}",
+        f"Members banned: {previous_data.get('members_banned', 0)}",
+        f"Total messages: {previous_data.get('total_messages', 0)}",
+        f"Reactions added: {previous_data.get('reactions_added', 0)}",
+        f"Reactions removed: {previous_data.get('reactions_removed', 0)}",
+        f"Deleted messages: {previous_data.get('deleted_messages', 0)}",
+        f"Boosters gained: {previous_data.get('boosters_gained', 0)}",
+        f"Boosters lost: {previous_data.get('boosters_lost', 0)}",
+    ]
+
+    prev_channels = sorted(
+        previous_data.get("messages", {}).items(), key=lambda x: x[1], reverse=True
+    )[:top_n]
+    if prev_channels:
+        lines.append("Top channels (messages):")
+        for channel_id, count in prev_channels:
+            channel = guild.get_channel(int(channel_id)) if guild else None
+            name = channel.name if channel else "deleted-channel"
+            lines.append(f"  - #{name}: {count}")
+
+    prev_active = sorted(
+        previous_data.get("active_members", {}).items(), key=lambda x: x[1], reverse=True
+    )[:top_n]
+    if prev_active:
+        lines.append("Most active members (messages):")
+        for user_id, count in prev_active:
+            member = guild.get_member(int(user_id)) if guild else None
+            name = member.display_name if member else "Unknown Member"
+            lines.append(f"  - {name}: {count}")
+
+    prev_reactors = sorted(
+        previous_data.get("reacting_members", {}).items(), key=lambda x: x[1], reverse=True
+    )[:top_n]
+    if prev_reactors:
+        lines.append("Top reactors:")
+        for user_id, count in prev_reactors:
+            member = guild.get_member(int(user_id)) if guild else None
+            name = member.display_name if member else "Unknown Member"
+            lines.append(f"  - {name}: {count}")
+
+    return "\n".join(lines)
+
+
+async def _generate_summary_narrative(
+    client, frequency, title, summary_data, previous_data, guild, top_n
+):
+    """Ask Gemini for a short editorial blurb to post alongside the summary image."""
+    stats_block = _format_stats_for_prompt(summary_data)
+    previous_block = _format_previous_for_prompt(previous_data, guild, top_n)
+
+    sentence_cap = {"daily": 2, "weekly": 3, "monthly": 4}.get(frequency, 2)
+    previous_label = {
+        "daily": "yesterday",
+        "weekly": "the previous week",
+        "monthly": "the previous month",
+    }.get(frequency, "the previous period")
+
+    system_prompt = (
+        "You are the HMS Victory bot, posting a short editorial caption to accompany a "
+        f"{frequency} server summary image for a UK-themed Discord. "
+        f"Write at most {sentence_cap} sentence(s). Plain text only — no markdown headers, "
+        "no bullet points, no emojis. Light British dry humour is welcome but never forced.\n\n"
+        "You will be given two stats blocks: 'Current period' and 'Previous period'. "
+        "Use the previous period to identify genuine trends — repeat winners (e.g. 'oggers tops "
+        "the activity board for the second week running'), category swings not already captured "
+        "in the (+N)/(-N) deltas (e.g. joins, leaves, bans, reactions, deletions), and noteworthy "
+        "channel reshuffles. Treat small wobbles as noise.\n\n"
+        "What to include:\n"
+        "- Lead with the single most interesting thing in the data — a notable spike or drop, "
+        "a streak across both periods, or a member/channel that clearly drove activity.\n"
+        "- Reference real channel names with a # prefix (e.g. #general) and real member names "
+        "exactly as given.\n"
+        "- Use (+N) / (-N) deltas where present, and otherwise compare current vs previous "
+        "directly (e.g. 'joins doubled', 'half as many bans as last week').\n"
+        "- If the period was unremarkable, say so briefly — don't manufacture drama.\n"
+        "- Never restate the full numbers; the image already shows them. Add colour, not redundancy."
+    )
+
+    if previous_block:
+        stats_section = (
+            f"Current period:\n{stats_block}\n\n"
+            f"Previous period ({previous_label}):\n{previous_block}"
+        )
+    else:
+        stats_section = (
+            f"Current period:\n{stats_block}\n\n"
+            f"Previous period: not available — skip comparisons."
+        )
+
+    user_text = (
+        f"Title: {title}\n"
+        f"Frequency: {frequency}\n\n"
+        f"{stats_section}\n\n"
+        "Caption:"
+    )
+
+    session = getattr(client, "session", None)
+    text, err = await gemini_generate(
+        session,
+        system_prompt,
+        [{"text": user_text}],
+        temperature=0.6,
+        max_output_tokens=300,
+    )
+    if err:
+        log.warning("Summary narrative generation failed: %s", err)
+        return None
+
+    if text and len(text) > 1900:
+        text = text[:1900].rstrip() + "…"
+    return text
 
 SUMMARY_DATA_FILE = "daily_summaries/daily_summary_{date}.json"
 SUMMARY_BACKUP_DATA_FILE = "daily_summaries/daily_summary_{date}_{time}.bak.json"
@@ -382,8 +549,12 @@ async def post_summary(
             ],
         }
         image_buffer = await create_summary_image(summary_data, title, title_color)
+        narrative = await _generate_summary_narrative(
+            client, frequency, title, summary_data, previous_data, guild, top_n
+        )
         await log_channel.send(
-            file=discord.File(image_buffer, filename=f"{frequency}_summary.png")
+            content=narrative or None,
+            file=discord.File(image_buffer, filename=f"{frequency}_summary.png"),
         )
         if frequency == "daily":
             data["total_members"] = total_members
