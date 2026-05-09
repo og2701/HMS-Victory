@@ -187,37 +187,39 @@ async def notify_mute(client, member):
             hours, remainder = divmod(total_seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
             if hours:
-                duration_str = f"{hours}h {minutes}m"
+                duration_str = f"{hours}h{minutes}m"
             elif minutes:
-                duration_str = f"{minutes}m {seconds}s"
+                duration_str = f"{minutes}m{seconds}s"
             else:
                 duration_str = f"{seconds}s"
-            until_str = discord.utils.format_dt(until, style="f")
+            until_str = discord.utils.format_dt(until, style="t")
         else:
-            duration_str = "unknown"
-            until_str = "unknown"
-
-        embed = discord.Embed(
-            title="🔇 Member muted",
-            color=0xE67E22,
-            timestamp=now,
-        )
-        embed.add_field(name="Member", value=f"{member.mention}\n`{member}` ({member.id})", inline=False)
-        embed.add_field(name="Type", value=mute_type, inline=True)
-        embed.add_field(name="Duration", value=duration_str, inline=True)
-        embed.add_field(name="Until", value=until_str, inline=True)
-        embed.add_field(name="By", value=moderator, inline=False)
-        embed.add_field(name="Reason", value=reason[:1000], inline=False)
+            duration_str = "?"
+            until_str = "?"
 
         msg_info = _consume_mute_trigger(client, member.id)
         is_trigger = msg_info is not None
         if msg_info is None:
             msg_info = _find_recent_user_message(client, member.id)
+
+        lines = [
+            f"{member.mention} `{member}` · **{mute_type}** · {duration_str} (→ {until_str})",
+            f"By **{moderator}** — {reason[:300]}",
+        ]
         if msg_info:
             url, preview = msg_info
-            label = "Triggering message" if (is_trigger and mute_type in ("Shut reaction", "Bedtime shut")) else "Most recent message"
-            value = f"[Jump to message]({url})\n{preview}"
-            embed.add_field(name=label, value=value[:1024], inline=False)
+            tag = "trigger" if (is_trigger and mute_type in ("Shut reaction", "Bedtime shut")) else "recent"
+            preview_line = preview.replace("\n", " ")
+            if len(preview_line) > 200:
+                preview_line = preview_line[:200].rstrip() + "…"
+            lines.append(f"[{tag} msg]({url}) — {preview_line}")
+
+        embed = discord.Embed(
+            description="\n".join(lines)[:4000],
+            color=0xE67E22,
+            timestamp=now,
+        )
+        embed.set_author(name=f"🔇 {member} muted", icon_url=member.display_avatar.url)
 
         for uid in MUTE_NOTIFY_USER_IDS:
             try:
