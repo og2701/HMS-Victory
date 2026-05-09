@@ -60,11 +60,107 @@ nationality_onboarding_roles = {
 async def on_member_update(before, after):
     if not before.premium_since and after.premium_since:
         await award_badge_with_notify(after._state._get_client(), after.id, 'server_booster')
-    
+
     if after.premium_since:
         days_boosting = (discord.utils.utcnow() - after.premium_since).days
         if days_boosting >= 365:
             await award_badge_with_notify(after._state._get_client(), after.id, 'yearly_booster')
+
+    if before.timed_out_until != after.timed_out_until and after.timed_out_until and after.timed_out_until > discord.utils.utcnow():
+        asyncio.create_task(notify_mute(after._state._get_client(), after))
+
+
+def _classify_mute(entry, client) -> tuple[str, str]:
+    """Returns (mute_type_label, moderator_display) for an audit log entry."""
+    actor = entry.user
+    reason = (entry.reason or "").strip()
+
+    if actor and client.user and actor.id == client.user.id:
+        if reason.startswith("Timed out due to ':Shut:'"):
+            return ("Shut reaction", reason.split(" by ", 1)[-1].rstrip(".") if " by " in reason else "(via shut reaction)")
+        if reason.startswith("Bedtime!"):
+            return ("Bedtime shut", reason.split(" by ", 1)[-1].rstrip(".") if " by " in reason else "(via bedtime reaction)")
+        if "VIP Case" in reason:
+            return ("VIP Case (self-inflicted)", str(actor))
+        return ("Bot timeout", str(actor))
+
+    if actor and actor.id == USERS.WICK_BOT:
+        return ("Wick mute", str(actor))
+
+    if actor:
+        return ("Native timeout", str(actor))
+
+    return ("Timeout", "(unknown)")
+
+
+async def notify_mute(client, member):
+    """DM mute notification recipients whenever a member is timed out."""
+    try:
+        await asyncio.sleep(1)  # let audit log catch up
+
+        guild = member.guild
+        entry = None
+        try:
+            cutoff = discord.utils.utcnow() - timedelta(seconds=30)
+            async for e in guild.audit_logs(action=discord.AuditLogAction.member_update, limit=10):
+                if e.target and e.target.id == member.id and e.created_at >= cutoff:
+                    after_until = getattr(e.after, "timed_out_until", None)
+                    if after_until is not None:
+                        entry = e
+                        break
+        except discord.Forbidden:
+            logger.warning("Missing audit log permission; mute notification will be partial.")
+        except Exception as e:
+            logger.error(f"Failed to read audit log for mute on {member}: {e}")
+
+        if entry:
+            mute_type, moderator = _classify_mute(entry, client)
+            reason = (entry.reason or "").strip() or "(no reason given)"
+        else:
+            mute_type = "Timeout"
+            moderator = "(unknown – not in audit log)"
+            reason = "(no reason given)"
+
+        until = member.timed_out_until
+        now = discord.utils.utcnow()
+        if until and until > now:
+            total_seconds = int((until - now).total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            if hours:
+                duration_str = f"{hours}h {minutes}m"
+            elif minutes:
+                duration_str = f"{minutes}m {seconds}s"
+            else:
+                duration_str = f"{seconds}s"
+            until_str = discord.utils.format_dt(until, style="f")
+        else:
+            duration_str = "unknown"
+            until_str = "unknown"
+
+        embed = discord.Embed(
+            title="🔇 Member muted",
+            color=0xE67E22,
+            timestamp=now,
+        )
+        embed.add_field(name="Member", value=f"{member.mention}\n`{member}` ({member.id})", inline=False)
+        embed.add_field(name="Type", value=mute_type, inline=True)
+        embed.add_field(name="Duration", value=duration_str, inline=True)
+        embed.add_field(name="Until", value=until_str, inline=True)
+        embed.add_field(name="By", value=moderator, inline=False)
+        embed.add_field(name="Reason", value=reason[:1000], inline=False)
+
+        for uid in MUTE_NOTIFY_USER_IDS:
+            try:
+                user = client.get_user(uid) or await client.fetch_user(uid)
+                if user:
+                    await user.send(embed=embed)
+            except discord.Forbidden:
+                logger.warning(f"Cannot DM mute notification to {uid} (DMs closed).")
+            except Exception as e:
+                logger.error(f"Failed to send mute notification to {uid}: {e}")
+    except Exception as e:
+        logger.error(f"notify_mute failed for {member}: {e}")
 
 async def award_badge_with_notify(client, user_id: int, badge_id: str):
     """Awards a badge and notifies the user via DM and logs to bot-usage-log."""

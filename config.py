@@ -134,6 +134,12 @@ class USERS:
     COUNTRYBALL_BOT = 999736048596816014
     CHIN = 795003706717372462
     CHERRY_BLOSSOM = 725155180680577066
+    HADIDAS = 198144909583056898
+    WICK_BOT = 536991182035746816
+
+# --- Mute Notifications ---
+# Users DM'd whenever a member is muted (shut, bedtime, native timeout, Wick, etc.)
+MUTE_NOTIFY_USER_IDS = [USERS.OGGERS, USERS.HADIDAS]
 
 # --- Voice Channel Lockdown ---
 VC_LOCKDOWN_WHITELIST = [
