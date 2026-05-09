@@ -70,6 +70,65 @@ async def on_member_update(before, after):
         asyncio.create_task(notify_mute(after._state._get_client(), after))
 
 
+def _summarise_message(message) -> str:
+    """Turn a discord.Message into a short preview string (content + attachment/sticker hints)."""
+    parts = []
+    content = (message.content or "").strip()
+    if content:
+        if len(content) > 500:
+            content = content[:500].rstrip() + "…"
+        parts.append(content)
+    extras = []
+    if getattr(message, "attachments", None):
+        extras.append(f"{len(message.attachments)} attachment(s)")
+    if getattr(message, "stickers", None):
+        extras.append(f"{len(message.stickers)} sticker(s)")
+    if getattr(message, "embeds", None):
+        extras.append(f"{len(message.embeds)} embed(s)")
+    if extras:
+        parts.append(f"_({', '.join(extras)})_")
+    return "\n".join(parts) or "_(no text content)_"
+
+
+def _record_mute_trigger(client, user_id: int, message) -> None:
+    """Stash the message that triggered a bot-issued mute so notify_mute can include it."""
+    store = getattr(client, "_mute_trigger_messages", None)
+    if store is None:
+        store = {}
+        client._mute_trigger_messages = store
+    store[user_id] = (message.jump_url, _summarise_message(message), time.time())
+
+
+def _consume_mute_trigger(client, user_id: int) -> tuple[str, str] | None:
+    store = getattr(client, "_mute_trigger_messages", None)
+    if not store:
+        return None
+    entry = store.pop(user_id, None)
+    now = time.time()
+    for uid in [k for k, v in store.items() if now - v[2] > 60]:
+        store.pop(uid, None)
+    if not entry:
+        return None
+    url, preview, ts = entry
+    if now - ts > 60:
+        return None
+    return (url, preview)
+
+
+def _find_recent_user_message(client, user_id: int) -> tuple[str, str] | None:
+    """Fall back to the muted user's most recent cached message (jump_url, preview)."""
+    try:
+        latest = None
+        for msg in client.cached_messages:
+            if msg.author.id == user_id and (latest is None or msg.created_at > latest.created_at):
+                latest = msg
+        if latest is None:
+            return None
+        return (latest.jump_url, _summarise_message(latest))
+    except Exception:
+        return None
+
+
 def _classify_mute(entry, client) -> tuple[str, str]:
     """Returns (mute_type_label, moderator_display) for an audit log entry."""
     actor = entry.user
@@ -149,6 +208,16 @@ async def notify_mute(client, member):
         embed.add_field(name="Until", value=until_str, inline=True)
         embed.add_field(name="By", value=moderator, inline=False)
         embed.add_field(name="Reason", value=reason[:1000], inline=False)
+
+        msg_info = _consume_mute_trigger(client, member.id)
+        is_trigger = msg_info is not None
+        if msg_info is None:
+            msg_info = _find_recent_user_message(client, member.id)
+        if msg_info:
+            url, preview = msg_info
+            label = "Triggering message" if (is_trigger and mute_type in ("Shut reaction", "Bedtime shut")) else "Most recent message"
+            value = f"[Jump to message]({url})\n{preview}"
+            embed.add_field(name=label, value=value[:1024], inline=False)
 
         for uid in MUTE_NOTIFY_USER_IDS:
             try:
@@ -983,6 +1052,7 @@ async def handle_shut_reaction(reaction, user):
         return
     try:
         reason = f"Timed out due to ':Shut:' reaction by {user.name}#{user.discriminator}."
+        _record_mute_trigger(client, message_author.id, reaction.message)
         if not SHUTCOIN_ENABLED:
             if has_role:
                 duration = timedelta(minutes=5)
@@ -1037,6 +1107,7 @@ async def handle_bedtime_reaction(reaction, user):
             next_7am += timedelta(days=1)
         duration = next_7am - now_uk
         reason = f"Bedtime! Timed out until 7 AM UK by {user.name}#{user.discriminator}."
+        _record_mute_trigger(client, message_author.id, reaction.message)
         await message_author.timeout(discord.utils.utcnow() + duration, reason=reason)
         sticker_message = await reaction.message.reply(stickers=[discord.Object(id=1500885911293136916)])
         sticker_messages[reaction.message.id] = (sticker_message.id, user.id)
