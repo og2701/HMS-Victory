@@ -785,9 +785,9 @@ async def on_message(client, message):
                         unique_mentions.append(m)
 
                 if unique_mentions:
-                    if len(unique_mentions) > 25:
+                    if len(unique_mentions) > 100:
                         await message.reply(
-                            f"❌ Too many recipients ({len(unique_mentions)}). Maximum is 25."
+                            f"❌ Too many recipients ({len(unique_mentions)}). Maximum is 100."
                         )
                     else:
                         recipients_str = ", ".join(m.mention for m in unique_mentions)
