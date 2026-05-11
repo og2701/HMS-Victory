@@ -770,13 +770,39 @@ async def on_message(client, message):
     if message.content.lower().startswith("ukpadd"):
         if hasattr(message.author, "roles") and any(role.id == ROLES.DEPUTY_PM for role in message.author.roles):
             try:
-                from lib.economy.bank_commands_ui import UKPAddUserSelectView
-                await message.reply(
-                    "Please select the members you want to give UKPence to:",
-                    view=UKPAddUserSelectView(message.author.id)
+                from lib.economy.bank_commands_ui import (
+                    UKPAddAmountLaunchView,
+                    UKPAddUserSelectView,
                 )
+
+                mentioned = [m for m in message.mentions if not m.bot]
+                # Deduplicate while preserving order
+                seen = set()
+                unique_mentions = []
+                for m in mentioned:
+                    if m.id not in seen:
+                        seen.add(m.id)
+                        unique_mentions.append(m)
+
+                if unique_mentions:
+                    if len(unique_mentions) > 25:
+                        await message.reply(
+                            f"❌ Too many recipients ({len(unique_mentions)}). Maximum is 25."
+                        )
+                    else:
+                        recipients_str = ", ".join(m.mention for m in unique_mentions)
+                        await message.reply(
+                            f"Hand out UKPence to {recipients_str}?",
+                            view=UKPAddAmountLaunchView(message.author.id, unique_mentions),
+                            allowed_mentions=discord.AllowedMentions.none(),
+                        )
+                else:
+                    await message.reply(
+                        "Please select the members you want to give UKPence to:",
+                        view=UKPAddUserSelectView(message.author.id)
+                    )
             except Exception as e:
-                logger.error(f"Error launching UKPAddUserSelectView: {e}")
+                logger.error(f"Error launching ukpadd flow: {e}")
 
     is_deputy_pm = hasattr(message.author, "roles") and any(role.id == ROLES.DEPUTY_PM for role in message.author.roles)
     if message.content.lower().strip() == "shopadmin" and message.author.id == USERS.OGGERS:

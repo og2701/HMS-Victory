@@ -1,8 +1,16 @@
 import discord
 from typing import List
 
+from config import ROLES
 from lib.economy.bank_manager import BankManager
 from lib.economy.economy_manager import add_bb, ensure_bb
+
+
+def _is_deputy_pm(user) -> bool:
+    roles = getattr(user, "roles", None)
+    if not roles:
+        return False
+    return any(role.id == ROLES.DEPUTY_PM for role in roles)
 
 class UKPAddAmountModal(discord.ui.Modal, title="UKPence Handout"):
     amount = discord.ui.TextInput(
@@ -18,6 +26,11 @@ class UKPAddAmountModal(discord.ui.Modal, title="UKPence Handout"):
         self.selected_members = selected_members
 
     async def on_submit(self, interaction: discord.Interaction):
+        if not _is_deputy_pm(interaction.user):
+            await interaction.response.send_message(
+                "❌ Only the Deputy PM can hand out UKPence.", ephemeral=True
+            )
+            return
         try:
             amount_str = self.amount.value.strip()
             # remove commas if someone entered 1,000
@@ -89,12 +102,43 @@ class UKPAddUserSelectView(discord.ui.View):
         if interaction.user.id != self.author_id:
             await interaction.response.send_message("❌ Only the command initiator can use this menu.", ephemeral=True)
             return
-            
+        if not _is_deputy_pm(interaction.user):
+            await interaction.response.send_message(
+                "❌ Only the Deputy PM can hand out UKPence.", ephemeral=True
+            )
+            return
+
         selected_members = select.values
         # Open a modal to ask for the amount to dispense to each
         await interaction.response.send_modal(UKPAddAmountModal(selected_members))
-        
+
         # We can safely delete the original message to keep chat clean
+        try:
+            await interaction.message.delete()
+        except discord.NotFound:
+            pass
+        self.stop()
+
+
+class UKPAddAmountLaunchView(discord.ui.View):
+    def __init__(self, author_id: int, selected_members: List[discord.Member]):
+        super().__init__(timeout=180)
+        self.author_id = author_id
+        self.selected_members = selected_members
+
+    @discord.ui.button(label="Enter amount", style=discord.ButtonStyle.primary)
+    async def enter_amount(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ Only the command initiator can use this.", ephemeral=True)
+            return
+        if not _is_deputy_pm(interaction.user):
+            await interaction.response.send_message(
+                "❌ Only the Deputy PM can hand out UKPence.", ephemeral=True
+            )
+            return
+
+        await interaction.response.send_modal(UKPAddAmountModal(self.selected_members))
+
         try:
             await interaction.message.delete()
         except discord.NotFound:
