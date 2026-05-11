@@ -22,7 +22,7 @@ def _strip_html(value):
     return _HTML_TAG_RE.sub("", value).strip()
 
 
-def _format_stats_for_prompt(summary_data):
+def _format_stats_for_prompt(summary_data, top_channel_ids=None):
     """Render summary_data as a plain-text stats block for the LLM."""
     lines = [
         f"Total members: {_strip_html(summary_data['total_members'])}",
@@ -39,8 +39,10 @@ def _format_stats_for_prompt(summary_data):
 
     if summary_data.get("top_channels"):
         lines.append("Top channels (messages):")
-        for name, count in summary_data["top_channels"]:
-            lines.append(f"  - #{name}: {_strip_html(count)}")
+        ids = top_channel_ids or [None] * len(summary_data["top_channels"])
+        for (name, count), channel_id in zip(summary_data["top_channels"], ids):
+            mention = f"<#{channel_id}>" if channel_id else f"#{name}"
+            lines.append(f"  - {mention} (name: {name}): {_strip_html(count)}")
 
     if summary_data.get("active_members"):
         lines.append("Most active members (messages):")
@@ -81,7 +83,8 @@ def _format_previous_for_prompt(previous_data, guild, top_n):
         for channel_id, count in prev_channels:
             channel = guild.get_channel(int(channel_id)) if guild else None
             name = channel.name if channel else "deleted-channel"
-            lines.append(f"  - #{name}: {count}")
+            mention = f"<#{channel_id}>" if channel else f"#{name}"
+            lines.append(f"  - {mention} (name: {name}): {count}")
 
     prev_active = sorted(
         previous_data.get("active_members", {}).items(), key=lambda x: x[1], reverse=True
@@ -107,10 +110,11 @@ def _format_previous_for_prompt(previous_data, guild, top_n):
 
 
 async def _generate_summary_narrative(
-    client, frequency, title, summary_data, previous_data, guild, top_n
+    client, frequency, title, summary_data, previous_data, guild, top_n,
+    top_channel_ids=None,
 ):
     """Ask Gemini for a short editorial blurb to post alongside the summary image."""
-    stats_block = _format_stats_for_prompt(summary_data)
+    stats_block = _format_stats_for_prompt(summary_data, top_channel_ids)
     previous_block = _format_previous_for_prompt(previous_data, guild, top_n)
 
     sentence_cap = {"daily": 2, "weekly": 3, "monthly": 4}.get(frequency, 2)
@@ -133,8 +137,10 @@ async def _generate_summary_narrative(
         "What to include:\n"
         "- Lead with the single most interesting thing in the data — a notable spike or drop, "
         "a streak across both periods, or a member/channel that clearly drove activity.\n"
-        "- Reference real channel names with a # prefix (e.g. #general) and real member names "
-        "exactly as given.\n"
+        "- When referring to a channel, copy its Discord mention token verbatim — the "
+        "`<#1234567890>` form shown in the stats block. Do NOT write `#channel-name` in "
+        "plain text and do NOT invent or guess channel IDs; only use mention tokens that "
+        "appear in the stats. Real member names should be written exactly as given.\n"
         "- Use (+N) / (-N) deltas where present, and otherwise compare current vs previous "
         "directly (e.g. 'joins doubled', 'half as many bans as last week').\n"
         "- If the period was unremarkable, say so briefly — don't manufacture drama.\n"
@@ -548,9 +554,11 @@ async def post_summary(
                 for user_id, count in reacting_members
             ],
         }
+        top_channel_ids = [channel_id for channel_id, _ in top_channels]
         image_buffer = await create_summary_image(summary_data, title, title_color)
         narrative = await _generate_summary_narrative(
-            client, frequency, title, summary_data, previous_data, guild, top_n
+            client, frequency, title, summary_data, previous_data, guild, top_n,
+            top_channel_ids=top_channel_ids,
         )
         await log_channel.send(
             content=narrative or None,
