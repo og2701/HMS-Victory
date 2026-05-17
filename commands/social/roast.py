@@ -1,15 +1,13 @@
 import random
 from collections import defaultdict
 from discord import Embed, Forbidden, TextChannel, Member
-from openai import AsyncOpenAI
 from datetime import datetime, timedelta
 from os import getenv
 from lib.core.discord_helpers import fetch_messages_with_context, estimate_tokens
+from lib.core.gemini import gemini_generate
 from config import USERS, SUMMARISE_DAILY_LIMIT
 
 command_usage_tracker = defaultdict(lambda: {"count": 0, "last_used": None})
-
-client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"), max_retries=5, timeout=60.0)
 
 time_threshold = datetime.utcnow() - timedelta(days=7)
 
@@ -80,19 +78,23 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         f"Return **only** the roast paragraph. No disclaimers, no filler—just pure, foul-mouthed British annihilation."
     )
 
+    user_prompt = f"Here are the recent pathetic chat messages from {user.display_name}. Read them, find the most embarrassing or stupid things they said, and mercilessly roast them for it:\n\n{input_text}"
 
     try:
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Here are the recent pathetic chat messages from {user.display_name}. Read them, find the most embarrassing or stupid things they said, and mercilessly roast them for it:\n\n{input_text}"},
-            ],
-            max_tokens=500,
+        summary, error = await gemini_generate(
+            session=None,
+            system_prompt=system_prompt,
+            user_parts=[{"text": user_prompt}],
             temperature=1.0,
+            max_output_tokens=500,
+            timeout=60,
         )
 
-        summary = response.choices[0].message.content.strip()
+        if error:
+            print(f"Gemini roast error: {error}")
+            await interaction.followup.send("An error occurred.")
+            return
+
         await interaction.followup.send(summary)
         
         from lib.bot.event_handlers import award_badge_with_notify
