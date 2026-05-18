@@ -55,9 +55,9 @@ def define_commands(tree, client):
                 if channel:
                     uk_tz = pytz.timezone("Europe/London")
                     now = datetime.now(uk_tz).strftime("%Y-%m-%d %H:%M:%S")
-                    await channel.send(
+                    asyncio.create_task(channel.send(
                         f"{now} - {interaction.user} (ID {interaction.user.id}) used /{interaction.command.name} in {interaction.channel.mention} with args: {param_str}"
-                    )
+                    ))
                 return await func(*args, **kwargs)
             wrapper.__signature__ = inspect.signature(func)
             return tree.command(name=name, description=description)(wrapper)
