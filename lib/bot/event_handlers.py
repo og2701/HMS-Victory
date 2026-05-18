@@ -659,13 +659,13 @@ async def on_message(client, message):
         # 1. Normalize unicode (converts fancy fonts like bold/cursive/circles 𝐭𝐮𝐧𝐠 -> tung)
         content_normalized = unicodedata.normalize('NFKD', message.content.lower())
         
-        # 2. Translate common Greek/Cyrillic and turned/upside-down homoglyphs back to standard Latin ASCII
+        # 2. Translate common Greek/Cyrillic, turned/upside-down, and symbol homoglyphs back to standard Latin ASCII
         homoglyphs = {
-            'т': 't', 'τ': 't', '†': 't', 'ʇ': 't',
-            'ц': 'u', 'υ': 'u', 'μ': 'u',
+            'т': 't', 'τ': 't', '†': 't', 'ʇ': 't', '┴': 't', '⊥': 't', '+': 't', '＋': 't', '➕': 't',
+            'ц': 'u', 'υ': 'u', 'μ': 'u', '∩': 'u', '∪': 'u',
             'ν': 'v', 'ѵ': 'v',
             'п': 'n', 'η': 'n', 'ñ': 'n', 'ń': 'n', 'ņ': 'n',
-            'ğ': 'g', 'ĝ': 'g', 'ġ': 'g', 'ģ': 'g', 'ƃ': 'g',
+            'ğ': 'g', 'ĝ': 'g', 'ġ': 'g', 'ģ': 'g', 'ƃ': 'g', '⅁': 'g', 'פ': 'g',
             'ɐ': 'a', 'ɔ': 'c', 'ǝ': 'e', 'ɟ': 'f', 'ɥ': 'h', 'ᴉ': 'i',
             'ɾ': 'j', 'ʞ': 'k', 'ɯ': 'm', 'ɹ': 'r', 'ʌ': 'v', 'ʍ': 'w', 'ʎ': 'y',
         }
@@ -678,8 +678,8 @@ async def on_message(client, message):
         # Regex for "tung" variations (tung, tvng, t u n g, tuuuung, tng, etc. - symbols are already stripped)
         tung_pattern = r't\s*[uvo0]*\s*n\s*[g9q]'
         
-        # Regex for "triple t" variations (triple t, triplet, 3t, 3-t, ttt, t t t, three ts, t3, etc.)
-        triplet_pattern = r'triple\s*t|triplet|3\s*t|ttt|t\s*t\s*t|three\s*t|t\s*3'
+        # Regex for "triple t" variations (triple t, triplet, 3t, 3-t, ttt, t t t, three ts, t3, t cube, t cubed, etc.)
+        triplet_pattern = r'triple\s*t|triplet|3\s*t|ttt|t\s*t\s*t|three\s*t|t\s*3|t\s*cube'
         
         # Regex for "67" (67, 6 7, sixtyseven, sixty seven, lxvii, etc.)
         sixty_seven_pattern = r'6\s*7|sixty\s*seven|lxvii'
