@@ -654,23 +654,38 @@ async def on_message(client, message):
     await client.xp_system.update_xp(message)
 
     if not message.author.bot and message.type != discord.MessageType.new_member:
+        import unicodedata
+        
+        # 1. Normalize unicode (converts fancy fonts like bold/cursive/circles 𝐭𝐮𝐧𝐠 -> tung)
+        content_normalized = unicodedata.normalize('NFKD', message.content.lower())
+        
+        # 2. Translate common Greek/Cyrillic homoglyphs back to standard Latin ASCII
+        homoglyphs = {
+            'т': 't', 'τ': 't', '†': 't',
+            'ц': 'u', 'υ': 'u', 'μ': 'u',
+            'ν': 'v', 'ѵ': 'v',
+            'п': 'n', 'η': 'n', 'ñ': 'n', 'ń': 'n', 'ņ': 'n',
+            'ğ': 'g', 'ĝ': 'g', 'ġ': 'g', 'ģ': 'g',
+        }
+        for k, v in homoglyphs.items():
+            content_normalized = content_normalized.replace(k, v)
+            
         # Regex for "tung" variations (tung, tvng, t u n g, tuuuung, t*ng, t0ng, t.u.n.g, t-u-n-g, etc.)
         tung_pattern = r't\s*[uv\*\_o0\-\.\/\\\~\|\?\+]*\s*n\s*[g9q]'
         
-        # Regex for "triple t" variations (triple t, triplet, 3t, 3-t, etc.)
-        triplet_pattern = r'triple\s*t|triplet|3\s*t'
+        # Regex for "triple t" variations (triple t, triplet, 3t, 3-t, ttt, t t t, three ts, etc.)
+        triplet_pattern = r'triple\s*t|triplet|3\s*t|ttt|t\s*t\s*t|three\s*t'
         
-        # Regex for "67" (67, 6 7, 6-7, etc.)
-        sixty_seven_pattern = r'6\s*7'
+        # Regex for "67" (67, 6 7, 6-7, sixty-seven, sixty seven, lxvii, etc.)
+        sixty_seven_pattern = r'6\s*7|sixty\s*-\s*seven|sixty\s*seven|lxvii'
         
-        content_lower = message.content.lower()
         matched_trigger = None
         
-        if re.search(tung_pattern, content_lower):
+        if re.search(tung_pattern, content_normalized):
             matched_trigger = "tung-variant"
-        elif re.search(triplet_pattern, content_lower):
+        elif re.search(triplet_pattern, content_normalized):
             matched_trigger = "triplet-variant"
-        elif re.search(sixty_seven_pattern, content_lower):
+        elif re.search(sixty_seven_pattern, content_normalized):
             matched_trigger = "67-variant"
             
         if message.author.id == USERS.LANCA and matched_trigger:
