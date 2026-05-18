@@ -675,14 +675,14 @@ async def on_message(client, message):
         # 3. Strip all characters that are not alphanumeric or spaces (e.g. T✓ng -> tng, t^3 -> t3, t**3 -> t3)
         content_normalized = "".join(c for c in content_normalized if c.isalnum() or c.isspace())
             
-        # Regex for "tung" variations (tung, tvng, t u n g, tuuuung, tng, etc. - symbols are already stripped)
-        tung_pattern = r't\s*[uvo0]*\s*n\s*[g9q]'
+        # Regex for "tung" variations (tung, tvng, t u n g, tuuuung, tng, phonetic tyung/tyng, Pig Latin ungtay, etc.)
+        tung_pattern = r't\s*[uvoyo0]*\s*n\s*[g9q]|ung\s*tay'
         
-        # Regex for "triple t" variations (triple t, triplet, 3t, 3-t, ttt, t t t, three ts, t3, t cube, t cubed, etc.)
-        triplet_pattern = r'triple\s*t|triplet|3\s*t|ttt|t\s*t\s*t|three\s*t|t\s*3|t\s*cube'
+        # Regex for "triple t" variations (triple t, triplet, 3t, ttt, t t t, three ts, t3, t cube, t cubed, t*3, three times t, t times 3, triplo t, etc.)
+        triplet_pattern = r'triple\s*t|triplet|3\s*t|ttt|t\s*t\s*t|three\s*t|t\s*3|t\s*cube|three\s*times\s*t|t\s*times\s*3|triplo\s*t'
         
-        # Regex for "67" (67, 6 7, sixtyseven, sixty seven, lxvii, etc.)
-        sixty_seven_pattern = r'6\s*7|sixty\s*seven|lxvii'
+        # Regex for "67" (67, 6 7, sixtyseven, sixty seven, lxvii, l x v i i, multilingual translations, etc.)
+        sixty_seven_pattern = r'6\s*7|sixty\s*seven|l\s*x\s*v\s*i\s*i|lxvii|soixante\s*sept|sesenta\s*y\s*siete|sieben\s*und\s*sechzig|sessantasette'
         
         matched_trigger = None
         
