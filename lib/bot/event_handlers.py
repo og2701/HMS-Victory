@@ -709,7 +709,7 @@ async def on_message(client, message):
                         messages=[
                             {
                                 "role": "system",
-                                "content": "You are a moderation assistant for a Discord server. Your task is to analyze if the user's message is a deliberate attempt to say, spell, or represent the forbidden words 'tung' (also 'tvng'), 'sixty seven' (also '67'), or 'triple t' / 'triplet' / 'three t' / 'ttt'. The user is highly creative and will use obfuscation, spacing, symbols, phonetic spellings, math notation, turned text, backwards/reversed text, foreign languages, or other tricks to bypass filters. If the message is an attempt to say or represent any of these forbidden words, respond with EXACTLY 'yes'. Otherwise, respond with EXACTLY 'no'."
+                                "content": "You are a moderation assistant for a Discord server. Your task is to analyze if the user's message is a deliberate attempt to say, spell, or represent the forbidden words 'tung' (also 'tvng'), 'sixty seven' (also '67'), or 'triple t' / 'triplet' / 'three t' / 'ttt'. The user is highly creative and will use obfuscation, spacing, symbols, phonetic spellings, math notation, turned text, backwards/reversed text (e.g. 'gnut' or 'tung sahur' / 'ruhas gnut' / 'sahue' variations), foreign languages, or other tricks to bypass filters. If the message is an attempt to say or represent any of these forbidden words, respond with EXACTLY 'yes'. Otherwise, respond with EXACTLY 'no'."
                             },
                             {
                                 "role": "user",
