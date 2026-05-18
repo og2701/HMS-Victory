@@ -665,7 +665,8 @@ async def on_message(client, message):
             'ц': 'u', 'υ': 'u', 'μ': 'u', '∩': 'u', '∪': 'u', 'у': 'u',
             'ν': 'v', 'ѵ': 'v',
             'п': 'n', 'η': 'n', 'ñ': 'n', 'ń': 'n', 'ņ': 'n', 'н': 'n',
-            'ğ': 'g', 'ĝ': 'g', 'ġ': 'g', 'ģ': 'g', 'ƃ': 'g', '⅁': 'g', 'פ': 'g', 'г': 'g',
+            'ğ': 'g', 'ĝ': 'g', 'ġ': 'g', 'ģ': 'g', 'ƃ': 'g', '⅁': 'g', 'פ': 'g', 'г': 'g', 'ϱ': 'g',
+            'ן': 'l',
             'ɐ': 'a', 'ɔ': 'c', 'ǝ': 'e', 'ɟ': 'f', 'ɥ': 'h', 'ᴉ': 'i',
             'ɾ': 'j', 'ʞ': 'k', 'ɯ': 'm', 'ɹ': 'r', 'ʌ': 'v', 'ʍ': 'w', 'ʎ': 'y',
         }
@@ -712,7 +713,13 @@ async def on_message(client, message):
                             },
                             {
                                 "role": "user",
-                                "content": f"Analyze this message:\n{message.content}"
+                                "content": (
+                                    f"Analyze this message in all its forms:\n"
+                                    f"Original: {message.content}\n"
+                                    f"Reversed: {message.content[::-1]}\n"
+                                    f"Normalized (homoglyphs resolved): {content_normalized}\n"
+                                    f"Normalized & Reversed: {content_reversed}"
+                                )
                             }
                         ],
                         max_tokens=5,
