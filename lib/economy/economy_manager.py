@@ -224,8 +224,14 @@ def add_bb(user_id: int, amount: int, reason: str = "Unspecified",
             current_balance = UKPenceManager.get_balance(user_id)
             tax_amount = compute_wealth_tax(current_balance, amount)
             if tax_amount > 0:
+                gross = amount
                 amount -= tax_amount
-                BankManager.deposit(tax_amount, description=f"Wealth tax on '{reason}'")
+                effective_rate = tax_amount / gross
+                BankManager.deposit(
+                    tax_amount,
+                    description=f"Wealth tax on '{reason}' (gross: {gross:,}, rate: {effective_rate:.0%})",
+                )
+                reason = f"{reason} [gross: {gross:,}, tax: -{tax_amount:,} ({effective_rate:.0%})]"
 
     UKPenceManager.add_amount(user_id, amount, reason=reason)
     return True
