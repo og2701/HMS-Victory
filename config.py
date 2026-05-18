@@ -136,6 +136,7 @@ class USERS:
     CHERRY_BLOSSOM = 725155180680577066
     HADIDAS = 198144909583056898
     WICK_BOT = 536991182035746816
+    LANCA = 1398652914737741956
 
 # --- Mute Notifications ---
 # Users DM'd whenever a member is muted (shut, bedtime, native timeout, Wick, etc.)
