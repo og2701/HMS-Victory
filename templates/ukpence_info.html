@@ -211,6 +211,18 @@ body {
   padding-top: 20px;
   border-top: 1px solid rgba(255,255,255,0.1);
 }
+
+img.emoji {
+  height: 1em;
+  width: 1em;
+  margin: 0 0.05em 0 0.1em;
+  vertical-align: -0.15em;
+  display: inline-block;
+}
+
+.title img.emoji { height: 0.9em; width: 0.9em; }
+.section-title img.emoji { height: 1.1em; width: 1.1em; }
+.row-icon img.emoji { height: 1.6rem; width: 1.6rem; }
 </style>
 </head>
 <body>
@@ -374,5 +386,11 @@ body {
   </div>
 
 </div>
+<script src="https://cdn.jsdelivr.net/npm/@twemoji/api@latest/dist/twemoji.min.js" crossorigin="anonymous"></script>
+<script>
+  window.onload = function() {
+    twemoji.parse(document.body, { folder: 'svg', ext: '.svg' });
+  };
+</script>
 </body>
 </html>
