@@ -169,18 +169,64 @@ def get_bb(user_id: int) -> int:
 def set_bb(user_id: int, amount: int, reason: str = "Unspecified") -> None:
     UKPenceManager.set_balance(user_id, amount, reason=reason)
 
-def add_bb(user_id: int, amount: int, reason: str = "Unspecified", from_bank: bool = True) -> bool:
+WEALTH_TAX_BRACKETS = [
+    (10_000, 0.00),
+    (20_000, 0.25),
+    (30_000, 0.50),
+    (50_000, 0.75),
+    (float("inf"), 0.90),
+]
+
+
+def compute_wealth_tax(balance: int, earning: int) -> int:
+    """Compute the wealth-tax owed on a passive bank-funded earning.
+
+    Tax kicks in once balance reaches 10k. Each slice of the earning that lands
+    within a bracket is taxed at that bracket's rate. Returns an integer UKP
+    amount (rounded down) so that tiny per-minute payouts naturally round to 0.
+    """
+    if earning <= 0:
+        return 0
+    tax = 0.0
+    remaining = earning
+    cursor = balance
+    for top, rate in WEALTH_TAX_BRACKETS:
+        if remaining <= 0:
+            break
+        if cursor >= top:
+            continue
+        slice_size = min(remaining, top - cursor)
+        tax += slice_size * rate
+        cursor += slice_size
+        remaining -= slice_size
+    return int(tax)
+
+
+def add_bb(user_id: int, amount: int, reason: str = "Unspecified",
+           from_bank: bool = True, taxable: bool = True) -> bool:
     """Credit a user with UKP.
-    
+
     from_bank=True (default): withdraws from the server bank first — UKP is conserved.
     from_bank=False: pure user credit for p2p transfers (e.g. /pay, wager payout) where
                      the sender's remove_bb already handled the bank side.
+    taxable=True (default): applies the progressive wealth tax for balances ≥10k
+                            when from_bank is also True. Tax returns to the bank.
+                            Set False for refunds and exempt earning types
+                            (prediction wins, wager wins).
     Returns True if successful, False if the bank couldn't cover it.
     """
     if from_bank:
         from lib.economy.bank_manager import BankManager
         if not BankManager.withdraw(amount, description=reason):
             return False
+
+        if taxable and amount > 0:
+            current_balance = UKPenceManager.get_balance(user_id)
+            tax_amount = compute_wealth_tax(current_balance, amount)
+            if tax_amount > 0:
+                amount -= tax_amount
+                BankManager.deposit(tax_amount, description=f"Wealth tax on '{reason}'")
+
     UKPenceManager.add_amount(user_id, amount, reason=reason)
     return True
 

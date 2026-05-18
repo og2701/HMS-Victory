@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;800;900&display=swap');
+
+body {
+  margin: 0;
+  padding: 40px;
+  background: #00247D;
+  font-family: 'Inter', sans-serif;
+  color: #f8fafc;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.container {
+  background: rgba(0, 0, 0, 0.9);
+  border: 4px solid #CF142B;
+  border-radius: 16px;
+  padding: 48px;
+  width: 1000px;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+}
+
+.title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 3rem;
+  font-weight: 900;
+  text-align: center;
+  margin: 0 0 8px 0;
+  letter-spacing: 2px;
+  color: #FFFFFF;
+}
+
+.subtitle {
+  text-align: center;
+  font-size: 1.05rem;
+  color: #cbd5e1;
+  margin-bottom: 36px;
+  padding-bottom: 24px;
+  border-bottom: 2px solid rgba(255,255,255,0.15);
+}
+
+.section-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #FFFFFF;
+  margin: 30px 0 14px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+.section-title::after {
+  content: "";
+  flex-grow: 1;
+  height: 1px;
+  background: rgba(255,255,255,0.2);
+  margin-left: 8px;
+}
+
+.body-text {
+  font-size: 1rem;
+  line-height: 1.55;
+  color: #e2e8f0;
+}
+
+.callout {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 4px solid #CF142B;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 10px 0;
+}
+
+.callout-key {
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+
+.row:last-child { border-bottom: none; }
+
+.row-icon {
+  font-size: 1.6rem;
+  width: 38px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.row-content {
+  flex-grow: 1;
+}
+
+.row-title {
+  font-weight: 700;
+  color: #FFFFFF;
+  font-size: 1.02rem;
+}
+
+.row-desc {
+  font-size: 0.92rem;
+  color: #cbd5e1;
+  margin-top: 2px;
+}
+
+.tax-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tax-table th {
+  background: rgba(207, 20, 43, 0.25);
+  color: #FFFFFF;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 10px 16px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.tax-table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 0.95rem;
+}
+
+.tax-table tr:last-child td { border-bottom: none; }
+
+.tax-rate {
+  font-weight: 700;
+  color: #fcd34d;
+}
+
+.exempt-badge {
+  display: inline-block;
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: 6px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.taxed-badge {
+  display: inline-block;
+  background: rgba(207, 20, 43, 0.18);
+  color: #f87171;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: 6px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.fixed-total {
+  text-align: center;
+  margin: 20px 0;
+  padding: 18px;
+  background: linear-gradient(90deg, rgba(207, 20, 43, 0.12), rgba(0, 36, 125, 0.15));
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 10px;
+}
+
+.fixed-total-num {
+  font-family: 'Outfit', sans-serif;
+  font-size: 2.4rem;
+  font-weight: 900;
+  color: #FFFFFF;
+  letter-spacing: 2px;
+}
+
+.fixed-total-label {
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-top: 4px;
+}
+
+.footer {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="title">💰 UKPENCE GUIDE</div>
+  <div class="subtitle">The official currency of HMS Victory — a closed economy where every UKP is accounted for.</div>
+
+  <div class="fixed-total">
+    <div class="fixed-total-num">800,000 UKP</div>
+    <div class="fixed-total-label">Total Economy · Fixed Forever</div>
+  </div>
+
+  <div class="body-text" style="margin-top: 8px;">
+    UKPence is split between every user's wallet and the <span class="callout-key">Server Bank</span>.
+    When you earn from passive activity, the bank pays you. When you spend on the shop or place a bet,
+    your UKP goes back to the bank. No new UKP is ever created — the total always equals 800,000.
+  </div>
+
+  <div class="section-title">🟢 How to Earn</div>
+  <div class="row">
+    <div class="row-icon">💬</div>
+    <div class="row-content">
+      <div class="row-title">Chatting <span class="taxed-badge">scales with wealth</span></div>
+      <div class="row-desc">Chance of +1 UKP every 10 minutes of activity. The richer you are, the rarer the payout — drops to 0 once you hit 10,000 UKP.</div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="row-icon">🏆</div>
+    <div class="row-content">
+      <div class="row-title">Top Chatter Daily <span class="taxed-badge">taxed if rich</span></div>
+      <div class="row-desc">+50 UKP awarded daily to the 5 most active chatters of the previous day.</div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="row-icon">🎤</div>
+    <div class="row-content">
+      <div class="row-title">Stage Participation <span class="taxed-badge">taxed if rich</span></div>
+      <div class="row-desc">+1 UKP per full minute you spend in a Stage channel.</div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="row-icon">💎</div>
+    <div class="row-content">
+      <div class="row-title">Server Booster Daily <span class="taxed-badge">taxed if rich</span></div>
+      <div class="row-desc">+10 UKP per day for every member who boosts the server.</div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="row-icon">🎲</div>
+    <div class="row-content">
+      <div class="row-title">Prediction Wins <span class="exempt-badge">tax-free</span></div>
+      <div class="row-desc">Bet on outcomes via the prediction system. Winners split the pot — no tax applied, even at high balances.</div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="row-icon">⚔️</div>
+    <div class="row-content">
+      <div class="row-title">Wager Wins <span class="exempt-badge">tax-free</span></div>
+      <div class="row-desc">Challenge another user. Winner takes the full pot. Skill-based earnings are not taxed.</div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="row-icon">🎁</div>
+    <div class="row-content">
+      <div class="row-title">Welcome Bonus</div>
+      <div class="row-desc">+10 UKP the first time you participate in the economy.</div>
+    </div>
+  </div>
+
+  <div class="section-title">🔴 How to Spend</div>
+  <div class="row">
+    <div class="row-icon">🛒</div>
+    <div class="row-content">
+      <div class="row-title">/shop</div>
+      <div class="row-desc">Buy shutcoins, VIP cases, custom emojis/stickers, iceberg entries, the roast command, and more.</div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="row-icon">🎲</div>
+    <div class="row-content">
+      <div class="row-title">Predictions</div>
+      <div class="row-desc">Place bets on event outcomes. Up to 100,000 UKP per bet.</div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="row-icon">⚔️</div>
+    <div class="row-content">
+      <div class="row-title">/wager</div>
+      <div class="row-desc">Stake UKP against another user. A moderator resolves the outcome.</div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="row-icon">🏛️</div>
+    <div class="row-content">
+      <div class="row-title">Auctions</div>
+      <div class="row-desc">Bid on rare items posted by staff. Highest bid at end time wins.</div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="row-icon">💸</div>
+    <div class="row-content">
+      <div class="row-title">/pay</div>
+      <div class="row-desc">Direct peer-to-peer transfer to another user. No fee, no tax.</div>
+    </div>
+  </div>
+
+  <div class="section-title">⚖️ The Wealth Tax</div>
+  <div class="body-text" style="margin-bottom: 10px;">
+    A progressive tax on passive earnings once your balance reaches 10,000 UKP.
+    Works like income tax brackets — each slice of an earning is taxed at the rate of the bracket it lands in.
+    Tax goes back to the bank.
+  </div>
+  <table class="tax-table">
+    <thead>
+      <tr><th>Balance Bracket</th><th>Tax Rate</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Under 10,000 UKP</td><td class="tax-rate">0%</td></tr>
+      <tr><td>10,000 – 20,000 UKP</td><td class="tax-rate">25%</td></tr>
+      <tr><td>20,000 – 30,000 UKP</td><td class="tax-rate">50%</td></tr>
+      <tr><td>30,000 – 50,000 UKP</td><td class="tax-rate">75%</td></tr>
+      <tr><td>Over 50,000 UKP</td><td class="tax-rate">90%</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout" style="margin-top: 16px;">
+    <span class="callout-key">Exempt earnings:</span> prediction wins, wager wins, refunds, /pay transfers, and the welcome bonus are <em>never</em> taxed. The wealth tax only hits passive bank-funded rewards.
+  </div>
+
+  <div class="section-title">⏳ Inactivity Tax</div>
+  <div class="body-text">
+    Every Friday, users who haven't chatted in 60+ days lose <span class="callout-key">5% of their balance</span> back to the bank. Stay active to keep what you've earned.
+  </div>
+
+  <div class="section-title">🎖️ Notable Badges</div>
+  <div class="row">
+    <div class="row-icon">💰</div>
+    <div class="row-content">
+      <div class="row-title">High Roller</div>
+      <div class="row-desc">Awarded when you first reach a balance of 30,000 UKPence.</div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="row-icon">💸</div>
+    <div class="row-content">
+      <div class="row-title">Philanthropist</div>
+      <div class="row-desc">Give away a total of 10,000 UKPence via /pay.</div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="row-icon">📉</div>
+    <div class="row-content">
+      <div class="row-title">Bankrupt</div>
+      <div class="row-desc">Drop to exactly 0 UKPence after having held at least 1,000.</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    HMS Victory · Closed economy · Total UKP fixed at 800,000
+  </div>
+
+</div>
+</body>
+</html>

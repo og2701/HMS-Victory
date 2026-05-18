@@ -86,7 +86,7 @@ class Prediction:
             payout = int(stake * ratio)
             payouts[uid] = payout
             distributed_total += payout
-            add_bb(uid, payout, reason=f"Prediction win: {self.title[:50]}")
+            add_bb(uid, payout, reason=f"Prediction win: {self.title[:50]}", taxable=False)
             
             # Double or Nothing Check: Bet > 50% of balance
             initial_bal = self.initial_balances.get(uid, 0)
@@ -424,7 +424,7 @@ class PredAdminView(discord.ui.View):
         for side in (1, 2):
             for uid, amt in self.pred.bets.get(side, {}).items():
                 # Bets were banked when staked (remove_bb to_bank=True), so refund from bank is correct
-                add_bb(uid, amt, reason=f"Prediction refund (Draw): {self.pred.title[:50]}")
+                add_bb(uid, amt, reason=f"Prediction refund (Draw): {self.pred.title[:50]}", taxable=False)
         self.pred.locked = True
         self.pred.bets = {1: {}, 2: {}}
         try:

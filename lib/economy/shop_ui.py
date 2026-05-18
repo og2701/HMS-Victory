@@ -290,7 +290,7 @@ class PurchaseConfirmationView(View):
                 logging.error(f"Shop execute error for {self.item.name} by {interaction.user}: {e}", exc_info=True)
                 # Refund since execute() failed
                 if price > 0:
-                    add_bb(interaction.user.id, price, reason=f"Shop refund: {self.item.name} (execute error: {type(e).__name__})")
+                    add_bb(interaction.user.id, price, reason=f"Shop refund: {self.item.name} (execute error: {type(e).__name__})", taxable=False)
                 
                 error_msg = f"❌ An error occurred during purchase. Your UKPence has been refunded.\nError: {str(e)}"
                 if not interaction.response.is_done():
@@ -302,7 +302,7 @@ class PurchaseConfirmationView(View):
             if not success:
                 # Refund if backend purchase logic returned False
                 if price > 0:
-                    add_bb(interaction.user.id, price, reason=f"Shop refund: {self.item.name} (out of stock)")
+                    add_bb(interaction.user.id, price, reason=f"Shop refund: {self.item.name} (out of stock)", taxable=False)
                 
                 if not interaction.response.is_done():
                     await interaction.response.send_message(f"❌ Purchase failed: {result_message}", ephemeral=True)
@@ -535,7 +535,7 @@ class VIPCaseSpinView(View):
 
         elif outcome["type"] == "cashback":
             refund_amount = int(self.price * outcome["percent"] / 100)
-            add_bb(interaction.user.id, refund_amount, reason=f"VIP Case cashback ({outcome['percent']}%)")
+            add_bb(interaction.user.id, refund_amount, reason=f"VIP Case cashback ({outcome['percent']}%)", taxable=False)
             result_embed.description = f"{outcome['emoji']} {self.user.mention} got **{outcome['percent']}% cashback**!\n\n+{refund_amount} UKPence returned!"
 
         else:
@@ -785,7 +785,7 @@ class EmojiStickerApprovalView(View):
                         refund_amount = item.price
                         break
 
-                add_bb(self.approval_view.user.id, refund_amount, reason="Custom role refund (denied)")
+                add_bb(self.approval_view.user.id, refund_amount, reason="Custom role refund (denied)", taxable=False)
 
                 embed = discord.Embed(title="❌ Custom Emoji/Sticker - DENIED", description=f"Request has been denied and {refund_amount} UKPence has been refunded.", color=0xff0000)
                 embed.add_field(name="Denied by", value=modal_interaction.user.mention, inline=True)
