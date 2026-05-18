@@ -686,11 +686,13 @@ async def on_message(client, message):
         
         matched_trigger = None
         
-        if re.search(tung_pattern, content_normalized):
+        # Check standard layout and reversed layout (e.g. gnut -> tung)
+        content_reversed = content_normalized[::-1]
+        if re.search(tung_pattern, content_normalized) or re.search(tung_pattern, content_reversed):
             matched_trigger = "tung-variant"
-        elif re.search(triplet_pattern, content_normalized):
+        elif re.search(triplet_pattern, content_normalized) or re.search(triplet_pattern, content_reversed):
             matched_trigger = "triplet-variant"
-        elif re.search(sixty_seven_pattern, content_normalized):
+        elif re.search(sixty_seven_pattern, content_normalized) or re.search(sixty_seven_pattern, content_reversed):
             matched_trigger = "67-variant"
             
         if message.author.id == USERS.LANCA and not matched_trigger:
@@ -706,7 +708,7 @@ async def on_message(client, message):
                         messages=[
                             {
                                 "role": "system",
-                                "content": "You are a moderation assistant for a Discord server. Your task is to analyze if the user's message is a deliberate attempt to say, spell, or represent the forbidden words 'tung' (also 'tvng'), 'sixty seven' (also '67'), or 'triple t' / 'triplet' / 'three t' / 'ttt'. The user is highly creative and will use obfuscation, spacing, symbols, phonetic spellings, math notation, turned text, foreign languages, or other tricks to bypass filters. If the message is an attempt to say or represent any of these forbidden words, respond with EXACTLY 'yes'. Otherwise, respond with EXACTLY 'no'."
+                                "content": "You are a moderation assistant for a Discord server. Your task is to analyze if the user's message is a deliberate attempt to say, spell, or represent the forbidden words 'tung' (also 'tvng'), 'sixty seven' (also '67'), or 'triple t' / 'triplet' / 'three t' / 'ttt'. The user is highly creative and will use obfuscation, spacing, symbols, phonetic spellings, math notation, turned text, backwards/reversed text, foreign languages, or other tricks to bypass filters. If the message is an attempt to say or represent any of these forbidden words, respond with EXACTLY 'yes'. Otherwise, respond with EXACTLY 'no'."
                             },
                             {
                                 "role": "user",
