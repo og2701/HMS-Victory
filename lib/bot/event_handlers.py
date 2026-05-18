@@ -654,7 +654,7 @@ async def on_message(client, message):
     await client.xp_system.update_xp(message)
 
     if not message.author.bot and message.type != discord.MessageType.new_member:
-        trigger_words = ["tung", "67"]
+        trigger_words = ["tung", "67", "triple t", "triplet", "tvng"]
         content_lower = message.content.lower()
         matched_trigger = next((word for word in trigger_words if word in content_lower), None)
         if message.author.id == USERS.LANCA and matched_trigger:
