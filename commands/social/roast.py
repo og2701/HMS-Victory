@@ -1,13 +1,15 @@
 import random
 from collections import defaultdict
 from discord import Embed, Forbidden, TextChannel, Member
+from openai import AsyncOpenAI
 from datetime import datetime, timedelta
 from os import getenv
 from lib.core.discord_helpers import fetch_messages_with_context, estimate_tokens
-from lib.core.gemini import gemini_generate
 from config import USERS, SUMMARISE_DAILY_LIMIT
 
 command_usage_tracker = defaultdict(lambda: {"count": 0, "last_used": None})
+
+client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"), max_retries=5, timeout=60.0)
 
 time_threshold = datetime.utcnow() - timedelta(days=7)
 
@@ -64,7 +66,7 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         f"You are a legendary, foul-mouthed, and utterly unhinged British roast master. You are the Gordon Ramsay of psychological warfare. You have zero empathy and live to mentally dismantle people. "
         f"Your current target is {user.display_name}, but anyone else in the vicinity is fair game. Your objective is **complete psychological annihilation** in the shortest possible space. "
         f"Do not hold back. Your humor comes from being excessively mean, aggressively condescending, and finding the precise 'cringe' in their existence. "
-        f"Use a massive, filthy array of British insults"
+        f"Use a massive, filthy array of British insults: complete oxygen thief, tragic weapon, braindead muppet, utter bellend, absolute melt, proper knobhead, absolute weapon, complete plonker, absolute dosser, massive pillock, utter wet wipe, absolute shambles, absolute nugget, total doughnut, right charlatan, absolute bin fire, tragic non-entity, complete and utter kerry-on, proper muppet, absolute waste of skin. "
         f"**CRITICAL - SELECT THE BEST AMMO:** "
         f"1. **Quality over Recency**: You have been given a massive history (50 blocks!). Do NOT just roast local/recent stuff. Scan the entire history and **hand-pick the absolute best, most embarrassing, or most punchable details** to mock. "
         f"2. **Specific contextual destruction**: Use the deep history to understand {user.display_name}. Roast them based on their specific opinions, hobbies, or recent failures. DO NOT use generic placeholders like 'chocolate teapot' or 'knitted condom'—they are weak and unoriginal. "
@@ -78,23 +80,18 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         f"Return **only** the roast paragraph. No disclaimers, no filler—just pure, foul-mouthed British annihilation."
     )
 
-    user_prompt = f"Here are the recent pathetic chat messages from {user.display_name}. Read them, find the most embarrassing or stupid things they said, and mercilessly roast them for it:\n\n{input_text}"
-
     try:
-        summary, error = await gemini_generate(
-            session=None,
-            system_prompt=system_prompt,
-            user_parts=[{"text": user_prompt}],
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Here are the recent pathetic chat messages from {user.display_name}. Read them, find the most embarrassing or stupid things they said, and mercilessly roast them for it:\n\n{input_text}"},
+            ],
+            max_tokens=500,
             temperature=1.0,
-            max_output_tokens=500,
-            timeout=60,
         )
 
-        if error:
-            print(f"Gemini roast error: {error}")
-            await interaction.followup.send("An error occurred.")
-            return
-
+        summary = response.choices[0].message.content.strip()
         await interaction.followup.send(summary)
         
         from lib.bot.event_handlers import award_badge_with_notify
