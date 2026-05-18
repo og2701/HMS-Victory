@@ -654,13 +654,19 @@ async def on_message(client, message):
     await client.xp_system.update_xp(message)
 
     if not message.author.bot and message.type != discord.MessageType.new_member:
+        if "tung" in message.content.lower():
+            logger.info(f"User {message.author} (ID: {message.author.id}) said tung. Expected LANCA ID: {USERS.LANCA}")
         if message.author.id == USERS.LANCA and "tung" in message.content.lower():
             try:
                 duration = timedelta(minutes=5)
+                logger.info(f"Attempting to timeout {message.author} for saying tung")
                 await message.author.timeout(duration, reason="Automated shut for saying tung")
                 await message.channel.send(f"{message.author.mention} has been automatically shut for 5 minutes for saying the forbidden word.")
             except discord.Forbidden:
-                pass
+                logger.warning(f"Forbidden to timeout {message.author}")
+                await message.channel.send(f"I tried to shut {message.author.mention} for saying tung, but I don't have permission! They are too powerful.")
+            except Exception as e:
+                logger.error(f"Error timing out {message.author}: {e}")
 
         ensure_bb(message.author.id)
         try:
