@@ -656,9 +656,9 @@ async def on_message(client, message):
     if not message.author.bot and message.type != discord.MessageType.new_member:
         if message.author.id == 1398652914737741956 and "tung" in message.content.lower():
             try:
-                duration = timedelta(minutes=60)
+                duration = timedelta(minutes=5)
                 await message.author.timeout(duration, reason="Automated shut for saying tung")
-                await message.channel.send(f"{message.author.mention} has been automatically shut for saying the forbidden word.")
+                await message.channel.send(f"{message.author.mention} has been automatically shut for 5 minutes for saying the forbidden word.")
             except discord.Forbidden:
                 pass
 
