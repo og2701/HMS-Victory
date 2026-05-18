@@ -654,20 +654,23 @@ async def on_message(client, message):
     await client.xp_system.update_xp(message)
 
     if not message.author.bot and message.type != discord.MessageType.new_member:
-        if message.author.id == USERS.LANCA and "tung" in message.content.lower():
+        trigger_words = ["tung", "67"]
+        content_lower = message.content.lower()
+        matched_trigger = next((word for word in trigger_words if word in content_lower), None)
+        if message.author.id == USERS.LANCA and matched_trigger:
             try:
                 duration = timedelta(minutes=5)
-                reason = "Automated shut for saying tung"
+                reason = f"Automated shut for saying {matched_trigger}"
                 _record_mute_trigger(client, message.author.id, message)
                 await message.author.timeout(discord.utils.utcnow() + duration, reason=reason)
                 sticker_message = await message.reply(stickers=[discord.Object(id=1298758779428536361)])
                 sticker_messages[message.id] = (sticker_message.id, client.user.id)
                 save_shut_count(message.author.id)
-                logger.info(f"User {message.author} timed out for {duration} for saying tung.")
+                logger.info(f"User {message.author} timed out for {duration} for saying {matched_trigger}.")
             except discord.Forbidden:
-                logger.warning(f"Forbidden to timeout {message.author} for saying tung")
+                logger.warning(f"Forbidden to timeout {message.author} for saying {matched_trigger}")
             except Exception as e:
-                logger.error(f"Error timing out {message.author} for saying tung: {e}")
+                logger.error(f"Error timing out {message.author} for saying {matched_trigger}: {e}")
 
         ensure_bb(message.author.id)
         try:
