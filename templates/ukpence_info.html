@@ -1,397 +1,960 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<script src="https://cdn.tailwindcss.com"></script>
+<meta charset="utf-8" />
+<title>UKPence Guide — HMS Victory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;800;900&display=swap');
+  :root {
+    --paper:       #efe6d0;
+    --paper-2:     #e8dec3;
+    --paper-edge:  #d8cba8;
+    --ink:         #0c1a33;
+    --ink-2:       #1b2a48;
+    --ink-soft:    #46557a;
+    --brass:       #b07f2a;
+    --brass-2:     #d6a44a;
+    --brass-soft:  #c9a661;
+    --crimson:     #8b2a26;
+    --crimson-2:   #b53a36;
+    --forest:      #2c5a3c;
+    --forest-2:    #3d7a52;
+    --rule:        rgba(12,26,51,0.22);
+    --rule-soft:   rgba(12,26,51,0.12);
+  }
 
-body {
-  margin: 0;
-  padding: 40px;
-  background: #00247D;
-  font-family: 'Inter', sans-serif;
-  color: #f8fafc;
-  display: inline-flex;
-  justify-content: center;
-}
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
 
-.container {
-  background: rgba(0, 0, 0, 0.9);
-  border: 4px solid #CF142B;
-  border-radius: 16px;
-  padding: 56px 64px;
-  width: 1400px;
-  box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
-}
+  body {
+    background: #1a1208;
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
 
-.title {
-  font-family: 'Outfit', sans-serif;
-  font-size: 3.8rem;
-  font-weight: 900;
-  text-align: center;
-  margin: 0 0 8px 0;
-  letter-spacing: 2px;
-  color: #FFFFFF;
-}
+  .page {
+    width: 1500px;
+    margin: 0 auto;
+    background: var(--paper);
+    background-image:
+      radial-gradient(1200px 600px at 50% -100px, rgba(176,127,42,0.10), transparent 60%),
+      radial-gradient(900px 500px at 50% 100%, rgba(12,26,51,0.06), transparent 60%);
+    position: relative;
+    overflow: hidden;
+  }
 
-.subtitle {
-  text-align: center;
-  font-size: 1.25rem;
-  color: #cbd5e1;
-  margin-bottom: 40px;
-  padding-bottom: 28px;
-  border-bottom: 2px solid rgba(255,255,255,0.15);
-}
+  /* Paper grain */
+  .page::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(12,26,51,0.018) 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(90deg, rgba(176,127,42,0.025) 0 1px, transparent 1px 4px);
+    pointer-events: none;
+    mix-blend-mode: multiply;
+  }
 
-.section-title {
-  font-family: 'Outfit', sans-serif;
-  font-size: 1.75rem;
-  font-weight: 800;
-  color: #FFFFFF;
-  margin: 36px 0 16px 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-}
+  /* Decorative frame */
+  .page::after {
+    content: "";
+    position: absolute;
+    inset: 28px;
+    border: 1px solid rgba(12,26,51,0.18);
+    pointer-events: none;
+  }
+  .frame-inner {
+    position: absolute;
+    inset: 36px;
+    border: 1px solid rgba(176,127,42,0.45);
+    pointer-events: none;
+    z-index: 1;
+  }
 
-.section-title::after {
-  content: "";
-  flex-grow: 1;
-  height: 1px;
-  background: rgba(255,255,255,0.2);
-  margin-left: 8px;
-}
+  .container {
+    position: relative;
+    z-index: 2;
+    padding: 90px 110px 80px;
+  }
 
-.body-text {
-  font-size: 1.2rem;
-  line-height: 1.55;
-  color: #e2e8f0;
-}
+  /* ===== Masthead ===== */
+  .masthead {
+    text-align: center;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 36px;
+    margin-bottom: 56px;
+    position: relative;
+  }
+  .masthead::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: -7px;
+    height: 1px;
+    background: var(--ink);
+  }
 
-.callout {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-left: 4px solid #CF142B;
-  border-radius: 8px;
-  padding: 16px 20px;
-  margin: 10px 0;
-}
+  .crest {
+    display: inline-flex;
+    align-items: center;
+    gap: 18px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    margin-bottom: 28px;
+  }
+  .crest .pip {
+    width: 6px; height: 6px;
+    background: var(--brass);
+    transform: rotate(45deg);
+  }
+  .crest .bar {
+    width: 60px; height: 1px;
+    background: var(--ink-2);
+  }
 
-.callout-key {
-  font-weight: 700;
-  color: #FFFFFF;
-}
+  h1.title {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 600;
+    font-size: 168px;
+    line-height: 0.92;
+    letter-spacing: -0.015em;
+    margin: 0;
+    color: var(--ink);
+  }
+  h1.title em {
+    font-style: italic;
+    font-weight: 500;
+    color: var(--brass);
+  }
+  .subtitle {
+    font-family: "Cormorant Garamond", serif;
+    font-style: italic;
+    font-size: 32px;
+    color: var(--ink-soft);
+    margin: 28px auto 0;
+    max-width: 980px;
+    line-height: 1.35;
+  }
 
-.row {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
-}
+  .meta-row { display: none; }
 
-.row:last-child { border-bottom: none; }
+  /* ===== Hero ===== */
+  .hero {
+    margin: 0 -10px 64px;
+    padding: 56px 60px 56px;
+    background: var(--ink);
+    color: var(--paper);
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: "";
+    position: absolute;
+    inset: 14px;
+    border: 1px solid rgba(214,164,74,0.45);
+    pointer-events: none;
+  }
+  .hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      repeating-linear-gradient(45deg, rgba(214,164,74,0.04) 0 2px, transparent 2px 8px);
+    pointer-events: none;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 56px;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+  }
+  .hero-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 15px;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    color: var(--brass-2);
+    margin-bottom: 26px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .hero-label::after {
+    content: "";
+    height: 1px;
+    flex: 1;
+    background: rgba(214,164,74,0.4);
+  }
+  .hero-number {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 600;
+    font-size: 232px;
+    line-height: 0.88;
+    letter-spacing: -0.025em;
+    color: var(--paper);
+    white-space: nowrap;
+  }
+  .hero-number .unit {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 500;
+    font-size: 58px;
+    letter-spacing: 0.05em;
+    color: var(--brass-2);
+    margin-left: 14px;
+    vertical-align: 0.45em;
+  }
+  .hero-caption {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 19px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(239,230,208,0.85);
+    margin-top: 30px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .hero-caption .dot { width: 8px; height: 8px; background: var(--brass-2); border-radius: 50%; }
 
-.row-icon {
-  font-size: 2rem;
-  width: 48px;
-  flex-shrink: 0;
-  text-align: center;
-}
+  .intro {
+    font-family: "Cormorant Garamond", serif;
+    font-size: 28px;
+    line-height: 1.45;
+    color: rgba(239,230,208,0.95);
+    text-wrap: pretty;
+  }
+  .intro b {
+    color: var(--brass-2);
+    font-weight: 600;
+  }
 
-.row-content {
-  flex-grow: 1;
-}
+  /* Coin diagram */
+  .coin {
+    margin-top: 30px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    color: rgba(239,230,208,0.7);
+  }
+  .coin .bar2 {
+    flex: 1;
+    height: 10px;
+    display: flex;
+    border: 1px solid rgba(214,164,74,0.5);
+  }
+  .coin .bar2 .a {
+    background: var(--brass-2);
+    width: 62%;
+  }
+  .coin .bar2 .b {
+    background: rgba(214,164,74,0.18);
+    width: 38%;
+  }
 
-.row-title {
-  font-weight: 700;
-  color: #FFFFFF;
-  font-size: 1.25rem;
-}
+  /* ===== Section headers ===== */
+  .section {
+    margin-top: 76px;
+    position: relative;
+  }
+  .sec-head {
+    display: block;
+    border-bottom: 1px solid var(--ink);
+    padding-bottom: 22px;
+    margin-bottom: 44px;
+  }
+  .sec-num { display: none; }
+  .sec-kicker { display: none; }
+  .sec-title {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 600;
+    font-size: 88px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    margin: 0;
+    color: var(--ink);
+  }
+  .sec-title em { font-style: italic; color: var(--brass); font-weight: 500; }
 
-.row-desc {
-  font-size: 1.1rem;
-  color: #cbd5e1;
-  margin-top: 4px;
-  line-height: 1.5;
-}
 
-.tax-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 8px;
-  background: rgba(255,255,255,0.03);
-  border-radius: 8px;
-  overflow: hidden;
-}
+  /* ===== Earn / Spend list ===== */
+  .ledger {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    border-top: 1px solid var(--rule-soft);
+  }
+  .ledger.single { grid-template-columns: 1fr; }
+  .entry {
+    padding: 26px 28px 26px 0;
+    border-bottom: 1px solid var(--rule-soft);
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 18px;
+    align-items: start;
+  }
+  .entry:nth-child(odd) { padding-right: 36px; border-right: 1px solid var(--rule-soft); }
+  .entry:nth-child(even) { padding-left: 36px; }
+  .ledger.single .entry { padding: 26px 0; border-right: 0; padding-left: 0; padding-right: 0; }
+  .entry-num {
+    font-family: "Cormorant Garamond", serif;
+    font-style: italic;
+    font-size: 52px;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--brass);
+    text-align: right;
+  }
+  .entry-body { min-width: 0; }
+  .entry-title-row {
+    display: block;
+    margin-bottom: 10px;
+    line-height: 1.15;
+  }
+  .entry-title {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 600;
+    font-size: 36px;
+    line-height: 1.15;
+    color: var(--ink);
+    display: inline;
+    margin-right: 12px;
+  }
+  .entry-title.mono {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    padding: 5px 11px 4px;
+    border: 1px solid currentColor;
+    line-height: 1;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    vertical-align: 6px;
+  }
+  .tag::before {
+    content: "";
+    width: 5px; height: 5px;
+    background: currentColor;
+    border-radius: 50%;
+  }
+  .tag.tax-free   { color: var(--forest); background: rgba(45,90,60,0.08); }
+  .tag.taxed      { color: var(--crimson); background: rgba(139,42,38,0.08); }
+  .tag.scales     { color: var(--ink-2); background: rgba(12,26,51,0.06); }
+  .entry-desc {
+    font-size: 20px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    text-wrap: pretty;
+  }
 
-.tax-table th {
-  background: rgba(207, 20, 43, 0.25);
-  color: #FFFFFF;
-  font-family: 'Outfit', sans-serif;
-  font-size: 1rem;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  padding: 14px 20px;
-  text-align: left;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
-}
+  /* ===== Tax section ===== */
+  .tax-wrap {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 60px;
+    align-items: start;
+  }
+  .tax-intro {
+    font-family: "Cormorant Garamond", serif;
+    font-size: 30px;
+    line-height: 1.4;
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+  .tax-intro b { color: var(--crimson); font-weight: 600; }
 
-.tax-table td {
-  padding: 14px 20px;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-  font-size: 1.15rem;
-}
+  .bracket-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: "IBM Plex Mono", monospace;
+  }
+  .bracket-table thead th {
+    font-size: 14px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    text-align: left;
+    padding: 0 0 16px;
+    border-bottom: 1px solid var(--ink);
+    font-weight: 500;
+  }
+  .bracket-table thead th:last-child { text-align: right; }
+  .bracket-table tbody td {
+    padding: 22px 0;
+    border-bottom: 1px solid var(--rule-soft);
+    font-size: 20px;
+    vertical-align: middle;
+  }
+  .bracket-table .br-label {
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .bracket-table .br-rate {
+    text-align: right;
+    font-weight: 600;
+    font-size: 30px;
+    color: var(--ink);
+    width: 90px;
+    white-space: nowrap;
+  }
+  .bracket-table .br-bar {
+    width: 220px;
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .bar-track {
+    height: 18px;
+    background: rgba(12,26,51,0.07);
+    position: relative;
+    overflow: hidden;
+  }
+  .bar-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--brass);
+  }
+  .bracket-table tbody tr:nth-child(1) .bar-fill { background: var(--forest-2); width: 0%; }
+  .bracket-table tbody tr:nth-child(2) .bar-fill { background: var(--brass-soft); width: 25%; }
+  .bracket-table tbody tr:nth-child(3) .bar-fill { background: var(--brass); width: 50%; }
+  .bracket-table tbody tr:nth-child(4) .bar-fill { background: var(--crimson-2); width: 75%; }
+  .bracket-table tbody tr:nth-child(5) .bar-fill { background: var(--crimson); width: 90%; }
+  .bracket-table tbody tr:nth-child(1) .br-rate { color: var(--forest); }
+  .bracket-table tbody tr:nth-child(5) .br-rate { color: var(--crimson); }
 
-.tax-table tr:last-child td { border-bottom: none; }
+  /* Callout */
+  .callout {
+    margin-top: 48px;
+    padding: 32px 36px;
+    background: var(--paper-2);
+    border-left: 5px solid var(--brass);
+  }
+  .callout-mark { display: none; }
+  .callout-text {
+    font-family: "Cormorant Garamond", serif;
+    font-size: 24px;
+    line-height: 1.45;
+    color: var(--ink-2);
+    text-wrap: pretty;
+  }
+  .callout-text b { color: var(--ink); font-weight: 600; }
 
-.tax-rate {
-  font-weight: 700;
-  color: #fcd34d;
-}
+  /* ===== Inactivity ===== */
+  .inactivity {
+    margin-top: 0;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 42px 56px;
+    position: relative;
+    overflow: hidden;
+    margin-left: -10px;
+    margin-right: -10px;
+  }
+  .inactivity::before {
+    content: "";
+    position: absolute;
+    inset: 12px;
+    border: 1px solid rgba(214,164,74,0.35);
+    pointer-events: none;
+  }
+  .inactivity-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 48px;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+  }
+  .inactivity-num {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 500;
+    font-size: 180px;
+    line-height: 0.9;
+    color: var(--brass-2);
+    letter-spacing: -0.02em;
+  }
+  .inactivity-num .pct {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 72px;
+    vertical-align: 0.45em;
+    margin-left: 4px;
+  }
+  .inactivity-text {
+    font-family: "Cormorant Garamond", serif;
+    font-size: 32px;
+    line-height: 1.4;
+    color: rgba(239,230,208,0.95);
+    text-wrap: pretty;
+  }
+  .inactivity-text b { color: var(--paper); font-weight: 600; font-style: italic; }
+  .inactivity-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 14px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--brass-2);
+    margin-bottom: 16px;
+  }
 
-.exempt-badge {
-  display: inline-block;
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 4px;
-  margin-left: 6px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-}
+  /* ===== Badges ===== */
+  .badges {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px;
+  }
+  .badge {
+    border: 1px solid var(--ink);
+    padding: 32px 28px 30px;
+    background: var(--paper);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .badge::before {
+    content: "";
+    position: absolute;
+    inset: 6px;
+    border: 1px solid rgba(12,26,51,0.18);
+    pointer-events: none;
+  }
+  .badge-medal {
+    width: 72px; height: 72px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .badge-medal svg { display: block; }
+  .badge-name {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 600;
+    font-size: 40px;
+    line-height: 1;
+    color: var(--ink);
+  }
+  .badge-rank { display: none; }
+  .badge-desc {
+    font-size: 18px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    text-wrap: pretty;
+  }
 
-.taxed-badge {
-  display: inline-block;
-  background: rgba(207, 20, 43, 0.18);
-  color: #f87171;
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 4px;
-  margin-left: 6px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-}
+  /* ===== Footer ===== */
+  .colophon {
+    margin-top: 86px;
+    padding-top: 32px;
+    border-top: 1px solid var(--ink);
+    text-align: center;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 15px;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .colophon .seal {
+    width: 38px; height: 38px;
+    border: 1px solid var(--brass);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--brass);
+    font-family: "Cormorant Garamond", serif;
+    font-style: italic;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .colophon-mid {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
 
-.fixed-total {
-  text-align: center;
-  margin: 20px 0;
-  padding: 18px;
-  background: linear-gradient(90deg, rgba(207, 20, 43, 0.12), rgba(0, 36, 125, 0.15));
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 10px;
-}
+  /* Utility */
+  .em-num { font-family: "IBM Plex Mono", monospace; font-weight: 600; }
+  .figure-rule {
+    height: 6px;
+    background-image: linear-gradient(to right, var(--brass) 0 12px, transparent 12px 18px);
+    background-size: 18px 6px;
+    margin: 22px 0 18px;
+    opacity: 0.5;
+  }
 
-.fixed-total-num {
-  font-family: 'Outfit', sans-serif;
-  font-size: 3rem;
-  font-weight: 900;
-  color: #FFFFFF;
-  letter-spacing: 2px;
-}
-
-.fixed-total-label {
-  font-size: 1rem;
-  color: #cbd5e1;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  margin-top: 6px;
-}
-
-.footer {
-  text-align: center;
-  font-size: 0.8rem;
-  color: #94a3b8;
-  margin-top: 32px;
-  padding-top: 20px;
-  border-top: 1px solid rgba(255,255,255,0.1);
-}
-
-img.emoji {
-  height: 1em;
-  width: 1em;
-  margin: 0 0.05em 0 0.1em;
-  vertical-align: -0.15em;
-  display: inline-block;
-}
-
-.title img.emoji { height: 0.9em; width: 0.9em; }
-.section-title img.emoji { height: 1.1em; width: 1.1em; }
-.row-icon img.emoji { height: 1.6rem; width: 1.6rem; }
 </style>
 </head>
 <body>
-<div class="container">
+<div class="page">
+  <div class="frame-inner"></div>
+  <div class="container">
 
-  <div class="title">💰 UKPENCE GUIDE</div>
-  <div class="subtitle">The official currency of HMS Victory — a closed economy where every UKP is accounted for.</div>
+    <!-- ============== MASTHEAD ============== -->
+    <header class="masthead">
+      <div class="crest">
+        <span class="bar"></span>
+        <span>HMS Victory · Treasury</span>
+        <span class="bar"></span>
+      </div>
+      <h1 class="title">UK<em>Pence</em> Guide</h1>
+      <p class="subtitle">The official currency of HMS Victory — a closed economy where every UKP is accounted for.</p>
+      <div class="meta-row">
+        <span>Filed · Treasury Bench</span>
+        <span>Issued to all crew</span>
+        <span>Index № UKP–001</span>
+      </div>
+    </header>
 
-  <div class="fixed-total">
-    <div class="fixed-total-num">800,000 UKP</div>
-    <div class="fixed-total-label">Total Economy · Fixed Forever</div>
-  </div>
+    <!-- ============== HERO ============== -->
+    <section class="hero">
+      <div class="hero-grid">
+        <div>
+          <div class="hero-label">Total Reserves</div>
+          <div class="hero-number">800,000<span class="unit">UKP</span></div>
+          <div class="hero-caption">
+            <span class="dot"></span>
+            <span>Total Economy · Fixed Forever</span>
+          </div>
+        </div>
+        <div>
+          <p class="intro">
+            UKPence is split between every user's wallet and the <b>Server Bank</b>. When you earn from passive activity, the bank pays you. When you spend on the shop or place a bet, your UKP goes back to the bank. <b>No new UKP is ever created</b> — the total always equals 800,000.
+          </p>
+        </div>
+      </div>
+    </section>
 
-  <div class="body-text" style="margin-top: 8px;">
-    UKPence is split between every user's wallet and the <span class="callout-key">Server Bank</span>.
-    When you earn from passive activity, the bank pays you. When you spend on the shop or place a bet,
-    your UKP goes back to the bank. No new UKP is ever created — the total always equals 800,000.
-  </div>
+    <!-- ============== HOW TO EARN ============== -->
+    <section class="section">
+      <div class="sec-head">
+        <div class="sec-num">§ 01 <span class="slash">/</span> VII</div>
+        <h2 class="sec-title">How to <em>Earn</em></h2>
+        <div class="sec-kicker">Income · Bank-funded &amp; peer</div>
+      </div>
 
-  <div class="section-title">🟢 How to Earn</div>
-  <div class="row">
-    <div class="row-icon">💬</div>
-    <div class="row-content">
-      <div class="row-title">Chatting <span class="taxed-badge">scales with wealth</span></div>
-      <div class="row-desc">Chance of +1 UKP every 10 minutes of activity. The richer you are, the rarer the payout — drops to 0 once you hit 10,000 UKP.</div>
-    </div>
-  </div>
-  <div class="row">
-    <div class="row-icon">🏆</div>
-    <div class="row-content">
-      <div class="row-title">Top Chatter Daily <span class="taxed-badge">taxed if rich</span></div>
-      <div class="row-desc">+50 UKP awarded daily to the 5 most active chatters of the previous day.</div>
-    </div>
-  </div>
-  <div class="row">
-    <div class="row-icon">🎤</div>
-    <div class="row-content">
-      <div class="row-title">Stage Participation <span class="taxed-badge">taxed if rich</span></div>
-      <div class="row-desc">+1 UKP per full minute you spend in a Stage channel.</div>
-    </div>
-  </div>
-  <div class="row">
-    <div class="row-icon">💎</div>
-    <div class="row-content">
-      <div class="row-title">Server Booster Daily <span class="taxed-badge">taxed if rich</span></div>
-      <div class="row-desc">+10 UKP per day for every member who boosts the server.</div>
-    </div>
-  </div>
-  <div class="row">
-    <div class="row-icon">🎲</div>
-    <div class="row-content">
-      <div class="row-title">Prediction Wins <span class="exempt-badge">tax-free</span></div>
-      <div class="row-desc">Bet on outcomes via the prediction system. Winners split the pot — no tax applied, even at high balances.</div>
-    </div>
-  </div>
-  <div class="row">
-    <div class="row-icon">⚔️</div>
-    <div class="row-content">
-      <div class="row-title">Wager Wins <span class="exempt-badge">tax-free</span></div>
-      <div class="row-desc">Challenge another user. Winner takes the full pot. Skill-based earnings are not taxed.</div>
-    </div>
-  </div>
-  <div class="row">
-    <div class="row-icon">🎁</div>
-    <div class="row-content">
-      <div class="row-title">Welcome Bonus</div>
-      <div class="row-desc">+10 UKP the first time you participate in the economy.</div>
-    </div>
-  </div>
+      <div class="ledger">
+        <div class="entry">
+          <div class="entry-num">i.</div>
+          <div class="entry-body">
+            <div class="entry-title-row">
+              <span class="entry-title">Chatting</span>
+              <span class="tag scales">Scales with wealth</span>
+            </div>
+            <p class="entry-desc">Chance of <span class="em-num">+1 UKP</span> every 10 minutes of activity. The richer you are, the rarer the payout — drops to 0 once you hit 10,000 UKP.</p>
+          </div>
+        </div>
 
-  <div class="section-title">🔴 How to Spend</div>
-  <div class="row">
-    <div class="row-icon">🛒</div>
-    <div class="row-content">
-      <div class="row-title">/shop</div>
-      <div class="row-desc">Buy shutcoins, VIP cases, custom emojis/stickers, iceberg entries, the roast command, and more.</div>
-    </div>
-  </div>
-  <div class="row">
-    <div class="row-icon">🎲</div>
-    <div class="row-content">
-      <div class="row-title">Predictions</div>
-      <div class="row-desc">Place bets on event outcomes. Up to 100,000 UKP per bet.</div>
-    </div>
-  </div>
-  <div class="row">
-    <div class="row-icon">⚔️</div>
-    <div class="row-content">
-      <div class="row-title">/wager</div>
-      <div class="row-desc">Stake UKP against another user. A moderator resolves the outcome.</div>
-    </div>
-  </div>
-  <div class="row">
-    <div class="row-icon">🏛️</div>
-    <div class="row-content">
-      <div class="row-title">Auctions</div>
-      <div class="row-desc">Bid on rare items posted by staff. Highest bid at end time wins.</div>
-    </div>
-  </div>
-  <div class="row">
-    <div class="row-icon">💸</div>
-    <div class="row-content">
-      <div class="row-title">/pay</div>
-      <div class="row-desc">Direct peer-to-peer transfer to another user. No fee, no tax.</div>
-    </div>
-  </div>
+        <div class="entry">
+          <div class="entry-num">ii.</div>
+          <div class="entry-body">
+            <div class="entry-title-row">
+              <span class="entry-title">Top Chatter Daily</span>
+              <span class="tag taxed">Taxed if rich</span>
+            </div>
+            <p class="entry-desc"><span class="em-num">+50 UKP</span> awarded daily to the 5 most active chatters of the previous day.</p>
+          </div>
+        </div>
 
-  <div class="section-title">⚖️ The Wealth Tax</div>
-  <div class="body-text" style="margin-bottom: 10px;">
-    A progressive tax on passive earnings once your balance reaches 10,000 UKP.
-    Works like income tax brackets — each slice of an earning is taxed at the rate of the bracket it lands in.
-    Tax goes back to the bank.
-  </div>
-  <table class="tax-table">
-    <thead>
-      <tr><th>Balance Bracket</th><th>Tax Rate</th></tr>
-    </thead>
-    <tbody>
-      <tr><td>Under 10,000 UKP</td><td class="tax-rate">0%</td></tr>
-      <tr><td>10,000 – 20,000 UKP</td><td class="tax-rate">25%</td></tr>
-      <tr><td>20,000 – 30,000 UKP</td><td class="tax-rate">50%</td></tr>
-      <tr><td>30,000 – 50,000 UKP</td><td class="tax-rate">75%</td></tr>
-      <tr><td>Over 50,000 UKP</td><td class="tax-rate">90%</td></tr>
-    </tbody>
-  </table>
+        <div class="entry">
+          <div class="entry-num">iii.</div>
+          <div class="entry-body">
+            <div class="entry-title-row">
+              <span class="entry-title">Stage Participation</span>
+              <span class="tag taxed">Taxed if rich</span>
+            </div>
+            <p class="entry-desc"><span class="em-num">+1 UKP</span> per full minute you spend in a Stage channel.</p>
+          </div>
+        </div>
 
-  <div class="callout" style="margin-top: 16px;">
-    <span class="callout-key">Exempt earnings:</span> prediction wins, wager wins, refunds, /pay transfers, and the welcome bonus are <em>never</em> taxed. The wealth tax only hits passive bank-funded rewards.
-  </div>
+        <div class="entry">
+          <div class="entry-num">iv.</div>
+          <div class="entry-body">
+            <div class="entry-title-row">
+              <span class="entry-title">Server Booster Daily</span>
+              <span class="tag taxed">Taxed if rich</span>
+            </div>
+            <p class="entry-desc"><span class="em-num">+10 UKP</span> per day for every member who boosts the server.</p>
+          </div>
+        </div>
 
-  <div class="section-title">⏳ Inactivity Tax</div>
-  <div class="body-text">
-    Every Friday, users who haven't chatted in 60+ days lose <span class="callout-key">5% of their balance</span> back to the bank. Stay active to keep what you've earned.
-  </div>
+        <div class="entry">
+          <div class="entry-num">v.</div>
+          <div class="entry-body">
+            <div class="entry-title-row">
+              <span class="entry-title">Prediction Wins</span>
+              <span class="tag tax-free">Tax-free</span>
+            </div>
+            <p class="entry-desc">Bet on outcomes via the prediction system. Winners split the pot — no tax applied, even at high balances.</p>
+          </div>
+        </div>
 
-  <div class="section-title">🎖️ Notable Badges</div>
-  <div class="row">
-    <div class="row-icon">💰</div>
-    <div class="row-content">
-      <div class="row-title">High Roller</div>
-      <div class="row-desc">Awarded when you first reach a balance of 30,000 UKPence.</div>
-    </div>
-  </div>
-  <div class="row">
-    <div class="row-icon">💸</div>
-    <div class="row-content">
-      <div class="row-title">Philanthropist</div>
-      <div class="row-desc">Give away a total of 10,000 UKPence via /pay.</div>
-    </div>
-  </div>
-  <div class="row">
-    <div class="row-icon">📉</div>
-    <div class="row-content">
-      <div class="row-title">Bankrupt</div>
-      <div class="row-desc">Drop to exactly 0 UKPence after having held at least 1,000.</div>
-    </div>
-  </div>
+        <div class="entry">
+          <div class="entry-num">vi.</div>
+          <div class="entry-body">
+            <div class="entry-title-row">
+              <span class="entry-title">Wager Wins</span>
+              <span class="tag tax-free">Tax-free</span>
+            </div>
+            <p class="entry-desc">Challenge another user. Winner takes the full pot. Skill-based earnings are not taxed.</p>
+          </div>
+        </div>
 
-  <div class="footer">
-    HMS Victory · Closed economy · Total UKP fixed at 800,000
-  </div>
+        <div class="entry">
+          <div class="entry-num">vii.</div>
+          <div class="entry-body">
+            <div class="entry-title-row">
+              <span class="entry-title">Welcome Bonus</span>
+            </div>
+            <p class="entry-desc"><span class="em-num">+10 UKP</span> the first time you participate in the economy.</p>
+          </div>
+        </div>
 
+        <!-- filler removed -->
+      </div>
+    </section>
+
+    <!-- ============== HOW TO SPEND ============== -->
+    <section class="section">
+      <div class="sec-head">
+        <div class="sec-num">§ 02 <span class="slash">/</span> V</div>
+        <h2 class="sec-title">How to <em>Spend</em></h2>
+        <div class="sec-kicker">Outflows · Returned to the bank</div>
+      </div>
+
+      <div class="ledger">
+        <div class="entry">
+          <div class="entry-num">i.</div>
+          <div class="entry-body">
+            <div class="entry-title-row">
+              <span class="entry-title mono">/shop</span>
+            </div>
+            <p class="entry-desc">Buy shutcoins, VIP cases, custom emojis/stickers, iceberg entries, the roast command, and more.</p>
+          </div>
+        </div>
+
+        <div class="entry">
+          <div class="entry-num">ii.</div>
+          <div class="entry-body">
+            <div class="entry-title-row">
+              <span class="entry-title">Predictions</span>
+            </div>
+            <p class="entry-desc">Place bets on event outcomes. Up to <span class="em-num">100,000 UKP</span> per bet.</p>
+          </div>
+        </div>
+
+        <div class="entry">
+          <div class="entry-num">iii.</div>
+          <div class="entry-body">
+            <div class="entry-title-row">
+              <span class="entry-title mono">/wager</span>
+            </div>
+            <p class="entry-desc">Stake UKP against another user. A moderator resolves the outcome.</p>
+          </div>
+        </div>
+
+        <div class="entry">
+          <div class="entry-num">iv.</div>
+          <div class="entry-body">
+            <div class="entry-title-row">
+              <span class="entry-title">Auctions</span>
+            </div>
+            <p class="entry-desc">Bid on rare items posted by staff. Highest bid at end time wins.</p>
+          </div>
+        </div>
+
+        <div class="entry" style="grid-column: 1 / -1; border-right: 0; padding-right: 0;">
+          <div class="entry-num">v.</div>
+          <div class="entry-body">
+            <div class="entry-title-row">
+              <span class="entry-title mono">/pay</span>
+              <span class="tag tax-free">No fee · No tax</span>
+            </div>
+            <p class="entry-desc">Direct peer-to-peer transfer to another user. No fee, no tax.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== WEALTH TAX ============== -->
+    <section class="section">
+      <div class="sec-head">
+        <div class="sec-num">§ 03</div>
+        <h2 class="sec-title">The Wealth <em>Tax</em></h2>
+        <div class="sec-kicker">Progressive · On passive earnings</div>
+      </div>
+
+      <div class="tax-wrap">
+        <div>
+          <p class="tax-intro">
+            A <b>progressive tax</b> on passive earnings once your balance reaches 10,000 UKP. Works like income tax brackets — each slice of an earning is taxed at the rate of the bracket it lands in. <b>Tax goes back to the bank.</b>
+          </p>
+        </div>
+
+        <table class="bracket-table">
+          <thead>
+            <tr>
+              <th>Balance Bracket</th>
+              <th>Rate Visualised</th>
+              <th>Tax Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="br-label">Under 10,000 UKP</td>
+              <td class="br-bar"><div class="bar-track"><div class="bar-fill"></div></div></td>
+              <td class="br-rate">0%</td>
+            </tr>
+            <tr>
+              <td class="br-label">10,000 – 20,000 UKP</td>
+              <td class="br-bar"><div class="bar-track"><div class="bar-fill"></div></div></td>
+              <td class="br-rate">25%</td>
+            </tr>
+            <tr>
+              <td class="br-label">20,000 – 30,000 UKP</td>
+              <td class="br-bar"><div class="bar-track"><div class="bar-fill"></div></div></td>
+              <td class="br-rate">50%</td>
+            </tr>
+            <tr>
+              <td class="br-label">30,000 – 50,000 UKP</td>
+              <td class="br-bar"><div class="bar-track"><div class="bar-fill"></div></div></td>
+              <td class="br-rate">75%</td>
+            </tr>
+            <tr>
+              <td class="br-label">Over 50,000 UKP</td>
+              <td class="br-bar"><div class="bar-track"><div class="bar-fill"></div></div></td>
+              <td class="br-rate">90%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        <div class="callout-mark">Note · 3a</div>
+        <div class="callout-text">
+          <b>Exempt earnings:</b> prediction wins, wager wins, refunds, <span style="font-family: 'IBM Plex Mono', monospace; font-size: 0.92em;">/pay</span> transfers, and the welcome bonus are never taxed. The wealth tax only hits passive bank-funded rewards.
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== INACTIVITY ============== -->
+    <section class="section">
+      <div class="sec-head">
+        <div class="sec-num">§ 04</div>
+        <h2 class="sec-title">Inactivity <em>Tax</em></h2>
+        <div class="sec-kicker">Weekly · Every Friday</div>
+      </div>
+
+      <div class="inactivity">
+        <div class="inactivity-grid">
+          <div>
+            <div class="inactivity-label">Weekly Forfeit</div>
+            <div class="inactivity-num">5<span class="pct">%</span></div>
+          </div>
+          <div>
+            <p class="inactivity-text">
+              Every <b>Friday</b>, users who haven't chatted in <b>60+ days</b> lose 5% of their balance back to the bank. <b>Stay active to keep what you've earned.</b>
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== BADGES ============== -->
+    <section class="section">
+      <div class="sec-head">
+        <div class="sec-num">§ 05</div>
+        <h2 class="sec-title">Notable <em>Badges</em></h2>
+        <div class="sec-kicker">Awards of distinction</div>
+      </div>
+
+      <div class="badges">
+        <div class="badge">
+          <div class="badge-medal">
+            <svg viewBox="0 0 72 72" width="72" height="72">
+              <defs>
+                <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#d6a44a"/>
+                  <stop offset="1" stop-color="#8a5e1c"/>
+                </linearGradient>
+              </defs>
+              <polygon points="36,4 44,28 68,28 49,44 56,68 36,54 16,68 23,44 4,28 28,28" fill="url(#g1)" stroke="#0c1a33" stroke-width="1.2"/>
+              <circle cx="36" cy="38" r="9" fill="#0c1a33"/>
+              <text x="36" y="42" text-anchor="middle" font-family="Cormorant Garamond, serif" font-size="11" font-style="italic" font-weight="600" fill="#d6a44a">I</text>
+            </svg>
+          </div>
+          <div>
+            <div class="badge-rank">Rank I · Wealth</div>
+            <div class="badge-name">High Roller</div>
+          </div>
+          <p class="badge-desc">Awarded when you first reach a balance of <span class="em-num">30,000 UKPence</span>.</p>
+        </div>
+
+        <div class="badge">
+          <div class="badge-medal">
+            <svg viewBox="0 0 72 72" width="72" height="72">
+              <defs>
+                <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#3d7a52"/>
+                  <stop offset="1" stop-color="#1d3b27"/>
+                </linearGradient>
+              </defs>
+              <circle cx="36" cy="36" r="30" fill="url(#g2)" stroke="#0c1a33" stroke-width="1.2"/>
+              <circle cx="36" cy="36" r="22" fill="none" stroke="#d6a44a" stroke-width="0.8" stroke-dasharray="2 3"/>
+              <path d="M22 36 L34 46 L52 26" fill="none" stroke="#efe6d0" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div>
+            <div class="badge-rank">Rank II · Generosity</div>
+            <div class="badge-name">Philanthropist</div>
+          </div>
+          <p class="badge-desc">Give away a total of <span class="em-num">10,000 UKPence</span> via <span style="font-family: 'IBM Plex Mono', monospace; font-size: 0.95em;">/pay</span>.</p>
+        </div>
+
+        <div class="badge">
+          <div class="badge-medal">
+            <svg viewBox="0 0 72 72" width="72" height="72">
+              <defs>
+                <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#b53a36"/>
+                  <stop offset="1" stop-color="#5a1c1a"/>
+                </linearGradient>
+              </defs>
+              <path d="M36 4 L66 22 L66 50 L36 68 L6 50 L6 22 Z" fill="url(#g3)" stroke="#0c1a33" stroke-width="1.2"/>
+              <circle cx="36" cy="36" r="15" fill="none" stroke="#efe6d0" stroke-width="2.4"/>
+              <line x1="25" y1="25" x2="47" y2="47" stroke="#efe6d0" stroke-width="2.4" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div>
+            <div class="badge-rank">Rank III · Ruin</div>
+            <div class="badge-name">Bankrupt</div>
+          </div>
+          <p class="badge-desc">Drop to exactly <span class="em-num">0 UKPence</span> after having held at least <span class="em-num">1,000</span>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== COLOPHON ============== -->
+    <footer class="colophon">
+      HMS Victory · Closed economy · Total UKP fixed at 800,000
+    </footer>
+
+  </div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/@twemoji/api@latest/dist/twemoji.min.js" crossorigin="anonymous"></script>
-<script>
-  window.onload = function() {
-    twemoji.parse(document.body, { folder: 'svg', ext: '.svg' });
-  };
-</script>
 </body>
 </html>
