@@ -160,14 +160,17 @@ class XPSystem:
             new_xp = current_xp + gain
             DatabaseManager.execute("INSERT OR REPLACE INTO xp (user_id, xp, last_xp_time) VALUES (?, ?, ?)", (user_id, new_xp, now))
             
-            # Award UKP on a separate 10-min cooldown with smooth wealth-based scaling.
-            # Smooth formula: max(0.1, 1 / (1 + balance / 500))
-            # Examples: 0 UKP=100%, 500=50%, 1000=33%, 2000=20%, 5000+=10%
+            # Award UKP on a separate 10-min cooldown with wealth-based scaling.
+            # Probability tapers to 0 at 10k UKP balance: rich users earn nothing from chat.
+            # 0=100%, 500=50%, 1000=33%, 2000=20%, 5000≈9%, 9999≈5%, 10000+=0%
             last_ukp = self._last_ukp_award.get(user_id, 0)
             if (now - last_ukp) >= self.UKP_COOLDOWN:
                 balance = get_bb(int(user_id))
-                reward_chance = max(0.1, 1.0 / (1.0 + balance / 500.0))
-                if random.random() < reward_chance:
+                if balance >= 10000:
+                    reward_chance = 0.0
+                else:
+                    reward_chance = 1.0 / (1.0 + balance / 500.0)
+                if reward_chance > 0 and random.random() < reward_chance:
                     add_bb(int(user_id), 1, reason="Chatting activity reward")
                 self._last_ukp_award[user_id] = now
 

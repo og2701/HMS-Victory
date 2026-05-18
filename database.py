@@ -315,7 +315,7 @@ def init_db():
             ('shut_victim', 'Silences', 'Be shut by a shutcoin', '🔇', 'Bronze'),
             ('server_booster', 'Supporter', 'Boost the server', '💎', 'Silver'),
             ('yearly_booster', 'Diamond Hands', 'Boost the server for a year', '👑', 'Gold'),
-            ('high_roller', 'High Roller', 'Reach a balance of 100,000 UKPence', '💰', 'Gold'),
+            ('high_roller', 'High Roller', 'Reach a balance of 30,000 UKPence', '💰', 'Gold'),
             ('philanthropist', 'Philanthropist', 'Give away a total of 10,000 UKPence using the /pay command', '💸', 'Silver'),
             ('bankrupt', 'Bankrupt', 'Reach exactly 0 UKPence after having at least 1,000 UKPence previously', '📉', 'Bronze'),
             ('shopaholic', 'Shopaholic', 'Purchase 10 items from the bot''s shop', '🛒', 'Silver'),

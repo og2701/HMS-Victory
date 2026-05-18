@@ -2,7 +2,7 @@
 
 ### 💰 High Roller
 **Rarity**: Gold
-Awarded for reaching a balance of 100,000 UKPence.
+Awarded for reaching a balance of 30,000 UKPence.
 
 ### 💸 Philanthropist
 **Rarity**: Silver

@@ -83,7 +83,7 @@ class BackdateClient(discord.Client):
         # 3. Backdate High Roller
         print("\n--- Checking High Rollers ---")
         hr_count = 0
-        high_rollers = DatabaseManager.fetch_all("SELECT user_id FROM ukpence WHERE balance >= 100000")
+        high_rollers = DatabaseManager.fetch_all("SELECT user_id FROM ukpence WHERE balance >= 30000")
         for (hr_id,) in high_rollers:
             if award_badge(hr_id, 'high_roller'):
                 print(f"Awarded 'High Roller' to user ID {hr_id}")

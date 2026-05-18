@@ -68,7 +68,7 @@ class UKPenceManager:
         old_balance = UKPenceManager.get_balance(user_id)
         DatabaseManager.execute("INSERT OR REPLACE INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), amount))
         
-        if amount >= 100000 and old_balance < 100000:
+        if amount >= 30000 and old_balance < 30000:
             from database import award_badge
             award_badge(user_id, 'high_roller')
             

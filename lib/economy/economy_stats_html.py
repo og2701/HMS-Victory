@@ -47,9 +47,19 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
     logger.info(f"[ECON DEBUG] Loaded {len(ukpence_data_current)} balances")
     
     total_ukpence = sum(ukpence_data_current.values())
-    num_holders = len(ukpence_data_current)
+
+    # Currency Holders = guild members with non-zero balance.
+    # Filters out ex-members still in the ukpence table and zero-balance ledger rows.
+    if guild is not None:
+        guild_member_ids = {m.id for m in guild.members}
+        num_holders = sum(
+            1 for uid, bal in ukpence_data_current.items()
+            if bal > 0 and int(uid) in guild_member_ids
+        )
+    else:
+        num_holders = sum(1 for bal in ukpence_data_current.values() if bal > 0)
     average_ukpence = total_ukpence / num_holders if num_holders > 0 else 0
-    
+
     actual_holders_with_balance = sum(1 for balance in ukpence_data_current.values() if balance > 0)
     average_ukpence_active = total_ukpence / actual_holders_with_balance if actual_holders_with_balance > 0 else 0
 
