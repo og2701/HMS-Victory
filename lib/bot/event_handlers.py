@@ -654,9 +654,25 @@ async def on_message(client, message):
     await client.xp_system.update_xp(message)
 
     if not message.author.bot and message.type != discord.MessageType.new_member:
-        trigger_words = ["tung", "67", "triple t", "triplet", "tvng"]
+        # Regex for "tung" variations (tung, tvng, t u n g, tuuuung, t*ng, t0ng, t.u.n.g, t-u-n-g, etc.)
+        tung_pattern = r't\s*[uv\*\_o0\-\.\/\\\~\|\?\+]*\s*n\s*[g9q]'
+        
+        # Regex for "triple t" variations (triple t, triplet, 3t, 3-t, etc.)
+        triplet_pattern = r'triple\s*t|triplet|3\s*t'
+        
+        # Regex for "67" (67, 6 7, 6-7, etc.)
+        sixty_seven_pattern = r'6\s*7'
+        
         content_lower = message.content.lower()
-        matched_trigger = next((word for word in trigger_words if word in content_lower), None)
+        matched_trigger = None
+        
+        if re.search(tung_pattern, content_lower):
+            matched_trigger = "tung-variant"
+        elif re.search(triplet_pattern, content_lower):
+            matched_trigger = "triplet-variant"
+        elif re.search(sixty_seven_pattern, content_lower):
+            matched_trigger = "67-variant"
+            
         if message.author.id == USERS.LANCA and matched_trigger:
             try:
                 duration = timedelta(minutes=5)
