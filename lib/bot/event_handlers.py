@@ -689,48 +689,72 @@ async def on_message(client, message):
         
         # Check standard layout and reversed layout (e.g. gnut -> tung)
         content_reversed = content_normalized[::-1]
-        if re.search(tung_pattern, content_normalized) or re.search(tung_pattern, content_reversed):
+        # Also check per-word reversal (each word reversed individually)
+        words_reversed = " ".join(w[::-1] for w in content_normalized.split())
+        
+        if re.search(tung_pattern, content_normalized) or re.search(tung_pattern, content_reversed) or re.search(tung_pattern, words_reversed):
             matched_trigger = "tung-variant"
-        elif re.search(triplet_pattern, content_normalized) or re.search(triplet_pattern, content_reversed):
+        elif re.search(triplet_pattern, content_normalized) or re.search(triplet_pattern, content_reversed) or re.search(triplet_pattern, words_reversed):
             matched_trigger = "triplet-variant"
-        elif re.search(sixty_seven_pattern, content_normalized) or re.search(sixty_seven_pattern, content_reversed):
+        elif re.search(sixty_seven_pattern, content_normalized) or re.search(sixty_seven_pattern, content_reversed) or re.search(sixty_seven_pattern, words_reversed):
             matched_trigger = "67-variant"
+        
+        # 4. Anagram detection: check if any 4-letter window is an anagram of "tung"
+        if not matched_trigger:
+            letters_only = "".join(c for c in content_normalized if c.isalpha())
+            tung_sorted = sorted("tung")
+            for i in range(len(letters_only) - 3):
+                if sorted(letters_only[i:i+4]) == tung_sorted:
+                    matched_trigger = "tung-anagram"
+                    break
+        
+        # 5. Acrostic detection: first letter of each word spells "tung", "tvng", "gnut", etc.
+        if not matched_trigger:
+            words = content_normalized.split()
+            if len(words) >= 4:
+                first_letters = "".join(w[0] for w in words if w)
+                first_letters_reversed = first_letters[::-1]
+                if re.search(tung_pattern, first_letters) or re.search(tung_pattern, first_letters_reversed):
+                    matched_trigger = "tung-acrostic"
+                elif re.search(triplet_pattern, first_letters) or re.search(triplet_pattern, first_letters_reversed):
+                    matched_trigger = "triplet-acrostic"
             
+        # 6. OpenAI fallback for Lanca - always check if local detection didn't catch anything
         if message.author.id == USERS.LANCA and not matched_trigger:
-            allowed_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 \t\r\n")
-            if not all(c in allowed_chars for c in message.content):
-                try:
-                    import os
-                    from openai import AsyncOpenAI
-                    openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_TOKEN"))
-                    
-                    response = await openai_client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "You are a moderation assistant for a Discord server. Your task is to analyze if the user's message is a deliberate attempt to say, spell, or represent the forbidden words 'tung' (also 'tvng'), 'sixty seven' (also '67'), or 'triple t' / 'triplet' / 'three t' / 'ttt'. The user is highly creative and will use obfuscation, spacing, symbols, phonetic spellings, math notation, turned text, backwards/reversed text (e.g. 'gnut' or 'tung sahur' / 'ruhas gnut' / 'sahue' variations), foreign languages, or other tricks to bypass filters. If the message is an attempt to say or represent any of these forbidden words, respond with EXACTLY 'yes'. Otherwise, respond with EXACTLY 'no'."
-                            },
-                            {
-                                "role": "user",
-                                "content": (
-                                    f"Analyze this message in all its forms:\n"
-                                    f"Original: {message.content}\n"
-                                    f"Reversed: {message.content[::-1]}\n"
-                                    f"Normalized (homoglyphs resolved): {content_normalized}\n"
-                                    f"Normalized & Reversed: {content_reversed}"
-                                )
-                            }
-                        ],
-                        max_tokens=5,
-                        temperature=0.0
-                    )
-                    ai_response = response.choices[0].message.content.strip().lower()
-                    if "yes" in ai_response:
-                        matched_trigger = "openai-obfuscation-detection"
-                        logger.info(f"OpenAI detected obfuscation in Lanca's message: {repr(message.content)}")
-                except Exception as e:
-                    logger.error(f"Error calling OpenAI for Lanca moderation: {e}")
+            try:
+                import os
+                from openai import AsyncOpenAI
+                openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_TOKEN"))
+                
+                response = await openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are a moderation assistant for a Discord server. Your task is to analyze if the user's message is a deliberate attempt to say, spell, or represent the forbidden words 'tung' (also 'tvng'), 'tung tung tung sahur', 'sixty seven' (also '67'), or 'triple t' / 'triplet' / 'three t' / 'ttt'. The user is highly creative and will use obfuscation, spacing, symbols, phonetic spellings, math notation, turned text, backwards/reversed text (e.g. 'gnut' or 'tung sahur' / 'ruhas gnut' / 'sahue' variations), anagrams, acrostics (first letter of each word), morse code, binary, braille, base64, foreign languages, or ANY other trick to bypass filters. Err on the side of caution - if it looks even slightly like an attempt, respond 'yes'. Respond with EXACTLY 'yes' or 'no'."
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Analyze this message in all its forms:\n"
+                                f"Original: {message.content}\n"
+                                f"Reversed: {message.content[::-1]}\n"
+                                f"Normalized (homoglyphs resolved): {content_normalized}\n"
+                                f"Normalized & Reversed: {content_reversed}\n"
+                                f"Per-word reversed: {words_reversed}\n"
+                                f"First letters of words: {''.join(w[0] for w in content_normalized.split() if w)}"
+                            )
+                        }
+                    ],
+                    max_tokens=5,
+                    temperature=0.0
+                )
+                ai_response = response.choices[0].message.content.strip().lower()
+                if "yes" in ai_response:
+                    matched_trigger = "openai-obfuscation-detection"
+                    logger.info(f"OpenAI detected obfuscation in Lanca's message: {repr(message.content)}")
+            except Exception as e:
+                logger.error(f"Error calling OpenAI for Lanca moderation: {e}")
                     
         if message.author.id == USERS.LANCA and matched_trigger:
             try:
