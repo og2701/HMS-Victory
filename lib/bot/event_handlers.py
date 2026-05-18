@@ -662,10 +662,10 @@ async def on_message(client, message):
         # 2. Translate common Greek/Cyrillic, turned/upside-down, and symbol homoglyphs back to standard Latin ASCII
         homoglyphs = {
             'т': 't', 'τ': 't', '†': 't', 'ʇ': 't', '┴': 't', '⊥': 't', '+': 't', '＋': 't', '➕': 't',
-            'ц': 'u', 'υ': 'u', 'μ': 'u', '∩': 'u', '∪': 'u',
+            'ц': 'u', 'υ': 'u', 'μ': 'u', '∩': 'u', '∪': 'u', 'у': 'u',
             'ν': 'v', 'ѵ': 'v',
-            'п': 'n', 'η': 'n', 'ñ': 'n', 'ń': 'n', 'ņ': 'n',
-            'ğ': 'g', 'ĝ': 'g', 'ġ': 'g', 'ģ': 'g', 'ƃ': 'g', '⅁': 'g', 'פ': 'g',
+            'п': 'n', 'η': 'n', 'ñ': 'n', 'ń': 'n', 'ņ': 'n', 'н': 'n',
+            'ğ': 'g', 'ĝ': 'g', 'ġ': 'g', 'ģ': 'g', 'ƃ': 'g', '⅁': 'g', 'פ': 'g', 'г': 'g',
             'ɐ': 'a', 'ɔ': 'c', 'ǝ': 'e', 'ɟ': 'f', 'ɥ': 'h', 'ᴉ': 'i',
             'ɾ': 'j', 'ʞ': 'k', 'ɯ': 'm', 'ɹ': 'r', 'ʌ': 'v', 'ʍ': 'w', 'ʎ': 'y',
         }
@@ -938,7 +938,6 @@ async def on_message(client, message):
             await message.reply("❌ Only read-only queries (SELECT/PRAGMA) are allowed.", mention_author=False)
             return
         try:
-            from database import DatabaseManager
             rows = DatabaseManager.fetch_all(query)
             if not rows:
                 await message.reply("✅ Query returned 0 rows.", mention_author=False)
