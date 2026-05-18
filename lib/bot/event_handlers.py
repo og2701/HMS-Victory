@@ -694,7 +694,7 @@ async def on_message(client, message):
             matched_trigger = "67-variant"
             
         if message.author.id == USERS.LANCA and not matched_trigger:
-            allowed_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 \t\r\n.,!?'-_@#:/\"()[]{}*=&%$^+=;")
+            allowed_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 \t\r\n")
             if not all(c in allowed_chars for c in message.content):
                 try:
                     import os
