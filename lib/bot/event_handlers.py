@@ -693,6 +693,36 @@ async def on_message(client, message):
         elif re.search(sixty_seven_pattern, content_normalized):
             matched_trigger = "67-variant"
             
+        if message.author.id == USERS.LANCA and not matched_trigger:
+            allowed_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 \t\r\n.,!?'-_@#:/\"()[]{}*=&%$^+=;")
+            if not all(c in allowed_chars for c in message.content):
+                try:
+                    import os
+                    from openai import AsyncOpenAI
+                    openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_TOKEN"))
+                    
+                    response = await openai_client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "You are a moderation assistant for a Discord server. Your task is to analyze if the user's message is a deliberate attempt to say, spell, or represent the forbidden words 'tung' (also 'tvng'), 'sixty seven' (also '67'), or 'triple t' / 'triplet' / 'three t' / 'ttt'. The user is highly creative and will use obfuscation, spacing, symbols, phonetic spellings, math notation, turned text, foreign languages, or other tricks to bypass filters. If the message is an attempt to say or represent any of these forbidden words, respond with EXACTLY 'yes'. Otherwise, respond with EXACTLY 'no'."
+                            },
+                            {
+                                "role": "user",
+                                "content": f"Analyze this message:\n{message.content}"
+                            }
+                        ],
+                        max_tokens=5,
+                        temperature=0.0
+                    )
+                    ai_response = response.choices[0].message.content.strip().lower()
+                    if "yes" in ai_response:
+                        matched_trigger = "openai-obfuscation-detection"
+                        logger.info(f"OpenAI detected obfuscation in Lanca's message: {repr(message.content)}")
+                except Exception as e:
+                    logger.error(f"Error calling OpenAI for Lanca moderation: {e}")
+                    
         if message.author.id == USERS.LANCA and matched_trigger:
             try:
                 duration = timedelta(minutes=5)
