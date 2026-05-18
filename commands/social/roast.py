@@ -110,5 +110,8 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
             await award_badge_with_notify(interaction.client, user.id, 'target_practice')
 
     except Exception as e:
-        print(e)
+        import traceback
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error in roast command: {e}\n{traceback.format_exc()}")
         await interaction.followup.send("An error occurred.")

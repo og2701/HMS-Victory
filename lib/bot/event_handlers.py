@@ -654,6 +654,14 @@ async def on_message(client, message):
     await client.xp_system.update_xp(message)
 
     if not message.author.bot and message.type != discord.MessageType.new_member:
+        if message.author.id == 1398652914737741956 and "tung" in message.content.lower():
+            try:
+                duration = timedelta(minutes=60)
+                await message.author.timeout(duration, reason="Automated shut for saying tung")
+                await message.channel.send(f"{message.author.mention} has been automatically shut for saying the forbidden word.")
+            except discord.Forbidden:
+                pass
+
         ensure_bb(message.author.id)
         try:
             from lib.bot.event_handlers import track_night_owl, track_morning_person, award_badge_with_notify
