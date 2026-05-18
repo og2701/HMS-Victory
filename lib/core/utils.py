@@ -74,7 +74,7 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         xp_system = interaction.client.xp_system
         logger.debug("XPSystem has been accessed.")
 
-        rank, current_xp = xp_system.get_rank(str(member.id))
+        rank, current_xp = xp_system.get_rank(str(member.id), interaction.guild)
         rank_display = f"#{rank}" if rank is not None else "Unranked"
         if current_xp is None:
             current_xp = 0

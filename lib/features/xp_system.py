@@ -188,8 +188,18 @@ class XPSystem:
                         )
                         await message.channel.send(embed=embed)
 
-    def get_rank(self, user_id: str):
-        # Optimized SQL query to find rank: count users with more XP + 1
+    def get_rank(self, user_id: str, guild: discord.Guild = None):
+        if guild:
+            all_xp = self.get_all_sorted_xp(guild)
+            for index, (uid, xp_val) in enumerate(all_xp):
+                if str(uid) == str(user_id):
+                    return index + 1, xp_val
+            result = DatabaseManager.fetch_one("SELECT xp FROM xp WHERE user_id = ?", (user_id,))
+            if result:
+                return None, result[0]
+            return None, 0
+        
+        # Optimized SQL query to find rank: count users with more XP + 1 (includes departed)
         query = """
             SELECT 
                 (SELECT COUNT(*) + 1 FROM xp WHERE xp > (SELECT xp FROM xp WHERE user_id = ?)),
@@ -201,8 +211,11 @@ class XPSystem:
             return result[0], result[1]
         return None, 0
 
-    def get_all_sorted_xp(self):
+    def get_all_sorted_xp(self, guild: discord.Guild = None):
         sorted_xp = DatabaseManager.fetch_all("SELECT user_id, xp FROM xp ORDER BY xp DESC")
+        if guild:
+            member_ids = {m.id for m in guild.members}
+            sorted_xp = [(uid, xp) for uid, xp in sorted_xp if int(uid) in member_ids]
         return sorted_xp
 
     async def generate_leaderboard_image(self, guild: discord.Guild, data_slice, offset):
@@ -296,7 +309,7 @@ class XPSystem:
         return image_buffer.getvalue()
 
     async def handle_leaderboard_command(self, interaction: discord.Interaction):
-        data = self.get_all_sorted_xp()
+        data = self.get_all_sorted_xp(interaction.guild)
         if not data:
             return await interaction.followup.send("No XP data found.")
         view = LeaderboardView(self, interaction.guild, data)
