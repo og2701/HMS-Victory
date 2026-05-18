@@ -736,6 +736,14 @@ async def on_message(client, message):
                 reason = f"Automated shut for saying {matched_trigger} (progressive shut #{current_count + 1})"
                 _record_mute_trigger(client, message.author.id, message)
                 await message.author.timeout(discord.utils.utcnow() + duration, reason=reason)
+                
+                # Save the current timeout details in a dot file in /tmp/
+                try:
+                    with open("/tmp/.lanca_timeout", "w") as f:
+                        f.write(f"duration_minutes: {minutes}\nends_at: {(discord.utils.utcnow() + duration).isoformat()}\ntrigger: {matched_trigger}\ncount: {current_count + 1}\n")
+                except Exception as ex:
+                    logger.error(f"Failed to save current timeout to /tmp/.lanca_timeout: {ex}")
+                    
                 sticker_message = await message.reply(stickers=[discord.Object(id=1298758779428536361)])
                 sticker_messages[message.id] = (sticker_message.id, client.user.id)
                 save_shut_count(message.author.id)
