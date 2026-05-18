@@ -673,8 +673,8 @@ async def on_message(client, message):
         # Regex for "tung" variations (tung, tvng, t u n g, tuuuung, t*ng, t0ng, t.u.n.g, t-u-n-g, etc.)
         tung_pattern = r't\s*[uv\*\_o0\-\.\/\\\~\|\?\+]*\s*n\s*[g9q]'
         
-        # Regex for "triple t" variations (triple t, triplet, 3t, 3-t, ttt, t t t, three ts, etc.)
-        triplet_pattern = r'triple\s*t|triplet|3\s*t|ttt|t\s*t\s*t|three\s*t'
+        # Regex for "triple t" variations (triple t, triplet, 3t, 3-t, ttt, t t t, three ts, t^3, t³, etc.)
+        triplet_pattern = r'triple\s*t|triplet|3\s*t|ttt|t\s*t\s*t|three\s*t|t\s*[\^\*]*\s*3'
         
         # Regex for "67" (67, 6 7, 6-7, sixty-seven, sixty seven, lxvii, etc.)
         sixty_seven_pattern = r'6\s*7|sixty\s*-\s*seven|sixty\s*seven|lxvii'
