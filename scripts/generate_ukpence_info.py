@@ -24,7 +24,7 @@ async def main():
     with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
         html = f.read()
 
-    buf = await screenshot_html(html, size=(1550, 4500), element_selector=".page")
+    buf = await screenshot_html(html, size=(2450, 3400), element_selector=".page")
 
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
     with open(OUTPUT_PATH, "wb") as f:

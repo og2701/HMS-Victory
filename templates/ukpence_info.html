@@ -37,14 +37,26 @@
   }
 
   .page {
-    width: 1500px;
+    width: 2400px;
     margin: 0 auto;
     background: var(--paper);
     background-image:
-      radial-gradient(1200px 600px at 50% -100px, rgba(176,127,42,0.10), transparent 60%),
-      radial-gradient(900px 500px at 50% 100%, rgba(12,26,51,0.06), transparent 60%);
+      radial-gradient(1800px 800px at 50% -100px, rgba(176,127,42,0.10), transparent 60%),
+      radial-gradient(1400px 700px at 50% 100%, rgba(12,26,51,0.06), transparent 60%);
     position: relative;
     overflow: hidden;
+  }
+
+  /* Side-by-side section pairs to reduce vertical scroll */
+  .section-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 90px;
+    margin-top: 76px;
+    align-items: start;
+  }
+  .section-pair > .section {
+    margin-top: 0;
   }
 
   /* Paper grain */
@@ -640,8 +652,9 @@
       </div>
     </section>
 
+    <div class="section-pair">
     <!-- ============== HOW TO EARN ============== -->
-    <section class="section">
+    <section class="section" style="margin-top:0;">
       <div class="sec-head">
         <div class="sec-num">§ 01 <span class="slash">/</span> VII</div>
         <h2 class="sec-title">How to <em>Earn</em></h2>
@@ -730,7 +743,7 @@
     </section>
 
     <!-- ============== HOW TO SPEND ============== -->
-    <section class="section">
+    <section class="section" style="margin-top:0;">
       <div class="sec-head">
         <div class="sec-num">§ 02 <span class="slash">/</span> V</div>
         <h2 class="sec-title">How to <em>Spend</em></h2>
@@ -791,6 +804,7 @@
       </div>
     </section>
 
+    </div>
     <!-- ============== WEALTH TAX ============== -->
     <section class="section">
       <div class="sec-head">
@@ -852,8 +866,9 @@
       </div>
     </section>
 
+    <div class="section-pair">
     <!-- ============== INACTIVITY ============== -->
-    <section class="section">
+    <section class="section" style="margin-top:0;">
       <div class="sec-head">
         <div class="sec-num">§ 04</div>
         <h2 class="sec-title">Inactivity <em>Tax</em></h2>
@@ -876,7 +891,7 @@
     </section>
 
     <!-- ============== BADGES ============== -->
-    <section class="section">
+    <section class="section" style="margin-top:0;">
       <div class="sec-head">
         <div class="sec-num">§ 05</div>
         <h2 class="sec-title">Notable <em>Badges</em></h2>
@@ -949,6 +964,7 @@
       </div>
     </section>
 
+    </div>
     <!-- ============== COLOPHON ============== -->
     <footer class="colophon">
       HMS Victory · Closed economy · Total UKP fixed at 800,000
