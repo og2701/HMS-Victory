@@ -725,14 +725,21 @@ async def on_message(client, message):
                     
         if message.author.id == USERS.LANCA and matched_trigger:
             try:
-                duration = timedelta(minutes=5)
-                reason = f"Automated shut for saying {matched_trigger}"
+                # Query historical shut counts to calculate doubling duration
+                row = DatabaseManager.fetch_one("SELECT count FROM shut_counts WHERE user_id = ?", (str(message.author.id),))
+                current_count = row[0] if row else 0
+                
+                # Double the duration starting at 5 minutes: 5, 10, 20, 40, 80... capped at Discord's max limit of 28 days (40320 minutes)
+                minutes = min(5 * (2 ** current_count), 40320)
+                duration = timedelta(minutes=minutes)
+                
+                reason = f"Automated shut for saying {matched_trigger} (progressive shut #{current_count + 1})"
                 _record_mute_trigger(client, message.author.id, message)
                 await message.author.timeout(discord.utils.utcnow() + duration, reason=reason)
                 sticker_message = await message.reply(stickers=[discord.Object(id=1298758779428536361)])
                 sticker_messages[message.id] = (sticker_message.id, client.user.id)
                 save_shut_count(message.author.id)
-                logger.info(f"User {message.author} timed out for {duration} for saying {matched_trigger}.")
+                logger.info(f"User {message.author} timed out for {duration} (minutes: {minutes}) for saying {matched_trigger} (shut #{current_count + 1}).")
             except discord.Forbidden:
                 logger.warning(f"Forbidden to timeout {message.author} for saying {matched_trigger}")
             except Exception as e:
