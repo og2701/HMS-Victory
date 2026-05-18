@@ -659,13 +659,15 @@ async def on_message(client, message):
         # 1. Normalize unicode (converts fancy fonts like bold/cursive/circles 𝐭𝐮𝐧𝐠 -> tung)
         content_normalized = unicodedata.normalize('NFKD', message.content.lower())
         
-        # 2. Translate common Greek/Cyrillic homoglyphs back to standard Latin ASCII
+        # 2. Translate common Greek/Cyrillic and turned/upside-down homoglyphs back to standard Latin ASCII
         homoglyphs = {
-            'т': 't', 'τ': 't', '†': 't',
+            'т': 't', 'τ': 't', '†': 't', 'ʇ': 't',
             'ц': 'u', 'υ': 'u', 'μ': 'u',
             'ν': 'v', 'ѵ': 'v',
             'п': 'n', 'η': 'n', 'ñ': 'n', 'ń': 'n', 'ņ': 'n',
-            'ğ': 'g', 'ĝ': 'g', 'ġ': 'g', 'ģ': 'g',
+            'ğ': 'g', 'ĝ': 'g', 'ġ': 'g', 'ģ': 'g', 'ƃ': 'g',
+            'ɐ': 'a', 'ɔ': 'c', 'ǝ': 'e', 'ɟ': 'f', 'ɥ': 'h', 'ᴉ': 'i',
+            'ɾ': 'j', 'ʞ': 'k', 'ɯ': 'm', 'ɹ': 'r', 'ʌ': 'v', 'ʍ': 'w', 'ʎ': 'y',
         }
         for k, v in homoglyphs.items():
             content_normalized = content_normalized.replace(k, v)
