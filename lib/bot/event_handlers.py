@@ -653,8 +653,7 @@ async def on_message(client, message):
 
     await client.xp_system.update_xp(message)
 
-    # Automated "Rude Timeout" / "MegaShut" detection system (Disabled)
-    if False and not message.author.bot and message.type != discord.MessageType.new_member:
+    if not message.author.bot and message.type != discord.MessageType.new_member:
         import unicodedata
         
         # 0. Strip Discord mentions, custom emojis, and URLs to avoid false positives from numeric IDs
@@ -728,8 +727,8 @@ async def on_message(client, message):
                 elif re.search(triplet_pattern, first_letters) or re.search(triplet_pattern, first_letters_reversed):
                     matched_trigger = "triplet-acrostic"
             
-        # 6. OpenAI fallback for Lanca - always check if local detection didn't catch anything
-        if message.author.id == USERS.LANCA and not matched_trigger:
+        # 6. OpenAI fallback for Lanca - always check if local detection didn't catch anything (Disabled)
+        if False and message.author.id == USERS.LANCA and not matched_trigger:
             try:
                 import os
                 from openai import AsyncOpenAI
