@@ -35,6 +35,31 @@ class BankManager:
             return False
 
     @staticmethod
+    def deposit_tax(amount: float, description: str = "Tax collection") -> bool:
+        """Deposit UKPence into the bank from tax collection, tracking it separately"""
+        if amount <= 0:
+            return False
+
+        now = int(time.time())
+        try:
+            with DatabaseManager.get_connection() as conn:
+                c = conn.cursor()
+                c.execute('''
+                    UPDATE bank
+                    SET balance = balance + ?, total_revenue = total_revenue + ?, total_tax_collected = total_tax_collected + ?, last_updated = ?
+                    WHERE id = 1
+                ''', (amount, amount, amount, now))
+                conn.commit()
+
+            log_text = f"🏦 Bank deposit: `{amount:,}` UKP|{description}"
+            DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
+            logger.info(f"Bank tax deposit: {amount} UKP. Reason: {description}")
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Error depositing tax into bank: {e}")
+            return False
+
+    @staticmethod
     def withdraw(amount: float, description: str = "Unspecified Withdrawal") -> bool:
         if amount < 0:
             logger.warning(f"Attempted to withdraw negative amount from bank: {amount}")
@@ -78,18 +103,20 @@ class BankManager:
     @staticmethod
     def get_bank_info() -> Dict[str, Any]:
         """Get complete bank information"""
-        result = DatabaseManager.fetch_one('SELECT balance, total_revenue, last_updated FROM bank WHERE id = 1')
+        result = DatabaseManager.fetch_one('SELECT balance, total_revenue, total_tax_collected, last_updated FROM bank WHERE id = 1')
 
         if result:
             return {
                 'balance': result[0],
                 'total_revenue': result[1],
-                'last_updated': result[2]
+                'total_tax_collected': result[2],
+                'last_updated': result[3]
             }
         else:
             return {
                 'balance': 0,
                 'total_revenue': 0,
+                'total_tax_collected': 0,
                 'last_updated': 0
             }
 

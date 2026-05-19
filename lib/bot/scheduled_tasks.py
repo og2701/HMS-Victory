@@ -502,7 +502,7 @@ async def apply_inactivity_tax(client):
             conn.commit()
 
         if total_reclaimed > 0:
-            BankManager.deposit(total_reclaimed, description=f"Inactivity Tax (60+ days dormant) from {taxed_count} users")
+            BankManager.deposit_tax(total_reclaimed, description=f"Inactivity Tax (60+ days dormant) from {taxed_count} users")
             logger.info(f"[ECONOMY] Inactivity Tax reclaimed {total_reclaimed} UKP from {taxed_count} users.")
             
             # Update specific metric if needed

@@ -117,9 +117,15 @@ def init_db():
                 id INTEGER PRIMARY KEY,
                 balance INTEGER NOT NULL DEFAULT 0,
                 total_revenue INTEGER NOT NULL DEFAULT 0,
+                total_tax_collected INTEGER NOT NULL DEFAULT 0,
                 last_updated INTEGER NOT NULL DEFAULT 0
             )
         ''')
+        # Migration: add total_tax_collected if missing on existing databases
+        try:
+            c.execute("ALTER TABLE bank ADD COLUMN total_tax_collected INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         c.execute('''
             CREATE TABLE IF NOT EXISTS daily_summaries (
                 date TEXT PRIMARY KEY,

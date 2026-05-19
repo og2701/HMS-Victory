@@ -26,6 +26,12 @@ async def handle_bank_status_command(interaction: discord.Interaction):
         inline=True
     )
 
+    embed.add_field(
+        name="🏛️ Total Tax Collected",
+        value=f"{bank_info['total_tax_collected']:,} UKPence",
+        inline=True
+    )
+
     if bank_info['last_updated'] > 0:
         last_updated = datetime.fromtimestamp(bank_info['last_updated'])
         embed.add_field(
@@ -34,7 +40,7 @@ async def handle_bank_status_command(interaction: discord.Interaction):
             inline=False
         )
 
-    embed.set_footer(text="💡 Bank accumulates UKPence from all shop purchases")
+    embed.set_footer(text="💡 Bank accumulates UKPence from shop purchases & inactivity tax")
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
