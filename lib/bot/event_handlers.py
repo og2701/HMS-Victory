@@ -656,8 +656,16 @@ async def on_message(client, message):
     if not message.author.bot and message.type != discord.MessageType.new_member:
         import unicodedata
         
+        # 0. Strip Discord mentions, custom emojis, and URLs to avoid false positives from numeric IDs
+        raw_content = message.content
+        raw_content = re.sub(r'<@!?\d+>', '', raw_content)       # User mentions
+        raw_content = re.sub(r'<@&\d+>', '', raw_content)        # Role mentions
+        raw_content = re.sub(r'<#\d+>', '', raw_content)         # Channel mentions
+        raw_content = re.sub(r'<a?:\w+:\d+>', '', raw_content)   # Custom emojis
+        raw_content = re.sub(r'https?://\S+', '', raw_content)   # URLs
+        
         # 1. Normalize unicode (converts fancy fonts like bold/cursive/circles 𝐭𝐮𝐧𝐠 -> tung)
-        content_normalized = unicodedata.normalize('NFKD', message.content.lower())
+        content_normalized = unicodedata.normalize('NFKD', raw_content.lower())
         
         # 2. Translate common Greek/Cyrillic, turned/upside-down, and symbol homoglyphs back to standard Latin ASCII
         homoglyphs = {
