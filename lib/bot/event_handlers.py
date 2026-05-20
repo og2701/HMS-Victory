@@ -653,7 +653,8 @@ async def on_message(client, message):
 
     await client.xp_system.update_xp(message)
 
-    if not message.author.bot and message.type != discord.MessageType.new_member:
+    # Automated "Rude Timeout" / "MegaShut" detection system (Disabled completely)
+    if False and not message.author.bot and message.type != discord.MessageType.new_member:
         import unicodedata
         
         # 0. Strip Discord mentions, custom emojis, and URLs to avoid false positives from numeric IDs
