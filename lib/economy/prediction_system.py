@@ -748,6 +748,167 @@ class PredictionScheduleModal(discord.ui.Modal, title="Schedule Prediction"):
                 )
 
 
+async def cancel_scheduled_prediction(client: discord.Client, sched_id: int, cancelled_by_mention: str) -> tuple[bool, str]:
+    """
+    Cancels a scheduled prediction by ID.
+    Updates the database status to 'cancelled', removes the job from APScheduler,
+    and updates the Community Management channel announcement message (if one exists).
+    Returns (success, message).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    from database import DatabaseManager
+
+    row = DatabaseManager.fetch_one(
+        "SELECT status, cm_message_id FROM scheduled_predictions WHERE id = ?", (sched_id,)
+    )
+    if not row:
+        return False, f"Scheduled prediction #{sched_id} not found."
+    status, cm_message_id = row
+    if status != 'pending':
+        return False, f"Scheduled prediction #{sched_id} is not pending (status={status})."
+
+    # Update database
+    DatabaseManager.execute(
+        "UPDATE scheduled_predictions SET status = 'cancelled' WHERE id = ?", (sched_id,)
+    )
+
+    # Remove scheduler job
+    scheduler = getattr(client, "scheduler", None)
+    if scheduler is not None:
+        try:
+            scheduler.remove_job(f"scheduled_pred_{sched_id}")
+        except Exception as e:
+            logger.warning(f"Failed to remove scheduler job for pred #{sched_id}: {e}")
+
+    # Update CM Announcement Message
+    if cm_message_id:
+        try:
+            cm_channel = client.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
+            if cm_channel is not None:
+                cm_msg = await cm_channel.fetch_message(int(cm_message_id))
+                disabled_view = CancelScheduledPredView(sched_id)
+                for item in disabled_view.children:
+                    item.disabled = True
+                cm_embed = cm_msg.embeds[0] if cm_msg.embeds else discord.Embed()
+                cm_embed.title = "🗑️ Prediction Scheduled (Cancelled)"
+                cm_embed.color = 0x99AAB5
+                
+                # Check if "Cancelled by" field is already present
+                has_cancelled_by = False
+                for field in cm_embed.fields:
+                    if field.name == "Cancelled by":
+                        has_cancelled_by = True
+                        break
+                if not has_cancelled_by:
+                    cm_embed.add_field(name="Cancelled by", value=cancelled_by_mention, inline=True)
+                await cm_msg.edit(embed=cm_embed, view=disabled_view)
+        except Exception as e:
+            logger.warning(f"Could not update CM announcement for scheduled pred {sched_id}: {e}")
+
+    return True, f"Scheduled prediction #{sched_id} cancelled."
+
+
+class ScheduledPredSelectView(discord.ui.View):
+    def __init__(self, rows: list, client: discord.Client):
+        super().__init__(timeout=600)
+        self.client = client
+        self.rows = rows[:25] # max 25 options in discord select menu
+
+        options = []
+        from datetime import datetime
+        for sched_id, channel_id, title, scheduled_ts, duration, creator_id in self.rows:
+            short_title = title[:80]
+            options.append(discord.SelectOption(
+                label=f"#{sched_id}: {short_title}",
+                description=f"Posts: {datetime.fromtimestamp(scheduled_ts).strftime('%Y-%m-%d %H:%M')} UK",
+                value=str(sched_id)
+            ))
+
+        self.select = discord.ui.Select(
+            placeholder="Choose a scheduled prediction to manage...",
+            options=options
+        )
+        self.select.callback = self.on_select
+        self.add_item(self.select)
+
+    async def on_select(self, interaction: discord.Interaction):
+        if not any(role.id in [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO] for role in interaction.user.roles):
+            return await interaction.response.send_message(
+                "❌ Only staff can manage scheduled predictions.", ephemeral=True
+            )
+
+        sched_id = int(self.select.values[0])
+        # Find row details
+        selected_row = None
+        for r in self.rows:
+            if r[0] == sched_id:
+                selected_row = r
+                break
+        
+        if not selected_row:
+            return await interaction.response.edit_message(content="❌ Scheduled prediction no longer found.", view=None)
+
+        sched_id, channel_id, title, scheduled_ts, duration, creator_id = selected_row
+        
+        embed = discord.Embed(
+            title="📅 Scheduled Prediction Details",
+            description=f"**Title:** {title}",
+            color=0xF5A623
+        )
+        embed.add_field(name="ID", value=f"#{sched_id}", inline=True)
+        embed.add_field(name="Channel", value=f"<#{channel_id}>", inline=True)
+        embed.add_field(name="Scheduled Time", value=f"<t:{scheduled_ts}:F> (<t:{scheduled_ts}:R>)", inline=True)
+        embed.add_field(name="Duration", value=f"{duration} minutes", inline=True)
+        embed.add_field(name="Scheduled by", value=f"<@{creator_id}>", inline=True)
+
+        view = ScheduledPredAdminView(sched_id, self.client)
+        await interaction.response.edit_message(content="Review details below:", embed=embed, view=view)
+
+
+class ScheduledPredAdminView(discord.ui.View):
+    def __init__(self, sched_id: int, client: discord.Client):
+        super().__init__(timeout=600)
+        self.sched_id = sched_id
+        self.client = client
+
+    @discord.ui.button(label="Cancel Prediction", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def cancel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not any(role.id in [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO] for role in interaction.user.roles):
+            return await interaction.response.send_message(
+                "❌ Only staff can cancel scheduled predictions.", ephemeral=True
+            )
+
+        # Defer interaction to avoid timeout
+        await interaction.response.defer(ephemeral=True)
+
+        success, msg = await cancel_scheduled_prediction(
+            self.client, self.sched_id, interaction.user.mention
+        )
+        if not success:
+            await interaction.followup.send(f"❌ {msg}", ephemeral=True)
+        else:
+            for item in self.children:
+                item.disabled = True
+            await interaction.followup.send(f"✅ {msg}", ephemeral=True)
+            try:
+                await interaction.message.edit(content=f"🗑️ {msg}", embed=None, view=self)
+            except Exception:
+                pass
+
+    @discord.ui.button(label="Back to List", style=discord.ButtonStyle.secondary, emoji="⬅️")
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        from database import DatabaseManager
+        rows = DatabaseManager.fetch_all(
+            "SELECT id, channel_id, title, scheduled_ts, duration_minutes, creator_id FROM scheduled_predictions WHERE status = 'pending' ORDER BY scheduled_ts ASC"
+        )
+        if not rows:
+            return await interaction.response.edit_message(content="No pending scheduled predictions.", embed=None, view=None)
+
+        view = ScheduledPredSelectView(rows, self.client)
+        await interaction.response.edit_message(content="Choose a scheduled prediction to manage:", embed=None, view=view)
+
+
 class CancelScheduledPredView(discord.ui.View):
     """Persistent view with a Cancel button shown on the COMMUNITY_MANAGEMENT
     announcement message for a scheduled prediction."""
@@ -763,44 +924,17 @@ class CancelScheduledPredView(discord.ui.View):
                 "❌ Only staff can cancel scheduled predictions.", ephemeral=True
             )
 
-        from database import DatabaseManager
-        row = DatabaseManager.fetch_one(
-            "SELECT status FROM scheduled_predictions WHERE id = ?", (self.sched_id,)
+        # Defer first so the interaction is acknowledged immediately
+        await interaction.response.defer(ephemeral=True)
+
+        success, msg = await cancel_scheduled_prediction(
+            interaction.client, self.sched_id, interaction.user.mention
         )
-        if not row:
-            return await interaction.response.send_message(
-                f"Scheduled prediction #{self.sched_id} not found.", ephemeral=True
-            )
-        if row[0] != 'pending':
-            for item in self.children:
-                item.disabled = True
-            try:
-                await interaction.message.edit(view=self)
-            except Exception:
-                pass
-            return await interaction.response.send_message(
-                f"Already {row[0]} — nothing to cancel.", ephemeral=True
-            )
+        if not success:
+            await interaction.followup.send(f"❌ {msg}", ephemeral=True)
+        else:
+            await interaction.followup.send(f"✅ {msg}", ephemeral=True)
 
-        DatabaseManager.execute(
-            "UPDATE scheduled_predictions SET status = 'cancelled' WHERE id = ?", (self.sched_id,)
-        )
-        scheduler = getattr(interaction.client, "scheduler", None)
-        if scheduler is not None:
-            try:
-                scheduler.remove_job(f"scheduled_pred_{self.sched_id}")
-            except Exception:
-                pass
-
-        for item in self.children:
-            item.disabled = True
-
-        embed = interaction.message.embeds[0] if interaction.message.embeds else discord.Embed()
-        embed.title = "🗑️ Prediction Scheduled (Cancelled)"
-        embed.color = 0x99AAB5
-        embed.add_field(name="Cancelled by", value=interaction.user.mention, inline=True)
-
-        await interaction.response.edit_message(embed=embed, view=self)
 
 
 async def post_scheduled_prediction(client: discord.Client, sched_id: int) -> bool:

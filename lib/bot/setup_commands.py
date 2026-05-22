@@ -289,6 +289,7 @@ def define_commands(tree, client):
     @command("pred-scheduled-list", "List pending scheduled predictions", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
     async def pred_scheduled_list(interaction: Interaction):
         from database import DatabaseManager
+        from lib.economy.prediction_system import ScheduledPredSelectView
         rows = DatabaseManager.fetch_all(
             "SELECT id, channel_id, title, scheduled_ts, duration_minutes, creator_id FROM scheduled_predictions WHERE status = 'pending' ORDER BY scheduled_ts ASC"
         )
@@ -305,30 +306,33 @@ def define_commands(tree, client):
         out = "\n".join(lines)
         if len(out) > 2000:
             out = out[:1990] + "\n…"
-        await interaction.response.send_message(out, ephemeral=True)
+        
+        view = ScheduledPredSelectView(rows, interaction.client)
+        await interaction.response.send_message(out, view=view, ephemeral=True)
 
-    @command("pred-scheduled-cancel", "Cancel a pending scheduled prediction by id", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
-    async def pred_scheduled_cancel(interaction: Interaction, sched_id: int):
+    @command("pred-scheduled-cancel", "Cancel a pending scheduled prediction by id or interactively", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    async def pred_scheduled_cancel(interaction: Interaction, sched_id: Optional[int] = None):
         from database import DatabaseManager
-        row = DatabaseManager.fetch_one(
-            "SELECT status FROM scheduled_predictions WHERE id = ?", (sched_id,)
-        )
-        if not row:
-            return await interaction.response.send_message(f"No scheduled prediction with id {sched_id}.", ephemeral=True)
-        if row[0] != 'pending':
-            return await interaction.response.send_message(
-                f"Scheduled prediction #{sched_id} is not pending (status={row[0]}).", ephemeral=True
+        from lib.economy.prediction_system import cancel_scheduled_prediction, ScheduledPredSelectView
+
+        if sched_id is not None:
+            # Direct cancel
+            success, msg = await cancel_scheduled_prediction(
+                interaction.client, sched_id, interaction.user.mention
             )
-        DatabaseManager.execute(
-            "UPDATE scheduled_predictions SET status = 'cancelled' WHERE id = ?", (sched_id,)
+            if not success:
+                return await interaction.response.send_message(f"❌ {msg}", ephemeral=True)
+            return await interaction.response.send_message(f"✅ {msg}", ephemeral=True)
+        
+        # Interactive select
+        rows = DatabaseManager.fetch_all(
+            "SELECT id, channel_id, title, scheduled_ts, duration_minutes, creator_id FROM scheduled_predictions WHERE status = 'pending' ORDER BY scheduled_ts ASC"
         )
-        scheduler = getattr(interaction.client, "scheduler", None)
-        if scheduler is not None:
-            try:
-                scheduler.remove_job(f"scheduled_pred_{sched_id}")
-            except Exception:
-                pass
-        await interaction.response.send_message(f"🗑️ Scheduled prediction #{sched_id} cancelled.", ephemeral=True)
+        if not rows:
+            return await interaction.response.send_message("No pending scheduled predictions to cancel.", ephemeral=True)
+
+        view = ScheduledPredSelectView(rows, interaction.client)
+        await interaction.response.send_message("Select a scheduled prediction to cancel:", view=view, ephemeral=True)
 
     @command("preds-to-resolve", "Shows all unresolved predictions in memory", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
     async def preds_to_resolve(interaction: Interaction):
