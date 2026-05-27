@@ -12,6 +12,7 @@ from lib.core.file_operations import load_whitelist, save_whitelist, load_persis
 from lib.core.utils import is_lockdown_active
 from lib.core.image_processing import trim_image, find_non_overlapping_position, random_color_excluding_blue_and_dark
 from lib.core.log_functions import create_message_image, create_edited_message_image, create_quote_image
+from lib.core.moderation_text import ModerationMatch, find_blocked_moderation_match
 from config import *
 from database import DatabaseManager, award_badge
 from lib.core.constants import FLAG_LANGUAGE_MAPPINGS, TRANSLATION_BLACKLIST_CHANNELS
@@ -56,6 +57,109 @@ nationality_onboarding_roles = {
     ROLES.WELSH,
     ROLES.NORTHERN_IRISH,
 }
+
+
+def _moderation_embed_value(value: str, limit: int = 1000) -> str:
+    value = discord.utils.escape_mentions(value or "")
+    value = value.replace("`", "'").strip()
+    if not value:
+        return "_(empty)_"
+    if len(value) > limit:
+        return value[: limit - 3].rstrip() + "..."
+    return value
+
+
+async def _get_channel(client, channel_id: int):
+    channel = client.get_channel(channel_id)
+    if channel is not None:
+        return channel
+    try:
+        return await client.fetch_channel(channel_id)
+    except (discord.NotFound, discord.Forbidden):
+        return None
+
+
+async def _report_hate_speech_timeout(
+    client,
+    message,
+    match: ModerationMatch,
+    timeout_status: str,
+    delete_status: str,
+) -> None:
+    police_channel = await _get_channel(client, CHANNELS.POLICE_STATION)
+    if police_channel is None:
+        logger.warning("Police Station channel not found for hate-speech moderation report.")
+        return
+
+    embed = discord.Embed(
+        title="Automated hate-speech timeout",
+        description=(
+            f"{message.author.mention} (`{message.author.id}`) triggered the "
+            f"normalized moderation filter in {message.channel.mention}."
+        ),
+        color=discord.Color.red(),
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.add_field(name="Matched", value=match.label, inline=True)
+    embed.add_field(name="Timeout", value=timeout_status, inline=True)
+    embed.add_field(name="Message deletion", value=delete_status, inline=True)
+    embed.add_field(name="Original message", value=_moderation_embed_value(message.content), inline=False)
+    embed.add_field(name="Normalized message", value=_moderation_embed_value(match.normalized_text), inline=False)
+    embed.add_field(name="Message link", value=f"[Jump to message]({message.jump_url})", inline=False)
+
+    await police_channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+
+
+async def handle_hate_speech_message(client, message) -> bool:
+    if message.author.bot or message.guild is None or not message.content:
+        return False
+
+    match = find_blocked_moderation_match(message.content)
+    if match is None:
+        return False
+
+    member = message.author
+    if not isinstance(member, discord.Member):
+        member = message.guild.get_member(message.author.id)
+        if member is None:
+            try:
+                member = await message.guild.fetch_member(message.author.id)
+            except discord.HTTPException:
+                member = None
+
+    _record_mute_trigger(client, message.author.id, message)
+
+    delete_status = "not attempted"
+    try:
+        await message.delete()
+        delete_status = "deleted"
+    except discord.NotFound:
+        delete_status = "already deleted"
+    except discord.Forbidden:
+        delete_status = "failed: missing permission"
+    except discord.HTTPException as e:
+        delete_status = f"failed: {e.__class__.__name__}"
+
+    timeout_status = "failed: member not found"
+    if member is not None:
+        until = discord.utils.utcnow() + timedelta(minutes=HATE_SPEECH_TIMEOUT_MINUTES)
+        try:
+            await member.timeout(until, reason=f"Automated hate-speech filter: {match.label}")
+            timeout_status = f"{HATE_SPEECH_TIMEOUT_MINUTES // 60}h"
+        except discord.Forbidden:
+            timeout_status = "failed: missing permission or role hierarchy"
+        except discord.HTTPException as e:
+            timeout_status = f"failed: {e.__class__.__name__}"
+
+    await _report_hate_speech_timeout(client, message, match, timeout_status, delete_status)
+    logger.info(
+        "Automated hate-speech moderation for user %s in channel %s: %s, %s",
+        message.author.id,
+        message.channel.id,
+        timeout_status,
+        delete_status,
+    )
+    return True
 
 async def on_member_update(before, after):
     if not before.premium_since and after.premium_since:
@@ -641,6 +745,9 @@ async def mirror_voice_message(client, message):
 
 
 async def on_message(client, message):
+    if await handle_hate_speech_message(client, message):
+        return
+
     if not hasattr(client, "xp_system"):
         from lib.features.xp_system import XPSystem
         client.xp_system = XPSystem(client)

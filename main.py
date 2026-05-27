@@ -184,6 +184,9 @@ class AClient(discord.Client):
                     logger.warning(f"Cannot DM user {target_user.id} (automod notification).")
             return
 
+        if await handle_hate_speech_message(self, message):
+            return
+
         initialize_summary_data()
         update_summary_data("messages", channel_id=message.channel.id)
         update_summary_data("active_members", user_id=message.author.id)

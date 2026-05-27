@@ -142,6 +142,9 @@ class USERS:
 # Users DM'd whenever a member is muted (shut, bedtime, native timeout, Wick, etc.)
 MUTE_NOTIFY_USER_IDS = [USERS.OGGERS, USERS.HADIDAS]
 
+# --- Automated Moderation ---
+HATE_SPEECH_TIMEOUT_MINUTES = 24 * 60
+
 # --- Voice Channel Lockdown ---
 VC_LOCKDOWN_WHITELIST = [
     ROLES.ROYAL_DUKE, ROLES.ARCHDUKE, ROLES.GRAND_DUKE, ROLES.LORD_HIGH_STEWARD,
