@@ -458,12 +458,12 @@ class LuckyDipCaseItem(ShopItem):
         # Every outcome does something — no "nothing" outcomes
         self.outcomes = [
             # UKPence wins (all > 100 so they're net profit)
-            {"type": "ukpence", "weight": 12, "amount": 150, "emoji": "🏦", "color": 0x00cc66, "label": "+150 UKPence"},
-            {"type": "ukpence", "weight": 6, "amount": 250, "emoji": "💰", "color": 0x00ff88, "label": "+250 UKPence"},
+            {"type": "ukpence", "weight": 9, "amount": 150, "emoji": "🏦", "color": 0x00cc66, "label": "+150 UKPence"},
+            {"type": "ukpence", "weight": 5, "amount": 250, "emoji": "💰", "color": 0x00ff88, "label": "+250 UKPence"},
             {"type": "ukpence", "weight": 2, "amount": 500, "emoji": "💎", "color": 0x00ff00, "label": "+500 UKPence"},
             # Shutcoins
-            {"type": "shutcoins", "weight": 14, "amount": 1, "emoji": "🪙", "color": 0xffd700, "label": "1 Shutcoin"},
-            {"type": "shutcoins", "weight": 8, "amount": 3, "emoji": "💰", "color": 0xffd700, "label": "3 Shutcoins"},
+            {"type": "shutcoins", "weight": 16, "amount": 1, "emoji": "🪙", "color": 0xffd700, "label": "1 Shutcoin"},
+            {"type": "shutcoins", "weight": 10, "amount": 3, "emoji": "💰", "color": 0xffd700, "label": "3 Shutcoins"},
             {"type": "shutcoins", "weight": 4, "amount": 5, "emoji": "🤑", "color": 0xffd700, "label": "5 Shutcoins"},
             # Timeouts
             {"type": "timeout", "weight": 8, "duration": 0.5, "emoji": "⚡", "color": 0xffcc00, "label": "30s timeout"},
