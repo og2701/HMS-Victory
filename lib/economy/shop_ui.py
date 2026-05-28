@@ -470,20 +470,23 @@ class VIPCaseSpinView(View):
                 label = label.replace(" cashback", " CB")
                 label = label.replace(" CASHBACK", " CB")
 
+                # Center the label within 14 characters to align the reel beautifully
+                centered_label = label.center(14)
+
                 if j == 0:
                     if i == len(spin_sequence) - 1:
-                        display_items.append(f"➤ {curr_item['emoji']} {label} ⬅")
+                        display_items.append(f"➤ {curr_item['emoji']} {centered_label} ⬅")
                     else:
-                        display_items.append(f"▶ {curr_item['emoji']} {label} ◀")
+                        display_items.append(f"▶ {curr_item['emoji']} {centered_label} ◀")
                 else:
-                    display_items.append(f"  {curr_item['emoji']} {label}")
+                    display_items.append(f"  {curr_item['emoji']} {centered_label}  ")
 
             reel_display = "\n".join([
-                "─────────────────",
+                "────────────────────────",
                 display_items[0],
                 display_items[1],  
                 display_items[2],
-                "─────────────────"
+                "────────────────────────"
             ])
 
             if i == len(spin_sequence) - 1:
@@ -495,14 +498,14 @@ class VIPCaseSpinView(View):
                     color=color
                 )
             else:
-                title = f"🎰 {self.user.display_name}'s Spin"
+                title = f"🎰 {self.user.display_name}'s Spin | Spinning..."
                 color = 0xffff00
                 embed = discord.Embed(
                     title=title,
-                    description=f"```\n{reel_display}\n```",
+                    description=f"```\n{reel_display}\n```\n*Spinning the wheel of fortune...*",
                     color=color
                 )
-                progress = "█" * (i * 10 // len(spin_sequence)) + "░" * (10 - (i * 10 // len(spin_sequence)))
+                progress = "█" * (i * 20 // len(spin_sequence)) + "░" * (20 - (i * 20 // len(spin_sequence)))
                 embed.add_field(name="Progress", value=progress, inline=False)
 
             await self.message.edit(embed=embed, view=self)
@@ -696,20 +699,23 @@ class LuckyDipCaseSpinView(View):
                 label = label.replace(" cashback", " CB")
                 label = label.replace(" CASHBACK", " CB")
 
+                # Center the label within 14 characters to align the reel beautifully
+                centered_label = label.center(14)
+
                 if j == 0:
                     if i == len(spin_sequence) - 1:
-                        display_items.append(f"➤ {curr_item['emoji']} {label} ⬅")
+                        display_items.append(f"➤ {curr_item['emoji']} {centered_label} ⬅")
                     else:
-                        display_items.append(f"▶ {curr_item['emoji']} {label} ◀")
+                        display_items.append(f"▶ {curr_item['emoji']} {centered_label} ◀")
                 else:
-                    display_items.append(f"  {curr_item['emoji']} {label}")
+                    display_items.append(f"  {curr_item['emoji']} {centered_label}  ")
 
             reel_display = "\n".join([
-                "─────────────────",
+                "────────────────────────",
                 display_items[0],
                 display_items[1],
                 display_items[2],
-                "─────────────────"
+                "────────────────────────"
             ])
 
             if i == len(spin_sequence) - 1:
@@ -721,14 +727,14 @@ class LuckyDipCaseSpinView(View):
                     color=color
                 )
             else:
-                title = f"🎰 {self.user.display_name}'s Lucky Dip"
+                title = f"🎰 {self.user.display_name}'s Lucky Dip | Spinning..."
                 color = 0xffff00
                 embed = discord.Embed(
                     title=title,
-                    description=f"```\n{reel_display}\n```",
+                    description=f"```\n{reel_display}\n```\n*Spinning the wheel of fortune...*",
                     color=color
                 )
-                progress = "█" * (i * 10 // len(spin_sequence)) + "░" * (10 - (i * 10 // len(spin_sequence)))
+                progress = "█" * (i * 20 // len(spin_sequence)) + "░" * (20 - (i * 20 // len(spin_sequence)))
                 embed.add_field(name="Progress", value=progress, inline=False)
 
             await self.message.edit(embed=embed, view=self)
