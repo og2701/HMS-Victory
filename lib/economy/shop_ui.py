@@ -595,17 +595,28 @@ class VIPCaseSpinView(View):
                 result_embed.description = "Error: VIP role not found. Please contact staff."
 
         elif outcome["type"] == "timeout":
-            duration = timedelta(minutes=outcome["duration"])
-            try:
-                await interaction.user.timeout(duration, reason="VIP Case outcome")
-                result_embed.description = f"{outcome['emoji']} {self.user.mention} got a **{outcome['duration']} minute timeout**!\n\nBetter luck next time!"
-            except discord.Forbidden:
+            from config import ROLES
+            is_border_force = any(r.id == ROLES.BORDER_FORCE for r in interaction.user.roles)
+
+            if is_border_force:
                 # Levy an Exemption Tax of -25 UKP instead!
-                had_funds = remove_bb(interaction.user.id, 25, reason="VIP Case timeout exemption tax")
+                had_funds = remove_bb(interaction.user.id, 25, reason="VIP Case timeout exemption tax (Border Force)")
                 if had_funds:
-                    result_embed.description = f"🛡️ {self.user.mention} is immune to timeouts (Staff/Admin)!\n\nGovernment has levied a **-25 UKPence Timeout Exemption Tax** instead! 💸"
+                    result_embed.description = f"🛡️ {self.user.mention} is exempt from timeouts (Border Force)!\n\nGovernment has levied a **-25 UKPence Timeout Exemption Tax** instead! 💸"
                 else:
-                    result_embed.description = f"🛡️ {self.user.mention} is immune to timeouts (Staff/Admin)!\n\nYou got lucky, you are too broke to pay the exemption tax! 😅"
+                    result_embed.description = f"🛡️ {self.user.mention} is exempt from timeouts (Border Force)!\n\nYou got lucky, you are too broke to pay the exemption tax! 😅"
+            else:
+                duration = timedelta(minutes=outcome["duration"])
+                try:
+                    await interaction.user.timeout(duration, reason="VIP Case outcome")
+                    result_embed.description = f"{outcome['emoji']} {self.user.mention} got a **{outcome['duration']} minute timeout**!\n\nBetter luck next time!"
+                except discord.Forbidden:
+                    # Levy an Exemption Tax of -25 UKP instead!
+                    had_funds = remove_bb(interaction.user.id, 25, reason="VIP Case timeout exemption tax (Staff/Admin)")
+                    if had_funds:
+                        result_embed.description = f"🛡️ {self.user.mention} is immune to timeouts (Staff/Admin)!\n\nGovernment has levied a **-25 UKPence Timeout Exemption Tax** instead! 💸"
+                    else:
+                        result_embed.description = f"🛡️ {self.user.mention} is immune to timeouts (Staff/Admin)!\n\nYou got lucky, you are too broke to pay the exemption tax! 😅"
 
         elif outcome["type"] == "shutcoins":
             add_shutcoins(interaction.user.id, outcome["amount"])
@@ -848,21 +859,32 @@ class LuckyDipCaseSpinView(View):
             result_embed.description = f"{outcome['emoji']} {self.user.mention} won **{outcome['amount']} Shutcoin{'s' if outcome['amount'] != 1 else ''}**!\n\nNot bad!"
 
         elif outcome["type"] == "timeout":
-            duration = timedelta(minutes=outcome["duration"])
-            try:
-                await interaction.user.timeout(duration, reason="Lucky Dip outcome")
-                if outcome["duration"] < 1:
-                    duration_str = f"{int(outcome['duration'] * 60)} second"
-                else:
-                    duration_str = f"{int(outcome['duration'])} minute"
-                result_embed.description = f"{outcome['emoji']} {self.user.mention} got a **{duration_str} timeout**!\n\nBetter luck next time!"
-            except discord.Forbidden:
+            from config import ROLES
+            is_border_force = any(r.id == ROLES.BORDER_FORCE for r in interaction.user.roles)
+
+            if is_border_force:
                 # Levy an Exemption Tax of -25 UKP instead!
-                had_funds = remove_bb(interaction.user.id, 25, reason="Lucky Dip timeout exemption tax")
+                had_funds = remove_bb(interaction.user.id, 25, reason="Lucky Dip timeout exemption tax (Border Force)")
                 if had_funds:
-                    result_embed.description = f"🛡️ {self.user.mention} is immune to timeouts (Staff/Admin)!\n\nGovernment has levied a **-25 UKPence Timeout Exemption Tax** instead! 💸"
+                    result_embed.description = f"🛡️ {self.user.mention} is exempt from timeouts (Border Force)!\n\nGovernment has levied a **-25 UKPence Timeout Exemption Tax** instead! 💸"
                 else:
-                    result_embed.description = f"🛡️ {self.user.mention} is immune to timeouts (Staff/Admin)!\n\nYou got lucky, you are too broke to pay the exemption tax! 😅"
+                    result_embed.description = f"🛡️ {self.user.mention} is exempt from timeouts (Border Force)!\n\nYou got lucky, you are too broke to pay the exemption tax! 😅"
+            else:
+                duration = timedelta(minutes=outcome["duration"])
+                try:
+                    await interaction.user.timeout(duration, reason="Lucky Dip outcome")
+                    if outcome["duration"] < 1:
+                        duration_str = f"{int(outcome['duration'] * 60)} second"
+                    else:
+                        duration_str = f"{int(outcome['duration'])} minute"
+                    result_embed.description = f"{outcome['emoji']} {self.user.mention} got a **{duration_str} timeout**!\n\nBetter luck next time!"
+                except discord.Forbidden:
+                    # Levy an Exemption Tax of -25 UKP instead!
+                    had_funds = remove_bb(interaction.user.id, 25, reason="Lucky Dip timeout exemption tax (Staff/Admin)")
+                    if had_funds:
+                        result_embed.description = f"🛡️ {self.user.mention} is immune to timeouts (Staff/Admin)!\n\nGovernment has levied a **-25 UKPence Timeout Exemption Tax** instead! 💸"
+                    else:
+                        result_embed.description = f"🛡️ {self.user.mention} is immune to timeouts (Staff/Admin)!\n\nYou got lucky, you are too broke to pay the exemption tax! 😅"
 
         elif outcome["type"] == "lose_ukpence":
             # Deduct additional UKPence (goes back to bank via remove_bb)
