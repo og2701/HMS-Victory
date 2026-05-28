@@ -435,14 +435,15 @@ class VIPCaseSpinView(View):
         if not selected_outcome:
             selected_outcome = dynamic_outcomes[-1] 
 
+        # Build spin sequence (22 items to prevent index out of bounds for j = 1)
         spin_sequence = []
-        for _ in range(20): 
+        for _ in range(22): 
             spin_sequence.append(random.choice(dynamic_outcomes))
 
         win_position = random.randint(16, 19) 
         spin_sequence[win_position] = selected_outcome
 
-        for i in range(len(spin_sequence)):
+        for i in range(win_position + 1):
             item = spin_sequence[i]
 
             if i < 8: delay = 0.05 
@@ -474,7 +475,7 @@ class VIPCaseSpinView(View):
                 centered_label = label.center(14)
 
                 if j == 0:
-                    if i == len(spin_sequence) - 1:
+                    if i == win_position:
                         display_items.append(f"➤ {curr_item['emoji']} {centered_label} ⬅")
                     else:
                         display_items.append(f"▶ {curr_item['emoji']} {centered_label} ◀")
@@ -489,7 +490,7 @@ class VIPCaseSpinView(View):
                 "────────────────────────"
             ])
 
-            if i == len(spin_sequence) - 1:
+            if i == win_position:
                 title = f"🎰 WINNER: {selected_outcome['emoji']} {selected_outcome['label']}"
                 color = selected_outcome["color"]
                 embed = discord.Embed(
@@ -505,12 +506,12 @@ class VIPCaseSpinView(View):
                     description=f"```\n{reel_display}\n```\n*Spinning the wheel of fortune...*",
                     color=color
                 )
-                progress = "█" * (i * 20 // len(spin_sequence)) + "░" * (20 - (i * 20 // len(spin_sequence)))
+                progress = "█" * (i * 20 // win_position) + "░" * (20 - (i * 20 // win_position))
                 embed.add_field(name="Progress", value=progress, inline=False)
 
             await self.message.edit(embed=embed, view=self)
 
-            if i < len(spin_sequence) - 1:
+            if i < win_position:
                 await asyncio.sleep(delay)
 
         await self.process_result(interaction, selected_outcome)
@@ -663,15 +664,15 @@ class LuckyDipCaseSpinView(View):
         if not selected_outcome:
             selected_outcome = self.outcomes[-1]
 
-        # Build spin sequence (20 items, winner placed near end)
+        # Build spin sequence (22 items to prevent index out of bounds for j = 1)
         spin_sequence = []
-        for _ in range(20):
+        for _ in range(22):
             spin_sequence.append(random.choice(self.outcomes))
 
         win_position = random.randint(16, 19)
         spin_sequence[win_position] = selected_outcome
 
-        for i in range(len(spin_sequence)):
+        for i in range(win_position + 1):
             item = spin_sequence[i]
 
             if i < 8: delay = 0.05
@@ -703,7 +704,7 @@ class LuckyDipCaseSpinView(View):
                 centered_label = label.center(14)
 
                 if j == 0:
-                    if i == len(spin_sequence) - 1:
+                    if i == win_position:
                         display_items.append(f"➤ {curr_item['emoji']} {centered_label} ⬅")
                     else:
                         display_items.append(f"▶ {curr_item['emoji']} {centered_label} ◀")
@@ -718,7 +719,7 @@ class LuckyDipCaseSpinView(View):
                 "────────────────────────"
             ])
 
-            if i == len(spin_sequence) - 1:
+            if i == win_position:
                 title = f"🎰 RESULT: {selected_outcome['emoji']} {selected_outcome['label']}"
                 color = selected_outcome["color"]
                 embed = discord.Embed(
@@ -734,12 +735,12 @@ class LuckyDipCaseSpinView(View):
                     description=f"```\n{reel_display}\n```\n*Spinning the wheel of fortune...*",
                     color=color
                 )
-                progress = "█" * (i * 20 // len(spin_sequence)) + "░" * (20 - (i * 20 // len(spin_sequence)))
+                progress = "█" * (i * 20 // win_position) + "░" * (20 - (i * 20 // win_position))
                 embed.add_field(name="Progress", value=progress, inline=False)
 
             await self.message.edit(embed=embed, view=self)
 
-            if i < len(spin_sequence) - 1:
+            if i < win_position:
                 await asyncio.sleep(delay)
 
         await self.process_result(interaction, selected_outcome)
