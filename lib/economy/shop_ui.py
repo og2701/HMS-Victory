@@ -619,6 +619,13 @@ class VIPCaseSpinView(View):
 
         await self.message.edit(embed=result_embed, view=self)
 
+        # Safety fallback: re-sync the final result 1.5s later to override any Discord websocket/gateway out-of-order client lag
+        await asyncio.sleep(1.5)
+        try:
+            await self.message.edit(embed=result_embed, view=self)
+        except Exception:
+            pass
+
     async def try_again_callback(self, interaction: discord.Interaction):
         from lib.economy.shop_items import get_shop_items
         
@@ -868,6 +875,13 @@ class LuckyDipCaseSpinView(View):
         self.add_item(try_again_button)
 
         await self.message.edit(embed=result_embed, view=self)
+
+        # Safety fallback: re-sync the final result 1.5s later to override any Discord websocket/gateway out-of-order client lag
+        await asyncio.sleep(1.5)
+        try:
+            await self.message.edit(embed=result_embed, view=self)
+        except Exception:
+            pass
 
     async def try_again_callback(self, interaction: discord.Interaction):
         from lib.economy.shop_items import get_shop_items
