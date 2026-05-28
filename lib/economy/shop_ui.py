@@ -16,6 +16,7 @@ from lib.economy.bank_manager import BankManager
 from database import award_badge
 from lib.core.image_processing import generate_shop_preview_grid, generate_shop_preview_grid_async
 import io
+from config import CHANNELS
 
 ACTIVE_SPINS = set()
 
