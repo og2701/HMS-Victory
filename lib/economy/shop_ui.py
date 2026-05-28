@@ -17,6 +17,8 @@ from database import award_badge
 from lib.core.image_processing import generate_shop_preview_grid, generate_shop_preview_grid_async
 import io
 
+ACTIVE_SPINS = set()
+
 class ShopItemSelect(Select):
     """Dropdown menu to select a shop item."""
     def __init__(self, items: List['ShopItem'], user_id: int, guild: Optional[discord.Guild] = None):
@@ -247,6 +249,23 @@ class PurchaseConfirmationView(View):
 
     @discord.ui.button(label="Confirm Purchase", style=discord.ButtonStyle.green, emoji="✅", row=0)
     async def confirm_purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if button.disabled:
+            return
+
+        # Check if they already have an active case spin in progress
+        if self.item.id in ["vip_case", "lucky_dip"] and interaction.user.id in ACTIVE_SPINS:
+            await interaction.response.send_message(
+                "❌ You already have an active spin in progress! Please wait for it to finish.",
+                ephemeral=True
+            )
+            return
+
+        button.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
         ensure_bb(interaction.user.id)
         user_balance = get_bb(interaction.user.id)
         price = self.item.get_price(interaction.user.id, interaction.guild)
@@ -256,12 +275,22 @@ class PurchaseConfirmationView(View):
                 f"❌ Insufficient funds! You need {price} UKPence but only have {user_balance}.",
                 ephemeral=True
             )
+            button.disabled = False
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                pass
             return
 
         # Double check if user can purchase
         can_purchase, reason = self.item.can_purchase(interaction.user)
         if not can_purchase:
             await interaction.response.send_message(f"❌ Cannot purchase: {reason}", ephemeral=True)
+            button.disabled = False
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                pass
             return
 
         # Charge the user
@@ -297,6 +326,11 @@ class PurchaseConfirmationView(View):
                     await interaction.response.send_message(error_msg, ephemeral=True)
                 else:
                     await interaction.followup.send(error_msg, ephemeral=True)
+                button.disabled = False
+                try:
+                    await interaction.message.edit(view=self)
+                except Exception:
+                    pass
                 return
 
             if not success:
@@ -308,6 +342,11 @@ class PurchaseConfirmationView(View):
                     await interaction.response.send_message(f"❌ Purchase failed: {result_message}", ephemeral=True)
                 else:
                     await interaction.followup.send(f"❌ Purchase failed: {result_message}", ephemeral=True)
+                button.disabled = False
+                try:
+                    await interaction.message.edit(view=self)
+                except Exception:
+                    pass
                 return
 
             # Item was successfully granted — from here, errors are UI-only (don't refund)
@@ -400,13 +439,22 @@ class VIPCaseSpinView(View):
             await interaction.response.defer()
             return
 
+        if interaction.user.id in ACTIVE_SPINS:
+            await interaction.response.send_message("❌ You already have an active spin in progress!", ephemeral=True)
+            return
+
         self.spinning = True
+        ACTIVE_SPINS.add(interaction.user.id)
         await interaction.response.defer()
 
         for item in self.children:
             item.disabled = True
 
-        await self.animate_spin(interaction)
+        try:
+            await self.animate_spin(interaction)
+        except Exception as e:
+            ACTIVE_SPINS.discard(self.user.id)
+            logging.error(f"Error during VIP spin animation: {e}", exc_info=True)
 
     async def animate_spin(self, interaction: discord.Interaction):
         """Animate the spinning case."""
@@ -518,6 +566,7 @@ class VIPCaseSpinView(View):
 
     async def process_result(self, interaction: discord.Interaction, outcome):
         """Process the winning outcome."""
+        ACTIVE_SPINS.discard(self.user.id)
         result_embed = discord.Embed(
             title=f"🎰 {self.user.display_name}'s VIP Role Case - RESULT",
             color=outcome["color"]
@@ -639,13 +688,22 @@ class LuckyDipCaseSpinView(View):
             await interaction.response.defer()
             return
 
+        if interaction.user.id in ACTIVE_SPINS:
+            await interaction.response.send_message("❌ You already have an active spin in progress!", ephemeral=True)
+            return
+
         self.spinning = True
+        ACTIVE_SPINS.add(interaction.user.id)
         await interaction.response.defer()
 
         for item in self.children:
             item.disabled = True
 
-        await self.animate_spin(interaction)
+        try:
+            await self.animate_spin(interaction)
+        except Exception as e:
+            ACTIVE_SPINS.discard(self.user.id)
+            logging.error(f"Error during Lucky Dip spin animation: {e}", exc_info=True)
 
     async def animate_spin(self, interaction: discord.Interaction):
         """Animate the spinning case."""
@@ -747,6 +805,7 @@ class LuckyDipCaseSpinView(View):
 
     async def process_result(self, interaction: discord.Interaction, outcome):
         """Process the winning outcome."""
+        ACTIVE_SPINS.discard(self.user.id)
         from config import CHANNELS
 
         result_embed = discord.Embed(
