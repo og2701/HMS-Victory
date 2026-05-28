@@ -448,6 +448,47 @@ class VIPCaseItem(ShopItem):
         # Return a placeholder message (actual result will be in the view)
         return "Case opening started!"
 
+class LuckyDipCaseItem(ShopItem):
+    """Lucky Dip case with CS:GO-style spinning mechanic. Cheaper alternative to VIP Case."""
+
+    def __init__(self, id: str, name: str, description: str, price: int, use_inventory: bool = True):
+        super().__init__(id, name, description, price, use_inventory)
+
+        # Define possible outcomes with weights (total weight = 100)
+        # Every outcome does something — no "nothing" outcomes
+        self.outcomes = [
+            # UKPence wins (all > 100 so they're net profit)
+            {"type": "ukpence", "weight": 12, "amount": 150, "emoji": "🏦", "color": 0x00cc66, "label": "+150 UKPence"},
+            {"type": "ukpence", "weight": 6, "amount": 250, "emoji": "💰", "color": 0x00ff88, "label": "+250 UKPence"},
+            {"type": "ukpence", "weight": 2, "amount": 500, "emoji": "💎", "color": 0x00ff00, "label": "+500 UKPence"},
+            # Shutcoins
+            {"type": "shutcoins", "weight": 14, "amount": 1, "emoji": "🪙", "color": 0xffd700, "label": "1 Shutcoin"},
+            {"type": "shutcoins", "weight": 8, "amount": 3, "emoji": "💰", "color": 0xffd700, "label": "3 Shutcoins"},
+            {"type": "shutcoins", "weight": 4, "amount": 5, "emoji": "🤑", "color": 0xffd700, "label": "5 Shutcoins"},
+            # Timeouts
+            {"type": "timeout", "weight": 8, "duration": 0.5, "emoji": "⚡", "color": 0xffcc00, "label": "30s timeout"},
+            {"type": "timeout", "weight": 18, "duration": 1, "emoji": "⏱️", "color": 0xff9900, "label": "1min timeout"},
+            {"type": "timeout", "weight": 12, "duration": 5, "emoji": "⏰", "color": 0xff6600, "label": "5min timeout"},
+            {"type": "timeout", "weight": 6, "duration": 15, "emoji": "🕐", "color": 0xff3300, "label": "15min timeout"},
+            # UK-themed penalties (lose extra UKPence on top of the spin cost)
+            {"type": "lose_ukpence", "weight": 4, "amount": 25, "emoji": "🏛️", "color": 0xcc0000, "label": "Council Tax"},
+            {"type": "lose_ukpence", "weight": 3, "amount": 50, "emoji": "🅿️", "color": 0xaa0000, "label": "Parking Fine"},
+            {"type": "lose_ukpence", "weight": 3, "amount": 100, "emoji": "🎩", "color": 0x880000, "label": "HMRC Tax Raid"},
+        ]
+
+    async def execute(self, interaction) -> str:
+        # Import here to avoid circular dependencies
+        from lib.economy.shop_ui import LuckyDipCaseSpinView
+
+        # Create the spinning case view
+        view = LuckyDipCaseSpinView(self.outcomes, self.price, interaction.user)
+
+        # Start the spin
+        await view.start_spin(interaction)
+
+        # Return a placeholder message (actual result will be in the view)
+        return "Case opening started!"
+
 class RoastAccessItem(ShopItem):
     """Shop item for purchasing roast command access."""
 
@@ -682,6 +723,9 @@ SHOP_ITEMS: List[ShopItem] = [
 
     # VIP Case - Gambling item (with inventory tracking)
     VIPCaseItem("vip_case", "VIP Role Case", "Open a case for a chance to win the VIP role! Contains various rewards and risks.", 3000, ROLES.VIP, use_inventory=True),
+
+    # Lucky Dip Case - Cheap gambling item (with inventory tracking)
+    LuckyDipCaseItem("lucky_dip", "Lucky Dip", "A cheap lucky dip! Win UKPence, Shutcoins, or risk timeouts and fines.", 100, use_inventory=True),
 
     # Service Items
     RoastAccessItem("roast_access", "Roast Access", "Get access to the /roast command (if not already a server booster)", 500, use_inventory=True),

@@ -312,7 +312,7 @@ class PurchaseConfirmationView(View):
 
             # Item was successfully granted — from here, errors are UI-only (don't refund)
             try:
-                if self.item.name not in ["VIP Role Case", "Custom Emoji/Sticker"]:
+                if self.item.name not in ["VIP Role Case", "Custom Emoji/Sticker", "Lucky Dip"]:
                     # Return to main browser but show a success ephemeral message
                     self.return_view._update_buttons()
                     
@@ -581,6 +581,227 @@ class VIPCaseSpinView(View):
 
         await interaction.response.send_message(embed=embed, view=detail_view, ephemeral=True)
 
+
+class LuckyDipCaseSpinView(View):
+    """Interactive view for the Lucky Dip case spinning animation."""
+
+    def __init__(self, outcomes, price, user):
+        super().__init__(timeout=60)
+        self.outcomes = outcomes
+        self.price = price
+        self.user = user
+        self.result = None
+        self.spinning = False
+        self.message = None
+
+    async def start_spin(self, interaction):
+        """Start the spinning animation."""
+        self.spinning = False
+
+        embed = discord.Embed(
+            title="🎰 Lucky Dip",
+            description=f"{self.user.mention} is opening a Lucky Dip!\n\nPress SPIN to try your luck!",
+            color=0xffff00
+        )
+
+        spin_button = Button(label="SPIN", style=discord.ButtonStyle.primary, emoji="🎲")
+        spin_button.callback = self.spin_callback
+        self.add_item(spin_button)
+
+        if not interaction.response.is_done():
+            await interaction.response.send_message(embed=embed, view=self, ephemeral=False)
+            self.message = await interaction.original_response()
+        else:
+            self.message = await interaction.followup.send(embed=embed, view=self, ephemeral=False)
+
+    async def spin_callback(self, interaction: discord.Interaction):
+        """Handle the spin button press."""
+        if self.spinning:
+            await interaction.response.defer()
+            return
+
+        self.spinning = True
+        await interaction.response.defer()
+
+        for item in self.children:
+            item.disabled = True
+
+        await self.animate_spin(interaction)
+
+    async def animate_spin(self, interaction: discord.Interaction):
+        """Animate the spinning case."""
+        # Standard weighted random selection
+        total_weight = sum(outcome["weight"] for outcome in self.outcomes)
+        rand = random.random() * total_weight
+
+        current_weight = 0
+        selected_outcome = None
+        for outcome in self.outcomes:
+            current_weight += outcome["weight"]
+            if rand <= current_weight:
+                selected_outcome = outcome
+                break
+
+        if not selected_outcome:
+            selected_outcome = self.outcomes[-1]
+
+        # Build spin sequence (20 items, winner placed near end)
+        spin_sequence = []
+        for _ in range(20):
+            spin_sequence.append(random.choice(self.outcomes))
+
+        win_position = random.randint(16, 19)
+        spin_sequence[win_position] = selected_outcome
+
+        for i in range(len(spin_sequence)):
+            item = spin_sequence[i]
+
+            if i < 8: delay = 0.05
+            elif i < 14: delay = 0.08
+            elif i < 17: delay = 0.12
+            else: delay = 0.2 + (i - 17) * 0.1
+
+            display_items = []
+            for j in range(-1, 2):
+                idx = (i + j) % len(spin_sequence)
+                curr_item = spin_sequence[idx]
+
+                if j == 0:
+                    if i == len(spin_sequence) - 1:
+                        display_items.append(f"➤ {curr_item['emoji']} {curr_item['label']} ⬅")
+                    else:
+                        display_items.append(f"▶ {curr_item['emoji']} {curr_item['label']} ◀")
+                else:
+                    display_items.append(f"  {curr_item['emoji']} {curr_item['label']}")
+
+            reel_display = "\n".join([
+                "━━━━━━━━━━━━━━━━━",
+                display_items[0],
+                display_items[1],
+                display_items[2],
+                "━━━━━━━━━━━━━━━━━"
+            ])
+
+            if i == len(spin_sequence) - 1:
+                title = f"🎰 RESULT: {selected_outcome['emoji']} {selected_outcome['label']}"
+                color = selected_outcome["color"]
+                embed = discord.Embed(
+                    title=title,
+                    description=f"```\n{reel_display}\n```\n**{self.user.mention} got: {selected_outcome['emoji']} {selected_outcome['label']}!**",
+                    color=color
+                )
+            else:
+                title = f"🎰 {self.user.display_name}'s Lucky Dip"
+                color = 0xffff00
+                embed = discord.Embed(
+                    title=title,
+                    description=f"```\n{reel_display}\n```",
+                    color=color
+                )
+                progress = "█" * (i * 10 // len(spin_sequence)) + "░" * (10 - (i * 10 // len(spin_sequence)))
+                embed.add_field(name="Progress", value=progress, inline=False)
+
+            await self.message.edit(embed=embed, view=self)
+
+            if i < len(spin_sequence) - 1:
+                await asyncio.sleep(delay)
+
+        await self.process_result(interaction, selected_outcome)
+
+    async def process_result(self, interaction: discord.Interaction, outcome):
+        """Process the winning outcome."""
+        from config import CHANNELS
+
+        result_embed = discord.Embed(
+            title=f"🎰 {self.user.display_name}'s Lucky Dip - RESULT",
+            color=outcome["color"]
+        )
+
+        if outcome["type"] == "ukpence":
+            # Award UKPence from the bank
+            amount = outcome["amount"]
+            success = add_bb(interaction.user.id, amount, reason=f"Lucky Dip win ({outcome['label']})", taxable=False)
+            if success:
+                result_embed.description = f"{outcome['emoji']} {self.user.mention} won **{amount} UKPence**!\n\n💰 Nice profit!"
+            else:
+                result_embed.description = f"{outcome['emoji']} {self.user.mention} won **{amount} UKPence** but the bank is empty! Contact staff."
+
+        elif outcome["type"] == "shutcoins":
+            add_shutcoins(interaction.user.id, outcome["amount"])
+            result_embed.description = f"{outcome['emoji']} {self.user.mention} won **{outcome['amount']} Shutcoin{'s' if outcome['amount'] != 1 else ''}**!\n\nNot bad!"
+
+        elif outcome["type"] == "timeout":
+            duration = timedelta(minutes=outcome["duration"])
+            try:
+                await interaction.user.timeout(duration, reason="Lucky Dip outcome")
+                if outcome["duration"] < 1:
+                    duration_str = f"{int(outcome['duration'] * 60)} second"
+                else:
+                    duration_str = f"{int(outcome['duration'])} minute"
+                result_embed.description = f"{outcome['emoji']} {self.user.mention} got a **{duration_str} timeout**!\n\nBetter luck next time!"
+            except discord.Forbidden:
+                result_embed.description = f"{outcome['emoji']} {self.user.mention} would have gotten a timeout, but I don't have permission!"
+
+        elif outcome["type"] == "lose_ukpence":
+            # Deduct additional UKPence (goes back to bank via remove_bb)
+            amount = outcome["amount"]
+            had_funds = remove_bb(interaction.user.id, amount, reason=f"Lucky Dip penalty ({outcome['label']})")
+            if had_funds:
+                result_embed.description = f"{outcome['emoji']} {self.user.mention} got hit with **{outcome['label']}**!\n\n-{amount} UKPence! 💸"
+            else:
+                # They don't have enough to lose — just show the message without deducting
+                result_embed.description = f"{outcome['emoji']} {self.user.mention} got hit with **{outcome['label']}**!\n\nYou're too broke to pay the -{amount} UKPence fine... lucky you! 😅"
+
+        # Log to bot usage log
+        log_channel = interaction.guild.get_channel(CHANNELS.BOT_USAGE_LOG)
+        if log_channel:
+            log_embed = discord.Embed(title="🎰 Lucky Dip Result", color=outcome["color"])
+            log_embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+            log_embed.add_field(name="User", value=interaction.user.mention, inline=True)
+            log_embed.add_field(name="Result", value=f"{outcome['emoji']} {outcome['label']}", inline=True)
+            log_embed.set_footer(text=f"User ID: {interaction.user.id}")
+            log_embed.timestamp = discord.utils.utcnow()
+            await log_channel.send(embed=log_embed)
+
+        self.clear_items()
+
+        # Always offer Try Again
+        try_again_button = Button(label=f"Try Again ({self.price} UKPence)", style=discord.ButtonStyle.secondary, emoji="🔄")
+        try_again_button.callback = self.try_again_callback
+        self.add_item(try_again_button)
+
+        await self.message.edit(embed=result_embed, view=self)
+
+    async def try_again_callback(self, interaction: discord.Interaction):
+        from lib.economy.shop_items import get_shop_items
+
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message("Only the original purchaser can use the Try Again button!", ephemeral=True)
+            return
+
+        balance = get_bb(interaction.user.id)
+        if balance < self.price:
+            await interaction.response.send_message(f"❌ Insufficient funds! You need {self.price} UKPence but only have {balance} UKPence.", ephemeral=True)
+            return
+
+        items = get_shop_items()
+        lucky_dip_item = next((item for item in items if item.id == "lucky_dip"), None)
+
+        if not lucky_dip_item:
+            await interaction.response.send_message("❌ Error: Lucky Dip item not found in shop!", ephemeral=True)
+            return
+
+        from lib.economy.shop_ui import ShopOverviewView
+
+        main_view = ShopOverviewView(items, interaction.user.id)
+
+        detail_view = PurchaseConfirmationView(lucky_dip_item, main_view)
+
+        embed = discord.Embed(title="💳 Confirm Purchase", description=f"Are you sure you want to buy **{lucky_dip_item.name}**?\n\n> *{lucky_dip_item.description}*", color=0x00ff00)
+        embed.add_field(name="Price", value=f"{lucky_dip_item.price} UKPence", inline=True)
+        embed.add_field(name="Your Balance", value=f"{balance} UKPence", inline=True)
+
+        await interaction.response.send_message(embed=embed, view=detail_view, ephemeral=True)
 
 
 class CustomEmojiStickerView(View):

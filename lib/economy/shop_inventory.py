@@ -222,6 +222,9 @@ class ShopInventory:
         # Initialize the shutcoin item with unlimited quantity
         ShopInventory.initialize_item("shutcoin", 999999, None, True, 80)
 
+        # Initialize the Lucky Dip case: max 30 stock, auto-restock +3 every 12h
+        ShopInventory.initialize_item("lucky_dip", 30, 30, True, 3)
+
         # Add some example limited items (uncomment and modify as needed)
         # ShopInventory.initialize_item("ball_inspector", 5, 10, True, 2)  # Limited role
         # ShopInventory.initialize_item("personal_vc", 3, 5, False, 0)     # Very limited service
