@@ -455,20 +455,35 @@ class VIPCaseSpinView(View):
                 idx = (i + j) % len(spin_sequence)
                 curr_item = spin_sequence[idx]
 
+                # Shorten the label to prevent formatting overflow/wrapping in the monospace reel
+                label = curr_item['label']
+                label = label.replace(" UKPence", " UKP")
+                label = label.replace(" Shutcoins", " SC")
+                label = label.replace(" Shutcoin", " SC")
+                label = label.replace(" timeout", " Mute")
+                label = label.replace("1min", "1m")
+                label = label.replace("5min", "5m")
+                label = label.replace("10min", "10m")
+                label = label.replace("15min", "15m")
+                label = label.replace("30min", "30m")
+                label = label.replace(" Tax Raid", " Raid")
+                label = label.replace(" cashback", " CB")
+                label = label.replace(" CASHBACK", " CB")
+
                 if j == 0:
                     if i == len(spin_sequence) - 1:
-                        display_items.append(f"➤ {curr_item['emoji']} {curr_item['label']} ⬅")
+                        display_items.append(f"➤ {curr_item['emoji']} {label} ⬅")
                     else:
-                        display_items.append(f"▶ {curr_item['emoji']} {curr_item['label']} ◀")
+                        display_items.append(f"▶ {curr_item['emoji']} {label} ◀")
                 else:
-                    display_items.append(f"  {curr_item['emoji']} {curr_item['label']}")
+                    display_items.append(f"  {curr_item['emoji']} {label}")
 
             reel_display = "\n".join([
-                "━━━━━━━━━━━━━━━━━",
+                "─────────────────",
                 display_items[0],
                 display_items[1],  
                 display_items[2],
-                "━━━━━━━━━━━━━━━━━"
+                "─────────────────"
             ])
 
             if i == len(spin_sequence) - 1:
@@ -666,20 +681,35 @@ class LuckyDipCaseSpinView(View):
                 idx = (i + j) % len(spin_sequence)
                 curr_item = spin_sequence[idx]
 
+                # Shorten the label to prevent formatting overflow/wrapping in the monospace reel
+                label = curr_item['label']
+                label = label.replace(" UKPence", " UKP")
+                label = label.replace(" Shutcoins", " SC")
+                label = label.replace(" Shutcoin", " SC")
+                label = label.replace(" timeout", " Mute")
+                label = label.replace("1min", "1m")
+                label = label.replace("5min", "5m")
+                label = label.replace("10min", "10m")
+                label = label.replace("15min", "15m")
+                label = label.replace("30min", "30m")
+                label = label.replace(" Tax Raid", " Raid")
+                label = label.replace(" cashback", " CB")
+                label = label.replace(" CASHBACK", " CB")
+
                 if j == 0:
                     if i == len(spin_sequence) - 1:
-                        display_items.append(f"➤ {curr_item['emoji']} {curr_item['label']} ⬅")
+                        display_items.append(f"➤ {curr_item['emoji']} {label} ⬅")
                     else:
-                        display_items.append(f"▶ {curr_item['emoji']} {curr_item['label']} ◀")
+                        display_items.append(f"▶ {curr_item['emoji']} {label} ◀")
                 else:
-                    display_items.append(f"  {curr_item['emoji']} {curr_item['label']}")
+                    display_items.append(f"  {curr_item['emoji']} {label}")
 
             reel_display = "\n".join([
-                "━━━━━━━━━━━━━━━━━",
+                "─────────────────",
                 display_items[0],
                 display_items[1],
                 display_items[2],
-                "━━━━━━━━━━━━━━━━━"
+                "─────────────────"
             ])
 
             if i == len(spin_sequence) - 1:
