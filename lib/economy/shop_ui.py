@@ -436,6 +436,10 @@ class VIPCaseSpinView(View):
 
     async def spin_callback(self, interaction: discord.Interaction):
         """Handle the spin button press."""
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message("❌ Only the player who purchased this case can spin it!", ephemeral=True)
+            return
+
         if self.spinning:
             await interaction.response.defer()
             return
@@ -692,6 +696,10 @@ class LuckyDipCaseSpinView(View):
 
     async def spin_callback(self, interaction: discord.Interaction):
         """Handle the spin button press."""
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message("❌ Only the player who purchased this case can spin it!", ephemeral=True)
+            return
+
         if self.spinning:
             await interaction.response.defer()
             return
