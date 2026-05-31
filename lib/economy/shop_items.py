@@ -461,14 +461,15 @@ class LuckyDipCaseItem(ShopItem):
             {"type": "ukpence", "weight": 12, "amount": 150, "emoji": "🏦", "color": 0x00cc66, "label": "+150 UKPence"},
             {"type": "ukpence", "weight": 7, "amount": 250, "emoji": "💰", "color": 0x00ff88, "label": "+250 UKPence"},
             {"type": "ukpence", "weight": 3, "amount": 500, "emoji": "💎", "color": 0x00ff00, "label": "+500 UKPence"},
-            # Shutcoins
-            {"type": "shutcoins", "weight": 18, "amount": 1, "emoji": "🪙", "color": 0xffd700, "label": "1 Shutcoin"},
-            {"type": "shutcoins", "weight": 11, "amount": 3, "emoji": "💰", "color": 0xffd700, "label": "3 Shutcoins"},
-            {"type": "shutcoins", "weight": 4, "amount": 5, "emoji": "🤑", "color": 0xffd700, "label": "5 Shutcoins"},
-            # Timeouts
-            {"type": "timeout", "weight": 6, "duration": 0.5, "emoji": "⚡", "color": 0xffcc00, "label": "30s timeout"},
-            {"type": "timeout", "weight": 14, "duration": 1, "emoji": "⏱️", "color": 0xff9900, "label": "1min timeout"},
-            {"type": "timeout", "weight": 10, "duration": 5, "emoji": "⏰", "color": 0xff6600, "label": "5min timeout"},
+            # Shutcoins (increased to 39% total)
+            {"type": "shutcoins", "weight": 20, "amount": 1, "emoji": "🪙", "color": 0xffd700, "label": "1 Shutcoin"},
+            {"type": "shutcoins", "weight": 12, "amount": 3, "emoji": "💰", "color": 0xffd700, "label": "3 Shutcoins"},
+            {"type": "shutcoins", "weight": 5, "amount": 5, "emoji": "🤑", "color": 0xffd700, "label": "5 Shutcoins"},
+            {"type": "shutcoins", "weight": 2, "amount": 10, "emoji": "👑", "color": 0xffd700, "label": "10 Shutcoins"},
+            # Timeouts (reduced to 29% total)
+            {"type": "timeout", "weight": 4, "duration": 0.5, "emoji": "⚡", "color": 0xffcc00, "label": "30s timeout"},
+            {"type": "timeout", "weight": 12, "duration": 1, "emoji": "⏱️", "color": 0xff9900, "label": "1min timeout"},
+            {"type": "timeout", "weight": 8, "duration": 5, "emoji": "⏰", "color": 0xff6600, "label": "5min timeout"},
             {"type": "timeout", "weight": 5, "duration": 15, "emoji": "🕐", "color": 0xff3300, "label": "15min timeout"},
             # UK-themed penalties (lose extra UKPence on top of the spin cost)
             {"type": "lose_ukpence", "weight": 4, "amount": 25, "emoji": "🏛️", "color": 0xcc0000, "label": "Council Tax"},
