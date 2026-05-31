@@ -137,6 +137,9 @@ class USERS:
     HADIDAS = 198144909583056898
     WICK_BOT = 536991182035746816
     LANCA = 1398652914737741956
+    HMS_VICTORY = 1171842947440967770
+
+BOT_ID = USERS.HMS_VICTORY
 
 # --- Mute Notifications ---
 # Users DM'd whenever a member is muted (shut, bedtime, native timeout, Wick, etc.)

@@ -172,6 +172,13 @@ def init_db():
             INSERT OR IGNORE INTO bank (id, balance, total_revenue, last_updated)
             VALUES (1, 0, 0, 0)
         ''')
+        
+        # Initialize the bot's balance in ukpence with the bank's balance if it doesn't exist
+        from config import BOT_ID
+        c.execute("SELECT balance FROM bank WHERE id = 1")
+        bank_row = c.fetchone()
+        bank_bal = bank_row[0] if bank_row else 0
+        c.execute("INSERT OR IGNORE INTO ukpence (user_id, balance) VALUES (?, ?)", (str(BOT_ID), bank_bal))
         c.execute('''
             CREATE TABLE IF NOT EXISTS pay_transfers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

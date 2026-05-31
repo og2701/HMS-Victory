@@ -369,9 +369,15 @@ def define_commands(tree, client):
             return await interaction.response.send_message("Enter a positive amount.", ephemeral=True)
         if recipient.id == interaction.user.id:
             return await interaction.response.send_message("You cannot pay yourself.", ephemeral=True)
-        if not remove_bb(interaction.user.id, amount, reason=f"/pay to {recipient.display_name}", to_bank=False):
-            return await interaction.response.send_message("Insufficient UKPence.", ephemeral=True)
-        add_bb(recipient.id, amount, reason=f"/pay from {interaction.user.display_name}", from_bank=False)
+            
+        if recipient.id == interaction.client.user.id:
+            # Pay to bot goes directly to bank
+            if not remove_bb(interaction.user.id, amount, reason=f"/pay to HMS Victory (Bank)", to_bank=True):
+                return await interaction.response.send_message("Insufficient UKPence.", ephemeral=True)
+        else:
+            if not remove_bb(interaction.user.id, amount, reason=f"/pay to {recipient.display_name}", to_bank=False):
+                return await interaction.response.send_message("Insufficient UKPence.", ephemeral=True)
+            add_bb(recipient.id, amount, reason=f"/pay from {interaction.user.display_name}", from_bank=False)
         embed = Embed(
             title="UKPence Transfer",
             description=f"{interaction.user.mention} paid **{amount:,}** UKPence to {recipient.mention}",

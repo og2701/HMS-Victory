@@ -15,16 +15,33 @@ class BankManager:
         if amount <= 0:
             return False
 
+        from config import BOT_ID
         now = int(time.time())
         try:
             with DatabaseManager.get_connection() as conn:
                 c = conn.cursor()
+                c.execute('BEGIN TRANSACTION')
+                
+                # Get current bot user balance
+                c.execute('SELECT balance FROM ukpence WHERE user_id = ?', (str(BOT_ID),))
+                res = c.fetchone()
+                current_bot_balance = res[0] if res else 0
+                new_bot_balance = current_bot_balance + amount
+                
+                # Update bot balance in ukpence
+                c.execute('''
+                    INSERT OR REPLACE INTO ukpence (user_id, balance)
+                    VALUES (?, ?)
+                ''', (str(BOT_ID), new_bot_balance))
+                
+                # Sync bank table statistics
                 c.execute('''
                     UPDATE bank
-                    SET balance = balance + ?, total_revenue = total_revenue + ?, last_updated = ?
+                    SET balance = ?, total_revenue = total_revenue + ?, last_updated = ?
                     WHERE id = 1
-                ''', (amount, amount, now))
-                conn.commit()
+                ''', (new_bot_balance, amount, now))
+                
+                c.execute('COMMIT')
 
             log_text = f"🏦 Bank deposit: `{amount:,}` UKP|{description}"
             DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
@@ -40,16 +57,33 @@ class BankManager:
         if amount <= 0:
             return False
 
+        from config import BOT_ID
         now = int(time.time())
         try:
             with DatabaseManager.get_connection() as conn:
                 c = conn.cursor()
+                c.execute('BEGIN TRANSACTION')
+                
+                # Get current bot user balance
+                c.execute('SELECT balance FROM ukpence WHERE user_id = ?', (str(BOT_ID),))
+                res = c.fetchone()
+                current_bot_balance = res[0] if res else 0
+                new_bot_balance = current_bot_balance + amount
+                
+                # Update bot balance in ukpence
+                c.execute('''
+                    INSERT OR REPLACE INTO ukpence (user_id, balance)
+                    VALUES (?, ?)
+                ''', (str(BOT_ID), new_bot_balance))
+                
+                # Sync bank table stats and tax collected
                 c.execute('''
                     UPDATE bank
-                    SET balance = balance + ?, total_revenue = total_revenue + ?, total_tax_collected = total_tax_collected + ?, last_updated = ?
+                    SET balance = ?, total_revenue = total_revenue + ?, total_tax_collected = total_tax_collected + ?, last_updated = ?
                     WHERE id = 1
-                ''', (amount, amount, amount, now))
-                conn.commit()
+                ''', (new_bot_balance, amount, amount, now))
+                
+                c.execute('COMMIT')
 
             log_text = f"🏦 Bank deposit: `{amount:,}` UKP|{description}"
             DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
@@ -65,21 +99,34 @@ class BankManager:
             logger.warning(f"Attempted to withdraw negative amount from bank: {amount}")
             return False
 
+        from config import BOT_ID
         now = int(time.time())
         try:
             with DatabaseManager.get_connection() as conn:
                 c = conn.cursor()
-                # Use a transaction to ensure balance doesn't go negative concurrently
                 c.execute('BEGIN TRANSACTION')
-                c.execute('SELECT balance FROM bank WHERE id = 1')
-                current_balance = c.fetchone()[0]
+                
+                # Check bot's balance in ukpence
+                c.execute('SELECT balance FROM ukpence WHERE user_id = ?', (str(BOT_ID),))
+                res = c.fetchone()
+                current_balance = res[0] if res else 0
 
                 if current_balance >= amount:
+                    new_balance = current_balance - amount
+                    
+                    # Update bot's balance in ukpence
+                    c.execute('''
+                        INSERT OR REPLACE INTO ukpence (user_id, balance)
+                        VALUES (?, ?)
+                    ''', (str(BOT_ID), new_balance))
+                    
+                    # Update bank table stats
                     c.execute('''
                         UPDATE bank
-                        SET balance = balance - ?, last_updated = ?
+                        SET balance = ?, last_updated = ?
                         WHERE id = 1
-                    ''', (amount, now))
+                    ''', (new_balance, now))
+                    
                     c.execute('COMMIT')
 
                     log_text = f"📉 Bank withdrawal: `{amount:,}` UKP|{description}"
@@ -97,24 +144,31 @@ class BankManager:
     @staticmethod
     def get_balance() -> float:
         """Get current bank balance"""
-        result = DatabaseManager.fetch_one('SELECT balance FROM bank WHERE id = 1')
+        from config import BOT_ID
+        result = DatabaseManager.fetch_one('SELECT balance FROM ukpence WHERE user_id = ?', (str(BOT_ID),))
         return result[0] if result else 0
 
     @staticmethod
     def get_bank_info() -> Dict[str, Any]:
         """Get complete bank information"""
-        result = DatabaseManager.fetch_one('SELECT balance, total_revenue, total_tax_collected, last_updated FROM bank WHERE id = 1')
+        from config import BOT_ID
+        
+        # Fetch balance from ukpence for BOT_ID
+        balance = BankManager.get_balance()
+        
+        # Fetch total_revenue, total_tax_collected, last_updated from bank table
+        result = DatabaseManager.fetch_one('SELECT total_revenue, total_tax_collected, last_updated FROM bank WHERE id = 1')
 
         if result:
             return {
-                'balance': result[0],
-                'total_revenue': result[1],
-                'total_tax_collected': result[2],
-                'last_updated': result[3]
+                'balance': balance,
+                'total_revenue': result[0],
+                'total_tax_collected': result[1],
+                'last_updated': result[2]
             }
         else:
             return {
-                'balance': 0,
+                'balance': balance,
                 'total_revenue': 0,
                 'total_tax_collected': 0,
                 'last_updated': 0
@@ -126,17 +180,28 @@ class BankManager:
             logger.warning(f"Attempted to set bank balance to negative: {amount}")
             return False
             
+        from config import BOT_ID
         now = int(time.time())
         try:
             old_balance = BankManager.get_balance()
             with DatabaseManager.get_connection() as conn:
                 c = conn.cursor()
+                c.execute('BEGIN TRANSACTION')
+                
+                # Update bot's balance in ukpence
+                c.execute('''
+                    INSERT OR REPLACE INTO ukpence (user_id, balance)
+                    VALUES (?, ?)
+                ''', (str(BOT_ID), amount))
+                
+                # Update bank table stats
                 c.execute('''
                     UPDATE bank 
                     SET balance = ?, last_updated = ?
                     WHERE id = 1
                 ''', (amount, now))
-                conn.commit()
+                
+                c.execute('COMMIT')
                 
             log_text = f"⚖️ Bank balance set to `{amount:,}` UKP (was `{old_balance:,}`)|{description}"
             DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
