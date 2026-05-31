@@ -46,14 +46,19 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
     ukpence_data_current = load_ukpence_data()
     logger.info(f"[ECON DEBUG] Loaded {len(ukpence_data_current)} balances")
     
-    total_ukpence = sum(ukpence_data_current.values())
+    # Exclude the bot from dashboard stats — its balance is the bank (shown separately)
+    from config import BOT_ID
+    bot_id_str = str(BOT_ID)
+    ukpence_data_users = {uid: bal for uid, bal in ukpence_data_current.items() if uid != bot_id_str}
+    
+    total_ukpence = sum(ukpence_data_users.values())
 
     # Currency Holders = ledger rows with non-zero balance (includes ex-server-members).
-    num_holders = sum(1 for bal in ukpence_data_current.values() if bal > 0)
+    num_holders = sum(1 for bal in ukpence_data_users.values() if bal > 0)
     average_ukpence = total_ukpence / num_holders if num_holders > 0 else 0
     average_ukpence_active = average_ukpence
 
-    balances_for_median_calc = [b for b in ukpence_data_current.values() if b > 250]
+    balances_for_median_calc = [b for b in ukpence_data_users.values() if b > 250]
     median_ukpence_balance = 0 
     
     if balances_for_median_calc:
@@ -65,7 +70,7 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
         else:
             median_ukpence_balance = (balances_for_median_calc[mid - 1] + balances_for_median_calc[mid]) / 2.0
 
-    sorted_balances_for_top = sorted(ukpence_data_current.items(), key=lambda item: item[1], reverse=True)
+    sorted_balances_for_top = sorted(ukpence_data_users.items(), key=lambda item: item[1], reverse=True)
     top_5_richest = sorted_balances_for_top[:5]
 
     num_top_users_for_concentration = 5 
@@ -141,7 +146,7 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
         "10,001-100,000 UKP": 0, "100,001+ UKP": 0,
         "Zero Balance (in file)": 0 
     }
-    for balance in ukpence_data_current.values():
+    for balance in ukpence_data_users.values():
         if balance == 0: dist_brackets["Zero Balance (in file)"] +=1
         elif 1 <= balance <= 1000: dist_brackets["1-1,000 UKP"] += 1
         elif 1001 <= balance <= 10000: dist_brackets["1,001-10,000 UKP"] += 1
