@@ -355,7 +355,8 @@ def init_db():
             ('pillar_3', 'Pillar of the Community (3 Years)', 'Be a member of the server for at least 3 years', '🏛️', 'Silver'),
             ('pillar_5', 'Pillar of the Community (5 Years)', 'Be a member of the server for at least 5 years', '🏰', 'Gold'),
             ('weekend_warrior', 'Weekend Warrior', 'Send 800 or more messages over a single weekend', '⚔️', 'Silver'),
-            ('global_citizen', 'Global Citizen', 'Send messages in 5 different channels within 5 minutes', '🗺️', 'Bronze')
+            ('global_citizen', 'Global Citizen', 'Send messages in 5 different channels within 5 minutes', '🗺️', 'Bronze'),
+            ('victory_sponsor', 'Victory Sponsor', 'Transfer UKPence directly to HMS Victory (the bank)', '⚓', 'Silver')
         ]
         for b_id, b_name, b_desc, b_icon, b_rarity in badges:
             c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)", 

@@ -374,6 +374,10 @@ def define_commands(tree, client):
             # Pay to bot goes directly to bank
             if not remove_bb(interaction.user.id, amount, reason=f"/pay to HMS Victory (Bank)", to_bank=True):
                 return await interaction.response.send_message("Insufficient UKPence.", ephemeral=True)
+            
+            # Award the victory_sponsor badge
+            from lib.bot.event_handlers import award_badge_with_notify
+            await award_badge_with_notify(interaction.client, interaction.user.id, 'victory_sponsor')
         else:
             if not remove_bb(interaction.user.id, amount, reason=f"/pay to {recipient.display_name}", to_bank=False):
                 return await interaction.response.send_message("Insufficient UKPence.", ephemeral=True)
