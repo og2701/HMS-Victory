@@ -158,27 +158,23 @@ def init_db():
         ''')
         # Initialize the bank with a single row if it doesn't exist
         c.execute('''
-            INSERT OR REPLACE INTO bank (id, balance, total_revenue, last_updated)
-            VALUES (1, 
-                COALESCE((SELECT balance FROM bank WHERE id = 1), 0),
-                COALESCE((SELECT total_revenue FROM bank WHERE id = 1), 0),
-                COALESCE((SELECT last_updated FROM bank WHERE id = 1), 0)
-            )
-        ''')
-        # The above INSERT OR REPLACE with COALESCE is a bit complex for init, 
-        # simpler to just INSERT OR IGNORE as before, but let's stick to the original logic 
-        # which was INSERT OR IGNORE.
-        c.execute('''
-            INSERT OR IGNORE INTO bank (id, balance, total_revenue, last_updated)
-            VALUES (1, 0, 0, 0)
+            INSERT OR IGNORE INTO bank (id, balance, total_revenue, total_tax_collected, last_updated)
+            VALUES (1, 0, 0, 0, 0)
         ''')
         
-        # Force sync the bot's balance in ukpence with the bank's balance on startup
+        # Calculate the correct bank balance from the closed economy total (800,000 UKP)
+        # Bank = 800,000 - sum(all non-bot user balances)
         from config import BOT_ID
-        c.execute("SELECT balance FROM bank WHERE id = 1")
-        bank_row = c.fetchone()
-        bank_bal = bank_row[0] if bank_row else 0
-        c.execute("INSERT OR REPLACE INTO ukpence (user_id, balance) VALUES (?, ?)", (str(BOT_ID), bank_bal))
+        c.execute("SELECT COALESCE(SUM(balance), 0) FROM ukpence WHERE user_id != ?", (str(BOT_ID),))
+        total_user_balances = c.fetchone()[0]
+        correct_bank_balance = max(800_000 - total_user_balances, 0)
+        
+        # Set bot's ukpence to the correct bank balance
+        c.execute("INSERT OR REPLACE INTO ukpence (user_id, balance) VALUES (?, ?)", (str(BOT_ID), correct_bank_balance))
+        
+        # Sync the bank table to match
+        import time as _time
+        c.execute("UPDATE bank SET balance = ?, last_updated = ? WHERE id = 1", (correct_bank_balance, int(_time.time())))
         c.execute('''
             CREATE TABLE IF NOT EXISTS pay_transfers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
