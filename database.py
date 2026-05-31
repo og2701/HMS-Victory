@@ -363,6 +363,19 @@ def init_db():
                       (b_id, b_name, b_desc, b_icon, b_rarity))
         
         conn.commit()
+        
+        # Award every badge to the bot itself
+        from config import BOT_ID
+        import time
+        now_ts = int(time.time())
+        c.execute("SELECT id FROM badges")
+        all_badge_ids = [row[0] for row in c.fetchall()]
+        for badge_id in all_badge_ids:
+            c.execute(
+                "INSERT OR IGNORE INTO user_badges (user_id, badge_id, awarded_at) VALUES (?, ?, ?)",
+                (str(BOT_ID), badge_id, now_ts)
+            )
+        conn.commit()
 
 if __name__ == '__main__':
     init_db()
