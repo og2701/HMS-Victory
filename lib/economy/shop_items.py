@@ -462,7 +462,7 @@ class LuckyDipCaseItem(ShopItem):
             {"type": "ukpence", "weight": 7, "amount": 250, "emoji": "💰", "color": 0x00ff88, "label": "+250 UKPence"},
             {"type": "ukpence", "weight": 3, "amount": 500, "emoji": "💎", "color": 0x00ff00, "label": "+500 UKPence"},
             # Shutcoins (increased to 39% total)
-            {"type": "shutcoins", "weight": 20, "amount": 1, "emoji": "🪙", "color": 0xffd700, "label": "1 Shutcoin"},
+            {"type": "shutcoins", "weight": 20, "amount": 2, "emoji": "🪙", "color": 0xffd700, "label": "2 Shutcoins"},
             {"type": "shutcoins", "weight": 12, "amount": 3, "emoji": "💰", "color": 0xffd700, "label": "3 Shutcoins"},
             {"type": "shutcoins", "weight": 5, "amount": 5, "emoji": "🤑", "color": 0xffd700, "label": "5 Shutcoins"},
             {"type": "shutcoins", "weight": 2, "amount": 10, "emoji": "👑", "color": 0xffd700, "label": "10 Shutcoins"},
