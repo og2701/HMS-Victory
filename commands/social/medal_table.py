@@ -10,7 +10,8 @@ from lib.core.file_operations import read_html_template
 from lib.core.image_processing import screenshot_html
 
 PAGE_SIZE = 20
-EXCLUDED_USER_IDS = {"818885214189256714"}  # ogme02 test account
+from config import BOT_ID
+EXCLUDED_USER_IDS = {"818885214189256714", str(BOT_ID)}  # ogme02 test account, HMS Victory bot
 
 
 def _fetch_medal_table(guild=None):
