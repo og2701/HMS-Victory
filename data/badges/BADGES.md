@@ -8,6 +8,10 @@ Awarded for reaching a balance of 30,000 UKPence.
 **Rarity**: Silver
 Awarded for giving away a total of 10,000 UKPence using the `/pay` command.
 
+### ⚓ Victory Sponsor
+**Rarity**: Silver
+Awarded for transferring UKPence directly to HMS Victory (the bank).
+
 ### 📉 Bankrupt
 **Rarity**: Bronze
 Awarded for reaching exactly 0 UKPence after having at least 1,000 UKPence previously.
