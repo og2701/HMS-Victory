@@ -499,14 +499,24 @@ class BetButtons(discord.ui.View):
 # ----------------------------------------------------------------------------
 
 def _option_bar_png(pct: int, rgb: tuple) -> io.BytesIO:
-    """A thin 'this outcome vs the rest' bar: the option's share filled in its
-    colour, the remainder left blank (dark). Pure colour, no text, so it stays
-    legible at any size Discord renders it."""
-    W, H = 800, 36
-    img = Image.new("RGB", (W, H), (54, 57, 63))  # blank remainder (Discord-dark grey)
-    fill = int(round(W * max(0, min(100, pct)) / 100))
-    if fill > 0:
-        ImageDraw.Draw(img).rectangle([0, 0, fill, H], fill=rgb)
+    """A sleek rounded 'this outcome vs the rest' capsule bar: a faint track with
+    the option's share filled in its colour (transparent corners so it sits cleanly
+    on Discord's dark background). Pure colour, no text — crisp at any size.
+    Supersampled then downscaled for smooth, anti-aliased edges."""
+    W, H, S = 900, 16, 3                      # logical size + supersample factor (short, sleek)
+    img = Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    radius = (H * S) // 2
+    # Faint track (visible even at 0%, so an empty option reads as a slim capsule,
+    # not a big grey slab).
+    d.rounded_rectangle([0, 0, W * S - 1, H * S - 1], radius=radius, fill=(255, 255, 255, 30))
+    pct = max(0, min(100, pct))
+    fill_w = int(round((W * S - 1) * pct / 100))
+    if fill_w > 0:
+        # Keep at least a rounded nub visible for tiny shares.
+        fill_w = max(fill_w, 2 * radius)
+        d.rounded_rectangle([0, 0, fill_w, H * S - 1], radius=radius, fill=rgb + (255,))
+    img = img.resize((W, H), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
@@ -549,10 +559,18 @@ def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
         t = totals[i]
         pct = int(round(t / grand * 100))
         pool_i = pred.bets.get(side, {})
+        odds = _odds(totals, side)
+        odds_str = f"{odds:.2f}x" if odds else "—"
+        nb = len(pool_i)
+        # Headline stat line (bold), then a de-emphasised sub-line; the top backer
+        # only appears once someone has actually backed the outcome.
+        sub = f"{odds_str} odds · {nb} bettor" + ("" if nb == 1 else "s")
+        if pool_i:
+            sub += f" · 👑 {_top_bettor(pool_i, client)}"
         stats = (
             f"### {emoji}  {em(opt)}\n"
-            f"**{t:,}** UKP  ·  {pct}%  ·  `{_odds(totals, side):.2f}x`  ·  {len(pool_i)} bettors\n"
-            f"-# Top backer: {_top_bettor(pool_i, client)}"
+            f"**{t:,} UKP**  ·  **{pct}%**\n"
+            f"-# {sub}"
         )
 
         container = discord.ui.Container(accent_colour=discord.Colour.from_rgb(*rgb))
