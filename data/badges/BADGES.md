@@ -40,10 +40,6 @@ Awarded for getting a message into the Hall of Fame.
 **Rarity**: Bronze
 Awarded for purchasing your first item from the shop.
 
-### 🏦 Market Manipulator
-**Rarity**: Silver
-Awarded for being the highest bidder on 3 different active auctions at the same time.
-
 ### 🤐 Shutcoin User
 **Rarity**: Bronze
 Awarded for using a Shutcoin for the first time.
