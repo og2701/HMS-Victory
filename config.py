@@ -11,11 +11,16 @@ CHROME_PATH = os.getenv("CHROME_PATH", "/usr/bin/google-chrome")
 # --- Feature Toggles & Limits ---
 SHUTCOIN_ENABLED = True
 SUMMARISE_DAILY_LIMIT = 10
-# When True, predictions are rendered as a custom HTML→PNG card (templates/
-# prediction_card.html) instead of the standard Discord embed. Flip to False to
-# instantly revert to the embed (e.g. if the renderer misbehaves). Rendering also
-# falls back to the embed automatically if image generation raises.
-PREDICTION_IMAGE_ENABLED = True
+# Prediction view style (checked in priority order):
+#   PREDICTION_CV2_ENABLED   — native Components V2 layout: one block per outcome
+#                              with stats, a Bet button and a coloured proportion
+#                              bar image. All native components (crisp on mobile).
+#   PREDICTION_IMAGE_ENABLED — custom HTML→PNG card (templates/prediction_card.html).
+#                              NOTE: it's an image Discord downscales, so it renders
+#                              small/hard-to-read on mobile — kept for reference only.
+#   (neither)                — the standard Discord embed (default).
+PREDICTION_CV2_ENABLED = True
+PREDICTION_IMAGE_ENABLED = False
 
 # --- File Paths & Directories ---
 DATA_DIR = os.path.join(BASE_DIR, "data")

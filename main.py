@@ -55,10 +55,15 @@ class AClient(discord.Client):
 
     async def setup_hook(self):
         self.session = aiohttp.ClientSession()
-        from lib.economy.prediction_system import BetButtons
+        import config
+        from lib.economy.prediction_system import BetButtons, build_prediction_layout
         for p in self.predictions.values():
             if not p.locked:
-                self.add_view(BetButtons(p), message_id=p.msg_id)
+                if getattr(config, "PREDICTION_CV2_ENABLED", False):
+                    view, _ = build_prediction_layout(p, self, interactive=True)
+                    self.add_view(view, message_id=p.msg_id)
+                else:
+                    self.add_view(BetButtons(p), message_id=p.msg_id)
         
         # Load persistent iceberg approval views
         from database import DatabaseManager
@@ -89,7 +94,7 @@ class AClient(discord.Client):
         await on_ready(self, tree, self.scheduler)
         # Proactively update existing predictions to show the new button
         import asyncio
-        from lib.economy.prediction_system import BetButtons, build_prediction_render
+        from lib.economy.prediction_system import _edit_prediction_message
         for p in list(self.predictions.values()):
             if not p.locked:
                 try:
@@ -112,8 +117,7 @@ class AClient(discord.Client):
                         from lib.economy.prediction_system import _save as _save_preds
                         _save_preds({k: v.to_dict() for k, v in self.predictions.items()})
 
-                    embed, files = await build_prediction_render(p, self)
-                    await msg.edit(embed=embed, attachments=files, view=BetButtons(p))
+                    await _edit_prediction_message(msg, p, self, interactive=True)
                     logger.info(f"Updated live prediction {p.msg_id} with new view.")
                     await asyncio.sleep(1) # Small delay to be polite to the API
                 except Exception as e:

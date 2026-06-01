@@ -394,9 +394,8 @@ class BetModal(discord.ui.Modal, title="Place your bet"):
             )
             _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
 
-            embed, files = await build_prediction_render(self.pred, interaction.client)
             try:
-                await interaction.message.edit(embed=embed, attachments=files)
+                await _edit_prediction_message(interaction.message, self.pred, interaction.client, interactive=True)
             except discord.NotFound:
                 pass # Message was deleted by a mod while they were typing
 
@@ -428,27 +427,39 @@ class BetModal(discord.ui.Modal, title="Place your bet"):
                     msg = f"❌ Bet failed — you only have **{_fmt_money(curr)}** UKPence."
             await interaction.response.send_message(msg, ephemeral=True)
 
+async def _open_bet_modal(interaction: discord.Interaction, pred: "Prediction", side: int) -> None:
+    """Shared bet-button handler: validate then open the BetModal. Used by both the
+    classic embed BetButtons view and the Components V2 layout."""
+    if pred.locked:
+        return await interaction.response.send_message("Betting locked.", ephemeral=True)
+    from lib.economy.economy_manager import get_bb
+    bal = get_bb(interaction.user.id)
+    if bal <= 0:
+        return await interaction.response.send_message("❌ You don't have any UKPence to bet!", ephemeral=True)
+    await interaction.response.send_modal(BetModal(pred, side, bal))
+
+
+async def _toggle_pred_notifications(interaction: discord.Interaction) -> None:
+    """Shared 🔔 handler: toggle the PRED_NOTIFICATIONS role."""
+    role = interaction.guild.get_role(ROLES.PRED_NOTIFICATIONS)
+    if not role:
+        return await interaction.response.send_message("Notification role not found.", ephemeral=True)
+    if role in interaction.user.roles:
+        await interaction.user.remove_roles(role)
+        await interaction.response.send_message("🔕 You will no longer be notified for new predictions.", ephemeral=True)
+    else:
+        await interaction.user.add_roles(role)
+        await interaction.response.send_message("🔔 You will be notified when new predictions are created!", ephemeral=True)
+
+
 class BetButtons(discord.ui.View):
     def __init__(self, pred: Prediction):
         super().__init__(timeout=None)
         self.pred = pred
 
-        async def _handler(interaction: discord.Interaction, side: int):
-            if self.pred.locked:
-                await interaction.response.send_message("Betting locked.", ephemeral=True)
-                return
-            
-            from lib.economy.economy_manager import get_bb
-            bal = get_bb(interaction.user.id)
-            if bal <= 0:
-                await interaction.response.send_message("❌ You don't have any UKPence to bet!", ephemeral=True)
-                return
-
-            await interaction.response.send_modal(BetModal(self.pred, side, bal))
-
         def _make_bet_cb(side: int):
             async def _cb(interaction: discord.Interaction):
-                await _handler(interaction, side)
+                await _open_bet_modal(interaction, self.pred, side)
             return _cb
 
         # One bet button per outcome (2–5). All fit on action row 0 (max 5 buttons).
@@ -478,21 +489,132 @@ class BetButtons(discord.ui.View):
             custom_id=f"prediction:{pred.msg_id}:notif_toggle",
             row=1,
         )
-
-        async def notif_cb(interaction: discord.Interaction):
-            role = interaction.guild.get_role(ROLES.PRED_NOTIFICATIONS)
-            if not role:
-                await interaction.response.send_message("Notification role not found.", ephemeral=True)
-                return
-            if role in interaction.user.roles:
-                await interaction.user.remove_roles(role)
-                await interaction.response.send_message("🔕 You will no longer be notified for new predictions.", ephemeral=True)
-            else:
-                await interaction.user.add_roles(role)
-                await interaction.response.send_message("🔔 You will be notified when new predictions are created!", ephemeral=True)
-
-        notif_btn.callback = notif_cb
+        notif_btn.callback = _toggle_pred_notifications
         self.add_item(notif_btn)
+
+
+# ----------------------------------------------------------------------------
+# Components V2 prediction view (one block per outcome: stats + Bet button + a
+# coloured proportion-bar image). Native components — crisp on mobile, no embed.
+# ----------------------------------------------------------------------------
+
+def _option_bar_png(pct: int, rgb: tuple) -> io.BytesIO:
+    """A thin 'this outcome vs the rest' bar: the option's share filled in its
+    colour, the remainder left blank (dark). Pure colour, no text, so it stays
+    legible at any size Discord renders it."""
+    W, H = 800, 36
+    img = Image.new("RGB", (W, H), (54, 57, 63))  # blank remainder (Discord-dark grey)
+    fill = int(round(W * max(0, min(100, pct)) / 100))
+    if fill > 0:
+        ImageDraw.Draw(img).rectangle([0, 0, fill, H], fill=rgb)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+
+def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
+                            *, interactive: bool = True, ping: str = None):
+    """Build the Components V2 LayoutView for a prediction, plus the bar-image
+    files to attach. interactive=False omits the bet/notify buttons (locked/resolved)."""
+    em = discord.utils.escape_markdown
+    totals = pred.totals()
+    pool = sum(totals)
+    grand = pool or 1
+    bettors = len({uid for p in pred.bets.values() for uid in p})
+
+    if pred.locked:
+        status = "🔒 Locked"
+    else:
+        status = "🟢 Open"
+    when = f"  ·  closes <t:{int(pred.end_ts)}:R>" if (pred.end_ts and not pred.locked) else ""
+
+    view = discord.ui.LayoutView(timeout=None)
+    if ping:
+        view.add_item(discord.ui.TextDisplay(ping))
+
+    header = discord.ui.Container(accent_colour=discord.Colour(0x00247D))
+    header.add_item(discord.ui.TextDisplay(
+        f"## {em(pred.title)}\n"
+        f"{status}{when}\n"
+        f"**{pool:,}** UKP pool  ·  {bettors} bettors  ·  {len(pred.options)} outcomes"
+    ))
+    view.add_item(header)
+
+    files = []
+    for i, opt in enumerate(pred.options):
+        side = i + 1
+        rgb = _OPTION_COLORS[i % len(_OPTION_COLORS)]
+        emoji = _OPTION_EMOJIS[i % len(_OPTION_EMOJIS)]
+        t = totals[i]
+        pct = int(round(t / grand * 100))
+        pool_i = pred.bets.get(side, {})
+        stats = (
+            f"### {emoji}  {em(opt)}\n"
+            f"**{t:,}** UKP  ·  {pct}%  ·  `{_odds(totals, side):.2f}x`  ·  {len(pool_i)} bettors\n"
+            f"-# Top backer: {_top_bettor(pool_i, client)}"
+        )
+
+        container = discord.ui.Container(accent_colour=discord.Colour.from_rgb(*rgb))
+        if interactive and not pred.locked:
+            bet_btn = discord.ui.Button(
+                label="Bet",
+                emoji=emoji,
+                style=discord.ButtonStyle.secondary,
+                custom_id=f"prediction:{pred.msg_id}:bet{side}",
+            )
+            bet_btn.callback = _make_layout_bet_cb(pred, side)
+            container.add_item(discord.ui.Section(discord.ui.TextDisplay(stats), accessory=bet_btn))
+        else:
+            container.add_item(discord.ui.TextDisplay(stats))
+
+        fname = f"predbar_{side}.png"
+        files.append(discord.File(_option_bar_png(pct, rgb), filename=fname))
+        container.add_item(discord.ui.MediaGallery(discord.MediaGalleryItem(f"attachment://{fname}")))
+        view.add_item(container)
+
+    if interactive:
+        notif = discord.ui.Button(
+            label="Notify me on new predictions",
+            emoji="🔔",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"prediction:{pred.msg_id}:notif_toggle",
+        )
+        notif.callback = _toggle_pred_notifications
+        view.add_item(discord.ui.ActionRow(notif))
+
+    return view, files
+
+
+def _make_layout_bet_cb(pred: Prediction, side: int):
+    async def _cb(interaction: discord.Interaction):
+        await _open_bet_modal(interaction, pred, side)
+    return _cb
+
+
+async def _post_prediction_message(channel, pred: Prediction, client: discord.Client):
+    """Send a brand-new prediction message in whichever style the flags select."""
+    import config
+    ping = f"<@&{ROLES.PRED_NOTIFICATIONS}>"
+    if getattr(config, "PREDICTION_CV2_ENABLED", False):
+        view, files = build_prediction_layout(pred, client, interactive=True, ping=ping)
+        return await channel.send(view=view, files=files,
+                                  allowed_mentions=discord.AllowedMentions(roles=True))
+    embed, files = await build_prediction_render(pred, client)
+    return await channel.send(content=ping, embed=embed, files=files, view=BetButtons(pred),
+                              allowed_mentions=discord.AllowedMentions(roles=True))
+
+
+async def _edit_prediction_message(msg, pred: Prediction, client: discord.Client, *, interactive: bool):
+    """Re-render an existing prediction message in the active style. interactive
+    controls whether bet/notify buttons are shown (False once locked/resolved)."""
+    import config
+    if getattr(config, "PREDICTION_CV2_ENABLED", False):
+        view, files = build_prediction_layout(pred, client, interactive=interactive)
+        await msg.edit(view=view, attachments=files)
+    else:
+        embed, files = await build_prediction_render(pred, client)
+        await msg.edit(embed=embed, attachments=files, view=(BetButtons(pred) if interactive else None))
 
 
 
@@ -563,8 +685,7 @@ class PredAdminView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         try:
             msg = await interaction.channel.fetch_message(self.pred.msg_id)
-            embed, files = await build_prediction_render(self.pred, self.client)
-            await msg.edit(embed=embed, attachments=files, view=None)
+            await _edit_prediction_message(msg, self.pred, self.client, interactive=False)
         except discord.NotFound:
             pass
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
@@ -583,10 +704,7 @@ class PredAdminView(discord.ui.View):
 
         try:
             msg = await interaction.channel.fetch_message(self.pred.msg_id)
-            embed, files = await build_prediction_render(self.pred, self.client)
-            view = BetButtons(self.pred)
-            await msg.edit(embed=embed, attachments=files, view=view)
-            self.client.add_view(view, message_id=self.pred.msg_id)
+            await _edit_prediction_message(msg, self.pred, self.client, interactive=True)
         except discord.NotFound:
             pass
 
@@ -611,8 +729,7 @@ class PredAdminView(discord.ui.View):
         self.pred.bets = {s: {} for s in range(1, len(self.pred.options) + 1)}
         try:
             msg = await interaction.channel.fetch_message(self.pred.msg_id)
-            embed, files = await build_prediction_render(self.pred, self.client)
-            await msg.edit(embed=embed, attachments=files, view=None)
+            await _edit_prediction_message(msg, self.pred, self.client, interactive=False)
         except discord.NotFound:
             pass
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
@@ -641,8 +758,7 @@ class PredAdminView(discord.ui.View):
         msg = None
         try:
             msg = await interaction.channel.fetch_message(self.pred.msg_id)
-            embed, files = await build_prediction_render(self.pred, self.client)
-            await msg.edit(embed=embed, attachments=files, view=None)
+            await _edit_prediction_message(msg, self.pred, self.client, interactive=False)
         except discord.NotFound:
             pass  # Message was deleted, proceed with payout and summary
 
@@ -817,14 +933,7 @@ async def post_prediction(client: discord.Client, channel, title: str, options: 
     register it on the client, and persist. Shared by /pred-create and the
     scheduled-post path."""
     p = Prediction(0, title, options, end_ts)
-    embed, files = await build_prediction_render(p, client)
-    msg = await channel.send(
-        content=f"<@&{ROLES.PRED_NOTIFICATIONS}>",
-        embed=embed,
-        files=files,
-        view=BetButtons(p),
-        allowed_mentions=discord.AllowedMentions(roles=True),
-    )
+    msg = await _post_prediction_message(channel, p, client)
     p.msg_id = msg.id
     p.channel_id = msg.channel.id
     client.predictions[msg.id] = p

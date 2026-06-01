@@ -182,7 +182,7 @@ async def monthly_summary(client):
 
 
 async def sweep_predictions(client):
-    from lib.economy.prediction_system import award_indecisive_badges, build_prediction_render
+    from lib.economy.prediction_system import award_indecisive_badges, _edit_prediction_message
     now = discord.utils.utcnow().timestamp()
     dirty = False
     for p in client.predictions.values():
@@ -192,8 +192,7 @@ async def sweep_predictions(client):
                 ch = client.get_channel(p.channel_id) if p.channel_id else client.get_channel(CHANNELS.BOT_SPAM)
                 if ch:
                     msg = await ch.fetch_message(p.msg_id)
-                    embed, files = await build_prediction_render(p, client)
-                    await msg.edit(embed=embed, attachments=files, view=None)
+                    await _edit_prediction_message(msg, p, client, interactive=False)
             except Exception:
                 pass
             # Award 'indecisive' on auto-lock too, matching the manual Lock button.
