@@ -57,6 +57,7 @@ class Prediction:
         # side numbers are 1-based and map to options[side - 1]
         self.bets = {i: {} for i in range(1, len(self.options) + 1)}  # side -> {uid: amount}
         self.locked = False
+        self.drawn = False   # set when an admin calls Draw (bets refunded but kept on display)
         self.end_ts = end_ts
         self.last_bet_times = {} # uid -> timestamp
         self.initial_balances = {} # uid -> balance before first bet on this pred
@@ -172,6 +173,16 @@ _OPTION_COLORS = [
 # 4 fixed style colours and can't match a 5-colour palette, so for 3+ outcomes the
 # buttons go neutral and the coloured circle carries the colour cue.
 _OPTION_EMOJIS = ["🟢", "🔵", "🟠", "🔴", "🟣"]
+# Square equivalents, aligned 1:1, for the inline proportion bar in the compact
+# Components V2 layout (filled with the option's square, remainder dark).
+_OPTION_SQUARES = ["🟩", "🟦", "🟧", "🟥", "🟪"]
+
+
+def _emoji_bar(pct: int, index: int, segments: int = 10) -> str:
+    """A compact inline proportion bar made of coloured squares (option's share
+    filled in its colour, the rest dark). Renders crisp natively at any size."""
+    fill = int(round(max(0, min(100, pct)) / 100 * segments))
+    return _OPTION_SQUARES[index % len(_OPTION_SQUARES)] * fill + "⬛" * (segments - fill)
 
 def _progress_png_multi(pcts: list) -> io.BytesIO:
     """Render a stacked horizontal bar: one coloured segment per option, sized to
@@ -219,7 +230,9 @@ def prediction_embed(pred: Prediction, client: Optional[discord.Client] = None) 
     grand = sum(totals) or 1
     pcts = [t / grand for t in totals]
     now = discord.utils.utcnow().timestamp()
-    if pred.locked:
+    if getattr(pred, "drawn", False):
+        time_line = "🟡 **Draw — all bets refunded**"
+    elif pred.locked:
         time_line = "🔒 **locked**"
     elif pred.end_ts and pred.end_ts > now:
         time_line = f"⏰ closes <t:{int(pred.end_ts)}:R>"
@@ -494,50 +507,28 @@ class BetButtons(discord.ui.View):
 
 
 # ----------------------------------------------------------------------------
-# Components V2 prediction view (one block per outcome: stats + Bet button + a
-# coloured proportion-bar image). Native components — crisp on mobile, no embed.
+# Components V2 prediction view: one compact row per outcome (stats + an inline
+# coloured proportion bar + a Bet button). Native components — crisp on mobile.
 # ----------------------------------------------------------------------------
-
-def _option_bar_png(pct: int, rgb: tuple) -> io.BytesIO:
-    """A sleek rounded 'this outcome vs the rest' capsule bar: a faint track with
-    the option's share filled in its colour (transparent corners so it sits cleanly
-    on Discord's dark background). Pure colour, no text — crisp at any size.
-    Supersampled then downscaled for smooth, anti-aliased edges."""
-    W, H, S = 900, 16, 3                      # logical size + supersample factor (short, sleek)
-    img = Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    radius = (H * S) // 2
-    # Faint track (visible even at 0%, so an empty option reads as a slim capsule,
-    # not a big grey slab).
-    d.rounded_rectangle([0, 0, W * S - 1, H * S - 1], radius=radius, fill=(255, 255, 255, 30))
-    pct = max(0, min(100, pct))
-    fill_w = int(round((W * S - 1) * pct / 100))
-    if fill_w > 0:
-        # Keep at least a rounded nub visible for tiny shares.
-        fill_w = max(fill_w, 2 * radius)
-        d.rounded_rectangle([0, 0, fill_w, H * S - 1], radius=radius, fill=rgb + (255,))
-    img = img.resize((W, H), Image.LANCZOS)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    return buf
-
 
 def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
                             *, interactive: bool = True, ping: str = None):
-    """Build the Components V2 LayoutView for a prediction, plus the bar-image
-    files to attach. interactive=False omits the bet/notify buttons (locked/resolved)."""
+    """Build the Components V2 LayoutView for a prediction. Returns (view, files);
+    the file list is empty (the bar is inline emoji, no attachments). interactive=False
+    omits the bet/notify buttons (locked/resolved)."""
     em = discord.utils.escape_markdown
     totals = pred.totals()
     pool = sum(totals)
     grand = pool or 1
     bettors = len({uid for p in pred.bets.values() for uid in p})
 
-    if pred.locked:
+    if getattr(pred, "drawn", False):
+        status = "🟡 Draw — all bets refunded"
+    elif pred.locked:
         status = "🔒 Locked"
     else:
         status = "🟢 Open"
-    when = f"  ·  closes <t:{int(pred.end_ts)}:R>" if (pred.end_ts and not pred.locked) else ""
+    when = f"  ·  closes <t:{int(pred.end_ts)}:R>" if (pred.end_ts and not pred.locked and not pred.drawn) else ""
 
     view = discord.ui.LayoutView(timeout=None)
     if ping:
@@ -551,7 +542,9 @@ def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
     ))
     view.add_item(header)
 
-    files = []
+    # One COMPACT row per outcome: a headline line + a de-emphasised line carrying
+    # the inline coloured-square proportion bar. No separate image-bar component, so
+    # each outcome is short. (CV2 stacks vertically — it can't place these in columns.)
     for i, opt in enumerate(pred.options):
         side = i + 1
         rgb = _OPTION_COLORS[i % len(_OPTION_COLORS)]
@@ -562,14 +555,11 @@ def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
         odds = _odds(totals, side)
         odds_str = f"{odds:.2f}x" if odds else "—"
         nb = len(pool_i)
-        # Headline stat line (bold), then a de-emphasised sub-line; the top backer
-        # only appears once someone has actually backed the outcome.
-        sub = f"{odds_str} odds · {nb} bettor" + ("" if nb == 1 else "s")
+        sub = f"{_emoji_bar(pct, i)}  ·  {odds_str}  ·  {nb} bettor" + ("" if nb == 1 else "s")
         if pool_i:
-            sub += f" · 👑 {_top_bettor(pool_i, client)}"
+            sub += f"  ·  👑 {_top_bettor(pool_i, client)}"
         stats = (
-            f"### {emoji}  {em(opt)}\n"
-            f"**{t:,} UKP**  ·  **{pct}%**\n"
+            f"{emoji}  **{em(opt)}**   {t:,} UKP · {pct}%\n"
             f"-# {sub}"
         )
 
@@ -585,10 +575,6 @@ def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
             container.add_item(discord.ui.Section(discord.ui.TextDisplay(stats), accessory=bet_btn))
         else:
             container.add_item(discord.ui.TextDisplay(stats))
-
-        fname = f"predbar_{side}.png"
-        files.append(discord.File(_option_bar_png(pct, rgb), filename=fname))
-        container.add_item(discord.ui.MediaGallery(discord.MediaGalleryItem(f"attachment://{fname}")))
         view.add_item(container)
 
     if interactive:
@@ -601,7 +587,7 @@ def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
         notif.callback = _toggle_pred_notifications
         view.add_item(discord.ui.ActionRow(notif))
 
-    return view, files
+    return view, []
 
 
 def _make_layout_bet_cb(pred: Prediction, side: int):
@@ -744,7 +730,9 @@ class PredAdminView(discord.ui.View):
             for uid, amt in pool.items():
                 # Bets were banked when staked (remove_bb to_bank=True), so refund from bank is correct
                 add_bb(uid, amt, reason=f"Prediction refund (Draw): {self.pred.title[:50]}", taxable=False)
-        self.pred.bets = {s: {} for s in range(1, len(self.pred.options) + 1)}
+        # Keep the bet amounts on display (don't zero them) and mark it drawn so the
+        # re-rendered message shows what everyone had staked + that it was refunded.
+        self.pred.drawn = True
         try:
             msg = await interaction.channel.fetch_message(self.pred.msg_id)
             await _edit_prediction_message(msg, self.pred, self.client, interactive=False)
