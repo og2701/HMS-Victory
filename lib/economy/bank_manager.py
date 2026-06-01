@@ -18,7 +18,7 @@ class BankManager:
         from config import BOT_ID
         now = int(time.time())
         try:
-            with DatabaseManager.get_connection() as conn:
+            with DatabaseManager.locked_connection() as conn:
                 c = conn.cursor()
                 c.execute('BEGIN TRANSACTION')
                 
@@ -60,7 +60,7 @@ class BankManager:
         from config import BOT_ID
         now = int(time.time())
         try:
-            with DatabaseManager.get_connection() as conn:
+            with DatabaseManager.locked_connection() as conn:
                 c = conn.cursor()
                 c.execute('BEGIN TRANSACTION')
                 
@@ -102,7 +102,7 @@ class BankManager:
         from config import BOT_ID
         now = int(time.time())
         try:
-            with DatabaseManager.get_connection() as conn:
+            with DatabaseManager.locked_connection() as conn:
                 c = conn.cursor()
                 c.execute('BEGIN TRANSACTION')
                 
@@ -184,7 +184,7 @@ class BankManager:
         now = int(time.time())
         try:
             old_balance = BankManager.get_balance()
-            with DatabaseManager.get_connection() as conn:
+            with DatabaseManager.locked_connection() as conn:
                 c = conn.cursor()
                 c.execute('BEGIN TRANSACTION')
                 

@@ -1,7 +1,4 @@
 from database import DatabaseManager
-import sqlite3
-import datetime
-import logging
 import json
 import os
 from config import ECONOMY_METRICS_FILE
@@ -27,7 +24,7 @@ class ShutcoinManager:
     @staticmethod
     def remove_amount(user_id: int, amount: int = 1) -> bool:
         # Atomic update: only subtract if the balance is sufficient
-        with DatabaseManager.get_connection() as conn:
+        with DatabaseManager.locked_connection() as conn:
             c = conn.cursor()
             c.execute(
                 "UPDATE shutcoins SET balance = balance - ? WHERE user_id = ? AND balance >= ?",
@@ -67,10 +64,11 @@ class UKPenceManager:
         now = int(time.time())
         old_balance = UKPenceManager.get_balance(user_id)
         DatabaseManager.execute("INSERT OR REPLACE INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), amount))
-        
-        if amount >= 30000 and old_balance < 30000:
-            from database import award_badge
-            award_badge(user_id, 'high_roller')
+
+        from config import BOT_ID
+        if amount >= 30000 and old_balance < 30000 and str(user_id) != str(BOT_ID):
+            from lib.bot.event_handlers import award_badge_notify
+            award_badge_notify(user_id, 'high_roller')
             
         log_text = f"⚖️ <@{user_id}> balance set to `{amount:,}` UKP (was `{old_balance:,}`)|{reason}"
         DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
@@ -83,7 +81,7 @@ class UKPenceManager:
     @staticmethod
     def remove_amount(user_id: int, amount: int, reason: str = "Unspecified") -> bool:
         # Atomic update: only subtract if the balance is sufficient
-        with DatabaseManager.get_connection() as conn:
+        with DatabaseManager.locked_connection() as conn:
             c = conn.cursor()
             
             c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(user_id),))
@@ -97,9 +95,10 @@ class UKPenceManager:
             success = c.rowcount > 0
             if success:
                 new_balance = old_balance - amount
-                if new_balance == 0 and old_balance >= 1000:
-                    from database import award_badge
-                    award_badge(user_id, 'bankrupt')
+                from config import BOT_ID
+                if new_balance == 0 and old_balance >= 1000 and str(user_id) != str(BOT_ID):
+                    from lib.bot.event_handlers import award_badge_notify
+                    award_badge_notify(user_id, 'bankrupt')
                 
                 import time
                 now = int(time.time())
@@ -129,8 +128,8 @@ class EconomyMetrics:
 
         metrics_data[date_str] = day_metrics
 
-        with open(ECONOMY_METRICS_FILE, "w") as f:
-            json.dump(metrics_data, f, indent=4)
+        from lib.core.file_operations import atomic_write_json
+        atomic_write_json(ECONOMY_METRICS_FILE, metrics_data, indent=4)
 
     @staticmethod
     def get_daily_metrics(date_str: str) -> dict:

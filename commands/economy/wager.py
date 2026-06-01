@@ -14,6 +14,7 @@ class WagerDecisionView(discord.ui.View):
         self.topic = topic
         self.challenger_name = challenger_name
         self.opponent_name = opponent_name
+        self.resolved = False
         # Ensure unique persistent IDs for these buttons
         base_id = f"wager_{self.challenger_id}_{self.opponent_id}_{self.amount}"
         self.btn_challenger.custom_id = f"{base_id}_win_challenger"
@@ -30,6 +31,16 @@ class WagerDecisionView(discord.ui.View):
         return True
 
     async def resolve(self, interaction: Interaction, winner_id: int | None):
+        # Idempotency claim: set synchronously before any await or payout. This
+        # WagerDecisionView instance is shared across all clicks on the message, so
+        # two moderators clicking within the edit round-trip would otherwise both
+        # pay out the pot (minting UKP). The first click claims it here; the rest bail.
+        if self.resolved:
+            return await interaction.response.send_message(
+                "This wager has already been resolved.", ephemeral=True
+            )
+        self.resolved = True
+
         pot = self.amount * 2
 
         if winner_id is None:

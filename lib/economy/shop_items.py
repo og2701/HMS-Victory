@@ -117,13 +117,10 @@ class IcebergAddModal(discord.ui.Modal):
             
             # Save to database for persistence
             actual_price = self.item.get_price(interaction.user.id, interaction.guild)
-            cursor = DatabaseManager.get_connection().cursor()
-            cursor.execute(
+            submission_id = DatabaseManager.execute_insert(
                 "INSERT INTO pending_iceberg_submissions (user_id, text, level, price) VALUES (?, ?, ?, ?)",
                 (str(interaction.user.id), text, level, actual_price)
             )
-            DatabaseManager.get_connection().commit()
-            submission_id = cursor.lastrowid
 
             view = IcebergApprovalView(submission_id)
             embed = discord.Embed(

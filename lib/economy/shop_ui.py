@@ -302,15 +302,6 @@ class PurchaseConfirmationView(View):
         if deducted:
             if price > 0:
                 pass  # BankManager.deposit handled automatically by remove_bb(to_bank=True)
-            from lib.bot.event_handlers import award_badge_with_notify
-            await award_badge_with_notify(interaction.client, interaction.user.id, 'first_purchase')
-            
-            from database import DatabaseManager
-            total_purchased_res = DatabaseManager.fetch_one("SELECT SUM(quantity) FROM shop_purchases WHERE user_id = ?", (str(interaction.user.id),))
-            # Add 1 to account for the current purchase which might not be logged yet
-            total = (total_purchased_res[0] or 0) + 1
-            if total >= 10:
-                await award_badge_with_notify(interaction.client, interaction.user.id, 'shopaholic')
 
             # Execute item purchase logic
             # We do not defer here because `execute` might need to edit the message (like VIPCase)
@@ -349,6 +340,17 @@ class PurchaseConfirmationView(View):
                 except Exception:
                     pass
                 return
+
+            # Purchase confirmed & item delivered — award purchase badges NOW (not
+            # before delivery, so a failed/refunded purchase can never leave a badge).
+            from lib.bot.event_handlers import award_badge_with_notify
+            await award_badge_with_notify(interaction.client, interaction.user.id, 'first_purchase')
+            from database import DatabaseManager
+            total_purchased_res = DatabaseManager.fetch_one(
+                "SELECT SUM(quantity) FROM shop_purchases WHERE user_id = ?", (str(interaction.user.id),)
+            )
+            if (total_purchased_res[0] or 0) >= 10:
+                await award_badge_with_notify(interaction.client, interaction.user.id, 'shopaholic')
 
             # Item was successfully granted — from here, errors are UI-only (don't refund)
             try:
@@ -1065,9 +1067,19 @@ class EmojiStickerApprovalView(View):
     def __init__(self, user: discord.Member, upload_data: dict, file_data: bytes, filename: str):
         super().__init__(timeout=86400)  # 24 hours timeout
         self.user = user
-        self.upload_data = upload_data  
+        self.upload_data = upload_data
         self.file_data = file_data
         self.filename = filename
+
+    def _refund_amount(self) -> int:
+        """The price to refund — the configured custom_emoji_sticker item price."""
+        from lib.economy.shop_items import get_shop_items
+        refund_amount = 3500
+        for item in get_shop_items():
+            if item.id == "custom_emoji_sticker":
+                refund_amount = item.price
+                break
+        return refund_amount
 
     @discord.ui.button(label="Approve", style=discord.ButtonStyle.green, emoji="✅")
     async def approve_request(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1120,8 +1132,35 @@ class EmojiStickerApprovalView(View):
                 except discord.Forbidden:
                     pass
 
-        except discord.HTTPException as e:
-            await interaction.followup.send(f"❌ Failed to create {self.upload_data['type']}: {str(e)}", ephemeral=True)
+        except Exception as e:
+            # Creation failed (HTTP error, bad image, server emoji/sticker slots
+            # full, etc.). The purchaser was already charged at purchase time, so
+            # refund them rather than silently keeping their money, and disable the
+            # buttons so it can't be retried into a double-create.
+            from lib.economy.economy_manager import add_bb
+            refund_amount = self._refund_amount()
+            add_bb(self.user.id, refund_amount, reason="Custom emoji/sticker refund (creation failed)", taxable=False)
+            for item in self.children:
+                item.disabled = True
+            fail_embed = discord.Embed(
+                title="⚠️ Custom Emoji/Sticker - FAILED",
+                description=(
+                    f"Could not create the {self.upload_data['type']}: {e}\n\n"
+                    f"{refund_amount:,} UKPence has been refunded to {self.user.mention}."
+                ),
+                color=0xff0000,
+            )
+            try:
+                await interaction.edit_original_response(embed=fail_embed, view=self)
+            except discord.HTTPException:
+                await interaction.followup.send(embed=fail_embed)
+            try:
+                await self.user.send(
+                    f"Your custom {self.upload_data['type']} '{self.upload_data['name']}' could not be "
+                    f"created ({e}). You have been refunded {refund_amount:,} UKPence."
+                )
+            except discord.Forbidden:
+                pass
 
 
     @discord.ui.button(label="Deny", style=discord.ButtonStyle.red, emoji="❌")
