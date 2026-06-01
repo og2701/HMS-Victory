@@ -119,6 +119,32 @@ class AClient(discord.Client):
                 except Exception as e:
                     logger.warning(f"Could not update prediction {p.msg_id}: {e}")
 
+        # Proactively update existing scheduled-prediction announcements so they
+        # show the new Edit button (older ones were posted with only Cancel).
+        from lib.economy.prediction_system import CancelScheduledPredView
+        from database import DatabaseManager
+        try:
+            sched_rows = DatabaseManager.fetch_all(
+                "SELECT id, cm_message_id FROM scheduled_predictions WHERE status = 'pending' AND cm_message_id IS NOT NULL"
+            )
+            cm_channel = self.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
+            if cm_channel is None:
+                try:
+                    cm_channel = await self.fetch_channel(CHANNELS.COMMUNITY_MANAGEMENT)
+                except Exception:
+                    cm_channel = None
+            if cm_channel is not None:
+                for sched_id, cm_msg_id in sched_rows:
+                    try:
+                        cm_msg = await cm_channel.fetch_message(int(cm_msg_id))
+                        await cm_msg.edit(view=CancelScheduledPredView(sched_id))
+                        logger.info(f"Updated scheduled-pred announcement {cm_msg_id} with Edit button.")
+                        await asyncio.sleep(1) # Small delay to be polite to the API
+                    except Exception as e:
+                        logger.warning(f"Could not update scheduled-pred announcement {cm_msg_id}: {e}")
+        except Exception as e:
+            logger.warning(f"Could not refresh scheduled-pred announcements: {e}")
+
     async def on_message(self, message):
         if (
             message.author.id == USERS.COUNTRYBALL_BOT

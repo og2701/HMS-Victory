@@ -575,6 +575,23 @@ def _resolve_end_ts(value: str, reference_ts: float) -> float:
     return end_ts
 
 
+def _scheduled_pred_embed(sched_id, channel_id, title: str, opt1: str, opt2: str,
+                          scheduled_ts: int, duration: int, creator_mention: str) -> discord.Embed:
+    """Build the COMMUNITY_MANAGEMENT announcement embed for a *pending* scheduled
+    prediction. Shared by the create and edit flows so the layout stays in sync."""
+    embed = discord.Embed(
+        title="📅 Prediction Scheduled",
+        description=f"**{title}**\n*{opt1}* vs *{opt2}*",
+        color=0x5865F2,
+    )
+    embed.add_field(name="Posts in", value=f"<#{channel_id}>", inline=True)
+    embed.add_field(name="Posts at", value=f"<t:{scheduled_ts}:F> (<t:{scheduled_ts}:R>)", inline=True)
+    embed.add_field(name="Betting closes", value=f"{duration} min after post", inline=True)
+    embed.add_field(name="Scheduled by", value=creator_mention, inline=True)
+    embed.set_footer(text=f"ID #{sched_id}")
+    return embed
+
+
 class PredictionCreateModal(discord.ui.Modal, title="Create Prediction"):
     title_input = discord.ui.TextInput(
         label="Title",
@@ -719,16 +736,10 @@ class PredictionScheduleModal(discord.ui.Modal, title="Schedule Prediction"):
 
         cm_channel = interaction.client.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
         if cm_channel is not None and sched_id is not None:
-            embed = discord.Embed(
-                title="📅 Prediction Scheduled",
-                description=f"**{title}**\n*{opt1}* vs *{opt2}*",
-                color=0x5865F2,
+            embed = _scheduled_pred_embed(
+                sched_id, self._channel_id, title, opt1, opt2,
+                scheduled_ts, duration, interaction.user.mention,
             )
-            embed.add_field(name="Posts in", value=f"<#{self._channel_id}>", inline=True)
-            embed.add_field(name="Posts at", value=f"<t:{scheduled_ts}:F> (<t:{scheduled_ts}:R>)", inline=True)
-            embed.add_field(name="Betting closes", value=f"{duration} min after post", inline=True)
-            embed.add_field(name="Scheduled by", value=interaction.user.mention, inline=True)
-            embed.set_footer(text=f"ID #{sched_id}")
             try:
                 cm_msg = await cm_channel.send(
                     embed=embed,
@@ -744,6 +755,151 @@ class PredictionScheduleModal(discord.ui.Modal, title="Schedule Prediction"):
                 import logging
                 logging.getLogger(__name__).warning(
                     f"Could not send scheduled-pred announcement to COMMUNITY_MANAGEMENT.",
+                    exc_info=True,
+                )
+
+
+class PredictionEditModal(discord.ui.Modal):
+    """Modal to edit an existing *pending* scheduled prediction. Pre-fills the
+    current values; on submit it updates the DB row, reschedules the post job,
+    and refreshes the COMMUNITY_MANAGEMENT announcement."""
+    def __init__(self, sched_id: int, title: str, opt1: str, opt2: str,
+                 scheduled_ts: int, duration_minutes: int):
+        super().__init__(title=f"Edit Scheduled Prediction #{sched_id}")
+        self.sched_id = sched_id
+
+        import pytz
+        from datetime import datetime
+        when_default = datetime.fromtimestamp(
+            scheduled_ts, tz=pytz.timezone("Europe/London")
+        ).strftime("%Y-%m-%d %H:%M")
+        # Keep the originals so an unchanged "when" can skip the future-time
+        # check — staff editing only the title of an imminent prediction
+        # shouldn't be blocked by "Post time must be in the future."
+        self._orig_when_default = when_default
+        self._orig_scheduled_ts = scheduled_ts
+
+        self.title_input = discord.ui.TextInput(
+            label="Title",
+            style=discord.TextStyle.long,
+            default=title,
+            required=True,
+            max_length=200,
+        )
+        self.opt1_input = discord.ui.TextInput(
+            label="Outcome 1",
+            style=discord.TextStyle.short,
+            default=opt1,
+            required=True,
+            max_length=80,
+        )
+        self.opt2_input = discord.ui.TextInput(
+            label="Outcome 2",
+            style=discord.TextStyle.short,
+            default=opt2,
+            required=True,
+            max_length=80,
+        )
+        self.when_input = discord.ui.TextInput(
+            label="Post when? (mins / YYYY-MM-DD HH:MM UK)",
+            style=discord.TextStyle.short,
+            default=when_default,
+            required=True,
+            max_length=40,
+        )
+        self.duration_input = discord.ui.TextInput(
+            label="Minutes or end time YYYY-MM-DD HH:MM",
+            style=discord.TextStyle.short,
+            default=str(duration_minutes),
+            required=True,
+            max_length=20,
+        )
+        for item in (self.title_input, self.opt1_input, self.opt2_input,
+                     self.when_input, self.duration_input):
+            self.add_item(item)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if not any(role.id in [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO] for role in interaction.user.roles):
+            return await interaction.response.send_message(
+                "❌ Only staff can edit scheduled predictions.", ephemeral=True
+            )
+
+        from database import DatabaseManager
+        row = DatabaseManager.fetch_one(
+            "SELECT status, cm_message_id, channel_id, creator_id FROM scheduled_predictions WHERE id = ?",
+            (self.sched_id,),
+        )
+        if not row:
+            return await interaction.response.send_message(
+                f"❌ Scheduled prediction #{self.sched_id} not found.", ephemeral=True
+            )
+        status, cm_message_id, channel_id, creator_id = row
+        if status != 'pending':
+            return await interaction.response.send_message(
+                f"❌ Scheduled prediction #{self.sched_id} is no longer pending (status={status}); cannot edit.",
+                ephemeral=True,
+            )
+
+        if self.when_input.value.strip() == self._orig_when_default:
+            # Time left untouched: keep the stored timestamp as-is (even if it's
+            # now imminent/past) so other fields can still be edited.
+            scheduled_ts = self._orig_scheduled_ts
+        else:
+            try:
+                scheduled_ts = _parse_post_time(self.when_input.value)
+            except ValueError as e:
+                return await interaction.response.send_message(str(e), ephemeral=True)
+        try:
+            end_ts = _resolve_end_ts(self.duration_input.value, float(scheduled_ts))
+        except ValueError as e:
+            return await interaction.response.send_message(str(e), ephemeral=True)
+        duration = max(1, int(round((end_ts - scheduled_ts) / 60)))
+
+        title = self.title_input.value.strip()
+        opt1 = self.opt1_input.value.strip()
+        opt2 = self.opt2_input.value.strip()
+
+        DatabaseManager.execute(
+            "UPDATE scheduled_predictions SET title = ?, opt1 = ?, opt2 = ?, duration_minutes = ?, scheduled_ts = ? WHERE id = ?",
+            (title, opt1, opt2, duration, scheduled_ts, self.sched_id),
+        )
+
+        # Reschedule the APScheduler job to fire at the (possibly new) time.
+        from apscheduler.triggers.date import DateTrigger
+        from datetime import datetime, timezone
+        run_at = datetime.fromtimestamp(scheduled_ts, tz=timezone.utc)
+        scheduler = getattr(interaction.client, "scheduler", None)
+        if scheduler is not None:
+            scheduler.add_job(
+                post_scheduled_prediction,
+                DateTrigger(run_date=run_at),
+                args=[interaction.client, self.sched_id],
+                id=f"scheduled_pred_{self.sched_id}",
+                name=f"Scheduled Prediction #{self.sched_id}",
+                misfire_grace_time=3600,
+                replace_existing=True,
+            )
+
+        await interaction.response.send_message(
+            f"✅ Prediction #{self.sched_id} updated — now posts <t:{scheduled_ts}:F> (<t:{scheduled_ts}:R>) in <#{channel_id}>.",
+            ephemeral=True,
+        )
+
+        # Refresh the CM announcement embed to reflect the edits.
+        if cm_message_id:
+            try:
+                cm_channel = interaction.client.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
+                if cm_channel is not None:
+                    cm_msg = await cm_channel.fetch_message(int(cm_message_id))
+                    embed = _scheduled_pred_embed(
+                        self.sched_id, channel_id, title, opt1, opt2,
+                        scheduled_ts, duration, f"<@{creator_id}>",
+                    )
+                    await cm_msg.edit(embed=embed, view=CancelScheduledPredView(self.sched_id))
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"Could not update CM announcement for edited scheduled pred {self.sched_id}.",
                     exc_info=True,
                 )
 
@@ -910,12 +1066,39 @@ class ScheduledPredAdminView(discord.ui.View):
 
 
 class CancelScheduledPredView(discord.ui.View):
-    """Persistent view with a Cancel button shown on the COMMUNITY_MANAGEMENT
+    """Persistent view with Edit and Cancel buttons shown on the COMMUNITY_MANAGEMENT
     announcement message for a scheduled prediction."""
     def __init__(self, sched_id: int):
         super().__init__(timeout=None)
         self.sched_id = sched_id
+        self.edit_button.custom_id = f"sched_pred_edit:{sched_id}"
         self.cancel_button.custom_id = f"sched_pred_cancel:{sched_id}"
+
+    @discord.ui.button(label="Edit", style=discord.ButtonStyle.primary, emoji="✏️")
+    async def edit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not any(role.id in [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO] for role in interaction.user.roles):
+            return await interaction.response.send_message(
+                "❌ Only staff can edit scheduled predictions.", ephemeral=True
+            )
+
+        from database import DatabaseManager
+        row = DatabaseManager.fetch_one(
+            "SELECT title, opt1, opt2, scheduled_ts, duration_minutes, status FROM scheduled_predictions WHERE id = ?",
+            (self.sched_id,),
+        )
+        if not row:
+            return await interaction.response.send_message(
+                f"❌ Scheduled prediction #{self.sched_id} not found.", ephemeral=True
+            )
+        title, opt1, opt2, scheduled_ts, duration, status = row
+        if status != 'pending':
+            return await interaction.response.send_message(
+                f"❌ Scheduled prediction #{self.sched_id} is no longer pending (status={status}); cannot edit.",
+                ephemeral=True,
+            )
+        await interaction.response.send_modal(
+            PredictionEditModal(self.sched_id, title, opt1, opt2, scheduled_ts, duration)
+        )
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, emoji="🗑️")
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
