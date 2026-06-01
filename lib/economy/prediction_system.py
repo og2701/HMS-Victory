@@ -319,9 +319,11 @@ async def render_prediction_image(pred: Prediction, client: Optional[discord.Cli
         .replace("{{OPTION_COUNT}}", str(len(pred.options)))
         .replace("{{OPTIONS}}", _build_option_rows_html(pred, client))
     )
-    # Landscape canvas: Discord width-fits a wide image inline (no tap-to-open),
-    # whereas a tall portrait card gets height-capped to a small thumbnail.
-    return await screenshot_html(html_out, size=(1000, 1200))
+    # Capture EXACTLY the .sheet card (CDP element clip) rather than the whole
+    # 1000x1200 viewport — otherwise a short 2-outcome card leaves a big band of
+    # blank canvas below it. The card is its own content height, so the image is
+    # tight: landscape and short, which Discord shows big inline (no tap-to-open).
+    return await screenshot_html(html_out, size=(1000, 1200), element_selector=".sheet")
 
 
 async def build_prediction_render(pred: Prediction, client: Optional[discord.Client]):
