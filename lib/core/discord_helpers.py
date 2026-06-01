@@ -29,17 +29,40 @@ def has_role(interaction: Interaction, role_id: int) -> bool:
 def has_any_role(interaction: Interaction, role_ids: list[int]) -> bool:
     return any(role.id in role_ids for role in interaction.user.roles)
 
+def can_moderate_target(interaction: Interaction, target: Member) -> Optional[str]:
+    """Return None if `interaction.user` may apply a punitive role-toggle to
+    `target`, else a human-readable refusal. Guards against targeting the bot,
+    the guild owner, oneself, or anyone with an equal/higher top role (the owner
+    is exempt from the hierarchy check)."""
+    guild = interaction.guild
+    invoker = interaction.user
+    if target.bot:
+        return "You can't target a bot."
+    if guild and target.id == guild.owner_id:
+        return "You can't target the server owner."
+    if target.id == invoker.id:
+        return "You can't target yourself."
+    if guild and invoker.id != guild.owner_id and target.top_role >= invoker.top_role:
+        return "You can't target someone with an equal or higher role than you."
+    return None
+
 async def toggle_user_role(interaction: Interaction, user: Member, role: discord.Role) -> None:
-    if role in user.roles:
-        await user.remove_roles(role)
-        await interaction.response.send_message(
-            f"Role {role.name} has been removed from {user.mention}."
-        )
+    try:
+        if role in user.roles:
+            await user.remove_roles(role)
+            message = f"Role {role.name} has been removed from {user.mention}."
+        else:
+            await user.add_roles(role)
+            message = f"Role {role.name} has been assigned to {user.mention}."
+    except discord.Forbidden:
+        message = f"I don't have permission to manage the **{role.name}** role for {user.mention} (it may sit above my highest role)."
+    except discord.HTTPException as e:
+        message = f"Failed to update {user.mention}'s roles: {e}"
+
+    if interaction.response.is_done():
+        await interaction.followup.send(message)
     else:
-        await user.add_roles(role)
-        await interaction.response.send_message(
-            f"Role {role.name} has been assigned to {user.mention}."
-            )
+        await interaction.response.send_message(message)
 
 async def validate_and_format_date(interaction: Interaction, date_str: Optional[str] = None) -> Optional[str]:
     if date_str is None:

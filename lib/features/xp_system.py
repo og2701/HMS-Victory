@@ -3,6 +3,7 @@ import time
 import random
 import io
 import asyncio
+import logging
 from database import DatabaseManager
 from config import *
 from lib.core.constants import CHAT_LEVEL_ROLE_THRESHOLDS, CUSTOM_RANK_BACKGROUNDS
@@ -11,6 +12,11 @@ from lib.economy.bank_manager import BankManager
 from lib.core.image_processing import screenshot_html, get_avatar_data_uri, encode_image_to_data_uri
 import os
 from lib.core.file_operations import read_html_template
+
+logger = logging.getLogger(__name__)
+
+# Channels where chatting earns no XP/UKP (keeps the rank ladder meaningful).
+XP_EXCLUDED_CHANNELS = {CHANNELS.BOT_SPAM}
 
 class LeaderboardView(discord.ui.View):
     PAGE_SIZE = 20
@@ -46,7 +52,16 @@ class LeaderboardView(discord.ui.View):
                 self.guild, self.get_slice(), self.offset
             )
         elif isinstance(self.image_cache[self.offset], asyncio.Task):
-            self.image_cache[self.offset] = await self.image_cache[self.offset]
+            try:
+                self.image_cache[self.offset] = await self.image_cache[self.offset]
+            except Exception as e:
+                # A prefetch render failed (e.g. Chrome OOM). Drop the failed task so
+                # this page isn't permanently broken, and regenerate inline.
+                logger.warning(f"Cached leaderboard render at offset {self.offset} failed, regenerating: {e}")
+                self.image_cache.pop(self.offset, None)
+                self.image_cache[self.offset] = await self.xp_system.generate_leaderboard_image(
+                    self.guild, self.get_slice(), self.offset
+                )
 
         return discord.File(fp=io.BytesIO(self.image_cache[self.offset]), filename="leaderboard.png")
 
@@ -105,7 +120,14 @@ class RichListView(discord.ui.View):
                 self.guild, self.get_slice(), self.offset
             )
         elif isinstance(self.image_cache[self.offset], asyncio.Task):
-            self.image_cache[self.offset] = await self.image_cache[self.offset]
+            try:
+                self.image_cache[self.offset] = await self.image_cache[self.offset]
+            except Exception as e:
+                logger.warning(f"Cached richlist render at offset {self.offset} failed, regenerating: {e}")
+                self.image_cache.pop(self.offset, None)
+                self.image_cache[self.offset] = await self.xp_system.generate_richlist_image(
+                    self.guild, self.get_slice(), self.offset
+                )
 
         return discord.File(fp=io.BytesIO(self.image_cache[self.offset]), filename="richlist.png")
 
@@ -147,9 +169,19 @@ class XPSystem:
         return role_id
 
     async def update_xp(self, message: discord.Message):
+        # Don't reward system messages (joins/boosts/pins), near-empty one-character
+        # messages, or chatter in excluded channels — all of which just pollute the
+        # rank ladder. Image/sticker-only posts are still genuine activity, so allow them.
+        if message.type not in (discord.MessageType.default, discord.MessageType.reply):
+            return
+        if message.channel.id in XP_EXCLUDED_CHANNELS:
+            return
+        if len(message.content.strip()) < 2 and not message.attachments and not message.stickers:
+            return
+
         user_id = str(message.author.id)
         now = time.time()
-        
+
         result = DatabaseManager.fetch_one("SELECT xp, last_xp_time FROM xp WHERE user_id = ?", (user_id,))
         
         current_xp = result[0] if result else 0
@@ -182,9 +214,19 @@ class XPSystem:
                     rank_ids = [rid for _, rid in CHAT_LEVEL_ROLE_THRESHOLDS]
                     old_roles = [r for r in message.author.roles if r.id in rank_ids]
                     if new_role not in message.author.roles:
+                        # Add the NEW role first, then remove superseded ones, so a
+                        # permission error can never leave the member rankless (and
+                        # re-failing every message). Both ops are guarded.
+                        try:
+                            await message.author.add_roles(new_role)
+                        except (discord.Forbidden, discord.HTTPException) as e:
+                            logger.warning(f"Failed to grant rank role {new_role.id} to {message.author.id}: {e}")
+                            return
                         if old_roles:
-                            await message.author.remove_roles(*old_roles)
-                        await message.author.add_roles(new_role)
+                            try:
+                                await message.author.remove_roles(*old_roles)
+                            except (discord.Forbidden, discord.HTTPException) as e:
+                                logger.warning(f"Failed to remove old rank roles from {message.author.id}: {e}")
                         embed = discord.Embed(
                             description=f"{message.author.mention} has progressed to **{new_role.name}**!",
                             color=discord.Color.green()

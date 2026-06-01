@@ -15,8 +15,8 @@ from lib.economy.bank_manager import BankManager
 from lib.economy.economy_stats_html import create_economy_stats_image
 from database import award_badge
 from lib.bot.backup_manager import zip_and_send_folder, backup_database, backup_bot, backup_json_data
-from lib.core.file_operations import load_webhook_deletions, save_webhook_deletions
-from lib.economy.prediction_system import prediction_embed, _save, _load, Prediction
+from lib.core.file_operations import load_webhook_deletions, save_webhook_deletions, atomic_write_json
+from lib.economy.prediction_system import _save, _load, Prediction
 from commands.moderation.overnight_mute import mute_visitors, unmute_visitors
 
 logger = logging.getLogger(__name__)
@@ -44,8 +44,7 @@ def _update_daily_metric_file(date_str, key, value_to_add_or_set, is_total_value
 
     metrics_data[date_str] = day_metrics
 
-    with open(ECONOMY_METRICS_FILE, "w") as f:
-        json.dump(metrics_data, f, indent=4)
+    atomic_write_json(ECONOMY_METRICS_FILE, metrics_data, indent=4)
 
 
 async def daily_summary(client):
@@ -120,8 +119,7 @@ async def daily_summary(client):
 
     metrics_data[yesterday_str] = day_metrics
 
-    with open(ECONOMY_METRICS_FILE, "w") as f:
-        json.dump(metrics_data, f, indent=4)
+    atomic_write_json(ECONOMY_METRICS_FILE, metrics_data, indent=4)
     logger.info(f"Finalized economy metrics for {yesterday_str}: ChatRewards={day_metrics.get('chat_rewards_total', 'N/A')}, TotalCircEOD={total_circulation_at_eod}")
 
     if not os.path.exists(BALANCE_SNAPSHOT_DIR):
@@ -134,8 +132,7 @@ async def daily_summary(client):
     if os.path.exists(BALANCE_SNAPSHOT_DIR):
         snapshot_filename = f"ukpence_balances_{yesterday_str}.json"
         snapshot_path = os.path.join(BALANCE_SNAPSHOT_DIR, snapshot_filename)
-        with open(snapshot_path, "w") as f_snap:
-            json.dump(current_ukpence_balances, f_snap, indent=4)
+        atomic_write_json(snapshot_path, current_ukpence_balances, indent=4)
         logger.info(f"Saved UKPence balance snapshot for {yesterday_str} to {snapshot_path}")
 
     await post_summary(client, CHANNELS.COMMONS, "daily", date=yesterday_str)
@@ -185,6 +182,7 @@ async def monthly_summary(client):
 
 
 async def sweep_predictions(client):
+    from lib.economy.prediction_system import award_indecisive_badges, build_prediction_render
     now = discord.utils.utcnow().timestamp()
     dirty = False
     for p in client.predictions.values():
@@ -194,8 +192,13 @@ async def sweep_predictions(client):
                 ch = client.get_channel(p.channel_id) if p.channel_id else client.get_channel(CHANNELS.BOT_SPAM)
                 if ch:
                     msg = await ch.fetch_message(p.msg_id)
-                    embed, bar = prediction_embed(p, client)
-                    await msg.edit(embed=embed, attachments=[bar], view=None)
+                    embed, files = await build_prediction_render(p, client)
+                    await msg.edit(embed=embed, attachments=files, view=None)
+            except Exception:
+                pass
+            # Award 'indecisive' on auto-lock too, matching the manual Lock button.
+            try:
+                await award_indecisive_badges(client, p)
             except Exception:
                 pass
             dirty = True
@@ -490,7 +493,7 @@ async def apply_inactivity_tax(client):
         total_reclaimed = 0
         taxed_count = 0
         
-        with DatabaseManager.get_connection() as conn:
+        with DatabaseManager.locked_connection() as conn:
             c = conn.cursor()
             for uid, balance in dormant_users:
                 tax_amount = int(balance * 0.05)
@@ -498,7 +501,7 @@ async def apply_inactivity_tax(client):
                     c.execute("UPDATE ukpence SET balance = balance - ? WHERE user_id = ?", (tax_amount, uid))
                     total_reclaimed += tax_amount
                     taxed_count += 1
-            
+
             conn.commit()
 
         if total_reclaimed > 0:

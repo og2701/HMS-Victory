@@ -1,0 +1,26 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        # Only the deps the logic tests actually import (discord.py pulls aiohttp).
+        # The full requirements.txt (selenium/Chrome) isn't needed for these.
+        run: pip install pytest discord.py Pillow
+
+      - name: Run economy + logic tests
+        run: pytest tests/test_economy_invariant.py tests/test_moderation_text.py tests/test_americanisms.py -v

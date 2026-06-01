@@ -337,6 +337,36 @@ async def notify_mute(client, member):
     except Exception as e:
         logger.error(f"notify_mute failed for {member}: {e}")
 
+# Set once the bot is ready so award sites that have no client in scope (the
+# economy/prediction managers) can still DM + log badge awards instead of awarding
+# them silently. See award_badge_notify().
+_BADGE_NOTIFY_CLIENT = None
+
+
+def set_badge_notify_client(client):
+    global _BADGE_NOTIFY_CLIENT
+    _BADGE_NOTIFY_CLIENT = client
+
+
+def award_badge_notify(user_id: int, badge_id: str):
+    """Award a badge from a synchronous, client-less context (e.g. economy or
+    prediction managers) while still notifying the user. Schedules the full
+    DM+log path on the running loop when the bot client is available; otherwise
+    falls back to a silent award so the badge is never lost."""
+    client = _BADGE_NOTIFY_CLIENT
+    if client is not None:
+        try:
+            import asyncio
+            asyncio.get_running_loop().create_task(
+                award_badge_with_notify(client, user_id, badge_id)
+            )
+            return
+        except RuntimeError:
+            pass  # No running loop (e.g. offline script) — award silently below.
+    from database import award_badge
+    award_badge(user_id, badge_id)
+
+
 async def award_badge_with_notify(client, user_id: int, badge_id: str):
     """Awards a badge and notifies the user via DM and logs to bot-usage-log."""
     from database import award_badge, DatabaseManager
@@ -474,7 +504,7 @@ async def process_pending_emoji_sticker_uploads(client, message):
                     # Send approval request to cabinet channel
                     cabinet_channel = client.get_channel(CHANNELS.CABINET)
                     if cabinet_channel:
-                        from lib.economy.shop_items import EmojiStickerApprovalView
+                        from lib.economy.shop_ui import EmojiStickerApprovalView
 
                         embed = discord.Embed(
                             title="🎨 Custom Emoji/Sticker Approval Required",
@@ -668,6 +698,7 @@ async def process_forum_threads(client, message):
 
 
 async def on_ready(client, tree, scheduler):
+    set_badge_notify_client(client)
     if not hasattr(client, "thread_messages"):
         client.thread_messages = load_json_file(THREAD_MESSAGES_FILE)
         logger.info("Loaded thread messages")
@@ -760,148 +791,11 @@ async def on_message(client, message):
 
     await client.xp_system.update_xp(message)
 
-    # Automated "Rude Timeout" / "MegaShut" detection system (Disabled completely)
-    if False and not message.author.bot and message.type != discord.MessageType.new_member:
-        import unicodedata
-        
-        # 0. Strip Discord mentions, custom emojis, and URLs to avoid false positives from numeric IDs
-        raw_content = message.content
-        raw_content = re.sub(r'<@!?\d+>', '', raw_content)       # User mentions
-        raw_content = re.sub(r'<@&\d+>', '', raw_content)        # Role mentions
-        raw_content = re.sub(r'<#\d+>', '', raw_content)         # Channel mentions
-        raw_content = re.sub(r'<a?:\w+:\d+>', '', raw_content)   # Custom emojis
-        raw_content = re.sub(r'https?://\S+', '', raw_content)   # URLs
-        
-        # 1. Normalize unicode (converts fancy fonts like bold/cursive/circles 𝐭𝐮𝐧𝐠 -> tung)
-        content_normalized = unicodedata.normalize('NFKD', raw_content.lower())
-        
-        # 2. Translate common Greek/Cyrillic, turned/upside-down, and symbol homoglyphs back to standard Latin ASCII
-        homoglyphs = {
-            'т': 't', 'τ': 't', '†': 't', 'ʇ': 't', '┴': 't', '⊥': 't', '+': 't', '＋': 't', '➕': 't',
-            'ц': 'u', 'υ': 'u', 'μ': 'u', '∩': 'u', '∪': 'u', 'у': 'u',
-            'ν': 'v', 'ѵ': 'v',
-            'п': 'n', 'η': 'n', 'ñ': 'n', 'ń': 'n', 'ņ': 'n', 'н': 'n',
-            'ğ': 'g', 'ĝ': 'g', 'ġ': 'g', 'ģ': 'g', 'ƃ': 'g', '⅁': 'g', 'פ': 'g', 'г': 'g', 'ϱ': 'g',
-            'ן': 'l',
-            'ɐ': 'a', 'ɔ': 'c', 'ǝ': 'e', 'ɟ': 'f', 'ɥ': 'h', 'ᴉ': 'i',
-            'ɾ': 'j', 'ʞ': 'k', 'ɯ': 'm', 'ɹ': 'r', 'ʌ': 'v', 'ʍ': 'w', 'ʎ': 'y',
-        }
-        for k, v in homoglyphs.items():
-            content_normalized = content_normalized.replace(k, v)
-            
-        # 3. Strip all characters that are not alphanumeric or spaces (e.g. T✓ng -> tng, t^3 -> t3, t**3 -> t3)
-        content_normalized = "".join(c for c in content_normalized if c.isalnum() or c.isspace())
-            
-        # Regex for "tung" variations (tung, tvng, t u n g, tuuuung, tng, phonetic tyung/tyng, Pig Latin ungtay, etc.)
-        tung_pattern = r't\s*[uvoyo0]*\s*n\s*[g9q]|ung\s*tay'
-        
-        # Regex for "triple t" variations (triple t, triplet, 3t, ttt, t t t, three ts, t3, t cube, t cubed, t*3, three times t, t times 3, triplo t, etc.)
-        triplet_pattern = r'triple\s*t|triplet|3\s*t|ttt|t\s*t\s*t|three\s*t|t\s*3|t\s*cube|three\s*times\s*t|t\s*times\s*3|triplo\s*t'
-        
-        # Regex for "67" (67, 6 7, sixtyseven, sixty seven, lxvii, l x v i i, multilingual translations, etc.)
-        sixty_seven_pattern = r'6\s*7|sixty\s*seven|l\s*x\s*v\s*i\s*i|lxvii|soixante\s*sept|sesenta\s*y\s*siete|sieben\s*und\s*sechzig|sessantasette'
-        
-        matched_trigger = None
-        
-        # Check standard layout and reversed layout (e.g. gnut -> tung)
-        content_reversed = content_normalized[::-1]
-        # Also check per-word reversal (each word reversed individually)
-        words_reversed = " ".join(w[::-1] for w in content_normalized.split())
-        
-        if re.search(tung_pattern, content_normalized) or re.search(tung_pattern, content_reversed) or re.search(tung_pattern, words_reversed):
-            matched_trigger = "tung-variant"
-        elif re.search(triplet_pattern, content_normalized) or re.search(triplet_pattern, content_reversed) or re.search(triplet_pattern, words_reversed):
-            matched_trigger = "triplet-variant"
-        elif re.search(sixty_seven_pattern, content_normalized) or re.search(sixty_seven_pattern, content_reversed) or re.search(sixty_seven_pattern, words_reversed):
-            matched_trigger = "67-variant"
-        
-        # 4. Anagram detection: check if any 4-letter window is an anagram of "tung"
-        if not matched_trigger:
-            letters_only = "".join(c for c in content_normalized if c.isalpha())
-            tung_sorted = sorted("tung")
-            for i in range(len(letters_only) - 3):
-                if sorted(letters_only[i:i+4]) == tung_sorted:
-                    matched_trigger = "tung-anagram"
-                    break
-        
-        # 5. Acrostic detection: first letter of each word spells "tung", "tvng", "gnut", etc.
-        if not matched_trigger:
-            words = content_normalized.split()
-            if len(words) >= 4:
-                first_letters = "".join(w[0] for w in words if w)
-                first_letters_reversed = first_letters[::-1]
-                if re.search(tung_pattern, first_letters) or re.search(tung_pattern, first_letters_reversed):
-                    matched_trigger = "tung-acrostic"
-                elif re.search(triplet_pattern, first_letters) or re.search(triplet_pattern, first_letters_reversed):
-                    matched_trigger = "triplet-acrostic"
-            
-        # 6. OpenAI fallback for Lanca - always check if local detection didn't catch anything (Disabled)
-        if False and message.author.id == USERS.LANCA and not matched_trigger:
-            try:
-                import os
-                from openai import AsyncOpenAI
-                openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_TOKEN"))
-                
-                response = await openai_client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are a moderation assistant for a Discord server. Your task is to analyze if the user's message is a deliberate attempt to say, spell, or represent the forbidden words 'tung' (also 'tvng'), 'tung tung tung sahur', 'sixty seven' (also '67'), or 'triple t' / 'triplet' / 'three t' / 'ttt'. The user is highly creative and will use obfuscation, spacing, symbols, phonetic spellings, math notation, turned text, backwards/reversed text (e.g. 'gnut' or 'tung sahur' / 'ruhas gnut' / 'sahue' variations), anagrams, acrostics (first letter of each word), morse code, binary, braille, base64, foreign languages, or ANY other trick to bypass filters. Err on the side of caution - if it looks even slightly like an attempt, respond 'yes'. Respond with EXACTLY 'yes' or 'no'."
-                        },
-                        {
-                            "role": "user",
-                            "content": (
-                                f"Analyze this message in all its forms:\n"
-                                f"Original: {message.content}\n"
-                                f"Reversed: {message.content[::-1]}\n"
-                                f"Normalized (homoglyphs resolved): {content_normalized}\n"
-                                f"Normalized & Reversed: {content_reversed}\n"
-                                f"Per-word reversed: {words_reversed}\n"
-                                f"First letters of words: {''.join(w[0] for w in content_normalized.split() if w)}"
-                            )
-                        }
-                    ],
-                    max_tokens=5,
-                    temperature=0.0
-                )
-                ai_response = response.choices[0].message.content.strip().lower()
-                if "yes" in ai_response:
-                    matched_trigger = "openai-obfuscation-detection"
-                    logger.info(f"OpenAI detected obfuscation in Lanca's message: {repr(message.content)}")
-            except Exception as e:
-                logger.error(f"Error calling OpenAI for Lanca moderation: {e}")
-                    
-        if message.author.id == USERS.LANCA and matched_trigger:
-            try:
-                # Query historical shut counts to calculate doubling duration
-                row = DatabaseManager.fetch_one("SELECT count FROM shut_counts WHERE user_id = ?", (str(message.author.id),))
-                current_count = row[0] if row else 0
-                
-                # Double the duration starting at 5 minutes: 5, 10, 20, 40, 80... capped at Discord's max limit of 28 days (40320 minutes)
-                minutes = min(5 * (2 ** current_count), 40320)
-                duration = timedelta(minutes=minutes)
-                
-                reason = f"Automated shut for saying {matched_trigger} (progressive shut #{current_count + 1})"
-                _record_mute_trigger(client, message.author.id, message)
-                await message.author.timeout(discord.utils.utcnow() + duration, reason=reason)
-                
-                # Save the current timeout details in a dot file in /tmp/
-                try:
-                    with open("/tmp/.lanca_timeout", "w") as f:
-                        f.write(f"duration_minutes: {minutes}\nends_at: {(discord.utils.utcnow() + duration).isoformat()}\ntrigger: {matched_trigger}\ncount: {current_count + 1}\n")
-                except Exception as ex:
-                    logger.error(f"Failed to save current timeout to /tmp/.lanca_timeout: {ex}")
-                    
-                sticker_message = await message.reply(stickers=[discord.Object(id=1298758779428536361)])
-                sticker_messages[message.id] = (sticker_message.id, client.user.id)
-                save_shut_count(message.author.id)
-                logger.info(f"User {message.author} timed out for {duration} (minutes: {minutes}) for saying {matched_trigger} (shut #{current_count + 1}).")
-            except discord.Forbidden:
-                logger.warning(f"Forbidden to timeout {message.author} for saying {matched_trigger}")
-            except Exception as e:
-                logger.error(f"Error timing out {message.author} for saying {matched_trigger}: {e}")
-
+    # Per-message activity badges (night owl, morning person, holiday badges, echo,
+    # town crier, global citizen, weekend warrior, periodic pillar check). The old
+    # disabled "MegaShut"/tung auto-timeout block that wrapped this has been removed
+    # (see git history); these badges were unreachable while sat inside `if False`.
+    if not message.author.bot and message.type != discord.MessageType.new_member:
         ensure_bb(message.author.id)
         try:
             from lib.bot.event_handlers import track_night_owl, track_morning_person, award_badge_with_notify
@@ -1402,9 +1296,8 @@ async def check_hall_of_fame(client, payload):
     async with hof_lock:
         hall_of_fame_data = load_json_file(HALL_OF_FAME_FILE) or []
         
-        if str(payload.message_id) in hall_of_fame_data:
-            return
-            
+        already_in_hof = str(payload.message_id) in hall_of_fame_data
+
         channel = client.get_channel(payload.channel_id)
         if not channel:
             try:
@@ -1426,6 +1319,18 @@ async def check_hall_of_fame(client, payload):
             logger.error(f"[HOF] Message {payload.message_id} not found.")
             return
 
+        # If the message is already in the Hall of Fame, the only thing left to
+        # award is local_legend (10 unique reactors) — which used to be unreachable
+        # because the old early-return fired first. Skip the expensive reactor
+        # recount only when the author already holds that one-time badge.
+        if already_in_hof:
+            from database import DatabaseManager
+            if DatabaseManager.fetch_one(
+                "SELECT 1 FROM user_badges WHERE user_id = ? AND badge_id = 'local_legend'",
+                (str(message.author.id),),
+            ):
+                return
+
         total_reactions = sum(r.count for r in message.reactions)
         # logger.info(f"[HOF] Checking message {message.id}. Total reactions: {total_reactions}")
 
@@ -1440,7 +1345,7 @@ async def check_hall_of_fame(client, payload):
                 
         # logger.info(f"[HOF] Unique reactors for {message.id}: {len(unique_reactors)}")
 
-        if len(unique_reactors) >= 6:
+        if not already_in_hof and len(unique_reactors) >= 6:
             logger.info(f"[HOF] Message {message.id} qualified for Hall of Fame! Relevant client: {client}")
             hall_of_fame_data.append(str(message.id))
             save_json_file(HALL_OF_FAME_FILE, hall_of_fame_data)

@@ -46,8 +46,8 @@ class AClient(discord.Client):
         self.image_cache = {}
         self.stage_events=set()
         self.stage_join_times={}
-        self.reply_chains = {} # user_id -> count
-        self.last_reply_user = None
+        self.reply_chains = {} # (channel_id, user_id) -> consecutive reply count
+        self.last_reply_user = {} # channel_id -> user_id of the last reply in that channel
         self.message_repliers = {} # message_id -> set(user_ids)
         self.predictions={int(k):Prediction.from_dict(v) for k,v in load_predictions().items()}
         self._pending_uploads = {}  # For custom emoji/sticker uploads
@@ -89,7 +89,7 @@ class AClient(discord.Client):
         await on_ready(self, tree, self.scheduler)
         # Proactively update existing predictions to show the new button
         import asyncio
-        from lib.economy.prediction_system import BetButtons, prediction_embed
+        from lib.economy.prediction_system import BetButtons, build_prediction_render
         for p in list(self.predictions.values()):
             if not p.locked:
                 try:
@@ -112,8 +112,8 @@ class AClient(discord.Client):
                         from lib.economy.prediction_system import _save as _save_preds
                         _save_preds({k: v.to_dict() for k, v in self.predictions.items()})
 
-                    embed, bar = prediction_embed(p, self)
-                    await msg.edit(embed=embed, attachments=[bar], view=BetButtons(p))
+                    embed, files = await build_prediction_render(p, self)
+                    await msg.edit(embed=embed, attachments=files, view=BetButtons(p))
                     logger.info(f"Updated live prediction {p.msg_id} with new view.")
                     await asyncio.sleep(1) # Small delay to be polite to the API
                 except Exception as e:
@@ -226,20 +226,24 @@ class AClient(discord.Client):
             await award_badge_with_notify(self, message.author.id, 'halloween')
 
         # Reply logic (Chain and Popular)
+        ch_id = message.channel.id
         if message.reference and message.reference.message_id:
             try:
                 referenced_msg = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
                 if referenced_msg and referenced_msg.author.id != message.author.id:
-                    # 1. Reply Chain (A -> B -> A -> B)
-                    if self.last_reply_user == referenced_msg.author.id:
-                        self.reply_chains[message.author.id] = self.reply_chains.get(message.author.id, 0) + 1
-                        if self.reply_chains[message.author.id] >= 3:
+                    # 1. Reply Chain (A -> B -> A -> B), tracked PER CHANNEL so
+                    #    interleaved replies in unrelated channels can't spuriously
+                    #    advance or reset someone's chain.
+                    chain_key = (ch_id, message.author.id)
+                    if self.last_reply_user.get(ch_id) == referenced_msg.author.id:
+                        self.reply_chains[chain_key] = self.reply_chains.get(chain_key, 0) + 1
+                        if self.reply_chains[chain_key] >= 3:
                             await award_badge_with_notify(self, message.author.id, 'reply_chain')
                             # Reset chain for this user after awarding to prevent spam
-                            self.reply_chains[message.author.id] = 0
+                            self.reply_chains[chain_key] = 0
                     else:
-                        self.reply_chains[message.author.id] = 1
-                    self.last_reply_user = message.author.id
+                        self.reply_chains[chain_key] = 1
+                    self.last_reply_user[ch_id] = message.author.id
 
                     # 2. Popular Badge (3 people reply to one message)
                     ref_id = referenced_msg.id
@@ -253,8 +257,8 @@ class AClient(discord.Client):
             except Exception:
                 pass
         else:
-            # Not a reply, so break the active chain
-            self.last_reply_user = None
+            # Not a reply, so break the active chain in THIS channel only
+            self.last_reply_user.pop(ch_id, None)
         
         # Cleanup old reply tracking dictionaries to prevent memory leaks
         if len(self.message_repliers) > 1000:

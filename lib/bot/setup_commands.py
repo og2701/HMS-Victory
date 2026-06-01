@@ -18,7 +18,6 @@ from lib.economy.prediction_system import PredAdminView, PredSelectView, Predict
 from lib.economy.economy_manager import get_bb, set_bb, add_bb, remove_bb
 from typing import Optional
 from commands.economy.shop import handle_shop_command
-from commands.economy.auction import handle_auction_create_command, handle_auction_list_command, handle_auction_end_command
 from commands.economy.bank_commands import (
     handle_bank_status_command
 )
@@ -82,20 +81,6 @@ def define_commands(tree, client):
         if interaction.user.id != USERS.OGGERS:
             return
         await updateRoleAssignments(interaction, role_name)
-
-    @command("colour-palette", "Generates a colour palette from an image")
-    async def colour_palette(interaction: Interaction, attachment_url: str):
-        await interaction.response.defer()
-        await colourPalette(interaction, attachment_url)
-
-    @command("gridify", "Adds a pixel art grid overlay to an image")
-    async def gridify_command(interaction: Interaction, attachment_url: str):
-        await interaction.response.defer()
-        await gridify(interaction, attachment_url)
-
-    @command("role-react", "Adds a reaction role to a message", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def role_react_command(interaction: Interaction):
-        await persistantRoleButtons(interaction)
 
     @command("screenshot-canvas", "Takes a screenshot of the current canvas")
     async def screenshot_canvas(interaction: Interaction, x: int = -770, y: int = 7930):
@@ -199,7 +184,7 @@ def define_commands(tree, client):
     async def end_lockdown_vcs_command(interaction: Interaction):
         await end_lockdown_vcs(interaction)
 
-    @command("toggle-anti-raid", "Toggles automatic timeout and quarantine for new joins", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    @command("toggle-anti-raid", "Toggles automatic quarantine of new joins", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
     async def toggle_anti_raid_command(interaction: Interaction):
         await toggle_anti_raid(interaction)
 
@@ -231,6 +216,12 @@ def define_commands(tree, client):
         if member is None:
             member = interaction.user
         file = await generate_rank_card(interaction, member)
+        if file is None:
+            await interaction.followup.send(
+                "Sorry — I couldn't generate the rank card right now. Please try again in a moment.",
+                ephemeral=True,
+            )
+            return
         await interaction.followup.send(file=file)
 
     @command("leaderboard", "Displays a paginated leaderboard of top XP holders (in increments of 30).")
@@ -256,9 +247,11 @@ def define_commands(tree, client):
     #         embed.set_footer(text=f"by {interaction.user.display_name}")
     #         await interaction.response.send_message(embed=embed)
 
-    @command("pred-create", "Create a UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
-    async def pred_create(interaction: Interaction):
-        await interaction.response.send_modal(PredictionCreateModal())
+    @command("pred-create", "Create a UKPence prediction (2-5 outcomes)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    async def pred_create(interaction: Interaction, options: app_commands.Range[int, 2, 5] = 2):
+        # Opens a modal: two outcome boxes for a 2-way prediction, or one
+        # slash-separated box ("A / B / C") for 3-5 outcomes.
+        await interaction.response.send_modal(PredictionCreateModal(options))
 
 
     @command("pred-admin", "Lock, resolve, or draw an existing UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
@@ -282,9 +275,10 @@ def define_commands(tree, client):
             view = PredSelectView(all_preds, interaction.client)
             await interaction.response.send_message("Select a prediction to manage:", view=view, ephemeral=True)
 
-    @command("pred-schedule", "Schedule a UKPence prediction to post later in a chosen channel", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
-    async def pred_schedule(interaction: Interaction, channel: TextChannel):
-        await interaction.response.send_modal(PredictionScheduleModal(channel.id))
+    @command("pred-schedule", "Schedule a UKPence prediction (2-5 outcomes) to post later", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    async def pred_schedule(interaction: Interaction, channel: TextChannel, options: app_commands.Range[int, 2, 5] = 2):
+        # Same modal as /pred-create, plus a "post when?" field; posts into `channel`.
+        await interaction.response.send_modal(PredictionScheduleModal(channel.id, options))
 
     @command("pred-scheduled-list", "List pending scheduled predictions", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
     async def pred_scheduled_list(interaction: Interaction):
@@ -379,9 +373,14 @@ def define_commands(tree, client):
             from lib.bot.event_handlers import award_badge_with_notify
             await award_badge_with_notify(interaction.client, interaction.user.id, 'victory_sponsor')
         else:
-            if not remove_bb(interaction.user.id, amount, reason=f"/pay to {recipient.display_name}", to_bank=False):
+            # Atomic user→user move: both balances update in one transaction or
+            # neither does, so the closed-economy total can never drift on a /pay.
+            from database import DatabaseManager
+            if not DatabaseManager.transfer(
+                interaction.user.id, recipient.id, amount,
+                reason=f"/pay {interaction.user.display_name} → {recipient.display_name}",
+            ):
                 return await interaction.response.send_message("Insufficient UKPence.", ephemeral=True)
-            add_bb(recipient.id, amount, reason=f"/pay from {interaction.user.display_name}", from_bank=False)
         embed = Embed(
             title="UKPence Transfer",
             description=f"{interaction.user.mention} paid **{amount:,}** UKPence to {recipient.mention}",
@@ -466,18 +465,6 @@ def define_commands(tree, client):
     @command("shop", "Browse and purchase items with UKPence")
     async def shop_command(interaction: Interaction):
         await handle_shop_command(interaction)
-
-    @command("auction-create", "Create a new auction (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def auction_create_command(interaction: Interaction):
-        await handle_auction_create_command(interaction)
-
-    @command("auction-list", "List all active auctions")
-    async def auction_list_command(interaction: Interaction):
-        await handle_auction_list_command(interaction)
-
-    @command("auction-end", "Manually end an auction (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def auction_end_command(interaction: Interaction, auction_id: int):
-        await handle_auction_end_command(interaction, auction_id)
 
     @command("bank-status", "View server bank status (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def bank_status_command(interaction: Interaction):

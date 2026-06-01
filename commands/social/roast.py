@@ -1,17 +1,13 @@
 import random
-from collections import defaultdict
 from discord import Embed, Forbidden, TextChannel, Member
 from openai import AsyncOpenAI
-from datetime import datetime, timedelta
+from datetime import datetime
 from os import getenv
 from lib.core.discord_helpers import fetch_messages_with_context, estimate_tokens
 from config import USERS, SUMMARISE_DAILY_LIMIT
-
-command_usage_tracker = defaultdict(lambda: {"count": 0, "last_used": None})
+from database import DatabaseManager
 
 client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"), max_retries=5, timeout=60.0)
-
-time_threshold = datetime.utcnow() - timedelta(days=7)
 
 thinking_messages = [
     "Formulating the roast...",
@@ -27,26 +23,28 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
     if user is None:
         user = interaction.user
 
-    today = datetime.now().date()
-    usage_data = command_usage_tracker[interaction.user.id]
-
     if interaction.user.id != USERS.OGGERS:
-        if usage_data["last_used"] != today:
-            usage_data["count"] = 0
-            usage_data["last_used"] = today
-
-        if usage_data["count"] >= SUMMARISE_DAILY_LIMIT:
+        # Persisted, UTC-keyed daily limit — can't be reset by a bot restart.
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        uid = str(interaction.user.id)
+        row = DatabaseManager.fetch_one(
+            "SELECT count FROM roast_usage WHERE user_id = ? AND date = ?", (uid, today)
+        )
+        if (row[0] if row else 0) >= SUMMARISE_DAILY_LIMIT:
             await interaction.response.send_message(
                 f"You've hit the daily limit of {SUMMARISE_DAILY_LIMIT} usages for this command", ephemeral=True
             )
             return
-        usage_data["count"] += 1
+        DatabaseManager.execute(
+            "INSERT INTO roast_usage (user_id, date, count) VALUES (?, ?, 1) "
+            "ON CONFLICT(user_id, date) DO UPDATE SET count = count + 1",
+            (uid, today),
+        )
 
     thinking_text = random.choice(thinking_messages)
     await interaction.response.defer()
     await interaction.followup.send(thinking_text, ephemeral=False)
 
-    user_messages = []
     user_messages = []
     await fetch_messages_with_context(channel, user, user_messages, total_limit=150, context_depth=20, history_limit=5000)
     

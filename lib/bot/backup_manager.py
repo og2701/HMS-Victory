@@ -237,27 +237,36 @@ async def backup_database(client):
         logger.warning(f"Backup channel {CHANNELS.DATA_BACKUP} not found.")
         return
 
-    db_files = ['database.db', 'database.db-shm', 'database.db-wal']
-    existing_files = [f for f in db_files if os.path.exists(f)]
-
-    if not existing_files:
-        logger.warning("No database files found for backup.")
+    if not os.path.exists('database.db'):
+        logger.warning("No database file found for backup.")
         return
 
+    # Take a single transactionally-consistent snapshot rather than copying the
+    # live .db/-wal/-shm separately (which risked a torn, unrestorable backup).
+    from database import DatabaseManager
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    snapshot_path = f"database_snapshot_{timestamp}.db"
     try:
+        DatabaseManager.snapshot_to_file(snapshot_path)
+
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-            for file in existing_files:
-                zipf.write(file, file)
-        
+            # Store it as 'database.db' so the restore path drops it straight into place.
+            zipf.write(snapshot_path, 'database.db')
+
         zip_buffer.seek(0)
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         filename = f"database_backup_{timestamp}.zip"
-        
+
         await channel.send(file=discord.File(fp=zip_buffer, filename=filename))
-        logger.info(f"Database backup ({', '.join(existing_files)}) sent to Discord.")
+        logger.info("Consistent database snapshot backed up to Discord.")
     except Exception as e:
         logger.error(f"Error during database backup to Discord: {e}")
+    finally:
+        if os.path.exists(snapshot_path):
+            try:
+                os.remove(snapshot_path)
+            except OSError as e:
+                logger.warning(f"Could not remove temporary snapshot {snapshot_path}: {e}")
 
 async def backup_bot(client):
     logger.info("Backing up bot...")

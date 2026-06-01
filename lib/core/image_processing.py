@@ -350,11 +350,16 @@ def find_non_overlapping_position(
     return None
 
 def random_color_excluding_blue_and_dark():
+    """Pick a random RGB colour that is neither too blue nor too dark, so iceberg
+    text stays legible on the dark background. (The old `r > 100 or g > 100` guard
+    was effectively a no-op — it only rejected exact (100, 100, b) — and did not
+    actually exclude dark colours; this uses a real luminance threshold.)"""
     while True:
         r = random.randint(100, 255)
         g = random.randint(100, 255)
         b = random.randint(0, 100)
-        if r > 100 or g > 100:
+        luminance = 0.299 * r + 0.587 * g + 0.114 * b
+        if luminance >= 120:
             return (r, g, b)
 
 get_text_position = find_non_overlapping_position

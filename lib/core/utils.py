@@ -93,11 +93,11 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
 
         if next_threshold is None:
             progress_percent = 100
-            xp_display = str(current_xp)
+            xp_display = f"{current_xp:,}"
             next_role_name = "MAX"
         else:
             progress_percent = (current_xp / next_threshold) * 100 if next_threshold > 0 else 100
-            xp_display = f"{current_xp} / {next_threshold}"
+            xp_display = f"{current_xp:,} / {next_threshold:,}"
             next_role = interaction.guild.get_role(next_role_id) if next_role_id else None
             next_role_name = next_role.name if next_role else "Max"
         logger.info(f"Progress calculated: {progress_percent:.2f}%")
@@ -216,7 +216,9 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         # Apply replacements
         html_content = safe_replace(html_content, "profile_pic", member.display_avatar.url)
         html_content = safe_replace(html_content, "username", member.display_name)
-        html_content = safe_replace(html_content, "rank", rank)
+        # Render "#5" when ranked, "Unranked" otherwise (the template prefixes "Rank ").
+        # Previously injected raw `rank`, so an uncached member showed "Rank #None".
+        html_content = safe_replace(html_content, "rank", f"#{rank}" if rank is not None else "Unranked")
         html_content = safe_replace(html_content, "xp_display", xp_display)
         html_content = safe_replace(html_content, "progress_percent", f"{progress_percent}%")
         html_content = safe_replace(html_content, "current_role", current_role_name)

@@ -10,6 +10,7 @@ from lib.features.summary_html import create_summary_image
 from lib.core.gemini import gemini_generate
 from config import *
 from database import DatabaseManager
+from lib.core.file_operations import atomic_write_json
 
 log = logging.getLogger(__name__)
 
@@ -263,8 +264,7 @@ def initialize_summary_data(force_init=False):
         # Still write to JSON for legacy/backup purposes if folder exists
         if os.path.exists("daily_summaries"):
             file_path = SUMMARY_DATA_FILE.format(date=date)
-            with open(file_path, "w") as file:
-                json.dump(initial_data, file)
+            atomic_write_json(file_path, initial_data)
     else:
         # Maintenance: ensure total_messages exists (sanity check)
         data = load_summary_data(date)
@@ -308,8 +308,7 @@ def update_summary_data(key, channel_id=None, user_id=None, remove=False):
     # Legacy: Still write to JSON for now if folder exists
     if os.path.exists("daily_summaries"):
         file_path = SUMMARY_DATA_FILE.format(date=date)
-        with open(file_path, "w") as file:
-            json.dump(data, file)
+        atomic_write_json(file_path, data)
 
 
 def aggregate_summaries(start_date, end_date):
@@ -574,5 +573,4 @@ async def post_summary(
             # Legacy fallback
             if os.path.exists("daily_summaries"):
                 file_path = SUMMARY_DATA_FILE.format(date=date)
-                with open(file_path, "w") as file:
-                    json.dump(data, file)
+                atomic_write_json(file_path, data)
