@@ -15,7 +15,7 @@ SUMMARISE_DAILY_LIMIT = 10
 # prediction_card.html) instead of the standard Discord embed. Flip to False to
 # instantly revert to the embed (e.g. if the renderer misbehaves). Rendering also
 # falls back to the embed automatically if image generation raises.
-PREDICTION_IMAGE_ENABLED = False
+PREDICTION_IMAGE_ENABLED = True
 
 # --- File Paths & Directories ---
 DATA_DIR = os.path.join(BASE_DIR, "data")

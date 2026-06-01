@@ -162,7 +162,7 @@ class Prediction:
 _OPTION_COLORS = [
     (46, 204, 113),   # green
     (88, 101, 242),   # blurple
-    (241, 196, 15),   # yellow
+    (230, 126, 34),   # orange  (was a low-contrast yellow — hard to read, esp. as a card accent)
     (231, 76, 60),    # red
     (155, 89, 182),   # purple
 ]
@@ -313,7 +313,9 @@ async def render_prediction_image(pred: Prediction, client: Optional[discord.Cli
         .replace("{{OPTION_COUNT}}", str(len(pred.options)))
         .replace("{{OPTIONS}}", _build_option_rows_html(pred, client))
     )
-    return await screenshot_html(html_out, size=(900, 1300))
+    # Landscape canvas: Discord width-fits a wide image inline (no tap-to-open),
+    # whereas a tall portrait card gets height-capped to a small thumbnail.
+    return await screenshot_html(html_out, size=(1000, 1200))
 
 
 async def build_prediction_render(pred: Prediction, client: Optional[discord.Client]):
@@ -396,12 +398,27 @@ class BetModal(discord.ui.Modal, title="Place your bet"):
                 await award_badge_with_notify(interaction.client, interaction.user.id, 'high_stakes')
                 
         else:
-            curr = get_bb(interaction.user.id)
-            await interaction.response.send_message(
-                f"❌ Bet failed. You have **{_fmt_money(curr)}** UKPence.\n"
-                "Ensure you have enough balance and aren't exceeding the **100,000** limit.", 
-                ephemeral=True
-            )
+            # Work out the REAL reason the stake was rejected so the message is
+            # accurate (the old message always blamed balance/limit).
+            if self.pred.locked:
+                msg = "❌ Betting is locked on this prediction."
+            else:
+                backed = next(
+                    (self.pred.options[s - 1] for s, pool in self.pred.bets.items()
+                     if s != self.side and interaction.user.id in pool),
+                    None,
+                )
+                if backed is not None:
+                    msg = (
+                        f"❌ You've already backed **{backed}** on this prediction — you can only "
+                        f"bet on one outcome. Add more to **{backed}**, or wait for the next prediction."
+                    )
+                elif stake > 100_000:
+                    msg = "❌ The maximum single bet is **100,000** UKPence."
+                else:
+                    curr = get_bb(interaction.user.id)
+                    msg = f"❌ Bet failed — you only have **{_fmt_money(curr)}** UKPence."
+            await interaction.response.send_message(msg, ephemeral=True)
 
 class BetButtons(discord.ui.View):
     def __init__(self, pred: Prediction):
