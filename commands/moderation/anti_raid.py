@@ -5,13 +5,25 @@ import asyncio
 from discord import Embed
 from discord.interactions import Interaction
 from config import *
-from lib.core.file_operations import set_file_status  # Reuse our file toggle utility
+from lib.core.file_operations import set_file_status, atomic_write_json  # Reuse our file toggle utility
 
-ANTI_RAID_FILE = "anti_raid_active"
+# Store the flag under the persistent data dir (not the CWD) so the active state
+# survives a restart regardless of the working directory the bot is launched from.
+ANTI_RAID_FILE = os.path.join(JSON_DATA_DIR, "anti_raid_active")
 from config import PERMISSIONS_BACKUP_FILE
 QUARANTINE_ROLE_ID = 962009285116710922
 ANTI_RAID_LOG_CHANNEL_ID = 1172677237988929646
 BATCH_SIZE = 10
+
+# Permissions stripped from every role while a raid lockdown is active. These are
+# the high-abuse spam vectors; send_messages is deliberately left untouched so the
+# lockdown doesn't silence the whole server (the quarantine role handles joiners).
+RESTRICTED_RAID_PERMS = {
+    "use_external_apps": False,
+    "mention_everyone": False,
+    "embed_links": False,
+    "attach_files": False,
+}
 
 def is_anti_raid_enabled():
     return os.path.exists(ANTI_RAID_FILE)
@@ -20,11 +32,10 @@ def set_anti_raid_status(active: bool):
     set_file_status(ANTI_RAID_FILE, active)
 
 def backup_role_permissions(guild: discord.Guild):
-    role_permissions = {}
-    for role in guild.roles:
-        role_permissions[role.id] = {"use_external_apps": role.permissions.use_external_apps}
-    with open(PERMISSIONS_BACKUP_FILE, "w") as f:
-        json.dump(role_permissions, f)
+    # Store the FULL permissions integer per role so restore is exact, not just a
+    # single bit (which previously left most of a role's perms unrecoverable).
+    role_permissions = {str(role.id): role.permissions.value for role in guild.roles}
+    atomic_write_json(PERMISSIONS_BACKUP_FILE, role_permissions)
 
 async def restore_role_permissions(guild: discord.Guild):
     if not os.path.exists(PERMISSIONS_BACKUP_FILE):
@@ -36,13 +47,18 @@ async def restore_role_permissions(guild: discord.Guild):
         batch = roles[i : i + BATCH_SIZE]
         tasks = []
         for role in batch:
-            permissions = role.permissions
-            permissions.update(use_external_apps=role_permissions[str(role.id)]["use_external_apps"])
+            saved = role_permissions[str(role.id)]
+            if isinstance(saved, dict):
+                # Legacy backup format: only use_external_apps was stored.
+                permissions = role.permissions
+                permissions.update(use_external_apps=saved.get("use_external_apps", True))
+            else:
+                permissions = discord.Permissions(int(saved))
             tasks.append(role.edit(permissions=permissions))
-        try:
-            await asyncio.gather(*tasks)
-        except Exception as e:
-            print(f"Failed to restore permissions for some roles: {e}")
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for role, result in zip(batch, results):
+            if isinstance(result, Exception):
+                print(f"Failed to restore permissions for {role.name}: {result}")
         await asyncio.sleep(1)
 
 async def disable_role_permissions(guild: discord.Guild):
@@ -53,12 +69,12 @@ async def disable_role_permissions(guild: discord.Guild):
         tasks = []
         for role in batch:
             permissions = role.permissions
-            permissions.update(use_external_apps=False)
+            permissions.update(**RESTRICTED_RAID_PERMS)
             tasks.append(role.edit(permissions=permissions))
-        try:
-            await asyncio.gather(*tasks)
-        except Exception as e:
-            print(f"Failed to disable permissions for some roles: {e}")
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for role, result in zip(batch, results):
+            if isinstance(result, Exception):
+                print(f"Failed to restrict permissions for {role.name}: {result}")
         await asyncio.sleep(1)
 
 async def send_backup_file(guild: discord.Guild):
@@ -74,7 +90,7 @@ async def toggle_anti_raid(interaction: Interaction):
         await restore_role_permissions(interaction.guild)
         embed = Embed(
             title="Anti-Raid Disabled",
-            description="New joins will no longer be timed out or quarantined. Role permissions have been restored.",
+            description="New joins will no longer be quarantined. Role permissions have been restored.",
             color=0x00FF00,
         )
     else:
@@ -83,7 +99,7 @@ async def toggle_anti_raid(interaction: Interaction):
         await send_backup_file(interaction.guild)
         embed = Embed(
             title="Anti-Raid Enabled",
-            description="Any new join will be auto-timed-out and assigned the quarantine role. Role permissions have been restricted.",
+            description="Any new join will be assigned the quarantine role. Role permissions have been restricted.",
             color=0xFF0000,
         )
     embed.set_footer(text=f"Triggered by {interaction.user.name}")

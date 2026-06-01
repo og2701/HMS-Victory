@@ -1,31 +1,6 @@
 import discord
-from discord import Embed, ButtonStyle, Interaction, Forbidden
-from discord.ui import View, Button
+from discord import Interaction, Forbidden
 from config import GUILD_ID
-from lib.core.file_operations import load_persistent_views, save_persistent_views
-
-persistent_views = load_persistent_views()
-
-async def persistantRoleButtons(interaction: Interaction):
-    role_embed = Embed(
-        title="Get Roles",
-        description="Select the buttons below to assign yourself a role.",
-        color=0xFFA500,
-    )
-    view = View()
-    for role_id, role_info in ROLE_BUTTONS.items():
-        role_embed.add_field(
-            name=role_info["name"],
-            value=role_info.get("description", "No description available"),
-            inline=False,
-        )
-        button = Button(
-            style=ButtonStyle.primary,
-            label=role_info["name"],
-            custom_id=f"role_{role_id}",
-        )
-        view.add_item(button)
-    await interaction.response.send_message(embed=role_embed, view=view, ephemeral=False)
 
 async def handleRoleButtonInteraction(interaction: Interaction):
     if interaction.type == discord.InteractionType.component and "custom_id" in interaction.data:
