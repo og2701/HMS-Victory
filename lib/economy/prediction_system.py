@@ -167,6 +167,12 @@ _OPTION_COLORS = [
     (155, 89, 182),   # purple
 ]
 
+# Circle emojis aligned 1:1 with _OPTION_COLORS, used on the bet buttons so each
+# button maps to its outcome's colour on the bar/card. Discord buttons only have
+# 4 fixed style colours and can't match a 5-colour palette, so for 3+ outcomes the
+# buttons go neutral and the coloured circle carries the colour cue.
+_OPTION_EMOJIS = ["🟢", "🔵", "🟠", "🔴", "🟣"]
+
 def _progress_png_multi(pcts: list) -> io.BytesIO:
     """Render a stacked horizontal bar: one coloured segment per option, sized to
     its share of the total pool. Works for 2–5 options."""
@@ -444,18 +450,19 @@ class BetButtons(discord.ui.View):
             return _cb
 
         # One bet button per outcome (2–5). All fit on action row 0 (max 5 buttons).
-        bet_styles = [
-            discord.ButtonStyle.success,
-            discord.ButtonStyle.primary,
-            discord.ButtonStyle.secondary,
-            discord.ButtonStyle.danger,
-            discord.ButtonStyle.primary,
-        ]
+        # Discord buttons only have 4 fixed style colours, so they can't match a
+        # 5-colour palette. For a 2-way prediction we keep distinct green/blurple
+        # buttons (they match the bar); for 3+ outcomes every button goes neutral
+        # grey and a coloured circle emoji carries the colour mapping instead.
+        many = len(pred.options) > 2
+        two_way_styles = [discord.ButtonStyle.success, discord.ButtonStyle.primary]
         for i, opt in enumerate(pred.options):
             side = i + 1
+            style = discord.ButtonStyle.secondary if many else two_way_styles[i % len(two_way_styles)]
             btn = discord.ui.Button(
-                label=f"Bet on {opt}"[:80],
-                style=bet_styles[i % len(bet_styles)],
+                label=f"Bet on {opt}"[:78],
+                emoji=_OPTION_EMOJIS[i % len(_OPTION_EMOJIS)],
+                style=style,
                 custom_id=f"prediction:{pred.msg_id}:bet{side}",
                 row=0,
             )
