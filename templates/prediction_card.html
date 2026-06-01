@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HMS Victory — Prediction Card</title>
+<style>
+  /* ============================================================
+     HMS VICTORY — Prediction / betting card
+     900px wide, flexible height. All CSS inline. No JS.
+     No external assets. System fonts only. No emoji.
+     Tokens (each appears exactly once below; do not also list them here as
+     literal {{...}} or the bot would substitute into this comment):
+     TITLE, STATUS, CLOSES, POOL_TOTAL, BETTOR_COUNT, OPTION_COUNT, OPTIONS
+     ============================================================ */
+
+  :root{
+    --navy:#00247D;
+    --navy-deep:#001a5c;
+    --red:#CF142B;
+    --ink:#111a33;
+    --paper:#ffffff;
+    --paper-line:#e6e2d6;
+    --card:#ffffff;
+    --muted:#5d6577;
+    --muted-soft:#8a92a3;
+    --serif:Georgia,"Times New Roman",Times,serif;
+    --sans:"Segoe UI",Helvetica,Arial,sans-serif;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--paper);}
+  body{
+    font-family:var(--sans);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .sheet{
+    width:900px;
+    background:var(--paper);
+    margin:0;
+  }
+
+  /* ---------- Masthead ---------- */
+  .masthead{
+    background:var(--navy);
+    background-image:
+      linear-gradient(135deg, rgba(255,255,255,.05) 0 2px, transparent 2px 9px),
+      linear-gradient(45deg,  rgba(255,255,255,.05) 0 2px, transparent 2px 9px);
+    background-size:18px 18px;
+    padding:26px 44px 24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:24px;
+  }
+  .brand{display:flex;align-items:center;gap:16px;}
+  /* Naval/RAF-style roundel emblem (pure CSS) */
+  .roundel{
+    width:40px;height:40px;border-radius:50%;
+    background:
+      radial-gradient(circle at center,
+        var(--red) 0 28%,
+        #ffffff 28% 50%,
+        var(--navy) 50% 72%,
+        #ffffff 72% 100%);
+    box-shadow:0 0 0 2px rgba(255,255,255,.55), 0 2px 6px rgba(0,0,0,.3);
+    flex:none;
+  }
+  .wordmark{display:flex;flex-direction:column;line-height:1;}
+  .wordmark .name{
+    color:#fff;font-weight:800;font-size:23px;letter-spacing:.06em;
+  }
+  .wordmark .sub{
+    color:#aeb7d6;font-size:11px;font-weight:600;letter-spacing:.28em;
+    text-transform:uppercase;margin-top:6px;
+  }
+
+  .head-right{display:flex;flex-direction:column;align-items:flex-end;gap:9px;}
+  .status-pill{
+    display:inline-flex;align-items:center;gap:9px;
+    padding:8px 16px;border-radius:999px;
+    font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+    line-height:1;
+  }
+  .status-ico{display:inline-block;position:relative;}
+  /* OPEN — solid white pill, live green dot */
+  .status-pill[data-status="Open"]{background:#ffffff;color:var(--navy);}
+  .status-pill[data-status="Open"] .status-ico{
+    width:9px;height:9px;border-radius:50%;background:#1faa53;
+    box-shadow:0 0 0 3px rgba(31,170,83,.25);
+  }
+  /* LOCKED — ghosted grey pill, CSS padlock */
+  .status-pill[data-status="Locked"]{
+    background:rgba(255,255,255,.12);color:#c2c9da;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.22);
+  }
+  .status-pill[data-status="Locked"] .status-ico{width:13px;height:16px;}
+  .status-pill[data-status="Locked"] .status-ico::before{
+    content:"";position:absolute;left:50%;top:0;transform:translateX(-50%);
+    width:8px;height:7px;border:2px solid currentColor;border-bottom:none;
+    border-radius:5px 5px 0 0;
+  }
+  .status-pill[data-status="Locked"] .status-ico::after{
+    content:"";position:absolute;left:0;bottom:0;width:13px;height:10px;
+    background:currentColor;border-radius:2px;
+  }
+  .closes{color:#c4cce4;font-size:13px;font-weight:600;letter-spacing:.01em;}
+
+  /* tricolour rule beneath masthead */
+  .tricolour{height:5px;display:flex;}
+  .tricolour i{flex:1;}
+  .tricolour i:nth-child(1){background:var(--red);}
+  .tricolour i:nth-child(2){background:#ffffff;}
+  .tricolour i:nth-child(3){background:var(--navy);}
+
+  /* ---------- Body ---------- */
+  .body{padding:34px 44px 38px;}
+
+  .kicker{
+    font-size:11px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;
+    color:var(--red);margin:0 0 12px;
+  }
+  .title{
+    font-family:var(--serif);
+    font-weight:700;
+    font-size:38px;
+    line-height:1.16;
+    color:var(--navy);
+    margin:0;
+    letter-spacing:-.005em;
+    text-wrap:pretty;
+  }
+
+  /* ---------- Stats strip ---------- */
+  .stats{
+    display:flex;
+    margin:26px 0 28px;
+    border:1px solid var(--paper-line);
+    border-radius:12px;
+    background:var(--card);
+    overflow:hidden;
+  }
+  .stat{
+    flex:1;
+    padding:16px 22px;
+    display:flex;flex-direction:column;gap:5px;
+  }
+  .stat + .stat{border-left:1px solid var(--paper-line);}
+  .stat .num{
+    font-size:27px;font-weight:800;color:var(--navy);line-height:1;
+    font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;
+  }
+  .stat.pool .num{color:var(--red);}
+  .stat .num .unit{
+    font-size:13px;font-weight:700;color:var(--muted);margin-left:6px;
+    letter-spacing:.04em;
+  }
+  .stat .lbl{
+    font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--muted-soft);
+  }
+
+  .board-head{
+    display:flex;align-items:center;justify-content:space-between;
+    margin:0 0 14px;
+  }
+  .board-head .h{
+    font-size:12px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--navy);
+  }
+  .board-head .h2{
+    font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--muted-soft);
+  }
+
+  /* ---------- Options (bot-injected rows) ---------- */
+  .options{display:flex;flex-direction:column;gap:12px;}
+
+  .pred-option{
+    background:var(--card);
+    border:1px solid var(--paper-line);
+    border-left:5px solid var(--accent);
+    border-radius:12px;
+    padding:16px 20px 15px;
+    box-shadow:0 1px 2px rgba(16,26,51,.05);
+  }
+  .pred-option-top{display:flex;align-items:center;gap:14px;}
+  .pred-option-rank{
+    flex:none;width:30px;height:30px;border-radius:8px;
+    border:2px solid var(--accent);
+    color:var(--accent);
+    display:grid;place-items:center;
+    font-size:15px;font-weight:800;line-height:1;
+    font-variant-numeric:tabular-nums;
+  }
+  .pred-option-name{
+    flex:1;font-size:21px;font-weight:700;color:var(--navy);
+    letter-spacing:-.01em;
+  }
+  .pred-option-odds{
+    flex:none;
+    font-size:18px;font-weight:800;line-height:1;
+    color:color-mix(in srgb, var(--accent) 78%, #07142e);
+    background:color-mix(in srgb, var(--accent) 13%, #ffffff);
+    border:1px solid color-mix(in srgb, var(--accent) 30%, #ffffff);
+    padding:7px 13px;border-radius:8px;
+    font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;
+  }
+
+  .pred-bar{
+    margin:13px 0 0;
+    height:12px;border-radius:7px;
+    background:#ece6d7;
+    overflow:hidden;
+  }
+  .pred-bar-fill{
+    height:100%;border-radius:7px;
+    background:linear-gradient(180deg,
+      color-mix(in srgb, var(--accent) 88%, #ffffff) 0%,
+      var(--accent) 55%,
+      color-mix(in srgb, var(--accent) 86%, #000000) 100%);
+    min-width:6px;
+  }
+
+  .pred-option-bottom{
+    display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;
+    margin-top:12px;font-size:14px;
+  }
+  .pred-option-total{font-weight:800;color:var(--navy);
+    font-variant-numeric:tabular-nums;}
+  .pred-option-pct{
+    font-weight:800;
+    color:color-mix(in srgb, var(--accent) 74%, #07142e);
+    font-variant-numeric:tabular-nums;
+  }
+  .pred-option-bettors{color:var(--muted);font-weight:600;}
+  .pred-option-top-bettor{
+    margin-left:auto;color:var(--navy);font-size:14px;font-weight:700;
+    letter-spacing:.01em;
+    display:inline-flex;align-items:baseline;gap:7px;
+  }
+  .pred-option-top-bettor::before{
+    content:"TOP BACKER";
+    font-size:9.5px;font-weight:800;letter-spacing:.16em;
+    color:#aab1c0;
+  }
+
+  /* ---------- Footer ---------- */
+  .footer{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-top:30px;padding-top:18px;
+    border-top:1px solid var(--paper-line);
+  }
+  .footer .fl{
+    display:flex;align-items:center;gap:10px;
+    font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--navy);
+  }
+  .footer .mini{
+    width:18px;height:18px;border-radius:50%;
+    background:radial-gradient(circle at center,
+      var(--red) 0 28%, #fff 28% 50%, var(--navy) 50% 72%, #fff 72% 100%);
+    box-shadow:0 0 0 1px var(--paper-line);
+  }
+  .footer .fr{
+    font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--muted-soft);
+  }
+</style>
+</head>
+<body>
+  <div class="sheet">
+
+    <div class="masthead">
+      <div class="brand">
+        <div class="roundel"></div>
+        <div class="wordmark">
+          <span class="name">HMS VICTORY</span>
+          <span class="sub">Prediction Market</span>
+        </div>
+      </div>
+      <div class="head-right">
+        <span class="status-pill" data-status="{{STATUS}}">
+          <span class="status-ico"></span>{{STATUS}}
+        </span>
+        <span class="closes">{{CLOSES}}</span>
+      </div>
+    </div>
+
+    <div class="tricolour"><i></i><i></i><i></i></div>
+
+    <div class="body">
+      <p class="kicker">The Question</p>
+      <h1 class="title">{{TITLE}}</h1>
+
+      <div class="stats">
+        <div class="stat pool">
+          <span class="num">{{POOL_TOTAL}}<span class="unit">UKP</span></span>
+          <span class="lbl">Total Pool</span>
+        </div>
+        <div class="stat">
+          <span class="num">{{BETTOR_COUNT}}</span>
+          <span class="lbl">Bettors</span>
+        </div>
+        <div class="stat">
+          <span class="num">{{OPTION_COUNT}}</span>
+          <span class="lbl">Outcomes</span>
+        </div>
+      </div>
+
+      <div class="board-head">
+        <span class="h">The Odds Board</span>
+        <span class="h2">Decimal odds · Pool share</span>
+      </div>
+
+      <div class="options">{{OPTIONS}}</div>
+    </div>
+
+  </div>
+</body>
+</html>

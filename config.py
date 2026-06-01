@@ -11,6 +11,11 @@ CHROME_PATH = os.getenv("CHROME_PATH", "/usr/bin/google-chrome")
 # --- Feature Toggles & Limits ---
 SHUTCOIN_ENABLED = True
 SUMMARISE_DAILY_LIMIT = 10
+# When True, predictions are rendered as a custom HTML→PNG card (templates/
+# prediction_card.html) instead of the standard Discord embed. Flip to False to
+# instantly revert to the embed (e.g. if the renderer misbehaves). Rendering also
+# falls back to the embed automatically if image generation raises.
+PREDICTION_IMAGE_ENABLED = True
 
 # --- File Paths & Directories ---
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -54,6 +59,10 @@ POLITICS_WHITELISTED_USER_IDS = []
 class ROLES:
     # Staff & Permissions
     DEPUTY_PM = 960538130761527386
+    # NOTE: MINISTER and CABINET intentionally share the same role ID today, so any
+    # command gated on one is effectively gated on both. If CABINET is ever given
+    # its own ID, audit every `checks=[...]` / role-id list that references either,
+    # because access on those commands will silently change.
     MINISTER = 1250190944502943755
     CABINET = 1250190944502943755
     BORDER_FORCE = 959500686746345542
@@ -156,12 +165,3 @@ VC_LOCKDOWN_WHITELIST = [
     ROLES.KNIGHT, ROLES.LORD, ROLES.ESQUIRE, ROLES.GENTLEMAN, ROLES.YEOMAN,
     ROLES.COMMONER, ROLES.FREEMAN, ROLES.PEASANT, ROLES.SERF,
 ]
-
-# --- Role Button Mappings ---
-ROLE_BUTTONS = {
-    "1132280073379123311": {"name": "Soldier 💂 ", "description": "Receive pings for important events and battles."},
-    "1132951426386116629": {"name": "Night Watch 🦇", "description": "Signify that you will maintain defence of the flag while others sleep."},
-    "1133022537962491964": {"name": "Voting ✅", "description": "Receive pings for new votes in <#959848236384919692>."},
-    "1132285964094558288": {"name": "Visitor ✈️", "description": "You're a visitor from another community."},
-    "1156757081924313161": {"name": "Gardener 🌳", "description": "Receive pings when <#1142970908059910204> needs watering."}
-}

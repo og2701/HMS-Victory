@@ -1,10 +1,18 @@
 import sqlite3
+import threading
 from contextlib import contextmanager
 
 DB_FILE = 'database.db'
 
 class DatabaseManager:
     _connection = None
+    # The bot shares ONE sqlite connection across the asyncio loop, APScheduler
+    # jobs and the Selenium render thread pool. A reentrant lock serialises every
+    # cursor so concurrent threads cannot interleave on the shared connection
+    # ("recursive use of cursors" / silent read corruption). RLock so a thread
+    # already inside a locked block (e.g. award_badge during a transfer) can
+    # re-acquire without deadlocking.
+    _lock = threading.RLock()
 
     @classmethod
     def get_connection(cls):
@@ -12,29 +20,124 @@ class DatabaseManager:
             cls._connection = sqlite3.connect(DB_FILE, check_same_thread=False)
             cls._connection.execute("PRAGMA journal_mode=WAL")
             cls._connection.execute("PRAGMA synchronous=NORMAL")
+            # Wait (instead of erroring) if another writer holds the file lock.
+            cls._connection.execute("PRAGMA busy_timeout=5000")
         return cls._connection
 
     @staticmethod
     def execute(query, params=()):
-        conn = DatabaseManager.get_connection()
-        c = conn.cursor()
-        c.execute(query, params)
-        conn.commit()
-        return c.rowcount
+        with DatabaseManager._lock:
+            conn = DatabaseManager.get_connection()
+            c = conn.cursor()
+            c.execute(query, params)
+            conn.commit()
+            return c.rowcount
+
+    @staticmethod
+    def execute_insert(query, params=()):
+        """Run an INSERT and return the new row id (cursor.lastrowid)."""
+        with DatabaseManager._lock:
+            conn = DatabaseManager.get_connection()
+            c = conn.cursor()
+            c.execute(query, params)
+            conn.commit()
+            return c.lastrowid
 
     @staticmethod
     def fetch_one(query, params=()):
-        conn = DatabaseManager.get_connection()
-        c = conn.cursor()
-        c.execute(query, params)
-        return c.fetchone()
+        with DatabaseManager._lock:
+            conn = DatabaseManager.get_connection()
+            c = conn.cursor()
+            c.execute(query, params)
+            return c.fetchone()
 
     @staticmethod
     def fetch_all(query, params=()):
-        conn = DatabaseManager.get_connection()
-        c = conn.cursor()
-        c.execute(query, params)
-        return c.fetchall()
+        with DatabaseManager._lock:
+            conn = DatabaseManager.get_connection()
+            c = conn.cursor()
+            c.execute(query, params)
+            return c.fetchall()
+
+    @classmethod
+    @contextmanager
+    def locked_connection(cls):
+        """Hold the global DB lock across a multi-statement block.
+
+        Yields the shared connection wrapped in its own context manager so the
+        block commits on success and rolls back on error — a drop-in replacement
+        for ``with DatabaseManager.get_connection() as conn:`` that also serialises
+        against every other DB caller.
+        """
+        with cls._lock:
+            conn = cls.get_connection()
+            with conn:
+                yield conn
+
+    @classmethod
+    @contextmanager
+    def transaction(cls):
+        """Run several statements as one atomic, locked transaction.
+
+        Yields a cursor. Commits on clean exit, rolls back on any exception.
+        Relies on sqlite3's implicit transaction (opened on the first DML), so
+        no explicit BEGIN is issued and it never nests transactions.
+        """
+        with cls._lock:
+            conn = cls.get_connection()
+            try:
+                yield conn.cursor()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+    @classmethod
+    def snapshot_to_file(cls, dest_path: str) -> None:
+        """Write a transactionally-consistent copy of the live database to
+        ``dest_path`` using SQLite's online backup API. Unlike copying the .db /
+        -wal / -shm files separately (which can capture a torn state mid-commit),
+        this always produces a single self-consistent file safe to restore."""
+        with cls._lock:
+            src = cls.get_connection()
+            dest = sqlite3.connect(dest_path)
+            try:
+                src.backup(dest)
+            finally:
+                dest.close()
+
+    @staticmethod
+    def transfer(src_id, dst_id, amount: int, reason: str = "Transfer") -> bool:
+        """Atomically move ``amount`` UKP from one user to another.
+
+        Both balance rows update inside a single locked transaction or neither
+        does, so the closed-economy total is always conserved. Returns False
+        (touching nothing) if the source lacks funds. The bank is just the bot's
+        own user row, so this also covers user↔bank moves.
+        """
+        if amount <= 0:
+            return False
+        import time
+        now = int(time.time())
+        with DatabaseManager.transaction() as c:
+            c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(src_id),))
+            row = c.fetchone()
+            if not row or row[0] < amount:
+                return False
+            c.execute(
+                "UPDATE ukpence SET balance = balance - ? WHERE user_id = ?",
+                (amount, str(src_id)),
+            )
+            c.execute(
+                "INSERT INTO ukpence (user_id, balance) VALUES (?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?",
+                (str(dst_id), amount, amount),
+            )
+            c.execute(
+                "INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)",
+                (now, f"🔁 <@{src_id}> → <@{dst_id}> `{amount:,}` UKP|{reason}"),
+            )
+        return True
 
 def init_db():
     with DatabaseManager.get_connection() as conn:
@@ -58,40 +161,10 @@ def init_db():
                 last_xp_time INTEGER NOT NULL DEFAULT 0
             )
         ''')
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS auctions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                item_name TEXT NOT NULL,
-                description TEXT,
-                starting_bid INTEGER NOT NULL,
-                current_bid INTEGER NOT NULL,
-                current_bidder_id TEXT,
-                end_time INTEGER NOT NULL,
-                created_by TEXT NOT NULL,
-                is_active BOOLEAN NOT NULL DEFAULT 1,
-                channel_id TEXT,
-                message_id TEXT
-            )
-        ''')
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS auction_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                auction_id INTEGER NOT NULL,
-                user_id TEXT NOT NULL,
-                bid_amount INTEGER NOT NULL,
-                bid_time INTEGER NOT NULL,
-                FOREIGN KEY (auction_id) REFERENCES auctions (id)
-            )
-        ''')
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS auction_winners (
-                user_id TEXT NOT NULL,
-                won_time INTEGER NOT NULL,
-                auction_id INTEGER NOT NULL,
-                item_name TEXT NOT NULL,
-                winning_bid INTEGER NOT NULL
-            )
-        ''')
+        # Auction feature removed — drop any legacy tables left over from older databases.
+        c.execute("DROP TABLE IF EXISTS auctions")
+        c.execute("DROP TABLE IF EXISTS auction_history")
+        c.execute("DROP TABLE IF EXISTS auction_winners")
         c.execute('''
             CREATE TABLE IF NOT EXISTS shop_inventory (
                 item_id TEXT PRIMARY KEY,
@@ -269,6 +342,16 @@ def init_db():
             )
         ''')
 
+        # Per-user, per-(UTC)-day roast usage, so the daily limit survives restarts.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS roast_usage (
+                user_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (user_id, date)
+            )
+        ''')
+
         c.execute('''
             CREATE TABLE IF NOT EXISTS scheduled_predictions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -289,6 +372,10 @@ def init_db():
         columns = [column[1] for column in c.fetchall()]
         if 'cm_message_id' not in columns:
             c.execute("ALTER TABLE scheduled_predictions ADD COLUMN cm_message_id TEXT")
+        # Multi-option support: full outcome list stored as a JSON array. opt1/opt2
+        # are kept (NOT NULL) for backward compatibility and hold the first two.
+        if 'options_json' not in columns:
+            c.execute("ALTER TABLE scheduled_predictions ADD COLUMN options_json TEXT")
 
         # Migration: Add rarity column if it doesn't exist
         c.execute("PRAGMA table_info(badges)")
@@ -343,7 +430,6 @@ def init_db():
             ('echo', 'Echo', '[REDACTED]', '🗣️', 'Secret'),
             ('lurker', 'Lurker', '[REDACTED]', '🪟', 'Secret'),
             ('indecisive', 'Indecisive', '[REDACTED]', '⚖️', 'Secret'),
-            ('market_manipulator', 'Market Manipulator', 'Be the highest bidder on 3 different active auctions at the same time', '🏦', 'Silver'),
             ('double_or_nothing', 'Double or Nothing', 'Win a prediction where you bet more than 50% of your total balance', '🎲', 'Gold'),
             ('local_legend', 'Local Legend', 'Have a single message receive 10 or more unique reactions', '🌟', 'Silver'),
             ('town_crier', 'Town Crier', 'Post the first message of the day in the server', '🔔', 'Bronze'),
@@ -355,9 +441,13 @@ def init_db():
             ('victory_sponsor', 'Victory Sponsor', 'Transfer UKPence directly to HMS Victory (the bank)', '⚓', 'Silver')
         ]
         for b_id, b_name, b_desc, b_icon, b_rarity in badges:
-            c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)", 
+            c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)",
                       (b_id, b_name, b_desc, b_icon, b_rarity))
-        
+
+        # Auction feature removed — purge the now-unobtainable market_manipulator badge.
+        c.execute("DELETE FROM user_badges WHERE badge_id = 'market_manipulator'")
+        c.execute("DELETE FROM badges WHERE id = 'market_manipulator'")
+
         conn.commit()
         
         # Award every badge to the bot itself

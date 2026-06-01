@@ -2,7 +2,6 @@ import json, os, io, discord
 from typing import Optional, Union
 from PIL import Image, ImageDraw
 import uuid
-from functools import lru_cache
 from lib.economy.economy_manager import add_bb, remove_bb, get_bb
 from config import ROLES, CHANNELS, PREDICTIONS_FILE, PREDICTION_STREAKS_FILE
 
@@ -10,7 +9,8 @@ def _load() -> dict:
     return json.load(open(PREDICTIONS_FILE)) if os.path.exists(PREDICTIONS_FILE) else {}
 
 def _save(d: dict) -> None:
-    json.dump(d, open(PREDICTIONS_FILE, "w"), indent=4)
+    from lib.core.file_operations import atomic_write_json
+    atomic_write_json(PREDICTIONS_FILE, d, indent=4)
 
 def track_prediction_streak(user_id: int, is_win: bool) -> tuple[int, int]:
     """Tracks a user's prediction streak. Returns (win_streak, lose_streak)."""
@@ -27,31 +27,52 @@ def track_prediction_streak(user_id: int, is_win: bool) -> tuple[int, int]:
         data[uid]["lose_streak"] += 1
         data[uid]["win_streak"] = 0
         
-    json.dump(data, open(PREDICTION_STREAKS_FILE, "w"), indent=4)
+    from lib.core.file_operations import atomic_write_json
+    atomic_write_json(PREDICTION_STREAKS_FILE, data, indent=4)
     return data[uid]["win_streak"], data[uid]["lose_streak"]
 
+async def award_indecisive_badges(client, pred, window: int = 10) -> None:
+    """Award the 'indecisive' badge to anyone who bet within `window` seconds of
+    the prediction being locked — used by both the manual Lock button and the
+    auto-lock sweep, so the badge is awarded consistently however a pred closes."""
+    import time
+    from lib.bot.event_handlers import award_badge_with_notify
+    now = time.time()
+    for uid, bet_time in pred.last_bet_times.items():
+        if now - bet_time <= window:
+            await award_badge_with_notify(client, uid, 'indecisive')
+
+# A prediction can have between 2 and 5 outcomes. 5 is the practical ceiling:
+# the bet buttons must fit in a single Discord action row (max 5 buttons).
+MAX_PRED_OPTIONS = 5
+MIN_PRED_OPTIONS = 2
+
+
 class Prediction:
-    def __init__(self, msg_id: int, title: str, opt1: str, opt2: str, end_ts: float, channel_id: Optional[int] = None):
+    def __init__(self, msg_id: int, title: str, options: list, end_ts: float, channel_id: Optional[int] = None):
         self.msg_id = msg_id
         self.channel_id = channel_id
         self.title = title
-        self.opt1 = opt1
-        self.opt2 = opt2
-        self.bets = {1: {}, 2: {}}
+        self.options = [str(o) for o in options]          # 2..5 outcome labels
+        # side numbers are 1-based and map to options[side - 1]
+        self.bets = {i: {} for i in range(1, len(self.options) + 1)}  # side -> {uid: amount}
         self.locked = False
         self.end_ts = end_ts
         self.last_bet_times = {} # uid -> timestamp
         self.initial_balances = {} # uid -> balance before first bet on this pred
 
     def stake(self, uid: int, side: int, amount: int) -> bool:
-        if self.locked or side not in (1, 2) or uid in self.bets[3 - side]:
+        if self.locked or not (1 <= side <= len(self.options)):
             return False
-        side_name = self.opt1 if side == 1 else self.opt2
+        # A user may only back ONE outcome — reject if they've already bet on another.
+        if any(uid in pool for s, pool in self.bets.items() if s != side):
+            return False
+        side_name = self.options[side - 1]
         if amount > 100_000 or not remove_bb(uid, amount, reason=f"Prediction bet: {self.title[:50]} ({side_name})"):
             return False
-            
+
         if uid not in self.initial_balances:
-            # We add back the amount because remove_bb already took it, 
+            # We add back the amount because remove_bb already took it,
             # and we want the balance BEFORE the bet.
             self.initial_balances[uid] = get_bb(uid) + amount
 
@@ -60,50 +81,46 @@ class Prediction:
         self.last_bet_times[uid] = time.time()
         return True
 
-    def totals(self) -> tuple[int, int]:
-        return sum(self.bets.get(1, {}).values()), sum(self.bets.get(2, {}).values())
+    def totals(self) -> list:
+        """Per-option staked totals, indexed by side-1 (i.e. totals()[0] is option 1)."""
+        return [sum(self.bets.get(s, {}).values()) for s in range(1, len(self.options) + 1)]
 
     def resolve(self, win_side: int) -> dict[int, int]:
-        # This is used by PredAdminView._resolve
-        # Calculate winning payouts based on ratio
-        t1, t2 = self.totals()
-        win_total = t1 if win_side == 1 else t2
-        lose_total = t2 if win_side == 1 else t1
-        pool_total = win_total + lose_total
-        
+        # This is used by PredAdminView._resolve.
+        #
+        # Conservation model: every stake was already moved INTO the bank when the
+        # bet was placed (stake() -> remove_bb with to_bank=True). The bank
+        # therefore already holds the whole pool. Winners are paid back OUT of the
+        # bank; any forfeited stakes or integer-rounding remainder simply stay in
+        # the bank. We must NOT deposit the pool (or the dust) again here — doing so
+        # would mint UKP and break the fixed 800k supply.
+        totals = self.totals()
+        win_total = totals[win_side - 1]
+        pool_total = sum(totals)
+
         payouts = {}
         if win_total == 0:
-            # Nobody won, so everything goes back to the bank
-            if pool_total > 0:
-                from lib.economy.bank_manager import BankManager
-                BankManager.deposit(float(pool_total), description=f"Prediction unclaimed pool (No winners): {self.title[:50]}")
+            # Nobody backed the winning side. The banked pool is forfeited to the
+            # bank, where it already sits — nothing to pay out, nothing to deposit.
             return payouts
-            
+
         ratio = pool_total / win_total
-        distributed_total = 0
-        
+
         for uid, stake in self.bets.get(win_side, {}).items():
             payout = int(stake * ratio)
             payouts[uid] = payout
-            distributed_total += payout
             add_bb(uid, payout, reason=f"Prediction win: {self.title[:50]}", taxable=False)
-            
+
             # Double or Nothing Check: Bet > 50% of balance
             initial_bal = self.initial_balances.get(uid, 0)
             if initial_bal > 0:
                 total_bet = self.bets[win_side].get(uid, 0)
                 if total_bet > (initial_bal / 2):
-                    # We can't award with notify easily here without a client,
-                    # but we'll award silently and it'll show in /rank.
-                    from database import award_badge
-                    award_badge(uid, 'double_or_nothing')
-        
-        # Collect rounding dust
-        dust = pool_total - distributed_total
-        if dust > 0:
-            from lib.economy.bank_manager import BankManager
-            BankManager.deposit(float(dust), description=f"Prediction rounding dust: {self.title[:50]}")
-            
+                    from lib.bot.event_handlers import award_badge_notify
+                    award_badge_notify(uid, 'double_or_nothing')
+
+        # Rounding dust (pool_total - sum of integer payouts) is left in the bank
+        # automatically, since we withdrew less than the pool that was banked.
         return payouts
 
     def to_dict(self) -> dict:
@@ -112,48 +129,73 @@ class Prediction:
             "msg_id": self.msg_id,
             "channel_id": self.channel_id,
             "title": self.title,
-            "opt1": self.opt1,
-            "opt2": self.opt2,
+            "options": list(self.options),
             "bets": bets_dump,
             "locked": self.locked,
             "end": self.end_ts,
-            "initial_balances": {str(uid): bal for uid, bal in self.initial_balances.items()}
+            "initial_balances": {str(uid): bal for uid, bal in self.initial_balances.items()},
+            "last_bet_times": {str(uid): ts for uid, ts in self.last_bet_times.items()},
         }
 
 
     @staticmethod
     def from_dict(d: dict):
-        p = Prediction(d["msg_id"], d["title"], d["opt1"], d["opt2"], d["end"], d.get("channel_id"))
+        options = d.get("options")
+        if not options:
+            # Backward-compat: predictions created before multi-option support
+            # stored opt1/opt2 instead of an options list.
+            options = [d.get("opt1", "Option 1"), d.get("opt2", "Option 2")]
+        p = Prediction(d["msg_id"], d["title"], options, d["end"], d.get("channel_id"))
         p.bets = {int(side): {int(uid): amt for uid, amt in pool.items()} for side, pool in d["bets"].items()}
+        # Make sure every side has a (possibly empty) pool.
+        for s in range(1, len(p.options) + 1):
+            p.bets.setdefault(s, {})
         p.locked = d["locked"]
         p.initial_balances = {int(uid): bal for uid, bal in d.get("initial_balances", {}).items()}
+        # Persisted so the "indecisive" badge can still be awarded for bets placed
+        # shortly before a restart, and by the auto-lock sweep.
+        p.last_bet_times = {int(uid): ts for uid, ts in d.get("last_bet_times", {}).items()}
         return p
 
 
-@lru_cache(maxsize=101)
-def _progress_png_bytes(pct_int: int) -> bytes:
-    pct = pct_int / 100.0
+# Distinct segment colours for the stacked pool bar / option fields (cycled).
+_OPTION_COLORS = [
+    (46, 204, 113),   # green
+    (88, 101, 242),   # blurple
+    (241, 196, 15),   # yellow
+    (231, 76, 60),    # red
+    (155, 89, 182),   # purple
+]
+
+def _progress_png_multi(pcts: list) -> io.BytesIO:
+    """Render a stacked horizontal bar: one coloured segment per option, sized to
+    its share of the total pool. Works for 2–5 options."""
     W, H = 400, 18
-    green, blurple = (46, 204, 113), (88, 101, 242)
-    img = Image.new("RGB", (W, H), blurple)
-    ImageDraw.Draw(img).rectangle([0, 0, int(W * pct), H], fill=green)
+    img = Image.new("RGB", (W, H), (60, 63, 69))  # dark backing for the empty/no-bets case
+    draw = ImageDraw.Draw(img)
+    x = 0.0
+    for i, pct in enumerate(pcts):
+        seg = W * pct
+        # The final non-zero segment snaps to the right edge to avoid a rounding gap.
+        right = W if i == len(pcts) - 1 else x + seg
+        if right > x:
+            draw.rectangle([int(round(x)), 0, int(round(right)), H], fill=_OPTION_COLORS[i % len(_OPTION_COLORS)])
+        x += seg
     buff = io.BytesIO()
     img.save(buff, format="PNG")
-    return buff.getvalue()
-
-def _progress_png(pct: float) -> io.BytesIO:
-    pct_int = int(pct * 100)
-    img_bytes = _progress_png_bytes(pct_int)
-    return io.BytesIO(img_bytes)
+    buff.seek(0)
+    return buff
 
 CASH, TROPHY, USER, COIN, MEDAL = "💰", "🏆", "👥", "🪙", "🏅"
 
 def _fmt_money(n: int) -> str:
     return f"{n:,}"
 
-def _odds(t1: int, t2: int, side: int) -> float:
-    win, lose = (t1, t2) if side == 1 else (t2, t1)
-    return 0 if win == 0 else max((win + lose) / win, 1)
+def _odds(totals: list, side: int) -> float:
+    """Decimal odds for an outcome: (whole pool) / (amount on this outcome)."""
+    win = totals[side - 1]
+    pool = sum(totals)
+    return 0 if win == 0 else max(pool / win, 1)
 
 def _top_bettor(bets: dict, client: Optional[discord.Client]) -> str:
     if not bets:
@@ -167,10 +209,9 @@ def _top_bettor(bets: dict, client: Optional[discord.Client]) -> str:
     return f"{name} {_fmt_money(bets[uid])}"
 
 def prediction_embed(pred: Prediction, client: Optional[discord.Client] = None) -> Union[tuple, any]:
-    t1, t2 = pred.totals()
-    total = t1 + t2 or 1
-    pct1 = t1 / total
-    pct2 = 1 - pct1
+    totals = pred.totals()
+    grand = sum(totals) or 1
+    pcts = [t / grand for t in totals]
     now = discord.utils.utcnow().timestamp()
     if pred.locked:
         time_line = "🔒 **locked**"
@@ -179,32 +220,122 @@ def prediction_embed(pred: Prediction, client: Optional[discord.Client] = None) 
     else:
         time_line = "🔓 **unlocked**"
 
-
-
     e = discord.Embed(title=pred.title, description=time_line)
-    e.add_field(
-        name=pred.opt1,
-        value=(
-            f"{CASH} **{_fmt_money(t1)}** `{int(pct1*100)}%`\n"
-            f"{TROPHY} **{_odds(t1,t2,1):.2f}x**\n"
-            f"{USER} {len(pred.bets.get(1, {}))}\n"
-            f"{MEDAL} {_top_bettor(pred.bets.get(1, {}), client)}"
-        ),
-        inline=True,
-    )
-    e.add_field(
-        name=pred.opt2,
-        value=(
-            f"{CASH} **{_fmt_money(t2)}** `{int(pct2*100)}%`\n"
-            f"{TROPHY} **{_odds(t1,t2,2):.2f}x**\n"
-            f"{USER} {len(pred.bets.get(2, {}))}\n"
-            f"{MEDAL} {_top_bettor(pred.bets.get(2, {}), client)}"
-        ),
-        inline=True,
-    )
-    bar_file = discord.File(_progress_png(pct1), filename="bar.png")
+    for i, opt in enumerate(pred.options):
+        side = i + 1
+        e.add_field(
+            name=opt,
+            value=(
+                f"{CASH} **{_fmt_money(totals[i])}** `{int(pcts[i]*100)}%`\n"
+                f"{TROPHY} **{_odds(totals, side):.2f}x**\n"
+                f"{USER} {len(pred.bets.get(side, {}))}\n"
+                f"{MEDAL} {_top_bettor(pred.bets.get(side, {}), client)}"
+            ),
+            inline=True,
+        )
+    bar_file = discord.File(_progress_png_multi(pcts), filename="bar.png")
     e.set_image(url="attachment://bar.png")
     return e, bar_file
+
+
+def _hex(rgb: tuple) -> str:
+    return "#%02x%02x%02x" % rgb
+
+
+def _build_option_rows_html(pred: Prediction, client: Optional[discord.Client]) -> str:
+    """Build the per-outcome HTML rows injected into the {{OPTIONS}} slot of
+    templates/prediction_card.html. Each row uses fixed class names + a per-option
+    --accent colour so the (design-generated) CSS can style them consistently."""
+    import html as _html
+    totals = pred.totals()
+    grand = sum(totals) or 1
+    rows = []
+    for i, opt in enumerate(pred.options):
+        side = i + 1
+        t = totals[i]
+        pct = int(round(t / grand * 100))
+        color = _hex(_OPTION_COLORS[i % len(_OPTION_COLORS)])
+        pool = pred.bets.get(side, {})
+        if pool:
+            top_uid = max(pool, key=pool.get)
+            user = client.get_user(top_uid) if client else None
+            top_name = user.display_name if user else str(top_uid)
+            top = f"{_html.escape(top_name)} · {_fmt_money(pool[top_uid])}"
+        else:
+            top = "—"
+        rows.append(
+            f'<div class="pred-option" style="--accent: {color};">'
+            f'<div class="pred-option-top">'
+            f'<span class="pred-option-rank">{side}</span>'
+            f'<span class="pred-option-name">{_html.escape(opt)}</span>'
+            f'<span class="pred-option-odds">{_odds(totals, side):.2f}x</span>'
+            f'</div>'
+            f'<div class="pred-bar"><div class="pred-bar-fill" style="width:{pct}%;"></div></div>'
+            f'<div class="pred-option-bottom">'
+            f'<span class="pred-option-total">{_fmt_money(t)} UKP</span>'
+            f'<span class="pred-option-pct">{pct}%</span>'
+            f'<span class="pred-option-bettors">{len(pool)} bettors</span>'
+            f'<span class="pred-option-top-bettor">{top}</span>'
+            f'</div>'
+            f'</div>'
+        )
+    return "".join(rows)
+
+
+async def render_prediction_image(pred: Prediction, client: Optional[discord.Client]) -> io.BytesIO:
+    """Render a prediction as a custom HTML→PNG card (templates/prediction_card.html)."""
+    import html as _html
+    from datetime import datetime
+    import pytz
+    from lib.core.image_processing import screenshot_html
+    from lib.core.file_operations import read_html_template
+
+    totals = pred.totals()
+    pool_total = sum(totals)
+    unique_bettors = len({uid for pool in pred.bets.values() for uid in pool})
+
+    status = "Locked" if pred.locked else "Open"
+    if pred.end_ts:
+        closes = datetime.fromtimestamp(
+            pred.end_ts, tz=pytz.timezone("Europe/London")
+        ).strftime("Closes %H:%M · %d %b")
+    else:
+        closes = "No deadline"
+
+    template = read_html_template("templates/prediction_card.html")
+    html_out = (
+        template
+        .replace("{{TITLE}}", _html.escape(pred.title))
+        .replace("{{STATUS}}", status)
+        .replace("{{CLOSES}}", _html.escape(closes))
+        .replace("{{POOL_TOTAL}}", _fmt_money(pool_total))
+        .replace("{{BETTOR_COUNT}}", str(unique_bettors))
+        .replace("{{OPTION_COUNT}}", str(len(pred.options)))
+        .replace("{{OPTIONS}}", _build_option_rows_html(pred, client))
+    )
+    return await screenshot_html(html_out, size=(900, 1300))
+
+
+async def build_prediction_render(pred: Prediction, client: Optional[discord.Client]):
+    """Return ``(embed_or_None, [file])`` for sending/editing a prediction message.
+
+    Honours the PREDICTION_IMAGE_ENABLED feature flag: when on, returns the custom
+    HTML→PNG card (no embed); when off — or if rendering raises — returns the
+    standard Discord embed + progress-bar file. Callers pass the returned file list
+    to ``send(files=...)`` or ``edit(attachments=...)`` and the embed to ``embed=``.
+    """
+    import config
+    if getattr(config, "PREDICTION_IMAGE_ENABLED", False):
+        try:
+            img = await render_prediction_image(pred, client)
+            return None, [discord.File(img, filename="prediction.png")]
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Prediction image render failed; falling back to embed.", exc_info=True
+            )
+    embed, bar = prediction_embed(pred, client)
+    return embed, [bar]
 
 class BetModal(discord.ui.Modal, title="Place your bet"):
     amount = discord.ui.TextInput(label="Amount", placeholder="whole number")
@@ -243,20 +374,22 @@ class BetModal(discord.ui.Modal, title="Place your bet"):
         if self.pred.stake(interaction.user.id, self.side, stake):
             user_total = self.pred.bets[self.side][interaction.user.id]
             new_balance = get_bb(interaction.user.id)
-            embed, bar = prediction_embed(self.pred, interaction.client)
-            
-            try:
-                await interaction.message.edit(embed=embed, attachments=[bar])
-            except discord.NotFound:
-                pass # Message was deleted by a mod while they were typing
-                
+
+            # Respond to the bettor FIRST so a slow image re-render (when the HTML
+            # card flag is on) can't make this interaction time out.
             await interaction.response.send_message(
-                f"✅ Bet placed! You now have **{_fmt_money(user_total)}** on **{self.pred.opt1 if self.side==1 else self.pred.opt2}**.\n"
+                f"✅ Bet placed! You now have **{_fmt_money(user_total)}** on **{self.pred.options[self.side - 1]}**.\n"
                 f"💰 Remaining Balance: **{_fmt_money(new_balance)}**",
                 ephemeral=True
             )
             _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
-            
+
+            embed, files = await build_prediction_render(self.pred, interaction.client)
+            try:
+                await interaction.message.edit(embed=embed, attachments=files)
+            except discord.NotFound:
+                pass # Message was deleted by a mod while they were typing
+
             # High Stakes Badge
             if stake >= 5000:
                 from lib.bot.event_handlers import award_badge_with_notify
@@ -288,34 +421,36 @@ class BetButtons(discord.ui.View):
 
             await interaction.response.send_modal(BetModal(self.pred, side, bal))
 
-        btn1 = discord.ui.Button(
-            label=f"Bet on {pred.opt1}",
-            style=discord.ButtonStyle.success,
-            custom_id = f"prediction:{pred.msg_id}:bet1"
-        )
-        btn2 = discord.ui.Button(
-            label=f"Bet on {pred.opt2}",
-            style=discord.ButtonStyle.primary,
-            custom_id = f"prediction:{pred.msg_id}:bet2"
-        )
+        def _make_bet_cb(side: int):
+            async def _cb(interaction: discord.Interaction):
+                await _handler(interaction, side)
+            return _cb
 
-        async def btn1_cb(interaction: discord.Interaction):
-            await _handler(interaction, 1)
+        # One bet button per outcome (2–5). All fit on action row 0 (max 5 buttons).
+        bet_styles = [
+            discord.ButtonStyle.success,
+            discord.ButtonStyle.primary,
+            discord.ButtonStyle.secondary,
+            discord.ButtonStyle.danger,
+            discord.ButtonStyle.primary,
+        ]
+        for i, opt in enumerate(pred.options):
+            side = i + 1
+            btn = discord.ui.Button(
+                label=f"Bet on {opt}"[:80],
+                style=bet_styles[i % len(bet_styles)],
+                custom_id=f"prediction:{pred.msg_id}:bet{side}",
+                row=0,
+            )
+            btn.callback = _make_bet_cb(side)
+            self.add_item(btn)
 
-        async def btn2_cb(interaction: discord.Interaction):
-            await _handler(interaction, 2)
-
-        btn1.callback = btn1_cb
-        btn2.callback = btn2_cb
-
-        self.add_item(btn1)
-        self.add_item(btn2)
-
-        # Notification toggle button
+        # Notification toggle button (own row so it never crowds the bet buttons)
         notif_btn = discord.ui.Button(
             label="🔔",
             style=discord.ButtonStyle.secondary,
-            custom_id=f"prediction:{pred.msg_id}:notif_toggle"
+            custom_id=f"prediction:{pred.msg_id}:notif_toggle",
+            row=1,
         )
 
         async def notif_cb(interaction: discord.Interaction):
@@ -347,7 +482,10 @@ class PredSelectView(discord.ui.View):
             status = "🔒" if p.locked else "🔓"
             options.append(discord.SelectOption(
                 label=f"{status} {p.title[:80]}",
-                description=f"ID: {p.msg_id} | {p.opt1} vs {p.opt2}",
+                # Discord rejects SelectOption descriptions over 100 chars. Keep the
+                # ID intact and truncate the options text so the whole pred-admin
+                # menu can't fail to render on long option names.
+                description=f"ID: {p.msg_id} | {' / '.join(p.options)}"[:100],
                 value=str(p.msg_id)
             ))
 
@@ -373,88 +511,112 @@ class PredAdminView(discord.ui.View):
         super().__init__(timeout=600)
         self.pred = pred
         self.client = client
-        # Dynamically set button labels to actual option text
-        self.win1.label = f"Winner: {pred.opt1[:70]}"
-        self.win2.label = f"Winner: {pred.opt2[:70]}"
+        # One "Winner: <option>" button per outcome (2–5), built dynamically so the
+        # panel scales with the prediction's option count. Lock/Unlock/Draw live on
+        # row 0; winner buttons on row 1.
+        for i, opt in enumerate(pred.options):
+            side = i + 1
+            btn = discord.ui.Button(
+                label=f"Winner: {opt[:60]}",
+                style=discord.ButtonStyle.primary,
+                row=1,
+            )
+            btn.callback = self._make_resolve_cb(side)
+            self.add_item(btn)
 
-    @discord.ui.button(label="Lock", style=discord.ButtonStyle.danger)
+    def _make_resolve_cb(self, side: int):
+        async def _cb(interaction: discord.Interaction):
+            await self._resolve(interaction, side)
+        return _cb
+
+    @discord.ui.button(label="Lock", style=discord.ButtonStyle.danger, row=0)
     async def lock(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         if self.pred.locked:
             return await interaction.response.send_message("Already locked.", ephemeral=True)
         self.pred.locked = True
+        await interaction.response.defer(ephemeral=True)
         try:
             msg = await interaction.channel.fetch_message(self.pred.msg_id)
-            embed, bar = prediction_embed(self.pred, self.client)
-            await msg.edit(embed=embed, attachments=[bar], view=None)
+            embed, files = await build_prediction_render(self.pred, self.client)
+            await msg.edit(embed=embed, attachments=files, view=None)
         except discord.NotFound:
             pass
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
-        await interaction.response.send_message("🔒 Locked.", ephemeral=True)
-        
-        # Indecisive Badge Logic
-        import time
-        now = time.time()
-        from lib.bot.event_handlers import award_badge_with_notify
-        for uid, bet_time in self.pred.last_bet_times.items():
-            if now - bet_time <= 10:
-                await award_badge_with_notify(self.client, uid, 'indecisive')
+        await interaction.followup.send("🔒 Locked.", ephemeral=True)
 
-    @discord.ui.button(label="Unlock", style=discord.ButtonStyle.success)
+        await award_indecisive_badges(self.client, self.pred)
+
+    @discord.ui.button(label="Unlock", style=discord.ButtonStyle.success, row=0)
     async def unlock(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         if not self.pred.locked:
             return await interaction.response.send_message("Already unlocked.", ephemeral=True)
 
         self.pred.locked = False
         self.pred.end_ts = None
+        await interaction.response.defer(ephemeral=True)
 
         try:
             msg = await interaction.channel.fetch_message(self.pred.msg_id)
-            embed, bar = prediction_embed(self.pred, self.client)
+            embed, files = await build_prediction_render(self.pred, self.client)
             view = BetButtons(self.pred)
-            await msg.edit(embed=embed, attachments=[bar], view=view)
+            await msg.edit(embed=embed, attachments=files, view=view)
             self.client.add_view(view, message_id=self.pred.msg_id)
         except discord.NotFound:
             pass
 
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
-        await interaction.response.send_message("🔓 Unlocked.", ephemeral=True)
+        await interaction.followup.send("🔓 Unlocked.", ephemeral=True)
 
-    @discord.ui.button(label="Draw", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Draw", style=discord.ButtonStyle.secondary, row=0)
     async def draw(self, interaction: discord.Interaction, _btn: discord.ui.Button):
-        for side in (1, 2):
-            for uid, amt in self.pred.bets.get(side, {}).items():
+        # Same idempotency claim as _resolve: pop synchronously before any await so
+        # a double-click can't refund every bettor twice (which would mint UKP).
+        if self.pred.msg_id not in self.client.predictions:
+            return await interaction.response.send_message(
+                "This prediction has already been resolved.", ephemeral=True
+            )
+        self.client.predictions.pop(self.pred.msg_id, None)
+        self.pred.locked = True
+        await interaction.response.defer(ephemeral=True)
+        for side, pool in self.pred.bets.items():
+            for uid, amt in pool.items():
                 # Bets were banked when staked (remove_bb to_bank=True), so refund from bank is correct
                 add_bb(uid, amt, reason=f"Prediction refund (Draw): {self.pred.title[:50]}", taxable=False)
-        self.pred.locked = True
-        self.pred.bets = {1: {}, 2: {}}
+        self.pred.bets = {s: {} for s in range(1, len(self.pred.options) + 1)}
         try:
             msg = await interaction.channel.fetch_message(self.pred.msg_id)
-            embed, bar = prediction_embed(self.pred, self.client)
-            await msg.edit(embed=embed, attachments=[bar], view=None)
+            embed, files = await build_prediction_render(self.pred, self.client)
+            await msg.edit(embed=embed, attachments=files, view=None)
         except discord.NotFound:
             pass
-        self.client.predictions.pop(self.pred.msg_id, None)
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
-        await interaction.response.send_message("🟡 Draw called – all bets refunded.", ephemeral=True)
+        await interaction.followup.send("🟡 Draw called – all bets refunded.", ephemeral=True)
         self.stop()
 
-    @discord.ui.button(label="Winner: Option 1", style=discord.ButtonStyle.primary)
-    async def win1(self, interaction: discord.Interaction, _btn: discord.ui.Button):
-        await self._resolve(interaction, 1)
-
-    @discord.ui.button(label="Winner: Option 2", style=discord.ButtonStyle.primary)
-    async def win2(self, interaction: discord.Interaction, _btn: discord.ui.Button):
-        await self._resolve(interaction, 2)
-
     async def _resolve(self, interaction: discord.Interaction, winner: int):
-        payouts = self.pred.resolve(winner)
-        win_side = self.pred.opt1 if winner == 1 else self.pred.opt2
+        # Idempotency guard. Claiming the prediction (the pop below) happens
+        # synchronously before any await, so a double-click — or two open admin
+        # panels sharing this Prediction — cannot both pay out: the second
+        # invocation finds it already gone from the live registry and bails.
+        if self.pred.msg_id not in self.client.predictions:
+            return await interaction.response.send_message(
+                "This prediction has already been resolved.", ephemeral=True
+            )
+        self.client.predictions.pop(self.pred.msg_id, None)
         self.pred.locked = True
+        _save({k: v.to_dict() for k, v in self.client.predictions.items()})
+
+        # Defer now (big pools can take >3s to pay out, which would otherwise
+        # surface as "interaction failed").
+        await interaction.response.defer(ephemeral=True)
+
+        payouts = self.pred.resolve(winner)
+        win_side = self.pred.options[winner - 1]
         msg = None
         try:
             msg = await interaction.channel.fetch_message(self.pred.msg_id)
-            embed, bar = prediction_embed(self.pred, self.client)
-            await msg.edit(embed=embed, attachments=[bar], view=None)
+            embed, files = await build_prediction_render(self.pred, self.client)
+            await msg.edit(embed=embed, attachments=files, view=None)
         except discord.NotFound:
             pass  # Message was deleted, proceed with payout and summary
 
@@ -473,15 +635,22 @@ class PredAdminView(discord.ui.View):
         else:
             await interaction.channel.send(content=f"{mentions}\nPrediction resolved (original message deleted).", embed=summary)
 
-        self.client.predictions.pop(self.pred.msg_id, None)
-        _save({k: v.to_dict() for k, v in self.client.predictions.items()})
-        
+        # (Already popped from client.predictions and persisted at the top of this
+        # method as the idempotency claim.)
+
         # Award streak badges
         from lib.economy.prediction_system import track_prediction_streak
         from lib.bot.event_handlers import award_badge_with_notify
         import asyncio
 
-        lose_side = 2 if winner == 1 else 1
+        # Everyone who backed a non-winning outcome is a loser (generalised from the
+        # old 2-way model where there was a single losing side).
+        loser_uids = [
+            uid
+            for side, pool in self.pred.bets.items()
+            if side != winner
+            for uid in pool.keys()
+        ]
 
         async def award_streaks():
             # Process winners
@@ -489,23 +658,20 @@ class PredAdminView(discord.ui.View):
                 win_streak, lose_streak = track_prediction_streak(uid, is_win=True)
                 if win_streak >= 7:
                     await award_badge_with_notify(self.client, uid, 'oracle')
-            
+
             # Process losers
-            for uid in self.pred.bets.get(lose_side, {}).keys():
+            for uid in loser_uids:
                 win_streak, lose_streak = track_prediction_streak(uid, is_win=False)
                 if lose_streak >= 5:
                     await award_badge_with_notify(self.client, uid, 'unlucky')
 
         asyncio.create_task(award_streaks())
-        
-        # If the interaction message (admin panel) is still valid, respond there too
+
+        # We deferred at the top, so the admin panel response is a followup.
         try:
-             if not interaction.response.is_done():
-                 await interaction.response.send_message("✅ Resolved & paid out.", ephemeral=True)
-             else:
-                 await interaction.followup.send("✅ Resolved & paid out.", ephemeral=True)
+            await interaction.followup.send("✅ Resolved & paid out.", ephemeral=True)
         except discord.NotFound:
-             pass # Admin interaction might be old/invalid too
+            pass  # Admin interaction might be old/invalid too
         self.stop()
 
 
@@ -575,13 +741,13 @@ def _resolve_end_ts(value: str, reference_ts: float) -> float:
     return end_ts
 
 
-def _scheduled_pred_embed(sched_id, channel_id, title: str, opt1: str, opt2: str,
+def _scheduled_pred_embed(sched_id, channel_id, title: str, options: list,
                           scheduled_ts: int, duration: int, creator_mention: str) -> discord.Embed:
     """Build the COMMUNITY_MANAGEMENT announcement embed for a *pending* scheduled
     prediction. Shared by the create and edit flows so the layout stays in sync."""
     embed = discord.Embed(
         title="📅 Prediction Scheduled",
-        description=f"**{title}**\n*{opt1}* vs *{opt2}*",
+        description=f"**{title}**\n" + " / ".join(f"*{o}*" for o in options),
         color=0x5865F2,
     )
     embed.add_field(name="Posts in", value=f"<#{channel_id}>", inline=True)
@@ -592,178 +758,267 @@ def _scheduled_pred_embed(sched_id, channel_id, title: str, opt1: str, opt2: str
     return embed
 
 
-class PredictionCreateModal(discord.ui.Modal, title="Create Prediction"):
-    title_input = discord.ui.TextInput(
-        label="Title",
+def _options_from_row(opt1, opt2, options_json) -> list:
+    """Decode the stored option list for a scheduled prediction, falling back to
+    the legacy opt1/opt2 columns for rows created before multi-option support."""
+    if options_json:
+        try:
+            opts = json.loads(options_json)
+            if isinstance(opts, list) and len(opts) >= 2:
+                return [str(o) for o in opts]
+        except (ValueError, TypeError):
+            pass
+    return [opt1, opt2]
+
+
+def _clean_options(raw_options: list) -> tuple:
+    """Validate a list of raw option strings (which may include None/blank entries
+    from optional slash params or blank modal lines). Returns (options, error)."""
+    opts = [o.strip() for o in raw_options if o and str(o).strip()]
+    if len(opts) < MIN_PRED_OPTIONS:
+        return [], f"A prediction needs at least {MIN_PRED_OPTIONS} outcomes."
+    if len(opts) > MAX_PRED_OPTIONS:
+        return [], f"A prediction can have at most {MAX_PRED_OPTIONS} outcomes."
+    if len({o.lower() for o in opts}) != len(opts):
+        return [], "Outcomes must be distinct."
+    if any(len(o) > 80 for o in opts):
+        return [], "Each outcome must be 80 characters or fewer."
+    return opts, None
+
+
+async def post_prediction(client: discord.Client, channel, title: str, options: list, end_ts: float) -> Prediction:
+    """Create a live Prediction, post it (with the bet buttons) to ``channel``,
+    register it on the client, and persist. Shared by /pred-create and the
+    scheduled-post path."""
+    p = Prediction(0, title, options, end_ts)
+    embed, files = await build_prediction_render(p, client)
+    msg = await channel.send(
+        content=f"<@&{ROLES.PRED_NOTIFICATIONS}>",
+        embed=embed,
+        files=files,
+        view=BetButtons(p),
+        allowed_mentions=discord.AllowedMentions(roles=True),
+    )
+    p.msg_id = msg.id
+    p.channel_id = msg.channel.id
+    client.predictions[msg.id] = p
+    _save({k: v.to_dict() for k, v in client.predictions.items()})
+    return p
+
+
+async def handle_pred_create_command(interaction: discord.Interaction, title: str,
+                                     raw_options: list, duration: str):
+    """Slash-command backed prediction creation (2–5 outcomes via slash options)."""
+    options, err = _clean_options(raw_options)
+    if err:
+        return await interaction.response.send_message(err, ephemeral=True)
+    title = (title or "").strip()
+    if not title:
+        return await interaction.response.send_message("The title can't be empty.", ephemeral=True)
+
+    now_ts = discord.utils.utcnow().timestamp()
+    try:
+        end_ts = _resolve_end_ts(duration, now_ts)
+    except ValueError as e:
+        return await interaction.response.send_message(str(e), ephemeral=True)
+
+    await interaction.response.defer(ephemeral=True)
+    await post_prediction(interaction.client, interaction.channel, title, options, end_ts)
+    await interaction.followup.send(f"✅ Prediction opened with {len(options)} outcomes.", ephemeral=True)
+
+
+async def handle_pred_schedule_command(interaction: discord.Interaction, channel_id: int,
+                                       title: str, raw_options: list, when: str, duration: str):
+    """Slash-command backed scheduling of a prediction (2–5 outcomes)."""
+    options, err = _clean_options(raw_options)
+    if err:
+        return await interaction.response.send_message(err, ephemeral=True)
+    title = (title or "").strip()
+    if not title:
+        return await interaction.response.send_message("The title can't be empty.", ephemeral=True)
+
+    try:
+        scheduled_ts = _parse_post_time(when)
+    except ValueError as e:
+        return await interaction.response.send_message(str(e), ephemeral=True)
+    try:
+        end_ts = _resolve_end_ts(duration, float(scheduled_ts))
+    except ValueError as e:
+        return await interaction.response.send_message(str(e), ephemeral=True)
+    duration_minutes = max(1, int(round((end_ts - scheduled_ts) / 60)))
+
+    from database import DatabaseManager
+    import time
+    now_ts = int(time.time())
+    sched_id = DatabaseManager.execute_insert(
+        "INSERT INTO scheduled_predictions "
+        "(channel_id, creator_id, title, opt1, opt2, options_json, duration_minutes, scheduled_ts, status, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+        (str(channel_id), str(interaction.user.id), title, options[0], options[1],
+         json.dumps(options), duration_minutes, scheduled_ts, now_ts),
+    )
+
+    from apscheduler.triggers.date import DateTrigger
+    from datetime import datetime, timezone
+    run_at = datetime.fromtimestamp(scheduled_ts, tz=timezone.utc)
+    scheduler = getattr(interaction.client, "scheduler", None)
+    if scheduler is not None and sched_id is not None:
+        scheduler.add_job(
+            post_scheduled_prediction,
+            DateTrigger(run_date=run_at),
+            args=[interaction.client, sched_id],
+            id=f"scheduled_pred_{sched_id}",
+            name=f"Scheduled Prediction #{sched_id}",
+            misfire_grace_time=3600,
+        )
+
+    await interaction.response.send_message(
+        f"✅ Prediction #{sched_id} ({len(options)} outcomes) scheduled for "
+        f"<t:{scheduled_ts}:F> (<t:{scheduled_ts}:R>) in <#{channel_id}>.",
+        ephemeral=True,
+    )
+
+    cm_channel = interaction.client.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
+    if cm_channel is not None and sched_id is not None:
+        embed = _scheduled_pred_embed(
+            sched_id, channel_id, title, options,
+            scheduled_ts, duration_minutes, interaction.user.mention,
+        )
+        try:
+            cm_msg = await cm_channel.send(
+                embed=embed,
+                view=CancelScheduledPredView(sched_id),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            DatabaseManager.execute(
+                "UPDATE scheduled_predictions SET cm_message_id = ? WHERE id = ?",
+                (str(cm_msg.id), sched_id),
+            )
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Could not send scheduled-pred announcement to COMMUNITY_MANAGEMENT.",
+                exc_info=True,
+            )
+
+
+def _build_option_inputs(num_options: int):
+    """Build the modal's outcome input(s): two separate boxes for a 2-way
+    prediction, or a single slash-separated box for 3–5 outcomes (Discord caps
+    modals at 5 fields, so we can't show 5 individual boxes alongside the other
+    fields). Returns (separate_inputs_or_None, slash_box_or_None)."""
+    if num_options == 2:
+        return [
+            discord.ui.TextInput(label="Outcome 1", default="Yes", required=True, max_length=80),
+            discord.ui.TextInput(label="Outcome 2", default="No", required=True, max_length=80),
+        ], None
+    box = discord.ui.TextInput(
+        label=f"{num_options} outcomes, separated by /",
         style=discord.TextStyle.long,
-        placeholder="The question/topic for the prediction",
+        placeholder="Labour / Tory / Reform",
         required=True,
-        max_length=200,
+        max_length=430,
     )
-    opt1_input = discord.ui.TextInput(
-        label="Outcome 1",
-        style=discord.TextStyle.short,
-        default="Yes",
-        required=True,
-        max_length=80,
-    )
-    opt2_input = discord.ui.TextInput(
-        label="Outcome 2",
-        style=discord.TextStyle.short,
-        default="No",
-        required=True,
-        max_length=80,
-    )
-    duration_input = discord.ui.TextInput(
-        label="Minutes or end time YYYY-MM-DD HH:MM",
-        style=discord.TextStyle.short,
-        default="5",
-        required=True,
-        max_length=20,
-    )
+    return None, box
+
+
+def _read_option_inputs(separate_inputs, slash_box, expected: int):
+    """Pull the raw outcome strings out of the modal inputs and check the count
+    matches what was requested. Returns (cleaned_options, error)."""
+    if separate_inputs is not None:
+        raw = [it.value for it in separate_inputs]
+    else:
+        raw = slash_box.value.split("/")
+    cleaned = [o.strip() for o in raw if o and o.strip()]
+    if len(cleaned) != expected:
+        return None, (
+            f"You selected **{expected}** outcomes but provided **{len(cleaned)}**. "
+            f"Separate them with `/` (e.g. `A / B / C`)."
+        )
+    return cleaned, None
+
+
+class PredictionCreateModal(discord.ui.Modal):
+    """Opened by /pred-create. The number of outcomes is chosen on the slash
+    command; this modal then collects the title, outcome(s) and duration."""
+    def __init__(self, num_options: int):
+        super().__init__(title="Create Prediction")
+        self.num_options = max(MIN_PRED_OPTIONS, min(MAX_PRED_OPTIONS, int(num_options)))
+
+        self.title_input = discord.ui.TextInput(
+            label="Title", style=discord.TextStyle.long,
+            placeholder="The question/topic for the prediction",
+            required=True, max_length=200,
+        )
+        self.add_item(self.title_input)
+
+        self._separate_inputs, self._slash_box = _build_option_inputs(self.num_options)
+        for item in (self._separate_inputs or [self._slash_box]):
+            self.add_item(item)
+
+        self.duration_input = discord.ui.TextInput(
+            label="Minutes or end time YYYY-MM-DD HH:MM",
+            style=discord.TextStyle.short, default="5", required=True, max_length=20,
+        )
+        self.add_item(self.duration_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        now_ts = discord.utils.utcnow().timestamp()
-        try:
-            end_ts = _resolve_end_ts(self.duration_input.value, now_ts)
-        except ValueError as e:
-            return await interaction.response.send_message(str(e), ephemeral=True)
-
-        title = self.title_input.value.strip()
-        opt1 = self.opt1_input.value.strip()
-        opt2 = self.opt2_input.value.strip()
-
-        p = Prediction(0, title, opt1, opt2, end_ts)
-        embed, bar = prediction_embed(p)
-        msg = await interaction.channel.send(
-            content=f"<@&{ROLES.PRED_NOTIFICATIONS}>",
-            embed=embed,
-            files=[bar],
-            view=BetButtons(p),
-            allowed_mentions=discord.AllowedMentions(roles=True),
+        options, err = _read_option_inputs(self._separate_inputs, self._slash_box, self.num_options)
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
+        await handle_pred_create_command(
+            interaction, self.title_input.value, options, self.duration_input.value
         )
-        p.msg_id = msg.id
-        p.channel_id = msg.channel.id
-        interaction.client.predictions[msg.id] = p
-        _save({k: v.to_dict() for k, v in interaction.client.predictions.items()})
-        await interaction.response.send_message("Prediction opened.", ephemeral=True)
 
 
-class PredictionScheduleModal(discord.ui.Modal, title="Schedule Prediction"):
-    def __init__(self, channel_id: int):
-        super().__init__()
+class PredictionScheduleModal(discord.ui.Modal):
+    """Opened by /pred-schedule. Like PredictionCreateModal but with a 'post when'
+    field; the target channel and outcome count come from the slash command."""
+    def __init__(self, channel_id: int, num_options: int):
+        super().__init__(title="Schedule Prediction")
         self._channel_id = channel_id
+        self.num_options = max(MIN_PRED_OPTIONS, min(MAX_PRED_OPTIONS, int(num_options)))
 
-    title_input = discord.ui.TextInput(
-        label="Title",
-        style=discord.TextStyle.long,
-        placeholder="The question/topic for the prediction",
-        required=True,
-        max_length=200,
-    )
-    opt1_input = discord.ui.TextInput(
-        label="Outcome 1",
-        style=discord.TextStyle.short,
-        default="Yes",
-        required=True,
-        max_length=80,
-    )
-    opt2_input = discord.ui.TextInput(
-        label="Outcome 2",
-        style=discord.TextStyle.short,
-        default="No",
-        required=True,
-        max_length=80,
-    )
-    when_input = discord.ui.TextInput(
-        label="Post when? (mins / YYYY-MM-DD HH:MM UK)",
-        style=discord.TextStyle.short,
-        placeholder="30  or  2026-05-08 19:30  or  <t:1715116200:F>",
-        required=True,
-        max_length=40,
-    )
-    duration_input = discord.ui.TextInput(
-        label="Minutes or end time YYYY-MM-DD HH:MM",
-        style=discord.TextStyle.short,
-        default="5",
-        required=True,
-        max_length=20,
-    )
+        self.title_input = discord.ui.TextInput(
+            label="Title", style=discord.TextStyle.long,
+            placeholder="The question/topic for the prediction",
+            required=True, max_length=200,
+        )
+        self.add_item(self.title_input)
+
+        self._separate_inputs, self._slash_box = _build_option_inputs(self.num_options)
+        for item in (self._separate_inputs or [self._slash_box]):
+            self.add_item(item)
+
+        self.when_input = discord.ui.TextInput(
+            label="Post when? (mins / YYYY-MM-DD HH:MM UK)",
+            style=discord.TextStyle.short,
+            placeholder="30  or  2026-05-08 19:30  or  <t:1715116200:F>",
+            required=True, max_length=40,
+        )
+        self.add_item(self.when_input)
+
+        self.duration_input = discord.ui.TextInput(
+            label="Minutes or end time YYYY-MM-DD HH:MM",
+            style=discord.TextStyle.short, default="5", required=True, max_length=20,
+        )
+        self.add_item(self.duration_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        try:
-            scheduled_ts = _parse_post_time(self.when_input.value)
-        except ValueError as e:
-            return await interaction.response.send_message(str(e), ephemeral=True)
-        try:
-            end_ts = _resolve_end_ts(self.duration_input.value, float(scheduled_ts))
-        except ValueError as e:
-            return await interaction.response.send_message(str(e), ephemeral=True)
-        duration = max(1, int(round((end_ts - scheduled_ts) / 60)))
-
-        title = self.title_input.value.strip()
-        opt1 = self.opt1_input.value.strip()
-        opt2 = self.opt2_input.value.strip()
-
-        from database import DatabaseManager
-        import time
-        now_ts = int(time.time())
-        DatabaseManager.execute(
-            "INSERT INTO scheduled_predictions (channel_id, creator_id, title, opt1, opt2, duration_minutes, scheduled_ts, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
-            (str(self._channel_id), str(interaction.user.id), title, opt1, opt2, duration, scheduled_ts, now_ts),
+        options, err = _read_option_inputs(self._separate_inputs, self._slash_box, self.num_options)
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
+        await handle_pred_schedule_command(
+            interaction, self._channel_id, self.title_input.value, options,
+            self.when_input.value, self.duration_input.value,
         )
-        row = DatabaseManager.fetch_one("SELECT last_insert_rowid()")
-        sched_id = row[0] if row else None
-
-        from apscheduler.triggers.date import DateTrigger
-        from datetime import datetime, timezone
-        run_at = datetime.fromtimestamp(scheduled_ts, tz=timezone.utc)
-        scheduler = getattr(interaction.client, "scheduler", None)
-        if scheduler is not None and sched_id is not None:
-            scheduler.add_job(
-                post_scheduled_prediction,
-                DateTrigger(run_date=run_at),
-                args=[interaction.client, sched_id],
-                id=f"scheduled_pred_{sched_id}",
-                name=f"Scheduled Prediction #{sched_id}",
-                misfire_grace_time=3600,
-            )
-
-        await interaction.response.send_message(
-            f"✅ Prediction #{sched_id} scheduled for <t:{scheduled_ts}:F> (<t:{scheduled_ts}:R>) in <#{self._channel_id}>.",
-            ephemeral=True,
-        )
-
-        cm_channel = interaction.client.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
-        if cm_channel is not None and sched_id is not None:
-            embed = _scheduled_pred_embed(
-                sched_id, self._channel_id, title, opt1, opt2,
-                scheduled_ts, duration, interaction.user.mention,
-            )
-            try:
-                cm_msg = await cm_channel.send(
-                    embed=embed,
-                    view=CancelScheduledPredView(sched_id),
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-                from database import DatabaseManager
-                DatabaseManager.execute(
-                    "UPDATE scheduled_predictions SET cm_message_id = ? WHERE id = ?",
-                    (str(cm_msg.id), sched_id),
-                )
-            except Exception:
-                import logging
-                logging.getLogger(__name__).warning(
-                    f"Could not send scheduled-pred announcement to COMMUNITY_MANAGEMENT.",
-                    exc_info=True,
-                )
 
 
 class PredictionEditModal(discord.ui.Modal):
     """Modal to edit an existing *pending* scheduled prediction. Pre-fills the
     current values; on submit it updates the DB row, reschedules the post job,
     and refreshes the COMMUNITY_MANAGEMENT announcement."""
-    def __init__(self, sched_id: int, title: str, opt1: str, opt2: str,
+    def __init__(self, sched_id: int, title: str, options: list,
                  scheduled_ts: int, duration_minutes: int):
         super().__init__(title=f"Edit Scheduled Prediction #{sched_id}")
         self.sched_id = sched_id
@@ -786,19 +1041,15 @@ class PredictionEditModal(discord.ui.Modal):
             required=True,
             max_length=200,
         )
-        self.opt1_input = discord.ui.TextInput(
-            label="Outcome 1",
-            style=discord.TextStyle.short,
-            default=opt1,
+        # A single multi-line box (one outcome per line) — a per-outcome field can't
+        # be used here because the modal already needs title + when + duration, and
+        # Discord caps modals at 5 fields, leaving no room for up to 5 option fields.
+        self.options_input = discord.ui.TextInput(
+            label="Outcomes (one per line, 2-5)",
+            style=discord.TextStyle.long,
+            default="\n".join(options),
             required=True,
-            max_length=80,
-        )
-        self.opt2_input = discord.ui.TextInput(
-            label="Outcome 2",
-            style=discord.TextStyle.short,
-            default=opt2,
-            required=True,
-            max_length=80,
+            max_length=430,
         )
         self.when_input = discord.ui.TextInput(
             label="Post when? (mins / YYYY-MM-DD HH:MM UK)",
@@ -814,7 +1065,7 @@ class PredictionEditModal(discord.ui.Modal):
             required=True,
             max_length=20,
         )
-        for item in (self.title_input, self.opt1_input, self.opt2_input,
+        for item in (self.title_input, self.options_input,
                      self.when_input, self.duration_input):
             self.add_item(item)
 
@@ -856,12 +1107,13 @@ class PredictionEditModal(discord.ui.Modal):
         duration = max(1, int(round((end_ts - scheduled_ts) / 60)))
 
         title = self.title_input.value.strip()
-        opt1 = self.opt1_input.value.strip()
-        opt2 = self.opt2_input.value.strip()
+        options, opt_err = _clean_options(self.options_input.value.splitlines())
+        if opt_err:
+            return await interaction.response.send_message(opt_err, ephemeral=True)
 
         DatabaseManager.execute(
-            "UPDATE scheduled_predictions SET title = ?, opt1 = ?, opt2 = ?, duration_minutes = ?, scheduled_ts = ? WHERE id = ?",
-            (title, opt1, opt2, duration, scheduled_ts, self.sched_id),
+            "UPDATE scheduled_predictions SET title = ?, opt1 = ?, opt2 = ?, options_json = ?, duration_minutes = ?, scheduled_ts = ? WHERE id = ?",
+            (title, options[0], options[1], json.dumps(options), duration, scheduled_ts, self.sched_id),
         )
 
         # Reschedule the APScheduler job to fire at the (possibly new) time.
@@ -892,7 +1144,7 @@ class PredictionEditModal(discord.ui.Modal):
                 if cm_channel is not None:
                     cm_msg = await cm_channel.fetch_message(int(cm_message_id))
                     embed = _scheduled_pred_embed(
-                        self.sched_id, channel_id, title, opt1, opt2,
+                        self.sched_id, channel_id, title, options,
                         scheduled_ts, duration, f"<@{creator_id}>",
                     )
                     await cm_msg.edit(embed=embed, view=CancelScheduledPredView(self.sched_id))
@@ -1083,21 +1335,22 @@ class CancelScheduledPredView(discord.ui.View):
 
         from database import DatabaseManager
         row = DatabaseManager.fetch_one(
-            "SELECT title, opt1, opt2, scheduled_ts, duration_minutes, status FROM scheduled_predictions WHERE id = ?",
+            "SELECT title, opt1, opt2, options_json, scheduled_ts, duration_minutes, status FROM scheduled_predictions WHERE id = ?",
             (self.sched_id,),
         )
         if not row:
             return await interaction.response.send_message(
                 f"❌ Scheduled prediction #{self.sched_id} not found.", ephemeral=True
             )
-        title, opt1, opt2, scheduled_ts, duration, status = row
+        title, opt1, opt2, options_json, scheduled_ts, duration, status = row
         if status != 'pending':
             return await interaction.response.send_message(
                 f"❌ Scheduled prediction #{self.sched_id} is no longer pending (status={status}); cannot edit.",
                 ephemeral=True,
             )
+        options = _options_from_row(opt1, opt2, options_json)
         await interaction.response.send_modal(
-            PredictionEditModal(self.sched_id, title, opt1, opt2, scheduled_ts, duration)
+            PredictionEditModal(self.sched_id, title, options, scheduled_ts, duration)
         )
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, emoji="🗑️")
@@ -1127,13 +1380,14 @@ async def post_scheduled_prediction(client: discord.Client, sched_id: int) -> bo
     from database import DatabaseManager
 
     row = DatabaseManager.fetch_one(
-        "SELECT channel_id, title, opt1, opt2, duration_minutes, status, cm_message_id FROM scheduled_predictions WHERE id = ?",
+        "SELECT channel_id, title, opt1, opt2, options_json, duration_minutes, status, cm_message_id FROM scheduled_predictions WHERE id = ?",
         (sched_id,),
     )
     if not row:
         logger.warning(f"Scheduled pred {sched_id} not found.")
         return False
-    channel_id, title, opt1, opt2, duration, status, cm_message_id = row
+    channel_id, title, opt1, opt2, options_json, duration, status, cm_message_id = row
+    options = _options_from_row(opt1, opt2, options_json)
     if status != 'pending':
         logger.info(f"Scheduled pred {sched_id} not pending (status={status}); skipping.")
         return False
@@ -1150,16 +1404,8 @@ async def post_scheduled_prediction(client: discord.Client, sched_id: int) -> bo
             return False
 
     end_ts = discord.utils.utcnow().timestamp() + duration * 60
-    p = Prediction(0, title, opt1, opt2, end_ts)
-    embed, bar = prediction_embed(p, client)
     try:
-        msg = await channel.send(
-            content=f"<@&{ROLES.PRED_NOTIFICATIONS}>",
-            embed=embed,
-            files=[bar],
-            view=BetButtons(p),
-            allowed_mentions=discord.AllowedMentions(roles=True),
-        )
+        p = await post_prediction(client, channel, title, options, end_ts)
     except Exception as e:
         logger.error(f"Scheduled pred {sched_id}: send failed: {e}")
         DatabaseManager.execute(
@@ -1167,14 +1413,10 @@ async def post_scheduled_prediction(client: discord.Client, sched_id: int) -> bo
         )
         return False
 
-    p.msg_id = msg.id
-    p.channel_id = msg.channel.id
-    client.predictions[msg.id] = p
-    _save({k: v.to_dict() for k, v in client.predictions.items()})
     DatabaseManager.execute(
         "UPDATE scheduled_predictions SET status = 'posted' WHERE id = ?", (sched_id,)
     )
-    logger.info(f"Posted scheduled prediction {sched_id} as msg {msg.id} in channel {msg.channel.id}.")
+    logger.info(f"Posted scheduled prediction {sched_id} as msg {p.msg_id} in channel {p.channel_id}.")
 
     if cm_message_id:
         try:
@@ -1187,7 +1429,8 @@ async def post_scheduled_prediction(client: discord.Client, sched_id: int) -> bo
                 cm_embed = cm_msg.embeds[0] if cm_msg.embeds else discord.Embed()
                 cm_embed.title = "✅ Prediction Scheduled (Posted)"
                 cm_embed.color = 0x57F287
-                jump = f"https://discord.com/channels/{msg.guild.id}/{msg.channel.id}/{msg.id}" if msg.guild else None
+                guild_id = getattr(getattr(channel, "guild", None), "id", None)
+                jump = f"https://discord.com/channels/{guild_id}/{p.channel_id}/{p.msg_id}" if guild_id else None
                 if jump:
                     cm_embed.add_field(name="Live message", value=f"[jump]({jump})", inline=True)
                 await cm_msg.edit(embed=cm_embed, view=disabled_view)
