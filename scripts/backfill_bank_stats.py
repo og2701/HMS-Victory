@@ -28,6 +28,10 @@ class BackfillClient(discord.Client):
         tax = 0
         bj_in = 0
         bj_out = 0
+        hl_in = 0
+        hl_out = 0
+        slots_in = 0
+        slots_out = 0
         
         try:
             unswept = DatabaseManager.fetch_all("SELECT log_text FROM economy_transactions")
@@ -48,7 +52,17 @@ class BackfillClient(discord.Client):
                         bj_in += amt
                     elif is_withdrawal:
                         bj_out += amt
-            print(f"Database stats parsed: Tax={tax}, BJ In={bj_in}, BJ Out={bj_out}")
+                elif "Higher-Lower" in txt:
+                    if is_deposit:
+                        hl_in += amt
+                    elif is_withdrawal:
+                        hl_out += amt
+                elif "Slots" in txt:
+                    if is_deposit:
+                        slots_in += amt
+                    elif is_withdrawal:
+                        slots_out += amt
+            print(f"Database stats parsed: Tax={tax}, BJ In={bj_in}, BJ Out={bj_out}, HL In={hl_in}, HL Out={hl_out}, Slots In={slots_in}, Slots Out={slots_out}")
         except Exception as e:
             print(f"Error querying database economy_transactions: {e}")
 
@@ -104,11 +118,26 @@ class BackfillClient(discord.Client):
                                 bj_in += amt
                             elif is_withdrawal:
                                 bj_out += amt
+                        elif "Higher-Lower" in name:
+                            if is_deposit:
+                                hl_in += amt
+                            elif is_withdrawal:
+                                hl_out += amt
+                        elif "Slots" in name:
+                            if is_deposit:
+                                slots_in += amt
+                            elif is_withdrawal:
+                                slots_out += amt
         except Exception as e:
             print(f"Error scanning Discord history: {e}")
 
         print(f"Scan complete. Total scanned messages: {count}, embeds: {embed_count}, fields: {field_count}")
-        print(f"Calculated totals: Tax Collected = {tax:,} UKP, Blackjack In = {bj_in:,} UKP, Blackjack Out = {bj_out:,} UKP, Net = {bj_in - bj_out:,} UKP")
+        print(f"Calculated totals:")
+        print(f"  Tax Collected = {tax:,} UKPence")
+        print(f"  Blackjack In  = {bj_in:,} UKPence · Out = {bj_out:,} UKPence · Net = {bj_in - bj_out:,} UKPence")
+        print(f"  Higher-Lower In = {hl_in:,} UKPence · Out = {hl_out:,} UKPence · Net = {hl_in - hl_out:,} UKPence")
+        print(f"  Slots In = {slots_in:,} UKPence · Out = {slots_out:,} UKPence · Net = {slots_in - slots_out:,} UKPence")
+        print(f"  Total Casino Net = {(bj_in + hl_in + slots_in) - (bj_out + hl_out + slots_out):,} UKPence")
         
         # 3. Update SQLite database bank table
         print(f"Updating sqlite bank table at {DB_FILE}...")
@@ -118,14 +147,21 @@ class BackfillClient(discord.Client):
                 c = conn.cursor()
                 c.execute('''
                     UPDATE bank
-                    SET total_tax_collected = ?, total_blackjack_in = ?, total_blackjack_out = ?
+                    SET total_tax_collected = ?,
+                        total_blackjack_in = ?, total_blackjack_out = ?,
+                        total_higherlower_in = ?, total_higherlower_out = ?,
+                        total_slots_in = ?, total_slots_out = ?
                     WHERE id = 1
-                ''', (tax, bj_in, bj_out))
+                ''', (tax, bj_in, bj_out, hl_in, hl_out, slots_in, slots_out))
                 conn.commit()
             print("Database stats updated successfully!")
             
             # Double check the updated values
-            row = DatabaseManager.fetch_one("SELECT total_tax_collected, total_blackjack_in, total_blackjack_out FROM bank WHERE id = 1")
+            row = DatabaseManager.fetch_one(
+                "SELECT total_tax_collected, total_blackjack_in, total_blackjack_out, "
+                "total_higherlower_in, total_higherlower_out, total_slots_in, total_slots_out "
+                "FROM bank WHERE id = 1"
+            )
             print("Verified new bank table stats:", row)
         except Exception as e:
             print(f"Failed to update database bank table: {e}")
