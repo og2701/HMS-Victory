@@ -225,7 +225,7 @@ def _make_cb(machine: SlotMachine, action: str):
 
 async def _show_rules(interaction: Interaction):
     import config
-    mn = getattr(config, "SLOTS_MIN_BET", 10)
+    mn = getattr(config, "SLOTS_MIN_BET", 5)
     mx = getattr(config, "SLOTS_MAX_BET", 100_000)
     pay = "\n".join(f"- {EMOJI[k]}{EMOJI[k]}{EMOJI[k]}  three {NAME[k].lower()} - **{THREE_OF_A_KIND[k]}x**"
                     for k in _KEYS)
@@ -332,7 +332,7 @@ class ChangeBetModal(discord.ui.Modal, title="Fruit Machine - change your bet"):
                 "Please enter a whole number of UKPence.", ephemeral=True
             )
             return
-        mn = getattr(config, "SLOTS_MIN_BET", 10)
+        mn = getattr(config, "SLOTS_MIN_BET", 5)
         mx = getattr(config, "SLOTS_MAX_BET", 10_000)
         if amount < mn or amount > mx:
             await interaction.response.send_message(
@@ -359,7 +359,7 @@ async def handle_slots_command(interaction: Interaction, amount: int):
         await interaction.response.send_message("The fruit machine is switched off.", ephemeral=True)
         return
 
-    mn = getattr(config, "SLOTS_MIN_BET", 10)
+    mn = getattr(config, "SLOTS_MIN_BET", 5)
     mx = getattr(config, "SLOTS_MAX_BET", 100_000)
     if amount < mn:
         await interaction.response.send_message(f"The minimum bet is {mn:,} UKPence.", ephemeral=True)

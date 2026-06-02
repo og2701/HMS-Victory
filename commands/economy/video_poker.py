@@ -282,7 +282,7 @@ def _make_cb(game: VideoPokerGame, action: str):
 
 async def _show_rules(interaction: Interaction):
     import config
-    mn = getattr(config, "VIDEOPOKER_MIN_BET", 10)
+    mn = getattr(config, "VIDEOPOKER_MIN_BET", 5)
     mx = getattr(config, "VIDEOPOKER_MAX_BET", 10_000)
     pay = (
         f"- 👑 Royal Flush - **{PAYTABLE[9]}x**\n"
@@ -416,7 +416,7 @@ async def _start_replay(interaction: Interaction, old_game: VideoPokerGame, clie
     if not getattr(config, "VIDEOPOKER_ENABLED", True):
         await interaction.response.send_message("Video Poker is currently closed.", ephemeral=True)
         return
-    mn = getattr(config, "VIDEOPOKER_MIN_BET", 10)
+    mn = getattr(config, "VIDEOPOKER_MIN_BET", 5)
     mx = getattr(config, "VIDEOPOKER_MAX_BET", 10_000)
     if bet < mn or bet > mx:
         await interaction.response.send_message(f"Bets must be between {mn:,} and {mx:,} UKPence.", ephemeral=True)
@@ -455,7 +455,7 @@ async def handle_videopoker_command(interaction: Interaction, amount: int):
     if not getattr(config, "VIDEOPOKER_ENABLED", True):
         await interaction.response.send_message("Video Poker is currently closed.", ephemeral=True)
         return
-    mn = getattr(config, "VIDEOPOKER_MIN_BET", 10)
+    mn = getattr(config, "VIDEOPOKER_MIN_BET", 5)
     mx = getattr(config, "VIDEOPOKER_MAX_BET", 10_000)
     if amount < mn:
         await interaction.response.send_message(f"The minimum bet is {mn:,} UKPence.", ephemeral=True)

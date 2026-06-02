@@ -559,7 +559,7 @@ async def _refresh(interaction: Interaction, game: BlackjackGame, client):
 async def _show_rules(interaction: Interaction):
     """Ephemeral house rules. Open to anyone (no owner check) and changes no state."""
     import config
-    min_bet = getattr(config, "BLACKJACK_MIN_BET", 10)
+    min_bet = getattr(config, "BLACKJACK_MIN_BET", 5)
     max_bet = getattr(config, "BLACKJACK_MAX_BET", 250_000)
     rules = (
         "## 🎴 Blackjack - House Rules\n"
@@ -716,7 +716,7 @@ async def _start_replay(interaction: Interaction, old_game: BlackjackGame, clien
     if not getattr(config, "BLACKJACK_ENABLED", True):
         await interaction.response.send_message("The blackjack table is closed.", ephemeral=True)
         return
-    mn = getattr(config, "BLACKJACK_MIN_BET", 10)
+    mn = getattr(config, "BLACKJACK_MIN_BET", 5)
     mx = getattr(config, "BLACKJACK_MAX_BET", 10_000)
     if bet < mn or bet > mx:
         await interaction.response.send_message(
@@ -782,7 +782,7 @@ async def handle_blackjack_command(interaction: Interaction, amount: int):
         await interaction.response.send_message("The blackjack table is closed.", ephemeral=True)
         return
 
-    min_bet = getattr(config, "BLACKJACK_MIN_BET", 10)
+    min_bet = getattr(config, "BLACKJACK_MIN_BET", 5)
     max_bet = getattr(config, "BLACKJACK_MAX_BET", 250_000)
 
     if amount < min_bet:

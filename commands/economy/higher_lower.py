@@ -410,7 +410,7 @@ def _make_cb(game: HigherLowerGame, action: str):
 
 async def _show_rules(interaction: Interaction):
     import config
-    mn = getattr(config, "HIGHERLOWER_MIN_BET", 10)
+    mn = getattr(config, "HIGHERLOWER_MIN_BET", 5)
     mx = getattr(config, "HIGHERLOWER_MAX_BET", 250_000)
     rules = (
         "## 🎴 Higher or Lower - House Rules\n"
@@ -544,7 +544,7 @@ async def _start_replay(interaction: Interaction, old_game: HigherLowerGame, cli
     if not getattr(config, "HIGHERLOWER_ENABLED", True):
         await interaction.response.send_message("Higher or Lower is currently closed.", ephemeral=True)
         return
-    mn = getattr(config, "HIGHERLOWER_MIN_BET", 10)
+    mn = getattr(config, "HIGHERLOWER_MIN_BET", 5)
     mx = getattr(config, "HIGHERLOWER_MAX_BET", 10_000)
     if bet < mn or bet > mx:
         await interaction.response.send_message(
@@ -598,7 +598,7 @@ async def handle_higherlower_command(interaction: Interaction, amount: int):
         await interaction.response.send_message("Higher or Lower is currently closed.", ephemeral=True)
         return
 
-    mn = getattr(config, "HIGHERLOWER_MIN_BET", 10)
+    mn = getattr(config, "HIGHERLOWER_MIN_BET", 5)
     mx = getattr(config, "HIGHERLOWER_MAX_BET", 250_000)
     if amount < mn:
         await interaction.response.send_message(f"The minimum bet is {mn:,} UKPence.", ephemeral=True)

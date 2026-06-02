@@ -293,7 +293,7 @@ def _make_cb(game: TcpGame, action: str):
 
 async def _show_rules(interaction: Interaction):
     import config
-    mn = getattr(config, "TCP_MIN_BET", 10)
+    mn = getattr(config, "TCP_MIN_BET", 5)
     mx = getattr(config, "TCP_MAX_BET", 10_000)
     rules = (
         "## 🃏 Three Card Poker - House Rules\n"
@@ -417,7 +417,7 @@ async def _start_replay(interaction: Interaction, old_game: TcpGame, client, bet
     if not getattr(config, "TCP_ENABLED", True):
         await interaction.response.send_message("Three Card Poker is currently closed.", ephemeral=True)
         return
-    mn = getattr(config, "TCP_MIN_BET", 10)
+    mn = getattr(config, "TCP_MIN_BET", 5)
     mx = getattr(config, "TCP_MAX_BET", 10_000)
     if bet < mn or bet > mx:
         await interaction.response.send_message(f"Bets must be between {mn:,} and {mx:,} UKPence.", ephemeral=True)
@@ -456,7 +456,7 @@ async def handle_tcp_command(interaction: Interaction, amount: int):
     if not getattr(config, "TCP_ENABLED", True):
         await interaction.response.send_message("Three Card Poker is currently closed.", ephemeral=True)
         return
-    mn = getattr(config, "TCP_MIN_BET", 10)
+    mn = getattr(config, "TCP_MIN_BET", 5)
     mx = getattr(config, "TCP_MAX_BET", 10_000)
     if amount < mn:
         await interaction.response.send_message(f"The minimum bet is {mn:,} UKPence.", ephemeral=True)

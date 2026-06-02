@@ -31,7 +31,7 @@ PREDICTION_IMAGE_ENABLED = False
 #                              cost). Mirrors the PREDICTION_* dual-path design.
 BLACKJACK_ENABLED = True
 BLACKJACK_IMAGE_ENABLED = True
-BLACKJACK_MIN_BET = 10
+BLACKJACK_MIN_BET = 5
 BLACKJACK_MAX_BET = 10_000
 
 # --- Higher or Lower (vs-the-house card ladder) ---
@@ -40,7 +40,7 @@ BLACKJACK_MAX_BET = 10_000
 # edges in - cash out to lock winnings. Same dual image/native render path as above.
 HIGHERLOWER_ENABLED = True
 HIGHERLOWER_IMAGE_ENABLED = True
-HIGHERLOWER_MIN_BET = 10
+HIGHERLOWER_MIN_BET = 5
 HIGHERLOWER_MAX_BET = 10_000
 HIGHERLOWER_PAYOUT_FACTOR = 0.95   # house edge per correct guess = 1 - this
 # A direction is only offered if winning it pays at least this much (a guess must
@@ -51,25 +51,25 @@ HIGHERLOWER_MIN_MULTIPLIER = 1.05
 # --- Fruit Machine / Slots (vs-the-house) ---
 SLOTS_ENABLED = True
 SLOTS_IMAGE_ENABLED = True
-SLOTS_MIN_BET = 10
+SLOTS_MIN_BET = 5
 SLOTS_MAX_BET = 10_000
 
 # --- Video Poker / Jacks or Better (vs-the-house) ---
 VIDEOPOKER_ENABLED = True
 VIDEOPOKER_IMAGE_ENABLED = True
-VIDEOPOKER_MIN_BET = 10
+VIDEOPOKER_MIN_BET = 5
 VIDEOPOKER_MAX_BET = 10_000
 
 # --- Red Dog / In-Between (vs-the-house) ---
 REDDOG_ENABLED = True
 REDDOG_IMAGE_ENABLED = True
-REDDOG_MIN_BET = 10
+REDDOG_MIN_BET = 5
 REDDOG_MAX_BET = 10_000
 
 # --- Three Card Poker (vs-the-house) ---
 TCP_ENABLED = True
 TCP_IMAGE_ENABLED = True
-TCP_MIN_BET = 10
+TCP_MIN_BET = 5
 TCP_MAX_BET = 10_000
 
 # --- File Paths & Directories ---

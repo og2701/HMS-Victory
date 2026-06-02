@@ -1,12 +1,12 @@
 """HMS Victory - Red Dog (a.k.a. In-Between / Acey-Deucey, vs-the-house).
 
-Ante a bet and two cards are dealt face up. Consecutive ranks push, a pair deals a
+Place a bet and two cards are dealt face up. Consecutive ranks push, a pair deals a
 third card for a shot at three-of-a-kind (11:1), and otherwise a spread opens up: you
 may Raise (double your stake) or Call before the third card is dealt. If that card
 lands strictly between the two you win at the spread odds; otherwise you lose the lot.
 
 Built on commands/economy/casino_base (shared card model, renderer, layout, economy,
-persistence). Lifecycle mirrors Casino War: an HTML->PNG felt table in a Components V2
+persistence). Lifecycle mirrors the other table games: an HTML->PNG felt table in a Components V2
 view, a native fallback, persistence of the in-flight raise decision, a busy-guard, a
 Rules button, and Play Again / Change Bet on the result.
 """
@@ -338,7 +338,7 @@ def _make_cb(game: RedDogGame, action: str):
 
 async def _show_rules(interaction: Interaction):
     import config
-    mn = getattr(config, "REDDOG_MIN_BET", 10)
+    mn = getattr(config, "REDDOG_MIN_BET", 5)
     mx = getattr(config, "REDDOG_MAX_BET", 10_000)
     rules = (
         "## 🐕 Red Dog - House Rules\n"
@@ -463,7 +463,7 @@ async def _start_replay(interaction: Interaction, old_game: RedDogGame, client, 
     if not getattr(config, "REDDOG_ENABLED", True):
         await interaction.response.send_message("Red Dog is currently closed.", ephemeral=True)
         return
-    mn = getattr(config, "REDDOG_MIN_BET", 10)
+    mn = getattr(config, "REDDOG_MIN_BET", 5)
     mx = getattr(config, "REDDOG_MAX_BET", 10_000)
     if bet < mn or bet > mx:
         await interaction.response.send_message(f"Bets must be between {mn:,} and {mx:,} UKPence.", ephemeral=True)
@@ -503,7 +503,7 @@ async def handle_reddog_command(interaction: Interaction, amount: int):
     if not getattr(config, "REDDOG_ENABLED", True):
         await interaction.response.send_message("Red Dog is currently closed.", ephemeral=True)
         return
-    mn = getattr(config, "REDDOG_MIN_BET", 10)
+    mn = getattr(config, "REDDOG_MIN_BET", 5)
     mx = getattr(config, "REDDOG_MAX_BET", 10_000)
     if amount < mn:
         await interaction.response.send_message(f"The minimum bet is {mn:,} UKPence.", ephemeral=True)

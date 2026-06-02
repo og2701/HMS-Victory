@@ -1,4 +1,4 @@
-"""Shared foundation for HMS Victory casino card games (Casino War, Red Dog, Three Card
+"""Shared foundation for HMS Victory casino card games (Video Poker, Red Dog, Three Card
 Poker, ...). Provides the card model, hand evaluation, the felt-table renderer (one shared
 template), the Components V2 layout wrapper, house-bank economy helpers and persistence -
 so each game module only has to express its own rules, view and handlers.
@@ -7,7 +7,7 @@ Economy convention (UKP conserved; the server bank is the house):
   • stake:  remove_bb(uid, bet, reason="<Game> bet")     - stake enters the bank.
   • payout: credit_from_bank(uid, amount, "<Game> win")  - add_bb(taxable=False) from bank.
   • loss:   nothing - the stake stays in the bank as the edge.
-The reason string MUST contain the game's bank keyword (e.g. "Casino War", "Red Dog",
+The reason string MUST contain the game's bank keyword (e.g. "Video Poker", "Red Dog",
 "Three Card Poker") so lib/economy/bank_manager routes it to that game's P/L counters.
 """
 

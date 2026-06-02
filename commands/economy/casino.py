@@ -81,7 +81,7 @@ def _make_pick_cb(game: dict):
 
 def build_casino_menu() -> discord.ui.LayoutView:
     import config
-    mn = getattr(config, "BLACKJACK_MIN_BET", 10)
+    mn = getattr(config, "BLACKJACK_MIN_BET", 5)
     mx = getattr(config, "BLACKJACK_MAX_BET", 10_000)
 
     view = discord.ui.LayoutView(timeout=None)
