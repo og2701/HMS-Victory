@@ -472,6 +472,16 @@ def _action_row(game: BlackjackGame) -> discord.ui.ActionRow:
             )
             dbl.callback = _make_cb(game, "double")
             row.add_item(dbl)
+
+        # Rules is only offered on the untouched opening hand (anyone may click it);
+        # the owner's first Hit/Stand/Double re-renders the hand and it disappears.
+        if len(game.player_cards) == 2 and not game.doubled:
+            rules = discord.ui.Button(
+                label="Rules", emoji="📖", style=discord.ButtonStyle.secondary,
+                custom_id=f"blackjack:{game.game_id}:rules",
+            )
+            rules.callback = _make_cb(game, "rules")
+            row.add_item(rules)
     else:
         again = discord.ui.Button(
             label="Play Again", emoji="🔁", style=discord.ButtonStyle.primary,
@@ -539,7 +549,35 @@ async def _refresh(interaction: Interaction, game: BlackjackGame, client):
         logger.debug("add_view after refresh failed (non-fatal)", exc_info=True)
 
 
+async def _show_rules(interaction: Interaction):
+    """Ephemeral house rules. Open to anyone (no owner check) and changes no state."""
+    import config
+    min_bet = getattr(config, "BLACKJACK_MIN_BET", 10)
+    max_bet = getattr(config, "BLACKJACK_MAX_BET", 250_000)
+    rules = (
+        "## 🎴 Blackjack - House Rules\n"
+        "Beat the dealer by getting closer to **21** than they do, without going over.\n\n"
+        "- **Card values:** 2-10 are face value, J/Q/K are 10, and an Ace is 1 or 11 - "
+        "whichever is better for your hand (it drops to 1 automatically to save you from a bust).\n"
+        "- **Blackjack:** an Ace plus a 10-value card on your first two cards. Pays **3:2**.\n"
+        "- **Hit** draws another card; **Stand** locks in your total.\n"
+        "- **Double Down:** on your opening two cards only - doubles your stake for exactly "
+        "one more card, then stands.\n"
+        "- **Dealer** reveals the hole card and draws until **17** (stands on all 17s, soft 17 included).\n"
+        "- **Bust** (over 21) loses at once. Matching totals **push** and your stake is returned.\n"
+        f"- **Bets:** {min_bet:,} - {max_bet:,} UKPence. Stakes go to the house bank; wins are paid from it.\n\n"
+        "-# Good luck. 🇬🇧"
+    )
+    await interaction.response.send_message(rules, ephemeral=True)
+
+
 async def _handle_action(interaction: Interaction, game: BlackjackGame, action: str):
+    # Rules is open to everyone and never touches game state, so it's handled before
+    # the owner / busy / state checks below.
+    if action == "rules":
+        await _show_rules(interaction)
+        return
+
     if interaction.user.id != game.player_id:
         await interaction.response.send_message(
             "This isn't your table - deal your own hand with `/blackjack`.", ephemeral=True

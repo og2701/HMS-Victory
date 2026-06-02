@@ -39,11 +39,12 @@ class BankManager:
                 ''', (str(BOT_ID), new_bot_balance))
                 
                 # Sync bank table statistics
+                bj_in_add = amount if "Blackjack" in description else 0
                 c.execute('''
                     UPDATE bank
-                    SET balance = ?, total_revenue = total_revenue + ?, last_updated = ?
+                    SET balance = ?, total_revenue = total_revenue + ?, total_blackjack_in = total_blackjack_in + ?, last_updated = ?
                     WHERE id = 1
-                ''', (new_bot_balance, amount, now))
+                ''', (new_bot_balance, amount, bj_in_add, now))
                 
                 c.execute('COMMIT')
 
@@ -125,11 +126,12 @@ class BankManager:
                     ''', (str(BOT_ID), new_balance))
                     
                     # Update bank table stats
+                    bj_out_add = amount if "Blackjack" in description else 0
                     c.execute('''
                         UPDATE bank
-                        SET balance = ?, last_updated = ?
+                        SET balance = ?, total_blackjack_out = total_blackjack_out + ?, last_updated = ?
                         WHERE id = 1
-                    ''', (new_balance, now))
+                    ''', (new_balance, bj_out_add, now))
                     
                     c.execute('COMMIT')
 
@@ -180,41 +182,27 @@ class BankManager:
 
     @staticmethod
     def get_ledger_stats() -> Dict[str, int]:
-        """Derive bank metrics straight from the transaction ledger (economy_transactions).
-
-        The ledger is the immutable record of every bank movement, so these figures
-        include all history (no separate backfill needed) and can never drift from a
-        stored counter. Only bank-side lines (🏦 deposit / 📉 withdrawal) are counted,
-        so the matching user-side rows (💸/⚖️) don't double-count.
+        """Get bank metrics directly from the bank table.
 
         Returns: tax_collected, and blackjack house P/L (wagered in, paid out, net).
         Net blackjack P/L is positive when the house is ahead.
         """
-        rows = DatabaseManager.fetch_all(
-            "SELECT log_text FROM economy_transactions "
-            "WHERE log_text LIKE '%Wealth tax%' OR log_text LIKE '%Blackjack%'"
+        result = DatabaseManager.fetch_one(
+            "SELECT total_tax_collected, total_blackjack_in, total_blackjack_out FROM bank WHERE id = 1"
         )
-        tax = bj_in = bj_out = 0
-        for row in rows or []:
-            txt = row[0] or ""
-            m = _LEDGER_AMOUNT.search(txt)
-            if not m:
-                continue
-            amt = int(float(m.group(1).replace(",", "")))
-            is_deposit = txt.startswith("🏦 Bank deposit:")
-            is_withdrawal = txt.startswith("📉 Bank withdrawal:")
-            if "Wealth tax" in txt and is_deposit:
-                tax += amt
-            elif "Blackjack" in txt:
-                if is_deposit:
-                    bj_in += amt        # stakes (and doubles) entering the bank
-                elif is_withdrawal:
-                    bj_out += amt       # wins / pushes / refunds leaving the bank
+        if result:
+            tax, bj_in, bj_out = result
+            return {
+                "tax_collected": tax,
+                "blackjack_in": bj_in,
+                "blackjack_out": bj_out,
+                "blackjack_net": bj_in - bj_out,
+            }
         return {
-            "tax_collected": tax,
-            "blackjack_in": bj_in,
-            "blackjack_out": bj_out,
-            "blackjack_net": bj_in - bj_out,
+            "tax_collected": 0,
+            "blackjack_in": 0,
+            "blackjack_out": 0,
+            "blackjack_net": 0,
         }
 
     @staticmethod
