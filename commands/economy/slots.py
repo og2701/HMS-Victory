@@ -1,0 +1,352 @@
+"""HMS Victory - Fruit Machine (vs-the-house slots).
+
+A one-shot spin: stake the bet, spin three weighted reels, and get paid from a tuned
+paytable (RTP ~= 0.94, so the house keeps ~6% over time). Unlike blackjack / higher-
+lower this resolves in a single interaction, so there's no in-flight state to persist -
+a "Spin Again" button re-spins in-session (it just dies after a restart, like a finished
+hand's Play Again). A busy flag drops double-clicks during the render.
+
+Economy (UKP conserved; bank is the house): stake -> bank via remove_bb; a winning spin
+pays mult x bet from the bank via add_bb(taxable=False). A losing spin keeps the stake.
+The win is credited only after the result message is on screen; a failed render/send
+refunds the stake (nothing was credited yet).
+"""
+
+import asyncio
+import io
+import html as _html
+import logging
+import random
+import uuid
+
+import discord
+from discord import Interaction
+
+from lib.economy.economy_manager import get_bb, add_bb, remove_bb, UKPenceManager
+from lib.core.file_operations import read_html_template
+
+logger = logging.getLogger(__name__)
+
+# (key, emoji, reel weight). Rarer symbols pay more. Weights sum to 29 per reel.
+REEL = [
+    ("crown", "👑", 1),
+    ("union", "🇬🇧", 2),
+    ("lion", "🦁", 3),
+    ("rose", "🌹", 4),
+    ("anchor", "⚓", 5),
+    ("pound", "💷", 6),
+    ("cherry", "🍒", 8),
+]
+EMOJI = {k: e for k, e, _ in REEL}
+NAME = {"crown": "Crowns", "union": "Union Jacks", "lion": "Lions", "rose": "Roses",
+        "anchor": "Anchors", "pound": "Pound Notes", "cherry": "Cherries"}
+_KEYS = [k for k, _, _ in REEL]
+_WEIGHTS = [w for _, _, w in REEL]
+
+# Three-of-a-kind payouts (x bet). Two cherries pays a small consolation.
+THREE_OF_A_KIND = {"crown": 200, "union": 100, "lion": 50, "rose": 30,
+                   "anchor": 20, "pound": 14, "cherry": 10}
+TWO_CHERRY = 2
+
+
+def spin_reels() -> list:
+    return random.choices(_KEYS, weights=_WEIGHTS, k=3)
+
+
+def evaluate(reels: list) -> int:
+    """Return the payout multiplier (x bet) for a spin. 0 = no win."""
+    a, b, c = reels
+    if a == b == c:
+        return THREE_OF_A_KIND[a]
+    if reels.count("cherry") == 2:
+        return TWO_CHERRY
+    return 0
+
+
+def _result_label(reels: list, mult: int) -> tuple:
+    """(headline, css class) for the result banner."""
+    if mult <= 0:
+        return "No Win", "lose"
+    a, b, c = reels
+    if a == b == c:
+        return ("Jackpot!" if a == "crown" else f"Three {NAME[a]}!"), ("jackpot" if a == "crown" else "win")
+    return "Two Cherries!", "win"
+
+
+# ---------------------------------------------------------------------------
+# Machine (one message; holds the latest spin for re-rendering)
+# ---------------------------------------------------------------------------
+class SlotMachine:
+    def __init__(self, player_id, player_name, channel_id, bet):
+        self.player_id = int(player_id)
+        self.player_name = player_name
+        self.channel_id = channel_id
+        self.bet = int(bet)
+        self.message_id = None
+        self.spin_id = uuid.uuid4().hex[:12]  # unique custom_id namespace for this machine
+        self.reels = ["cherry", "cherry", "cherry"]
+        self.mult = 0
+        self.win = 0
+        self.busy = False
+        self.lock = asyncio.Lock()
+
+    def do_spin(self):
+        self.reels = spin_reels()
+        self.mult = evaluate(self.reels)
+        self.win = self.mult * self.bet
+        return self.win
+
+
+# ---------------------------------------------------------------------------
+# Economy
+# ---------------------------------------------------------------------------
+def _credit(uid: int, amount: int, reason: str):
+    if amount <= 0:
+        return
+    if not add_bb(uid, amount, reason=reason, taxable=False):
+        logger.critical("Bank insolvent paying %s of %s to %s - minting to honour the win.",
+                        reason, amount, uid)
+        UKPenceManager.add_amount(uid, amount, reason=f"{reason} [bank insolvent - minted]")
+
+
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+def _banner_html(reels, mult, win) -> str:
+    head, cls = _result_label(reels, mult)
+    if mult > 0:
+        sub = f"+{win:,} UKPence  ({mult}x)"
+    else:
+        sub = "Spin again?"
+    return (f'<div class="banner {cls}"><div class="head">{head}</div>'
+            f'<div class="sub">{sub}</div></div>')
+
+
+def build_slots_html(machine: SlotMachine) -> str:
+    template = read_html_template("templates/slots.html")
+    cells = "".join(f'<div class="reel"><span class="sym">{EMOJI[k]}</span></div>' for k in machine.reels)
+    win_glow = " winline" if machine.mult > 0 else ""
+    bal = get_bb(machine.player_id)
+    return (
+        template
+        .replace("{{PLAYER_NAME}}", _html.escape(str(machine.player_name)[:24]) or "Player")
+        .replace("{{REELS}}", cells)
+        .replace("{{WINLINE}}", win_glow)
+        .replace("{{BANNER}}", _banner_html(machine.reels, machine.mult, machine.win))
+        .replace("{{BET}}", f"{machine.bet:,}")
+        .replace("{{BALANCE}}", f"{bal:,}")
+    )
+
+
+async def render_slots_image(machine: SlotMachine) -> io.BytesIO:
+    from lib.core.image_processing import screenshot_html
+    return await screenshot_html(build_slots_html(machine), size=(820, 1000), element_selector=".cabinet")
+
+
+def _native_text(machine: SlotMachine) -> str:
+    row = "  ".join(EMOJI[k] for k in machine.reels)
+    head, _ = _result_label(machine.reels, machine.mult)
+    lines = [
+        "## 🎰 HMS Victory Fruit Machine",
+        f"### ┃ {row} ┃",
+    ]
+    if machine.mult > 0:
+        lines.append(f"**{head}** +{machine.win:,} UKPence ({machine.mult}x)")
+    else:
+        lines.append(f"**{head}** - better luck next spin")
+    lines.append(f"-# Bet {machine.bet:,} · Balance {get_bb(machine.player_id):,} UKPence")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Components V2 view
+# ---------------------------------------------------------------------------
+ACCENT = discord.Colour(0xD4AF37)  # brass
+
+
+def _action_row(machine: SlotMachine) -> discord.ui.ActionRow:
+    row = discord.ui.ActionRow()
+    again = discord.ui.Button(
+        label="Spin Again", emoji="🎰", style=discord.ButtonStyle.success,
+        custom_id=f"slots:{machine.spin_id}:spin",
+    )
+    again.callback = _make_cb(machine, "spin")
+    row.add_item(again)
+
+    rules = discord.ui.Button(
+        label="Rules", emoji="📖", style=discord.ButtonStyle.secondary,
+        custom_id=f"slots:{machine.spin_id}:rules",
+    )
+    rules.callback = _make_cb(machine, "rules")
+    row.add_item(rules)
+    return row
+
+
+async def build_slots_layout(machine: SlotMachine, client):
+    import config
+    files = []
+    view = discord.ui.LayoutView(timeout=None)
+    used_image = False
+    if getattr(config, "SLOTS_IMAGE_ENABLED", True):
+        try:
+            img = await render_slots_image(machine)
+            files = [discord.File(img, filename="slots.png")]
+            gallery = discord.ui.MediaGallery()
+            gallery.add_item(media="attachment://slots.png")
+            view.add_item(gallery)
+            used_image = True
+        except Exception:
+            logger.warning("Slots image render failed; using native layout.", exc_info=True)
+    if not used_image:
+        container = discord.ui.Container(accent_colour=ACCENT)
+        container.add_item(discord.ui.TextDisplay(_native_text(machine)))
+        view.add_item(container)
+    view.add_item(_action_row(machine))
+    return view, files
+
+
+# ---------------------------------------------------------------------------
+# Interaction handling
+# ---------------------------------------------------------------------------
+def _make_cb(machine: SlotMachine, action: str):
+    async def _cb(interaction: Interaction):
+        await _handle_action(interaction, machine, action)
+    return _cb
+
+
+async def _show_rules(interaction: Interaction):
+    import config
+    mn = getattr(config, "SLOTS_MIN_BET", 10)
+    mx = getattr(config, "SLOTS_MAX_BET", 100_000)
+    pay = "\n".join(f"- {EMOJI[k]}{EMOJI[k]}{EMOJI[k]}  three {NAME[k].lower()} - **{THREE_OF_A_KIND[k]}x**"
+                    for k in _KEYS)
+    rules = (
+        "## 🎰 Fruit Machine - House Rules\n"
+        "Stake your bet and spin three reels. Match symbols on the line to win.\n\n"
+        f"{pay}\n"
+        f"- {EMOJI['cherry']}{EMOJI['cherry']}  any two cherries - **{TWO_CHERRY}x**\n\n"
+        "Prizes are multiples of your bet (a `10x` win pays ten times your stake). "
+        "The reels are weighted so the house keeps a small edge over time.\n"
+        f"- **Bets:** {mn:,} - {mx:,} UKPence. Stakes go to the house bank; wins are paid from it.\n\n"
+        "-# Good luck. 🇬🇧"
+    )
+    await interaction.response.send_message(rules, ephemeral=True)
+
+
+async def _refresh(interaction: Interaction, machine: SlotMachine, client):
+    view, files = await build_slots_layout(machine, client)
+    await interaction.edit_original_response(view=view, attachments=files)
+    try:
+        client.add_view(view, message_id=machine.message_id)
+    except Exception:
+        logger.debug("add_view after slots refresh failed (non-fatal)", exc_info=True)
+
+
+async def _handle_action(interaction: Interaction, machine: SlotMachine, action: str):
+    if action == "rules":
+        await _show_rules(interaction)
+        return
+
+    if interaction.user.id != machine.player_id:
+        await interaction.response.send_message(
+            "This isn't your machine - spin your own with `/slots`.", ephemeral=True
+        )
+        return
+
+    if machine.busy:
+        await interaction.response.defer()
+        return
+    machine.busy = True
+    client = interaction.client
+    try:
+        import config
+        if getattr(interaction.client, "maintenance_mode", False):
+            await interaction.response.send_message(
+                "🔧 **Under maintenance** - the bot is restarting. Hold on a minute.", ephemeral=True
+            )
+            return
+        if get_bb(machine.player_id) < machine.bet:
+            await interaction.response.send_message(
+                f"You need {machine.bet:,} UKPence to spin again.", ephemeral=True
+            )
+            return
+        if not remove_bb(machine.player_id, machine.bet, reason="Slots bet"):
+            await interaction.response.send_message("You don't have enough UKPence.", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+        machine.do_spin()  # result decided; win credited only after the message updates
+        try:
+            await _refresh(interaction, machine, client)
+        except Exception:
+            logger.error("Slots respin render failed; refunding stake.", exc_info=True)
+            _credit(machine.player_id, machine.bet, "Slots stake refund (spin failed)")
+            return
+        _credit(machine.player_id, machine.win, "Slots win")
+    finally:
+        machine.busy = False
+
+
+# ---------------------------------------------------------------------------
+# Slash command entry point
+# ---------------------------------------------------------------------------
+async def handle_slots_command(interaction: Interaction, amount: int):
+    import config
+
+    if getattr(interaction.client, "maintenance_mode", False):
+        await interaction.response.send_message(
+            "🔧 **Under maintenance** - the bot is restarting for an update. "
+            "Hold on a minute before spinning.", ephemeral=True
+        )
+        return
+    if not getattr(config, "SLOTS_ENABLED", True):
+        await interaction.response.send_message("The fruit machine is switched off.", ephemeral=True)
+        return
+
+    mn = getattr(config, "SLOTS_MIN_BET", 10)
+    mx = getattr(config, "SLOTS_MAX_BET", 100_000)
+    if amount < mn:
+        await interaction.response.send_message(f"The minimum bet is {mn:,} UKPence.", ephemeral=True)
+        return
+    if amount > mx:
+        await interaction.response.send_message(f"The maximum bet is {mx:,} UKPence.", ephemeral=True)
+        return
+
+    balance = get_bb(interaction.user.id)
+    if balance < amount:
+        await interaction.response.send_message(
+            f"You don't have enough UKPence. Your balance is {balance:,}.", ephemeral=True
+        )
+        return
+
+    if not remove_bb(interaction.user.id, amount, reason="Slots bet"):
+        await interaction.response.send_message(
+            f"You don't have enough UKPence. Your balance is {get_bb(interaction.user.id):,}.",
+            ephemeral=True,
+        )
+        return
+
+    name = discord.utils.escape_markdown(interaction.user.display_name)
+    machine = SlotMachine(interaction.user.id, name, interaction.channel_id, amount)
+    machine.do_spin()
+    try:
+        await interaction.response.defer(thinking=True)
+        view, files = await build_slots_layout(machine, interaction.client)
+        msg = await interaction.followup.send(view=view, files=files)
+    except Exception:
+        logger.error("Slots spin failed; refunding stake.", exc_info=True)
+        _credit(interaction.user.id, amount, "Slots stake refund (spin failed)")
+        try:
+            await interaction.followup.send(
+                "The fruit machine jammed - your stake has been refunded.", ephemeral=True
+            )
+        except Exception:
+            pass
+        return
+
+    machine.message_id = msg.id
+    _credit(interaction.user.id, machine.win, "Slots win")  # pay only after it's on screen
+    try:
+        interaction.client.add_view(view, message_id=msg.id)
+    except Exception:
+        logger.debug("slots add_view failed (non-fatal)", exc_info=True)

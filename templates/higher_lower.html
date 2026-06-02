@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  /* HMS Victory - Higher or Lower felt table (portrait). Rendered via
+     screenshot_html(element_selector=".table"). System fonts only, like the
+     blackjack table, so renders stay fast/reliable on the headless t3.micro. */
+  :root{
+    --navy:#00247D; --red:#CF142B; --suit-red:#c0182c; --suit-black:#16182a;
+    --ink:#0c1a33; --brass:#b07f2a; --brass-2:#d6a44a; --brass-soft:#e8cf92;
+    --felt:#1c6b46; --felt-2:#114e31; --felt-edge:#0c3a24;
+    --serif:Georgia,"Times New Roman",Times,serif; --sans:"Segoe UI",Helvetica,Arial,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{background:#0a0a0f;}
+  body{padding:20px;font-family:var(--sans);-webkit-font-smoothing:antialiased;}
+
+  .table{position:relative;width:700px;min-height:900px;border-radius:24px;overflow:hidden;
+    background:radial-gradient(130% 65% at 50% 32%, #2a7f55 0%, var(--felt) 40%, var(--felt-2) 76%, var(--felt-edge) 100%);
+    box-shadow:0 24px 60px rgba(0,0,0,.55), inset 0 0 130px rgba(0,0,0,.45);color:#fff;
+    display:flex;flex-direction:column;}
+  .table::before{content:"";position:absolute;inset:0;pointer-events:none;mix-blend-mode:multiply;
+    background-image:repeating-linear-gradient(0deg, rgba(0,0,0,.05) 0 1px, transparent 1px 4px),
+      repeating-linear-gradient(90deg, rgba(0,0,0,.05) 0 1px, transparent 1px 4px);}
+  .table::after{content:"";position:absolute;inset:14px;border-radius:15px;pointer-events:none;
+    border:2px solid rgba(214,164,74,.55);
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.35), inset 0 0 30px rgba(0,0,0,.35), 0 0 0 1px rgba(214,164,74,.18);}
+
+  .masthead{position:relative;z-index:3;display:flex;flex-direction:column;align-items:center;
+    gap:14px;padding:28px 32px 0;text-align:center;}
+  .brand{display:flex;align-items:center;gap:14px;}
+  .roundel{width:50px;height:50px;border-radius:50%;flex:none;
+    background:radial-gradient(circle at center, var(--red) 0 26%, #fff 26% 48%, var(--navy) 48% 70%, #fff 70% 100%);
+    box-shadow:0 0 0 2px rgba(214,164,74,.7), 0 3px 8px rgba(0,0,0,.5);}
+  .wordmark{display:flex;flex-direction:column;line-height:1;text-align:left;}
+  .wordmark .name{font-weight:800;font-size:27px;letter-spacing:.12em;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5);}
+  .wordmark .sub{font-size:14px;font-weight:700;letter-spacing:.34em;text-transform:uppercase;color:var(--brass-soft);margin-top:7px;}
+  .title{font-family:var(--serif);font-weight:700;font-size:56px;line-height:1;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--brass-2);text-shadow:0 2px 0 rgba(0,0,0,.35), 0 0 22px rgba(214,164,74,.4);}
+  .title .blip{color:#fff;font-style:italic;font-weight:600;font-size:40px;}
+  .tricolour{position:relative;z-index:3;height:5px;display:flex;margin:16px 90px 0;border-radius:3px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.4);}
+  .tricolour i{flex:1;}
+  .tricolour i:nth-child(1){background:var(--red);} .tricolour i:nth-child(2){background:#fff;} .tricolour i:nth-child(3){background:var(--navy);}
+  .rules{position:relative;z-index:3;text-align:center;margin:14px 0 0;
+    font-family:var(--serif);font-style:italic;color:var(--brass-soft);font-size:24px;line-height:1.5;}
+
+  .felt{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:14px;padding:20px 38px 6px;}
+
+  /* current card flanked by the two odds chips */
+  .arena{display:flex;flex-direction:column;align-items:center;gap:14px;}
+  .odds{display:flex;align-items:center;gap:14px;font-family:var(--serif);font-weight:700;
+    padding:10px 26px;border-radius:14px;background:rgba(0,0,0,.3);border:1px solid rgba(214,164,74,.45);
+    box-shadow:inset 0 0 12px rgba(0,0,0,.35);min-width:280px;justify-content:center;}
+  .odds .dir{font-size:22px;letter-spacing:.22em;text-transform:uppercase;color:#eafff2;}
+  .odds .mult{font-size:30px;color:var(--brass-soft);}
+  .odds.up{border-color:rgba(124,252,154,.5);} .odds.up .arrow{color:#7CFC9A;}
+  .odds.down{border-color:rgba(255,141,134,.5);} .odds.down .arrow{color:#ff8d86;}
+  .odds .arrow{font-size:26px;}
+
+  .card{position:relative;border-radius:15px;background:linear-gradient(160deg,#ffffff 0%,#f3f1ea 100%);
+    border:1px solid rgba(12,26,51,.22);font-family:var(--serif);color:var(--suit-black);flex:none;}
+  .card.red{color:var(--suit-red);}
+  .card .pip{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;line-height:1;}
+  .card .corner{position:absolute;display:flex;flex-direction:column;align-items:center;line-height:.9;font-weight:700;}
+  .card .corner.tl{top:11px;left:13px;} .card .corner.br{bottom:11px;right:13px;transform:rotate(180deg);}
+  /* big current card */
+  .card.big{width:188px;height:264px;box-shadow:0 16px 28px rgba(0,0,0,.45), inset 0 0 0 2px rgba(255,255,255,.55);}
+  .card.big .pip{font-size:118px;} .card.big .corner b{font-size:42px;} .card.big .corner i{font-size:34px;margin-top:2px;}
+  /* small history cards */
+  .card.small{width:76px;height:106px;box-shadow:0 6px 12px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,255,255,.5);}
+  .card.small .pip{font-size:46px;} .card.small .corner b{font-size:16px;} .card.small .corner i{font-size:13px;}
+  .card.small .corner.tl{top:6px;left:7px;} .card.small .corner.br{bottom:6px;right:7px;}
+
+  .history-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:6px;}
+  .history-label{font-family:var(--sans);font-size:13px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;color:rgba(255,255,255,.55);}
+  .history{display:flex;align-items:flex-end;}
+  .history .card:not(:first-child){margin-left:-30px;}
+  .history .empty{font-family:var(--serif);font-style:italic;color:rgba(255,255,255,.4);font-size:20px;}
+
+  .hud{position:relative;z-index:3;display:flex;align-items:center;gap:16px;padding:14px 38px 30px;}
+  .chip{display:flex;align-items:center;gap:14px;background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.12);
+    border-radius:16px;padding:14px 22px;box-shadow:0 4px 12px rgba(0,0,0,.4);}
+  .chip .disc{width:32px;height:32px;border-radius:50%;flex:none;
+    background:radial-gradient(circle at 35% 30%, #ffe9a8, #d6a44a 55%, #9c6a1f 100%);
+    border:2px dashed rgba(255,255,255,.65);box-shadow:0 2px 5px rgba(0,0,0,.5);}
+  .chip .meta{display:flex;flex-direction:column;line-height:1.12;}
+  .chip .lab{font-size:13px;font-weight:700;letter-spacing:.20em;text-transform:uppercase;color:rgba(255,255,255,.55);}
+  .chip .val{font-family:var(--serif);font-weight:700;font-size:28px;color:#fff;}
+  .chip .val .u{font-size:15px;color:var(--brass-soft);font-style:italic;margin-left:4px;}
+  .hint{margin-left:auto;font-family:var(--serif);font-style:italic;font-size:22px;text-align:right;color:var(--brass-soft);text-shadow:0 1px 2px rgba(0,0,0,.5);max-width:240px;line-height:1.3;}
+
+  .banner-wrap{position:absolute;inset:0;z-index:6;display:flex;align-items:center;justify-content:center;pointer-events:none;
+    background:radial-gradient(62% 48% at 50% 50%, rgba(0,0,0,.48), rgba(0,0,0,0) 72%);}
+  .banner{text-align:center;padding:28px 56px;border-radius:18px;
+    background:linear-gradient(180deg, rgba(12,26,51,.84), rgba(12,26,51,.93));border:2px solid var(--brass-2);
+    box-shadow:0 18px 40px rgba(0,0,0,.6), inset 0 0 28px rgba(0,0,0,.5);}
+  .banner .head{font-family:var(--serif);font-weight:700;font-size:60px;letter-spacing:.08em;text-transform:uppercase;color:var(--brass-2);
+    text-shadow:2px 2px 4px rgba(0,0,0,.9), 0 0 18px rgba(214,164,74,.45);}
+  .banner .sub{margin-top:12px;font-family:var(--sans);font-weight:700;font-size:26px;letter-spacing:.04em;}
+  .banner.win .head{color:#7CFC9A;text-shadow:2px 2px 4px rgba(0,0,0,.9),0 0 20px rgba(124,252,154,.45);} .banner.win .sub{color:#caffd9;}
+  .banner.lose .head{color:#ff8d86;text-shadow:2px 2px 4px rgba(0,0,0,.9),0 0 20px rgba(207,20,43,.45);} .banner.lose .sub{color:#ffd5d2;}
+</style>
+</head>
+<body>
+  <div class="table">
+    <div class="masthead">
+      <div class="brand">
+        <div class="roundel"></div>
+        <div class="wordmark"><span class="name">HMS VICTORY</span><span class="sub">Casino Royale</span></div>
+      </div>
+      <div class="title">Higher <span class="blip">or</span> Lower</div>
+    </div>
+    <div class="tricolour"><i></i><i></i><i></i></div>
+    <div class="rules">{{RULE}}</div>
+
+    <div class="felt">
+      <div class="arena">
+        <div class="odds up"><span class="arrow">▲</span><span class="dir">Higher</span><span class="mult">{{MULT_HIGHER}}</span></div>
+        {{CURRENT_CARD}}
+        <div class="odds down"><span class="arrow">▼</span><span class="dir">Lower</span><span class="mult">{{MULT_LOWER}}</span></div>
+      </div>
+
+      <div class="history-wrap">
+        <div class="history-label">Streak &middot; {{STREAK}}</div>
+        <div class="history">{{HISTORY}}</div>
+      </div>
+    </div>
+
+    <div class="hud">
+      <div class="chip">
+        <span class="disc"></span>
+        <span class="meta"><span class="lab">Bet</span><span class="val">{{BET}}<span class="u">UKP</span></span></span>
+      </div>
+      <div class="chip">
+        <span class="disc"></span>
+        <span class="meta"><span class="lab">Banked value</span><span class="val">{{VALUE}}<span class="u">UKP</span></span></span>
+      </div>
+      <span class="hint">{{HINT}}</span>
+    </div>
+
+    {{RESULT_BANNER}}
+  </div>
+</body>
+</html>

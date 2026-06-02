@@ -448,6 +448,12 @@ def reattach_persistent_views(client):
                 reattach_blackjack_view(client, key, value)
             except Exception as e:
                 logger.error(f"Failed to reattach blackjack view {key}: {e}")
+        elif isinstance(value, dict) and value.get("type") == "higherlower":
+            try:
+                from commands.economy.higher_lower import reattach_hl_view
+                reattach_hl_view(client, key, value)
+            except Exception as e:
+                logger.error(f"Failed to reattach higher-lower view {key}: {e}")
         elif isinstance(value, dict):
             view = RoleButtonView(value)
             client.add_view(view, message_id=key)
