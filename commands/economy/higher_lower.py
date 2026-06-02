@@ -93,15 +93,24 @@ class HigherLowerGame:
     @classmethod
     def new(cls, player_id, player_name, channel_id, bet):
         deck = _fresh_deck()
-        return cls(uuid.uuid4().hex[:12], player_id, player_name, channel_id, bet,
+        game = cls(uuid.uuid4().hex[:12], player_id, player_name, channel_id, bet,
                    deck, deck.pop())
+        # Never open on an unplayable card (both directions disabled, e.g. an Ace:
+        # 'higher' impossible and 'lower' too certain to profit). Burn and redraw.
+        while game.mult_higher is None and game.mult_lower is None and game.deck:
+            game.current = game.deck.pop()
+            game._recompute()
+        return game
 
     # --- odds ---
     def _recompute(self):
         """Set the higher/lower payout multipliers for the current card from the
-        remaining deck. A direction with zero chance is None (button disabled)."""
+        remaining deck. A direction is None (button disabled) when it's impossible
+        (no cards that way) OR so likely that a win wouldn't pay a real profit - so
+        an offered guess always increases your banked value."""
         import config
         factor = getattr(config, "HIGHERLOWER_PAYOUT_FACTOR", 0.95)
+        min_mult = getattr(config, "HIGHERLOWER_MIN_MULTIPLIER", 1.05)
         n = len(self.deck)
         if n == 0:
             self.mult_higher = self.mult_lower = None
@@ -109,8 +118,15 @@ class HigherLowerGame:
         cv = _value(self.current)
         higher = sum(1 for c in self.deck if _value(c) > cv)
         lower = sum(1 for c in self.deck if _value(c) < cv)
-        self.mult_higher = round(factor * n / higher, 2) if higher else None
-        self.mult_lower = round(factor * n / lower, 2) if lower else None
+
+        def mk(count):
+            if count <= 0:
+                return None
+            m = round(factor * n / count, 2)
+            return m if m >= min_mult else None  # too certain to pay a profit -> not offered
+
+        self.mult_higher = mk(higher)
+        self.mult_lower = mk(lower)
 
     def can_cash_out(self) -> bool:
         return self.state == "player" and self.steps >= 1

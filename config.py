@@ -42,7 +42,11 @@ HIGHERLOWER_ENABLED = True
 HIGHERLOWER_IMAGE_ENABLED = True
 HIGHERLOWER_MIN_BET = 10
 HIGHERLOWER_MAX_BET = 10_000
-HIGHERLOWER_PAYOUT_FACTOR = 0.95  # house edge per correct guess = 1 - this
+HIGHERLOWER_PAYOUT_FACTOR = 0.95   # house edge per correct guess = 1 - this
+# A direction is only offered if winning it pays at least this much (a guess must
+# always increase your banked value). Near-certain bets - e.g. 'lower' on an Ace -
+# would otherwise round to <=1.0x ("win but lose money"), so they're disabled instead.
+HIGHERLOWER_MIN_MULTIPLIER = 1.05
 
 # --- Fruit Machine / Slots (vs-the-house) ---
 SLOTS_ENABLED = True
