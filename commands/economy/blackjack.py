@@ -489,6 +489,13 @@ def _action_row(game: BlackjackGame) -> discord.ui.ActionRow:
         )
         again.callback = _make_cb(game, "again")
         row.add_item(again)
+
+        change = discord.ui.Button(
+            label="Change Bet", emoji="✏️", style=discord.ButtonStyle.secondary,
+            custom_id=f"blackjack:{game.game_id}:changebet",
+        )
+        change.callback = _make_cb(game, "changebet")
+        row.add_item(change)
     return row
 
 
@@ -584,6 +591,12 @@ async def _handle_action(interaction: Interaction, game: BlackjackGame, action: 
         )
         return
 
+    # Change Bet opens a modal, which must be the immediate interaction response (no
+    # defer/busy first). The replay itself runs from the modal submit.
+    if action == "changebet":
+        await interaction.response.send_modal(ChangeBetModal(game))
+        return
+
     # Drop clicks that arrive while a previous one is still being processed. The image
     # render takes ~1-2s and the old buttons stay live during it, so a fast double-click
     # would otherwise queue a second action (an extra Hit). Reading and setting `busy`
@@ -654,27 +667,71 @@ async def _handle_action(interaction: Interaction, game: BlackjackGame, action: 
 
 
 async def _handle_again(interaction: Interaction, old_game: BlackjackGame, client):
-    """Start a fresh hand on the same message, reusing the previous stake amount."""
+    """Play Again: a fresh hand on the same message at the previous stake."""
+    await _start_replay(interaction, old_game, client, old_game.bet, via_modal=False)
+
+
+class ChangeBetModal(discord.ui.Modal, title="Blackjack - change your bet"):
+    def __init__(self, game: BlackjackGame):
+        super().__init__()
+        self.game = game
+        self.amount = discord.ui.TextInput(
+            label="New bet (UKPence)", placeholder=f"{game.bet:,}", required=True, max_length=12,
+        )
+        self.add_item(self.amount)
+
+    async def on_submit(self, interaction: Interaction):
+        raw = str(self.amount.value).replace(",", "").strip()
+        try:
+            amount = int(raw)
+        except ValueError:
+            await interaction.response.send_message(
+                "Please enter a whole number of UKPence.", ephemeral=True
+            )
+            return
+        await _start_replay(interaction, self.game, interaction.client, amount, via_modal=True)
+
+
+async def _start_replay(interaction: Interaction, old_game: BlackjackGame, client,
+                        bet: int, *, via_modal: bool):
+    """Deal a fresh hand on the same message at `bet`. Drives both Play Again (button,
+    same stake) and Change Bet (modal, new stake). via_modal picks the message-edit path
+    (a modal submit edits interaction.message; a button edits the original response)."""
     import config
-    if old_game.replayed:  # a previous click on this message already dealt the next hand
-        await interaction.response.defer()
+    if old_game.replayed:  # this message already moved on to a new hand
+        if via_modal:
+            await interaction.response.send_message(
+                "This hand has already been replayed.", ephemeral=True
+            )
+        else:
+            await interaction.response.defer()
         return
 
     uid = old_game.player_id
-    bet = old_game.bet
-
+    if getattr(interaction.client, "maintenance_mode", False):
+        await interaction.response.send_message(
+            "🔧 **Under maintenance** - the bot is restarting. Hold on a minute.", ephemeral=True
+        )
+        return
     if not getattr(config, "BLACKJACK_ENABLED", True):
         await interaction.response.send_message("The blackjack table is closed.", ephemeral=True)
         return
+    mn = getattr(config, "BLACKJACK_MIN_BET", 10)
+    mx = getattr(config, "BLACKJACK_MAX_BET", 10_000)
+    if bet < mn or bet > mx:
+        await interaction.response.send_message(
+            f"Bets must be between {mn:,} and {mx:,} UKPence.", ephemeral=True
+        )
+        return
     if get_bb(uid) < bet:
         await interaction.response.send_message(
-            f"You need {bet:,} UKPence to play another hand.", ephemeral=True
+            f"You need {bet:,} UKPence for that bet.", ephemeral=True
         )
         return
     if not remove_bb(uid, bet, reason="Blackjack bet"):
         await interaction.response.send_message("You don't have enough UKPence.", ephemeral=True)
         return
-    old_game.replayed = True  # claim under the lock so a double-click can't deal twice
+    old_game.replayed = True  # claimed before any await so two clicks can't deal twice
 
     await interaction.response.defer()
 
@@ -687,7 +744,10 @@ async def _handle_again(interaction: Interaction, old_game: BlackjackGame, clien
     # screen, nothing has been credited yet, so the new stake is refunded in full.
     try:
         view, files = await build_blackjack_layout(new_game, client)
-        await interaction.edit_original_response(view=view, attachments=files)
+        if via_modal:
+            await interaction.message.edit(view=view, attachments=files)
+        else:
+            await interaction.edit_original_response(view=view, attachments=files)
     except Exception:
         logger.error("Blackjack replay failed before showing the new hand; refunding stake.", exc_info=True)
         _credit(uid, bet, "Blackjack stake refund (replay failed)")
