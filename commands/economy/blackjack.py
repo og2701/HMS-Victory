@@ -373,7 +373,8 @@ def build_table_html(game: BlackjackGame) -> str:
 async def render_blackjack_image(game: BlackjackGame) -> io.BytesIO:
     from lib.core.image_processing import screenshot_html
     html_out = build_table_html(game)
-    return await screenshot_html(html_out, size=(1200, 900), element_selector=".table")
+    # Portrait table; the CDP element-clip captures the real .table size regardless.
+    return await screenshot_html(html_out, size=(900, 1500), element_selector=".table")
 
 
 def _native_text(game: BlackjackGame) -> str:
@@ -456,25 +457,28 @@ async def build_blackjack_layout(game: BlackjackGame, client):
     enabled; on failure falls back to a native text layout (files == [])."""
     import config
     files = []
-    container = discord.ui.Container(accent_colour=ACCENT)
+    view = discord.ui.LayoutView(timeout=None)
     used_image = False
 
     if getattr(config, "BLACKJACK_IMAGE_ENABLED", True):
         try:
             img = await render_blackjack_image(game)
             files = [discord.File(img, filename="blackjack.png")]
+            # Image goes straight into the view — no Container wrapper, so there's no
+            # accent-rail "embed" box around it. The rendered table carries its own frame.
             gallery = discord.ui.MediaGallery()
             gallery.add_item(media="attachment://blackjack.png")
-            container.add_item(gallery)
+            view.add_item(gallery)
             used_image = True
         except Exception:
             logger.warning("Blackjack image render failed; using native layout.", exc_info=True)
 
     if not used_image:
+        # Text-only fallback has no image to carry the brand, so a themed container helps.
+        container = discord.ui.Container(accent_colour=ACCENT)
         container.add_item(discord.ui.TextDisplay(_native_text(game)))
+        view.add_item(container)
 
-    view = discord.ui.LayoutView(timeout=None)
-    view.add_item(container)
     view.add_item(_action_row(game))
     return view, files
 
