@@ -38,14 +38,20 @@ class BankManager:
                     VALUES (?, ?)
                 ''', (str(BOT_ID), new_bot_balance))
                 
-                # Sync bank table statistics
+                # Sync bank table statistics (stakes entering the bank, by game)
                 bj_in_add = amount if "Blackjack" in description else 0
+                hl_in_add = amount if "Higher-Lower" in description else 0
+                slots_in_add = amount if "Slots" in description else 0
                 tax_add = amount if "Wealth tax" in description else 0
                 c.execute('''
                     UPDATE bank
-                    SET balance = ?, total_revenue = total_revenue + ?, total_blackjack_in = total_blackjack_in + ?, total_tax_collected = total_tax_collected + ?, last_updated = ?
+                    SET balance = ?, total_revenue = total_revenue + ?,
+                        total_blackjack_in = total_blackjack_in + ?,
+                        total_higherlower_in = total_higherlower_in + ?,
+                        total_slots_in = total_slots_in + ?,
+                        total_tax_collected = total_tax_collected + ?, last_updated = ?
                     WHERE id = 1
-                ''', (new_bot_balance, amount, bj_in_add, tax_add, now))
+                ''', (new_bot_balance, amount, bj_in_add, hl_in_add, slots_in_add, tax_add, now))
                 
                 c.execute('COMMIT')
 
@@ -127,13 +133,19 @@ class BankManager:
                         VALUES (?, ?)
                     ''', (str(BOT_ID), new_balance))
                     
-                    # Update bank table stats
+                    # Update bank table stats (payouts leaving the bank, by game)
                     bj_out_add = amount if "Blackjack" in description else 0
+                    hl_out_add = amount if "Higher-Lower" in description else 0
+                    slots_out_add = amount if "Slots" in description else 0
                     c.execute('''
                         UPDATE bank
-                        SET balance = ?, total_blackjack_out = total_blackjack_out + ?, last_updated = ?
+                        SET balance = ?,
+                            total_blackjack_out = total_blackjack_out + ?,
+                            total_higherlower_out = total_higherlower_out + ?,
+                            total_slots_out = total_slots_out + ?,
+                            last_updated = ?
                         WHERE id = 1
-                    ''', (new_balance, bj_out_add, now))
+                    ''', (new_balance, bj_out_add, hl_out_add, slots_out_add, now))
                     
                     c.execute('COMMIT')
 
@@ -186,25 +198,28 @@ class BankManager:
     def get_ledger_stats() -> Dict[str, int]:
         """Get bank metrics directly from the bank table.
 
-        Returns: tax_collected, and blackjack house P/L (wagered in, paid out, net).
-        Net blackjack P/L is positive when the house is ahead.
+        Returns tax_collected plus per-game house P/L (wagered in, paid out, net) for
+        blackjack, higher-lower and slots, and a combined casino total. A positive net
+        means the house (bank) is ahead.
         """
-        result = DatabaseManager.fetch_one(
-            "SELECT total_tax_collected, total_blackjack_in, total_blackjack_out FROM bank WHERE id = 1"
-        )
+        cols = ("total_tax_collected, "
+                "total_blackjack_in, total_blackjack_out, "
+                "total_higherlower_in, total_higherlower_out, "
+                "total_slots_in, total_slots_out")
+        result = DatabaseManager.fetch_one(f"SELECT {cols} FROM bank WHERE id = 1")
         if result:
-            tax, bj_in, bj_out = result
-            return {
-                "tax_collected": tax,
-                "blackjack_in": bj_in,
-                "blackjack_out": bj_out,
-                "blackjack_net": bj_in - bj_out,
-            }
+            tax, bj_in, bj_out, hl_in, hl_out, sl_in, sl_out = result
+        else:
+            tax = bj_in = bj_out = hl_in = hl_out = sl_in = sl_out = 0
+
+        casino_in = bj_in + hl_in + sl_in
+        casino_out = bj_out + hl_out + sl_out
         return {
-            "tax_collected": 0,
-            "blackjack_in": 0,
-            "blackjack_out": 0,
-            "blackjack_net": 0,
+            "tax_collected": tax,
+            "blackjack_in": bj_in, "blackjack_out": bj_out, "blackjack_net": bj_in - bj_out,
+            "higherlower_in": hl_in, "higherlower_out": hl_out, "higherlower_net": hl_in - hl_out,
+            "slots_in": sl_in, "slots_out": sl_out, "slots_net": sl_in - sl_out,
+            "casino_in": casino_in, "casino_out": casino_out, "casino_net": casino_in - casino_out,
         }
 
     @staticmethod

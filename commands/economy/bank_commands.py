@@ -35,14 +35,24 @@ async def handle_bank_status_command(interaction: discord.Interaction):
         inline=True
     )
 
-    bj_net = ledger['blackjack_net']
-    bj_sign = "+" if bj_net >= 0 else "-"
-    house_note = "house ahead" if bj_net > 0 else ("players ahead" if bj_net < 0 else "even")
+    def _short_pl(net):
+        sign = "+" if net >= 0 else "-"
+        note = "house ahead" if net > 0 else ("players ahead" if net < 0 else "even")
+        return f"{sign}{abs(net):,} ({note})"
+
+    # Per-game house P/L (positive = the bank is ahead), three across.
+    embed.add_field(name="🎴 Blackjack", value=_short_pl(ledger['blackjack_net']), inline=True)
+    embed.add_field(name="🔼 Higher/Lower", value=_short_pl(ledger['higherlower_net']), inline=True)
+    embed.add_field(name="🎰 Fruit Machine", value=_short_pl(ledger['slots_net']), inline=True)
+
+    casino_net = ledger['casino_net']
+    casino_sign = "+" if casino_net >= 0 else "-"
+    casino_note = "house ahead" if casino_net > 0 else ("players ahead" if casino_net < 0 else "even")
     embed.add_field(
-        name="🎰 Blackjack (House P/L)",
+        name="🏰 Total Casino (House P/L)",
         value=(
-            f"{bj_sign}{abs(bj_net):,} UKPence ({house_note})\n"
-            f"`{ledger['blackjack_in']:,}` wagered in · `{ledger['blackjack_out']:,}` paid out"
+            f"{casino_sign}{abs(casino_net):,} UKPence ({casino_note})\n"
+            f"`{ledger['casino_in']:,}` staked in · `{ledger['casino_out']:,}` paid out"
         ),
         inline=False
     )

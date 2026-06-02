@@ -34,6 +34,7 @@ from commands.economy.wager import handle_wager_command
 from commands.economy.blackjack import handle_blackjack_command
 from commands.economy.higher_lower import handle_higherlower_command
 from commands.economy.slots import handle_slots_command
+from commands.economy.casino import handle_casino_command
 
 def define_commands(tree, client):
     def command(name: str, description: str, checks: list = None):
@@ -440,6 +441,10 @@ def define_commands(tree, client):
     @command("slots", "Spin the HMS Victory fruit machine for UKPence")
     async def slots_command(interaction: Interaction, amount: app_commands.Range[int, 1]):
         await handle_slots_command(interaction, amount)
+
+    @command("casino", "Open the HMS Victory casino - pick a game to play")
+    async def casino_command(interaction: Interaction):
+        await handle_casino_command(interaction)
 
     @command("richlist", "Displays a leaderboard of users with the most UKPence")
     async def richlist_command(interaction: Interaction):

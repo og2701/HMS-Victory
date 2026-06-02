@@ -43,10 +43,12 @@ NAME = {"crown": "Crowns", "union": "Union Jacks", "lion": "Lions", "rose": "Ros
 _KEYS = [k for k, _, _ in REEL]
 _WEIGHTS = [w for _, _, w in REEL]
 
-# Three-of-a-kind payouts (x bet). Two cherries pays a small consolation.
-THREE_OF_A_KIND = {"crown": 200, "union": 100, "lion": 50, "rose": 30,
-                   "anchor": 20, "pound": 14, "cherry": 10}
-TWO_CHERRY = 2
+# Three-of-a-kind payouts (x bet). Two cherries pays a frequent small consolation.
+# Sized for the locked 800k economy (max bet 10k -> top jackpot 150k, not millions).
+# RTP ~= 0.93 (house edge ~7%); monotonic by symbol rarity.
+THREE_OF_A_KIND = {"crown": 15, "union": 13, "lion": 11, "rose": 9,
+                   "anchor": 8, "pound": 7, "cherry": 6}
+TWO_CHERRY = 4
 
 
 def spin_reels() -> list:

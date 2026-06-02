@@ -32,7 +32,7 @@ PREDICTION_IMAGE_ENABLED = False
 BLACKJACK_ENABLED = True
 BLACKJACK_IMAGE_ENABLED = True
 BLACKJACK_MIN_BET = 10
-BLACKJACK_MAX_BET = 250_000
+BLACKJACK_MAX_BET = 10_000
 
 # --- Higher or Lower (vs-the-house card ladder) ---
 # Each correct guess pays a fraction (HIGHERLOWER_PAYOUT_FACTOR) of the fair odds,
@@ -41,14 +41,14 @@ BLACKJACK_MAX_BET = 250_000
 HIGHERLOWER_ENABLED = True
 HIGHERLOWER_IMAGE_ENABLED = True
 HIGHERLOWER_MIN_BET = 10
-HIGHERLOWER_MAX_BET = 250_000
+HIGHERLOWER_MAX_BET = 10_000
 HIGHERLOWER_PAYOUT_FACTOR = 0.95  # house edge per correct guess = 1 - this
 
 # --- Fruit Machine / Slots (vs-the-house) ---
 SLOTS_ENABLED = True
 SLOTS_IMAGE_ENABLED = True
 SLOTS_MIN_BET = 10
-SLOTS_MAX_BET = 100_000
+SLOTS_MAX_BET = 10_000
 
 # --- File Paths & Directories ---
 DATA_DIR = os.path.join(BASE_DIR, "data")

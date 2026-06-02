@@ -216,6 +216,10 @@ def init_db():
                 total_tax_collected INTEGER NOT NULL DEFAULT 0,
                 total_blackjack_in INTEGER NOT NULL DEFAULT 0,
                 total_blackjack_out INTEGER NOT NULL DEFAULT 0,
+                total_higherlower_in INTEGER NOT NULL DEFAULT 0,
+                total_higherlower_out INTEGER NOT NULL DEFAULT 0,
+                total_slots_in INTEGER NOT NULL DEFAULT 0,
+                total_slots_out INTEGER NOT NULL DEFAULT 0,
                 last_updated INTEGER NOT NULL DEFAULT 0
             )
         ''')
@@ -224,15 +228,14 @@ def init_db():
             c.execute("ALTER TABLE bank ADD COLUMN total_tax_collected INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass  # Column already exists
-        # Migration: add blackjack in/out columns if missing
-        try:
-            c.execute("ALTER TABLE bank ADD COLUMN total_blackjack_in INTEGER NOT NULL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            c.execute("ALTER TABLE bank ADD COLUMN total_blackjack_out INTEGER NOT NULL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
+        # Migration: add per-game house P/L columns if missing
+        for _col in ("total_blackjack_in", "total_blackjack_out",
+                     "total_higherlower_in", "total_higherlower_out",
+                     "total_slots_in", "total_slots_out"):
+            try:
+                c.execute(f"ALTER TABLE bank ADD COLUMN {_col} INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
         c.execute('''
             CREATE TABLE IF NOT EXISTS daily_summaries (
                 date TEXT PRIMARY KEY,
