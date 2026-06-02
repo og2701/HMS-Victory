@@ -40,7 +40,7 @@ class BackfillClient(discord.Client):
                 is_deposit = txt.startswith("🏦 Bank deposit:")
                 is_withdrawal = txt.startswith("📉 Bank withdrawal:")
                 
-                is_tax = "tax" in txt.lower() or "raid" in txt.lower()
+                is_tax = "wealth tax" in txt.lower()
                 if is_tax and is_deposit:
                     tax += amt
                 elif "Blackjack" in txt:
@@ -96,7 +96,7 @@ class BackfillClient(discord.Client):
                         is_deposit = "🏦 Bank deposit:" in val or " deposit:" in val
                         is_withdrawal = "📉 Bank withdrawal:" in val or " withdrawal:" in val
                         
-                        is_tax = "tax" in name.lower() or "raid" in name.lower()
+                        is_tax = "wealth tax" in name.lower()
                         if is_tax and is_deposit:
                             tax += amt
                         elif "Blackjack" in name:

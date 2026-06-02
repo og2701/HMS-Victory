@@ -40,7 +40,7 @@ class BankManager:
                 
                 # Sync bank table statistics
                 bj_in_add = amount if "Blackjack" in description else 0
-                tax_add = amount if ("tax" in description.lower() or "raid" in description.lower()) else 0
+                tax_add = amount if "Wealth tax" in description else 0
                 c.execute('''
                     UPDATE bank
                     SET balance = ?, total_revenue = total_revenue + ?, total_blackjack_in = total_blackjack_in + ?, total_tax_collected = total_tax_collected + ?, last_updated = ?
@@ -83,11 +83,12 @@ class BankManager:
                 ''', (str(BOT_ID), new_bot_balance))
                 
                 # Sync bank table stats and tax collected
+                tax_add = amount if "Wealth tax" in description else 0
                 c.execute('''
                     UPDATE bank
                     SET balance = ?, total_revenue = total_revenue + ?, total_tax_collected = total_tax_collected + ?, last_updated = ?
                     WHERE id = 1
-                ''', (new_bot_balance, amount, amount, now))
+                ''', (new_bot_balance, amount, tax_add, now))
                 
                 c.execute('COMMIT')
 
