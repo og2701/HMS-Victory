@@ -43,6 +43,81 @@ async def collect_media_files(message: discord.Message, size_limit: int) -> list
     return files
 
 
+def collect_link_media_urls(message: discord.Message, size_limit: int) -> list[str]:
+    """Return URLs of playable media that can't be re-uploaded inline, so they can
+    instead be re-posted in the HOF body for Discord to re-embed. Covers:
+      - link-embedded videos/gifs (TikTok, YouTube, Tenor, etc.) that live in
+        message.embeds rather than as attachments, and
+      - video/gif attachments too large for the guild's upload limit.
+    """
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    for embed in message.embeds:
+        if embed.url and embed.url not in seen and (embed.type in ("video", "gifv") or embed.video):
+            seen.add(embed.url)
+            urls.append(embed.url)
+
+    for att in message.attachments:
+        if not _is_playable_media(att):
+            continue
+        if att.size and att.size > size_limit and att.url not in seen:
+            logger.info(f"[HOF] {att.filename} too large to re-upload — linking instead.")
+            seen.add(att.url)
+            urls.append(att.url)
+
+    return urls
+
+
+async def send_hof_post(client, thread, message: discord.Message):
+    """Build and send the Hall of Fame post for `message` into `thread`.
+
+    Re-uploads any video/gif attachments inline, re-embeds link-based or oversized
+    media via their URLs, and renders the quote card. Shared by the auto-trigger
+    (reaction threshold) and the manual context menu so both paths behave the same."""
+    size_limit = getattr(thread.guild, "filesize_limit", 25 * 1024 * 1024)
+    media_files = await collect_media_files(message, size_limit)
+    link_urls = collect_link_media_urls(message, size_limit)
+    # Re-posting the URL in the bot's message body lets Discord regenerate the
+    # video/gif embed beneath the post.
+    link_block = ("\n" + "\n".join(link_urls)) if link_urls else ""
+    announcement = f"🏆 {message.author.mention}'s message made it to the Hall of Fame!"
+
+    # A message with no real text (just a video/gif, uploaded or linked) has
+    # nothing meaningful to render in the quote card — post the media directly.
+    if not message.content.strip() and (media_files or link_urls):
+        await thread.send(
+            content=f"{announcement}\n[Jump to message]({message.jump_url}){link_block}",
+            files=media_files,
+        )
+        return
+
+    embed = discord.Embed(
+        description=f"[Click here to jump to message]({message.jump_url})",
+        color=0xffd700,
+        url=message.jump_url,
+    )
+    embed.set_author(
+        name=message.author.display_name,
+        icon_url=message.author.display_avatar.url if message.author.display_avatar else None,
+        url=message.jump_url,
+    )
+    try:
+        image_buffer = await create_quote_image(client, message)
+        quote_file = discord.File(image_buffer, filename="hof_quote.png")
+        embed.set_image(url="attachment://hof_quote.png")
+        await thread.send(content=f"{announcement}{link_block}", embed=embed, files=[quote_file, *media_files])
+    except Exception as e:
+        logger.error(f"[HOF] Error creating quote image: {e}")
+        embed.description = f"{embed.description}\n\n{message.content}"
+        if message.attachments:
+            for attachment in message.attachments:
+                if attachment.content_type and attachment.content_type.startswith("image/") and attachment.content_type != "image/gif":
+                    embed.set_image(url=attachment.url)
+                    break
+        await thread.send(content=f"{announcement}{link_block}", embed=embed, files=media_files)
+
+
 async def _hof_post_exists(thread, jump_url: str) -> bool:
     """Check whether the HOF thread still contains a bot post referencing `jump_url`."""
     bot_id = thread.guild.me.id if thread.guild and thread.guild.me else None
@@ -121,7 +196,7 @@ async def handle_hof_context_menu(interaction: discord.Interaction, message: dis
         await interaction.response.send_message("Bot messages can't be added to the Hall of Fame.", ephemeral=True)
         return
 
-    if not message.content and not message.attachments:
+    if not message.content and not message.attachments and not message.embeds:
         await interaction.response.send_message("This message has nothing to add.", ephemeral=True)
         return
 
@@ -143,40 +218,7 @@ async def handle_hof_context_menu(interaction: discord.Interaction, message: dis
             return
         logger.info(f"[HOF] {message.id} in JSON but missing from thread — re-adding.")
 
-    size_limit = getattr(thread.guild, "filesize_limit", 25 * 1024 * 1024)
-    media_files = await collect_media_files(message, size_limit)
-    announcement = f"🏆 {message.author.mention}'s message made it to the Hall of Fame!"
-
-    if not message.content.strip() and media_files:
-        await thread.send(
-            content=f"{announcement}\n[Jump to message]({message.jump_url})",
-            files=media_files,
-        )
-    else:
-        embed = discord.Embed(
-            description=f"[Click here to jump to message]({message.jump_url})",
-            color=0xffd700,
-            url=message.jump_url,
-        )
-        embed.set_author(
-            name=message.author.display_name,
-            icon_url=message.author.display_avatar.url if message.author.display_avatar else None,
-            url=message.jump_url,
-        )
-        try:
-            image_buffer = await create_quote_image(client, message)
-            quote_file = discord.File(image_buffer, filename="hof_quote.png")
-            embed.set_image(url="attachment://hof_quote.png")
-            await thread.send(content=announcement, embed=embed, files=[quote_file, *media_files])
-        except Exception as e:
-            logger.error(f"[HOF] Error creating quote image: {e}")
-            embed.description = f"{embed.description}\n\n{message.content}"
-            if message.attachments:
-                for attachment in message.attachments:
-                    if attachment.content_type and attachment.content_type.startswith("image/") and attachment.content_type != "image/gif":
-                        embed.set_image(url=attachment.url)
-                        break
-            await thread.send(content=announcement, embed=embed, files=media_files)
+    await send_hof_post(client, thread, message)
 
     if str(message.id) not in hall_of_fame_data:
         hall_of_fame_data.append(str(message.id))

@@ -11,7 +11,7 @@ from lib.core.discord_helpers import has_role, has_any_role, restrict_channel_fo
 from lib.core.file_operations import load_whitelist, save_whitelist, load_persistent_views, save_persistent_views, load_json_file, save_json_file, set_file_status, is_file_status_active, load_webhook_deletions, save_webhook_deletions
 from lib.core.utils import is_lockdown_active
 from lib.core.image_processing import trim_image, find_non_overlapping_position, random_color_excluding_blue_and_dark
-from lib.core.log_functions import create_message_image, create_edited_message_image, create_quote_image
+from lib.core.log_functions import create_message_image, create_edited_message_image
 from lib.core.moderation_text import ModerationMatch, find_blocked_moderation_match
 from config import *
 from database import DatabaseManager, award_badge
@@ -1358,34 +1358,11 @@ async def check_hall_of_fame(client, payload):
                     logger.error("Hall of Fame thread not found.")
                     return
                     
-            embed = discord.Embed(
-                description=f"[Click here to jump to message]({message.jump_url})",
-                color=0xffd700, # Gold color
-                url=message.jump_url
-            )
-            embed.set_author(
-                name=message.author.display_name, 
-                icon_url=message.author.display_avatar.url if message.author.display_avatar else None,
-                url=message.jump_url
-            )
-            
-            # Generate quote image
-            try:
-                image_buffer = await create_quote_image(client, message)
-                file = discord.File(image_buffer, filename="hof_quote.png")
-                embed.set_image(url="attachment://hof_quote.png")
-                await thread.send(content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!", embed=embed, file=file)
-            except Exception as e:
-                logger.error(f"[HOF] Error creating quote image: {e}")
-                # Fallback logic
-                embed.description = f"{embed.description}\n\n{message.content}"
-                if message.attachments:
-                    for attachment in message.attachments:
-                        if attachment.content_type and attachment.content_type.startswith("image/"):
-                            embed.set_image(url=attachment.url)
-                            break
-                await thread.send(content=f"🏆 {message.author.mention}'s message made it to the Hall of Fame!", embed=embed)
-            
+            # Shared with the manual context menu so videos/gifs get re-uploaded
+            # inline instead of being dropped from the quote card.
+            from commands.social.hof import send_hof_post
+            await send_hof_post(client, thread, message)
+
             logger.info(f"Message {message.id} sent to Hall of Fame.")
             await award_badge_with_notify(client, message.author.id, 'hof')
         
