@@ -175,6 +175,13 @@ def _action_row(machine: SlotMachine) -> discord.ui.ActionRow:
     again.callback = _make_cb(machine, "spin")
     row.add_item(again)
 
+    change = discord.ui.Button(
+        label="Change Bet", emoji="✏️", style=discord.ButtonStyle.secondary,
+        custom_id=f"slots:{machine.spin_id}:changebet",
+    )
+    change.callback = _make_cb(machine, "changebet")
+    row.add_item(change)
+
     rules = discord.ui.Button(
         label="Rules", emoji="📖", style=discord.ButtonStyle.secondary,
         custom_id=f"slots:{machine.spin_id}:rules",
@@ -255,13 +262,22 @@ async def _handle_action(interaction: Interaction, machine: SlotMachine, action:
         )
         return
 
+    # Change Bet opens a modal (must be the immediate response, before defer/busy).
+    if action == "changebet":
+        await interaction.response.send_modal(ChangeBetModal(machine))
+        return
+
+    await _do_spin_round(interaction, machine, interaction.client, via_modal=False)
+
+
+async def _do_spin_round(interaction: Interaction, machine: SlotMachine, client, *, via_modal: bool):
+    """Deduct the stake, spin, show the result, then pay any win. Drives both Spin Again
+    (button) and Change Bet (modal). via_modal picks the message-edit path."""
     if machine.busy:
         await interaction.response.defer()
         return
     machine.busy = True
-    client = interaction.client
     try:
-        import config
         if getattr(interaction.client, "maintenance_mode", False):
             await interaction.response.send_message(
                 "🔧 **Under maintenance** - the bot is restarting. Hold on a minute.", ephemeral=True
@@ -269,7 +285,7 @@ async def _handle_action(interaction: Interaction, machine: SlotMachine, action:
             return
         if get_bb(machine.player_id) < machine.bet:
             await interaction.response.send_message(
-                f"You need {machine.bet:,} UKPence to spin again.", ephemeral=True
+                f"You need {machine.bet:,} UKPence for that spin.", ephemeral=True
             )
             return
         if not remove_bb(machine.player_id, machine.bet, reason="Slots bet"):
@@ -279,14 +295,52 @@ async def _handle_action(interaction: Interaction, machine: SlotMachine, action:
         await interaction.response.defer()
         machine.do_spin()  # result decided; win credited only after the message updates
         try:
-            await _refresh(interaction, machine, client)
+            view, files = await build_slots_layout(machine, client)
+            if via_modal:
+                await interaction.message.edit(view=view, attachments=files)
+            else:
+                await interaction.edit_original_response(view=view, attachments=files)
         except Exception:
-            logger.error("Slots respin render failed; refunding stake.", exc_info=True)
+            logger.error("Slots spin render failed; refunding stake.", exc_info=True)
             _credit(machine.player_id, machine.bet, "Slots stake refund (spin failed)")
             return
-        _credit(machine.player_id, machine.win, "Slots win")
+        _credit(machine.player_id, machine.win, "Slots win")  # paid only once on screen
+        try:
+            client.add_view(view, message_id=machine.message_id)
+        except Exception:
+            logger.debug("slots add_view after spin failed (non-fatal)", exc_info=True)
     finally:
         machine.busy = False
+
+
+class ChangeBetModal(discord.ui.Modal, title="Fruit Machine - change your bet"):
+    def __init__(self, machine: SlotMachine):
+        super().__init__()
+        self.machine = machine
+        self.amount = discord.ui.TextInput(
+            label="New bet (UKPence)", placeholder=f"{machine.bet:,}", required=True, max_length=12,
+        )
+        self.add_item(self.amount)
+
+    async def on_submit(self, interaction: Interaction):
+        import config
+        raw = str(self.amount.value).replace(",", "").strip()
+        try:
+            amount = int(raw)
+        except ValueError:
+            await interaction.response.send_message(
+                "Please enter a whole number of UKPence.", ephemeral=True
+            )
+            return
+        mn = getattr(config, "SLOTS_MIN_BET", 10)
+        mx = getattr(config, "SLOTS_MAX_BET", 10_000)
+        if amount < mn or amount > mx:
+            await interaction.response.send_message(
+                f"Bets must be between {mn:,} and {mx:,} UKPence.", ephemeral=True
+            )
+            return
+        self.machine.bet = amount  # the new stake sticks for subsequent spins too
+        await _do_spin_round(interaction, self.machine, interaction.client, via_modal=True)
 
 
 # ---------------------------------------------------------------------------

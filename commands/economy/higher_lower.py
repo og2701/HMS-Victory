@@ -360,6 +360,13 @@ def _action_row(game: HigherLowerGame) -> discord.ui.ActionRow:
         )
         again.callback = _make_cb(game, "again")
         row.add_item(again)
+
+        change = discord.ui.Button(
+            label="Change Bet", emoji="✏️", style=discord.ButtonStyle.secondary,
+            custom_id=f"higherlower:{game.game_id}:changebet",
+        )
+        change.callback = _make_cb(game, "changebet")
+        row.add_item(change)
     return row
 
 
@@ -441,6 +448,11 @@ async def _handle_action(interaction: Interaction, game: HigherLowerGame, action
         )
         return
 
+    # Change Bet opens a modal (must be the immediate response, before defer/busy).
+    if action == "changebet":
+        await interaction.response.send_modal(ChangeBetModal(game))
+        return
+
     if game.busy:
         await interaction.response.defer()
         return
@@ -487,23 +499,60 @@ async def _handle_action(interaction: Interaction, game: HigherLowerGame, action
 
 
 async def _handle_again(interaction: Interaction, old_game: HigherLowerGame, client):
+    """Play Again: a fresh ladder on the same message at the previous stake."""
+    await _start_replay(interaction, old_game, client, old_game.bet, via_modal=False)
+
+
+class ChangeBetModal(discord.ui.Modal, title="Higher or Lower - change your bet"):
+    def __init__(self, game: HigherLowerGame):
+        super().__init__()
+        self.game = game
+        self.amount = discord.ui.TextInput(
+            label="New bet (UKPence)", placeholder=f"{game.bet:,}", required=True, max_length=12,
+        )
+        self.add_item(self.amount)
+
+    async def on_submit(self, interaction: Interaction):
+        raw = str(self.amount.value).replace(",", "").strip()
+        try:
+            amount = int(raw)
+        except ValueError:
+            await interaction.response.send_message(
+                "Please enter a whole number of UKPence.", ephemeral=True
+            )
+            return
+        await _start_replay(interaction, self.game, interaction.client, amount, via_modal=True)
+
+
+async def _start_replay(interaction: Interaction, old_game: HigherLowerGame, client,
+                        bet: int, *, via_modal: bool):
+    """Deal a fresh ladder on the same message at `bet`. Drives Play Again (button, same
+    stake) and Change Bet (modal, new stake)."""
     import config
     if old_game.replayed:
-        await interaction.response.defer()
+        if via_modal:
+            await interaction.response.send_message("This game has already been replayed.", ephemeral=True)
+        else:
+            await interaction.response.defer()
         return
-    uid, bet = old_game.player_id, old_game.bet
-    if not getattr(config, "HIGHERLOWER_ENABLED", True):
-        await interaction.response.send_message("Higher or Lower is currently closed.", ephemeral=True)
-        return
+    uid = old_game.player_id
     if getattr(interaction.client, "maintenance_mode", False):
         await interaction.response.send_message(
             "🔧 **Under maintenance** - the bot is restarting. Hold on a minute.", ephemeral=True
         )
         return
-    if get_bb(uid) < bet:
+    if not getattr(config, "HIGHERLOWER_ENABLED", True):
+        await interaction.response.send_message("Higher or Lower is currently closed.", ephemeral=True)
+        return
+    mn = getattr(config, "HIGHERLOWER_MIN_BET", 10)
+    mx = getattr(config, "HIGHERLOWER_MAX_BET", 10_000)
+    if bet < mn or bet > mx:
         await interaction.response.send_message(
-            f"You need {bet:,} UKPence to play again.", ephemeral=True
+            f"Bets must be between {mn:,} and {mx:,} UKPence.", ephemeral=True
         )
+        return
+    if get_bb(uid) < bet:
+        await interaction.response.send_message(f"You need {bet:,} UKPence for that bet.", ephemeral=True)
         return
     if not remove_bb(uid, bet, reason="Higher-Lower bet"):
         await interaction.response.send_message("You don't have enough UKPence.", ephemeral=True)
@@ -513,13 +562,24 @@ async def _handle_again(interaction: Interaction, old_game: HigherLowerGame, cli
 
     new_game = HigherLowerGame.new(uid, old_game.player_name, old_game.channel_id, bet)
     new_game.message_id = old_game.message_id
+    # Refundable section ends the moment the new ladder is shown.
     try:
-        await _refresh(interaction, new_game, client)
+        view, files = await build_hl_layout(new_game, client)
+        if via_modal:
+            await interaction.message.edit(view=view, attachments=files)
+        else:
+            await interaction.edit_original_response(view=view, attachments=files)
     except Exception:
         logger.error("Higher-Lower replay failed; refunding stake.", exc_info=True)
         _credit(uid, bet, "Higher-Lower stake refund (replay failed)")
         return
-    save_game(new_game)
+
+    # New ladder is live - persistence/add_view failures are logged, never refunded.
+    try:
+        save_game(new_game)
+        client.add_view(view, message_id=new_game.message_id)
+    except Exception:
+        logger.error("Higher-Lower replay post-update issue (game is live).", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
