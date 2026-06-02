@@ -452,7 +452,7 @@ class LuckyDipCaseItem(ShopItem):
         super().__init__(id, name, description, price, use_inventory)
 
         # Define possible outcomes with weights (total weight = 100)
-        # Every outcome does something — no "nothing" outcomes
+        # Every outcome does something - no "nothing" outcomes
         self.outcomes = [
             # UKPence wins (all > 100 so they're net profit)
             {"type": "ukpence", "weight": 13, "amount": 150, "emoji": "🏦", "color": 0x00cc66, "label": "+150 UKPence"},

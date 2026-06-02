@@ -49,7 +49,7 @@ async def post_summary_helper(interaction: Interaction, summary_type: str):
         this_monday = now - timedelta(days=now.weekday())
         date_str = this_monday.strftime("%Y-%m-%d")
         summary_label = "weekly"
-        message = f"Posted last week's summary using {date_str} (covers the Monday–Sunday prior)."
+        message = f"Posted last week's summary using {date_str} (covers the Monday-Sunday prior)."
     elif summary_type == "monthly":
         this_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         date_str = this_month_start.strftime("%Y-%m-%d")

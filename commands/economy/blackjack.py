@@ -1,17 +1,17 @@
-"""HMS Victory — Blackjack (vs-the-house).
+"""HMS Victory - Blackjack (vs-the-house).
 
 A premium single-hand blackjack game. The table is rendered as an HTML→PNG image
 (templates/blackjack_table.html) via the shared headless-Chrome pipeline and wrapped
-in a Components V2 LayoutView with Hit / Stand / Double Down buttons — mirroring the
+in a Components V2 LayoutView with Hit / Stand / Double Down buttons - mirroring the
 prediction system. If image rendering is disabled (config.BLACKJACK_IMAGE_ENABLED) or
 fails, it falls back to a native CV2 text layout, exactly like build_prediction_render.
 
 Economy model (UKP is conserved; the server bank is the house):
-    • Stake:  remove_bb(uid, bet)              — to_bank=True, stake enters the bank.
-    • Win:    add_bb(uid, 2·staked, taxable=False)        — paid from the bank.
+    • Stake:  remove_bb(uid, bet)              - to_bank=True, stake enters the bank.
+    • Win:    add_bb(uid, 2·staked, taxable=False)        - paid from the bank.
     • BJ 3:2: add_bb(uid, staked + ⌊3·staked/2⌋, taxable=False).
-    • Push:   add_bb(uid, staked, taxable=False)          — stake refunded.
-    • Loss:   nothing — the staked UKP stays in the bank (the house edge / sink).
+    • Push:   add_bb(uid, staked, taxable=False)          - stake refunded.
+    • Loss:   nothing - the staked UKP stays in the bank (the house edge / sink).
 Gaming payouts are tax-exempt (taxable=False) like wager wins, so the small house edge
 is a mild UKPence sink rather than a faucet. See lib/economy/economy_manager.add_bb.
 """
@@ -45,7 +45,7 @@ SUITS = ["S", "H", "D", "C"]
 SUIT_GLYPH = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"}
 SUIT_EMOJI = {"S": "♠️", "H": "♥️", "D": "♦️", "C": "♣️"}
 RED_SUITS = {"H", "D"}
-DEALER_STANDS_ON = 17  # dealer stands on all 17s (incl. soft 17) — player-friendly.
+DEALER_STANDS_ON = 17  # dealer stands on all 17s (incl. soft 17) - player-friendly.
 
 
 def _fresh_deck() -> list:
@@ -224,10 +224,10 @@ def _credit(uid: int, amount: int, reason: str):
         return
     if not add_bb(uid, amount, reason=reason, taxable=False):
         logger.critical(
-            "Bank insolvent paying blackjack %s of %s UKP to %s — minting to honour the win.",
+            "Bank insolvent paying blackjack %s of %s UKP to %s - minting to honour the win.",
             reason, amount, uid,
         )
-        UKPenceManager.add_amount(uid, amount, reason=f"{reason} [bank insolvent — minted]")
+        UKPenceManager.add_amount(uid, amount, reason=f"{reason} [bank insolvent - minted]")
 
 
 def _decide(game: BlackjackGame):
@@ -284,7 +284,7 @@ def _settle(game: BlackjackGame):
 
 
 # ---------------------------------------------------------------------------
-# Rendering — premium HTML table
+# Rendering - premium HTML table
 # ---------------------------------------------------------------------------
 # Card fan geometry (keep in sync with .card width in templates/blackjack_table.html).
 _CARD_W = 160
@@ -344,7 +344,7 @@ def _banner_html(game: BlackjackGame) -> str:
     else:
         cls = "lose"
         head = "Bust" if game.player_busted() else "Dealer Wins"
-        sub = f"−{game.total_staked:,} UKPence"
+        sub = f"-{game.total_staked:,} UKPence"
     return (
         f'<div class="banner-wrap"><div class="banner {cls}">'
         f'<div class="head">{head}</div><div class="sub">{sub}</div>'
@@ -381,7 +381,7 @@ def build_table_html(game: BlackjackGame) -> str:
         hint = "Round complete"
     else:
         banner = ""
-        hint = "Your move — Hit or Stand" + (" or Double" if game.can_double() else "")
+        hint = "Your move - Hit or Stand" + (" or Double" if game.can_double() else "")
 
     return (
         template
@@ -422,7 +422,7 @@ def _native_text(game: BlackjackGame) -> str:
     pt = game.player_total()
 
     lines = [
-        f"## 🎴 Blackjack — {game.total_staked:,} UKPence",
+        f"## 🎴 Blackjack - {game.total_staked:,} UKPence",
         f"**Dealer** ({dt}):  {dealer}",
         f"**{game.player_name}** ({pt}):  {player}",
     ]
@@ -433,9 +433,9 @@ def _native_text(game: BlackjackGame) -> str:
         elif game.outcome == "win":
             tag = f"✅ **You win** +{game.net:,} UKPence"
         elif game.outcome == "push":
-            tag = "🤝 **Push** — stake returned"
+            tag = "🤝 **Push** - stake returned"
         else:
-            tag = f"❌ **{'Bust' if pt > 21 else 'Dealer wins'}** −{game.total_staked:,} UKPence"
+            tag = f"❌ **{'Bust' if pt > 21 else 'Dealer wins'}** -{game.total_staked:,} UKPence"
         lines.append(f"-# {tag}  ·  Balance: {bal:,} UKPence")
     else:
         lines.append(f"-# Your move  ·  Balance: {bal:,} UKPence")
@@ -494,7 +494,7 @@ async def build_blackjack_layout(game: BlackjackGame, client):
         try:
             img = await render_blackjack_image(game)
             files = [discord.File(img, filename="blackjack.png")]
-            # Image goes straight into the view — no Container wrapper, so there's no
+            # Image goes straight into the view - no Container wrapper, so there's no
             # accent-rail "embed" box around it. The rendered table carries its own frame.
             gallery = discord.ui.MediaGallery()
             gallery.add_item(media="attachment://blackjack.png")
@@ -542,14 +542,14 @@ async def _refresh(interaction: Interaction, game: BlackjackGame, client):
 async def _handle_action(interaction: Interaction, game: BlackjackGame, action: str):
     if interaction.user.id != game.player_id:
         await interaction.response.send_message(
-            "This isn't your table — deal your own hand with `/blackjack`.", ephemeral=True
+            "This isn't your table - deal your own hand with `/blackjack`.", ephemeral=True
         )
         return
 
     # Drop clicks that arrive while a previous one is still being processed. The image
     # render takes ~1-2s and the old buttons stay live during it, so a fast double-click
     # would otherwise queue a second action (an extra Hit). Reading and setting `busy`
-    # has no await between them, so it's atomic on the event loop — exactly one action
+    # has no await between them, so it's atomic on the event loop - exactly one action
     # runs; the rest are silently acknowledged.
     if game.busy:
         await interaction.response.defer()
@@ -655,7 +655,7 @@ async def _handle_again(interaction: Interaction, old_game: BlackjackGame, clien
         _credit(uid, bet, "Blackjack stake refund (replay failed)")
         return
 
-    # New hand is live — persistence/payout/add_view failures are logged, never refunded.
+    # New hand is live - persistence/payout/add_view failures are logged, never refunded.
     try:
         if new_game.state == "over":
             _payout(new_game)
@@ -716,13 +716,13 @@ async def handle_blackjack_command(interaction: Interaction, amount: int):
         view, files = await build_blackjack_layout(game, interaction.client)
         msg = await interaction.followup.send(view=view, files=files)
     except Exception:
-        # The hand never made it to the table — nothing has been credited yet, so the
+        # The hand never made it to the table - nothing has been credited yet, so the
         # stake (sitting in the bank) is refunded in full rather than vanishing.
         logger.error("Blackjack deal failed; refunding stake.", exc_info=True)
         _credit(interaction.user.id, amount, "Blackjack stake refund (deal failed)")
         try:
             await interaction.followup.send(
-                "Something went wrong dealing your hand — your stake has been refunded.",
+                "Something went wrong dealing your hand - your stake has been refunded.",
                 ephemeral=True,
             )
         except Exception:
@@ -731,7 +731,7 @@ async def handle_blackjack_command(interaction: Interaction, amount: int):
 
     # The table is now on screen and the hand is live (discord.py registered the view
     # on send). Paying the natural / persisting / add_view happen here: a failure is
-    # logged but must NOT refund — the stake belongs to a real, playable hand.
+    # logged but must NOT refund - the stake belongs to a real, playable hand.
     game.message_id = msg.id
     try:
         if game.state == "over":
@@ -753,10 +753,10 @@ def reattach_blackjack_view(client, key, value):
         game = BlackjackGame.from_dict(value)
     except Exception as e:
         logger.error(f"Pruning malformed blackjack entry {key}: {e}", exc_info=True)
-        delete_game(key)  # unreconstructable — drop it so it can't wedge future restarts
+        delete_game(key)  # unreconstructable - drop it so it can't wedge future restarts
         return
 
-    if game.state != "player":  # a hand that already settled — nothing to resume
+    if game.state != "player":  # a hand that already settled - nothing to resume
         delete_game(key)
         return
 

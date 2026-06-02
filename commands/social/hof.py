@@ -62,7 +62,7 @@ def collect_link_media_urls(message: discord.Message, size_limit: int) -> list[s
         if not _is_playable_media(att):
             continue
         if att.size and att.size > size_limit and att.url not in seen:
-            logger.info(f"[HOF] {att.filename} too large to re-upload — linking instead.")
+            logger.info(f"[HOF] {att.filename} too large to re-upload - linking instead.")
             seen.add(att.url)
             urls.append(att.url)
 
@@ -84,7 +84,7 @@ async def send_hof_post(client, thread, message: discord.Message):
     announcement = f"🏆 {message.author.mention}'s message made it to the Hall of Fame!"
 
     # A message with no real text (just a video/gif, uploaded or linked) has
-    # nothing meaningful to render in the quote card — post the media directly.
+    # nothing meaningful to render in the quote card - post the media directly.
     if not message.content.strip() and (media_files or link_urls):
         await thread.send(
             content=f"{announcement}\n[Jump to message]({message.jump_url}){link_block}",
@@ -216,7 +216,7 @@ async def handle_hof_context_menu(interaction: discord.Interaction, message: dis
         if await _hof_post_exists(thread, message.jump_url):
             await interaction.followup.send("This message is already in the Hall of Fame.", ephemeral=True)
             return
-        logger.info(f"[HOF] {message.id} in JSON but missing from thread — re-adding.")
+        logger.info(f"[HOF] {message.id} in JSON but missing from thread - re-adding.")
 
     await send_hof_post(client, thread, message)
 

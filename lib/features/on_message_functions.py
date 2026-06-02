@@ -189,7 +189,7 @@ async def _summarise_closed_ticket(bot, message):
 
     if err:
         log.warning("Ticket summary generation failed: %s", err)
-        summary = f"(Failed to generate summary — {err})"
+        summary = f"(Failed to generate summary - {err})"
 
     e = discord.Embed(
         title=f"Support ticket ({message.channel.name}) summary",
@@ -204,7 +204,7 @@ async def _summarise_closed_ticket(bot, message):
         e.add_field(name="Screenshots", value=str(len(image_parts)), inline=True)
     e.add_field(
         name="Users Involved",
-        value=", ".join(users_involved) if users_involved else "—",
+        value=", ".join(users_involved) if users_involved else "-",
         inline=False,
     )
     e.timestamp = message.created_at

@@ -45,7 +45,7 @@ async def add_iceberg_text(interaction, text: str, level: int, show_image: bool 
         # Account for shadow (2px) and general padding (5px) in collision detection
         existing_positions.append((x - 2, y - 2, x + w + 7, y + h + 7))
 
-    # 2. Calculate attributes for the NEW entry — retry with smaller padding if crowded
+    # 2. Calculate attributes for the NEW entry - retry with smaller padding if crowded
     bounds = LEVEL_BOUNDS[level]
     pos = None
     for padding in [10, 5, 2, 0]:

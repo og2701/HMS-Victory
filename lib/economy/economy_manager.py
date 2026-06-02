@@ -205,7 +205,7 @@ def add_bb(user_id: int, amount: int, reason: str = "Unspecified",
            from_bank: bool = True, taxable: bool = True) -> bool:
     """Credit a user with UKP.
 
-    from_bank=True (default): withdraws from the server bank first — UKP is conserved.
+    from_bank=True (default): withdraws from the server bank first - UKP is conserved.
     from_bank=False: pure user credit for p2p transfers (e.g. /pay, wager payout) where
                      the sender's remove_bb already handled the bank side.
     taxable=True (default): applies the progressive wealth tax for balances ≥10k
@@ -238,7 +238,7 @@ def add_bb(user_id: int, amount: int, reason: str = "Unspecified",
 def remove_bb(user_id: int, amount: int, reason: str = "Unspecified", to_bank: bool = True) -> bool:
     """Debit a user of UKP.
     
-    to_bank=True (default): deposits the deducted amount back to the server bank — UKP is conserved.
+    to_bank=True (default): deposits the deducted amount back to the server bank - UKP is conserved.
     to_bank=False: pure user debit for p2p transfers (e.g. /pay, wager stake) where
                    add_bb on the recipient handles the bank side.
     Returns True if the user had sufficient funds, False otherwise.

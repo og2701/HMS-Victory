@@ -119,7 +119,7 @@ def define_commands(tree, client):
         await post_summary(client, interaction.channel.id, "daily", interaction.channel, formatted_date)
         await interaction.followup.send(f"Posted daily summary for {formatted_date}.", ephemeral=True)
 
-    @command("post-last-weekly-summary", "Posts the most recently completed Monday–Sunday.", checks=[lambda i: has_role(i, ROLES.MINISTER)])
+    @command("post-last-weekly-summary", "Posts the most recently completed Monday-Sunday.", checks=[lambda i: has_role(i, ROLES.MINISTER)])
     async def post_last_weekly_summary(interaction: Interaction):
         await interaction.response.defer(ephemeral=True)
         await post_summary_helper(interaction, "weekly")
@@ -219,7 +219,7 @@ def define_commands(tree, client):
         file = await generate_rank_card(interaction, member)
         if file is None:
             await interaction.followup.send(
-                "Sorry — I couldn't generate the rank card right now. Please try again in a moment.",
+                "Sorry - I couldn't generate the rank card right now. Please try again in a moment.",
                 ephemeral=True,
             )
             return
@@ -296,7 +296,7 @@ def define_commands(tree, client):
             short_title = title if len(title) <= 60 else title[:57] + "..."
             lines.append(
                 f"`#{sched_id}` <t:{scheduled_ts}:F> (<t:{scheduled_ts}:R>) in <#{channel_id}> "
-                f"by <@{creator_id}> — duration {duration}m — *{discord.utils.escape_markdown(short_title)}*"
+                f"by <@{creator_id}> - duration {duration}m - *{discord.utils.escape_markdown(short_title)}*"
             )
         out = "\n".join(lines)
         if len(out) > 2000:
@@ -456,7 +456,7 @@ def define_commands(tree, client):
         info_path = os.path.join(BASE_DIR, "data", "ukpence_info.png")
         if not os.path.exists(info_path):
             await interaction.response.send_message(
-                "UKPence info image is missing — run `python -m scripts.generate_ukpence_info`.",
+                "UKPence info image is missing - run `python -m scripts.generate_ukpence_info`.",
                 ephemeral=True,
             )
             return

@@ -46,7 +46,7 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
     ukpence_data_current = load_ukpence_data()
     logger.info(f"[ECON DEBUG] Loaded {len(ukpence_data_current)} balances")
     
-    # Exclude the bot from dashboard stats — its balance is the bank (shown separately)
+    # Exclude the bot from dashboard stats - its balance is the bank (shown separately)
     from config import BOT_ID
     bot_id_str = str(BOT_ID)
     ukpence_data_users = {uid: bal for uid, bal in ukpence_data_current.items() if uid != bot_id_str}

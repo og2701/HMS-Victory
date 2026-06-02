@@ -170,7 +170,7 @@ class XPSystem:
 
     async def update_xp(self, message: discord.Message):
         # Don't reward system messages (joins/boosts/pins), near-empty one-character
-        # messages, or chatter in excluded channels — all of which just pollute the
+        # messages, or chatter in excluded channels - all of which just pollute the
         # rank ladder. Image/sticker-only posts are still genuine activity, so allow them.
         if message.type not in (discord.MessageType.default, discord.MessageType.reply):
             return

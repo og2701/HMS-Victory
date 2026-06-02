@@ -33,7 +33,7 @@ def track_prediction_streak(user_id: int, is_win: bool) -> tuple[int, int]:
 
 async def award_indecisive_badges(client, pred, window: int = 10) -> None:
     """Award the 'indecisive' badge to anyone who bet within `window` seconds of
-    the prediction being locked — used by both the manual Lock button and the
+    the prediction being locked - used by both the manual Lock button and the
     auto-lock sweep, so the badge is awarded consistently however a pred closes."""
     import time
     from lib.bot.event_handlers import award_badge_with_notify
@@ -65,7 +65,7 @@ class Prediction:
     def stake(self, uid: int, side: int, amount: int) -> bool:
         if self.locked or not (1 <= side <= len(self.options)):
             return False
-        # A user may only back ONE outcome — reject if they've already bet on another.
+        # A user may only back ONE outcome - reject if they've already bet on another.
         if any(uid in pool for s, pool in self.bets.items() if s != side):
             return False
         side_name = self.options[side - 1]
@@ -93,7 +93,7 @@ class Prediction:
         # bet was placed (stake() -> remove_bb with to_bank=True). The bank
         # therefore already holds the whole pool. Winners are paid back OUT of the
         # bank; any forfeited stakes or integer-rounding remainder simply stay in
-        # the bank. We must NOT deposit the pool (or the dust) again here — doing so
+        # the bank. We must NOT deposit the pool (or the dust) again here - doing so
         # would mint UKP and break the fixed 800k supply.
         totals = self.totals()
         win_total = totals[win_side - 1]
@@ -102,7 +102,7 @@ class Prediction:
         payouts = {}
         if win_total == 0:
             # Nobody backed the winning side. The banked pool is forfeited to the
-            # bank, where it already sits — nothing to pay out, nothing to deposit.
+            # bank, where it already sits - nothing to pay out, nothing to deposit.
             return payouts
 
         ratio = pool_total / win_total
@@ -163,7 +163,7 @@ class Prediction:
 _OPTION_COLORS = [
     (46, 204, 113),   # green
     (88, 101, 242),   # blurple
-    (230, 126, 34),   # orange  (was a low-contrast yellow — hard to read, esp. as a card accent)
+    (230, 126, 34),   # orange  (was a low-contrast yellow - hard to read, esp. as a card accent)
     (231, 76, 60),    # red
     (155, 89, 182),   # purple
 ]
@@ -186,7 +186,7 @@ def _emoji_bar(pct: int, index: int, segments: int = 10) -> str:
 
 def _progress_png_multi(pcts: list) -> io.BytesIO:
     """Render a stacked horizontal bar: one coloured segment per option, sized to
-    its share of the total pool. Works for 2–5 options."""
+    its share of the total pool. Works for 2-5 options."""
     W, H = 400, 18
     img = Image.new("RGB", (W, H), (60, 63, 69))  # dark backing for the empty/no-bets case
     draw = ImageDraw.Draw(img)
@@ -231,7 +231,7 @@ def prediction_embed(pred: Prediction, client: Optional[discord.Client] = None) 
     pcts = [t / grand for t in totals]
     now = discord.utils.utcnow().timestamp()
     if getattr(pred, "drawn", False):
-        time_line = "🟡 **Draw — all bets refunded**"
+        time_line = "🟡 **Draw - all bets refunded**"
     elif pred.locked:
         time_line = "🔒 **locked**"
     elif pred.end_ts and pred.end_ts > now:
@@ -281,7 +281,7 @@ def _build_option_rows_html(pred: Prediction, client: Optional[discord.Client]) 
             top_name = user.display_name if user else str(top_uid)
             top = f"{_html.escape(top_name)} · {_fmt_money(pool[top_uid])}"
         else:
-            top = "—"
+            top = "-"
         rows.append(
             f'<div class="pred-option" style="--accent: {color};">'
             f'<div class="pred-option-top">'
@@ -333,7 +333,7 @@ async def render_prediction_image(pred: Prediction, client: Optional[discord.Cli
         .replace("{{OPTIONS}}", _build_option_rows_html(pred, client))
     )
     # Capture EXACTLY the .sheet card (CDP element clip) rather than the whole
-    # 1000x1200 viewport — otherwise a short 2-outcome card leaves a big band of
+    # 1000x1200 viewport - otherwise a short 2-outcome card leaves a big band of
     # blank canvas below it. The card is its own content height, so the image is
     # tight: landscape and short, which Discord shows big inline (no tap-to-open).
     return await screenshot_html(html_out, size=(1000, 1200), element_selector=".sheet")
@@ -343,7 +343,7 @@ async def build_prediction_render(pred: Prediction, client: Optional[discord.Cli
     """Return ``(embed_or_None, [file])`` for sending/editing a prediction message.
 
     Honours the PREDICTION_IMAGE_ENABLED feature flag: when on, returns the custom
-    HTML→PNG card (no embed); when off — or if rendering raises — returns the
+    HTML→PNG card (no embed); when off - or if rendering raises - returns the
     standard Discord embed + progress-bar file. Callers pass the returned file list
     to ``send(files=...)`` or ``edit(attachments=...)`` and the embed to ``embed=``.
     """
@@ -430,14 +430,14 @@ class BetModal(discord.ui.Modal, title="Place your bet"):
                 )
                 if backed is not None:
                     msg = (
-                        f"❌ You've already backed **{backed}** on this prediction — you can only "
+                        f"❌ You've already backed **{backed}** on this prediction - you can only "
                         f"bet on one outcome. Add more to **{backed}**, or wait for the next prediction."
                     )
                 elif stake > 100_000:
                     msg = "❌ The maximum single bet is **100,000** UKPence."
                 else:
                     curr = get_bb(interaction.user.id)
-                    msg = f"❌ Bet failed — you only have **{_fmt_money(curr)}** UKPence."
+                    msg = f"❌ Bet failed - you only have **{_fmt_money(curr)}** UKPence."
             await interaction.response.send_message(msg, ephemeral=True)
 
 async def _open_bet_modal(interaction: discord.Interaction, pred: "Prediction", side: int) -> None:
@@ -475,7 +475,7 @@ class BetButtons(discord.ui.View):
                 await _open_bet_modal(interaction, self.pred, side)
             return _cb
 
-        # One bet button per outcome (2–5). All fit on action row 0 (max 5 buttons).
+        # One bet button per outcome (2-5). All fit on action row 0 (max 5 buttons).
         # Discord buttons only have 4 fixed style colours, so they can't match a
         # 5-colour palette. For a 2-way prediction we keep distinct green/blurple
         # buttons (they match the bar); for 3+ outcomes every button goes neutral
@@ -508,7 +508,7 @@ class BetButtons(discord.ui.View):
 
 # ----------------------------------------------------------------------------
 # Components V2 prediction view: one compact row per outcome (stats + an inline
-# coloured proportion bar + a Bet button). Native components — crisp on mobile.
+# coloured proportion bar + a Bet button). Native components - crisp on mobile.
 # ----------------------------------------------------------------------------
 
 def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
@@ -517,7 +517,7 @@ def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
     the file list is empty (the bar is inline emoji, no attachments). interactive=False
     omits the bet/notify buttons (locked/resolved).
 
-    Note: the @pred-notifications ping is NOT put in this view — a role mention inside a
+    Note: the @pred-notifications ping is NOT put in this view - a role mention inside a
     CV2 TextDisplay renders but doesn't reliably notify. _post_prediction_message sends
     it as a separate plain-content message instead."""
     em = discord.utils.escape_markdown
@@ -527,7 +527,7 @@ def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
     bettors = len({uid for p in pred.bets.values() for uid in p})
 
     if getattr(pred, "drawn", False):
-        status = "🟡 Draw — all bets refunded"
+        status = "🟡 Draw - all bets refunded"
     elif pred.locked:
         status = "🔒 Locked"
     else:
@@ -546,7 +546,7 @@ def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
 
     # One COMPACT row per outcome: a headline line + a de-emphasised line carrying
     # the inline coloured-square proportion bar. No separate image-bar component, so
-    # each outcome is short. (CV2 stacks vertically — it can't place these in columns.)
+    # each outcome is short. (CV2 stacks vertically - it can't place these in columns.)
     for i, opt in enumerate(pred.options):
         side = i + 1
         rgb = _OPTION_COLORS[i % len(_OPTION_COLORS)]
@@ -555,7 +555,7 @@ def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
         pct = int(round(t / grand * 100))
         pool_i = pred.bets.get(side, {})
         odds = _odds(totals, side)
-        odds_str = f"{odds:.2f}x" if odds else "—"
+        odds_str = f"{odds:.2f}x" if odds else "-"
         nb = len(pool_i)
         sub = f"{_emoji_bar(pct, i)}  ·  {odds_str}  ·  {nb} bettor" + ("" if nb == 1 else "s")
         if pool_i:
@@ -604,7 +604,7 @@ async def _post_prediction_message(channel, pred: Prediction, client: discord.Cl
     if getattr(config, "PREDICTION_CV2_ENABLED", False):
         # Ping the notifications role from a SEPARATE plain-content message. A role
         # mention buried in a Components V2 TextDisplay renders but does NOT reliably
-        # fire a notification — Discord parses mentions differently for content-less
+        # fire a notification - Discord parses mentions differently for content-less
         # CV2 messages. Plain message content is the one ping path Discord never broke.
         # Scoped to only this role so other mentions in the title can't ping.
         role = channel.guild.get_role(ROLES.PRED_NOTIFICATIONS) if channel.guild else None
@@ -679,7 +679,7 @@ class PredAdminView(discord.ui.View):
         super().__init__(timeout=600)
         self.pred = pred
         self.client = client
-        # One "Winner: <option>" button per outcome (2–5), built dynamically so the
+        # One "Winner: <option>" button per outcome (2-5), built dynamically so the
         # panel scales with the prediction's option count. Lock/Unlock/Draw live on
         # row 0; winner buttons on row 1.
         for i, opt in enumerate(pred.options):
@@ -755,13 +755,13 @@ class PredAdminView(discord.ui.View):
         except discord.NotFound:
             pass
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
-        await interaction.followup.send("🟡 Draw called – all bets refunded.", ephemeral=True)
+        await interaction.followup.send("🟡 Draw called - all bets refunded.", ephemeral=True)
         self.stop()
 
     async def _resolve(self, interaction: discord.Interaction, winner: int):
         # Idempotency guard. Claiming the prediction (the pop below) happens
-        # synchronously before any await, so a double-click — or two open admin
-        # panels sharing this Prediction — cannot both pay out: the second
+        # synchronously before any await, so a double-click - or two open admin
+        # panels sharing this Prediction - cannot both pay out: the second
         # invocation finds it already gone from the live registry and bails.
         if self.pred.msg_id not in self.client.predictions:
             return await interaction.response.send_message(
@@ -965,7 +965,7 @@ async def post_prediction(client: discord.Client, channel, title: str, options: 
 
 async def handle_pred_create_command(interaction: discord.Interaction, title: str,
                                      raw_options: list, duration: str):
-    """Slash-command backed prediction creation (2–5 outcomes via slash options)."""
+    """Slash-command backed prediction creation (2-5 outcomes via slash options)."""
     options, err = _clean_options(raw_options)
     if err:
         return await interaction.response.send_message(err, ephemeral=True)
@@ -986,7 +986,7 @@ async def handle_pred_create_command(interaction: discord.Interaction, title: st
 
 async def handle_pred_schedule_command(interaction: discord.Interaction, channel_id: int,
                                        title: str, raw_options: list, when: str, duration: str):
-    """Slash-command backed scheduling of a prediction (2–5 outcomes)."""
+    """Slash-command backed scheduling of a prediction (2-5 outcomes)."""
     options, err = _clean_options(raw_options)
     if err:
         return await interaction.response.send_message(err, ephemeral=True)
@@ -1061,7 +1061,7 @@ async def handle_pred_schedule_command(interaction: discord.Interaction, channel
 
 def _build_option_inputs(num_options: int):
     """Build the modal's outcome input(s): two separate boxes for a 2-way
-    prediction, or a single slash-separated box for 3–5 outcomes (Discord caps
+    prediction, or a single slash-separated box for 3-5 outcomes (Discord caps
     modals at 5 fields, so we can't show 5 individual boxes alongside the other
     fields). Returns (separate_inputs_or_None, slash_box_or_None)."""
     if num_options == 2:
@@ -1186,7 +1186,7 @@ class PredictionEditModal(discord.ui.Modal):
             scheduled_ts, tz=pytz.timezone("Europe/London")
         ).strftime("%Y-%m-%d %H:%M")
         # Keep the originals so an unchanged "when" can skip the future-time
-        # check — staff editing only the title of an imminent prediction
+        # check - staff editing only the title of an imminent prediction
         # shouldn't be blocked by "Post time must be in the future."
         self._orig_when_default = when_default
         self._orig_scheduled_ts = scheduled_ts
@@ -1198,7 +1198,7 @@ class PredictionEditModal(discord.ui.Modal):
             required=True,
             max_length=200,
         )
-        # A single multi-line box (one outcome per line) — a per-outcome field can't
+        # A single multi-line box (one outcome per line) - a per-outcome field can't
         # be used here because the modal already needs title + when + duration, and
         # Discord caps modals at 5 fields, leaving no room for up to 5 option fields.
         self.options_input = discord.ui.TextInput(
@@ -1290,7 +1290,7 @@ class PredictionEditModal(discord.ui.Modal):
             )
 
         await interaction.response.send_message(
-            f"✅ Prediction #{self.sched_id} updated — now posts <t:{scheduled_ts}:F> (<t:{scheduled_ts}:R>) in <#{channel_id}>.",
+            f"✅ Prediction #{self.sched_id} updated - now posts <t:{scheduled_ts}:F> (<t:{scheduled_ts}:R>) in <#{channel_id}>.",
             ephemeral=True,
         )
 

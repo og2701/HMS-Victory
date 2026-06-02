@@ -12,21 +12,21 @@ CHROME_PATH = os.getenv("CHROME_PATH", "/usr/bin/google-chrome")
 SHUTCOIN_ENABLED = True
 SUMMARISE_DAILY_LIMIT = 10
 # Prediction view style (checked in priority order):
-#   PREDICTION_CV2_ENABLED   — native Components V2 layout: one block per outcome
+#   PREDICTION_CV2_ENABLED   - native Components V2 layout: one block per outcome
 #                              with stats, a Bet button and a coloured proportion
 #                              bar image. All native components (crisp on mobile).
-#   PREDICTION_IMAGE_ENABLED — custom HTML→PNG card (templates/prediction_card.html).
+#   PREDICTION_IMAGE_ENABLED - custom HTML→PNG card (templates/prediction_card.html).
 #                              NOTE: it's an image Discord downscales, so it renders
-#                              small/hard-to-read on mobile — kept for reference only.
-#   (neither)                — the standard Discord embed (default).
+#                              small/hard-to-read on mobile - kept for reference only.
+#   (neither)                - the standard Discord embed (default).
 PREDICTION_CV2_ENABLED = True
 PREDICTION_IMAGE_ENABLED = False
 
 # --- Blackjack (vs-the-house) ---
-#   BLACKJACK_ENABLED        — master toggle for the /blackjack command.
-#   BLACKJACK_IMAGE_ENABLED  — render the premium HTML→PNG felt table each action
-#                              (templates/blackjack_table.html). When off — or if a
-#                              render raises — the game falls back to a native
+#   BLACKJACK_ENABLED        - master toggle for the /blackjack command.
+#   BLACKJACK_IMAGE_ENABLED  - render the premium HTML→PNG felt table each action
+#                              (templates/blackjack_table.html). When off - or if a
+#                              render raises - the game falls back to a native
 #                              Components V2 text layout (mobile-crisp, zero render
 #                              cost). Mirrors the PREDICTION_* dual-path design.
 BLACKJACK_ENABLED = True

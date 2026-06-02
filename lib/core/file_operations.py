@@ -8,7 +8,7 @@ from config import PERSISTENT_VIEWS_FILE, WEBHOOK_DELETIONS_FILE, WHITELIST_FILE
 def atomic_write_json(filename: str, data: Any, indent: int = None) -> None:
     """Write JSON durably: serialise to a temp file in the same directory, fsync,
     then os.replace() over the target. A crash mid-write can never leave a
-    truncated/corrupt file — readers see either the old or the new content, never
+    truncated/corrupt file - readers see either the old or the new content, never
     a half-written one. Used for all persistent JSON state (predictions, persistent
     views, metrics, etc.) that has no other backing store.
     """

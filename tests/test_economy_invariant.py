@@ -7,7 +7,7 @@ a throwaway SQLite database and assert that the invariant holds across transfers
 bank withdrawals/deposits, the wealth tax, and prediction payouts.
 
 Runnable either under pytest (`pytest tests/test_economy_invariant.py`) or directly
-with the stdlib (`python3 tests/test_economy_invariant.py`) — no pytest required.
+with the stdlib (`python3 tests/test_economy_invariant.py`) - no pytest required.
 """
 
 import os
@@ -153,7 +153,7 @@ def test_prediction_payout_conserves_supply():
         # double_or_nothing badge path isn't taken.
         assert pred.stake(a, 1, 1000) is True
         assert pred.stake(b, 2, 1000) is True
-        # Stakes are banked at bet time — supply still conserved.
+        # Stakes are banked at bet time - supply still conserved.
         assert _total_supply(database) == TOTAL_SUPPLY
 
         payouts = pred.resolve(1)  # side A wins the 2000 pool
@@ -165,7 +165,7 @@ def test_prediction_payout_conserves_supply():
 
 def test_prediction_one_sided_winner_no_inflation():
     """If the side with zero backers is declared winner, the forfeited pool must
-    stay in the bank (already there from bet time) — not be deposited again."""
+    stay in the bank (already there from bet time) - not be deposited again."""
     _require_discord()
     with tempfile.TemporaryDirectory() as d:
         em, _, database = _fresh_economy(d)

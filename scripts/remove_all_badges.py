@@ -9,7 +9,7 @@ from database import DatabaseManager
 from config import USERS
 
 def main():
-    # Default to Oggers (matches award_all_badges.py) — the old hardcoded id was stale.
+    # Default to Oggers (matches award_all_badges.py) - the old hardcoded id was stale.
     target_user_id = str(USERS.OGGERS)
 
     if len(sys.argv) > 1:

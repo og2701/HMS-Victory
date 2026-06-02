@@ -65,7 +65,7 @@ class DatabaseManager:
         """Hold the global DB lock across a multi-statement block.
 
         Yields the shared connection wrapped in its own context manager so the
-        block commits on success and rolls back on error — a drop-in replacement
+        block commits on success and rolls back on error - a drop-in replacement
         for ``with DatabaseManager.get_connection() as conn:`` that also serialises
         against every other DB caller.
         """
@@ -161,7 +161,7 @@ def init_db():
                 last_xp_time INTEGER NOT NULL DEFAULT 0
             )
         ''')
-        # Auction feature removed — drop any legacy tables left over from older databases.
+        # Auction feature removed - drop any legacy tables left over from older databases.
         c.execute("DROP TABLE IF EXISTS auctions")
         c.execute("DROP TABLE IF EXISTS auction_history")
         c.execute("DROP TABLE IF EXISTS auction_winners")
@@ -444,7 +444,7 @@ def init_db():
             c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)",
                       (b_id, b_name, b_desc, b_icon, b_rarity))
 
-        # Auction feature removed — purge the now-unobtainable market_manipulator badge.
+        # Auction feature removed - purge the now-unobtainable market_manipulator badge.
         c.execute("DELETE FROM user_badges WHERE badge_id = 'market_manipulator'")
         c.execute("DELETE FROM badges WHERE id = 'market_manipulator'")
 

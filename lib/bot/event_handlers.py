@@ -281,7 +281,7 @@ async def notify_mute(client, member):
             reason = (entry.reason or "").strip() or "(no reason given)"
         else:
             mute_type = "Timeout"
-            moderator = "(unknown – not in audit log)"
+            moderator = "(unknown - not in audit log)"
             reason = "(no reason given)"
 
         until = member.timed_out_until
@@ -308,7 +308,7 @@ async def notify_mute(client, member):
 
         lines = [
             f"{member.mention} `{member}` · **{mute_type}** · {duration_str} (→ {until_str})",
-            f"By **{moderator}** — {reason[:300]}",
+            f"By **{moderator}** - {reason[:300]}",
         ]
         if msg_info:
             url, preview = msg_info
@@ -316,7 +316,7 @@ async def notify_mute(client, member):
             preview_line = preview.replace("\n", " ")
             if len(preview_line) > 200:
                 preview_line = preview_line[:200].rstrip() + "…"
-            lines.append(f"[{tag} msg]({url}) — {preview_line}")
+            lines.append(f"[{tag} msg]({url}) - {preview_line}")
 
         embed = discord.Embed(
             description="\n".join(lines)[:4000],
@@ -362,7 +362,7 @@ def award_badge_notify(user_id: int, badge_id: str):
             )
             return
         except RuntimeError:
-            pass  # No running loop (e.g. offline script) — award silently below.
+            pass  # No running loop (e.g. offline script) - award silently below.
     from database import award_badge
     award_badge(user_id, badge_id)
 
@@ -958,7 +958,7 @@ async def on_message(client, message):
             await message.delete()
             from lib.economy.admin_shop_ui import AdminShopLaunchView
             await message.channel.send(
-                "**Shop Admin** — pick an item:",
+                "**Shop Admin** - pick an item:",
                 view=AdminShopLaunchView(message.author.id),
             )
         except Exception as e:
@@ -1326,7 +1326,7 @@ async def check_hall_of_fame(client, payload):
             return
 
         # If the message is already in the Hall of Fame, the only thing left to
-        # award is local_legend (10 unique reactors) — which used to be unreachable
+        # award is local_legend (10 unique reactors) - which used to be unreachable
         # because the old early-return fired first. Skip the expensive reactor
         # recount only when the author already holds that one-time badge.
         if already_in_hof:
@@ -1464,7 +1464,7 @@ async def on_reaction_add(reaction, user):
 async def on_reaction_remove(reaction, user):
     emoji_str = str(reaction.emoji)
 
-    # bedtime undo — Cabinet/Border Force only, same mod who applied it
+    # bedtime undo - Cabinet/Border Force only, same mod who applied it
     if ":bedtime:" in emoji_str:
         has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
         if has_role:

@@ -29,7 +29,7 @@ The ship's chief "police officer," responsible for maintaining order, preventing
 A young officer in training, learning the trade of seamanship and leadership while serving as a bridge between the crew and officers.
 
 ### ⚓ Able Seaman
-A skilled and experienced mariner capable of "hand, reef, and steer"—performing all the essential duties of working the ship.
+A skilled and experienced mariner capable of "hand, reef, and steer"-performing all the essential duties of working the ship.
 
 ### 💣 Master Gunner
 A warrant officer in charge of the ship's artillery, gunpowder stores, and the training of the gun crews.
@@ -38,7 +38,7 @@ A warrant officer in charge of the ship's artillery, gunpowder stores, and the t
 The ship's doctor, responsible for the health of the crew, managing diseases, and performing surgeries during battle.
 
 ### 💰 Purser
-The warrant officer responsible for the ship's provisions, clothing, and pay—handling the complex logistics of the voyage.
+The warrant officer responsible for the ship's provisions, clothing, and pay-handling the complex logistics of the voyage.
 
 ### 🔉 Boatswain
 The warrant officer in charge of the ship's hull, rigging, anchors, and boats, traditionally using a silver whistle to signal orders.

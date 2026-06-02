@@ -128,23 +128,23 @@ async def _generate_summary_narrative(
     system_prompt = (
         "You are the HMS Victory bot, posting a short editorial caption to accompany a "
         f"{frequency} server summary image for a UK-themed Discord. "
-        f"Write at most {sentence_cap} sentence(s). Plain text only — no markdown headers, "
+        f"Write at most {sentence_cap} sentence(s). Plain text only - no markdown headers, "
         "no bullet points, no emojis. Light British dry humour is welcome but never forced.\n\n"
         "You will be given two stats blocks: 'Current period' and 'Previous period'. "
-        "Use the previous period to identify genuine trends — repeat winners (e.g. 'oggers tops "
+        "Use the previous period to identify genuine trends - repeat winners (e.g. 'oggers tops "
         "the activity board for the second week running'), category swings not already captured "
         "in the (+N)/(-N) deltas (e.g. joins, leaves, bans, reactions, deletions), and noteworthy "
         "channel reshuffles. Treat small wobbles as noise.\n\n"
         "What to include:\n"
-        "- Lead with the single most interesting thing in the data — a notable spike or drop, "
+        "- Lead with the single most interesting thing in the data - a notable spike or drop, "
         "a streak across both periods, or a member/channel that clearly drove activity.\n"
-        "- When referring to a channel, copy its Discord mention token verbatim — the "
+        "- When referring to a channel, copy its Discord mention token verbatim - the "
         "`<#1234567890>` form shown in the stats block. Do NOT write `#channel-name` in "
         "plain text and do NOT invent or guess channel IDs; only use mention tokens that "
         "appear in the stats. Real member names should be written exactly as given.\n"
         "- Use (+N) / (-N) deltas where present, and otherwise compare current vs previous "
         "directly (e.g. 'joins doubled', 'half as many bans as last week').\n"
-        "- If the period was unremarkable, say so briefly — don't manufacture drama.\n"
+        "- If the period was unremarkable, say so briefly - don't manufacture drama.\n"
         "- Never restate the full numbers; the image already shows them. Add colour, not redundancy."
     )
 
@@ -156,7 +156,7 @@ async def _generate_summary_narrative(
     else:
         stats_section = (
             f"Current period:\n{stats_block}\n\n"
-            f"Previous period: not available — skip comparisons."
+            f"Previous period: not available - skip comparisons."
         )
 
     user_text = (

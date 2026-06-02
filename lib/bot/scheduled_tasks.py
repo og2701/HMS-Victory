@@ -543,7 +543,7 @@ async def process_economy_logs(client):
                 reason_part = "Unspecified"
             
             reason_stripped = reason_part.strip()
-            field_name = f"<t:{timestamp}:T> — {reason_stripped}"
+            field_name = f"<t:{timestamp}:T> - {reason_stripped}"
             field_value = description_part.strip()
             
             if reason_stripped == "Chatting activity reward" and economy_thread:

@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 def _format_purchase_history_embed(item_id=None, limit: int = 15) -> discord.Embed:
     purchases = ShopInventory.get_purchase_history(None, item_id, limit)
-    title = f"📜 Purchases — {item_id}" if item_id else "📜 Recent Purchases"
+    title = f"📜 Purchases - {item_id}" if item_id else "📜 Recent Purchases"
     embed = discord.Embed(title=title, color=0x0099ff)
     if not purchases:
         embed.description = "_No purchases recorded._"
@@ -59,7 +59,7 @@ def _format_item_embed(item, viewer_id: int) -> discord.Embed:
     embed.add_field(name="Item ID", value=f"`{item.id}`", inline=True)
     embed.add_field(name="Price", value=f"{item.get_price(viewer_id)} UKP", inline=True)
     embed.add_field(name="Visible in shop", value="Yes" if item.show_in_shop else "No", inline=True)
-    embed.add_field(name="Stock", value=str(qty) if qty is not None else "—", inline=True)
+    embed.add_field(name="Stock", value=str(qty) if qty is not None else "-", inline=True)
     embed.add_field(name="Max", value="∞" if max_qty is None else str(max_qty), inline=True)
     embed.add_field(name="Auto-restock", value=f"{'On' if auto else 'Off'} (+{restock_amt}/12h)", inline=True)
     return embed
@@ -126,7 +126,7 @@ class AdminShopItemView(View):
                 return
             await modal_interaction.response.edit_message(embed=_format_item_embed(self._item(), self.user_id), view=self)
         await interaction.response.send_modal(_IntModal(
-            title=f"Set stock — {self.item_id}",
+            title=f"Set stock - {self.item_id}",
             label="New stock quantity",
             placeholder="e.g. 10",
             allow_blank_for_none=False,
@@ -142,7 +142,7 @@ class AdminShopItemView(View):
                 return
             await modal_interaction.response.edit_message(embed=_format_item_embed(self._item(), self.user_id), view=self)
         await interaction.response.send_modal(_IntModal(
-            title=f"Set max — {self.item_id}",
+            title=f"Set max - {self.item_id}",
             label="Max quantity (blank = unlimited)",
             placeholder="e.g. 60 or leave blank",
             allow_blank_for_none=True,
@@ -158,7 +158,7 @@ class AdminShopItemView(View):
                 return
             await modal_interaction.response.edit_message(embed=_format_item_embed(self._item(), self.user_id), view=self)
         await interaction.response.send_modal(_IntModal(
-            title=f"Set restock — {self.item_id}",
+            title=f"Set restock - {self.item_id}",
             label="Amount added per 12h tick",
             placeholder="e.g. 1",
             allow_blank_for_none=False,
@@ -179,7 +179,7 @@ class AdminShopItemView(View):
     async def initialize(self, interaction: discord.Interaction, button: Button):
         info = ShopInventory.get_item_info(self.item_id)
         if info:
-            await interaction.response.send_message("Already initialized — use the other buttons.", ephemeral=True)
+            await interaction.response.send_message("Already initialized - use the other buttons.", ephemeral=True)
             return
         ShopInventory.initialize_item(self.item_id, 0, None, False, 0)
         await self._refresh(interaction)
@@ -193,7 +193,7 @@ class AdminShopItemView(View):
     @discord.ui.button(label="◀ Back", style=discord.ButtonStyle.danger, row=1)
     async def back(self, interaction: discord.Interaction, button: Button):
         view = AdminShopLaunchView(self.user_id)
-        await interaction.response.edit_message(content="**Shop Admin** — pick an item:", embed=None, view=view)
+        await interaction.response.edit_message(content="**Shop Admin** - pick an item:", embed=None, view=view)
 
 
 class _ItemSelect(Select):

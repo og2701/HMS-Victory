@@ -45,7 +45,7 @@ def render_mentions(message, text: str) -> str:
     """
     guild = message.guild
 
-    # 1. @everyone / @here — only when the message actually pinged everyone.
+    # 1. @everyone / @here - only when the message actually pinged everyone.
     if getattr(message, "mention_everyone", False):
         text = re.sub(
             r"@(everyone|here)",
@@ -53,7 +53,7 @@ def render_mentions(message, text: str) -> str:
             text,
         )
 
-    # 2. Role mentions — escaped &lt;@&amp;id&gt;; tint the pill with the role colour.
+    # 2. Role mentions - escaped &lt;@&amp;id&gt;; tint the pill with the role colour.
     role_map = {r.id: r for r in message.role_mentions}
 
     def _role_sub(m):
@@ -73,7 +73,7 @@ def render_mentions(message, text: str) -> str:
 
     text = re.sub(r"&lt;@&amp;([0-9]+)&gt;", _role_sub, text)
 
-    # 3. User mentions — escaped &lt;@id&gt; and &lt;@!id&gt;.
+    # 3. User mentions - escaped &lt;@id&gt; and &lt;@!id&gt;.
     user_map = {u.id: u.display_name for u in message.mentions}
 
     def _user_sub(m):
@@ -88,7 +88,7 @@ def render_mentions(message, text: str) -> str:
 
     text = re.sub(r"&lt;@!?([0-9]+)&gt;", _user_sub, text)
 
-    # 4. Channel mentions — escaped &lt;#id&gt;.
+    # 4. Channel mentions - escaped &lt;#id&gt;.
     chan_map = {c.id: c for c in message.channel_mentions}
 
     def _chan_sub(m):
@@ -106,10 +106,10 @@ def render_mentions(message, text: str) -> str:
 def get_video_poster_url(message, width: int = 640):
     """Return a still poster-image URL for a video in `message`, or None.
 
-    Covers link-embedded videos (TikTok/YouTube live in message.embeds — use the
+    Covers link-embedded videos (TikTok/YouTube live in message.embeds - use the
     embed thumbnail) and uploaded video attachments (no poster field, so ask
     Discord's media proxy to freeze the first frame via format=jpeg). The URL is
-    signed and short-lived, so download it promptly — create_quote_image inlines it
+    signed and short-lived, so download it promptly - create_quote_image inlines it
     as base64 right away, so expiry doesn't matter afterwards.
     """
     for embed in message.embeds:
@@ -422,7 +422,7 @@ async def create_quote_image(client, message):
             except Exception as e:
                 print(f"Error downloading attachment for quote: {e}")
 
-    # No static image — if the message has a video (uploaded file or a link-embedded
+    # No static image - if the message has a video (uploaded file or a link-embedded
     # TikTok/YouTube), bake its poster frame into the card with a play-button overlay
     # so the card isn't just text. The playable copy still rides along in the HOF post.
     if not attached_image_html:

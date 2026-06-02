@@ -341,7 +341,7 @@ class PurchaseConfirmationView(View):
                     pass
                 return
 
-            # Purchase confirmed & item delivered — award purchase badges NOW (not
+            # Purchase confirmed & item delivered - award purchase badges NOW (not
             # before delivery, so a failed/refunded purchase can never leave a badge).
             from lib.bot.event_handlers import award_badge_with_notify
             await award_badge_with_notify(interaction.client, interaction.user.id, 'first_purchase')
@@ -352,7 +352,7 @@ class PurchaseConfirmationView(View):
             if (total_purchased_res[0] or 0) >= 10:
                 await award_badge_with_notify(interaction.client, interaction.user.id, 'shopaholic')
 
-            # Item was successfully granted — from here, errors are UI-only (don't refund)
+            # Item was successfully granted - from here, errors are UI-only (don't refund)
             try:
                 if self.item.name not in ["VIP Role Case", "Custom Emoji/Sticker", "Lucky Dip"]:
                     # Return to main browser but show a success ephemeral message
@@ -395,7 +395,7 @@ class PurchaseConfirmationView(View):
                     log_embed.timestamp = discord.utils.utcnow()
                     await log_channel.send(embed=log_embed)
             except Exception as e:
-                # UI/logging error after successful purchase — do NOT refund
+                # UI/logging error after successful purchase - do NOT refund
                 logging.error(f"Shop post-purchase UI error for {self.item.name} by {interaction.user}: {e}", exc_info=True)
         else:
             await interaction.response.send_message("❌ Payment failed. Please try again.", ephemeral=True)
@@ -895,7 +895,7 @@ class LuckyDipCaseSpinView(View):
             if had_funds:
                 result_embed.description = f"{outcome['emoji']} {self.user.mention} got hit with **{outcome['label']}**!\n\n-{amount} UKPence! 💸"
             else:
-                # They don't have enough to lose — just show the message without deducting
+                # They don't have enough to lose - just show the message without deducting
                 result_embed.description = f"{outcome['emoji']} {self.user.mention} got hit with **{outcome['label']}**!\n\nYou're too broke to pay the -{amount} UKPence fine... lucky you! 😅"
 
         # Log to bot usage log
@@ -1072,7 +1072,7 @@ class EmojiStickerApprovalView(View):
         self.filename = filename
 
     def _refund_amount(self) -> int:
-        """The price to refund — the configured custom_emoji_sticker item price."""
+        """The price to refund - the configured custom_emoji_sticker item price."""
         from lib.economy.shop_items import get_shop_items
         refund_amount = 3500
         for item in get_shop_items():
