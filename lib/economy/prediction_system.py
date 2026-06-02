@@ -512,10 +512,14 @@ class BetButtons(discord.ui.View):
 # ----------------------------------------------------------------------------
 
 def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
-                            *, interactive: bool = True, ping: str = None):
+                            *, interactive: bool = True):
     """Build the Components V2 LayoutView for a prediction. Returns (view, files);
     the file list is empty (the bar is inline emoji, no attachments). interactive=False
-    omits the bet/notify buttons (locked/resolved)."""
+    omits the bet/notify buttons (locked/resolved).
+
+    Note: the @pred-notifications ping is NOT put in this view — a role mention inside a
+    CV2 TextDisplay renders but doesn't reliably notify. _post_prediction_message sends
+    it as a separate plain-content message instead."""
     em = discord.utils.escape_markdown
     totals = pred.totals()
     pool = sum(totals)
@@ -531,8 +535,6 @@ def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
     when = f"  ·  closes <t:{int(pred.end_ts)}:R>" if (pred.end_ts and not pred.locked and not pred.drawn) else ""
 
     view = discord.ui.LayoutView(timeout=None)
-    if ping:
-        view.add_item(discord.ui.TextDisplay(ping))
 
     header = discord.ui.Container(accent_colour=discord.Colour(0x00247D))
     header.add_item(discord.ui.TextDisplay(
@@ -599,11 +601,25 @@ def _make_layout_bet_cb(pred: Prediction, side: int):
 async def _post_prediction_message(channel, pred: Prediction, client: discord.Client):
     """Send a brand-new prediction message in whichever style the flags select."""
     import config
-    ping = f"<@&{ROLES.PRED_NOTIFICATIONS}>"
     if getattr(config, "PREDICTION_CV2_ENABLED", False):
-        view, files = build_prediction_layout(pred, client, interactive=True, ping=ping)
+        # Ping the notifications role from a SEPARATE plain-content message. A role
+        # mention buried in a Components V2 TextDisplay renders but does NOT reliably
+        # fire a notification — Discord parses mentions differently for content-less
+        # CV2 messages. Plain message content is the one ping path Discord never broke.
+        # Scoped to only this role so other mentions in the title can't ping.
+        role = channel.guild.get_role(ROLES.PRED_NOTIFICATIONS) if channel.guild else None
+        mention = role.mention if role else f"<@&{ROLES.PRED_NOTIFICATIONS}>"
+        await channel.send(
+            content=f"{mention}  ·  **{discord.utils.escape_markdown(pred.title)}**",
+            allowed_mentions=discord.AllowedMentions(
+                everyone=False, users=False,
+                roles=[role] if role else [discord.Object(id=ROLES.PRED_NOTIFICATIONS)],
+            ),
+        )
+        view, files = build_prediction_layout(pred, client, interactive=True)
         return await channel.send(view=view, files=files,
-                                  allowed_mentions=discord.AllowedMentions(roles=True))
+                                  allowed_mentions=discord.AllowedMentions.none())
+    ping = f"<@&{ROLES.PRED_NOTIFICATIONS}>"
     embed, files = await build_prediction_render(pred, client)
     return await channel.send(content=ping, embed=embed, files=files, view=BetButtons(pred),
                               allowed_mentions=discord.AllowedMentions(roles=True))
