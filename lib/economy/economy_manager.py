@@ -226,7 +226,9 @@ def add_bb(user_id: int, amount: int, reason: str = "Unspecified",
                 gross = amount
                 amount -= tax_amount
                 effective_rate = tax_amount / gross
-                BankManager.deposit(
+                # deposit_tax (not deposit) so it also increments total_tax_collected;
+                # plain deposit only bumped total_revenue, leaving the tax counter at 0.
+                BankManager.deposit_tax(
                     tax_amount,
                     description=f"Wealth tax on '{reason}' (gross: {gross:,}, rate: {effective_rate:.0%})",
                 )

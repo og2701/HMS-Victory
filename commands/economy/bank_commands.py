@@ -8,6 +8,9 @@ from typing import Optional
 async def handle_bank_status_command(interaction: discord.Interaction):
     """Show current bank status"""
     bank_info = BankManager.get_bank_info()
+    # Tax + blackjack P/L are derived from the transaction ledger so they include all
+    # history and can't drift from a counter (the old stored tax counter read 0).
+    ledger = BankManager.get_ledger_stats()
 
     embed = discord.Embed(
         title="🏦 Server Bank Status",
@@ -28,8 +31,20 @@ async def handle_bank_status_command(interaction: discord.Interaction):
 
     embed.add_field(
         name="🏛️ Total Tax Collected",
-        value=f"{bank_info['total_tax_collected']:,} UKPence",
+        value=f"{ledger['tax_collected']:,} UKPence",
         inline=True
+    )
+
+    bj_net = ledger['blackjack_net']
+    bj_sign = "+" if bj_net >= 0 else "-"
+    house_note = "house ahead" if bj_net > 0 else ("players ahead" if bj_net < 0 else "even")
+    embed.add_field(
+        name="🎰 Blackjack (House P/L)",
+        value=(
+            f"{bj_sign}{abs(bj_net):,} UKPence ({house_note})\n"
+            f"`{ledger['blackjack_in']:,}` wagered in · `{ledger['blackjack_out']:,}` paid out"
+        ),
+        inline=False
     )
 
     if bank_info['last_updated'] > 0:
@@ -40,7 +55,7 @@ async def handle_bank_status_command(interaction: discord.Interaction):
             inline=False
         )
 
-    embed.set_footer(text="💡 Bank accumulates UKPence from shop purchases & inactivity tax")
+    embed.set_footer(text="💡 Bank accumulates UKPence from shop purchases, wealth tax & the blackjack edge")
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 

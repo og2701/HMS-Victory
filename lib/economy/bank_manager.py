@@ -1,3 +1,4 @@
+import re
 import time
 import sqlite3
 import logging
@@ -5,6 +6,9 @@ from typing import Dict, Any
 from database import DatabaseManager
 
 logger = logging.getLogger(__name__)
+
+# Amount inside a bank-ledger log line, e.g. "🏦 Bank deposit: `1,234` UKP|...".
+_LEDGER_AMOUNT = re.compile(r"`([\d,]+(?:\.\d+)?)`")
 
 class BankManager:
     """Manages the server's bank balance from shop purchases"""
@@ -173,6 +177,45 @@ class BankManager:
                 'total_tax_collected': 0,
                 'last_updated': 0
             }
+
+    @staticmethod
+    def get_ledger_stats() -> Dict[str, int]:
+        """Derive bank metrics straight from the transaction ledger (economy_transactions).
+
+        The ledger is the immutable record of every bank movement, so these figures
+        include all history (no separate backfill needed) and can never drift from a
+        stored counter. Only bank-side lines (🏦 deposit / 📉 withdrawal) are counted,
+        so the matching user-side rows (💸/⚖️) don't double-count.
+
+        Returns: tax_collected, and blackjack house P/L (wagered in, paid out, net).
+        Net blackjack P/L is positive when the house is ahead.
+        """
+        rows = DatabaseManager.fetch_all(
+            "SELECT log_text FROM economy_transactions "
+            "WHERE log_text LIKE '%Wealth tax%' OR log_text LIKE '%Blackjack%'"
+        )
+        tax = bj_in = bj_out = 0
+        for row in rows or []:
+            txt = row[0] or ""
+            m = _LEDGER_AMOUNT.search(txt)
+            if not m:
+                continue
+            amt = int(float(m.group(1).replace(",", "")))
+            is_deposit = txt.startswith("🏦 Bank deposit:")
+            is_withdrawal = txt.startswith("📉 Bank withdrawal:")
+            if "Wealth tax" in txt and is_deposit:
+                tax += amt
+            elif "Blackjack" in txt:
+                if is_deposit:
+                    bj_in += amt        # stakes (and doubles) entering the bank
+                elif is_withdrawal:
+                    bj_out += amt       # wins / pushes / refunds leaving the bank
+        return {
+            "tax_collected": tax,
+            "blackjack_in": bj_in,
+            "blackjack_out": bj_out,
+            "blackjack_net": bj_in - bj_out,
+        }
 
     @staticmethod
     def set_balance(amount: float, description: str = "Administrative adjustment") -> bool:
