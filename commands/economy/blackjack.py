@@ -105,6 +105,7 @@ class BlackjackGame:
         # transient (never serialised)
         self.settled = False
         self.replayed = False
+        self.busy = False             # True while an action is mid-render (drops double-clicks)
         self.outcome = None           # "win" | "lose" | "push" | "blackjack"
         self.payout = 0
         self.net = 0
@@ -285,13 +286,31 @@ def _settle(game: BlackjackGame):
 # ---------------------------------------------------------------------------
 # Rendering — premium HTML table
 # ---------------------------------------------------------------------------
-def _card_html(code: str) -> str:
+# Card fan geometry (keep in sync with .card width in templates/blackjack_table.html).
+_CARD_W = 160
+_HAND_MAXW = 600       # cards never spill past this, however many are dealt
+_DEFAULT_STEP = 112    # comfortable spacing for small hands
+
+
+def _overlaps(n: int) -> list:
+    """Per-card left-margins (for cards after the first) so the fan fits _HAND_MAXW."""
+    if n <= 1:
+        return []
+    step = min(_DEFAULT_STEP, (_HAND_MAXW - _CARD_W) / (n - 1))
+    return [round(step - _CARD_W)] * (n - 1)
+
+
+def _style(margin_left):
+    return f' style="margin-left:{margin_left}px"' if margin_left is not None else ""
+
+
+def _card_html(code: str, margin_left=None) -> str:
     r, s = code[0], code[1]
     disp = _disp_rank(r)
     glyph = SUIT_GLYPH[s]
     red = " red" if s in RED_SUITS else ""
     return (
-        f'<div class="card{red}">'
+        f'<div class="card{red}"{_style(margin_left)}>'
         f'<span class="corner tl"><b>{disp}</b><i>{glyph}</i></span>'
         f'<span class="pip">{glyph}</span>'
         f'<span class="corner br"><b>{disp}</b><i>{glyph}</i></span>'
@@ -299,8 +318,19 @@ def _card_html(code: str) -> str:
     )
 
 
-def _back_html() -> str:
-    return '<div class="card back"></div>'
+def _back_html(margin_left=None) -> str:
+    return f'<div class="card back"{_style(margin_left)}></div>'
+
+
+def _hand_html(specs: list) -> str:
+    """Render a hand from specs (a card code, or None for a face-down back),
+    overlapping cards just enough that even a big hand stays on the table."""
+    margins = _overlaps(len(specs))
+    parts = []
+    for i, spec in enumerate(specs):
+        ml = None if i == 0 else margins[i - 1]
+        parts.append(_back_html(ml) if spec is None else _card_html(spec, ml))
+    return "".join(parts)
 
 
 def _banner_html(game: BlackjackGame) -> str:
@@ -326,16 +356,16 @@ def build_table_html(game: BlackjackGame) -> str:
     template = read_html_template("templates/blackjack_table.html")
 
     if game.hole_revealed:
-        dealer_cards = "".join(_card_html(c) for c in game.dealer_cards)
+        dealer_cards = _hand_html(list(game.dealer_cards))
         dt = game.dealer_total()
         dealer_total = str(dt)
         d_cls = "bust" if dt > 21 else ("bj" if game.is_blackjack(game.dealer_cards) else "")
     else:
-        dealer_cards = _card_html(game.dealer_cards[0]) + _back_html()
+        dealer_cards = _hand_html([game.dealer_cards[0], None])  # None = face-down hole card
         dealer_total = "?"
         d_cls = ""
 
-    player_cards = "".join(_card_html(c) for c in game.player_cards)
+    player_cards = _hand_html(list(game.player_cards))
     pt = game.player_total()
     if pt > 21:
         p_cls = "bust"
@@ -516,61 +546,73 @@ async def _handle_action(interaction: Interaction, game: BlackjackGame, action: 
         )
         return
 
-    client = interaction.client
-    async with game.lock:
-        if action == "again":
-            await _handle_again(interaction, game, client)
-            return
-
-        if game.state != "player":
-            await interaction.response.defer()  # stale click; the hand is already over
-            return
-
-        if action == "double":
-            if not game.can_double():
-                await interaction.response.send_message(
-                    "You can only double down on your opening two cards.", ephemeral=True
-                )
-                return
-            if get_bb(game.player_id) < game.bet:
-                await interaction.response.send_message(
-                    f"You need {game.bet:,} more UKPence to double down.", ephemeral=True
-                )
-                return
-
+    # Drop clicks that arrive while a previous one is still being processed. The image
+    # render takes ~1-2s and the old buttons stay live during it, so a fast double-click
+    # would otherwise queue a second action (an extra Hit). Reading and setting `busy`
+    # has no await between them, so it's atomic on the event loop — exactly one action
+    # runs; the rest are silently acknowledged.
+    if game.busy:
         await interaction.response.defer()
-
-        if action == "hit":
-            game.hit_player()
-        elif action == "stand":
-            game.dealer_play()
-        elif action == "double":
-            if not remove_bb(game.player_id, game.bet, reason="Blackjack double down"):
-                await interaction.followup.send(
-                    "You don't have enough UKPence to double down.", ephemeral=True
-                )
+        return
+    game.busy = True
+    client = interaction.client
+    try:
+        async with game.lock:
+            if action == "again":
+                await _handle_again(interaction, game, client)
                 return
-            game.total_staked += game.bet
-            game.doubled = True
-            game.player_cards.append(game.deck.pop())
-            if game.player_busted():
-                game.hole_revealed = True
-                game.state = "over"
-            else:
+
+            if game.state != "player":
+                await interaction.response.defer()  # stale click; the hand is already over
+                return
+
+            if action == "double":
+                if not game.can_double():
+                    await interaction.response.send_message(
+                        "You can only double down on your opening two cards.", ephemeral=True
+                    )
+                    return
+                if get_bb(game.player_id) < game.bet:
+                    await interaction.response.send_message(
+                        f"You need {game.bet:,} more UKPence to double down.", ephemeral=True
+                    )
+                    return
+
+            await interaction.response.defer()
+
+            if action == "hit":
+                game.hit_player()
+            elif action == "stand":
                 game.dealer_play()
+            elif action == "double":
+                if not remove_bb(game.player_id, game.bet, reason="Blackjack double down"):
+                    await interaction.followup.send(
+                        "You don't have enough UKPence to double down.", ephemeral=True
+                    )
+                    return
+                game.total_staked += game.bet
+                game.doubled = True
+                game.player_cards.append(game.deck.pop())
+                if game.player_busted():
+                    game.hole_revealed = True
+                    game.state = "over"
+                else:
+                    game.dealer_play()
 
-        if game.state == "over":
-            if not game.settled:
-                _settle(game)
-            delete_game(game.message_id)
-        else:
-            save_game(game)
+            if game.state == "over":
+                if not game.settled:
+                    _settle(game)
+                delete_game(game.message_id)
+            else:
+                save_game(game)
 
-        # Money is already settled/persisted above; a failed redraw is cosmetic only.
-        try:
-            await _refresh(interaction, game, client)
-        except Exception:
-            logger.error("Blackjack redraw failed after applying the move.", exc_info=True)
+            # Money is already settled/persisted above; a failed redraw is cosmetic only.
+            try:
+                await _refresh(interaction, game, client)
+            except Exception:
+                logger.error("Blackjack redraw failed after applying the move.", exc_info=True)
+    finally:
+        game.busy = False
 
 
 async def _handle_again(interaction: Interaction, old_game: BlackjackGame, client):
