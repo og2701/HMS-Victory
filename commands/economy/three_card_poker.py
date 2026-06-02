@@ -164,7 +164,7 @@ def _pay(game: TcpGame):
 # ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
-SUBTITLE = "Beat the dealer · ante &amp; play"
+SUBTITLE = "Beat the dealer · play or fold"
 
 
 def _result_banner(game: TcpGame) -> str:
@@ -221,7 +221,7 @@ def _native(game: TcpGame) -> str:
     p += f"  ({cb.three_card_name(game.player_cards)})"
     lines = ["## 🃏 Three Card Poker", f"**Dealer:** {d}", f"**{game.player_name}:** {p}"]
     if game.state == "play_decision":
-        lines.append("-# **Play** (match your ante) or **Fold**?")
+        lines.append("-# **Play** (match your bet) or **Fold**?")
     else:
         tag = {
             "win": f"✅ You win +{game.net:,}",
@@ -297,16 +297,17 @@ async def _show_rules(interaction: Interaction):
     mx = getattr(config, "TCP_MAX_BET", 10_000)
     rules = (
         "## 🃏 Three Card Poker - House Rules\n"
-        "Ante up and you each get **three cards** - yours face up, the dealer's face down. "
-        "**Aces are high** and, with only three cards, a **straight beats a flush**.\n\n"
-        "- **Fold** to give up your ante.\n"
-        "- **Play** to match your ante (you now have two bets in). The dealer reveals.\n"
+        "Place your bet and you each get **three cards** - yours face up, the dealer's face "
+        "down. **Aces are high** and, with only three cards, a **straight beats a flush**.\n\n"
+        "- **Fold** to give up your bet.\n"
+        "- **Play** to match your bet (you now have two equal bets riding). The dealer reveals.\n"
         "- The dealer only **qualifies** with **Queen-high or better**.\n"
-        "  - Dealer **doesn't qualify** -> ante pays **1:1**, your Play pushes (net **+1 bet**).\n"
-        "  - Dealer qualifies and you **win** -> ante and Play both pay **1:1** (net **+2 bets**).\n"
+        "  - Dealer **doesn't qualify** -> your first bet pays **1:1**, the Play bet pushes "
+        "(net **+1 bet**).\n"
+        "  - Dealer qualifies and you **win** -> both bets pay **1:1** (net **+2 bets**).\n"
         "  - Dealer qualifies and you **lose** -> you forfeit both bets.\n"
         "  - **Tie** -> both bets push.\n"
-        "- **Ante Bonus** (paid on your ante no matter what the dealer holds): "
+        "- **Hand Bonus** (paid on your first bet no matter what the dealer holds): "
         "Straight **+1x**, Three of a Kind **+4x**, Straight Flush **+5x**.\n"
         f"- **Bets:** {mn:,} - {mx:,} UKPence. Stakes go to the house bank; wins are paid from it.\n\n"
         "-# Good luck. 🇬🇧"
@@ -387,7 +388,7 @@ class ChangeBetModal(discord.ui.Modal, title="Three Card Poker - change your bet
     def __init__(self, game: TcpGame):
         super().__init__()
         self.game = game
-        self.amount = discord.ui.TextInput(label="New ante (UKPence)", placeholder=f"{game.bet:,}",
+        self.amount = discord.ui.TextInput(label="New bet (UKPence)", placeholder=f"{game.bet:,}",
                                            required=True, max_length=12)
         self.add_item(self.amount)
 

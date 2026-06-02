@@ -18,7 +18,7 @@ import random
 
 import discord
 
-from lib.economy.economy_manager import get_bb, add_bb, remove_bb, UKPenceManager
+from lib.economy.economy_manager import add_bb, UKPenceManager
 from lib.core.file_operations import (
     read_html_template,
     load_persistent_views,
@@ -112,6 +112,66 @@ def three_card_name(codes: list) -> str:
     if cat == 1:
         return f"Pair of {RANK_NAME[tb[0]]}s"
     return f"{RANK_NAME[tb[0]]} high"
+
+
+# ---------------------------------------------------------------------------
+# Five-card poker hand evaluation (for Video Poker etc.)
+# Returns (category, tiebreak); bigger compares as the stronger hand.
+#   9 royal flush · 8 straight flush · 7 four of a kind · 6 full house · 5 flush
+#   4 straight · 3 three of a kind · 2 two pair · 1 pair · 0 high card
+# (Use pair rank in the tiebreak to tell a high pair apart, e.g. Jacks or Better.)
+# ---------------------------------------------------------------------------
+def five_card_rank(cards: list) -> tuple:
+    vals = sorted((value(c) for c in cards), reverse=True)
+    suits = [c[1] for c in cards]
+    is_flush = len(set(suits)) == 1
+
+    distinct = sorted(set(vals))
+    is_straight = False
+    straight_high = None
+    if len(distinct) == 5:
+        if distinct[4] - distinct[0] == 4:
+            is_straight, straight_high = True, distinct[4]
+        elif distinct == [2, 3, 4, 5, 14]:          # A-2-3-4-5 wheel
+            is_straight, straight_high = True, 5
+
+    counts = {}
+    for v in vals:
+        counts[v] = counts.get(v, 0) + 1
+    # ranks ordered by (count, value) descending
+    by_count = sorted(counts.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)
+    shape = [c for _, c in by_count]
+
+    if is_straight and is_flush:
+        return (9 if straight_high == 14 else 8, (straight_high,))
+    if shape[0] == 4:
+        return (7, (by_count[0][0], by_count[1][0]))            # quads + kicker
+    if shape[:2] == [3, 2]:
+        return (6, (by_count[0][0], by_count[1][0]))            # full house
+    if is_flush:
+        return (5, tuple(vals))
+    if is_straight:
+        return (4, (straight_high,))
+    if shape[0] == 3:
+        kick = sorted((v for v, c in counts.items() if c == 1), reverse=True)
+        return (3, (by_count[0][0], *kick))
+    if shape[:2] == [2, 2]:
+        pairs = sorted((v for v, c in counts.items() if c == 2), reverse=True)
+        kick = next(v for v, c in counts.items() if c == 1)
+        return (2, (pairs[0], pairs[1], kick))
+    if shape[0] == 2:
+        kick = sorted((v for v, c in counts.items() if c == 1), reverse=True)
+        return (1, (by_count[0][0], *kick))
+    return (0, tuple(vals))
+
+
+def five_card_name(cards: list) -> str:
+    cat, tb = five_card_rank(cards)
+    return {
+        9: "Royal Flush", 8: "Straight Flush", 7: "Four of a Kind", 6: "Full House",
+        5: "Flush", 4: "Straight", 3: "Three of a Kind", 2: "Two Pair",
+        1: f"Pair of {RANK_NAME[tb[0]]}s", 0: f"{RANK_NAME[tb[0]]} high",
+    }[cat]
 
 
 # ---------------------------------------------------------------------------

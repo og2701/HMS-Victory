@@ -454,12 +454,12 @@ def reattach_persistent_views(client):
                 reattach_hl_view(client, key, value)
             except Exception as e:
                 logger.error(f"Failed to reattach higher-lower view {key}: {e}")
-        elif isinstance(value, dict) and value.get("type") == "war":
+        elif isinstance(value, dict) and value.get("type") == "videopoker":
             try:
-                from commands.economy.war import reattach_war_view
-                reattach_war_view(client, key, value)
+                from commands.economy.video_poker import reattach_videopoker_view
+                reattach_videopoker_view(client, key, value)
             except Exception as e:
-                logger.error(f"Failed to reattach casino-war view {key}: {e}")
+                logger.error(f"Failed to reattach video-poker view {key}: {e}")
         elif isinstance(value, dict) and value.get("type") == "reddog":
             try:
                 from commands.economy.red_dog import reattach_reddog_view

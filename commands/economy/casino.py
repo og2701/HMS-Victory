@@ -14,7 +14,7 @@ from discord import Interaction
 from commands.economy.blackjack import handle_blackjack_command
 from commands.economy.higher_lower import handle_higherlower_command
 from commands.economy.slots import handle_slots_command
-from commands.economy.war import handle_war_command
+from commands.economy.video_poker import handle_videopoker_command
 from commands.economy.red_dog import handle_reddog_command
 from commands.economy.three_card_poker import handle_tcp_command
 
@@ -31,10 +31,10 @@ GAMES = [
     {"key": "slots", "label": "Fruit Machine", "emoji": "🎰",
      "handler": handle_slots_command,
      "desc": "Spin three reels - match symbols for the jackpot."},
-    {"key": "war", "label": "Casino War", "emoji": "⚔️",
-     "handler": handle_war_command,
-     "desc": "High card beats the dealer; a tie goes to war."},
-    {"key": "reddog", "label": "Red Dog", "emoji": "🃏",
+    {"key": "videopoker", "label": "Video Poker", "emoji": "🃏",
+     "handler": handle_videopoker_command,
+     "desc": "Hold the cards you want, draw, paid by poker rank."},
+    {"key": "reddog", "label": "Red Dog", "emoji": "🐕",
      "handler": handle_reddog_command,
      "desc": "Bet the third card falls between the first two."},
     {"key": "tcp", "label": "3-Card Poker", "emoji": "♣️",

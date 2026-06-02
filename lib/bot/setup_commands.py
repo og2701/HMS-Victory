@@ -34,7 +34,7 @@ from commands.economy.wager import handle_wager_command
 from commands.economy.blackjack import handle_blackjack_command
 from commands.economy.higher_lower import handle_higherlower_command
 from commands.economy.slots import handle_slots_command
-from commands.economy.war import handle_war_command
+from commands.economy.video_poker import handle_videopoker_command
 from commands.economy.red_dog import handle_reddog_command
 from commands.economy.three_card_poker import handle_tcp_command
 from commands.economy.casino import handle_casino_command
@@ -449,9 +449,9 @@ def define_commands(tree, client):
     async def casino_command(interaction: Interaction):
         await handle_casino_command(interaction)
 
-    @command("war", "Play Casino War against the house - high card wins")
-    async def war_command(interaction: Interaction, amount: app_commands.Range[int, 1]):
-        await handle_war_command(interaction, amount)
+    @command("video-poker", "Play Video Poker (Jacks or Better) against the house")
+    async def video_poker_command(interaction: Interaction, amount: app_commands.Range[int, 1]):
+        await handle_videopoker_command(interaction, amount)
 
     @command("red-dog", "Play Red Dog - bet the third card lands between the first two")
     async def red_dog_command(interaction: Interaction, amount: app_commands.Range[int, 1]):

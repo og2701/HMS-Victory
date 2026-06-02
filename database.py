@@ -220,8 +220,8 @@ def init_db():
                 total_higherlower_out INTEGER NOT NULL DEFAULT 0,
                 total_slots_in INTEGER NOT NULL DEFAULT 0,
                 total_slots_out INTEGER NOT NULL DEFAULT 0,
-                total_war_in INTEGER NOT NULL DEFAULT 0,
-                total_war_out INTEGER NOT NULL DEFAULT 0,
+                total_videopoker_in INTEGER NOT NULL DEFAULT 0,
+                total_videopoker_out INTEGER NOT NULL DEFAULT 0,
                 total_reddog_in INTEGER NOT NULL DEFAULT 0,
                 total_reddog_out INTEGER NOT NULL DEFAULT 0,
                 total_tcp_in INTEGER NOT NULL DEFAULT 0,
@@ -238,7 +238,7 @@ def init_db():
         for _col in ("total_blackjack_in", "total_blackjack_out",
                      "total_higherlower_in", "total_higherlower_out",
                      "total_slots_in", "total_slots_out",
-                     "total_war_in", "total_war_out",
+                     "total_videopoker_in", "total_videopoker_out",
                      "total_reddog_in", "total_reddog_out",
                      "total_tcp_in", "total_tcp_out"):
             try:

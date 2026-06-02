@@ -54,11 +54,11 @@ SLOTS_IMAGE_ENABLED = True
 SLOTS_MIN_BET = 10
 SLOTS_MAX_BET = 10_000
 
-# --- Casino War (vs-the-house) ---
-WAR_ENABLED = True
-WAR_IMAGE_ENABLED = True
-WAR_MIN_BET = 10
-WAR_MAX_BET = 10_000
+# --- Video Poker / Jacks or Better (vs-the-house) ---
+VIDEOPOKER_ENABLED = True
+VIDEOPOKER_IMAGE_ENABLED = True
+VIDEOPOKER_MIN_BET = 10
+VIDEOPOKER_MAX_BET = 10_000
 
 # --- Red Dog / In-Between (vs-the-house) ---
 REDDOG_ENABLED = True

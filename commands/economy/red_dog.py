@@ -193,7 +193,7 @@ def _result_banner(game: RedDogGame) -> str:
     if o == "win":
         return cb.banner_html("win", "In Between!", f"+{game.net:,} UKPence")
     if o == "push":
-        return cb.banner_html("push", "Push", "Ante returned")
+        return cb.banner_html("push", "Push", "Bet returned")
     return cb.banner_html("lose", "Outside", f"-{abs(game.net):,} UKPence")
 
 
@@ -274,7 +274,7 @@ def _native(game: RedDogGame) -> str:
     lines = ["## 🐕 Red Dog", f"**Board:** {board}"]
     tag = {"trips": f"🏆 Three of a kind! +{game.net:,}",
            "win": f"✅ In between! +{game.net:,}",
-           "push": "↩️ Push - ante returned",
+           "push": "↩️ Push - bet returned",
            "lose": f"❌ Outside -{abs(game.net):,}"}.get(game.outcome, "")
     lines.append(f"-# {tag} UKPence  ·  Balance {get_bb(game.player_id):,}")
     return "\n".join(lines)
@@ -342,16 +342,18 @@ async def _show_rules(interaction: Interaction):
     mx = getattr(config, "REDDOG_MAX_BET", 10_000)
     rules = (
         "## 🐕 Red Dog - House Rules\n"
-        "Ante your bet and two cards are dealt face up. **Aces are high.**\n\n"
-        "- **Consecutive ranks** (e.g. 7 & 8, or K & A) **push** - your ante is returned.\n"
+        "Place your bet and two cards are dealt face up. **Aces are high.**\n\n"
+        "- **Consecutive ranks** (e.g. 7 & 8, or K & A) **push** - your bet is returned.\n"
         "- **A pair** deals a third card automatically: match it for **three of a kind** "
         "(**11:1**); otherwise it's a **push**.\n"
         "- **Otherwise a spread opens up** (the gap between the cards). You may **Raise** to "
-        "double your stake, or **Call** to keep your ante. Then the third card is dealt:\n"
+        "double your bet, or **Call** to keep it as is. Then the third card is dealt:\n"
         "  - lands **strictly between** the two cards -> you **win** at the spread odds on your "
         "total stake;\n  - lands on or outside them -> you **lose** the lot.\n"
         "- **Spread payouts:** 1 -> **5:1**, 2 -> **4:1**, 3 -> **2:1**, 4 or more -> **1:1**. "
         "The wider the gap, the likelier the hit - so the smaller the payout.\n"
+        "- **Strategy:** that's the whole decision - **Raise** on a **wide** spread (you're very "
+        "likely to win), but only **Call** on a **narrow** one, where the long odds rarely pay off.\n"
         f"- **Bets:** {mn:,} - {mx:,} UKPence. Stakes go to the house bank; wins are paid from it.\n\n"
         "-# Good luck. 🇬🇧"
     )
@@ -400,7 +402,7 @@ async def _handle_action(interaction: Interaction, game: RedDogGame, action: str
 
             if action == "raise" and not game.can_afford_raise():
                 await interaction.response.send_message(
-                    f"You need {game.bet:,} more UKPence to raise. Call instead to keep your ante.",
+                    f"You need {game.bet:,} more UKPence to raise. Call instead to keep your bet as is.",
                     ephemeral=True,
                 )
                 return
