@@ -92,6 +92,14 @@ class AClient(discord.Client):
         except Exception as e:
             logger.warning(f"Could not load persistent scheduled-pred views: {e}")
 
+        # Global persistent casino lobby view so /casino menu buttons survive restarts.
+        try:
+            from commands.economy.casino import build_casino_menu
+            self.add_view(build_casino_menu())
+            logger.info("Registered persistent casino lobby view.")
+        except Exception as e:
+            logger.warning(f"Could not register casino lobby view: {e}")
+
         logger.info("Persistent prediction views registered in setup_hook.")
 
     async def on_ready(self):

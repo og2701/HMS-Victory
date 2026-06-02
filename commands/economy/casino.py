@@ -104,6 +104,7 @@ async def handle_casino_command(interaction: Interaction):
             "Hold on a minute before playing.", ephemeral=True
         )
         return
-    # Ephemeral so the menu is private to the player (it self-expires); the launched
-    # game posts publicly from the modal-submit interaction.
-    await interaction.response.send_message(view=build_casino_menu(), ephemeral=True)
+    # Public lobby: anyone can see it and tap a game to start their own hand. The
+    # buttons are stable, custom-id'd components registered as a global persistent
+    # view in setup_hook, so they keep working across restarts.
+    await interaction.response.send_message(view=build_casino_menu())
