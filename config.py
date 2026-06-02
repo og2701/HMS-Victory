@@ -54,6 +54,24 @@ SLOTS_IMAGE_ENABLED = True
 SLOTS_MIN_BET = 10
 SLOTS_MAX_BET = 10_000
 
+# --- Casino War (vs-the-house) ---
+WAR_ENABLED = True
+WAR_IMAGE_ENABLED = True
+WAR_MIN_BET = 10
+WAR_MAX_BET = 10_000
+
+# --- Red Dog / In-Between (vs-the-house) ---
+REDDOG_ENABLED = True
+REDDOG_IMAGE_ENABLED = True
+REDDOG_MIN_BET = 10
+REDDOG_MAX_BET = 10_000
+
+# --- Three Card Poker (vs-the-house) ---
+TCP_ENABLED = True
+TCP_IMAGE_ENABLED = True
+TCP_MIN_BET = 10
+TCP_MAX_BET = 10_000
+
 # --- File Paths & Directories ---
 DATA_DIR = os.path.join(BASE_DIR, "data")
 JSON_DATA_DIR = os.path.join(DATA_DIR, "json")

@@ -220,6 +220,12 @@ def init_db():
                 total_higherlower_out INTEGER NOT NULL DEFAULT 0,
                 total_slots_in INTEGER NOT NULL DEFAULT 0,
                 total_slots_out INTEGER NOT NULL DEFAULT 0,
+                total_war_in INTEGER NOT NULL DEFAULT 0,
+                total_war_out INTEGER NOT NULL DEFAULT 0,
+                total_reddog_in INTEGER NOT NULL DEFAULT 0,
+                total_reddog_out INTEGER NOT NULL DEFAULT 0,
+                total_tcp_in INTEGER NOT NULL DEFAULT 0,
+                total_tcp_out INTEGER NOT NULL DEFAULT 0,
                 last_updated INTEGER NOT NULL DEFAULT 0
             )
         ''')
@@ -231,7 +237,10 @@ def init_db():
         # Migration: add per-game house P/L columns if missing
         for _col in ("total_blackjack_in", "total_blackjack_out",
                      "total_higherlower_in", "total_higherlower_out",
-                     "total_slots_in", "total_slots_out"):
+                     "total_slots_in", "total_slots_out",
+                     "total_war_in", "total_war_out",
+                     "total_reddog_in", "total_reddog_out",
+                     "total_tcp_in", "total_tcp_out"):
             try:
                 c.execute(f"ALTER TABLE bank ADD COLUMN {_col} INTEGER NOT NULL DEFAULT 0")
             except sqlite3.OperationalError:

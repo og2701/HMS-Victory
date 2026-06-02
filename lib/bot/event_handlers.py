@@ -454,6 +454,24 @@ def reattach_persistent_views(client):
                 reattach_hl_view(client, key, value)
             except Exception as e:
                 logger.error(f"Failed to reattach higher-lower view {key}: {e}")
+        elif isinstance(value, dict) and value.get("type") == "war":
+            try:
+                from commands.economy.war import reattach_war_view
+                reattach_war_view(client, key, value)
+            except Exception as e:
+                logger.error(f"Failed to reattach casino-war view {key}: {e}")
+        elif isinstance(value, dict) and value.get("type") == "reddog":
+            try:
+                from commands.economy.red_dog import reattach_reddog_view
+                reattach_reddog_view(client, key, value)
+            except Exception as e:
+                logger.error(f"Failed to reattach red-dog view {key}: {e}")
+        elif isinstance(value, dict) and value.get("type") == "tcp":
+            try:
+                from commands.economy.three_card_poker import reattach_tcp_view
+                reattach_tcp_view(client, key, value)
+            except Exception as e:
+                logger.error(f"Failed to reattach three-card-poker view {key}: {e}")
         elif isinstance(value, dict):
             view = RoleButtonView(value)
             client.add_view(view, message_id=key)

@@ -14,6 +14,9 @@ from discord import Interaction
 from commands.economy.blackjack import handle_blackjack_command
 from commands.economy.higher_lower import handle_higherlower_command
 from commands.economy.slots import handle_slots_command
+from commands.economy.war import handle_war_command
+from commands.economy.red_dog import handle_reddog_command
+from commands.economy.three_card_poker import handle_tcp_command
 
 logger = logging.getLogger(__name__)
 ACCENT = discord.Colour(0xD4AF37)  # brass
@@ -28,6 +31,15 @@ GAMES = [
     {"key": "slots", "label": "Fruit Machine", "emoji": "🎰",
      "handler": handle_slots_command,
      "desc": "Spin three reels - match symbols for the jackpot."},
+    {"key": "war", "label": "Casino War", "emoji": "⚔️",
+     "handler": handle_war_command,
+     "desc": "High card beats the dealer; a tie goes to war."},
+    {"key": "reddog", "label": "Red Dog", "emoji": "🃏",
+     "handler": handle_reddog_command,
+     "desc": "Bet the third card falls between the first two."},
+    {"key": "tcp", "label": "3-Card Poker", "emoji": "♣️",
+     "handler": handle_tcp_command,
+     "desc": "Make the best three-card hand and beat the dealer."},
 ]
 
 
@@ -85,15 +97,17 @@ def build_casino_menu() -> discord.ui.LayoutView:
     container.add_item(discord.ui.TextDisplay("\n".join(lines)))
     view.add_item(container)
 
-    row = discord.ui.ActionRow()
-    for g in GAMES:
-        btn = discord.ui.Button(
-            label=g["label"], emoji=g["emoji"], style=discord.ButtonStyle.success,
-            custom_id=f"casino:pick:{g['key']}",
-        )
-        btn.callback = _make_pick_cb(g)
-        row.add_item(btn)
-    view.add_item(row)
+    # Up to 5 buttons per ActionRow, so chunk the games into rows of 3.
+    for i in range(0, len(GAMES), 3):
+        row = discord.ui.ActionRow()
+        for g in GAMES[i:i + 3]:
+            btn = discord.ui.Button(
+                label=g["label"], emoji=g["emoji"], style=discord.ButtonStyle.success,
+                custom_id=f"casino:pick:{g['key']}",
+            )
+            btn.callback = _make_pick_cb(g)
+            row.add_item(btn)
+        view.add_item(row)
     return view
 
 
