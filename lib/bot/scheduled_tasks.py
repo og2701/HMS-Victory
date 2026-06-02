@@ -10,7 +10,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from config import *
 from lib.features.summary import initialize_summary_data, update_summary_data, post_summary
-from lib.economy.economy_manager import add_bb, get_all_balances as load_ukpence_data
+from lib.economy.economy_manager import add_bb, get_bb, get_all_balances as load_ukpence_data
 from lib.economy.bank_manager import BankManager
 from lib.economy.economy_stats_html import create_economy_stats_image
 from database import award_badge
@@ -218,6 +218,9 @@ async def award_stage_bonuses(client):
     for uid, start_time_utc in list(client.stage_join_times.items()):
         minutes = int((now_utc - start_time_utc).total_seconds() // 60)
         if minutes > 0:
+            if get_bb(uid) >= 20000:
+                client.stage_join_times[uid] = now_utc
+                continue
             bonus_awarded = minutes * STAGE_UKPENCE_MULTIPLIER
             if add_bb(uid, bonus_awarded, reason=f"Stage Participation Reward ({minutes}m)"):
                 from lib.bot.event_handlers import award_badge_with_notify
