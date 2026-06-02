@@ -31,6 +31,7 @@ try:
 except ImportError:
     pass
 from commands.economy.wager import handle_wager_command
+from commands.economy.blackjack import handle_blackjack_command
 
 def define_commands(tree, client):
     def command(name: str, description: str, checks: list = None):
@@ -425,6 +426,10 @@ def define_commands(tree, client):
     @command("wager", "Wager UKPence against another user on a custom topic")
     async def wager_command(interaction: Interaction, opponent: Member, amount: int, topic: str):
         await handle_wager_command(interaction, opponent, amount, topic)
+
+    @command("blackjack", "Play a hand of blackjack against the house for UKPence")
+    async def blackjack_command(interaction: Interaction, amount: app_commands.Range[int, 1]):
+        await handle_blackjack_command(interaction, amount)
 
     @command("richlist", "Displays a leaderboard of users with the most UKPence")
     async def richlist_command(interaction: Interaction):

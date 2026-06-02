@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  /* HMS Victory — Blackjack felt table.
+     Rendered HTML→PNG via lib/core/image_processing.screenshot_html(element_selector=".table").
+     System fonts only (Georgia/Segoe) — mirrors prediction_card.html so renders stay fast and
+     reliable on the headless t3.micro (no Google-Fonts CDN round-trip per render). */
+  :root{
+    --navy:#00247D;
+    --red:#CF142B;
+    --suit-red:#c0182c;
+    --suit-black:#16182a;
+    --ink:#0c1a33;
+    --paper:#f4eedd;
+    --brass:#b07f2a;
+    --brass-2:#d6a44a;
+    --brass-soft:#e6c984;
+    --felt:#1c6b46;
+    --felt-2:#114e31;
+    --felt-edge:#0c3a24;
+    --serif:Georgia,"Times New Roman",Times,serif;
+    --sans:"Segoe UI",Helvetica,Arial,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{background:#0a0a0f;}
+  body{padding:24px;font-family:var(--sans);-webkit-font-smoothing:antialiased;}
+
+  .table{
+    position:relative;
+    width:1120px;
+    min-height:716px;
+    border-radius:22px;
+    overflow:hidden;
+    background:
+      radial-gradient(120% 90% at 50% 8%, #2a7f55 0%, var(--felt) 38%, var(--felt-2) 74%, var(--felt-edge) 100%);
+    box-shadow:0 24px 60px rgba(0,0,0,.55), inset 0 0 120px rgba(0,0,0,.45);
+    color:#fff;
+  }
+  /* felt weave grain */
+  .table::before{
+    content:"";position:absolute;inset:0;pointer-events:none;mix-blend-mode:multiply;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(0,0,0,.05) 0 1px, transparent 1px 4px),
+      repeating-linear-gradient(90deg, rgba(0,0,0,.05) 0 1px, transparent 1px 4px);
+  }
+  /* brass double frame */
+  .table::after{
+    content:"";position:absolute;inset:14px;border-radius:14px;pointer-events:none;
+    border:2px solid rgba(214,164,74,.55);
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.35), inset 0 0 28px rgba(0,0,0,.35),
+               0 0 0 1px rgba(214,164,74,.18);
+  }
+
+  /* ---------------- masthead ---------------- */
+  .masthead{
+    position:relative;z-index:3;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:24px 36px 14px;
+  }
+  .brand{display:flex;align-items:center;gap:14px;}
+  .roundel{
+    width:46px;height:46px;border-radius:50%;flex:none;
+    background:radial-gradient(circle at center,
+      var(--red) 0 26%, #fff 26% 48%, var(--navy) 48% 70%, #fff 70% 100%);
+    box-shadow:0 0 0 2px rgba(214,164,74,.7), 0 3px 8px rgba(0,0,0,.5);
+  }
+  .wordmark{display:flex;flex-direction:column;line-height:1;}
+  .wordmark .name{font-weight:800;font-size:22px;letter-spacing:.10em;color:#fff;
+    text-shadow:0 1px 2px rgba(0,0,0,.5);}
+  .wordmark .sub{font-size:11px;font-weight:700;letter-spacing:.34em;text-transform:uppercase;
+    color:var(--brass-soft);margin-top:6px;}
+  .title-wrap{text-align:center;flex:1;}
+  .title{
+    font-family:var(--serif);font-weight:700;font-size:46px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--brass-2);
+    text-shadow:0 2px 0 rgba(0,0,0,.35), 0 0 18px rgba(214,164,74,.35);
+  }
+  .title .blip{color:#fff;}
+  .rules{
+    text-align:right;font-family:var(--serif);font-style:italic;color:var(--brass-soft);
+    font-size:14px;line-height:1.5;max-width:230px;opacity:.95;
+  }
+  .tricolour{position:relative;z-index:3;height:4px;display:flex;margin:2px 36px 0;
+    border-radius:3px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.4);}
+  .tricolour i{flex:1;}
+  .tricolour i:nth-child(1){background:var(--red);}
+  .tricolour i:nth-child(2){background:#fff;}
+  .tricolour i:nth-child(3){background:var(--navy);}
+
+  /* ---------------- felt / seats ---------------- */
+  .felt{position:relative;z-index:2;padding:20px 40px 0;}
+  .seat{padding:8px 0;}
+  .seat-head{display:flex;align-items:center;gap:16px;margin-bottom:6px;}
+  .seat-label{
+    font-family:var(--serif);font-weight:700;font-size:15px;letter-spacing:.30em;
+    text-transform:uppercase;color:#eafff2;
+    padding:5px 16px;border-radius:8px;
+    background:rgba(0,0,0,.28);border:1px solid rgba(214,164,74,.45);
+    box-shadow:inset 0 0 12px rgba(0,0,0,.35);
+  }
+  .seat-label.you{color:#fff;}
+  .total{
+    display:inline-flex;align-items:center;gap:7px;
+    font-family:var(--serif);font-weight:700;font-size:20px;
+    padding:4px 16px;border-radius:999px;
+    background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(0,0,0,.32));
+    border:1px solid rgba(255,255,255,.16);
+    box-shadow:0 2px 6px rgba(0,0,0,.4), inset 0 0 8px rgba(0,0,0,.25);
+    color:var(--brass-soft);min-width:54px;justify-content:center;
+  }
+  .total .lab{font-family:var(--sans);font-size:10px;font-weight:700;letter-spacing:.20em;
+    text-transform:uppercase;color:rgba(255,255,255,.55);}
+  .total.bust{color:#ffd5d2;border-color:rgba(207,20,43,.6);
+    background:linear-gradient(180deg, rgba(207,20,43,.35), rgba(0,0,0,.4));}
+  .total.bj{color:#0c1a33;background:linear-gradient(180deg,#ffe9a8,#d6a44a);
+    border-color:#ffe9a8;text-shadow:none;}
+  .total.win{color:#caffd9;border-color:rgba(61,122,82,.7);
+    background:linear-gradient(180deg, rgba(61,122,82,.4), rgba(0,0,0,.35));}
+
+  .center-rail{
+    display:flex;align-items:center;gap:18px;justify-content:center;
+    margin:6px 0 4px;color:var(--brass-soft);
+  }
+  .center-rail .ln{height:1px;flex:1;background:linear-gradient(90deg,transparent,rgba(214,164,74,.55),transparent);}
+  .center-rail .pays{font-family:var(--serif);font-style:italic;font-size:15px;letter-spacing:.06em;white-space:nowrap;}
+
+  /* ---------------- cards ---------------- */
+  .hand{display:flex;align-items:flex-end;min-height:152px;padding-left:8px;}
+  .card{
+    position:relative;width:104px;height:146px;flex:none;
+    border-radius:11px;background:
+      linear-gradient(160deg,#ffffff 0%,#f3f1ea 100%);
+    border:1px solid rgba(12,26,51,.22);
+    box-shadow:0 10px 18px rgba(0,0,0,.4), inset 0 0 0 2px rgba(255,255,255,.55);
+    font-family:var(--serif);color:var(--suit-black);
+    transform-origin:bottom center;
+  }
+  .card:not(:first-child){margin-left:-34px;}
+  .card .pip{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:62px;line-height:1;
+  }
+  .card .corner{position:absolute;display:flex;flex-direction:column;align-items:center;
+    line-height:.92;font-weight:700;}
+  .card .corner b{font-size:23px;}
+  .card .corner i{font-size:19px;font-style:normal;margin-top:1px;}
+  .card .corner.tl{top:9px;left:10px;}
+  .card .corner.br{bottom:9px;right:10px;transform:rotate(180deg);}
+  .card.red{color:var(--suit-red);}
+  /* face/back */
+  .card.back{
+    background:
+      repeating-linear-gradient(45deg, rgba(214,164,74,.16) 0 7px, transparent 7px 14px),
+      linear-gradient(160deg,#16356e 0%,var(--navy) 55%,#001a5c 100%);
+    border:1px solid rgba(214,164,74,.55);
+    box-shadow:0 10px 18px rgba(0,0,0,.45), inset 0 0 0 2px rgba(214,164,74,.35);
+  }
+  .card.back::after{
+    content:"";position:absolute;top:50%;left:50%;width:40px;height:40px;
+    transform:translate(-50%,-50%);border-radius:50%;
+    background:radial-gradient(circle at center,
+      var(--red) 0 26%, #fff 26% 48%, var(--navy) 48% 70%, #fff 70% 100%);
+    box-shadow:0 0 0 2px rgba(214,164,74,.7);
+  }
+
+  /* ---------------- HUD ---------------- */
+  .hud{position:relative;z-index:3;display:flex;align-items:center;gap:14px;
+    padding:14px 40px 26px;margin-top:6px;}
+  .chip{
+    display:flex;align-items:center;gap:11px;
+    background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.12);
+    border-radius:14px;padding:11px 20px;backdrop-filter:blur(4px);
+    box-shadow:0 4px 12px rgba(0,0,0,.4);
+  }
+  .chip .disc{width:26px;height:26px;border-radius:50%;flex:none;
+    background:radial-gradient(circle at 35% 30%, #ffe9a8, #d6a44a 55%, #9c6a1f 100%);
+    border:2px dashed rgba(255,255,255,.65);box-shadow:0 2px 5px rgba(0,0,0,.5);}
+  .chip .meta{display:flex;flex-direction:column;line-height:1.1;}
+  .chip .lab{font-size:10px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;
+    color:rgba(255,255,255,.55);}
+  .chip .val{font-family:var(--serif);font-weight:700;font-size:21px;color:#fff;}
+  .chip .val .u{font-size:12px;color:var(--brass-soft);font-style:italic;margin-left:3px;}
+  .hint{margin-left:auto;font-family:var(--serif);font-style:italic;font-size:16px;
+    color:var(--brass-soft);text-shadow:0 1px 2px rgba(0,0,0,.5);}
+
+  /* ---------------- result banner ---------------- */
+  .banner-wrap{position:absolute;inset:0;z-index:6;display:flex;align-items:center;justify-content:center;
+    pointer-events:none;background:radial-gradient(60% 60% at 50% 50%, rgba(0,0,0,.42), rgba(0,0,0,0) 70%);}
+  .banner{
+    text-align:center;padding:22px 54px;border-radius:16px;
+    background:linear-gradient(180deg, rgba(12,26,51,.82), rgba(12,26,51,.92));
+    border:2px solid var(--brass-2);
+    box-shadow:0 18px 40px rgba(0,0,0,.6), inset 0 0 26px rgba(0,0,0,.5);
+  }
+  .banner .head{
+    font-family:var(--serif);font-weight:700;font-size:50px;letter-spacing:.10em;
+    text-transform:uppercase;color:var(--brass-2);
+    text-shadow:2px 2px 4px rgba(0,0,0,.9), 0 0 16px rgba(214,164,74,.45);
+  }
+  .banner .sub{margin-top:8px;font-family:var(--sans);font-weight:700;font-size:22px;letter-spacing:.04em;}
+  .banner.win .head{color:#7CFC9A;text-shadow:2px 2px 4px rgba(0,0,0,.9),0 0 18px rgba(124,252,154,.45);}
+  .banner.win .sub{color:#caffd9;}
+  .banner.lose .head{color:#ff8d86;text-shadow:2px 2px 4px rgba(0,0,0,.9),0 0 18px rgba(207,20,43,.45);}
+  .banner.lose .sub{color:#ffd5d2;}
+  .banner.push .head{color:#e8e2cf;}
+  .banner.push .sub{color:#cfc9b6;}
+</style>
+</head>
+<body>
+  <div class="table">
+    <div class="masthead">
+      <div class="brand">
+        <div class="roundel"></div>
+        <div class="wordmark">
+          <span class="name">HMS VICTORY</span>
+          <span class="sub">Casino Royale</span>
+        </div>
+      </div>
+      <div class="title-wrap">
+        <div class="title">Black<span class="blip">jack</span></div>
+      </div>
+      <div class="rules">{{RULE}}</div>
+    </div>
+    <div class="tricolour"><i></i><i></i><i></i></div>
+
+    <div class="felt">
+      <div class="seat dealer">
+        <div class="seat-head">
+          <span class="seat-label">Dealer</span>
+          <span class="total {{DEALER_TOTAL_CLASS}}"><span class="lab">Total</span> {{DEALER_TOTAL}}</span>
+        </div>
+        <div class="hand">{{DEALER_CARDS}}</div>
+      </div>
+
+      <div class="center-rail">
+        <span class="ln"></span>
+        <span class="pays">Blackjack pays 3 : 2</span>
+        <span class="ln"></span>
+      </div>
+
+      <div class="seat player">
+        <div class="seat-head">
+          <span class="seat-label you">{{PLAYER_NAME}}</span>
+          <span class="total {{PLAYER_TOTAL_CLASS}}"><span class="lab">Total</span> {{PLAYER_TOTAL}}</span>
+        </div>
+        <div class="hand">{{PLAYER_CARDS}}</div>
+      </div>
+    </div>
+
+    <div class="hud">
+      <div class="chip">
+        <span class="disc"></span>
+        <span class="meta"><span class="lab">Bet</span><span class="val">{{BET}}<span class="u">UKP</span></span></span>
+      </div>
+      <div class="chip">
+        <span class="disc"></span>
+        <span class="meta"><span class="lab">Balance</span><span class="val">{{BALANCE}}<span class="u">UKP</span></span></span>
+      </div>
+      <span class="hint">{{STATE_HINT}}</span>
+    </div>
+
+    {{RESULT_BANNER}}
+  </div>
+</body>
+</html>

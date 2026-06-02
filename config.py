@@ -22,6 +22,18 @@ SUMMARISE_DAILY_LIMIT = 10
 PREDICTION_CV2_ENABLED = True
 PREDICTION_IMAGE_ENABLED = False
 
+# --- Blackjack (vs-the-house) ---
+#   BLACKJACK_ENABLED        — master toggle for the /blackjack command.
+#   BLACKJACK_IMAGE_ENABLED  — render the premium HTML→PNG felt table each action
+#                              (templates/blackjack_table.html). When off — or if a
+#                              render raises — the game falls back to a native
+#                              Components V2 text layout (mobile-crisp, zero render
+#                              cost). Mirrors the PREDICTION_* dual-path design.
+BLACKJACK_ENABLED = True
+BLACKJACK_IMAGE_ENABLED = True
+BLACKJACK_MIN_BET = 10
+BLACKJACK_MAX_BET = 250_000
+
 # --- File Paths & Directories ---
 DATA_DIR = os.path.join(BASE_DIR, "data")
 JSON_DATA_DIR = os.path.join(DATA_DIR, "json")
