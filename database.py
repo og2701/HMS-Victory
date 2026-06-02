@@ -106,6 +106,29 @@ class DatabaseManager:
             finally:
                 dest.close()
 
+    @classmethod
+    def shutdown_checkpoint(cls):
+        """Flush the WAL into database.db (TRUNCATE) and close the connection on a
+        clean shutdown.
+
+        WAL is already crash-safe and ``snapshot_to_file`` already produces clean
+        backups, so this isn't required for integrity - it just keeps the on-disk
+        .db self-contained and the -wal file small. Safe to call when no connection
+        was ever opened; ``get_connection`` transparently reopens if anything queries
+        afterwards, so this never wedges the bot.
+        """
+        with cls._lock:
+            if cls._connection is None:
+                return
+            try:
+                cls._connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                cls._connection.commit()
+                cls._connection.close()
+                cls._connection = None
+                print("[db] WAL checkpoint (TRUNCATE) complete; connection closed.")
+            except Exception as e:
+                print(f"[db] WAL checkpoint failed: {e}")
+
     @staticmethod
     def transfer(src_id, dst_id, amount: int, reason: str = "Transfer") -> bool:
         """Atomically move ``amount`` UKP from one user to another.

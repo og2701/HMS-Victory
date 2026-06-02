@@ -199,6 +199,13 @@ class WagerProposalView(discord.ui.View):
         await interaction.response.edit_message(embed=orig_embed, view=self)
 
 async def handle_wager_command(interaction: Interaction, opponent: Member, amount: int, topic: str):
+    if getattr(interaction.client, "maintenance_mode", False):
+        await interaction.response.send_message(
+            "🔧 **Under maintenance** - the bot is restarting for an update. "
+            "Hold on a minute before starting a new wager.", ephemeral=True
+        )
+        return
+
     if amount <= 0:
         await interaction.response.send_message("Wager amount must be greater than 0 UKPence.", ephemeral=True)
         return

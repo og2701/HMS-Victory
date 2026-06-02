@@ -1,6 +1,8 @@
 import discord
 from discord.ext import tasks
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import asyncio
+import signal
 import logging
 import pytz
 from datetime import datetime, timedelta
@@ -42,6 +44,8 @@ class AClient(discord.Client):
         intents.guilds = True
         super().__init__(intents=intents)
         self.synced = False
+        self.maintenance_mode = False  # set True during graceful shutdown to refuse new coin-deducting actions
+        self._shutting_down = False    # re-entrancy guard for graceful_shutdown
         self.scheduler = AsyncIOScheduler()
         self.image_cache = {}
         self.stage_events=set()
@@ -415,8 +419,70 @@ tree = discord.app_commands.CommandTree(client)
 
 define_commands(tree, client)
 
+async def graceful_shutdown(client, sig_name):
+    """Drain cleanly on SIGTERM/SIGINT (systemctl restart, ./update_bot.sh, Ctrl-C).
+
+    In-flight games already survive restarts via persistent_views.json (predictions,
+    accepted wagers, in-play blackjack hands all reattach on boot), so this sequence
+    is about a *tidy* exit: stop scheduled work, close our HTTP session, flush the
+    SQLite WAL into the .db file, then log the bot out of the gateway so it shows
+    offline immediately instead of timing out.
+    """
+    if client._shutting_down:
+        return
+    client._shutting_down = True
+    logger.info(f"Received {sig_name}; starting graceful shutdown.")
+
+    # 1. Maintenance mode: refuse new coin-deducting commands during the drain.
+    client.maintenance_mode = True
+
+    # 2. Stop scheduled jobs so nothing new writes to the DB while we checkpoint.
+    #    wait=False: never block the event loop waiting on a job that needs it.
+    try:
+        if getattr(client, "scheduler", None) and client.scheduler.running:
+            client.scheduler.shutdown(wait=False)
+            logger.info("APScheduler stopped.")
+    except Exception as e:
+        logger.error(f"Scheduler shutdown error: {e}")
+
+    # 3. Close our aiohttp session (avoids 'Unclosed client session' warnings).
+    try:
+        if client.session and not client.session.closed:
+            await client.session.close()
+            logger.info("aiohttp session closed.")
+    except Exception as e:
+        logger.error(f"Session close error: {e}")
+
+    # 4. Flush the WAL into database.db so the file is self-contained for backups.
+    try:
+        from database import DatabaseManager
+        DatabaseManager.shutdown_checkpoint()
+    except Exception as e:
+        logger.error(f"WAL checkpoint error: {e}")
+
+    # 5. Log out of the Discord gateway (returns from client.start()).
+    try:
+        await client.close()
+        logger.info("Discord gateway closed cleanly.")
+    except Exception as e:
+        logger.error(f"Gateway close error: {e}")
+
+
 async def main():
     async with client:
+        # Intercept systemd's SIGTERM and a terminal's SIGINT so we drain via
+        # graceful_shutdown instead of being killed mid-write. add_signal_handler
+        # is the asyncio-safe path (works on Linux/macOS; absent on Windows).
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                loop.add_signal_handler(
+                    sig,
+                    lambda s=sig: asyncio.create_task(graceful_shutdown(client, s.name)),
+                )
+            except (NotImplementedError, RuntimeError):
+                pass  # platform without add_signal_handler support
+
         await restore_database_if_missing()
         await restore_json_if_missing()
         init_db()

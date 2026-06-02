@@ -673,6 +673,13 @@ async def _handle_again(interaction: Interaction, old_game: BlackjackGame, clien
 async def handle_blackjack_command(interaction: Interaction, amount: int):
     import config
 
+    if getattr(interaction.client, "maintenance_mode", False):
+        await interaction.response.send_message(
+            "🔧 **Under maintenance** - the bot is restarting for an update. "
+            "Hold on a minute before dealing a new hand.", ephemeral=True
+        )
+        return
+
     if not getattr(config, "BLACKJACK_ENABLED", True):
         await interaction.response.send_message("The blackjack table is closed.", ephemeral=True)
         return
