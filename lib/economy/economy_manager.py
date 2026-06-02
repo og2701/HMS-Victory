@@ -170,10 +170,9 @@ def set_bb(user_id: int, amount: int, reason: str = "Unspecified") -> None:
 
 WEALTH_TAX_BRACKETS = [
     (10_000, 0.00),
-    (20_000, 0.25),
-    (30_000, 0.50),
-    (50_000, 0.75),
-    (float("inf"), 0.90),
+    (20_000, 0.60),
+    (30_000, 0.85),
+    (float("inf"), 0.95),
 ]
 
 
