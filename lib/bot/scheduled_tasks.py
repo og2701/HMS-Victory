@@ -135,7 +135,24 @@ async def daily_summary(client):
         atomic_write_json(snapshot_path, current_ukpence_balances, indent=4)
         logger.info(f"Saved UKPence balance snapshot for {yesterday_str} to {snapshot_path}")
 
-    await post_summary(client, CHANNELS.COMMONS, "daily", date=yesterday_str)
+    # Daily summaries post in the dedicated thread (weekly/monthly stay in COMMONS).
+    # get_channel misses archived/uncached threads, so fall back to fetch_channel;
+    # sending to an archived thread auto-unarchives it. If the thread can't be reached
+    # at all, fall back to COMMONS so the summary is never silently dropped.
+    daily_target = client.get_channel(CHANNELS.DAILY_SUMMARY_THREAD)
+    if daily_target is None:
+        try:
+            daily_target = await client.fetch_channel(CHANNELS.DAILY_SUMMARY_THREAD)
+        except Exception as e:
+            logger.warning(
+                f"Daily summary thread {CHANNELS.DAILY_SUMMARY_THREAD} unreachable ({e}); "
+                f"falling back to COMMONS."
+            )
+            daily_target = client.get_channel(CHANNELS.COMMONS)
+    await post_summary(
+        client, CHANNELS.DAILY_SUMMARY_THREAD, "daily",
+        channel_override=daily_target, date=yesterday_str,
+    )
 
     await zip_and_send_folder(
         client=client,
