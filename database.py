@@ -147,6 +147,11 @@ class DatabaseManager:
             row = c.fetchone()
             if not row or row[0] < amount:
                 return False
+            
+            c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(dst_id),))
+            dst_row = c.fetchone()
+            old_dst_balance = dst_row[0] if dst_row else 0
+            
             c.execute(
                 "UPDATE ukpence SET balance = balance - ? WHERE user_id = ?",
                 (amount, str(src_id)),
@@ -160,6 +165,15 @@ class DatabaseManager:
                 "INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)",
                 (now, f"🔁 <@{src_id}> → <@{dst_id}> `{amount:,}` UKP|{reason}"),
             )
+            
+        new_dst_balance = old_dst_balance + amount
+        from config import BOT_ID
+        if new_dst_balance >= 30000 and old_dst_balance < 30000 and str(dst_id) != str(BOT_ID):
+            try:
+                from lib.bot.event_handlers import award_badge_notify
+                award_badge_notify(int(dst_id), 'high_roller')
+            except (ImportError, Exception):
+                award_badge(dst_id, 'high_roller')
         return True
 
 def init_db():

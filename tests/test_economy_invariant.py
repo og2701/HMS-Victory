@@ -223,6 +223,17 @@ def test_clean_options_validation():
     assert MAX_PRED_OPTIONS == 5
 
 
+def test_transfer_awards_high_roller():
+    with tempfile.TemporaryDirectory() as d:
+        em, _, database = _fresh_economy(d)
+        a, b = 222, 333
+        database.DatabaseManager.execute("INSERT OR REPLACE INTO ukpence (user_id, balance) VALUES (?, ?)", (str(a), 35000))
+        assert database.DatabaseManager.transfer(a, b, 31000, reason="test") is True
+        res = database.DatabaseManager.fetch_all("SELECT badge_id FROM user_badges WHERE user_id = ?", (str(b),))
+        badge_ids = [r[0] for r in res]
+        assert "high_roller" in badge_ids
+
+
 if __name__ == "__main__":
     import traceback
 
