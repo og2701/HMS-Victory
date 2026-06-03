@@ -366,6 +366,23 @@ def init_db():
         if 'deny_reason' not in columns:
             c.execute("ALTER TABLE pending_iceberg_submissions ADD COLUMN deny_reason TEXT")
 
+        # Custom rank-card background submissions awaiting staff approval. The 700 UKP
+        # is charged on upload (stored in `price`) and refunded on denial; `filename`
+        # is the saved file in data/rank_cards/ and becomes the user's background once
+        # approved.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS pending_rank_background_submissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                price INTEGER NOT NULL,
+                status TEXT DEFAULT 'pending',
+                deny_reason TEXT,
+                cm_message_id TEXT,
+                created_at INTEGER DEFAULT (strftime('%s','now'))
+            )
+        ''')
+
         c.execute('''
             CREATE TABLE IF NOT EXISTS shut_counts (
                 user_id TEXT PRIMARY KEY,

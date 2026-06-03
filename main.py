@@ -81,6 +81,16 @@ class AClient(discord.Client):
         except Exception as e:
             logger.warning(f"Could not load persistent iceberg views: {e}")
 
+        # Load persistent custom rank-background approval views
+        from lib.economy.shop_items import RankBgApprovalView
+        try:
+            bg_rows = DatabaseManager.fetch_all("SELECT id FROM pending_rank_background_submissions WHERE status = 'pending'")
+            for row in bg_rows:
+                self.add_view(RankBgApprovalView(row[0]))
+            logger.info(f"Registered {len(bg_rows)} persistent rank-background approval views.")
+        except Exception as e:
+            logger.warning(f"Could not load persistent rank-background views: {e}")
+
         # Load persistent scheduled-prediction cancel views
         from lib.economy.prediction_system import CancelScheduledPredView
         try:

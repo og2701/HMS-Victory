@@ -354,7 +354,7 @@ class PurchaseConfirmationView(View):
 
             # Item was successfully granted - from here, errors are UI-only (don't refund)
             try:
-                if self.item.name not in ["VIP Role Case", "Custom Emoji/Sticker", "Lucky Dip"]:
+                if self.item.name not in ["VIP Role Case", "Custom Emoji/Sticker", "Lucky Dip", "Custom Rank Background"]:
                     # Return to main browser but show a success ephemeral message
                     self.return_view._update_buttons()
                     

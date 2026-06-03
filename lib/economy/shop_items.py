@@ -3,12 +3,14 @@ from discord.ui import View, Button
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
 import asyncio
+import os
+import time
 import random
 import aiohttp
 import io
 from datetime import timedelta
-from config import ROLES, CHANNELS, USERS
-from lib.economy.economy_manager import add_shutcoins, add_bb, get_bb
+from config import ROLES, CHANNELS, USERS, BASE_DIR
+from lib.economy.economy_manager import add_shutcoins, add_bb, get_bb, remove_bb
 from lib.economy.shop_inventory import ShopInventory
 from database import DatabaseManager
 from commands.creative.iceberg.add_to_iceberg import add_iceberg_text
@@ -715,6 +717,307 @@ class RankResetItem(ShopItem):
         return "Your rank card has been reset to your original default!"
 
 # Shop Items Registry
+# ---------------------------------------------------------------------------
+# Custom rank-card background (user-supplied art, staff-approved)
+# ---------------------------------------------------------------------------
+# The 700 UKP is NOT taken at the shop - the shop entry is free and just hands
+# over the blank Union Jack template. The charge happens only when the finished
+# image is actually submitted (see _process_bg_submission), and is refunded if
+# staff deny it. Users currently waiting to DM their image (so a double-click
+# doesn't start two capture loops):
+CUSTOM_RANK_BG_PRICE = 700
+_bg_upload_waiters: set = set()
+# Absolute paths so saves land exactly where the rank-card renderer (xp_system,
+# which joins from BASE_DIR) looks them up - independent of the process CWD.
+_RANK_CARDS_DIR = os.path.join(BASE_DIR, "data", "rank_cards")
+_UNIONJACK_TEMPLATE = os.path.join(_RANK_CARDS_DIR, "unionjack.png")
+
+
+async def _process_bg_submission(client, user, message, dm):
+    """Validate a DM'd image, charge for it, save it, and post it to Community
+    Management for approval. Called once the user has sent their finished design."""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if not message.attachments:
+        return await dm.send("❌ That wasn't an image. Click **📤 Submit my design** again and send your file.")
+    att = message.attachments[0]
+    ctype = att.content_type or ""
+    if not ctype.startswith("image/"):
+        return await dm.send("❌ That file isn't an image (PNG/JPG/WebP). Click **Submit** again and send an image.")
+    if att.size > 8 * 1024 * 1024:
+        return await dm.send("❌ That image is too large (max 8 MB). Shrink it and click **Submit** again.")
+
+    # Take payment only now that we have a valid file. Funds-check first so we
+    # never debit someone who can't afford it.
+    if get_bb(user.id) < CUSTOM_RANK_BG_PRICE:
+        return await dm.send(
+            f"❌ A custom background costs **{CUSTOM_RANK_BG_PRICE} UKPence** and you don't have enough. "
+            f"Nothing was charged - earn some more and try again."
+        )
+    if not remove_bb(user.id, CUSTOM_RANK_BG_PRICE, reason="Custom rank background submission"):
+        return await dm.send("❌ Couldn't take your payment. Nothing was charged - try again.")
+
+    # Save the file into data/rank_cards/ (it only becomes the user's actual
+    # background once approved; a denied file is deleted).
+    ext = os.path.splitext(att.filename or "")[1].lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+        ext = ".png"
+    os.makedirs(_RANK_CARDS_DIR, exist_ok=True)
+    filename = f"custom_bg_{user.id}_{int(time.time())}{ext}"
+    path = os.path.join(_RANK_CARDS_DIR, filename)
+    try:
+        await att.save(path)
+    except Exception as e:
+        add_bb(user.id, CUSTOM_RANK_BG_PRICE, reason="Custom rank background refund (save failed)", taxable=False)
+        logger.error(f"Failed saving custom rank bg for {user.id}: {e}", exc_info=True)
+        return await dm.send("❌ Something went wrong saving your image. You've been **refunded** - please try again.")
+
+    sub_id = DatabaseManager.execute_insert(
+        "INSERT INTO pending_rank_background_submissions (user_id, filename, price, status) VALUES (?, ?, ?, 'pending')",
+        (str(user.id), filename, CUSTOM_RANK_BG_PRICE),
+    )
+
+    cm_channel = client.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
+    if cm_channel is None:
+        try:
+            cm_channel = await client.fetch_channel(CHANNELS.COMMUNITY_MANAGEMENT)
+        except Exception:
+            cm_channel = None
+    if cm_channel is None:
+        add_bb(user.id, CUSTOM_RANK_BG_PRICE, reason="Custom rank background refund (staff channel missing)", taxable=False)
+        DatabaseManager.execute("UPDATE pending_rank_background_submissions SET status = 'failed' WHERE id = ?", (sub_id,))
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        return await dm.send("❌ Couldn't reach the staff channel. You've been **refunded** - please try again later.")
+
+    embed = discord.Embed(
+        title="🎨 Custom Rank Background - Approval Needed",
+        description=f"{user.mention} submitted a custom rank-card background.\nID: `{sub_id}`",
+        color=0xD4AF37,
+    )
+    embed.add_field(name="Price Paid", value=f"{CUSTOM_RANK_BG_PRICE} UKPence", inline=True)
+    embed.set_footer(text=f"User ID: {user.id}")
+    embed.set_image(url=f"attachment://{filename}")
+    file = discord.File(path, filename=filename)
+    cm_msg = await cm_channel.send(embed=embed, file=file, view=RankBgApprovalView(sub_id))
+    DatabaseManager.execute(
+        "UPDATE pending_rank_background_submissions SET cm_message_id = ? WHERE id = ?", (str(cm_msg.id), sub_id)
+    )
+
+    await dm.send(
+        f"✅ **Got it!** Your background was sent to staff for review. **{CUSTOM_RANK_BG_PRICE} UKPence** has been "
+        f"charged - you'll be **refunded automatically if it isn't approved**, and it'll be equipped on your rank card if it is."
+    )
+
+
+class SubmitCustomRankBgView(View):
+    """The '📤 Submit my design' button shown beneath the template. On click it DMs the
+    user and captures the next image they send in DM (modals can't take file uploads)."""
+    def __init__(self):
+        super().__init__(timeout=600)
+
+    @discord.ui.button(label="Submit my design", style=discord.ButtonStyle.success, emoji="📤")
+    async def submit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        uid = interaction.user.id
+        if uid in _bg_upload_waiters:
+            return await interaction.response.send_message(
+                "⏳ I'm already waiting for your image - check your DMs.", ephemeral=True
+            )
+        try:
+            dm = await interaction.user.create_dm()
+            await dm.send(
+                f"📤 **Send your finished rank-background image here within 2 minutes.**\n"
+                f"It must be an image (PNG/JPG/WebP), ideally **1000×600**. This costs "
+                f"**{CUSTOM_RANK_BG_PRICE} UKPence**, refunded if staff don't approve it."
+            )
+        except discord.Forbidden:
+            return await interaction.response.send_message(
+                "❌ I couldn't DM you. Enable **Direct Messages** from server members (Privacy Settings) and click Submit again.",
+                ephemeral=True,
+            )
+        await interaction.response.send_message("📨 Check your DMs - send me your finished image there.", ephemeral=True)
+
+        def _check(m):
+            return m.author.id == uid and m.guild is None
+
+        _bg_upload_waiters.add(uid)
+        try:
+            try:
+                msg = await interaction.client.wait_for("message", check=_check, timeout=120)
+            except asyncio.TimeoutError:
+                try:
+                    await dm.send("⏰ Timed out - no image received. Click **📤 Submit my design** again when you're ready.")
+                except Exception:
+                    pass
+                return
+            await _process_bg_submission(interaction.client, interaction.user, msg, dm)
+        finally:
+            _bg_upload_waiters.discard(uid)
+
+
+class RankBgApprovalView(View):
+    """Persistent Approve/Deny view posted to Community Management for a custom
+    rank-background submission. Approve auto-equips it; Deny refunds and deletes it."""
+    def __init__(self, submission_id: int):
+        super().__init__(timeout=None)
+        self.submission_id = submission_id
+        self.approve_button.custom_id = f"rankbg_approve:{submission_id}"
+        self.deny_button.custom_id = f"rankbg_deny:{submission_id}"
+
+    @discord.ui.button(label="Approve", style=discord.ButtonStyle.green, emoji="✅")
+    async def approve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not any(role.id in [ROLES.CABINET, ROLES.DEPUTY_PM] for role in interaction.user.roles):
+            return await interaction.response.send_message("❌ Only staff can approve submissions.", ephemeral=True)
+        await interaction.response.defer()
+
+        row = DatabaseManager.fetch_one(
+            "SELECT user_id, filename, status FROM pending_rank_background_submissions WHERE id = ?",
+            (self.submission_id,),
+        )
+        if not row or row[2] != 'pending':
+            return await interaction.followup.send("❌ Submission not found or already processed.", ephemeral=True)
+        user_id, filename, _ = row
+
+        # Equip it as the user's background (upsert, mirroring RankBackgroundItem).
+        exists = DatabaseManager.fetch_one("SELECT 1 FROM user_rank_customization WHERE user_id = ?", (user_id,))
+        if exists:
+            DatabaseManager.execute("UPDATE user_rank_customization SET background = ? WHERE user_id = ?", (filename, user_id))
+        else:
+            DatabaseManager.execute(
+                "INSERT INTO user_rank_customization (user_id, background, primary_color, secondary_color, tertiary_color) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (user_id, filename, '#CF142B', '#00247D', '#FFFFFF'),
+            )
+        DatabaseManager.execute(
+            "UPDATE pending_rank_background_submissions SET status = 'approved' WHERE id = ?", (self.submission_id,)
+        )
+
+        embed = interaction.message.embeds[0] if interaction.message.embeds else discord.Embed()
+        embed.title = "✅ Custom Rank Background - APPROVED"
+        embed.color = 0x57F287
+        embed.add_field(name="Approved By", value=interaction.user.mention, inline=False)
+        for item in self.children:
+            item.disabled = True
+        await interaction.message.edit(embed=embed, view=self)
+
+        try:
+            user = await interaction.client.fetch_user(int(user_id))
+            if user:
+                await user.send("✅ Your custom rank-card background was **approved** and equipped! Run `/rank` to see it. 🇬🇧")
+        except Exception:
+            pass
+
+    @discord.ui.button(label="Deny", style=discord.ButtonStyle.red, emoji="❌")
+    async def deny_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not any(role.id in [ROLES.CABINET, ROLES.DEPUTY_PM] for role in interaction.user.roles):
+            return await interaction.response.send_message("❌ Only staff can deny submissions.", ephemeral=True)
+
+        row = DatabaseManager.fetch_one(
+            "SELECT status FROM pending_rank_background_submissions WHERE id = ?", (self.submission_id,)
+        )
+        if not row or row[0] != 'pending':
+            return await interaction.response.send_message("❌ Submission not found or already processed.", ephemeral=True)
+
+        parent = self
+
+        class RankBgDenyReasonModal(discord.ui.Modal, title="Deny Custom Background"):
+            def __init__(self):
+                super().__init__()
+                self.reason_input = discord.ui.TextInput(
+                    label="Reason for denial", placeholder="Why is this being denied?",
+                    required=True, max_length=200, style=discord.TextStyle.paragraph,
+                )
+                self.add_item(self.reason_input)
+
+            async def on_submit(modal_self, modal_interaction: discord.Interaction):
+                await modal_interaction.response.defer()
+                # Re-fetch to guard against a race (e.g. approved meanwhile).
+                row2 = DatabaseManager.fetch_one(
+                    "SELECT user_id, filename, price, status FROM pending_rank_background_submissions WHERE id = ?",
+                    (parent.submission_id,),
+                )
+                if not row2 or row2[3] != 'pending':
+                    return await modal_interaction.followup.send("❌ Submission not found or already processed.", ephemeral=True)
+                user_id, filename, price, _ = row2
+                reason = modal_self.reason_input.value
+
+                DatabaseManager.execute(
+                    "UPDATE pending_rank_background_submissions SET status = 'denied', deny_reason = ? WHERE id = ?",
+                    (reason, parent.submission_id),
+                )
+                if price and price > 0:
+                    add_bb(user_id, price, reason="Custom rank background denied (refund)", taxable=False)
+                # Remove the rejected file so it can't be referenced.
+                try:
+                    os.remove(os.path.join(_RANK_CARDS_DIR, filename))
+                except OSError:
+                    pass
+
+                embed = modal_interaction.message.embeds[0] if modal_interaction.message.embeds else discord.Embed()
+                embed.title = "❌ Custom Rank Background - DENIED"
+                embed.color = 0xFF0000
+                embed.add_field(name="Denied By", value=modal_interaction.user.mention, inline=False)
+                embed.add_field(name="Reason", value=reason, inline=False)
+                embed.add_field(name="Refund", value=f"{price} UKPence returned" if price else "No charge", inline=False)
+                for item in parent.children:
+                    item.disabled = True
+                await modal_interaction.edit_original_response(embed=embed, view=parent)
+
+                try:
+                    user = await modal_interaction.client.fetch_user(int(user_id))
+                    if user:
+                        deny_embed = discord.Embed(
+                            title="❌ Custom Rank Background Denied",
+                            description="Your custom rank-card background wasn't approved.",
+                            color=0xFF0000,
+                        )
+                        deny_embed.add_field(name="Reason", value=reason, inline=False)
+                        if price and price > 0:
+                            deny_embed.add_field(name="Refund", value=f"You've been refunded {price} UKPence.", inline=False)
+                        await user.send(embed=deny_embed)
+                except Exception:
+                    pass
+
+        await interaction.response.send_modal(RankBgDenyReasonModal())
+
+
+class CustomRankBackgroundItem(ShopItem):
+    """Shop entry for designing your own rank-card background. Free to start (it just
+    hands over the blank Union Jack template); the 700 UKP is charged only when the
+    finished image is submitted, and refunded if staff deny it."""
+    def __init__(self, id: str, name: str, description: str, price: int):
+        # price kept for reference/logging; get_price returns 0 so the shop's buy
+        # button never charges - payment is deferred to submission.
+        super().__init__(id, name, description, price, use_inventory=False, show_in_shop=True)
+
+    def get_price(self, user_id: int, guild: Optional[discord.Guild] = None) -> int:
+        return 0
+
+    def can_purchase(self, user: discord.Member) -> Tuple[bool, str]:
+        return True, ""
+
+    async def execute(self, interaction) -> str:
+        instructions = (
+            "## 🎨 Custom Rank Background\n"
+            "Design your **own** rank-card background, starting from the blank Union Jack below.\n\n"
+            "**1.** Download the template. **2.** Edit it - add art, your name, photos, anything "
+            "(keep it roughly **1000×600**). **3.** Click **📤 Submit my design** and send the finished "
+            "image when I DM you.\n\n"
+            f"**Cost: {CUSTOM_RANK_BG_PRICE} UKPence** - charged only when you submit, and **refunded if "
+            "staff don't approve it**. Keep it tasteful; every submission is reviewed. 🇬🇧"
+        )
+        view = SubmitCustomRankBgView()
+        if os.path.exists(_UNIONJACK_TEMPLATE):
+            file = discord.File(_UNIONJACK_TEMPLATE, filename="blank_uk_flag.png")
+            await interaction.response.send_message(instructions, file=file, view=view, ephemeral=True)
+        else:
+            await interaction.response.send_message(instructions, view=view, ephemeral=True)
+        return "Custom rank background flow started."
+
+
 SHOP_ITEMS: List[ShopItem] = [
     # Currency Items
     ShutcoinItem("shutcoin", "1 Shutcoin", "Get a Shutcoin for the ability to silence a member for 30s", 80, 1),
@@ -732,6 +1035,7 @@ SHOP_ITEMS: List[ShopItem] = [
     # Rank Customisations
     RankCustomisationMenuShopItem("rank_custom_menu", "Customise Rank Card", "Preview and choose different custom backgrounds and colour themes for your rank card.", 0),
     RankResetItem("rank_custom_reset", "Reset Rank Card", "Reset your rank card background and colours to default", 0),
+    CustomRankBackgroundItem("rank_bg_custom", "Custom Rank Background", "Design your OWN rank-card background from the blank UK flag. 700 UKPence, charged only when you submit & refunded if not approved.", 700),
 
     # Iceberg
     IcebergAddItem("iceberg_add", "Add to Iceberg", "Add your own text to the server iceberg! (Free for Boosters)", 10),
