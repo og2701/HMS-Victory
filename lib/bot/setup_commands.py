@@ -38,6 +38,7 @@ from commands.economy.video_poker import handle_videopoker_command
 from commands.economy.red_dog import handle_reddog_command
 from commands.economy.three_card_poker import handle_tcp_command
 from commands.economy.casino import handle_casino_command
+from commands.economy.casino_stats import handle_casino_stats_command
 
 def define_commands(tree, client):
     def command(name: str, description: str, checks: list = None):
@@ -460,6 +461,10 @@ def define_commands(tree, client):
     @command("three-card-poker", "Play Three Card Poker against the house")
     async def three_card_poker_command(interaction: Interaction, amount: app_commands.Range[int, 1]):
         await handle_tcp_command(interaction, amount)
+
+    @command("casino-stats", "Displays the casino statistics of a user")
+    async def casino_stats_command(interaction: Interaction, member: Optional[Member] = None):
+        await handle_casino_stats_command(interaction, member)
 
     @command("richlist", "Displays a leaderboard of users with the most UKPence")
     async def richlist_command(interaction: Interaction):
