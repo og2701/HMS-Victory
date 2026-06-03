@@ -1598,66 +1598,53 @@ def _remove_option_from_scheduled_pred(sched_id: int, option_text: str) -> tuple
     return True, f"✅ Removed **{option_text}** - the outcomes are now {' / '.join(cleaned)}.", embed
 
 
-async def _refresh_scheduled_pred_card(client: discord.Client, sched_id: int, embed: discord.Embed) -> None:
-    """Edit the COMMUNITY_MANAGEMENT card for a scheduled pred to show ``embed`` and a
-    fresh button view. Used when the refresh can't piggy-back on the triggering
-    interaction's own message (e.g. the ephemeral Remove-Option select lives on a
-    different message than the card)."""
-    from database import DatabaseManager
-    row = DatabaseManager.fetch_one(
-        "SELECT cm_message_id FROM scheduled_predictions WHERE id = ?", (sched_id,)
-    )
-    if not row or not row[0]:
-        return
-    try:
-        cm_channel = client.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
-        if cm_channel is None:
-            cm_channel = await client.fetch_channel(CHANNELS.COMMUNITY_MANAGEMENT)
-        cm_msg = await cm_channel.fetch_message(int(row[0]))
-        await cm_msg.edit(embed=embed, view=CancelScheduledPredView(sched_id))
-    except Exception:
-        import logging
-        logging.getLogger(__name__).warning(
-            f"Could not refresh scheduled-pred card #{sched_id} after editing its outcomes.",
-            exc_info=True,
-        )
-
-
-class RemoveOptionSelect(discord.ui.Select):
-    """Dropdown of a scheduled prediction's current outcomes; picking one removes it."""
+class RemoveScheduledOptionModal(discord.ui.Modal, title="Remove an outcome"):
+    """Opened by the 'Remove Option' button. A modal (so it pops up over wherever you
+    are - no scrolling back down to the card) where staff name the outcome to drop, by
+    text or by its number. The current outcomes are shown in the field placeholder.
+    Won't drop below MIN_PRED_OPTIONS."""
     def __init__(self, sched_id: int, options: list):
+        super().__init__()
         self.sched_id = sched_id
-        super().__init__(
-            placeholder="Choose an outcome to remove…",
-            min_values=1, max_values=1,
-            options=[discord.SelectOption(label=o[:100], value=o[:100]) for o in options],
+        self.options = list(options)
+        numbered = "  ".join(f"{i + 1}. {o}" for i, o in enumerate(self.options))
+        self.option_input = discord.ui.TextInput(
+            label="Outcome to remove (name or number)",
+            placeholder=numbered[:100],
+            required=True, max_length=80,
         )
+        self.add_item(self.option_input)
 
-    async def callback(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction):
         if not any(role.id in [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO] for role in interaction.user.roles):
             return await interaction.response.send_message(
                 "❌ Only staff can edit scheduled predictions.", ephemeral=True
             )
-        ok, msg, embed = _remove_option_from_scheduled_pred(self.sched_id, self.values[0])
-        # The select lives on an ephemeral message; collapse it to a confirmation line.
-        await interaction.response.edit_message(content=msg, view=None)
+        raw = self.option_input.value.strip()
+        target = raw
+        if raw.isdigit():                       # allow picking by position (1-based)
+            n = int(raw)
+            if 1 <= n <= len(self.options):
+                target = self.options[n - 1]
+        ok, msg, embed = _remove_option_from_scheduled_pred(self.sched_id, target)
+        await interaction.response.send_message(msg, ephemeral=True)
         if ok and embed is not None:
-            await _refresh_scheduled_pred_card(interaction.client, self.sched_id, embed)
-
-
-class RemoveOptionSelectView(discord.ui.View):
-    """Transient ephemeral view holding the Remove-Option dropdown. Not persistent -
-    staff pick an outcome straight away; it doesn't need to survive a restart."""
-    def __init__(self, sched_id: int, options: list):
-        super().__init__(timeout=120)
-        self.add_item(RemoveOptionSelect(sched_id, options))
+            try:
+                await interaction.message.edit(embed=embed, view=CancelScheduledPredView(self.sched_id))
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"Could not refresh scheduled-pred card #{self.sched_id} after removing an option.",
+                    exc_info=True,
+                )
 
 
 class CancelScheduledPredView(discord.ui.View):
     """Persistent view on the COMMUNITY_MANAGEMENT announcement for a scheduled
     prediction. Row 1: Edit / Cancel. Row 2: Add Draw (one-tap) / Add Option (modal) /
-    Remove Option (pick from a dropdown) - for adjusting a fixture's outcomes without
-    retyping everything in the Edit modal."""
+    Remove Option (modal) - for adjusting a fixture's outcomes without retyping
+    everything in the Edit modal. The add/remove modals pop up over the card so staff
+    never have to scroll back down to it."""
     def __init__(self, sched_id: int):
         super().__init__(timeout=None)
         self.sched_id = sched_id
@@ -1777,11 +1764,7 @@ class CancelScheduledPredView(discord.ui.View):
                 f"❌ A prediction needs at least {MIN_PRED_OPTIONS} outcomes - there's nothing to remove.",
                 ephemeral=True,
             )
-        await interaction.response.send_message(
-            "Pick an outcome to remove:",
-            view=RemoveOptionSelectView(self.sched_id, options),
-            ephemeral=True,
-        )
+        await interaction.response.send_modal(RemoveScheduledOptionModal(self.sched_id, options))
 
 
 
