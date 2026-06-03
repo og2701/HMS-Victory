@@ -20,6 +20,7 @@ import discord
 from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, remove_bb
+from lib.economy.casino_stats import record_result
 import commands.economy.casino_base as cb
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,7 @@ def _pay(game: VideoPokerGame):
     if game.payout > 0:
         kind = "push" if game.mult == 1 else "win"
         cb.credit_from_bank(game.player_id, game.payout, f"{BANK} {kind}")
+    record_result(game.player_id, KEY, game.bet, game.bet, game.payout, game.outcome)
 
 
 # ---------------------------------------------------------------------------

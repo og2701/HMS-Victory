@@ -23,6 +23,7 @@ import discord
 from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, add_bb, remove_bb, UKPenceManager
+from lib.economy.casino_stats import record_result
 from lib.core.file_operations import read_html_template
 
 logger = logging.getLogger(__name__)
@@ -305,6 +306,8 @@ async def _do_spin_round(interaction: Interaction, machine: SlotMachine, client,
             _credit(machine.player_id, machine.bet, "Slots stake refund (spin failed)")
             return
         _credit(machine.player_id, machine.win, "Slots win")  # paid only once on screen
+        record_result(machine.player_id, "slots", machine.bet, machine.bet, machine.win,
+                      f"{machine.mult}x" if machine.win else "no win")
         try:
             client.add_view(view, message_id=machine.message_id)
         except Exception:

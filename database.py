@@ -258,6 +258,27 @@ def init_db():
                 log_text TEXT NOT NULL
             )
         ''')
+
+        # One row per finished casino round (every game, every player). `staked` is the
+        # total put at risk (incl. doubles/raises), `payout` the total returned, `net`
+        # = payout - staked, and `result` is the normalised win/loss/push. Enables
+        # per-user stats, leaderboards and accurate house analytics.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS casino_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                game TEXT NOT NULL,
+                bet INTEGER NOT NULL,
+                staked INTEGER NOT NULL,
+                payout INTEGER NOT NULL,
+                net INTEGER NOT NULL,
+                outcome TEXT,
+                result TEXT NOT NULL,
+                timestamp INTEGER NOT NULL
+            )
+        ''')
+        c.execute("CREATE INDEX IF NOT EXISTS idx_casino_results_user ON casino_results(user_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_casino_results_game ON casino_results(game)")
         c.execute('''
             CREATE TABLE IF NOT EXISTS circulation_snapshots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

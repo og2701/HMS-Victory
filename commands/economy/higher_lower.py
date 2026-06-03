@@ -27,6 +27,7 @@ import discord
 from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, add_bb, remove_bb, UKPenceManager
+from lib.economy.casino_stats import record_result
 from lib.core.file_operations import (
     read_html_template,
     load_persistent_views,
@@ -227,6 +228,7 @@ def _payout(game: HigherLowerGame):
     game.settled = True
     if game.outcome == "win" and game.payout > 0:
         _credit(game.player_id, game.payout, "Higher-Lower cash-out")
+    record_result(game.player_id, "higherlower", game.bet, game.bet, game.payout, game.outcome)
 
 
 # ---------------------------------------------------------------------------

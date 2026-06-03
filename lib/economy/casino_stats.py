@@ -1,0 +1,122 @@
+"""Per-user casino statistics.
+
+Every finished round of every house game writes one row to the ``casino_results``
+table via :func:`record_result` (called at each game's single settle point). From
+that we can answer per-user questions (games played, win/loss/push, net P/L, biggest
+win, per-game breakdown) and build leaderboards - all from indexed columns rather than
+parsing the free-text economy ledger.
+
+This module deliberately depends only on ``DatabaseManager`` so any game module can
+import it without pulling in rendering/economy code or risking a circular import.
+"""
+
+import time
+import logging
+
+from database import DatabaseManager
+
+logger = logging.getLogger(__name__)
+
+# Canonical game keys (stored in casino_results.game) -> human label.
+GAME_LABELS = {
+    "blackjack": "Blackjack",
+    "higherlower": "Higher/Lower",
+    "slots": "Fruit Machine",
+    "videopoker": "Video Poker",
+    "reddog": "Red Dog",
+    "tcp": "3-Card Poker",
+}
+
+
+def record_result(user_id, game: str, bet, staked, payout, outcome=None) -> None:
+    """Append one finished casino round.
+
+    ``staked`` is the total put at risk (base bet plus any double/raise), ``payout``
+    the total returned (0 on a loss, the stake back on a push). ``net`` and the
+    normalised ``result`` are derived here so callers can't get them inconsistent.
+
+    Best-effort: a stats failure must never break a payout, so this swallows and logs
+    any error rather than raising into the game flow.
+    """
+    try:
+        bet = int(bet)
+        staked = int(staked)
+        payout = int(payout)
+        net = payout - staked
+        result = "win" if net > 0 else ("loss" if net < 0 else "push")
+        DatabaseManager.execute(
+            "INSERT INTO casino_results "
+            "(user_id, game, bet, staked, payout, net, outcome, result, timestamp) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (str(user_id), str(game), bet, staked, payout, net,
+             (str(outcome) if outcome is not None else None), result, int(time.time())),
+        )
+    except Exception:
+        logger.error("Failed to record casino result (%s/%s)", user_id, game, exc_info=True)
+
+
+def _blank_totals() -> dict:
+    return {"games": 0, "wins": 0, "losses": 0, "pushes": 0,
+            "staked": 0, "payout": 0, "net": 0, "biggest_win": 0, "biggest_loss": 0}
+
+
+def get_user_casino_stats(user_id) -> dict:
+    """Return ``{"total": {...}, "per_game": {game: {...}}}`` for one user.
+
+    ``net`` positive means the player is up overall; ``biggest_loss`` is the most
+    negative single-round net (0 if they've never lost). Empty/zeroed if no rounds.
+    """
+    rows = DatabaseManager.fetch_all(
+        "SELECT game, COUNT(*), "
+        "SUM(CASE WHEN result='win' THEN 1 ELSE 0 END), "
+        "SUM(CASE WHEN result='loss' THEN 1 ELSE 0 END), "
+        "SUM(CASE WHEN result='push' THEN 1 ELSE 0 END), "
+        "COALESCE(SUM(staked),0), COALESCE(SUM(payout),0), COALESCE(SUM(net),0), "
+        "COALESCE(MAX(net),0), COALESCE(MIN(net),0) "
+        "FROM casino_results WHERE user_id = ? GROUP BY game",
+        (str(user_id),),
+    ) or []
+
+    total = _blank_totals()
+    per_game = {}
+    for game, n, wins, losses, pushes, staked, payout, net, mx, mn in rows:
+        per_game[game] = {
+            "games": n, "wins": wins, "losses": losses, "pushes": pushes,
+            "staked": staked, "payout": payout, "net": net,
+            "biggest_win": max(0, mx), "biggest_loss": min(0, mn),
+        }
+        total["games"] += n
+        total["wins"] += wins
+        total["losses"] += losses
+        total["pushes"] += pushes
+        total["staked"] += staked
+        total["payout"] += payout
+        total["net"] += net
+        total["biggest_win"] = max(total["biggest_win"], mx)
+        total["biggest_loss"] = min(total["biggest_loss"], mn)
+    return {"total": total, "per_game": per_game}
+
+
+def get_casino_leaderboard(metric: str = "net", game: str = None, limit: int = 10) -> list:
+    """Top players by a metric across all games (or one ``game``).
+
+    ``metric``: ``net`` (profit), ``payout`` (total won), ``staked`` (total wagered),
+    ``games`` (rounds played) or ``biggest_win`` (best single round). Returns a list of
+    ``{"user_id", "value", "games"}`` ordered high -> low.
+    """
+    agg = {
+        "net": "COALESCE(SUM(net),0)",
+        "payout": "COALESCE(SUM(payout),0)",
+        "staked": "COALESCE(SUM(staked),0)",
+        "games": "COUNT(*)",
+        "biggest_win": "COALESCE(MAX(net),0)",
+    }.get(metric, "COALESCE(SUM(net),0)")
+
+    where = "WHERE game = ?" if game else ""
+    params = ([game] if game else []) + [int(limit)]
+    rows = DatabaseManager.fetch_all(
+        f"SELECT user_id, {agg} AS value, COUNT(*) AS games "
+        f"FROM casino_results {where} GROUP BY user_id ORDER BY value DESC LIMIT ?",
+        tuple(params),
+    ) or []
+    return [{"user_id": r[0], "value": r[1], "games": r[2]} for r in rows]

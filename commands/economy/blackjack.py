@@ -28,6 +28,7 @@ import discord
 from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, add_bb, remove_bb, UKPenceManager
+from lib.economy.casino_stats import record_result
 from lib.core.file_operations import (
     read_html_template,
     load_persistent_views,
@@ -275,6 +276,7 @@ def _payout(game: BlackjackGame):
             "push": "Blackjack push (refund)",
         }[game.outcome]
         _credit(game.player_id, game.payout, reason)
+    record_result(game.player_id, "blackjack", game.bet, game.total_staked, game.payout, game.outcome)
 
 
 def _settle(game: BlackjackGame):
