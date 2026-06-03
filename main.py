@@ -465,6 +465,29 @@ async def graceful_shutdown(client, sig_name):
     # 1. Maintenance mode: refuse new coin-deducting commands during the drain.
     client.maintenance_mode = True
 
+    # Wait for active casino games to finish
+    try:
+        from lib.core.file_operations import load_persistent_views
+        wait_seconds = 0
+        max_wait = 60  # maximum wait 60 seconds
+        while wait_seconds < max_wait:
+            views = load_persistent_views()
+            active_games = [
+                k for k, v in views.items()
+                if isinstance(v, dict) and v.get("type") in ["blackjack", "higherlower", "videopoker", "reddog", "tcp"]
+            ]
+            if not active_games:
+                break
+            logger.info(f"Waiting for {len(active_games)} active casino games to finish... ({wait_seconds}s)")
+            await asyncio.sleep(2)
+            wait_seconds += 2
+        if wait_seconds >= max_wait:
+            logger.warning("Reached maximum wait time for active games. Proceeding with shutdown.")
+        else:
+            logger.info("All active casino games finished.")
+    except Exception as e:
+        logger.error(f"Error waiting for active games: {e}")
+
     # 2. Stop scheduled jobs so nothing new writes to the DB while we checkpoint.
     #    wait=False: never block the event loop waiting on a job that needs it.
     try:
