@@ -46,6 +46,7 @@ class AClient(discord.Client):
         self.synced = False
         self.maintenance_mode = False  # set True during graceful shutdown to refuse new coin-deducting actions
         self._shutting_down = False    # re-entrancy guard for graceful_shutdown
+        self._prediction_backfill_done = False  # on_ready button-backfill runs once per process
         self.scheduler = AsyncIOScheduler()
         self.image_cache = {}
         self.stage_events=set()
@@ -104,6 +105,14 @@ class AClient(discord.Client):
 
     async def on_ready(self):
         await on_ready(self, tree, self.scheduler)
+        # The two loops below are a one-off cosmetic backfill of buttons onto
+        # already-posted prediction / scheduled-pred messages. on_ready fires on
+        # every gateway reconnect, so gate it to run once per process (mirrors the
+        # self.synced convention) - otherwise every reconnect re-edits every card.
+        # Flag is set BEFORE the loops so a reconnect mid-sleep can't start a 2nd pass.
+        if self._prediction_backfill_done:
+            return
+        self._prediction_backfill_done = True
         # Proactively update existing predictions to show the new button
         import asyncio
         from lib.economy.prediction_system import _edit_prediction_message
@@ -135,8 +144,10 @@ class AClient(discord.Client):
                 except Exception as e:
                     logger.warning(f"Could not update prediction {p.msg_id}: {e}")
 
-        # Proactively update existing scheduled-prediction announcements so they
-        # show the new Edit button (older ones were posted with only Cancel).
+        # Proactively update existing pending scheduled-prediction announcements so
+        # they show the latest buttons (Edit, plus the new Add Draw / Add Option).
+        # Re-editing with a fresh CancelScheduledPredView backfills buttons added
+        # after a card was first posted.
         from lib.economy.prediction_system import CancelScheduledPredView
         from database import DatabaseManager
         try:
@@ -154,7 +165,7 @@ class AClient(discord.Client):
                     try:
                         cm_msg = await cm_channel.fetch_message(int(cm_msg_id))
                         await cm_msg.edit(view=CancelScheduledPredView(sched_id))
-                        logger.info(f"Updated scheduled-pred announcement {cm_msg_id} with Edit button.")
+                        logger.info(f"Refreshed scheduled-pred announcement {cm_msg_id} with the latest buttons.")
                         await asyncio.sleep(1) # Small delay to be polite to the API
                     except Exception as e:
                         logger.warning(f"Could not update scheduled-pred announcement {cm_msg_id}: {e}")

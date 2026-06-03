@@ -1474,14 +1474,101 @@ class ScheduledPredAdminView(discord.ui.View):
         await interaction.response.edit_message(content="Choose a scheduled prediction to manage:", embed=None, view=view)
 
 
+def _add_option_to_scheduled_pred(sched_id: int, new_option: str, *, position: str = "end") -> tuple:
+    """Add an outcome to a *pending* scheduled prediction.
+
+    ``position='middle'`` inserts the new outcome just after the first one (football
+    1X2 order - home / draw / away); anything else appends it. Used by the one-tap
+    "Add Draw" and the generic "Add Option" buttons on the COMMUNITY_MANAGEMENT card.
+
+    Returns ``(ok, user_message, refreshed_embed_or_None)``. The caller owns the
+    Discord response - this only does the validation, DB update and embed rebuild so
+    both the button and the modal can share one code path.
+    """
+    from database import DatabaseManager
+    new_option = (new_option or "").strip()
+    if not new_option:
+        return False, "❌ The outcome can't be empty.", None
+
+    row = DatabaseManager.fetch_one(
+        "SELECT title, opt1, opt2, options_json, scheduled_ts, duration_minutes, status, channel_id, creator_id "
+        "FROM scheduled_predictions WHERE id = ?",
+        (sched_id,),
+    )
+    if not row:
+        return False, f"❌ Scheduled prediction #{sched_id} not found.", None
+    title, opt1, opt2, options_json, scheduled_ts, duration, status, channel_id, creator_id = row
+    if status != 'pending':
+        return False, (f"❌ Scheduled prediction #{sched_id} is no longer pending "
+                       f"(status={status}); cannot edit."), None
+
+    options = _options_from_row(opt1, opt2, options_json)
+    if any(o.lower() == new_option.lower() for o in options):
+        return False, f"❌ This prediction already has a **{new_option}** outcome.", None
+    if len(options) >= MAX_PRED_OPTIONS:
+        return False, (f"❌ A prediction can have at most {MAX_PRED_OPTIONS} outcomes - "
+                       f"this one already has {len(options)}."), None
+
+    if position == "middle":
+        new_options = options[:1] + [new_option] + options[1:]
+    else:
+        new_options = options + [new_option]
+
+    cleaned, err = _clean_options(new_options)
+    if err:
+        return False, f"❌ {err}", None
+
+    DatabaseManager.execute(
+        "UPDATE scheduled_predictions SET opt1 = ?, opt2 = ?, options_json = ? WHERE id = ?",
+        (cleaned[0], cleaned[1], json.dumps(cleaned), sched_id),
+    )
+    embed = _scheduled_pred_embed(
+        sched_id, channel_id, title, cleaned, scheduled_ts, duration, f"<@{creator_id}>",
+    )
+    return True, f"✅ Added **{new_option}** - the outcomes are now {' / '.join(cleaned)}.", embed
+
+
+class AddScheduledOptionModal(discord.ui.Modal, title="Add an outcome"):
+    """Opened by the 'Add Option' button on a scheduled-prediction card. Lets staff
+    type any new outcome (pre-filled with 'Draw' for the common football case)."""
+    def __init__(self, sched_id: int):
+        super().__init__()
+        self.sched_id = sched_id
+        self.option_input = discord.ui.TextInput(
+            label="New outcome", default="Draw", placeholder="e.g. Draw",
+            required=True, max_length=80,
+        )
+        self.add_item(self.option_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if not any(role.id in [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO] for role in interaction.user.roles):
+            return await interaction.response.send_message(
+                "❌ Only staff can edit scheduled predictions.", ephemeral=True
+            )
+        ok, msg, embed = _add_option_to_scheduled_pred(self.sched_id, self.option_input.value, position="end")
+        await interaction.response.send_message(msg, ephemeral=True)
+        if ok and embed is not None:
+            try:
+                await interaction.message.edit(embed=embed, view=CancelScheduledPredView(self.sched_id))
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"Could not refresh scheduled-pred card #{self.sched_id} after adding an option.",
+                    exc_info=True,
+                )
+
+
 class CancelScheduledPredView(discord.ui.View):
-    """Persistent view with Edit and Cancel buttons shown on the COMMUNITY_MANAGEMENT
-    announcement message for a scheduled prediction."""
+    """Persistent view on the COMMUNITY_MANAGEMENT announcement for a scheduled
+    prediction. Row 1: Edit / Cancel. Row 2: Add Draw (one-tap) / Add Option (modal),
+    for quickly giving a fixture its third outcome without retyping everything."""
     def __init__(self, sched_id: int):
         super().__init__(timeout=None)
         self.sched_id = sched_id
         self.edit_button.custom_id = f"sched_pred_edit:{sched_id}"
         self.cancel_button.custom_id = f"sched_pred_cancel:{sched_id}"
+        self.add_draw_button.custom_id = f"sched_pred_adddraw:{sched_id}"
+        self.add_option_button.custom_id = f"sched_pred_addoption:{sched_id}"
 
     @discord.ui.button(label="Edit", style=discord.ButtonStyle.primary, emoji="✏️")
     async def edit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1527,6 +1614,43 @@ class CancelScheduledPredView(discord.ui.View):
             await interaction.followup.send(f"❌ {msg}", ephemeral=True)
         else:
             await interaction.followup.send(f"✅ {msg}", ephemeral=True)
+
+    @discord.ui.button(label="Add Draw", style=discord.ButtonStyle.success, emoji="➕", row=1)
+    async def add_draw_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """One tap: drop a 'Draw' outcome into the fixture (between the two teams)."""
+        if not any(role.id in [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO] for role in interaction.user.roles):
+            return await interaction.response.send_message(
+                "❌ Only staff can edit scheduled predictions.", ephemeral=True
+            )
+        ok, msg, embed = _add_option_to_scheduled_pred(self.sched_id, "Draw", position="middle")
+        if ok and embed is not None:
+            # Update the card in place, then confirm privately.
+            await interaction.response.edit_message(embed=embed, view=CancelScheduledPredView(self.sched_id))
+            await interaction.followup.send(msg, ephemeral=True)
+        else:
+            await interaction.response.send_message(msg, ephemeral=True)
+
+    @discord.ui.button(label="Add Option", style=discord.ButtonStyle.secondary, emoji="➕", row=1)
+    async def add_option_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Open a modal to add any custom outcome (pre-filled with 'Draw')."""
+        if not any(role.id in [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO] for role in interaction.user.roles):
+            return await interaction.response.send_message(
+                "❌ Only staff can edit scheduled predictions.", ephemeral=True
+            )
+        from database import DatabaseManager
+        row = DatabaseManager.fetch_one(
+            "SELECT status FROM scheduled_predictions WHERE id = ?", (self.sched_id,)
+        )
+        if not row:
+            return await interaction.response.send_message(
+                f"❌ Scheduled prediction #{self.sched_id} not found.", ephemeral=True
+            )
+        if row[0] != 'pending':
+            return await interaction.response.send_message(
+                f"❌ Scheduled prediction #{self.sched_id} is no longer pending (status={row[0]}); cannot edit.",
+                ephemeral=True,
+            )
+        await interaction.response.send_modal(AddScheduledOptionModal(self.sched_id))
 
 
 
