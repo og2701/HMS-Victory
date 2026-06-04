@@ -354,59 +354,217 @@ def _banner_html(game: BlackjackGame) -> str:
     )
 
 
-def build_table_html(game: BlackjackGame) -> str:
+def build_table_html_for_state(
+    game: BlackjackGame,
+    player_cards: list,
+    dealer_cards: list,
+    hole_revealed: bool,
+    outcome: str = None,
+    hint: str = None,
+    balance_override: int = None
+) -> str:
     template = read_html_template("templates/blackjack_table.html")
 
-    if game.hole_revealed:
-        dealer_cards = _hand_html(list(game.dealer_cards))
-        dt = game.dealer_total()
+    # Filter out None cards (which are face down card backs) for scoring
+    pt, _ = hand_value([c for c in player_cards if c is not None])
+
+    if hole_revealed:
+        dealer_cards_calc = [c for c in dealer_cards if c is not None]
+        dt, _ = hand_value(dealer_cards_calc)
         dealer_total = str(dt)
-        d_cls = "bust" if dt > 21 else ("bj" if game.is_blackjack(game.dealer_cards) else "")
+        d_is_bj = len(dealer_cards_calc) == 2 and dt == 21
+        d_cls = "bust" if dt > 21 else ("bj" if d_is_bj else "")
     else:
-        dealer_cards = _hand_html([game.dealer_cards[0], None])  # None = face-down hole card
-        dealer_total = "?"
+        visible_dealer = [c for c in dealer_cards if c is not None]
+        if visible_dealer:
+            dt, _ = hand_value([visible_dealer[0]])
+            dealer_total = str(dt)
+        else:
+            dealer_total = "0"
         d_cls = ""
 
-    player_cards = _hand_html(list(game.player_cards))
-    pt = game.player_total()
+    dealer_cards_html = _hand_html(dealer_cards)
+    player_cards_html = _hand_html(player_cards)
+
+    p_cards_calc = [c for c in player_cards if c is not None]
+    p_is_bj = len(p_cards_calc) == 2 and pt == 21
     if pt > 21:
         p_cls = "bust"
-    elif game.is_blackjack(game.player_cards):
+    elif p_is_bj:
         p_cls = "bj"
-    elif game.state == "over" and game.outcome in ("win", "blackjack"):
+    elif outcome in ("win", "blackjack"):
         p_cls = "win"
     else:
         p_cls = ""
 
-    if game.state == "over":
-        banner = _banner_html(game)
-        hint = "Round complete"
+    if outcome is not None:
+        staked = game.total_staked
+        net = game.payout - staked if game.payout else 0
+        if outcome == "blackjack":
+            net = (staked * 3) // 2
+            cls, head, sub = "win", "Blackjack!", f"+{net:,} UKPence"
+        elif outcome == "win":
+            net = staked
+            cls, head, sub = "win", "You Win", f"+{net:,} UKPence"
+        elif outcome == "push":
+            net = 0
+            cls, head, sub = "push", "Push", "Stake returned"
+        else:
+            net = -staked
+            cls, head, sub = "lose", "Bust" if pt > 21 else "Dealer Wins", f"-{staked:,} UKPence"
+
+        banner = (
+            f'<div class="banner-wrap"><div class="banner {cls}">'
+            f'<div class="head">{head}</div><div class="sub">{sub}</div>'
+            f"</div></div>"
+        )
+        final_hint = "Round complete"
     else:
         banner = ""
-        hint = "Your move - Hit or Stand" + (" or Double" if game.can_double() else "")
+        final_hint = hint if hint is not None else ("Your move - Hit or Stand" + (" or Double" if game.can_double() else ""))
+
+    bal = balance_override if balance_override is not None else get_bb(game.player_id)
 
     return (
         template
         .replace("{{RULE}}", "Dealer stands on all 17s<br>Blackjack pays 3 : 2")
         .replace("{{PLAYER_NAME}}", _html.escape(str(game.player_name)[:24]) or "Player")
-        .replace("{{DEALER_CARDS}}", dealer_cards)
-        .replace("{{PLAYER_CARDS}}", player_cards)
+        .replace("{{DEALER_CARDS}}", dealer_cards_html)
+        .replace("{{PLAYER_CARDS}}", player_cards_html)
         .replace("{{DEALER_TOTAL}}", dealer_total)
         .replace("{{PLAYER_TOTAL}}", str(pt))
         .replace("{{DEALER_TOTAL_CLASS}}", d_cls)
         .replace("{{PLAYER_TOTAL_CLASS}}", p_cls)
         .replace("{{BET}}", f"{game.total_staked:,}")
-        .replace("{{BALANCE}}", f"{get_bb(game.player_id):,}")
-        .replace("{{STATE_HINT}}", hint)
+        .replace("{{BALANCE}}", f"{bal:,}")
+        .replace("{{STATE_HINT}}", final_hint)
         .replace("{{RESULT_BANNER}}", banner)
     )
 
 
-async def render_blackjack_image(game: BlackjackGame) -> io.BytesIO:
-    from lib.core.image_processing import screenshot_html
-    html_out = build_table_html(game)
-    # Portrait table; the CDP element-clip captures the real .table size regardless.
-    return await screenshot_html(html_out, size=(900, 1500), element_selector=".table")
+def build_blackjack_gif_frames(
+    game: BlackjackGame,
+    action: str,
+    prev_player: list,
+    prev_dealer: list
+) -> tuple:
+    """Return a tuple of (list of HTML strings, list of durations) for the GIF."""
+    frames_html = []
+    durations = []
+
+    if action == "deal":
+        p0, p1 = game.player_cards[0], game.player_cards[1]
+        d0, d1 = game.dealer_cards[0], game.dealer_cards[1]
+
+        # Frame 0: Empty table
+        frames_html.append(build_table_html_for_state(game, [], [], False, hint="Dealing..."))
+        durations.append(250)
+
+        # Frame 1: Player gets 1st card
+        frames_html.append(build_table_html_for_state(game, [p0], [], False, hint="Dealing..."))
+        durations.append(200)
+
+        # Frame 2: Dealer gets 1st card
+        frames_html.append(build_table_html_for_state(game, [p0], [d0], False, hint="Dealing..."))
+        durations.append(200)
+
+        # Frame 3: Player gets 2nd card
+        frames_html.append(build_table_html_for_state(game, [p0, p1], [d0], False, hint="Dealing..."))
+        durations.append(200)
+
+        # Frame 4: Dealer gets 2nd card (face down)
+        frames_html.append(build_table_html_for_state(game, [p0, p1], [d0, None], False))
+        durations.append(300 if game.state == "over" else 10000)
+
+        if game.state == "over":
+            # Natural blackjack showdown!
+            # Frame 5: Reveal hole card
+            frames_html.append(build_table_html_for_state(game, [p0, p1], [d0, d1], True, hint="Showdown!"))
+            durations.append(300)
+
+            # Frame 6: Final result
+            _decide(game)
+            frames_html.append(build_table_html_for_state(game, [p0, p1], [d0, d1], True, outcome=game.outcome))
+            durations.append(10000)
+
+    elif action == "hit":
+        # Frame 0: Previous state
+        frames_html.append(build_table_html_for_state(game, prev_player, [prev_dealer[0], None], False, hint="Hitting..."))
+        durations.append(250)
+
+        # Frame 1: Card slides in face-down
+        frames_html.append(build_table_html_for_state(game, prev_player + [None], [prev_dealer[0], None], False, hint="Hitting..."))
+        durations.append(200)
+
+        # Frame 2: Card flips up / final result
+        if game.state == "over":
+            _decide(game)
+            frames_html.append(build_table_html_for_state(game, game.player_cards, game.dealer_cards, True, outcome=game.outcome))
+        else:
+            frames_html.append(build_table_html_for_state(game, game.player_cards, [game.dealer_cards[0], None], False))
+        durations.append(10000)
+
+    elif action == "stand":
+        # Frame 0: Previous state
+        frames_html.append(build_table_html_for_state(game, prev_player, [prev_dealer[0], None], False, hint="Dealer's turn..."))
+        durations.append(250)
+
+        # Frame 1: Reveal hole card
+        d0, d1 = game.dealer_cards[0], game.dealer_cards[1]
+        frames_html.append(build_table_html_for_state(game, prev_player, [d0, d1], True, hint="Dealer's turn..."))
+        durations.append(300)
+
+        # Draw dealer cards one-by-one
+        for i in range(2, len(game.dealer_cards)):
+            frames_html.append(build_table_html_for_state(game, prev_player, game.dealer_cards[:i+1], True, hint="Dealer's turn..."))
+            durations.append(300)
+
+        # Frame final: Result banner
+        _decide(game)
+        frames_html.append(build_table_html_for_state(game, prev_player, game.dealer_cards, True, outcome=game.outcome))
+        durations.append(10000)
+
+    elif action == "double":
+        # Frame 0: Previous state
+        frames_html.append(build_table_html_for_state(game, prev_player, [prev_dealer[0], None], False, hint="Doubling down..."))
+        durations.append(250)
+
+        # Frame 1: Double card face-down
+        frames_html.append(build_table_html_for_state(game, prev_player + [None], [prev_dealer[0], None], False, hint="Doubling down..."))
+        durations.append(200)
+
+        # Frame 2: Double card flips up
+        p_cards = game.player_cards
+        frames_html.append(build_table_html_for_state(game, p_cards, [prev_dealer[0], None], False, hint="Doubling down..."))
+        durations.append(300)
+
+        # Frame 3: Dealer reveals hole card
+        d0, d1 = game.dealer_cards[0], game.dealer_cards[1]
+        frames_html.append(build_table_html_for_state(game, p_cards, [d0, d1], True, hint="Dealer's turn..."))
+        durations.append(300)
+
+        # Draw dealer cards one-by-one
+        for i in range(2, len(game.dealer_cards)):
+            frames_html.append(build_table_html_for_state(game, p_cards, game.dealer_cards[:i+1], True, hint="Dealer's turn..."))
+            durations.append(300)
+
+        # Frame final: Result banner
+        _decide(game)
+        frames_html.append(build_table_html_for_state(game, p_cards, game.dealer_cards, True, outcome=game.outcome))
+        durations.append(10000)
+
+    return frames_html, durations
+
+
+async def render_blackjack_gif(
+    game: BlackjackGame,
+    action: str,
+    prev_player: list,
+    prev_dealer: list
+) -> io.BytesIO:
+    from lib.core.image_processing import screenshot_html_sequence
+    frames_html, durations = build_blackjack_gif_frames(game, action, prev_player, prev_dealer)
+    return await screenshot_html_sequence(frames_html, size=(900, 1500), element_selector=".table", durations=durations, loop=None)
 
 
 def _native_text(game: BlackjackGame) -> str:
@@ -501,7 +659,14 @@ def _action_row(game: BlackjackGame) -> discord.ui.ActionRow:
     return row
 
 
-async def build_blackjack_layout(game: BlackjackGame, client):
+async def build_blackjack_layout(
+    game: BlackjackGame,
+    client,
+    *,
+    action: str = "deal",
+    prev_player: list = None,
+    prev_dealer: list = None
+):
     """Return (view, files) for sending/editing. Renders the premium table image when
     enabled; on failure falls back to a native text layout (files == [])."""
     import config
@@ -511,19 +676,27 @@ async def build_blackjack_layout(game: BlackjackGame, client):
 
     if getattr(config, "BLACKJACK_IMAGE_ENABLED", True):
         try:
-            img = await render_blackjack_image(game)
-            files = [discord.File(img, filename="blackjack.png")]
-            # Image goes straight into the view - no Container wrapper, so there's no
-            # accent-rail "embed" box around it. The rendered table carries its own frame.
+            if action == "deal":
+                if prev_player is None:
+                    prev_player = []
+                if prev_dealer is None:
+                    prev_dealer = []
+            else:
+                if prev_player is None:
+                    prev_player = list(game.player_cards)
+                if prev_dealer is None:
+                    prev_dealer = list(game.dealer_cards)
+
+            img = await render_blackjack_gif(game, action, prev_player, prev_dealer)
+            files = [discord.File(img, filename="blackjack.gif")]
             gallery = discord.ui.MediaGallery()
-            gallery.add_item(media="attachment://blackjack.png")
+            gallery.add_item(media="attachment://blackjack.gif")
             view.add_item(gallery)
             used_image = True
         except Exception:
             logger.warning("Blackjack image render failed; using native layout.", exc_info=True)
 
     if not used_image:
-        # Text-only fallback has no image to carry the brand, so a themed container helps.
         container = discord.ui.Container(accent_colour=ACCENT)
         container.add_item(discord.ui.TextDisplay(_native_text(game)))
         view.add_item(container)
@@ -549,8 +722,16 @@ def _make_cb(game: BlackjackGame, action: str):
     return _cb
 
 
-async def _refresh(interaction: Interaction, game: BlackjackGame, client):
-    view, files = await build_blackjack_layout(game, client)
+async def _refresh(
+    interaction: Interaction,
+    game: BlackjackGame,
+    client,
+    *,
+    action: str = "deal",
+    prev_player: list = None,
+    prev_dealer: list = None
+):
+    view, files = await build_blackjack_layout(game, client, action=action, prev_player=prev_player, prev_dealer=prev_dealer)
     await interaction.edit_original_response(view=view, attachments=files)
     try:
         client.add_view(view, message_id=game.message_id)
@@ -599,11 +780,7 @@ async def _handle_action(interaction: Interaction, game: BlackjackGame, action: 
         await interaction.response.send_modal(ChangeBetModal(game))
         return
 
-    # Drop clicks that arrive while a previous one is still being processed. The image
-    # render takes ~1-2s and the old buttons stay live during it, so a fast double-click
-    # would otherwise queue a second action (an extra Hit). Reading and setting `busy`
-    # has no await between them, so it's atomic on the event loop - exactly one action
-    # runs; the rest are silently acknowledged.
+    # Drop clicks that arrive while a previous one is still being processed.
     if game.busy:
         await interaction.response.defer()
         return
@@ -631,7 +808,14 @@ async def _handle_action(interaction: Interaction, game: BlackjackGame, action: 
                     )
                     return
 
-            await interaction.response.defer()
+            # Capture previous states for GIF sequence rendering
+            prev_player = list(game.player_cards)
+            prev_dealer = list(game.dealer_cards)
+
+            # Immediately disable the buttons to prevent double clicking/races
+            disabled_view = discord.ui.LayoutView(timeout=None)
+            disabled_view.add_item(_action_row_disabled(game, action))
+            await interaction.response.edit_message(view=disabled_view)
 
             if action == "hit":
                 game.hit_player()
@@ -639,6 +823,12 @@ async def _handle_action(interaction: Interaction, game: BlackjackGame, action: 
                 game.dealer_play()
             elif action == "double":
                 if not remove_bb(game.player_id, game.bet, reason="Blackjack double down"):
+                    try:
+                        enabled_view = discord.ui.LayoutView(timeout=None)
+                        enabled_view.add_item(_action_row(game))
+                        await interaction.edit_original_response(view=enabled_view)
+                    except Exception:
+                        pass
                     await interaction.followup.send(
                         "You don't have enough UKPence to double down.", ephemeral=True
                     )
@@ -661,9 +851,15 @@ async def _handle_action(interaction: Interaction, game: BlackjackGame, action: 
 
             # Money is already settled/persisted above; a failed redraw is cosmetic only.
             try:
-                await _refresh(interaction, game, client)
+                await _refresh(interaction, game, client, action=action, prev_player=prev_player, prev_dealer=prev_dealer)
             except Exception:
                 logger.error("Blackjack redraw failed after applying the move.", exc_info=True)
+                try:
+                    enabled_view = discord.ui.LayoutView(timeout=None)
+                    enabled_view.add_item(_action_row(game))
+                    await interaction.edit_original_response(view=enabled_view)
+                except Exception:
+                    pass
     finally:
         game.busy = False
 
@@ -735,7 +931,10 @@ async def _start_replay(interaction: Interaction, old_game: BlackjackGame, clien
         return
     old_game.replayed = True  # claimed before any await so two clicks can't deal twice
 
-    await interaction.response.defer()
+    # Immediately disable buttons and show "Dealing..." feedback
+    disabled_view = discord.ui.LayoutView(timeout=None)
+    disabled_view.add_item(_action_row_disabled(old_game, "again" if not via_modal else "changebet"))
+    await interaction.response.edit_message(view=disabled_view)
 
     new_game = BlackjackGame.new(uid, old_game.player_name, old_game.channel_id, bet)
     new_game.message_id = old_game.message_id
@@ -745,7 +944,7 @@ async def _start_replay(interaction: Interaction, old_game: BlackjackGame, clien
     # Refundable section ends the moment the new hand is shown. If we never get it on
     # screen, nothing has been credited yet, so the new stake is refunded in full.
     try:
-        view, files = await build_blackjack_layout(new_game, client)
+        view, files = await build_blackjack_layout(new_game, client, action="deal", prev_player=[], prev_dealer=[])
         if via_modal:
             await interaction.message.edit(view=view, attachments=files)
         else:
@@ -753,6 +952,15 @@ async def _start_replay(interaction: Interaction, old_game: BlackjackGame, clien
     except Exception:
         logger.error("Blackjack replay failed before showing the new hand; refunding stake.", exc_info=True)
         _credit(uid, bet, "Blackjack stake refund (replay failed)")
+        try:
+            enabled_view = discord.ui.LayoutView(timeout=None)
+            enabled_view.add_item(_action_row(old_game))
+            if via_modal:
+                await interaction.message.edit(view=enabled_view)
+            else:
+                await interaction.edit_original_response(view=enabled_view)
+        except Exception:
+            pass
         return
 
     # New hand is live - persistence/payout/add_view failures are logged, never refunded.
