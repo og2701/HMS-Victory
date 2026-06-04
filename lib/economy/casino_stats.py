@@ -153,8 +153,8 @@ def session_footer_html(player_id, *, session_count, session_net, current_net=0,
         )
 
     return (
-        '<div style="display:flex;gap:16px;justify-content:center;align-items:center;'
-        'flex-wrap:wrap;margin-top:10px">'
+        '<div style="position:relative;z-index:3;display:flex;gap:16px;justify-content:center;'
+        'align-items:center;flex-wrap:wrap;margin-top:12px;padding:0 24px 30px">'
         + chip("This session", f"Game&nbsp;#{sc} &middot; {_fmt_signed(st)}")
         + chip("Career", f"{cg:,} games &middot; {_fmt_signed(cn)}")
         + "</div>"
