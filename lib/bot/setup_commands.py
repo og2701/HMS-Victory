@@ -38,6 +38,7 @@ from commands.economy.video_poker import handle_videopoker_command
 from commands.economy.red_dog import handle_reddog_command
 from commands.economy.three_card_poker import handle_tcp_command
 from commands.economy.casino import handle_casino_command
+from lib.economy.lottery import handle_lottery_command
 from commands.economy.casino_stats import handle_casino_stats_command
 
 def define_commands(tree, client):
@@ -449,6 +450,10 @@ def define_commands(tree, client):
     @command("casino", "Open the HMS Victory casino - pick a game to play")
     async def casino_command(interaction: Interaction):
         await handle_casino_command(interaction)
+
+    @command("lottery", "Buy tickets for the HMS Victory National Lottery")
+    async def lottery_command(interaction: Interaction):
+        await handle_lottery_command(interaction)
 
     @command("video-poker", "Play Video Poker (Jacks or Better) against the house")
     async def video_poker_command(interaction: Interaction, amount: app_commands.Range[int, 1]):

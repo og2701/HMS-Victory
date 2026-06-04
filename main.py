@@ -112,6 +112,16 @@ class AClient(discord.Client):
         except Exception as e:
             logger.warning(f"Could not register casino lobby view: {e}")
 
+        # Reattach the open lottery board's buttons so Buy/My-Tickets survive restarts.
+        try:
+            from lib.economy.lottery import get_open_round, build_board_controls
+            rnd = get_open_round()
+            if rnd and rnd.get("message_id"):
+                self.add_view(build_board_controls(rnd), message_id=int(rnd["message_id"]))
+                logger.info("Registered persistent lottery board view.")
+        except Exception as e:
+            logger.warning(f"Could not register lottery board view: {e}")
+
         logger.info("Persistent prediction views registered in setup_hook.")
 
     async def on_ready(self):
@@ -182,6 +192,14 @@ class AClient(discord.Client):
                         logger.warning(f"Could not update scheduled-pred announcement {cm_msg_id}: {e}")
         except Exception as e:
             logger.warning(f"Could not refresh scheduled-pred announcements: {e}")
+
+        # Open the first-ever lottery round (no-op once one exists; the weekly job opens
+        # subsequent rounds). Safe across reconnects - it only acts if none has existed.
+        try:
+            from lib.economy.lottery import ensure_started
+            await ensure_started(self)
+        except Exception as e:
+            logger.warning(f"Could not start lottery: {e}")
 
     async def on_message(self, message):
         if (

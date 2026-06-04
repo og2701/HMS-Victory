@@ -72,6 +72,19 @@ TCP_IMAGE_ENABLED = True
 TCP_MIN_BET = 5
 TCP_MAX_BET = 10_000
 
+# --- National Lottery (shared pooled draw) ---
+# Tickets are LOTTERY_TICKET_PRICE each; a round draws when it sells out (TICKET_CAP)
+# OR at the weekly time, whichever comes first - but a sold-out round never reopens
+# until the next weekly tick. Winner takes the pot minus a LOTTERY_RAKE_PCT bank cut.
+LOTTERY_ENABLED = True
+LOTTERY_IMAGE_ENABLED = True
+LOTTERY_TICKET_PRICE = 10
+LOTTERY_TICKET_CAP = 500          # tickets per round -> max pot = price * cap
+LOTTERY_RAKE_PCT = 10             # house bank keeps this %, winner gets the rest
+LOTTERY_DRAW_DOW = "sun"          # weekly draw day (APScheduler day_of_week)
+LOTTERY_DRAW_HOUR = 20            # 8pm UK
+LOTTERY_DRAW_MINUTE = 0
+
 # --- File Paths & Directories ---
 DATA_DIR = os.path.join(BASE_DIR, "data")
 JSON_DATA_DIR = os.path.join(DATA_DIR, "json")
@@ -188,6 +201,7 @@ class CHANNELS:
     HALL_OF_FAME_THREAD = 1479149572591845376
     ECONOMY_LOG_THREAD = 1488926630767366416
     DAILY_SUMMARY_THREAD = 1511784346451710113  # daily server summaries post here (weekly/monthly stay in COMMONS)
+    VOTING = 959848236384919692  # lottery board + winner announcements post here
     VOICE_LOG_THREAD = 1493403784074760362
 
 class CATEGORIES:

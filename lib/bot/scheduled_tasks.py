@@ -452,9 +452,26 @@ def schedule_client_jobs(client, scheduler):
 
     scheduler.add_job(apply_inactivity_tax, CronTrigger(day_of_week="fri", hour=0, minute=0, timezone="Europe/London"), args=[client], id="apply_inactivity_tax_job", name="Weekly Inactivity Tax")
 
+    # Weekly National Lottery draw (draws the open round, opens a fresh one). misfire
+    # grace so a draw missed while the bot was down still fires on the next startup.
+    import config as _config
+    scheduler.add_job(
+        _lottery_weekly_draw,
+        CronTrigger(day_of_week=getattr(_config, "LOTTERY_DRAW_DOW", "sun"),
+                    hour=getattr(_config, "LOTTERY_DRAW_HOUR", 20),
+                    minute=getattr(_config, "LOTTERY_DRAW_MINUTE", 0),
+                    timezone="Europe/London"),
+        args=[client], id="lottery_weekly_draw_job", name="Weekly National Lottery Draw",
+        misfire_grace_time=3600, coalesce=True)
+
     _register_pending_scheduled_predictions(client, scheduler)
 
     scheduler.start()
+
+
+async def _lottery_weekly_draw(client):
+    from lib.economy.lottery import weekly_draw_job
+    await weekly_draw_job(client)
 
 
 def _register_pending_scheduled_predictions(client, scheduler):

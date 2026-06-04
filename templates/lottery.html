@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#00247D; --red:#CF142B; --brass:#b07f2a; --brass-2:#d6a44a; --brass-soft:#e8cf92;
+    --serif:Georgia,"Times New Roman",Times,serif; --sans:"Segoe UI",Helvetica,Arial,sans-serif;
+    --emoji:"Noto Color Emoji","Apple Color Emoji","Segoe UI Emoji",sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{background:#0a0a0f;}
+  body{padding:20px;font-family:var(--sans);-webkit-font-smoothing:antialiased;}
+
+  .board{position:relative;width:760px;border-radius:28px;overflow:hidden;
+    background:linear-gradient(180deg,#16356e 0%, var(--navy) 45%, #001a5c 100%);
+    box-shadow:0 24px 60px rgba(0,0,0,.6), inset 0 0 120px rgba(0,0,0,.5);color:#fff;
+    display:flex;flex-direction:column;align-items:center;padding:34px 34px 38px;}
+  .board::before{content:"";position:absolute;inset:0;pointer-events:none;
+    background-image:repeating-linear-gradient(45deg, rgba(214,164,74,.05) 0 9px, transparent 9px 18px);}
+  .board::after{content:"";position:absolute;inset:14px;border-radius:18px;pointer-events:none;
+    border:2px solid rgba(214,164,74,.6);box-shadow:inset 0 0 0 1px rgba(0,0,0,.4), inset 0 0 34px rgba(0,0,0,.4);}
+
+  .masthead{position:relative;z-index:3;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;}
+  .brand{display:flex;align-items:center;gap:14px;}
+  .roundel{width:44px;height:44px;border-radius:50%;flex:none;
+    background:radial-gradient(circle at center, var(--red) 0 26%, #fff 26% 48%, var(--navy) 48% 70%, #fff 70% 100%);
+    box-shadow:0 0 0 2px rgba(214,164,74,.75), 0 3px 8px rgba(0,0,0,.5);}
+  .wordmark{display:flex;flex-direction:column;line-height:1;text-align:left;}
+  .wordmark .name{font-weight:800;font-size:22px;letter-spacing:.12em;}
+  .wordmark .sub{font-size:11px;font-weight:700;letter-spacing:.34em;text-transform:uppercase;color:var(--brass-soft);margin-top:5px;}
+  .title{font-family:var(--serif);font-weight:700;font-size:54px;line-height:1;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--brass-2);text-shadow:0 2px 0 rgba(0,0,0,.4), 0 0 24px rgba(214,164,74,.5);margin-top:6px;}
+  .lights{display:flex;gap:12px;margin-top:4px;}
+  .lights i{width:12px;height:12px;border-radius:50%;background:radial-gradient(circle at 35% 30%, #fff6cf, var(--brass-2) 60%, #9c6a1f);
+    box-shadow:0 0 10px rgba(214,164,74,.8);}
+
+  /* jackpot panel */
+  .jackpot{position:relative;z-index:3;margin:26px 0 6px;width:100%;border-radius:18px;padding:26px 20px 22px;text-align:center;
+    background:linear-gradient(180deg, rgba(0,0,0,.34), rgba(0,0,0,.52));border:2px solid var(--brass-2);
+    box-shadow:0 0 0 4px rgba(0,0,0,.4), inset 0 0 40px rgba(0,0,0,.5);}
+  .jackpot .lab{font-size:14px;font-weight:800;letter-spacing:.34em;text-transform:uppercase;color:var(--brass-soft);}
+  .jackpot .amt{font-family:var(--serif);font-weight:800;font-size:84px;line-height:1.04;color:#ffe06b;
+    text-shadow:0 2px 4px rgba(0,0,0,.8), 0 0 30px rgba(255,224,107,.55);}
+  .jackpot .amt .u{font-size:28px;color:var(--brass-soft);font-style:italic;margin-left:8px;}
+  .jackpot .note{margin-top:6px;font-size:16px;color:#cdd6f0;}
+
+  /* progress */
+  .progress{position:relative;z-index:3;width:100%;margin-top:18px;}
+  .progress .meta{display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:#cdd6f0;margin-bottom:7px;}
+  .progress .meta b{color:#fff;}
+  .bar{height:22px;border-radius:12px;background:rgba(0,0,0,.45);border:1px solid rgba(214,164,74,.5);overflow:hidden;}
+  .bar .fill{height:100%;border-radius:12px 0 0 12px;
+    background:linear-gradient(90deg,#d6a44a,#ffe06b);box-shadow:0 0 14px rgba(255,224,107,.6);}
+
+  /* chips */
+  .hud{position:relative;z-index:3;margin-top:20px;display:flex;gap:16px;width:100%;justify-content:center;}
+  .chip{display:flex;align-items:center;gap:13px;background:rgba(0,0,0,.4);border:1px solid rgba(214,164,74,.4);
+    border-radius:15px;padding:13px 22px;box-shadow:0 4px 12px rgba(0,0,0,.4);}
+  .chip .disc{width:28px;height:28px;border-radius:50%;flex:none;
+    background:radial-gradient(circle at 35% 30%, #ffe9a8, #d6a44a 55%, #9c6a1f 100%);border:2px dashed rgba(255,255,255,.65);}
+  .chip .meta{display:flex;flex-direction:column;line-height:1.14;}
+  .chip .l{font-size:11px;font-weight:700;letter-spacing:.20em;text-transform:uppercase;color:rgba(255,255,255,.55);}
+  .chip .v{font-family:var(--serif);font-weight:700;font-size:22px;color:#fff;}
+
+  /* winner banner (drawn state); empty when open */
+  .winner{position:relative;z-index:3;margin-top:22px;width:100%;border-radius:16px;padding:20px;text-align:center;
+    background:linear-gradient(180deg, rgba(124,252,154,.12), rgba(0,0,0,.45));border:2px solid #7CFC9A;
+    box-shadow:0 0 26px rgba(124,252,154,.35);}
+  .winner .h{font-family:var(--serif);font-weight:800;font-size:40px;color:#7CFC9A;text-shadow:0 2px 4px rgba(0,0,0,.8);letter-spacing:.04em;}
+  .winner .who{margin-top:6px;font-size:24px;font-weight:700;color:#fff;}
+  .winner .sub{margin-top:4px;font-size:16px;color:#caffd9;}
+
+  img.emoji{height:1em;width:1em;vertical-align:-.12em;display:inline-block;}
+</style>
+</head>
+<body>
+  <div class="board">
+    <div class="masthead">
+      <div class="brand">
+        <div class="roundel"></div>
+        <div class="wordmark"><span class="name">HMS VICTORY</span><span class="sub">Casino Royale</span></div>
+      </div>
+      <div class="title">National Lottery</div>
+      <div class="lights"><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+
+    <div class="jackpot">
+      <div class="lab">{{JACKPOT_LABEL}}</div>
+      <div class="amt">{{POT}}<span class="u">UKP</span></div>
+      <div class="note">{{POT_NOTE}}</div>
+    </div>
+
+    <div class="progress">
+      <div class="meta"><span><b>{{SOLD}}</b> of {{CAP}} tickets sold</span><span>{{REMAIN}} left</span></div>
+      <div class="bar"><div class="fill" style="width:{{PROGRESS_PCT}}%"></div></div>
+    </div>
+
+    <div class="hud">
+      <div class="chip"><span class="disc"></span><span class="meta"><span class="l">Ticket Price</span><span class="v">{{PRICE}} UKP</span></span></div>
+      <div class="chip"><span class="meta"><span class="l">{{DRAW_LABEL}}</span><span class="v">{{DRAW_VALUE}}</span></span></div>
+    </div>
+
+    {{WINNER}}
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@twemoji/api@latest/dist/twemoji.min.js" crossorigin="anonymous"></script>
+  <script>window.onload=function(){twemoji.parse(document.body,{folder:'svg',ext:'.svg'});};</script>
+</body>
+</html>

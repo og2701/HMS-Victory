@@ -293,6 +293,37 @@ def init_db():
         ''')
         c.execute("CREATE INDEX IF NOT EXISTS idx_casino_results_user ON casino_results(user_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_casino_results_game ON casino_results(game)")
+
+        # National Lottery: one row per round, plus aggregated per-user entries. A round
+        # is 'open' (selling tickets) then 'drawn' (winner picked, pot paid). tickets_sold
+        # is SUM(lottery_entries.tickets); the draw weights by ticket count.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS lottery_rounds (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                status TEXT NOT NULL DEFAULT 'open',
+                ticket_price INTEGER NOT NULL,
+                ticket_cap INTEGER NOT NULL,
+                rake_pct INTEGER NOT NULL DEFAULT 0,
+                draw_ts INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                drawn_at INTEGER,
+                winner_id TEXT,
+                winning_ticket INTEGER,
+                pot INTEGER,
+                prize INTEGER,
+                message_id TEXT,
+                channel_id TEXT
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS lottery_entries (
+                round_id INTEGER NOT NULL,
+                user_id TEXT NOT NULL,
+                tickets INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (round_id, user_id)
+            )
+        ''')
+        c.execute("CREATE INDEX IF NOT EXISTS idx_lottery_entries_round ON lottery_entries(round_id)")
         c.execute('''
             CREATE TABLE IF NOT EXISTS circulation_snapshots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

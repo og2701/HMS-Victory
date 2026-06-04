@@ -157,105 +157,122 @@ def build_slots_html(machine: SlotMachine, reels: list = None, mult: int = None,
     )
 
 
-def _generate_random_reel_symbols() -> list:
-    return [random.choice(_KEYS) for _ in range(3)]
+# ---------------------------------------------------------------------------
+# Sliding-reel result animation (pre-generated; one GIF per 7x7x7 = 343 outcome)
+# ---------------------------------------------------------------------------
+# Each reel is a tall vertical strip that scrolls DOWNWARD and decelerates to land on
+# its symbol, reels stopping left-to-right. The picture has no player/bet/balance/win
+# text baked in (that's dynamic), so it depends only on the 3 final symbols -> 343
+# variants that can be rendered once offline (scripts/bake_slots_results.py) and then
+# served instantly at spin time. Until baked, the runtime falls back to rendering one.
+SLIDE_TEMPLATE = "templates/slots_spin.html"
+SLIDE_SIZE = (820, 700)          # viewport; the screenshot clips to the .cabinet element
+SLIDE_REEL_H = 230               # must match .reel / .strip .sym height in the template
+SLIDE_LEADIN = 20                # random symbols scrolled past before the target lands
+SLIDE_STOPS = (11, 15, 19)       # frame index at which reels 1, 2, 3 lock onto target
+SLIDE_HOLD = 2                   # extra held frames after the last reel locks
+SLIDE_FRAME_MS = 55              # per spin-frame duration
+SLIDE_FINAL_MS = 1800            # last frame lingers (GIF plays once via loop=None)
 
 
-def build_slots_gif_frames(machine: SlotMachine) -> list[str]:
+def _ease_out_cubic(p: float) -> float:
+    return 1 - (1 - p) ** 3
+
+
+def _slide_durations(n_frames: int) -> list:
+    return [SLIDE_FRAME_MS] * (n_frames - 1) + [SLIDE_FINAL_MS]
+
+
+def build_slots_slide_frames(reels: list, *, seed: int = 0) -> list:
+    """Frames for a downward reel-slide that lands on ``reels`` (left-to-right stop).
+
+    Each reel's strip = [target, then SLIDE_LEADIN random symbols]; the strip starts
+    scrolled up by the lead-in and eases back to 0 so the target slides in from above.
+    Deterministic per ``seed`` so a re-bake of the same outcome is identical.
     """
-    Build an animated GIF frame sequence with a sequential slow-to-stop.
+    import random as _random
+    rng = _random.Random(seed)
+    strips = []
+    for target in reels:
+        strips.append([target] + [rng.choice(_KEYS) for _ in range(SLIDE_LEADIN)])
 
-    Structure (all durations in ms):
-      Phase 1 – all 3 reels spinning fast   (3 frames × 180ms)
-      Phase 2 – reel 1 decelerates          (4 frames: 220, 300, 420, 560ms)
-               reel 1 locked, reels 2+3 fast
-      Phase 3 – reel 2 decelerates          (4 frames: 220, 300, 420, 560ms)
-               reels 1+2 locked, reel 3 fast
-      Phase 4 – reel 3 decelerates          (4 frames: 220, 300, 420, 560ms)
-      Phase 5 – all locked, final result    (10 000ms hold)
+    template = read_html_template(SLIDE_TEMPLATE)
+    travel = SLIDE_LEADIN * SLIDE_REEL_H
+    n = SLIDE_STOPS[2] + SLIDE_HOLD
+    is_win = evaluate(reels) > 0
 
-    Total: 3 + 4 + 4 + 4 + 1 = 16 frames.
+    frames = []
+    for f in range(n + 1):
+        reels_html = []
+        all_locked = True
+        for r in range(3):
+            stop = SLIDE_STOPS[r]
+            p = 1.0 if f >= stop else (f / stop)
+            if p < 1.0:
+                all_locked = False
+            offset = -(1 - _ease_out_cubic(p)) * travel      # -travel .. 0 (lands on target)
+            cells = "".join(f'<div class="sym">{EMOJI[k]}</div>' for k in strips[r])
+            # `top:` (a layout property) rather than transform: the fast frame-sequence
+            # renderer swaps frames via innerHTML and reuses the page; a transform makes
+            # a compositor layer it screenshots stale, but a top change forces a reflow
+            # it captures correctly - so the whole 343-GIF bake stays fast.
+            reels_html.append(
+                f'<div class="reel"><div class="strip" '
+                f'style="top:{offset:.1f}px">{cells}</div></div>'
+            )
+        winline = " winline" if (all_locked and is_win) else ""
+        frames.append(template.replace("{{WINLINE}}", winline).replace("{{REELS}}", "".join(reels_html)))
+    return frames
+
+
+async def render_slots_result_gif(reels: list, *, seed: int) -> io.BytesIO:
+    """Render the reel-slide as an animated GIF (plays once, holds the final frame).
+
+    Uses the fast frame-sequence renderer (one page load, innerHTML swaps): correct here
+    because the frames position reels with `top:` (a reflow), not a compositor transform.
     """
-    t0, t1, t2 = machine.reels
-    R = _KEYS  # shorthand
-
-    frames_html: list[str] = []
-
-    def _html(reels, spinning=True, final=False):
-        if final:
-            return build_slots_html(machine, reels=reels, mult=machine.mult, win=machine.win, spinning=False)
-        return build_slots_html(machine, reels=reels, mult=0, win=0, spinning=spinning)
-
-    # ── Phase 1: all spinning fast ──────────────────────────────────────────
-    for _ in range(3):
-        frames_html.append(_html([random.choice(R), random.choice(R), random.choice(R)]))
-
-    # ── Phase 2: reel 1 slows to a stop (4 decel frames) ───────────────────
-    # Reel 1 shows progressively-closer-to-result symbols, reels 2+3 spin freely
-    for step in range(4):
-        r1_sym = t0 if step == 3 else random.choice(R)
-        frames_html.append(_html([r1_sym, random.choice(R), random.choice(R)]))
-
-    # ── Phase 3: reel 2 slows to a stop (4 decel frames) ───────────────────
-    # Reel 1 is now fully locked; reel 3 spins freely
-    for step in range(4):
-        r2_sym = t1 if step == 3 else random.choice(R)
-        frames_html.append(_html([t0, r2_sym, random.choice(R)]))
-
-    # ── Phase 4: reel 3 slows to a stop (4 decel frames) ───────────────────
-    # Reels 1+2 locked; reel 3 decelerates
-    for step in range(4):
-        r3_sym = t2 if step == 3 else random.choice(R)
-        frames_html.append(_html([t0, t1, r3_sym]))
-
-    # ── Phase 5: final result hold ──────────────────────────────────────────
-    frames_html.append(_html([t0, t1, t2], final=True))
-
-    return frames_html
-
-
-def _build_slot_gif_durations() -> list[int]:
-    """
-    Frame durations (ms) matching build_slots_gif_frames.
-
-    Phase 1 – 3 × 180ms  (fast spin)
-    Phase 2 – 4 × [220, 300, 420, 560]ms  (reel 1 decel)
-    Phase 3 – 4 × [220, 300, 420, 560]ms  (reel 2 decel)
-    Phase 4 – 4 × [220, 300, 420, 560]ms  (reel 3 decel)
-    Phase 5 – 1 × 10 000ms  (hold result)
-    """
-    decel = [220, 300, 420, 560]          # each reel takes ~1.5s to slow down
-    return (
-        [180] * 3                         # phase 1
-        + decel                           # phase 2 – reel 1
-        + decel                           # phase 3 – reel 2
-        + decel                           # phase 4 – reel 3
-        + [10_000]                        # phase 5 – hold
-    )
-
-
-async def render_slots_gif(machine: SlotMachine) -> io.BytesIO:
     from lib.core.image_processing import screenshot_html_sequence
-    frames_html = build_slots_gif_frames(machine)
-    durations = _build_slot_gif_durations()
+    frames = build_slots_slide_frames(reels, seed=seed)
     return await screenshot_html_sequence(
-        frames_html, size=(820, 1000), element_selector=".cabinet",
-        durations=durations, loop=None
+        frames, size=SLIDE_SIZE, element_selector=".cabinet",
+        durations=_slide_durations(len(frames)), loop=None,
     )
 
 
-def _native_text(machine: SlotMachine) -> str:
-    row = "  ".join(EMOJI[k] for k in machine.reels)
+def results_dir() -> str:
+    import config
+    import os
+    return os.path.join(config.DATA_DIR, "slots_results")
+
+
+def _result_gif_path(reels: list) -> str:
+    import os
+    return os.path.join(results_dir(), f"{reels[0]}_{reels[1]}_{reels[2]}.gif")
+
+
+async def render_slots_slide_gif(machine: SlotMachine) -> io.BytesIO:
+    """Runtime fallback: render the slide GIF for this spin (used only when the
+    pre-generated file is missing)."""
+    return await render_slots_result_gif(machine.reels, seed=random.randint(0, 9999))
+
+
+def _result_text(machine: SlotMachine, *, show_reels: bool = False) -> str:
+    """The dynamic result text shown in the Components V2 message under the reel GIF
+    (player/bet/balance/win - none of which can live in the pre-baked image). With
+    ``show_reels`` it also prints the symbol row, for the no-image native fallback."""
     head, _ = _result_label(machine.reels, machine.mult)
-    lines = [
-        "## 🎰 HMS Victory Fruit Machine",
-        f"### ┃ {row} ┃",
-    ]
+    lines = []
+    if show_reels:
+        row = "  ".join(EMOJI[k] for k in machine.reels)
+        lines.append("## 🎰 HMS Victory Fruit Machine")
+        lines.append(f"### ┃ {row} ┃")
     if machine.mult > 0:
-        lines.append(f"**{head}** +{machine.win:,} UKPence ({machine.mult}x)")
+        lines.append(f"## 🎉 {head}")
+        lines.append(f"**+{machine.win:,} UKPence**  ·  {machine.mult}x")
     else:
-        lines.append(f"**{head}** - better luck next spin")
-    lines.append(f"-# Bet {machine.bet:,} · Balance {get_bb(machine.player_id):,} UKPence")
+        lines.append(f"## {head}")
+        lines.append("Better luck next spin.")
+    lines.append(f"-# {machine.player_name} · Bet {machine.bet:,} · Balance {get_bb(machine.player_id):,} UKPence")
     return "\n".join(lines)
 
 
@@ -358,24 +375,30 @@ def build_spinning_layout(machine: SlotMachine) -> tuple:
 
 
 async def build_slots_layout(machine: SlotMachine, client):
+    """Result message: the reel-slide GIF (pre-generated if baked, else rendered on the
+    fly) plus a Components V2 text block with the dynamic player/bet/balance/win."""
     import config
+    import os
     files = []
     view = discord.ui.LayoutView(timeout=None)
     used_image = False
     if getattr(config, "SLOTS_IMAGE_ENABLED", True):
         try:
-            img = await render_slots_gif(machine)
-            files = [discord.File(img, filename="slots.gif")]
+            gif_path = _result_gif_path(machine.reels)
+            if os.path.exists(gif_path):
+                files = [discord.File(gif_path, filename="slots.gif")]          # pre-baked: instant
+            else:
+                img = await render_slots_slide_gif(machine)                     # fallback: render now
+                files = [discord.File(img, filename="slots.gif")]
             gallery = discord.ui.MediaGallery()
             gallery.add_item(media="attachment://slots.gif")
             view.add_item(gallery)
             used_image = True
         except Exception:
-            logger.warning("Slots image render failed; using native layout.", exc_info=True)
-    if not used_image:
-        container = discord.ui.Container(accent_colour=ACCENT)
-        container.add_item(discord.ui.TextDisplay(_native_text(machine)))
-        view.add_item(container)
+            logger.warning("Slots image unavailable; using native layout.", exc_info=True)
+    container = discord.ui.Container(accent_colour=ACCENT)
+    container.add_item(discord.ui.TextDisplay(_result_text(machine, show_reels=not used_image)))
+    view.add_item(container)
     view.add_item(_action_row(machine))
     return view, files
 
@@ -458,11 +481,22 @@ async def _do_spin_round(interaction: Interaction, machine: SlotMachine, client,
             await interaction.response.send_message("You don't have enough UKPence.", ephemeral=True)
             return
 
-        # Immediately edit the message with the spinning GIF and disabled buttons
-        spin_view, spin_files = build_spinning_layout(machine)
-        await interaction.response.edit_message(view=spin_view, attachments=spin_files)
+        machine.do_spin()  # decide first so we know which pre-baked result GIF to use
 
-        machine.do_spin()  # result decided; win credited only after the message updates
+        # A pre-baked result GIF plays its own slide animation, so we jump straight to
+        # it (no placeholder). Only when one has to be rendered at runtime do we show
+        # the spinning placeholder to cover the wait.
+        import os
+        has_pregen = os.path.exists(_result_gif_path(machine.reels))
+        if not has_pregen:
+            # Render-on-the-fly: cover the wait with the spinning placeholder.
+            spin_view, spin_files = build_spinning_layout(machine)
+            await interaction.response.edit_message(view=spin_view, attachments=spin_files)
+        else:
+            # Pre-baked: defer to ack instantly (the previous result lingers for the
+            # ~1s GIF upload, then snaps to the new slide - no placeholder flicker).
+            await interaction.response.defer()
+
         try:
             view, files = await build_slots_layout(machine, client)
             if via_modal:
