@@ -605,10 +605,18 @@ async def _submit_slip(interaction: Interaction, table, slip: BetSlip):
         staked = slip.total
         table.commit(slip.player_id, name, dict(slip.bets))
         slip.clear()
-        await interaction.response.edit_message(
-            content=f"✅ **{staked:,} UKPence** on the table. Tap Enter Table again to add more.",
-            view=None)
-        await _refresh_table_message(table)
+    # Confirm to the player. The slip is a Components-V2 message, so the confirmation must
+    # be a V2 view (TextDisplay) - `content` is rejected on V2 messages.
+    done = discord.ui.LayoutView(timeout=1)
+    box = discord.ui.Container(accent_colour=ACCENT)
+    box.add_item(discord.ui.TextDisplay(
+        f"✅ **{staked:,} UKPence** on the table. Tap **Enter Table** again to add more."))
+    done.add_item(box)
+    try:
+        await interaction.response.edit_message(view=done)
+    except Exception:
+        logger.error("Roulette submit confirm edit failed.", exc_info=True)
+    await _refresh_table_message(table)
 
 
 class NumberBetModal(discord.ui.Modal, title="Roulette — straight-up bet"):
