@@ -166,7 +166,7 @@ def build_slots_gif_frames(machine: SlotMachine) -> list:
     t0, t1, t2 = machine.reels
 
     # Frame 0: Previous state
-    frames_html.append(build_slots_html(machine, reels=machine.prev_reels, mult=0, win=0, spinning=False))
+    frames_html.append(build_slots_html(machine, reels=machine.prev_reels, mult=0, win=0, spinning=True))
 
     # Frame 1: All reels spin
     r1 = _generate_random_reel_symbols()
@@ -246,6 +246,32 @@ def _action_row(machine: SlotMachine) -> discord.ui.ActionRow:
     rules.callback = _make_cb(machine, "rules")
     row.add_item(rules)
     return row
+
+
+def _action_row_disabled(machine: SlotMachine) -> discord.ui.ActionRow:
+    row = discord.ui.ActionRow()
+    again = discord.ui.Button(
+        label="Spinning...", emoji="🔄", style=discord.ButtonStyle.success,
+        custom_id=f"slots:{machine.spin_id}:spin_disabled",
+        disabled=True,
+    )
+    row.add_item(again)
+
+    change = discord.ui.Button(
+        label="Change Bet", emoji="✏️", style=discord.ButtonStyle.secondary,
+        custom_id=f"slots:{machine.spin_id}:changebet_disabled",
+        disabled=True,
+    )
+    row.add_item(change)
+
+    rules = discord.ui.Button(
+        label="Rules", emoji="📖", style=discord.ButtonStyle.secondary,
+        custom_id=f"slots:{machine.spin_id}:rules_disabled",
+        disabled=True,
+    )
+    row.add_item(rules)
+    return row
+
 
 
 async def build_slots_layout(machine: SlotMachine, client):
@@ -349,7 +375,11 @@ async def _do_spin_round(interaction: Interaction, machine: SlotMachine, client,
             await interaction.response.send_message("You don't have enough UKPence.", ephemeral=True)
             return
 
-        await interaction.response.defer()
+        # Immediately disable the buttons and change label to "Spinning..."
+        disabled_view = discord.ui.LayoutView(timeout=None)
+        disabled_view.add_item(_action_row_disabled(machine))
+        await interaction.response.edit_message(view=disabled_view)
+
         machine.do_spin()  # result decided; win credited only after the message updates
         try:
             view, files = await build_slots_layout(machine, client)
@@ -360,6 +390,16 @@ async def _do_spin_round(interaction: Interaction, machine: SlotMachine, client,
         except Exception:
             logger.error("Slots spin render failed; refunding stake.", exc_info=True)
             _credit(machine.player_id, machine.bet, "Slots stake refund (spin failed)")
+            try:
+                # Re-enable buttons on failure
+                enabled_view = discord.ui.LayoutView(timeout=None)
+                enabled_view.add_item(_action_row(machine))
+                if via_modal:
+                    await interaction.message.edit(view=enabled_view)
+                else:
+                    await interaction.edit_original_response(view=enabled_view)
+            except Exception:
+                pass
             return
         _credit(machine.player_id, machine.win, "Slots win")  # paid only once on screen
         record_result(machine.player_id, "slots", machine.bet, machine.bet, machine.win,
