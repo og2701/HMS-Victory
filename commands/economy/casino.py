@@ -17,9 +17,11 @@ from commands.economy.slots import handle_slots_command
 from commands.economy.video_poker import handle_videopoker_command
 from commands.economy.red_dog import handle_reddog_command
 from commands.economy.three_card_poker import handle_tcp_command
+from lib.economy.casino_stats import get_net_standings
 
 logger = logging.getLogger(__name__)
 ACCENT = discord.Colour(0xD4AF37)  # brass
+SCOPE_OVERALL = "overall"
 
 GAMES = [
     {"key": "blackjack", "label": "Blackjack", "emoji": "🎴",
@@ -41,6 +43,83 @@ GAMES = [
      "handler": handle_tcp_command,
      "desc": "Make the best three-card hand and beat the dealer."},
 ]
+
+
+# ---------------------------------------------------------------------------
+# Casino leaderboard (net P/L, overall or per game)
+# ---------------------------------------------------------------------------
+def _fmt_net(n: int) -> str:
+    return f"+{n:,}" if n >= 0 else f"-{abs(n):,}"
+
+
+def _scope_label(scope: str) -> str:
+    if scope == SCOPE_OVERALL:
+        return "All Games"
+    return next((g["label"] for g in GAMES if g["key"] == scope), scope)
+
+
+def build_leaderboard_embed(scope: str) -> discord.Embed:
+    game = None if scope == SCOPE_OVERALL else scope
+    winners, losers = get_net_standings(game=game, top=5)
+
+    embed = discord.Embed(
+        title=f"🏰 Casino Leaderboard - {_scope_label(scope)}",
+        description="Players ranked by **net profit / loss** (UKPence won minus staked).",
+        colour=ACCENT,
+    )
+    if not winners and not losers:
+        embed.description = "No casino games have been played yet - be the first! 🎲"
+        return embed
+
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+
+    def _rows(rows):
+        out = []
+        for i, (uid, net, games) in enumerate(rows):
+            tag = medals[i] if i < len(medals) else f"{i + 1}."
+            out.append(f"{tag} <@{uid}> · **{_fmt_net(net)}** · {games} game{'s' if games != 1 else ''}")
+        return "\n".join(out) if out else "—"
+
+    embed.add_field(name="📈 Biggest Winners", value=_rows(winners), inline=False)
+    if losers:
+        embed.add_field(name="📉 Biggest Losers", value=_rows(losers), inline=False)
+    return embed
+
+
+class CasinoLeaderboardView(discord.ui.View):
+    """Public leaderboard with a dropdown to switch between Overall and each game.
+    Persistent (timeout=None, fixed custom_id) so the dropdown keeps working on a
+    public message and survives restarts - registered once globally in setup_hook."""
+    def __init__(self, scope: str = SCOPE_OVERALL):
+        super().__init__(timeout=None)
+        self.scope = scope
+        options = [discord.SelectOption(label="All Games", value=SCOPE_OVERALL, emoji="🏰",
+                                        default=(scope == SCOPE_OVERALL))]
+        for g in GAMES:
+            options.append(discord.SelectOption(label=g["label"], value=g["key"], emoji=g["emoji"],
+                                                default=(scope == g["key"])))
+        self.select = discord.ui.Select(
+            placeholder="Choose a game or overall…", options=options,
+            custom_id="casino:lb:scope",
+        )
+        self.select.callback = self._on_select
+        self.add_item(self.select)
+
+    async def _on_select(self, interaction: Interaction):
+        # Rebuild a fresh view for the chosen scope (no shared-state mutation - this
+        # one view object is registered globally and handles every leaderboard message).
+        scope = self.select.values[0]
+        await interaction.response.edit_message(
+            embed=build_leaderboard_embed(scope), view=CasinoLeaderboardView(scope),
+        )
+
+
+async def _leaderboard_cb(interaction: Interaction):
+    await interaction.response.send_message(
+        embed=build_leaderboard_embed(SCOPE_OVERALL),
+        view=CasinoLeaderboardView(),
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
 
 
 class BetModal(discord.ui.Modal):
@@ -80,34 +159,51 @@ def _make_pick_cb(game: dict):
 
 
 def build_casino_menu() -> discord.ui.LayoutView:
+    """The /casino lobby, built with Components V2 primitives: each game is its own
+    Section (description on the left, a Play button accessory on the right) divided by
+    Separators inside a brass accent Container - rather than one text blob + button rail."""
     import config
     mn = getattr(config, "BLACKJACK_MIN_BET", 5)
     mx = getattr(config, "BLACKJACK_MAX_BET", 10_000)
 
     view = discord.ui.LayoutView(timeout=None)
     container = discord.ui.Container(accent_colour=ACCENT)
-    lines = [
-        "## 🎰 HMS Victory - Casino Royale",
-        "Pick a table below and enter your stake. Wins are paid from the house bank.",
-        "",
-    ]
-    for g in GAMES:
-        lines.append(f"{g['emoji']} **{g['label']}** - {g['desc']}")
-    lines.append(f"\n-# Bets {mn:,} - {mx:,} UKPence. Please gamble responsibly. 🇬🇧")
-    container.add_item(discord.ui.TextDisplay("\n".join(lines)))
-    view.add_item(container)
+    container.add_item(discord.ui.TextDisplay(
+        "## 🎰 HMS Victory - Casino Royale\n"
+        "Pick a table and place your stake. Wins are paid from the house bank."
+    ))
+    container.add_item(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
 
-    # Up to 5 buttons per ActionRow, so chunk the games into rows of 3.
-    for i in range(0, len(GAMES), 3):
-        row = discord.ui.ActionRow()
-        for g in GAMES[i:i + 3]:
-            btn = discord.ui.Button(
-                label=g["label"], emoji=g["emoji"], style=discord.ButtonStyle.success,
-                custom_id=f"casino:pick:{g['key']}",
-            )
-            btn.callback = _make_pick_cb(g)
-            row.add_item(btn)
-        view.add_item(row)
+    # One Section per game: text + a "Play" button accessory on the right.
+    for idx, g in enumerate(GAMES):
+        play = discord.ui.Button(
+            label="Play", style=discord.ButtonStyle.success,
+            custom_id=f"casino:pick:{g['key']}",
+        )
+        play.callback = _make_pick_cb(g)
+        container.add_item(discord.ui.Section(
+            discord.ui.TextDisplay(f"### {g['emoji']}  {g['label']}\n{g['desc']}"),
+            accessory=play,
+        ))
+        if idx < len(GAMES) - 1:
+            container.add_item(discord.ui.Separator(visible=False, spacing=discord.SeparatorSpacing.small))
+
+    # Leaderboard as its own Section with a View accessory.
+    container.add_item(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.large))
+    lb_btn = discord.ui.Button(
+        label="View", emoji="🏆", style=discord.ButtonStyle.secondary,
+        custom_id="casino:leaderboard",
+    )
+    lb_btn.callback = _leaderboard_cb
+    container.add_item(discord.ui.Section(
+        discord.ui.TextDisplay("### 🏆  Leaderboard\nNet profit / loss standings - overall or by game."),
+        accessory=lb_btn,
+    ))
+    container.add_item(discord.ui.TextDisplay(
+        f"-# Bets {mn:,} - {mx:,} UKPence. Please gamble responsibly. 🇬🇧"
+    ))
+
+    view.add_item(container)
     return view
 
 

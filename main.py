@@ -105,9 +105,10 @@ class AClient(discord.Client):
 
         # Global persistent casino lobby view so /casino menu buttons survive restarts.
         try:
-            from commands.economy.casino import build_casino_menu
+            from commands.economy.casino import build_casino_menu, CasinoLeaderboardView
             self.add_view(build_casino_menu())
-            logger.info("Registered persistent casino lobby view.")
+            self.add_view(CasinoLeaderboardView())  # leaderboard dropdown (public, persistent)
+            logger.info("Registered persistent casino lobby + leaderboard views.")
         except Exception as e:
             logger.warning(f"Could not register casino lobby view: {e}")
 

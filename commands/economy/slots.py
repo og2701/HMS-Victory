@@ -1,7 +1,7 @@
 """HMS Victory - Fruit Machine (vs-the-house slots).
 
 A one-shot spin: stake the bet, spin three weighted reels, and get paid from a tuned
-paytable (RTP ~= 0.94, so the house keeps ~6% over time). Unlike blackjack / higher-
+paytable (RTP ~= 0.97, so the house keeps ~3% over time). Unlike blackjack / higher-
 lower this resolves in a single interaction, so there's no in-flight state to persist -
 a "Spin Again" button re-spins in-session (it just dies after a restart, like a finished
 hand's Play Again). A busy flag drops double-clicks during the render.
@@ -46,9 +46,9 @@ _WEIGHTS = [w for _, _, w in REEL]
 
 # Three-of-a-kind payouts (x bet). Two cherries pays a frequent small consolation.
 # Sized for the locked 800k economy (max bet 10k -> top jackpot 150k, not millions).
-# RTP ~= 0.93 (house edge ~7%); monotonic by symbol rarity.
-THREE_OF_A_KIND = {"crown": 15, "union": 13, "lion": 11, "rose": 9,
-                   "anchor": 8, "pound": 7, "cherry": 6}
+# RTP ~= 0.97 (house edge ~3%); monotonic by symbol rarity.
+THREE_OF_A_KIND = {"crown": 20, "union": 16, "lion": 13, "rose": 10,
+                   "anchor": 9, "pound": 8, "cherry": 7}
 TWO_CHERRY = 4
 
 

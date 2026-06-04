@@ -97,6 +97,29 @@ def get_user_casino_stats(user_id) -> dict:
     return {"total": total, "per_game": per_game}
 
 
+def get_net_standings(game: str = None, top: int = 5):
+    """Return ``(winners, losers)`` for the net-P/L leaderboard.
+
+    ``winners`` are the ``top`` players by highest net, ``losers`` the ``top`` by
+    lowest net - with anyone already in ``winners`` removed from ``losers`` so a small
+    player pool can't list the same person on both sides. Each entry is
+    ``(user_id, net, games)``. Pass ``game`` to scope to one game, or None for overall.
+    """
+    where = "WHERE game = ?" if game else ""
+    gparams = [game] if game else []
+    base = ("SELECT user_id, COALESCE(SUM(net),0) AS net, COUNT(*) AS games "
+            f"FROM casino_results {where} GROUP BY user_id ")
+    winners = DatabaseManager.fetch_all(
+        base + "ORDER BY net DESC, games DESC LIMIT ?", tuple(gparams + [int(top)])
+    ) or []
+    losers = DatabaseManager.fetch_all(
+        base + "ORDER BY net ASC, games DESC LIMIT ?", tuple(gparams + [int(top)])
+    ) or []
+    win_ids = {r[0] for r in winners}
+    losers = [r for r in losers if r[0] not in win_ids]
+    return winners, losers
+
+
 def get_casino_leaderboard(metric: str = "net", game: str = None, limit: int = 10) -> list:
     """Top players by a metric across all games (or one ``game``).
 
