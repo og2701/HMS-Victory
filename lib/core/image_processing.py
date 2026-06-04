@@ -352,9 +352,32 @@ def _screenshot_html_sequence_sync(
                 if idx > 0:
                     # Update body innerHTML in-place to avoid reloading files
                     escaped_html = html_str.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
-                    browser.execute_script(f"document.body.innerHTML = `{escaped_html}`;")
-                    # Brief pause for DOM update/rendering logic inside browser
-                    time.sleep(0.02)
+                    browser.execute_script(
+                        f"document.body.innerHTML = `{escaped_html}`;"
+                        # Re-run Twemoji if it was loaded with the page (emoji img replacement)
+                        "if (window.twemoji) { twemoji.parse(document.body, {folder: 'svg', ext: '.svg'}); }"
+                    )
+                    # Wait for any Twemoji SVG imgs to finish loading
+                    try:
+                        WebDriverWait(browser, 3).until(
+                            lambda b: b.execute_script(
+                                "return Array.from(document.querySelectorAll('img.emoji')).every(i => i.complete)"
+                            )
+                        )
+                    except Exception:
+                        pass
+                    # Brief extra pause for DOM rendering
+                    time.sleep(0.05)
+                else:
+                    # Frame 0: wait for Twemoji SVG images to fully load after window.onload
+                    try:
+                        WebDriverWait(browser, 5).until(
+                            lambda b: b.execute_script(
+                                "return Array.from(document.querySelectorAll('img.emoji')).every(i => i.complete)"
+                            )
+                        )
+                    except Exception:
+                        pass
 
                 if element_selector:
                     element = browser.find_element(By.CSS_SELECTOR, element_selector)

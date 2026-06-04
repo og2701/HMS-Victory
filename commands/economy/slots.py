@@ -161,45 +161,87 @@ def _generate_random_reel_symbols() -> list:
     return [random.choice(_KEYS) for _ in range(3)]
 
 
-def build_slots_gif_frames(machine: SlotMachine) -> list:
-    frames_html = []
+def build_slots_gif_frames(machine: SlotMachine) -> list[str]:
+    """
+    Build an animated GIF frame sequence with a sequential slow-to-stop.
+
+    Structure (all durations in ms):
+      Phase 1 – all 3 reels spinning fast   (3 frames × 180ms)
+      Phase 2 – reel 1 decelerates          (4 frames: 220, 300, 420, 560ms)
+               reel 1 locked, reels 2+3 fast
+      Phase 3 – reel 2 decelerates          (4 frames: 220, 300, 420, 560ms)
+               reels 1+2 locked, reel 3 fast
+      Phase 4 – reel 3 decelerates          (4 frames: 220, 300, 420, 560ms)
+      Phase 5 – all locked, final result    (10 000ms hold)
+
+    Total: 3 + 4 + 4 + 4 + 1 = 16 frames.
+    """
     t0, t1, t2 = machine.reels
+    R = _KEYS  # shorthand
 
-    # Frame 0: Previous state
-    frames_html.append(build_slots_html(machine, reels=machine.prev_reels, mult=0, win=0, spinning=True))
+    frames_html: list[str] = []
 
-    # Frame 1: All reels spin
-    r1 = _generate_random_reel_symbols()
-    frames_html.append(build_slots_html(machine, reels=r1, mult=0, win=0, spinning=True))
+    def _html(reels, spinning=True, final=False):
+        if final:
+            return build_slots_html(machine, reels=reels, mult=machine.mult, win=machine.win, spinning=False)
+        return build_slots_html(machine, reels=reels, mult=0, win=0, spinning=spinning)
 
-    # Frame 2: All reels spin
-    r2 = _generate_random_reel_symbols()
-    frames_html.append(build_slots_html(machine, reels=r2, mult=0, win=0, spinning=True))
+    # ── Phase 1: all spinning fast ──────────────────────────────────────────
+    for _ in range(3):
+        frames_html.append(_html([random.choice(R), random.choice(R), random.choice(R)]))
 
-    # Frame 3: All reels spin
-    r3 = _generate_random_reel_symbols()
-    frames_html.append(build_slots_html(machine, reels=r3, mult=0, win=0, spinning=True))
+    # ── Phase 2: reel 1 slows to a stop (4 decel frames) ───────────────────
+    # Reel 1 shows progressively-closer-to-result symbols, reels 2+3 spin freely
+    for step in range(4):
+        r1_sym = t0 if step == 3 else random.choice(R)
+        frames_html.append(_html([r1_sym, random.choice(R), random.choice(R)]))
 
-    # Frame 4: Reel 1 stops, Reels 2 & 3 spin
-    r4 = [t0, random.choice(_KEYS), random.choice(_KEYS)]
-    frames_html.append(build_slots_html(machine, reels=r4, mult=0, win=0, spinning=True))
+    # ── Phase 3: reel 2 slows to a stop (4 decel frames) ───────────────────
+    # Reel 1 is now fully locked; reel 3 spins freely
+    for step in range(4):
+        r2_sym = t1 if step == 3 else random.choice(R)
+        frames_html.append(_html([t0, r2_sym, random.choice(R)]))
 
-    # Frame 5: Reels 1 & 2 stop, Reel 3 spins
-    r5 = [t0, t1, random.choice(_KEYS)]
-    frames_html.append(build_slots_html(machine, reels=r5, mult=0, win=0, spinning=True))
+    # ── Phase 4: reel 3 slows to a stop (4 decel frames) ───────────────────
+    # Reels 1+2 locked; reel 3 decelerates
+    for step in range(4):
+        r3_sym = t2 if step == 3 else random.choice(R)
+        frames_html.append(_html([t0, t1, r3_sym]))
 
-    # Frame 6: Final state (hold)
-    frames_html.append(build_slots_html(machine, reels=machine.reels, mult=machine.mult, win=machine.win, spinning=False))
+    # ── Phase 5: final result hold ──────────────────────────────────────────
+    frames_html.append(_html([t0, t1, t2], final=True))
 
     return frames_html
+
+
+def _build_slot_gif_durations() -> list[int]:
+    """
+    Frame durations (ms) matching build_slots_gif_frames.
+
+    Phase 1 – 3 × 180ms  (fast spin)
+    Phase 2 – 4 × [220, 300, 420, 560]ms  (reel 1 decel)
+    Phase 3 – 4 × [220, 300, 420, 560]ms  (reel 2 decel)
+    Phase 4 – 4 × [220, 300, 420, 560]ms  (reel 3 decel)
+    Phase 5 – 1 × 10 000ms  (hold result)
+    """
+    decel = [220, 300, 420, 560]          # each reel takes ~1.5s to slow down
+    return (
+        [180] * 3                         # phase 1
+        + decel                           # phase 2 – reel 1
+        + decel                           # phase 3 – reel 2
+        + decel                           # phase 4 – reel 3
+        + [10_000]                        # phase 5 – hold
+    )
 
 
 async def render_slots_gif(machine: SlotMachine) -> io.BytesIO:
     from lib.core.image_processing import screenshot_html_sequence
     frames_html = build_slots_gif_frames(machine)
-    # Pause slightly longer at start (350ms), spin for 220-250ms per frame, and freeze final result for 10s
-    durations = [350, 220, 220, 220, 250, 250, 10000]
-    return await screenshot_html_sequence(frames_html, size=(820, 1000), element_selector=".cabinet", durations=durations, loop=None)
+    durations = _build_slot_gif_durations()
+    return await screenshot_html_sequence(
+        frames_html, size=(820, 1000), element_selector=".cabinet",
+        durations=durations, loop=None
+    )
 
 
 def _native_text(machine: SlotMachine) -> str:
