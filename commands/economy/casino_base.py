@@ -223,7 +223,11 @@ def banner_html(kind: str, head: str, sub: str = "") -> str:
 # ---------------------------------------------------------------------------
 async def render_table(*, title_main: str, title_accent: str, subtitle: str,
                        body_html: str, bet: int, balance: int, hint: str,
-                       result_banner: str = "", session_html: str = "") -> io.BytesIO:
+                       result_banner: str = "", session_html: str = "",
+                       bet_label: str = "Bet", balance_label: str = "Balance",
+                       bet_unit: str = "UKP", balance_unit: str = "UKP") -> io.BytesIO:
+    # The two HUD chips default to "Bet"/"Balance" in UKP; pass labels/units to repurpose
+    # them (e.g. roulette's shared table shows "Pot" and "Players").
     from lib.core.image_processing import screenshot_html
     tpl = read_html_template("templates/casino_table.html")
     out = (
@@ -232,6 +236,10 @@ async def render_table(*, title_main: str, title_accent: str, subtitle: str,
         .replace("{{TITLE_ACCENT}}", _html.escape(title_accent))
         .replace("{{SUBTITLE}}", subtitle)  # may contain <br>
         .replace("{{BODY}}", body_html)
+        .replace("{{BET_LABEL}}", _html.escape(bet_label))
+        .replace("{{BALANCE_LABEL}}", _html.escape(balance_label))
+        .replace("{{BET_UNIT}}", _html.escape(bet_unit))
+        .replace("{{BALANCE_UNIT}}", _html.escape(balance_unit))
         .replace("{{BET}}", f"{bet:,}")
         .replace("{{BALANCE}}", f"{balance:,}")
         .replace("{{HINT}}", _html.escape(hint))

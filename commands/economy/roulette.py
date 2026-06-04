@@ -199,6 +199,8 @@ def _fill_shell(template: str, body: str, *, subtitle: str, hint: str,
         .replace("{{TITLE_MAIN}}", "EUROPEAN").replace("{{TITLE_ACCENT}}", "ROULETTE")
         .replace("{{SUBTITLE}}", subtitle)
         .replace('<div class="body">{{BODY}}</div>', f'<div class="body">{body}</div>')
+        .replace("{{BET_LABEL}}", "Pot").replace("{{BALANCE_LABEL}}", "Players")
+        .replace("{{BET_UNIT}}", "").replace("{{BALANCE_UNIT}}", "")
         .replace("{{BET}}", bet).replace("{{BALANCE}}", balance)
         .replace("{{HINT}}", hint)
         .replace("{{RESULT_BANNER}}", banner).replace("{{SESSION}}", "")
@@ -331,6 +333,7 @@ async def render_table_image(table) -> io.BytesIO:
         subtitle="Place your bets - tap Enter Table",
         body_html=_roster_body(table),
         bet=table.pot, balance=len(table.players),
+        bet_label="Pot", balance_label="Players", balance_unit="",
         hint="Bets lock when the countdown ends.", result_banner="", session_html="")
 
 
@@ -342,6 +345,7 @@ async def render_results_image(table) -> io.BytesIO:
         subtitle="The ball has landed",
         body_html=_results_body(table),
         bet=table.pot, balance=len(table.players),
+        bet_label="Pot", balance_label="Players", balance_unit="",
         hint="Tap New Round to play again.", result_banner=banner, session_html="")
 
 
