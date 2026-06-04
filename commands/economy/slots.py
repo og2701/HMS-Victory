@@ -157,10 +157,49 @@ def build_slots_html(machine: SlotMachine, reels: list = None, mult: int = None,
     )
 
 
-async def render_slots_image(machine: SlotMachine) -> io.BytesIO:
-    from lib.core.image_processing import screenshot_html
-    html = build_slots_html(machine, reels=machine.reels, mult=machine.mult, win=machine.win, spinning=False)
-    return await screenshot_html(html, size=(820, 1000), element_selector=".cabinet")
+def _generate_random_reel_symbols() -> list:
+    return [random.choice(_KEYS) for _ in range(3)]
+
+
+def build_slots_gif_frames(machine: SlotMachine) -> list:
+    frames_html = []
+    t0, t1, t2 = machine.reels
+
+    # Frame 0: Previous state
+    frames_html.append(build_slots_html(machine, reels=machine.prev_reels, mult=0, win=0, spinning=True))
+
+    # Frame 1: All reels spin
+    r1 = _generate_random_reel_symbols()
+    frames_html.append(build_slots_html(machine, reels=r1, mult=0, win=0, spinning=True))
+
+    # Frame 2: All reels spin
+    r2 = _generate_random_reel_symbols()
+    frames_html.append(build_slots_html(machine, reels=r2, mult=0, win=0, spinning=True))
+
+    # Frame 3: All reels spin
+    r3 = _generate_random_reel_symbols()
+    frames_html.append(build_slots_html(machine, reels=r3, mult=0, win=0, spinning=True))
+
+    # Frame 4: Reel 1 stops, Reels 2 & 3 spin
+    r4 = [t0, random.choice(_KEYS), random.choice(_KEYS)]
+    frames_html.append(build_slots_html(machine, reels=r4, mult=0, win=0, spinning=True))
+
+    # Frame 5: Reels 1 & 2 stop, Reel 3 spins
+    r5 = [t0, t1, random.choice(_KEYS)]
+    frames_html.append(build_slots_html(machine, reels=r5, mult=0, win=0, spinning=True))
+
+    # Frame 6: Final state (hold)
+    frames_html.append(build_slots_html(machine, reels=machine.reels, mult=machine.mult, win=machine.win, spinning=False))
+
+    return frames_html
+
+
+async def render_slots_gif(machine: SlotMachine) -> io.BytesIO:
+    from lib.core.image_processing import screenshot_html_sequence
+    frames_html = build_slots_gif_frames(machine)
+    # Pause slightly longer at start (350ms), spin for 220-250ms per frame, and freeze final result for 10s
+    durations = [350, 220, 220, 220, 250, 250, 10000]
+    return await screenshot_html_sequence(frames_html, size=(820, 1000), element_selector=".cabinet", durations=durations, loop=None)
 
 
 def _native_text(machine: SlotMachine) -> str:
@@ -254,9 +293,9 @@ def build_spinning_layout(machine: SlotMachine) -> tuple:
         gif_path = get_random_spinning_gif()
         if gif_path:
             try:
-                files = [discord.File(gif_path, filename="slots.gif")]
+                files = [discord.File(gif_path, filename="slots_spinning.gif")]
                 gallery = discord.ui.MediaGallery()
-                gallery.add_item(media="attachment://slots.gif")
+                gallery.add_item(media="attachment://slots_spinning.gif")
                 view.add_item(gallery)
                 used_image = True
             except Exception:
@@ -283,10 +322,10 @@ async def build_slots_layout(machine: SlotMachine, client):
     used_image = False
     if getattr(config, "SLOTS_IMAGE_ENABLED", True):
         try:
-            img = await render_slots_image(machine)
-            files = [discord.File(img, filename="slots.png")]
+            img = await render_slots_gif(machine)
+            files = [discord.File(img, filename="slots.gif")]
             gallery = discord.ui.MediaGallery()
-            gallery.add_item(media="attachment://slots.png")
+            gallery.add_item(media="attachment://slots.gif")
             view.add_item(gallery)
             used_image = True
         except Exception:
