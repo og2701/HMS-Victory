@@ -307,6 +307,138 @@ async def screenshot_html(
             None, _screenshot_html_sync, html_str, size, apply_trim, element_selector
         )
 
+
+def _screenshot_html_sequence_sync(
+    html_strings: list,
+    size: Tuple[int, int] = (1600, 1000),
+    element_selector: str = None,
+    durations: list = None
+) -> io.BytesIO:
+    """Synchronous implementation of screenshot_html_sequence."""
+    global _browser, _render_count
+
+    if not html_strings:
+        raise ValueError("html_strings list cannot be empty")
+
+    with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as tmp:
+        tmp.write(html_strings[0])
+        tmp_path = tmp.name
+
+    last_err = None
+    for attempt in range(2):
+        try:
+            browser = get_browser()
+            browser.set_window_size(size[0], size[1])
+            browser.get(f"file://{os.path.abspath(tmp_path)}")
+
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            import base64 as _b64
+
+            # Wait for images to complete on first load
+            try:
+                WebDriverWait(browser, 5).until(
+                    lambda b: b.execute_script(
+                        "return Array.from(document.images).every(i => i.complete)"
+                    )
+                )
+            except Exception:
+                pass
+
+            png_frames = []
+
+            for idx, html_str in enumerate(html_strings):
+                if idx > 0:
+                    # Update body innerHTML in-place to avoid reloading files
+                    escaped_html = html_str.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
+                    browser.execute_script(f"document.body.innerHTML = `{escaped_html}`;")
+                    # Brief pause for DOM update/rendering logic inside browser
+                    time.sleep(0.02)
+
+                if element_selector:
+                    element = browser.find_element(By.CSS_SELECTOR, element_selector)
+                    rect = browser.execute_script(
+                        "const r = arguments[0].getBoundingClientRect();"
+                        "return {x: r.left + window.scrollX, y: r.top + window.scrollY,"
+                        " w: r.width, h: r.height};",
+                        element,
+                    )
+                    cdp_result = browser.execute_cdp_cmd(
+                        "Page.captureScreenshot",
+                        {
+                            "format": "png",
+                            "clip": {
+                                "x": rect["x"],
+                                "y": rect["y"],
+                                "width": rect["w"],
+                                "height": rect["h"],
+                                "scale": 1,
+                            },
+                            "captureBeyondViewport": True,
+                        },
+                    )
+                    png_bytes = _b64.b64decode(cdp_result["data"])
+                else:
+                    png_bytes = browser.get_screenshot_as_png()
+
+                png_frames.append(png_bytes)
+
+            # Compile into animated GIF using Pillow
+            images = []
+            for p_bytes in png_frames:
+                images.append(Image.open(io.BytesIO(p_bytes)))
+
+            buffer = io.BytesIO()
+            # Default to 180ms per frame if durations is not provided
+            frame_durations = durations if durations else [180] * len(images)
+
+            # Save the sequence as an animated GIF
+            images[0].save(
+                buffer,
+                format="GIF",
+                save_all=True,
+                append_images=images[1:],
+                duration=frame_durations,
+                loop=0
+            )
+            buffer.seek(0)
+
+            gc.collect()
+
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+            return buffer
+
+        except Exception as e:
+            last_err = e
+            if attempt == 0:
+                logging.warning(f"Screenshot sequence attempt failed ({e}), restarting Chrome and retrying...")
+                _render_count = MAX_RENDERS_BEFORE_RESTART
+            else:
+                logging.error(f"Screenshot sequence retry also failed: {e}")
+
+    if os.path.exists(tmp_path):
+        os.remove(tmp_path)
+    raise last_err
+
+
+async def screenshot_html_sequence(
+    html_strings: list,
+    size: Tuple[int, int] = (1600, 1000),
+    *,
+    element_selector: str = None,
+    durations: list = None
+) -> io.BytesIO:
+    """Render a sequence of HTML strings into an animated GIF (non-blocking, queued)."""
+    async with rendering_lock:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, _screenshot_html_sequence_sync, html_strings, size, element_selector, durations
+        )
+
+
+
 def calculate_text_dimensions(font, text: str) -> Tuple[int, int]:
     text_bbox = font.getbbox(text)
     width = text_bbox[2] - text_bbox[0]

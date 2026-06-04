@@ -88,12 +88,14 @@ class SlotMachine:
         self.message_id = None
         self.spin_id = uuid.uuid4().hex[:12]  # unique custom_id namespace for this machine
         self.reels = ["cherry", "cherry", "cherry"]
+        self.prev_reels = ["cherry", "cherry", "cherry"]
         self.mult = 0
         self.win = 0
         self.busy = False
         self.lock = asyncio.Lock()
 
     def do_spin(self):
+        self.prev_reels = list(self.reels)
         self.reels = spin_reels()
         self.mult = evaluate(self.reels)
         self.win = self.mult * self.bet
@@ -125,25 +127,74 @@ def _banner_html(reels, mult, win) -> str:
             f'<div class="sub">{sub}</div></div>')
 
 
-def build_slots_html(machine: SlotMachine) -> str:
+def build_slots_html(machine: SlotMachine, reels: list = None, mult: int = None, win: int = None, spinning: bool = False) -> str:
+    if reels is None:
+        reels = machine.reels
+    if mult is None:
+        mult = machine.mult
+    if win is None:
+        win = machine.win
+
     template = read_html_template("templates/slots.html")
-    cells = "".join(f'<div class="reel"><span class="sym">{EMOJI[k]}</span></div>' for k in machine.reels)
-    win_glow = " winline" if machine.mult > 0 else ""
+    cells = "".join(f'<div class="reel"><span class="sym">{EMOJI[k]}</span></div>' for k in reels)
+
+    if spinning:
+        win_glow = ""
+        banner = '<div class="banner lose"><div class="head">Spinning...</div><div class="sub">Good luck!</div></div>'
+    else:
+        win_glow = " winline" if mult > 0 else ""
+        banner = _banner_html(reels, mult, win)
+
     bal = get_bb(machine.player_id)
     return (
         template
         .replace("{{PLAYER_NAME}}", _html.escape(str(machine.player_name)[:24]) or "Player")
         .replace("{{REELS}}", cells)
         .replace("{{WINLINE}}", win_glow)
-        .replace("{{BANNER}}", _banner_html(machine.reels, machine.mult, machine.win))
+        .replace("{{BANNER}}", banner)
         .replace("{{BET}}", f"{machine.bet:,}")
         .replace("{{BALANCE}}", f"{bal:,}")
     )
 
 
-async def render_slots_image(machine: SlotMachine) -> io.BytesIO:
-    from lib.core.image_processing import screenshot_html
-    return await screenshot_html(build_slots_html(machine), size=(820, 1000), element_selector=".cabinet")
+def _generate_random_reel_symbols() -> list:
+    return [random.choice(_KEYS) for _ in range(3)]
+
+
+def build_slots_gif_frames(machine: SlotMachine) -> list:
+    frames_html = []
+    t0, t1, t2 = machine.reels
+
+    # Frame 0: Previous state
+    frames_html.append(build_slots_html(machine, reels=machine.prev_reels, mult=0, win=0, spinning=False))
+
+    # Frame 1: All reels spin
+    r1 = _generate_random_reel_symbols()
+    frames_html.append(build_slots_html(machine, reels=r1, mult=0, win=0, spinning=True))
+
+    # Frame 2: All reels spin
+    r2 = _generate_random_reel_symbols()
+    frames_html.append(build_slots_html(machine, reels=r2, mult=0, win=0, spinning=True))
+
+    # Frame 3: Reel 1 stops, Reels 2 & 3 spin
+    r3 = [t0, random.choice(_KEYS), random.choice(_KEYS)]
+    frames_html.append(build_slots_html(machine, reels=r3, mult=0, win=0, spinning=True))
+
+    # Frame 4: Reels 1 & 2 stop, Reel 3 spins
+    r4 = [t0, t1, random.choice(_KEYS)]
+    frames_html.append(build_slots_html(machine, reels=r4, mult=0, win=0, spinning=True))
+
+    # Frame 5: Final state (hold)
+    frames_html.append(build_slots_html(machine, reels=machine.reels, mult=machine.mult, win=machine.win, spinning=False))
+
+    return frames_html
+
+
+async def render_slots_gif(machine: SlotMachine) -> io.BytesIO:
+    from lib.core.image_processing import screenshot_html_sequence
+    frames_html = build_slots_gif_frames(machine)
+    durations = [180, 180, 180, 180, 180, 2500]
+    return await screenshot_html_sequence(frames_html, size=(820, 1000), element_selector=".cabinet", durations=durations)
 
 
 def _native_text(machine: SlotMachine) -> str:
@@ -199,10 +250,10 @@ async def build_slots_layout(machine: SlotMachine, client):
     used_image = False
     if getattr(config, "SLOTS_IMAGE_ENABLED", True):
         try:
-            img = await render_slots_image(machine)
-            files = [discord.File(img, filename="slots.png")]
+            img = await render_slots_gif(machine)
+            files = [discord.File(img, filename="slots.gif")]
             gallery = discord.ui.MediaGallery()
-            gallery.add_item(media="attachment://slots.png")
+            gallery.add_item(media="attachment://slots.gif")
             view.add_item(gallery)
             used_image = True
         except Exception:
