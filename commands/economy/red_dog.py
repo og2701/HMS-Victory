@@ -406,6 +406,19 @@ async def _handle_action(interaction: Interaction, game: RedDogGame, action: str
                 await interaction.response.defer()   # stale click on a finished round
                 return
 
+            # The persisted entry is the source of truth across reconnects and view
+            # reattachment, so reconcile the stake from it before settling in case the
+            # in-memory hand drifted (e.g. the view was rebuilt mid-round).
+            try:
+                _stored = cb.load_persistent_views().get(str(game.message_id))
+                if _stored and _stored.get("type") == KEY:
+                    _b = int(_stored.get("bet", game.bet))
+                    if _b != game.bet:
+                        game.bet = _b
+                        game.total_staked = int(_stored.get("total_staked", _b))
+            except Exception:
+                logger.error("Red Dog state reconcile failed.", exc_info=True)
+
             if action == "raise" and not game.can_afford_raise():
                 await interaction.response.send_message(
                     f"You need {game.bet:,} more UKPence to raise. Call instead to keep your bet as is.",
