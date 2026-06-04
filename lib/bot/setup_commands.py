@@ -41,6 +41,20 @@ from commands.economy.casino import handle_casino_command
 from lib.economy.lottery import handle_lottery_command
 from commands.economy.casino_stats import handle_casino_stats_command
 
+async def _require_casino_channel(interaction) -> bool:
+    """Gate casino games + lottery to the allowed channels. Returns True (and sends an
+    ephemeral nudge to the casino channel) when the command should be blocked here."""
+    import config
+    if interaction.channel_id in config.CASINO_CHANNELS:
+        return False
+    await interaction.response.send_message(
+        f"🎰 The casino's over in <#{config.CHANNELS.CASINO}> — head there to play! "
+        "(Casino games and the lottery can only be used in that channel.)",
+        ephemeral=True,
+    )
+    return True
+
+
 def define_commands(tree, client):
     def command(name: str, description: str, checks: list = None):
         def decorator(func):
@@ -437,38 +451,56 @@ def define_commands(tree, client):
 
     @command("blackjack", "Play a hand of blackjack against the house for UKPence")
     async def blackjack_command(interaction: Interaction, amount: app_commands.Range[int, 1]):
+        if await _require_casino_channel(interaction):
+            return
         await handle_blackjack_command(interaction, amount)
 
     @command("higher-lower", "Climb the card ladder - guess higher or lower and cash out")
     async def higher_lower_command(interaction: Interaction, amount: app_commands.Range[int, 1]):
+        if await _require_casino_channel(interaction):
+            return
         await handle_higherlower_command(interaction, amount)
 
     @command("slots", "Spin the HMS Victory fruit machine for UKPence")
     async def slots_command(interaction: Interaction, amount: app_commands.Range[int, 1]):
+        if await _require_casino_channel(interaction):
+            return
         await handle_slots_command(interaction, amount)
 
     @command("casino", "Open the HMS Victory casino - pick a game to play")
     async def casino_command(interaction: Interaction):
+        if await _require_casino_channel(interaction):
+            return
         await handle_casino_command(interaction)
 
     @command("lottery", "Buy tickets for the HMS Victory National Lottery")
     async def lottery_command(interaction: Interaction):
+        if await _require_casino_channel(interaction):
+            return
         await handle_lottery_command(interaction)
 
     @command("video-poker", "Play Video Poker (Jacks or Better) against the house")
     async def video_poker_command(interaction: Interaction, amount: app_commands.Range[int, 1]):
+        if await _require_casino_channel(interaction):
+            return
         await handle_videopoker_command(interaction, amount)
 
     @command("red-dog", "Play Red Dog - bet the third card lands between the first two")
     async def red_dog_command(interaction: Interaction, amount: app_commands.Range[int, 1]):
+        if await _require_casino_channel(interaction):
+            return
         await handle_reddog_command(interaction, amount)
 
     @command("three-card-poker", "Play Three Card Poker against the house")
     async def three_card_poker_command(interaction: Interaction, amount: app_commands.Range[int, 1]):
+        if await _require_casino_channel(interaction):
+            return
         await handle_tcp_command(interaction, amount)
 
     @command("casino-stats", "Displays the casino statistics of a user")
     async def casino_stats_command(interaction: Interaction, member: Optional[Member] = None):
+        if await _require_casino_channel(interaction):
+            return
         await handle_casino_stats_command(interaction, member)
 
     @command("richlist", "Displays a leaderboard of users with the most UKPence")

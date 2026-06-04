@@ -4,12 +4,16 @@
 <meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- Noto Color Emoji so the reel symbols render in headless Chrome (same as slots.html). -->
 <link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap" rel="stylesheet">
 <style>
+  /* Full-size spinning machine, matching templates/slots.html dimensions so the
+     pre-baked spin GIF and the runtime-rendered result frame are the same size (no
+     resize when it settles). Only the reels animate (sliding strips); the banner shows
+     a generic "SPINNING..." and the HUD shows neutral values, because this image is
+     shared by every player - the real player/bet/balance/result are baked into the
+     runtime result frame that swaps in once the slide finishes. */
   :root{
-    --navy:#00247D; --red:#CF142B; --ink:#0c1a33; --ink-2:#16356e;
-    --brass:#b07f2a; --brass-2:#d6a44a; --brass-soft:#e8cf92;
+    --navy:#00247D; --red:#CF142B; --brass:#b07f2a; --brass-2:#d6a44a; --brass-soft:#e8cf92;
     --serif:Georgia,"Times New Roman",Times,serif; --sans:"Segoe UI",Helvetica,Arial,sans-serif;
     --emoji:"Noto Color Emoji","Apple Color Emoji","Segoe UI Emoji",sans-serif;
   }
@@ -17,13 +21,10 @@
   html,body{background:#0a0a0f;}
   body{padding:20px;font-family:var(--sans);-webkit-font-smoothing:antialiased;}
 
-  /* No HUD / no result banner here: this image is reused for every player, bet and
-     balance (only the 3 final symbols vary -> 343 variants), so all dynamic text lives
-     in the Components V2 message, not the picture. */
-  .cabinet{position:relative;width:760px;border-radius:28px;overflow:hidden;
+  .cabinet{position:relative;width:760px;min-height:960px;border-radius:28px;overflow:hidden;
     background:linear-gradient(180deg, #16356e 0%, var(--navy) 45%, #001a5c 100%);
     box-shadow:0 24px 60px rgba(0,0,0,.6), inset 0 0 120px rgba(0,0,0,.5);color:#fff;
-    display:flex;flex-direction:column;align-items:center;padding-bottom:34px;}
+    display:flex;flex-direction:column;align-items:center;}
   .cabinet::before{content:"";position:absolute;inset:0;pointer-events:none;
     background-image:repeating-linear-gradient(45deg, rgba(214,164,74,.05) 0 9px, transparent 9px 18px);}
   .cabinet::after{content:"";position:absolute;inset:14px;border-radius:18px;pointer-events:none;
@@ -47,27 +48,35 @@
   .window{position:relative;z-index:3;display:flex;gap:16px;margin:30px 0 6px;padding:22px;border-radius:18px;
     background:linear-gradient(180deg,#07142e,#0c1a33);
     border:3px solid var(--brass-2);box-shadow:0 0 0 4px rgba(0,0,0,.5), inset 0 0 40px rgba(0,0,0,.7);}
-  /* each reel is a fixed window that clips a tall vertical strip of symbols */
   .reel{width:190px;height:230px;border-radius:14px;overflow:hidden;position:relative;
     background:linear-gradient(180deg,#f7f4ea,#dcd6c4);
     box-shadow:inset 0 0 0 3px rgba(214,164,74,.5), inset 0 8px 20px rgba(0,0,0,.25), inset 0 -8px 20px rgba(0,0,0,.25);}
-  /* NB: no `will-change:transform` here on purpose - it promotes the strip to a
-     compositor layer, and the offline frame-sequence renderer (which swaps content via
-     innerHTML and screenshots each frame) captures the layer before the new transform
-     composites, so every frame would look identical. Plain transform repaints inline. */
   .reel .strip{position:absolute;left:0;right:0;top:0;display:flex;flex-direction:column;align-items:center;}
   .reel .strip .sym{height:230px;flex:none;display:flex;align-items:center;justify-content:center;
     font-family:var(--emoji);font-size:118px;line-height:1;}
-  /* soft fade at the top & bottom of each reel so symbols melt in/out as they slide */
   .reel::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:2;border-radius:14px;
     background:linear-gradient(180deg, rgba(247,244,234,.85) 0%, rgba(247,244,234,0) 16%, rgba(247,244,234,0) 84%, rgba(220,214,196,.85) 100%);}
-
-  /* glowing payline on a win */
   .window.winline{border-color:#ffe9a8;box-shadow:0 0 0 4px rgba(0,0,0,.5), inset 0 0 40px rgba(0,0,0,.7), 0 0 34px rgba(255,233,168,.6);}
   .window.winline .reel{box-shadow:inset 0 0 0 3px #ffd95e, inset 0 8px 20px rgba(0,0,0,.25), inset 0 -8px 20px rgba(0,0,0,.25);}
   .payline{position:absolute;top:50%;left:10px;right:10px;height:3px;transform:translateY(-50%);
     background:linear-gradient(90deg,transparent,rgba(207,20,43,.85),transparent);z-index:3;}
 
+  /* banner (static "SPINNING...") */
+  .banner{position:relative;z-index:3;text-align:center;margin:18px 0 8px;padding:16px 48px;border-radius:16px;
+    background:linear-gradient(180deg, rgba(0,0,0,.35), rgba(0,0,0,.5));border:2px solid var(--brass-2);min-width:420px;}
+  .banner .head{font-family:var(--serif);font-weight:700;font-size:52px;letter-spacing:.06em;text-transform:uppercase;color:var(--brass-soft);
+    text-shadow:2px 2px 4px rgba(0,0,0,.9);}
+  .banner .sub{margin-top:8px;font-family:var(--sans);font-weight:700;font-size:24px;letter-spacing:.04em;color:#fff;}
+
+  .hud{position:relative;z-index:3;margin-top:auto;display:flex;gap:16px;padding:18px 36px 34px;width:100%;justify-content:center;}
+  .chip{display:flex;align-items:center;gap:13px;background:rgba(0,0,0,.4);border:1px solid rgba(214,164,74,.4);
+    border-radius:15px;padding:13px 24px;box-shadow:0 4px 12px rgba(0,0,0,.4);}
+  .chip .disc{width:30px;height:30px;border-radius:50%;flex:none;
+    background:radial-gradient(circle at 35% 30%, #ffe9a8, #d6a44a 55%, #9c6a1f 100%);border:2px dashed rgba(255,255,255,.65);box-shadow:0 2px 5px rgba(0,0,0,.5);}
+  .chip .meta{display:flex;flex-direction:column;line-height:1.12;}
+  .chip .lab{font-size:12px;font-weight:700;letter-spacing:.20em;text-transform:uppercase;color:rgba(255,255,255,.55);}
+  .chip .val{font-family:var(--serif);font-weight:700;font-size:27px;color:#fff;}
+  .chip .player{font-family:var(--serif);font-weight:700;font-size:20px;color:#fff;}
   img.emoji{height:1em;width:1em;vertical-align:middle;display:inline-block;}
 </style>
 </head>
@@ -86,12 +95,16 @@
       <div class="payline"></div>
       {{REELS}}
     </div>
+
+    <div class="banner"><div class="head">Spinning...</div><div class="sub">Good luck!</div></div>
+
+    <div class="hud">
+      <div class="chip"><span class="meta"><span class="lab">Player</span><span class="player">—</span></span></div>
+      <div class="chip"><span class="disc"></span><span class="meta"><span class="lab">Bet</span><span class="val">—</span></span></div>
+      <div class="chip"><span class="disc"></span><span class="meta"><span class="lab">Balance</span><span class="val">—</span></span></div>
+    </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/@twemoji/api@latest/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <script>
-    window.onload = function() {
-      twemoji.parse(document.body, { folder: 'svg', ext: '.svg' });
-    };
-  </script>
+  <script>window.onload=function(){twemoji.parse(document.body,{folder:'svg',ext:'.svg'});};</script>
 </body>
 </html>

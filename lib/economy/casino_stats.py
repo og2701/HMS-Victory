@@ -120,6 +120,47 @@ def get_net_standings(game: str = None, top: int = 5):
     return winners, losers
 
 
+def _fmt_signed(n) -> str:
+    n = int(n)
+    return f"+{n:,}" if n >= 0 else f"-{abs(n):,}"
+
+
+def session_career(player_id, *, session_count, session_net, current_net=0, over=False):
+    """Numbers for the on-game counter: (session_count, session_total, career_games,
+    career_net). The current game's net is folded in only once it's ``over`` - at
+    result-render time it isn't in casino_results yet (record_result runs in _pay, after
+    the render), so we add it here; later renders read it from the DB."""
+    stats = get_user_casino_stats(player_id)
+    add = int(current_net) if over else 0
+    return (int(session_count), int(session_net) + add,
+            stats["total"]["games"] + (1 if over else 0),
+            stats["total"]["net"] + add)
+
+
+def session_footer_html(player_id, *, session_count, session_net, current_net=0, over=False) -> str:
+    """A fully inline-styled 'This session / Career' footer that can be dropped into any
+    casino game's rendered table via a {{SESSION}} placeholder."""
+    sc, st, cg, cn = session_career(player_id, session_count=session_count,
+                                    session_net=session_net, current_net=current_net, over=over)
+
+    def chip(label, value):
+        return (
+            '<span style="display:inline-flex;align-items:center;gap:10px;background:rgba(0,0,0,.42);'
+            'border:1px solid rgba(214,164,74,.45);border-radius:13px;padding:9px 18px;'
+            'font-family:Georgia,\'Times New Roman\',serif;font-weight:700;font-size:20px;color:#fff">'
+            f'<span style="font-size:12px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;'
+            f'color:rgba(255,255,255,.55)">{label}</span>{value}</span>'
+        )
+
+    return (
+        '<div style="display:flex;gap:16px;justify-content:center;align-items:center;'
+        'flex-wrap:wrap;margin-top:10px">'
+        + chip("This session", f"Game&nbsp;#{sc} &middot; {_fmt_signed(st)}")
+        + chip("Career", f"{cg:,} games &middot; {_fmt_signed(cn)}")
+        + "</div>"
+    )
+
+
 def get_casino_leaderboard(metric: str = "net", game: str = None, limit: int = 10) -> list:
     """Top players by a metric across all games (or one ``game``).
 

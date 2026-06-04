@@ -223,7 +223,7 @@ def banner_html(kind: str, head: str, sub: str = "") -> str:
 # ---------------------------------------------------------------------------
 async def render_table(*, title_main: str, title_accent: str, subtitle: str,
                        body_html: str, bet: int, balance: int, hint: str,
-                       result_banner: str = "") -> io.BytesIO:
+                       result_banner: str = "", session_html: str = "") -> io.BytesIO:
     from lib.core.image_processing import screenshot_html
     tpl = read_html_template("templates/casino_table.html")
     out = (
@@ -236,6 +236,7 @@ async def render_table(*, title_main: str, title_accent: str, subtitle: str,
         .replace("{{BALANCE}}", f"{balance:,}")
         .replace("{{HINT}}", _html.escape(hint))
         .replace("{{RESULT_BANNER}}", result_banner)
+        .replace("{{SESSION}}", session_html)
     )
     return await screenshot_html(out, size=(900, 1500), element_selector=".table")
 

@@ -463,6 +463,10 @@ def schedule_client_jobs(client, scheduler):
                     timezone="Europe/London"),
         args=[client], id="lottery_weekly_draw_job", name="Weekly National Lottery Draw",
         misfire_grace_time=3600, coalesce=True)
+    # Periodic sellout check: draws a sold-out round once it passes its minimum runtime
+    # (restart-safe; no reliance on a one-off job surviving a reboot).
+    scheduler.add_job(_lottery_tick, IntervalTrigger(minutes=2), args=[client],
+                      id="lottery_tick_job", name="Lottery sellout tick")
 
     _register_pending_scheduled_predictions(client, scheduler)
 
@@ -472,6 +476,11 @@ def schedule_client_jobs(client, scheduler):
 async def _lottery_weekly_draw(client):
     from lib.economy.lottery import weekly_draw_job
     await weekly_draw_job(client)
+
+
+async def _lottery_tick(client):
+    from lib.economy.lottery import lottery_tick
+    await lottery_tick(client)
 
 
 def _register_pending_scheduled_predictions(client, scheduler):

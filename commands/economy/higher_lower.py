@@ -27,7 +27,7 @@ import discord
 from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, add_bb, remove_bb, UKPenceManager
-from lib.economy.casino_stats import record_result
+from lib.economy.casino_stats import record_result, session_footer_html
 from lib.core.file_operations import (
     read_html_template,
     load_persistent_views,
@@ -283,6 +283,10 @@ def build_hl_html(game: HigherLowerGame) -> str:
         .replace("{{VALUE}}", f"{game.current_value():,}")
         .replace("{{HINT}}", hint)
         .replace("{{RESULT_BANNER}}", banner)
+        .replace("{{SESSION}}", session_footer_html(
+            game.player_id, session_count=getattr(game, "session_count", 1),
+            session_net=getattr(game, "session_net", 0),
+            current_net=(game.payout - game.bet), over=(game.outcome is not None)))
     )
 
 
@@ -564,6 +568,8 @@ async def _start_replay(interaction: Interaction, old_game: HigherLowerGame, cli
 
     new_game = HigherLowerGame.new(uid, old_game.player_name, old_game.channel_id, bet)
     new_game.message_id = old_game.message_id
+    new_game.session_count = getattr(old_game, "session_count", 1) + 1
+    new_game.session_net = getattr(old_game, "session_net", 0) + (old_game.payout - old_game.bet)
     # Refundable section ends the moment the new ladder is shown.
     try:
         view, files = await build_hl_layout(new_game, client)

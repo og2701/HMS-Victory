@@ -96,13 +96,17 @@ def user_tickets(round_id, user_id) -> int:
 
 
 def create_round():
+    """Open a new round with a RANDOM ticket price and cap (a little weekly mystery)."""
     import config
     now = int(time.time())
+    price = random.randint(getattr(config, "LOTTERY_TICKET_PRICE_MIN", 2),
+                           getattr(config, "LOTTERY_TICKET_PRICE_MAX", 20))
+    cap = random.randint(getattr(config, "LOTTERY_TICKET_CAP_MIN", 300),
+                         getattr(config, "LOTTERY_TICKET_CAP_MAX", 1000))
     rid = DatabaseManager.execute_insert(
         "INSERT INTO lottery_rounds (status, ticket_price, ticket_cap, rake_pct, draw_ts, created_at) "
         "VALUES ('open', ?, ?, ?, ?, ?)",
-        (config.LOTTERY_TICKET_PRICE, config.LOTTERY_TICKET_CAP, config.LOTTERY_RAKE_PCT,
-         _next_draw_ts(), now))
+        (price, cap, config.LOTTERY_RAKE_PCT, _next_draw_ts(), now))
     return get_round(rid)
 
 
@@ -219,6 +223,37 @@ async def ensure_started(client):
         await open_round(client, post=True)
 
 
+def _sold_out(rnd) -> bool:
+    return tickets_sold(rnd["id"]) >= rnd["ticket_cap"]
+
+
+def _min_runtime_passed(rnd) -> bool:
+    import config
+    elapsed = int(time.time()) - rnd["created_at"]
+    return elapsed >= getattr(config, "LOTTERY_MIN_RUNTIME_MIN", 30) * 60
+
+
+async def maybe_sellout_draw(client, round_id):
+    """Draw a sold-out round, but only once it's been open at least the minimum runtime
+    (so a cheap/small round can't sell out and vanish within minutes of opening)."""
+    rnd = get_round(round_id)
+    if not rnd or rnd["status"] != "open" or not _sold_out(rnd):
+        return
+    if _min_runtime_passed(rnd):
+        await draw_round(client, round_id)
+
+
+async def lottery_tick(client):
+    """Periodic: draw a sold-out round once it passes the minimum runtime. Restart-safe
+    (no reliance on a one-off job that wouldn't survive a reboot)."""
+    import config
+    if not getattr(config, "LOTTERY_ENABLED", True):
+        return
+    rnd = get_open_round()
+    if rnd:
+        await maybe_sellout_draw(client, rnd["id"])
+
+
 # ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
@@ -254,6 +289,10 @@ async def render_board(rnd) -> io.BytesIO:
                   '<div class="sub">No tickets were sold this round.</div></div>')
         label, note = "Jackpot", "Round closed"
         draw_label, draw_value = "Drawn", _draw_value(rnd["drawn_at"] or rnd["draw_ts"])
+    elif sold >= cap:
+        winner = ""
+        label, note = "Final Jackpot", "🎉 SOLD OUT — drawing shortly!"
+        draw_label, draw_value = "Status", "Sold out"
     else:
         winner = ""
         label, note = "This Week's Jackpot", f"Winner takes {100 - rake}% · {rake}% to the house"
@@ -301,9 +340,12 @@ def _board_text(rnd) -> str:
         return f"**Round #{rnd['id']} drawn** — no tickets were sold.\n-# A new round opens at the next weekly draw."
     sold = tickets_sold(rnd["id"])
     pot = sold * price
+    if sold >= rnd["ticket_cap"]:
+        return (f"🎟️ **Round #{rnd['id']} — SOLD OUT!** Jackpot **{pot:,} UKPence**. "
+                f"The winner is drawn shortly — good luck! 🍀")
     return (f"🎟️ **Round #{rnd['id']}** · Jackpot **{pot:,} UKPence** · "
             f"draw <t:{rnd['draw_ts']}:R> (or when it sells out).\n"
-            f"-# Tickets {price:,} UKPence each. Buy below — good luck! 🇬🇧")
+            f"-# Tickets {price:,} UKPence each (this round). Buy below — good luck! 🇬🇧")
 
 
 def _action_row(rnd) -> discord.ui.ActionRow:
@@ -362,13 +404,13 @@ def build_board_controls(rnd) -> discord.ui.LayoutView:
 # Board posting / refreshing
 # ---------------------------------------------------------------------------
 async def _post_board(client, rnd):
-    from config import CHANNELS
-    channel = client.get_channel(CHANNELS.VOTING)
+    import config
+    channel = client.get_channel(config.LOTTERY_CHANNEL)
     if channel is None:
         try:
-            channel = await client.fetch_channel(CHANNELS.VOTING)
+            channel = await client.fetch_channel(config.LOTTERY_CHANNEL)
         except Exception:
-            logger.warning("Lottery: VOTING channel unavailable; cannot post board.")
+            logger.warning("Lottery: channel unavailable; cannot post board.")
             return
     try:
         view, files = await build_board_layout(rnd)
@@ -403,11 +445,11 @@ async def _refresh_board(client, round_id):
 
 
 async def _announce(client, rnd, *, no_winner: bool):
-    from config import CHANNELS
-    channel = client.get_channel(CHANNELS.VOTING)
+    import config
+    channel = client.get_channel(config.LOTTERY_CHANNEL)
     if channel is None:
         try:
-            channel = await client.fetch_channel(CHANNELS.VOTING)
+            channel = await client.fetch_channel(config.LOTTERY_CHANNEL)
         except Exception:
             return
     if no_winner:
@@ -504,8 +546,9 @@ class BuyTicketsModal(discord.ui.Modal, title="Buy lottery tickets"):
         if ok:
             await _refresh_board(interaction.client, self.round_id)
             if sold_out:
-                # Sellout draw - does NOT open a new round (weekly tick does that).
-                await draw_round(interaction.client, self.round_id)
+                # Sellout: draw only if it's been open long enough; otherwise the periodic
+                # tick draws it at the right time. Never opens a new round (weekly does).
+                await maybe_sellout_draw(interaction.client, self.round_id)
 
 
 # ---------------------------------------------------------------------------

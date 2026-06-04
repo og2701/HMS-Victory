@@ -73,17 +73,25 @@ TCP_MIN_BET = 5
 TCP_MAX_BET = 10_000
 
 # --- National Lottery (shared pooled draw) ---
-# Tickets are LOTTERY_TICKET_PRICE each; a round draws when it sells out (TICKET_CAP)
-# OR at the weekly time, whichever comes first - but a sold-out round never reopens
+# Each round picks a RANDOM ticket price and ticket cap from the ranges below (a little
+# mystery each week). A round draws when it sells out OR at the weekly time, whichever
+# comes first - but never sooner than LOTTERY_MIN_RUNTIME_MIN after opening (so a cheap
+# small round can't sell out and vanish in minutes), and a sold-out round won't reopen
 # until the next weekly tick. Winner takes the pot minus a LOTTERY_RAKE_PCT bank cut.
 LOTTERY_ENABLED = True
 LOTTERY_IMAGE_ENABLED = True
-LOTTERY_TICKET_PRICE = 10
-LOTTERY_TICKET_CAP = 500          # tickets per round -> max pot = price * cap
+LOTTERY_TICKET_PRICE_MIN = 2      # random ticket price per round, inclusive
+LOTTERY_TICKET_PRICE_MAX = 20
+LOTTERY_TICKET_CAP_MIN = 300      # random ticket cap (sellout threshold) per round
+LOTTERY_TICKET_CAP_MAX = 1000
+LOTTERY_MIN_RUNTIME_MIN = 30      # a round can't draw on sellout sooner than this (minutes)
 LOTTERY_RAKE_PCT = 10             # house bank keeps this %, winner gets the rest
 LOTTERY_DRAW_DOW = "sun"          # weekly draw day (APScheduler day_of_week)
 LOTTERY_DRAW_HOUR = 20            # 8pm UK
 LOTTERY_DRAW_MINUTE = 0
+# Fallback defaults (only used if a range is missing); live rounds use the ranges above.
+LOTTERY_TICKET_PRICE = 10
+LOTTERY_TICKET_CAP = 500
 
 # --- File Paths & Directories ---
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -185,6 +193,9 @@ class CHANNELS:
     GENERAL = 959493057076666380
     COMMONS = 959501347571531776
     BOT_SPAM = 968502541107228734
+    CASINO = 1512095841517699213          # casino games + lottery board live here
+    VIP_LOUNGE = 1333482774157590609      # vip lounge channel; casino commands allowed here
+    BOT_WORKSHOP = 1141037835445616640    # casino commands allowed here too
     POLITICS = 1141097424849481799
     LOGS = 959723562892144690
     POLICE_STATION = 1132970233502650388
@@ -201,8 +212,13 @@ class CHANNELS:
     HALL_OF_FAME_THREAD = 1479149572591845376
     ECONOMY_LOG_THREAD = 1488926630767366416
     DAILY_SUMMARY_THREAD = 1511784346451710113  # daily server summaries post here (weekly/monthly stay in COMMONS)
-    VOTING = 959848236384919692  # lottery board + winner announcements post here
+    VOTING = 959848236384919692
     VOICE_LOG_THREAD = 1493403784074760362
+
+# Casino games + the lottery may only be used in these channels.
+CASINO_CHANNELS = [CHANNELS.CASINO, CHANNELS.VIP_LOUNGE, CHANNELS.BOT_SPAM, CHANNELS.BOT_WORKSHOP]
+# The lottery board + winner announcements post here.
+LOTTERY_CHANNEL = CHANNELS.CASINO
 
 class CATEGORIES:
     TICKETS = 1139976595336069161

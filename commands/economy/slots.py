@@ -23,7 +23,7 @@ import discord
 from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, add_bb, remove_bb, UKPenceManager
-from lib.economy.casino_stats import record_result
+from lib.economy.casino_stats import record_result, session_footer_html
 from lib.core.file_operations import read_html_template
 
 logger = logging.getLogger(__name__)
@@ -91,14 +91,19 @@ class SlotMachine:
         self.prev_reels = ["cherry", "cherry", "cherry"]
         self.mult = 0
         self.win = 0
+        self.net = 0
         self.busy = False
         self.lock = asyncio.Lock()
+        # Session counter across this machine's Spin Again chain.
+        self.session_count = 1
+        self.session_net = 0
 
     def do_spin(self):
         self.prev_reels = list(self.reels)
         self.reels = spin_reels()
         self.mult = evaluate(self.reels)
         self.win = self.mult * self.bet
+        self.net = self.win - self.bet
         return self.win
 
 
@@ -154,6 +159,10 @@ def build_slots_html(machine: SlotMachine, reels: list = None, mult: int = None,
         .replace("{{BANNER}}", banner)
         .replace("{{BET}}", f"{machine.bet:,}")
         .replace("{{BALANCE}}", f"{bal:,}")
+        .replace("{{SESSION}}", session_footer_html(
+            machine.player_id, session_count=getattr(machine, "session_count", 1),
+            session_net=getattr(machine, "session_net", 0),
+            current_net=getattr(machine, "net", 0), over=not spinning))
     )
 
 
@@ -166,7 +175,7 @@ def build_slots_html(machine: SlotMachine, reels: list = None, mult: int = None,
 # variants that can be rendered once offline (scripts/bake_slots_results.py) and then
 # served instantly at spin time. Until baked, the runtime falls back to rendering one.
 SLIDE_TEMPLATE = "templates/slots_spin.html"
-SLIDE_SIZE = (820, 700)          # viewport; the screenshot clips to the .cabinet element
+SLIDE_SIZE = (820, 1040)         # viewport; the screenshot clips to the .cabinet element
 SLIDE_REEL_H = 230               # must match .reel / .strip .sym height in the template
 SLIDE_LEADIN = 20                # random symbols scrolled past before the target lands
 SLIDE_STOPS = (11, 15, 19)       # frame index at which reels 1, 2, 3 lock onto target
@@ -343,62 +352,64 @@ def get_random_spinning_gif() -> str:
     return None
 
 
-def build_spinning_layout(machine: SlotMachine) -> tuple:
+def build_spin_anim_layout(machine: SlotMachine) -> tuple:
+    """The spinning phase: the pre-baked full-size reel-slide GIF (or a native fallback),
+    controls disabled while it animates. The GIF already lands on this spin's result; the
+    full result frame (with the player's name/bet/balance baked in) swaps in right after."""
     import config
+    import os
     view = discord.ui.LayoutView(timeout=None)
     files = []
     used_image = False
     if getattr(config, "SLOTS_IMAGE_ENABLED", True):
-        gif_path = get_random_spinning_gif()
-        if gif_path:
+        # 1) the pre-baked per-result slide GIF (lands on this spin's reels);
+        # 2) else a generic full-size spinner placeholder (e.g. before the 343 are
+        #    deployed to the server, or if one is missing) so the spin is always instant.
+        gif_path = _result_gif_path(machine.reels)
+        if not os.path.exists(gif_path):
+            gif_path = get_random_spinning_gif()
+        if gif_path and os.path.exists(gif_path):
             try:
-                files = [discord.File(gif_path, filename="slots_spinning.gif")]
+                files = [discord.File(gif_path, filename="slots.gif")]
                 gallery = discord.ui.MediaGallery()
-                gallery.add_item(media="attachment://slots_spinning.gif")
+                gallery.add_item(media="attachment://slots.gif")
                 view.add_item(gallery)
                 used_image = True
             except Exception:
-                logger.warning("Failed to attach spinning slots GIF", exc_info=True)
-    
+                logger.warning("Failed to attach slots spin GIF", exc_info=True)
     if not used_image:
         container = discord.ui.Container(accent_colour=ACCENT)
-        lines = [
-            "## 🎰 HMS Victory Fruit Machine",
-            "### ┃ 🔄  🔄  🔄 ┃",
-            "**Spinning...** Good luck!"
-        ]
-        container.add_item(discord.ui.TextDisplay("\n".join(lines)))
+        container.add_item(discord.ui.TextDisplay(
+            "## 🎰 HMS Victory Fruit Machine\n### ┃ 🔄  🔄  🔄 ┃\n**Spinning...** Good luck!"))
         view.add_item(container)
-        
     view.add_item(_action_row_disabled(machine))
     return view, files
 
 
 async def build_slots_layout(machine: SlotMachine, client):
-    """Result message: the reel-slide GIF (pre-generated if baked, else rendered on the
-    fly) plus a Components V2 text block with the dynamic player/bet/balance/win."""
+    """Result message: the FULL machine rendered with the player's name, bet, balance and
+    result banner baked into one image (no separate text panel) - the same look as before
+    the pre-gen change. The slide animation already played via build_spin_anim_layout."""
     import config
-    import os
-    files = []
     view = discord.ui.LayoutView(timeout=None)
+    files = []
     used_image = False
     if getattr(config, "SLOTS_IMAGE_ENABLED", True):
         try:
-            gif_path = _result_gif_path(machine.reels)
-            if os.path.exists(gif_path):
-                files = [discord.File(gif_path, filename="slots.gif")]          # pre-baked: instant
-            else:
-                img = await render_slots_slide_gif(machine)                     # fallback: render now
-                files = [discord.File(img, filename="slots.gif")]
+            from lib.core.image_processing import screenshot_html
+            html = build_slots_html(machine)  # spinning=False -> result banner + real HUD
+            img = await screenshot_html(html, size=(820, 1000), element_selector=".cabinet")
+            files = [discord.File(img, filename="slots.png")]
             gallery = discord.ui.MediaGallery()
-            gallery.add_item(media="attachment://slots.gif")
+            gallery.add_item(media="attachment://slots.png")
             view.add_item(gallery)
             used_image = True
         except Exception:
-            logger.warning("Slots image unavailable; using native layout.", exc_info=True)
-    container = discord.ui.Container(accent_colour=ACCENT)
-    container.add_item(discord.ui.TextDisplay(_result_text(machine, show_reels=not used_image)))
-    view.add_item(container)
+            logger.warning("Slots result render failed; using native layout.", exc_info=True)
+    if not used_image:
+        container = discord.ui.Container(accent_colour=ACCENT)
+        container.add_item(discord.ui.TextDisplay(_result_text(machine, show_reels=True)))
+        view.add_item(container)
     view.add_item(_action_row(machine))
     return view, files
 
@@ -481,21 +492,22 @@ async def _do_spin_round(interaction: Interaction, machine: SlotMachine, client,
             await interaction.response.send_message("You don't have enough UKPence.", ephemeral=True)
             return
 
+        machine.session_net += machine.net   # fold the previous spin into the session
+        machine.session_count += 1
         machine.do_spin()  # decide first so we know which pre-baked result GIF to use
 
-        # A pre-baked result GIF plays its own slide animation, so we jump straight to
-        # it (no placeholder). Only when one has to be rendered at runtime do we show
-        # the spinning placeholder to cover the wait.
-        import os
-        has_pregen = os.path.exists(_result_gif_path(machine.reels))
-        if not has_pregen:
-            # Render-on-the-fly: cover the wait with the spinning placeholder.
-            spin_view, spin_files = build_spinning_layout(machine)
-            await interaction.response.edit_message(view=spin_view, attachments=spin_files)
-        else:
-            # Pre-baked: defer to ack instantly (the previous result lingers for the
-            # ~1s GIF upload, then snaps to the new slide - no placeholder flicker).
-            await interaction.response.defer()
+        # Two-phase: the pre-baked slide GIF plays the animation instantly (no
+        # placeholder), then the full-size result frame - with this player's name, bet,
+        # balance and result banner baked in - is rendered and swapped in.
+        await interaction.response.defer()
+        spin_view, spin_files = build_spin_anim_layout(machine)
+        try:
+            if via_modal:
+                await interaction.message.edit(view=spin_view, attachments=spin_files)
+            else:
+                await interaction.edit_original_response(view=spin_view, attachments=spin_files)
+        except Exception:
+            logger.error("Slots spin animation edit failed.", exc_info=True)
 
         try:
             view, files = await build_slots_layout(machine, client)
@@ -504,7 +516,7 @@ async def _do_spin_round(interaction: Interaction, machine: SlotMachine, client,
             else:
                 await interaction.edit_original_response(view=view, attachments=files)
         except Exception:
-            logger.error("Slots spin render failed; refunding stake.", exc_info=True)
+            logger.error("Slots result render failed; refunding stake.", exc_info=True)
             _credit(machine.player_id, machine.bet, "Slots stake refund (spin failed)")
             try:
                 # Re-enable buttons on failure
@@ -599,15 +611,16 @@ async def handle_slots_command(interaction: Interaction, amount: int):
 
     name = discord.utils.escape_markdown(interaction.user.display_name)
     machine = SlotMachine(interaction.user.id, name, interaction.channel_id, amount)
-    
-    # Send the spinning GIF and disabled view immediately!
-    spin_view, spin_files = build_spinning_layout(machine)
+    machine.do_spin()  # decide first - the pre-baked spin GIF is chosen by the result
+
+    # Phase 1: post the spinning animation (pre-baked full-size slide GIF) - instant.
     try:
-        await interaction.response.send_message(view=spin_view, files=spin_files)
-        msg = await interaction.original_response()
+        await interaction.response.defer(thinking=True)
+        spin_view, spin_files = build_spin_anim_layout(machine)
+        msg = await interaction.followup.send(view=spin_view, files=spin_files)
         machine.message_id = msg.id
     except Exception:
-        logger.error("Failed to send initial slots spinning message; refunding stake.", exc_info=True)
+        logger.error("Failed to send initial slots message; refunding stake.", exc_info=True)
         _credit(interaction.user.id, amount, "Slots stake refund (failed to send initial message)")
         try:
             await interaction.followup.send(
@@ -617,24 +630,24 @@ async def handle_slots_command(interaction: Interaction, amount: int):
             pass
         return
 
-    machine.do_spin()
+    # Phase 2: swap in the full result frame (this player's name/bet/balance + result).
     try:
         view, files = await build_slots_layout(machine, interaction.client)
-        # Edit the original response to swap in the final static result
-        await interaction.edit_original_response(view=view, attachments=files)
+        await msg.edit(view=view, attachments=files)
     except Exception:
         logger.error("Slots spin render failed; refunding stake.", exc_info=True)
         _credit(interaction.user.id, amount, "Slots stake refund (spin failed)")
         try:
-            # Re-enable the buttons on failure and show error
             enabled_view = discord.ui.LayoutView(timeout=None)
             enabled_view.add_item(_action_row(machine))
-            await interaction.edit_original_response(view=enabled_view)
+            await msg.edit(view=enabled_view)
         except Exception:
             pass
         return
 
     _credit(interaction.user.id, machine.win, "Slots win")  # pay only after it's on screen
+    record_result(machine.player_id, "slots", machine.bet, machine.bet, machine.win,
+                  f"{machine.mult}x" if machine.win else "no win")
     try:
         interaction.client.add_view(view, message_id=machine.message_id)
     except Exception:

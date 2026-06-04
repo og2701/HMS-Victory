@@ -19,7 +19,7 @@ import discord
 from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, remove_bb
-from lib.economy.casino_stats import record_result
+from lib.economy.casino_stats import record_result, session_footer_html
 import commands.economy.casino_base as cb
 
 logger = logging.getLogger(__name__)
@@ -258,6 +258,10 @@ async def _render(game: RedDogGame):
         body_html=_body(game), bet=game.total_staked, balance=get_bb(game.player_id),
         hint=("Raise or call?" if game.state == "raise_decision" else "Round complete"),
         result_banner=("" if game.state == "raise_decision" else _result_banner(game)),
+        session_html=session_footer_html(
+            game.player_id, session_count=getattr(game, "session_count", 1),
+            session_net=getattr(game, "session_net", 0), current_net=getattr(game, "net", 0),
+            over=(game.state == "over")),
     )
 
 
@@ -481,6 +485,8 @@ async def _start_replay(interaction: Interaction, old_game: RedDogGame, client, 
 
     new_game = RedDogGame.new(uid, old_game.player_name, old_game.channel_id, bet)
     new_game.message_id = old_game.message_id
+    new_game.session_count = getattr(old_game, "session_count", 1) + 1
+    new_game.session_net = getattr(old_game, "session_net", 0) + old_game.net
     if new_game.state == "over":
         _decide_initial(new_game)
     try:

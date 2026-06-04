@@ -28,7 +28,7 @@ import discord
 from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, add_bb, remove_bb, UKPenceManager
-from lib.economy.casino_stats import record_result
+from lib.economy.casino_stats import record_result, session_footer_html
 from lib.core.file_operations import (
     read_html_template,
     load_persistent_views,
@@ -399,6 +399,10 @@ def build_table_html(game: BlackjackGame) -> str:
         .replace("{{BALANCE}}", f"{get_bb(game.player_id):,}")
         .replace("{{STATE_HINT}}", hint)
         .replace("{{RESULT_BANNER}}", banner)
+        .replace("{{SESSION}}", session_footer_html(
+            game.player_id, session_count=getattr(game, "session_count", 1),
+            session_net=getattr(game, "session_net", 0), current_net=getattr(game, "net", 0),
+            over=(game.state == "over")))
     )
 
 
@@ -739,6 +743,8 @@ async def _start_replay(interaction: Interaction, old_game: BlackjackGame, clien
 
     new_game = BlackjackGame.new(uid, old_game.player_name, old_game.channel_id, bet)
     new_game.message_id = old_game.message_id
+    new_game.session_count = getattr(old_game, "session_count", 1) + 1
+    new_game.session_net = getattr(old_game, "session_net", 0) + old_game.net
     if new_game.state == "over":
         _decide(new_game)  # decide for display; pay only after the message updates
 
