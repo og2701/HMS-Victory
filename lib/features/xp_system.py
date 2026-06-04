@@ -65,26 +65,40 @@ class LeaderboardView(discord.ui.View):
 
         return discord.File(fp=io.BytesIO(self.image_cache[self.offset]), filename="leaderboard.png")
 
-    @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
-    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.response.is_done():
-            await interaction.response.defer()
-        self.offset = max(0, self.offset - self.PAGE_SIZE)
-        file = await self._get_or_generate_image()
+    async def _turn_page(self, interaction: discord.Interaction, new_offset: int):
+        """Ack, render the target page and swap it in - tolerant of an interaction that
+        already expired (10062) under event-loop congestion, so a slow ack never spams the
+        logs with an unhandled view exception."""
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.defer()
+        except discord.NotFound:
+            # Interaction expired before we could ack it (loop was busy >3s). Nothing more
+            # we can do with this click - drop it quietly rather than raising.
+            logger.debug("Page turn dropped: interaction expired before defer")
+            return
+        except discord.HTTPException as e:
+            logger.warning(f"Pagination defer failed: {e}")
+            return
+
+        self.offset = max(0, min(new_offset, max(0, len(self.sorted_data) - self.PAGE_SIZE)))
         self.previous_button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
-        await interaction.edit_original_response(attachments=[file], view=self)
+        try:
+            file = await self._get_or_generate_image()
+            await interaction.edit_original_response(attachments=[file], view=self)
+        except discord.NotFound:
+            logger.debug("Page turn dropped: interaction gone before edit")
+        except discord.HTTPException as e:
+            logger.warning(f"Pagination edit failed: {e}")
+
+    @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
+    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._turn_page(interaction, self.offset - self.PAGE_SIZE)
 
     @discord.ui.button(label="Next", style=discord.ButtonStyle.blurple)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.response.is_done():
-            await interaction.response.defer()
-        max_off = max(0, len(self.sorted_data) - self.PAGE_SIZE)
-        self.offset = min(max_off, self.offset + self.PAGE_SIZE)
-        file = await self._get_or_generate_image()
-        self.previous_button.disabled = (self.offset == 0)
-        self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
-        await interaction.edit_original_response(attachments=[file], view=self)
+        await self._turn_page(interaction, self.offset + self.PAGE_SIZE)
 
 class RichListView(discord.ui.View):
     PAGE_SIZE = 20
@@ -131,26 +145,40 @@ class RichListView(discord.ui.View):
 
         return discord.File(fp=io.BytesIO(self.image_cache[self.offset]), filename="richlist.png")
 
-    @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
-    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.response.is_done():
-            await interaction.response.defer()
-        self.offset = max(0, self.offset - self.PAGE_SIZE)
-        file = await self._get_or_generate_image()
+    async def _turn_page(self, interaction: discord.Interaction, new_offset: int):
+        """Ack, render the target page and swap it in - tolerant of an interaction that
+        already expired (10062) under event-loop congestion, so a slow ack never spams the
+        logs with an unhandled view exception."""
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.defer()
+        except discord.NotFound:
+            # Interaction expired before we could ack it (loop was busy >3s). Nothing more
+            # we can do with this click - drop it quietly rather than raising.
+            logger.debug("Page turn dropped: interaction expired before defer")
+            return
+        except discord.HTTPException as e:
+            logger.warning(f"Pagination defer failed: {e}")
+            return
+
+        self.offset = max(0, min(new_offset, max(0, len(self.sorted_data) - self.PAGE_SIZE)))
         self.previous_button.disabled = (self.offset == 0)
         self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
-        await interaction.edit_original_response(attachments=[file], view=self)
+        try:
+            file = await self._get_or_generate_image()
+            await interaction.edit_original_response(attachments=[file], view=self)
+        except discord.NotFound:
+            logger.debug("Page turn dropped: interaction gone before edit")
+        except discord.HTTPException as e:
+            logger.warning(f"Pagination edit failed: {e}")
+
+    @discord.ui.button(label="Previous", style=discord.ButtonStyle.blurple)
+    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._turn_page(interaction, self.offset - self.PAGE_SIZE)
 
     @discord.ui.button(label="Next", style=discord.ButtonStyle.blurple)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.response.is_done():
-            await interaction.response.defer()
-        max_off = max(0, len(self.sorted_data) - self.PAGE_SIZE)
-        self.offset = min(max_off, self.offset + self.PAGE_SIZE)
-        file = await self._get_or_generate_image()
-        self.previous_button.disabled = (self.offset == 0)
-        self.next_button.disabled = (self.offset + self.PAGE_SIZE >= len(self.sorted_data))
-        await interaction.edit_original_response(attachments=[file], view=self)
+        await self._turn_page(interaction, self.offset + self.PAGE_SIZE)
 
 class XPSystem:
     UKP_COOLDOWN = 600  # 10 minutes between UKP chat rewards
