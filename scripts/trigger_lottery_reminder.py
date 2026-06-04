@@ -21,8 +21,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Add parent directory to path so `lib`/`config` import cleanly.
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Run from the project root regardless of where we're launched from: the DB path
+# (DB_FILE = 'database.db') is relative to cwd, so launching from scripts/ would
+# otherwise open an empty database and silently find no round.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(PROJECT_ROOT)
+os.chdir(PROJECT_ROOT)
 
 from lib.economy import lottery
 
