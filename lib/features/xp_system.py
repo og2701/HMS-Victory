@@ -366,7 +366,12 @@ class XPSystem:
         await interaction.followup.send(file=file, view=view)
 
     def get_all_balances(self):
-        balances = DatabaseManager.fetch_all("SELECT user_id, balance FROM ukpence ORDER BY balance DESC")
+        # The bot/bank (BOT_ID) is the house, not a player - keep it off the ranked list
+        # (it's shown separately as a header on the richlist).
+        from config import BOT_ID
+        balances = DatabaseManager.fetch_all(
+            "SELECT user_id, balance FROM ukpence WHERE user_id != ? ORDER BY balance DESC",
+            (str(BOT_ID),))
         return balances
 
     async def generate_richlist_image(self, guild, data_slice, offset):
@@ -454,7 +459,30 @@ class XPSystem:
           <div class="flex flex-col gap-2 w-full max-w-[380px]">{right_html}</div>
         </div>
         """
-        final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col).replace("{{ TITLE }}", "HMS Victory UKPence Richlist")
+
+        # House Bank header - the bot/bank isn't ranked among players, but its balance is
+        # shown centred at the top of every page.
+        from config import BOT_ID
+        bank_row = DatabaseManager.fetch_one("SELECT balance FROM ukpence WHERE user_id = ?", (str(BOT_ID),))
+        bank_bal = bank_row[0] if bank_row else 0
+        bank_member = guild.get_member(int(BOT_ID))
+        bank_avatar_url = bank_member.display_avatar.url if bank_member else "https://cdn.discordapp.com/embed/avatars/0.png"
+        bank_avatar = await get_avatar_data_uri(self.client, bank_avatar_url)
+        bank_html = f"""
+        <div class="flex justify-center w-full" style="margin-bottom:18px">
+          <div class="leaderboard-item" style="max-width:470px;width:100%;border:1.5px solid #D4AF37;box-shadow:0 0 22px rgba(212,175,55,.4);background:linear-gradient(90deg, rgba(0,0,0,.9), rgba(48,36,6,.7));">
+            <div class="rank-badge" style="color:#D4AF37;font-size:22px">🏦</div>
+            <div class="avatar-container"><img src="{bank_avatar}" class="avatar" /></div>
+            <div class="user-info">
+              <div class="user-name" style="color:#D4AF37">Victory Bank</div>
+              <div class="user-stats">UKPence: <span class="stat-highlight">{bank_bal:,}</span></div>
+            </div>
+          </div>
+        </div>
+        """
+
+        rows_html = f'<div class="flex flex-col w-full">{bank_html}{two_col}</div>'
+        final_html = template.replace("{{ LEADERBOARD_ROWS }}", rows_html).replace("{{ TITLE }}", "HMS Victory UKPence Richlist")
         image_buffer = await screenshot_html(final_html, size=(1000, 1400))
         return image_buffer.getvalue()
 
