@@ -72,6 +72,12 @@ TCP_IMAGE_ENABLED = True
 TCP_MIN_BET = 5
 TCP_MAX_BET = 10_000
 
+# --- European Roulette (single-zero, vs-the-house) ---
+ROULETTE_ENABLED = True
+ROULETTE_IMAGE_ENABLED = True
+ROULETTE_MIN_BET = 5       # informational (min chip is the smallest CHIP_SIZE)
+ROULETTE_MAX_BET = 10_000  # max total stake across all bets on one spin
+
 # --- National Lottery (shared pooled draw) ---
 # Each round picks a RANDOM ticket price and ticket cap from the ranges below (a little
 # mystery each week). A round draws when it sells out OR at the weekly time, whichever

@@ -15,4 +15,6 @@ database.db*
 venv/
 data/iceberg_cache.png
 data/slots_results/
+data/roulette_results/
+data/roulette_spinning/
 .chrome_data/

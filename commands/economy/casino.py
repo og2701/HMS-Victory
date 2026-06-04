@@ -17,6 +17,7 @@ from commands.economy.slots import handle_slots_command
 from commands.economy.video_poker import handle_videopoker_command
 from commands.economy.red_dog import handle_reddog_command
 from commands.economy.three_card_poker import handle_tcp_command
+from commands.economy.roulette import handle_roulette_command
 from lib.economy.casino_stats import get_net_standings
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,9 @@ GAMES = [
     {"key": "tcp", "label": "3-Card Poker", "emoji": "♣️",
      "handler": handle_tcp_command,
      "desc": "Make the best three-card hand and beat the dealer."},
+    {"key": "roulette", "label": "Roulette", "emoji": "🎡",
+     "handler": handle_roulette_command, "prompt_bet": False,
+     "desc": "Place chips on the felt (red/black, dozens, numbers…) and spin the wheel."},
 ]
 
 
@@ -154,7 +158,12 @@ class BetModal(discord.ui.Modal):
 
 def _make_pick_cb(game: dict):
     async def _cb(interaction: Interaction):
-        await interaction.response.send_modal(BetModal(game))
+        # Games that build their stake in-message (e.g. roulette's bet slip) skip the
+        # bet modal and open straight away.
+        if game.get("prompt_bet", True):
+            await interaction.response.send_modal(BetModal(game))
+        else:
+            await game["handler"](interaction)
     return _cb
 
 

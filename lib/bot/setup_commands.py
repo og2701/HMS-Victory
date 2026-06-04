@@ -36,6 +36,7 @@ from commands.economy.higher_lower import handle_higherlower_command
 from commands.economy.slots import handle_slots_command
 from commands.economy.video_poker import handle_videopoker_command
 from commands.economy.red_dog import handle_reddog_command
+from commands.economy.roulette import handle_roulette_command
 from commands.economy.three_card_poker import handle_tcp_command
 from commands.economy.casino import handle_casino_command
 from lib.economy.lottery import handle_lottery_command
@@ -496,6 +497,12 @@ def define_commands(tree, client):
         if await _require_casino_channel(interaction):
             return
         await handle_tcp_command(interaction, amount)
+
+    @command("roulette", "Play European Roulette - place chips on the felt and spin")
+    async def roulette_command(interaction: Interaction):
+        if await _require_casino_channel(interaction):
+            return
+        await handle_roulette_command(interaction)
 
     @command("casino-stats", "Displays the casino statistics of a user")
     async def casino_stats_command(interaction: Interaction, member: Optional[Member] = None):
