@@ -45,6 +45,7 @@ class BankManager:
                 vp_in_add = amount if "Video Poker" in description else 0
                 reddog_in_add = amount if "Red Dog" in description else 0
                 tcp_in_add = amount if "Three Card Poker" in description else 0
+                roulette_in_add = amount if "Roulette" in description else 0
                 tax_add = amount if "Wealth tax" in description else 0
                 c.execute('''
                     UPDATE bank
@@ -55,10 +56,11 @@ class BankManager:
                         total_videopoker_in = total_videopoker_in + ?,
                         total_reddog_in = total_reddog_in + ?,
                         total_tcp_in = total_tcp_in + ?,
+                        total_roulette_in = total_roulette_in + ?,
                         total_tax_collected = total_tax_collected + ?, last_updated = ?
                     WHERE id = 1
                 ''', (new_bot_balance, amount, bj_in_add, hl_in_add, slots_in_add,
-                      vp_in_add, reddog_in_add, tcp_in_add, tax_add, now))
+                      vp_in_add, reddog_in_add, tcp_in_add, roulette_in_add, tax_add, now))
                 
                 c.execute('COMMIT')
 
@@ -147,6 +149,7 @@ class BankManager:
                     vp_out_add = amount if "Video Poker" in description else 0
                     reddog_out_add = amount if "Red Dog" in description else 0
                     tcp_out_add = amount if "Three Card Poker" in description else 0
+                    roulette_out_add = amount if "Roulette" in description else 0
                     c.execute('''
                         UPDATE bank
                         SET balance = ?,
@@ -156,10 +159,11 @@ class BankManager:
                             total_videopoker_out = total_videopoker_out + ?,
                             total_reddog_out = total_reddog_out + ?,
                             total_tcp_out = total_tcp_out + ?,
+                            total_roulette_out = total_roulette_out + ?,
                             last_updated = ?
                         WHERE id = 1
                     ''', (new_balance, bj_out_add, hl_out_add, slots_out_add,
-                          vp_out_add, reddog_out_add, tcp_out_add, now))
+                          vp_out_add, reddog_out_add, tcp_out_add, roulette_out_add, now))
                     
                     c.execute('COMMIT')
 
@@ -222,17 +226,18 @@ class BankManager:
                 "total_slots_in, total_slots_out, "
                 "total_videopoker_in, total_videopoker_out, "
                 "total_reddog_in, total_reddog_out, "
-                "total_tcp_in, total_tcp_out")
+                "total_tcp_in, total_tcp_out, "
+                "total_roulette_in, total_roulette_out")
         result = DatabaseManager.fetch_one(f"SELECT {cols} FROM bank WHERE id = 1")
         if result:
             (tax, bj_in, bj_out, hl_in, hl_out, sl_in, sl_out,
-             vp_in, vp_out, rd_in, rd_out, tcp_in, tcp_out) = result
+             vp_in, vp_out, rd_in, rd_out, tcp_in, tcp_out, ro_in, ro_out) = result
         else:
             tax = bj_in = bj_out = hl_in = hl_out = sl_in = sl_out = 0
-            vp_in = vp_out = rd_in = rd_out = tcp_in = tcp_out = 0
+            vp_in = vp_out = rd_in = rd_out = tcp_in = tcp_out = ro_in = ro_out = 0
 
-        casino_in = bj_in + hl_in + sl_in + vp_in + rd_in + tcp_in
-        casino_out = bj_out + hl_out + sl_out + vp_out + rd_out + tcp_out
+        casino_in = bj_in + hl_in + sl_in + vp_in + rd_in + tcp_in + ro_in
+        casino_out = bj_out + hl_out + sl_out + vp_out + rd_out + tcp_out + ro_out
         return {
             "tax_collected": tax,
             "blackjack_in": bj_in, "blackjack_out": bj_out, "blackjack_net": bj_in - bj_out,
@@ -241,6 +246,7 @@ class BankManager:
             "videopoker_in": vp_in, "videopoker_out": vp_out, "videopoker_net": vp_in - vp_out,
             "reddog_in": rd_in, "reddog_out": rd_out, "reddog_net": rd_in - rd_out,
             "tcp_in": tcp_in, "tcp_out": tcp_out, "tcp_net": tcp_in - tcp_out,
+            "roulette_in": ro_in, "roulette_out": ro_out, "roulette_net": ro_in - ro_out,
             "casino_in": casino_in, "casino_out": casino_out, "casino_net": casino_in - casino_out,
         }
 

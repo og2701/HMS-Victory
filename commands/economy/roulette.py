@@ -1,11 +1,11 @@
 """HMS Victory - European Roulette (single-zero), multiplayer shared table.
 
-One live table per channel. `/roulette` opens it (a public felt message with a 60s
+One live table per channel. `/roulette` opens it (a public felt message with a 2-minute
 countdown) or, if one's already running, lets you join. Players tap **Enter Table** to
 get a private (ephemeral) chip + bet-slip; **Submit** stamps their chips onto the shared
-felt and debits their stake. When the countdown hits zero (or the opener taps **Spin
-Now**) the wheel spins once and every player's bets resolve against that one number, with
-a shared results board and payouts from the house bank.
+felt and debits their stake. When the countdown hits zero the wheel spins once and every
+player's bets resolve against that one number, with a shared results board and payouts
+from the house bank.
 
 The wheel itself is a pre-baked horizontal-ticker GIF (one per outcome 0-36) rendered on
 the same felt shell as the table, so the spinning phase and the result are one table.
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 KEY = "roulette"
 ACCENT = discord.Colour(0x1C6B46)  # felt green
-COUNTDOWN_SECONDS = 60
+COUNTDOWN_SECONDS = 120
 
 # ---------------------------------------------------------------------------
 # Wheel model (European single-zero)
@@ -133,11 +133,11 @@ CELL_W = 130
 VIEW_W = 688                # = .table width 760 - .body padding (36*2)
 VIEW_H = 240
 CENTER_X = VIEW_W / 2
-LEADIN = 36
+LEADIN = 72                 # pockets scrolled through (doubled for a ~2x longer spin)
 HALF = 3
 TARGET_IDX = LEADIN + HALF
-SPIN_STOP = 44
-SPIN_HOLD = 4
+SPIN_STOP = 88              # frames of deceleration (doubled)
+SPIN_HOLD = 6
 SPIN_FRAME_MS = 60
 SPIN_FINAL_MS = 2200
 
@@ -407,6 +407,10 @@ def _table_buttons(table) -> discord.ui.ActionRow:
                               disabled=(table.status != "betting"))
     enter.callback = _make_table_cb(table, "enter")
     row.add_item(enter)
+    rules = discord.ui.Button(label="Rules", emoji="\U0001f4d6", style=discord.ButtonStyle.secondary,
+                              custom_id=f"roul:tbl:{table.id}:rules")
+    rules.callback = _make_table_cb(table, "rules")
+    row.add_item(rules)
     return row
 
 
@@ -762,27 +766,46 @@ async def _show_rules(interaction: Interaction):
     await interaction.response.send_message(rules, ephemeral=True)
 
 
+async def _open_slip_for(interaction: Interaction, table):
+    """Open the joiner's private bet slip (handles both fresh and deferred interactions)."""
+    name = discord.utils.escape_markdown(interaction.user.display_name)
+    slip = BetSlip(interaction.user.id, name)
+    view = build_slip_layout(table, slip)
+    if interaction.response.is_done():
+        await interaction.followup.send(view=view, ephemeral=True)
+    else:
+        await interaction.response.send_message(view=view, ephemeral=True)
+
+
 async def _open_table(interaction: Interaction):
-    """Create and post a fresh shared table in this channel."""
+    """Create and post a fresh shared table in this channel - or join the live one.
+
+    The channel slot is reserved in _TABLES *synchronously* (before any await) so a second
+    /roulette firing during the slow felt render can't spawn a duplicate table."""
+    existing = get_table(interaction.channel_id)
+    if existing and existing.status == "betting":
+        await _open_slip_for(interaction, existing)
+        return
     table = RouletteTable(interaction.channel_id, interaction.user.id, interaction.client)
+    _TABLES[interaction.channel_id] = table  # reserve the slot before the render await
     try:
         img = await render_table_image(table)
+        view, files = build_table_layout(table, img)
+        if interaction.response.is_done():
+            msg = await interaction.followup.send(view=view, files=files)
+        else:
+            await interaction.response.send_message(view=view, files=files)
+            msg = await interaction.original_response()
+        table.message = msg
+        try:
+            interaction.client.add_view(view, message_id=msg.id)
+        except Exception:
+            pass
     except Exception:
-        logger.error("Roulette initial table render failed.", exc_info=True)
-        img = None
-    view, files = build_table_layout(table, img)
-    # The button that opened a new round may already have responded (defer) - use followup.
-    if interaction.response.is_done():
-        msg = await interaction.followup.send(view=view, files=files)
-    else:
-        await interaction.response.send_message(view=view, files=files)
-        msg = await interaction.original_response()
-    table.message = msg
-    _TABLES[interaction.channel_id] = table
-    try:
-        interaction.client.add_view(view, message_id=msg.id)
-    except Exception:
-        pass
+        logger.error("Roulette open table failed; releasing the channel slot.", exc_info=True)
+        if _TABLES.get(interaction.channel_id) is table:
+            _TABLES.pop(interaction.channel_id, None)
+        return
     table._timer = asyncio.create_task(_run_timer(table))
 
 
@@ -792,13 +815,5 @@ async def handle_roulette_command(interaction: Interaction):
         return
     if not getattr(config, "ROULETTE_ENABLED", True):
         await interaction.response.send_message("The roulette table is closed.", ephemeral=True)
-        return
-
-    table = get_table(interaction.channel_id)
-    if table and table.status == "betting":
-        # Join the live table: open your private bet slip.
-        name = discord.utils.escape_markdown(interaction.user.display_name)
-        slip = BetSlip(interaction.user.id, name)
-        await interaction.response.send_message(view=build_slip_layout(table, slip), ephemeral=True)
         return
     await _open_table(interaction)

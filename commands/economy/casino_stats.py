@@ -75,7 +75,8 @@ async def handle_casino_stats_command(interaction: discord.Interaction, member: 
         "reddog": "🐕 Red Dog",
         "slots": "🎰 Slots",
         "videopoker": "🃏 Video Poker",
-        "tcp": "♣️ 3-Card Poker"
+        "tcp": "♣️ 3-Card Poker",
+        "roulette": "🎡 Roulette"
     }
     
     for row in games:
