@@ -324,6 +324,14 @@ def init_db():
             )
         ''')
         c.execute("CREATE INDEX IF NOT EXISTS idx_lottery_entries_round ON lottery_entries(round_id)")
+        # Small key/value store for lottery scheduling state (e.g. the next random-reminder
+        # time) so it survives restarts instead of resetting each boot.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS lottery_state (
+                key TEXT PRIMARY KEY,
+                value INTEGER NOT NULL
+            )
+        ''')
         c.execute('''
             CREATE TABLE IF NOT EXISTS circulation_snapshots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

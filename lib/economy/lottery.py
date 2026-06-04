@@ -244,14 +244,126 @@ async def maybe_sellout_draw(client, round_id):
 
 
 async def lottery_tick(client):
-    """Periodic: draw a sold-out round once it passes the minimum runtime. Restart-safe
-    (no reliance on a one-off job that wouldn't survive a reboot)."""
+    """Periodic (every couple of minutes): draw a sold-out round once it passes the
+    minimum runtime, and fire the occasional random reminder. Restart-safe."""
     import config
     if not getattr(config, "LOTTERY_ENABLED", True):
         return
     rnd = get_open_round()
     if rnd:
         await maybe_sellout_draw(client, rnd["id"])
+    await _maybe_post_reminder(client)
+
+
+# ---------------------------------------------------------------------------
+# Random "feeling lucky?" reminders (posted to the casino channel, linking to the board)
+# ---------------------------------------------------------------------------
+def _get_state(key, default=0):
+    row = DatabaseManager.fetch_one("SELECT value FROM lottery_state WHERE key = ?", (key,))
+    return int(row[0]) if row else default
+
+
+def _set_state(key, value):
+    DatabaseManager.execute(
+        "INSERT INTO lottery_state (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = ?", (key, int(value), int(value)))
+
+
+_REMINDER_LINES = [
+    "🎟️ The lottery's running, if you fancy a ticket.",
+    "Reminder: there's a lottery on.",
+    "A lottery is running. Mathematically a poor decision; emotionally, a triumph.",
+    "The lottery's open. Your odds are bad and your spirits are high.",
+    "There's a lottery. Think of it as a voluntary tax on optimism.",
+    "Someone will win the lottery. The smart money says not you — but the smart money's no fun.",
+    "The lottery's on, for those who like their disappointment scheduled.",
+    "Buy a ticket and enjoy a few days of pleasant delusion.",
+    "The lottery would like to remind you it exists, and that you haven't won it.",
+    "Tickets on sale. Results not guaranteed; hope fully guaranteed.",
+    "You'd do better keeping the UKP — but where's the romance in that. Lottery's open.",
+    "A lottery: where dreams go to be statistically crushed.",
+    "The jackpot is large and your chances are not. Tickets below.",
+    "Lottery's open. A modest price for several minutes of unrealistic financial planning.",
+    "There's a lottery on. Lose responsibly.",
+    "The lottery continues. Someone has to lose, and you've kindly volunteered.",
+    "Reminder: the lottery is on, and the universe remains indifferent to your finances.",
+    "We'd wish you luck, but we've seen the odds. Lottery's open anyway.",
+    "The lottery: cheaper than a hobby, less reliable than a pension.",
+    "The dream is short, the odds are long, the ticket is cheap. Lottery's on.",
+    "Someone's getting rich today. Probably not you. Tickets below regardless.",
+    "The lottery's running. The house edge is modest; your judgement, questionable.",
+    "🎟️ Lottery's on. Your move — assuming your move is unwise.",
+    "Still time to lose some money in an orderly fashion. Lottery's open.",
+    "The pot's growing. Your chances aren't. Tickets are here.",
+    "A lottery is happening. Participation is optional; regret is included.",
+    "The lottery's open for business, and business is hope.",
+    "There's a lottery on, in case you'd forgotten you could be doing this instead of saving.",
+    "Fancy a punt? The maths says no; the heart says go on then.",
+    "🎟️ Still going. Still a long shot. Still strangely tempting.",
+]
+
+
+def _schedule_next_reminder(now: int) -> int:
+    """A random next-reminder time (2.5-5h out), pulled into active UK hours so we never
+    ping in the small hours."""
+    import config
+    tz = pytz.timezone("Europe/London")
+    start = getattr(config, "LOTTERY_REMINDER_START_HOUR", 10)
+    end = getattr(config, "LOTTERY_REMINDER_END_HOUR", 23)
+    gap = random.randint(getattr(config, "LOTTERY_REMINDER_MIN_GAP_MIN", 150),
+                         getattr(config, "LOTTERY_REMINDER_MAX_GAP_MIN", 300))
+    dt = datetime.fromtimestamp(now + gap * 60, tz)
+    if dt.hour < start:
+        dt = dt.replace(hour=start, minute=random.randint(0, 59), second=0, microsecond=0)
+    elif dt.hour >= end:
+        dt = (dt + timedelta(days=1)).replace(hour=start, minute=random.randint(0, 59),
+                                              second=0, microsecond=0)
+    return int(dt.timestamp())
+
+
+async def _maybe_post_reminder(client):
+    # Persisted in the DB so restarts neither spam (it never posts on the arming tick) nor
+    # suppress (the schedule survives a reboot instead of resetting each time).
+    now = int(time.time())
+    nxt = _get_state("next_reminder_ts", 0)
+    if nxt <= 0:                                  # never armed: arm and wait
+        _set_state("next_reminder_ts", _schedule_next_reminder(now))
+        return
+    if now < nxt:
+        return
+    _set_state("next_reminder_ts", _schedule_next_reminder(now))   # re-arm regardless of outcome
+    rnd = get_open_round()
+    # Only remind when there's a live board to link AND tickets are still on sale.
+    if not rnd or not rnd.get("message_id") or not rnd.get("channel_id") or _sold_out(rnd):
+        return
+    await _post_reminder(client, rnd)
+
+
+async def _post_reminder(client, rnd):
+    import config
+    channel = client.get_channel(config.LOTTERY_CHANNEL)
+    if channel is None:
+        try:
+            channel = await client.fetch_channel(config.LOTTERY_CHANNEL)
+        except Exception:
+            return
+    sold = tickets_sold(rnd["id"])
+    pot = sold * rnd["ticket_price"]
+    guild_id = getattr(getattr(channel, "guild", None), "id", None)
+    link = (f"https://discord.com/channels/{guild_id}/{rnd['channel_id']}/{rnd['message_id']}"
+            if guild_id else None)
+    body = (
+        f"{random.choice(_REMINDER_LINES)}\n"
+        f"Round #{rnd['id']} · jackpot **{pot:,} UKPence** "
+        f"({sold:,}/{rnd['ticket_cap']:,} tickets sold) · draws <t:{rnd['draw_ts']}:R>. "
+        f"Tickets are **{rnd['ticket_price']:,} UKPence** each."
+    )
+    if link:
+        body += f"\n👉 Grab your tickets here: {link}"
+    try:
+        await channel.send(body, allowed_mentions=discord.AllowedMentions.none())
+    except Exception:
+        logger.warning("Lottery reminder post failed.", exc_info=True)
 
 
 # ---------------------------------------------------------------------------

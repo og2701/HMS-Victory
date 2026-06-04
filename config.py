@@ -89,6 +89,11 @@ LOTTERY_RAKE_PCT = 10             # house bank keeps this %, winner gets the res
 LOTTERY_DRAW_DOW = "sun"          # weekly draw day (APScheduler day_of_week)
 LOTTERY_DRAW_HOUR = 20            # 8pm UK
 LOTTERY_DRAW_MINUTE = 0
+# Random "feeling lucky?" reminders in the casino channel, linking to the live board.
+LOTTERY_REMINDER_START_HOUR = 10  # only remind during active UK hours
+LOTTERY_REMINDER_END_HOUR = 23
+LOTTERY_REMINDER_MIN_GAP_MIN = 150  # min minutes between reminders (2.5h)
+LOTTERY_REMINDER_MAX_GAP_MIN = 300  # max (5h) -> ~3-4 random reminders a day
 # Fallback defaults (only used if a range is missing); live rounds use the ranges above.
 LOTTERY_TICKET_PRICE = 10
 LOTTERY_TICKET_CAP = 500
