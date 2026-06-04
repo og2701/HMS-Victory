@@ -51,7 +51,7 @@ _OUTSIDE_PAYOUT = {
 }
 _BET_LABELS = {
     "red": "Red", "black": "Black", "even": "Even", "odd": "Odd",
-    "low": "1–18", "high": "19–36",
+    "low": "1-18", "high": "19-36",
     "dozen1": "1st 12", "dozen2": "2nd 12", "dozen3": "3rd 12",
     "col1": "Col 1", "col2": "Col 2", "col3": "Col 3",
 }
@@ -190,7 +190,7 @@ def _ticker_body(nums: list, left: float, *, win_idx: int = None) -> str:
 
 
 def _fill_shell(template: str, body: str, *, subtitle: str, hint: str,
-                bet: str = "—", balance: str = "—", banner: str = "") -> str:
+                bet: str = "-", balance: str = "-", banner: str = "") -> str:
     # Replace the exact body <div>, not the bare {{BODY}} - the template's CSS comment also
     # contains the literal "{{BODY}}", and a body carrying </style> would otherwise close
     # the head <style> early and kill the shell styling.
@@ -217,7 +217,7 @@ def build_spin_frames(target: int) -> list:
         p = 1.0 if landed else _ease_out_cubic(f / SPIN_STOP)
         left = start_left + (final_left - start_left) * p
         body = _ticker_body(nums, left, win_idx=(TARGET_IDX if landed else None))
-        frames.append(_fill_shell(template, body, subtitle="No more bets — where will the ball land?",
+        frames.append(_fill_shell(template, body, subtitle="No more bets - where will the ball land?",
                                   hint="Spinning…"))
     return frames
 
@@ -229,7 +229,7 @@ def build_spinner_frames() -> list:
     start = CENTER_X - CELL_W / 2
     n = 30
     return [_fill_shell(template, _ticker_body(nums, start - span * (f / n)),
-                        subtitle="No more bets — where will the ball land?", hint="Spinning…")
+                        subtitle="No more bets - where will the ball land?", hint="Spinning…")
             for f in range(n)]
 
 
@@ -270,7 +270,7 @@ def get_spinner_gif() -> str:
 def _roster_body(table) -> str:
     if not table.players:
         return ('<div style="text-align:center;color:rgba(255,255,255,.6);font-size:22px;'
-                'padding:46px 20px">No bets yet — tap <b>Enter Table</b> to place your chips.</div>')
+                'padding:46px 20px">No bets yet - tap <b>Enter Table</b> to place your chips.</div>')
     rows = []
     for slot in sorted(table.players.values(), key=lambda s: -sum(s["bets"].values())):
         ptotal = sum(slot["bets"].values())
@@ -291,7 +291,7 @@ def _results_body(table) -> str:
     n = table.result
     bg = {"green": "#1b8a4b", "red": "#b3242f", "black": "#1a1a1a"}[color(n)]
     tags = ["Zero", "Green"] if n == 0 else [
-        color(n).capitalize(), "Even" if n % 2 == 0 else "Odd", "1–18" if n <= 18 else "19–36"]
+        color(n).capitalize(), "Even" if n % 2 == 0 else "Odd", "1-18" if n <= 18 else "19-36"]
     hero = (
         '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin:2px 0 16px">'
         f'<div style="width:132px;height:132px;border-radius:50%;display:flex;align-items:center;'
@@ -307,7 +307,7 @@ def _results_body(table) -> str:
         staked = sum(slot["bets"].values())
         net = _resolve(slot["bets"], n) - staked
         col = "#7CFC9B" if net > 0 else ("#ff7a7a" if net < 0 else "#e8e2cf")
-        sign = f"+{net:,}" if net > 0 else (f"−{abs(net):,}" if net < 0 else "even")
+        sign = f"+{net:,}" if net > 0 else (f"-{abs(net):,}" if net < 0 else "even")
         rows.append(
             '<div style="display:flex;justify-content:space-between;align-items:center;'
             'padding:10px 18px;border-radius:12px;background:rgba(0,0,0,.32);'
@@ -316,15 +316,19 @@ def _results_body(table) -> str:
             f'<span style="opacity:.55;font-size:15px">· staked {staked:,}</span></span>'
             f'<span style="font-weight:800;font-size:20px;color:{col}">{sign}</span></div>'
         )
-    body = ('<div style="width:100%;max-width:560px;margin:0 auto;display:flex;flex-direction:column;'
-            f'gap:8px">{"".join(rows)}</div>')
+    if rows:
+        body = ('<div style="width:100%;max-width:560px;margin:0 auto;display:flex;flex-direction:column;'
+                f'gap:8px">{"".join(rows)}</div>')
+    else:
+        body = ('<div style="text-align:center;color:rgba(255,255,255,.6);font-size:22px;'
+                'padding:30px">No bets were placed this round.</div>')
     return hero + body
 
 
 async def render_table_image(table) -> io.BytesIO:
     return await cb.render_table(
         title_main="EUROPEAN", title_accent="ROULETTE",
-        subtitle="Place your bets — tap Enter Table",
+        subtitle="Place your bets - tap Enter Table",
         body_html=_roster_body(table),
         bet=table.pot, balance=len(table.players),
         hint="Bets lock when the countdown ends.", result_banner="", session_html="")
@@ -382,7 +386,7 @@ def get_table(channel_id):
 # ---------------------------------------------------------------------------
 def _table_text(table) -> str:
     if table.status == "betting":
-        return (f"## \U0001f3a1 European Roulette — open table\n"
+        return (f"## \U0001f3a1 European Roulette - open table\n"
                 f"**{len(table.players)}** players · pot **{table.pot:,}** UKPence · "
                 f"bets close <t:{table.close_ts}:R>\n"
                 f"-# Tap **Enter Table** to place chips. The wheel spins when the timer ends.")
@@ -492,14 +496,14 @@ async def _refresh_table_message(table):
 def _slip_text(table, slip: BetSlip) -> str:
     bal = get_bb(slip.player_id)
     lines = [
-        f"## \U0001f3a1 Your bets — bets close <t:{table.close_ts}:R>",
+        f"## \U0001f3a1 Your bets - bets close <t:{table.close_ts}:R>",
         f"Active chip: **{_fmt_chip(slip.chip)}**  ·  Balance: **{bal:,}** UKPence",
         "",
     ]
     if slip.bets:
         for key, amt in slip.bets.items():
-            lines.append(f"• **{bet_label(key)}** — {amt:,}  _(pays {bet_payout(key)}:1)_")
-        lines.append(f"\n**This slip: {slip.total:,}** — tap Submit to put it on the table.")
+            lines.append(f"• **{bet_label(key)}** - {amt:,}  _(pays {bet_payout(key)}:1)_")
+        lines.append(f"\n**This slip: {slip.total:,}** - tap Submit to put it on the table.")
     else:
         lines.append("_Pick a chip size, then tap where to bet. Submit to add it to the table._")
     return "\n".join(lines)
@@ -526,7 +530,7 @@ def build_slip_layout(table, slip: BetSlip) -> discord.ui.LayoutView:
 
     layout = [
         [("\U0001f534 Red", "bet:red"), ("⚫ Black", "bet:black"), ("Even", "bet:even"), ("Odd", "bet:odd")],
-        [("1–18", "bet:low"), ("19–36", "bet:high"),
+        [("1-18", "bet:low"), ("19-36", "bet:high"),
          ("1st 12", "bet:dozen1"), ("2nd 12", "bet:dozen2"), ("3rd 12", "bet:dozen3")],
         [("Col 1", "bet:col1"), ("Col 2", "bet:col2"), ("Col 3", "bet:col3"),
          ("# Number", "num"), ("↶ Undo", "undo")],
@@ -619,12 +623,12 @@ async def _submit_slip(interaction: Interaction, table, slip: BetSlip):
     await _refresh_table_message(table)
 
 
-class NumberBetModal(discord.ui.Modal, title="Roulette — straight-up bet"):
+class NumberBetModal(discord.ui.Modal, title="Roulette - straight-up bet"):
     def __init__(self, table, slip: BetSlip):
         super().__init__()
         self.table = table
         self.slip = slip
-        self.num = discord.ui.TextInput(label="Number(s) 0–36", placeholder="17   or   0,17,32",
+        self.num = discord.ui.TextInput(label="Number(s) 0-36", placeholder="17   or   0,17,32",
                                         required=True, max_length=80)
         self.add_item(self.num)
 
@@ -641,7 +645,7 @@ class NumberBetModal(discord.ui.Modal, title="Roulette — straight-up bet"):
             return
         nums = [n for n in nums if 0 <= n <= 36]
         if not nums:
-            await interaction.response.send_message("No valid numbers (0–36).", ephemeral=True)
+            await interaction.response.send_message("No valid numbers (0-36).", ephemeral=True)
             return
         mx = getattr(config, "ROULETTE_MAX_BET", 10_000)
         if self.slip.total + self.slip.chip * len(nums) > mx:
@@ -695,24 +699,10 @@ async def _lock_and_spin(table):
         if table.status != "betting":
             return
         table.status = "spinning"
-    if table._timer:
-        table._timer.cancel()
+    # Do NOT cancel table._timer here: this coroutine runs INSIDE that timer task, so
+    # cancelling it would raise CancelledError into our own awaits and abort the spin.
 
-    # Nobody bet -> close the table quietly.
-    if not table.players:
-        table.status = "closed"
-        _TABLES.pop(table.channel_id, None)
-        try:
-            view = discord.ui.LayoutView(timeout=None)
-            c = discord.ui.Container(accent_colour=ACCENT)
-            c.add_item(discord.ui.TextDisplay("## \U0001f3a1 Table closed\nNo bets were placed."))
-            view.add_item(c)
-            await table.message.edit(view=view, attachments=[])
-        except Exception:
-            pass
-        return
-
-    table.result = random.randint(0, 36)
+    table.result = random.randint(0, 36)  # the wheel always spins, even with no bets
 
     # Phase 1: spin animation on the public message.
     try:
@@ -757,11 +747,11 @@ async def _show_rules(interaction: Interaction):
     import config
     mx = getattr(config, "ROULETTE_MAX_BET", 10_000)
     rules = (
-        "## \U0001f3a1 European Roulette — House Rules\n"
+        "## \U0001f3a1 European Roulette - House Rules\n"
         "A shared table: everyone bets, then one wheel spins for the whole table.\n\n"
-        "- **Red / Black, Even / Odd, 1–18 / 19–36** — pay **1:1**\n"
-        "- **Dozens & Columns** — pay **2:1**\n"
-        "- **Straight up** (# Number) — pays **35:1**\n"
+        "- **Red / Black, Even / Odd, 1-18 / 19-36** - pay **1:1**\n"
+        "- **Dozens & Columns** - pay **2:1**\n"
+        "- **Straight up** (# Number) - pays **35:1**\n"
         "- One green **zero** (2.7% house edge); zero loses every outside/dozen/column bet.\n\n"
         f"-# Up to {mx:,} UKPence per player per spin. Stakes go to the house bank; wins are paid from it."
     )
