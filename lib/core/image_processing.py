@@ -312,7 +312,8 @@ def _screenshot_html_sequence_sync(
     html_strings: list,
     size: Tuple[int, int] = (1600, 1000),
     element_selector: str = None,
-    durations: list = None
+    durations: list = None,
+    loop: int = None
 ) -> io.BytesIO:
     """Synchronous implementation of screenshot_html_sequence."""
     global _browser, _render_count
@@ -393,14 +394,16 @@ def _screenshot_html_sequence_sync(
             frame_durations = durations if durations else [180] * len(images)
 
             # Save the sequence as an animated GIF
-            images[0].save(
-                buffer,
-                format="GIF",
-                save_all=True,
-                append_images=images[1:],
-                duration=frame_durations,
-                loop=0
-            )
+            save_kwargs = {
+                "format": "GIF",
+                "save_all": True,
+                "append_images": images[1:],
+                "duration": frame_durations,
+            }
+            if loop is not None:
+                save_kwargs["loop"] = loop
+
+            images[0].save(buffer, **save_kwargs)
             buffer.seek(0)
 
             gc.collect()
@@ -428,13 +431,14 @@ async def screenshot_html_sequence(
     size: Tuple[int, int] = (1600, 1000),
     *,
     element_selector: str = None,
-    durations: list = None
+    durations: list = None,
+    loop: int = None
 ) -> io.BytesIO:
     """Render a sequence of HTML strings into an animated GIF (non-blocking, queued)."""
     async with rendering_lock:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None, _screenshot_html_sequence_sync, html_strings, size, element_selector, durations
+        async_loop = asyncio.get_event_loop()
+        return await async_loop.run_in_executor(
+            None, _screenshot_html_sequence_sync, html_strings, size, element_selector, durations, loop
         )
 
 
