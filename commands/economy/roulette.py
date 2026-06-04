@@ -385,7 +385,7 @@ def _table_text(table) -> str:
         return (f"## \U0001f3a1 European Roulette — open table\n"
                 f"**{len(table.players)}** players · pot **{table.pot:,}** UKPence · "
                 f"bets close <t:{table.close_ts}:R>\n"
-                f"-# Tap **Enter Table** to place chips. {('<@%d> ' % table.opener_id)}can Spin Now.")
+                f"-# Tap **Enter Table** to place chips. The wheel spins when the timer ends.")
     if table.status == "spinning":
         return "## \U0001f3a1 No more bets!\nRound and round she goes…"
     return "## \U0001f3a1 Round over\nTap **New Round** to play again."
@@ -399,12 +399,6 @@ def _table_buttons(table) -> discord.ui.ActionRow:
                               disabled=(table.status != "betting"))
     enter.callback = _make_table_cb(table, "enter")
     row.add_item(enter)
-    spin = discord.ui.Button(label="Spin Now", emoji="\U0001f3a1",
-                             style=discord.ButtonStyle.primary,
-                             custom_id=f"roul:tbl:{table.id}:spin",
-                             disabled=(table.status != "betting"))
-    spin.callback = _make_table_cb(table, "spin")
-    row.add_item(spin)
     return row
 
 
@@ -674,17 +668,6 @@ async def _handle_table(interaction: Interaction, table, action: str):
         name = discord.utils.escape_markdown(interaction.user.display_name)
         slip = BetSlip(interaction.user.id, name)
         await interaction.response.send_message(view=build_slip_layout(table, slip), ephemeral=True)
-        return
-    if action == "spin":
-        if interaction.user.id != table.opener_id:
-            await interaction.response.send_message(
-                "Only the player who opened the table can Spin Now.", ephemeral=True)
-            return
-        if table.status != "betting":
-            await interaction.response.send_message("Already spinning.", ephemeral=True)
-            return
-        await interaction.response.defer()
-        await _lock_and_spin(table)
         return
 
 
