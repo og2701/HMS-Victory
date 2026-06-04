@@ -157,49 +157,10 @@ def build_slots_html(machine: SlotMachine, reels: list = None, mult: int = None,
     )
 
 
-def _generate_random_reel_symbols() -> list:
-    return [random.choice(_KEYS) for _ in range(3)]
-
-
-def build_slots_gif_frames(machine: SlotMachine) -> list:
-    frames_html = []
-    t0, t1, t2 = machine.reels
-
-    # Frame 0: Previous state
-    frames_html.append(build_slots_html(machine, reels=machine.prev_reels, mult=0, win=0, spinning=True))
-
-    # Frame 1: All reels spin
-    r1 = _generate_random_reel_symbols()
-    frames_html.append(build_slots_html(machine, reels=r1, mult=0, win=0, spinning=True))
-
-    # Frame 2: All reels spin
-    r2 = _generate_random_reel_symbols()
-    frames_html.append(build_slots_html(machine, reels=r2, mult=0, win=0, spinning=True))
-
-    # Frame 3: All reels spin
-    r3 = _generate_random_reel_symbols()
-    frames_html.append(build_slots_html(machine, reels=r3, mult=0, win=0, spinning=True))
-
-    # Frame 4: Reel 1 stops, Reels 2 & 3 spin
-    r4 = [t0, random.choice(_KEYS), random.choice(_KEYS)]
-    frames_html.append(build_slots_html(machine, reels=r4, mult=0, win=0, spinning=True))
-
-    # Frame 5: Reels 1 & 2 stop, Reel 3 spins
-    r5 = [t0, t1, random.choice(_KEYS)]
-    frames_html.append(build_slots_html(machine, reels=r5, mult=0, win=0, spinning=True))
-
-    # Frame 6: Final state (hold)
-    frames_html.append(build_slots_html(machine, reels=machine.reels, mult=machine.mult, win=machine.win, spinning=False))
-
-    return frames_html
-
-
-async def render_slots_gif(machine: SlotMachine) -> io.BytesIO:
-    from lib.core.image_processing import screenshot_html_sequence
-    frames_html = build_slots_gif_frames(machine)
-    # Pause slightly longer at start (350ms), spin for 220-250ms per frame, and freeze final result for 10s
-    durations = [350, 220, 220, 220, 250, 250, 10000]
-    return await screenshot_html_sequence(frames_html, size=(820, 1000), element_selector=".cabinet", durations=durations, loop=None)
+async def render_slots_image(machine: SlotMachine) -> io.BytesIO:
+    from lib.core.image_processing import screenshot_html
+    html = build_slots_html(machine, reels=machine.reels, mult=machine.mult, win=machine.win, spinning=False)
+    return await screenshot_html(html, size=(820, 1000), element_selector=".cabinet")
 
 
 def _native_text(machine: SlotMachine) -> str:
@@ -274,6 +235,47 @@ def _action_row_disabled(machine: SlotMachine) -> discord.ui.ActionRow:
 
 
 
+def get_random_spinning_gif() -> str:
+    import config
+    import os
+    idx = random.randint(0, 19)
+    path = os.path.join(config.DATA_DIR, "slots_spinning", f"spin_{idx}.gif")
+    if os.path.exists(path):
+        return path
+    return None
+
+
+def build_spinning_layout(machine: SlotMachine) -> tuple:
+    import config
+    view = discord.ui.LayoutView(timeout=None)
+    files = []
+    used_image = False
+    if getattr(config, "SLOTS_IMAGE_ENABLED", True):
+        gif_path = get_random_spinning_gif()
+        if gif_path:
+            try:
+                files = [discord.File(gif_path, filename="slots.gif")]
+                gallery = discord.ui.MediaGallery()
+                gallery.add_item(media="attachment://slots.gif")
+                view.add_item(gallery)
+                used_image = True
+            except Exception:
+                logger.warning("Failed to attach spinning slots GIF", exc_info=True)
+    
+    if not used_image:
+        container = discord.ui.Container(accent_colour=ACCENT)
+        lines = [
+            "## 🎰 HMS Victory Fruit Machine",
+            "### ┃ 🔄  🔄  🔄 ┃",
+            "**Spinning...** Good luck!"
+        ]
+        container.add_item(discord.ui.TextDisplay("\n".join(lines)))
+        view.add_item(container)
+        
+    view.add_item(_action_row_disabled(machine))
+    return view, files
+
+
 async def build_slots_layout(machine: SlotMachine, client):
     import config
     files = []
@@ -281,10 +283,10 @@ async def build_slots_layout(machine: SlotMachine, client):
     used_image = False
     if getattr(config, "SLOTS_IMAGE_ENABLED", True):
         try:
-            img = await render_slots_gif(machine)
-            files = [discord.File(img, filename="slots.gif")]
+            img = await render_slots_image(machine)
+            files = [discord.File(img, filename="slots.png")]
             gallery = discord.ui.MediaGallery()
-            gallery.add_item(media="attachment://slots.gif")
+            gallery.add_item(media="attachment://slots.png")
             view.add_item(gallery)
             used_image = True
         except Exception:
@@ -375,10 +377,9 @@ async def _do_spin_round(interaction: Interaction, machine: SlotMachine, client,
             await interaction.response.send_message("You don't have enough UKPence.", ephemeral=True)
             return
 
-        # Immediately disable the buttons and change label to "Spinning..."
-        disabled_view = discord.ui.LayoutView(timeout=None)
-        disabled_view.add_item(_action_row_disabled(machine))
-        await interaction.response.edit_message(view=disabled_view)
+        # Immediately edit the message with the spinning GIF and disabled buttons
+        spin_view, spin_files = build_spinning_layout(machine)
+        await interaction.response.edit_message(view=spin_view, attachments=spin_files)
 
         machine.do_spin()  # result decided; win credited only after the message updates
         try:
@@ -483,14 +484,16 @@ async def handle_slots_command(interaction: Interaction, amount: int):
 
     name = discord.utils.escape_markdown(interaction.user.display_name)
     machine = SlotMachine(interaction.user.id, name, interaction.channel_id, amount)
-    machine.do_spin()
+    
+    # Send the spinning GIF and disabled view immediately!
+    spin_view, spin_files = build_spinning_layout(machine)
     try:
-        await interaction.response.defer(thinking=True)
-        view, files = await build_slots_layout(machine, interaction.client)
-        msg = await interaction.followup.send(view=view, files=files)
+        await interaction.response.send_message(view=spin_view, files=spin_files)
+        msg = await interaction.original_response()
+        machine.message_id = msg.id
     except Exception:
-        logger.error("Slots spin failed; refunding stake.", exc_info=True)
-        _credit(interaction.user.id, amount, "Slots stake refund (spin failed)")
+        logger.error("Failed to send initial slots spinning message; refunding stake.", exc_info=True)
+        _credit(interaction.user.id, amount, "Slots stake refund (failed to send initial message)")
         try:
             await interaction.followup.send(
                 "The fruit machine jammed - your stake has been refunded.", ephemeral=True
@@ -499,9 +502,25 @@ async def handle_slots_command(interaction: Interaction, amount: int):
             pass
         return
 
-    machine.message_id = msg.id
+    machine.do_spin()
+    try:
+        view, files = await build_slots_layout(machine, interaction.client)
+        # Edit the original response to swap in the final static result
+        await interaction.edit_original_response(view=view, attachments=files)
+    except Exception:
+        logger.error("Slots spin render failed; refunding stake.", exc_info=True)
+        _credit(interaction.user.id, amount, "Slots stake refund (spin failed)")
+        try:
+            # Re-enable the buttons on failure and show error
+            enabled_view = discord.ui.LayoutView(timeout=None)
+            enabled_view.add_item(_action_row(machine))
+            await interaction.edit_original_response(view=enabled_view)
+        except Exception:
+            pass
+        return
+
     _credit(interaction.user.id, machine.win, "Slots win")  # pay only after it's on screen
     try:
-        interaction.client.add_view(view, message_id=msg.id)
+        interaction.client.add_view(view, message_id=machine.message_id)
     except Exception:
         logger.debug("slots add_view failed (non-fatal)", exc_info=True)
