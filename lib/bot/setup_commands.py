@@ -506,6 +506,14 @@ def define_commands(tree, client):
     async def shop_command(interaction: Interaction):
         await handle_shop_command(interaction)
 
+    @command("balance", "Check your current UKPence balance (only you can see this)")
+    async def balance_command(interaction: Interaction):
+        balance = get_bb(interaction.user.id)
+        await interaction.response.send_message(
+            f"💷 **{interaction.user.display_name}**, you have **{balance:,} UKPence**.",
+            ephemeral=True,
+        )
+
     @command("bank-status", "View server bank status (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def bank_status_command(interaction: Interaction):
         await handle_bank_status_command(interaction)
