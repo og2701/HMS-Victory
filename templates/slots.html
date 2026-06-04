@@ -74,6 +74,12 @@
   .chip .val{font-family:var(--serif);font-weight:700;font-size:27px;color:#fff;}
   .chip .val .u{font-size:14px;color:var(--brass-soft);font-style:italic;margin-left:4px;}
   .chip .player{font-family:var(--serif);font-weight:700;font-size:20px;color:#fff;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  img.emoji {
+    height: 1em;
+    width: 1em;
+    vertical-align: middle;
+    display: inline-block;
+  }
 </style>
 </head>
 <body>
@@ -100,5 +106,14 @@
       <div class="chip"><span class="disc"></span><span class="meta"><span class="lab">Balance</span><span class="val">{{BALANCE}}<span class="u">UKP</span></span></span></div>
     </div>
   </div>
+  <script src="https://cdn.jsdelivr.net/npm/@twemoji/api@latest/dist/twemoji.min.js" crossorigin="anonymous"></script>
+  <script>
+    window.onload = function() {
+      twemoji.parse(document.body, {
+        folder: 'svg',
+        ext: '.svg'
+      });
+    };
+  </script>
 </body>
 </html>
