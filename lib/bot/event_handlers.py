@@ -626,6 +626,49 @@ async def process_message_attachments(client, message):
                             )
 
 
+async def _delete_fletcher_duplicate(client, trigger_message, quoted_message):
+    """The Fletcher bot posts its own summary for the same message link, so we get a double.
+    Find Fletcher's summary (a bot message right after the link-post that references the same
+    quoted message) and delete it. Conservative: only deletes when both signals match."""
+    import config
+    if not getattr(config, "FLETCHER_DEDUPE_ENABLED", False):
+        return
+    fid = getattr(config, "FLETCHER_BOT_ID", None)
+    names = [n.lower() for n in getattr(config, "FLETCHER_BOT_NAMES", ["fletcher"])]
+
+    def is_fletcher(m):
+        if not m.author.bot:
+            return False
+        if fid and m.author.id == fid:
+            return True
+        tags = " ".join(filter(None, [m.author.name, getattr(m.author, "display_name", None),
+                                       getattr(m.author, "global_name", None)])).lower()
+        return any(n in tags for n in names)
+
+    # Signals that a Fletcher message is *this* link's summary: it names the quoted author or
+    # repeats a chunk of the quoted content.
+    author_tags = [t.lower() for t in filter(None, [
+        quoted_message.author.name, getattr(quoted_message.author, "display_name", None),
+        getattr(quoted_message.author, "global_name", None)])]
+    snippet = (quoted_message.content or "").strip()[:40].lower()
+
+    def looks_like_dup(m):
+        text = (m.content or "").lower()
+        for e in m.embeds:
+            text += " " + " ".join(filter(None, [e.title, e.description, e.author.name if e.author else None])).lower()
+        return any(t and t in text for t in author_tags) or (len(snippet) >= 8 and snippet in text)
+
+    for _ in range(6):  # Fletcher may post a beat after us; poll briefly
+        try:
+            async for m in trigger_message.channel.history(limit=10, after=trigger_message.created_at):
+                if is_fletcher(m) and looks_like_dup(m):
+                    await m.delete()
+                    return
+        except Exception:
+            logger.debug("Fletcher dedupe scan failed", exc_info=True)
+        await asyncio.sleep(1.0)
+
+
 async def process_message_links(client, message):
     message_links = [part for part in message.content.split() if "discord.com/channels/" in part]
     if message_links:
@@ -638,6 +681,7 @@ async def process_message_links(client, message):
                 guild = client.get_guild(guild_id)
                 channel = guild.get_channel(channel_id)
                 quoted_message = await channel.fetch_message(message_id)
+                asyncio.create_task(_delete_fletcher_duplicate(client, message, quoted_message))
                 timestamp_unix = int(quoted_message.created_at.timestamp())
                 timestamp_formatted = f"<t:{timestamp_unix}:f>"
                 channel_name = channel.name

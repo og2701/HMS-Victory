@@ -148,6 +148,10 @@ TREE_WATER_FILE = os.path.join(JSON_DATA_DIR, "tree_water_rewards.json")
 BENEFITS_FILE = os.path.join(JSON_DATA_DIR, "benefits_claims.json")
 EARNED_SOURCES_FILE = os.path.join(JSON_DATA_DIR, "earned_sources.json")
 WORDLE_STATE_FILE = os.path.join(JSON_DATA_DIR, "wordle_state.json")
+# Fletcher bot posts the same message-link summary HMS does; auto-delete its duplicate.
+FLETCHER_DEDUPE_ENABLED = True
+FLETCHER_BOT_ID = None            # set to Fletcher's user id for an exact match (optional)
+FLETCHER_BOT_NAMES = ["fletcher"]  # otherwise matched by bot name
 # HMS Wordle: one shared 5-letter word per UK day, dictionary-validated guesses.
 WORDLE_ANSWERS_FILE = os.path.join("data", "words", "answers.txt")
 WORDLE_VALID_FILE = os.path.join("data", "words", "valid.txt")
