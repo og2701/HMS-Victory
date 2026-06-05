@@ -112,7 +112,7 @@ BOND_FUNNEL_LOOKBACK_DAYS = 3        # UKP /pay-received in this window can't be
 # mystery each week). A round draws when it sells out OR at the weekly time, whichever
 # comes first - but never sooner t  n LOTTERY_MIN_RUNTIME_MIN after opening (so a cheap
 # small round can't sell out and vanish in minutes), and a sold-out round won't reopen
-# until the next weekly tick. Winner takes the pot minus a LOTTERY_RAKE_PCT bank cut.
+# until the next weekly tick. Winner takes the whole pot (LOTTERY_RAKE_PCT bank cut, 0 by default).
 LOTTERY_ENABLED = True
 LOTTERY_IMAGE_ENABLED = True
 LOTTERY_TICKET_PRICE_MIN = 2      # random ticket price per round, inclusive
@@ -120,7 +120,7 @@ LOTTERY_TICKET_PRICE_MAX = 20
 LOTTERY_TICKET_CAP_MIN = 300      # random ticket cap (sellout threshold) per round
 LOTTERY_TICKET_CAP_MAX = 1000
 LOTTERY_MIN_RUNTIME_MIN = 30      # a round can't draw on sellout sooner than this (minutes)
-LOTTERY_RAKE_PCT = 10             # house bank keeps this %, winner gets the rest
+LOTTERY_RAKE_PCT = 0              # house bank keeps this %; 0 = winner takes the whole pot
 LOTTERY_DRAW_DOW = "sun"          # weekly draw day (APScheduler day_of_week)
 LOTTERY_DRAW_HOUR = 20            # 8pm UK
 LOTTERY_DRAW_MINUTE = 0

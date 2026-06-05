@@ -291,7 +291,7 @@ _REMINDER_LINES = [
     "The lottery: cheaper than a hobby, less reliable than a pension.",
     "The dream is short, the odds are long, the ticket is cheap. Lottery's on.",
     "Someone's getting rich today. Probably not you. Tickets below regardless.",
-    "The lottery's running. The house edge is modest; your judgement, questionable.",
+    "The lottery's running. The whole pot goes to one winner; your judgement, questionable.",
     "🎟️ Lottery's on. Your move - assuming your move is unwise.",
     "Still time to lose some money in an orderly fashion. Lottery's open.",
     "The pot's growing. Your chances aren't. Tickets are here.",
@@ -394,7 +394,8 @@ async def render_board(rnd) -> io.BytesIO:
         winner = (f'<div class="winner"><div class="h">🎉 We have a winner!</div>'
                   f'<div class="who">Ticket #{rnd["winning_ticket"]:,} of {sold:,}</div>'
                   f'<div class="sub">Prize: {rnd["prize"]:,} UKPence</div></div>')
-        label, note = "Final Jackpot", f"Drawn · {100 - rake}% to the winner"
+        label, note = "Final Jackpot", ("Drawn · winner took the whole pot" if rake == 0
+                                        else f"Drawn · {100 - rake}% to the winner")
         draw_label, draw_value = "Drawn", _draw_value(rnd["drawn_at"] or rnd["draw_ts"])
     elif drawn:
         winner = ('<div class="winner"><div class="h">No entries</div>'
@@ -407,7 +408,8 @@ async def render_board(rnd) -> io.BytesIO:
         draw_label, draw_value = "Status", "Sold out"
     else:
         winner = ""
-        label, note = "This Week's Jackpot", f"Winner takes {100 - rake}% · {rake}% to the house"
+        label, note = "This Week's Jackpot", ("Winner takes the whole pot" if rake == 0
+                                              else f"Winner takes {100 - rake}% · {rake}% to the house")
         draw_label, draw_value = "Draws", _draw_value(rnd["draw_ts"])
 
     html = (read_html_template("templates/lottery.html")
@@ -625,9 +627,10 @@ async def _show_odds(interaction: Interaction, round_id):
         f"**your tickets ÷ all tickets sold**.\n"
         f"- The round draws when it **sells out ({cap:,} tickets)** or at the **weekly draw "
         f"(Sunday 8pm UK)** - whichever comes first.\n"
-        f"- The winner takes **{100 - rake}%** of the pot; **{rake}%** goes to the house bank.\n"
-        f"- A sold-out round won't reopen until the next weekly draw.\n"
-        "-# Please gamble responsibly. 🇬🇧",
+        + ("- The winner takes the **entire pot** - every single UKPence.\n" if rake == 0
+           else f"- The winner takes **{100 - rake}%** of the pot; **{rake}%** goes to the house bank.\n")
+        + "- A sold-out round won't reopen until the next weekly draw.\n"
+        + "-# Please gamble responsibly. 🇬🇧",
         ephemeral=True)
 
 
