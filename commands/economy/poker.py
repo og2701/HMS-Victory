@@ -9,12 +9,14 @@ restart refunds everyone (voiding any live hand) instead of stranding chips.
 """
 
 import asyncio
+import html as _html
 import logging
 
 import discord
 from discord import Interaction
 
 import config
+import commands.economy.casino_base as cb
 from lib.economy.economy_manager import get_bb, remove_bb
 from commands.economy.casino_base import credit_from_bank
 from lib.economy.poker import escrow
@@ -37,18 +39,80 @@ def _cards(cards):
     return " ".join(f"`{card_str(c)}`" for c in cards) if cards else ""
 
 
+_RANK_CODE = {10: "T", 11: "J", 12: "Q", 13: "K", 14: "A"}
+_SUIT_CODE = {0: "S", 1: "H", 2: "D", 3: "C"}
+
+
+def _code(card):
+    r, s = card
+    return f"{_RANK_CODE.get(r, str(r))}{_SUIT_CODE[s]}"
+
+
+async def _render_felt(table, viewer=None):
+    """Render the table as the shared casino felt image. `viewer` (a seat id) sees their own
+    hole cards face-up; everyone else's are face-down. Returns a PNG BytesIO or None."""
+    h = table.hand
+    board = [_code(c) for c in h.board] + [None] * (5 - len(h.board)) if h else [None] * 5
+    community = cb.zone_html("Board", cb.hand_html(board, size="small"))
+    actor = h.current_player() if h else None
+    boxes = []
+    for i, s in enumerate(table.seats):
+        sid = s["id"]
+        if h:
+            stack = h.stack[sid]
+            if sid in h.folded:
+                cards = '<div style="opacity:.45;font-style:italic;padding:18px 0;">folded</div>'
+                meta = ""
+            else:
+                shown = [_code(c) for c in h.hole[sid]] if viewer == sid else [None, None]
+                cards = cb.hand_html(shown, size="small")
+                bet = h.committed.get(sid, 0)
+                meta = "ALL-IN" if sid in h.allin else (f"bet {bet:,}" if bet else "")
+        else:
+            stack = s["stack"]
+            cards = ""
+            meta = "ready"
+        btn = "(D) " if (h and i == table.button) else ""
+        ring = ("border:3px solid #d6a44a;box-shadow:0 0 18px rgba(214,164,74,.5);"
+                if sid == actor else "border:2px solid rgba(255,255,255,.16);")
+        boxes.append(
+            f'<div style="{ring}border-radius:14px;padding:10px 16px 12px;'
+            f'background:rgba(0,0,0,.34);text-align:center;min-width:150px;">'
+            f'<div style="font-weight:800;font-size:21px;color:#fff;">{btn}{_html.escape(s["name"])[:14]}</div>'
+            f'<div style="color:#e8cf92;font-size:17px;margin:2px 0 6px;">{stack:,}'
+            f'{(" &middot; " + meta) if meta else ""}</div>{cards}</div>')
+    seats = (f'<div style="display:flex;flex-wrap:wrap;gap:16px;justify-content:center;'
+             f'max-width:680px;">{"".join(boxes)}</div>')
+    if actor is not None:
+        nm = next((x["name"] for x in table.seats if x["id"] == actor), "")
+        hint = f"{nm} to act"
+    elif h is None:
+        hint = "Waiting to deal"
+    else:
+        hint = "Showdown"
+    try:
+        return await cb.render_table(
+            title_main="HOLD", title_accent="'EM", subtitle="No-Limit Texas Hold'em",
+            body_html=community + seats, bet=(h.pot() if h else 0),
+            balance=len(table.seats), hint=hint, bet_label="Pot", balance_label="Players")
+    except Exception:
+        logger.error("poker felt render failed", exc_info=True)
+        return None
+
+
 def get_table(channel_id):
     return _TABLES.get(channel_id)
 
 
 class Table:
-    def __init__(self, channel, client):
-        self.channel = channel
-        self.channel_id = channel.id
+    def __init__(self, casino_channel, client):
+        self.casino = casino_channel    # where start/result notices go
+        self.channel_id = casino_channel.id   # escrow + _TABLES key
+        self.thread = None              # the live game runs in here
         self.client = client
         self.seats = []                 # [{id, name, stack}]
         self.button = -1
-        self.message = None             # public board
+        self.message = None             # board message (in the thread)
         self.lock = asyncio.Lock()
         self.status = "lobby"           # lobby | playing | between
         self.hand = None
@@ -120,13 +184,23 @@ class Table:
         return v
 
     async def render(self):
+        """Edit (or post) the board in the thread: felt image while playing, text otherwise."""
+        dest = self.thread or self.casino
         try:
-            content = self._text()
             view = self._view()
-            if self.message is None:
-                self.message = await self.channel.send(content=content, view=view)
+            img = await _render_felt(self) if self.hand is not None else None
+            if img is not None:
+                file = discord.File(img, "poker.png")
+                if self.message is None:
+                    self.message = await dest.send(file=file, view=view)
+                else:
+                    await self.message.edit(attachments=[file], content=None, view=view)
             else:
-                await self.message.edit(content=content, view=view)
+                content = self._text()
+                if self.message is None:
+                    self.message = await dest.send(content=content, view=view)
+                else:
+                    await self.message.edit(content=content, attachments=[], view=view)
         except Exception:
             logger.error("poker render failed", exc_info=True)
 
@@ -160,6 +234,11 @@ class Table:
             self.seats.append({"id": user.id, "name": discord.utils.escape_markdown(user.display_name),
                                "stack": int(amount)})
             self._checkpoint()
+        if self.thread is not None:
+            try:
+                await self.thread.add_user(user)  # pull them into the game thread
+            except Exception:
+                logger.debug("poker add_user to thread failed", exc_info=True)
         await interaction.response.send_message(
             f"Seated with **{amount:,}** chips. Good luck!", ephemeral=True)
         await self.render()
@@ -281,11 +360,12 @@ class Table:
                 lines.append(f"{s['name']}: {_cards(hole)} ({cat}){tag}")
         lines.append("\n**Stacks** " + " · ".join(
             f"{s['name']} {s['stack']:,}" for s in self.seats))
-        lines.append("-# Next hand shortly. Tap **Deal** to go now, or **Leave** to cash out.")
+        if self.thread is not None:
+            lines.append(f"-# Played at {self.thread.mention} · next hand shortly.")
         try:
-            await self.channel.send("\n".join(lines))
+            await self.casino.send("\n".join(lines))  # results go to the casino channel
         except Exception:
-            logger.error("poker results render failed", exc_info=True)
+            logger.error("poker results post failed", exc_info=True)
 
     async def _recover(self):
         """A crash mid-hand: void it by restoring pre-hand stacks, then return to lobby."""
@@ -308,10 +388,17 @@ class Table:
         escrow.clear_table(self.channel_id)
         _TABLES.pop(self.channel_id, None)
         try:
-            if self.message:
-                await self.message.edit(content="## \U0001f0cf HMS Hold'em\nTable closed. Everyone cashed out.", view=None)
+            await self.casino.send("\U0001f0cf The Hold'em table closed - everyone cashed out.")
         except Exception:
             pass
+        if self.thread is not None:
+            try:
+                await self.thread.delete()
+            except Exception:
+                try:
+                    await self.thread.edit(archived=True, locked=True)
+                except Exception:
+                    pass
 
     # --- per-player ephemeral action UI ---------------------------------------
     async def _on_act(self, interaction: Interaction):
@@ -324,12 +411,21 @@ class Table:
         if not h:
             await interaction.response.send_message("No hand in progress.", ephemeral=True)
             return
-        hole = _cards(h.hole.get(interaction.user.id, []))
-        header = f"**Your hand:** {hole}\n**Board:** {_cards(h.board) or '(pre-flop)'}  ·  **Pot** {h.pot():,}"
-        if h.current_player() != interaction.user.id:
-            await interaction.response.send_message(header + "\n\n_Waiting for your turn..._", ephemeral=True)
-            return
-        await interaction.response.send_message(header, view=ActionView(self), ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        is_turn = h.current_player() == interaction.user.id
+        view = ActionView(self) if is_turn else None
+        img = await _render_felt(self, viewer=interaction.user.id)
+        if img is not None:
+            content = None if is_turn else "_Not your turn yet - here's the table._"
+            await interaction.followup.send(
+                content=content, file=discord.File(img, "hand.png"), view=view, ephemeral=True)
+        else:
+            hole = _cards(h.hole.get(interaction.user.id, []))
+            content = (f"**Your hand:** {hole}\n**Board:** {_cards(h.board) or '(pre-flop)'}  ·  "
+                       f"**Pot** {h.pot():,}")
+            if not is_turn:
+                content += "\n\n_Waiting for your turn..._"
+            await interaction.followup.send(content=content, view=view, ephemeral=True)
 
 
 class BuyInModal(discord.ui.Modal, title="Sit at the table"):
@@ -408,12 +504,30 @@ async def handle_poker_command(interaction: Interaction):
             "Poker can only be played in the casino channels.", ephemeral=True)
         return
     table = _TABLES.get(interaction.channel_id)
-    if table is None:
-        table = Table(interaction.channel, interaction.client)
-        _TABLES[interaction.channel_id] = table
+    if table is not None:
+        link = table.thread.mention if table.thread else "above"
         await interaction.response.send_message(
-            "Dealing you in - the table's below. Tap **Sit** to buy in.", ephemeral=True)
-        await table.render()
-    else:
-        await interaction.response.send_message(
-            "There's already a table in this channel - scroll up and tap **Sit**.", ephemeral=True)
+            f"There's already a Hold'em table running - join it here: {link}", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    table = Table(interaction.channel, interaction.client)
+    _TABLES[interaction.channel_id] = table
+    try:
+        table.thread = await interaction.channel.create_thread(
+            name="HMS Hold'em", type=discord.ChannelType.public_thread, auto_archive_duration=60)
+    except Exception:
+        logger.error("poker thread create failed", exc_info=True)
+        _TABLES.pop(interaction.channel_id, None)
+        await interaction.followup.send(
+            "Couldn't open a table thread here (need the Create Public Threads permission).",
+            ephemeral=True)
+        return
+    await table.render()  # board lives in the thread
+    try:
+        await interaction.channel.send(
+            f"\U0001f0cf A **Hold'em** table just opened: {table.thread.mention} - "
+            f"jump in and tap **Sit** to buy in!")
+    except Exception:
+        pass
+    await interaction.followup.send(f"Table opened: {table.thread.mention}", ephemeral=True)
