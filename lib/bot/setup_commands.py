@@ -567,6 +567,11 @@ def define_commands(tree, client):
             ephemeral=True,
         )
 
+    @command("wordle", "Play today's HMS Wordle - guess the 5-letter word for UKPence")
+    async def wordle_command(interaction: Interaction):
+        from lib.features.wordle import handle_wordle_command
+        await handle_wordle_command(interaction)
+
     @command("bank-status", "View server bank status (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def bank_status_command(interaction: Interaction):
         await handle_bank_status_command(interaction)
