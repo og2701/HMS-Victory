@@ -88,10 +88,14 @@ BENEFITS_THRESHOLD = 250          # only claimable while balance is under this
 BENEFITS_MIN = 30                 # random payout range (always pays when eligible)
 BENEFITS_MAX = 75                 # one claim per UK calendar day (resets at midnight)
 BENEFITS_LOOKBACK_DAYS = 3        # /pay sent in this window counts toward "effective wealth"
-BENEFITS_BAN_RAMP = [3, 7, 14, 30]  # benefits-fraud cooldown (days), ramps per offence
+BENEFITS_BAN_RAMP = [1, 3, 7, 14]   # benefits-fraud cooldown (days), ramps per offence
 
 HOF_REWARD = 100                  # UKP DM'd to a message's author on Hall of Fame entry
 TICKET_REWARD = 100               # UKP a staff member can grant a ticket's opener
+# Channels whose messages can't enter the Hall of Fame (announcements etc. always get a
+# lot of reactions but aren't organic HoF-worthy posts). Bot/webhook and Discord
+# announcement-type channels are also excluded automatically in the HoF check.
+HOF_EXCLUDED_CHANNELS = {959503403199905862, 1133386861033832448, 1279873633602244668}
 
 # --- Bonds (fixed-term Treasury savings; interest paid from the bank) ---
 BOND_ENABLED = True
@@ -102,7 +106,7 @@ BOND_EARLY_PENALTY_PCT = 10          # early exit: forfeit interest + lose this 
 # --- National Lottery (shared pooled draw) ---
 # Each round picks a RANDOM ticket price and ticket cap from the ranges below (a little
 # mystery each week). A round draws when it sells out OR at the weekly time, whichever
-# comes first - but never sooner than LOTTERY_MIN_RUNTIME_MIN after opening (so a cheap
+# comes first - but never sooner t  n LOTTERY_MIN_RUNTIME_MIN after opening (so a cheap
 # small round can't sell out and vanish in minutes), and a sold-out round won't reopen
 # until the next weekly tick. Winner takes the pot minus a LOTTERY_RAKE_PCT bank cut.
 LOTTERY_ENABLED = True

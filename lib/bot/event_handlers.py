@@ -1367,7 +1367,15 @@ async def check_hall_of_fame(client, payload):
         # Quick filter to avoid iterating through users if total reactions are less than 6
         if total_reactions < 6:
             return
-            
+
+        # Hall of Fame is for organic community posts. Skip bot/webhook posts and
+        # announcement channels (which naturally rack up reactions but aren't HoF-worthy).
+        ch = message.channel
+        if (message.author.bot or getattr(message, "webhook_id", None)
+                or getattr(ch, "type", None) == discord.ChannelType.news
+                or ch.id in HOF_EXCLUDED_CHANNELS):
+            return
+
         unique_reactors = set()
         for r in message.reactions:
             async for u in r.users():
