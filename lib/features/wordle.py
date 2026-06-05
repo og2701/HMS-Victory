@@ -186,6 +186,80 @@ def _render(uid, date):
     return "\n".join(lines), p["done"]
 
 
+# --- image board ---------------------------------------------------------------
+_TILE = {"correct": "#6aaa64", "present": "#c9b458", "absent": "#3a3a3c"}
+
+
+def _board_html(uid, date):
+    word = _todays_word(date)
+    p = _player(date.isoformat(), uid)
+    guesses = p["guesses"]
+    rows = []
+    for r in range(6):
+        if r < len(guesses):
+            g = guesses[r]
+            sc = _score(g, word)
+            tiles = "".join(f'<div class="t {s}">{g[i].upper()}</div>' for i, s in enumerate(sc))
+        else:
+            tiles = '<div class="t e"></div>' * 5
+        rows.append(f'<div class="row">{tiles}</div>')
+    status = {}
+    for g in guesses:
+        for s, ch in zip(_score(g, word), g.upper()):
+            if ch not in status or _RANK[s] > _RANK[status[ch]]:
+                status[ch] = s
+    kb = []
+    for row in _KB_ROWS:
+        keys = "".join(f'<div class="k {status.get(ch, "u")}">{ch}</div>' for ch in row)
+        kb.append(f'<div class="krow">{keys}</div>')
+    if p["solved"]:
+        n = len(guesses)
+        sub = f"Solved in {n}/6 · +{config.WORDLE_REWARDS[n - 1]:,} UKPence"
+    elif p["done"]:
+        sub = f"Out of guesses · the word was {word.upper()}"
+    else:
+        left = 6 - len(guesses)
+        sub = f"{left} guess{'es' if left != 1 else ''} left"
+    return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@600;800&family=Outfit:wght@800&display=swap');
+*{{margin:0;padding:0;box-sizing:border-box}}html,body{{overflow:hidden}}::-webkit-scrollbar{{width:0;height:0}}
+body{{background:#0a0e1a;display:flex;justify-content:center;padding:18px;font-family:'Inter',sans-serif}}
+.card{{background:#121624;border:4px solid #CF142B;border-radius:18px;padding:22px 26px 24px;
+ box-shadow:0 14px 44px rgba(0,0,0,.55)}}
+.title{{font-family:'Outfit',sans-serif;font-weight:800;color:#fff;font-size:26px;text-align:center;letter-spacing:.5px}}
+.date{{color:rgba(255,255,255,.45);font-size:14px;text-align:center;margin:2px 0 16px}}
+.grid{{display:flex;flex-direction:column;gap:7px;align-items:center}}
+.row{{display:flex;gap:7px}}
+.t{{width:58px;height:58px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+ font-weight:800;font-size:30px;color:#fff;text-transform:uppercase}}
+.t.correct{{background:#6aaa64}}.t.present{{background:#c9b458}}.t.absent{{background:#3a3a3c}}
+.t.e{{background:transparent;border:2px solid #2b2f3a}}
+.kb{{display:flex;flex-direction:column;gap:6px;align-items:center;margin-top:18px}}
+.krow{{display:flex;gap:5px}}
+.k{{min-width:30px;height:42px;padding:0 7px;border-radius:5px;display:flex;align-items:center;justify-content:center;
+ font-weight:700;font-size:16px;color:#fff;background:#818384}}
+.k.correct{{background:#6aaa64}}.k.present{{background:#c9b458}}.k.absent{{background:#2b2f3a;color:#6b6f78}}
+.sub{{color:rgba(255,255,255,.6);font-size:15px;text-align:center;margin-top:16px}}
+</style></head><body><div class='card'>
+<div class='title'>\U0001f1ec\U0001f1e7 HMS Wordle</div><div class='date'>{_pretty(date)}</div>
+<div class='grid'>{''.join(rows)}</div>
+<div class='kb'>{''.join(kb)}</div>
+<div class='sub'>{sub}</div>
+</div></body></html>"""
+
+
+async def render_board(uid, date):
+    """Render the board to a PNG BytesIO + done flag. Returns (None, done) if rendering fails."""
+    p = _player(date.isoformat(), uid)
+    try:
+        from lib.core.image_processing import screenshot_html
+        img = await screenshot_html(_board_html(uid, date), size=(520, 760), apply_trim=True)
+        return img, p["done"]
+    except Exception:
+        log.error("HMS Wordle board render failed", exc_info=True)
+        return None, p["done"]
+
+
 # --- UI ------------------------------------------------------------------------
 class WordleModal(discord.ui.Modal, title="HMS Wordle"):
     guess = discord.ui.TextInput(label="Your guess", placeholder="a five-letter word",
@@ -211,8 +285,15 @@ class WordleModal(discord.ui.Modal, title="HMS Wordle"):
                     await record_income_source(interaction.client, self.user_id, "wordle")
                 except Exception:
                     pass
-        content, done = _render(self.user_id, self.date)
-        await interaction.response.edit_message(content=content, view=_view_for(self.user_id, self.date, done))
+        await interaction.response.defer()
+        img, done = await render_board(self.user_id, self.date)
+        view = _view_for(self.user_id, self.date, done)
+        if img is not None:
+            await interaction.edit_original_response(
+                content=None, attachments=[discord.File(img, "wordle.png")], view=view)
+        else:
+            content, _ = _render(self.user_id, self.date)
+            await interaction.edit_original_response(content=content, attachments=[], view=view)
 
 
 class WordleView(discord.ui.View):
@@ -271,6 +352,12 @@ async def handle_wordle_command(interaction: discord.Interaction):
             "HMS Wordle's word list isn't loaded right now, try again later.", ephemeral=True)
         return
     date = _today()
-    content, done = _render(interaction.user.id, date)
-    await interaction.response.send_message(
-        content=content, view=_view_for(interaction.user.id, date, done), ephemeral=True)
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    img, done = await render_board(interaction.user.id, date)
+    view = _view_for(interaction.user.id, date, done)
+    if img is not None:
+        await interaction.followup.send(
+            file=discord.File(img, "wordle.png"), view=view, ephemeral=True)
+    else:
+        content, _ = _render(interaction.user.id, date)
+        await interaction.followup.send(content=content, view=view, ephemeral=True)
