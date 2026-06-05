@@ -540,16 +540,10 @@ def define_commands(tree, client):
         else:
             await interaction.followup.send("An error occurred while generating the economy stats.", ephemeral=True)
 
-    @command("ukpence", "Explains how the UKPence economy works.")
+    @command("ukpence", "A full guide & walkthrough of the UKPence economy.")
     async def ukpence_info_command(interaction: Interaction):
-        info_path = os.path.join(BASE_DIR, "data", "ukpence_info.png")
-        if not os.path.exists(info_path):
-            await interaction.response.send_message(
-                "UKPence info image is missing - run `python -m scripts.generate_ukpence_info`.",
-                ephemeral=True,
-            )
-            return
-        await interaction.response.send_message(file=discord.File(info_path))
+        from commands.economy.ukpence_guide import handle_ukpence_guide_command
+        await handle_ukpence_guide_command(interaction)
 
 
     @command("toggle-visitor-overnight-mute", "Toggles the overnight mute for visitors", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
