@@ -87,6 +87,8 @@ TREE_WATER_DAILY_CAP = 200        # max UKP/day per user from watering (anti-cam
 BENEFITS_THRESHOLD = 250          # only claimable while balance is under this
 BENEFITS_MIN = 30                 # random payout range (always pays when eligible)
 BENEFITS_MAX = 75                 # one claim per UK calendar day (resets at midnight)
+BENEFITS_LOOKBACK_DAYS = 3        # /pay sent in this window counts toward "effective wealth"
+BENEFITS_BAN_RAMP = [3, 7, 14, 30]  # benefits-fraud cooldown (days), ramps per offence
 
 HOF_REWARD = 100                  # UKP DM'd to a message's author on Hall of Fame entry
 TICKET_REWARD = 100               # UKP a staff member can grant a ticket's opener

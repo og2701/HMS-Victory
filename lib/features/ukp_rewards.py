@@ -13,6 +13,7 @@ minting); add_bb returns False only if the bank is somehow insolvent.
 import logging
 import random
 import re
+import time
 from datetime import datetime, timedelta
 
 import pytz
@@ -20,6 +21,7 @@ import discord
 
 import config
 from config import ROLES
+from database import DatabaseManager
 from lib.economy.economy_manager import add_bb, get_bb
 from lib.core.file_operations import load_json_file, save_json_file
 
@@ -116,38 +118,132 @@ async def handle_tree_watering(client, message):
 # ---------------------------------------------------------------------------
 # /benefits
 # ---------------------------------------------------------------------------
+_BENEFITS_SUCCESS = [
+    "🧾 **Benefits approved!** <@{uid}> receives **{amount:,} UKPence** from the state. Spend it wisely (or at the casino).",
+    "🧾 The DWP has assessed your claim. **<@{uid}>**, here's **{amount:,} UKPence** to tide you over. Don't blow it all on scratchcards.",
+    "🧾 Universal Credit incoming: **+{amount:,} UKPence** for <@{uid}>. Mind how you go.",
+    "🧾 Your giro's arrived. **{amount:,} UKPence** for <@{uid}>. Try the lottery, eh?",
+    "🧾 **Cha-ching.** <@{uid}> topped up with **{amount:,} UKPence** of taxpayer money. You're welcome.",
+    "🧾 Claim successful. The state grants <@{uid}> **{amount:,} UKPence**. The job centre wishes you well.",
+    "🧾 Sorted. <@{uid}> pockets **{amount:,} UKPence** from the public purse. Keep your chin up.",
+]
+_BENEFITS_RICH = [
+    "💼 You've got **{bal:,} UKPence** - benefits are for those under {threshold:,}. Get back to work.",
+    "💼 Claim denied: **{bal:,} UKPence** is too rich for the state's blood (cutoff is {threshold:,}).",
+    "💼 The DWP reviewed your **{bal:,} UKPence** and decided you'll be fine. Off you pop.",
+    "💼 Nice try, but **{bal:,} UKPence** is well over the {threshold:,} threshold. No handouts for the wealthy.",
+    "💼 You're hardly destitute with **{bal:,} UKPence**. Come back when you're properly skint (under {threshold:,}).",
+]
+_BENEFITS_ALREADY = [
+    "🧾 You've already had your benefits today. The office reopens at midnight UK <t:{ts}:R>.",
+    "🧾 One claim a day, that's the rule. Back at midnight UK <t:{ts}:R>.",
+    "🧾 The giro's already gone out today. Next one <t:{ts}:R>.",
+    "🧾 Patience. Your next assessment is <t:{ts}:R>.",
+    "🧾 You've drained today's allowance. Reopens <t:{ts}:R>.",
+]
+_BENEFITS_FRAUD_WARN = [
+    "🕵️ Hang on. You've shifted **{out:,} UKPence** to other users lately, and we count that as yours - so you're not actually eligible. Do it again and you'll be cut off.",
+    "🕵️ The fraud office clocked **{out:,} UKPence** leaving your account recently. Parking money on mates doesn't make you poor. Denied - and consider this your one warning.",
+    "🕵️ Benefits are means-tested on what you've **had**, not just what's in your wallet. You've moved **{out:,} UKPence** out recently. No claim today - don't push your luck.",
+    "🕵️ Nice try. **{out:,} UKPence** of recent transfers says you're not skint. Refused. Repeat it and you'll lose benefits access entirely.",
+]
+_BENEFITS_FRAUD_BAN = [
+    "🚫 **Benefits fraud detected.** Caught hiding UKPence to keep claiming - you're barred from benefits for **{days} days**.",
+    "🚫 That's enough. The DWP fraud squad has sanctioned you for **{days} days**. Keep it up and it only gets longer.",
+    "🚫 Caught red-handed shuffling UKPence to look 'poor'. Benefits suspended for **{days} days**.",
+    "🚫 **Sanctioned.** Repeated benefits fraud has earned you a **{days}-day** ban. Try earning it honestly.",
+]
+_BENEFITS_BANNED = [
+    "🚫 You're serving a benefits-fraud ban. Access returns <t:{ts}:R>.",
+    "🚫 No benefits for you - your fraud ban lifts <t:{ts}:R>.",
+    "🚫 The DWP hasn't forgotten. Your benefits ban ends <t:{ts}:R>.",
+]
+
+
+def _benefits_rec(store, uid):
+    """Normalise a stored record (older versions stored just the last-claim date string)."""
+    v = store.get(str(uid))
+    rec = {"last": None, "offenses": 0, "banned_until": 0, "warned": False}
+    if isinstance(v, str):
+        rec["last"] = v
+    elif isinstance(v, dict):
+        for k in rec:
+            if k in v:
+                rec[k] = v[k]
+    return rec
+
+
+def _recent_pay_out(uid, days) -> int:
+    """Total UKP this user has sent via /pay in the last ``days`` (their 'hidden' wealth)."""
+    cutoff = int(time.time()) - days * 86400
+    try:
+        row = DatabaseManager.fetch_one(
+            "SELECT COALESCE(SUM(amount),0) FROM pay_transfers WHERE payer_id = ? AND timestamp > ?",
+            (str(uid), cutoff))
+        return int(row[0]) if row else 0
+    except Exception:
+        log.error("benefits pay-out lookup failed", exc_info=True)
+        return 0
+
+
 async def handle_benefits_command(interaction):
     uid = interaction.user.id
+    suid = str(uid)
     bal = get_bb(uid)
     threshold = getattr(config, "BENEFITS_THRESHOLD", 250)
-    if bal >= threshold:
-        await interaction.response.send_message(
-            f"\U0001f4bc You're not eligible - you've got **{bal:,} UKPence** "
-            f"(benefits are for those under {threshold:,}). Back to work."
-        )
-        return
-
     store = load_json_file(config.BENEFITS_FILE) or {}
-    today = _today()
-    if store.get(str(uid)) == today:
-        await interaction.response.send_message(
-            f"\U0001f9fe You've already had your benefits today. The office reopens at "
-            f"midnight UK <t:{_next_uk_midnight_ts()}:R>."
-        )
+    rec = _benefits_rec(store, suid)
+    now = int(time.time())
+
+    async def _reply(msg):
+        await interaction.response.send_message(msg)
+
+    def _save():
+        store[suid] = rec
+        save_json_file(config.BENEFITS_FILE, store)
+
+    # Serving a fraud ban?
+    if rec["banned_until"] > now:
+        await _reply(random.choice(_BENEFITS_BANNED).format(ts=rec["banned_until"]))
         return
 
-    # One claim per UK calendar day; resets at midnight.
-    store[str(uid)] = today
-    save_json_file(config.BENEFITS_FILE, store)
+    # Genuinely well-off (hid nothing) - plain denial, no penalty.
+    if bal >= threshold:
+        await _reply(random.choice(_BENEFITS_RICH).format(bal=bal, threshold=threshold))
+        return
 
+    # Effective wealth = balance + recent /pay outflows. Parking UKP on an alt to drop
+    # under the threshold doesn't make you poor.
+    recent_out = _recent_pay_out(suid, getattr(config, "BENEFITS_LOOKBACK_DAYS", 3))
+    if bal + recent_out >= threshold:
+        ramp = getattr(config, "BENEFITS_BAN_RAMP", [3, 7, 14, 30])
+        if rec["offenses"] == 0 and not rec["warned"]:
+            rec["warned"] = True  # one warning before any ban (protects honest givers)
+            _save()
+            await _reply(random.choice(_BENEFITS_FRAUD_WARN).format(out=recent_out))
+            return
+        days = ramp[min(rec["offenses"], len(ramp) - 1)]
+        rec["offenses"] += 1
+        rec["banned_until"] = now + days * 86400
+        _save()
+        await _reply(random.choice(_BENEFITS_FRAUD_BAN).format(days=days))
+        return
+
+    # Already claimed this UK day?
+    today = _today()
+    if rec["last"] == today:
+        await _reply(random.choice(_BENEFITS_ALREADY).format(ts=_next_uk_midnight_ts()))
+        return
+
+    # Eligible: pay out (and clear any standing warning - they came good).
+    rec["last"] = today
+    rec["warned"] = False
+    _save()
     amount = random.randint(getattr(config, "BENEFITS_MIN", 30), getattr(config, "BENEFITS_MAX", 75))
     if not _pay(uid, amount, "Benefits payment"):
-        await interaction.response.send_message("\U0001f9fe The benefits office is shut right now - try later.")
+        await _reply("🧾 The benefits office is shut right now - try later.")
         return
-    await interaction.response.send_message(
-        f"\U0001f9fe **Benefits approved!** <@{uid}> receives **{amount:,} UKPence** from the state. "
-        f"Spend it wisely (or at the casino)."
-    )
+    await _reply(random.choice(_BENEFITS_SUCCESS).format(uid=uid, amount=amount))
 
 
 # ---------------------------------------------------------------------------
