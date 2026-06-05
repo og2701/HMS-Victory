@@ -157,7 +157,7 @@ svg {{ display:block; margin-top:10px; }}
 <div class='card'>
   <div class='head'>
     <div>
-      <div class='title'>\U0001f4b7 {discord.utils.escape_markdown(display_name)[:28]}</div>
+      <div class='title'>{discord.utils.escape_markdown(display_name)[:28]}</div>
       <div class='sub'>Balance over time · {span}</div>
     </div>
     <div class='now'>
