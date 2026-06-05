@@ -131,6 +131,7 @@ async def handle_tree_watering(client, message):
         await message.channel.send(
             f"\U0001f333 <@{waterer_id}> earned **{pay_amt:,} UKPence** for watering the tree!",
             allowed_mentions=discord.AllowedMentions(users=True),
+            delete_after=600,  # self-destruct after 10 minutes to keep the channel tidy
         )
     except Exception:
         log.debug("tree watering message failed", exc_info=True)
