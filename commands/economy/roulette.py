@@ -797,16 +797,19 @@ async def _open_table(interaction: Interaction):
     if existing and existing.status == "betting":
         await _open_slip_for(interaction, existing)
         return
+    # Ack immediately - the felt render below can take >3s under load, which would
+    # otherwise expire the interaction (10062) before we could respond.
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+    except discord.NotFound:
+        return
     table = RouletteTable(interaction.channel_id, interaction.user.id, interaction.client)
     _TABLES[interaction.channel_id] = table  # reserve the slot before the render await
     try:
         img = await render_table_image(table)
         view, files = build_table_layout(table, img)
-        if interaction.response.is_done():
-            msg = await interaction.followup.send(view=view, files=files)
-        else:
-            await interaction.response.send_message(view=view, files=files)
-            msg = await interaction.original_response()
+        msg = await interaction.followup.send(view=view, files=files)
         table.message = msg
         try:
             interaction.client.add_view(view, message_id=msg.id)
