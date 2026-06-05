@@ -275,12 +275,12 @@ _REMINDER_LINES = [
     "A lottery is running. Mathematically a poor decision; emotionally, a triumph.",
     "The lottery's open. Your odds are bad and your spirits are high.",
     "There's a lottery. Think of it as a voluntary tax on optimism.",
-    "Someone will win the lottery. The smart money says not you — but the smart money's no fun.",
+    "Someone will win the lottery. The smart money says not you - but the smart money's no fun.",
     "The lottery's on, for those who like their disappointment scheduled.",
     "Buy a ticket and enjoy a few days of pleasant delusion.",
     "The lottery would like to remind you it exists, and that you haven't won it.",
     "Tickets on sale. Results not guaranteed; hope fully guaranteed.",
-    "You'd do better keeping the UKP — but where's the romance in that. Lottery's open.",
+    "You'd do better keeping the UKP - but where's the romance in that. Lottery's open.",
     "A lottery: where dreams go to be statistically crushed.",
     "The jackpot is large and your chances are not. Tickets below.",
     "Lottery's open. A modest price for several minutes of unrealistic financial planning.",
@@ -292,7 +292,7 @@ _REMINDER_LINES = [
     "The dream is short, the odds are long, the ticket is cheap. Lottery's on.",
     "Someone's getting rich today. Probably not you. Tickets below regardless.",
     "The lottery's running. The house edge is modest; your judgement, questionable.",
-    "🎟️ Lottery's on. Your move — assuming your move is unwise.",
+    "🎟️ Lottery's on. Your move - assuming your move is unwise.",
     "Still time to lose some money in an orderly fashion. Lottery's open.",
     "The pot's growing. Your chances aren't. Tickets are here.",
     "A lottery is happening. Participation is optional; regret is included.",
@@ -403,7 +403,7 @@ async def render_board(rnd) -> io.BytesIO:
         draw_label, draw_value = "Drawn", _draw_value(rnd["drawn_at"] or rnd["draw_ts"])
     elif sold >= cap:
         winner = ""
-        label, note = "Final Jackpot", "🎉 SOLD OUT — drawing shortly!"
+        label, note = "Final Jackpot", "🎉 SOLD OUT - drawing shortly!"
         draw_label, draw_value = "Status", "Sold out"
     else:
         winner = ""
@@ -430,13 +430,13 @@ def _native_text(rnd) -> str:
     cap = rnd["ticket_cap"]
     if rnd["status"] == "drawn":
         if rnd["winner_id"]:
-            return (f"## 🎟️ National Lottery — Round #{rnd['id']} (Drawn)\n"
+            return (f"## 🎟️ National Lottery - Round #{rnd['id']} (Drawn)\n"
                     f"🎉 <@{rnd['winner_id']}> won **{rnd['prize']:,} UKPence** "
                     f"(ticket #{rnd['winning_ticket']:,}).")
-        return f"## 🎟️ National Lottery — Round #{rnd['id']} (Drawn)\nNo tickets were sold."
+        return f"## 🎟️ National Lottery - Round #{rnd['id']} (Drawn)\nNo tickets were sold."
     sold = tickets_sold(rnd["id"])
     pot = sold * price
-    return (f"## 🎟️ National Lottery — Round #{rnd['id']}\n"
+    return (f"## 🎟️ National Lottery - Round #{rnd['id']}\n"
             f"**Jackpot: {pot:,} UKPence** · {sold:,}/{cap:,} tickets sold\n"
             f"Tickets **{price:,} UKPence** each · draw <t:{rnd['draw_ts']}:R>")
 
@@ -446,18 +446,18 @@ def _board_text(rnd) -> str:
     price = rnd["ticket_price"]
     if rnd["status"] == "drawn":
         if rnd["winner_id"]:
-            return (f"🎉 **Round #{rnd['id']} drawn** — <@{rnd['winner_id']}> won "
+            return (f"🎉 **Round #{rnd['id']} drawn** - <@{rnd['winner_id']}> won "
                     f"**{rnd['prize']:,} UKPence** with ticket **#{rnd['winning_ticket']:,}**.\n"
                     f"-# A new round opens at the next weekly draw.")
-        return f"**Round #{rnd['id']} drawn** — no tickets were sold.\n-# A new round opens at the next weekly draw."
+        return f"**Round #{rnd['id']} drawn** - no tickets were sold.\n-# A new round opens at the next weekly draw."
     sold = tickets_sold(rnd["id"])
     pot = sold * price
     if sold >= rnd["ticket_cap"]:
-        return (f"🎟️ **Round #{rnd['id']} — SOLD OUT!** Jackpot **{pot:,} UKPence**. "
-                f"The winner is drawn shortly — good luck! 🍀")
+        return (f"🎟️ **Round #{rnd['id']} - SOLD OUT!** Jackpot **{pot:,} UKPence**. "
+                f"The winner is drawn shortly - good luck! 🍀")
     return (f"🎟️ **Round #{rnd['id']}** · Jackpot **{pot:,} UKPence** · "
             f"draw <t:{rnd['draw_ts']}:R> (or when it sells out).\n"
-            f"-# Tickets {price:,} UKPence each (this round). Buy below — good luck! 🇬🇧")
+            f"-# Tickets {price:,} UKPence each (this round). Buy below - good luck! 🇬🇧")
 
 
 def _action_row(rnd) -> discord.ui.ActionRow:
@@ -566,13 +566,13 @@ async def _announce(client, rnd, *, no_winner: bool):
             return
     if no_winner:
         await channel.send(
-            f"🎟️ **National Lottery — Round #{rnd['id']}** drew with **no tickets sold**, so there's no winner. "
-            f"A fresh round is open — get your tickets in!")
+            f"🎟️ **National Lottery - Round #{rnd['id']}** drew with **no tickets sold**, so there's no winner. "
+            f"A fresh round is open - get your tickets in!")
         return
     sold = (rnd["pot"] // rnd["ticket_price"]) if rnd["ticket_price"] else 0
     try:
         await channel.send(
-            content=(f"🎉🎟️ **NATIONAL LOTTERY — Round #{rnd['id']}** 🎟️🎉\n"
+            content=(f"🎉🎟️ **NATIONAL LOTTERY - Round #{rnd['id']}** 🎟️🎉\n"
                      f"Congratulations <@{rnd['winner_id']}>, you won **{rnd['prize']:,} UKPence** "
                      f"with ticket **#{rnd['winning_ticket']:,}** of {sold:,}! 🍀\n"
                      f"-# A new round opens at the next weekly draw (Sunday 8pm UK). 🇬🇧"),
@@ -597,10 +597,10 @@ async def _handle_action(interaction: Interaction, round_id, action):
     if action == "mine":
         n = user_tickets(round_id, interaction.user.id)
         sold = tickets_sold(round_id)
-        odds = (f"{n / sold * 100:.1f}%" if sold else "—")
+        odds = (f"{n / sold * 100:.1f}%" if sold else "-")
         await interaction.response.send_message(
             f"🎫 You hold **{n}** ticket(s) in round #{round_id}"
-            + (f" — about a **{odds}** chance of winning right now." if n else " — buy some below to enter!"),
+            + (f" - about a **{odds}** chance of winning right now." if n else " - buy some below to enter!"),
             ephemeral=True)
         return
     if action == "buy":
@@ -619,12 +619,12 @@ async def _show_odds(interaction: Interaction, round_id):
     cap = rnd.get("ticket_cap", config.LOTTERY_TICKET_CAP)
     rake = rnd.get("rake_pct", config.LOTTERY_RAKE_PCT)
     await interaction.response.send_message(
-        "## 🎟️ National Lottery — How it works\n"
-        f"- Tickets are **{price:,} UKPence** each — buy as many as you like.\n"
+        "## 🎟️ National Lottery - How it works\n"
+        f"- Tickets are **{price:,} UKPence** each - buy as many as you like.\n"
         f"- Every ticket is one entry: more tickets = higher chance. Your odds are "
         f"**your tickets ÷ all tickets sold**.\n"
         f"- The round draws when it **sells out ({cap:,} tickets)** or at the **weekly draw "
-        f"(Sunday 8pm UK)** — whichever comes first.\n"
+        f"(Sunday 8pm UK)** - whichever comes first.\n"
         f"- The winner takes **{100 - rake}%** of the pot; **{rake}%** goes to the house bank.\n"
         f"- A sold-out round won't reopen until the next weekly draw.\n"
         "-# Please gamble responsibly. 🇬🇧",
@@ -682,7 +682,7 @@ async def handle_lottery_command(interaction: Interaction):
                 allowed_mentions=discord.AllowedMentions.none())
         else:
             await interaction.response.send_message(
-                "🎟️ No lottery round is open right now — the next one opens at the weekly draw (Sunday 8pm UK).",
+                "🎟️ No lottery round is open right now - the next one opens at the weekly draw (Sunday 8pm UK).",
                 ephemeral=True)
         return
     await interaction.response.defer(ephemeral=True, thinking=True)

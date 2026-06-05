@@ -82,7 +82,7 @@ def build_leaderboard_embed(scope: str) -> discord.Embed:
         for i, (uid, net, games) in enumerate(rows):
             tag = medals[i] if i < len(medals) else f"{i + 1}."
             out.append(f"{tag} <@{uid}> · **{_fmt_net(net)}** · {games} game{'s' if games != 1 else ''}")
-        return "\n".join(out) if out else "—"
+        return "\n".join(out) if out else "-"
 
     embed.add_field(name="📈 Biggest Winners", value=_rows(winners), inline=False)
     if losers:

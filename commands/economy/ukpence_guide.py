@@ -16,12 +16,12 @@ async def handle_ukpence_guide_command(interaction: discord.Interaction):
     tree_mention = f"<#{tree}>" if tree else "the tree channel"
 
     earn = discord.Embed(
-        title="🪙 UKPence — The Complete Guide",
+        title="🪙 UKPence - The Complete Guide",
         colour=ACCENT,
         description=(
             "**UKPence (UKP)** is HMS Victory's currency, and it's a **closed economy**: a fixed "
             "**800,000 UKP** that never grows or shrinks. The **Server Bank** pays out the passive "
-            "rewards below and collects everything you stake or spend — so money just circulates "
+            "rewards below and collects everything you stake or spend - so money just circulates "
             "between players and the bank. None is ever created or destroyed.\n\n"
             "Check your balance any time with **/balance**, and see the whole economy live with "
             "**/ukpeconomy**.\n\n"
@@ -42,7 +42,7 @@ async def handle_ukpence_guide_command(interaction: discord.Interaction):
                    value="**+10 UKP** the very first time you take part in the economy.", inline=False)
     earn.add_field(name="🌳 Tree watering",
                    value=(f"Water the server tree in {tree_mention} for **20 UKP**. The first few waters each day "
-                          "pay full, then it decays by 1 per water down to 1 — so casual waterers get the best rate."),
+                          "pay full, then it decays by 1 per water down to 1 - so casual waterers get the best rate."),
                    inline=False)
     earn.add_field(name="🧾 /benefits",
                    value="Skint? Claim a daily handout of **40–100 UKP** while your balance is under **400**. "
@@ -56,7 +56,7 @@ async def handle_ukpence_guide_command(interaction: discord.Interaction):
                    inline=False)
     earn.add_field(name="🎲 Gambling",
                    value="Win at the **casino**, scoop the weekly **lottery** pot, call **predictions** right, "
-                         "or beat someone in a **/wager** — winnings from these are yours to keep.",
+                         "or beat someone in a **/wager** - winnings from these are yours to keep.",
                    inline=False)
 
     spend = discord.Embed(
@@ -64,32 +64,32 @@ async def handle_ukpence_guide_command(interaction: discord.Interaction):
         colour=ACCENT,
         description="Anything you stake or spend flows back into the Server Bank.",
     )
-    spend.add_field(name="🏦 /bond — save & earn interest",
+    spend.add_field(name="🏦 /bond - save & earn interest",
                     value="Lock UKP for a fixed term (**3d / 7d / 30d** at **2% / 6% / 30%**) and the bank repays it "
                           "with interest when it matures. One bond at a time, up to **5,000**. Break early and you "
                           "forfeit the interest plus a small penalty.",
                     inline=False)
     spend.add_field(name="🎰 Casino",
-                    value="**/casino** opens the lobby — Blackjack, Roulette, Slots, Video Poker, Red Dog and "
+                    value="**/casino** opens the lobby - Blackjack, Roulette, Slots, Video Poker, Red Dog and "
                           "3-Card Poker. The house keeps a small edge, so play for the fun of it.",
                     inline=False)
     spend.add_field(name="🎫 /lottery",
-                    value="Buy tickets for the weekly National Lottery — one winner takes the whole pot.", inline=False)
+                    value="Buy tickets for the weekly National Lottery - one winner takes the whole pot.", inline=False)
     spend.add_field(name="🔮 Predictions & /wager",
                     value="Bet on event outcomes, or challenge another player to a head-to-head wager.", inline=False)
     spend.add_field(name="💸 /pay",
-                    value="Send UKP straight to another member — no fee.", inline=False)
+                    value="Send UKP straight to another member - no fee.", inline=False)
     spend.add_field(name="🛍️ /shop",
                     value="Spend on shutcoins, VIP cases, custom emojis & roles, and more.", inline=False)
     spend.add_field(name="📋 Handy commands",
-                    value=("**/balance** — check your UKP\n"
-                           "**/ukpeconomy** — live economy dashboard\n"
-                           "**/benefits** — daily handout if you're broke\n"
-                           "**/bond** — open or manage a savings bond\n"
-                           "**/casino** · **/lottery** · **/shop** — play & spend\n"
-                           "**/pay** — send UKP to someone\n"
-                           "**/casino-stats** — your gambling record"),
+                    value=("**/balance** - check your UKP\n"
+                           "**/ukpeconomy** - live economy dashboard\n"
+                           "**/benefits** - daily handout if you're broke\n"
+                           "**/bond** - open or manage a savings bond\n"
+                           "**/casino** · **/lottery** · **/shop** - play & spend\n"
+                           "**/pay** - send UKP to someone\n"
+                           "**/casino-stats** - your gambling record"),
                     inline=False)
-    spend.set_footer(text="HMS Victory · A closed economy — total UKP fixed at 800,000")
+    spend.set_footer(text="HMS Victory · A closed economy - total UKP fixed at 800,000")
 
     await interaction.response.send_message(embeds=[earn, spend], ephemeral=True)

@@ -219,7 +219,7 @@ def banner_html(kind: str, head: str, sub: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
-# Rendering — one shared felt table (templates/casino_table.html)
+# Rendering - one shared felt table (templates/casino_table.html)
 # ---------------------------------------------------------------------------
 async def render_table(*, title_main: str, title_accent: str, subtitle: str,
                        body_html: str, bet: int, balance: int, hint: str,
