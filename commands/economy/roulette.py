@@ -302,25 +302,38 @@ def _results_body(table) -> str:
         f'<div style="font-size:16px;letter-spacing:.16em;text-transform:uppercase;color:#e8cf92;'
         f'font-weight:700">{" · ".join(tags)}</div></div>'
     )
-    rows = []
+    cards = []
     standings = sorted(table.players.values(),
                        key=lambda s: -(_resolve(s["bets"], n) - sum(s["bets"].values())))
     for slot in standings:
-        staked = sum(slot["bets"].values())
-        net = _resolve(slot["bets"], n) - staked
-        col = "#7CFC9B" if net > 0 else ("#ff7a7a" if net < 0 else "#e8e2cf")
-        sign = f"+{net:,}" if net > 0 else (f"-{abs(net):,}" if net < 0 else "even")
-        rows.append(
+        bets = slot["bets"]
+        net = _resolve(bets, n) - sum(bets.values())
+        ncol = "#7CFC9B" if net > 0 else ("#ff7a7a" if net < 0 else "#e8e2cf")
+        nsign = f"+{net:,}" if net > 0 else (f"-{abs(net):,}" if net < 0 else "even")
+        bet_rows = []
+        for key in sorted(bets, key=lambda k: (not bet_wins(k, n), k)):
+            amt = bets[key]
+            won = bet_wins(key, n)
+            val = f"+{amt * bet_payout(key):,}" if won else f"-{amt:,}"
+            bcol = "#7CFC9B" if won else "#ff7a7a"
+            bet_rows.append(
+                '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 2px">'
+                f'<span style="color:rgba(255,255,255,.82);font-size:16px">{bet_label(key)}'
+                f'<span style="opacity:.5"> · staked {amt:,}</span></span>'
+                f'<span style="font-weight:700;font-size:16px;color:{bcol}">{val}</span></div>'
+            )
+        cards.append(
+            '<div style="background:rgba(0,0,0,.32);border:1px solid rgba(214,164,74,.3);'
+            'border-radius:12px;padding:11px 16px">'
             '<div style="display:flex;justify-content:space-between;align-items:center;'
-            'padding:10px 18px;border-radius:12px;background:rgba(0,0,0,.32);'
-            'border:1px solid rgba(255,255,255,.1)">'
-            f'<span style="font-weight:700;color:#fff;font-size:19px">{_esc(slot["name"])} '
-            f'<span style="opacity:.55;font-size:15px">· staked {staked:,}</span></span>'
-            f'<span style="font-weight:800;font-size:20px;color:{col}">{sign}</span></div>'
+            'padding-bottom:6px;margin-bottom:5px;border-bottom:1px solid rgba(255,255,255,.12)">'
+            f'<span style="font-weight:800;color:#fff;font-size:20px">{_esc(slot["name"])}</span>'
+            f'<span style="font-weight:800;font-size:20px;color:{ncol}">{nsign}</span></div>'
+            f'{"".join(bet_rows)}</div>'
         )
-    if rows:
+    if cards:
         body = ('<div style="width:100%;max-width:560px;margin:0 auto;display:flex;flex-direction:column;'
-                f'gap:8px">{"".join(rows)}</div>')
+                f'gap:9px">{"".join(cards)}</div>')
     else:
         body = ('<div style="text-align:center;color:rgba(255,255,255,.6);font-size:22px;'
                 'padding:30px">No bets were placed this round.</div>')
@@ -338,15 +351,13 @@ async def render_table_image(table) -> io.BytesIO:
 
 
 async def render_results_image(table) -> io.BytesIO:
-    n = table.result
-    banner = cb.banner_html("gold", f"{n} {color(n).upper()}", f"{len(table.players)} players · pot {table.pot:,}")
     return await cb.render_table(
         title_main="EUROPEAN", title_accent="ROULETTE",
         subtitle="The ball has landed",
         body_html=_results_body(table),
         bet=table.pot, balance=len(table.players),
         bet_label="Pot", balance_label="Players", balance_unit="",
-        hint="Tap New Round to play again.", result_banner=banner, session_html="")
+        hint="Tap New Round to play again.", result_banner="", session_html="")
 
 
 # ---------------------------------------------------------------------------
