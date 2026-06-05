@@ -41,6 +41,58 @@ def load_balance_snapshot(date_str: str):
     except (json.JSONDecodeError, FileNotFoundError):
         return None
 
+# Every bank-funded reward is an "injection" (bank -> player). add_bb-from-bank logs a
+# "Bank withdrawal: `amount`|<reason>" row, so we sum yesterday's by reason for each source.
+# (Casino/lottery are excluded - net of stakes they're a sink, not an injection.)
+_INJECTION_SOURCES = [
+    ("Chat Activity", "Chatting activity reward"),
+    ("Top Chatters", "Top chatter daily reward"),
+    ("Stage Events", "Stage Participation Reward"),
+    ("Booster Bonuses", "Server booster daily bonus"),
+    ("Welcome Bonus", "New member welcome bonus"),
+    ("Benefits", "Benefits payment"),
+    ("Tree Watering", "Tree watering reward"),
+    ("Hall of Fame", "Hall of Fame reward"),
+    ("Tickets", "Ticket reward"),
+]
+
+
+def _build_injections_html(uk_tz, now_dt) -> str:
+    import re
+    y = now_dt - timedelta(days=1)
+    start = int(uk_tz.localize(datetime(y.year, y.month, y.day)).timestamp())
+    end = int(uk_tz.localize(datetime(now_dt.year, now_dt.month, now_dt.day)).timestamp())
+    try:
+        rows = DatabaseManager.fetch_all(
+            "SELECT log_text FROM economy_transactions WHERE timestamp >= ? AND timestamp < ? "
+            "AND log_text LIKE '%Bank withdrawal%'", (start, end)) or []
+    except Exception:
+        logger.error("injections query failed", exc_info=True)
+        rows = []
+    amt_re = re.compile(r"`([\d,]+)`")
+    totals = {label: 0 for label, _ in _INJECTION_SOURCES}
+    for (t,) in rows:
+        if not t:
+            continue
+        m = amt_re.search(t)
+        if not m:
+            continue
+        amount = int(m.group(1).replace(",", ""))
+        for label, kw in _INJECTION_SOURCES:
+            if kw in t:
+                totals[label] += amount
+                break
+    cards = []
+    for label, _ in _INJECTION_SOURCES:
+        cards.append(
+            "<div class='stat-item'>"
+            f"<div class='stat-label'>{label}</div>"
+            f"<div class='stat-value'>{totals[label]:,} <span class='text-xs text-slate-500'>UKP</span></div>"
+            "</div>"
+        )
+    return "\n".join(cards)
+
+
 async def create_economy_stats_image(guild: discord.Guild, client: discord.Client) -> str:
     logger.info("[ECON DEBUG] create_economy_stats_image called")
     ukpence_data_current = load_ukpence_data()
@@ -116,10 +168,7 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
         elif net_change_value < 0:
             net_ukpence_change_class = "change-negative"
     
-    yesterday_metrics = get_daily_metrics(yesterday_str_key)
-    chat_rewards_yesterday = yesterday_metrics.get("chat_rewards_total", 0)
-    booster_rewards_yesterday = yesterday_metrics.get("booster_rewards_total", 0)
-    stage_rewards_yesterday = yesterday_metrics.get("stage_rewards_total", 0)
+    injections_html = _build_injections_html(uk_timezone, now_dt)
 
     today_metrics_start_of_day = get_daily_metrics(today_str_key)
     total_circulation_start_of_today = today_metrics_start_of_day.get("total_circulation_start_of_day")
@@ -206,9 +255,7 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
         growth_class=growth_class,
         yesterday_date=yesterday_dt.strftime("%d %B %Y"),
         
-        chat_rewards_yesterday=f"{chat_rewards_yesterday:,}",
-        booster_rewards_yesterday=f"{booster_rewards_yesterday:,}",
-        stage_rewards_yesterday=f"{stage_rewards_yesterday:,}",
+        injections_html=injections_html,
 
         biggest_earner_name=discord.utils.escape_markdown(str(biggest_earner_name)),
         biggest_earner_amount=str(biggest_earner_amount),
