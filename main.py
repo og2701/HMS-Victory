@@ -165,33 +165,10 @@ class AClient(discord.Client):
                 except Exception as e:
                     logger.warning(f"Could not update prediction {p.msg_id}: {e}")
 
-        # Proactively update existing pending scheduled-prediction announcements so
-        # they show the latest buttons (Edit, plus the new Add Draw / Add Option).
-        # Re-editing with a fresh CancelScheduledPredView backfills buttons added
-        # after a card was first posted.
-        from lib.economy.prediction_system import CancelScheduledPredView
-        from database import DatabaseManager
-        try:
-            sched_rows = DatabaseManager.fetch_all(
-                "SELECT id, cm_message_id FROM scheduled_predictions WHERE status = 'pending' AND cm_message_id IS NOT NULL"
-            )
-            cm_channel = self.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
-            if cm_channel is None:
-                try:
-                    cm_channel = await self.fetch_channel(CHANNELS.COMMUNITY_MANAGEMENT)
-                except Exception:
-                    cm_channel = None
-            if cm_channel is not None:
-                for sched_id, cm_msg_id in sched_rows:
-                    try:
-                        cm_msg = await cm_channel.fetch_message(int(cm_msg_id))
-                        await cm_msg.edit(view=CancelScheduledPredView(sched_id))
-                        logger.info(f"Refreshed scheduled-pred announcement {cm_msg_id} with the latest buttons.")
-                        await asyncio.sleep(1) # Small delay to be polite to the API
-                    except Exception as e:
-                        logger.warning(f"Could not update scheduled-pred announcement {cm_msg_id}: {e}")
-        except Exception as e:
-            logger.warning(f"Could not refresh scheduled-pred announcements: {e}")
+        # (Removed the on-ready scheduled-prediction button backfill: it re-edited every
+        # pending CM announcement on each restart, 429-storming the API and stalling the
+        # event loop. The cancel buttons already work via the persistent views registered
+        # in __init__, so the backfill was redundant.)
 
         # Open the first-ever lottery round (no-op once one exists; the weekly job opens
         # subsequent rounds). Safe across reconnects - it only acts if none has existed.

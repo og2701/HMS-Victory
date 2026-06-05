@@ -215,6 +215,28 @@ def _recent_pay_out(uid, days) -> int:
         return 0
 
 
+def _benefits_clear_ts(uid, bal, threshold, days):
+    """When (epoch) recent transfers age out of the window enough that balance + the
+    still-in-window transfers drop below the threshold - i.e. when they'd be eligible again
+    if they stop sending UKP. Each transfer leaves the window ``days`` after it was sent."""
+    cutoff = int(time.time()) - days * 86400
+    try:
+        rows = DatabaseManager.fetch_all(
+            "SELECT timestamp, amount FROM pay_transfers WHERE payer_id = ? AND timestamp > ? "
+            "ORDER BY timestamp ASC", (str(uid), cutoff)) or []
+    except Exception:
+        return None
+    if not rows:
+        return None
+    target = threshold - bal              # in-window transfers must fall below this
+    remaining = sum(a for _, a in rows)
+    for ts, a in rows:                    # oldest first; each expires at ts + window
+        remaining -= a
+        if remaining < target:
+            return ts + days * 86400
+    return None
+
+
 async def handle_benefits_command(interaction):
     uid = interaction.user.id
     suid = str(uid)
@@ -249,7 +271,11 @@ async def handle_benefits_command(interaction):
         if rec["offenses"] == 0 and not rec["warned"]:
             rec["warned"] = True  # one warning before any ban (protects honest givers)
             _save()
-            await _reply(random.choice(_BENEFITS_FRAUD_WARN).format(out=recent_out))
+            msg = random.choice(_BENEFITS_FRAUD_WARN).format(out=recent_out)
+            clear = _benefits_clear_ts(suid, bal, threshold, getattr(config, "BENEFITS_LOOKBACK_DAYS", 1))
+            if clear:
+                msg += f"\n-# If you stop sending UKP, you'll be eligible again <t:{clear}:R>."
+            await _reply(msg)
             return
         days = ramp[min(rec["offenses"], len(ramp) - 1)]
         rec["offenses"] += 1
