@@ -121,6 +121,7 @@ class Table:
         self.thread = None              # the live game runs in here
         self.client = client
         self.seats = []                 # [{id, name, stack}]
+        self.ledger = {}                # uid -> {name, bought, cashed} for the session summary
         self.button = -1
         self.message = None             # board message (in the thread)
         self.lock = asyncio.Lock()
@@ -252,8 +253,10 @@ class Table:
             if not remove_bb(user.id, amount, reason="Poker buy-in", to_bank=True):
                 await interaction.response.send_message("Buy-in failed.", ephemeral=True)
                 return
-            self.seats.append({"id": user.id, "name": discord.utils.escape_markdown(user.display_name),
-                               "stack": int(amount)})
+            name = discord.utils.escape_markdown(user.display_name)
+            self.seats.append({"id": user.id, "name": name, "stack": int(amount)})
+            lg = self.ledger.setdefault(user.id, {"name": name, "bought": 0, "cashed": 0})
+            lg["bought"] += int(amount)
             self._checkpoint()
         if self.thread is not None:
             try:
@@ -276,6 +279,8 @@ class Table:
                 return
             credit_from_bank(seat["id"], seat["stack"], reason="Poker cash-out")
             cashed = seat["stack"]
+            if seat["id"] in self.ledger:
+                self.ledger[seat["id"]]["cashed"] += cashed
             self.seats.remove(seat)
             self._checkpoint()
         await interaction.response.send_message(f"Cashed out **{cashed:,}** UKPence.", ephemeral=True)
@@ -405,15 +410,14 @@ class Table:
         async with self.lock:
             for s in self.seats:
                 credit_from_bank(s["id"], s["stack"], reason="Poker table closed")
+                if s["id"] in self.ledger:
+                    self.ledger[s["id"]]["cashed"] += s["stack"]
             self.seats = []
             self.status = "lobby"
             self.hand = None
         escrow.clear_table(self.channel_id)
         _TABLES.pop(self.channel_id, None)
-        try:
-            await self.casino.send("\U0001f0cf The Hold'em table closed - everyone cashed out.")
-        except Exception:
-            pass
+        await self._post_summary()
         if self.thread is not None:
             try:
                 await self.thread.delete()
@@ -422,6 +426,24 @@ class Table:
                     await self.thread.edit(archived=True, locked=True)
                 except Exception:
                     pass
+
+    async def _post_summary(self):
+        """Session results in the casino channel: each player's net (cash-out minus buy-in)."""
+        rows = sorted(((lg["cashed"] - lg["bought"], lg["name"], lg["bought"], lg["cashed"])
+                       for lg in self.ledger.values()), reverse=True)
+        lines = ["## \U0001f0cf HMS Hold'em - table closed"]
+        if rows:
+            lines.append("**Session results**")
+            for net, name, bought, cashed in rows:
+                emo = "\U0001f7e2" if net > 0 else ("\U0001f534" if net < 0 else "⚪")
+                sign = "+" if net >= 0 else ""
+                lines.append(f"{emo} **{name}** {sign}{net:,}  (in {bought:,}, out {cashed:,})")
+        else:
+            lines.append("Everyone cashed out.")
+        try:
+            await self.casino.send("\n".join(lines))
+        except Exception:
+            logger.error("poker summary post failed", exc_info=True)
 
     # --- per-player ephemeral action UI ---------------------------------------
     async def _on_act(self, interaction: Interaction):
