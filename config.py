@@ -51,7 +51,7 @@ HIGHERLOWER_MIN_MULTIPLIER = 1.05
 # --- Fruit Machine / Slots (vs-the-house) ---
 SLOTS_ENABLED = True
 SLOTS_IMAGE_ENABLED = True
-SLOTS_MIN_BET = 5
+SLOTS_MIN_BET = 1
 SLOTS_MAX_BET = 10_000
 
 # --- Video Poker / Jacks or Better (vs-the-house) ---
