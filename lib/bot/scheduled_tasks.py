@@ -22,7 +22,7 @@ from commands.moderation.overnight_mute import mute_visitors, unmute_visitors
 logger = logging.getLogger(__name__)
 
 STAGE_UKPENCE_MULTIPLIER = 1
-SERVER_BOOSTER_UKP_DAILY_BONUS = 10
+SERVER_BOOSTER_UKP_DAILY_BONUS = 100
 MAX_THREAD_USERS = 990
 FORUM_CHANNEL_ID = 1341451323249266711
 
