@@ -64,7 +64,7 @@ async def award_hof_reward(client, user_id: int):
     try:
         user = client.get_user(int(user_id)) or await client.fetch_user(int(user_id))
         await user.send(
-            f"\U0001f3c6 Your message just made it into the **Hall of Fame** — "
+            f"\U0001f3c6 Your message just made it into the **Hall of Fame** - "
             f"here's **{amount:,} UKPence** to go with the glory. Well earned!"
         )
     except Exception:
@@ -122,7 +122,7 @@ async def handle_benefits_command(interaction):
     threshold = getattr(config, "BENEFITS_THRESHOLD", 250)
     if bal >= threshold:
         await interaction.response.send_message(
-            f"\U0001f4bc You're not eligible — you've got **{bal:,} UKPence** "
+            f"\U0001f4bc You're not eligible - you've got **{bal:,} UKPence** "
             f"(benefits are for those under {threshold:,}). Back to work."
         )
         return
@@ -142,7 +142,7 @@ async def handle_benefits_command(interaction):
 
     amount = random.randint(getattr(config, "BENEFITS_MIN", 30), getattr(config, "BENEFITS_MAX", 75))
     if not _pay(uid, amount, "Benefits payment"):
-        await interaction.response.send_message("\U0001f9fe The benefits office is shut right now — try later.")
+        await interaction.response.send_message("\U0001f9fe The benefits office is shut right now - try later.")
         return
     await interaction.response.send_message(
         f"\U0001f9fe **Benefits approved!** <@{uid}> receives **{amount:,} UKPence** from the state. "

@@ -49,7 +49,7 @@ async def _require_casino_channel(interaction) -> bool:
     if interaction.channel_id in config.CASINO_CHANNELS:
         return False
     await interaction.response.send_message(
-        f"🎰 The casino's over in <#{config.CHANNELS.CASINO}> — head there to play! "
+        f"🎰 The casino's over in <#{config.CHANNELS.CASINO}> - head there to play! "
         "(Casino games and the lottery can only be used in that channel.)",
         ephemeral=True,
     )
