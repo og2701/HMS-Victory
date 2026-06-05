@@ -572,6 +572,11 @@ def define_commands(tree, client):
         from lib.features.wordle import handle_wordle_command
         await handle_wordle_command(interaction)
 
+    @command("poker", "Open or join the HMS Hold'em table in this channel (casino channels)")
+    async def poker_command(interaction: Interaction):
+        from commands.economy.poker import handle_poker_command
+        await handle_poker_command(interaction)
+
     @command("bank-status", "View server bank status (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def bank_status_command(interaction: Interaction):
         await handle_bank_status_command(interaction)

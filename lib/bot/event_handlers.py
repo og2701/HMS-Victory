@@ -773,6 +773,11 @@ async def process_forum_threads(client, message):
 
 async def on_ready(client, tree, scheduler):
     set_badge_notify_client(client)
+    try:
+        from lib.economy.poker import escrow as _poker_escrow
+        _poker_escrow.refund_all()  # void+refund any poker hands a restart interrupted
+    except Exception:
+        logger.error("poker escrow refund on startup failed", exc_info=True)
     if not hasattr(client, "thread_messages"):
         client.thread_messages = load_json_file(THREAD_MESSAGES_FILE)
         logger.info("Loaded thread messages")

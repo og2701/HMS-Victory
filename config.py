@@ -156,6 +156,14 @@ FLETCHER_BOT_NAMES = ["fletcher"]  # otherwise matched by bot name
 WORDLE_ANSWERS_FILE = os.path.join("data", "words", "answers.txt")
 WORDLE_VALID_FILE = os.path.join("data", "words", "valid.txt")
 WORDLE_REWARDS = [200, 140, 100, 70, 45, 25]  # payout by number of guesses to solve (1..6)
+# Texas Hold'em (player-vs-player; bank is escrow, no rake)
+POKER_SMALL_BLIND = 5
+POKER_BIG_BLIND = 10
+POKER_MIN_BUYIN = 200
+POKER_MAX_BUYIN = 2000
+POKER_MAX_SEATS = 6
+POKER_TURN_SECONDS = 45            # auto check/fold if a player stalls
+POKER_ESCROW_FILE = os.path.join(JSON_DATA_DIR, "poker_escrow.json")
 HALL_OF_FAME_FILE = os.path.join(JSON_DATA_DIR, "hall_of_fame.json")
 PREDICTIONS_FILE = os.path.join(JSON_DATA_DIR, "predictions.json")
 PREDICTION_STREAKS_FILE = os.path.join(JSON_DATA_DIR, "prediction_streaks.json")
