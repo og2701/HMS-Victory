@@ -85,9 +85,8 @@ TREE_WATER_REWARD = 20            # UKP per detected watering
 TREE_WATER_DAILY_CAP = 200        # max UKP/day per user from watering (anti-camp)
 
 BENEFITS_THRESHOLD = 250          # only claimable while balance is under this
-BENEFITS_MIN = 30                 # random payout range
+BENEFITS_MIN = 30                 # random payout range (always pays when eligible)
 BENEFITS_MAX = 75                 # one claim per UK calendar day (resets at midnight)
-BENEFITS_SUCCESS_CHANCE = 0.75    # the "assessment" can fail (funny)
 
 HOF_REWARD = 100                  # UKP DM'd to a message's author on Hall of Fame entry
 TICKET_REWARD = 100               # UKP a staff member can grant a ticket's opener

@@ -136,16 +136,9 @@ async def handle_benefits_command(interaction):
         )
         return
 
-    # One claim per UK calendar day (pass or fail); resets at midnight.
+    # One claim per UK calendar day; resets at midnight.
     store[str(uid)] = today
     save_json_file(config.BENEFITS_FILE, store)
-
-    if random.random() > getattr(config, "BENEFITS_SUCCESS_CHANCE", 0.75):
-        await interaction.response.send_message(
-            "\U0001f9fe **Benefits assessment complete.** After careful review you've been found "
-            "**fit for work** — claim denied. Try again tomorrow. \U0001fae1"
-        )
-        return
 
     amount = random.randint(getattr(config, "BENEFITS_MIN", 30), getattr(config, "BENEFITS_MAX", 75))
     if not _pay(uid, amount, "Benefits payment"):
