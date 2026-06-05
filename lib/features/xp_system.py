@@ -499,7 +499,7 @@ class XPSystem:
         bank_html = f"""
         <div class="flex justify-center w-full" style="margin-bottom:18px">
           <div class="leaderboard-item" style="max-width:470px;width:100%;border:1.5px solid #D4AF37;box-shadow:0 0 22px rgba(212,175,55,.4);background:linear-gradient(90deg, rgba(0,0,0,.9), rgba(48,36,6,.7));">
-            <div class="rank-badge" style="color:#D4AF37;font-size:22px">🏦</div>
+            <div class="rank-badge" style="color:#D4AF37;font-size:30px;font-weight:700">£</div>
             <div class="avatar-container"><img src="{bank_avatar}" class="avatar" /></div>
             <div class="user-info">
               <div class="user-name" style="color:#D4AF37">Victory Bank</div>

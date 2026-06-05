@@ -77,18 +77,30 @@ async def award_hof_reward(client, user_id: int):
 # Tree watering
 # ---------------------------------------------------------------------------
 _WATER_RE = re.compile(r"Thanks <@!?(\d+)> for watering the tree", re.IGNORECASE)
+_HEIGHT_RE = re.compile(r"tree is ([\d,]+(?:\.\d+)?)\s*ft tall", re.IGNORECASE)
 
 
 async def handle_tree_watering(client, message):
-    """Pay the waterer when the Grow-a-Tree bot posts a 'thanks for watering' embed.
-    Daily-capped per user to stop someone camping the tree for UKP."""
+    """Pay the waterer when the Grow-a-Tree bot's 'thanks for watering' embed appears -
+    whether it's a NEW message or the bot EDITING the existing one in place.
+
+    Dedup is on the tree height (strictly increasing per water): we only ever pay when the
+    height is greater than the last one we paid for, so re-processing the same edit, or the
+    new-message and edit events for one water, can't double-pay. Daily-capped per user too.
+    """
     if message.author.id != getattr(config, "GROW_A_TREE_BOT_ID", 0):
         return
     waterer_id = None
+    height = None
     for e in message.embeds:
-        m = _WATER_RE.search(f"{e.description or ''} {e.title or ''}")
-        if m:
-            waterer_id = int(m.group(1))
+        blob = f"{e.description or ''} {e.title or ''}"
+        wm = _WATER_RE.search(blob)
+        if wm:
+            waterer_id = int(wm.group(1))
+        hm = _HEIGHT_RE.search(blob)
+        if hm:
+            height = float(hm.group(1).replace(",", ""))
+        if waterer_id:
             break
     if not waterer_id:
         return
@@ -96,10 +108,19 @@ async def handle_tree_watering(client, message):
     reward = getattr(config, "TREE_WATER_REWARD", 20)
     cap = getattr(config, "TREE_WATER_DAILY_CAP", 200)
     store = load_json_file(config.TREE_WATER_FILE) or {}
+
+    # Dedup: only pay once per genuine water (height must have grown since last payout).
+    if height is not None:
+        last_h = store.get("_last_height", 0)
+        if height <= last_h:
+            return
+        store["_last_height"] = height
+
     today = _today()
     rec = store.get(str(waterer_id))
-    earned = rec["earned"] if (rec and rec.get("date") == today) else 0
+    earned = rec["earned"] if (isinstance(rec, dict) and rec.get("date") == today) else 0
     if earned >= cap:
+        save_json_file(config.TREE_WATER_FILE, store)  # persist the height advance
         return  # hit the daily cap; pay nothing more today
     pay_amt = min(reward, cap - earned)
     if not _pay(waterer_id, pay_amt, "Tree watering reward"):

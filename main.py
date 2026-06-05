@@ -433,6 +433,24 @@ class AClient(discord.Client):
     async def on_message_edit(self, before, after):
         await on_message_edit(self, before, after)
 
+    async def on_raw_message_edit(self, payload):
+        # Grow-a-Tree usually EDITS the tree message in place when someone waters (instead of
+        # posting a new one), and that old message is often out of the cache - so use the RAW
+        # edit event (fires regardless of cache) and fetch the current message. Dedup is by
+        # tree height inside the handler, so this can't double-pay vs the on_message path.
+        try:
+            if payload.channel_id != TREE_CHANNEL_ID:
+                return
+            author = ((payload.data or {}).get("author") or {}).get("id")
+            if str(author) != str(GROW_A_TREE_BOT_ID):
+                return
+            channel = self.get_channel(TREE_CHANNEL_ID) or await self.fetch_channel(TREE_CHANNEL_ID)
+            msg = await channel.fetch_message(payload.message_id)
+            from lib.features.ukp_rewards import handle_tree_watering
+            asyncio.create_task(handle_tree_watering(self, msg))
+        except Exception:
+            logger.debug("tree raw-edit handler failed", exc_info=True)
+
     async def on_reaction_add(self, reaction, user):
         if user.bot:
             return
