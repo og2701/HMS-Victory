@@ -81,8 +81,10 @@ ROULETTE_MAX_BET = 10_000  # max total stake across all bets on one spin
 # --- UKP earning rewards (all paid from the house bank; supply stays at 800k) ---
 TREE_CHANNEL_ID = 1142970908059910204
 GROW_A_TREE_BOT_ID = 972637072991068220
-TREE_WATER_REWARD = 20            # UKP per detected watering
-TREE_WATER_DAILY_CAP = 200        # max UKP/day per user from watering (anti-camp)
+TREE_WATER_REWARD = 20            # UKP for the first few waters of the day, then it decays
+TREE_WATER_FULL_COUNT = 3         # this many waters/day at full reward; after that -1 each
+                                  # water (20,..,19,18,...) down to a floor of 1 UKP, reset
+                                  # at midnight UK. The decay self-limits, so no hard cap.
 
 BENEFITS_THRESHOLD = 400          # only claimable while balance is under this
 BENEFITS_MIN = 40                 # random payout range (always pays when eligible)

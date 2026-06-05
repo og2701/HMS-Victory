@@ -80,6 +80,16 @@ _WATER_RE = re.compile(r"Thanks <@!?(\d+)> for watering the tree", re.IGNORECASE
 _HEIGHT_RE = re.compile(r"tree is ([\d,]+(?:\.\d+)?)\s*ft tall", re.IGNORECASE)
 
 
+def _tree_reward(water_index: int) -> int:
+    """Reward for a user's Nth water of the day (1-based): full rate for the first few
+    waters, then -1 per water down to a floor of 1. Resets daily."""
+    start = getattr(config, "TREE_WATER_REWARD", 20)
+    full = getattr(config, "TREE_WATER_FULL_COUNT", 3)
+    if water_index <= full:
+        return start
+    return max(1, start - (water_index - full))
+
+
 async def handle_tree_watering(client, message):
     """Pay the waterer when the Grow-a-Tree bot's 'thanks for watering' embed appears -
     whether it's a NEW message or the bot EDITING the existing one in place.
@@ -105,8 +115,6 @@ async def handle_tree_watering(client, message):
     if not waterer_id:
         return
 
-    reward = getattr(config, "TREE_WATER_REWARD", 20)
-    cap = getattr(config, "TREE_WATER_DAILY_CAP", 200)
     store = load_json_file(config.TREE_WATER_FILE) or {}
 
     # Dedup: only pay once per genuine water (height must have grown since last payout).
@@ -118,14 +126,13 @@ async def handle_tree_watering(client, message):
 
     today = _today()
     rec = store.get(str(waterer_id))
-    earned = rec["earned"] if (isinstance(rec, dict) and rec.get("date") == today) else 0
-    if earned >= cap:
-        save_json_file(config.TREE_WATER_FILE, store)  # persist the height advance
-        return  # hit the daily cap; pay nothing more today
-    pay_amt = min(reward, cap - earned)
+    same_day = isinstance(rec, dict) and rec.get("date") == today
+    count = rec.get("count", 0) if same_day else 0
+    earned = rec.get("earned", 0) if same_day else 0
+    pay_amt = _tree_reward(count + 1)  # decays after the first few waters; floors at 1
     if not _pay(waterer_id, pay_amt, "Tree watering reward"):
         return
-    store[str(waterer_id)] = {"date": today, "earned": earned + pay_amt}
+    store[str(waterer_id)] = {"date": today, "count": count + 1, "earned": earned + pay_amt}
     save_json_file(config.TREE_WATER_FILE, store)
     try:
         await message.channel.send(
