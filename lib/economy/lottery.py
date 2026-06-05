@@ -189,6 +189,7 @@ async def draw_round(client, round_id):
     credit_from_bank(int(winner_id), prize, reason="Lottery win")
     rnd = get_round(round_id)
     await _refresh_board(client, round_id)
+    await _repost_winner_board(client, rnd)
     await _announce(client, rnd, no_winner=False)
     logger.info("Lottery round %s drawn: winner %s, ticket %s/%s, prize %s.",
                 round_id, winner_id, winning_ticket, total, prize)
@@ -540,6 +541,27 @@ async def _post_board(client, rnd):
         logger.error("Lottery: failed to post board for round %s.", rnd["id"], exc_info=True)
 
 
+async def _repost_winner_board(client, rnd):
+    """Post a fresh copy of the drawn board into the casino channel. The persistent board is
+    edited in place (and may be buried up-channel), so this resurfaces the result on a draw."""
+    import config
+    channel = client.get_channel(config.LOTTERY_CHANNEL)
+    if channel is None:
+        try:
+            channel = await client.fetch_channel(config.LOTTERY_CHANNEL)
+        except Exception:
+            return
+    try:
+        view, files = await build_board_layout(rnd)
+        msg = await channel.send(view=view, files=files)
+        try:
+            client.add_view(view, message_id=msg.id)
+        except Exception:
+            pass
+    except Exception:
+        logger.error("Lottery: failed to repost winner board for round %s.", rnd["id"], exc_info=True)
+
+
 async def _refresh_board(client, round_id):
     """Re-render the stored board message for a round (after a buy or a draw)."""
     rnd = get_round(round_id)
@@ -560,10 +582,12 @@ async def _refresh_board(client, round_id):
 
 async def _announce(client, rnd, *, no_winner: bool):
     import config
-    channel = client.get_channel(config.LOTTERY_CHANNEL)
+    # Winner shout-out goes to General (wider celebration); the no-winner note stays in casino.
+    target = config.LOTTERY_CHANNEL if no_winner else config.CHANNELS.GENERAL
+    channel = client.get_channel(target)
     if channel is None:
         try:
-            channel = await client.fetch_channel(config.LOTTERY_CHANNEL)
+            channel = await client.fetch_channel(target)
         except Exception:
             return
     if no_winner:
