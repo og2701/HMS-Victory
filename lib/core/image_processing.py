@@ -55,7 +55,10 @@ chrome_options.add_argument("--incognito") # Don't persist session data to disk
 import time
 _browser = None
 _render_count = 0
-MAX_RENDERS_BEFORE_RESTART = 2
+MAX_RENDERS_BEFORE_RESTART = 20  # restarting every 2 renders stalled the event loop
+                                 # constantly (chromedriver re-init), expiring button
+                                 # defers (10062) across the games. Idle-restart below
+                                 # still frees memory when quiet.
 MAX_IDLE_TIME_SECONDS = 180  # Shut down Chrome after 3 minutes of inactivity
 _last_render_time = 0
 

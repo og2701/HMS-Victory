@@ -460,7 +460,10 @@ async def _handle_action(interaction: Interaction, game: HigherLowerGame, action
         return
 
     if game.busy:
-        await interaction.response.defer()
+        try:
+            await interaction.response.defer()
+        except discord.NotFound:
+            pass  # duplicate click whose interaction already expired - ignore
         return
     game.busy = True
     client = interaction.client
@@ -483,7 +486,10 @@ async def _handle_action(interaction: Interaction, game: HigherLowerGame, action
                     )
                     return
 
-            await interaction.response.defer()
+            try:
+                await interaction.response.defer()
+            except discord.NotFound:
+                return  # interaction expired before we could ack it (loop was busy)
 
             if action in ("higher", "lower"):
                 game.guess(action)
