@@ -515,6 +515,11 @@ def define_commands(tree, client):
         from lib.features.ukp_rewards import handle_benefits_command
         await handle_benefits_command(interaction)
 
+    @command("bond", "Lock UKPence in a fixed-term bond and earn interest from the bank.")
+    async def bond_command(interaction: Interaction):
+        from lib.economy.bonds import handle_bond_command
+        await handle_bond_command(interaction)
+
     @command("richlist", "Displays a leaderboard of users with the most UKPence")
     async def richlist_command(interaction: Interaction):
         await interaction.response.defer()

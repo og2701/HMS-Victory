@@ -400,6 +400,22 @@ def init_db():
         ''')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_payer ON pay_transfers(payer_id)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_recipient ON pay_transfers(recipient_id)')
+        # Fixed-term savings ("bonds"): principal held in the bank while locked; on maturity
+        # the bank repays principal + interest. status: active | matured | withdrawn.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS bonds (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                principal INTEGER NOT NULL,
+                rate_pct INTEGER NOT NULL,
+                term_days INTEGER NOT NULL,
+                opened_ts INTEGER NOT NULL,
+                matures_ts INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active'
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_bonds_user ON bonds(user_id)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_bonds_status ON bonds(status)')
         
         c.execute('''
             CREATE TABLE IF NOT EXISTS iceberg (

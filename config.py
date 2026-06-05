@@ -93,6 +93,12 @@ BENEFITS_BAN_RAMP = [3, 7, 14, 30]  # benefits-fraud cooldown (days), ramps per 
 HOF_REWARD = 100                  # UKP DM'd to a message's author on Hall of Fame entry
 TICKET_REWARD = 100               # UKP a staff member can grant a ticket's opener
 
+# --- Bonds (fixed-term Treasury savings; interest paid from the bank) ---
+BOND_ENABLED = True
+BOND_TERMS = {3: 2, 7: 6, 30: 30}   # term in days -> interest percent
+BOND_MAX = 5000                      # max principal per bond (one active bond per user)
+BOND_EARLY_PENALTY_PCT = 10          # early exit: forfeit interest + lose this % of principal
+
 # --- National Lottery (shared pooled draw) ---
 # Each round picks a RANDOM ticket price and ticket cap from the ranges below (a little
 # mystery each week). A round draws when it sells out OR at the weekly time, whichever

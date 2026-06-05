@@ -229,6 +229,21 @@ async def handle_benefits_command(interaction):
         await _reply(random.choice(_BENEFITS_FRAUD_BAN).format(days=days))
         return
 
+    # Money locked in a bond still counts as wealth - but that's a legit feature, so it's a
+    # plain denial, not a fraud flag.
+    locked = 0
+    try:
+        from lib.economy.bonds import active_bond_principal
+        locked = active_bond_principal(suid)
+    except Exception:
+        locked = 0
+    if bal + recent_out + locked >= threshold:
+        await _reply(
+            f"🏦 You've got **{locked:,} UKPence** locked in a bond, which still counts as wealth - "
+            f"so you're over the {threshold:,} threshold. Wait for it to mature or break it early."
+        )
+        return
+
     # Already claimed this UK day?
     today = _today()
     if rec["last"] == today:
