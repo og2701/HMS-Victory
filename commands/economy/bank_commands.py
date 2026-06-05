@@ -71,5 +71,6 @@ async def handle_bank_status_command(interaction: discord.Interaction):
 
     embed.set_footer(text="💡 Bank accumulates UKPence from shop purchases, wealth tax & the blackjack edge")
 
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    from lib.economy.bonds import BondOverviewView
+    await interaction.response.send_message(embed=embed, view=BondOverviewView(), ephemeral=True)
 

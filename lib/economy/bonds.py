@@ -292,3 +292,54 @@ async def handle_bond_command(interaction: Interaction):
     g = get_active(interaction.user.id)
     view = build_status_panel(interaction.user.id, g) if g else build_open_panel(interaction.user.id)
     await interaction.response.send_message(view=view, ephemeral=True)
+
+
+# ---------------------------------------------------------------------------
+# Bond overview (a button on /bank-status)
+# ---------------------------------------------------------------------------
+def bonds_overview_embed() -> discord.Embed:
+    rows = DatabaseManager.fetch_all(
+        f"SELECT {_COLS} FROM bonds WHERE status = 'active'") or []
+    active = [_row_to_bond(r) for r in rows]
+    principal = sum(b["principal"] for b in active)
+    interest = sum(interest_for(b["principal"], b["rate_pct"]) for b in active)
+
+    e = discord.Embed(title="🏦 Bond Overview", colour=ACCENT,
+                      description="Fixed-term savings currently locked in the bank.")
+    if not active:
+        e.description = "No active bonds right now."
+    e.add_field(name="Active bonds", value=f"{len(active)}", inline=True)
+    e.add_field(name="Locked (principal)", value=f"{principal:,} UKP", inline=True)
+    e.add_field(name="Interest owed", value=f"{interest:,} UKP", inline=True)
+    e.add_field(name="Payout liability", value=f"{principal + interest:,} UKP", inline=True)
+
+    if active:
+        terms = {}
+        for b in active:
+            slot = terms.setdefault(b["term_days"], [0, 0, b["rate_pct"]])
+            slot[0] += 1
+            slot[1] += b["principal"]
+        by_term = "\n".join(
+            f"**{d}d** @ {slot[2]}%: {slot[0]} bond(s) · {slot[1]:,} UKP"
+            for d, slot in sorted(terms.items()))
+        e.add_field(name="By term", value=by_term, inline=False)
+        e.add_field(name="Next maturity", value=f"<t:{min(b['matures_ts'] for b in active)}:R>", inline=True)
+
+    m = DatabaseManager.fetch_one("SELECT COUNT(*) FROM bonds WHERE status = 'matured'")
+    w = DatabaseManager.fetch_one("SELECT COUNT(*) FROM bonds WHERE status = 'withdrawn'")
+    e.add_field(name="History",
+                value=f"Matured: {(m[0] if m else 0)} · Early-withdrawn: {(w[0] if w else 0)}",
+                inline=False)
+    return e
+
+
+class BondOverviewView(discord.ui.View):
+    """A 'Bond Overview' button to attach to the /bank-status embed."""
+
+    def __init__(self):
+        super().__init__(timeout=300)
+
+    @discord.ui.button(label="Bond Overview", emoji="🏦", style=discord.ButtonStyle.secondary,
+                       custom_id="bankstatus:bonds")
+    async def overview(self, interaction: Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(embed=bonds_overview_embed(), ephemeral=True)
