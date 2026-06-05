@@ -211,4 +211,11 @@ async def _summarise_closed_ticket(bot, message):
 
     destination_channel = bot.get_channel(CHANNELS.POLICE_STATION)
     if destination_channel:
-        await destination_channel.send(embed=e)
+        from lib.features.ukp_rewards import TicketRewardView
+        view = TicketRewardView(ticket_creator_id, ticket_creator_name) if ticket_creator_id else None
+        sent = await destination_channel.send(embed=e, view=view)
+        if view:
+            try:
+                bot.add_view(view, message_id=sent.id)
+            except Exception:
+                pass

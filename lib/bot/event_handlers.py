@@ -1395,6 +1395,13 @@ async def check_hall_of_fame(client, payload):
 
             logger.info(f"Message {message.id} sent to Hall of Fame.")
             await award_badge_with_notify(client, message.author.id, 'hof')
+            # UKP reward (from the bank), DM'd to the author.
+            try:
+                if not message.author.bot:
+                    from lib.features.ukp_rewards import award_hof_reward
+                    await award_hof_reward(client, message.author.id)
+            except Exception:
+                logger.error("HoF UKP reward failed", exc_info=True)
         
         # Local Legend Check (10 unique reactors)
         if len(unique_reactors) >= 10:

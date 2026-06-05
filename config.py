@@ -78,6 +78,20 @@ ROULETTE_IMAGE_ENABLED = True
 ROULETTE_MIN_BET = 5       # informational (min chip is the smallest CHIP_SIZE)
 ROULETTE_MAX_BET = 10_000  # max total stake across all bets on one spin
 
+# --- UKP earning rewards (all paid from the house bank; supply stays at 800k) ---
+TREE_CHANNEL_ID = 1142970908059910204
+GROW_A_TREE_BOT_ID = 972637072991068220
+TREE_WATER_REWARD = 20            # UKP per detected watering
+TREE_WATER_DAILY_CAP = 200        # max UKP/day per user from watering (anti-camp)
+
+BENEFITS_THRESHOLD = 250          # only claimable while balance is under this
+BENEFITS_MIN = 30                 # random payout range
+BENEFITS_MAX = 75                 # one claim per UK calendar day (resets at midnight)
+BENEFITS_SUCCESS_CHANCE = 0.75    # the "assessment" can fail (funny)
+
+HOF_REWARD = 100                  # UKP DM'd to a message's author on Hall of Fame entry
+TICKET_REWARD = 100               # UKP a staff member can grant a ticket's opener
+
 # --- National Lottery (shared pooled draw) ---
 # Each round picks a RANDOM ticket price and ticket cap from the ranges below (a little
 # mystery each week). A round draws when it sells out OR at the weekly time, whichever
@@ -115,6 +129,8 @@ os.makedirs("balance_snapshots", exist_ok=True)
 
 XP_FILE = os.path.join(JSON_DATA_DIR, "chat_leaderboard.json")
 ECONOMY_METRICS_FILE = os.path.join(JSON_DATA_DIR, "economy_metrics.json")
+TREE_WATER_FILE = os.path.join(JSON_DATA_DIR, "tree_water_rewards.json")
+BENEFITS_FILE = os.path.join(JSON_DATA_DIR, "benefits_claims.json")
 HALL_OF_FAME_FILE = os.path.join(JSON_DATA_DIR, "hall_of_fame.json")
 PREDICTIONS_FILE = os.path.join(JSON_DATA_DIR, "predictions.json")
 PREDICTION_STREAKS_FILE = os.path.join(JSON_DATA_DIR, "prediction_streaks.json")

@@ -217,6 +217,12 @@ class AClient(discord.Client):
             handle_ticket_closed_message(self, message)
             return
 
+        # Grow-a-Tree watering reward (the tree bot is a bot, so handle before the filter).
+        if message.channel.id == TREE_CHANNEL_ID and message.author.id == GROW_A_TREE_BOT_ID:
+            from lib.features.ukp_rewards import handle_tree_watering
+            asyncio.create_task(handle_tree_watering(self, message))
+            return
+
         if message.author.bot:
             return
 

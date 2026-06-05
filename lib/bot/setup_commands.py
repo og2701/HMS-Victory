@@ -510,6 +510,11 @@ def define_commands(tree, client):
             return
         await handle_casino_stats_command(interaction, member)
 
+    @command("benefits", "Skint? Claim a daily benefits handout from the bank.")
+    async def benefits_command(interaction: Interaction):
+        from lib.features.ukp_rewards import handle_benefits_command
+        await handle_benefits_command(interaction)
+
     @command("richlist", "Displays a leaderboard of users with the most UKPence")
     async def richlist_command(interaction: Interaction):
         await interaction.response.defer()
