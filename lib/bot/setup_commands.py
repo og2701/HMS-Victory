@@ -558,9 +558,12 @@ def define_commands(tree, client):
     async def balance_command(interaction: Interaction):
         balance = get_bb(interaction.user.id)
         from lib.economy.balance_graph import BalanceGraphView
+        from config import USERS
+        is_owner = interaction.user.id == USERS.OGGERS
         await interaction.response.send_message(
             f"💷 **{interaction.user.display_name}**, you have **{balance:,} UKPence**.",
-            view=BalanceGraphView(interaction.user.id, interaction.user.display_name),
+            view=BalanceGraphView(interaction.user.id, interaction.user.display_name,
+                                  interaction.user.id, owner_search=is_owner),
             ephemeral=True,
         )
 

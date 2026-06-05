@@ -131,8 +131,10 @@ def _build_html(display_name, series):
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@600;800&display=swap');
 * {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ background:#00247D; display:flex; align-items:center; justify-content:center;
-        padding:30px; font-family:'Inter',sans-serif; }}
+html,body {{ overflow:hidden; }}
+::-webkit-scrollbar {{ width:0; height:0; }}
+body {{ background:#0a0e1a; display:flex; align-items:center; justify-content:center;
+        padding:16px; font-family:'Inter',sans-serif; }}
 .card {{ width:{W}px; background:rgba(0,0,0,0.85); border:4px solid #CF142B; border-radius:20px;
          padding:28px 30px; box-shadow:0 16px 50px rgba(0,0,0,0.6); }}
 .head {{ display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:6px; }}
@@ -191,29 +193,56 @@ async def render_balance_graph(user_id, display_name):
     return await screenshot_html(html, size=(1120, 780), apply_trim=True)
 
 
-class BalanceGraphView(discord.ui.View):
-    """A single 'Show balance graph' button attached to the ephemeral /balance reply."""
+class _UserLookupSelect(discord.ui.UserSelect):
+    """Native searchable member picker. Owner-only; selecting a member shows their balance
+    (with its own graph button) in a fresh ephemeral reply, so lookups can be chained."""
 
-    def __init__(self, user_id, display_name):
-        super().__init__(timeout=180)
-        self.user_id = int(user_id)
-        self.display_name = display_name
+    def __init__(self, viewer_id):
+        super().__init__(placeholder="Look up another member's balance...",
+                         min_values=1, max_values=1)
+        self.viewer_id = int(viewer_id)
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.viewer_id:
+            await interaction.response.send_message("That isn't for you.", ephemeral=True)
+            return
+        member = self.values[0]
+        balance = int(get_bb(member.id))
+        await interaction.response.send_message(
+            f"💷 **{member.display_name}** has **{balance:,} UKPence**.",
+            view=BalanceGraphView(member.id, member.display_name, self.viewer_id, owner_search=True),
+            ephemeral=True,
+        )
+
+
+class BalanceGraphView(discord.ui.View):
+    """A 'Show balance graph' button for the ephemeral /balance reply. `target` is whose
+    balance the button graphs; `viewer` is who's allowed to press it (the two differ when
+    the owner is looking someone else up). With owner_search, also attaches a member picker."""
+
+    def __init__(self, target_id, target_name, viewer_id, *, owner_search=False):
+        super().__init__(timeout=300)
+        self.target_id = int(target_id)
+        self.target_name = target_name
+        self.viewer_id = int(viewer_id)
+        if owner_search:
+            self.add_item(_UserLookupSelect(self.viewer_id))
 
     @discord.ui.button(label="Show balance graph", emoji="\U0001f4c8",
                        style=discord.ButtonStyle.secondary)
     async def show_graph(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("That isn't your balance.", ephemeral=True)
+        if interaction.user.id != self.viewer_id:
+            await interaction.response.send_message("That isn't for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
-            img = await render_balance_graph(self.user_id, self.display_name)
+            img = await render_balance_graph(self.target_id, self.target_name)
         except Exception:
             log.error("balance graph render failed", exc_info=True)
             img = None
         if img is None:
             await interaction.followup.send(
-                "Not enough balance history yet - your graph builds up a point a day, "
+                "Not enough balance history yet - the graph builds up a point a day, "
                 "so check back in a day or two.", ephemeral=True)
             return
         await interaction.followup.send(
