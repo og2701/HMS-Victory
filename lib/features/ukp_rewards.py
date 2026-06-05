@@ -71,6 +71,8 @@ async def award_hof_reward(client, user_id: int):
         )
     except Exception:
         log.debug("HoF reward DM failed", exc_info=True)
+    from lib.features.income_badges import record_income_source
+    await record_income_source(client, user_id, "hof")
 
 
 # ---------------------------------------------------------------------------
@@ -127,15 +129,25 @@ async def handle_tree_watering(client, message):
     store["_last_cb"] = comeback
 
     today = _today()
-    rec = store.get(str(waterer_id))
-    same_day = isinstance(rec, dict) and rec.get("date") == today
+    rec = store.get(str(waterer_id)) if isinstance(store.get(str(waterer_id)), dict) else {}
+    same_day = rec.get("date") == today
     count = rec.get("count", 0) if same_day else 0
     earned = rec.get("earned", 0) if same_day else 0
+    total = rec.get("total", 0) + 1                    # lifetime water count (never resets)
     pay_amt = _tree_reward(count + 1)  # decays after the first few waters; floors at 1
     if not _pay(waterer_id, pay_amt, "Tree watering reward"):
         return
-    store[str(waterer_id)] = {"date": today, "count": count + 1, "earned": earned + pay_amt}
+    store[str(waterer_id)] = {"date": today, "count": count + 1, "earned": earned + pay_amt, "total": total}
     save_json_file(config.TREE_WATER_FILE, store)
+
+    from lib.features.income_badges import award_badge_safe, record_income_source
+    await award_badge_safe(client, waterer_id, "green_fingers")     # first water (idempotent)
+    if pay_amt == 1:
+        await award_badge_safe(client, waterer_id, "drip")          # decayed to the floor today
+    if total >= 100:
+        await award_badge_safe(client, waterer_id, "sir_branchalot")
+    await record_income_source(client, waterer_id, "tree")
+
     try:
         await message.channel.send(
             f"\U0001f333 <@{waterer_id}> earned **{pay_amt:,} UKPence** for watering the tree!",
@@ -194,7 +206,7 @@ _BENEFITS_BANNED = [
 def _benefits_rec(store, uid):
     """Normalise a stored record (older versions stored just the last-claim date string)."""
     v = store.get(str(uid))
-    rec = {"last": None, "offenses": 0, "banned_until": 0, "warned": False}
+    rec = {"last": None, "offenses": 0, "banned_until": 0, "warned": False, "streak": 0}
     if isinstance(v, str):
         rec["last"] = v
     elif isinstance(v, dict):
@@ -283,6 +295,8 @@ async def handle_benefits_command(interaction):
         rec["offenses"] += 1
         rec["banned_until"] = now + days * 86400
         _save()
+        from lib.features.income_badges import award_badge_safe
+        await award_badge_safe(interaction.client, uid, "benefits_cheat")
         await _reply(random.choice(_BENEFITS_FRAUD_BAN).format(days=days))
         return
 
@@ -308,6 +322,8 @@ async def handle_benefits_command(interaction):
         return
 
     # Eligible: pay out (and clear any standing warning - they came good).
+    yesterday = (datetime.now(_UK) - timedelta(days=1)).strftime("%Y-%m-%d")
+    rec["streak"] = (rec.get("streak", 0) + 1) if rec["last"] == yesterday else 1
     rec["last"] = today
     rec["warned"] = False
     _save()
@@ -316,6 +332,14 @@ async def handle_benefits_command(interaction):
         await _reply("🧾 The benefits office is shut right now - try later.")
         return
     await _reply(random.choice(_BENEFITS_SUCCESS).format(uid=uid, amount=amount))
+
+    from lib.features.income_badges import award_badge_safe, record_income_source
+    await award_badge_safe(interaction.client, uid, "on_the_dole")     # first claim (idempotent)
+    if bal < 5:
+        await award_badge_safe(interaction.client, uid, "rock_bottom")
+    if rec["streak"] >= 7:
+        await award_badge_safe(interaction.client, uid, "career_claimant")
+    await record_income_source(interaction.client, uid, "benefits")
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +359,9 @@ async def grant_ticket_reward(client, creator_id, creator_name=None) -> bool:
         )
     except Exception:
         log.debug("ticket reward DM failed", exc_info=True)
+    from lib.features.income_badges import award_badge_safe, record_income_source
+    await award_badge_safe(client, creator_id, "squeaky_wheel")
+    await record_income_source(client, creator_id, "ticket")
     return True
 
 

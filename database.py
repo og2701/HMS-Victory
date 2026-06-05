@@ -594,7 +594,24 @@ def init_db():
             ('pillar_5', 'Pillar of the Community (5 Years)', 'Be a member of the server for at least 5 years', '🏰', 'Gold'),
             ('weekend_warrior', 'Weekend Warrior', 'Send 800 or more messages over a single weekend', '⚔️', 'Silver'),
             ('global_citizen', 'Global Citizen', 'Send messages in 5 different channels within 5 minutes', '🗺️', 'Bronze'),
-            ('victory_sponsor', 'Victory Sponsor', 'Transfer UKPence directly to HMS Victory (the bank)', '⚓', 'Silver')
+            ('victory_sponsor', 'Victory Sponsor', 'Transfer UKPence directly to HMS Victory (the bank)', '⚓', 'Silver'),
+            ('green_fingers', 'Green Fingers', 'Water the server tree for the first time', '🌱', 'Bronze'),
+            ('sir_branchalot', 'Sir Branchalot', 'Water the server tree 100 times', '🌳', 'Silver'),
+            ('drip', 'Drip Feed', 'Water the tree enough in one day to decay your reward down to 1 UKPence', '💧', 'Bronze'),
+            ('saver', 'Prudent Saver', 'Open your first bond', '🏦', 'Bronze'),
+            ('bond_villain', 'Bond Villain', 'Earn 1,000 UKPence in total bond interest', '🕴️', 'Gold'),
+            ('long_game', 'The Long Game', 'Open a 30-day bond', '⏳', 'Silver'),
+            ('paper_hands', 'Paper Hands', 'Break a bond early and forfeit the interest', '🧻', 'Bronze'),
+            ('on_the_dole', 'On the Dole', 'Claim benefits for the first time', '🧾', 'Bronze'),
+            ('career_claimant', 'Career Claimant', 'Claim benefits 7 days in a row', '🛋️', 'Silver'),
+            ('benefits_cheat', 'Benefits Cheat', '[REDACTED]', '🕵️', 'Secret'),
+            ('rock_bottom', 'Rock Bottom', 'Claim benefits with under 5 UKPence to your name', '🪨', 'Bronze'),
+            ('lucky_number', 'Lucky Number', 'Win a straight-up number bet on roulette (35:1)', '🎯', 'Gold'),
+            ('zero_hero', 'Zero Hero', 'Be at the roulette table when the ball lands on the green zero', '🟢', 'Silver'),
+            ('red_letter_day', 'Red Letter Day', 'Win 1,000 or more on a single roulette spin', '🔴', 'Silver'),
+            ('squeaky_wheel', 'Squeaky Wheel', 'Be awarded UKPence for a support ticket', '🎟️', 'Bronze'),
+            ('jack_of_all_trades', 'Jack of All Trades', 'Earn UKPence from 5 different income sources', '🧩', 'Silver'),
+            ('self_made', 'Self-Made', '[REDACTED]', '🛠️', 'Secret')
         ]
         for b_id, b_name, b_desc, b_icon, b_rarity in badges:
             c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)",

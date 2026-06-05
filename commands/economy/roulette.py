@@ -748,12 +748,23 @@ async def _lock_and_spin(table):
 
     # Pay everyone from the bank and record stats (independent of rendering).
     n = table.result
+    from lib.features.income_badges import award_badge_safe, record_income_source
     for pid, slot in table.players.items():
-        staked = sum(slot["bets"].values())
-        returned = _resolve(slot["bets"], n)
+        bets = slot["bets"]
+        staked = sum(bets.values())
+        returned = _resolve(bets, n)
         if returned > 0:
             cb.credit_from_bank(pid, returned, "Roulette win")
         record_result(pid, KEY, staked, staked, returned, str(n))
+        # Badges
+        if n == 0:
+            await award_badge_safe(table.client, pid, "zero_hero")
+        if any(k.startswith("straight:") and bet_wins(k, n) for k in bets):
+            await award_badge_safe(table.client, pid, "lucky_number")
+        if returned - staked >= 1000:
+            await award_badge_safe(table.client, pid, "red_letter_day")
+        if returned > 0:
+            await record_income_source(table.client, pid, "casino")
 
     table.status = "closed"
     _TABLES.pop(table.channel_id, None)

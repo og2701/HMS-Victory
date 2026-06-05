@@ -139,6 +139,14 @@ async def mature_due(client):
             )
         except Exception:
             log.debug("bond maturity DM failed", exc_info=True)
+        # Badges: total bond interest earned (incl. this one) >= 1000 -> Bond Villain.
+        from lib.features.income_badges import award_badge_safe, record_income_source
+        matured = DatabaseManager.fetch_all(
+            "SELECT principal, rate_pct FROM bonds WHERE user_id = ? AND status = 'matured'",
+            (str(g["user_id"]),)) or []
+        if sum(interest_for(p, rt) for p, rt in matured) >= 1000:
+            await award_badge_safe(client, g["user_id"], "bond_villain")
+        await record_income_source(client, g["user_id"], "bond")
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +272,10 @@ class BondAmountModal(discord.ui.Modal, title="Open a bond"):
             await interaction.response.send_message(err, ephemeral=True)
             return
         await interaction.response.edit_message(view=build_status_panel(self.user_id, g, note="✅ Bond opened!"))
+        from lib.features.income_badges import award_badge_safe
+        await award_badge_safe(interaction.client, self.user_id, "saver")
+        if self.term == 30:
+            await award_badge_safe(interaction.client, self.user_id, "long_game")
 
 
 def _make_withdraw_cb(user_id):
@@ -295,6 +307,8 @@ def _make_withdraw_confirm_cb(user_id):
             f"(you forfeited the interest and paid a **{penalty:,}** penalty)."))
         view.add_item(box)
         await interaction.response.edit_message(view=view)
+        from lib.features.income_badges import award_badge_safe
+        await award_badge_safe(interaction.client, user_id, "paper_hands")
     return _cb
 
 

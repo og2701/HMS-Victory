@@ -69,6 +69,16 @@ class UKPenceManager:
         if amount >= 30000 and old_balance < 30000 and str(user_id) != str(BOT_ID):
             from lib.bot.event_handlers import award_badge_notify
             award_badge_notify(user_id, 'high_roller')
+            # Self-Made (secret): hit 30k without ever having claimed benefits.
+            try:
+                from lib.core.file_operations import load_json_file
+                import config as _cfg
+                _rec = (load_json_file(_cfg.BENEFITS_FILE) or {}).get(str(user_id))
+                _claimed = bool(_rec.get("last")) if isinstance(_rec, dict) else bool(_rec)
+                if not _claimed:
+                    award_badge_notify(user_id, 'self_made')
+            except Exception:
+                pass
             
         log_text = f"⚖️ <@{user_id}> balance set to `{amount:,}` UKP (was `{old_balance:,}`)|{reason}"
         DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))

@@ -232,6 +232,11 @@ class XPSystem:
                     reward_chance = 1.0 / (1.0 + balance / 500.0)
                 if reward_chance > 0 and random.random() < reward_chance:
                     add_bb(int(user_id), 1, reason="Chatting activity reward")
+                    try:
+                        from lib.features.income_badges import record_income_source
+                        await record_income_source(self.client, int(user_id), "chat")
+                    except Exception:
+                        pass
                 self._last_ukp_award[user_id] = now
 
             new_role_id = self.get_role_for_xp(new_xp)
