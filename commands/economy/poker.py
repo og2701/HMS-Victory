@@ -119,6 +119,8 @@ class Table:
         self.casino = casino_channel    # where start/result notices go
         self.channel_id = casino_channel.id   # escrow + _TABLES key
         self.thread = None              # the live game runs in here
+        self.casino_msg = None          # the "table open" notice in the casino channel (has a Sit button)
+        self.closed = False
         self.client = client
         self.seats = []                 # [{id, name, stack}]
         self.ledger = {}                # uid -> {name, bought, cashed} for the session summary
@@ -226,8 +228,25 @@ class Table:
         except Exception:
             logger.error("poker render failed", exc_info=True)
 
+    def _casino_lobby_view(self):
+        """Buttons for the casino-channel notice so people can join without opening the thread."""
+        v = discord.ui.View(timeout=None)
+        sit = discord.ui.Button(label="Sit / Join", emoji="➕", style=discord.ButtonStyle.success)
+        sit.callback = self._on_sit
+        v.add_item(sit)
+        try:
+            url = f"https://discord.com/channels/{self.casino.guild.id}/{self.thread.id}"
+            v.add_item(discord.ui.Button(label="Open table", style=discord.ButtonStyle.link, url=url))
+        except Exception:
+            pass
+        return v
+
     # --- lobby actions ---------------------------------------------------------
     async def _on_sit(self, interaction: Interaction):
+        if self.closed or self.channel_id not in _TABLES:
+            await interaction.response.send_message(
+                "That table has closed - run `/poker` to start a new one.", ephemeral=True)
+            return
         if self.seat_of(interaction.user.id):
             await interaction.response.send_message("You're already seated.", ephemeral=True)
             return
@@ -415,8 +434,14 @@ class Table:
             self.seats = []
             self.status = "lobby"
             self.hand = None
+            self.closed = True
         escrow.clear_table(self.channel_id)
         _TABLES.pop(self.channel_id, None)
+        if self.casino_msg is not None:
+            try:
+                await self.casino_msg.edit(view=None)  # retire the Sit button
+            except Exception:
+                pass
         await self._post_summary()
         if self.thread is not None:
             try:
@@ -570,9 +595,10 @@ async def handle_poker_command(interaction: Interaction):
         return
     await table.render()  # board lives in the thread
     try:
-        await interaction.channel.send(
+        table.casino_msg = await interaction.channel.send(
             f"\U0001f0cf A **Hold'em** table just opened: {table.thread.mention} - "
-            f"jump in and tap **Sit** to buy in!")
+            f"tap **Sit / Join** to buy in (from here or in the thread).",
+            view=table._casino_lobby_view())
     except Exception:
         pass
     await interaction.followup.send(f"Table opened: {table.thread.mention}", ephemeral=True)
