@@ -233,7 +233,8 @@ class XPSystem:
                 if reward_chance > 0 and random.random() < reward_chance:
                     add_bb(int(user_id), 1, reason="Chatting activity reward")
                     try:
-                        from lib.features.income_badges import record_income_source
+                        from lib.features.income_badges import record_income_source, bump_daily_income
+                        bump_daily_income("chat_activity_total", 1)
                         await record_income_source(self.client, int(user_id), "chat")
                     except Exception:
                         pass

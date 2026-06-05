@@ -51,6 +51,12 @@ class UKPenceManager:
             if not add_bb(user_id, amount, reason=f"New member welcome bonus"):
                 # Fallback: create user with 0 if bank is empty
                 DatabaseManager.execute("INSERT OR IGNORE INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), 0))
+            else:
+                try:
+                    from lib.features.income_badges import bump_daily_income
+                    bump_daily_income("welcome_total", amount)
+                except Exception:
+                    pass
     
 
     @staticmethod

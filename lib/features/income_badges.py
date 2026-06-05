@@ -36,3 +36,19 @@ async def record_income_source(client, user_id, source):
             await award_badge_safe(client, user_id, "jack_of_all_trades")
     except Exception:
         log.debug("income source record failed", exc_info=True)
+
+
+def bump_daily_income(source_key, amount):
+    """Add `amount` to today's (UK) running total for an income source in the persistent
+    economy metrics file, so /ukpeconomy's 'Recent Injections' board can report it.
+    economy_transactions is a drained queue, so we aggregate here instead. Best-effort."""
+    try:
+        import pytz
+        from datetime import datetime
+        from lib.economy.economy_manager import EconomyMetrics
+        if not amount:
+            return
+        today = datetime.now(pytz.timezone("Europe/London")).strftime("%Y-%m-%d")
+        EconomyMetrics.update_daily_metric(today, source_key, int(amount))
+    except Exception:
+        log.debug("bump_daily_income failed: %s", source_key, exc_info=True)

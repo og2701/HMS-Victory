@@ -41,53 +41,36 @@ def load_balance_snapshot(date_str: str):
     except (json.JSONDecodeError, FileNotFoundError):
         return None
 
-# Every bank-funded reward is an "injection" (bank -> player). add_bb-from-bank logs a
-# "Bank withdrawal: `amount`|<reason>" row, so we sum yesterday's by reason for each source.
+# Recent injections = bank -> player rewards, summed per source for yesterday.
+# economy_transactions is a drained processing queue (rows are deleted after they're
+# posted to the log channel), so it's useless for history. Instead each source writes a
+# running daily total into the persistent economy_metrics.json (same store the nightly
+# chat/stage/booster aggregates already use), and we read yesterday's totals here.
 # (Casino/lottery are excluded - net of stakes they're a sink, not an injection.)
 _INJECTION_SOURCES = [
-    ("Chat Activity", "Chatting activity reward"),
-    ("Top Chatters", "Top chatter daily reward"),
-    ("Stage Events", "Stage Participation Reward"),
-    ("Booster Bonuses", "Server booster daily bonus"),
-    ("Welcome Bonus", "New member welcome bonus"),
-    ("Benefits", "Benefits payment"),
-    ("Tree Watering", "Tree watering reward"),
-    ("Hall of Fame", "Hall of Fame reward"),
-    ("Tickets", "Ticket reward"),
+    ("Chat Activity", "chat_activity_total"),
+    ("Top Chatters", "chat_rewards_total"),
+    ("Stage Events", "stage_rewards_total"),
+    ("Booster Bonuses", "booster_rewards_total"),
+    ("Welcome Bonus", "welcome_total"),
+    ("Benefits", "benefits_total"),
+    ("Tree Watering", "tree_total"),
+    ("Hall of Fame", "hof_total"),
+    ("Tickets", "ticket_total"),
 ]
 
 
-def _build_injections_html(uk_tz, now_dt) -> str:
-    import re
-    y = now_dt - timedelta(days=1)
-    start = int(uk_tz.localize(datetime(y.year, y.month, y.day)).timestamp())
-    end = int(uk_tz.localize(datetime(now_dt.year, now_dt.month, now_dt.day)).timestamp())
-    try:
-        rows = DatabaseManager.fetch_all(
-            "SELECT log_text FROM economy_transactions WHERE timestamp >= ? AND timestamp < ? "
-            "AND log_text LIKE '%Bank withdrawal%'", (start, end)) or []
-    except Exception:
-        logger.error("injections query failed", exc_info=True)
-        rows = []
-    amt_re = re.compile(r"`([\d,]+)`")
-    totals = {label: 0 for label, _ in _INJECTION_SOURCES}
-    for (t,) in rows:
-        if not t:
-            continue
-        m = amt_re.search(t)
-        if not m:
-            continue
-        amount = int(m.group(1).replace(",", ""))
-        for label, kw in _INJECTION_SOURCES:
-            if kw in t:
-                totals[label] += amount
-                break
+def _build_injections_html(metrics: dict) -> str:
     cards = []
-    for label, _ in _INJECTION_SOURCES:
+    for label, key in _INJECTION_SOURCES:
+        try:
+            value = int(metrics.get(key, 0) or 0)
+        except (TypeError, ValueError):
+            value = 0
         cards.append(
             "<div class='stat-item'>"
             f"<div class='stat-label'>{label}</div>"
-            f"<div class='stat-value'>{totals[label]:,} <span class='text-xs text-slate-500'>UKP</span></div>"
+            f"<div class='stat-value'>{value:,} <span class='text-xs text-slate-500'>UKP</span></div>"
             "</div>"
         )
     return "\n".join(cards)
@@ -159,6 +142,12 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
         "SELECT total_circulation FROM circulation_snapshots WHERE timestamp <= ? ORDER BY timestamp DESC LIMIT 1",
         (target_24h_ago,)
     )
+    # Growth Today = how player-held circulation moved over the last 24h, i.e. the net flow
+    # between the bank and players (bank pays rewards out, casino/tax pull money back in).
+    # Positive => players got richer today; negative => the bank absorbed more than it paid.
+    # Both figures come from the same player-only snapshot, so it's a like-for-like compare.
+    economy_growth_percentage_str = "N/A"
+    growth_class = "growth-neutral"
     if snapshot_row:
         total_ukpence_24h_ago = snapshot_row[0]
         net_change_value = total_ukpence - total_ukpence_24h_ago
@@ -167,25 +156,15 @@ async def create_economy_stats_image(guild: discord.Guild, client: discord.Clien
             net_ukpence_change_class = "change-positive"
         elif net_change_value < 0:
             net_ukpence_change_class = "change-negative"
-    
-    injections_html = _build_injections_html(uk_timezone, now_dt)
-
-    today_metrics_start_of_day = get_daily_metrics(today_str_key)
-    total_circulation_start_of_today = today_metrics_start_of_day.get("total_circulation_start_of_day")
-
-    economy_growth_percentage_str = "N/A"
-    growth_class = "growth-neutral"
-    if total_circulation_start_of_today is not None and isinstance(total_circulation_start_of_today, (int, float)):
-        if total_circulation_start_of_today > 0:
-            growth = ((total_ukpence - total_circulation_start_of_today) / total_circulation_start_of_today) * 100
+        if total_ukpence_24h_ago > 0:
+            growth = (net_change_value / total_ukpence_24h_ago) * 100
             economy_growth_percentage_str = f"{growth:+.2f}%"
-            if growth > 0.005: growth_class = "growth-positive" 
-            elif growth < -0.005: growth_class = "growth-negative" 
-        elif total_ukpence > 0:
-             economy_growth_percentage_str = "+∞%"
-             growth_class = "growth-positive"
-        else: 
-             economy_growth_percentage_str = "0.00%"
+            if growth > 0.005:
+                growth_class = "growth-positive"
+            elif growth < -0.005:
+                growth_class = "growth-negative"
+
+    injections_html = _build_injections_html(get_daily_metrics(yesterday_str_key))
 
     biggest_earner_name, biggest_earner_amount, biggest_earner_change_class = "N/A", "N/A", "change-neutral"
     biggest_loser_name, biggest_loser_amount, biggest_loser_change_class = "N/A", "N/A", "change-neutral"

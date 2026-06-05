@@ -71,7 +71,8 @@ async def award_hof_reward(client, user_id: int):
         )
     except Exception:
         log.debug("HoF reward DM failed", exc_info=True)
-    from lib.features.income_badges import record_income_source
+    from lib.features.income_badges import record_income_source, bump_daily_income
+    bump_daily_income("hof_total", amount)
     await record_income_source(client, user_id, "hof")
 
 
@@ -140,7 +141,8 @@ async def handle_tree_watering(client, message):
     store[str(waterer_id)] = {"date": today, "count": count + 1, "earned": earned + pay_amt, "total": total}
     save_json_file(config.TREE_WATER_FILE, store)
 
-    from lib.features.income_badges import award_badge_safe, record_income_source
+    from lib.features.income_badges import award_badge_safe, record_income_source, bump_daily_income
+    bump_daily_income("tree_total", pay_amt)
     await award_badge_safe(client, waterer_id, "green_fingers")     # first water (idempotent)
     if pay_amt == 1:
         await award_badge_safe(client, waterer_id, "drip")          # decayed to the floor today
@@ -333,7 +335,8 @@ async def handle_benefits_command(interaction):
         return
     await _reply(random.choice(_BENEFITS_SUCCESS).format(uid=uid, amount=amount))
 
-    from lib.features.income_badges import award_badge_safe, record_income_source
+    from lib.features.income_badges import award_badge_safe, record_income_source, bump_daily_income
+    bump_daily_income("benefits_total", amount)
     await award_badge_safe(interaction.client, uid, "on_the_dole")     # first claim (idempotent)
     if bal < 5:
         await award_badge_safe(interaction.client, uid, "rock_bottom")
@@ -359,7 +362,8 @@ async def grant_ticket_reward(client, creator_id, creator_name=None) -> bool:
         )
     except Exception:
         log.debug("ticket reward DM failed", exc_info=True)
-    from lib.features.income_badges import award_badge_safe, record_income_source
+    from lib.features.income_badges import award_badge_safe, record_income_source, bump_daily_income
+    bump_daily_income("ticket_total", amount)
     await award_badge_safe(client, creator_id, "squeaky_wheel")
     await record_income_source(client, creator_id, "ticket")
     return True

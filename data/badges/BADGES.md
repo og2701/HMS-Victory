@@ -192,4 +192,72 @@ Awarded for sending a message on November 5th.
 **Rarity**: Secret
 [REDACTED]
 
+### 🌱 Green Fingers
+**Rarity**: Bronze
+Awarded for watering the server tree for the first time.
+
+### 🌳 Sir Branchalot
+**Rarity**: Silver
+Awarded for watering the server tree 100 times.
+
+### 💧 Drip Feed
+**Rarity**: Bronze
+Awarded for watering the tree enough in one day to decay your reward all the way down to 1 UKPence.
+
+### 🏦 Prudent Saver
+**Rarity**: Bronze
+Awarded for opening your first bond.
+
+### 🕴️ Bond Villain
+**Rarity**: Gold
+Awarded for earning 1,000 UKPence in total bond interest.
+
+### ⏳ The Long Game
+**Rarity**: Silver
+Awarded for opening a 30-day bond.
+
+### 🧻 Paper Hands
+**Rarity**: Bronze
+Awarded for breaking a bond early and forfeiting the interest.
+
+### 🧾 On the Dole
+**Rarity**: Bronze
+Awarded for claiming benefits for the first time.
+
+### 🛋️ Career Claimant
+**Rarity**: Silver
+Awarded for claiming benefits 7 days in a row.
+
+### 🕵️ Benefits Cheat
+**Rarity**: Secret
+[REDACTED]
+
+### 🪨 Rock Bottom
+**Rarity**: Bronze
+Awarded for claiming benefits with under 5 UKPence to your name.
+
+### 🎯 Lucky Number
+**Rarity**: Gold
+Awarded for winning a straight-up number bet on roulette (35:1).
+
+### 🟢 Zero Hero
+**Rarity**: Silver
+Awarded for being at the roulette table when the ball lands on the green zero.
+
+### 🔴 Red Letter Day
+**Rarity**: Silver
+Awarded for winning 1,000 or more on a single roulette spin.
+
+### 🎟️ Squeaky Wheel
+**Rarity**: Bronze
+Awarded for being given UKPence for a support ticket.
+
+### 🧩 Jack of All Trades
+**Rarity**: Silver
+Awarded for earning UKPence from 5 different income sources.
+
+### 🛠️ Self-Made
+**Rarity**: Secret
+[REDACTED]
+
 
