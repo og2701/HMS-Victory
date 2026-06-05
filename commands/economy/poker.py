@@ -49,6 +49,15 @@ def _code(card):
     return f"{_RANK_CODE.get(r, str(r))}{_SUIT_CODE[s]}"
 
 
+async def _dismiss(interaction):
+    """Acknowledge and delete the ephemeral action message after a move is made."""
+    try:
+        await interaction.response.defer()
+        await interaction.delete_original_response()
+    except Exception:
+        logger.debug("poker ephemeral dismiss failed", exc_info=True)
+
+
 async def _render_felt(table, viewer=None):
     """Render the table as the shared casino felt image. `viewer` (a seat id) sees their own
     hole cards face-up; everyone else's are face-down. Returns a PNG BytesIO or None."""
@@ -474,7 +483,7 @@ class RaiseModal(discord.ui.Modal, title="Raise"):
         if not ok:
             await interaction.response.send_message(err, ephemeral=True)
         else:
-            await interaction.response.send_message(f"Raised to **{to:,}**.", ephemeral=True)
+            await _dismiss(interaction)
 
 
 class ActionView(discord.ui.View):
@@ -502,7 +511,7 @@ class ActionView(discord.ui.View):
             if not ok:
                 await interaction.response.send_message(err, ephemeral=True)
             else:
-                await interaction.response.edit_message(content=f"Action: **{label}** registered.", view=None)
+                await _dismiss(interaction)  # move's in - clear the ephemeral
         b.callback = cb
         self.add_item(b)
 
