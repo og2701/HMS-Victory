@@ -85,8 +85,8 @@ TREE_WATER_REWARD = 20            # UKP per detected watering
 TREE_WATER_DAILY_CAP = 200        # max UKP/day per user from watering (anti-camp)
 
 BENEFITS_THRESHOLD = 250          # only claimable while balance is under this
-BENEFITS_MIN = 30                 # random payout range (always pays when eligible)
-BENEFITS_MAX = 75                 # one claim per UK calendar day (resets at midnight)
+BENEFITS_MIN = 40                 # random payout range (always pays when eligible)
+BENEFITS_MAX = 100                # one claim per UK calendar day (resets at midnight)
 BENEFITS_LOOKBACK_DAYS = 1        # /pay sent in this window counts toward "effective wealth"
 BENEFITS_BAN_RAMP = [1, 3, 7, 14]   # benefits-fraud cooldown (days), ramps per offence
 
