@@ -77,7 +77,9 @@ async def award_hof_reward(client, user_id: int):
 # Tree watering
 # ---------------------------------------------------------------------------
 _WATER_RE = re.compile(r"Thanks <@!?(\d+)> for watering the tree", re.IGNORECASE)
-_HEIGHT_RE = re.compile(r"tree is ([\d,]+(?:\.\d+)?)\s*ft tall", re.IGNORECASE)
+# The growth-window timestamp ("...come back <t:1780655819:R>.") only changes on a real
+# water - used to dedup against the bot's periodic message refreshes.
+_COMEBACK_RE = re.compile(r"come back <t:(\d+)", re.IGNORECASE)
 
 
 def _tree_reward(water_index: int) -> int:
@@ -94,22 +96,22 @@ async def handle_tree_watering(client, message):
     """Pay the waterer when the Grow-a-Tree bot's 'thanks for watering' embed appears -
     whether it's a NEW message or the bot EDITING the existing one in place.
 
-    Dedup is on the tree height (strictly increasing per water): we only ever pay when the
-    height is greater than the last one we paid for, so re-processing the same edit, or the
-    new-message and edit events for one water, can't double-pay. Daily-capped per user too.
+    Dedup is on the "come back <t:...>" growth-window timestamp, which only changes on a
+    REAL water. The bot also refreshes the message periodically (which bumps the displayed
+    height without anyone watering), so height is NOT a safe key - that timestamp is.
     """
     if message.author.id != getattr(config, "GROW_A_TREE_BOT_ID", 0):
         return
     waterer_id = None
-    height = None
+    comeback = None
     for e in message.embeds:
         blob = f"{e.description or ''} {e.title or ''}"
         wm = _WATER_RE.search(blob)
         if wm:
             waterer_id = int(wm.group(1))
-        hm = _HEIGHT_RE.search(blob)
-        if hm:
-            height = float(hm.group(1).replace(",", ""))
+        cm = _COMEBACK_RE.search(blob)
+        if cm:
+            comeback = int(cm.group(1))
         if waterer_id:
             break
     if not waterer_id:
@@ -117,12 +119,12 @@ async def handle_tree_watering(client, message):
 
     store = load_json_file(config.TREE_WATER_FILE) or {}
 
-    # Dedup: only pay once per genuine water (height must have grown since last payout).
-    if height is not None:
-        last_h = store.get("_last_height", 0)
-        if height <= last_h:
-            return
-        store["_last_height"] = height
+    # Dedup on the growth-window timestamp: it only advances on a genuine water, so a mere
+    # message refresh (same window, higher height) is correctly ignored. If it's missing,
+    # skip rather than risk paying for a refresh.
+    if comeback is None or comeback <= store.get("_last_cb", 0):
+        return
+    store["_last_cb"] = comeback
 
     today = _today()
     rec = store.get(str(waterer_id))
