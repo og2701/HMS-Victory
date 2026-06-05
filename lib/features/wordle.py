@@ -134,6 +134,34 @@ def _share_block(p, word, date):
     return f"```\nHMS Wordle · {_pretty(date)} · {n}/6\n{grid}\n```"
 
 
+_KB_ROWS = ("QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM")
+_RANK = {"absent": 0, "present": 1, "correct": 2}
+
+
+def _keyboard(p, word):
+    """Letter tracker: each letter's best-known status across all guesses. Ruled-out letters
+    are blanked to ⬛; confirmed letters are listed so you can see what's still in play."""
+    status = {}
+    for g in p["guesses"]:
+        for st, ch in zip(_score(g, word), g.upper()):
+            if ch not in status or _RANK[st] > _RANK[status[ch]]:
+                status[ch] = st
+    rows = []
+    for row in _KB_ROWS:
+        rows.append(" ".join("⬛" if status.get(ch) == "absent" else ch for ch in row))
+    greens = [ch for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if status.get(ch) == "correct"]
+    yellows = [ch for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if status.get(ch) == "present"]
+    out = "\n".join(rows)
+    hint = []
+    if greens:
+        hint.append("\U0001f7e9 " + " ".join(greens))
+    if yellows:
+        hint.append("\U0001f7e8 " + " ".join(yellows))
+    if hint:
+        out += "\n" + "    ".join(hint)
+    return out
+
+
 def _render(uid, date):
     word = _todays_word(date)
     p = _player(date.isoformat(), uid)
@@ -150,9 +178,11 @@ def _render(uid, date):
         lines.append(f"\nOut of guesses - the word was **{word.upper()}**. Back tomorrow for a new one.")
         lines.append(_share_block(p, word, date))
     else:
+        if p["guesses"]:
+            lines.append(_keyboard(p, word))
         left = 6 - len(p["guesses"])
-        lines.append(f"\n-# {left} guess{'es' if left != 1 else ''} left · "
-                     f"\U0001f7e9 right spot · \U0001f7e8 wrong spot · ⬛ not in word")
+        lines.append(f"-# {left} guess{'es' if left != 1 else ''} left · "
+                     f"\U0001f7e9 right spot · \U0001f7e8 wrong spot · ⬛ ruled out")
     return "\n".join(lines), p["done"]
 
 
@@ -182,8 +212,7 @@ class WordleModal(discord.ui.Modal, title="HMS Wordle"):
                 except Exception:
                     pass
         content, done = _render(self.user_id, self.date)
-        view = None if done else WordleView(self.user_id, self.date)
-        await interaction.response.edit_message(content=content, view=view)
+        await interaction.response.edit_message(content=content, view=_view_for(self.user_id, self.date, done))
 
 
 class WordleView(discord.ui.View):
@@ -200,6 +229,42 @@ class WordleView(discord.ui.View):
         await interaction.response.send_modal(WordleModal(self.user_id, self.date))
 
 
+class WordleShareView(discord.ui.View):
+    """Shown once the day's game is over: a button to post your spoiler-free grid to the
+    channel, tagging you."""
+
+    def __init__(self, user_id, date):
+        super().__init__(timeout=600)
+        self.user_id = int(user_id)
+        self.date = date
+
+    @discord.ui.button(label="Share result", emoji="\U0001f4e3", style=discord.ButtonStyle.success)
+    async def share(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("That isn't your result.", ephemeral=True)
+            return
+        word = _todays_word(self.date)
+        p = _player(self.date.isoformat(), self.user_id)
+        n = len(p["guesses"]) if p["solved"] else "X"
+        verb = (f"solved today's **HMS Wordle** in **{n}/6**" if p["solved"]
+                else f"played today's **HMS Wordle** (**{n}/6**)")
+        grid = "\n".join("".join(_SQUARES[s] for s in _score(g, word)) for g in p["guesses"])
+        try:
+            await interaction.channel.send(
+                f"\U0001f7e9 <@{self.user_id}> {verb}!\n{grid}",
+                allowed_mentions=discord.AllowedMentions(users=True))
+        except Exception:
+            await interaction.response.send_message("Couldn't post to the channel here.", ephemeral=True)
+            return
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send("Shared to the channel!", ephemeral=True)
+
+
+def _view_for(user_id, date, done):
+    return WordleShareView(user_id, date) if done else WordleView(user_id, date)
+
+
 async def handle_wordle_command(interaction: discord.Interaction):
     if not _READY:
         await interaction.response.send_message(
@@ -207,5 +272,5 @@ async def handle_wordle_command(interaction: discord.Interaction):
         return
     date = _today()
     content, done = _render(interaction.user.id, date)
-    view = None if done else WordleView(interaction.user.id, date)
-    await interaction.response.send_message(content=content, view=view, ephemeral=True)
+    await interaction.response.send_message(
+        content=content, view=_view_for(interaction.user.id, date, done), ephemeral=True)
