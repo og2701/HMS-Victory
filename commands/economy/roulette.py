@@ -807,6 +807,8 @@ async def _post_result_ping(table, n, outcomes):
             lines.append(f"\U0001f4b8 <@{pid}> {('**-' + format(abs(net), ',') + '**') if net < 0 else 'broke even'}")
         if len(others) > CAP:
             lines.append(f"-# ...and {len(others) - CAP} more")
+    if table.message is not None:
+        lines.append(f"-# [Jump to the table]({table.message.jump_url})")
     await channel.send("\n".join(lines))
 
 
