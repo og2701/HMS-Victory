@@ -55,6 +55,18 @@ def _credit(uid, amount, reason):
     return add_bb(int(uid), int(amount), reason=reason, taxable=False)
 
 
+def _recent_received(uid, days) -> int:
+    """Total UKP /pay'd TO this user in the last ``days`` (funnelled-in capital)."""
+    cutoff = int(time.time()) - days * 86400
+    try:
+        r = DatabaseManager.fetch_one(
+            "SELECT COALESCE(SUM(amount),0) FROM pay_transfers WHERE recipient_id = ? AND timestamp > ?",
+            (str(uid), cutoff))
+        return int(r[0]) if r else 0
+    except Exception:
+        return 0
+
+
 def open_bond(user_id, principal, term_days):
     """Lock ``principal`` for ``term_days``. Returns (bond, error_message)."""
     terms = getattr(config, "BOND_TERMS", {3: 2, 7: 6, 30: 30})
@@ -67,8 +79,20 @@ def open_bond(user_id, principal, term_days):
         return None, "Enter a positive amount of UKPence."
     if principal > mx:
         return None, f"The maximum per bond is {mx:,} UKPence."
-    if get_bb(user_id) < principal:
+    bal = get_bb(user_id)
+    if bal < principal:
         return None, f"You don't have {principal:,} UKPence to lock."
+    # Anti-funnel: UKP you've recently been /pay'd doesn't count as your own capital to
+    # bond, so a big holder can't push 5k to alts/friends and have them invest it past the
+    # per-person cap.
+    received = _recent_received(user_id, getattr(config, "BOND_FUNNEL_LOOKBACK_DAYS", 3))
+    own = max(0, bal - received)
+    if principal > own:
+        days = getattr(config, "BOND_FUNNEL_LOOKBACK_DAYS", 3)
+        return None, (
+            f"You can only bond **{own:,} UKPence** of your own. **{received:,}** arrived from "
+            f"other users in the last {days} day(s) and can't be locked in a bond (anti-funnel). "
+            f"Wait for it to age out, or bond a smaller amount.")
     if not remove_bb(int(user_id), int(principal), reason="Bond deposit"):
         return None, "You don't have enough UKPence."
     now = int(time.time())

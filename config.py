@@ -104,6 +104,8 @@ BOND_ENABLED = True
 BOND_TERMS = {3: 2, 7: 6, 30: 30}   # term in days -> interest percent
 BOND_MAX = 5000                      # max principal per bond (one active bond per user)
 BOND_EARLY_PENALTY_PCT = 10          # early exit: forfeit interest + lose this % of principal
+BOND_FUNNEL_LOOKBACK_DAYS = 3        # UKP /pay-received in this window can't be bonded
+                                     # (stops a whale funnelling 5k to alts to invest past the cap)
 
 # --- National Lottery (shared pooled draw) ---
 # Each round picks a RANDOM ticket price and ticket cap from the ranges below (a little
