@@ -241,7 +241,7 @@ body{{background:#0a0e1a;display:flex;justify-content:center;padding:18px;font-f
 .k.correct{{background:#6aaa64}}.k.present{{background:#c9b458}}.k.absent{{background:#2b2f3a;color:#6b6f78}}
 .sub{{color:rgba(255,255,255,.6);font-size:15px;text-align:center;margin-top:16px}}
 </style></head><body><div class='card'>
-<div class='title'>\U0001f1ec\U0001f1e7 HMS Wordle</div><div class='date'>{_pretty(date)}</div>
+<div class='title'>HMS Wordle</div><div class='date'>{_pretty(date)}</div>
 <div class='grid'>{''.join(rows)}</div>
 <div class='kb'>{''.join(kb)}</div>
 <div class='sub'>{sub}</div>
@@ -253,7 +253,7 @@ async def render_board(uid, date):
     p = _player(date.isoformat(), uid)
     try:
         from lib.core.image_processing import screenshot_html
-        img = await screenshot_html(_board_html(uid, date), size=(520, 760), apply_trim=True)
+        img = await screenshot_html(_board_html(uid, date), size=(560, 1000), apply_trim=True)
         return img, p["done"]
     except Exception:
         log.error("HMS Wordle board render failed", exc_info=True)
