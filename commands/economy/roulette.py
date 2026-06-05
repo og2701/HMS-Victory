@@ -749,6 +749,7 @@ async def _lock_and_spin(table):
     # Pay everyone from the bank and record stats (independent of rendering).
     n = table.result
     from lib.features.income_badges import award_badge_safe, record_income_source
+    outcomes = []  # (pid, net) for the result ping below
     for pid, slot in table.players.items():
         bets = slot["bets"]
         staked = sum(bets.values())
@@ -756,6 +757,7 @@ async def _lock_and_spin(table):
         if returned > 0:
             cb.credit_from_bank(pid, returned, "Roulette win")
         record_result(pid, KEY, staked, staked, returned, str(n))
+        outcomes.append((pid, returned - staked))
         # Badges
         if n == 0:
             await award_badge_safe(table.client, pid, "zero_hero")
@@ -766,8 +768,46 @@ async def _lock_and_spin(table):
         if returned > 0:
             await record_income_source(table.client, pid, "casino")
 
+    # Fresh message pinging everyone who entered, with the result and each player's net.
+    # (The table message itself keeps the rendered results board, unchanged.)
+    if outcomes:
+        try:
+            await _post_result_ping(table, n, outcomes)
+        except Exception:
+            logger.error("Roulette result ping failed.", exc_info=True)
+
     table.status = "closed"
     _TABLES.pop(table.channel_id, None)
+
+
+_COLOR_EMOJI = {"green": "\U0001f7e2", "red": "\U0001f534", "black": "⚫"}
+
+
+async def _post_result_ping(table, n, outcomes):
+    """Announce the spin result in a new channel message that @-mentions every entrant."""
+    channel = table.message.channel if table.message else table.client.get_channel(table.channel_id)
+    if channel is None:
+        return
+    col = color(n)
+    label = "Zero" if n == 0 else col.capitalize()
+    lines = [f"# \U0001f3a1 Roulette result: **{n} {label}** {_COLOR_EMOJI[col]}"]
+    lines.append(" ".join(f"<@{pid}>" for pid, _ in outcomes))  # the ping
+    winners = sorted((o for o in outcomes if o[1] > 0), key=lambda o: -o[1])
+    others = [o for o in outcomes if o[1] <= 0]
+    CAP = 15
+    if winners:
+        lines.append("**Winners**")
+        for pid, net in winners[:CAP]:
+            lines.append(f"\U0001f4b0 <@{pid}> **+{net:,}** UKPence")
+        if len(winners) > CAP:
+            lines.append(f"-# ...and {len(winners) - CAP} more winners")
+    if others:
+        lines.append("**No luck this time**")
+        for pid, net in others[:CAP]:
+            lines.append(f"\U0001f4b8 <@{pid}> {('**-' + format(abs(net), ',') + '**') if net < 0 else 'broke even'}")
+        if len(others) > CAP:
+            lines.append(f"-# ...and {len(others) - CAP} more")
+    await channel.send("\n".join(lines))
 
 
 # ---------------------------------------------------------------------------
