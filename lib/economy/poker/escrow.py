@@ -11,7 +11,6 @@ import logging
 
 import config
 from lib.core.file_operations import load_json_file, save_json_file
-from lib.economy.economy_manager import credit_from_bank
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +37,7 @@ def clear_table(channel_id):
 def refund_all():
     """Refund every escrowed stack back to UKPence and clear the store. Call once on startup.
     Returns (players_refunded, total_chips)."""
+    from commands.economy.casino_base import credit_from_bank
     store = _load()
     players = total = 0
     for _cid, stacks in store.items():

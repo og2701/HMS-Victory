@@ -15,7 +15,8 @@ import discord
 from discord import Interaction
 
 import config
-from lib.economy.economy_manager import get_bb, remove_bb, credit_from_bank
+from lib.economy.economy_manager import get_bb, remove_bb
+from commands.economy.casino_base import credit_from_bank
 from lib.economy.poker import escrow
 from lib.economy.poker.engine import card_str, hand_category
 from lib.economy.poker.hand import Hand
