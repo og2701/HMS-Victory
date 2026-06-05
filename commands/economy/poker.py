@@ -10,6 +10,7 @@ restart refunds everyone (voiding any live hand) instead of stranding chips.
 
 import asyncio
 import html as _html
+import io
 import logging
 
 import discord
@@ -184,23 +185,34 @@ class Table:
         return v
 
     async def render(self):
-        """Edit (or post) the board in the thread: felt image while playing, text otherwise."""
+        """Edit (or post) the board in the thread: felt image while playing, text otherwise.
+        If the board message was deleted, re-post a fresh one instead of dying on a 404."""
         dest = self.thread or self.casino
+        if dest is None:
+            return
         try:
             view = self._view()
             img = await _render_felt(self) if self.hand is not None else None
-            if img is not None:
-                file = discord.File(img, "poker.png")
-                if self.message is None:
-                    self.message = await dest.send(file=file, view=view)
-                else:
-                    await self.message.edit(attachments=[file], content=None, view=view)
+            data = img.getvalue() if img is not None else None
+            content = None if data is not None else self._text()
+
+            def _file():
+                return discord.File(io.BytesIO(data), "poker.png") if data is not None else None
+
+            if self.message is not None:
+                try:
+                    if data is not None:
+                        await self.message.edit(attachments=[_file()], content=None, view=view)
+                    else:
+                        await self.message.edit(content=content, attachments=[], view=view)
+                    return
+                except discord.NotFound:
+                    self.message = None  # board was deleted; fall through to re-post
+            f = _file()
+            if f is not None:
+                self.message = await dest.send(file=f, view=view)
             else:
-                content = self._text()
-                if self.message is None:
-                    self.message = await dest.send(content=content, view=view)
-                else:
-                    await self.message.edit(content=content, attachments=[], view=view)
+                self.message = await dest.send(content=content, view=view)
         except Exception:
             logger.error("poker render failed", exc_info=True)
 
