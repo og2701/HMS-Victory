@@ -557,8 +557,10 @@ def define_commands(tree, client):
     @command("balance", "Check your current UKPence balance (only you can see this)")
     async def balance_command(interaction: Interaction):
         balance = get_bb(interaction.user.id)
+        from lib.economy.balance_graph import BalanceGraphView
         await interaction.response.send_message(
             f"💷 **{interaction.user.display_name}**, you have **{balance:,} UKPence**.",
+            view=BalanceGraphView(interaction.user.id, interaction.user.display_name),
             ephemeral=True,
         )
 
