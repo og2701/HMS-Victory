@@ -373,12 +373,14 @@ class Table:
             w = live[0]
             lines.append(f"\U0001f3c6 **{w['name']}** wins **{h.payouts[w['id']]:,}** (everyone folded)")
         else:
-            for s in live:
-                hole = h.hole[s["id"]]
-                cat = hand_category(list(hole) + list(h.board))
-                won = h.payouts.get(s["id"], 0)
-                tag = f" \U0001f3c6 +{won:,}" if won > 0 else ""
-                lines.append(f"{s['name']}: {_cards(hole)} ({cat}){tag}")
+            # Showdown: reveal only the winning hand's *category*, never anyone's hole cards.
+            winners = [s for s in live if h.payouts.get(s["id"], 0) > 0]
+            for s in winners:
+                cat = hand_category(list(h.hole[s["id"]]) + list(h.board))
+                lines.append(f"\U0001f3c6 **{s['name']}** wins **{h.payouts[s['id']]:,}** with a **{cat}**")
+            beaten = [s["name"] for s in live if h.payouts.get(s["id"], 0) == 0]
+            if beaten:
+                lines.append("-# " + ", ".join(beaten) + (" mucks." if len(beaten) == 1 else " muck."))
         lines.append("\n**Stacks** " + " · ".join(
             f"{s['name']} {s['stack']:,}" for s in self.seats))
         if self.thread is not None:
