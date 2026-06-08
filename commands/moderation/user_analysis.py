@@ -47,9 +47,9 @@ def _load_context(member_id):
 
 
 # --- gather the member's recent messages with context -------------------------
-async def gather_user_messages(client, guild, user, channel_ids, target=1000, min_target=200,
-                               density_floor=0.08, per_channel=40000, days=14, concurrency=4,
-                               progress=None):
+async def gather_user_messages(client, guild, user, channel_ids, target=1000, min_target=150,
+                               density_floor=0.08, read_budget=18000, per_channel=40000,
+                               days=14, concurrency=4, progress=None):
     """Scan only `channel_ids` (the main chats) in parallel for the member's recent messages.
 
     Discord has no per-user message API, so we read history and filter. Each channel scan
@@ -113,6 +113,8 @@ async def gather_user_messages(client, guild, user, channel_ids, target=1000, mi
                         why = "hit per-channel cap"; break
                     async with lock:
                         state["scanned"] += 1
+                        if state["scanned"] >= read_budget:  # global cap so low-posters don't trigger a giant scan
+                            stop.set()
                     if before_for is not None:
                         if msg.author.id != user.id:
                             before_for["before"] = f"{msg.author.display_name}: {(msg.content or '')[:110]}"
@@ -353,7 +355,8 @@ class FollowupModal(discord.ui.Modal, title="Ask about this member"):
                 interaction.client, interaction.guild, member,
                 getattr(config, "USER_ANALYSIS_CHANNELS", []),
                 target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 1000),
-                min_target=getattr(config, "USER_ANALYSIS_MIN_MSGS", 200),
+                min_target=getattr(config, "USER_ANALYSIS_MIN_MSGS", 150),
+                read_budget=getattr(config, "USER_ANALYSIS_READ_BUDGET", 18000),
                 days=getattr(config, "USER_ANALYSIS_DAYS", 14))
             _save_context(self.user_id, msgs)
         if not msgs:
@@ -540,7 +543,8 @@ async def handle_analyse_user(interaction, member):
         interaction.client, interaction.guild, member,
         getattr(config, "USER_ANALYSIS_CHANNELS", []),
         target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 1000),
-        min_target=getattr(config, "USER_ANALYSIS_MIN_MSGS", 200),
+        min_target=getattr(config, "USER_ANALYSIS_MIN_MSGS", 150),
+        read_budget=getattr(config, "USER_ANALYSIS_READ_BUDGET", 18000),
         days=getattr(config, "USER_ANALYSIS_DAYS", 14), progress=progress)
     if not msgs:
         await _status(f"Couldn't find recent messages from {member.mention} in channels I can read.")
