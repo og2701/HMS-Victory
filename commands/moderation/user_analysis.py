@@ -230,6 +230,17 @@ async def _call_gemini(prompt, json_mode=True):
     return None, f"Gemini error {status}: {str(data)[:300]}"
 
 
+_CULTURE = (
+    "CONTEXT: this is a casual, British, banter-heavy server. Strong language, swearing, dark "
+    "humour, edgy jokes and crude or vulgar usernames (e.g. words like 'cunt') are completely "
+    "normal here and are NOT rule violations on their own. Only genuine harm counts: targeted "
+    "harassment, hate speech or slurs aimed at people or protected groups, threats, doxxing, NSFW, "
+    "or scams. Be proportionate: reserve bans and formal warnings for serious or repeated harm, "
+    "and never escalate over tone, ordinary profanity, or a rude-but-harmless username. When in "
+    "doubt, lean lenient."
+)
+
+
 def _build_prompt(member, msgs, rules):
     lines = []
     for i, m in enumerate(msgs, 1):
@@ -248,6 +259,7 @@ def _build_prompt(member, msgs, rules):
         "recent messages against the server rules. Be balanced: note positives, account for banter "
         "and context, do NOT over-flag, and never invent quotes (use only verbatim text from the "
         "messages). If nothing is wrong, say so plainly.\n\n"
+        f"{_CULTURE}\n\n"
         f"SERVER RULES:\n{rules}\n\n"
         f"MEMBER: {member.display_name} (id {member.id}). {len(msgs)} recent messages, oldest first. "
         "Context in {curly braces} is what they replied to / the message before / reactions.\n\n"
@@ -282,6 +294,7 @@ def _build_followup_prompt(member, msgs, rules, question):
         "- Base it on the visible messages (and the rules); you may note that caveat, but still "
         "commit to an answer. Only refuse if there is genuinely nothing relevant to go on, and then "
         "say what would help.\n\n"
+        f"{_CULTURE}\n\n"
         f"SERVER RULES:\n{rules}\n\n"
         f"MEMBER: {member.display_name}. {len(msgs)} recent messages:\n{body}\n\n"
         f"MODERATOR'S QUESTION: {question}"
