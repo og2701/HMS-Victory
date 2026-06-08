@@ -123,20 +123,16 @@ async def _load_rules(client):
 
 
 # --- Gemini -------------------------------------------------------------------
-async def _call_gemini(prompt):
+async def _call_gemini(prompt, json_mode=True):
     key = os.getenv("GEMINI_TOKEN") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not key:
         return None, "No Gemini key in the environment (GEMINI_TOKEN / GEMINI_API_KEY)."
     model = getattr(config, "GEMINI_MODEL", "gemini-2.0-flash")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
-    body = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.3,
-            "maxOutputTokens": 4096,            # 2.5 "thinking" shares this budget; keep it roomy
-            "responseMimeType": "application/json",
-        },
-    }
+    gen = {"temperature": 0.3, "maxOutputTokens": 4096}  # 2.5 "thinking" shares this budget
+    if json_mode:
+        gen["responseMimeType"] = "application/json"
+    body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": gen}
     try:
         async with aiohttp.ClientSession() as s:
             async with s.post(url, json=body, timeout=aiohttp.ClientTimeout(total=60)) as r:
@@ -187,6 +183,19 @@ def _build_prompt(member, msgs, rules):
     )
 
 
+def _build_followup_prompt(member, msgs, rules, question):
+    body = "\n".join(f"{i}. #{m['channel']}: {m['content']}" for i, m in enumerate(msgs, 1))
+    return (
+        "You are a moderation assistant. A moderator has a follow-up question about a member. "
+        "Answer concisely and factually using ONLY the member's recent messages below (and the "
+        "rules for context). Quote verbatim where useful. If the messages don't show enough to "
+        "answer, say so plainly. Do not invent anything.\n\n"
+        f"SERVER RULES:\n{rules}\n\n"
+        f"MEMBER: {member.display_name}. {len(msgs)} recent messages:\n{body}\n\n"
+        f"MODERATOR'S QUESTION: {question}"
+    )
+
+
 _RISK_COLOR = {"low": 0x10B981, "medium": 0xF59E0B, "high": 0xEF4444}
 _RISK_EMOJI = {"low": "\U0001f7e2", "medium": "\U0001f7e1", "high": "\U0001f534"}
 _SEV_EMOJI = {"low": "\U0001f7e1", "medium": "\U0001f7e0", "high": "\U0001f534"}
@@ -201,6 +210,68 @@ def _activity_line(msgs):
     fmt = lambda ts: datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%-d %b")
     span = f"{fmt(msgs[0]['ts'])} to {fmt(msgs[-1]['ts'])}"
     return f"**{len(msgs)}** msgs · **{len(counts)}** channels ({top}) · **{reacts}** reactions · {span}"
+
+
+class FollowupModal(discord.ui.Modal, title="Ask about this member"):
+    question = discord.ui.TextInput(
+        label="Your question", style=discord.TextStyle.paragraph, max_length=300,
+        placeholder="e.g. is the politics stuff a pattern? are they targeting anyone?")
+
+    def __init__(self, user_id):
+        super().__init__()
+        self.user_id = int(user_id)
+
+    async def on_submit(self, interaction):
+        from lib.core.discord_helpers import has_any_role
+        if not has_any_role(interaction, _ALLOWED_ROLES()):
+            await interaction.response.send_message("Deputy PM only for now.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        member = interaction.guild.get_member(self.user_id)
+        if member is None:
+            try:
+                member = await interaction.guild.fetch_member(self.user_id)
+            except Exception:
+                member = None
+        if member is None:
+            await interaction.followup.send("Couldn't resolve that member.", ephemeral=True)
+            return
+        msgs = await gather_user_messages(
+            interaction.client, interaction.guild, member,
+            getattr(config, "USER_ANALYSIS_CHANNELS", []),
+            target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 250),
+            days=getattr(config, "USER_ANALYSIS_DAYS", 14))
+        if not msgs:
+            await interaction.followup.send("No recent messages to answer from.", ephemeral=True)
+            return
+        rules = await _load_rules(interaction.client)
+        q = str(self.question.value)
+        text, err = await _call_gemini(_build_followup_prompt(member, msgs, rules, q), json_mode=False)
+        if err:
+            await interaction.followup.send(f"Follow-up failed: {err}", ephemeral=True)
+            return
+        await interaction.followup.send(f"**Q:** {q}\n\n{(text or '').strip()[:1800]}", ephemeral=True)
+
+
+class FollowupButton(discord.ui.DynamicItem[discord.ui.Button], template=r"analysefu:(?P<uid>\d+)"):
+    """Persistent per-member 'Ask a follow-up' button (the member id rides in the custom_id)."""
+
+    def __init__(self, user_id):
+        self.user_id = int(user_id)
+        super().__init__(discord.ui.Button(
+            label="Ask a follow-up", emoji="\U0001f4ac",
+            style=discord.ButtonStyle.secondary, custom_id=f"analysefu:{self.user_id}"))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match["uid"]))
+
+    async def callback(self, interaction):
+        from lib.core.discord_helpers import has_any_role
+        if not has_any_role(interaction, _ALLOWED_ROLES()):
+            await interaction.response.send_message("Deputy PM only for now.", ephemeral=True)
+            return
+        await interaction.response.send_modal(FollowupModal(self.user_id))
 
 
 def _build_view(member, requester, msgs, text):
@@ -219,10 +290,17 @@ def _build_view(member, requester, msgs, text):
             f"{len(msgs)} msgs")
     view = discord.ui.LayoutView(timeout=None)
 
+    def _header_section(text_md):
+        # header text with the member's avatar as a thumbnail accessory
+        return discord.ui.Section(
+            discord.ui.TextDisplay(text_md),
+            accessory=discord.ui.Thumbnail(member.display_avatar.url))
+
     if not isinstance(data, dict):
         c = discord.ui.Container(accent_colour=0xCF142B)
-        c.add_item(discord.ui.TextDisplay(f"## \U0001f50e Moderation analysis: {name}\n{(text or '')[:3500]}"))
+        c.add_item(_header_section(f"## \U0001f50e Moderation analysis: {name}\n{(text or '')[:3500]}"))
         c.add_item(discord.ui.TextDisplay(foot))
+        c.add_item(discord.ui.ActionRow(FollowupButton(member.id)))
         view.add_item(c)
         return view
 
@@ -238,7 +316,7 @@ def _build_view(member, requester, msgs, text):
         head += f"\n{str(data['summary'])[:1200]}"
     if data.get("justification"):
         head += f"\n-# {str(data['justification'])[:300]}"
-    c.add_item(discord.ui.TextDisplay(head))
+    c.add_item(_header_section(head))
 
     concerns = data.get("concerns") or []
     if concerns:
@@ -267,6 +345,7 @@ def _build_view(member, requester, msgs, text):
         c.add_item(discord.ui.TextDisplay("\n".join(extra)[:3500]))
 
     c.add_item(discord.ui.TextDisplay(foot))
+    c.add_item(discord.ui.ActionRow(FollowupButton(member.id)))
     view.add_item(c)
     return view
 

@@ -61,6 +61,12 @@ class AClient(discord.Client):
     async def setup_hook(self):
         self.session = aiohttp.ClientSession()
         import config
+        # Persistent 'Ask a follow-up' buttons on moderation analysis reports.
+        try:
+            from commands.moderation.user_analysis import FollowupButton
+            self.add_dynamic_items(FollowupButton)
+        except Exception as e:
+            logger.warning(f"Could not register Analyse User follow-up button: {e}")
         from lib.economy.prediction_system import BetButtons, build_prediction_layout
         for p in self.predictions.values():
             if not p.locked:
