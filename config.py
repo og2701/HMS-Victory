@@ -168,7 +168,7 @@ POKER_ESCROW_FILE = os.path.join(JSON_DATA_DIR, "poker_escrow.json")
 GEMINI_MODEL = "gemini-2.0-flash"
 RULES_CHANNEL_ID = None            # set to your rules channel id for accurate analysis (else data/rules.txt / generic)
 USER_ANALYSIS_MSG_LIMIT = 100      # how many recent user messages to gather
-USER_ANALYSIS_CHANNEL_ID = 1141037835445616640  # where reports post (bot workshop for testing; switch to POLICE_STATION later)
+# USER_ANALYSIS_CHANNEL_ID is set below, once CHANNELS is defined.
 HALL_OF_FAME_FILE = os.path.join(JSON_DATA_DIR, "hall_of_fame.json")
 PREDICTIONS_FILE = os.path.join(JSON_DATA_DIR, "predictions.json")
 PREDICTION_STREAKS_FILE = os.path.join(JSON_DATA_DIR, "prediction_streaks.json")
@@ -282,6 +282,8 @@ class CHANNELS:
 
 # Casino games + the lottery may only be used in these channels.
 CASINO_CHANNELS = [CHANNELS.CASINO, CHANNELS.VIP_LOUNGE, CHANNELS.BOT_SPAM, CHANNELS.BOT_WORKSHOP]
+# Where /Analyse User reports post (bot workshop for testing; switch to CHANNELS.POLICE_STATION later).
+USER_ANALYSIS_CHANNEL_ID = CHANNELS.BOT_WORKSHOP
 # The lottery board + winner announcements post here.
 LOTTERY_CHANNEL = CHANNELS.CASINO
 
