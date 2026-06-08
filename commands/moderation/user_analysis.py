@@ -61,6 +61,9 @@ async def gather_user_messages(client, guild, user, channel_ids, target=250, per
 
     me = guild.me
     cutoff = discord.utils.utcnow() - timedelta(days=days)
+    joined = getattr(user, "joined_at", None)
+    if joined is not None and joined > cutoff:
+        cutoff = joined  # nothing exists before they joined the server
     chans = [guild.get_channel(cid) for cid in channel_ids]
     chans = [c for c in chans if c is not None and c.permissions_for(me).read_message_history]
     t_start = time.monotonic()
@@ -95,7 +98,7 @@ async def gather_user_messages(client, guild, user, channel_ids, target=250, per
                     if stop.is_set():
                         why = "target reached"; break
                     if msg.created_at < cutoff:
-                        why = "past 2-week window"; break
+                        why = "reached cutoff (2 weeks / join date)"; break
                     if seen[0] >= per_channel:
                         why = "hit per-channel cap"; break
                     async with lock:
