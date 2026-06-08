@@ -34,6 +34,68 @@ class ArchiveButtonView(discord.ui.View):
             await interaction.user.add_roles(role)
             await interaction.response.send_message("Archivist role assigned!", ephemeral=True)
 
+class UnarchiveButtonView(discord.ui.View):
+    def __init__(self, bot, channel_id: int):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.channel_id = channel_id
+        for child in self.children:
+            if isinstance(child, discord.ui.Button) and child.custom_id == "placeholder_unarchive_id":
+                child.custom_id = f"unarchive_button_{channel_id}"
+
+    @discord.ui.button(label="Unarchive Channel", style=discord.ButtonStyle.success, custom_id="placeholder_unarchive_id")
+    async def unarchive_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        member = guild.get_member(interaction.user.id)
+        if not member or not any(r.id in [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO] for r in member.roles):
+            await interaction.response.send_message("You do not have permission to unarchive channels.", ephemeral=True)
+            return
+
+        from database import DatabaseManager
+        record = DatabaseManager.get_archived_channel(self.channel_id)
+        if not record:
+            await interaction.response.send_message("No archive record found for this channel.", ephemeral=True)
+            return
+            
+        original_category_id, original_overwrites_json = record
+        
+        channel = guild.get_channel(self.channel_id)
+        if not channel:
+            await interaction.response.send_message("Channel not found.", ephemeral=True)
+            return
+            
+        # Parse overwrites
+        try:
+            overwrites_data = json.loads(original_overwrites_json)
+            new_overwrites = {}
+            for item in overwrites_data:
+                target = guild.get_role(item['id']) if item['type'] == 'role' else guild.get_member(item['id'])
+                if target:
+                    new_overwrites[target] = discord.PermissionOverwrite.from_pair(
+                        discord.Permissions(item['allow']),
+                        discord.Permissions(item['deny'])
+                    )
+        except Exception as e:
+            await interaction.response.send_message(f"Failed to parse original permissions: {e}", ephemeral=True)
+            return
+
+        category = guild.get_channel(int(original_category_id)) if original_category_id else None
+        await channel.edit(category=category, overwrites=new_overwrites)
+        
+        DatabaseManager.delete_archived_channel(self.channel_id)
+        
+        # Disable button
+        for child in self.children:
+            child.disabled = True
+        await interaction.message.edit(view=self)
+        
+        success_embed = discord.Embed(
+            title="Channel Unarchived",
+            description=f"{interaction.user.mention} has restored this channel to its original state.",
+            color=0x00FF00
+        )
+        await interaction.response.send_message(embed=success_embed)
+
 async def schedule_archive_move(channel: discord.TextChannel, guild: discord.Guild, target_timestamp: float, bot, private: bool = False):
     delay = target_timestamp - time.time()
     if delay > 0:
@@ -59,9 +121,14 @@ async def schedule_archive_move(channel: discord.TextChannel, guild: discord.Gui
             description=desc,
             color=0x00FF00,
         )
-        await channel.send(embed=move_embed)
+        
+        view = UnarchiveButtonView(bot, channel.id)
+        bot.add_view(view)
+        msg = await channel.send(embed=move_embed, view=view)
+        
         key = f"archive_{channel.id}"
         persistent_views.pop(key, None)
+        persistent_views[f"unarchive_{channel.id}"] = {"msg_id": msg.id}
         save_persistent_views(persistent_views)
 
 async def archive_channel(interaction: discord.Interaction, bot, seconds: int, private: bool = False):
@@ -74,6 +141,22 @@ async def archive_channel(interaction: discord.Interaction, bot, seconds: int, p
         
     if private:
         seconds = 0
+        
+    from database import DatabaseManager
+    # Save original perms before we strip them
+    original_overwrites = []
+    for target, overwrite in channel.overwrites.items():
+        original_overwrites.append({
+            "id": target.id,
+            "type": "role" if isinstance(target, discord.Role) else "member",
+            "allow": overwrite.pair()[0].value,
+            "deny": overwrite.pair()[1].value
+        })
+    DatabaseManager.save_archived_channel(
+        channel.id, 
+        channel.category_id, 
+        json.dumps(original_overwrites)
+    )
         
     for target, overwrite in channel.overwrites.items():
         if isinstance(target, discord.Role):
