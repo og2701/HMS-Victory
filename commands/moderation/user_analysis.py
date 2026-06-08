@@ -163,10 +163,10 @@ async def handle_analyse_user(interaction, member):
         await interaction.followup.send(f"Analysis failed: {err}", ephemeral=True)
         return
 
-    channel = interaction.client.get_channel(config.CHANNELS.POLICE_STATION)
+    channel = interaction.client.get_channel(config.USER_ANALYSIS_CHANNEL_ID)
     if channel is None:
         try:
-            channel = await interaction.client.fetch_channel(config.CHANNELS.POLICE_STATION)
+            channel = await interaction.client.fetch_channel(config.USER_ANALYSIS_CHANNEL_ID)
         except Exception:
             await interaction.followup.send("Couldn't reach the police station channel.", ephemeral=True)
             return
@@ -185,4 +185,4 @@ async def handle_analyse_user(interaction, member):
         await interaction.followup.send("Generated the report but couldn't post it.", ephemeral=True)
         return
     await interaction.followup.send(
-        f"Analysis of {member.mention} posted to <#{config.CHANNELS.POLICE_STATION}>.", ephemeral=True)
+        f"Analysis of {member.mention} posted to <#{config.USER_ANALYSIS_CHANNEL_ID}>.", ephemeral=True)
