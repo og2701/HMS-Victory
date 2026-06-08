@@ -283,8 +283,8 @@ class CHANNELS:
 
 # Casino games + the lottery may only be used in these channels.
 CASINO_CHANNELS = [CHANNELS.CASINO, CHANNELS.VIP_LOUNGE, CHANNELS.BOT_SPAM, CHANNELS.BOT_WORKSHOP]
-# Where /Analyse User reports post (bot workshop for testing; switch to CHANNELS.POLICE_STATION later).
-USER_ANALYSIS_CHANNEL_ID = CHANNELS.BOT_WORKSHOP
+# Where /Analyse User reports post.
+USER_ANALYSIS_CHANNEL_ID = CHANNELS.POLICE_STATION
 # Only these channels are scanned for the member's messages (the main chats), in parallel.
 USER_ANALYSIS_CHANNELS = [CHANNELS.VIP_LOUNGE, CHANNELS.GENERAL, CHANNELS.POLITICS]
 # The lottery board + winner announcements post here.
