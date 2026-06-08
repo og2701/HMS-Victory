@@ -282,18 +282,17 @@ def _build_prompt(member, msgs, rules):
 
 
 def _build_followup_prompt(member, msgs, rules, question):
-    body = "\n".join(f"{i}. #{m['channel']}: {m['content']}" for i, m in enumerate(msgs, 1))
+    body = "\n".join(f"{i}. {m['content']}" for i, m in enumerate(msgs, 1))
     return (
-        "You are a moderation assistant helping a moderator make a call. Answer their question "
-        "DIRECTLY and DECISIVELY.\n"
-        "- LEAD with the actual answer in the first sentence. If the question asks for a judgement "
-        "or decision (e.g. 'are they a good member?', 'should we ban them?'), give a clear verdict "
-        "or recommendation - do NOT just describe their messages or sit on the fence.\n"
-        "- Then justify it with specific evidence from their messages (quote verbatim), weighing "
-        "both sides fairly and accounting for banter and context.\n"
-        "- Base it on the visible messages (and the rules); you may note that caveat, but still "
-        "commit to an answer. Only refuse if there is genuinely nothing relevant to go on, and then "
-        "say what would help.\n\n"
+        "You are a moderation assistant helping a moderator make a call. Answer DIRECTLY, "
+        "DECISIVELY, and CONCISELY.\n"
+        "- First sentence: the actual verdict/answer. For judgement or decision questions "
+        "('are they good?', 'should we ban them?'), commit to a clear yes/no/recommendation - do "
+        "NOT fence-sit or just describe.\n"
+        "- Then at most 2-3 short sentences of justification, with a quoted example or two.\n"
+        "- Keep it tight: no padding or preamble. Do NOT list or mention which channels they post "
+        "in (only a few channels are scanned, so that is not meaningful).\n"
+        "- Weigh banter and context fairly. Only refuse if there is genuinely nothing to go on.\n\n"
         f"{_CULTURE}\n\n"
         f"SERVER RULES:\n{rules}\n\n"
         f"MEMBER: {member.display_name}. {len(msgs)} recent messages:\n{body}\n\n"
