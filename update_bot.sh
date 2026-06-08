@@ -10,8 +10,16 @@ echo "======================================"
 echo " Starting HMS-Victory Update Sequence "
 echo "======================================"
 
-# 1. Stop the bot safely to release SQLite locks
-echo "[1/4] Stopping HMS-Victory service..."
+# 0. Ensure systemd waits for the in-bot graceful drain (up to 2 min for active games to
+#    finish) before sending SIGKILL. Idempotent drop-in; safe to run every time.
+echo "[0/3] Ensuring graceful-stop timeout (150s)..."
+sudo mkdir -p /etc/systemd/system/hms-victory.service.d
+printf '[Service]\nTimeoutStopSec=150\n' | sudo tee /etc/systemd/system/hms-victory.service.d/timeout.conf >/dev/null
+sudo systemctl daemon-reload
+
+# 1. Stop the bot. systemctl now blocks while the bot drains active games (maintenance mode
+#    blocks new ones), then checkpoints the DB and exits cleanly within the 150s window.
+echo "[1/3] Stopping HMS-Victory service (waits for active games to finish)..."
 sudo systemctl stop hms-victory
 sleep 2
 

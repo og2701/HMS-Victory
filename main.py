@@ -491,26 +491,41 @@ async def graceful_shutdown(client, sig_name):
     # 1. Maintenance mode: refuse new coin-deducting commands during the drain.
     client.maintenance_mode = True
 
-    # Wait for active casino games to finish
-    try:
-        from lib.core.file_operations import load_persistent_views
-        wait_seconds = 0
-        max_wait = 60  # maximum wait 60 seconds
-        while wait_seconds < max_wait:
+    # Wait (up to 2 min) for active games to finish before we tear down.
+    def _count_active_games():
+        n = 0
+        try:
+            from lib.core.file_operations import load_persistent_views
             views = load_persistent_views()
-            active_games = [
-                k for k, v in views.items()
-                if isinstance(v, dict) and v.get("type") in ["blackjack", "higherlower", "videopoker", "reddog", "tcp"]
-            ]
-            if not active_games:
+            n += sum(1 for v in views.values()
+                     if isinstance(v, dict) and v.get("type") in
+                     ("blackjack", "higherlower", "videopoker", "reddog", "tcp"))
+        except Exception:
+            pass
+        try:  # poker tables with a hand in progress
+            from commands.economy.poker import _TABLES as _pt
+            n += sum(1 for t in _pt.values() if getattr(t, "status", None) == "playing")
+        except Exception:
+            pass
+        try:  # roulette tables with a live round (betting or spinning)
+            from commands.economy.roulette import _TABLES as _rt
+            n += sum(1 for t in _rt.values() if getattr(t, "status", None) in ("betting", "spinning"))
+        except Exception:
+            pass
+        return n
+
+    try:
+        wait_seconds, max_wait = 0, 120  # up to 2 minutes
+        while wait_seconds < max_wait:
+            active = _count_active_games()
+            if active == 0:
+                logger.info("All active games finished; proceeding with shutdown.")
                 break
-            logger.info(f"Waiting for {len(active_games)} active casino games to finish... ({wait_seconds}s)")
+            logger.info(f"Waiting for {active} active game(s) to finish... ({wait_seconds}/{max_wait}s)")
             await asyncio.sleep(2)
             wait_seconds += 2
-        if wait_seconds >= max_wait:
-            logger.warning("Reached maximum wait time for active games. Proceeding with shutdown.")
         else:
-            logger.info("All active casino games finished.")
+            logger.warning(f"Reached max wait ({max_wait}s) for active games; proceeding with shutdown.")
     except Exception as e:
         logger.error(f"Error waiting for active games: {e}")
 

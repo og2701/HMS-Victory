@@ -569,6 +569,8 @@ class ActionView(discord.ui.View):
 
 
 async def handle_poker_command(interaction: Interaction):
+    if await cb.reject_if_maintenance(interaction):  # block new tables during a restart drain
+        return
     if interaction.channel_id not in getattr(config, "CASINO_CHANNELS", []):
         await interaction.response.send_message(
             "Poker can only be played in the casino channels.", ephemeral=True)
