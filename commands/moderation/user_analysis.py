@@ -290,9 +290,10 @@ class FollowupModal(discord.ui.Modal, title="Ask about this member"):
         label="Your question", style=discord.TextStyle.paragraph, max_length=300,
         placeholder="e.g. is the politics stuff a pattern? are they targeting anyone?")
 
-    def __init__(self, user_id):
+    def __init__(self, user_id, report_message=None):
         super().__init__()
         self.user_id = int(user_id)
+        self.report_message = report_message  # the analysis message to thread follow-ups under
 
     async def on_submit(self, interaction):
         from lib.core.discord_helpers import has_any_role
@@ -331,14 +332,17 @@ class FollowupModal(discord.ui.Modal, title="Ask about this member"):
         if err:
             await interaction.followup.send(f"Follow-up failed: {err}", ephemeral=True)
             return
+        target = await _followup_thread(member, self.report_message) or interaction.channel
         try:
-            await interaction.channel.send(
+            await target.send(
                 view=_followup_view(member, interaction.user, q, text),
                 allowed_mentions=discord.AllowedMentions.none())
         except Exception:
-            await interaction.followup.send("Couldn't post the answer here.", ephemeral=True)
+            log.warning("[analyse] failed to post follow-up", exc_info=True)
+            await interaction.followup.send("Couldn't post the answer.", ephemeral=True)
             return
-        await interaction.followup.send("Posted.", ephemeral=True)
+        where = "the thread" if getattr(target, "id", None) != getattr(interaction.channel, "id", None) else "the channel"
+        await interaction.followup.send(f"Posted in {where}.", ephemeral=True)
 
 
 class FollowupButton(discord.ui.DynamicItem[discord.ui.Button], template=r"analysefu:(?P<uid>\d+)"):
@@ -359,7 +363,27 @@ class FollowupButton(discord.ui.DynamicItem[discord.ui.Button], template=r"analy
         if not has_any_role(interaction, _ALLOWED_ROLES()):
             await interaction.response.send_message("Deputy PM only for now.", ephemeral=True)
             return
-        await interaction.response.send_modal(FollowupModal(self.user_id))
+        await interaction.response.send_modal(FollowupModal(self.user_id, interaction.message))
+
+
+async def _followup_thread(member, report_message):
+    """Get (or create) the thread hanging off the analysis report, so follow-ups group there."""
+    if report_message is None:
+        return None
+    thread = getattr(report_message, "thread", None)
+    if thread is not None:
+        return thread
+    try:
+        return await report_message.create_thread(
+            name=f"Follow-ups: {member.display_name}"[:100], auto_archive_duration=10080)
+    except Exception:
+        # a thread may already exist but isn't cached - refetch the message to pick it up
+        try:
+            fresh = await report_message.channel.fetch_message(report_message.id)
+            return getattr(fresh, "thread", None)
+        except Exception:
+            log.warning("[analyse] couldn't get/create follow-up thread", exc_info=True)
+            return None
 
 
 def _build_view(member, requester, msgs, text):
