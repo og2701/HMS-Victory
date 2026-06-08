@@ -97,6 +97,7 @@ async def gather_user_messages(client, guild, user, channel_ids, target=1000, mi
 
     async def scan(ch):
         before_for = None
+        last_seen = None   # the message iterated just before (newer) = the one right AFTER theirs
         cursor = None      # resume point (oldest message seen) so a transient error doesn't abandon the channel
         seen = [0]         # messages read in this channel (our own per-channel cap)
         found = [0]        # the member's messages found here
@@ -132,18 +133,22 @@ async def gather_user_messages(client, guild, user, channel_ids, target=1000, mi
                             "ts": int(msg.created_at.timestamp()), "channel": ch.name,
                             "content": content, "jump": msg.jump_url,
                             "reactions": sum(r.count for r in msg.reactions),
-                            "reply_to": None, "before": None, "got_reply": False,
+                            "reply_to": None, "before": None, "after": None, "got_reply": False,
                         }
                         ref = msg.reference
                         if ref is not None and isinstance(getattr(ref, "resolved", None), discord.Message):
                             r = ref.resolved
                             entry["reply_to"] = f"{r.author.display_name}: {(r.content or '')[:120]}"
+                        if last_seen is not None:  # the message right after theirs (organic response or them again)
+                            who = "THEM" if last_seen.author.id == user.id else last_seen.author.display_name
+                            entry["after"] = f"{who}: {(last_seen.content or '')[:110]}"
                         async with lock:
                             collected.append(entry)
                             found[0] += 1
                             if _enough(len(collected), state["scanned"]):
                                 stop.set()
                         before_for = entry
+                    last_seen = msg
                     await _tick(ch.name)
                 break  # finished this channel (broke out or history exhausted)
             except Exception:
@@ -262,8 +267,12 @@ def _build_prompt(member, msgs, rules):
             ctx.append(f"prev msg [{m['before']}]")
         if m.get("reactions"):
             ctx.append(f"{m['reactions']} reactions")
+        if m.get("after"):
+            ctx.append(f"next msg [{m['after']}]")
+        if m.get("reactions"):
+            ctx.append(f"{m['reactions']} reactions")
         if m.get("got_reply"):
-            ctx.append("someone replied to this")
+            ctx.append("formal reply to this")
         tag = (" {" + "; ".join(ctx) + "}") if ctx else ""
         lines.append(f"{i}. #{m['channel']}{tag}: {m['content']}")
     body = "\n".join(lines)
@@ -275,17 +284,19 @@ def _build_prompt(member, msgs, rules):
         "and context, do NOT over-flag, and never invent quotes (use only verbatim text from the "
         "messages). If nothing is wrong, say so plainly.\n"
         "IMPORTANT: weigh RECEPTION, not just volume. Posting a lot is NOT the same as contributing. "
-        "If their messages are mostly short greetings or silly one-liners that get few/no replies or "
-        "reactions, treat them as low-engagement (talking into the void) rather than 'fostering a "
-        "friendly environment' - even if very active. Messages that spark replies/reactions are the "
-        "genuine contributions.\n\n"
+        "People here usually respond organically (just sending the next message, NOT Discord's reply "
+        "button), so judge engagement from the 'next msg' that follows each message (is someone "
+        "actually picking up on what they said, or is it unrelated / them talking to themselves?) "
+        "plus reactions - the formal reply count is only a lower bound. If their messages are mostly "
+        "short greetings or silly one-liners that nobody picks up on, treat them as low-engagement "
+        "(talking into the void) rather than 'fostering a friendly environment', even if very active.\n\n"
         f"{_CULTURE}\n\n"
         f"SERVER RULES:\n{rules}\n\n"
         f"MEMBER: {member.display_name} (id {member.id}). {len(msgs)} recent messages, oldest first. "
-        "Context in {curly braces} shows what they replied to, the previous message, reactions, and "
-        "whether anyone replied to them.\n"
-        f"ENGAGEMENT: only {replied} of {len(msgs)} of their messages got a reply from someone, and "
-        f"only {reacted} got any reaction.\n\n"
+        "Context in {curly braces}: 'prev msg' = message before theirs, 'next msg' = the message that "
+        "followed (THEM = themselves), reactions, and 'formal reply' = someone used the reply button.\n"
+        f"ENGAGEMENT (lower bound; most responses are organic): {replied} of {len(msgs)} got a formal "
+        f"reply, {reacted} got a reaction - infer the rest from the 'next msg' context.\n\n"
         f"{body}\n\n"
         "Respond with ONLY a JSON object (no markdown fences) with these keys:\n"
         '  "summary": 2-4 sentences on overall tone and behaviour.\n'
@@ -307,10 +318,9 @@ def _build_prompt(member, msgs, rules):
 def _build_followup_prompt(member, msgs, rules, question):
     body = "\n".join(
         f"{i}. {m['content']}"
-        + ("  [someone replied]" if m.get("got_reply") else "")
+        + (f"  [next: {m['after']}]" if m.get("after") else "")
         + (f"  [{m['reactions']} reactions]" if m.get("reactions") else "")
         for i, m in enumerate(msgs, 1))
-    replied = sum(1 for m in msgs if m.get("got_reply"))
     reacted = sum(1 for m in msgs if m.get("reactions"))
     return (
         "You are a moderation assistant helping a moderator make a call. Answer DIRECTLY, "
@@ -321,13 +331,15 @@ def _build_followup_prompt(member, msgs, rules, question):
         "- Then at most 2-3 short sentences of justification, with a quoted example or two.\n"
         "- Keep it tight: no padding or preamble. Do NOT list or mention which channels they post "
         "in (only a few channels are scanned, so that is not meaningful).\n"
-        "- Weigh RECEPTION, not just volume: posting a lot is not the same as contributing. If their "
-        "messages mostly go unanswered (few/no replies or reactions), they add little even if active. "
-        "Weigh banter and context fairly. Only refuse if there is genuinely nothing to go on.\n\n"
+        "- Weigh RECEPTION, not just volume. People respond organically (the next message, not the "
+        "reply button), so judge from each message's [next: ...] context whether anyone actually "
+        "picks up on what they say (vs unrelated, or 'THEM' talking to themselves) plus reactions. If "
+        "their messages mostly go unanswered, they add little even if active. Weigh banter fairly. "
+        "Only refuse if there is genuinely nothing to go on.\n\n"
         f"{_CULTURE}\n\n"
         f"SERVER RULES:\n{rules}\n\n"
-        f"MEMBER: {member.display_name}. {len(msgs)} recent messages (only {replied} got a reply, "
-        f"{reacted} got any reaction):\n{body}\n\n"
+        f"MEMBER: {member.display_name}. {len(msgs)} recent messages ('next:' = the message that "
+        f"followed; 'THEM' = themselves; {reacted} got a reaction):\n{body}\n\n"
         f"MODERATOR'S QUESTION: {question}"
     )
 
