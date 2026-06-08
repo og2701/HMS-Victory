@@ -47,8 +47,9 @@ def _load_context(member_id):
 
 
 # --- gather the member's recent messages with context -------------------------
-async def gather_user_messages(client, guild, user, channel_ids, target=250, per_channel=40000,
-                               days=14, concurrency=4, progress=None):
+async def gather_user_messages(client, guild, user, channel_ids, target=1000, min_target=200,
+                               density_floor=0.08, per_channel=40000, days=14, concurrency=4,
+                               progress=None):
     """Scan only `channel_ids` (the main chats) in parallel for the member's recent messages.
 
     Discord has no per-user message API, so we read history and filter. Each channel scan
@@ -74,6 +75,15 @@ async def gather_user_messages(client, guild, user, channel_ids, target=250, per
     state = {"scanned": 0, "last_edit": 0.0}
     lock = asyncio.Lock()
     stop = asyncio.Event()
+
+    def _enough(found_n, read_n):
+        # Dynamic: heavy chatters (high density of their msgs) keep going to the hard cap; once
+        # we have a decent sample AND they're clearly not a heavy chatter, stop early.
+        if found_n >= target:
+            return True
+        if found_n >= min_target and read_n >= 1500 and (found_n / read_n) < density_floor:
+            return True
+        return False
 
     async def _tick(ch_name):
         if progress is None:
@@ -124,7 +134,7 @@ async def gather_user_messages(client, guild, user, channel_ids, target=250, per
                         async with lock:
                             collected.append(entry)
                             found[0] += 1
-                            if len(collected) >= target:
+                            if _enough(len(collected), state["scanned"]):
                                 stop.set()
                         before_for = entry
                     await _tick(ch.name)
@@ -324,7 +334,8 @@ class FollowupModal(discord.ui.Modal, title="Ask about this member"):
             msgs = await gather_user_messages(
                 interaction.client, interaction.guild, member,
                 getattr(config, "USER_ANALYSIS_CHANNELS", []),
-                target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 250),
+                target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 1000),
+                min_target=getattr(config, "USER_ANALYSIS_MIN_MSGS", 200),
                 days=getattr(config, "USER_ANALYSIS_DAYS", 14))
             _save_context(self.user_id, msgs)
         if not msgs:
@@ -510,7 +521,8 @@ async def handle_analyse_user(interaction, member):
     msgs = await gather_user_messages(
         interaction.client, interaction.guild, member,
         getattr(config, "USER_ANALYSIS_CHANNELS", []),
-        target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 250),
+        target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 1000),
+        min_target=getattr(config, "USER_ANALYSIS_MIN_MSGS", 200),
         days=getattr(config, "USER_ANALYSIS_DAYS", 14), progress=progress)
     if not msgs:
         await _status(f"Couldn't find recent messages from {member.mention} in channels I can read.")

@@ -167,7 +167,8 @@ POKER_ESCROW_FILE = os.path.join(JSON_DATA_DIR, "poker_escrow.json")
 # "Analyse User" moderation tool (Gemini). Reads GEMINI_API_KEY from the environment.
 GEMINI_MODEL = "gemini-2.5-flash"
 RULES_CHANNEL_ID = None            # set to your rules channel id for accurate analysis (else data/rules.txt / generic)
-USER_ANALYSIS_MSG_LIMIT = 500      # max recent user messages to gather (or fewer if that's all in the window)
+USER_ANALYSIS_MSG_LIMIT = 1000     # hard cap on messages gathered (only heavy chatters reach it)
+USER_ANALYSIS_MIN_MSGS = 200       # collect at least this many before stopping a non-heavy chatter early
 USER_ANALYSIS_DAYS = 14            # only look at messages from the last this-many days
 # Cache the scraped messages per member so follow-up questions skip re-scraping Discord.
 USER_ANALYSIS_CONTEXT_FILE = os.path.join(JSON_DATA_DIR, "user_analysis_context.json")
