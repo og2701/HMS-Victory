@@ -89,9 +89,9 @@ async def _load_rules(client):
 
 # --- Gemini -------------------------------------------------------------------
 async def _call_gemini(prompt):
-    key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    key = os.getenv("GEMINI_TOKEN") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not key:
-        return None, "GEMINI_API_KEY is not set in the environment."
+        return None, "No Gemini key in the environment (GEMINI_TOKEN / GEMINI_API_KEY)."
     model = getattr(config, "GEMINI_MODEL", "gemini-2.0-flash")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
     body = {
