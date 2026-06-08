@@ -178,7 +178,9 @@ async def _call_gemini(prompt, json_mode=True):
         return None, "No Gemini key in the environment (GEMINI_TOKEN / GEMINI_API_KEY)."
     model = getattr(config, "GEMINI_MODEL", "gemini-2.0-flash")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
-    gen = {"temperature": 0.3, "maxOutputTokens": 4096}  # 2.5 "thinking" shares this budget
+    # 2.5 "thinking" tokens share the output budget, so keep it large AND cap thinking so the
+    # actual answer can't get starved/truncated (which breaks JSON parsing).
+    gen = {"temperature": 0.3, "maxOutputTokens": 8192, "thinkingConfig": {"thinkingBudget": 2048}}
     if json_mode:
         gen["responseMimeType"] = "application/json"
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": gen}
