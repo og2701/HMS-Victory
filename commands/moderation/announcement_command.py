@@ -4,8 +4,6 @@ from discord import ButtonStyle, Interaction, Forbidden
 import re
 from lib.core.file_operations import load_persistent_views, save_persistent_views
 
-persistent_views = load_persistent_views()
-
 async def handle_role_button_interaction(interaction: Interaction):
     custom_id = interaction.data.get("custom_id", "")
     if custom_id.startswith("role_"):
@@ -178,6 +176,7 @@ class PreviewView(View):
         view = RoleButtonView(self.roles)
         try:
             message = await self.channel.send(content=self.content, view=view)
+            persistent_views = load_persistent_views()
             persistent_views[message.id] = self.roles
             save_persistent_views(persistent_views)
             interaction.client.add_view(view, message_id=message.id)

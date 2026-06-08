@@ -9,8 +9,6 @@ from config import *
 ARCHIVIST_ROLE_ID = 1281602571416375348
 ARCHIVE_CATEGORY_ID = 962003831313555537
 
-persistent_views = load_persistent_views()
-
 class ArchiveButtonView(discord.ui.View):
     def __init__(self, bot, channel_id: int):
         super().__init__(timeout=None)
@@ -127,6 +125,7 @@ async def schedule_archive_move(channel: discord.TextChannel, guild: discord.Gui
         msg = await channel.send(embed=move_embed, view=view)
         
         key = f"archive_{channel.id}"
+        persistent_views = load_persistent_views()
         persistent_views.pop(key, None)
         persistent_views[f"unarchive_{channel.id}"] = {"msg_id": msg.id}
         save_persistent_views(persistent_views)
@@ -183,6 +182,7 @@ async def archive_channel(interaction: discord.Interaction, bot, seconds: int, p
         msg = await channel.send(embed=embed, view=view)
         
     target_timestamp = time.time() + seconds
+    persistent_views = load_persistent_views()
     persistent_views[f"archive_{channel.id}"] = {"msg_id": msg.id, "move_timestamp": target_timestamp, "private": private}
     save_persistent_views(persistent_views)
 
