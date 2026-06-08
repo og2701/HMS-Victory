@@ -176,6 +176,27 @@ class DatabaseManager:
                 award_badge(dst_id, 'high_roller')
         return True
 
+    @classmethod
+    def save_archived_channel(cls, channel_id: int, original_category_id: int, original_overwrites: str):
+        import time
+        with DatabaseManager.transaction() as c:
+            c.execute('''
+                INSERT OR REPLACE INTO archived_channels (channel_id, original_category_id, original_overwrites, archived_at)
+                VALUES (?, ?, ?, ?)
+            ''', (str(channel_id), str(original_category_id) if original_category_id else None, original_overwrites, int(time.time())))
+
+    @classmethod
+    def get_archived_channel(cls, channel_id: int):
+        with DatabaseManager.get_connection() as conn:
+            c = conn.cursor()
+            c.execute('SELECT original_category_id, original_overwrites FROM archived_channels WHERE channel_id = ?', (str(channel_id),))
+            return c.fetchone()
+
+    @classmethod
+    def delete_archived_channel(cls, channel_id: int):
+        with DatabaseManager.transaction() as c:
+            c.execute('DELETE FROM archived_channels WHERE channel_id = ?', (str(channel_id),))
+
 def init_db():
     with DatabaseManager.get_connection() as conn:
         c = conn.cursor()
@@ -653,31 +674,6 @@ def init_db():
                 "INSERT OR IGNORE INTO user_badges (user_id, badge_id, awarded_at) VALUES (?, ?, ?)",
                 (str(BOT_ID), badge_id, now_ts)
             )
-        conn.commit()
-
-    @classmethod
-    def save_archived_channel(cls, channel_id: int, original_category_id: int, original_overwrites: str):
-        import time
-        conn = cls._get_conn()
-        c = conn.cursor()
-        c.execute('''
-            INSERT OR REPLACE INTO archived_channels (channel_id, original_category_id, original_overwrites, archived_at)
-            VALUES (?, ?, ?, ?)
-        ''', (str(channel_id), str(original_category_id) if original_category_id else None, original_overwrites, int(time.time())))
-        conn.commit()
-
-    @classmethod
-    def get_archived_channel(cls, channel_id: int):
-        conn = cls._get_conn()
-        c = conn.cursor()
-        c.execute('SELECT original_category_id, original_overwrites FROM archived_channels WHERE channel_id = ?', (str(channel_id),))
-        return c.fetchone()
-
-    @classmethod
-    def delete_archived_channel(cls, channel_id: int):
-        conn = cls._get_conn()
-        c = conn.cursor()
-        c.execute('DELETE FROM archived_channels WHERE channel_id = ?', (str(channel_id),))
         conn.commit()
 
 if __name__ == '__main__':
