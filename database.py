@@ -342,6 +342,16 @@ def init_db():
                 total_circulation INTEGER NOT NULL
             )
         ''')
+        # Granular per-user balance history (every change, from any source) for /balance graph.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS balance_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                ts INTEGER NOT NULL,
+                balance INTEGER NOT NULL
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_balance_history_user_ts ON balance_history (user_id, ts)')
         c.execute('''
             CREATE TABLE IF NOT EXISTS user_rank_customization (
                 user_id TEXT PRIMARY KEY,

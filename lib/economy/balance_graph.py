@@ -1,9 +1,11 @@
 """Per-user 'balance over time' graph for /balance.
 
-The nightly job writes the full ledger to balance_snapshots/ukpence_balances_<date>.json,
-so a user's history is just their balance read out of each daily file. We render it as an
-inline-SVG line chart (no charting deps) through the existing headless-Chrome pipeline,
-styled to match the /ukpeconomy dashboard. Gated behind a button so /balance stays instant.
+Two data sources, merged on a real time axis: the granular `balance_history` table (every
+meaningful balance change, from any source - rewards, casino, pay, tax, etc., recorded at
+the ledger chokepoints) for recent detail, plus the daily `balance_snapshots` for long-range
+history from before granular logging existed, tipped with the live balance. Rendered as an
+inline-SVG line chart (no charting deps) via the headless-Chrome pipeline, styled to match
+the /ukpeconomy dashboard. Gated behind a button so /balance stays instant.
 """
 
 import glob
@@ -23,14 +25,18 @@ log = logging.getLogger(__name__)
 
 _UK = pytz.timezone("Europe/London")
 _PREFIX = "ukpence_balances_"
-_MAX_POINTS = 180  # keep the x-axis readable; show at most the last ~6 months of dailies
+_MAX_POINTS = 300  # cap rendered points (downsampled) so the SVG stays light
 
 
-def _load_series(user_id):
-    """Sorted [(date_str, balance), ...] from the daily snapshots, starting at the first
-    day the user appears in the ledger (so we don't draw a flat 0 line before they joined)."""
-    uid = str(user_id)
-    points = []
+def _midnight_epoch(date_str):
+    y, m, d = map(int, date_str.split("-"))
+    return int(_UK.localize(datetime(y, m, d)).timestamp())
+
+
+def _snapshot_points(uid):
+    """One (ts, balance) per daily snapshot, placed at end-of-day (the snapshot is the
+    end-of-day ledger). Covers long-range history from before granular logging existed."""
+    pts = []
     for path in glob.glob(os.path.join(config.BALANCE_SNAPSHOT_DIR, f"{_PREFIX}*.json")):
         date_str = os.path.basename(path)[len(_PREFIX):-len(".json")]
         try:
@@ -44,24 +50,40 @@ def _load_series(user_id):
             continue
         if uid in data:
             try:
-                points.append((date_str, int(data[uid])))
+                pts.append((_midnight_epoch(date_str) + 86400, int(data[uid])))
             except (TypeError, ValueError):
                 continue
-    points.sort(key=lambda p: p[0])
-    return points
+    return pts
 
 
-def _series_with_today(user_id):
-    points = _load_series(user_id)
-    today = datetime.now(_UK).strftime("%Y-%m-%d")
+def _history_points(uid):
+    """Granular (ts, balance) points: every meaningful balance change, from any source."""
+    try:
+        from database import DatabaseManager
+        rows = DatabaseManager.fetch_all(
+            "SELECT ts, balance FROM balance_history WHERE user_id = ? ORDER BY ts ASC", (uid,)) or []
+        return [(int(ts), int(bal)) for ts, bal in rows]
+    except Exception:
+        log.debug("balance_history query failed", exc_info=True)
+        return []
+
+
+def _load_points(user_id):
+    """Merged, time-ordered [(ts, balance)] from daily snapshots + granular history, tipped
+    with the live balance. Downsampled to _MAX_POINTS for rendering."""
+    import time
+    uid = str(user_id)
+    pts = _snapshot_points(uid) + _history_points(uid)
+    pts.sort(key=lambda p: p[0])
+    now = int(time.time())
     current = int(get_bb(user_id))
-    if points and points[-1][0] == today:
-        points[-1] = (today, current)
-    else:
-        points.append((today, current))
-    if len(points) > _MAX_POINTS:
-        points = points[-_MAX_POINTS:]
-    return points
+    if not pts or pts[-1][0] < now - 30 or pts[-1][1] != current:
+        pts.append((now, current))
+    if len(pts) > _MAX_POINTS:
+        step = len(pts) / _MAX_POINTS
+        keep = sorted({int(i * step) for i in range(_MAX_POINTS)} | {0, len(pts) - 1})
+        pts = [pts[i] for i in keep]
+    return pts
 
 
 def _fmt(n):
@@ -73,11 +95,11 @@ def _fmt(n):
     return str(n)
 
 
-def _build_html(display_name, series):
+def _build_html(display_name, points):
     W, H = 1040, 440
     ml, mr, mt, mb = 96, 48, 36, 70
     pw, ph = W - ml - mr, H - mt - mb
-    vals = [b for _, b in series]
+    vals = [b for _, b in points]
     vmin, vmax = min(vals), max(vals)
     if vmin == vmax:
         vmin = max(0, vmin - 1)
@@ -86,15 +108,18 @@ def _build_html(display_name, series):
     lo, hi = max(0, vmin - pad), vmax + pad
     if hi == lo:
         hi = lo + 1
-    n = len(series)
+    n = len(points)
+    t0, t1 = points[0][0], points[-1][0]
+    if t1 == t0:
+        t1 = t0 + 1
 
-    def px(i):
-        return ml + (pw * (i / (n - 1) if n > 1 else 0.5))
+    def px(ts):
+        return ml + pw * (ts - t0) / (t1 - t0)
 
     def py(v):
         return mt + ph * (1 - (v - lo) / (hi - lo))
 
-    pts = [(px(i), py(v)) for i, (_, v) in enumerate(series)]
+    pts = [(px(t), py(v)) for t, v in points]
     poly = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
     area = (f"M {ml:.1f},{mt + ph:.1f} "
             + " ".join(f"L {x:.1f},{y:.1f}" for x, y in pts)
@@ -108,9 +133,12 @@ def _build_html(display_name, series):
         grid.append(f"<line x1='{ml}' y1='{gy:.1f}' x2='{ml + pw}' y2='{gy:.1f}' class='grid'/>")
         grid.append(f"<text x='{ml - 14}' y='{gy + 6:.1f}' class='ylab'>{_fmt(gv)}</text>")
 
+    def datelabel(ts):
+        return datetime.fromtimestamp(ts, _UK).strftime("%-d %b")
+
     xlab = []
-    for i in sorted({0, n // 2, n - 1}):
-        xlab.append(f"<text x='{px(i):.1f}' y='{mt + ph + 38:.1f}' class='xlab'>{series[i][0][5:]}</text>")
+    for ts in (t0, (t0 + t1) // 2, t1):
+        xlab.append(f"<text x='{px(ts):.1f}' y='{mt + ph + 38:.1f}' class='xlab'>{datelabel(ts)}</text>")
 
     markers = ""
     if n <= 30:
@@ -118,14 +146,14 @@ def _build_html(display_name, series):
     ex, ey = pts[-1]
     end_dot = f"<circle cx='{ex:.1f}' cy='{ey:.1f}' r='6' class='enddot'/>"
 
-    first, last = series[0][1], series[-1][1]
+    first, last = points[0][1], points[-1][1]
     net = last - first
     up = net > 0
     flat = net == 0
     color = "#10b981" if up else ("#ef4444" if not flat else "#3b82f6")
     arrow = "▲" if up else ("▼" if not flat else "▬")
     sign = "+" if net >= 0 else ""
-    span = f"{series[0][0]} to {series[-1][0]}" if n > 1 else series[0][0]
+    span = f"{datelabel(t0)} to {datelabel(t1)}"
 
     return f"""<!DOCTYPE html><html><head><meta charset='utf-8'>
 <style>
@@ -186,10 +214,10 @@ svg {{ display:block; margin-top:10px; }}
 
 async def render_balance_graph(user_id, display_name):
     """Render the user's balance history to a PNG BytesIO, or None if there's <2 points."""
-    series = _series_with_today(user_id)
-    if len(series) < 2:
+    points = _load_points(user_id)
+    if len(points) < 2:
         return None
-    html = _build_html(display_name, series)
+    html = _build_html(display_name, points)
     return await screenshot_html(html, size=(1120, 780), apply_trim=True)
 
 

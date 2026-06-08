@@ -37,6 +37,33 @@ class ShutcoinManager:
     def can_afford(user_id: int, amount: int = 1) -> bool:
         return ShutcoinManager.get_balance(user_id) >= amount
 
+_HIST_LAST = {}          # user_id -> (ts, balance); in-memory throttle for balance_history
+_HIST_MIN_GAP = 20       # seconds: coalesce rapid small changes
+_HIST_MIN_DELTA = 50     # ...unless the balance jumps by at least this much
+
+
+def record_balance_point(user_id, balance, ts=None):
+    """Append the user's new balance to balance_history so /balance can plot the true curve.
+    Records on every meaningful change (any source flows through set_balance/remove_amount),
+    lightly throttled so chat/stage ticks don't flood the table. Skips the bank (BOT_ID)."""
+    try:
+        import time
+        from config import BOT_ID
+        uid = str(user_id)
+        if uid == str(BOT_ID):
+            return
+        now = int(ts) if ts is not None else int(time.time())
+        last = _HIST_LAST.get(uid)
+        if last is not None and (now - last[0]) < _HIST_MIN_GAP and abs(balance - last[1]) < _HIST_MIN_DELTA:
+            return
+        _HIST_LAST[uid] = (now, int(balance))
+        DatabaseManager.execute(
+            "INSERT INTO balance_history (user_id, ts, balance) VALUES (?, ?, ?)",
+            (uid, now, int(balance)))
+    except Exception:
+        pass
+
+
 class UKPenceManager:
     @staticmethod
     def get_all_balances() -> dict:
@@ -88,6 +115,7 @@ class UKPenceManager:
             
         log_text = f"⚖️ <@{user_id}> balance set to `{amount:,}` UKP (was `{old_balance:,}`)|{reason}"
         DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
+        record_balance_point(user_id, amount, now)
         
     @staticmethod
     def add_amount(user_id: int, amount: int, reason: str = "Unspecified") -> None:
@@ -97,9 +125,10 @@ class UKPenceManager:
     @staticmethod
     def remove_amount(user_id: int, amount: int, reason: str = "Unspecified") -> bool:
         # Atomic update: only subtract if the balance is sufficient
+        new_balance = None
         with DatabaseManager.locked_connection() as conn:
             c = conn.cursor()
-            
+
             c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(user_id),))
             res = c.fetchone()
             old_balance = res[0] if res else 0
@@ -120,9 +149,11 @@ class UKPenceManager:
                 now = int(time.time())
                 log_text = f"💸 <@{user_id}> paid `{amount:,}` UKP|{reason}"
                 c.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
-            
+
             conn.commit()
-            return success
+        if new_balance is not None:  # record after the lock is released to avoid a nested write
+            record_balance_point(user_id, new_balance)
+        return success
 
 class EconomyMetrics:
     @staticmethod

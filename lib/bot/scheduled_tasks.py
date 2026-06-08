@@ -135,6 +135,14 @@ async def daily_summary(client):
         atomic_write_json(snapshot_path, current_ukpence_balances, indent=4)
         logger.info(f"Saved UKPence balance snapshot for {yesterday_str} to {snapshot_path}")
 
+    # Keep the granular balance history bounded (older history is covered by daily snapshots).
+    try:
+        from database import DatabaseManager
+        cutoff = int(datetime.now(pytz.utc).timestamp()) - 90 * 86400
+        DatabaseManager.execute("DELETE FROM balance_history WHERE ts < ?", (cutoff,))
+    except Exception:
+        logger.error("balance_history prune failed", exc_info=True)
+
     # Daily summaries post in the dedicated thread (weekly/monthly stay in COMMONS).
     # get_channel misses archived/uncached threads, so fall back to fetch_channel;
     # sending to an archived thread auto-unarchives it. If the thread can't be reached
@@ -548,12 +556,16 @@ async def apply_inactivity_tax(client):
         total_reclaimed = 0
         taxed_count = 0
         
+        _tax_now = int(datetime.now(pytz.utc).timestamp())
         with DatabaseManager.locked_connection() as conn:
             c = conn.cursor()
             for uid, balance in dormant_users:
                 tax_amount = int(balance * 0.05)
                 if tax_amount > 0:
                     c.execute("UPDATE ukpence SET balance = balance - ? WHERE user_id = ?", (tax_amount, uid))
+                    # keep the balance graph accurate: this path bypasses remove_amount
+                    c.execute("INSERT INTO balance_history (user_id, ts, balance) VALUES (?, ?, ?)",
+                              (str(uid), _tax_now, balance - tax_amount))
                     total_reclaimed += tax_amount
                     taxed_count += 1
 
