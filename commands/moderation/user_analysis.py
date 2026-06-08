@@ -216,7 +216,7 @@ def _build_view(member, requester, msgs, text):
 
     name = discord.utils.escape_markdown(member.display_name)
     foot = (f"-# {_activity_line(msgs)}\n-# {member.mention} (`{member.id}`) · by {requester.mention} · "
-            f"{len(msgs)} msgs, AI-generated, use your judgement")
+            f"{len(msgs)} msgs")
     view = discord.ui.LayoutView(timeout=None)
 
     if not isinstance(data, dict):
