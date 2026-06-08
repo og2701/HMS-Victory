@@ -250,7 +250,15 @@ class FollowupModal(discord.ui.Modal, title="Ask about this member"):
         if err:
             await interaction.followup.send(f"Follow-up failed: {err}", ephemeral=True)
             return
-        await interaction.followup.send(f"**Q:** {q}\n\n{(text or '').strip()[:1800]}", ephemeral=True)
+        answer = (
+            f"\U0001f4ac **Follow-up on {discord.utils.escape_markdown(member.display_name)}** "
+            f"· asked by {interaction.user.mention}\n**Q:** {q}\n{(text or '').strip()[:1700]}")
+        try:
+            await interaction.channel.send(answer, allowed_mentions=discord.AllowedMentions.none())
+        except Exception:
+            await interaction.followup.send("Couldn't post the answer here.", ephemeral=True)
+            return
+        await interaction.followup.send("Posted.", ephemeral=True)
 
 
 class FollowupButton(discord.ui.DynamicItem[discord.ui.Button], template=r"analysefu:(?P<uid>\d+)"):
