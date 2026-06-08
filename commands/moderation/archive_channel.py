@@ -34,17 +34,24 @@ class ArchiveButtonView(discord.ui.View):
             await interaction.user.add_roles(role)
             await interaction.response.send_message("Archivist role assigned!", ephemeral=True)
 
-async def schedule_archive_move(channel: discord.TextChannel, guild: discord.Guild, target_timestamp: float, bot):
+async def schedule_archive_move(channel: discord.TextChannel, guild: discord.Guild, target_timestamp: float, bot, private: bool = False):
     delay = target_timestamp - time.time()
     if delay > 0:
         await asyncio.sleep(delay)
-    archive_category = guild.get_channel(ARCHIVE_CATEGORY_ID)
+    
+    archive_cat_id = 1281601623747072104 if private else ARCHIVE_CATEGORY_ID
+    archive_category = guild.get_channel(archive_cat_id)
+    
     if archive_category and isinstance(archive_category, discord.CategoryChannel):
-        new_overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False, send_messages=False)}
-        archive_role = guild.get_role(ARCHIVIST_ROLE_ID)
-        if archive_role:
-            new_overwrites[archive_role] = discord.PermissionOverwrite(view_channel=True, send_messages=False)
-        await channel.edit(overwrites=new_overwrites, category=archive_category)
+        if private:
+            await channel.edit(category=archive_category, sync_permissions=True)
+        else:
+            new_overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False, send_messages=False)}
+            archive_role = guild.get_role(ARCHIVIST_ROLE_ID)
+            if archive_role:
+                new_overwrites[archive_role] = discord.PermissionOverwrite(view_channel=True, send_messages=False)
+            await channel.edit(overwrites=new_overwrites, category=archive_category)
+            
         move_embed = discord.Embed(
             title="Channel Moved to Archive",
             description="This channel has been moved to the archive category.",
@@ -55,7 +62,7 @@ async def schedule_archive_move(channel: discord.TextChannel, guild: discord.Gui
         persistent_views.pop(key, None)
         save_persistent_views(persistent_views)
 
-async def archive_channel(interaction: discord.Interaction, bot, seconds: int):
+async def archive_channel(interaction: discord.Interaction, bot, seconds: int, private: bool = False):
     guild = interaction.guild
     channel = interaction.channel
     if not channel:
@@ -77,9 +84,9 @@ async def archive_channel(interaction: discord.Interaction, bot, seconds: int):
     )
     msg = await channel.send(embed=embed, view=view)
     target_timestamp = time.time() + seconds
-    persistent_views[f"archive_{channel.id}"] = {"msg_id": msg.id, "move_timestamp": target_timestamp}
+    persistent_views[f"archive_{channel.id}"] = {"msg_id": msg.id, "move_timestamp": target_timestamp, "private": private}
     save_persistent_views(persistent_views)
 
     await interaction.followup.send(f"Channel will be archived in {seconds // 3600} hours!", ephemeral=True)
     
-    asyncio.create_task(schedule_archive_move(channel, guild, target_timestamp, bot))
+    asyncio.create_task(schedule_archive_move(channel, guild, target_timestamp, bot, private))

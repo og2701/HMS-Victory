@@ -434,7 +434,8 @@ def reattach_persistent_views(client):
             if channel:
                 client.add_view(ArchiveButtonView(client, channel_id), message_id=value["msg_id"])
                 target_timestamp = value["move_timestamp"]
-                asyncio.create_task(schedule_archive_move(channel, channel.guild, target_timestamp, client))
+                private = value.get("private", False)
+                asyncio.create_task(schedule_archive_move(channel, channel.guild, target_timestamp, client, private))
         elif isinstance(value, dict) and value.get("type") == "wager":
             try:
                 from commands.economy.wager import WagerDecisionView

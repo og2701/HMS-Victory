@@ -230,9 +230,9 @@ def define_commands(tree, client):
         await toggle_user_role(interaction, user, role)
 
     @command("archive-channel", "Archive the current channel.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def archive_channel_command(interaction: Interaction, seconds: int = 86400):
+    async def archive_channel_command(interaction: Interaction, seconds: int = 86400, private: bool = False):
         await interaction.response.defer()
-        await archive_channel(interaction, interaction.client, seconds)
+        await archive_channel(interaction, interaction.client, seconds, private)
 
     @command("rank", "Displays your XP and rank in the server")
     async def rank_command(interaction: Interaction, member: Member = None):
