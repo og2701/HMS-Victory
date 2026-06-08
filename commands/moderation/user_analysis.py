@@ -20,7 +20,7 @@ _ALLOWED_ROLES = lambda: [config.ROLES.DEPUTY_PM]  # Deputy PM only for now
 
 
 # --- gather the member's recent messages with context -------------------------
-async def gather_user_messages(client, guild, user, channel_ids, target=250, per_channel=20000,
+async def gather_user_messages(client, guild, user, channel_ids, target=250, per_channel=40000,
                                days=14, concurrency=4, progress=None):
     """Scan only `channel_ids` (the main chats) in parallel for the member's recent messages.
 
@@ -53,38 +53,46 @@ async def gather_user_messages(client, guild, user, channel_ids, target=250, per
 
     async def scan(ch):
         before_for = None
-        try:
-            async for msg in ch.history(limit=per_channel):  # newest-first
-                if stop.is_set() or msg.created_at < cutoff:  # done, or past the 2-week window
-                    break
-                async with lock:
-                    state["scanned"] += 1
-                if before_for is not None:
-                    if msg.author.id != user.id:
-                        before_for["before"] = f"{msg.author.display_name}: {(msg.content or '')[:110]}"
-                    before_for = None
-                if msg.author.id == user.id and (msg.content or msg.attachments):
-                    content = (msg.content or "").replace("\n", " ")[:300]
-                    if msg.attachments:
-                        content += " [attachment]"
-                    entry = {
-                        "ts": int(msg.created_at.timestamp()), "channel": ch.name,
-                        "content": content, "jump": msg.jump_url,
-                        "reactions": sum(r.count for r in msg.reactions),
-                        "reply_to": None, "before": None,
-                    }
-                    ref = msg.reference
-                    if ref is not None and isinstance(getattr(ref, "resolved", None), discord.Message):
-                        r = ref.resolved
-                        entry["reply_to"] = f"{r.author.display_name}: {(r.content or '')[:120]}"
+        cursor = None      # resume point (oldest message seen) so a transient error doesn't abandon the channel
+        seen = 0           # messages read in this channel (our own per-channel cap)
+        for attempt in range(4):
+            try:
+                async for msg in ch.history(limit=None, before=cursor):  # newest-first, resume-able
+                    cursor = msg.created_at
+                    seen += 1
+                    if stop.is_set() or msg.created_at < cutoff or seen >= per_channel:
+                        return  # done: target hit, past the window, or hit our cap
                     async with lock:
-                        collected.append(entry)
-                        if len(collected) >= target:
-                            stop.set()
-                    before_for = entry
-                await _tick(ch.name)
-        except Exception:
-            return
+                        state["scanned"] += 1
+                    if before_for is not None:
+                        if msg.author.id != user.id:
+                            before_for["before"] = f"{msg.author.display_name}: {(msg.content or '')[:110]}"
+                        before_for = None
+                    if msg.author.id == user.id and (msg.content or msg.attachments):
+                        content = (msg.content or "").replace("\n", " ")[:300]
+                        if msg.attachments:
+                            content += " [attachment]"
+                        entry = {
+                            "ts": int(msg.created_at.timestamp()), "channel": ch.name,
+                            "content": content, "jump": msg.jump_url,
+                            "reactions": sum(r.count for r in msg.reactions),
+                            "reply_to": None, "before": None,
+                        }
+                        ref = msg.reference
+                        if ref is not None and isinstance(getattr(ref, "resolved", None), discord.Message):
+                            r = ref.resolved
+                            entry["reply_to"] = f"{r.author.display_name}: {(r.content or '')[:120]}"
+                        async with lock:
+                            collected.append(entry)
+                            if len(collected) >= target:
+                                stop.set()
+                        before_for = entry
+                    await _tick(ch.name)
+                return  # history exhausted cleanly
+            except Exception:
+                log.warning("Analyse User: history error in #%s (attempt %d/4), resuming",
+                            ch.name, attempt + 1, exc_info=True)
+                await asyncio.sleep(1.5)
 
     sem = asyncio.Semaphore(concurrency)
 
