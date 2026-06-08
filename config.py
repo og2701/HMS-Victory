@@ -165,7 +165,7 @@ POKER_MAX_SEATS = 6
 POKER_TURN_SECONDS = 45            # auto check/fold if a player stalls
 POKER_ESCROW_FILE = os.path.join(JSON_DATA_DIR, "poker_escrow.json")
 # "Analyse User" moderation tool (Gemini). Reads GEMINI_API_KEY from the environment.
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 RULES_CHANNEL_ID = None            # set to your rules channel id for accurate analysis (else data/rules.txt / generic)
 USER_ANALYSIS_MSG_LIMIT = 100      # how many recent user messages to gather
 # USER_ANALYSIS_CHANNEL_ID is set below, once CHANNELS is defined.
