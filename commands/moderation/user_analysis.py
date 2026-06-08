@@ -20,18 +20,31 @@ _ALLOWED_ROLES = lambda: [config.ROLES.DEPUTY_PM]  # Deputy PM only for now
 
 
 # --- gather the member's recent messages with context -------------------------
-async def gather_user_messages(client, guild, user, target=100, per_channel=300, max_channels=40):
+async def gather_user_messages(client, guild, user, target=100, per_channel=4000,
+                               max_channels=25, scan_budget=15000, progress=None):
+    """Scan channel history (busiest first, deep) for the member's recent messages.
+
+    Discord has no 'get a user's messages' endpoint, so we read history and filter. Active
+    users concentrate in a few busy channels, so we scan each channel deep (per_channel) and
+    stop as soon as we've collected `target` of *their* messages or hit the global scan_budget.
+    """
     me = guild.me
     channels = [c for c in guild.text_channels
                 if c.permissions_for(me).read_message_history]
     channels.sort(key=lambda c: (c.last_message_id or 0), reverse=True)  # busiest/most-recent first
     collected = []
+    scanned = 0
     for ch in channels[:max_channels]:
-        if len(collected) >= target:
+        if len(collected) >= target or scanned >= scan_budget:
             break
         capture_before_for = None
         try:
             async for msg in ch.history(limit=per_channel):  # newest-first
+                scanned += 1
+                if scanned >= scan_budget:
+                    break
+                if progress is not None and scanned % 250 == 0:
+                    await progress(scanned, len(collected), ch.name)
                 if capture_before_for is not None:
                     # this message is the one immediately BEFORE the recorded one (older)
                     if msg.author.id != user.id:
@@ -168,7 +181,8 @@ def _activity_line(msgs):
     return f"**{len(msgs)}** msgs · **{len(counts)}** channels ({top}) · **{reacts}** reactions · {span}"
 
 
-def _build_embed(member, requester, msgs, text):
+def _build_view(member, requester, msgs, text):
+    """Compact Components V2 report: one accent-coloured container of markdown blocks."""
     import json
     import re
     data = None
@@ -178,50 +192,61 @@ def _build_embed(member, requester, msgs, text):
     except Exception:
         log.debug("gemini json parse failed", exc_info=True)
 
-    if not isinstance(data, dict):
-        embed = discord.Embed(title=f"\U0001f50e Moderation analysis: {member.display_name}",
-                              description=text[:4096], color=0xCF142B)
-    else:
-        risk = str(data.get("risk_level", "low")).lower()
-        embed = discord.Embed(
-            title=f"\U0001f50e Moderation analysis: {member.display_name}",
-            description=(data.get("summary") or "")[:1500],
-            color=_RISK_COLOR.get(risk, 0xCF142B))
-        embed.add_field(name="Risk", value=f"{_RISK_EMOJI.get(risk, '⚪')} {risk.capitalize()}", inline=True)
-        if data.get("tone"):
-            embed.add_field(name="Tone", value=str(data["tone"])[:1024], inline=True)
-        action = data.get("recommended_action") or "-"
-        embed.add_field(name="Recommended action",
-                        value=f"**{action}**\n{data.get('justification', '')}"[:1024], inline=False)
-        concerns = data.get("concerns") or []
-        if concerns:
-            blocks = []
-            for c in concerns[:6]:
-                se = _SEV_EMOJI.get(str(c.get("severity", "low")).lower(), "\U0001f7e1")
-                blk = f"{se} **{c.get('issue', '')}**"
-                if c.get("quote"):
-                    blk += f"\n> {str(c['quote'])[:170]}"
-                if c.get("why"):
-                    blk += f"\n_{str(c['why'])[:170]}_"
-                blocks.append(blk)
-            embed.add_field(name="Concerns", value="\n\n".join(blocks)[:1024], inline=False)
-        else:
-            embed.add_field(name="Concerns", value="None notable.", inline=False)
-        if data.get("patterns"):
-            embed.add_field(name="Patterns", value=str(data["patterns"])[:1024], inline=False)
-        quotes = data.get("notable_quotes") or []
-        if quotes:
-            embed.add_field(name="Notable quotes",
-                            value="\n".join(f"> {str(q)[:150]}" for q in quotes[:5])[:1024], inline=False)
-        if data.get("positives"):
-            embed.add_field(name="Positives", value=str(data["positives"])[:1024], inline=False)
+    name = discord.utils.escape_markdown(member.display_name)
+    foot = (f"-# {_activity_line(msgs)}\n-# {member.mention} (`{member.id}`) · by {requester.mention} · "
+            f"{len(msgs)} msgs, AI-generated, use your judgement")
+    view = discord.ui.LayoutView(timeout=None)
 
-    embed.set_author(name=str(member), icon_url=member.display_avatar.url)
-    embed.add_field(name="Activity", value=_activity_line(msgs)[:1024], inline=False)
-    embed.add_field(name="Member", value=f"{member.mention} (`{member.id}`)", inline=True)
-    embed.add_field(name="Requested by", value=requester.mention, inline=True)
-    embed.set_footer(text=f"{len(msgs)} recent messages analysed by AI - use your own judgement.")
-    return embed
+    if not isinstance(data, dict):
+        c = discord.ui.Container(accent_colour=0xCF142B)
+        c.add_item(discord.ui.TextDisplay(f"## \U0001f50e Moderation analysis: {name}\n{(text or '')[:3500]}"))
+        c.add_item(discord.ui.TextDisplay(foot))
+        view.add_item(c)
+        return view
+
+    risk = str(data.get("risk_level", "low")).lower()
+    c = discord.ui.Container(accent_colour=_RISK_COLOR.get(risk, 0xCF142B))
+
+    head = f"## \U0001f50e Moderation analysis: {name}\n{_RISK_EMOJI.get(risk, '⚪')} **{risk.capitalize()} risk**"
+    if data.get("tone"):
+        head += f" · *{str(data['tone'])[:80]}*"
+    if data.get("recommended_action"):
+        head += f" · ⚖️ **{data['recommended_action']}**"
+    if data.get("summary"):
+        head += f"\n{str(data['summary'])[:1200]}"
+    if data.get("justification"):
+        head += f"\n-# {str(data['justification'])[:300]}"
+    c.add_item(discord.ui.TextDisplay(head))
+
+    concerns = data.get("concerns") or []
+    if concerns:
+        lines = ["**Concerns**"]
+        for con in concerns[:6]:
+            se = _SEV_EMOJI.get(str(con.get("severity", "low")).lower(), "\U0001f7e1")
+            seg = f"{se} **{con.get('issue', '')}**"
+            if con.get("quote"):
+                seg += f' · "{str(con["quote"])[:120]}"'
+            if con.get("why"):
+                seg += f" · _{str(con['why'])[:120]}_"
+            lines.append(seg)
+        c.add_item(discord.ui.TextDisplay("\n".join(lines)[:3500]))
+    else:
+        c.add_item(discord.ui.TextDisplay("**Concerns** None notable."))
+
+    extra = []
+    if data.get("patterns"):
+        extra.append(f"**Patterns** {str(data['patterns'])[:400]}")
+    quotes = data.get("notable_quotes") or []
+    if quotes:
+        extra.append("**Notable quotes** " + " · ".join(f'"{str(q)[:80]}"' for q in quotes[:5]))
+    if data.get("positives"):
+        extra.append(f"**Positives** {str(data['positives'])[:400]}")
+    if extra:
+        c.add_item(discord.ui.TextDisplay("\n".join(extra)[:3500]))
+
+    c.add_item(discord.ui.TextDisplay(foot))
+    view.add_item(c)
+    return view
 
 
 # --- entry point --------------------------------------------------------------
@@ -230,21 +255,38 @@ async def handle_analyse_user(interaction, member):
     if not has_any_role(interaction, _ALLOWED_ROLES()):
         await interaction.response.send_message("This tool is Deputy PM only for now.", ephemeral=True)
         return
+    import time
     await interaction.response.defer(ephemeral=True, thinking=True)
 
+    async def _status(content):
+        try:
+            await interaction.edit_original_response(content=content)
+        except Exception:
+            pass
+
+    last_edit = [0.0]
+
+    async def progress(scanned, found, ch_name):
+        now = time.monotonic()
+        if now - last_edit[0] < 1.5:  # throttle edits to dodge rate limits
+            return
+        last_edit[0] = now
+        await _status(f"\U0001f50d Scanning **#{ch_name}** ... {scanned:,} messages read, "
+                      f"**{found}** from {member.display_name} so far.")
+
+    await _status(f"\U0001f50d Gathering {member.display_name}'s recent messages ...")
     msgs = await gather_user_messages(
         interaction.client, interaction.guild, member,
-        target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 100))
+        target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 100), progress=progress)
     if not msgs:
-        await interaction.followup.send(
-            f"Couldn't find recent messages from {member.mention} in channels I can read.",
-            ephemeral=True)
+        await _status(f"Couldn't find recent messages from {member.mention} in channels I can read.")
         return
 
+    await _status(f"\U0001f4dd Gathered **{len(msgs)}** messages. Asking Gemini to review ...")
     rules = await _load_rules(interaction.client)
     text, err = await _call_gemini(_build_prompt(member, msgs, rules))
     if err:
-        await interaction.followup.send(f"Analysis failed: {err}", ephemeral=True)
+        await _status(f"Analysis failed: {err}")
         return
 
     channel = interaction.client.get_channel(config.USER_ANALYSIS_CHANNEL_ID)
@@ -252,15 +294,13 @@ async def handle_analyse_user(interaction, member):
         try:
             channel = await interaction.client.fetch_channel(config.USER_ANALYSIS_CHANNEL_ID)
         except Exception:
-            await interaction.followup.send("Couldn't reach the police station channel.", ephemeral=True)
+            await _status("Couldn't reach the report channel.")
             return
 
-    embed = _build_embed(member, interaction.user, msgs, text)
     try:
-        await channel.send(embed=embed)
+        await channel.send(view=_build_view(member, interaction.user, msgs, text))
     except Exception:
         log.error("failed to post user analysis", exc_info=True)
-        await interaction.followup.send("Generated the report but couldn't post it.", ephemeral=True)
+        await _status("Generated the report but couldn't post it.")
         return
-    await interaction.followup.send(
-        f"Analysis of {member.mention} posted to <#{config.USER_ANALYSIS_CHANNEL_ID}>.", ephemeral=True)
+    await _status(f"✅ Analysis of {member.mention} posted to <#{config.USER_ANALYSIS_CHANNEL_ID}>.")
