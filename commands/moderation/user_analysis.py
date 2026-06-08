@@ -19,6 +19,33 @@ log = logging.getLogger(__name__)
 _ALLOWED_ROLES = lambda: [config.ROLES.DEPUTY_PM]  # Deputy PM only for now
 
 
+# --- scraped-message cache (so follow-ups skip re-scraping Discord) -----------
+def _save_context(member_id, msgs):
+    try:
+        import time
+        from lib.core.file_operations import load_json_file, save_json_file
+        store = load_json_file(config.USER_ANALYSIS_CONTEXT_FILE) or {}
+        store[str(member_id)] = {"ts": int(time.time()), "msgs": msgs}
+        cutoff = int(time.time()) - 7 * 86400          # drop entries older than a week
+        store = {k: v for k, v in store.items() if v.get("ts", 0) >= cutoff}
+        save_json_file(config.USER_ANALYSIS_CONTEXT_FILE, store)
+        log.info("[analyse] cached %d msgs for member %s (store now holds %d members)",
+                 len(msgs), member_id, len(store))
+    except Exception:
+        log.warning("[analyse] failed to cache context for %s", member_id, exc_info=True)
+
+
+def _load_context(member_id):
+    try:
+        from lib.core.file_operations import load_json_file
+        entry = (load_json_file(config.USER_ANALYSIS_CONTEXT_FILE) or {}).get(str(member_id))
+        if entry and entry.get("msgs"):
+            return entry["msgs"]
+    except Exception:
+        log.warning("[analyse] failed to load cached context for %s", member_id, exc_info=True)
+    return None
+
+
 # --- gather the member's recent messages with context -------------------------
 async def gather_user_messages(client, guild, user, channel_ids, target=250, per_channel=40000,
                                days=14, concurrency=4, progress=None):
@@ -36,6 +63,9 @@ async def gather_user_messages(client, guild, user, channel_ids, target=250, per
     cutoff = discord.utils.utcnow() - timedelta(days=days)
     chans = [guild.get_channel(cid) for cid in channel_ids]
     chans = [c for c in chans if c is not None and c.permissions_for(me).read_message_history]
+    t_start = time.monotonic()
+    log.info("[analyse] scanning %d channels for member %s (target=%d, days=%d): %s",
+             len(chans), user.id, target, days, [c.name for c in chans])
 
     collected = []
     state = {"scanned": 0, "last_edit": 0.0}
@@ -54,14 +84,20 @@ async def gather_user_messages(client, guild, user, channel_ids, target=250, per
     async def scan(ch):
         before_for = None
         cursor = None      # resume point (oldest message seen) so a transient error doesn't abandon the channel
-        seen = 0           # messages read in this channel (our own per-channel cap)
+        seen = [0]         # messages read in this channel (our own per-channel cap)
+        found = [0]        # the member's messages found here
+        why = "exhausted"
         for attempt in range(4):
             try:
                 async for msg in ch.history(limit=None, before=cursor):  # newest-first, resume-able
                     cursor = msg.created_at
-                    seen += 1
-                    if stop.is_set() or msg.created_at < cutoff or seen >= per_channel:
-                        return  # done: target hit, past the window, or hit our cap
+                    seen[0] += 1
+                    if stop.is_set():
+                        why = "target reached"; break
+                    if msg.created_at < cutoff:
+                        why = "past 2-week window"; break
+                    if seen[0] >= per_channel:
+                        why = "hit per-channel cap"; break
                     async with lock:
                         state["scanned"] += 1
                     if before_for is not None:
@@ -84,15 +120,18 @@ async def gather_user_messages(client, guild, user, channel_ids, target=250, per
                             entry["reply_to"] = f"{r.author.display_name}: {(r.content or '')[:120]}"
                         async with lock:
                             collected.append(entry)
+                            found[0] += 1
                             if len(collected) >= target:
                                 stop.set()
                         before_for = entry
                     await _tick(ch.name)
-                return  # history exhausted cleanly
+                break  # finished this channel (broke out or history exhausted)
             except Exception:
-                log.warning("Analyse User: history error in #%s (attempt %d/4), resuming",
+                log.warning("[analyse] history error in #%s (attempt %d/4), resuming from cursor",
                             ch.name, attempt + 1, exc_info=True)
                 await asyncio.sleep(1.5)
+        log.info("[analyse] #%s done: found %d of theirs from %d read (%s)",
+                 ch.name, found[0], seen[0], why)
 
     sem = asyncio.Semaphore(concurrency)
 
@@ -104,6 +143,8 @@ async def gather_user_messages(client, guild, user, channel_ids, target=250, per
     await asyncio.gather(*(run(c) for c in chans))          # the chosen channels, in parallel
 
     collected.sort(key=lambda e: e["ts"])  # chronological for the model
+    log.info("[analyse] scan complete for %s: %d msgs from %d messages read in %.1fs",
+             user.id, len(collected), state["scanned"], time.monotonic() - t_start)
     return collected
 
 
@@ -141,14 +182,21 @@ async def _call_gemini(prompt, json_mode=True):
     if json_mode:
         gen["responseMimeType"] = "application/json"
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": gen}
+    import time as _t
+    t0 = _t.monotonic()
+    log.info("[analyse] gemini call model=%s json=%s prompt_chars=%d", model, json_mode, len(prompt))
     try:
         async with aiohttp.ClientSession() as s:
             async with s.post(url, json=body, timeout=aiohttp.ClientTimeout(total=60)) as r:
                 data = await r.json()
                 if r.status != 200:
+                    log.warning("[analyse] gemini HTTP %d: %s", r.status, str(data)[:300])
                     return None, f"Gemini error {r.status}: {str(data)[:300]}"
-                return data["candidates"][0]["content"]["parts"][0]["text"], None
+                out = data["candidates"][0]["content"]["parts"][0]["text"]
+                log.info("[analyse] gemini ok in %.1fs (%d chars out)", _t.monotonic() - t0, len(out or ""))
+                return out, None
     except Exception as e:
+        log.warning("[analyse] gemini request failed in %.1fs: %s", _t.monotonic() - t0, e, exc_info=True)
         return None, f"Gemini request failed: {e}"
 
 
@@ -244,16 +292,24 @@ class FollowupModal(discord.ui.Modal, title="Ask about this member"):
         if member is None:
             await interaction.followup.send("Couldn't resolve that member.", ephemeral=True)
             return
-        msgs = await gather_user_messages(
-            interaction.client, interaction.guild, member,
-            getattr(config, "USER_ANALYSIS_CHANNELS", []),
-            target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 250),
-            days=getattr(config, "USER_ANALYSIS_DAYS", 14))
+        q = str(self.question.value)
+        log.info("[analyse] follow-up by %s about %s: %r", interaction.user.id, self.user_id, q[:120])
+        msgs = _load_context(self.user_id)  # reuse the first scan, no re-scrape
+        if msgs:
+            log.info("[analyse] follow-up using %d cached msgs for %s (no re-scrape)",
+                     len(msgs), self.user_id)
+        else:
+            log.info("[analyse] follow-up cache miss for %s, re-scraping", self.user_id)
+            msgs = await gather_user_messages(
+                interaction.client, interaction.guild, member,
+                getattr(config, "USER_ANALYSIS_CHANNELS", []),
+                target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 250),
+                days=getattr(config, "USER_ANALYSIS_DAYS", 14))
+            _save_context(self.user_id, msgs)
         if not msgs:
             await interaction.followup.send("No recent messages to answer from.", ephemeral=True)
             return
         rules = await _load_rules(interaction.client)
-        q = str(self.question.value)
         text, err = await _call_gemini(_build_followup_prompt(member, msgs, rules, q), json_mode=False)
         if err:
             await interaction.followup.send(f"Follow-up failed: {err}", ephemeral=True)
@@ -386,6 +442,8 @@ async def handle_analyse_user(interaction, member):
         await interaction.response.send_message("This tool is Deputy PM only for now.", ephemeral=True)
         return
     import time
+    log.info("[analyse] %s (%s) requested analysis of %s (%s)",
+             interaction.user, interaction.user.id, member, member.id)
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     async def _status(content):
@@ -413,6 +471,7 @@ async def handle_analyse_user(interaction, member):
     if not msgs:
         await _status(f"Couldn't find recent messages from {member.mention} in channels I can read.")
         return
+    _save_context(member.id, msgs)  # cache for fast follow-ups (no re-scrape)
 
     await _status(f"\U0001f4dd Gathered **{len(msgs)}** messages. Asking Gemini to review ...")
     rules = await _load_rules(interaction.client)

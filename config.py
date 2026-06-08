@@ -169,6 +169,8 @@ GEMINI_MODEL = "gemini-2.5-flash"
 RULES_CHANNEL_ID = None            # set to your rules channel id for accurate analysis (else data/rules.txt / generic)
 USER_ANALYSIS_MSG_LIMIT = 250      # max recent user messages to gather (or fewer if that's all in the window)
 USER_ANALYSIS_DAYS = 14            # only look at messages from the last this-many days
+# Cache the scraped messages per member so follow-up questions skip re-scraping Discord.
+USER_ANALYSIS_CONTEXT_FILE = os.path.join(JSON_DATA_DIR, "user_analysis_context.json")
 # USER_ANALYSIS_CHANNEL_ID is set below, once CHANNELS is defined.
 HALL_OF_FAME_FILE = os.path.join(JSON_DATA_DIR, "hall_of_fame.json")
 PREDICTIONS_FILE = os.path.join(JSON_DATA_DIR, "predictions.json")
