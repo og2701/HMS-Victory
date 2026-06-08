@@ -45,9 +45,10 @@ _KEYS = [k for k, _, _ in REEL]
 _WEIGHTS = [w for _, _, w in REEL]
 
 # Three-of-a-kind payouts (x bet). Two cherries pays a frequent small consolation.
-# Sized for the locked 800k economy (max bet 10k -> top jackpot 150k, not millions).
-# RTP ~= 0.97 (house edge ~3%); monotonic by symbol rarity.
-THREE_OF_A_KIND = {"crown": 20, "union": 16, "lion": 13, "rose": 10,
+# Sized for the locked 800k economy (max bet 10k -> top jackpot 250k, not millions).
+# RTP ~= 0.982 (house edge ~1.8%); monotonic by symbol rarity. The two-cherry pay drives
+# most of the RTP, so the top jackpots are tuned for feel without breaking the math.
+THREE_OF_A_KIND = {"crown": 25, "union": 20, "lion": 16, "rose": 12,
                    "anchor": 9, "pound": 8, "cherry": 7}
 TWO_CHERRY = 4
 

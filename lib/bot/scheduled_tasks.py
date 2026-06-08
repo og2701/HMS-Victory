@@ -242,20 +242,27 @@ async def award_stage_bonuses(client):
 
     for uid, start_time_utc in list(client.stage_join_times.items()):
         minutes = int((now_utc - start_time_utc).total_seconds() // 60)
-        if minutes > 0:
-            if get_bb(uid) >= 20000:
-                client.stage_join_times[uid] = now_utc
-                continue
-            bonus_awarded = minutes * STAGE_UKPENCE_MULTIPLIER
-            if add_bb(uid, bonus_awarded, reason=f"Stage Participation Reward ({minutes}m)"):
-                from lib.bot.event_handlers import award_badge_with_notify
-                await award_badge_with_notify(client, uid, 'stage_fan')
-                client.stage_join_times[uid] = now_utc - timedelta(seconds=((now_utc - start_time_utc).total_seconds() % 60))
-                logger.info(f"[STAGE CRON] +{bonus_awarded} UKP → User {uid} for {minutes} full mins.")
-                total_awarded_this_call += bonus_awarded
-            else:
-                logger.error(f"[STAGE CRON] Bank insufficient for {bonus_awarded} UKP to User {uid}.")
-                # We do NOT update their client.stage_join_times[uid] so they keep their accumulated time.
+        if minutes <= 0:
+            continue
+        bal = get_bb(uid)
+        if bal >= 20000:
+            client.stage_join_times[uid] = now_utc   # over the cap: no reward, don't bank the time
+            continue
+        # Taper the Stage faucet by wealth: 1/min under 10k, 1 per 5 min from 10k-20k, 0 over 20k.
+        period = 5 if bal >= 10000 else 1
+        units = minutes // period
+        if units <= 0:
+            continue                                  # not enough time for this tier yet; keep accruing
+        bonus_awarded = units * STAGE_UKPENCE_MULTIPLIER
+        if add_bb(uid, bonus_awarded, reason=f"Stage Participation Reward ({units * period}m)"):
+            from lib.bot.event_handlers import award_badge_with_notify
+            await award_badge_with_notify(client, uid, 'stage_fan')
+            client.stage_join_times[uid] = start_time_utc + timedelta(seconds=units * period * 60)
+            logger.info(f"[STAGE CRON] +{bonus_awarded} UKP → User {uid} ({units * period}m, bal {bal:,}).")
+            total_awarded_this_call += bonus_awarded
+        else:
+            logger.error(f"[STAGE CRON] Bank insufficient for {bonus_awarded} UKP to User {uid}.")
+            # We do NOT update their client.stage_join_times[uid] so they keep their accumulated time.
 
     if total_awarded_this_call > 0:
         _update_daily_metric_file(current_date_str, "stage_rewards_total", total_awarded_this_call)

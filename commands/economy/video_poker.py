@@ -32,11 +32,11 @@ BANK = "Video Poker"   # reason keyword routed to the bank's Video Poker P/L col
 # A pair only pays if it's Jacks or better (handled in _decide). Two pair just returns
 # your bet (a push); everything below a high pair loses. Top hands capped for the economy.
 PAYTABLE = {
-    9: 15,   # Royal Flush   (jackpot; 10k bet -> 150k)
-    8: 12,   # Straight Flush
-    7: 10,   # Four of a Kind
-    6: 8,    # Full House
-    5: 6,    # Flush
+    9: 15,   # Royal Flush   (jackpot kept capped so one hit can't warp the 800k economy)
+    8: 20,   # Straight Flush (was 12)
+    7: 16,   # Four of a Kind (was 10; the big RTP lever - 10-for-1 was very stingy)
+    6: 9,    # Full House     (was 8; standard 9/6)
+    5: 7,    # Flush          (was 6)
     4: 4,    # Straight
     3: 3,    # Three of a Kind
     2: 2,    # Two Pair

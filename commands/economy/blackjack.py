@@ -146,6 +146,10 @@ class BlackjackGame:
     def can_double(self) -> bool:
         return self.state == "player" and len(self.player_cards) == 2 and not self.doubled
 
+    def can_surrender(self) -> bool:
+        # Late surrender: bail on the opening two cards for half your stake back.
+        return self.state == "player" and len(self.player_cards) == 2 and not self.doubled
+
     # --- mutations ---
     def hit_player(self):
         self.player_cards.append(self.deck.pop())
@@ -274,6 +278,7 @@ def _payout(game: BlackjackGame):
             "blackjack": "Blackjack win (3:2)",
             "win": "Blackjack win",
             "push": "Blackjack push (refund)",
+            "surrender": "Blackjack surrender (half back)",
         }[game.outcome]
         _credit(game.player_id, game.payout, reason)
     record_result(game.player_id, "blackjack", game.bet, game.total_staked, game.payout, game.outcome)
@@ -343,6 +348,8 @@ def _banner_html(game: BlackjackGame) -> str:
         cls, head, sub = "win", "You Win", f"+{game.net:,} UKPence"
     elif o == "push":
         cls, head, sub = "push", "Push", "Stake returned"
+    elif o == "surrender":
+        cls, head, sub = "push", "Surrendered", f"-{game.total_staked - game.payout:,} UKPence (half back)"
     else:
         cls = "lose"
         head = "Bust" if game.player_busted() else "Dealer Wins"
@@ -387,7 +394,7 @@ def build_table_html(game: BlackjackGame) -> str:
 
     return (
         template
-        .replace("{{RULE}}", "Dealer stands on all 17s<br>Blackjack pays 3 : 2")
+        .replace("{{RULE}}", "Dealer stands on all 17s · Blackjack pays 3 : 2<br>Double or surrender on your first two cards")
         .replace("{{PLAYER_NAME}}", _html.escape(str(game.player_name)[:24]) or "Player")
         .replace("{{DEALER_CARDS}}", dealer_cards)
         .replace("{{PLAYER_CARDS}}", player_cards)
@@ -478,6 +485,14 @@ def _action_row(game: BlackjackGame) -> discord.ui.ActionRow:
             )
             dbl.callback = _make_cb(game, "double")
             row.add_item(dbl)
+
+        if game.can_surrender():
+            surr = discord.ui.Button(
+                label="Surrender", emoji="🏳️", style=discord.ButtonStyle.danger,
+                custom_id=f"blackjack:{game.game_id}:surrender",
+            )
+            surr.callback = _make_cb(game, "surrender")
+            row.add_item(surr)
 
         # Rules is only offered on the untouched opening hand (anyone may click it);
         # the owner's first Hit/Stand/Double re-renders the hand and it disappears.
@@ -635,9 +650,20 @@ async def _handle_action(interaction: Interaction, game: BlackjackGame, action: 
                     )
                     return
 
+            if action == "surrender" and not game.can_surrender():
+                await interaction.response.send_message(
+                    "You can only surrender on your opening two cards.", ephemeral=True)
+                return
+
             await interaction.response.defer()
 
-            if action == "hit":
+            if action == "surrender":
+                game.outcome = "surrender"
+                game.payout = game.total_staked // 2  # half the stake back
+                game.net = game.payout - game.total_staked
+                game.hole_revealed = True
+                game.state = "over"
+            elif action == "hit":
                 game.hit_player()
             elif action == "stand":
                 game.dealer_play()
