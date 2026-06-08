@@ -178,28 +178,43 @@ async def _call_gemini(prompt, json_mode=True):
         return None, "No Gemini key in the environment (GEMINI_TOKEN / GEMINI_API_KEY)."
     model = getattr(config, "GEMINI_MODEL", "gemini-2.0-flash")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
-    # 2.5 "thinking" tokens share the output budget, so keep it large AND cap thinking so the
+    # 2.5 "thinking" tokens share the output budget, so keep it large; cap thinking so the
     # actual answer can't get starved/truncated (which breaks JSON parsing).
-    gen = {"temperature": 0.3, "maxOutputTokens": 8192, "thinkingConfig": {"thinkingBudget": 2048}}
+    base = {"temperature": 0.3, "maxOutputTokens": 8192}
     if json_mode:
-        gen["responseMimeType"] = "application/json"
-    body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": gen}
+        base["responseMimeType"] = "application/json"
     import time as _t
     t0 = _t.monotonic()
     log.info("[analyse] gemini call model=%s json=%s prompt_chars=%d", model, json_mode, len(prompt))
-    try:
+
+    async def _post(gen):
+        body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": gen}
         async with aiohttp.ClientSession() as s:
-            async with s.post(url, json=body, timeout=aiohttp.ClientTimeout(total=60)) as r:
-                data = await r.json()
-                if r.status != 200:
-                    log.warning("[analyse] gemini HTTP %d: %s", r.status, str(data)[:300])
-                    return None, f"Gemini error {r.status}: {str(data)[:300]}"
+            async with s.post(url, json=body, timeout=aiohttp.ClientTimeout(total=90)) as r:
+                return r.status, await r.json()
+
+    # Try with capped thinking first; if the API rejects thinkingConfig (400), retry without it.
+    attempts = [dict(base, thinkingConfig={"thinkingBudget": 2048}), base]
+    status, data = None, None
+    for gen in attempts:
+        try:
+            status, data = await _post(gen)
+        except Exception as e:
+            log.warning("[analyse] gemini request error in %.1fs: %s", _t.monotonic() - t0, e, exc_info=True)
+            return None, f"Gemini request failed: {e}"
+        if status == 200:
+            try:
                 out = data["candidates"][0]["content"]["parts"][0]["text"]
-                log.info("[analyse] gemini ok in %.1fs (%d chars out)", _t.monotonic() - t0, len(out or ""))
-                return out, None
-    except Exception as e:
-        log.warning("[analyse] gemini request failed in %.1fs: %s", _t.monotonic() - t0, e, exc_info=True)
-        return None, f"Gemini request failed: {e}"
+            except Exception:
+                fr = (data.get("candidates") or [{}])[0].get("finishReason")
+                log.warning("[analyse] gemini 200 but no text (finishReason=%s): %s", fr, str(data)[:300])
+                return None, f"Gemini returned no text (finishReason={fr})."
+            log.info("[analyse] gemini ok in %.1fs (%d chars out)", _t.monotonic() - t0, len(out or ""))
+            return out, None
+        log.warning("[analyse] gemini HTTP %d: %s", status, str(data)[:300])
+        if status != 400:
+            break  # only a 400 is worth retrying without thinkingConfig
+    return None, f"Gemini error {status}: {str(data)[:300]}"
 
 
 def _build_prompt(member, msgs, rules):
