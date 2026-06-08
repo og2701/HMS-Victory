@@ -75,6 +75,7 @@ async def gather_user_messages(client, guild, user, channel_ids, target=1000, mi
     state = {"scanned": 0, "last_edit": 0.0}
     lock = asyncio.Lock()
     stop = asyncio.Event()
+    reply_targets = set()  # ids of messages someone replied to (so we can tell if THEIRS got replies)
 
     def _enough(found_n, read_n):
         # Dynamic: heavy chatters (high density of their msgs) keep going to the hard cap; once
@@ -115,6 +116,9 @@ async def gather_user_messages(client, guild, user, channel_ids, target=1000, mi
                         state["scanned"] += 1
                         if state["scanned"] >= read_budget:  # global cap so low-posters don't trigger a giant scan
                             stop.set()
+                    rref = msg.reference  # any reply: remember what it replied to (engagement signal)
+                    if rref is not None and getattr(rref, "message_id", None):
+                        reply_targets.add(rref.message_id)
                     if before_for is not None:
                         if msg.author.id != user.id:
                             before_for["before"] = f"{msg.author.display_name}: {(msg.content or '')[:110]}"
@@ -124,10 +128,11 @@ async def gather_user_messages(client, guild, user, channel_ids, target=1000, mi
                         if msg.attachments:
                             content += " [attachment]"
                         entry = {
+                            "mid": msg.id,
                             "ts": int(msg.created_at.timestamp()), "channel": ch.name,
                             "content": content, "jump": msg.jump_url,
                             "reactions": sum(r.count for r in msg.reactions),
-                            "reply_to": None, "before": None,
+                            "reply_to": None, "before": None, "got_reply": False,
                         }
                         ref = msg.reference
                         if ref is not None and isinstance(getattr(ref, "resolved", None), discord.Message):
@@ -157,9 +162,13 @@ async def gather_user_messages(client, guild, user, channel_ids, target=1000, mi
 
     await asyncio.gather(*(run(c) for c in chans))          # the chosen channels, in parallel
 
+    for e in collected:  # did anyone reply to this message?
+        e["got_reply"] = e.pop("mid", None) in reply_targets
     collected.sort(key=lambda e: e["ts"])  # chronological for the model
-    log.info("[analyse] scan complete for %s: %d msgs from %d messages read in %.1fs",
-             user.id, len(collected), state["scanned"], time.monotonic() - t_start)
+    replied = sum(1 for e in collected if e["got_reply"])
+    reacted = sum(1 for e in collected if e["reactions"] > 0)
+    log.info("[analyse] scan complete for %s: %d msgs from %d read in %.1fs (%d got replies, %d got reactions)",
+             user.id, len(collected), state["scanned"], time.monotonic() - t_start, replied, reacted)
     return collected
 
 
@@ -247,24 +256,36 @@ def _build_prompt(member, msgs, rules):
     lines = []
     for i, m in enumerate(msgs, 1):
         ctx = []
-        if m["reply_to"]:
-            ctx.append(f"reply to [{m['reply_to']}]")
-        if m["before"]:
-            ctx.append(f"after [{m['before']}]")
-        if m["reactions"]:
+        if m.get("reply_to"):
+            ctx.append(f"they replied to [{m['reply_to']}]")
+        if m.get("before"):
+            ctx.append(f"prev msg [{m['before']}]")
+        if m.get("reactions"):
             ctx.append(f"{m['reactions']} reactions")
+        if m.get("got_reply"):
+            ctx.append("someone replied to this")
         tag = (" {" + "; ".join(ctx) + "}") if ctx else ""
         lines.append(f"{i}. #{m['channel']}{tag}: {m['content']}")
     body = "\n".join(lines)
+    replied = sum(1 for m in msgs if m.get("got_reply"))
+    reacted = sum(1 for m in msgs if m.get("reactions"))
     return (
         "You are a fair, careful moderation assistant for a Discord server. Review the member's "
         "recent messages against the server rules. Be balanced: note positives, account for banter "
         "and context, do NOT over-flag, and never invent quotes (use only verbatim text from the "
-        "messages). If nothing is wrong, say so plainly.\n\n"
+        "messages). If nothing is wrong, say so plainly.\n"
+        "IMPORTANT: weigh RECEPTION, not just volume. Posting a lot is NOT the same as contributing. "
+        "If their messages are mostly short greetings or silly one-liners that get few/no replies or "
+        "reactions, treat them as low-engagement (talking into the void) rather than 'fostering a "
+        "friendly environment' - even if very active. Messages that spark replies/reactions are the "
+        "genuine contributions.\n\n"
         f"{_CULTURE}\n\n"
         f"SERVER RULES:\n{rules}\n\n"
         f"MEMBER: {member.display_name} (id {member.id}). {len(msgs)} recent messages, oldest first. "
-        "Context in {curly braces} is what they replied to / the message before / reactions.\n\n"
+        "Context in {curly braces} shows what they replied to, the previous message, reactions, and "
+        "whether anyone replied to them.\n"
+        f"ENGAGEMENT: only {replied} of {len(msgs)} of their messages got a reply from someone, and "
+        f"only {reacted} got any reaction.\n\n"
         f"{body}\n\n"
         "Respond with ONLY a JSON object (no markdown fences) with these keys:\n"
         '  "summary": 2-4 sentences on overall tone and behaviour.\n'
@@ -284,20 +305,29 @@ def _build_prompt(member, msgs, rules):
 
 
 def _build_followup_prompt(member, msgs, rules, question):
-    body = "\n".join(f"{i}. {m['content']}" for i, m in enumerate(msgs, 1))
+    body = "\n".join(
+        f"{i}. {m['content']}"
+        + ("  [someone replied]" if m.get("got_reply") else "")
+        + (f"  [{m['reactions']} reactions]" if m.get("reactions") else "")
+        for i, m in enumerate(msgs, 1))
+    replied = sum(1 for m in msgs if m.get("got_reply"))
+    reacted = sum(1 for m in msgs if m.get("reactions"))
     return (
         "You are a moderation assistant helping a moderator make a call. Answer DIRECTLY, "
         "DECISIVELY, and CONCISELY.\n"
         "- First sentence: the actual verdict/answer. For judgement or decision questions "
-        "('are they good?', 'should we ban them?'), commit to a clear yes/no/recommendation - do "
-        "NOT fence-sit or just describe.\n"
+        "('are they good?', 'do they add to the conversation?', 'should we ban them?'), commit to a "
+        "clear yes/no/recommendation - do NOT fence-sit or just describe.\n"
         "- Then at most 2-3 short sentences of justification, with a quoted example or two.\n"
         "- Keep it tight: no padding or preamble. Do NOT list or mention which channels they post "
         "in (only a few channels are scanned, so that is not meaningful).\n"
-        "- Weigh banter and context fairly. Only refuse if there is genuinely nothing to go on.\n\n"
+        "- Weigh RECEPTION, not just volume: posting a lot is not the same as contributing. If their "
+        "messages mostly go unanswered (few/no replies or reactions), they add little even if active. "
+        "Weigh banter and context fairly. Only refuse if there is genuinely nothing to go on.\n\n"
         f"{_CULTURE}\n\n"
         f"SERVER RULES:\n{rules}\n\n"
-        f"MEMBER: {member.display_name}. {len(msgs)} recent messages:\n{body}\n\n"
+        f"MEMBER: {member.display_name}. {len(msgs)} recent messages (only {replied} got a reply, "
+        f"{reacted} got any reaction):\n{body}\n\n"
         f"MODERATOR'S QUESTION: {question}"
     )
 
