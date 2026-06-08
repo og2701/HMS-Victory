@@ -167,7 +167,8 @@ POKER_ESCROW_FILE = os.path.join(JSON_DATA_DIR, "poker_escrow.json")
 # "Analyse User" moderation tool (Gemini). Reads GEMINI_API_KEY from the environment.
 GEMINI_MODEL = "gemini-2.5-flash"
 RULES_CHANNEL_ID = None            # set to your rules channel id for accurate analysis (else data/rules.txt / generic)
-USER_ANALYSIS_MSG_LIMIT = 100      # how many recent user messages to gather
+USER_ANALYSIS_MSG_LIMIT = 250      # max recent user messages to gather (or fewer if that's all in the window)
+USER_ANALYSIS_DAYS = 14            # only look at messages from the last this-many days
 # USER_ANALYSIS_CHANNEL_ID is set below, once CHANNELS is defined.
 HALL_OF_FAME_FILE = os.path.join(JSON_DATA_DIR, "hall_of_fame.json")
 PREDICTIONS_FILE = os.path.join(JSON_DATA_DIR, "predictions.json")
@@ -284,6 +285,8 @@ class CHANNELS:
 CASINO_CHANNELS = [CHANNELS.CASINO, CHANNELS.VIP_LOUNGE, CHANNELS.BOT_SPAM, CHANNELS.BOT_WORKSHOP]
 # Where /Analyse User reports post (bot workshop for testing; switch to CHANNELS.POLICE_STATION later).
 USER_ANALYSIS_CHANNEL_ID = CHANNELS.BOT_WORKSHOP
+# Only these channels are scanned for the member's messages (the main chats), in parallel.
+USER_ANALYSIS_CHANNELS = [CHANNELS.VIP_LOUNGE, CHANNELS.GENERAL, CHANNELS.POLITICS]
 # The lottery board + winner announcements post here.
 LOTTERY_CHANNEL = CHANNELS.CASINO
 

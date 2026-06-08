@@ -20,59 +20,81 @@ _ALLOWED_ROLES = lambda: [config.ROLES.DEPUTY_PM]  # Deputy PM only for now
 
 
 # --- gather the member's recent messages with context -------------------------
-async def gather_user_messages(client, guild, user, target=100, per_channel=4000,
-                               max_channels=25, scan_budget=15000, progress=None):
-    """Scan channel history (busiest first, deep) for the member's recent messages.
+async def gather_user_messages(client, guild, user, channel_ids, target=250, per_channel=6000,
+                               days=14, concurrency=4, progress=None):
+    """Scan only `channel_ids` (the main chats) in parallel for the member's recent messages.
 
-    Discord has no 'get a user's messages' endpoint, so we read history and filter. Active
-    users concentrate in a few busy channels, so we scan each channel deep (per_channel) and
-    stop as soon as we've collected `target` of *their* messages or hit the global scan_budget.
+    Discord has no per-user message API, so we read history and filter. Each channel scan
+    stops once its messages cross `days` old, and overall stops at `target` (or returns
+    however many it finds within the window).
     """
+    import asyncio
+    import time
+    from datetime import timedelta
+
     me = guild.me
-    channels = [c for c in guild.text_channels
-                if c.permissions_for(me).read_message_history]
-    channels.sort(key=lambda c: (c.last_message_id or 0), reverse=True)  # busiest/most-recent first
+    cutoff = discord.utils.utcnow() - timedelta(days=days)
+    chans = [guild.get_channel(cid) for cid in channel_ids]
+    chans = [c for c in chans if c is not None and c.permissions_for(me).read_message_history]
+
     collected = []
-    scanned = 0
-    for ch in channels[:max_channels]:
-        if len(collected) >= target or scanned >= scan_budget:
-            break
-        capture_before_for = None
+    state = {"scanned": 0, "last_edit": 0.0}
+    lock = asyncio.Lock()
+    stop = asyncio.Event()
+
+    async def _tick(ch_name):
+        if progress is None:
+            return
+        now = time.monotonic()
+        if now - state["last_edit"] < 1.5:
+            return
+        state["last_edit"] = now
+        await progress(state["scanned"], len(collected), ch_name)
+
+    async def scan(ch):
+        before_for = None
         try:
             async for msg in ch.history(limit=per_channel):  # newest-first
-                scanned += 1
-                if scanned >= scan_budget:
+                if stop.is_set() or msg.created_at < cutoff:  # done, or past the 2-week window
                     break
-                if progress is not None and scanned % 250 == 0:
-                    await progress(scanned, len(collected), ch.name)
-                if capture_before_for is not None:
-                    # this message is the one immediately BEFORE the recorded one (older)
+                async with lock:
+                    state["scanned"] += 1
+                if before_for is not None:
                     if msg.author.id != user.id:
-                        capture_before_for["before"] = f"{msg.author.display_name}: {(msg.content or '')[:110]}"
-                    capture_before_for = None
+                        before_for["before"] = f"{msg.author.display_name}: {(msg.content or '')[:110]}"
+                    before_for = None
                 if msg.author.id == user.id and (msg.content or msg.attachments):
                     content = (msg.content or "").replace("\n", " ")[:300]
                     if msg.attachments:
                         content += " [attachment]"
                     entry = {
-                        "ts": int(msg.created_at.timestamp()),
-                        "channel": ch.name,
-                        "content": content,
-                        "jump": msg.jump_url,
+                        "ts": int(msg.created_at.timestamp()), "channel": ch.name,
+                        "content": content, "jump": msg.jump_url,
                         "reactions": sum(r.count for r in msg.reactions),
-                        "reply_to": None,
-                        "before": None,
+                        "reply_to": None, "before": None,
                     }
                     ref = msg.reference
                     if ref is not None and isinstance(getattr(ref, "resolved", None), discord.Message):
                         r = ref.resolved
                         entry["reply_to"] = f"{r.author.display_name}: {(r.content or '')[:120]}"
-                    collected.append(entry)
-                    capture_before_for = entry
-                    if len(collected) >= target:
-                        break
+                    async with lock:
+                        collected.append(entry)
+                        if len(collected) >= target:
+                            stop.set()
+                    before_for = entry
+                await _tick(ch.name)
         except Exception:
-            continue
+            return
+
+    sem = asyncio.Semaphore(concurrency)
+
+    async def run(ch):
+        async with sem:
+            if not stop.is_set():
+                await scan(ch)
+
+    await asyncio.gather(*(run(c) for c in chans))          # the chosen channels, in parallel
+
     collected.sort(key=lambda e: e["ts"])  # chronological for the model
     return collected
 
@@ -277,7 +299,9 @@ async def handle_analyse_user(interaction, member):
     await _status(f"\U0001f50d Gathering {member.display_name}'s recent messages ...")
     msgs = await gather_user_messages(
         interaction.client, interaction.guild, member,
-        target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 100), progress=progress)
+        getattr(config, "USER_ANALYSIS_CHANNELS", []),
+        target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 250),
+        days=getattr(config, "USER_ANALYSIS_DAYS", 14), progress=progress)
     if not msgs:
         await _status(f"Couldn't find recent messages from {member.mention} in channels I can read.")
         return
