@@ -100,6 +100,13 @@ def define_commands(tree, client):
 
     tree.add_command(hof_context_menu)
 
+    @app_commands.context_menu(name="Analyse User")
+    async def analyse_user_context_menu(interaction: Interaction, member: discord.Member):
+        from commands.moderation.user_analysis import handle_analyse_user
+        await handle_analyse_user(interaction, member)
+
+    tree.add_command(analyse_user_context_menu)
+
     @command("role-manage", "Manages user roles by assigning a specified role to members who don't have it")
     async def role_management(interaction: Interaction, role_name: str):
         if interaction.user.id != USERS.OGGERS:
