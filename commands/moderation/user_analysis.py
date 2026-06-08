@@ -96,7 +96,11 @@ async def _call_gemini(prompt):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
     body = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1200},
+        "generationConfig": {
+            "temperature": 0.3,
+            "maxOutputTokens": 4096,            # 2.5 "thinking" shares this budget; keep it roomy
+            "responseMimeType": "application/json",
+        },
     }
     try:
         async with aiohttp.ClientSession() as s:
@@ -124,20 +128,100 @@ def _build_prompt(member, msgs, rules):
     body = "\n".join(lines)
     return (
         "You are a fair, careful moderation assistant for a Discord server. Review the member's "
-        "recent messages against the server rules. Be balanced: note positives, do NOT over-flag, "
-        "and only raise genuine concerns, each with a short quoted example and a severity "
-        "(low/medium/high). Account for banter and context. If nothing is wrong, say so plainly.\n\n"
+        "recent messages against the server rules. Be balanced: note positives, account for banter "
+        "and context, do NOT over-flag, and never invent quotes (use only verbatim text from the "
+        "messages). If nothing is wrong, say so plainly.\n\n"
         f"SERVER RULES:\n{rules}\n\n"
         f"MEMBER: {member.display_name} (id {member.id}). {len(msgs)} recent messages, oldest first. "
         "Context in {curly braces} is what they replied to / the message before / reactions.\n\n"
         f"{body}\n\n"
-        "Respond in this exact structure, concise and skimmable:\n"
-        "**Summary** - 2-3 lines on overall tone and behaviour.\n"
-        "**Concerns** - bullets, each `severity - issue - \"quoted example\"`; or `None notable`.\n"
-        "**Positives** - one line.\n"
-        "**Recommended action** - one of: No action / Keep an eye on it / Informal nudge / "
-        "Formal warning / Escalate to senior staff - then one line of justification."
+        "Respond with ONLY a JSON object (no markdown fences) with these keys:\n"
+        '  "summary": 2-4 sentences on overall tone and behaviour.\n'
+        '  "tone": a short phrase (e.g. "friendly banter", "argumentative", "edgy humour").\n'
+        '  "risk_level": one of "low", "medium", "high" (overall moderation risk).\n'
+        '  "concerns": array of {"severity":"low|medium|high","issue":<short>,"quote":<verbatim>,'
+        '"why":<short reason>}; empty array if none.\n'
+        '  "notable_quotes": array of up to 5 short verbatim quotes that characterise them '
+        "(telling, funny, or concerning).\n"
+        '  "patterns": a short note on any behavioural pattern (targets a person, repeats a topic, '
+        "time-of-day, escalation), or empty string.\n"
+        '  "positives": one line on positive contributions.\n'
+        '  "recommended_action": one of "No action","Keep an eye on it","Informal nudge",'
+        '"Formal warning","Escalate to senior staff".\n'
+        '  "justification": one or two sentences supporting the action.'
     )
+
+
+_RISK_COLOR = {"low": 0x10B981, "medium": 0xF59E0B, "high": 0xEF4444}
+_RISK_EMOJI = {"low": "\U0001f7e2", "medium": "\U0001f7e1", "high": "\U0001f534"}
+_SEV_EMOJI = {"low": "\U0001f7e1", "medium": "\U0001f7e0", "high": "\U0001f534"}
+
+
+def _activity_line(msgs):
+    import datetime
+    from collections import Counter
+    counts = Counter(m["channel"] for m in msgs)
+    top = " · ".join(f"#{c} ({n})" for c, n in counts.most_common(4))
+    reacts = sum(m["reactions"] for m in msgs)
+    fmt = lambda ts: datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%-d %b")
+    span = f"{fmt(msgs[0]['ts'])} to {fmt(msgs[-1]['ts'])}"
+    return f"**{len(msgs)}** msgs · **{len(counts)}** channels ({top}) · **{reacts}** reactions · {span}"
+
+
+def _build_embed(member, requester, msgs, text):
+    import json
+    import re
+    data = None
+    raw = re.sub(r"^```(?:json)?|```$", "", (text or "").strip(), flags=re.MULTILINE).strip()
+    try:
+        data = json.loads(raw)
+    except Exception:
+        log.debug("gemini json parse failed", exc_info=True)
+
+    if not isinstance(data, dict):
+        embed = discord.Embed(title=f"\U0001f50e Moderation analysis: {member.display_name}",
+                              description=text[:4096], color=0xCF142B)
+    else:
+        risk = str(data.get("risk_level", "low")).lower()
+        embed = discord.Embed(
+            title=f"\U0001f50e Moderation analysis: {member.display_name}",
+            description=(data.get("summary") or "")[:1500],
+            color=_RISK_COLOR.get(risk, 0xCF142B))
+        embed.add_field(name="Risk", value=f"{_RISK_EMOJI.get(risk, '⚪')} {risk.capitalize()}", inline=True)
+        if data.get("tone"):
+            embed.add_field(name="Tone", value=str(data["tone"])[:1024], inline=True)
+        action = data.get("recommended_action") or "-"
+        embed.add_field(name="Recommended action",
+                        value=f"**{action}**\n{data.get('justification', '')}"[:1024], inline=False)
+        concerns = data.get("concerns") or []
+        if concerns:
+            blocks = []
+            for c in concerns[:6]:
+                se = _SEV_EMOJI.get(str(c.get("severity", "low")).lower(), "\U0001f7e1")
+                blk = f"{se} **{c.get('issue', '')}**"
+                if c.get("quote"):
+                    blk += f"\n> {str(c['quote'])[:170]}"
+                if c.get("why"):
+                    blk += f"\n_{str(c['why'])[:170]}_"
+                blocks.append(blk)
+            embed.add_field(name="Concerns", value="\n\n".join(blocks)[:1024], inline=False)
+        else:
+            embed.add_field(name="Concerns", value="None notable.", inline=False)
+        if data.get("patterns"):
+            embed.add_field(name="Patterns", value=str(data["patterns"])[:1024], inline=False)
+        quotes = data.get("notable_quotes") or []
+        if quotes:
+            embed.add_field(name="Notable quotes",
+                            value="\n".join(f"> {str(q)[:150]}" for q in quotes[:5])[:1024], inline=False)
+        if data.get("positives"):
+            embed.add_field(name="Positives", value=str(data["positives"])[:1024], inline=False)
+
+    embed.set_author(name=str(member), icon_url=member.display_avatar.url)
+    embed.add_field(name="Activity", value=_activity_line(msgs)[:1024], inline=False)
+    embed.add_field(name="Member", value=f"{member.mention} (`{member.id}`)", inline=True)
+    embed.add_field(name="Requested by", value=requester.mention, inline=True)
+    embed.set_footer(text=f"{len(msgs)} recent messages analysed by AI - use your own judgement.")
+    return embed
 
 
 # --- entry point --------------------------------------------------------------
@@ -171,13 +255,7 @@ async def handle_analyse_user(interaction, member):
             await interaction.followup.send("Couldn't reach the police station channel.", ephemeral=True)
             return
 
-    embed = discord.Embed(
-        title=f"\U0001f50e Moderation analysis: {member.display_name}",
-        description=text[:4096], color=0xCF142B)
-    embed.set_author(name=str(member), icon_url=member.display_avatar.url)
-    embed.add_field(name="Member", value=f"{member.mention} (`{member.id}`)", inline=True)
-    embed.add_field(name="Requested by", value=interaction.user.mention, inline=True)
-    embed.set_footer(text=f"{len(msgs)} recent messages analysed by AI - use your own judgement.")
+    embed = _build_embed(member, interaction.user, msgs, text)
     try:
         await channel.send(embed=embed)
     except Exception:
