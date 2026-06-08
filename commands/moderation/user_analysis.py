@@ -20,7 +20,7 @@ _ALLOWED_ROLES = lambda: [config.ROLES.DEPUTY_PM]  # Deputy PM only for now
 
 
 # --- gather the member's recent messages with context -------------------------
-async def gather_user_messages(client, guild, user, channel_ids, target=250, per_channel=6000,
+async def gather_user_messages(client, guild, user, channel_ids, target=250, per_channel=20000,
                                days=14, concurrency=4, progress=None):
     """Scan only `channel_ids` (the main chats) in parallel for the member's recent messages.
 
@@ -250,11 +250,10 @@ class FollowupModal(discord.ui.Modal, title="Ask about this member"):
         if err:
             await interaction.followup.send(f"Follow-up failed: {err}", ephemeral=True)
             return
-        answer = (
-            f"\U0001f4ac **Follow-up on {discord.utils.escape_markdown(member.display_name)}** "
-            f"· asked by {interaction.user.mention}\n**Q:** {q}\n{(text or '').strip()[:1700]}")
         try:
-            await interaction.channel.send(answer, allowed_mentions=discord.AllowedMentions.none())
+            await interaction.channel.send(
+                view=_followup_view(member, interaction.user, q, text),
+                allowed_mentions=discord.AllowedMentions.none())
         except Exception:
             await interaction.followup.send("Couldn't post the answer here.", ephemeral=True)
             return
@@ -354,6 +353,20 @@ def _build_view(member, requester, msgs, text):
 
     c.add_item(discord.ui.TextDisplay(foot))
     c.add_item(discord.ui.ActionRow(FollowupButton(member.id)))
+    view.add_item(c)
+    return view
+
+
+def _followup_view(member, requester, question, answer):
+    """Components V2 card for a follow-up Q&A (blurple to distinguish from the report)."""
+    name = discord.utils.escape_markdown(member.display_name)
+    view = discord.ui.LayoutView(timeout=None)
+    c = discord.ui.Container(accent_colour=0x5865F2)
+    c.add_item(discord.ui.Section(
+        discord.ui.TextDisplay(f"## \U0001f4ac Follow-up: {name}\n**Q:** {question[:300]}"),
+        accessory=discord.ui.Thumbnail(member.display_avatar.url)))
+    c.add_item(discord.ui.TextDisplay((answer or "").strip()[:3500] or "_(no answer)_"))
+    c.add_item(discord.ui.TextDisplay(f"-# asked by {requester.mention} about {member.mention}"))
     view.add_item(c)
     return view
 
