@@ -16,7 +16,7 @@ import config
 
 log = logging.getLogger(__name__)
 
-_STAFF_ROLES = lambda: [config.ROLES.MINISTER, config.ROLES.CABINET, config.ROLES.BORDER_FORCE]
+_ALLOWED_ROLES = lambda: [config.ROLES.DEPUTY_PM]  # Deputy PM only for now
 
 
 # --- gather the member's recent messages with context -------------------------
@@ -143,8 +143,8 @@ def _build_prompt(member, msgs, rules):
 # --- entry point --------------------------------------------------------------
 async def handle_analyse_user(interaction, member):
     from lib.core.discord_helpers import has_any_role
-    if not has_any_role(interaction, _STAFF_ROLES()):
-        await interaction.response.send_message("This tool is staff-only.", ephemeral=True)
+    if not has_any_role(interaction, _ALLOWED_ROLES()):
+        await interaction.response.send_message("This tool is Deputy PM only for now.", ephemeral=True)
         return
     await interaction.response.defer(ephemeral=True, thinking=True)
 
