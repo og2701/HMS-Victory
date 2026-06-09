@@ -340,6 +340,25 @@ async def _maybe_post_reminder(client):
     await _post_reminder(client, rnd)
 
 
+# Unique substring every reminder body carries; used to detect a recent reminder so we
+# never stack two in a quiet channel.
+_REMINDER_SIGNATURE = "tickets sold) · draws"
+
+
+async def _reminder_in_recent_history(channel, client) -> bool:
+    """True if one of the channel's last few messages is already a lottery reminder."""
+    import config
+    me = client.user
+    lookback = getattr(config, "LOTTERY_REMINDER_RECENT_LOOKBACK", 10)
+    try:
+        async for msg in channel.history(limit=lookback):
+            if me and msg.author.id == me.id and _REMINDER_SIGNATURE in (msg.content or ""):
+                return True
+    except Exception:
+        logger.warning("Lottery reminder recency check failed.", exc_info=True)
+    return False
+
+
 async def _post_reminder(client, rnd):
     import config
     channel = client.get_channel(config.LOTTERY_CHANNEL)
@@ -348,6 +367,9 @@ async def _post_reminder(client, rnd):
             channel = await client.fetch_channel(config.LOTTERY_CHANNEL)
         except Exception:
             return
+    # Don't pile on if a reminder is already sitting near the bottom of the channel.
+    if await _reminder_in_recent_history(channel, client):
+        return
     sold = tickets_sold(rnd["id"])
     pot = sold * rnd["ticket_price"]
     guild_id = getattr(getattr(channel, "guild", None), "id", None)

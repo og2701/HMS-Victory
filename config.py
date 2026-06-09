@@ -127,8 +127,9 @@ LOTTERY_DRAW_MINUTE = 0
 # Random "feeling lucky?" reminders in the casino channel, linking to the live board.
 LOTTERY_REMINDER_START_HOUR = 10  # only remind during active UK hours
 LOTTERY_REMINDER_END_HOUR = 23
-LOTTERY_REMINDER_MIN_GAP_MIN = 150  # min minutes between reminders (2.5h)
-LOTTERY_REMINDER_MAX_GAP_MIN = 300  # max (5h) -> ~3-4 random reminders a day
+LOTTERY_REMINDER_MIN_GAP_MIN = 45   # min minutes between reminders
+LOTTERY_REMINDER_MAX_GAP_MIN = 120  # max (2h); also suppressed if a reminder is already in recent msgs
+LOTTERY_REMINDER_RECENT_LOOKBACK = 10  # skip if a reminder is within this many of the channel's last msgs
 # Fallback defaults (only used if a range is missing); live rounds use the ranges above.
 LOTTERY_TICKET_PRICE = 10
 LOTTERY_TICKET_CAP = 500
