@@ -64,6 +64,29 @@ def record_balance_point(user_id, balance, ts=None):
         pass
 
 
+def record_transaction(user_id, amount, balance_after, reason="Unspecified",
+                       counterparty_id=None, ts=None):
+    """Append a signed ledger entry to user_transactions for the /balance statement.
+
+    Captures every durable money move: credits via set_balance, debits via remove_amount,
+    and both legs of a /pay transfer. Not throttled (unlike balance_history) so the statement
+    shows the true itemised history. Skips the bank (BOT_ID) and no-op zero-amount moves."""
+    try:
+        import time
+        from config import BOT_ID
+        uid = str(user_id)
+        if uid == str(BOT_ID) or not int(amount):
+            return
+        now = int(ts) if ts is not None else int(time.time())
+        DatabaseManager.execute(
+            "INSERT INTO user_transactions (user_id, ts, amount, balance_after, reason, counterparty_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (uid, now, int(amount), int(balance_after), str(reason)[:200],
+             str(counterparty_id) if counterparty_id else None))
+    except Exception:
+        pass
+
+
 class UKPenceManager:
     @staticmethod
     def get_all_balances() -> dict:
@@ -116,6 +139,8 @@ class UKPenceManager:
         log_text = f"⚖️ <@{user_id}> balance set to `{amount:,}` UKP (was `{old_balance:,}`)|{reason}"
         DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
         record_balance_point(user_id, amount, now)
+        # Signed ledger entry for the statement (delta = new - old; covers add_amount and admin sets).
+        record_transaction(user_id, amount - old_balance, amount, reason, ts=now)
         
     @staticmethod
     def add_amount(user_id: int, amount: int, reason: str = "Unspecified") -> None:
@@ -153,6 +178,7 @@ class UKPenceManager:
             conn.commit()
         if new_balance is not None:  # record after the lock is released to avoid a nested write
             record_balance_point(user_id, new_balance)
+            record_transaction(user_id, -amount, new_balance, reason, ts=now)
         return success
 
 class EconomyMetrics:

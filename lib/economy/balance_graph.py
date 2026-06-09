@@ -275,3 +275,15 @@ class BalanceGraphView(discord.ui.View):
             return
         await interaction.followup.send(
             file=discord.File(img, filename="balance_graph.png"), ephemeral=True)
+
+    @discord.ui.button(label="Statement", emoji="\U0001f9fe",
+                       style=discord.ButtonStyle.secondary)
+    async def show_statement(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.viewer_id:
+            await interaction.response.send_message("That isn't for you.", ephemeral=True)
+            return
+        from lib.economy.statement import build_statement_view
+        view = build_statement_view(
+            target_id=self.target_id, target_name=self.target_name,
+            viewer_id=self.viewer_id, offset=1, client=interaction.client)
+        await interaction.response.send_message(view=view, ephemeral=True)

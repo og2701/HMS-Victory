@@ -147,11 +147,12 @@ class DatabaseManager:
             row = c.fetchone()
             if not row or row[0] < amount:
                 return False
-            
+            old_src_balance = row[0]
+
             c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(dst_id),))
             dst_row = c.fetchone()
             old_dst_balance = dst_row[0] if dst_row else 0
-            
+
             c.execute(
                 "UPDATE ukpence SET balance = balance - ? WHERE user_id = ?",
                 (amount, str(src_id)),
@@ -165,8 +166,20 @@ class DatabaseManager:
                 "INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)",
                 (now, f"🔁 <@{src_id}> → <@{dst_id}> `{amount:,}` UKP|{reason}"),
             )
-            
+
+        new_src_balance = old_src_balance - amount
         new_dst_balance = old_dst_balance + amount
+        # /pay bypasses set_balance/remove_amount, so record both legs here for the balance
+        # graph (balance_history) and the statement ledger (user_transactions), after commit.
+        try:
+            from lib.economy.economy_manager import record_balance_point, record_transaction
+            record_balance_point(src_id, new_src_balance, now)
+            record_balance_point(dst_id, new_dst_balance, now)
+            record_transaction(src_id, -amount, new_src_balance, reason, counterparty_id=dst_id, ts=now)
+            record_transaction(dst_id, amount, new_dst_balance, reason, counterparty_id=src_id, ts=now)
+        except Exception:
+            pass
+
         from config import BOT_ID
         if new_dst_balance >= 30000 and old_dst_balance < 30000 and str(dst_id) != str(BOT_ID):
             try:
@@ -373,6 +386,20 @@ def init_db():
             )
         ''')
         c.execute('CREATE INDEX IF NOT EXISTS idx_balance_history_user_ts ON balance_history (user_id, ts)')
+        # Durable per-user ledger of signed money moves (with the human-readable reason that
+        # flows through the economy chokepoints) for the /balance "Statement" feature.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS user_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                ts INTEGER NOT NULL,
+                amount INTEGER NOT NULL,          -- signed: positive=credit, negative=debit
+                balance_after INTEGER NOT NULL,
+                reason TEXT NOT NULL,
+                counterparty_id TEXT
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_user_transactions_user_ts ON user_transactions (user_id, ts)')
         c.execute('''
             CREATE TABLE IF NOT EXISTS user_rank_customization (
                 user_id TEXT PRIMARY KEY,

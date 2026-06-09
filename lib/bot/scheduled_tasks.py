@@ -143,6 +143,14 @@ async def daily_summary(client):
     except Exception:
         logger.error("balance_history prune failed", exc_info=True)
 
+    # Keep the statement ledger to ~13 months so a full year back is always navigable.
+    try:
+        from database import DatabaseManager
+        txn_cutoff = int(datetime.now(pytz.utc).timestamp()) - 400 * 86400
+        DatabaseManager.execute("DELETE FROM user_transactions WHERE ts < ?", (txn_cutoff,))
+    except Exception:
+        logger.error("user_transactions prune failed", exc_info=True)
+
     # Daily summaries post in the dedicated thread (weekly/monthly stay in COMMONS).
     # get_channel misses archived/uncached threads, so fall back to fetch_channel;
     # sending to an archived thread auto-unarchives it. If the thread can't be reached
