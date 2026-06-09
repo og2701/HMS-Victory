@@ -74,8 +74,9 @@ class Prediction:
 
         if uid not in self.initial_balances:
             # We add back the amount because remove_bb already took it,
-            # and we want the balance BEFORE the bet.
-            self.initial_balances[uid] = get_bb(uid) + amount
+            # and we want the balance BEFORE the bet (wallet + active bonds).
+            from lib.economy.bonds import active_bond_principal
+            self.initial_balances[uid] = get_bb(uid) + amount + active_bond_principal(uid)
 
         self.bets[side][uid] = self.bets[side].get(uid, 0) + amount
         import time
