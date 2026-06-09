@@ -491,7 +491,18 @@ async def graceful_shutdown(client, sig_name):
     # 1. Maintenance mode: refuse new coin-deducting commands during the drain.
     client.maintenance_mode = True
 
-    # Wait (up to 2 min) for active games to finish before we tear down.
+    # 2. In-memory games (poker sessions, roulette rounds) do NOT reattach on boot, so a
+    #    restart would silently destroy them. Resolve them cleanly up front: spin any open
+    #    roulette betting round now so its already-debited bets pay out instead of vanishing.
+    try:
+        from commands.economy.roulette import drain_for_shutdown as _drain_roulette
+        await _drain_roulette()
+    except Exception as e:
+        logger.error(f"Roulette shutdown drain failed: {e}", exc_info=True)
+
+    # Wait (up to 2 min) for active games to wind down before we tear down. Under maintenance
+    # poker deals no new hands and auto-closes finished sessions; persistent-view games
+    # (blackjack/HL/video poker/red dog/TCP) reattach on boot regardless.
     def _count_active_games():
         n = 0
         try:
@@ -502,9 +513,11 @@ async def graceful_shutdown(client, sig_name):
                      ("blackjack", "higherlower", "videopoker", "reddog", "tcp"))
         except Exception:
             pass
-        try:  # poker tables with a hand in progress
+        try:  # poker tables mid-hand or between hands (a live session still winding down)
             from commands.economy.poker import _TABLES as _pt
-            n += sum(1 for t in _pt.values() if getattr(t, "status", None) == "playing")
+            n += sum(1 for t in _pt.values()
+                     if getattr(t, "status", None) in ("playing", "between")
+                     and not getattr(t, "closed", False))
         except Exception:
             pass
         try:  # roulette tables with a live round (betting or spinning)
@@ -528,6 +541,14 @@ async def graceful_shutdown(client, sig_name):
             logger.warning(f"Reached max wait ({max_wait}s) for active games; proceeding with shutdown.")
     except Exception as e:
         logger.error(f"Error waiting for active games: {e}")
+
+    # 3. Final sweep: cash out any poker table still open (a lobby holding a lone winner's
+    #    stack, or a session that ran past the wait cap) so a restart never strands chips.
+    try:
+        from commands.economy.poker import drain_for_shutdown as _drain_poker
+        await _drain_poker(max_wait=0)
+    except Exception as e:
+        logger.error(f"Poker shutdown drain failed: {e}", exc_info=True)
 
     # 2. Stop scheduled jobs so nothing new writes to the DB while we checkpoint.
     #    wait=False: never block the event loop waiting on a job that needs it.

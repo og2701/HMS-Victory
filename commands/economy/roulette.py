@@ -780,6 +780,25 @@ async def _lock_and_spin(table):
     _TABLES.pop(table.channel_id, None)
 
 
+async def drain_for_shutdown():
+    """Graceful-restart hook: a roulette round lives only in memory and bets are already
+    debited, so a restart mid-round would strand them. Spin any open betting table *now*
+    so every bet resolves and pays out before we go down. Tables already spinning are
+    left to their in-flight timer (the shutdown waiter blocks on them reaching 'closed').
+    """
+    betting = [t for t in list(_TABLES.values()) if getattr(t, "status", None) == "betting"]
+    if not betting:
+        return
+    logger.info(f"Force-resolving {len(betting)} roulette round(s) for shutdown.")
+    for t in betting:
+        try:
+            if t._timer is not None:
+                t._timer.cancel()  # stop the countdown; we spin immediately instead
+            await _lock_and_spin(t)
+        except Exception:
+            logger.error("roulette drain spin failed", exc_info=True)
+
+
 _COLOR_EMOJI = {"green": "\U0001f7e2", "red": "\U0001f534", "black": "⚫"}
 
 

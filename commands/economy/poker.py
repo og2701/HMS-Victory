@@ -316,6 +316,8 @@ class Table:
 
     # --- hand flow -------------------------------------------------------------
     async def start_hand(self):
+        if getattr(self.client, "maintenance_mode", False):
+            return  # restart drain in progress: deal no new hands
         async with self.lock:
             if self.status == "playing":
                 return
@@ -385,6 +387,12 @@ class Table:
 
     async def _auto_next(self):
         await asyncio.sleep(10)
+        if getattr(self.client, "maintenance_mode", False):
+            # Restart drain in progress: end the session cleanly (cash everyone out at
+            # their current stack) instead of dealing on into a restart that would kill it.
+            if not self.closed:
+                await self.close()
+            return
         if self.status == "between" and len([s for s in self.seats if s["stack"] > 0]) >= 2:
             await self.start_hand()
 
@@ -426,7 +434,12 @@ class Table:
         await self.render()
 
     async def close(self):
+        if self.closed:
+            return  # idempotent: the drain sweep and _auto_next can both reach here
         async with self.lock:
+            if self.closed:
+                return  # re-check under lock so a racing caller can't double cash-out
+            self.closed = True
             for s in self.seats:
                 credit_from_bank(s["id"], s["stack"], reason="Poker table closed")
                 if s["id"] in self.ledger:
@@ -434,7 +447,6 @@ class Table:
             self.seats = []
             self.status = "lobby"
             self.hand = None
-            self.closed = True
         escrow.clear_table(self.channel_id)
         _TABLES.pop(self.channel_id, None)
         if self.casino_msg is not None:
@@ -566,6 +578,30 @@ class ActionView(discord.ui.View):
 
     async def _raise(self, interaction: Interaction):
         await interaction.response.send_modal(RaiseModal(self.table))
+
+
+async def drain_for_shutdown(max_wait: int = 90):
+    """Graceful-restart hook: poker sessions live only in memory, so a restart would
+    destroy any open table. Let an in-progress hand finish (bounded), then cash every
+    open table out at its current stack so nobody loses chips or winnings.
+
+    maintenance_mode is already set by the caller, which stops new hands being dealt,
+    so 'playing' is the only thing left to wait on.
+    """
+    tables = [t for t in list(_TABLES.values()) if not getattr(t, "closed", False)]
+    if not tables:
+        return
+    logger.info(f"Draining {len(tables)} poker table(s) for shutdown.")
+    waited = 0
+    while waited < max_wait and any(getattr(t, "status", None) == "playing" for t in tables):
+        await asyncio.sleep(2)
+        waited += 2
+    for t in tables:
+        try:
+            if not getattr(t, "closed", False):
+                await t.close()
+        except Exception:
+            logger.error("poker drain close failed", exc_info=True)
 
 
 async def handle_poker_command(interaction: Interaction):
