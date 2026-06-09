@@ -30,9 +30,9 @@ _SEP = discord.SeparatorSpacing.small
 # presence of a counterparty id, ahead of any text match.
 _CATEGORIES = [
     ("Casino", "\U0001f3b0", ["blackjack", "roulette", "slots", "slot ", "video poker",
-                               "vpoker", "red dog", "reddog", "three card", "three-card",
-                               "hold'em", "holdem", "poker", "higher", "lower", "baccarat",
-                               "casino"]),
+                               "vpoker", "videopoker", "red dog", "reddog", "three card",
+                               "three-card", "tcp", "hold'em", "holdem", "poker", "higher",
+                               "lower", "baccarat", "casino"]),
     ("Predictions", "\U0001f52e", ["prediction", "wager"]),
     ("Lottery", "\U0001f3ab", ["lottery"]),
     ("Rewards", "\U0001f4ac", ["chat", "stage", "booster", "top chatter", "activity",
@@ -146,6 +146,21 @@ def _opening(uid, start_ts, rows):
     return int(get_bb(uid))
 
 
+def _snapshots(uid):
+    """Sorted (ts, balance) end-of-day snapshot points - exact balances for month boundaries."""
+    try:
+        from lib.economy.balance_graph import _snapshot_points
+        return sorted(_snapshot_points(uid))
+    except Exception:
+        return []
+
+
+def _balance_at(boundary_ts, snaps):
+    """The latest snapshot balance at or before a month boundary, or None if none exists."""
+    cand = [b for ts, b in snaps if ts <= boundary_ts]
+    return cand[-1] if cand else None
+
+
 def build_statement_view(*, target_id, target_name, viewer_id, offset, client):
     """Build the Components V2 statement card for one month (offset months back)."""
     uid = str(target_id)
@@ -153,8 +168,32 @@ def build_statement_view(*, target_id, target_name, viewer_id, offset, client):
     period = start_dt.strftime("%B %Y")
 
     rows, entries, total_in, total_out, breakdown = _gather(uid, start_ts, end_ts, client)
-    opening = _opening(uid, start_ts, rows)
-    closing = int(rows[-1][2]) if rows else opening
+
+    # Opening/closing prefer the exact end-of-day balance snapshots so backfilled months
+    # (whose reconstructed rows lack a running balance) still reconcile. Fall back to the
+    # ledger's own balance_after when no snapshot brackets the boundary.
+    snaps = _snapshots(uid)
+    snap_open = _balance_at(start_ts, snaps)
+    opening = snap_open if snap_open is not None else _opening(uid, start_ts, rows)
+    if offset == 0:                          # current month: closing is the live balance
+        closing = int(get_bb(uid))
+        snap_close = closing
+    else:
+        snap_close = _balance_at(end_ts, snaps)
+        closing = snap_close if snap_close is not None else (int(rows[-1][2]) if rows else opening)
+
+    # Residual: whatever the itemised entries don't explain (historical rewards/tax/benefits
+    # that were never stored per-user). Only trustworthy when both boundaries are real
+    # snapshots, so it stays 0 for fully-itemised live months and surfaces the rest otherwise.
+    residual = 0
+    if snap_open is not None and snap_close is not None:
+        residual = (closing - opening) - (total_in - total_out)
+    if residual:
+        breakdown["Rewards & other"] = breakdown.get("Rewards & other", 0) + residual
+        if residual > 0:
+            total_in += residual
+        else:
+            total_out += -residual
     net = total_in - total_out
 
     accent = 0x10B981 if net > 0 else (0xEF4444 if net < 0 else 0x3B82F6)
@@ -169,6 +208,8 @@ def build_statement_view(*, target_id, target_name, viewer_id, offset, client):
         for ts, emoji, desc, amount in shown:
             date = datetime.fromtimestamp(ts, _UK).strftime("%d %b")
             lines.append(f"`{date}`  {emoji} {desc} · **{_sign(amount)}**")
+    if residual:
+        lines.append(f"\U0001f4ac Rewards & other (net) · **{_sign(residual)}**")
     body = "\n".join(lines) if lines else "_No transactions this period._"
     if hidden:
         body = f"-# {hidden} earlier entries rolled into the totals below\n" + body
@@ -202,6 +243,8 @@ def build_statement_view(*, target_id, target_name, viewer_id, offset, client):
 def _emoji_for(label):
     if label == "Pay":
         return "\U0001f501"
+    if label == "Rewards & other":
+        return "\U0001f4ac"
     if label == "Other":
         return "\U0001f4b7"
     for lbl, emoji, _subs in _CATEGORIES:

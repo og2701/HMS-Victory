@@ -396,7 +396,8 @@ def init_db():
                 amount INTEGER NOT NULL,          -- signed: positive=credit, negative=debit
                 balance_after INTEGER NOT NULL,
                 reason TEXT NOT NULL,
-                counterparty_id TEXT
+                counterparty_id TEXT,
+                source TEXT NOT NULL DEFAULT 'live'  -- 'live' or 'backfill' (reconstructed history)
             )
         ''')
         c.execute('CREATE INDEX IF NOT EXISTS idx_user_transactions_user_ts ON user_transactions (user_id, ts)')
