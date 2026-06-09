@@ -135,17 +135,6 @@ def _gather(uid, start_ts, end_ts, client):
     return rows, entries, total_in, total_out, breakdown
 
 
-def _opening(uid, start_ts, rows):
-    prev = DatabaseManager.fetch_one(
-        "SELECT balance_after FROM user_transactions WHERE user_id = ? AND ts < ? "
-        "ORDER BY ts DESC LIMIT 1", (uid, start_ts))
-    if prev:
-        return int(prev[0])
-    if rows:                            # first ever entry: derive the pre-entry balance
-        return int(rows[0][2]) - int(rows[0][1])
-    return int(get_bb(uid))
-
-
 def _snapshots(uid):
     """Sorted (ts, balance) end-of-day snapshot points - exact balances for month boundaries."""
     try:
@@ -161,6 +150,15 @@ def _balance_at(boundary_ts, snaps):
     return cand[-1] if cand else None
 
 
+def _live_balance_before(uid, ts):
+    """Last real running balance (live rows only) before ts. Backfilled rows carry no
+    running balance, so they're excluded - the caller shows '—' when this is None."""
+    row = DatabaseManager.fetch_one(
+        "SELECT balance_after FROM user_transactions WHERE user_id = ? AND ts < ? "
+        "AND source = 'live' ORDER BY ts DESC LIMIT 1", (uid, ts))
+    return int(row[0]) if row else None
+
+
 def build_statement_view(*, target_id, target_name, viewer_id, offset, client):
     """Build the Components V2 statement card for one month (offset months back)."""
     uid = str(target_id)
@@ -174,13 +172,13 @@ def build_statement_view(*, target_id, target_name, viewer_id, offset, client):
     # ledger's own balance_after when no snapshot brackets the boundary.
     snaps = _snapshots(uid)
     snap_open = _balance_at(start_ts, snaps)
-    opening = snap_open if snap_open is not None else _opening(uid, start_ts, rows)
+    opening = snap_open if snap_open is not None else _live_balance_before(uid, start_ts)
     if offset == 0:                          # current month: closing is the live balance
         closing = int(get_bb(uid))
         snap_close = closing
     else:
         snap_close = _balance_at(end_ts, snaps)
-        closing = snap_close if snap_close is not None else (int(rows[-1][2]) if rows else opening)
+        closing = snap_close if snap_close is not None else _live_balance_before(uid, end_ts)
 
     # Residual: whatever the itemised entries don't explain (historical rewards/tax/benefits
     # that were never stored per-user). Only trustworthy when both boundaries are real
@@ -217,10 +215,19 @@ def build_statement_view(*, target_id, target_name, viewer_id, offset, client):
 
     bd = " · ".join(f"{_emoji_for(label)} {label} {_sign(net)}"
                         for label, net in breakdown.items() if net)
-    summary = (
-        f"In **{_sign(total_in)}** · Out **{_sign(-total_out)}** · Net **{_sign(net)}**\n"
-        f"Closing balance · **{closing:,}** UKP"
-    )
+    known = opening is not None and closing is not None
+    open_str = f"{opening:,}" if opening is not None else "—"
+    if known:
+        summary = (
+            f"In **{_sign(total_in)}** · Out **{_sign(-total_out)}** · Net **{_sign(net)}**\n"
+            f"Closing balance · **{closing:,}** UKP"
+        )
+    else:
+        summary = (
+            f"In **{_sign(total_in)}** · Out **{_sign(-total_out)}** · "
+            f"Itemised total **{_sign(net)}**\n"
+            f"-# Opening/closing balance isn't recorded this far back."
+        )
     if bd:
         summary += f"\n-# {bd}"
 
@@ -230,7 +237,7 @@ def build_statement_view(*, target_id, target_name, viewer_id, offset, client):
     c.add_item(discord.ui.TextDisplay("## \U0001f9fe HMS Victory Bank — Statement"))
     c.add_item(discord.ui.TextDisplay(f"**{name}** · {period}"))
     c.add_item(discord.ui.Separator(visible=True, spacing=_SEP))
-    c.add_item(discord.ui.TextDisplay(f"Opening balance · **{opening:,}** UKP"))
+    c.add_item(discord.ui.TextDisplay(f"Opening balance · **{open_str}** UKP"))
     c.add_item(discord.ui.Separator(visible=False, spacing=_SEP))
     c.add_item(discord.ui.TextDisplay(body))
     c.add_item(discord.ui.Separator(visible=True, spacing=_SEP))
