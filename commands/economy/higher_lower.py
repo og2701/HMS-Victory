@@ -2,7 +2,8 @@
 
 Bet, see a card, and guess whether the next card is higher or lower. Each correct
 guess multiplies your stake by the odds shown on the button (shaved by the house
-factor); cash out any time to bank it, or lose the lot on a wrong guess or a tie.
+factor); cash out any time to bank it, or lose the lot on a wrong guess. A tie (equal
+value) is a push - no win, no loss - and the run carries on from the new card.
 
 Visuals + lifecycle mirror the blackjack feature: an HTML->PNG felt table wrapped in
 a Components V2 LayoutView, a native text fallback, persistence of in-play ladders to
@@ -119,11 +120,15 @@ class HigherLowerGame:
         cv = _value(self.current)
         higher = sum(1 for c in self.deck if _value(c) > cv)
         lower = sum(1 for c in self.deck if _value(c) < cv)
+        decisive = higher + lower  # ties now push, so they're excluded from the win/lose odds
+        if decisive == 0:
+            self.mult_higher = self.mult_lower = None
+            return
 
         def mk(count):
             if count <= 0:
                 return None
-            m = round(factor * n / count, 2)
+            m = round(factor * decisive / count, 2)
             return m if m >= min_mult else None  # too certain to pay a profit -> not offered
 
         self.mult_higher = mk(higher)
@@ -137,10 +142,18 @@ class HigherLowerGame:
 
     # --- mutations ---
     def guess(self, direction: str):
-        """direction: 'higher' or 'lower'. Advances the ladder or busts."""
+        """direction: 'higher' or 'lower'. Advances the ladder, pushes on a tie, or busts."""
         mult = self.mult_higher if direction == "higher" else self.mult_lower
         nxt = self.deck.pop()
         nv, cv = _value(nxt), _value(self.current)
+        if nv == cv:
+            # Tie -> push: no win, no loss. Carry on from the new (same-value) card.
+            self.history.append(self.current)
+            self.current = nxt
+            self._recompute()
+            if not self.deck or (self.mult_higher is None and self.mult_lower is None):
+                self.cash_out()
+            return
         won = (nv > cv) if direction == "higher" else (nv < cv)
         if won and mult is not None:
             self.cumulative *= mult
@@ -425,7 +438,8 @@ async def _show_rules(interaction: Interaction):
         "the bigger the multiplier.\n"
         "- A correct guess multiplies your banked value and deals the next card; keep going or "
         "**Cash Out** to collect.\n"
-        "- A **wrong guess or a tie** (same rank) loses the whole stake.\n"
+        "- A **wrong guess** loses the whole stake. A **tie** (same value) is a **push** - no "
+        "win, no loss - and the run carries on from the new card.\n"
         "- The multiplier is shaved slightly below true odds, so each step carries a small house "
         "edge - the further you climb, the more the house edges in. Cash out to lock it.\n"
         f"- **Bets:** {mn:,} - {mx:,} UKPence. Stakes go to the house bank; cash-outs are paid from it.\n\n"
