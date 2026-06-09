@@ -9,7 +9,7 @@ Awarded for reaching a balance of 30,000 UKPence.
 Awarded for giving away a total of 10,000 UKPence using the `/pay` command.
 
 ### ⚓ Victory Sponsor
-**Rarity**: Silver
+**Rarity**: Bronze
 Awarded for transferring UKPence directly to HMS Victory (the bank).
 
 ### 📉 Bankrupt
@@ -25,7 +25,7 @@ Awarded for purchasing 10 items from the bot's shop.
 Awarded for attending 5 different Stage events.
 
 ### 👻 Night Owl
-**Rarity**: Bronze
+**Rarity**: Silver
 Awarded for sending 100 messages between 2 AM and 5 AM UK time.
 
 ### 🔒 The Warden
@@ -49,7 +49,7 @@ Awarded for using a Shutcoin for the first time.
 Awarded for participating in a reply chain of 3 or more messages.
 
 ### ⚡ Active Chatter
-**Rarity**: Bronze
+**Rarity**: Silver
 Awarded for sending 200 or more messages in a single day.
 
 ### 🔔 Town Crier
@@ -105,15 +105,15 @@ Awarded for screensharing for 30 minutes.
 Awarded for being caught by the Americanism filter.
 
 ### 📣 Fast Hands
-**Rarity**: Silver
+**Rarity**: Bronze
 Awarded for reacting to an announcement within 10 minutes.
 
 ### 📢 Small Talker
-**Rarity**: Silver
+**Rarity**: Bronze
 Awarded for reacting to a minor announcement within 10 minutes.
 
 ### 🔥 Chef
-**Rarity**: Silver
+**Rarity**: Bronze
 Awarded for using the roast command.
 
 ### 💀 Fried
