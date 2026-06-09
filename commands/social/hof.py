@@ -220,11 +220,22 @@ async def handle_hof_context_menu(interaction: discord.Interaction, message: dis
 
     await send_hof_post(client, thread, message)
 
-    if str(message.id) not in hall_of_fame_data:
+    newly_added = str(message.id) not in hall_of_fame_data
+    if newly_added:
         hall_of_fame_data.append(str(message.id))
         save_json_file(HALL_OF_FAME_FILE, hall_of_fame_data)
 
     from lib.bot.event_handlers import award_badge_with_notify
     await award_badge_with_notify(client, message.author.id, 'hof')
+
+    # Pay the same bank-funded reward the automatic 6-reaction path gives. Gated on a
+    # genuinely new entry so a re-add (or a message that already auto-qualified and was
+    # paid) can never double-pay.
+    if newly_added and not message.author.bot:
+        try:
+            from lib.features.ukp_rewards import award_hof_reward
+            await award_hof_reward(client, message.author.id)
+        except Exception:
+            logger.error("[HOF] manual UKP reward failed", exc_info=True)
 
     await interaction.followup.send("Added to the Hall of Fame!", ephemeral=True)
