@@ -1,7 +1,10 @@
 from database import DatabaseManager
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List
 import time
+
+# How often each auto-restock item gains its restock_amount (the "/12h" in the UI).
+RESTOCK_INTERVAL_SECONDS = 12 * 60 * 60
+
 
 class ShopInventory:
     """Manages shop item quantities and restocking"""
@@ -94,8 +97,10 @@ class ShopInventory:
                         restock_amount: Optional[int] = None) -> bool:
         """Update inventory settings without resetting quantity. Pass `...` to leave a field unchanged.
         max_quantity accepts None explicitly (means unlimited)."""
-        if not DatabaseManager.fetch_one('SELECT item_id FROM shop_inventory WHERE item_id = ?', (item_id,)):
+        row = DatabaseManager.fetch_one('SELECT auto_restock, max_quantity FROM shop_inventory WHERE item_id = ?', (item_id,))
+        if not row:
             return False
+        cur_auto, cur_max = bool(row[0]), row[1]
 
         sets, params = [], []
         if max_quantity is not ...:
@@ -108,6 +113,16 @@ class ShopInventory:
             sets.append('restock_amount = ?')
             params.append(restock_amount)
 
+        # If this update makes the item newly eligible for the auto-restock cycle,
+        # start its clock now — last_restock kept aging while the item was
+        # ineligible, and counting that span as missed cycles would burst it to
+        # max on the next tick instead of resuming the +N/12h drip.
+        new_auto = cur_auto if auto_restock is None else auto_restock
+        new_max = cur_max if max_quantity is ... else max_quantity
+        if (new_auto and new_max is not None) and not (cur_auto and cur_max is not None):
+            sets.append('last_restock = ?')
+            params.append(int(time.time()))
+
         if not sets:
             return True
         params.append(item_id)
@@ -115,33 +130,57 @@ class ShopInventory:
         return True
 
     @staticmethod
-    def auto_restock_items() -> List[str]:
-        """Perform restocking for all auto-restock items by their restock amount. Returns list of restocked item IDs."""
+    def auto_restock_items(due_only: bool = False) -> List[str]:
+        """Perform restocking for all auto-restock items by their restock amount.
+
+        due_only=True only restocks items whose RESTOCK_INTERVAL_SECONDS cycle has
+        elapsed since last_restock (catching up any cycles missed while the bot was
+        down), so it's safe to call from a frequent scheduler tick. due_only=False
+        (admin "Restock all") applies one cycle immediately.
+        Returns list of restocked item IDs."""
         current_time = int(time.time())
 
-        # Find all items with auto_restock enabled that are below max_quantity
-        items_to_restock = DatabaseManager.fetch_all('''
-            SELECT item_id, quantity, max_quantity, restock_amount
+        items = DatabaseManager.fetch_all('''
+            SELECT item_id, quantity, max_quantity, restock_amount, last_restock
             FROM shop_inventory
-            WHERE auto_restock = 1 AND max_quantity IS NOT NULL AND quantity < max_quantity
+            WHERE auto_restock = 1 AND max_quantity IS NOT NULL
         ''')
 
         restocked_items = []
 
-        for item_id, current_qty, max_qty, restock_amt in items_to_restock:
-            if restock_amt <= 0:
+        for item_id, current_qty, max_qty, restock_amt, last_restock in items:
+            last_restock = last_restock or 0
+            if due_only:
+                cycles = (current_time - last_restock) // RESTOCK_INTERVAL_SECONDS
+                if cycles < 1:
+                    continue
+                # Advance the clock by whole cycles so the cadence stays steady
+                # regardless of tick timing or downtime. Items already at max
+                # still get their clock bumped, so stock bought later waits a
+                # full cycle rather than refilling on the next tick.
+                new_last_restock = last_restock + cycles * RESTOCK_INTERVAL_SECONDS
+            else:
+                # Manual restocks are additive: don't touch the clock, or a click
+                # would consume any pending catch-up backlog and re-phase the
+                # next auto cycle to click+12h.
+                cycles = 1
+                new_last_restock = last_restock
+
+            new_qty = current_qty
+            if restock_amt > 0 and current_qty < max_qty:
+                new_qty = min(current_qty + restock_amt * cycles, max_qty)
+
+            # Manual restocks leave untouched items alone (no clock bump)
+            if not due_only and new_qty == current_qty:
                 continue
 
-            new_qty = min(current_qty + restock_amt, max_qty)
-            
-            # Only update if the quantity actually increased
-            if new_qty > current_qty:
-                DatabaseManager.execute('''
-                    UPDATE shop_inventory
-                    SET quantity = ?, last_restock = ?
-                    WHERE item_id = ?
-                ''', (new_qty, current_time, item_id))
+            DatabaseManager.execute('''
+                UPDATE shop_inventory
+                SET quantity = ?, last_restock = ?
+                WHERE item_id = ?
+            ''', (new_qty, new_last_restock, item_id))
 
+            if new_qty > current_qty:
                 restocked_items.append(item_id)
 
         return restocked_items

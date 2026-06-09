@@ -413,11 +413,14 @@ async def cleanup_webhook_reactions(client):
 
 
 async def auto_restock_shop(client):
+    """Restock any auto-restock items whose 12h cycle is due (DB-driven via
+    last_restock, so it survives restarts — a plain 12h IntervalTrigger never
+    fired because the bot restarts more often than that)."""
     try:
         from lib.economy.shop_inventory import ShopInventory
         from lib.economy.shop_items import get_shop_items
-        
-        restocked_items = ShopInventory.auto_restock_items()
+
+        restocked_items = ShopInventory.auto_restock_items(due_only=True)
         
         if restocked_items:
             # Log the restock
@@ -481,7 +484,11 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(cleanup_webhook_reactions, IntervalTrigger(minutes=1), args=[client], id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
 
     scheduler.add_job(process_economy_logs, IntervalTrigger(seconds=15), args=[client], id="process_economy_logs_interval", name="Process Economy Log Queue")
-    scheduler.add_job(auto_restock_shop, IntervalTrigger(hours=12), args=[client], id="auto_restock_shop_interval", name="Automated Shop Restock")
+    # Frequent tick, not a 12h interval: the 12h cycle lives in the DB (last_restock),
+    # so it survives the frequent deploy restarts that reset in-process interval timers.
+    # next_run_time so the first catch-up fires right after boot rather than one
+    # full interval later (the APScheduler default that broke the original 12h job).
+    scheduler.add_job(auto_restock_shop, IntervalTrigger(minutes=10), args=[client], id="auto_restock_shop_interval", name="Automated Shop Restock", next_run_time=discord.utils.utcnow() + timedelta(seconds=30))
 
     scheduler.add_job(apply_inactivity_tax, CronTrigger(day_of_week="fri", hour=0, minute=0, timezone="Europe/London"), args=[client], id="apply_inactivity_tax_job", name="Weekly Inactivity Tax")
 
