@@ -862,9 +862,51 @@ async def mirror_voice_message(client, message):
         logger.warning(f"[voice-mirror] send failed: {e}")
 
 
+# "piggyreact" toggle (oggers): react to every PIGGY message with H-O-G. Cached on the
+# client, persisted to PIGGY_REACT_FILE so it survives restarts.
+_PIGGY_REACT_EMOJIS = ("\U0001F1ED", "\U0001F1F4", "\U0001F1EC")  # 🇭 🇴 🇬
+
+
+def _piggy_react_enabled(client) -> bool:
+    if not hasattr(client, "_piggy_react"):
+        from lib.core.file_operations import load_json_file
+        data = load_json_file(PIGGY_REACT_FILE) or {}
+        client._piggy_react = bool(data.get("enabled", False))
+    return client._piggy_react
+
+
+def _set_piggy_react(client, enabled: bool):
+    from lib.core.file_operations import save_json_file
+    client._piggy_react = bool(enabled)
+    save_json_file(PIGGY_REACT_FILE, {"enabled": bool(enabled)})
+
+
 async def on_message(client, message):
     if await handle_hate_speech_message(client, message):
         return
+
+    # oggers toggles the piggy-react feature on/off; the command message is removed.
+    if message.author.id == USERS.OGGERS and message.content.lower().strip() == "piggyreact":
+        try:
+            await message.delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+        new_state = not _piggy_react_enabled(client)
+        _set_piggy_react(client, new_state)
+        try:
+            await message.channel.send(
+                f"🐷 Piggy react is now **{'on' if new_state else 'off'}**.", delete_after=5)
+        except discord.HTTPException:
+            pass
+        return
+
+    # When enabled, spell H-O-G on every message PIGGY sends (order matters).
+    if _piggy_react_enabled(client) and message.author.id == USERS.PIGGY:
+        for emoji in _PIGGY_REACT_EMOJIS:
+            try:
+                await message.add_reaction(emoji)
+            except (discord.HTTPException, discord.Forbidden):
+                break
 
     if not hasattr(client, "xp_system"):
         from lib.features.xp_system import XPSystem

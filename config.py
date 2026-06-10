@@ -194,6 +194,8 @@ ADDED_USERS_FILE = os.path.join(JSON_DATA_DIR, "added_users.json")
 ROAST_TARGET_FILE = os.path.join(JSON_DATA_DIR, "roast_targets.json")
 RECIPE_BOOK_FILE = os.path.join(JSON_DATA_DIR, "recipe_book.json")
 WEEKEND_WARRIOR_COUNTS_FILE = os.path.join(JSON_DATA_DIR, "weekend_warrior_counts.json")
+# Toggle (oggers' "piggyreact"): when on, every message from PIGGY gets H-O-G reactions.
+PIGGY_REACT_FILE = os.path.join(JSON_DATA_DIR, "piggy_react.json")
 TOWN_CRIER_TRACKING_FILE = os.path.join(JSON_DATA_DIR, "town_crier_tracking.json")
 BALANCE_SNAPSHOT_DIR = "balance_snapshots"
 VC_LOCKDOWN_FILE = os.path.join(JSON_DATA_DIR, "vc_lockdown_status.txt")
@@ -308,6 +310,7 @@ class USERS:
     WICK_BOT = 536991182035746816
     LANCA = 1398652914737741956
     HMS_VICTORY = 1171842947440967770
+    PIGGY = 1514272473485672520
 
 BOT_ID = USERS.HMS_VICTORY
 
