@@ -531,6 +531,9 @@ async def _do_spin_round(interaction: Interaction, machine: SlotMachine, client,
                 pass
             return
         _credit(machine.player_id, machine.win, "Slots win")  # paid only once on screen
+        if machine.reels == ["crown", "crown", "crown"]:
+            from lib.features.income_badges import award_badge_safe
+            await award_badge_safe(client, machine.player_id, "slots_jackpot")
         record_result(machine.player_id, "slots", machine.bet, machine.bet, machine.win,
                       f"{machine.mult}x" if machine.win else "no win")
         try:
@@ -647,6 +650,9 @@ async def handle_slots_command(interaction: Interaction, amount: int):
         return
 
     _credit(interaction.user.id, machine.win, "Slots win")  # pay only after it's on screen
+    if machine.reels == ["crown", "crown", "crown"]:
+        from lib.features.income_badges import award_badge_safe
+        await award_badge_safe(interaction.client, machine.player_id, "slots_jackpot")
     record_result(machine.player_id, "slots", machine.bet, machine.bet, machine.win,
                   f"{machine.mult}x" if machine.win else "no win")
     try:

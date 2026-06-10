@@ -761,7 +761,8 @@ async def _lock_and_spin(table):
         # Badges
         if n == 0:
             await award_badge_safe(table.client, pid, "zero_hero")
-        if any(k.startswith("straight:") and bet_wins(k, n) for k in bets):
+        straights = [k for k in bets if k.startswith("straight:")]
+        if len(straights) <= 3 and any(bet_wins(k, n) for k in straights) and returned > staked:
             await award_badge_safe(table.client, pid, "lucky_number")
         if returned - staked >= 1000:
             await award_badge_safe(table.client, pid, "red_letter_day")
