@@ -891,13 +891,7 @@ async def on_message(client, message):
             await message.delete()
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
-        new_state = not _piggy_react_enabled(client)
-        _set_piggy_react(client, new_state)
-        try:
-            await message.channel.send(
-                f"🐷 Piggy react is now **{'on' if new_state else 'off'}**.", delete_after=5)
-        except discord.HTTPException:
-            pass
+        _set_piggy_react(client, not _piggy_react_enabled(client))
         return
 
     # When enabled, spell H-O-G on every message PIGGY sends (order matters).
