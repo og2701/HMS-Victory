@@ -285,6 +285,24 @@ _CULTURE = (
 )
 
 
+def _member_tenure(member):
+    """Tenure facts so the model can apply the new-account vs established-member
+    bar instead of guessing from message volume."""
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc)
+    parts = []
+    joined = getattr(member, "joined_at", None)
+    if joined:
+        days = (now - joined).days
+        parts.append(f"joined this server {joined.date()} ({days} days ago)")
+    created = getattr(member, "created_at", None)
+    if created:
+        age_days = (now - created).days
+        age = f"{age_days / 365:.1f} years" if age_days >= 365 else f"{age_days} days"
+        parts.append(f"Discord account created {created.date()} ({age} old)")
+    return "; ".join(parts) or "tenure unknown"
+
+
 def _build_prompt(member, msgs, rules):
     lines = []
     for i, m in enumerate(msgs, 1):
@@ -320,7 +338,9 @@ def _build_prompt(member, msgs, rules):
         "(talking into the void) rather than 'fostering a friendly environment', even if very active.\n\n"
         f"{_CULTURE}\n\n"
         f"SERVER RULES:\n{rules}\n\n"
-        f"MEMBER: {member.display_name} (id {member.id}). {len(msgs)} recent messages, oldest first. "
+        f"MEMBER: {member.display_name} (id {member.id}); {_member_tenure(member)}. "
+        "Weigh this tenure when applying the new-account vs established-member bar above.\n"
+        f"{len(msgs)} recent messages, oldest first. "
         "Context in {curly braces}: 'prev msg' = message before theirs, 'next msg' = the message that "
         "followed (THEM = themselves), reactions, and 'formal reply' = someone used the reply button.\n"
         f"ENGAGEMENT (lower bound; most responses are organic): {replied} of {len(msgs)} got a formal "
@@ -367,7 +387,8 @@ def _build_followup_prompt(member, msgs, rules, question):
         "Only refuse if there is genuinely nothing to go on.\n\n"
         f"{_CULTURE}\n\n"
         f"SERVER RULES:\n{rules}\n\n"
-        f"MEMBER: {member.display_name}. {len(msgs)} recent messages ('next:' = the message that "
+        f"MEMBER: {member.display_name}; {_member_tenure(member)}. "
+        f"{len(msgs)} recent messages ('next:' = the message that "
         f"followed; 'THEM' = themselves; {reacted} got a reaction):\n{body}\n\n"
         f"MODERATOR'S QUESTION: {question}"
     )
