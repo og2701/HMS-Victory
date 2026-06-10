@@ -253,7 +253,16 @@ _CULTURE = (
     "harassment, hate speech or slurs aimed at people or protected groups, threats, doxxing, NSFW, "
     "or scams. Be proportionate: reserve bans and formal warnings for serious or repeated harm, "
     "and never escalate over tone, ordinary profanity, or a rude-but-harmless username. When in "
-    "doubt, lean lenient."
+    "doubt, lean lenient.\n"
+    "SAFEGUARDING OVERRIDE (outranks all leniency above): graphic or sexualised content is NSFW "
+    "and counts as genuine harm even when delivered as a joke - the crude-humour tolerance covers "
+    "language, not sexual content. If there are signs the member may be underage (stated or "
+    "implied age, school references, others treating them as young) and they post or receive "
+    "sexualised content or innuendo, set risk_level to at least \"medium\" (\"high\" if explicit "
+    "or repeated), recommend \"Escalate to senior staff\", and name the safeguarding concern "
+    "plainly in the justification. The same applies to adults steering conversation with an "
+    "apparently-young member toward sexual topics. Never let the lenient server culture soften "
+    "a safeguarding call."
 )
 
 
@@ -301,7 +310,8 @@ def _build_prompt(member, msgs, rules):
         "Respond with ONLY a JSON object (no markdown fences) with these keys:\n"
         '  "summary": 2-4 sentences on overall tone and behaviour.\n'
         '  "tone": a short phrase (e.g. "friendly banter", "argumentative", "edgy humour").\n'
-        '  "risk_level": one of "low", "medium", "high" (overall moderation risk).\n'
+        '  "risk_level": one of "low", "medium", "high" (overall moderation risk; keep it '
+        'consistent with your concerns - if any concern is severity "high", risk is not "low").\n'
         '  "concerns": array of {"severity":"low|medium|high","issue":<short>,"quote":<verbatim>,'
         '"why":<short reason>}; empty array if none.\n'
         '  "notable_quotes": array of up to 5 short verbatim quotes that characterise them '
