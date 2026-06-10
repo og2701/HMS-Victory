@@ -412,6 +412,28 @@ async def cleanup_webhook_reactions(client):
         save_webhook_deletions(deletions)
 
 
+async def sweep_orphaned_gate_messages(client):
+    """Delete leftover new-member gate notices in politics. They're sent with
+    delete_after=10, but that timer is in-process — a restart inside the window
+    orphans the message, and we restart often (deploys)."""
+    try:
+        channel = client.get_channel(CHANNELS.POLITICS)
+        if channel is None:
+            return
+        cutoff = discord.utils.utcnow() - timedelta(hours=48)
+        async for msg in channel.history(limit=200):
+            if msg.created_at < cutoff:
+                break  # newest-first; orphans older than this were already seen by a prior boot
+            if msg.author.id == client.user.id and "you need to be in the server for at least" in msg.content:
+                try:
+                    await msg.delete()
+                    logger.info(f"Deleted orphaned gate message {msg.id} in #politics.")
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                    logger.warning(f"Failed to delete orphaned gate message {msg.id}: {e}")
+    except Exception:
+        logger.error("Orphaned gate message sweep failed", exc_info=True)
+
+
 async def auto_restock_shop(client):
     """Restock any auto-restock items whose 12h cycle is due (DB-driven via
     last_restock, so it survives restarts — a plain 12h IntervalTrigger never
@@ -484,6 +506,8 @@ def schedule_client_jobs(client, scheduler):
     scheduler.add_job(cleanup_webhook_reactions, IntervalTrigger(minutes=1), args=[client], id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
 
     scheduler.add_job(process_economy_logs, IntervalTrigger(seconds=15), args=[client], id="process_economy_logs_interval", name="Process Economy Log Queue")
+    # One-shot on boot: clean up gate notices orphaned by a restart mid-delete_after
+    scheduler.add_job(sweep_orphaned_gate_messages, args=[client], id="sweep_gate_orphans_boot", name="Sweep Orphaned Gate Messages", next_run_time=discord.utils.utcnow() + timedelta(seconds=20))
     # Frequent tick, not a 12h interval: the 12h cycle lives in the DB (last_restock),
     # so it survives the frequent deploy restarts that reset in-process interval timers.
     # next_run_time so the first catch-up fires right after boot rather than one
