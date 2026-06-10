@@ -1083,19 +1083,22 @@ async def on_message(client, message):
                 # A role can be pre-picked by mentioning it too (e.g. "roleadd @user @Role").
                 pre_role = next((r for r in message.role_mentions if _bot_can_assign(message.guild, r) is None), None)
 
-                if len(mentioned) > 25:
-                    await message.reply(f"❌ Too many recipients ({len(mentioned)}). Maximum is 25.")
+                # Mentioned recipients aren't limited (no select menu involved); only the
+                # no-mention path uses the UserSelect, which Discord hard-caps at 25.
+                if not mentioned:
+                    prompt = "Select members and a role to add:"
+                elif len(mentioned) == 1:
+                    prompt = f"Pick a role to add to {mentioned[0].mention}:"
                 else:
-                    if mentioned:
-                        who = ", ".join(m.mention for m in mentioned)
-                        prompt = f"Pick a role to add to {who}:"
-                    else:
-                        prompt = "Select members and a role to add:"
-                    await message.reply(
-                        prompt,
-                        view=RoleAddView(message.author.id, mentioned or None, pre_role),
-                        allowed_mentions=discord.AllowedMentions.none(),
-                    )
+                    who = ", ".join(m.mention for m in mentioned[:20])
+                    if len(mentioned) > 20:
+                        who += f" and {len(mentioned) - 20} more"
+                    prompt = f"Pick a role to add to these {len(mentioned)} members:\n{who}"
+                await message.reply(
+                    prompt,
+                    view=RoleAddView(message.author.id, mentioned or None, pre_role),
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
             except Exception as e:
                 logger.error(f"Error launching roleadd flow: {e}", exc_info=True)
 
