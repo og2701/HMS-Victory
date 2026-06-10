@@ -463,6 +463,22 @@ async def _followup_thread(member, report_message):
             return None
 
 
+def _trunc(s, n):
+    """Cut at a word boundary with an ellipsis instead of a mid-word hard slice."""
+    s = str(s)
+    if len(s) <= n:
+        return s
+    cut = s[: max(n - 1, 0)]
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(" ,;:·_*") + "…"
+
+
+# Discord caps text across all Components V2 text displays at 4000 chars per
+# message; keep headroom for the container/footer markup.
+_CARD_TEXT_LIMIT = 3800
+
+
 def _build_view(member, requester, msgs, text):
     """Compact Components V2 report: one accent-coloured container of markdown blocks."""
     import json
@@ -487,7 +503,9 @@ def _build_view(member, requester, msgs, text):
 
     if not isinstance(data, dict):
         c = discord.ui.Container(accent_colour=0xCF142B)
-        c.add_item(_header_section(f"## \U0001f50e Moderation analysis: {name}\n{(text or '')[:3500]}"))
+        c.add_item(_header_section(
+            f"## \U0001f50e Moderation analysis: {name}\n"
+            f"{_trunc(text or '', _CARD_TEXT_LIMIT - len(foot) - 100)}"))
         c.add_item(discord.ui.TextDisplay(foot))
         c.add_item(discord.ui.ActionRow(FollowupButton(member.id)))
         view.add_item(c)
@@ -498,14 +516,13 @@ def _build_view(member, requester, msgs, text):
 
     head = f"## \U0001f50e Moderation analysis: {name}\n{_RISK_EMOJI.get(risk, '⚪')} **{risk.capitalize()} risk**"
     if data.get("tone"):
-        head += f" · *{str(data['tone'])[:80]}*"
+        head += f" · *{_trunc(data['tone'], 80)}*"
     if data.get("recommended_action"):
         head += f" · ⚖️ **{data['recommended_action']}**"
     if data.get("summary"):
-        head += f"\n{str(data['summary'])[:1200]}"
+        head += f"\n{_trunc(data['summary'], 1200)}"
     if data.get("justification"):
-        head += f"\n-# {str(data['justification'])[:300]}"
-    c.add_item(_header_section(head))
+        head += f"\n-# {_trunc(data['justification'], 600)}"
 
     concerns = data.get("concerns") or []
     if concerns:
@@ -514,24 +531,41 @@ def _build_view(member, requester, msgs, text):
             se = _SEV_EMOJI.get(str(con.get("severity", "low")).lower(), "\U0001f7e1")
             seg = f"{se} **{con.get('issue', '')}**"
             if con.get("quote"):
-                seg += f' · "{str(con["quote"])[:120]}"'
+                seg += f' · "{_trunc(con["quote"], 160)}"'
             if con.get("why"):
-                seg += f" · _{str(con['why'])[:120]}_"
+                seg += f" · _{_trunc(con['why'], 240)}_"
             lines.append(seg)
-        c.add_item(discord.ui.TextDisplay("\n".join(lines)[:3500]))
+        concerns_text = "\n".join(lines)
     else:
-        c.add_item(discord.ui.TextDisplay("**Concerns** None notable."))
+        concerns_text = "**Concerns** None notable."
 
     extra = []
     if data.get("patterns"):
-        extra.append(f"**Patterns** {str(data['patterns'])[:400]}")
+        extra.append(f"**Patterns** {_trunc(data['patterns'], 400)}")
     quotes = data.get("notable_quotes") or []
     if quotes:
-        extra.append("**Notable quotes** " + " · ".join(f'"{str(q)[:80]}"' for q in quotes[:5]))
+        extra.append("**Notable quotes** " + " · ".join(f'"{_trunc(q, 120)}"' for q in quotes[:5]))
     if data.get("positives"):
-        extra.append(f"**Positives** {str(data['positives'])[:400]}")
-    if extra:
-        c.add_item(discord.ui.TextDisplay("\n".join(extra)[:3500]))
+        extra.append(f"**Positives** {_trunc(data['positives'], 400)}")
+    extras_text = "\n".join(extra)
+
+    # Fit the whole card under Discord's total-text cap, trimming bottom-up so
+    # the verdict/summary at the top survives intact.
+    blocks = [head, concerns_text, extras_text]
+    over = sum(map(len, blocks)) + len(foot) - _CARD_TEXT_LIMIT
+    for i in (2, 1, 0):
+        if over <= 0:
+            break
+        keep = max(len(blocks[i]) - over, 120)
+        trimmed = _trunc(blocks[i], keep)
+        over -= len(blocks[i]) - len(trimmed)
+        blocks[i] = trimmed
+    head, concerns_text, extras_text = blocks
+
+    c.add_item(_header_section(head))
+    c.add_item(discord.ui.TextDisplay(concerns_text))
+    if extras_text:
+        c.add_item(discord.ui.TextDisplay(extras_text))
 
     c.add_item(discord.ui.TextDisplay(foot))
     c.add_item(discord.ui.ActionRow(FollowupButton(member.id)))
@@ -545,9 +579,9 @@ def _followup_view(member, requester, question, answer):
     view = discord.ui.LayoutView(timeout=None)
     c = discord.ui.Container(accent_colour=0x5865F2)
     c.add_item(discord.ui.Section(
-        discord.ui.TextDisplay(f"## \U0001f4ac Follow-up: {name}\n**Q:** {question[:300]}"),
+        discord.ui.TextDisplay(f"## \U0001f4ac Follow-up: {name}\n**Q:** {_trunc(question, 300)}"),
         accessory=discord.ui.Thumbnail(member.display_avatar.url)))
-    c.add_item(discord.ui.TextDisplay((answer or "").strip()[:3500] or "_(no answer)_"))
+    c.add_item(discord.ui.TextDisplay(_trunc((answer or "").strip(), 3400) or "_(no answer)_"))
     c.add_item(discord.ui.TextDisplay(f"-# asked by {requester.mention} about {member.mention}"))
     view.add_item(c)
     return view
