@@ -1033,6 +1033,36 @@ async def on_message(client, message):
             except Exception as e:
                 logger.error(f"Error launching ukpadd flow: {e}")
 
+    if message.content.lower().startswith("roleadd") and message.guild is not None:
+        if hasattr(message.author, "roles") and any(role.id == ROLES.DEPUTY_PM for role in message.author.roles):
+            try:
+                from lib.features.role_admin_ui import RoleAddView, _bot_can_assign
+
+                seen = set()
+                mentioned = []
+                for m in message.mentions:
+                    if not m.bot and m.id not in seen:
+                        seen.add(m.id)
+                        mentioned.append(m)
+                # A role can be pre-picked by mentioning it too (e.g. "roleadd @user @Role").
+                pre_role = next((r for r in message.role_mentions if _bot_can_assign(message.guild, r) is None), None)
+
+                if len(mentioned) > 25:
+                    await message.reply(f"❌ Too many recipients ({len(mentioned)}). Maximum is 25.")
+                else:
+                    if mentioned:
+                        who = ", ".join(m.mention for m in mentioned)
+                        prompt = f"Pick a role to add to {who}:"
+                    else:
+                        prompt = "Select members and a role to add:"
+                    await message.reply(
+                        prompt,
+                        view=RoleAddView(message.author.id, mentioned or None, pre_role),
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+            except Exception as e:
+                logger.error(f"Error launching roleadd flow: {e}", exc_info=True)
+
     is_deputy_pm = hasattr(message.author, "roles") and any(role.id == ROLES.DEPUTY_PM for role in message.author.roles)
     if message.content.lower().strip() == "shopadmin" and message.author.id == USERS.OGGERS:
         try:
