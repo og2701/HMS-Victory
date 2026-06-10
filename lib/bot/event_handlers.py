@@ -693,7 +693,7 @@ async def process_message_links(client, message):
                 timestamp_unix = int(quoted_message.created_at.timestamp())
                 timestamp_formatted = f"<t:{timestamp_unix}:f>"
                 channel_name = channel.name
-                reply_content = f"@__{quoted_message.author}__ in *{channel_name}* {timestamp_formatted}:\n"
+                reply_content = f"@__{quoted_message.author.display_name}__ in *{channel_name}* {timestamp_formatted}:\n"
                 filtered_content = re.sub(r"<@&?\d+>", "", quoted_message.content).replace("@everyone", "[everyone]").replace("@here", "[here]").strip()
                 if filtered_content:
                     reply_content += f"> {filtered_content}"
