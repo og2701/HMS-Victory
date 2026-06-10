@@ -65,7 +65,7 @@ async def gather_user_messages(client, guild, user, channel_ids, target=1000, mi
     joined = getattr(user, "joined_at", None)
     if joined is not None and joined > cutoff:
         cutoff = joined  # nothing exists before they joined the server
-    chans = [guild.get_channel(cid) for cid in channel_ids]
+    chans = [guild.get_channel_or_thread(cid) for cid in channel_ids]  # threads too (forum posts etc.)
     chans = [c for c in chans if c is not None and c.permissions_for(me).read_message_history]
     t_start = time.monotonic()
     log.info("[analyse] scanning %d channels for member %s (target=%d, days=%d): %s",
@@ -581,9 +581,19 @@ async def handle_analyse_user(interaction, member):
                       f"**{found}** from {member.display_name} so far.")
 
     await _status(f"\U0001f50d Gathering {member.display_name}'s recent messages ...")
+    channel_ids = list(getattr(config, "USER_ANALYSIS_CHANNELS", []))
+    # Also scan the channel the command was invoked in: mods usually run this where
+    # the trouble is, which isn't always one of the configured main chats. Skip
+    # channels the member can't see (e.g. staff rooms) — nothing of theirs there,
+    # and scanning one would just burn the shared read budget.
+    invoked = interaction.channel
+    if (invoked is not None and invoked.id not in channel_ids
+            and hasattr(invoked, "permissions_for")
+            and invoked.permissions_for(member).read_messages):
+        channel_ids.append(invoked.id)
     msgs = await gather_user_messages(
         interaction.client, interaction.guild, member,
-        getattr(config, "USER_ANALYSIS_CHANNELS", []),
+        channel_ids,
         target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 1000),
         min_target=getattr(config, "USER_ANALYSIS_MIN_MSGS", 150),
         read_budget=getattr(config, "USER_ANALYSIS_READ_BUDGET", 18000),
