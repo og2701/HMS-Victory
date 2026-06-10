@@ -525,6 +525,11 @@ async def graceful_shutdown(client, sig_name):
             n += sum(1 for t in _rt.values() if getattr(t, "status", None) in ("betting", "spinning"))
         except Exception:
             pass
+        try:  # single-player casino clicks mid-redraw — wait so the result lands
+            from lib.economy.casino_drain import in_flight_actions
+            n += in_flight_actions()
+        except Exception:
+            pass
         return n
 
     try:

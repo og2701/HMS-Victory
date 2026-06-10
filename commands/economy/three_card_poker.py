@@ -22,6 +22,7 @@ from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, remove_bb
 from lib.economy.casino_stats import record_result, session_footer_html
+from lib.economy.casino_drain import action_in_flight
 import commands.economy.casino_base as cb
 
 logger = logging.getLogger(__name__)
@@ -293,7 +294,8 @@ def build_control_view(game: TcpGame) -> discord.ui.LayoutView:
 # ---------------------------------------------------------------------------
 def _make_cb(game: TcpGame, action: str):
     async def _cb(interaction: Interaction):
-        await _handle_action(interaction, game, action)
+        with action_in_flight():
+            await _handle_action(interaction, game, action)
     return _cb
 
 

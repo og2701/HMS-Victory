@@ -29,6 +29,7 @@ from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, add_bb, remove_bb, UKPenceManager
 from lib.economy.casino_stats import record_result, session_footer_html
+from lib.economy.casino_drain import action_in_flight
 from lib.core.file_operations import (
     read_html_template,
     load_persistent_views,
@@ -423,7 +424,8 @@ def build_control_view(game: HigherLowerGame) -> discord.ui.LayoutView:
 # ---------------------------------------------------------------------------
 def _make_cb(game: HigherLowerGame, action: str):
     async def _cb(interaction: Interaction):
-        await _handle_action(interaction, game, action)
+        with action_in_flight():
+            await _handle_action(interaction, game, action)
     return _cb
 
 
