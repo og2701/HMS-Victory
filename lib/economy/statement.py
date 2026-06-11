@@ -46,7 +46,7 @@ _CATEGORIES = [
     ("Shop", "\U0001f6d2", ["shop", "purchase", "bought", "restock"]),
     ("Bond", "\U0001f3e6", ["bond"]),
     ("Welcome", "\U0001f44b", ["welcome"]),
-    ("Admin", "⚖️", ["balance set", "admin", "manual", "unspecified"]),
+    ("Admin", "⚖️", ["balance set", "admin", "manual", "unspecified", "ukpadd", "grant"]),
 ]
 
 
