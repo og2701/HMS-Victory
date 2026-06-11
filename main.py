@@ -582,6 +582,15 @@ async def graceful_shutdown(client, sig_name):
     except Exception as e:
         logger.error(f"Poker shutdown drain failed: {e}", exc_info=True)
 
+    # Roulette again too: a round opened or extended during the wait above (e.g. via a
+    # button path that slipped past maintenance) would otherwise die holding live bets -
+    # exactly the failure the step-2 sweep exists to prevent.
+    try:
+        from commands.economy.roulette import drain_for_shutdown as _drain_roulette_final
+        await _drain_roulette_final()
+    except Exception as e:
+        logger.error(f"Roulette final shutdown drain failed: {e}", exc_info=True)
+
     # 2. Stop scheduled jobs so nothing new writes to the DB while we checkpoint.
     #    wait=False: never block the event loop waiting on a job that needs it.
     try:

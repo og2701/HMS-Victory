@@ -609,6 +609,10 @@ async def _handle_slip(interaction: Interaction, table, slip: BetSlip, action: s
 
 
 async def _submit_slip(interaction: Interaction, table, slip: BetSlip):
+    # No new stakes once the shutdown drain has started - the table may already have
+    # been force-spun, and money committed now could be stranded by the restart.
+    if await cb.reject_if_maintenance(interaction):
+        return
     if slip.total <= 0:
         await interaction.response.send_message("Place at least one chip first.", ephemeral=True)
         return
@@ -690,9 +694,15 @@ async def _handle_table(interaction: Interaction, table, action: str):
         await _show_rules(interaction)
         return
     if action == "new":
+        # Same gate as /roulette: a round opened during the shutdown drain would be
+        # invisible to the already-run roulette sweep and die with its bets.
+        if await cb.reject_if_maintenance(interaction):
+            return
         await _open_table(interaction)
         return
     if action == "enter":
+        if await cb.reject_if_maintenance(interaction):
+            return
         if table.status != "betting":
             await interaction.response.send_message("Betting has closed for this round.", ephemeral=True)
             return
