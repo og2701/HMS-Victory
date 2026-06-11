@@ -24,7 +24,9 @@ from database import DatabaseManager
 
 log = logging.getLogger(__name__)
 
-RETENTION_DAYS = 30
+# Discord's ban delete-window maxes out at 7 days, so 10 days of archive covers every
+# possible ban purge with margin while keeping the retained-content footprint small.
+RETENTION_DAYS = 10
 _UK = pytz.timezone("Europe/London")
 
 
