@@ -3,7 +3,8 @@
 Reads the durable `user_transactions` ledger (every signed money move, with the reason that
 already flows through the economy chokepoints - see economy_manager.record_transaction) and
 renders a month at a time as a Components V2 card. Casino activity is collapsed to one net
-line per day; everything else is itemised. Navigation buttons walk months: Previous (further
+line per day, and repeated identical reward lines (e.g. chat activity drips) collapse into
+one per-day line with a count; everything else is itemised. Navigation buttons walk months: Previous (further
 back, repeatable), This month (current month-to-date), Next (forward again).
 
 Defaults to the last completed month when first opened.
@@ -107,6 +108,7 @@ def _gather(uid, start_ts, end_ts, client):
         (uid, start_ts, end_ts)) or []
 
     casino_by_day = OrderedDict()       # 'YYYY-MM-DD' -> [net, count, first_ts]
+    rewards_by_day = OrderedDict()      # ('YYYY-MM-DD', desc) -> [net, count, first_ts, emoji]
     entries = []                        # (ts, emoji, desc, amount)
     breakdown = OrderedDict()           # label -> net
     total_in = total_out = 0
@@ -124,12 +126,23 @@ def _gather(uid, start_ts, end_ts, client):
             agg = casino_by_day.setdefault(day, [0, 0, ts])
             agg[0] += amount
             agg[1] += 1
+        elif label == "Rewards":
+            day = datetime.fromtimestamp(ts, _UK).strftime("%Y-%m-%d")
+            desc = _describe(reason, cp, amount, client)
+            agg = rewards_by_day.setdefault((day, desc), [0, 0, ts, emoji])
+            agg[0] += amount
+            agg[1] += 1
         else:
             entries.append((ts, emoji, _describe(reason, cp, amount, client), amount))
 
     for _day, (net, count, first_ts) in casino_by_day.items():
         plays = f"{count} play" + ("" if count == 1 else "s")
         entries.append((first_ts, "\U0001f3b0", f"Casino ({plays})", net))
+
+    for (_day, desc), (net, count, first_ts, emoji) in rewards_by_day.items():
+        if count > 1:
+            desc = f"{desc} (×{count})"
+        entries.append((first_ts, emoji, desc, net))
 
     entries.sort(key=lambda e: e[0])
     return rows, entries, total_in, total_out, breakdown
