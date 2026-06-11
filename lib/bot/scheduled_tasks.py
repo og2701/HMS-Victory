@@ -603,6 +603,7 @@ async def apply_inactivity_tax(client):
         taxed_count = 0
         
         _tax_now = int(datetime.now(pytz.utc).timestamp())
+        taxed = []  # (uid, tax_amount, new_balance) for the statement ledger
         with DatabaseManager.locked_connection() as conn:
             c = conn.cursor()
             for uid, balance in dormant_users:
@@ -612,10 +613,17 @@ async def apply_inactivity_tax(client):
                     # keep the balance graph accurate: this path bypasses remove_amount
                     c.execute("INSERT INTO balance_history (user_id, ts, balance) VALUES (?, ?, ?)",
                               (str(uid), _tax_now, balance - tax_amount))
+                    taxed.append((uid, tax_amount, balance - tax_amount))
                     total_reclaimed += tax_amount
                     taxed_count += 1
 
             conn.commit()
+
+        # Statement ledger entries (outside the lock - record_transaction opens its own write)
+        from lib.economy.economy_manager import record_transaction
+        for uid, tax_amount, new_balance in taxed:
+            record_transaction(uid, -tax_amount, new_balance,
+                               "Inactivity tax (60+ days dormant)", ts=_tax_now)
 
         if total_reclaimed > 0:
             BankManager.deposit_tax(total_reclaimed, description=f"Inactivity Tax (60+ days dormant) from {taxed_count} users")
