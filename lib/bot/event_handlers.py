@@ -450,6 +450,12 @@ def reattach_persistent_views(client):
                 client.add_view(view, message_id=int(key))
             except ImportError as e:
                 logger.error(f"Failed to import WagerDecisionView: {e}")
+        elif isinstance(value, dict) and value.get("type") == "roulette":
+            try:
+                from commands.economy.roulette import reattach_roulette_round
+                reattach_roulette_round(client, key, value)
+            except Exception as e:
+                logger.error(f"Failed to recover roulette round {key}: {e}")
         elif isinstance(value, dict) and value.get("type") == "blackjack":
             try:
                 from commands.economy.blackjack import reattach_blackjack_view

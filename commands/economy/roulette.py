@@ -397,6 +397,70 @@ def get_table(channel_id):
 
 
 # ---------------------------------------------------------------------------
+# Round persistence (committed bets only - recovery spins the round on boot)
+# ---------------------------------------------------------------------------
+def _save_round(table):
+    """Persist a betting round's committed slips so a restart can still spin it."""
+    if table.message is None:
+        return
+    try:
+        from lib.core.file_operations import load_persistent_views, save_persistent_views
+        views = load_persistent_views()
+        views[str(table.message.id)] = {
+            "type": "roulette",
+            "channel_id": table.channel_id,
+            "opener_id": table.opener_id,
+            "close_ts": table.close_ts,
+            "players": {str(pid): {"name": s["name"], "bets": dict(s["bets"])}
+                        for pid, s in table.players.items()},
+        }
+        save_persistent_views(views)
+    except Exception:
+        logger.error("roulette round persist failed", exc_info=True)
+
+
+def _delete_round(message_id):
+    if message_id is None:
+        return
+    try:
+        from lib.core.file_operations import load_persistent_views, save_persistent_views
+        views = load_persistent_views()
+        if str(message_id) in views:
+            del views[str(message_id)]
+            save_persistent_views(views)
+    except Exception:
+        logger.error("roulette round unpersist failed", exc_info=True)
+
+
+def reattach_roulette_round(client, key, value):
+    """Boot recovery: rebuild an interrupted round from persistence and spin it now.
+    Bets were debited before the restart, so the wheel owes these players a result."""
+    asyncio.create_task(_recover_round(client, key, value))
+
+
+async def _recover_round(client, key, value):
+    try:
+        channel_id = int(value["channel_id"])
+        channel = client.get_channel(channel_id) or await client.fetch_channel(channel_id)
+        message = await channel.fetch_message(int(key))
+        table = RouletteTable(channel_id, int(value.get("opener_id") or 0), client)
+        table.message = message
+        table.close_ts = int(value.get("close_ts") or time.time())
+        table.players = {int(pid): {"name": s["name"], "bets": {k: int(a) for k, a in s["bets"].items()}}
+                         for pid, s in value.get("players", {}).items()}
+        if not table.players:
+            _delete_round(key)
+            return
+        _TABLES[channel_id] = table
+        logger.info(f"Recovered roulette round {key} with {len(table.players)} player(s), "
+                    f"pot {table.pot} - spinning now.")
+        await _lock_and_spin(table)
+    except Exception:
+        logger.error(f"Roulette round recovery failed for {key} (entry kept for retry).",
+                     exc_info=True)
+
+
+# ---------------------------------------------------------------------------
 # Public table message layout
 # ---------------------------------------------------------------------------
 def _table_text(table) -> str:
@@ -632,6 +696,7 @@ async def _submit_slip(interaction: Interaction, table, slip: BetSlip):
         staked = slip.total
         table.commit(slip.player_id, name, dict(slip.bets))
         slip.clear()
+        _save_round(table)  # committed money is on the table - survive a restart from here
     # Confirm to the player. The slip is a Components-V2 message, so the confirmation must
     # be a V2 view (TextDisplay) - `content` is rejected on V2 messages.
     done = discord.ui.LayoutView(timeout=1)
@@ -732,6 +797,10 @@ async def _lock_and_spin(table):
     # cancelling it would raise CancelledError into our own awaits and abort the spin.
 
     table.result = random.randint(0, 36)  # the wheel always spins, even with no bets
+
+    # Unpersist before paying (bond-style): a crash from here loses at most the render,
+    # never double-pays - boot recovery re-spinning an already-paid round would.
+    _delete_round(table.message.id if table.message else None)
 
     # Phase 1: spin animation on the public message.
     try:
