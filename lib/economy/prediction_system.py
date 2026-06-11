@@ -58,6 +58,7 @@ class Prediction:
         self.bets = {i: {} for i in range(1, len(self.options) + 1)}  # side -> {uid: amount}
         self.locked = False
         self.drawn = False   # set when an admin calls Draw (bets refunded but kept on display)
+        self.winner = None   # winning side (1-based) once resolved; drives the "X won" display
         self.end_ts = end_ts
         self.last_bet_times = {} # uid -> timestamp
         self.initial_balances = {} # uid -> balance before first bet on this pred
@@ -96,6 +97,7 @@ class Prediction:
         # bank; any forfeited stakes or integer-rounding remainder simply stay in
         # the bank. We must NOT deposit the pool (or the dust) again here - doing so
         # would mint UKP and break the fixed 800k supply.
+        self.winner = win_side   # recorded so the re-rendered card can mark the winner
         totals = self.totals()
         win_total = totals[win_side - 1]
         pool_total = sum(totals)
@@ -134,6 +136,7 @@ class Prediction:
             "options": list(self.options),
             "bets": bets_dump,
             "locked": self.locked,
+            "winner": self.winner,
             "end": self.end_ts,
             "initial_balances": {str(uid): bal for uid, bal in self.initial_balances.items()},
             "last_bet_times": {str(uid): ts for uid, ts in self.last_bet_times.items()},
@@ -153,6 +156,7 @@ class Prediction:
         for s in range(1, len(p.options) + 1):
             p.bets.setdefault(s, {})
         p.locked = d["locked"]
+        p.winner = d.get("winner")
         p.initial_balances = {int(uid): bal for uid, bal in d.get("initial_balances", {}).items()}
         # Persisted so the "indecisive" badge can still be awarded for bets placed
         # shortly before a restart, and by the auto-lock sweep.
@@ -527,8 +531,11 @@ def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
     grand = pool or 1
     bettors = len({uid for p in pred.bets.values() for uid in p})
 
+    won = getattr(pred, "winner", None)
     if getattr(pred, "drawn", False):
         status = "🟡 Draw - all bets refunded"
+    elif won:
+        status = f"🏆 Resolved · **{em(pred.options[won - 1])}** won"
     elif pred.locked:
         status = "🔒 Locked"
     else:
@@ -561,12 +568,15 @@ def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
         sub = f"{_emoji_bar(pct, i)}  ·  {odds_str}  ·  {nb} bettor" + ("" if nb == 1 else "s")
         if pool_i:
             sub += f"  ·  👑 {_top_bettor(pool_i, client)}"
-        stats = (
-            f"{emoji}  **{em(opt)}**   {t:,} UKP · {pct}%\n"
-            f"-# {sub}"
-        )
+        is_winner = (won == side)
+        headline = f"{emoji}  **{em(opt)}**   {t:,} UKP · {pct}%"
+        if is_winner:
+            headline = f"🏆  **{em(opt)}** — WINNER   {t:,} UKP · {pct}%"
+        stats = f"{headline}\n-# {sub}"
 
-        container = discord.ui.Container(accent_colour=discord.Colour.from_rgb(*rgb))
+        # Winning outcome gets a green accent so it stands out from the muted losers.
+        accent = discord.Colour(0x2ECC71) if is_winner else discord.Colour.from_rgb(*rgb)
+        container = discord.ui.Container(accent_colour=accent)
         if interactive and not pred.locked:
             bet_btn = discord.ui.Button(
                 label="Bet",
