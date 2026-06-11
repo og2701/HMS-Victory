@@ -23,6 +23,7 @@ import discord
 from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, add_bb, remove_bb, UKPenceManager
+from lib.economy.casino_drain import deal_in_flight
 from lib.economy.casino_stats import record_result, session_footer_html
 from lib.core.file_operations import read_html_template
 
@@ -452,6 +453,7 @@ async def _refresh(interaction: Interaction, machine: SlotMachine, client):
         logger.debug("add_view after slots refresh failed (non-fatal)", exc_info=True)
 
 
+@deal_in_flight
 async def _handle_action(interaction: Interaction, machine: SlotMachine, action: str):
     if action == "rules":
         await _show_rules(interaction)
@@ -577,6 +579,7 @@ class ChangeBetModal(discord.ui.Modal, title="Fruit Machine - change your bet"):
 # ---------------------------------------------------------------------------
 # Slash command entry point
 # ---------------------------------------------------------------------------
+@deal_in_flight
 async def handle_slots_command(interaction: Interaction, amount: int):
     import config
 

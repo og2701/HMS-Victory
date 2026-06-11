@@ -12,6 +12,7 @@ Single event loop, so a plain int is safe (no await between read and write).
 """
 
 import contextlib
+import functools
 
 _in_flight = 0
 
@@ -25,6 +26,24 @@ def action_in_flight():
         yield
     finally:
         _in_flight = max(0, _in_flight - 1)
+
+
+def deal_in_flight(fn):
+    """Decorator for async deal/replay entry points (slash commands, replays).
+
+    A fresh deal debits the stake, sends the table message, and only THEN writes the
+    game to persistent_views - so for a couple of seconds the hand is invisible to the
+    shutdown drain's active-game count. A SIGTERM in that window tears the session down
+    mid-send: the player sees a live table whose buttons are dead, and the error path
+    refunds a hand that actually reached Discord. Counting the whole handler closes
+    the window. Nesting inside action_in_flight() is harmless (the counter just goes
+    to 2 and back).
+    """
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        with action_in_flight():
+            return await fn(*args, **kwargs)
+    return wrapper
 
 
 def in_flight_actions() -> int:

@@ -29,7 +29,7 @@ from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, add_bb, remove_bb, UKPenceManager
 from lib.economy.casino_stats import record_result, session_footer_html
-from lib.economy.casino_drain import action_in_flight
+from lib.economy.casino_drain import action_in_flight, deal_in_flight
 from lib.core.file_operations import (
     read_html_template,
     load_persistent_views,
@@ -700,6 +700,7 @@ class ChangeBetModal(discord.ui.Modal, title="Blackjack - change your bet"):
         await _start_replay(interaction, self.game, interaction.client, amount, via_modal=True)
 
 
+@deal_in_flight
 async def _start_replay(interaction: Interaction, old_game: BlackjackGame, client,
                         bet: int, *, via_modal: bool):
     """Deal a fresh hand on the same message at `bet`. Drives both Play Again (button,
@@ -778,6 +779,7 @@ async def _start_replay(interaction: Interaction, old_game: BlackjackGame, clien
 # ---------------------------------------------------------------------------
 # Slash command entry point
 # ---------------------------------------------------------------------------
+@deal_in_flight
 async def handle_blackjack_command(interaction: Interaction, amount: int):
     import config
 

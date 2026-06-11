@@ -22,7 +22,7 @@ from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, remove_bb
 from lib.economy.casino_stats import record_result, session_footer_html
-from lib.economy.casino_drain import action_in_flight
+from lib.economy.casino_drain import action_in_flight, deal_in_flight
 import commands.economy.casino_base as cb
 
 logger = logging.getLogger(__name__)
@@ -410,6 +410,7 @@ class ChangeBetModal(discord.ui.Modal, title="Three Card Poker - change your bet
         await _start_replay(interaction, self.game, interaction.client, amount, via_modal=True)
 
 
+@deal_in_flight
 async def _start_replay(interaction: Interaction, old_game: TcpGame, client, bet: int, *, via_modal: bool):
     import config
     if old_game.replayed:
@@ -459,6 +460,7 @@ async def _start_replay(interaction: Interaction, old_game: TcpGame, client, bet
 # ---------------------------------------------------------------------------
 # Slash command entry point
 # ---------------------------------------------------------------------------
+@deal_in_flight
 async def handle_tcp_command(interaction: Interaction, amount: int):
     import config
     if await cb.reject_if_maintenance(interaction):
