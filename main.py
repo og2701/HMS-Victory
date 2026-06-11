@@ -527,19 +527,18 @@ async def graceful_shutdown(client, sig_name):
     except Exception as e:
         logger.error(f"Roulette shutdown drain failed: {e}", exc_info=True)
 
-    # Wait (up to 2 min) for active games to wind down before we tear down. Under maintenance
-    # poker deals no new hands and auto-closes finished sessions; persistent-view games
-    # (blackjack/HL/video poker/red dog/TCP) reattach on boot regardless.
+    # Wait (up to 2 min) for active games to wind down before we tear down. We only count
+    # things a restart would actually harm:
+    #   - in-memory poker/roulette tables (lost entirely on restart unless drained)
+    #   - single-player casino clicks/deals mid-render (the action/deal in-flight counter)
+    # We deliberately do NOT count at-rest persistent-view hands (blackjack/HL/video poker/
+    # red dog/TCP sitting in persistent_views.json): they reattach cleanly on boot, so
+    # waiting for them is pointless - and an abandoned hand (dealt, walked away) would
+    # otherwise pin the drain at the full 2-minute cap on every single restart. The brief
+    # dangerous windows for those games (a click mid-redraw, a deal mid-send) are already
+    # covered by the in-flight counter below.
     def _count_active_games():
         n = 0
-        try:
-            from lib.core.file_operations import load_persistent_views
-            views = load_persistent_views()
-            n += sum(1 for v in views.values()
-                     if isinstance(v, dict) and v.get("type") in
-                     ("blackjack", "higherlower", "videopoker", "reddog", "tcp"))
-        except Exception:
-            pass
         try:  # poker tables mid-hand or between hands (a live session still winding down)
             from commands.economy.poker import _TABLES as _pt
             n += sum(1 for t in _pt.values()
