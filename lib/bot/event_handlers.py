@@ -241,6 +241,8 @@ def _classify_mute(entry, client) -> tuple[str, str]:
     if actor and client.user and actor.id == client.user.id:
         if reason.startswith("Timed out due to ':Shut:'"):
             return ("Shut reaction", reason.split(" by ", 1)[-1].rstrip(".") if " by " in reason else "(via shut reaction)")
+        if reason.startswith("Timed out due to ':oggersglare:'"):
+            return ("Oggersglare shut", reason.split(" by ", 1)[-1].rstrip(".") if " by " in reason else "(via oggersglare reaction)")
         if reason.startswith("Bedtime!"):
             return ("Bedtime shut", reason.split(" by ", 1)[-1].rstrip(".") if " by " in reason else "(via bedtime reaction)")
         if "VIP Case" in reason:
@@ -312,7 +314,7 @@ async def notify_mute(client, member):
         ]
         if msg_info:
             url, preview = msg_info
-            tag = "trigger" if (is_trigger and mute_type in ("Shut reaction", "Bedtime shut")) else "recent"
+            tag = "trigger" if (is_trigger and mute_type in ("Shut reaction", "Bedtime shut", "Oggersglare shut")) else "recent"
             preview_line = preview.replace("\n", " ")
             if len(preview_line) > 200:
                 preview_line = preview_line[:200].rstrip() + "…"
@@ -1451,6 +1453,39 @@ async def handle_bedtime_reaction(reaction, user):
         logger.error(f"Failed to bedtime user {message_author}: {e}")
 
 
+# :oggersglare: reaction - a 30-second 'shut' with its own sticker. Cabinet/Border Force only.
+OGGERSGLARE_EMOJI_ID = 1514618204784431194
+OGGERSGLARE_STICKER_ID = 1514616284707426384
+
+
+async def handle_oggersglare_reaction(reaction, user):
+    """30-second shut triggered by the :oggersglare: reaction, replying with the matching
+    sticker. Mirrors the :Shut:/:bedtime: flows (staff-only, undoable by un-reacting)."""
+    has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
+    if not has_role:
+        return
+    client = reaction.message._state._get_client()
+    message_author = reaction.message.author
+    if message_author.is_timed_out():
+        logger.info(f"User {message_author} is already timed out. Skipping oggersglare.")
+        return
+    try:
+        duration = timedelta(seconds=30)
+        reason = f"Timed out due to ':oggersglare:' reaction by {user.name}#{user.discriminator}."
+        _record_mute_trigger(client, message_author.id, reaction.message)
+        await message_author.timeout(discord.utils.utcnow() + duration, reason=reason)
+        sticker_message = await reaction.message.reply(stickers=[discord.Object(id=OGGERSGLARE_STICKER_ID)])
+        sticker_messages[reaction.message.id] = (sticker_message.id, user.id)
+        logger.info(f"User {message_author} shut for 30s due to ':oggersglare:' reaction by {user}.")
+        save_shut_count(message_author.id)
+        await award_badge_with_notify(client, message_author.id, 'shut_victim')
+        warden_count = track_warden(user.id, message_author.id)
+        if warden_count >= 10:
+            await award_badge_with_notify(client, user.id, 'warden')
+    except Exception as e:
+        logger.error(f"Failed to oggersglare-shut user {message_author}: {e}")
+
+
 hof_lock = asyncio.Lock()
 
 
@@ -1625,6 +1660,8 @@ async def on_reaction_add(reaction, user):
             await handle_flag_reaction(reaction, reaction.message, user)
         if ":bedtime:" in str(reaction.emoji):
             await handle_bedtime_reaction(reaction, user)
+        elif getattr(reaction.emoji, "id", None) == OGGERSGLARE_EMOJI_ID:
+            await handle_oggersglare_reaction(reaction, user)
         elif ":Shut:" in str(reaction.emoji):
             await handle_shut_reaction(reaction, user)
             
@@ -1656,6 +1693,26 @@ async def on_reaction_remove(reaction, user):
                 del sticker_messages[reaction.message.id]
             except Exception as e:
                 logger.error(f"Failed to remove bedtime timeout for user {message_author}: {e}")
+        return
+
+    if getattr(reaction.emoji, "id", None) == OGGERSGLARE_EMOJI_ID:
+        has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
+        if has_role:
+            message_author = reaction.message.author
+            try:
+                sticker_message_info = sticker_messages.get(reaction.message.id)
+                if not sticker_message_info:
+                    return
+                sticker_message_id, initiating_mod_id = sticker_message_info
+                if initiating_mod_id != user.id:
+                    return
+                reason = f"Oggersglare timeout removed by {user.name}#{user.discriminator}."
+                await message_author.timeout(None, reason=reason)
+                sticker_message = await reaction.message.channel.fetch_message(sticker_message_id)
+                await sticker_message.delete()
+                del sticker_messages[reaction.message.id]
+            except Exception as e:
+                logger.error(f"Failed to remove oggersglare timeout/sticker for {message_author}: {e}")
         return
 
     if ":Shut:" in emoji_str:
