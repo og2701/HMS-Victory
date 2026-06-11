@@ -209,6 +209,10 @@ class AClient(discord.Client):
         if message.author.bot:
             return
 
+        # Rolling archive so bulk deletes (ban purges / mod sweeps) can be logged later.
+        from lib.features.message_archive import archive_message
+        archive_message(message)
+
         if message.type == discord.MessageType.auto_moderation_action:
             target_user_id_str = None
             if message.embeds:
@@ -412,6 +416,29 @@ class AClient(discord.Client):
         initialize_summary_data()
         update_summary_data("deleted_messages")
         await on_message_delete(self, message)
+
+    async def on_raw_bulk_message_delete(self, payload):
+        # Bulk deletes (ban purges, mod/bot sweeps) never reach on_message_delete and the
+        # cache rarely still holds them - recover content from the message archive instead.
+        try:
+            initialize_summary_data()
+            for _ in payload.message_ids:
+                update_summary_data("deleted_messages")
+        except Exception:
+            pass
+        try:
+            from lib.features.message_archive import handle_raw_bulk_delete
+            await handle_raw_bulk_delete(self, payload)
+        except Exception:
+            logger.error("bulk delete logging failed", exc_info=True)
+
+    async def on_raw_message_delete(self, payload):
+        # Uncached single deletes (the cached path is handled by on_message_delete).
+        try:
+            from lib.features.message_archive import handle_raw_single_delete
+            await handle_raw_single_delete(self, payload)
+        except Exception:
+            logger.debug("raw single delete logging failed", exc_info=True)
 
     async def on_message_edit(self, before, after):
         await on_message_edit(self, before, after)

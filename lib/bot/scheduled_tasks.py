@@ -484,8 +484,20 @@ async def _bond_maturity_tick(client):
         logger.error("Bond maturity tick failed", exc_info=True)
 
 
+async def _purge_message_archive(client):
+    """Trim the rolling message archive (bulk-delete logging) past its retention window."""
+    try:
+        from lib.features.message_archive import purge_old
+        removed = purge_old()
+        if removed:
+            logger.info(f"Message archive purge removed {removed} rows.")
+    except Exception:
+        logger.error("Message archive purge failed", exc_info=True)
+
+
 def schedule_client_jobs(client, scheduler):
     scheduler.add_job(_bond_maturity_tick, IntervalTrigger(minutes=2), args=[client], id="bond_maturity_job", name="Pay matured bonds")
+    scheduler.add_job(_purge_message_archive, CronTrigger(hour=4, minute=30, timezone="Europe/London"), args=[client], id="purge_message_archive_job", name="Purge old message archive rows")
     scheduler.add_job(award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client], id="award_booster_bonus_job", name="Award Daily Booster UKPence & Log SOD Circulation")
     scheduler.add_job(daily_summary, CronTrigger(hour=0, minute=1, timezone="Europe/London"), args=[client], id="daily_summary_job", name="Daily Summary, Chat Rewards & Economy Metrics")
     scheduler.add_job(post_daily_economy_stats, CronTrigger(hour=0, minute=5, timezone="Europe/London"), args=[client], id="post_daily_economy_stats_job", name="Post Daily UKPence Economy Stats")

@@ -583,6 +583,21 @@ def init_db():
             )
         ''')
 
+        # Rolling short-retention copy of every user message, so bulk deletes (ban purges,
+        # mod sweeps) can be logged even though Discord only sends the message IDs and the
+        # in-memory cache rarely still holds them. Purged daily past the retention window.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS message_archive (
+                message_id TEXT PRIMARY KEY,
+                channel_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                attachments TEXT,
+                ts INTEGER NOT NULL
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_message_archive_ts ON message_archive (ts)')
+
         c.execute('''
             CREATE TABLE IF NOT EXISTS archived_channels (
                 channel_id TEXT PRIMARY KEY,
