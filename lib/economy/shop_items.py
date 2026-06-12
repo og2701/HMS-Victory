@@ -411,9 +411,9 @@ class VIPCaseItem(ShopItem):
         self.vip_role_id = vip_role_id
 
         # Define possible outcomes with weights (higher weight = more likely)
-        # Total weight = 100, so VIP at weight 10 = 10% chance
+        # Total weight = 95, so VIP at weight 5 = ~5.26% chance
         self.outcomes = [
-            {"type": "vip", "weight": 10, "emoji": "💎", "color": 0x00ff00, "label": "VIP ROLE"},
+            {"type": "vip", "weight": 5, "emoji": "💎", "color": 0x00ff00, "label": "VIP ROLE"},
             {"type": "timeout", "weight": 15, "duration": 1, "emoji": "⏱️", "color": 0xff9900, "label": "1min timeout"},
             {"type": "timeout", "weight": 10, "duration": 5, "emoji": "⏰", "color": 0xff6600, "label": "5min timeout"},
             {"type": "timeout", "weight": 8, "duration": 10, "emoji": "🕐", "color": 0xff3300, "label": "10min timeout"},
