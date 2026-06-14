@@ -836,7 +836,8 @@ class PredAdminView(discord.ui.View):
         msg = None
         try:
             # Fetch from the channel the prediction LIVES in, not wherever /pred-admin
-            # was run, so we can mark the winner and reply under it even cross-channel.
+            # was run, so we can mark the winner on the card and cross-link it to the
+            # result regardless of which channel the admin resolved from.
             msg = await _fetch_pred_message(interaction, self.pred, self.client)
         except discord.NotFound:
             pass  # Original post was deleted; still pay out and announce below.
@@ -852,24 +853,21 @@ class PredAdminView(discord.ui.View):
 
         mentions = " ".join([f"<@{uid}>" for uid in payouts.keys()])
 
-        # Announce in the prediction's own channel. msg.reply() posts in msg.channel
-        # (the prediction's channel) no matter where the admin resolved from, so the
-        # cross-channel "reply doesn't work" case is gone. We also drop a jump link to
-        # the prediction into the summary so it's reachable even if the reply context
-        # is collapsed (mobile) or the original later vanishes.
         summary_msg = None
-        if msg:
+        same_channel = bool(msg) and msg.channel.id == interaction.channel.id
+
+        # Announce the result in the channel where /pred-admin was run. Same channel
+        # as the prediction -> reply so it threads under the card. Different channel
+        # -> a reply can't cross channels, so post a standalone message with a jump
+        # link back to the prediction instead.
+        if msg and not same_channel:
             summary.add_field(
                 name="\u200b", value=f"🔗 [Jump to the prediction]({msg.jump_url})", inline=False
             )
+        if same_channel:
             summary_msg = await msg.reply(content=mentions, embed=summary, mention_author=False)
         else:
-            target = (self.client.get_channel(self.pred.channel_id) if self.pred.channel_id else None) \
-                or interaction.channel
-            summary_msg = await target.send(
-                content=f"{mentions}\nPrediction resolved (original post no longer available).",
-                embed=summary,
-            )
+            summary_msg = await interaction.channel.send(content=mentions, embed=summary)
 
         # Re-render the original card now that the summary exists: this marks the
         # winning outcome AND links the card to the result message (two-way link).
@@ -915,18 +913,9 @@ class PredAdminView(discord.ui.View):
 
         asyncio.create_task(award_streaks())
 
-        # We deferred at the top, so the admin panel response is a followup. When the
-        # result was announced in a different channel than the one the admin resolved
-        # from, hand them a jump link so they can confirm it landed correctly.
+        # We deferred at the top, so the admin panel response is a followup.
         try:
-            if summary_msg is not None and summary_msg.channel.id != interaction.channel.id:
-                await interaction.followup.send(
-                    f"✅ Resolved & paid out. Result posted in {summary_msg.channel.mention} → "
-                    f"[jump]({summary_msg.jump_url})",
-                    ephemeral=True,
-                )
-            else:
-                await interaction.followup.send("✅ Resolved & paid out.", ephemeral=True)
+            await interaction.followup.send("✅ Resolved & paid out.", ephemeral=True)
         except discord.NotFound:
             pass  # Admin interaction might be old/invalid too
         self.stop()
