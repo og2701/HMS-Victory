@@ -648,6 +648,27 @@ async def _edit_prediction_message(msg, pred: Prediction, client: discord.Client
         await msg.edit(embed=embed, attachments=files, view=(BetButtons(pred) if interactive else None))
 
 
+async def _fetch_pred_message(interaction: discord.Interaction, pred: Prediction,
+                              client: discord.Client):
+    """Fetch the original prediction message from the channel it was POSTED in,
+    regardless of where /pred-admin was invoked. The admin panel is ephemeral and
+    can be opened from any channel, so locking/resolving from a different channel
+    must still update the original card (and let the settlement reply land under it).
+    Falls back to the interaction's channel for legacy predictions created before
+    channel_id was recorded."""
+    channel = None
+    if pred.channel_id:
+        channel = client.get_channel(pred.channel_id)
+        if channel is None:
+            try:
+                channel = await client.fetch_channel(pred.channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                channel = None
+    if channel is None:
+        channel = interaction.channel
+    return await channel.fetch_message(pred.msg_id)
+
+
 
 
 class PredSelectView(discord.ui.View):
@@ -715,7 +736,7 @@ class PredAdminView(discord.ui.View):
         self.pred.locked = True
         await interaction.response.defer(ephemeral=True)
         try:
-            msg = await interaction.channel.fetch_message(self.pred.msg_id)
+            msg = await _fetch_pred_message(interaction, self.pred, self.client)
             await _edit_prediction_message(msg, self.pred, self.client, interactive=False)
         except discord.NotFound:
             pass
@@ -734,7 +755,7 @@ class PredAdminView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
 
         try:
-            msg = await interaction.channel.fetch_message(self.pred.msg_id)
+            msg = await _fetch_pred_message(interaction, self.pred, self.client)
             await _edit_prediction_message(msg, self.pred, self.client, interactive=True)
         except discord.NotFound:
             pass
@@ -761,7 +782,7 @@ class PredAdminView(discord.ui.View):
         # re-rendered message shows what everyone had staked + that it was refunded.
         self.pred.drawn = True
         try:
-            msg = await interaction.channel.fetch_message(self.pred.msg_id)
+            msg = await _fetch_pred_message(interaction, self.pred, self.client)
             await _edit_prediction_message(msg, self.pred, self.client, interactive=False)
         except discord.NotFound:
             pass
@@ -790,10 +811,12 @@ class PredAdminView(discord.ui.View):
         win_side = self.pred.options[winner - 1]
         msg = None
         try:
-            msg = await interaction.channel.fetch_message(self.pred.msg_id)
+            # Resolve against the channel the prediction LIVES in, not wherever
+            # /pred-admin was run, so the winning card is marked even cross-channel.
+            msg = await _fetch_pred_message(interaction, self.pred, self.client)
             await _edit_prediction_message(msg, self.pred, self.client, interactive=False)
         except discord.NotFound:
-            pass  # Message was deleted, proceed with payout and summary
+            pass  # Original post was deleted; still pay out and announce below.
 
         lines = []
         for uid, amt in sorted(payouts.items(), key=lambda x: x[1], reverse=True):
@@ -805,10 +828,25 @@ class PredAdminView(discord.ui.View):
         summary = discord.Embed(title=f"🏁 Prediction settled: **{win_side}** wins!", description=descr, color=0x2ECC71)
 
         mentions = " ".join([f"<@{uid}>" for uid in payouts.keys()])
+
+        # Announce in the prediction's own channel. msg.reply() posts in msg.channel
+        # (the prediction's channel) no matter where the admin resolved from, so the
+        # cross-channel "reply doesn't work" case is gone. We also drop a jump link to
+        # the prediction into the summary so it's reachable even if the reply context
+        # is collapsed (mobile) or the original later vanishes.
+        summary_msg = None
         if msg:
-            await msg.reply(content=mentions, embed=summary, mention_author=False)
+            summary.add_field(
+                name="\u200b", value=f"🔗 [Jump to the prediction]({msg.jump_url})", inline=False
+            )
+            summary_msg = await msg.reply(content=mentions, embed=summary, mention_author=False)
         else:
-            await interaction.channel.send(content=f"{mentions}\nPrediction resolved (original message deleted).", embed=summary)
+            target = (self.client.get_channel(self.pred.channel_id) if self.pred.channel_id else None) \
+                or interaction.channel
+            summary_msg = await target.send(
+                content=f"{mentions}\nPrediction resolved (original post no longer available).",
+                embed=summary,
+            )
 
         # (Already popped from client.predictions and persisted at the top of this
         # method as the idempotency claim.)
@@ -842,9 +880,18 @@ class PredAdminView(discord.ui.View):
 
         asyncio.create_task(award_streaks())
 
-        # We deferred at the top, so the admin panel response is a followup.
+        # We deferred at the top, so the admin panel response is a followup. When the
+        # result was announced in a different channel than the one the admin resolved
+        # from, hand them a jump link so they can confirm it landed correctly.
         try:
-            await interaction.followup.send("✅ Resolved & paid out.", ephemeral=True)
+            if summary_msg is not None and summary_msg.channel.id != interaction.channel.id:
+                await interaction.followup.send(
+                    f"✅ Resolved & paid out. Result posted in {summary_msg.channel.mention} → "
+                    f"[jump]({summary_msg.jump_url})",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send("✅ Resolved & paid out.", ephemeral=True)
         except discord.NotFound:
             pass  # Admin interaction might be old/invalid too
         self.stop()
