@@ -517,10 +517,11 @@ class BetButtons(discord.ui.View):
 # ----------------------------------------------------------------------------
 
 def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
-                            *, interactive: bool = True):
+                            *, interactive: bool = True, result_url: Optional[str] = None):
     """Build the Components V2 LayoutView for a prediction. Returns (view, files);
     the file list is empty (the bar is inline emoji, no attachments). interactive=False
-    omits the bet/notify buttons (locked/resolved).
+    omits the bet/notify buttons (locked/resolved). result_url, when given, adds a
+    link button to the settlement message (set once the prediction is resolved).
 
     Note: the @pred-notifications ping is NOT put in this view - a role mention inside a
     CV2 TextDisplay renders but doesn't reliably notify. _post_prediction_message sends
@@ -600,6 +601,12 @@ def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
         notif.callback = _toggle_pred_notifications
         view.add_item(discord.ui.ActionRow(notif))
 
+    if result_url:
+        view.add_item(discord.ui.ActionRow(discord.ui.Button(
+            style=discord.ButtonStyle.link, url=result_url,
+            label="See the result", emoji="🏁",
+        )))
+
     return view, []
 
 
@@ -636,16 +643,33 @@ async def _post_prediction_message(channel, pred: Prediction, client: discord.Cl
                               allowed_mentions=discord.AllowedMentions(roles=True))
 
 
-async def _edit_prediction_message(msg, pred: Prediction, client: discord.Client, *, interactive: bool):
+def _result_link_view(result_url: Optional[str]):
+    """A static one-button view linking to the settlement message, or None. Used by
+    the embed/image render paths; the CV2 layout adds the same link inline instead."""
+    if not result_url:
+        return None
+    view = discord.ui.View(timeout=None)
+    view.add_item(discord.ui.Button(
+        style=discord.ButtonStyle.link, url=result_url,
+        label="See the result", emoji="🏁",
+    ))
+    return view
+
+
+async def _edit_prediction_message(msg, pred: Prediction, client: discord.Client, *,
+                                   interactive: bool, result_url: Optional[str] = None):
     """Re-render an existing prediction message in the active style. interactive
-    controls whether bet/notify buttons are shown (False once locked/resolved)."""
+    controls whether bet/notify buttons are shown (False once locked/resolved).
+    result_url, when given, links the card to its settlement message."""
     import config
     if getattr(config, "PREDICTION_CV2_ENABLED", False):
-        view, files = build_prediction_layout(pred, client, interactive=interactive)
+        view, files = build_prediction_layout(pred, client, interactive=interactive,
+                                               result_url=result_url)
         await msg.edit(view=view, attachments=files)
     else:
         embed, files = await build_prediction_render(pred, client)
-        await msg.edit(embed=embed, attachments=files, view=(BetButtons(pred) if interactive else None))
+        view = BetButtons(pred) if interactive else _result_link_view(result_url)
+        await msg.edit(embed=embed, attachments=files, view=view)
 
 
 async def _fetch_pred_message(interaction: discord.Interaction, pred: Prediction,
@@ -811,10 +835,9 @@ class PredAdminView(discord.ui.View):
         win_side = self.pred.options[winner - 1]
         msg = None
         try:
-            # Resolve against the channel the prediction LIVES in, not wherever
-            # /pred-admin was run, so the winning card is marked even cross-channel.
+            # Fetch from the channel the prediction LIVES in, not wherever /pred-admin
+            # was run, so we can mark the winner and reply under it even cross-channel.
             msg = await _fetch_pred_message(interaction, self.pred, self.client)
-            await _edit_prediction_message(msg, self.pred, self.client, interactive=False)
         except discord.NotFound:
             pass  # Original post was deleted; still pay out and announce below.
 
@@ -847,6 +870,18 @@ class PredAdminView(discord.ui.View):
                 content=f"{mentions}\nPrediction resolved (original post no longer available).",
                 embed=summary,
             )
+
+        # Re-render the original card now that the summary exists: this marks the
+        # winning outcome AND links the card to the result message (two-way link).
+        # Done after posting the summary because we need its jump URL.
+        if msg:
+            try:
+                await _edit_prediction_message(
+                    msg, self.pred, self.client, interactive=False,
+                    result_url=(summary_msg.jump_url if summary_msg else None),
+                )
+            except discord.NotFound:
+                pass  # Original deleted between the reply and the edit.
 
         # (Already popped from client.predictions and persisted at the top of this
         # method as the idempotency claim.)
