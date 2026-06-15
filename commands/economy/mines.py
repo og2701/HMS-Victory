@@ -61,6 +61,7 @@ class MinesGame:
         self.message_id = message_id
         # transient (never serialised)
         self.busy = False               # True while a click is mid-render - drops double-clicks
+        self.replayed = False           # set once Play Again deals a fresh board on this message
 
     @classmethod
     def new(cls, player_id, player_name, channel_id, bet, mines):
@@ -228,6 +229,15 @@ def _rules_button(game: MinesGame) -> discord.ui.Button:
     return btn
 
 
+def _again_button(game: MinesGame) -> discord.ui.Button:
+    btn = discord.ui.Button(
+        style=discord.ButtonStyle.primary, label="Play Again", emoji="🔁",
+        custom_id=f"mines:{game.game_id}:again",
+    )
+    btn.callback = _make_again_cb(game)
+    return btn
+
+
 def build_mines_layout(game: MinesGame) -> discord.ui.LayoutView:
     view = discord.ui.LayoutView(timeout=None)
     box = discord.ui.Container(accent_colour=ACCENT)
@@ -238,11 +248,15 @@ def build_mines_layout(game: MinesGame) -> discord.ui.LayoutView:
         for c in range(GRID):
             row.add_item(_tile_button(game, r * GRID + c))
         view.add_item(row)
-    # Controls row: Cash Out (while playing) + Rules (always available to anyone).
+    # Controls row: Cash Out while playing, Play Again once the board is over, plus
+    # Rules (always available to anyone).
     controls = discord.ui.ActionRow()
-    cash = _cash_button(game)
-    if cash is not None:
-        controls.add_item(cash)
+    if game.state == "over":
+        controls.add_item(_again_button(game))
+    else:
+        cash = _cash_button(game)
+        if cash is not None:
+            controls.add_item(cash)
     controls.add_item(_rules_button(game))
     view.add_item(controls)
     return view
@@ -263,6 +277,14 @@ def _make_cash_cb(game: MinesGame):
     async def _cb(interaction: Interaction):
         with action_in_flight():
             await _handle_cashout(interaction, game)
+    return _cb
+
+
+def _make_again_cb(old_game: MinesGame):
+    async def _cb(interaction: Interaction):
+        # action_in_flight keeps the drain waiting through the re-stake + re-render.
+        with action_in_flight():
+            await _handle_again(interaction, old_game)
     return _cb
 
 
@@ -338,6 +360,61 @@ async def _handle_cashout(interaction: Interaction, game: MinesGame):
         await _rerender(interaction, game)
     finally:
         game.busy = False
+
+
+async def _handle_again(interaction: Interaction, old_game: MinesGame):
+    """Play Again: deal a fresh board on the same message at the previous stake. Only
+    the original player can replay (it re-stakes their UKPence)."""
+    import config
+    if interaction.user.id != old_game.player_id:
+        await interaction.response.send_message(
+            "This isn't your game - start your own with `/mines`.", ephemeral=True)
+        return
+    if old_game.replayed:               # this board already moved on to a new game
+        await interaction.response.defer()
+        return
+    if await reject_if_maintenance(interaction):
+        return
+    if not getattr(config, "MINES_ENABLED", True):
+        await interaction.response.send_message("The mines table is closed.", ephemeral=True)
+        return
+    bet = old_game.bet
+    min_bet = getattr(config, "MINES_MIN_BET", 5)
+    max_bet = getattr(config, "MINES_MAX_BET", 5_000)
+    if bet < min_bet or bet > max_bet:
+        await interaction.response.send_message(
+            f"Bets must be between {min_bet:,} and {max_bet:,} UKPence.", ephemeral=True)
+        return
+    if get_bb(old_game.player_id) < bet:
+        await interaction.response.send_message(
+            f"You need {bet:,} UKPence to play again.", ephemeral=True)
+        return
+    if not remove_bb(old_game.player_id, bet, reason="Mines bet"):
+        await interaction.response.send_message(
+            "You don't have enough UKPence.", ephemeral=True)
+        return
+    # Claim the replay before the first awaiting call so two fast clicks can't both
+    # deal (and double-debit). Everything above is sync or non-suspending on success.
+    old_game.replayed = True
+
+    mines = getattr(config, "MINES_DEFAULT_MINES", 3)
+    new_game = MinesGame.new(old_game.player_id, old_game.player_name, old_game.channel_id,
+                             bet, mines)
+    new_game.message_id = old_game.message_id
+    try:
+        view = build_mines_layout(new_game)
+        await interaction.response.edit_message(view=view)
+    except Exception:
+        # The new board never reached the screen - refund the just-taken stake.
+        logger.error("Mines replay failed before showing the new board; refunding stake.",
+                     exc_info=True)
+        credit_from_bank(old_game.player_id, bet, "Mines stake refund (replay failed)")
+        return
+    try:
+        save_game(new_game)
+        interaction.client.add_view(view, message_id=new_game.message_id)
+    except Exception:
+        logger.error("Mines replay post-update issue (board is live).", exc_info=True)
 
 
 async def _show_rules(interaction: Interaction):
