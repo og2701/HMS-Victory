@@ -26,6 +26,7 @@ GAME_LABELS = {
     "reddog": "Red Dog",
     "tcp": "3-Card Poker",
     "roulette": "Roulette",
+    "mines": "Mines",
 }
 
 
