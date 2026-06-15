@@ -88,6 +88,10 @@ MINES_MAX_WIN = 0             # payout ceiling; 0 = no cap (a lucky board pays t
                               # multiplier - if the bank can't cover it, credit_from_bank
                               # mints the win and logs CRITICAL; amend the supply after)
 
+# One-time UKPence reward paid (from the bank) when a badge is earned, by rarity. A tier
+# set to 0 pays nothing. Used by the live grant hook and scripts/backfill_badge_rewards.py.
+BADGE_REWARDS = {"Bronze": 25, "Silver": 100, "Gold": 500, "Secret": 1000}
+
 # --- UKP earning rewards (all paid from the house bank; supply stays at 800k) ---
 TREE_CHANNEL_ID = 1142970908059910204
 GROW_A_TREE_BOT_ID = 972637072991068220

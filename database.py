@@ -460,6 +460,17 @@ def init_db():
                 FOREIGN KEY (badge_id) REFERENCES badges (id)
             )
         ''')
+        # Idempotency ledger for one-time badge UKPence rewards: a (user, badge) is paid at
+        # most once, shared by the live grant hook and the backfill script.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS badge_rewards (
+                user_id TEXT NOT NULL,
+                badge_id TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                paid_at INTEGER NOT NULL,
+                PRIMARY KEY (user_id, badge_id)
+            )
+        ''')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_payer ON pay_transfers(payer_id)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_recipient ON pay_transfers(recipient_id)')
         # Fixed-term savings ("bonds"): principal held in the bank while locked; on maturity

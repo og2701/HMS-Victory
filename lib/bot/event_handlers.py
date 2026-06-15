@@ -375,19 +375,28 @@ async def award_badge_with_notify(client, user_id: int, badge_id: str):
     
     newly_awarded = award_badge(user_id, badge_id)
     if newly_awarded:
+        # One-time UKPence reward for the badge (idempotent, paid from the bank).
+        reward_paid = 0
+        try:
+            from lib.economy.badge_rewards import pay_badge_reward
+            reward_paid = pay_badge_reward(user_id, badge_id)
+        except Exception:
+            logger.error(f"Badge reward payment failed for {user_id}/{badge_id}", exc_info=True)
+
         # Get badge info
         badge_info = DatabaseManager.fetch_one("SELECT name, description, icon_path, rarity FROM badges WHERE id = ?", (badge_id,))
         if not badge_info:
             logger.warning(f"Badge ID '{badge_id}' not found in database.")
             return
-        
+
         badge_name, badge_desc, badge_icon, badge_rarity = badge_info
-        
+
         # Log to bot-usage-log
         log_channel = client.get_channel(CHANNELS.BOT_USAGE_LOG)
         user_mention = f"<@{user_id}>"
         if log_channel:
-            await log_channel.send(f"🎖️ **Badge Awarded**: {user_mention} just earned the **{badge_name}** {badge_icon} badge!")
+            reward_str = f" (+{reward_paid:,} UKPence)" if reward_paid else ""
+            await log_channel.send(f"🎖️ **Badge Awarded**: {user_mention} just earned the **{badge_name}** {badge_icon} badge!{reward_str}")
 
         # Notify User via DM
         try:
@@ -402,6 +411,8 @@ async def award_badge_with_notify(client, user_id: int, badge_id: str):
                 embed.add_field(name="Badge", value=f"{badge_icon} **{badge_name}**", inline=True)
                 embed.add_field(name="How to earn", value=badge_desc, inline=True)
                 embed.add_field(name="Rarity", value=badge_rarity, inline=True)
+                if reward_paid:
+                    embed.add_field(name="Reward", value=f"+{reward_paid:,} UKPence", inline=True)
                 embed.set_footer(text="Check your /rank to see all your badges!")
                 
                 await user.send(embed=embed)
