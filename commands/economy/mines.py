@@ -28,6 +28,7 @@ from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, remove_bb
 from lib.economy.casino_drain import action_in_flight, deal_in_flight
+from lib.economy.casino_stats import record_result
 from commands.economy.casino_base import (
     credit_from_bank, reject_if_maintenance, save_state, delete_state, ACCENT,
 )
@@ -290,8 +291,10 @@ async def _handle_reveal(interaction: Interaction, game: MinesGame, idx: int):
             # paid-AND-resumable one, which would mint UKP on the next boot.
             delete_state(game.message_id)
             credit_from_bank(game.player_id, game.payout, reason="Mines win (board cleared)")
+            record_result(game.player_id, "mines", game.bet, game.bet, game.payout, "win")
         elif result == "mine":
             delete_state(game.message_id)   # stake already in the bank; nothing to pay
+            record_result(game.player_id, "mines", game.bet, game.bet, 0, "lose")
         else:                               # "gem"
             save_game(game)
         await _rerender(interaction, game)
@@ -317,6 +320,7 @@ async def _handle_cashout(interaction: Interaction, game: MinesGame):
         # Delete-before-credit (see _handle_reveal): never leave a paid, resumable board.
         delete_state(game.message_id)
         credit_from_bank(game.player_id, payout, reason="Mines cashout")
+        record_result(game.player_id, "mines", game.bet, game.bet, payout, "win")
         await _rerender(interaction, game)
     finally:
         game.busy = False

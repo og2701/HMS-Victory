@@ -18,11 +18,18 @@ from commands.economy.video_poker import handle_videopoker_command
 from commands.economy.red_dog import handle_reddog_command
 from commands.economy.three_card_poker import handle_tcp_command
 from commands.economy.roulette import handle_roulette_command
+from commands.economy.mines import handle_mines_command
 from lib.economy.casino_stats import get_net_standings
 
 logger = logging.getLogger(__name__)
 ACCENT = discord.Colour(0xD4AF37)  # brass
 SCOPE_OVERALL = "overall"
+
+async def _open_mines_setup(interaction: Interaction):
+    """Mines takes a mine count as well as a bet, so it opens its own two-field setup
+    modal instead of the shared single-field BetModal."""
+    await interaction.response.send_modal(MinesSetupModal())
+
 
 GAMES = [
     {"key": "blackjack", "label": "Blackjack", "emoji": "🎴",
@@ -46,6 +53,9 @@ GAMES = [
     {"key": "roulette", "label": "Roulette", "emoji": "🎡",
      "handler": handle_roulette_command, "prompt_bet": False,
      "desc": "Place chips on the felt (red/black, dozens, numbers…) and spin the wheel."},
+    {"key": "mines", "label": "Mines", "emoji": "💣",
+     "handler": _open_mines_setup, "prompt_bet": False,
+     "desc": "Reveal gems and cash out before you hit a mine."},
 ]
 
 
@@ -154,6 +164,52 @@ class BetModal(discord.ui.Modal):
             return
         # The game handler does the rest (min/max limits, balance, maintenance gate).
         await self.game["handler"](interaction, amount)
+
+
+class MinesSetupModal(discord.ui.Modal):
+    """Mines needs a bet AND a mine count, so it has its own two-field modal. The
+    mines field is optional - blank uses the default. handle_mines_command validates."""
+
+    def __init__(self):
+        import config
+        super().__init__(title="Mines - place your bet")
+        self._default_mines = getattr(config, "MINES_DEFAULT_MINES", 3)
+        self.amount = discord.ui.TextInput(
+            label="Bet (UKPence)", placeholder="e.g. 100", required=True, max_length=12,
+        )
+        self.mines = discord.ui.TextInput(
+            label="Mines (1-24)", placeholder=str(self._default_mines),
+            required=False, max_length=2,
+        )
+        self.add_item(self.amount)
+        self.add_item(self.mines)
+
+    async def on_submit(self, interaction: Interaction):
+        raw = str(self.amount.value).replace(",", "").strip()
+        try:
+            amount = int(raw)
+        except ValueError:
+            await interaction.response.send_message(
+                "Please enter a whole number of UKPence.", ephemeral=True)
+            return
+        if amount <= 0:
+            await interaction.response.send_message(
+                "Your bet must be greater than 0 UKPence.", ephemeral=True)
+            return
+        mraw = str(self.mines.value).strip()
+        mines = self._default_mines
+        if mraw:
+            try:
+                mines = int(mraw)
+            except ValueError:
+                await interaction.response.send_message(
+                    "Mines must be a whole number from 1 to 24.", ephemeral=True)
+                return
+        if not (1 <= mines <= 24):
+            await interaction.response.send_message(
+                "Mines must be between 1 and 24.", ephemeral=True)
+            return
+        await handle_mines_command(interaction, amount, mines)
 
 
 def _make_pick_cb(game: dict):
