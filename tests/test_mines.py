@@ -76,7 +76,7 @@ def _game(bet=100, mines=3, mine_positions=None):
     return MINES.MinesGame("gid", 1, "p", 1, bet, mines, mine_positions)
 
 
-def _survive_prob(k, m, T=25):
+def _survive_prob(k, m, T=MINES.TILES):
     p = 1.0
     for i in range(k):
         p *= (T - m - i) / (T - i)
@@ -92,7 +92,7 @@ def test_ev_is_constant_regardless_of_strategy():
     # For ANY mine count and ANY number of reveals k, the unconditional EV of
     # "reveal k tiles then cash out" must equal stake * (1 - edge): the house edge
     # does not depend on how greedy the player is.
-    for m in range(1, 25):
+    for m in range(1, MINES.TILES):
         g = _game(bet=1, mines=m)
         for k in range(0, g.safe_tiles + 1):
             ev_fraction = _survive_prob(k, m) * g.multiplier(k)
@@ -125,20 +125,22 @@ def test_reveal_already_revealed_is_ignored():
 
 
 def test_clearing_board_auto_cashes_out():
-    g = _game(bet=10, mines=24, mine_positions=list(range(24)))  # 1 safe tile (#24)
-    res = g.reveal(24)
+    T = MINES.TILES
+    mines = T - 1                                  # exactly one safe tile (the last index)
+    g = _game(bet=10, mines=mines, mine_positions=list(range(mines)))
+    res = g.reveal(T - 1)
     assert res == "win"
     assert g.state == "over" and g.outcome == "win"
-    # 1 gem, 24 mines: fair mult = 25/1, scaled by edge.
-    assert g.payout == min(int(10 * (1 - EDGE) * (25 / 1)), getattr(config, "MINES_MAX_WIN", 100_000))
+    # 1 gem with one safe tile: fair mult = T/1, scaled by edge.
+    assert g.payout == min(int(10 * (1 - EDGE) * (T / 1)), getattr(config, "MINES_MAX_WIN", 100_000))
 
 
 def test_payout_is_capped():
     cap = getattr(config, "MINES_MAX_WIN", 100_000)
-    # 3 mines, clear all 22 safe tiles at max bet -> raw multiplier ~2300x, far over cap.
+    # 3 mines, clear every safe tile at max bet -> astronomical raw multiplier, far over cap.
     g = _game(bet=10_000, mines=3, mine_positions=[0, 1, 2])
-    assert g.payout_for(22) == cap
-    assert g.multiplier(22) * 10_000 > cap   # sanity: it really would have exceeded the cap
+    assert g.payout_for(g.safe_tiles) == cap
+    assert g.multiplier(g.safe_tiles) * 10_000 > cap   # sanity: would really exceed the cap
 
 
 def test_cashout_uses_current_reveals():

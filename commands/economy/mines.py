@@ -1,6 +1,6 @@
 """Mines - a single-player "reveal gems, dodge mines, cash out" game for UKPence.
 
-A 5x5 grid (25 tiles) hides ``mines`` bombs. The player taps tiles to reveal gems;
+A 4x6 grid (24 tiles) hides ``mines`` bombs. The player taps tiles to reveal gems;
 each gem lifts the multiplier. Cash out any time to take ``stake x multiplier`` from
 the house bank - but tap a mine and the whole stake is lost. Clearing every safe tile
 auto-cashes-out at the top multiplier.
@@ -15,7 +15,7 @@ expected return is a constant (1 - edge) of the stake no matter when you cash ou
 the house edge is the same whatever you do. Payouts are capped (MINES_MAX_WIN) so a
 lucky low-tile-count board can never demand more than the bank can safely pay.
 
-The board is a Components V2 LayoutView: a status panel plus 25 tile buttons (5 rows)
+The board is a Components V2 LayoutView: a status panel plus 24 tile buttons (6 rows)
 and a Cash Out button. In-play games are persisted by message id and their click
 routing is re-registered on restart (reattach_mines_view); terminal boards are dropped.
 """
@@ -35,8 +35,11 @@ from commands.economy.casino_base import (
 
 logger = logging.getLogger(__name__)
 
-GRID = 5
-TILES = GRID * GRID            # 25
+# 4 columns wide so the grid renders one clean row per line on mobile (Discord wraps
+# at ~4 buttons per row on phones; a 5-wide grid breaks into an ugly 4+1).
+COLS = 4
+ROWS = 6
+TILES = COLS * ROWS           # 24
 
 
 class MinesGame:
@@ -159,7 +162,7 @@ def save_game(game: MinesGame):
 
 
 # ---------------------------------------------------------------------------
-# Rendering (Components V2: status panel + 5x5 tile grid + Cash Out)
+# Rendering (Components V2: status panel + 4x6 tile grid + Cash Out)
 # ---------------------------------------------------------------------------
 def _status_text(game: MinesGame) -> str:
     mult = game.multiplier()
@@ -243,10 +246,10 @@ def build_mines_layout(game: MinesGame) -> discord.ui.LayoutView:
     box = discord.ui.Container(accent_colour=ACCENT)
     box.add_item(discord.ui.TextDisplay(_status_text(game)))
     view.add_item(box)
-    for r in range(GRID):
+    for r in range(ROWS):
         row = discord.ui.ActionRow()
-        for c in range(GRID):
-            row.add_item(_tile_button(game, r * GRID + c))
+        for c in range(COLS):
+            row.add_item(_tile_button(game, r * COLS + c))
         view.add_item(row)
     # Controls row: Cash Out while playing, Play Again once the board is over, plus
     # Rules (always available to anyone).
@@ -426,7 +429,7 @@ async def _show_rules(interaction: Interaction):
     max_win = getattr(config, "MINES_MAX_WIN", 100_000)
     rules = (
         "## 💎 Mines - House Rules\n"
-        f"A 5×5 grid hides **{mines} mines**. Reveal gems to build your multiplier, then "
+        f"A {TILES}-tile grid hides **{mines} mines**. Reveal gems to build your multiplier, then "
         "cash out before you hit one.\n\n"
         "- Each 💎 you uncover raises your cash-out multiplier - the more you reveal, the "
         "higher it climbs, but any tile could be a 💣.\n"
