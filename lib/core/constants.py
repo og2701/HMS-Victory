@@ -48,6 +48,7 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🏴‍☠️": "Pirate Speak", "🤓": "Nerd Speak", "🥷": "Over the top 'roadman' speak",
     "🎩": "British 'rp'/posh talk - 'the queens english'",
     "🏰": "Medieval/Olde English",
+    "🦴": "Caveman talk - completely rewrite the message as primitive caveman speech: drop small grammar words (a, the, is, are, of), turn 'I/me/my' into 'me', use short broken present-tense fragments and the simplest possible words, and add the odd grunt. Keep all the meaning but make it sound like a club-wielding caveman",
 }
 
 # --- Translation Global Blacklist ---
