@@ -60,9 +60,20 @@ def _is_staff(member) -> bool:
 async def award_hof_reward(client, user_id: int):
     if not user_id:
         return
+    # Once per UK day per user: a user can land several messages on 6+ reactions, so the HoF
+    # cash is farmable. Cap the UKP to one HoF reward a day - the HoF entry and the badge
+    # still happen in the caller; this only gates the money. (Check->pay->record runs with no
+    # await between, so two near-simultaneous HoF entries can't both pay.)
+    store = load_json_file(config.HOF_REWARD_CLAIMS_FILE) or {}
+    today = _today()
+    if store.get(str(user_id)) == today:
+        log.info("[HOF] %s already earned a HoF reward today; skipping the UKP.", user_id)
+        return
     amount = getattr(config, "HOF_REWARD", 100)
     if not _pay(user_id, amount, "Hall of Fame reward"):
         return
+    store[str(user_id)] = today
+    save_json_file(config.HOF_REWARD_CLAIMS_FILE, store)
     try:
         user = client.get_user(int(user_id)) or await client.fetch_user(int(user_id))
         await user.send(

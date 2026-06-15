@@ -161,6 +161,7 @@ XP_FILE = os.path.join(JSON_DATA_DIR, "chat_leaderboard.json")
 ECONOMY_METRICS_FILE = os.path.join(JSON_DATA_DIR, "economy_metrics.json")
 TREE_WATER_FILE = os.path.join(JSON_DATA_DIR, "tree_water_rewards.json")
 BENEFITS_FILE = os.path.join(JSON_DATA_DIR, "benefits_claims.json")
+HOF_REWARD_CLAIMS_FILE = os.path.join(JSON_DATA_DIR, "hof_reward_claims.json")  # last UK day each user earned HoF UKP
 EARNED_SOURCES_FILE = os.path.join(JSON_DATA_DIR, "earned_sources.json")
 WORDLE_STATE_FILE = os.path.join(JSON_DATA_DIR, "wordle_state.json")
 # Fletcher bot posts the same message-link summary HMS does; auto-delete its duplicate.
