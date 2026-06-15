@@ -477,11 +477,10 @@ def define_commands(tree, client):
         await handle_slots_command(interaction, amount)
 
     @command("mines", "Reveal gems and cash out before you hit a mine (UKPence)")
-    async def mines_command(interaction: Interaction, amount: app_commands.Range[int, 1],
-                            mines: app_commands.Range[int, 1, 24] = MINES_DEFAULT_MINES):
+    async def mines_command(interaction: Interaction, amount: app_commands.Range[int, 1]):
         if await _require_casino_channel(interaction):
             return
-        await handle_mines_command(interaction, amount, mines)
+        await handle_mines_command(interaction, amount)
 
     @command("casino", "Open the HMS Victory casino - pick a game to play")
     async def casino_command(interaction: Interaction):

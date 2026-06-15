@@ -219,6 +219,15 @@ def _cash_button(game: MinesGame):
     return btn
 
 
+def _rules_button(game: MinesGame) -> discord.ui.Button:
+    btn = discord.ui.Button(
+        style=discord.ButtonStyle.secondary, label="Rules", emoji="📖",
+        custom_id=f"mines:{game.game_id}:rules",
+    )
+    btn.callback = _show_rules
+    return btn
+
+
 def build_mines_layout(game: MinesGame) -> discord.ui.LayoutView:
     view = discord.ui.LayoutView(timeout=None)
     box = discord.ui.Container(accent_colour=ACCENT)
@@ -229,11 +238,13 @@ def build_mines_layout(game: MinesGame) -> discord.ui.LayoutView:
         for c in range(GRID):
             row.add_item(_tile_button(game, r * GRID + c))
         view.add_item(row)
+    # Controls row: Cash Out (while playing) + Rules (always available to anyone).
+    controls = discord.ui.ActionRow()
     cash = _cash_button(game)
     if cash is not None:
-        cash_row = discord.ui.ActionRow()
-        cash_row.add_item(cash)
-        view.add_item(cash_row)
+        controls.add_item(cash)
+    controls.add_item(_rules_button(game))
+    view.add_item(controls)
     return view
 
 
@@ -258,7 +269,10 @@ def _make_cash_cb(game: MinesGame):
 async def _rerender(interaction: Interaction, game: MinesGame):
     view = build_mines_layout(game)
     await interaction.response.edit_message(view=view)
-    if game.state == "playing" and game.message_id is not None:
+    # Re-register routing for the freshly-built view in both states, so the Rules
+    # button still works once the board is terminal. (The view always reflects the
+    # current state, so this is never a stale registration.)
+    if game.message_id is not None:
         try:
             interaction.client.add_view(view, message_id=game.message_id)
         except Exception:
@@ -326,11 +340,34 @@ async def _handle_cashout(interaction: Interaction, game: MinesGame):
         game.busy = False
 
 
+async def _show_rules(interaction: Interaction):
+    """Ephemeral house rules. Open to anyone (no owner check) and changes no state."""
+    import config
+    mines = getattr(config, "MINES_DEFAULT_MINES", 3)
+    min_bet = getattr(config, "MINES_MIN_BET", 5)
+    max_bet = getattr(config, "MINES_MAX_BET", 5_000)
+    max_win = getattr(config, "MINES_MAX_WIN", 100_000)
+    rules = (
+        "## 💎 Mines - House Rules\n"
+        f"A 5×5 grid hides **{mines} mines**. Reveal gems to build your multiplier, then "
+        "cash out before you hit one.\n\n"
+        "- Each 💎 you uncover raises your cash-out multiplier - the more you reveal, the "
+        "higher it climbs, but any tile could be a 💣.\n"
+        "- **Cash Out** any time after your first gem to take **stake × multiplier**; hit "
+        "a mine and you lose the stake.\n"
+        "- Clear every safe tile and you auto-cash-out at the top multiplier.\n"
+        f"- **Bets:** {min_bet:,} - {max_bet:,} UKPence; wins are capped at {max_win:,}. "
+        "Stakes go to the house bank and wins are paid from it.\n\n"
+        "-# The house keeps a ~2% edge whatever you do. Good luck. 🇬🇧"
+    )
+    await interaction.response.send_message(rules, ephemeral=True)
+
+
 # ---------------------------------------------------------------------------
 # Command entry
 # ---------------------------------------------------------------------------
 @deal_in_flight
-async def handle_mines_command(interaction: Interaction, amount: int, mines: int):
+async def handle_mines_command(interaction: Interaction, amount: int):
     import config
     if await reject_if_maintenance(interaction):
         return
@@ -338,8 +375,11 @@ async def handle_mines_command(interaction: Interaction, amount: int, mines: int
         await interaction.response.send_message("The mines table is closed.", ephemeral=True)
         return
 
+    # Mine count is fixed by config (not player-selectable): keeps the board's risk -
+    # and so the bank's variance - consistent for everyone.
+    mines = getattr(config, "MINES_DEFAULT_MINES", 3)
     min_bet = getattr(config, "MINES_MIN_BET", 5)
-    max_bet = getattr(config, "MINES_MAX_BET", 10_000)
+    max_bet = getattr(config, "MINES_MAX_BET", 5_000)
     if amount < min_bet:
         await interaction.response.send_message(
             f"The minimum bet is {min_bet:,} UKPence.", ephemeral=True)
@@ -347,10 +387,6 @@ async def handle_mines_command(interaction: Interaction, amount: int, mines: int
     if amount > max_bet:
         await interaction.response.send_message(
             f"The maximum bet is {max_bet:,} UKPence.", ephemeral=True)
-        return
-    if not (1 <= mines <= TILES - 1):
-        await interaction.response.send_message(
-            f"Mines must be between 1 and {TILES - 1}.", ephemeral=True)
         return
 
     balance = get_bb(interaction.user.id)
