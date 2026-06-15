@@ -67,7 +67,7 @@ def main():
         if status == "matured":
             interest[uid] = interest.get(uid, 0) + (int(principal) * int(rate) // 100)
     for uid, total in interest.items():
-        if total >= 1000:
+        if total >= 10000:
             give(uid, "bond_villain")
 
     # Roulette history -> Red Letter Day / Zero Hero

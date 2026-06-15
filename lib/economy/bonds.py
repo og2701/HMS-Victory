@@ -139,12 +139,12 @@ async def mature_due(client):
             )
         except Exception:
             log.debug("bond maturity DM failed", exc_info=True)
-        # Badges: total bond interest earned (incl. this one) >= 1000 -> Bond Villain.
+        # Badges: total bond interest earned (incl. this one) >= 10000 -> Bond Villain.
         from lib.features.income_badges import award_badge_safe, record_income_source
         matured = DatabaseManager.fetch_all(
             "SELECT principal, rate_pct FROM bonds WHERE user_id = ? AND status = 'matured'",
             (str(g["user_id"]),)) or []
-        if sum(interest_for(p, rt) for p, rt in matured) >= 1000:
+        if sum(interest_for(p, rt) for p, rt in matured) >= 10000:
             await award_badge_safe(client, g["user_id"], "bond_villain")
         await record_income_source(client, g["user_id"], "bond")
 

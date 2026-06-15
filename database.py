@@ -682,7 +682,7 @@ def init_db():
             ('sir_branchalot', 'Sir Branchalot', 'Water the server tree 100 times', '🌳', 'Silver'),
             ('drip', 'Drip Feed', 'Water the tree enough in one day to decay your reward down to 1 UKPence', '💧', 'Bronze'),
             ('saver', 'Prudent Saver', 'Open your first bond', '🏦', 'Bronze'),
-            ('bond_villain', 'Bond Villain', 'Earn 1,000 UKPence in total bond interest', '🕴️', 'Gold'),
+            ('bond_villain', 'Bond Villain', 'Earn 10,000 UKPence in total bond interest', '🕴️', 'Gold'),
             ('long_game', 'The Long Game', 'Open a 30-day bond', '⏳', 'Silver'),
             ('paper_hands', 'Paper Hands', 'Break a bond early and forfeit the interest', '🧻', 'Bronze'),
             ('on_the_dole', 'On the Dole', 'Claim benefits for the first time', '🧾', 'Bronze'),
