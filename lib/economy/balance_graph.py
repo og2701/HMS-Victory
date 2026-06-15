@@ -26,6 +26,7 @@ log = logging.getLogger(__name__)
 _UK = pytz.timezone("Europe/London")
 _PREFIX = "ukpence_balances_"
 _MAX_POINTS = 300  # cap rendered points (downsampled) so the SVG stays light
+_DEFAULT_DAYS = 30  # the graph opens on the last 30 days; range buttons adjust it
 
 
 def _midnight_epoch(date_str):
@@ -68,9 +69,11 @@ def _history_points(uid):
         return []
 
 
-def _load_points(user_id):
+def _load_points(user_id, days=None):
     """Merged, time-ordered [(ts, balance)] from daily snapshots + granular history, tipped
-    with the live balance. Downsampled to _MAX_POINTS for rendering."""
+    with the live balance. ``days`` limits to the last N days (None = all time); the last
+    balance before the window is carried forward to the window's start so the line begins at
+    the right level. Downsampled to _MAX_POINTS for rendering."""
     import time
     uid = str(user_id)
     pts = _snapshot_points(uid) + _history_points(uid)
@@ -79,6 +82,14 @@ def _load_points(user_id):
     current = int(get_bb(user_id))
     if not pts or pts[-1][0] < now - 30 or pts[-1][1] != current:
         pts.append((now, current))
+    if days:
+        cutoff = now - int(days) * 86400
+        inside = [p for p in pts if p[0] >= cutoff]
+        before = [p for p in pts if p[0] < cutoff]
+        if before:
+            # Anchor the window's left edge at the balance the user actually had then.
+            inside = [(cutoff, before[-1][1])] + inside
+        pts = inside
     if len(pts) > _MAX_POINTS:
         step = len(pts) / _MAX_POINTS
         keep = sorted({int(i * step) for i in range(_MAX_POINTS)} | {0, len(pts) - 1})
@@ -212,9 +223,10 @@ svg {{ display:block; margin-top:10px; }}
 </div></body></html>"""
 
 
-async def render_balance_graph(user_id, display_name):
-    """Render the user's balance history to a PNG BytesIO, or None if there's <2 points."""
-    points = _load_points(user_id)
+async def render_balance_graph(user_id, display_name, days=None):
+    """Render the user's balance history (last ``days``, or all time) to a PNG BytesIO,
+    or None if there are <2 points in the window."""
+    points = _load_points(user_id, days=days)
     if len(points) < 2:
         return None
     html = _build_html(display_name, points)
@@ -264,7 +276,7 @@ class BalanceGraphView(discord.ui.View):
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
-            img = await render_balance_graph(self.target_id, self.target_name)
+            img = await render_balance_graph(self.target_id, self.target_name, days=_DEFAULT_DAYS)
         except Exception:
             log.error("balance graph render failed", exc_info=True)
             img = None
@@ -273,8 +285,11 @@ class BalanceGraphView(discord.ui.View):
                 "Not enough balance history yet - the graph builds up a point a day, "
                 "so check back in a day or two.", ephemeral=True)
             return
+        view = BalanceGraphRangeView(self.target_id, self.target_name, self.viewer_id,
+                                     selected_days=_DEFAULT_DAYS)
         await interaction.followup.send(
-            file=discord.File(img, filename="balance_graph.png"), ephemeral=True)
+            file=discord.File(img, filename=f"balance_{_DEFAULT_DAYS}d.png"),
+            view=view, ephemeral=True)
 
     @discord.ui.button(label="Statement", emoji="\U0001f9fe",
                        style=discord.ButtonStyle.secondary)
@@ -287,3 +302,47 @@ class BalanceGraphView(discord.ui.View):
             target_id=self.target_id, target_name=self.target_name,
             viewer_id=self.viewer_id, offset=1, client=interaction.client)
         await interaction.response.send_message(view=view, ephemeral=True)
+
+
+class BalanceGraphRangeView(discord.ui.View):
+    """Range buttons (7D / 30D / 90D / All) under a rendered balance graph. Each re-renders
+    the graph for that window and edits the message in place; the active range is highlighted.
+    Only the original viewer can press them."""
+
+    RANGES = [("7D", 7), ("30D", 30), ("90D", 90), ("All", None)]
+
+    def __init__(self, target_id, target_name, viewer_id, *, selected_days=_DEFAULT_DAYS):
+        super().__init__(timeout=300)
+        self.target_id = int(target_id)
+        self.target_name = target_name
+        self.viewer_id = int(viewer_id)
+        for label, days in self.RANGES:
+            style = (discord.ButtonStyle.primary if days == selected_days
+                     else discord.ButtonStyle.secondary)
+            btn = discord.ui.Button(label=label, style=style)
+            btn.callback = self._make_cb(days)
+            self.add_item(btn)
+
+    def _make_cb(self, days):
+        async def _cb(interaction: discord.Interaction):
+            await self._render_range(interaction, days)
+        return _cb
+
+    async def _render_range(self, interaction: discord.Interaction, days):
+        if interaction.user.id != self.viewer_id:
+            await interaction.response.send_message("That isn't for you.", ephemeral=True)
+            return
+        await interaction.response.defer()
+        try:
+            img = await render_balance_graph(self.target_id, self.target_name, days=days)
+        except Exception:
+            log.error("balance graph range render failed", exc_info=True)
+            img = None
+        if img is None:
+            await interaction.followup.send(
+                "Not enough balance history in that range.", ephemeral=True)
+            return
+        view = BalanceGraphRangeView(self.target_id, self.target_name, self.viewer_id,
+                                     selected_days=days)
+        await interaction.edit_original_response(
+            attachments=[discord.File(img, filename=f"balance_{days or 'all'}d.png")], view=view)
