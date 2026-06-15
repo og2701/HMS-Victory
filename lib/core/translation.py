@@ -4,6 +4,7 @@ from openai import AsyncOpenAI
 import discord
 from config import CHANNELS
 from collections import defaultdict
+from lib.core.constants import FLAG_LANGUAGE_MAPPINGS
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_TOKEN"))
 
@@ -14,7 +15,8 @@ target_language_mappings = {
     "British 'rp'/posh talk - 'the queens english'": "The Queen's English",
     "Over the top american yank speak": "Yank",
     "Medieval/Olde English - Early Modern English or Elizabethan English commonly associated with the works of Shakespeare and the King James Bible": "Olde English",
-    "Caveman talk - completely rewrite the message as primitive caveman speech: drop small grammar words (a, the, is, are, of), turn 'I/me/my' into 'me', use short broken present-tense fragments and the simplest possible words, and add the odd grunt like 'ugh' or 'hrnk'. Keep all the meaning but make it sound like a club-wielding caveman": "🦴 Caveman",
+    # Keyed off the constants source so the footer label can't drift from the prompt.
+    FLAG_LANGUAGE_MAPPINGS["🦴"]: "🦴 Caveman",
 }
 
 user_translation_timestamps = defaultdict(list)
