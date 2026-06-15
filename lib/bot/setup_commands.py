@@ -487,13 +487,13 @@ def define_commands(tree, client):
             return
         await handle_lottery_command(interaction)
 
-    @command("lottery-start", "Open a new lottery round and start its reminders (staff)",
-             checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    @command("lottery-start", "Open a new lottery round and start its reminders (Oggers only)",
+             checks=[lambda i: i.user.id == USERS.OGGERS])
     async def lottery_start_command(interaction: Interaction):
         await handle_lottery_start_command(interaction)
 
-    @command("lottery-draw", "Draw the open lottery round now (staff)",
-             checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    @command("lottery-draw", "Draw the open lottery round now (Oggers only)",
+             checks=[lambda i: i.user.id == USERS.OGGERS])
     async def lottery_draw_command(interaction: Interaction):
         await handle_lottery_draw_command(interaction)
 
