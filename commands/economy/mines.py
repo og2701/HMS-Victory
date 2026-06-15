@@ -12,8 +12,9 @@ Money flow (mirrors the other casino games; the fixed 800k UKP supply is conserv
 
 Fairness: the multiplier after k gems is (1 - edge) / P(survive k reveals), so the
 expected return is a constant (1 - edge) of the stake no matter when you cash out -
-the house edge is the same whatever you do. Payouts are capped (MINES_MAX_WIN) so a
-lucky low-tile-count board can never demand more than the bank can safely pay.
+the house edge is the same whatever you do. Payouts can be capped (MINES_MAX_WIN; 0 =
+uncapped) - note a cap silently raises the edge on deep/high-bet pushes, since the
+multiplier keeps rising while the payout doesn't.
 
 The board is a Components V2 LayoutView: a status panel plus 24 tile buttons (6 rows)
 and a Cash Out button. In-play games are persisted by message id and their click
@@ -97,8 +98,9 @@ class MinesGame:
 
     def payout_for(self, k=None) -> int:
         import config
-        cap = getattr(config, "MINES_MAX_WIN", 100_000)
-        return min(int(self.bet * self.multiplier(k)), cap)
+        raw = int(self.bet * self.multiplier(k))
+        cap = getattr(config, "MINES_MAX_WIN", 0)
+        return raw if cap <= 0 else min(raw, cap)
 
     def current_payout(self) -> int:
         return self.payout_for(self.revealed_count)
@@ -426,7 +428,8 @@ async def _show_rules(interaction: Interaction):
     mines = getattr(config, "MINES_DEFAULT_MINES", 3)
     min_bet = getattr(config, "MINES_MIN_BET", 5)
     max_bet = getattr(config, "MINES_MAX_BET", 5_000)
-    max_win = getattr(config, "MINES_MAX_WIN", 100_000)
+    max_win = getattr(config, "MINES_MAX_WIN", 0)
+    cap_str = f"; wins are capped at {max_win:,}" if max_win > 0 else ""
     rules = (
         "## 💎 Mines - House Rules\n"
         f"A {TILES}-tile grid hides **{mines} mines**. Reveal gems to build your multiplier, then "
@@ -436,7 +439,7 @@ async def _show_rules(interaction: Interaction):
         "- **Cash Out** any time after your first gem to take **stake × multiplier**; hit "
         "a mine and you lose the stake.\n"
         "- Clear every safe tile and you auto-cash-out at the top multiplier.\n"
-        f"- **Bets:** {min_bet:,} - {max_bet:,} UKPence; wins are capped at {max_win:,}. "
+        f"- **Bets:** {min_bet:,} - {max_bet:,} UKPence{cap_str}. "
         "Stakes go to the house bank and wins are paid from it.\n\n"
         "-# The house keeps a ~2% edge whatever you do. Good luck. 🇬🇧"
     )

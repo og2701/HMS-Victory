@@ -84,7 +84,9 @@ MINES_MIN_BET = 5
 MINES_MAX_BET = 5_000
 MINES_DEFAULT_MINES = 3       # default bomb count when /mines is called without one
 MINES_HOUSE_EDGE = 0.02       # fraction of the stake the house keeps (EV-constant)
-MINES_MAX_WIN = 100_000       # hard payout ceiling so a lucky board can't drain the bank
+MINES_MAX_WIN = 0             # payout ceiling; 0 = no cap (a lucky board pays the full
+                              # multiplier - if the bank can't cover it, credit_from_bank
+                              # mints the win and logs CRITICAL; amend the supply after)
 
 # --- UKP earning rewards (all paid from the house bank; supply stays at 800k) ---
 TREE_CHANNEL_ID = 1142970908059910204

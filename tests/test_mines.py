@@ -131,16 +131,24 @@ def test_clearing_board_auto_cashes_out():
     res = g.reveal(T - 1)
     assert res == "win"
     assert g.state == "over" and g.outcome == "win"
-    # 1 gem with one safe tile: fair mult = T/1, scaled by edge.
-    assert g.payout == min(int(10 * (1 - EDGE) * (T / 1)), getattr(config, "MINES_MAX_WIN", 100_000))
+    # 1 gem with one safe tile: fair mult = T/1, scaled by edge (and the cap, if any).
+    raw = int(10 * (1 - EDGE) * (T / 1))
+    cap = getattr(config, "MINES_MAX_WIN", 0)
+    assert g.payout == (raw if cap <= 0 else min(raw, cap))
 
 
-def test_payout_is_capped():
-    cap = getattr(config, "MINES_MAX_WIN", 100_000)
-    # 3 mines, clear every safe tile at max bet -> astronomical raw multiplier, far over cap.
+def test_payout_cap_is_optional():
     g = _game(bet=10_000, mines=3, mine_positions=[0, 1, 2])
-    assert g.payout_for(g.safe_tiles) == cap
-    assert g.multiplier(g.safe_tiles) * 10_000 > cap   # sanity: would really exceed the cap
+    full = int(10_000 * g.multiplier(g.safe_tiles))     # astronomical raw payout
+    orig = getattr(config, "MINES_MAX_WIN", 0)
+    try:
+        config.MINES_MAX_WIN = 0                          # 0 = no cap -> full multiplier paid
+        assert g.payout_for(g.safe_tiles) == full
+        assert full > 1_000_000                           # sanity: it really is huge uncapped
+        config.MINES_MAX_WIN = 50_000                     # cap on -> clipped to the ceiling
+        assert g.payout_for(g.safe_tiles) == 50_000
+    finally:
+        config.MINES_MAX_WIN = orig
 
 
 def test_cashout_uses_current_reveals():
