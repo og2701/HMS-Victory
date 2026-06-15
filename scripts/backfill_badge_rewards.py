@@ -44,9 +44,21 @@ class BackfillClient(discord.Client):
             await self.close()
 
     async def _run(self):
+        # Ensure the reward ledger exists even if the bot hasn't restarted onto the new
+        # schema yet (idempotent; identical DDL to database.init_db).
+        DatabaseManager.execute(
+            "CREATE TABLE IF NOT EXISTS badge_rewards (user_id TEXT NOT NULL, "
+            "badge_id TEXT NOT NULL, amount INTEGER NOT NULL, paid_at INTEGER NOT NULL, "
+            "PRIMARY KEY (user_id, badge_id))")
+
         guild = self.get_guild(config.GUILD_ID) or await self.fetch_guild(config.GUILD_ID)
         member_ids = {str(m.id) async for m in guild.fetch_members(limit=None)}
-        print(f"Guild: {guild.name} · current members: {len(member_ids):,}")
+        expected = guild.member_count or 0
+        print(f"Guild: {guild.name} · fetched {len(member_ids):,} members "
+              f"(guild reports {expected:,})")
+        if expected and len(member_ids) < expected * 0.9:
+            print("ABORT: fetched member list looks incomplete (<90% of the guild). Re-run.")
+            return
 
         # Badges earned by in-economy users (have a balance row), oldest awards first.
         rows = DatabaseManager.fetch_all(

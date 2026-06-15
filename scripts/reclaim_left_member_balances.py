@@ -46,7 +46,15 @@ class ReclaimClient(discord.Client):
     async def _run(self):
         guild = self.get_guild(config.GUILD_ID) or await self.fetch_guild(config.GUILD_ID)
         member_ids = {str(m.id) async for m in guild.fetch_members(limit=None)}
-        print(f"Guild: {guild.name} · current members: {len(member_ids):,}")
+        expected = guild.member_count or 0
+        print(f"Guild: {guild.name} · fetched {len(member_ids):,} members "
+              f"(guild reports {expected:,})")
+        # Safety: this op is destructive, so bail if the member fetch looks incomplete -
+        # otherwise a partial list would wrongly reclaim balances from members still here.
+        if expected and len(member_ids) < expected * 0.9:
+            print("ABORT: fetched member list looks incomplete (<90% of the guild). "
+                  "Not touching any balances - re-run.")
+            return
 
         rows = DatabaseManager.fetch_all(
             "SELECT user_id, balance FROM ukpence WHERE user_id != ? AND balance > 0 "
