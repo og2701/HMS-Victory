@@ -418,7 +418,14 @@ def define_commands(tree, client):
             description=f"{interaction.user.mention} paid **{amount:,}** UKPence to {recipient.mention}",
             color=discord.Color.gold(),
         )
-        await interaction.response.send_message(embed=embed)
+        # Put the recipient's mention in the message CONTENT, not just the embed - a
+        # mention inside an embed renders but never fires a notification. Skip the ping
+        # when the recipient is the bank (the bot can't be usefully pinged).
+        ping = recipient.mention if recipient.id != interaction.client.user.id else None
+        await interaction.response.send_message(
+            content=ping, embed=embed,
+            allowed_mentions=discord.AllowedMentions(users=[recipient], everyone=False, roles=False),
+        )
 
         # Database logging
         from database import DatabaseManager
