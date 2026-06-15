@@ -328,7 +328,9 @@ def _build_prompt(member, msgs, rules):
         "You are a fair, careful moderation assistant for a Discord server. Review the member's "
         "recent messages against the server rules. Be balanced: note positives, account for banter "
         "and context, do NOT over-flag, and never invent quotes (use only verbatim text from the "
-        "messages). If nothing is wrong, say so plainly.\n"
+        "messages). If nothing is wrong, say so plainly. Separately, if anyone ELSE shown in the "
+        "surrounding context (the named prev/next-msg lines) is clearly breaking the rules themselves, "
+        "flag them under others_of_concern - but keep the main analysis about THIS member.\n"
         "IMPORTANT: weigh RECEPTION, not just volume. Posting a lot is NOT the same as contributing. "
         "People here usually respond organically (just sending the next message, NOT Discord's reply "
         "button), so judge engagement from the 'next msg' that follows each message (is someone "
@@ -353,6 +355,10 @@ def _build_prompt(member, msgs, rules):
         'consistent with your concerns - if any concern is severity "high", risk is not "low").\n'
         '  "concerns": array of {"severity":"low|medium|high","issue":<short>,"quote":<verbatim>,'
         '"why":<short reason>}; empty array if none.\n'
+        '  "others_of_concern": array of {"name":<name of the OTHER person exactly as shown in the '
+        'context>,"severity":"low|medium|high","issue":<short>,"quote":<their verbatim words from the '
+        'context>,"why":<short>}; empty array if none. People OTHER than the analysed member only, and '
+        'only from verbatim words visible in the prev/next context - do not speculate beyond it.\n'
         '  "notable_quotes": array of up to 5 short verbatim quotes that characterise them '
         "(telling, funny, or concerning).\n"
         '  "patterns": a short note on any behavioural pattern (targets a person, repeats a topic, '
@@ -589,6 +595,25 @@ def _build_view(member, requester, msgs, text):
     else:
         concerns_text = "**Concerns** None notable."
 
+    others = data.get("others_of_concern") or []
+    if others:
+        olines = ["**Others worth a look** _(from context - run a full Analyse on them to confirm)_"]
+        for o in others[:6]:
+            if not isinstance(o, dict):
+                continue
+            se = _SEV_EMOJI.get(str(o.get("severity", "low")).lower(), "\U0001f7e1")
+            seg = f"{se} **{_trunc(str(o.get('name', '?')), 60)}**"
+            if o.get("issue"):
+                seg += f" · {_trunc(o['issue'], 80)}"
+            if o.get("quote"):
+                seg += f' · "{_trunc(o["quote"], 140)}"'
+            if o.get("why"):
+                seg += f" · _{_trunc(o['why'], 160)}_"
+            olines.append(seg)
+        others_text = "\n".join(olines)
+    else:
+        others_text = ""
+
     extra = []
     if data.get("patterns"):
         extra.append(f"**Patterns** {_trunc(data['patterns'], 400)}")
@@ -601,19 +626,21 @@ def _build_view(member, requester, msgs, text):
 
     # Fit the whole card under Discord's total-text cap, trimming bottom-up so
     # the verdict/summary at the top survives intact.
-    blocks = [head, concerns_text, extras_text]
+    blocks = [head, concerns_text, others_text, extras_text]
     over = sum(map(len, blocks)) + len(foot) - _CARD_TEXT_LIMIT
-    for i in (2, 1, 0):
+    for i in (3, 2, 1, 0):  # trim bottom-up so the verdict/summary at the top survives
         if over <= 0:
             break
         keep = max(len(blocks[i]) - over, 120)
         trimmed = _trunc(blocks[i], keep)
         over -= len(blocks[i]) - len(trimmed)
         blocks[i] = trimmed
-    head, concerns_text, extras_text = blocks
+    head, concerns_text, others_text, extras_text = blocks
 
     c.add_item(_header_section(head))
     c.add_item(discord.ui.TextDisplay(concerns_text))
+    if others_text:
+        c.add_item(discord.ui.TextDisplay(others_text))
     if extras_text:
         c.add_item(discord.ui.TextDisplay(extras_text))
 
