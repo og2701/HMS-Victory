@@ -200,28 +200,50 @@ async def open_round(client, *, post: bool = True):
     rnd = create_round()
     if post:
         await _post_board(client, rnd)
+    # Opening a round (re)starts the reminder cadence from now, so the periodic
+    # "feeling lucky?" reminders begin once staff manually start the lottery.
+    _set_state("next_reminder_ts", _schedule_next_reminder(int(time.time())))
     return rnd
 
 
-async def weekly_draw_job(client):
-    """Weekly: draw the open round (if any) then open a fresh one for next week."""
+async def handle_lottery_start_command(interaction):
+    """Staff: manually open a new lottery round (the lottery no longer auto-opens on
+    boot or on a weekly schedule). Posts the board and starts the periodic reminders;
+    refuses if a round is already open."""
     import config
     if not getattr(config, "LOTTERY_ENABLED", True):
-        return
+        return await interaction.response.send_message(
+            "🎟️ The lottery is currently disabled.", ephemeral=True)
+    existing = get_open_round()
+    if existing:
+        return await interaction.response.send_message(
+            f"🎟️ Round #{existing['id']} is already open - draw it with `/lottery-draw` "
+            f"before starting another.", ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
+    rnd = await open_round(interaction.client, post=True)
+    await interaction.followup.send(
+        f"🎟️ Lottery round #{rnd['id']} is open and the board is posted. Reminders will "
+        f"run in <#{config.LOTTERY_CHANNEL}> until you draw it with `/lottery-draw`.",
+        ephemeral=True)
+
+
+async def handle_lottery_draw_command(interaction):
+    """Staff: manually draw the open lottery round now (announces the winner in the
+    casino channel). Does not open a new round - run `/lottery-start` for the next one."""
+    import config
+    if not getattr(config, "LOTTERY_ENABLED", True):
+        return await interaction.response.send_message(
+            "🎟️ The lottery is currently disabled.", ephemeral=True)
     rnd = get_open_round()
-    if rnd:
-        await draw_round(client, rnd["id"])
-    await open_round(client, post=True)
-
-
-async def ensure_started(client):
-    """On startup: if no lottery round has ever existed, open the first one. A sold-out
-    round that's waiting for the weekly tick is left alone (no open round = intended)."""
-    import config
-    if not getattr(config, "LOTTERY_ENABLED", True):
-        return
-    if latest_round() is None:
-        await open_round(client, post=True)
+    if not rnd:
+        return await interaction.response.send_message(
+            "There's no open lottery round to draw. Start one with `/lottery-start`.",
+            ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
+    await draw_round(interaction.client, rnd["id"])
+    await interaction.followup.send(
+        f"🎲 Round #{rnd['id']} drawn - the result is posted in <#{config.LOTTERY_CHANNEL}>.",
+        ephemeral=True)
 
 
 def _sold_out(rnd) -> bool:

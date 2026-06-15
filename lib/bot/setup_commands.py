@@ -39,7 +39,7 @@ from commands.economy.red_dog import handle_reddog_command
 from commands.economy.roulette import handle_roulette_command
 from commands.economy.three_card_poker import handle_tcp_command
 from commands.economy.casino import handle_casino_command
-from lib.economy.lottery import handle_lottery_command
+from lib.economy.lottery import handle_lottery_command, handle_lottery_start_command, handle_lottery_draw_command
 from commands.economy.casino_stats import handle_casino_stats_command
 
 async def _require_casino_channel(interaction) -> bool:
@@ -486,6 +486,16 @@ def define_commands(tree, client):
         if await _require_casino_channel(interaction):
             return
         await handle_lottery_command(interaction)
+
+    @command("lottery-start", "Open a new lottery round and start its reminders (staff)",
+             checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    async def lottery_start_command(interaction: Interaction):
+        await handle_lottery_start_command(interaction)
+
+    @command("lottery-draw", "Draw the open lottery round now (staff)",
+             checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    async def lottery_draw_command(interaction: Interaction):
+        await handle_lottery_draw_command(interaction)
 
     @command("video-poker", "Play Video Poker (Jacks or Better) against the house")
     async def video_poker_command(interaction: Interaction, amount: app_commands.Range[int, 1]):

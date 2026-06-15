@@ -176,13 +176,9 @@ class AClient(discord.Client):
         # event loop. The cancel buttons already work via the persistent views registered
         # in __init__, so the backfill was redundant.)
 
-        # Open the first-ever lottery round (no-op once one exists; the weekly job opens
-        # subsequent rounds). Safe across reconnects - it only acts if none has existed.
-        try:
-            from lib.economy.lottery import ensure_started
-            await ensure_started(self)
-        except Exception as e:
-            logger.warning(f"Could not start lottery: {e}")
+        # The lottery is started manually by staff (/lottery-start) rather than
+        # auto-opened on boot. While a round is open, the lottery tick posts the
+        # periodic reminders to the casino channel.
 
     async def on_message(self, message):
         if (
