@@ -34,6 +34,7 @@ from commands.economy.wager import handle_wager_command
 from commands.economy.blackjack import handle_blackjack_command
 from commands.economy.higher_lower import handle_higherlower_command
 from commands.economy.slots import handle_slots_command
+from commands.economy.mines import handle_mines_command
 from commands.economy.video_poker import handle_videopoker_command
 from commands.economy.red_dog import handle_reddog_command
 from commands.economy.roulette import handle_roulette_command
@@ -474,6 +475,13 @@ def define_commands(tree, client):
         if await _require_casino_channel(interaction):
             return
         await handle_slots_command(interaction, amount)
+
+    @command("mines", "Reveal gems and cash out before you hit a mine (UKPence)")
+    async def mines_command(interaction: Interaction, amount: app_commands.Range[int, 1],
+                            mines: app_commands.Range[int, 1, 24] = MINES_DEFAULT_MINES):
+        if await _require_casino_channel(interaction):
+            return
+        await handle_mines_command(interaction, amount, mines)
 
     @command("casino", "Open the HMS Victory casino - pick a game to play")
     async def casino_command(interaction: Interaction):

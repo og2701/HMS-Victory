@@ -488,6 +488,12 @@ def reattach_persistent_views(client):
                 reattach_tcp_view(client, key, value)
             except Exception as e:
                 logger.error(f"Failed to reattach three-card-poker view {key}: {e}")
+        elif isinstance(value, dict) and value.get("type") == "mines":
+            try:
+                from commands.economy.mines import reattach_mines_view
+                reattach_mines_view(client, key, value)
+            except Exception as e:
+                logger.error(f"Failed to reattach mines view {key}: {e}")
         elif isinstance(value, dict):
             view = RoleButtonView(value)
             client.add_view(view, message_id=key)
@@ -812,7 +818,12 @@ async def on_ready(client, tree, scheduler):
         from lib.features.xp_system import XPSystem
         client.xp_system = XPSystem(client)
         logger.info("XP system initialised")
-    reattach_persistent_views(client)
+    # Run exactly once per process: on_ready can re-fire on a gateway reconnect, and
+    # in-process add_view registrations survive that, so re-running this would bind a
+    # second game object to each live casino message and defeat the busy-flag guard.
+    if not getattr(client, "_views_reattached", False):
+        reattach_persistent_views(client)
+        client._views_reattached = True
     loaded = _load()
     client.predictions = {}
     for msg_id_str, pd in loaded.items():

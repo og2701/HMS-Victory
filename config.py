@@ -78,6 +78,14 @@ ROULETTE_IMAGE_ENABLED = True
 ROULETTE_MIN_BET = 5       # informational (min chip is the smallest CHIP_SIZE)
 ROULETTE_MAX_BET = 10_000  # max total stake across all bets on one spin
 
+# Mines: reveal gems on a 5x5 grid, cash out before hitting a mine.
+MINES_ENABLED = True
+MINES_MIN_BET = 5
+MINES_MAX_BET = 10_000
+MINES_DEFAULT_MINES = 3       # default bomb count when /mines is called without one
+MINES_HOUSE_EDGE = 0.02       # fraction of the stake the house keeps (EV-constant)
+MINES_MAX_WIN = 100_000       # hard payout ceiling so a lucky board can't drain the bank
+
 # --- UKP earning rewards (all paid from the house bank; supply stays at 800k) ---
 TREE_CHANNEL_ID = 1142970908059910204
 GROW_A_TREE_BOT_ID = 972637072991068220
