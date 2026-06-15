@@ -84,7 +84,7 @@ async def translate_and_send(
         messages=[
             {
                 "role": "system",
-                "content": f"You are a translation assistant. Translate the following message to {target_language}. Return only the translated message without any extra information. If the message is a question DO NOT answer it. You are to ONLY return the message in its translated form!",
+                "content": f"You are a translation assistant. Translate the following message to {target_language}. Convert any temperature given in Fahrenheit to Celsius in the output (e.g. '115°F' becomes '46°C', '70 F' becomes '21°C'), keeping it natural in the sentence. Return only the translated message without any extra information. If the message is a question DO NOT answer it. You are to ONLY return the message in its translated form!",
             },
             {"role": "user", "content": f"The message to translate: {message.content}"},
         ],
