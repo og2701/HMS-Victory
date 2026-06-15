@@ -54,7 +54,15 @@ def _fetch_medal_table(guild=None):
     # Flag shared ranks so the renderer can prefix them with "=".
     from collections import Counter
     counts = Counter(ranks)
-    return [(rank, counts[rank] > 1, *row) for rank, row in zip(ranks, table)]
+
+    # Members holding any Secret-tier badge get their name ringed in the secret rainbow.
+    secret_rows = DatabaseManager.fetch_all(
+        "SELECT DISTINCT ub.user_id FROM user_badges ub "
+        "JOIN badges b ON ub.badge_id = b.id WHERE b.rarity = 'Secret'") or []
+    secret_holders = {str(r[0]) for r in secret_rows}
+
+    return [(rank, counts[rank] > 1, *row, str(row[0]) in secret_holders)
+            for rank, row in zip(ranks, table)]
 
 
 def _resolve_name(interaction: Interaction, user_id: str) -> str:
@@ -89,8 +97,10 @@ def _render_html(interaction: Interaction, table: list, page: int) -> str:
     slice_ = table[start:start + PAGE_SIZE]
 
     rows_html = []
-    for rank, shared, uid, g, s, b, total in slice_:
+    for rank, shared, uid, g, s, b, total, has_secret in slice_:
         name = html.escape(_resolve_name(interaction, uid))
+        if has_secret:
+            name = f'<span class="secret-name">{name}</span>'
         row_class = f"top-{rank}" if rank <= 3 else ""
         rows_html.append(
             f'<tr class="{row_class}">'
