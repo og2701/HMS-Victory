@@ -74,6 +74,7 @@ class Connect4View(discord.ui.View):
         self.turn = random.choice([1, 2])   # who moves first is random (first-move edge is real)
         self.game_over = False
         self.message = None
+        self.client = None              # set on accept; needed to award badges on forfeit
         self._lock = asyncio.Lock()
         self._timer_task = None
         self._sync_buttons()
@@ -250,7 +251,19 @@ class Connect4View(discord.ui.View):
             credit_from_bank(self.p2_id, self.stake, "Connect 4 draw refund")
         else:
             wid = self.p1_id if winner == 1 else self.p2_id
+            lid = self.p2_id if winner == 1 else self.p1_id
             credit_from_bank(wid, pot, "Connect 4 win")
+        # Log the match and award the winner their Connect 4 badges (best-effort).
+        try:
+            from lib.economy.game_badges import record_connect4_result, award_connect4_badges
+            if winner is None:
+                record_connect4_result(None, None, self.stake)
+            else:
+                record_connect4_result(wid, lid, self.stake)
+                if self.client is not None:
+                    await award_connect4_badges(self.client, wid, self.stake)
+        except Exception:
+            logger.error("connect4 badge hook failed", exc_info=True)
         embed = self._embed(final=True, winner=winner, forfeit=forfeit)
         if interaction is not None:
             await self._safe_edit(interaction, embed=embed, view=None)
@@ -316,6 +329,7 @@ class Connect4ChallengeView(discord.ui.View):
         game = Connect4View(self.challenger.id, p1_name, self.opponent.id, p2_name,
                             self.amount, interaction.channel_id)
         game.message = interaction.message
+        game.client = interaction.client
         # Persist the escrow record (keyed by the board message) BEFORE showing the board,
         # so a crash right after staking is still recoverable on boot.
         save_state(interaction.message.id, {

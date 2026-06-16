@@ -480,6 +480,18 @@ def init_db():
                 PRIMARY KEY (message_id, target)
             )
         ''')
+        # One row per finished Connect 4 match (kept separate from casino_results so PvP
+        # games don't pollute the house-casino stats/leaderboard). winner_id NULL on a draw.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS connect4_results (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                winner_id  TEXT,
+                loser_id   TEXT,
+                stake      INTEGER NOT NULL,
+                timestamp  INTEGER NOT NULL
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_c4_winner ON connect4_results(winner_id)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_payer ON pay_transfers(payer_id)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_recipient ON pay_transfers(recipient_id)')
         # Fixed-term savings ("bonds"): principal held in the bank while locked; on maturity
@@ -718,7 +730,27 @@ def init_db():
             ('red_letter_day', 'Red Letter Day', 'Win 1,000 or more on a single roulette spin', '🔴', 'Silver'),
             ('squeaky_wheel', 'Squeaky Wheel', 'Be awarded UKPence for a support ticket', '🎟️', 'Bronze'),
             ('jack_of_all_trades', 'Jack of All Trades', 'Earn UKPence from 5 different income sources', '🧩', 'Silver'),
-            ('self_made', 'Self-Made', '[REDACTED]', '🛠️', 'Secret')
+            ('self_made', 'Self-Made', '[REDACTED]', '🛠️', 'Secret'),
+            # Connect 4 (1v1 wager game)
+            ('first_blood', 'First Blood', 'Win your first Connect 4 match', '🩸', 'Bronze'),
+            ('four_in_a_row', 'Four in a Row', 'Win 10 Connect 4 matches', '🟡', 'Silver'),
+            ('trash_talker', 'Trash Talker', 'Win a Connect 4 match staked at 1,000 UKPence or more', '🗯️', 'Silver'),
+            ('grandmaster', 'Grandmaster', 'Win 50 Connect 4 matches', '♟️', 'Gold'),
+            # Higher or Lower
+            ('on_the_up', 'On the Up', 'Win 3 Higher or Lower guesses in a single game', '🪜', 'Bronze'),
+            ('vertigo', 'Vertigo', 'Reach a 5x multiplier in Higher or Lower and cash out', '🗼', 'Silver'),
+            # Blackjack
+            ('hot_hand', 'Hot Hand', 'Win 5 Blackjack hands in a row', '♠️', 'Gold'),
+            # Casino (any game)
+            ('dealers_choice', "Dealer's Choice", 'Play every casino game at least once', '🎴', 'Bronze'),
+            ('on_a_heater', 'On a Heater', 'Win 5 casino games in a row', '♨️', 'Silver'),
+            ('comeback_kid', 'Comeback Kid', 'Win a casino game after dropping below 100 UKPence', '🪃', 'Silver'),
+            ('centurion', 'Centurion', 'Win 1,000 casino games in total', '🎖️', 'Gold'),
+            # Translation
+            ('ooga_booga', 'Ooga Booga', 'Have one of your messages translated to Caveman', '🦴', 'Bronze'),
+            # Secret
+            ('lucky_7s', 'Lucky 7s', '[REDACTED]', '7️⃣', 'Secret'),
+            ('regifter', 'Re-Gifter', '[REDACTED]', '🎁', 'Secret')
         ]
         for b_id, b_name, b_desc, b_icon, b_rarity in badges:
             c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)",
