@@ -94,7 +94,7 @@ async def translate_and_send(
     ]
 
     # If limit reached, punish
-    if len(user_translation_timestamps[user_id]) > TRANSLATION_LIMIT:
+    if len(user_translation_timestamps[user_id]) >= TRANSLATION_LIMIT:
         user_cooldowns[user_id] = current_time + COOLDOWN_DURATION
         police_channel = message.guild.get_channel(CHANNELS.POLICE_STATION)
 
