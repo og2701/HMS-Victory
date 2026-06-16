@@ -160,64 +160,73 @@ class BetModal(discord.ui.Modal):
         await self.game["handler"](interaction, amount)
 
 
-def _make_pick_cb(game: dict):
-    async def _cb(interaction: Interaction):
-        # Games that build their stake in-message (e.g. roulette's bet slip) skip the
-        # bet modal and open straight away.
+class CasinoMenuView(discord.ui.View):
+    """The /casino lobby as one compact dropdown of games plus a Leaderboard button.
+
+    Collapsing the games into a select keeps the lobby tiny, and opening the dropdown gives
+    Discord's native type-to-filter over the game list (the "search"). Public and persistent
+    (timeout=None, fixed custom_ids) - registered once globally in setup_hook so it keeps
+    working on the public message and survives restarts.
+    """
+
+    def __init__(self):
+        super().__init__(timeout=None)
+        options = [
+            discord.SelectOption(
+                label=g["label"], value=g["key"], emoji=g["emoji"],
+                description=g["desc"][:100],
+            )
+            for g in GAMES
+        ]
+        self.select = discord.ui.Select(
+            placeholder="🎲  Pick a game to play…", options=options,
+            min_values=1, max_values=1, custom_id="casino:menu:pick",
+        )
+        self.select.callback = self._on_pick
+        self.add_item(self.select)
+
+        lb = discord.ui.Button(
+            label="Leaderboard", emoji="🏆", style=discord.ButtonStyle.secondary,
+            custom_id="casino:leaderboard",
+        )
+        lb.callback = _leaderboard_cb
+        self.add_item(lb)
+
+    async def _on_pick(self, interaction: Interaction):
+        if getattr(interaction.client, "maintenance_mode", False):
+            await interaction.response.send_message(
+                "🔧 **Under maintenance** - the bot is restarting for an update. "
+                "Hold on a minute before playing.", ephemeral=True)
+            return
+        key = self.select.values[0]
+        game = next((g for g in GAMES if g["key"] == key), None)
+        if game is None:
+            await interaction.response.send_message("That game isn't available.", ephemeral=True)
+            return
+        # Most games ask for a stake first; bet-slip games (roulette) open straight away.
         if game.get("prompt_bet", True):
             await interaction.response.send_modal(BetModal(game))
         else:
             await game["handler"](interaction)
-    return _cb
 
 
-def build_casino_menu() -> discord.ui.LayoutView:
-    """The /casino lobby, built with Components V2 primitives: each game is its own
-    Section (description on the left, a Play button accessory on the right) divided by
-    Separators inside a brass accent Container - rather than one text blob + button rail."""
+def build_casino_embed() -> discord.Embed:
     import config
     mn = getattr(config, "BLACKJACK_MIN_BET", 5)
     mx = getattr(config, "BLACKJACK_MAX_BET", 10_000)
-
-    view = discord.ui.LayoutView(timeout=None)
-    container = discord.ui.Container(accent_colour=ACCENT)
-    container.add_item(discord.ui.TextDisplay(
-        "## 🎰 HMS Victory - Casino Royale\n"
-        "Pick a table and place your stake. Wins are paid from the house bank."
-    ))
-    container.add_item(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
-
-    # One Section per game: text + a "Play" button accessory on the right.
-    for idx, g in enumerate(GAMES):
-        play = discord.ui.Button(
-            label="Play", style=discord.ButtonStyle.success,
-            custom_id=f"casino:pick:{g['key']}",
-        )
-        play.callback = _make_pick_cb(g)
-        container.add_item(discord.ui.Section(
-            discord.ui.TextDisplay(f"### {g['emoji']}  {g['label']}\n{g['desc']}"),
-            accessory=play,
-        ))
-        if idx < len(GAMES) - 1:
-            container.add_item(discord.ui.Separator(visible=False, spacing=discord.SeparatorSpacing.small))
-
-    # Leaderboard as its own Section with a View accessory.
-    container.add_item(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.large))
-    lb_btn = discord.ui.Button(
-        label="View", emoji="🏆", style=discord.ButtonStyle.secondary,
-        custom_id="casino:leaderboard",
+    embed = discord.Embed(
+        title="🎰 HMS Victory - Casino Royale",
+        description=("Pick a table from the dropdown below and place your stake - wins are "
+                     "paid from the house bank. Open the menu to browse or search the games."),
+        colour=ACCENT,
     )
-    lb_btn.callback = _leaderboard_cb
-    container.add_item(discord.ui.Section(
-        discord.ui.TextDisplay("### 🏆  Leaderboard\nNet profit / loss standings - overall or by game."),
-        accessory=lb_btn,
-    ))
-    container.add_item(discord.ui.TextDisplay(
-        f"-# Bets {mn:,} - {mx:,} UKPence. Please gamble responsibly. 🇬🇧"
-    ))
+    embed.set_footer(text=f"Bets {mn:,} - {mx:,} UKPence. Please gamble responsibly. 🇬🇧")
+    return embed
 
-    view.add_item(container)
-    return view
+
+def build_casino_menu() -> "CasinoMenuView":
+    """Return the persistent lobby view (used by /casino and the setup_hook registration)."""
+    return CasinoMenuView()
 
 
 async def handle_casino_command(interaction: Interaction):
@@ -227,7 +236,10 @@ async def handle_casino_command(interaction: Interaction):
             "Hold on a minute before playing.", ephemeral=True
         )
         return
-    # Public lobby: anyone can see it and tap a game to start their own hand. The
-    # buttons are stable, custom-id'd components registered as a global persistent
-    # view in setup_hook, so they keep working across restarts.
-    await interaction.response.send_message(view=build_casino_menu())
+    # Public lobby: anyone can see it and pick a game to start their own hand. The dropdown
+    # + leaderboard button are stable, custom-id'd components registered as a global
+    # persistent view in setup_hook, so they keep working across restarts.
+    await interaction.response.send_message(
+        embed=build_casino_embed(), view=build_casino_menu(),
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
