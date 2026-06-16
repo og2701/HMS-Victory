@@ -124,8 +124,8 @@ def define_commands(tree, client):
         await interaction.response.defer()
         await show_iceberg(interaction)
 
-    @command("politics-permit", "Toggle a member's access to the politics channel", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
-    async def politics_permit(interaction: Interaction, user: Member):
+    @command("politics-toggle", "Toggle a member's access to the politics channel", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    async def politics_toggle(interaction: Interaction, user: Member):
         from lib.features.politics_access import toggle_member_access
         channel = interaction.guild.get_channel(CHANNELS.POLITICS)
         if channel is None:

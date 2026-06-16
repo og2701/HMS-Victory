@@ -3,7 +3,7 @@
 Visibility is handled by Discord's own channel permissions now (no JSON whitelist, no
 listening for and deleting unauthorised messages):
 
-- /politics-permit <user> smart-toggles a *member-specific* view_channel overwrite. If
+- /politics-toggle <user> smart-toggles a *member-specific* view_channel overwrite. If
   the toggle would put the member back to their natural/default state (whatever their
   roles already grant), the overwrite is deleted entirely so the channel settings stay
   clean.
@@ -22,7 +22,7 @@ def has_natural_access(channel: discord.abc.GuildChannel, member: discord.Member
     """Whether ``member`` can view ``channel`` from roles + @everyone alone, IGNORING any
     member-specific overwrite.
 
-    This is the member's "default" state. /politics-permit uses it to decide whether a
+    This is the member's "default" state. /politics-toggle uses it to decide whether a
     toggle should write an explicit overwrite or simply clear one - clearing is correct
     exactly when the desired visibility already matches this natural state.
 
@@ -74,7 +74,7 @@ async def toggle_member_access(channel, member, *, actor=None):
     current_effective = natural if current is None else current
     granted = not current_effective
 
-    reason = f"politics-permit toggle by {actor}" if actor is not None else "politics-permit toggle"
+    reason = f"politics-toggle by {actor}" if actor is not None else "politics-toggle"
 
     if granted == natural:
         # Returning them to their default - drop the explicit overwrite. Only delete the
