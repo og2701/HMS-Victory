@@ -181,6 +181,12 @@ POKER_MAX_SEATS = 6
 POKER_TURN_SECONDS = 45            # auto check/fold if a player stalls
 POKER_IDLE_CLOSE_SECONDS = 180     # close a table after this long with no human action
 POKER_ESCROW_FILE = os.path.join(JSON_DATA_DIR, "poker_escrow.json")
+# Connect 4 (1v1 PvP wager; both stake the same, winner takes the whole pot, no rake)
+CONNECT4_ENABLED = True
+CONNECT4_MIN_BET = 5
+CONNECT4_MAX_BET = 5000
+CONNECT4_ACCEPT_SECONDS = 300      # opponent has this long to accept the challenge
+CONNECT4_FORFEIT_SECONDS = 600     # 10 min to make each move, or you forfeit the pot
 # "Analyse User" moderation tool (Gemini). Reads GEMINI_API_KEY from the environment.
 GEMINI_MODEL = "gemini-2.5-flash"
 RULES_CHANNEL_ID = None            # set to your rules channel id for accurate analysis (else data/rules.txt / generic)
