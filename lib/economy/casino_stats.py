@@ -53,8 +53,65 @@ def record_result(user_id, game: str, bet, staked, payout, outcome=None) -> None
             (str(user_id), str(game), bet, staked, payout, net,
              (str(outcome) if outcome is not None else None), result, int(time.time())),
         )
+        _check_casino_badges(user_id, game, result, net)
     except Exception:
         logger.error("Failed to record casino result (%s/%s)", user_id, game, exc_info=True)
+
+
+# Number of distinct house games (blackjack, higherlower, slots, videopoker, reddog, tcp,
+# roulette, mines) - all of them recorded here. Connect 4 is PvP and lives elsewhere.
+_CASINO_GAME_COUNT = 8
+
+
+def _award_silently(user_id, badge_id):
+    """Award a badge + its one-time reward without a DM - record_result has no bot client.
+    Idempotent (award_badge is INSERT OR IGNORE), so safe to call on every qualifying game."""
+    try:
+        from database import award_badge
+        if award_badge(user_id, badge_id):
+            from lib.economy.badge_rewards import pay_badge_reward
+            pay_badge_reward(user_id, badge_id)
+    except Exception:
+        logger.error("silent badge award failed (%s/%s)", user_id, badge_id, exc_info=True)
+
+
+def _check_casino_badges(user_id, game, result, net):
+    """Best-effort casino milestone badges, derived from casino_results (which already
+    includes the row just inserted). Never raises into the record path."""
+    try:
+        uid = str(user_id)
+        total = DatabaseManager.fetch_one(
+            "SELECT COUNT(*) FROM casino_results WHERE user_id = ?", (uid,))
+        if total and total[0] >= 1000:
+            _award_silently(user_id, "centurion")
+        distinct = DatabaseManager.fetch_one(
+            "SELECT COUNT(DISTINCT game) FROM casino_results WHERE user_id = ?", (uid,))
+        if distinct and distinct[0] >= _CASINO_GAME_COUNT:
+            _award_silently(user_id, "dealers_choice")
+        if result == "win":
+            recent = DatabaseManager.fetch_all(
+                "SELECT result FROM casino_results WHERE user_id = ? ORDER BY id DESC LIMIT 5", (uid,))
+            if recent and len(recent) == 5 and all(r[0] == "win" for r in recent):
+                _award_silently(user_id, "on_a_heater")
+            if game == "blackjack":
+                bj = DatabaseManager.fetch_all(
+                    "SELECT result FROM casino_results WHERE user_id = ? AND game = 'blackjack' "
+                    "ORDER BY id DESC LIMIT 5", (uid,))
+                if bj and len(bj) == 5 and all(r[0] == "win" for r in bj):
+                    _award_silently(user_id, "hot_hand")
+            # Comeback Kid: won this round while sitting under 100 UKPence going in
+            # (pre-round balance = current balance minus this round's net).
+            try:
+                from lib.economy.economy_manager import get_bb
+                bal = get_bb(int(user_id))
+                if bal - int(net) < 100:
+                    _award_silently(user_id, "comeback_kid")
+                if bal == 777:
+                    _award_silently(user_id, "lucky_7s")
+            except Exception:
+                pass
+    except Exception:
+        logger.error("casino badge check failed (%s/%s)", user_id, game, exc_info=True)
 
 
 def _blank_totals() -> dict:

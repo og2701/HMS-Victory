@@ -444,6 +444,32 @@ def define_commands(tree, client):
             from lib.bot.event_handlers import award_badge_with_notify
             await award_badge_with_notify(interaction.client, interaction.user.id, 'philanthropist')
 
+        # Re-Gifter (secret): got this exact amount from someone else within the last minute
+        # and is now passing it onward to a DIFFERENT person (not the bank, not back to the
+        # giver). The row just inserted is payer->recipient, so it can't match this query.
+        if recipient.id != interaction.client.user.id:
+            regift = DatabaseManager.fetch_one(
+                "SELECT 1 FROM pay_transfers WHERE recipient_id = ? AND amount = ? "
+                "AND payer_id != ? AND timestamp >= ?",
+                (str(interaction.user.id), amount, str(recipient.id), now_ts - 60),
+            )
+            if regift:
+                from lib.bot.event_handlers import award_badge_with_notify
+                await award_badge_with_notify(interaction.client, interaction.user.id, 'regifter')
+
+        # Lucky 7s (secret): land on a balance of exactly 777 UKPence after the transfer.
+        from lib.economy.economy_manager import get_bb
+        from lib.bot.event_handlers import award_badge_with_notify as _notify_lucky
+        lucky_targets = [interaction.user.id]
+        if recipient.id != interaction.client.user.id:
+            lucky_targets.append(recipient.id)
+        for _luid in lucky_targets:
+            try:
+                if get_bb(_luid) == 777:
+                    await _notify_lucky(interaction.client, _luid, 'lucky_7s')
+            except Exception:
+                pass
+
         # Check Valentine badge
         uk_tz = pytz.timezone("Europe/London")
         now = datetime.now(uk_tz)
