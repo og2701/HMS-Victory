@@ -148,7 +148,8 @@ class PoliticsControlView(discord.ui.View):
         self._disable()
         verb = "unlocked" if self.unlock else "locked"
         await interaction.response.edit_message(
-            content=f"✅ {self.channel.mention} has been **{verb}** for @everyone.", view=self)
+            content=f"✅ {self.channel.mention} has been **{verb}** for the whole server.",
+            view=self, allowed_mentions=discord.AllowedMentions.none())
         self.stop()
 
     async def _cancel(self, interaction: discord.Interaction):
@@ -182,12 +183,19 @@ async def handle_politics_control_command(client, message) -> bool:
     if channel is None:
         return False
 
+    # Delete the trigger message instantly (like ukpadd/roleadd) so the channel stays clean.
+    try:
+        await message.delete()
+    except discord.HTTPException:
+        pass
+
     currently_open = is_channel_open(channel)
     unlock = not currently_open
     state = "Open" if currently_open else "Restricted"
     action = "Unlock" if unlock else "Lock"
     view = PoliticsControlView(channel, message.author.id, unlock=unlock)
-    view.message = await message.reply(
-        f"🏛️ {channel.mention} is currently **{state}**. {action} it for **@everyone**?",
-        view=view, mention_author=False)
+    # allowed_mentions.none() so the wording can never ping anyone (never @everyone).
+    view.message = await message.channel.send(
+        f"🏛️ {channel.mention} is currently **{state}**. {action} it for **the whole server**?",
+        view=view, allowed_mentions=discord.AllowedMentions.none())
     return True
