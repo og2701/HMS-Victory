@@ -745,7 +745,7 @@ def init_db():
             ('dealers_choice', "Dealer's Choice", 'Play every casino game at least once', '🎴', 'Bronze'),
             ('on_a_heater', 'On a Heater', 'Win 5 casino games in a row', '♨️', 'Silver'),
             ('comeback_kid', 'Comeback Kid', 'Win a casino game after dropping below 100 UKPence', '🪃', 'Silver'),
-            ('centurion', 'Centurion', 'Win 1,000 casino games in total', '🎖️', 'Gold'),
+            ('centurion', 'Centurion', 'Win 1,000 casino games in total', '🏵️', 'Gold'),
             # Translation
             ('ooga_booga', 'Ooga Booga', 'Have one of your messages translated to Caveman', '🦴', 'Bronze'),
             # Secret
