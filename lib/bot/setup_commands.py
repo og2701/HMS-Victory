@@ -10,8 +10,8 @@ from functools import wraps
 from config import *
 from lib.bot.commands import *
 from lib.core.utils import post_summary_helper, validate_and_format_date, generate_rank_card
-from lib.core.discord_helpers import has_role, has_any_role, toggle_user_role, restrict_channel_for_new_members, send_embed_to_channels, edit_voice_channel_members
-from lib.core.file_operations import load_whitelist, save_whitelist, set_file_status, is_file_status_active
+from lib.core.discord_helpers import has_role, has_any_role, toggle_user_role, send_embed_to_channels, edit_voice_channel_members
+from lib.core.file_operations import set_file_status, is_file_status_active
 from lib.features.summary import post_summary
 from lib.economy.economy_manager import get_shutcoins, set_shutcoins
 from lib.economy.prediction_system import PredAdminView, PredSelectView, PredictionCreateModal, PredictionScheduleModal
@@ -124,18 +124,26 @@ def define_commands(tree, client):
         await interaction.response.defer()
         await show_iceberg(interaction)
 
-    @command("politics-permit", "Allows a new user to speak in politics before the 7-day cooldown", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    @command("politics-permit", "Toggle a member's access to the politics channel", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
     async def politics_permit(interaction: Interaction, user: Member):
-        from lib.core.utils import load_whitelist, save_whitelist
-        current_whitelist = load_whitelist()
-        if user.id not in current_whitelist:
-            current_whitelist.append(user.id)
-            save_whitelist(current_whitelist)
-            from lib.bot.event_handlers import set_politics_whitelist
-            set_politics_whitelist(current_whitelist)
-            await interaction.response.send_message(f"{user.mention} has been permitted to speak in politics.", ephemeral=True)
+        from lib.features.politics_access import toggle_member_access
+        channel = interaction.guild.get_channel(CHANNELS.POLITICS)
+        if channel is None:
+            await interaction.response.send_message("Couldn't find the politics channel.", ephemeral=True)
+            return
+        try:
+            granted, natural, cleared = await toggle_member_access(channel, user, actor=interaction.user)
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "I don't have permission to edit the politics channel's overrides.", ephemeral=True)
+            return
+        if granted:
+            msg = (f"✅ Restored {user.mention}'s default access to {channel.mention} (override removed)."
+                   if cleared else f"✅ Granted {user.mention} access to {channel.mention}.")
         else:
-            await interaction.response.send_message(f"{user.mention} is already permitted to speak in politics.", ephemeral=True)
+            msg = (f"🚫 Removed {user.mention}'s access to {channel.mention} (override removed)."
+                   if cleared else f"🚫 Blocked {user.mention} from {channel.mention}.")
+        await interaction.response.send_message(msg, ephemeral=True)
 
     @command("post-daily-summary", "Posts the daily summary in the current channel for a specific date", checks=[lambda i: has_role(i, ROLES.MINISTER)])
     async def post_daily_summary(interaction: Interaction, date: str = None):

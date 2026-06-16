@@ -7,8 +7,8 @@ from collections import defaultdict
 from lib.core.translation import translate_and_send
 from lib.features.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.core.utils import post_summary_helper, generate_rank_card
-from lib.core.discord_helpers import has_role, has_any_role, restrict_channel_for_new_members, send_embed_to_channels, edit_voice_channel_members, fetch_messages_with_context, estimate_tokens
-from lib.core.file_operations import load_whitelist, save_whitelist, load_persistent_views, save_persistent_views, load_json_file, save_json_file, set_file_status, is_file_status_active, load_webhook_deletions, save_webhook_deletions
+from lib.core.discord_helpers import has_role, has_any_role, send_embed_to_channels, edit_voice_channel_members, fetch_messages_with_context, estimate_tokens
+from lib.core.file_operations import load_persistent_views, save_persistent_views, load_json_file, save_json_file, set_file_status, is_file_status_active, load_webhook_deletions, save_webhook_deletions
 from lib.core.utils import is_lockdown_active
 from lib.core.image_processing import trim_image, find_non_overlapping_position, random_color_excluding_blue_and_dark
 from lib.core.log_functions import create_message_image, create_edited_message_image
@@ -29,13 +29,6 @@ from commands.moderation.overnight_mute import mute_visitors, unmute_visitors
 
 logger = logging.getLogger(__name__)
 logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
-POLITICS_WHITELISTED_USER_IDS = load_whitelist()
-
-
-def set_politics_whitelist(user_ids: list[int]) -> None:
-    """Replace the cached politics whitelist with the latest user ids."""
-    global POLITICS_WHITELISTED_USER_IDS
-    POLITICS_WHITELISTED_USER_IDS = list(user_ids)
 
 MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
@@ -915,6 +908,11 @@ async def on_message(client, message):
     if await handle_hate_speech_message(client, message):
         return
 
+    # Deputy PM unlock/lock of the politics channel for @everyone (prefix command + confirm).
+    from lib.features.politics_access import handle_politics_control_command
+    if await handle_politics_control_command(client, message):
+        return
+
     # oggers toggles the piggy-react feature on/off; the command message is removed.
     if message.author.id == USERS.OGGERS and message.content.lower().strip() == "piggyreact":
         try:
@@ -936,9 +934,6 @@ async def on_message(client, message):
         from lib.features.xp_system import XPSystem
         client.xp_system = XPSystem(client)
         logger.info("XP system initialised")
-
-    if not await restrict_channel_for_new_members(message, CHANNELS.POLITICS, 7, POLITICS_WHITELISTED_USER_IDS):
-        return
 
     await mirror_voice_message(client, message)
 
