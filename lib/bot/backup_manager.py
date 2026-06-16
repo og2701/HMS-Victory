@@ -3,12 +3,50 @@ import os
 import logging
 import io
 import zipfile
+import asyncio
 from datetime import datetime
 from config import *
 from database import init_db
 
 logger = logging.getLogger(__name__)
 MAX_PART_SIZE = 8 * 1024 * 1024
+
+
+def _zip_folder_to_buffer(folder_path) -> io.BytesIO:
+    """Zip every file under folder_path into an in-memory buffer. Runs in a worker thread
+    (zlib + file I/O release the GIL) so the compression never blocks the event loop."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for root, _, files in os.walk(folder_path):
+            for name in files:
+                fp = os.path.join(root, name)
+                zipf.write(fp, os.path.relpath(fp, start=folder_path))
+    buf.seek(0)
+    return buf
+
+
+def _zip_json_dirs_to_buffer(present_dirs) -> io.BytesIO:
+    """Zip the .json files under each present dir into an in-memory buffer (worker thread)."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for folder in present_dirs:
+            for root, _, files in os.walk(folder):
+                for f in files:
+                    if not f.endswith(".json"):
+                        continue
+                    full = os.path.join(root, f)
+                    zipf.write(full, os.path.relpath(full, start="."))
+    buf.seek(0)
+    return buf
+
+
+def _zip_single_file_to_buffer(src_path, arcname) -> io.BytesIO:
+    """Zip one file into an in-memory buffer under arcname (worker thread)."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zipf:
+        zipf.write(src_path, arcname)
+    buf.seek(0)
+    return buf
 
 async def restore_database_if_missing():
     if not os.path.exists('database.db'):
@@ -75,15 +113,7 @@ async def zip_and_send_folder(client, folder_path, channel_id, zip_filename_pref
 
     logger.info(f"Creating in-memory ZIP for {folder_path}...")
 
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-        for root, _, files in os.walk(folder_path):
-            for file_in_folder in files:
-                file_path = os.path.join(root, file_in_folder)
-                archive_name = os.path.relpath(file_path, start=folder_path)
-                zipf.write(file_path, archive_name)
-
-    zip_buffer.seek(0)
+    zip_buffer = await asyncio.to_thread(_zip_folder_to_buffer, folder_path)
 
     file_number = 1
     while True:
@@ -204,17 +234,7 @@ async def backup_json_data(client):
         return
 
     try:
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-            for folder in present_dirs:
-                for root, _, files in os.walk(folder):
-                    for f in files:
-                        if not f.endswith(".json"):
-                            continue
-                        full = os.path.join(root, f)
-                        zipf.write(full, os.path.relpath(full, start="."))
-
-        zip_buffer.seek(0)
+        zip_buffer = await asyncio.to_thread(_zip_json_dirs_to_buffer, present_dirs)
         size = zip_buffer.getbuffer().nbytes
         if size == 0:
             logger.info("JSON backup archive is empty; skipping upload.")
@@ -249,12 +269,9 @@ async def backup_database(client):
     try:
         DatabaseManager.snapshot_to_file(snapshot_path)
 
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-            # Store it as 'database.db' so the restore path drops it straight into place.
-            zipf.write(snapshot_path, 'database.db')
-
-        zip_buffer.seek(0)
+        # Store it as 'database.db' so the restore path drops it straight into place.
+        # The (slow) compression runs in a worker thread so it can't block the event loop.
+        zip_buffer = await asyncio.to_thread(_zip_single_file_to_buffer, snapshot_path, 'database.db')
         filename = f"database_backup_{timestamp}.zip"
 
         await channel.send(file=discord.File(fp=zip_buffer, filename=filename))
