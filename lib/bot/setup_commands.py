@@ -168,15 +168,6 @@ def define_commands(tree, client):
         await interaction.response.defer(ephemeral=True)
         await post_summary_helper(interaction, "monthly")
 
-    @command("politics-ban", "Toggles politics ban for a member", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
-    async def politics_ban_command(interaction: Interaction, user: Member):
-        from config import ROLES
-        role = interaction.guild.get_role(ROLES.POLITICS_BAN)
-        if not role:
-            await interaction.response.send_message(f"Role with ID {ROLES.POLITICS_BAN} not found.", ephemeral=True)
-            return
-        await toggle_user_role(interaction, user, role)
-
     def has_roast_access(interaction):
         """Check if user has roast command access (including purchased access)"""
         user = interaction.user
