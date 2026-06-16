@@ -5,8 +5,36 @@ import discord
 from config import CHANNELS
 from collections import defaultdict
 from lib.core.constants import FLAG_LANGUAGE_MAPPINGS
+from database import DatabaseManager
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_TOKEN"))
+
+
+def _already_translated(message_id, target):
+    """Has this message already been translated to this target (flag)? Survives the reaction
+    being removed and re-added, and applies no matter who reacts."""
+    row = DatabaseManager.fetch_one(
+        "SELECT 1 FROM translation_log WHERE message_id = ? AND target = ?",
+        (str(message_id), target),
+    )
+    return row is not None
+
+
+def _claim_translation(message_id, target):
+    """Atomically claim (message, target) so two near-simultaneous reactions can't both
+    translate. Returns True if we got the claim, False if someone already holds it."""
+    return DatabaseManager.execute(
+        "INSERT OR IGNORE INTO translation_log (message_id, target) VALUES (?, ?)",
+        (str(message_id), target),
+    ) == 1
+
+
+def _release_translation(message_id, target):
+    """Drop the claim so a failed translation can be retried."""
+    DatabaseManager.execute(
+        "DELETE FROM translation_log WHERE message_id = ? AND target = ?",
+        (str(message_id), target),
+    )
 
 target_language_mappings = {
     "British English": "English",
@@ -31,6 +59,17 @@ async def translate_and_send(
     reaction, message, target_language, original_author, reacting_user
 ):
     if original_author.bot:
+        return
+
+    # Never translate the same message to the same thing twice - even if the reaction was
+    # removed and re-added, or a different person reacts later. The flag emoji is the identity
+    # of "the same thing". Checked up front so a duplicate doesn't cost the user a rate slot.
+    dedup_target = str(reaction.emoji)
+    if _already_translated(message.id, dedup_target):
+        try:
+            await reaction.remove(reacting_user)
+        except discord.HTTPException:
+            pass
         return
 
     user_id = reacting_user.id
@@ -81,35 +120,48 @@ async def translate_and_send(
     # Log timestamp
     user_translation_timestamps[user_id].append(current_time)
 
+    # Atomically claim this (message, target) - this is what actually blocks a duplicate when
+    # two reactions land at almost the same time. Released below if the translation fails so it
+    # stays retryable.
+    if not _claim_translation(message.id, dedup_target):
+        try:
+            await reaction.remove(reacting_user)
+        except discord.HTTPException:
+            pass
+        return
 
-    response = await client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": f"You are a translation assistant. Translate the following message to {target_language}. Convert any temperature given in Fahrenheit to Celsius in the output (e.g. '115°F' becomes '46°C', '70 F' becomes '21°C'), keeping it natural in the sentence. Return only the translated message without any extra information. If the message is a question DO NOT answer it. You are to ONLY return the message in its translated form!",
-            },
-            {"role": "user", "content": f"The message to translate: {message.content}"},
-        ],
-    )
+    try:
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"You are a translation assistant. Translate the following message to {target_language}. Convert any temperature given in Fahrenheit to Celsius in the output (e.g. '115°F' becomes '46°C', '70 F' becomes '21°C'), keeping it natural in the sentence. Return only the translated message without any extra information. If the message is a question DO NOT answer it. You are to ONLY return the message in its translated form!",
+                },
+                {"role": "user", "content": f"The message to translate: {message.content}"},
+            ],
+        )
 
-    translated_text = response.choices[0].message.content.strip()
+        translated_text = response.choices[0].message.content.strip()
 
-    embed = discord.Embed(description=translated_text, color=discord.Color.dark_gold())
+        embed = discord.Embed(description=translated_text, color=discord.Color.dark_gold())
 
-    embed.set_author(
-        name=original_author.display_name,
-        icon_url=(
-            original_author.avatar.url
-            if original_author.avatar
-            else original_author.default_avatar.url
-        ),
-    )
+        embed.set_author(
+            name=original_author.display_name,
+            icon_url=(
+                original_author.avatar.url
+                if original_author.avatar
+                else original_author.default_avatar.url
+            ),
+        )
 
-    target_language = target_language_mappings.get(target_language, target_language)
+        footer_target = target_language_mappings.get(target_language, target_language)
 
-    embed.set_footer(
-        text=f"Translated to {target_language} | Requested by {reacting_user.display_name}"
-    )
+        embed.set_footer(
+            text=f"Translated to {footer_target} | Requested by {reacting_user.display_name}"
+        )
 
-    await message.reply(embed=embed)
+        await message.reply(embed=embed)
+    except Exception:
+        _release_translation(message.id, dedup_target)
+        raise

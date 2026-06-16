@@ -471,6 +471,15 @@ def init_db():
                 PRIMARY KEY (user_id, badge_id)
             )
         ''')
+        # Dedup ledger for flag translations: a given message is translated to a given target
+        # (the flag emoji) at most once, regardless of reaction add/remove churn or who reacts.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS translation_log (
+                message_id TEXT NOT NULL,
+                target     TEXT NOT NULL,
+                PRIMARY KEY (message_id, target)
+            )
+        ''')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_payer ON pay_transfers(payer_id)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_recipient ON pay_transfers(recipient_id)')
         # Fixed-term savings ("bonds"): principal held in the bank while locked; on maturity
