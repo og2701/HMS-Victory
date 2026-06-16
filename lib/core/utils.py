@@ -187,6 +187,8 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
         # Add badges
         badges_html = ""
         secret_badges_html = ""
+        n_main_badges = 0
+        n_secret_badges = 0
         user_badges = get_user_badges(user_id_str)
         if user_badges:
             # Sort by rarity: Secret (-1), Gold (0), Silver (1), Bronze (2)
@@ -210,10 +212,50 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
                 
                 if rarity == "Secret":
                     secret_badges_html += badge_inner_html
+                    n_secret_badges += 1
                 else:
                     badges_html += badge_inner_html
+                    n_main_badges += 1
         
+        # --- Dynamic badge grid sizing ---------------------------------------
+        # Each badge grid is fit inside a bounded box so it never spills below the rank
+        # progress row or onto the username. The right (non-secret) box narrows as the name
+        # gets longer (keeping badges clear of a long name); the cell size is then the
+        # largest that fits every badge in the box. Boxes are in the template's 1000x600
+        # logical card space.
+        def _fit_badge_cell(count, box_w, box_h, gap, max_cell=40, min_cell=16):
+            if count <= 0:
+                return max_cell
+            for cell in range(max_cell, min_cell - 1, -1):
+                cols = max(1, (box_w + gap) // (cell + gap))
+                rows = (count + cols - 1) // cols
+                if rows * (cell + gap) - gap <= box_h:
+                    return cell
+            return min_cell
+
+        badge_gap = 6
+        # Right box width shrinks with the username so badges stay off a longer name.
+        if name_len <= 12:
+            main_box_w = 580
+        elif name_len <= 18:
+            main_box_w = 500
+        elif name_len <= 24:
+            main_box_w = 430
+        else:
+            main_box_w = 370
+        main_box_h = 250                       # keeps the grid above the rank-progress row
+        secret_box_w, secret_box_h = 320, 150  # top-left, above the avatar
+        main_badge_size = _fit_badge_cell(n_main_badges, main_box_w, main_box_h, badge_gap)
+        secret_badge_size = _fit_badge_cell(n_secret_badges, secret_box_w, secret_box_h, badge_gap)
+
         # Apply replacements
+        html_content = safe_replace(html_content, "badge_gap", badge_gap)
+        html_content = safe_replace(html_content, "main_box_w", main_box_w)
+        html_content = safe_replace(html_content, "main_box_h", main_box_h)
+        html_content = safe_replace(html_content, "secret_box_w", secret_box_w)
+        html_content = safe_replace(html_content, "secret_box_h", secret_box_h)
+        html_content = safe_replace(html_content, "main_badge_size", main_badge_size)
+        html_content = safe_replace(html_content, "secret_badge_size", secret_badge_size)
         html_content = safe_replace(html_content, "profile_pic", member.display_avatar.url)
         html_content = safe_replace(html_content, "username", member.display_name)
         # Render "#5" when ranked, "Unranked" otherwise (the template prefixes "Rank ").

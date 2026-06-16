@@ -61,19 +61,33 @@
       display: flex;
       flex-wrap: wrap;
       justify-content: flex-end;
-      gap: 8px;
-      max-width: 580px;
+      align-content: flex-start;
+      gap: {badge_gap}px;
+      max-width: {main_box_w}px;
+      max-height: {main_box_h}px;
+      overflow: hidden;
       z-index: 20;
     }
 
     .badge-item {
-      width: 40px;
-      height: 40px;
       display: flex;
       align-items: center;
       justify-content: center;
       transition: transform 0.2s;
       border-radius: 8px;
+      flex: 0 0 auto;
+    }
+
+    /* Cell size is computed per render so each grid fits its box (keeps the badges off
+       the username and above the rank-progress row). */
+    .badge-container .badge-item {
+      width: {main_badge_size}px;
+      height: {main_badge_size}px;
+    }
+
+    .secret-badge-container .badge-item {
+      width: {secret_badge_size}px;
+      height: {secret_badge_size}px;
     }
 
     .rarity-bronze {
@@ -144,7 +158,11 @@
       left: 25px;
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      align-content: flex-start;
+      gap: {badge_gap}px;
+      max-width: {secret_box_w}px;
+      max-height: {secret_box_h}px;
+      overflow: hidden;
       z-index: 20;
     }
 
