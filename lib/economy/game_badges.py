@@ -53,3 +53,18 @@ async def award_connect4_badges(client, winner_id, stake):
             await award_badge_with_notify(client, winner_id, "trash_talker")
     except Exception:
         logger.error("connect4 badge award failed", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Higher or Lower
+# ---------------------------------------------------------------------------
+async def award_higherlower_badges(client, game):
+    """on_the_up: win 3 guesses in one game (steps). vertigo: cash out at >= 5x."""
+    try:
+        from lib.bot.event_handlers import award_badge_with_notify
+        if getattr(game, "steps", 0) >= 3:
+            await award_badge_with_notify(client, game.player_id, "on_the_up")
+        if getattr(game, "outcome", None) == "win" and getattr(game, "cumulative", 0) >= 5.0:
+            await award_badge_with_notify(client, game.player_id, "vertigo")
+    except Exception:
+        logger.error("higher/lower badge award failed", exc_info=True)

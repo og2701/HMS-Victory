@@ -519,6 +519,12 @@ async def _handle_action(interaction: Interaction, game: HigherLowerGame, action
                 save_game(game)
 
             try:
+                from lib.economy.game_badges import award_higherlower_badges
+                await award_higherlower_badges(client, game)
+            except Exception:
+                logger.error("higher/lower badge hook failed", exc_info=True)
+
+            try:
                 await _refresh(interaction, game, client)
             except Exception:
                 logger.error("Higher-Lower redraw failed after applying the move.", exc_info=True)
