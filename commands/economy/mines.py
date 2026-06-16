@@ -293,9 +293,34 @@ def _make_again_cb(old_game: MinesGame):
     return _cb
 
 
+async def _safe_edit_board(interaction: Interaction, view) -> bool:
+    """Refresh the board, surviving a dead interaction token.
+
+    The board is just buttons, so the 3-second interaction window can lapse when the
+    event loop is briefly busy elsewhere (e.g. a synchronous headless-Chrome render for
+    another casino game) - by the time this callback runs the token is already expired
+    (404 Unknown interaction / 10062). Fall back to editing the message directly via the
+    bot token so the board still refreshes instead of erroring and going stale. Returns
+    True if the board updated.
+    """
+    try:
+        await interaction.response.edit_message(view=view)
+        return True
+    except (discord.NotFound, discord.InteractionResponded):
+        try:
+            if interaction.message is not None:
+                await interaction.message.edit(view=view)
+                return True
+        except discord.HTTPException:
+            logger.debug("Mines board fallback edit failed", exc_info=True)
+    except discord.HTTPException:
+        logger.debug("Mines board edit failed", exc_info=True)
+    return False
+
+
 async def _rerender(interaction: Interaction, game: MinesGame):
     view = build_mines_layout(game)
-    await interaction.response.edit_message(view=view)
+    await _safe_edit_board(interaction, view)
     # Re-register routing for the freshly-built view in both states, so the Rules
     # button still works once the board is terminal. (The view always reflects the
     # current state, so this is never a stale registration.)
@@ -406,14 +431,13 @@ async def _handle_again(interaction: Interaction, old_game: MinesGame):
     new_game = MinesGame.new(old_game.player_id, old_game.player_name, old_game.channel_id,
                              bet, mines)
     new_game.message_id = old_game.message_id
-    try:
-        view = build_mines_layout(new_game)
-        await interaction.response.edit_message(view=view)
-    except Exception:
-        # The new board never reached the screen - refund the just-taken stake.
-        logger.error("Mines replay failed before showing the new board; refunding stake.",
-                     exc_info=True)
+    view = build_mines_layout(new_game)
+    if not await _safe_edit_board(interaction, view):
+        # The new board never reached the screen - refund the just-taken stake and let
+        # them try again (clear the replay claim).
+        logger.error("Mines replay failed before showing the new board; refunding stake.")
         credit_from_bank(old_game.player_id, bet, "Mines stake refund (replay failed)")
+        old_game.replayed = False
         return
     try:
         save_game(new_game)
