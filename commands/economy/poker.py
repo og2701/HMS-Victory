@@ -12,6 +12,7 @@ import asyncio
 import html as _html
 import io
 import logging
+import time
 
 import discord
 from discord import Interaction
@@ -133,6 +134,10 @@ class Table:
         self._loop_task = None
         self._next_task = None
         self._prehand = {}
+        self._hand_acted = False        # did a human act this hand (vs everyone timing out)?
+        self._sitting_out = set()       # seats that missed a turn; insta-folded until they return
+        self._last_active = time.monotonic()  # last human engagement, for the idle auto-close
+        self._idle_task = None
 
     # --- seat helpers ----------------------------------------------------------
     def seat_of(self, uid):
@@ -140,6 +145,14 @@ class Table:
 
     def _checkpoint(self):
         escrow.checkpoint(self.channel_id, {s["id"]: s["stack"] for s in self.seats})
+
+    def _active_seats(self):
+        """Seats that can play a hand: have chips and aren't sitting out (missed-turn AFK)."""
+        return [s for s in self.seats if s["stack"] > 0 and s["id"] not in self._sitting_out]
+
+    def _touch(self):
+        """Mark real human engagement, resetting the idle-close clock."""
+        self._last_active = time.monotonic()
 
     # --- rendering -------------------------------------------------------------
     def _text(self):
@@ -187,7 +200,11 @@ class Table:
                 b = discord.ui.Button(label="Sit", emoji="➕", style=discord.ButtonStyle.success)
                 b.callback = self._on_sit
                 v.add_item(b)
-            if len([s for s in self.seats if s["stack"] > 0]) >= 2:
+            if self._sitting_out:
+                b = discord.ui.Button(label="I'm back", emoji="\U0001f44b", style=discord.ButtonStyle.success)
+                b.callback = self._on_back
+                v.add_item(b)
+            if len(self._active_seats()) >= 2:
                 b = discord.ui.Button(label="Deal", emoji="\U0001f3b4", style=discord.ButtonStyle.primary)
                 b.callback = self._on_deal
                 v.add_item(b)
@@ -196,9 +213,13 @@ class Table:
             v.add_item(b)
         return v
 
-    async def render(self):
-        """Edit (or post) the board in the thread: felt image while playing, text otherwise.
-        If the board message was deleted, re-post a fresh one instead of dying on a 404."""
+    async def render(self, *, bump=False, content=None):
+        """Show the board in the thread: felt image while a hand is live, text otherwise.
+
+        bump=True re-posts the board at the BOTTOM (deleting the old one) so player chat can't
+        bury it - used each turn, with `content` carrying the actor's @mention so they're
+        actually pinged. The old board is deleted, so the thread never fills with stale boards.
+        """
         dest = self.thread or self.casino
         if dest is None:
             return
@@ -206,25 +227,35 @@ class Table:
             view = self._view()
             img = await _render_felt(self) if self.hand is not None else None
             data = img.getvalue() if img is not None else None
-            content = None if data is not None else self._text()
+            if content is None and data is None:
+                content = self._text()
+            am = discord.AllowedMentions(users=True) if content else discord.AllowedMentions.none()
 
             def _file():
                 return discord.File(io.BytesIO(data), "poker.png") if data is not None else None
 
+            # Bump: drop the old board and re-post at the bottom. A re-post (not an edit) is
+            # the only thing that both un-buries the board AND fires the actor's mention.
+            if bump and self.message is not None:
+                try:
+                    await self.message.delete()
+                except Exception:
+                    pass
+                self.message = None
+
             if self.message is not None:
                 try:
-                    if data is not None:
-                        await self.message.edit(attachments=[_file()], content=None, view=view)
-                    else:
-                        await self.message.edit(content=content, attachments=[], view=view)
+                    await self.message.edit(
+                        content=content, attachments=[_file()] if data is not None else [],
+                        view=view, allowed_mentions=am)
                     return
                 except discord.NotFound:
                     self.message = None  # board was deleted; fall through to re-post
             f = _file()
             if f is not None:
-                self.message = await dest.send(file=f, view=view)
+                self.message = await dest.send(content=content, file=f, view=view, allowed_mentions=am)
             else:
-                self.message = await dest.send(content=content, view=view)
+                self.message = await dest.send(content=content, view=view, allowed_mentions=am)
         except Exception:
             logger.error("poker render failed", exc_info=True)
 
@@ -282,6 +313,7 @@ class Table:
                 await self.thread.add_user(user)  # pull them into the game thread
             except Exception:
                 logger.debug("poker add_user to thread failed", exc_info=True)
+        self._touch()
         await interaction.response.send_message(
             f"Seated with **{amount:,}** chips. Good luck!", ephemeral=True)
         await self.render()
@@ -310,9 +342,22 @@ class Table:
 
     async def _on_deal(self, interaction: Interaction):
         await interaction.response.defer()
+        self._touch()
+        self._sitting_out.discard(interaction.user.id)
         if self.status == "playing":
             return
         await self.start_hand()
+
+    async def _on_back(self, interaction: Interaction):
+        """A sat-out player taps 'I'm back' to rejoin the next hand."""
+        if not self.seat_of(interaction.user.id):
+            await interaction.response.send_message("You're not seated - tap **Sit**.", ephemeral=True)
+            return
+        self._sitting_out.discard(interaction.user.id)
+        self._touch()
+        await interaction.response.send_message(
+            "Welcome back - you're in for the next hand.", ephemeral=True)
+        await self.render()
 
     # --- hand flow -------------------------------------------------------------
     async def start_hand(self):
@@ -322,8 +367,10 @@ class Table:
             if self.status == "playing":
                 return
             self.seats = [s for s in self.seats if s["stack"] > 0]
-            if len(self.seats) < 2:
-                self.status = "lobby"
+            if len(self._active_seats()) < 2:
+                # Fewer than two players actually present - stay paused (the idle watcher
+                # closes the table if nobody shows up). Sat-out players can tap "I'm back".
+                self.status = "between" if self.seats else "lobby"
                 self.hand = None
                 await self.render()
                 return
@@ -338,11 +385,25 @@ class Table:
     async def _run(self):
         try:
             while self.status == "playing" and self.hand and not self.hand.finished:
-                self._turn_event = asyncio.Event()
                 actor = self.hand.current_player()
                 if actor is None:
                     break
-                await self.render()
+                # Sat-out players (missed a prior turn) don't hold up the table: act for them
+                # instantly - no ping, no 45s wait - so the live players keep moving.
+                if actor in self._sitting_out:
+                    async with self.lock:
+                        if self.hand and not self.hand.finished and self.hand.current_player() == actor:
+                            la = self.hand.legal_actions()
+                            self.hand.act("check" if la.get("check") else "fold")
+                    continue
+                # Re-post the board at the bottom with the actor's @mention, so they're actually
+                # pinged and the board can't be buried by chat.
+                to_call = self.hand.current_bet - self.hand.committed.get(actor, 0)
+                act_word = f"call **{to_call:,}**" if to_call > 0 else "**check**"
+                ping = (f"\U0001f0cf <@{actor}> - your turn to {act_word}. Tap **View / Act** below "
+                        f"to see your cards and move. Auto-{'fold' if to_call > 0 else 'check'} in {TURN}s.")
+                self._turn_event = asyncio.Event()
+                await self.render(bump=True, content=ping)
                 try:
                     await asyncio.wait_for(self._turn_event.wait(), timeout=TURN)
                 except asyncio.TimeoutError:
@@ -350,6 +411,7 @@ class Table:
                         if self.hand and not self.hand.finished and self.hand.current_player() == actor:
                             la = self.hand.legal_actions()
                             self.hand.act("check" if la.get("check") else "fold")
+                            self._sitting_out.add(actor)  # missed their turn -> sit out till back
             await self._end_hand()
         except Exception:
             logger.error("poker hand loop crashed", exc_info=True)
@@ -364,25 +426,33 @@ class Table:
                 h.act(kind, amount)
             except Exception as e:
                 return False, f"Invalid action: {e}"
+            self._hand_acted = True
+            self._sitting_out.discard(interaction.user.id)
+        self._touch()
         if self._turn_event:
             self._turn_event.set()
         return True, None
 
     async def _end_hand(self):
         h = self.hand
+        acted = self._hand_acted
         async with self.lock:
             for s in self.seats:
                 if s["id"] in h.final_stack:
                     s["stack"] = h.final_stack[s["id"]]
             self.status = "between"
             self.hand = None
+            self._hand_acted = False
             self._checkpoint()
         await self._render_results(h)
         self.seats = [s for s in self.seats if s["stack"] > 0]
-        if len([s for s in self.seats if s["stack"] > 0]) >= 2:
+        # Only roll into the next hand if a human actually played AND 2+ players are still
+        # present. A hand where everyone timed out just pauses (require a manual Deal); the
+        # idle watcher closes a table nobody comes back to.
+        if acted and len(self._active_seats()) >= 2:
             self._next_task = asyncio.create_task(self._auto_next())
         else:
-            self.status = "lobby"
+            self.status = "between" if self.seats else "lobby"
             await self.render()
 
     async def _auto_next(self):
@@ -415,10 +485,11 @@ class Table:
                 lines.append("-# " + ", ".join(beaten) + (" mucks." if len(beaten) == 1 else " muck."))
         lines.append("\n**Stacks** " + " · ".join(
             f"{s['name']} {s['stack']:,}" for s in self.seats))
-        if self.thread is not None:
-            lines.append(f"-# Played at {self.thread.mention} · next hand shortly.")
+        # Per-hand results stay in the THREAD now - the casino channel only gets the session
+        # summary on close - so the table can't flood #casino with hand-over notices.
+        dest = self.thread or self.casino
         try:
-            await self.casino.send("\n".join(lines))  # results go to the casino channel
+            await dest.send("\n".join(lines))
         except Exception:
             logger.error("poker results post failed", exc_info=True)
 
@@ -432,6 +503,30 @@ class Table:
             self.hand = None
             self._checkpoint()
         await self.render()
+
+    async def _idle_watch(self):
+        """Close a table that's seen no human action for POKER_IDLE_CLOSE_SECONDS. Only ever
+        fires while NOT mid-hand - an idle table pauses in 'between'/'lobby', which is when a
+        dead session gets swept up and everyone cashed out."""
+        limit = getattr(config, "POKER_IDLE_CLOSE_SECONDS", 180)
+        try:
+            while not self.closed:
+                await asyncio.sleep(30)
+                if self.closed:
+                    return
+                if self.status != "playing" and (time.monotonic() - self._last_active) > limit:
+                    try:
+                        await self.casino.send(
+                            "\U0001f0cf The Hold'em table closed after sitting idle - "
+                            "run `/poker` to start a fresh one.")
+                    except Exception:
+                        pass
+                    await self.close()
+                    return
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.error("poker idle watch crashed", exc_info=True)
 
     async def close(self):
         if self.closed:
@@ -489,25 +584,24 @@ class Table:
             await interaction.response.send_message(
                 "You're not in this hand. Wait for the next one and tap **Sit**.", ephemeral=True)
             return
+        self._touch()
+        self._sitting_out.discard(interaction.user.id)
         h = self.hand
         if not h:
             await interaction.response.send_message("No hand in progress.", ephemeral=True)
             return
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        # Respond INSTANTLY with the player's hole cards + action buttons as text - no felt
+        # render here (the shared board image already sits at the bottom of the thread). This
+        # kills the "thinking..." placeholder and the "No hand in progress" races from the slow
+        # render, and keeps the private info compact right next to the board.
         is_turn = h.current_player() == interaction.user.id
+        hole = _cards(h.hole.get(interaction.user.id, [])) or "_(not in this hand)_"
+        board = _cards(h.board) or "_(pre-flop)_"
+        content = f"\U0001f0cf **Your hand** {hole}\n**Board** {board}  ·  **Pot** {h.pot():,}"
+        if not is_turn:
+            content += "\n\n-# Waiting for your turn - the board above pings you when it's your move."
         view = ActionView(self) if is_turn else None
-        img = await _render_felt(self, viewer=interaction.user.id)
-        if img is not None:
-            content = None if is_turn else "_Not your turn yet - here's the table._"
-            await interaction.followup.send(
-                content=content, file=discord.File(img, "hand.png"), view=view, ephemeral=True)
-        else:
-            hole = _cards(h.hole.get(interaction.user.id, []))
-            content = (f"**Your hand:** {hole}\n**Board:** {_cards(h.board) or '(pre-flop)'}  ·  "
-                       f"**Pot** {h.pot():,}")
-            if not is_turn:
-                content += "\n\n_Waiting for your turn..._"
-            await interaction.followup.send(content=content, view=view, ephemeral=True)
+        await interaction.response.send_message(content=content, view=view, ephemeral=True)
 
 
 class BuyInModal(discord.ui.Modal, title="Sit at the table"):
@@ -632,6 +726,7 @@ async def handle_poker_command(interaction: Interaction):
             ephemeral=True)
         return
     await table.render()  # board lives in the thread
+    table._idle_task = asyncio.create_task(table._idle_watch())
     try:
         table.casino_msg = await interaction.channel.send(
             f"\U0001f0cf A **Hold'em** table just opened: {table.thread.mention} - "

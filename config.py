@@ -179,6 +179,7 @@ POKER_MIN_BUYIN = 200
 POKER_MAX_BUYIN = 2000
 POKER_MAX_SEATS = 6
 POKER_TURN_SECONDS = 45            # auto check/fold if a player stalls
+POKER_IDLE_CLOSE_SECONDS = 180     # close a table after this long with no human action
 POKER_ESCROW_FILE = os.path.join(JSON_DATA_DIR, "poker_escrow.json")
 # "Analyse User" moderation tool (Gemini). Reads GEMINI_API_KEY from the environment.
 GEMINI_MODEL = "gemini-2.5-flash"
