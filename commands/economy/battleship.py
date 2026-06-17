@@ -572,6 +572,12 @@ class BattleshipGame:
         if self.escrow_key is not None:
             delete_state(self.escrow_key)            # delete-before-credit: never double-pay on reboot
         credit_from_bank(self._uid(winner), self.stake * 2, "Battleship win")
+        try:
+            from lib.economy import pvp_stats
+            pvp_stats.record_result("battleship", self._uid(winner), self._uid(self._opp(winner)),
+                                    self.stake, "forfeit" if forfeit else "win")
+        except Exception:
+            logger.error("battleship stats hook failed", exc_info=True)
         await self._render_final(winner=winner, forfeit=forfeit)
         for pl in (1, 2):
             await self._refresh_fire_panel(pl)

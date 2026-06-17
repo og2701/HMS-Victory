@@ -253,17 +253,19 @@ class Connect4View(discord.ui.View):
             wid = self.p1_id if winner == 1 else self.p2_id
             lid = self.p2_id if winner == 1 else self.p1_id
             credit_from_bank(wid, pot, "Connect 4 win")
-        # Log the match and award the winner their Connect 4 badges (best-effort).
+        # Log the match (unified PvP stats) and award the winner their badges (best-effort).
         try:
-            from lib.economy.game_badges import record_connect4_result, award_connect4_badges
+            from lib.economy import pvp_stats
+            from lib.economy.game_badges import award_connect4_badges
             if winner is None:
-                record_connect4_result(None, None, self.stake)
+                pvp_stats.record_result("connect4", None, None, self.stake, "draw")
             else:
-                record_connect4_result(wid, lid, self.stake)
+                pvp_stats.record_result("connect4", wid, lid, self.stake,
+                                        "forfeit" if forfeit else "win")
                 if self.client is not None:
                     await award_connect4_badges(self.client, wid, self.stake)
         except Exception:
-            logger.error("connect4 badge hook failed", exc_info=True)
+            logger.error("connect4 stats/badge hook failed", exc_info=True)
         embed = self._embed(final=True, winner=winner, forfeit=forfeit)
         if interaction is not None:
             await self._safe_edit(interaction, embed=embed, view=None)

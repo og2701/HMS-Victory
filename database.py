@@ -492,6 +492,30 @@ def init_db():
             )
         ''')
         c.execute('CREATE INDEX IF NOT EXISTS idx_c4_winner ON connect4_results(winner_id)')
+        # Unified results for ALL 1v1 PvP wager games (connect4, battleship, and future ones).
+        # winner_id NULL on a draw. outcome: 'win' | 'draw' | 'forfeit'. Kept out of
+        # casino_results so PvP games don't skew the house-casino stats/leaderboard.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS pvp_results (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                game       TEXT NOT NULL,
+                winner_id  TEXT,
+                loser_id   TEXT,
+                stake      INTEGER NOT NULL,
+                outcome    TEXT,
+                timestamp  INTEGER NOT NULL
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_pvp_game ON pvp_results(game)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_pvp_winner ON pvp_results(game, winner_id)')
+        # One-time migration: fold the legacy connect4_results into the unified table. Guarded
+        # on "no connect4 rows yet" so it runs exactly once (afterwards live games write here).
+        if c.execute("SELECT COUNT(*) FROM pvp_results WHERE game='connect4'").fetchone()[0] == 0:
+            c.execute(
+                "INSERT INTO pvp_results (game, winner_id, loser_id, stake, outcome, timestamp) "
+                "SELECT 'connect4', winner_id, loser_id, stake, "
+                "CASE WHEN winner_id IS NULL THEN 'draw' ELSE 'win' END, timestamp "
+                "FROM connect4_results")
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_payer ON pay_transfers(payer_id)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pay_recipient ON pay_transfers(recipient_id)')
         # Fixed-term savings ("bonds"): principal held in the bank while locked; on maturity
