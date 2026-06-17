@@ -134,6 +134,10 @@ class Connect4View(discord.ui.View):
                 ok = await self._render_board()
             if ok:
                 self._restart_timer()
+                # Re-push the board a few seconds later. If a client dropped the edit event and
+                # is still showing "thinking…", this resyncs it so the human sees it's their turn
+                # (the main cause of a board that *looks* stuck when the AI actually moved).
+                asyncio.create_task(self._nudge_render())
             else:
                 logger.error("connect4 AI board still not rendered; human left OFF the clock")
 
@@ -252,6 +256,16 @@ class Connect4View(discord.ui.View):
         except discord.HTTPException:
             logger.debug("connect4 board render failed", exc_info=True)
             return False
+
+    async def _nudge_render(self):
+        """A few seconds after the AI moves, re-push the current board. Cheap insurance against a
+        client that dropped the edit event and is still showing a stale 'thinking…'."""
+        try:
+            await asyncio.sleep(3)
+        except asyncio.CancelledError:
+            return
+        if not self.game_over:
+            await self._render_board()
 
     # --- forfeit clock -----------------------------------------------------
     def start(self):
