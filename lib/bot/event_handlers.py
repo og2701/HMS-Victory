@@ -1018,7 +1018,7 @@ async def on_message(client, message):
                 if last_echo and last_echo["content"] == current_content and last_echo["author_id"] != message.author.id:
                     last_echo["count"] += 1
                     last_echo["author_id"] = message.author.id # Update to current author for next echo
-                    if last_echo["count"] >= 3:
+                    if last_echo["count"] >= 4:
                         await award_badge_with_notify(client, message.author.id, 'echo')
                 else:
                     client.echo_tracking[channel_id] = {
