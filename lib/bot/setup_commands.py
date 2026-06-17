@@ -518,9 +518,9 @@ def define_commands(tree, client):
             return
         await handle_mines_command(interaction, amount)
 
-    @command("connect4", "Challenge someone to Connect 4 - winner takes the pot (UKPence)")
-    async def connect4_command(interaction: Interaction, opponent: Member,
-                               bet: app_commands.Range[int, 1]):
+    @command("connect4", "Connect 4 for UKPence - challenge someone, or leave opponent blank to play the AI")
+    async def connect4_command(interaction: Interaction, bet: app_commands.Range[int, 1],
+                               opponent: Member = None):
         if await _require_casino_channel(interaction):
             return
         from commands.economy.connect4 import handle_connect4_command

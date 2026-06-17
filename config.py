@@ -187,6 +187,8 @@ CONNECT4_MIN_BET = 5
 CONNECT4_MAX_BET = 5000
 CONNECT4_ACCEPT_SECONDS = 300      # opponent has this long to accept the challenge
 CONNECT4_FORFEIT_SECONDS = 600     # 10 min to make each move, or you forfeit the pot
+CONNECT4_AI_DEPTH = 13             # vs-AI (bank-funded): max negamax depth
+CONNECT4_AI_TIME = 1.8             # vs-AI: per-move think budget in seconds (iterative deepening)
 
 BATTLESHIP_ENABLED = True
 BATTLESHIP_MIN_BET = 5

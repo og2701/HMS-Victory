@@ -62,7 +62,7 @@ def rules_text() -> str:
 # The live board
 # ---------------------------------------------------------------------------
 class Connect4View(discord.ui.View):
-    def __init__(self, p1_id, p1_name, p2_id, p2_name, stake, channel_id):
+    def __init__(self, p1_id, p1_name, p2_id, p2_name, stake, channel_id, ai_player=None):
         super().__init__(timeout=None)  # the forfeit clock is managed ourselves, not by the View
         self.p1_id = int(p1_id)
         self.p2_id = int(p2_id)
@@ -70,6 +70,7 @@ class Connect4View(discord.ui.View):
         self.p2_name = p2_name
         self.stake = int(stake)
         self.channel_id = channel_id
+        self.ai_player = ai_player       # 1|2 if that seat is the bank-funded AI, else None
         self.board = [[0] * COLS for _ in range(ROWS)]
         self.turn = random.choice([1, 2])   # who moves first is random (first-move edge is real)
         self.game_over = False
@@ -78,6 +79,55 @@ class Connect4View(discord.ui.View):
         self._lock = asyncio.Lock()
         self._timer_task = None
         self._sync_buttons()
+
+    # --- AI opponent (bank-funded) -----------------------------------------
+    def _human_player(self):
+        """The non-AI seat (only meaningful in an AI game)."""
+        return 1 if self.ai_player == 2 else 2
+
+    async def _ai_take_turn(self, interaction):
+        """If it's the AI's turn, think (off the event loop) and play; settle on win/full.
+        Called after the human's move and, if the AI moves first, at game start."""
+        while not self.game_over and self.ai_player is not None and self.turn == self.ai_player:
+            import config
+            depth = getattr(config, "CONNECT4_AI_DEPTH", 12)
+            budget = getattr(config, "CONNECT4_AI_TIME", 1.5)
+            try:
+                from lib.economy import connect4_ai
+                loop = asyncio.get_event_loop()
+                col = await loop.run_in_executor(
+                    None, lambda: connect4_ai.best_move(self.board, self.ai_player,
+                                                        depth=depth, time_budget=budget))
+            except Exception:
+                logger.error("connect4 AI move failed; picking a fallback column", exc_info=True)
+                col = next((c for c in range(COLS) if self.board[0][c] == 0), None)
+            async with self._lock:
+                if self.game_over or self.turn != self.ai_player:
+                    return
+                if col is None or self.board[0][col] != 0:
+                    col = next((c for c in range(COLS) if self.board[0][c] == 0), None)
+                    if col is None:
+                        await self._finish(interaction, winner=None)
+                        return
+                row = self._drop(col, self.ai_player)
+                if self._check_win(row, col, self.ai_player):
+                    await self._finish(interaction, winner=self.ai_player)
+                    return
+                if self._is_full():
+                    await self._finish(interaction, winner=None)
+                    return
+                self.turn = self._human_player()
+                self._restart_timer()
+                self._sync_buttons()
+            # show the AI's move; it's now the human's turn (loop exits)
+            if interaction is not None:
+                await self._safe_edit(interaction, embed=self._embed(), view=self)
+            elif self.message is not None:
+                try:
+                    await self.message.edit(embed=self._embed(), view=self)
+                except discord.HTTPException:
+                    pass
+            interaction = None  # only the first edit can use the interaction token
 
     # --- board logic -------------------------------------------------------
     def _drop(self, col, player) -> int | None:
@@ -237,6 +287,9 @@ class Connect4View(discord.ui.View):
             self._restart_timer()
             self._sync_buttons()
             await self._safe_edit(interaction, embed=self._embed(), view=self)
+        # In an AI game, let the bot reply now that it's its turn (re-acquires the lock).
+        if not self.game_over and self.ai_player is not None and self.turn == self.ai_player:
+            await self._ai_take_turn(None)
 
     async def _finish(self, interaction, *, winner, forfeit=False):
         """Settle the game. winner: 1 | 2 | None(draw). Pays out of the bank after dropping
@@ -246,12 +299,24 @@ class Connect4View(discord.ui.View):
         pot = self.stake * 2
         if self.message is not None:
             delete_state(self.message.id)
-        if winner is None:
+        wid = lid = None
+        if winner is not None:
+            wid = self.p1_id if winner == 1 else self.p2_id
+            lid = self.p2_id if winner == 1 else self.p1_id
+        if self.ai_player is not None:
+            # Bank-funded AI game: only the human staked. Human win pays 2x from the bank;
+            # AI win -> the bank simply keeps the stake (NO payout, or it would mint UKP);
+            # draw refunds the human.
+            human = self._human_player()
+            human_id = self.p1_id if human == 1 else self.p2_id
+            if winner is None:
+                credit_from_bank(human_id, self.stake, "Connect 4 vs AI draw refund")
+            elif winner == human:
+                credit_from_bank(human_id, pot, "Connect 4 vs AI win")
+        elif winner is None:
             credit_from_bank(self.p1_id, self.stake, "Connect 4 draw refund")
             credit_from_bank(self.p2_id, self.stake, "Connect 4 draw refund")
         else:
-            wid = self.p1_id if winner == 1 else self.p2_id
-            lid = self.p2_id if winner == 1 else self.p1_id
             credit_from_bank(wid, pot, "Connect 4 win")
         # Log the match (unified PvP stats) and award the winner their badges (best-effort).
         try:
@@ -262,7 +327,9 @@ class Connect4View(discord.ui.View):
             else:
                 pvp_stats.record_result("connect4", wid, lid, self.stake,
                                         "forfeit" if forfeit else "win")
-                if self.client is not None:
+                # Award badges to a human winner only - never the AI/bank.
+                ai_won = self.ai_player is not None and winner == self.ai_player
+                if self.client is not None and not ai_won:
                     await award_connect4_badges(self.client, wid, self.stake)
         except Exception:
             logger.error("connect4 stats/badge hook failed", exc_info=True)
@@ -413,15 +480,49 @@ class Connect4ChallengeView(discord.ui.View):
 # ---------------------------------------------------------------------------
 # Command entry
 # ---------------------------------------------------------------------------
+async def _start_ai_game(interaction: Interaction, bet: int):
+    """Bank-funded game vs the AI: the human stakes; the bank is the opponent. Human win pays
+    2x from the bank, AI win lets the bank keep the stake, draw refunds (see _finish). No
+    challenge/accept - it starts immediately."""
+    user = interaction.user
+    if not remove_bb(user.id, bet, reason="Connect 4 vs AI stake"):
+        await interaction.response.send_message("Couldn't take your stake.", ephemeral=True)
+        return
+    bot_id = interaction.client.user.id
+    p1_name = discord.utils.escape_markdown(user.display_name)
+    game = Connect4View(user.id, p1_name, bot_id, "HMS Victory \U0001F916", bet,
+                        interaction.channel_id, ai_player=2)
+    game.client = interaction.client
+    try:
+        await interaction.response.send_message(embed=game._embed(), view=game)
+        game.message = await interaction.original_response()
+    except Exception:
+        credit_from_bank(user.id, bet, "Connect 4 vs AI void refund (start failed)")
+        logger.error("connect4 AI game failed to start; refunded.", exc_info=True)
+        return
+    # Persist a refund record keyed by the board message - a restart voids the game and
+    # refunds the human (the bank never actually staked, so only the human is owed).
+    save_state(game.message.id, {
+        "type": "connect4", "ai": True,
+        "p1_id": user.id, "p2_id": bot_id, "stake": bet, "channel_id": interaction.channel_id,
+    })
+    game.start()
+    if game.turn == game.ai_player:          # AI moves first
+        await game._ai_take_turn(None)
+
+
 async def handle_connect4_command(interaction: Interaction, opponent: Member, bet: int):
     if await reject_if_maintenance(interaction):
         return
     if not getattr(config, "CONNECT4_ENABLED", True):
         await interaction.response.send_message("Connect 4 is currently disabled.", ephemeral=True)
         return
-    if opponent.bot or opponent.id == interaction.user.id:
+
+    bot_id = interaction.client.user.id
+    vs_ai = opponent is None or opponent.id == bot_id   # no opponent / challenging the bot -> AI
+    if not vs_ai and (opponent.bot or opponent.id == interaction.user.id):
         await interaction.response.send_message(
-            "Pick a real opponent - you can't play yourself or a bot.", ephemeral=True)
+            "Pick a real opponent - or leave it blank to play the AI.", ephemeral=True)
         return
 
     min_bet = getattr(config, "CONNECT4_MIN_BET", 5)
@@ -433,6 +534,9 @@ async def handle_connect4_command(interaction: Interaction, opponent: Member, be
     if get_bb(interaction.user.id) < bet:
         await interaction.response.send_message(
             f"You don't have {bet:,} UKPence to stake.", ephemeral=True)
+        return
+    if vs_ai:
+        await _start_ai_game(interaction, bet)
         return
     if get_bb(opponent.id) < bet:
         await interaction.response.send_message(
@@ -474,8 +578,10 @@ def reattach_connect4_view(client, key, value):
         delete_state(key)
         return
     delete_state(key)  # drop first so a re-run can't double-refund
+    is_ai = bool(value.get("ai"))
     credit_from_bank(p1, stake, "Connect 4 void refund (bot restart)")
-    credit_from_bank(p2, stake, "Connect 4 void refund (bot restart)")
+    if not is_ai:                       # AI game: the bank never staked, so don't "refund" it
+        credit_from_bank(p2, stake, "Connect 4 void refund (bot restart)")
 
     channel_id = value.get("channel_id")
 
@@ -488,7 +594,7 @@ def reattach_connect4_view(client, key, value):
             e = discord.Embed(
                 title="\U0001F534\U0001F7E1 Connect 4 - Voided",
                 description=("This game was voided because the bot restarted mid-match. "
-                             f"Both players have had their **{stake:,}** UKP stake refunded."),
+                             f"The **{stake:,}** UKP stake has been refunded."),
                 colour=0x95A5A6)
             await msg.edit(embed=e, view=None)
         except Exception:
