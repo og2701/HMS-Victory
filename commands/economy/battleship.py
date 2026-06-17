@@ -578,6 +578,15 @@ class BattleshipGame:
                                     self.stake, "forfeit" if forfeit else "win")
         except Exception:
             logger.error("battleship stats hook failed", exc_info=True)
+        try:
+            from lib.features.income_badges import award_badge_safe
+            if self.client:
+                if self.stake >= 1000:
+                    await award_badge_safe(self.client, self._uid(winner), "broadside")
+                if not forfeit and all(v != "hit" for v in self.shots[self._opp(winner)].values()):
+                    await award_badge_safe(self.client, self._uid(winner), "ironclad")
+        except Exception:
+            logger.error("battleship badge award failed", exc_info=True)
         await self._render_final(winner=winner, forfeit=forfeit)
         for pl in (1, 2):
             await self._refresh_fire_panel(pl)

@@ -772,6 +772,9 @@ def init_db():
             ('centurion', 'Centurion', 'Win 1,000 casino games in total', '🏵️', 'Gold'),
             # Translation
             ('ooga_booga', 'Ooga Booga', 'Have one of your messages translated to Caveman', '🦴', 'Bronze'),
+            # Battleship
+            ('broadside', 'Broadside', 'Win a Battleship match staked at 1,000 UKPence or more', '💣', 'Silver'),
+            ('ironclad', 'Ironclad', 'Win a Battleship match without any of your own ships being hit', '🛡️', 'Gold'),
             # Secret
             ('lucky_7s', 'Lucky 7s', '[REDACTED]', '7️⃣', 'Secret'),
             ('regifter', 'Re-Gifter', '[REDACTED]', '🎁', 'Secret')
