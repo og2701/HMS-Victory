@@ -259,11 +259,6 @@ class Connect4View(discord.ui.View):
 
     def _restart_timer(self):
         self._cancel_timer()
-        # The bank-funded AI never forfeits - only ever put a HUMAN on the clock. (While the AI
-        # is thinking the board may briefly read "AI's turn"; the human must never be charged
-        # for that.)
-        if self.ai_player is not None and self.turn == self.ai_player:
-            return
         self._timer_task = asyncio.create_task(self._forfeit_after())
 
     def _cancel_timer(self):
@@ -273,30 +268,36 @@ class Connect4View(discord.ui.View):
             t.cancel()
 
     def _forfeit_seconds(self) -> int:
-        # PvP uses the tight clock (an opponent is waiting). A solo game vs the AI has nobody
-        # waiting, so it gets a generous window - the only purpose there is to eventually reclaim
-        # a truly abandoned game, not to punish a slow move or a laggy client refresh.
+        # A human's move clock. PvP uses the tight clock (an opponent is waiting). A solo game vs
+        # the AI has nobody waiting, so it gets a generous window - the only purpose there is to
+        # eventually reclaim a truly abandoned game, not to punish a slow move / laggy client.
         if self.ai_player is not None:
             return getattr(config, "CONNECT4_AI_FORFEIT_SECONDS", 600)
         return getattr(config, "CONNECT4_FORFEIT_SECONDS", 120)
 
     async def _forfeit_after(self):
+        # On the AI's turn this is a short WATCHDOG: the AI should move within seconds, so if the
+        # clock fires the bot wedged - and the player must NOT lose for the bot's fault, they win.
+        # On a human's turn it's the normal forfeit clock: run it down and your opponent wins.
+        ai_turn = self.ai_player is not None and self.turn == self.ai_player
+        secs = getattr(config, "CONNECT4_AI_MOVE_TIMEOUT", 60) if ai_turn else self._forfeit_seconds()
         try:
-            await asyncio.sleep(self._forfeit_seconds())
+            await asyncio.sleep(secs)
         except asyncio.CancelledError:
             return
         async with self._lock:
             if self.game_over:
                 return
-            # Defense in depth: never settle a forfeit on the AI's turn (it plays via
-            # _ai_take_turn and has no clock). Stops a slow/failed AI move ever being charged
-            # to the human - the bug where "the bot was stuck" but the human was blamed.
-            if self.ai_player is not None and self.turn == self.ai_player:
-                return
             # We're past the sleep - clear the handle so _finish's _cancel_timer doesn't
             # cancel this very task mid-settlement.
             self._timer_task = None
-            winner = 2 if self.turn == 1 else 1  # the player to move ran down the clock
+            if self.ai_player is not None and self.turn == self.ai_player:
+                # The AI never made its move in time (hang/crash). Award the pot to the human -
+                # a stalled bot must never cost the player their stake.
+                logger.error("connect4: AI didn't move within %ss; awarding the pot to the human", secs)
+                await self._finish(None, winner=self._human_player(), forfeit=True)
+                return
+            winner = 2 if self.turn == 1 else 1  # the player to move ran down their own clock
             await self._finish(None, winner=winner, forfeit=True)
 
     # --- moves + settlement ------------------------------------------------
