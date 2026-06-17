@@ -47,7 +47,10 @@ async def _require_casino_channel(interaction) -> bool:
     """Gate casino games + lottery to the allowed channels. Returns True (and sends an
     ephemeral nudge to the casino channel) when the command should be blocked here."""
     import config
-    if interaction.channel_id in config.CASINO_CHANNELS:
+    channel_id = interaction.channel_id
+    if interaction.channel and hasattr(interaction.channel, "parent_id") and interaction.channel.parent_id:
+        channel_id = interaction.channel.parent_id
+    if channel_id in config.CASINO_CHANNELS:
         return False
     await interaction.response.send_message(
         f"🎰 The casino's over in <#{config.CHANNELS.CASINO}> - head there to play! "
@@ -55,6 +58,7 @@ async def _require_casino_channel(interaction) -> bool:
         ephemeral=True,
     )
     return True
+
 
 
 def define_commands(tree, client):

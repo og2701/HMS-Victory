@@ -701,7 +701,10 @@ async def drain_for_shutdown(max_wait: int = 90):
 async def handle_poker_command(interaction: Interaction):
     if await cb.reject_if_maintenance(interaction):  # block new tables during a restart drain
         return
-    if interaction.channel_id not in getattr(config, "CASINO_CHANNELS", []):
+    channel_id = interaction.channel_id
+    if interaction.channel and hasattr(interaction.channel, "parent_id") and interaction.channel.parent_id:
+        channel_id = interaction.channel.parent_id
+    if channel_id not in getattr(config, "CASINO_CHANNELS", []):
         await interaction.response.send_message(
             "Poker can only be played in the casino channels.", ephemeral=True)
         return
