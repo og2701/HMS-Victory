@@ -400,6 +400,22 @@ class Connect4View(discord.ui.View):
                 await self.message.edit(embed=embed, view=None)
             except discord.HTTPException:
                 logger.debug("connect4 final edit failed", exc_info=True)
+        # Re-push the FINAL board a few seconds later as well. A stale client that missed the
+        # settlement edit would otherwise sit forever on the last in-game frame (e.g. "thinking…")
+        # and never see the win/loss/draw - the move-nudge skips game-ending moves, so this is
+        # the only thing that resyncs the result.
+        asyncio.create_task(self._repush_final(embed))
+
+    async def _repush_final(self, embed):
+        try:
+            await asyncio.sleep(3)
+        except asyncio.CancelledError:
+            return
+        if self.message is not None:
+            try:
+                await self.message.edit(embed=embed, view=None)
+            except discord.HTTPException:
+                pass
 
 
 # ---------------------------------------------------------------------------
