@@ -18,8 +18,11 @@ Entry point: ``best_move(board, ai_disc, depth=?, time_budget=?) -> column``.
 else the disc id), matching commands/economy/connect4.py.
 """
 
+import logging
 import random
 import time
+
+logger = logging.getLogger(__name__)
 
 WIDTH = 7
 HEIGHT = 6
@@ -137,7 +140,15 @@ def _heuristic(position, mask):
     return score
 
 
-def _negamax(position, mask, moves, depth, alpha, beta, tt):
+class _Timeout(Exception):
+    """Raised to abort a search that has run past its time budget (caught in best_move)."""
+
+
+def _negamax(position, mask, moves, depth, alpha, beta, tt, deadline=None, nc=None):
+    if deadline is not None:
+        nc[0] += 1                                      # nc[0] doubles as this depth's node count
+        if (nc[0] & 1023) == 0 and time.monotonic() > deadline:
+            raise _Timeout                              # throttled clock check (every 1024 nodes)
     if moves >= SIZE:
         return 0                                        # board full -> draw
     win = _compute_winning(position, mask) & _possible(mask)
@@ -149,37 +160,43 @@ def _negamax(position, mask, moves, depth, alpha, beta, tt):
     if nonlosing == 0:
         return -(WIN + (SIZE - moves) // 2)             # every reply loses
 
-    # Transposition table. Entries store a value tagged EXACT / LOWER / UPPER bound; a
-    # cutoff value is only a bound, so it must NOT be reused as exact (that corrupts the
-    # search - the bug that made deeper play weaker). Use it to tighten the window instead.
+    # Transposition table. Entries store (depth, value, flag, best_col); value is tagged
+    # EXACT / LOWER / UPPER bound. A cutoff value is only a bound, so it must NOT be reused as
+    # exact (that corrupts the search - the bug that made deeper play weaker); use it to tighten
+    # the window. best_col is the move that scored best last time - searching it first sharpens
+    # alpha-beta pruning (fewer nodes -> deeper search in the same time).
     key = (position, mask)
     cached = tt.get(key)
-    if cached is not None and cached[0] >= depth:
-        cdepth, cval, cflag = cached
-        if cflag == 0:                       # EXACT
-            return cval
-        elif cflag == 1 and cval > alpha:    # LOWER bound
-            alpha = cval
-        elif cflag == 2 and cval < beta:     # UPPER bound
-            beta = cval
-        if alpha >= beta:
-            return cval
+    tt_move = None
+    if cached is not None:
+        if cached[0] >= depth:
+            cval, cflag = cached[1], cached[2]
+            if cflag == 0:                       # EXACT
+                return cval
+            elif cflag == 1 and cval > alpha:    # LOWER bound
+                alpha = cval
+            elif cflag == 2 and cval < beta:     # UPPER bound
+                beta = cval
+            if alpha >= beta:
+                return cval
+        tt_move = cached[3]                       # use the remembered move for ordering
 
+    order = COL_ORDER if tt_move is None else (tt_move, *(c for c in COL_ORDER if c != tt_move))
     orig_alpha, orig_beta = alpha, beta
-    best = -(1 << 30)
-    for c in COL_ORDER:
+    best, best_c = -(1 << 30), COL_ORDER[0]
+    for c in order:
         move = nonlosing & _column_mask(c)
         if move:
             score = -_negamax(position ^ mask, mask | move, moves + 1,
-                              depth - 1, -beta, -alpha, tt)
+                              depth - 1, -beta, -alpha, tt, deadline, nc)
             if score > best:
-                best = score
+                best, best_c = score, c
                 if best > alpha:
                     alpha = best
                     if alpha >= beta:
                         break
     flag = 1 if best >= orig_beta else 0 if best > orig_alpha else 2  # LOWER / EXACT / UPPER
-    tt[key] = (depth, best, flag)
+    tt[key] = (depth, best, flag, best_c)
     return best
 
 
@@ -207,10 +224,11 @@ def best_move(board, ai_disc, depth=12, time_budget=None):
     if not legal:
         return None
 
-    # 1) take an immediate win if there is one.
+    # 1) take an immediate win if there is one (no search needed).
     winning_cells = _compute_winning(position, mask)
     for c in legal:
         if winning_cells & ((mask + _bottom_mask_col(c)) & _column_mask(c)):
+            logger.info("connect4 AI: forced win -> col %d (no search)", c + 1)
             return c
 
     # 2) restrict to non-losing moves (don't walk into a forced loss). If all moves lose,
@@ -218,28 +236,55 @@ def best_move(board, ai_disc, depth=12, time_budget=None):
     nonlosing = _non_losing(position, mask)
     candidates = [c for c in legal if nonlosing & _column_mask(c)] or legal
     if len(candidates) == 1:
+        logger.info("connect4 AI: only one non-losing move -> col %d (no search)",
+                    candidates[0] + 1)
         return candidates[0]
 
     # Evaluate each root candidate with a FULL window so every move gets its exact value.
     # (Narrowing alpha across root moves lets a worse move's fail-high tie the true best, and
     # the random tie-break would then sometimes play the inferior move.) The per-candidate
     # subtree still prunes via _negamax's own alpha-beta.
+    # Iterative deepening under a hard deadline. A single deep _negamax can't be interrupted
+    # between depths, so the deadline is enforced INSIDE the search (raises _Timeout). On a
+    # timeout we keep the last fully-completed depth's result, so total time stays ~time_budget.
+    # Each iteration re-orders the roots best-first (from the prior depth's scores) so the next,
+    # deeper iteration prunes harder.
+    deadline = (time.monotonic() + time_budget) if time_budget else None
     start = time.monotonic()
     best_cols = [candidates[0]]
+    order = list(candidates)
+    reached, last_best, total_nodes = 1, 0, 0
     for d in range(2, depth + 1):
         tt = {}
-        best, ties = -(1 << 31), []
-        for c in candidates:
-            move = (mask + _bottom_mask_col(c)) & _column_mask(c)
-            score = -_negamax(position ^ mask, mask | move, moves + 1,
-                              d - 1, -(1 << 30), (1 << 30), tt)
-            if score > best:
-                best, ties = score, [c]
-            elif score == best:
-                ties.append(c)
-            if time_budget and time.monotonic() - start > time_budget:
-                break
-        best_cols = ties
-        if time_budget and time.monotonic() - start > time_budget:
+        nc = [0]
+        best, ties, scored = -(1 << 31), [], {}
+        try:
+            for c in order:
+                move = (mask + _bottom_mask_col(c)) & _column_mask(c)
+                score = -_negamax(position ^ mask, mask | move, moves + 1,
+                                  d - 1, -(1 << 30), (1 << 30), tt, deadline, nc)
+                scored[c] = score
+                if score > best:
+                    best, ties = score, [c]
+                elif score == best:
+                    ties.append(c)
+        except _Timeout:
+            total_nodes += nc[0]
+            break                          # ran out of time mid-depth; keep the prior depth
+        total_nodes += nc[0]
+        best_cols, reached, last_best = ties, d, best
+        order = sorted(order, key=lambda c: scored.get(c, -(1 << 31)), reverse=True)
+        if abs(best) >= WIN:               # forced win/loss is proven; deeper won't change it
             break
-    return random.choice(best_cols)
+
+    choice = random.choice(best_cols)
+    if last_best >= WIN:
+        verdict = "winning (forced)"
+    elif last_best <= -WIN:
+        verdict = "losing (best defence)"
+    else:
+        verdict = f"eval {last_best:+d}"
+    logger.info("connect4 AI: col %d | depth %d | %d nodes | %.2fs | %s | candidates=%s best=%s",
+                choice + 1, reached, total_nodes, time.monotonic() - start, verdict,
+                [c + 1 for c in candidates], [c + 1 for c in best_cols])
+    return choice

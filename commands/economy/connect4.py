@@ -21,6 +21,7 @@ Flow:
 import asyncio
 import logging
 import random
+from concurrent.futures import ThreadPoolExecutor
 
 import discord
 from discord import Interaction, Member
@@ -32,6 +33,10 @@ from commands.economy.casino_base import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Dedicated pool for AI search, so a deep think can't be starved by (or starve) other blocking
+# work on the default executor (e.g. casino image renders). Keeps AI moves prompt.
+_AI_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="c4-ai")
 
 COLS = 7
 ROWS = 6
@@ -85,7 +90,7 @@ class Connect4View(discord.ui.View):
         """The non-AI seat (only meaningful in an AI game)."""
         return 1 if self.ai_player == 2 else 2
 
-    async def _ai_take_turn(self, interaction):
+    async def _ai_take_turn(self):
         """If it's the AI's turn, think (off the event loop) and play; settle on win/full.
         Called after the human's move and, if the AI moves first, at game start."""
         while not self.game_over and self.ai_player is not None and self.turn == self.ai_player:
@@ -96,8 +101,8 @@ class Connect4View(discord.ui.View):
                 from lib.economy import connect4_ai
                 loop = asyncio.get_event_loop()
                 col = await loop.run_in_executor(
-                    None, lambda: connect4_ai.best_move(self.board, self.ai_player,
-                                                        depth=depth, time_budget=budget))
+                    _AI_EXECUTOR, lambda: connect4_ai.best_move(self.board, self.ai_player,
+                                                                depth=depth, time_budget=budget))
             except Exception:
                 logger.error("connect4 AI move failed; picking a fallback column", exc_info=True)
                 col = next((c for c in range(COLS) if self.board[0][c] == 0), None)
@@ -107,27 +112,30 @@ class Connect4View(discord.ui.View):
                 if col is None or self.board[0][col] != 0:
                     col = next((c for c in range(COLS) if self.board[0][c] == 0), None)
                     if col is None:
-                        await self._finish(interaction, winner=None)
+                        await self._finish(None, winner=None)
                         return
                 row = self._drop(col, self.ai_player)
                 if self._check_win(row, col, self.ai_player):
-                    await self._finish(interaction, winner=self.ai_player)
+                    await self._finish(None, winner=self.ai_player)
                     return
                 if self._is_full():
-                    await self._finish(interaction, winner=None)
+                    await self._finish(None, winner=None)
                     return
                 self.turn = self._human_player()
-                self._restart_timer()
+                self._cancel_timer()        # no clock until the human can SEE it's their turn
                 self._sync_buttons()
-            # show the AI's move; it's now the human's turn (loop exits)
-            if interaction is not None:
-                await self._safe_edit(interaction, embed=self._embed(), view=self)
-            elif self.message is not None:
-                try:
-                    await self.message.edit(embed=self._embed(), view=self)
-                except discord.HTTPException:
-                    pass
-            interaction = None  # only the first edit can use the interaction token
+            # Show the AI's move (it's now the human's turn). Only start the human's forfeit
+            # clock once the board has actually rendered - a silently-failed edit would freeze
+            # the board on "AI's turn" while the human ran down the clock and lost. Retry once.
+            ok = await self._render_board()
+            if not ok:
+                logger.error("connect4 AI move didn't render; retrying before starting the clock")
+                await asyncio.sleep(1.0)
+                ok = await self._render_board()
+            if ok:
+                self._restart_timer()
+            else:
+                logger.error("connect4 AI board still not rendered; human left OFF the clock")
 
     # --- board logic -------------------------------------------------------
     def _drop(self, col, player) -> int | None:
@@ -227,12 +235,29 @@ class Connect4View(discord.ui.View):
         except discord.HTTPException:
             logger.debug("connect4 board edit failed", exc_info=True)
 
+    async def _render_board(self) -> bool:
+        """Edit the stored board message (via the bot token). Returns True on success - the AI
+        path relies on this so it never starts the human's clock against an un-rendered board."""
+        if self.message is None:
+            return False
+        try:
+            await self.message.edit(embed=self._embed(), view=self)
+            return True
+        except discord.HTTPException:
+            logger.debug("connect4 board render failed", exc_info=True)
+            return False
+
     # --- forfeit clock -----------------------------------------------------
     def start(self):
         self._restart_timer()
 
     def _restart_timer(self):
         self._cancel_timer()
+        # The bank-funded AI never forfeits - only ever put a HUMAN on the clock. (While the AI
+        # is thinking the board may briefly read "AI's turn"; the human must never be charged
+        # for that.)
+        if self.ai_player is not None and self.turn == self.ai_player:
+            return
         self._timer_task = asyncio.create_task(self._forfeit_after())
 
     def _cancel_timer(self):
@@ -248,6 +273,11 @@ class Connect4View(discord.ui.View):
             return
         async with self._lock:
             if self.game_over:
+                return
+            # Defense in depth: never settle a forfeit on the AI's turn (it plays via
+            # _ai_take_turn and has no clock). Stops a slow/failed AI move ever being charged
+            # to the human - the bug where "the bot was stuck" but the human was blamed.
+            if self.ai_player is not None and self.turn == self.ai_player:
                 return
             # We're past the sleep - clear the handle so _finish's _cancel_timer doesn't
             # cancel this very task mid-settlement.
@@ -289,7 +319,7 @@ class Connect4View(discord.ui.View):
             await self._safe_edit(interaction, embed=self._embed(), view=self)
         # In an AI game, let the bot reply now that it's its turn (re-acquires the lock).
         if not self.game_over and self.ai_player is not None and self.turn == self.ai_player:
-            await self._ai_take_turn(None)
+            await self._ai_take_turn()
 
     async def _finish(self, interaction, *, winner, forfeit=False):
         """Settle the game. winner: 1 | 2 | None(draw). Pays out of the bank after dropping
@@ -508,7 +538,7 @@ async def _start_ai_game(interaction: Interaction, bet: int):
     })
     game.start()
     if game.turn == game.ai_player:          # AI moves first
-        await game._ai_take_turn(None)
+        await game._ai_take_turn()
 
 
 async def handle_connect4_command(interaction: Interaction, opponent: Member, bet: int):
