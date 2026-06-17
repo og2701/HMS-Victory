@@ -392,6 +392,11 @@ class Connect4View(discord.ui.View):
                     await award_connect4_badges(self.client, wid, self.stake)
         except Exception:
             logger.error("connect4 stats/badge hook failed", exc_info=True)
+        # Bounty watch: DM the owner the moment a human GENUINELY beats the AI (four-in-a-row,
+        # not a forfeit/hang). This is the "first to beat the bot" alert.
+        if (self.ai_player is not None and not forfeit
+                and winner is not None and winner == self._human_player()):
+            asyncio.create_task(self._notify_owner_win(wid))
         embed = self._embed(final=True, winner=winner, forfeit=forfeit)
         if interaction is not None:
             await self._safe_edit(interaction, embed=embed, view=None)
@@ -416,6 +421,21 @@ class Connect4View(discord.ui.View):
                 await self.message.edit(embed=embed, view=None)
             except discord.HTTPException:
                 pass
+
+    async def _notify_owner_win(self, winner_id):
+        """DM the owner the moment a human genuinely beats the Connect 4 AI (bounty watch)."""
+        if self.client is None:
+            return
+        try:
+            owner = (self.client.get_user(config.USERS.OGGERS)
+                     or await self.client.fetch_user(config.USERS.OGGERS))
+            link = self.message.jump_url if self.message is not None else "(game message)"
+            await owner.send(
+                "\U0001F3C6 **Someone just beat the Connect 4 AI!**\n"
+                f"<@{winner_id}> won (stake **{self.stake:,}** UKP).\n{link}"
+            )
+        except Exception:
+            logger.error("connect4 owner-win DM failed", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
