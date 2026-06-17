@@ -43,7 +43,8 @@ SHIPS = [3, 2, 2]                      # ship sizes; 7 cells of 24 (~29% density
 SHIP_NAMES = {3: "Cruiser", 2: "Patrol Boat"}
 
 UNKNOWN = "⬛"        # un-fired square (fog) / empty placement square
-HIT = "\U0001f4a5"   # 💥
+HIT = "\U0001f525"   # 🔥 a hit on a ship that's still afloat
+SUNK = "\U0001f4a5"  # 💥 every cell of a fully-sunk ship
 MISS = "\U0001f30a"  # 🌊
 WATER = "\U0001f7e6" # 🟦 own untouched water
 SHIP = "\U0001f6a2"  # 🚢 your intact ship
@@ -174,26 +175,46 @@ class BattleshipGame:
         return ("sunk" if sunk else "hit"), (ship["size"] if sunk else None), won
 
     # --- grids -------------------------------------------------------------
+    @staticmethod
+    def _sunk_in(fleet, shots):
+        """Cells of ships in `fleet` that are fully hit by `shots` (i.e. sunk)."""
+        cells = set()
+        for s in fleet:
+            if all(c in shots for c in s["cells"]):
+                cells |= s["cells"]
+        return cells
+
     def _fog_grid(self, shooter):
+        sunk = self._sunk_in(self.fleet[self._opp(shooter)], self.shots[shooter])
         out = []
         for r in range(ROWS):
             row = ""
             for c in range(COLS):
-                v = self.shots[shooter].get((r, c))
-                row += HIT if v == "hit" else MISS if v == "miss" else UNKNOWN
+                cell = (r, c)
+                v = self.shots[shooter].get(cell)
+                if v == "hit":
+                    row += SUNK if cell in sunk else HIT      # 🔥 while afloat, 💥 once sunk
+                elif v == "miss":
+                    row += MISS
+                else:
+                    row += UNKNOWN
             out.append(row)
         return "\n".join(out)
 
     def _fleet_grid(self, p):
         ship_cells = self._ship_cells(p)
         incoming = self.shots[self._opp(p)]
+        sunk = self._sunk_in(self.fleet[p], incoming)
         out = []
         for r in range(ROWS):
             row = ""
             for c in range(COLS):
                 cell = (r, c)
                 if cell in ship_cells:
-                    row += HIT if cell in incoming else SHIP
+                    if cell in incoming:
+                        row += SUNK if cell in sunk else HIT
+                    else:
+                        row += SHIP
                 else:
                     row += MISS if cell in incoming else WATER
             out.append(row)
@@ -242,7 +263,7 @@ class BattleshipGame:
             elif result == "sunk":
                 lines.append(f"\U0001f4a5 **{who}** sank a **{SHIP_NAMES.get(sunk_size, 'ship')}** at {coord}!")
             else:
-                lines.append(f"\U0001f4a5 **{who}** hit at {coord}!")
+                lines.append(f"\U0001f525 **{who}** hit at {coord}!")
         lines.append(f"➡️  **{self._name(self.turn)}'s turn to fire**")
         e = discord.Embed(title=title, description="\n".join(lines), colour=ACCENT)
         e.set_footer(text=f"⏳ {_forfeit_seconds() // 60} min to fire, or you forfeit the pot")
@@ -445,12 +466,14 @@ class BattleshipGame:
         box.add_item(discord.ui.TextDisplay(header))
         view.add_item(box)
         shots = self.shots[shooter]
+        sunk = self._sunk_in(self.fleet[self._opp(shooter)], shots)
         for r in range(ROWS):
             row = discord.ui.ActionRow()
             for c in range(COLS):
                 v = shots.get((r, c))
                 if v == "hit":
-                    b = discord.ui.Button(emoji=HIT, style=discord.ButtonStyle.danger, disabled=True)
+                    b = discord.ui.Button(emoji=(SUNK if (r, c) in sunk else HIT),
+                                          style=discord.ButtonStyle.danger, disabled=True)
                 elif v == "miss":
                     b = discord.ui.Button(emoji=MISS, style=discord.ButtonStyle.secondary, disabled=True)
                 elif active:
