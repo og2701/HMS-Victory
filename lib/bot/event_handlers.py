@@ -1012,7 +1012,7 @@ async def on_message(client, message):
                 client.echo_tracking = {} # channel_id -> {"content": str, "author_id": int, "count": int}
             
             channel_id = message.channel.id
-            current_content = message.content.strip().lower()
+            current_content = message.content
             if current_content:
                 last_echo = client.echo_tracking.get(channel_id)
                 if last_echo and last_echo["content"] == current_content and last_echo["author_id"] != message.author.id:
