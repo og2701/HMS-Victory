@@ -176,10 +176,16 @@ class Connect4View(discord.ui.View):
         if not final:
             cur = self.p1_name if self.turn == 1 else self.p2_name
             disc = P1_DISC if self.turn == 1 else P2_DISC
-            lines.append(f"➡️  **{cur}'s turn**  {disc}")
             colour = 0xE74C3C if self.turn == 1 else 0xF1C40F
-            mins = getattr(config, "CONNECT4_FORFEIT_SECONDS", 600) // 60
-            footer = f"⏳ {mins} min to move, or you forfeit the pot"
+            if self.ai_player is not None and self.turn == self.ai_player:
+                # AI's move: show it's thinking (no clock - the AI never forfeits). If this
+                # lingers well past the think budget, the move genuinely failed to land.
+                lines.append(f"\U0001F916  **{cur}** is thinking…")
+                footer = "🤖 the AI is choosing its move…"
+            else:
+                lines.append(f"➡️  **{cur}'s turn**  {disc}")
+                mins = self._forfeit_seconds() // 60
+                footer = f"⏳ {mins} min to move, or you forfeit the pot"
         elif winner is None:
             lines.append(f"\U0001F91D **Draw!** The board's full - both **{self.stake:,}** "
                          "UKP stakes have been refunded.")
@@ -266,9 +272,17 @@ class Connect4View(discord.ui.View):
         if t is not None and not t.done():
             t.cancel()
 
+    def _forfeit_seconds(self) -> int:
+        # PvP uses the tight clock (an opponent is waiting). A solo game vs the AI has nobody
+        # waiting, so it gets a generous window - the only purpose there is to eventually reclaim
+        # a truly abandoned game, not to punish a slow move or a laggy client refresh.
+        if self.ai_player is not None:
+            return getattr(config, "CONNECT4_AI_FORFEIT_SECONDS", 600)
+        return getattr(config, "CONNECT4_FORFEIT_SECONDS", 120)
+
     async def _forfeit_after(self):
         try:
-            await asyncio.sleep(getattr(config, "CONNECT4_FORFEIT_SECONDS", 600))
+            await asyncio.sleep(self._forfeit_seconds())
         except asyncio.CancelledError:
             return
         async with self._lock:
