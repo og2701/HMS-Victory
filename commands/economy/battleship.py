@@ -67,7 +67,8 @@ def rules_text() -> str:
         f"Two captains, a **{COLS}x{ROWS}** ocean each. Place your fleet "
         f"({', '.join(map(str, SHIPS))}-cell ships) by tapping cells - **Rotate** to flip a "
         "ship, **Auto** to fill the rest, then **Ready**.\n\n"
-        "- Take turns firing at the enemy grid (tap a square). \U0001f4a5 = hit, \U0001f30a = miss. "
+        "- Take turns firing at the enemy grid (tap a square). \U0001f525 = hit, \U0001f30a = miss, "
+        "\U0001f4a5 = a sunk ship. **A hit earns you another shot**; a miss passes the turn. "
         "Sink every enemy ship to win.\n"
         "- Shot results are public (both fog grids show on the board); only your own *unhit* "
         "ships are hidden - check them with **My fleet**.\n"
@@ -511,13 +512,18 @@ class BattleshipGame:
             self.last = (p, cell, _result, sunk)
             if won:
                 await self._finish(winner=p)            # also refreshes both panels + board
-            else:
-                self.turn = self._opp(p)
+            elif _result == "miss":
+                self.turn = self._opp(p)                # only a miss passes the turn
                 self._restart_timer()
+            else:
+                self._restart_timer()                   # a hit/sink earns another shot
         if not self.game_over:
-            await self.render(content=f"\U0001f3af <@{self._uid(self.turn)}> - your turn to fire.")
-            await self._refresh_fire_panel(p)            # shooter -> "waiting"
-            await self._refresh_fire_panel(self.turn)    # next player -> active (if their panel is open)
+            again = (self.turn == p)                    # True if p hit and fires again
+            who = "fire again!" if again else "your turn to fire."
+            await self.render(content=f"\U0001f3af <@{self._uid(self.turn)}> - {who}")
+            await self._refresh_fire_panel(p)            # shooter (now waiting, or still active if again)
+            if not again:
+                await self._refresh_fire_panel(self.turn)  # opponent's panel -> active
 
     async def _refresh_fire_panel(self, p):
         """Edit player p's open firing ephemeral to match the current state (best-effort - if
@@ -640,16 +646,31 @@ class BattleshipGame:
             logger.debug("battleship parent announce failed", exc_info=True)
 
     async def _close_thread(self):
+        """Delete the game thread shortly after it ends (the full result + revealed board is
+        mirrored to the parent channel, so nothing is lost). A brief delay lets the players
+        see the final board in the thread first. Falls back to archiving if delete is denied."""
         if self.thread is None:
             return
         ACTIVE_GAME_THREADS.discard(self.thread.id)
-        try:
-            await self.thread.edit(archived=True, locked=True)
-        except discord.HTTPException:
+        thread = self.thread
+
+        async def _go():
             try:
-                await self.thread.delete()
+                await asyncio.sleep(12)
+            except asyncio.CancelledError:
+                return
+            try:
+                await thread.delete()
             except discord.HTTPException:
-                pass
+                try:
+                    await thread.edit(archived=True, locked=True)
+                except discord.HTTPException:
+                    pass
+
+        try:
+            asyncio.create_task(_go())
+        except RuntimeError:
+            pass
 
 
 # ---------------------------------------------------------------------------
