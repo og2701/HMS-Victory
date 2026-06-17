@@ -164,14 +164,11 @@ async def translate_and_send(
         await message.reply(embed=embed)
 
         # "Ooga Booga" badge for the author whose message got translated to Caveman.
-        # Reactions carry no bot client here, so award via the sync path (no DM) - the
-        # badge + its reward still land. Best-effort; never break the translation.
+        # Uses award_badge_notify so the user is notified via DM and the award is logged.
         if dedup_target == "\U0001f9b4":  # 🦴 caveman flag
             try:
-                from database import award_badge
-                if award_badge(original_author.id, "ooga_booga"):
-                    from lib.economy.badge_rewards import pay_badge_reward
-                    pay_badge_reward(original_author.id, "ooga_booga")
+                from lib.bot.event_handlers import award_badge_notify
+                award_badge_notify(original_author.id, "ooga_booga")
             except Exception:
                 pass
     except Exception:

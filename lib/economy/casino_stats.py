@@ -64,15 +64,13 @@ _CASINO_GAME_COUNT = 8
 
 
 def _award_silently(user_id, badge_id):
-    """Award a badge + its one-time reward without a DM - record_result has no bot client.
-    Idempotent (award_badge is INSERT OR IGNORE), so safe to call on every qualifying game."""
+    """Award a badge and notify the user via DM and log channel.
+    If the bot client/loop is not available (e.g. in offline scripts), falls back to a silent database award."""
     try:
-        from database import award_badge
-        if award_badge(user_id, badge_id):
-            from lib.economy.badge_rewards import pay_badge_reward
-            pay_badge_reward(user_id, badge_id)
+        from lib.bot.event_handlers import award_badge_notify
+        award_badge_notify(user_id, badge_id)
     except Exception:
-        logger.error("silent badge award failed (%s/%s)", user_id, badge_id, exc_info=True)
+        logger.error("badge award failed (%s/%s)", user_id, badge_id, exc_info=True)
 
 
 def _check_casino_badges(user_id, game, result, net):

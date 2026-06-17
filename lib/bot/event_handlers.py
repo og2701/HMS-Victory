@@ -359,7 +359,12 @@ def award_badge_notify(user_id: int, badge_id: str):
         except RuntimeError:
             pass  # No running loop (e.g. offline script) - award silently below.
     from database import award_badge
-    award_badge(user_id, badge_id)
+    if award_badge(user_id, badge_id):
+        try:
+            from lib.economy.badge_rewards import pay_badge_reward
+            pay_badge_reward(user_id, badge_id)
+        except Exception:
+            pass
 
 
 async def award_badge_with_notify(client, user_id: int, badge_id: str):
