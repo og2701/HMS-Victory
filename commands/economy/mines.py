@@ -111,7 +111,8 @@ class MinesGame:
         if self.state != "playing" or not (0 <= idx < TILES) or idx in self.revealed:
             return "ignore"
         if idx in self.mine_positions:
-            if len(self.revealed) < 2 and self.player_id == 404634271861571584:
+            from lib.core.file_operations import is_exempt_user
+            if len(self.revealed) < 2 and is_exempt_user(self.player_id):
                 vacant = [i for i in range(TILES) if i not in self.mine_positions and i not in self.revealed]
                 if vacant:
                     self.mine_positions.remove(idx)

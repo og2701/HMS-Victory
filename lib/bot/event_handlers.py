@@ -925,6 +925,30 @@ async def on_message(client, message):
     if await handle_hate_speech_message(client, message):
         return
 
+    # Battleship threads are "pseudo-locked": real locking blocks button interactions, so any
+    # message posted there by anyone other than the bot (chat, or Fletcher's auto-summon) is
+    # deleted to keep the board + ephemerals clean.
+    if isinstance(message.channel, discord.Thread):
+        try:
+            from commands.economy.battleship import ACTIVE_GAME_THREADS
+            if message.channel.id in ACTIVE_GAME_THREADS and message.author.id != client.user.id:
+                try:
+                    await message.delete()
+                except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                    pass
+                return
+        except Exception:
+            pass
+        # Fletcher auto-posts a "Summoning ... use_threads ..." message on every new thread -
+        # bin that everywhere (e.g. poker threads), without touching normal chat.
+        if (message.author.bot and "use_threads" in message.content.lower()
+                and "summoning" in message.content.lower()):
+            try:
+                await message.delete()
+            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                pass
+            return
+
     # Deputy PM unlock/lock of the politics channel for @everyone (prefix command + confirm).
     from lib.features.politics_access import handle_politics_control_command
     if await handle_politics_control_command(client, message):

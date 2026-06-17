@@ -6,16 +6,15 @@ Flow:
   paid the whole pot back out of it (the bank nets zero; the fixed UKP supply is conserved).
   A void (restart / nobody sets up in time) refunds both.
 
-  On accept the game opens its own LOCKED thread (only the bot posts), so the fog-of-war
-  board sits still and each player's ephemeral (firing grid / their own fleet) reads right
-  beneath it without chat burying anything. Both players are added to the thread; banter
-  goes in the parent channel.
+  On accept the game opens its own thread and adds both players. The board is a single
+  message edited IN PLACE each turn, with the current player @mentioned. Banter goes in the
+  parent channel.
 
-  Board: a 4x6 ocean (mobile-friendly, like Mines - phones wrap ~4 buttons/row). Fleets are
-  placed RANDOMLY with a Shuffle/Ready step. Shot results are public so the board shows both
-  players' fog grids; only your own *unhit* ship layout is private (a "My fleet" ephemeral).
-  Firing is a 4x6 button grid in an ephemeral - tap an enemy square to bomb it. Each turn has
-  a forfeit clock; miss it and your opponent takes the pot.
+  Board: a 4x6 ocean (mobile-friendly, like Mines - phones wrap ~4 buttons/row). Each player
+  places their fleet by tapping cells on a 4x6 grid (Rotate / Undo / Auto / Ready). Shot
+  results are public so the board shows both players' fog grids; only your own *unhit* ship
+  layout is private. Firing is a 4x6 button grid in an ephemeral that stays open and updates
+  as the game goes - tap an enemy square to bomb it. Each turn has a forfeit clock.
 
   Persistence: a tiny escrow record (both players + stake + thread) is keyed by the CHALLENGE
   message id. The live board/timer don't survive a restart, so on boot an in-progress game is
@@ -43,11 +42,17 @@ ROWS = 6
 SHIPS = [3, 2, 2]                      # ship sizes; 7 cells of 24 (~29% density)
 SHIP_NAMES = {3: "Cruiser", 2: "Patrol Boat"}
 
-UNKNOWN = "⬛"   # ⬛ un-fired square (fog)
+UNKNOWN = "⬛"        # un-fired square (fog) / empty placement square
 HIT = "\U0001f4a5"   # 💥
 MISS = "\U0001f30a"  # 🌊
 WATER = "\U0001f7e6" # 🟦 own untouched water
 SHIP = "\U0001f6a2"  # 🚢 your intact ship
+ACCENT = discord.Colour(0x3498DB)
+
+# Thread ids of in-progress games. Real thread-locking blocks button interactions, so the
+# board's thread is "pseudo-locked" instead: on_message deletes anything posted there by
+# anyone other than the bot (see event_handlers.on_message), keeping the board clean.
+ACTIVE_GAME_THREADS = set()
 
 
 def _forfeit_seconds():
@@ -58,8 +63,9 @@ def rules_text() -> str:
     mins = _forfeit_seconds() // 60
     return (
         "## \U0001f6a2 Battleship - Rules\n"
-        f"Two captains, a **{COLS}x{ROWS}** ocean each. Your fleet ({', '.join(map(str, SHIPS))}-cell "
-        "ships) is placed **randomly** - hit **Shuffle** until you like it, then **Ready**.\n\n"
+        f"Two captains, a **{COLS}x{ROWS}** ocean each. Place your fleet "
+        f"({', '.join(map(str, SHIPS))}-cell ships) by tapping cells - **Rotate** to flip a "
+        "ship, **Auto** to fill the rest, then **Ready**.\n\n"
         "- Take turns firing at the enemy grid (tap a square). \U0001f4a5 = hit, \U0001f30a = miss. "
         "Sink every enemy ship to win.\n"
         "- Shot results are public (both fog grids show on the board); only your own *unhit* "
@@ -67,59 +73,31 @@ def rules_text() -> str:
         "- Both players stake the same; **winner takes the whole pot** (2x the stake).\n"
         f"- ⏳ **Forfeit timer:** {mins} minutes per move (and to set up your fleet). "
         "Miss it and your opponent takes the pot.\n"
-        "- The game runs in its own locked thread - chat in the main channel."
+        "- The game runs in its own thread; the board updates in place each turn."
     )
 
 
-def _random_fleet():
-    """Place SHIPS on a COLS x ROWS grid with no overlaps. Returns a list of ships, each
-    a dict {size, cells:set[(r,c)]}. Retries the whole layout on the rare dead end."""
-    for _ in range(200):
-        occupied, ships, ok = set(), [], True
-        for size in SHIPS:
-            placed = False
-            for _ in range(100):
-                if random.choice((True, False)):                     # horizontal
-                    r = random.randrange(ROWS)
-                    c = random.randrange(COLS - size + 1)
-                    cells = {(r, c + i) for i in range(size)}
-                else:                                                # vertical
-                    r = random.randrange(ROWS - size + 1)
-                    c = random.randrange(COLS)
-                    cells = {(r + i, c) for i in range(size)}
-                if cells & occupied:
-                    continue
-                occupied |= cells
-                ships.append({"size": size, "cells": cells})
-                placed = True
-                break
-            if not placed:
-                ok = False
-                break
-        if ok:
-            return ships
-    raise RuntimeError("could not place battleship fleet")
-
-
 class BattleshipGame:
-    """One game's state + its rendering/flow. Not a View itself - the board's button view is
-    rebuilt fresh each render (so it survives the thread 'bump'), mirroring the poker table."""
+    """One game's state + rendering/flow. Not a View itself - the board's button view is
+    rebuilt fresh each render, mirroring the poker table."""
 
     def __init__(self, p1_id, p1_name, p2_id, p2_name, stake, channel_id):
         self.p1_id, self.p2_id = int(p1_id), int(p2_id)
         self.p1_name, self.p2_name = p1_name, p2_name
         self.stake = int(stake)
         self.channel_id = channel_id
-        self.fleet = {1: _random_fleet(), 2: _random_fleet()}
-        self.shots = {1: {}, 2: {}}      # shots[p][(r,c)] = 'hit'|'miss'  (p's shots on the OTHER grid)
+        self.fleet = {1: [], 2: []}        # placed ships, built up during placement
+        self.place_orient = {1: "h", 2: "h"}
+        self.shots = {1: {}, 2: {}}        # shots[p][(r,c)] = 'hit'|'miss'  (p's shots on the OTHER grid)
         self.ready = {1: False, 2: False}
-        self.phase = "placing"           # placing | firing | over
+        self.fire_iaction = {1: None, 2: None}   # latest interaction touching each firing panel
+        self.phase = "placing"             # placing | firing | over
         self.turn = random.choice([1, 2])
-        self.last = None                 # (shooter, (r,c), result, sunk_size) for the status line
+        self.last = None                   # (shooter, (r,c), result, sunk_size) for the status line
         self.thread = None
-        self.message = None              # board message (in the thread)
+        self.message = None                # board message (in the thread)
         self.client = None
-        self.escrow_key = None           # challenge message id - the escrow record's key
+        self.escrow_key = None             # challenge message id - the escrow record's key
         self.game_over = False
         self._lock = asyncio.Lock()
         self._timer_task = None
@@ -144,6 +122,45 @@ class BattleshipGame:
             cells |= s["cells"]
         return cells
 
+    def _next_ship(self, p):
+        placed = len(self.fleet[p])
+        return SHIPS[placed] if placed < len(SHIPS) else None
+
+    def _try_place(self, p, r, c):
+        """Place the next ship with its bow at (r,c). Returns False if it won't fit / overlaps."""
+        size = self._next_ship(p)
+        if size is None:
+            return False
+        if self.place_orient[p] == "h":
+            if c + size > COLS:
+                return False
+            cells = {(r, c + i) for i in range(size)}
+        else:
+            if r + size > ROWS:
+                return False
+            cells = {(r + i, c) for i in range(size)}
+        if cells & self._ship_cells(p):
+            return False
+        self.fleet[p].append({"size": size, "cells": cells})
+        return True
+
+    def _auto_place_rest(self, p):
+        """Randomly place whatever ships are left, avoiding the already-placed ones."""
+        occupied = set(self._ship_cells(p))
+        for size in SHIPS[len(self.fleet[p]):]:
+            for _ in range(300):
+                if random.choice((True, False)):
+                    r, c = random.randrange(ROWS), random.randrange(COLS - size + 1)
+                    cells = {(r, c + i) for i in range(size)}
+                else:
+                    r, c = random.randrange(ROWS - size + 1), random.randrange(COLS)
+                    cells = {(r + i, c) for i in range(size)}
+                if cells & occupied:
+                    continue
+                occupied |= cells
+                self.fleet[p].append({"size": size, "cells": cells})
+                break
+
     def _fire(self, shooter, cell):
         """Resolve shooter firing at cell. Returns (result, sunk_size, won)."""
         target = self._opp(shooter)
@@ -156,9 +173,8 @@ class BattleshipGame:
         won = all(c in self.shots[shooter] for c in self._ship_cells(target))
         return ("sunk" if sunk else "hit"), (ship["size"] if sunk else None), won
 
-    # --- rendering ---------------------------------------------------------
+    # --- grids -------------------------------------------------------------
     def _fog_grid(self, shooter):
-        """shooter's shots on the opponent (public knowledge - no ships shown)."""
         out = []
         for r in range(ROWS):
             row = ""
@@ -169,9 +185,8 @@ class BattleshipGame:
         return "\n".join(out)
 
     def _fleet_grid(self, p):
-        """p's own ocean: their ships + the opponent's hits/misses on them (private)."""
         ship_cells = self._ship_cells(p)
-        incoming = self.shots[self._opp(p)]   # opponent's shots on p
+        incoming = self.shots[self._opp(p)]
         out = []
         for r in range(ROWS):
             row = ""
@@ -191,8 +206,8 @@ class BattleshipGame:
                      "Set up your fleets, then the shooting starts.", "",
                      f"{'✅' if self.ready[1] else '⏳'} **{self.p1_name}**",
                      f"{'✅' if self.ready[2] else '⏳'} **{self.p2_name}**", "",
-                     "-# Tap **Place fleet** below · Shuffle until happy, then Ready."]
-            return discord.Embed(title=title, description="\n".join(lines), colour=0x3498DB)
+                     "-# Tap **Place fleet** below to position your ships."]
+            return discord.Embed(title=title, description="\n".join(lines), colour=ACCENT)
 
         if final:
             pot = self.stake * 2
@@ -209,14 +224,12 @@ class BattleshipGame:
                     lines.append(f"\U0001f3c6 **{wname}** sank the fleet and wins the "
                                  f"**{pot:,}** UKP pot!")
                 colour = 0x2ECC71
-            # Reveal both fleets at the end.
             lines += ["", f"**{self.p1_name}'s fleet**", self._fleet_grid(1),
                       "", f"**{self.p2_name}'s fleet**", self._fleet_grid(2)]
             e = discord.Embed(title=title, description="\n".join(lines), colour=colour)
             e.set_footer(text="Battleship · winner takes the pot")
             return e
 
-        # firing
         lines = [f"\U0001f6a2 **{self.p1_name}**  vs  **{self.p2_name}**", "",
                  f"\U0001f3af **{self.p1_name}** → {self.p2_name}", self._fog_grid(1), "",
                  f"\U0001f3af **{self.p2_name}** → {self.p1_name}", self._fog_grid(2), ""]
@@ -230,67 +243,43 @@ class BattleshipGame:
                 lines.append(f"\U0001f4a5 **{who}** sank a **{SHIP_NAMES.get(sunk_size, 'ship')}** at {coord}!")
             else:
                 lines.append(f"\U0001f4a5 **{who}** hit at {coord}!")
-        cur = self._name(self.turn)
-        lines.append(f"➡️  **{cur}'s turn to fire**")
-        mins = _forfeit_seconds() // 60
-        e = discord.Embed(title=title, description="\n".join(lines), colour=0x3498DB)
-        e.set_footer(text=f"⏳ {mins} min to fire, or you forfeit the pot")
+        lines.append(f"➡️  **{self._name(self.turn)}'s turn to fire**")
+        e = discord.Embed(title=title, description="\n".join(lines), colour=ACCENT)
+        e.set_footer(text=f"⏳ {_forfeit_seconds() // 60} min to fire, or you forfeit the pot")
         return e
 
     def _board_view(self):
         v = discord.ui.View(timeout=None)
         if self.phase == "placing":
-            b = discord.ui.Button(label="Place fleet", emoji="\U0001f6a2",
-                                  style=discord.ButtonStyle.primary)
+            b = discord.ui.Button(label="Place fleet", emoji=SHIP, style=discord.ButtonStyle.primary)
             b.callback = self._on_place
             v.add_item(b)
         elif self.phase == "firing":
-            fire = discord.ui.Button(label="Fire", emoji="\U0001f3af",
-                                     style=discord.ButtonStyle.danger)
+            fire = discord.ui.Button(label="Fire", emoji="\U0001f3af", style=discord.ButtonStyle.danger)
             fire.callback = self._on_fire_open
             v.add_item(fire)
-            fleet = discord.ui.Button(label="My fleet", emoji="\U0001f6a2",
-                                      style=discord.ButtonStyle.secondary)
+            fleet = discord.ui.Button(label="My fleet", emoji=SHIP, style=discord.ButtonStyle.secondary)
             fleet.callback = self._on_fleet
             v.add_item(fleet)
         return v
 
-    async def render(self, *, bump=False, content=None):
-        """Draw the board in the thread. bump=True re-posts at the bottom (with the actor's
-        @mention in `content` to ping them) so the board stays put and pings the next player;
-        the old board is deleted. Posts the new one BEFORE deleting the old, so a failed send
-        (e.g. a locked thread the bot can't post in) falls back to an in-place edit instead of
-        losing the board."""
+    async def render(self, *, content=None):
+        """Update the board in place - one message, edited each turn (no re-posting), with the
+        current player @mentioned in the content. Sends it the first time."""
         dest = self.thread
         if dest is None:
             return
-        embed = self._embed()
-        view = self._board_view()
+        embed, view = self._embed(), self._board_view()
         am = discord.AllowedMentions(users=True) if content else discord.AllowedMentions.none()
-        if bump:
-            try:
-                new = await dest.send(content=content, embed=embed, view=view, allowed_mentions=am)
-            except discord.HTTPException:
-                if self.message is not None:
-                    try:
-                        await self.message.edit(content=content, embed=embed, view=view,
-                                                allowed_mentions=am)
-                    except discord.HTTPException:
-                        logger.debug("battleship bump fallback edit failed", exc_info=True)
-                return
-            old, self.message = self.message, new
-            if old is not None:
-                try:
-                    await old.delete()
-                except discord.HTTPException:
-                    pass
-            return
         if self.message is not None:
             try:
                 await self.message.edit(content=content, embed=embed, view=view, allowed_mentions=am)
-                return
             except discord.NotFound:
                 self.message = None
+            except discord.HTTPException:
+                logger.debug("battleship board edit failed", exc_info=True)
+            else:
+                return
         try:
             self.message = await dest.send(content=content, embed=embed, view=view, allowed_mentions=am)
         except discord.HTTPException:
@@ -306,23 +295,119 @@ class BattleshipGame:
             await interaction.response.send_message(
                 "Your fleet's locked in - waiting for your opponent.", ephemeral=True)
             return
-        await interaction.response.send_message(
-            content=self._placement_text(p), view=PlacementView(self, p), ephemeral=True)
+        await interaction.response.send_message(view=self._placement_layout(p), ephemeral=True)
 
-    def _placement_text(self, p):
-        return (f"## \U0001f6a2 Your fleet\n{self._fleet_grid(p)}\n\n"
-                "\U0001f500 **Shuffle** until you're happy, then ✅ **Ready**.")
+    def _placement_layout(self, p):
+        view = discord.ui.LayoutView(timeout=_forfeit_seconds())
+        box = discord.ui.Container(accent_colour=ACCENT)
+        nxt = self._next_ship(p)
+        orient = "Horizontal ↔️" if self.place_orient[p] == "h" else "Vertical ↕️"
+        if nxt is not None:
+            box.add_item(discord.ui.TextDisplay(
+                f"## \U0001f6a2 Place your fleet\nNext: **{SHIP_NAMES.get(nxt, 'ship')} ({nxt})** "
+                f"— **{orient}**\n-# Tap a square for the bow; it extends right (↔️) or down (↕️)."))
+        else:
+            box.add_item(discord.ui.TextDisplay(
+                "## \U0001f6a2 Fleet ready\nAll ships placed - hit **Ready**, or **Undo** to adjust."))
+        view.add_item(box)
+        occupied = self._ship_cells(p)
+        for r in range(ROWS):
+            row = discord.ui.ActionRow()
+            for c in range(COLS):
+                if (r, c) in occupied:
+                    b = discord.ui.Button(emoji=SHIP, style=discord.ButtonStyle.success, disabled=True)
+                elif nxt is not None:
+                    b = discord.ui.Button(emoji=UNKNOWN, style=discord.ButtonStyle.secondary)
+                    b.callback = self._make_place_cb(p, (r, c))
+                else:
+                    b = discord.ui.Button(emoji=WATER, style=discord.ButtonStyle.secondary, disabled=True)
+                row.add_item(b)
+            view.add_item(row)
+        controls = discord.ui.ActionRow()
+        rotate = discord.ui.Button(label="Rotate", emoji="\U0001f504", style=discord.ButtonStyle.primary)
+        rotate.callback = self._make_orient_cb(p)
+        controls.add_item(rotate)
+        undo = discord.ui.Button(label="Undo", emoji="↩️", style=discord.ButtonStyle.secondary,
+                                 disabled=not self.fleet[p])
+        undo.callback = self._make_undo_cb(p)
+        controls.add_item(undo)
+        auto = discord.ui.Button(label="Auto", emoji="\U0001f500", style=discord.ButtonStyle.secondary,
+                                 disabled=nxt is None)
+        auto.callback = self._make_auto_cb(p)
+        controls.add_item(auto)
+        ready = discord.ui.Button(label="Ready", emoji="✅", style=discord.ButtonStyle.success,
+                                  disabled=nxt is not None)
+        ready.callback = self._make_ready_cb(p)
+        controls.add_item(ready)
+        view.add_item(controls)
+        return view
+
+    def _make_place_cb(self, p, cell):
+        async def cb(interaction: Interaction):
+            if self._pnum(interaction.user.id) != p or self.ready[p] or self.game_over:
+                await interaction.response.defer()
+                return
+            if self._try_place(p, *cell):
+                await interaction.response.edit_message(view=self._placement_layout(p))
+            else:
+                await interaction.response.send_message(
+                    "That ship won't fit there - try another square or **Rotate**.", ephemeral=True)
+        return cb
+
+    def _make_orient_cb(self, p):
+        async def cb(interaction: Interaction):
+            if self._pnum(interaction.user.id) != p or self.ready[p]:
+                await interaction.response.defer()
+                return
+            self.place_orient[p] = "v" if self.place_orient[p] == "h" else "h"
+            await interaction.response.edit_message(view=self._placement_layout(p))
+        return cb
+
+    def _make_undo_cb(self, p):
+        async def cb(interaction: Interaction):
+            if self._pnum(interaction.user.id) != p or self.ready[p]:
+                await interaction.response.defer()
+                return
+            if self.fleet[p]:
+                self.fleet[p].pop()
+            await interaction.response.edit_message(view=self._placement_layout(p))
+        return cb
+
+    def _make_auto_cb(self, p):
+        async def cb(interaction: Interaction):
+            if self._pnum(interaction.user.id) != p or self.ready[p]:
+                await interaction.response.defer()
+                return
+            self._auto_place_rest(p)
+            await interaction.response.edit_message(view=self._placement_layout(p))
+        return cb
+
+    def _make_ready_cb(self, p):
+        async def cb(interaction: Interaction):
+            if self._pnum(interaction.user.id) != p or self.ready[p] or self.game_over:
+                await interaction.response.defer()
+                return
+            if self._next_ship(p) is not None:
+                await interaction.response.send_message(
+                    "Place all your ships first (or tap **Auto**).", ephemeral=True)
+                return
+            self.ready[p] = True
+            done = discord.ui.LayoutView(timeout=180)
+            dbox = discord.ui.Container(accent_colour=discord.Colour(0x2ECC71))
+            dbox.add_item(discord.ui.TextDisplay("✅ **Fleet locked in** - waiting for your opponent."))
+            done.add_item(dbox)
+            await interaction.response.edit_message(view=done)
+            await self.after_ready()
+        return cb
 
     async def after_ready(self):
-        """Called after a player marks Ready. Starts the battle once both are in."""
         async with self._lock:
             both = self.phase == "placing" and self.ready[1] and self.ready[2]
             if both:
                 self.phase = "firing"
                 self._restart_timer()
         if both:
-            await self.render(bump=True,
-                              content=f"\U0001f3af <@{self._uid(self.turn)}> - both fleets ready, "
+            await self.render(content=f"\U0001f3af <@{self._uid(self.turn)}> - both fleets ready, "
                                       "you fire first!")
         else:
             await self.render()
@@ -336,10 +421,8 @@ class BattleshipGame:
         if self.phase != "firing" or self.game_over:
             await interaction.response.defer()
             return
-        if p != self.turn:
-            await interaction.response.send_message("It's not your turn to fire.", ephemeral=True)
-            return
         await interaction.response.send_message(view=self._fire_view(p), ephemeral=True)
+        self.fire_iaction[p] = interaction
 
     async def _on_fleet(self, interaction: Interaction):
         p = self._pnum(interaction.user.id)
@@ -350,9 +433,16 @@ class BattleshipGame:
             content=f"## \U0001f6a2 Your fleet\n{self._fleet_grid(p)}", ephemeral=True)
 
     def _fire_view(self, shooter):
-        view = discord.ui.LayoutView(timeout=_forfeit_seconds())
-        box = discord.ui.Container(accent_colour=discord.Colour(0x3498DB))
-        box.add_item(discord.ui.TextDisplay("\U0001f3af **Tap an enemy square to fire.**"))
+        active = (self.phase == "firing" and not self.game_over and self.turn == shooter)
+        view = discord.ui.LayoutView(timeout=None)
+        box = discord.ui.Container(accent_colour=ACCENT)
+        if self.game_over:
+            header = "\U0001f6a2 **Game over.**"
+        elif active:
+            header = "\U0001f3af **Your turn - tap an enemy square to fire.**"
+        else:
+            header = f"⏳ **Waiting for {self._name(self._opp(shooter))} to fire...**"
+        box.add_item(discord.ui.TextDisplay(header))
         view.add_item(box)
         shots = self.shots[shooter]
         for r in range(ROWS):
@@ -363,9 +453,11 @@ class BattleshipGame:
                     b = discord.ui.Button(emoji=HIT, style=discord.ButtonStyle.danger, disabled=True)
                 elif v == "miss":
                     b = discord.ui.Button(emoji=MISS, style=discord.ButtonStyle.secondary, disabled=True)
-                else:
+                elif active:
                     b = discord.ui.Button(emoji=UNKNOWN, style=discord.ButtonStyle.primary)
                     b.callback = self._make_fire_cb((r, c))
+                else:
+                    b = discord.ui.Button(emoji=UNKNOWN, style=discord.ButtonStyle.secondary, disabled=True)
                 row.add_item(b)
             view.add_item(row)
         return view
@@ -377,36 +469,43 @@ class BattleshipGame:
 
     async def _do_fire(self, interaction: Interaction, cell):
         p = self._pnum(interaction.user.id)
-        if p is None or self.phase != "firing" or self.game_over or p != self.turn:
+        if (p is None or self.phase != "firing" or self.game_over or p != self.turn
+                or cell in self.shots.get(p, {})):
             try:
                 await interaction.response.defer()
             except discord.HTTPException:
                 pass
             return
-        if cell in self.shots[p]:
-            await interaction.response.send_message("You've already fired there.", ephemeral=True)
-            return
         try:
-            await interaction.response.defer()       # ack fast (the board edit comes via the bot token)
+            await interaction.response.defer()      # ack fast; panels/board update via the token below
         except discord.NotFound:
             return
+        self.fire_iaction[p] = interaction
         async with self._lock:
             if self.game_over or p != self.turn or cell in self.shots[p]:
                 return
-            _result, sunk_size, won = self._fire(p, cell)
-            self.last = (p, cell, _result, sunk_size)
+            _result, sunk, won = self._fire(p, cell)
+            self.last = (p, cell, _result, sunk)
             if won:
-                await self._finish(winner=p)
+                await self._finish(winner=p)            # also refreshes both panels + board
             else:
                 self.turn = self._opp(p)
                 self._restart_timer()
-        try:
-            await interaction.delete_original_response()   # clear the firing grid
-        except discord.HTTPException:
-            pass
         if not self.game_over:
-            await self.render(bump=True,
-                              content=f"\U0001f3af <@{self._uid(self.turn)}> - your turn to fire.")
+            await self.render(content=f"\U0001f3af <@{self._uid(self.turn)}> - your turn to fire.")
+            await self._refresh_fire_panel(p)            # shooter -> "waiting"
+            await self._refresh_fire_panel(self.turn)    # next player -> active (if their panel is open)
+
+    async def _refresh_fire_panel(self, p):
+        """Edit player p's open firing ephemeral to match the current state (best-effort - if
+        the interaction token has lapsed it's dropped and they just reopen via the board)."""
+        ia = self.fire_iaction.get(p)
+        if ia is None:
+            return
+        try:
+            await ia.edit_original_response(view=self._fire_view(p))
+        except discord.HTTPException:
+            self.fire_iaction[p] = None
 
     # --- forfeit clock -----------------------------------------------------
     def start(self):
@@ -448,10 +547,11 @@ class BattleshipGame:
         self.phase = "over"
         self._cancel_timer()
         if self.escrow_key is not None:
-            delete_state(self.escrow_key)        # delete-before-credit: never double-pay on reboot
-        pot = self.stake * 2
-        credit_from_bank(self._uid(winner), pot, "Battleship win")
+            delete_state(self.escrow_key)            # delete-before-credit: never double-pay on reboot
+        credit_from_bank(self._uid(winner), self.stake * 2, "Battleship win")
         await self._render_final(winner=winner, forfeit=forfeit)
+        for pl in (1, 2):
+            await self._refresh_fire_panel(pl)
         await self._announce_parent(winner=winner, forfeit=forfeit)
         await self._close_thread()
 
@@ -474,6 +574,8 @@ class BattleshipGame:
                 await self.message.edit(content=None, embed=e, view=None)
         except discord.HTTPException:
             pass
+        for pl in (1, 2):
+            await self._refresh_fire_panel(pl)
         await self._close_thread()
 
     async def _render_final(self, *, winner, forfeit):
@@ -487,26 +589,22 @@ class BattleshipGame:
             logger.debug("battleship final render failed", exc_info=True)
 
     async def _announce_parent(self, *, winner, forfeit):
-        """A short result in the parent channel so there's a record outside the (archived) thread."""
+        """Post the final board (both fleets revealed + result) to the parent channel, so
+        there's a full record outside the (archived) thread."""
         if self.client is None:
             return
         try:
             parent = self.client.get_channel(int(self.channel_id))
-            if parent is None:
-                return
-            pot = self.stake * 2
-            wname = self._name(winner)
-            verb = "by forfeit" if forfeit else "sinks the fleet and"
-            await parent.send(
-                f"\U0001f6a2 **Battleship:** {wname} {verb} takes the **{pot:,}** UKP pot "
-                f"off {self._name(self._opp(winner))}.",
-                allowed_mentions=discord.AllowedMentions.none())
+            if parent is not None:
+                await parent.send(embed=self._embed(final=True, winner=winner, forfeit=forfeit),
+                                  allowed_mentions=discord.AllowedMentions.none())
         except discord.HTTPException:
             logger.debug("battleship parent announce failed", exc_info=True)
 
     async def _close_thread(self):
         if self.thread is None:
             return
+        ACTIVE_GAME_THREADS.discard(self.thread.id)
         try:
             await self.thread.edit(archived=True, locked=True)
         except discord.HTTPException:
@@ -514,34 +612,6 @@ class BattleshipGame:
                 await self.thread.delete()
             except discord.HTTPException:
                 pass
-
-
-class PlacementView(discord.ui.View):
-    """The per-player ephemeral: shuffle the random fleet, then lock it in."""
-
-    def __init__(self, game: BattleshipGame, p: int):
-        super().__init__(timeout=_forfeit_seconds())
-        self.game = game
-        self.p = p
-
-    @discord.ui.button(label="Shuffle", emoji="\U0001f500", style=discord.ButtonStyle.secondary)
-    async def shuffle(self, interaction: Interaction, button: discord.ui.Button):
-        if self.game.ready[self.p] or self.game.game_over:
-            await interaction.response.defer()
-            return
-        self.game.fleet[self.p] = _random_fleet()
-        await interaction.response.edit_message(content=self.game._placement_text(self.p), view=self)
-
-    @discord.ui.button(label="Ready", emoji="✅", style=discord.ButtonStyle.success)
-    async def ready(self, interaction: Interaction, button: discord.ui.Button):
-        if self.game.game_over:
-            await interaction.response.defer()
-            return
-        self.game.ready[self.p] = True
-        await interaction.response.edit_message(
-            content="✅ Fleet locked in - waiting for your opponent.", view=None)
-        await self.game.after_ready()
-        self.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -597,13 +667,12 @@ class BattleshipChallengeView(discord.ui.View):
         game.client = interaction.client
         game.escrow_key = interaction.message.id
 
-        # Open the game's own thread, pull both players in, and lock it so only the bot posts
-        # (players still interact via buttons - locking blocks chat, not interactions).
         try:
             thread = await interaction.channel.create_thread(
                 name=f"\U0001f6a2 Battleship: {self.challenger.display_name} vs {self.opponent.display_name}"[:90],
                 type=discord.ChannelType.public_thread, auto_archive_duration=60)
             game.thread = thread
+            ACTIVE_GAME_THREADS.add(thread.id)       # pseudo-lock: bin anyone else's messages here
             for m in (self.challenger, self.opponent):
                 try:
                     await thread.add_user(m)
@@ -624,13 +693,8 @@ class BattleshipChallengeView(discord.ui.View):
             "stake": self.amount, "channel_id": interaction.channel_id,
             "thread_id": game.thread.id,
         })
-        await game.render()                          # post the board in the thread
-        try:
-            await game.thread.edit(locked=True)      # only the bot posts; banter goes in the parent
-        except discord.HTTPException:
-            logger.debug("battleship thread lock failed (continuing unlocked)", exc_info=True)
+        await game.render()
         game.start()
-
         try:
             e = interaction.message.embeds[0]
             e.colour = 0x2ECC71
@@ -732,11 +796,11 @@ async def handle_battleship_command(interaction: Interaction, opponent: Member, 
 
 
 # ---------------------------------------------------------------------------
-# Restart recovery (called from event_handlers.reattach_persistent_views)
+# Restart recovery
 # ---------------------------------------------------------------------------
 def reattach_battleship_view(client, key, value):
     """A game was mid-match when the bot restarted. The live board/timer can't be rebuilt, so
-    VOID it: refund both stakes, prune the record, and clean up the thread."""
+    VOID it: refund both stakes, prune the record, clean up the thread."""
     try:
         p1 = int(value["p1_id"])
         p2 = int(value["p2_id"])

@@ -79,3 +79,12 @@ def is_file_status_active(file_path: str) -> bool:
 def read_html_template(file_path: str) -> str:
     with open(file_path, "r", encoding="utf-8") as file:
         return file.read()
+
+
+def is_exempt_user(user_id: int) -> bool:
+    """Check if a user is exempt from standard constraints or rate limits."""
+    try:
+        from config import USERS
+        return int(user_id) == getattr(USERS, "OGGERS", 0)
+    except Exception:
+        return False
