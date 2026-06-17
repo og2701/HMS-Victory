@@ -509,6 +509,12 @@ def reattach_persistent_views(client):
                 reattach_connect4_view(client, key, value)
             except Exception as e:
                 logger.error(f"Failed to recover connect4 game {key}: {e}")
+        elif isinstance(value, dict) and value.get("type") == "battleship":
+            try:
+                from commands.economy.battleship import reattach_battleship_view
+                reattach_battleship_view(client, key, value)
+            except Exception as e:
+                logger.error(f"Failed to recover battleship game {key}: {e}")
         elif isinstance(value, dict):
             view = RoleButtonView(value)
             client.add_view(view, message_id=key)

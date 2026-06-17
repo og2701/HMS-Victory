@@ -522,6 +522,14 @@ def define_commands(tree, client):
         from commands.economy.connect4 import handle_connect4_command
         await handle_connect4_command(interaction, opponent, bet)
 
+    @command("battleship", "Challenge someone to Battleship - winner takes the pot (UKPence)")
+    async def battleship_command(interaction: Interaction, opponent: Member,
+                                 bet: app_commands.Range[int, 1]):
+        if await _require_casino_channel(interaction):
+            return
+        from commands.economy.battleship import handle_battleship_command
+        await handle_battleship_command(interaction, opponent, bet)
+
     @command("casino", "Open the HMS Victory casino - pick a game to play")
     async def casino_command(interaction: Interaction):
         if await _require_casino_channel(interaction):
