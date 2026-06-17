@@ -99,9 +99,14 @@ def _render_html(interaction: Interaction, table: list, page: int) -> str:
     rows_html = []
     for rank, shared, uid, g, s, b, total, has_secret in slice_:
         name = html.escape(_resolve_name(interaction, uid))
+        # Secret-badge holders get a subtle rainbow outline on the whole row (see the
+        # tr.secret-row rule in the template), not a ring around just the name.
+        classes = []
+        if rank <= 3:
+            classes.append(f"top-{rank}")
         if has_secret:
-            name = f'<span class="secret-name">{name}</span>'
-        row_class = f"top-{rank}" if rank <= 3 else ""
+            classes.append("secret-row")
+        row_class = " ".join(classes)
         rows_html.append(
             f'<tr class="{row_class}">'
             f'<td class="rank">{_rank_cell(rank, shared)}</td>'

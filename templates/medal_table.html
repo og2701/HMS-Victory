@@ -134,18 +134,24 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    /* Secret-badge holders: name sits in a rainbow ring matching the secret badge's
-       conic-gradient border (static here since the table is a screenshot), with the same
-       white glow. Inner fill is the row backdrop so only the rainbow edge shows. */
-    td.name .secret-name {
-      display: inline-block;
-      padding: 2px 12px;
-      border-radius: 9px;
-      border: 2px solid transparent;
+    /* Secret-badge holders: the whole row gets a SUBTLE rainbow outline matching the secret
+       badge's conic-gradient. A single masked overlay is positioned against the row (the tr is
+       the containing block), so it rings the full row without filling it. Thin + low opacity
+       keeps it understated. */
+    tbody tr.secret-row { position: relative; }
+    tbody tr.secret-row td:first-child::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 8px;
+      padding: 1px;                          /* ring thickness */
       background:
-        linear-gradient(#171b24, #171b24) padding-box,
         conic-gradient(from 0deg, #ff0000, #ff7300, #fffb00, #48ff00, #00ffd5, #002bff, #7a00ff, #ff00c8, #ff0000) border-box;
-      box-shadow: 0 0 10px rgba(255, 255, 255, 0.22);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+              mask-composite: exclude;       /* cut the centre so only the edge shows */
+      opacity: 0.4;                          /* subtle */
+      pointer-events: none;
     }
     td.count {
       font-variant-numeric: tabular-nums;
