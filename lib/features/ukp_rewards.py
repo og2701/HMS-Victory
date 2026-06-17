@@ -155,8 +155,8 @@ async def handle_tree_watering(client, message):
     from lib.features.income_badges import award_badge_safe, record_income_source, bump_daily_income
     bump_daily_income("tree_total", pay_amt)
     await award_badge_safe(client, waterer_id, "green_fingers")     # first water (idempotent)
-    if pay_amt == 1:
-        await award_badge_safe(client, waterer_id, "drip")          # decayed to the floor today
+    if pay_amt <= 10:
+        await award_badge_safe(client, waterer_id, "drip")          # decayed to 10 UKPence or below today
     if total >= 100:
         await award_badge_safe(client, waterer_id, "sir_branchalot")
     await record_income_source(client, waterer_id, "tree")

@@ -715,7 +715,7 @@ def init_db():
             ('victory_sponsor', 'Victory Sponsor', 'Transfer UKPence directly to HMS Victory (the bank)', '⚓', 'Bronze'),
             ('green_fingers', 'Green Fingers', 'Water the server tree for the first time', '🌱', 'Bronze'),
             ('sir_branchalot', 'Sir Branchalot', 'Water the server tree 100 times', '🌳', 'Silver'),
-            ('drip', 'Drip Feed', 'Water the tree enough in one day to decay your reward down to 1 UKPence', '💧', 'Bronze'),
+            ('drip', 'Drip Feed', 'Water the tree enough in one day to decay your reward down to 10 UKPence', '💧', 'Silver'),
             ('saver', 'Prudent Saver', 'Open your first bond', '🏦', 'Bronze'),
             ('bond_villain', 'Bond Villain', 'Earn 10,000 UKPence in total bond interest', '🕴️', 'Gold'),
             ('long_game', 'The Long Game', 'Open a 30-day bond', '⏳', 'Silver'),
