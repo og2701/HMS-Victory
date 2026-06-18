@@ -506,26 +506,28 @@ async def grant_ticket_reward(client, creator_id, creator_name=None) -> bool:
     return True
 
 
-class BenefitsFineView(discord.ui.View):
-    """Allows a banned user to pay their benefits fraud fine to lift their ban and reset the ramp."""
+class BenefitsFineConfirmView(discord.ui.View):
+    """View to confirm fine payment by the payer."""
 
-    def __init__(self, user_id: int, fine: int):
-        super().__init__(timeout=180)
-        self.user_id = user_id
+    def __init__(self, banned_user_id: int, payer_id: int, fine: int):
+        super().__init__(timeout=60)
+        self.banned_user_id = banned_user_id
+        self.payer_id = payer_id
         self.fine = fine
 
-    @discord.ui.button(label="Pay Fine", style=discord.ButtonStyle.danger, emoji="💸", custom_id="benefits_fine:pay")
-    async def pay_fine(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("Only the banned user can pay this fine.", ephemeral=True)
+    @discord.ui.button(label="Confirm Payment", style=discord.ButtonStyle.danger, emoji="✅")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.payer_id:
+            await interaction.response.send_message("Only the person who initiated this payment can confirm it.", ephemeral=True)
             return
 
         from lib.economy.economy_manager import remove_bb, get_bb
         from database import DatabaseManager
         import time
 
-        uid = self.user_id
+        uid = self.banned_user_id
         suid = str(uid)
+        payer_id = self.payer_id
 
         # Use DatabaseManager lock to serialize state changes and avoid race conditions
         with DatabaseManager.locked_connection():
@@ -534,15 +536,15 @@ class BenefitsFineView(discord.ui.View):
             now = int(time.time())
 
             if rec.get("banned_until", 0) <= now:
-                await interaction.response.send_message("❌ Your benefits ban has already expired or is not active.", ephemeral=True)
+                await interaction.response.send_message("❌ This benefits ban has already expired or is not active.", ephemeral=True)
                 return
 
             fine_amount = rec.get("fine", 0)
             if fine_amount <= 0:
-                # Fallback for legacy bans
-                fine_amount = 400
+                fine_amount = 350  # Fallback
 
-            bal = get_bb(uid)
+            # Check payer's balance again to avoid race conditions
+            bal = get_bb(payer_id)
             if bal < fine_amount:
                 await interaction.response.send_message(
                     f"❌ You cannot afford this fine. The fine is **{fine_amount:,} UKPence**, but you only have **{bal:,} UKPence**.",
@@ -550,8 +552,9 @@ class BenefitsFineView(discord.ui.View):
                 )
                 return
 
-            # Deduct the fine and deposit it to the server bank
-            if not remove_bb(uid, fine_amount, reason="Paid benefits fraud fine", to_bank=True):
+            # Deduct the fine from the payer and deposit to bank
+            reason = f"Paid benefits fraud fine for {uid}" if payer_id != uid else "Paid benefits fraud fine"
+            if not remove_bb(payer_id, fine_amount, reason=reason, to_bank=True):
                 await interaction.response.send_message("❌ Fine payment failed due to a bank issue. Please try again.", ephemeral=True)
                 return
 
@@ -574,10 +577,77 @@ class BenefitsFineView(discord.ui.View):
             child.disabled = True
         await interaction.response.edit_message(view=self)
 
-        await interaction.followup.send(
-            f"✅ **Fine Paid!** You paid **{fine_amount:,} UKPence** to the bank. Your benefits ban has been lifted and your offense history has been reset. You can now use `/benefits` again!",
-            ephemeral=False
-        )
+        if payer_id == uid:
+            await interaction.followup.send(
+                f"✅ **Fine Paid!** <@{payer_id}> paid their own fine of **{fine_amount:,} UKPence**. Their benefits ban has been lifted and their offense history has been reset!",
+                ephemeral=False
+            )
+        else:
+            await interaction.followup.send(
+                f"✅ **Fine Paid!** <@{payer_id}> paid the fine of **{fine_amount:,} UKPence** for <@{uid}>. Their benefits ban has been lifted and their offense history has been reset!",
+                ephemeral=False
+            )
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, emoji="❌")
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.payer_id:
+            await interaction.response.send_message("Only the person who initiated this payment can cancel it.", ephemeral=True)
+            return
+
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send(f"❌ Payment cancelled by <@{self.payer_id}>.", ephemeral=False)
+        self.stop()
+
+
+class BenefitsFineView(discord.ui.View):
+    """Allows any user to pay the benefits fraud fine for a banned user to lift their ban."""
+
+    def __init__(self, user_id: int, fine: int):
+        super().__init__(timeout=180)
+        self.user_id = user_id
+        self.fine = fine
+
+    @discord.ui.button(label="Pay Fine", style=discord.ButtonStyle.danger, emoji="💸", custom_id="benefits_fine:pay")
+    async def pay_fine(self, interaction: discord.Interaction, button: discord.ui.Button):
+        from lib.economy.economy_manager import get_bb
+        import time
+
+        # Ensure the ban is still active before offering confirmation
+        store = load_json_file(config.BENEFITS_FILE) or {}
+        rec = _benefits_rec(store, str(self.user_id))
+        now = int(time.time())
+        if rec.get("banned_until", 0) <= now:
+            await interaction.response.send_message("❌ This benefits ban has already expired or is not active.", ephemeral=True)
+            return
+
+        # Fetch fine stored in JSON to be absolutely precise
+        fine_amount = rec.get("fine", 0)
+        if fine_amount <= 0:
+            fine_amount = self.fine
+        if fine_amount <= 0:
+            fine_amount = 350
+
+        payer_id = interaction.user.id
+        bal = get_bb(payer_id)
+        if bal < fine_amount:
+            await interaction.response.send_message(
+                f"❌ You cannot afford this fine. The fine is **{fine_amount:,} UKPence**, but you only have **{bal:,} UKPence**.",
+                ephemeral=True
+            )
+            return
+
+        # Send a non-ephemeral confirmation message
+        if payer_id == self.user_id:
+            msg = f"💸 <@{payer_id}>, are you sure you want to pay your own benefits fraud fine of **{fine_amount:,} UKPence**?"
+        else:
+            msg = f"💸 <@{payer_id}>, are you sure you want to pay the benefits fraud fine of **{fine_amount:,} UKPence** for <@{self.user_id}>?"
+
+        confirm_view = BenefitsFineConfirmView(self.user_id, payer_id, fine_amount)
+        await interaction.response.send_message(msg, view=confirm_view, ephemeral=False)
+
 
 
 class TicketRewardView(discord.ui.View):
