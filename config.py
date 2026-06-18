@@ -200,6 +200,7 @@ CONNECT4_FORFEIT_SECONDS = 120     # PvP: 2 min to make each move, or you forfei
 CONNECT4_AI_FORFEIT_SECONDS = 120  # vs-AI: 2 min to make each move, or you forfeit the pot
 CONNECT4_AI_MOVE_TIMEOUT = 60      # vs-AI: if the AI doesn't move within this (a hang), the player WINS the pot by forfeit
 CONNECT4_AI_STARTS_CHANCE = 0.70   # vs-AI: probability the AI opens (it's perfect -> unbeatable when it starts; the rest let the human open so the bounty stays winnable)
+CONNECT4_AI_DAILY_WIN_CAP = 4000   # vs-AI: max NET profit per user per UK day (anti-farm); over it a win just returns the stake, losses count against it
 CONNECT4_AI_DEPTH = 22             # vs-AI (bank-funded): max negamax depth (deep-search cap)
 CONNECT4_AI_TIME = 5.0             # vs-AI: per-move think budget in seconds (iterative deepening)
 

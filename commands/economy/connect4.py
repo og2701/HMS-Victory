@@ -371,15 +371,21 @@ class Connect4View(discord.ui.View):
             wid = self.p1_id if winner == 1 else self.p2_id
             lid = self.p2_id if winner == 1 else self.p1_id
         if self.ai_player is not None:
-            # Bank-funded AI game: only the human staked. Human win pays 2x from the bank;
-            # AI win -> the bank simply keeps the stake (NO payout, or it would mint UKP);
-            # draw refunds the human.
+            # Bank-funded AI game: only the human staked. A win returns the stake plus profit,
+            # but daily net profit is capped (CONNECT4_AI_DAILY_WIN_CAP) so beating the perfect AI
+            # can't be farmed - over the cap a win just returns the stake. A loss counts against
+            # the day's total. AI win otherwise -> the bank keeps the stake; draw refunds.
+            from lib.economy import connect4_ai_cap
             human = self._human_player()
             human_id = self.p1_id if human == 1 else self.p2_id
             if winner is None:
                 credit_from_bank(human_id, self.stake, "Connect 4 vs AI draw refund")
             elif winner == human:
-                credit_from_bank(human_id, pot, "Connect 4 vs AI win")
+                profit = connect4_ai_cap.win_profit(human_id, self.stake)
+                credit_from_bank(human_id, self.stake + profit,
+                                 f"Connect 4 vs AI win (stake + {profit:,} profit, daily-capped)")
+            else:  # AI won -> the human lost their stake; count it against the daily cap
+                connect4_ai_cap.record_loss(human_id, self.stake)
         elif winner is None:
             credit_from_bank(self.p1_id, self.stake, "Connect 4 draw refund")
             credit_from_bank(self.p2_id, self.stake, "Connect 4 draw refund")
