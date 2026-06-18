@@ -11,6 +11,9 @@ data/iceberg_texts.json
 
 *.json
 database.db*
+*.db
+# secret_badges.json (plaintext secret-badge config) is covered by *.json above; only the
+# encrypted secret_badges.json.enc is committed.
 .env
 venv/
 data/iceberg_cache.png

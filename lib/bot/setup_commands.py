@@ -448,29 +448,33 @@ def define_commands(tree, client):
             from lib.bot.event_handlers import award_badge_with_notify
             await award_badge_with_notify(interaction.client, interaction.user.id, 'philanthropist')
 
-        # Re-Gifter (secret): got this exact amount from someone else within the last minute
-        # and is now passing it onward to a DIFFERENT person (not the bank, not back to the
-        # giver). The row just inserted is payer->recipient, so it can't match this query.
-        if recipient.id != interaction.client.user.id:
+        # Hidden badge: a quick relay of the exact same amount onward to a DIFFERENT person (not
+        # the bank, not back to the giver). The window + identity live in the encrypted
+        # secret-badge config. The row just inserted is payer->recipient, so it can't self-match.
+        from lib.economy import secret_config as _sc
+        _rg_win = _sc.param("a7")
+        if _rg_win is not None and recipient.id != interaction.client.user.id:
             regift = DatabaseManager.fetch_one(
                 "SELECT 1 FROM pay_transfers WHERE recipient_id = ? AND amount = ? "
                 "AND payer_id != ? AND timestamp >= ?",
-                (str(interaction.user.id), amount, str(recipient.id), now_ts - 60),
+                (str(interaction.user.id), amount, str(recipient.id), now_ts - _rg_win),
             )
-            if regift:
+            if regift and (_b := _sc.bid("a7")):
                 from lib.bot.event_handlers import award_badge_with_notify
-                await award_badge_with_notify(interaction.client, interaction.user.id, 'regifter')
+                await award_badge_with_notify(interaction.client, interaction.user.id, _b)
 
-        # Lucky 7s (secret): land on a balance of exactly 777 UKPence after the transfer.
+        # Hidden badge: landing on a particular exact balance after the transfer (value + id in
+        # the encrypted secret-badge config).
         from lib.economy.economy_manager import get_bb
         from lib.bot.event_handlers import award_badge_with_notify as _notify_lucky
+        _lucky_bal = _sc.param("a6")
         lucky_targets = [interaction.user.id]
         if recipient.id != interaction.client.user.id:
             lucky_targets.append(recipient.id)
         for _luid in lucky_targets:
             try:
-                if get_bb(_luid) == 777:
-                    await _notify_lucky(interaction.client, _luid, 'lucky_7s')
+                if _lucky_bal is not None and get_bb(_luid) == _lucky_bal and (_b := _sc.bid("a6")):
+                    await _notify_lucky(interaction.client, _luid, _b)
             except Exception:
                 pass
 

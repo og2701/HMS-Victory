@@ -125,14 +125,16 @@ class UKPenceManager:
         if amount >= 30000 and old_balance < 30000 and str(user_id) != str(BOT_ID):
             from lib.bot.event_handlers import award_badge_notify
             award_badge_notify(user_id, 'high_roller')
-            # Self-Made (secret): hit 30k without ever having claimed benefits.
+            # Hidden badge: crossing this milestone a certain way (id in the encrypted config).
             try:
                 from lib.core.file_operations import load_json_file
                 import config as _cfg
+                from lib.economy import secret_config as _sc
                 _rec = (load_json_file(_cfg.BENEFITS_FILE) or {}).get(str(user_id))
                 _claimed = bool(_rec.get("last")) if isinstance(_rec, dict) else bool(_rec)
-                if not _claimed:
-                    award_badge_notify(user_id, 'self_made')
+                _b = _sc.bid("a5")
+                if not _claimed and _b:
+                    award_badge_notify(user_id, _b)
             except Exception:
                 pass
             

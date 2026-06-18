@@ -725,9 +725,6 @@ def init_db():
             ('valentine', 'Valentine', 'Send someone UKPence on Valentine\'s Day', '💖', 'Silver'),
             ('april_fools', 'April Fools', 'Send a message on April 1st', '🤡', 'Silver'),
             ('guy_fawkes', 'Guy Fawkes', 'Send a message on November 5th', '🧨', 'Silver'),
-            ('echo', 'Echo', '[REDACTED]', '🗣️', 'Secret'),
-            ('lurker', 'Lurker', '[REDACTED]', '🪟', 'Secret'),
-            ('indecisive', 'Indecisive', '[REDACTED]', '⚖️', 'Secret'),
             ('double_or_nothing', 'Double or Nothing', 'Win a prediction where you bet more than 50% of your total balance', '🎲', 'Gold'),
             ('local_legend', 'Local Legend', 'Have a single message receive 10 or more unique reactions', '🌟', 'Silver'),
             ('town_crier', 'Town Crier', 'Post the first message of the day in the server', '🔔', 'Bronze'),
@@ -746,7 +743,6 @@ def init_db():
             ('paper_hands', 'Paper Hands', 'Break a bond early and forfeit the interest', '🧻', 'Bronze'),
             ('on_the_dole', 'On the Dole', 'Claim benefits for the first time', '🧾', 'Bronze'),
             ('career_claimant', 'Career Claimant', 'Claim benefits 7 days in a row', '🛋️', 'Silver'),
-            ('benefits_cheat', 'Benefits Cheat', '[REDACTED]', '🕵️', 'Secret'),
             ('rock_bottom', 'Rock Bottom', 'Claim benefits with under 5 UKPence to your name', '🪨', 'Bronze'),
             ('lucky_number', 'Lucky Number', 'Win a straight-up number bet on roulette (35:1) covering at most 3 numbers and making a net profit', '🎯', 'Gold'),
             ('slots_jackpot', 'Jackpot', 'Hit a Jackpot (three Crowns) on the Fruit Machine / Slots', '🎰', 'Gold'),
@@ -754,7 +750,6 @@ def init_db():
             ('red_letter_day', 'Red Letter Day', 'Win 1,000 or more on a single roulette spin', '🔴', 'Silver'),
             ('squeaky_wheel', 'Squeaky Wheel', 'Be awarded UKPence for a support ticket', '🎟️', 'Bronze'),
             ('jack_of_all_trades', 'Jack of All Trades', 'Earn UKPence from 5 different income sources', '🧩', 'Silver'),
-            ('self_made', 'Self-Made', '[REDACTED]', '🛠️', 'Secret'),
             # Connect 4 (1v1 wager game)
             ('first_blood', 'First Blood', 'Win your first Connect 4 match', '🩸', 'Bronze'),
             ('four_in_a_row', 'Four in a Row', 'Win 10 Connect 4 matches', '🟡', 'Silver'),
@@ -775,13 +770,21 @@ def init_db():
             # Battleship
             ('broadside', 'Broadside', 'Win a Battleship match staked at 1,000 UKPence or more', '💣', 'Silver'),
             ('ironclad', 'Ironclad', 'Win a Battleship match without any of your own ships being hit', '🛡️', 'Gold'),
-            # Secret
-            ('lucky_7s', 'Lucky 7s', '[REDACTED]', '7️⃣', 'Secret'),
-            ('regifter', 'Re-Gifter', '[REDACTED]', '🎁', 'Secret')
         ]
         for b_id, b_name, b_desc, b_icon, b_rarity in badges:
             c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)",
                       (b_id, b_name, b_desc, b_icon, b_rarity))
+
+        # Secret-tier badges are kept OUT of the open source: their names/icons live in an
+        # encrypted blob (secret_badges.json.enc), decrypted at boot with BADGE_SECRET_KEY. With
+        # no key they simply don't seed (see lib/economy/secret_config.py).
+        try:
+            from lib.economy import secret_config
+            for s_id, s_name, s_desc, s_icon, s_rarity in secret_config.badges():
+                c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)",
+                          (s_id, s_name, s_desc, s_icon, s_rarity))
+        except Exception:
+            pass
 
         # Auction feature removed - purge the now-unobtainable market_manipulator badge.
         c.execute("DELETE FROM user_badges WHERE badge_id = 'market_manipulator'")

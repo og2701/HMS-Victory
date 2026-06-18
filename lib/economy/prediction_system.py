@@ -31,16 +31,22 @@ def track_prediction_streak(user_id: int, is_win: bool) -> tuple[int, int]:
     atomic_write_json(PREDICTION_STREAKS_FILE, data, indent=4)
     return data[uid]["win_streak"], data[uid]["lose_streak"]
 
-async def award_indecisive_badges(client, pred, window: int = 10) -> None:
-    """Award the 'indecisive' badge to anyone who bet within `window` seconds of
-    the prediction being locked - used by both the manual Lock button and the
-    auto-lock sweep, so the badge is awarded consistently however a pred closes."""
+async def award_indecisive_badges(client, pred, window: int = None) -> None:
+    """Award the hidden last-second-bet badge to anyone who bet within `window` seconds of the
+    prediction being locked - used by both the manual Lock button and the auto-lock sweep. The
+    window and badge id come from the encrypted secret-badge config (no key -> no-op)."""
     import time
     from lib.bot.event_handlers import award_badge_with_notify
+    from lib.economy import secret_config as _sc
+    if window is None:
+        window = _sc.param("a3")
+    badge_id = _sc.bid("a3")
+    if window is None or not badge_id:
+        return
     now = time.time()
     for uid, bet_time in pred.last_bet_times.items():
         if now - bet_time <= window:
-            await award_badge_with_notify(client, uid, 'indecisive')
+            await award_badge_with_notify(client, uid, badge_id)
 
 # A prediction can have between 2 and 5 outcomes. 5 is the practical ceiling:
 # the bet buttons must fit in a single Discord action row (max 5 buttons).

@@ -104,8 +104,10 @@ def _check_casino_badges(user_id, game, result, net):
                 bal = get_bb(int(user_id))
                 if bal - int(net) < 100:
                     _award_silently(user_id, "comeback_kid")
-                if bal == 777:
-                    _award_silently(user_id, "lucky_7s")
+                from lib.economy import secret_config as _sc
+                _lucky = _sc.param("a6")
+                if _lucky is not None and bal == _lucky and (_b := _sc.bid("a6")):
+                    _award_silently(user_id, _b)
             except Exception:
                 pass
     except Exception:

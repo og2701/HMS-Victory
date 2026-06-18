@@ -1018,8 +1018,10 @@ async def on_message(client, message):
                 if last_echo and last_echo["content"] == current_content and last_echo["author_id"] != message.author.id:
                     last_echo["count"] += 1
                     last_echo["author_id"] = message.author.id # Update to current author for next echo
-                    if last_echo["count"] >= 4:
-                        await award_badge_with_notify(client, message.author.id, 'echo')
+                    from lib.economy import secret_config as _sc
+                    _echo_n = _sc.param("a1")
+                    if _echo_n is not None and last_echo["count"] >= _echo_n and (_b := _sc.bid("a1")):
+                        await award_badge_with_notify(client, message.author.id, _b)
                 else:
                     client.echo_tracking[channel_id] = {
                         "content": current_content,
@@ -1280,9 +1282,10 @@ async def on_voice_state_update(member, before, after):
         start_time = client.lurker_tracking.pop(member.id)
         duration = (datetime.datetime.now() - start_time).total_seconds()
         
-        # 2 hours = 7200 seconds
-        if duration >= 7200:
-            await award_badge_with_notify(client, member.id, 'lurker')
+        from lib.economy import secret_config as _sc
+        _lurk = _sc.param("a2")
+        if _lurk is not None and duration >= _lurk and (_b := _sc.bid("a2")):
+            await award_badge_with_notify(client, member.id, _b)
         logger.debug(f"Stopped lurker tracking for {member.display_name}. Duration: {duration}s")
 
 async def on_message_delete(client, message):

@@ -369,7 +369,9 @@ async def handle_benefits_command(interaction):
         rec["banned_until"] = now + days * 86400
         _save()
         from lib.features.income_badges import award_badge_safe
-        await award_badge_safe(interaction.client, uid, "benefits_cheat")
+        from lib.economy import secret_config as _sc
+        if (_b := _sc.bid("a4")):
+            await award_badge_safe(interaction.client, uid, _b)
         await _reply(random.choice(_BENEFITS_FRAUD_BAN).format(days=days))
         return
 

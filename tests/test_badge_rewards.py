@@ -68,7 +68,12 @@ def run():
         # Each tier pays its configured amount; unknown badge pays 0.
         assert br.pay_badge_reward(uid, "roaster") == 25            # Bronze
         assert br.pay_badge_reward(uid, "philanthropist") == 100    # Silver
-        assert br.pay_badge_reward(uid, "echo") == 1000             # Secret
+        # Secret-tier reward. The real secret badges live in the encrypted config (not the open
+        # seed), so insert a throwaway Secret badge directly to exercise the reward tier.
+        db.DatabaseManager.execute(
+            "INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) "
+            "VALUES (?, ?, ?, ?, ?)", ("test_secret", "Test", "[REDACTED]", "🔒", "Secret"))
+        assert br.pay_badge_reward(uid, "test_secret") == 1000      # Secret
         assert br.pay_badge_reward(uid, "does_not_exist") == 0
         assert get_bb(uid) == 500 + 25 + 100 + 1000
         assert supply() == 800_000
