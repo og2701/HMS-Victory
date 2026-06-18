@@ -754,7 +754,7 @@ def init_db():
             ('first_blood', 'First Blood', 'Win your first Connect 4 match', '🩸', 'Bronze'),
             ('four_in_a_row', 'Four in a Row', 'Win 10 Connect 4 matches', '🟡', 'Silver'),
             ('trash_talker', 'Trash Talker', 'Win a Connect 4 match staked at 1,000 UKPence or more', '🗯️', 'Silver'),
-            ('grandmaster', 'Grandmaster', 'Win 50 Connect 4 matches', '♟️', 'Gold'),
+            ('grandmaster', 'Grandmaster', 'Win 100 Connect 4 matches', '♟️', 'Gold'),
             # Higher or Lower
             ('on_the_up', 'On the Up', 'Win 3 Higher or Lower guesses in a single game', '🪜', 'Bronze'),
             ('vertigo', 'Vertigo', 'Reach a 5x multiplier in Higher or Lower and cash out', '🗼', 'Silver'),

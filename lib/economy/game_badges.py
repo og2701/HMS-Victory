@@ -25,7 +25,7 @@ async def award_connect4_badges(client, winner_id, stake):
             await award_badge_with_notify(client, winner_id, "first_blood")
         if wins >= 10:
             await award_badge_with_notify(client, winner_id, "four_in_a_row")
-        if wins >= 50:
+        if wins >= 100:
             await award_badge_with_notify(client, winner_id, "grandmaster")
         if int(stake) >= 1000:
             await award_badge_with_notify(client, winner_id, "trash_talker")
