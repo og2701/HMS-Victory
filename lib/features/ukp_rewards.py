@@ -22,7 +22,7 @@ import discord
 import config
 from config import ROLES
 from database import DatabaseManager
-from lib.economy.economy_manager import add_bb, get_bb
+from lib.economy.economy_manager import add_bb, get_bb, remove_bb
 from lib.core.file_operations import load_json_file, save_json_file
 
 log = logging.getLogger(__name__)
@@ -342,7 +342,15 @@ async def handle_benefits_command(interaction):
 
     # Serving a fraud ban?
     if rec["banned_until"] > now:
-        await _reply(random.choice(_BENEFITS_BANNED).format(ts=rec["banned_until"]))
+        fine = rec.get("fine", 0)
+        if fine <= 0:
+            fine = 400  # Fallback for legacy bans
+        view = BenefitsFineView(uid, fine)
+        await interaction.response.send_message(
+            random.choice(_BENEFITS_BANNED).format(ts=rec["banned_until"]) +
+            f"\n\n-# You can pay a fine of **{fine:,} UKPence** to lift the ban and reset your offense history.",
+            view=view
+        )
         return
 
     # Genuinely well-off (hid nothing) - plain denial, no penalty.
@@ -367,6 +375,7 @@ async def handle_benefits_command(interaction):
         days = ramp[min(rec["offenses"], len(ramp) - 1)]
         rec["offenses"] += 1
         rec["banned_until"] = now + days * 86400
+        rec["fine"] = max(1, min(int(recent_out * 0.25), 500))
         _save()
         from lib.features.income_badges import award_badge_safe
         from lib.economy import secret_config as _sc
@@ -440,6 +449,73 @@ async def grant_ticket_reward(client, creator_id, creator_name=None) -> bool:
     await award_badge_safe(client, creator_id, "squeaky_wheel")
     await record_income_source(client, creator_id, "ticket")
     return True
+
+
+class BenefitsFineView(discord.ui.View):
+    """Allows a banned user to pay their benefits fraud fine to lift their ban and reset the ramp."""
+
+    def __init__(self, user_id: int, fine: int):
+        super().__init__(timeout=180)
+        self.user_id = user_id
+        self.fine = fine
+
+    @discord.ui.button(label="Pay Fine", style=discord.ButtonStyle.danger, emoji="💸", custom_id="benefits_fine:pay")
+    async def pay_fine(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Only the banned user can pay this fine.", ephemeral=True)
+            return
+
+        from lib.economy.economy_manager import remove_bb, get_bb
+        from database import DatabaseManager
+        import time
+
+        uid = self.user_id
+        suid = str(uid)
+
+        # Use DatabaseManager lock to serialize state changes and avoid race conditions
+        with DatabaseManager.locked_connection():
+            store = load_json_file(config.BENEFITS_FILE) or {}
+            rec = _benefits_rec(store, suid)
+            now = int(time.time())
+
+            if rec.get("banned_until", 0) <= now:
+                await interaction.response.send_message("❌ Your benefits ban has already expired or is not active.", ephemeral=True)
+                return
+
+            fine_amount = rec.get("fine", 0)
+            if fine_amount <= 0:
+                # Fallback for legacy bans
+                fine_amount = 400
+
+            bal = get_bb(uid)
+            if bal < fine_amount:
+                await interaction.response.send_message(
+                    f"❌ You cannot afford this fine. The fine is **{fine_amount:,} UKPence**, but you only have **{bal:,} UKPence**.",
+                    ephemeral=True
+                )
+                return
+
+            # Deduct the fine and deposit it to the server bank
+            if not remove_bb(uid, fine_amount, reason="Paid benefits fraud fine", to_bank=True):
+                await interaction.response.send_message("❌ Fine payment failed due to a bank issue. Please try again.", ephemeral=True)
+                return
+
+            # Reset benefits status
+            rec["banned_until"] = 0
+            rec["fine"] = 0
+            rec["offenses"] = 0
+            rec["warned"] = False
+            store[suid] = rec
+            save_json_file(config.BENEFITS_FILE, store)
+
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(view=self)
+
+        await interaction.followup.send(
+            f"✅ **Fine Paid!** You paid **{fine_amount:,} UKPence** to the bank. Your benefits ban has been lifted and your offense history has been reset. You can now use `/benefits` again!",
+            ephemeral=False
+        )
 
 
 class TicketRewardView(discord.ui.View):
