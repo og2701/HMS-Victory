@@ -209,7 +209,7 @@ async def _call_gemini(prompt, json_mode=True):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
     # 2.5 "thinking" tokens share the output budget, so keep it large; cap thinking so the
     # actual answer can't get starved/truncated (which breaks JSON parsing).
-    base = {"temperature": 0.3, "maxOutputTokens": 8192}
+    base = {"temperature": 0.3, "maxOutputTokens": 16384}
     if json_mode:
         base["responseMimeType"] = "application/json"
     import time as _t
@@ -232,13 +232,21 @@ async def _call_gemini(prompt, json_mode=True):
             log.warning("[analyse] gemini request error in %.1fs: %s", _t.monotonic() - t0, e, exc_info=True)
             return None, f"Gemini request failed: {e}"
         if status == 200:
-            try:
-                out = data["candidates"][0]["content"]["parts"][0]["text"]
-            except Exception:
-                fr = (data.get("candidates") or [{}])[0].get("finishReason")
+            cand = (data.get("candidates") or [{}])[0]
+            fr = cand.get("finishReason")
+            # Gemini can split a long answer across several parts - concatenate them all
+            # (taking only parts[0] truncates the JSON and breaks parsing). Skip "thought"
+            # parts so reasoning text can't leak into / corrupt the JSON.
+            parts = (cand.get("content") or {}).get("parts") or []
+            out = "".join(p.get("text", "") for p in parts
+                          if isinstance(p, dict) and not p.get("thought"))
+            if not out:
                 log.warning("[analyse] gemini 200 but no text (finishReason=%s): %s", fr, str(data)[:300])
                 return None, f"Gemini returned no text (finishReason={fr})."
-            log.info("[analyse] gemini ok in %.1fs (%d chars out)", _t.monotonic() - t0, len(out or ""))
+            if fr == "MAX_TOKENS":  # answer was cut off - JSON will be incomplete
+                log.warning("[analyse] gemini hit MAX_TOKENS (%d chars out); response may be truncated", len(out))
+            log.info("[analyse] gemini ok in %.1fs (%d chars out, %d parts)",
+                     _t.monotonic() - t0, len(out), len(parts))
             return out, None
         log.warning("[analyse] gemini HTTP %d: %s", status, str(data)[:300])
         if status != 400:
@@ -535,16 +543,37 @@ def _trunc(s, n):
 _CARD_TEXT_LIMIT = 3800
 
 
-def _build_view(member, requester, msgs, text):
-    """Compact Components V2 report: one accent-coloured container of markdown blocks."""
+def _parse_report(text):
+    """Best-effort parse of Gemini's JSON report into a dict.
+
+    The model is asked for raw JSON, but occasionally wraps it in prose/code fences, leaves a
+    trailing comma, or slips an unescaped control character into a quote - any of which breaks a
+    strict json.loads and used to dump the raw blob into the police station. Try progressively
+    more forgiving parses and only give up if nothing yields a dict.
+    """
     import json
     import re
-    data = None
-    raw = re.sub(r"^```(?:json)?|```$", "", (text or "").strip(), flags=re.MULTILINE).strip()
-    try:
-        data = json.loads(raw)
-    except Exception:
-        log.debug("gemini json parse failed", exc_info=True)
+    raw = (text or "").strip()
+    if raw.startswith("```"):  # strip a ```json ... ``` fence if the model added one
+        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.IGNORECASE).strip()
+    # Narrow to the outermost {...} so any leading/trailing prose is dropped.
+    i, j = raw.find("{"), raw.rfind("}")
+    candidate = raw[i:j + 1] if i != -1 and j > i else raw
+    for attempt in (candidate, re.sub(r",\s*([}\]])", r"\1", candidate)):  # 2nd: drop trailing commas
+        for strict in (True, False):  # strict=False tolerates literal control chars in strings
+            try:
+                data = json.loads(attempt, strict=strict)
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                continue
+    log.warning("[analyse] gemini json parse failed (%d chars); falling back to raw text", len(raw))
+    return None
+
+
+def _build_view(member, requester, msgs, text):
+    """Compact Components V2 report: one accent-coloured container of markdown blocks."""
+    data = _parse_report(text)
 
     name = discord.utils.escape_markdown(member.display_name)
     foot = (f"-# {_activity_line(msgs)}\n-# {member.mention} (`{member.id}`) · by {requester.mention} · "
