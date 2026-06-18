@@ -424,7 +424,7 @@ async def handle_benefits_command(interaction):
         days = ramp[min(rec["offenses"], len(ramp) - 1)]
         rec["offenses"] += 1
         rec["banned_until"] = now + days * 86400
-        fine = max(1, min(int(recent_out * 0.25), 500))
+        fine = max(1, min(int(recent_out * 0.25), 350))
         rec["fine"] = fine
         _save()
         from lib.features.income_badges import award_badge_safe
