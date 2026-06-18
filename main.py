@@ -202,6 +202,12 @@ class AClient(discord.Client):
             asyncio.create_task(handle_tree_watering(self, message))
             return
 
+        # DISBOARD bump reward (DISBOARD is a bot, so handle before the filter).
+        if message.author.id == DISBOARD_BOT_ID:
+            from lib.features.ukp_rewards import handle_bump_reward
+            asyncio.create_task(handle_bump_reward(self, message))
+            return
+
         if message.author.bot:
             return
 

@@ -172,6 +172,52 @@ async def handle_tree_watering(client, message):
 
 
 # ---------------------------------------------------------------------------
+# DISBOARD bump
+# ---------------------------------------------------------------------------
+async def handle_bump_reward(client, message):
+    """Reward the member who bumps the server on DISBOARD. DISBOARD's '/bump' success reply
+    ('Bump done!') is an interaction response, so its invoker is the bumper. DISBOARD limits a
+    server to one bump every ~2h, so this naturally can't be farmed."""
+    if message.author.id != getattr(config, "DISBOARD_BOT_ID", 302050872383242240):
+        return
+    # Success only - DISBOARD says "Bump done!" on success (a "wait N minutes" embed on failure).
+    blob = (message.content or "") + " " + " ".join(
+        f"{e.title or ''} {e.description or ''}" for e in message.embeds)
+    if "bump done" not in blob.lower():
+        return
+    # The bumper = whoever ran /bump (interaction_metadata on modern discord.py, else .interaction).
+    meta = getattr(message, "interaction_metadata", None) or getattr(message, "interaction", None)
+    bumper = getattr(meta, "user", None)
+    if bumper is None or getattr(bumper, "bot", False):
+        log.info("[BUMP] couldn't identify the bumper on a 'Bump done' message; no reward given.")
+        return
+    # Dedup on the message id (claim before paying) so a re-delivered event can't double-pay.
+    store = load_json_file(config.BUMP_REWARD_FILE) or {}
+    if store.get("last_msg_id") == message.id:
+        return
+    store["last_msg_id"] = message.id
+    save_json_file(config.BUMP_REWARD_FILE, store)
+
+    amount = getattr(config, "BUMP_REWARD", 50)
+    if not _pay(bumper.id, amount, "DISBOARD bump reward"):
+        return
+    try:
+        from lib.features.income_badges import bump_daily_income
+        bump_daily_income("bump_total", amount)
+    except Exception:
+        pass
+    try:
+        await message.channel.send(
+            f"\U0001F4E3 <@{bumper.id}> earned **{amount:,} UKPence** for bumping the server - "
+            "thanks for the support!",
+            allowed_mentions=discord.AllowedMentions(users=True),
+            delete_after=600,
+        )
+    except Exception:
+        log.debug("bump reward message failed", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
 # /benefits
 # ---------------------------------------------------------------------------
 _BENEFITS_SUCCESS = [
