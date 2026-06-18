@@ -333,8 +333,11 @@ async def handle_benefits_command(interaction):
     rec = _benefits_rec(store, suid)
     now = int(time.time())
 
-    async def _reply(msg):
-        await interaction.response.send_message(msg)
+    async def _reply(msg, view=None):
+        if view is not None:
+            await interaction.response.send_message(msg, view=view)
+        else:
+            await interaction.response.send_message(msg)
 
     def _save():
         store[suid] = rec
@@ -375,13 +378,19 @@ async def handle_benefits_command(interaction):
         days = ramp[min(rec["offenses"], len(ramp) - 1)]
         rec["offenses"] += 1
         rec["banned_until"] = now + days * 86400
-        rec["fine"] = max(1, min(int(recent_out * 0.25), 500))
+        fine = max(1, min(int(recent_out * 0.25), 500))
+        rec["fine"] = fine
         _save()
         from lib.features.income_badges import award_badge_safe
         from lib.economy import secret_config as _sc
         if (_b := _sc.bid("a4")):
             await award_badge_safe(interaction.client, uid, _b)
-        await _reply(random.choice(_BENEFITS_FRAUD_BAN).format(days=days))
+        view = BenefitsFineView(uid, fine)
+        await _reply(
+            random.choice(_BENEFITS_FRAUD_BAN).format(days=days) +
+            f"\n\n-# You can pay a fine of **{fine:,} UKPence** to lift the ban and reset your offense history.",
+            view=view
+        )
         return
 
     # Money locked in a bond still counts as wealth - but that's a legit feature, so it's a
@@ -508,6 +517,12 @@ class BenefitsFineView(discord.ui.View):
             rec["fine_paid_at"] = now
             store[suid] = rec
             save_json_file(config.BENEFITS_FILE, store)
+
+            # Clear outbound transactions log for this user in the database
+            try:
+                DatabaseManager.execute("DELETE FROM pay_transfers WHERE payer_id = ?", (suid,))
+            except Exception as e:
+                log.error("Failed to clear outbound transfers for user %s: %s", suid, e)
 
         for child in self.children:
             child.disabled = True
