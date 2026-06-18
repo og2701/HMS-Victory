@@ -80,7 +80,7 @@ class UKPAddAmountModal(discord.ui.Modal, title="UKPence Handout"):
             embed.add_field(name="Total Withdrawn", value=f"{total_cost:,} UKPence", inline=True)
             embed.add_field(name="Bank Balance Remaining", value=f"{new_balance:,} UKPence", inline=True)
             embed.add_field(name="Recipients", value=users_list_str, inline=False)
-            embed.set_footer(text=f"Authorized by Deputy PM {interaction.user.display_name}")
+            embed.set_footer(text=f"Authorised by Deputy PM {interaction.user.display_name}")
 
             await interaction.response.send_message(embed=embed, ephemeral=False)
 

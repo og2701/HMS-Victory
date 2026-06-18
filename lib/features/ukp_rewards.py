@@ -279,7 +279,7 @@ _BENEFITS_BANNED = [
 def _benefits_rec(store, uid):
     """Normalise a stored record (older versions stored just the last-claim date string)."""
     v = store.get(str(uid))
-    rec = {"last": None, "offenses": 0, "banned_until": 0, "warned": False, "streak": 0, "fine": 0}
+    rec = {"last": None, "offenses": 0, "banned_until": 0, "warned": False, "streak": 0, "fine": 0, "fine_paid_at": 0}
     if isinstance(v, str):
         rec["last"] = v
     elif isinstance(v, dict):
@@ -289,9 +289,9 @@ def _benefits_rec(store, uid):
     return rec
 
 
-def _recent_pay_out(uid, days) -> int:
+def _recent_pay_out(uid, days, since_ts=0) -> int:
     """Total UKP this user has sent via /pay in the last ``days`` (their 'hidden' wealth)."""
-    cutoff = int(time.time()) - days * 86400
+    cutoff = max(int(time.time()) - days * 86400, since_ts)
     try:
         row = DatabaseManager.fetch_one(
             "SELECT COALESCE(SUM(amount),0) FROM pay_transfers WHERE payer_id = ? AND timestamp > ?",
@@ -302,11 +302,11 @@ def _recent_pay_out(uid, days) -> int:
         return 0
 
 
-def _benefits_clear_ts(uid, bal, threshold, days):
+def _benefits_clear_ts(uid, bal, threshold, days, since_ts=0):
     """When (epoch) recent transfers age out of the window enough that balance + the
     still-in-window transfers drop below the threshold - i.e. when they'd be eligible again
     if they stop sending UKP. Each transfer leaves the window ``days`` after it was sent."""
-    cutoff = int(time.time()) - days * 86400
+    cutoff = max(int(time.time()) - days * 86400, since_ts)
     try:
         rows = DatabaseManager.fetch_all(
             "SELECT timestamp, amount FROM pay_transfers WHERE payer_id = ? AND timestamp > ? "
@@ -360,14 +360,14 @@ async def handle_benefits_command(interaction):
 
     # Effective wealth = balance + recent /pay outflows. Parking UKP on an alt to drop
     # under the threshold doesn't make you poor.
-    recent_out = _recent_pay_out(suid, getattr(config, "BENEFITS_LOOKBACK_DAYS", 3))
+    recent_out = _recent_pay_out(suid, getattr(config, "BENEFITS_LOOKBACK_DAYS", 3), rec.get("fine_paid_at", 0))
     if bal + recent_out >= threshold:
         ramp = getattr(config, "BENEFITS_BAN_RAMP", [3, 7, 14, 30])
         if rec["offenses"] == 0 and not rec["warned"]:
             rec["warned"] = True  # one warning before any ban (protects honest givers)
             _save()
             msg = random.choice(_BENEFITS_FRAUD_WARN).format(out=recent_out)
-            clear = _benefits_clear_ts(suid, bal, threshold, getattr(config, "BENEFITS_LOOKBACK_DAYS", 1))
+            clear = _benefits_clear_ts(suid, bal, threshold, getattr(config, "BENEFITS_LOOKBACK_DAYS", 1), rec.get("fine_paid_at", 0))
             if clear:
                 msg += f"\n-# If you stop sending UKP, you'll be eligible again <t:{clear}:R>."
             await _reply(msg)
@@ -505,6 +505,7 @@ class BenefitsFineView(discord.ui.View):
             rec["fine"] = 0
             rec["offenses"] = 0
             rec["warned"] = False
+            rec["fine_paid_at"] = now
             store[suid] = rec
             save_json_file(config.BENEFITS_FILE, store)
 

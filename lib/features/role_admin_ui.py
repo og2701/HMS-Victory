@@ -117,7 +117,7 @@ class RoleAddView(discord.ui.View):
             embed.add_field(name="Already had it", value=_names(already), inline=False)
         if failed:
             embed.add_field(name="Failed", value=_names(failed), inline=False)
-        embed.set_footer(text=f"Authorized by Deputy PM {interaction.user.display_name}")
+        embed.set_footer(text=f"Authorised by Deputy PM {interaction.user.display_name}")
 
         await interaction.edit_original_response(
             content=None, embed=embed, allowed_mentions=discord.AllowedMentions.none())
