@@ -279,7 +279,7 @@ _BENEFITS_BANNED = [
 def _benefits_rec(store, uid):
     """Normalise a stored record (older versions stored just the last-claim date string)."""
     v = store.get(str(uid))
-    rec = {"last": None, "offenses": 0, "banned_until": 0, "warned": False, "streak": 0}
+    rec = {"last": None, "offenses": 0, "banned_until": 0, "warned": False, "streak": 0, "fine": 0}
     if isinstance(v, str):
         rec["last"] = v
     elif isinstance(v, dict):
