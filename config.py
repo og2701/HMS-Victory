@@ -197,8 +197,9 @@ CONNECT4_MIN_BET = 5
 CONNECT4_MAX_BET = 5000
 CONNECT4_ACCEPT_SECONDS = 300      # opponent has this long to accept the challenge
 CONNECT4_FORFEIT_SECONDS = 120     # PvP: 2 min to make each move, or you forfeit the pot
-CONNECT4_AI_FORFEIT_SECONDS = 600  # vs-AI: generous (10 min) - no opponent waiting, so don't punish a slow move / laggy client
+CONNECT4_AI_FORFEIT_SECONDS = 120  # vs-AI: 2 min to make each move, or you forfeit the pot
 CONNECT4_AI_MOVE_TIMEOUT = 60      # vs-AI: if the AI doesn't move within this (a hang), the player WINS the pot by forfeit
+CONNECT4_AI_STARTS_CHANCE = 0.70   # vs-AI: probability the AI opens (it's perfect -> unbeatable when it starts; the rest let the human open so the bounty stays winnable)
 CONNECT4_AI_DEPTH = 22             # vs-AI (bank-funded): max negamax depth (deep-search cap)
 CONNECT4_AI_TIME = 5.0             # vs-AI: per-move think budget in seconds (iterative deepening)
 

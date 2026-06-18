@@ -596,10 +596,13 @@ async def _start_ai_game(interaction: Interaction, bet: int):
     game = Connect4View(user.id, p1_name, bot_id, "HMS Victory \U0001F916", bet,
                         interaction.channel_id, ai_player=2)
     game.client = interaction.client
-    # The AI plays PERFECTLY (solved game), so it always moves SECOND - that hands the human the
-    # first-move advantage, the only real chance to beat a perfect player, and keeps the
-    # "first to beat the AI" bounty winnable. (A perfect player moving first would be unbeatable.)
-    game.turn = game._human_player()
+    # Who opens is weighted (CONNECT4_AI_STARTS_CHANCE): the AI usually opens - a perfect first
+    # player is unbeatable, it forces the win - but sometimes the human opens, their only real
+    # shot at a perfect player, which keeps the "first to beat the AI" bounty winnable.
+    if random.random() < getattr(config, "CONNECT4_AI_STARTS_CHANCE", 0.70):
+        game.turn = game.ai_player
+    else:
+        game.turn = game._human_player()
     try:
         await interaction.response.send_message(embed=game._embed(), view=game)
         game.message = await interaction.original_response()
@@ -613,7 +616,9 @@ async def _start_ai_game(interaction: Interaction, bet: int):
         "type": "connect4", "ai": True,
         "p1_id": user.id, "p2_id": bot_id, "stake": bet, "channel_id": interaction.channel_id,
     })
-    game.start()   # the human moves first (set above), so no AI opening move
+    game.start()
+    if game.turn == game.ai_player:          # AI won the coin-flip -> it opens
+        await game._ai_take_turn()
 
 
 async def handle_connect4_command(interaction: Interaction, opponent: Member, bet: int):
