@@ -106,6 +106,16 @@ BENEFITS_MAX = 100                # one claim per UK calendar day (resets at mid
 BENEFITS_LOOKBACK_DAYS = 1        # /pay sent in this window counts toward "effective wealth"
 BENEFITS_BAN_RAMP = [1, 3, 7, 14]   # benefits-fraud cooldown (days), ramps per offence
 
+# Wealth demurrage: a weekly "use it or lose it" charge on the portion of a balance ABOVE the
+# threshold, paid to the bank (supply conserved). Unlike the progressive income wealth-tax
+# (which only hits taxable bank-funded earnings), this taxes the STOCK - so it can't be dodged
+# by earning through untaxed channels (gambling/predictions). A soft cap on hoarding: a balance
+# settles where weekly demurrage == weekly income, i.e. ~ THRESHOLD + income/RATE. Only the
+# excess above the threshold is ever charged, so normal players never feel it.
+WEALTH_DEMURRAGE_ENABLED = True
+WEALTH_DEMURRAGE_THRESHOLD = 20000   # only balance above this is charged
+WEALTH_DEMURRAGE_RATE = 0.01         # fraction of the excess taken per weekly run (1%)
+
 HOF_REWARD = 100                  # UKP DM'd to a message's author on Hall of Fame entry
 TICKET_REWARD = 100               # UKP a staff member can grant a ticket's opener
 # Channels whose messages can't enter the Hall of Fame (announcements etc. always get a

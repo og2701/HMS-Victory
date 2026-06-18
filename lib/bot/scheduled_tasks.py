@@ -528,6 +528,8 @@ def schedule_client_jobs(client, scheduler):
 
     scheduler.add_job(apply_inactivity_tax, CronTrigger(day_of_week="fri", hour=0, minute=0, timezone="Europe/London"), args=[client], id="apply_inactivity_tax_job", name="Weekly Inactivity Tax")
 
+    scheduler.add_job(apply_wealth_demurrage, CronTrigger(day_of_week="fri", hour=0, minute=5, timezone="Europe/London"), args=[client], id="apply_wealth_demurrage_job", name="Weekly Wealth Demurrage")
+
     # Lottery tick (every 2 min): while a round is open - started manually by staff via
     # /lottery-start - this posts the periodic reminders and draws a sold-out round once
     # it passes its minimum runtime. No weekly auto-draw/auto-open: the lottery is manual.
@@ -634,6 +636,92 @@ async def apply_inactivity_tax(client):
             
     except Exception as e:
         logger.error(f"Error applying inactivity tax: {e}", exc_info=True)
+
+
+async def apply_wealth_demurrage(client):
+    """Weekly demurrage on hoarded wealth: charge a small % of the portion of each balance ABOVE
+    the configured threshold, paid to the bank. Unlike the income wealth-tax this taxes the
+    STOCK, so it can't be dodged by earning through untaxed channels (gambling/predictions) - a
+    soft cap on hoarding. Supply is conserved (the charge goes to the bank)."""
+    try:
+        import config
+        if not getattr(config, "WEALTH_DEMURRAGE_ENABLED", True):
+            return
+        threshold = int(getattr(config, "WEALTH_DEMURRAGE_THRESHOLD", 20000))
+        rate = float(getattr(config, "WEALTH_DEMURRAGE_RATE", 0.01))
+        if rate <= 0 or threshold < 0:
+            return
+
+        from database import DatabaseManager
+        from config import BOT_ID
+        rich = DatabaseManager.fetch_all(
+            "SELECT user_id, balance FROM ukpence WHERE balance > ? AND user_id != ?",
+            (threshold, str(BOT_ID)))
+        if not rich:
+            logger.info("[ECONOMY] Demurrage: nobody above the %s threshold.", threshold)
+            return
+
+        _now = int(datetime.now(pytz.utc).timestamp())
+        charged = []  # (uid, amount, new_balance)
+        with DatabaseManager.locked_connection() as conn:
+            c = conn.cursor()
+            for uid, balance in rich:
+                amount = int((balance - threshold) * rate)
+                if amount > 0:
+                    c.execute("UPDATE ukpence SET balance = balance - ? WHERE user_id = ?", (amount, uid))
+                    c.execute("INSERT INTO balance_history (user_id, ts, balance) VALUES (?, ?, ?)",
+                              (str(uid), _now, balance - amount))
+                    charged.append((uid, amount, balance - amount))
+            conn.commit()
+
+        if not charged:
+            logger.info("[ECONOMY] Demurrage: nobody's excess rounded above 0.")
+            return
+
+        total = sum(a for _, a, _ in charged)
+        from lib.economy.economy_manager import record_transaction
+        label = f"Wealth demurrage ({rate:.0%}/wk over {threshold:,})"
+        for uid, amount, new_balance in charged:
+            record_transaction(uid, -amount, new_balance, label, ts=_now)
+        BankManager.deposit_tax(total, description=f"Wealth demurrage from {len(charged)} users")
+        logger.info(f"[ECONOMY] Demurrage reclaimed {total} UKP from {len(charged)} users.")
+        current_date_str = datetime.now(pytz.timezone("Europe/London")).strftime("%Y-%m-%d")
+        _update_daily_metric_file(current_date_str, "demurrage_total", total)
+
+        await _notify_demurrage(client, charged, threshold, rate, _now)
+    except Exception as e:
+        logger.error(f"Error applying wealth demurrage: {e}", exc_info=True)
+
+
+async def _notify_demurrage(client, charged, threshold, rate, now_ts):
+    """DM each user the first time demurrage ever hits them, so it's never a silent leak."""
+    try:
+        from lib.core.file_operations import load_json_file, save_json_file
+        path = os.path.join(JSON_DATA_DIR, "demurrage_notified.json")
+        notified = load_json_file(path) or {}
+        changed = False
+        for uid, amount, _ in charged:
+            if str(uid) in notified:
+                continue
+            try:
+                user = client.get_user(int(uid)) or await client.fetch_user(int(uid))
+                await user.send(
+                    f"\U0001F3DB️ **Treasury notice** — your balance is over **{threshold:,}** "
+                    f"UKPence, so a small **{rate:.0%}/week** charge now applies to the amount *above* "
+                    f"that line (this week: **-{amount:,}** UKP to the treasury).\n\n"
+                    f"It only ever touches the surplus above {threshold:,} — spending or investing it "
+                    f"(shop, bonds, bets, gifting) stops the drain. It's there so no single person can "
+                    f"hoard the whole economy, not to punish doing well."
+                )
+                notified[str(uid)] = now_ts
+                changed = True
+            except Exception:
+                pass
+        if changed:
+            save_json_file(path, notified)
+    except Exception:
+        logger.error("Demurrage notify failed", exc_info=True)
+
 
 async def process_economy_logs(client):
     try:
