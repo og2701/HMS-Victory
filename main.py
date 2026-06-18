@@ -532,7 +532,9 @@ async def graceful_shutdown(client, sig_name):
     # waiting for them is pointless - and an abandoned hand (dealt, walked away) would
     # otherwise pin the drain at the full 2-minute cap on every single restart. The brief
     # dangerous windows for those games (a click mid-redraw, a deal mid-send) are already
-    # covered by the in-flight counter below.
+    # covered by the in-flight counter below. Connect 4 / Battleship ARE counted, though:
+    # they void + refund on restart (not a clean reattach), so an in-progress PvP match
+    # should be given the chance to finish before we stop.
     def _count_active_games():
         n = 0
         try:  # poker tables mid-hand or between hands (a live session still winding down)
@@ -550,6 +552,14 @@ async def graceful_shutdown(client, sig_name):
         try:  # single-player casino clicks mid-redraw — wait so the result lands
             from lib.economy.casino_drain import in_flight_actions
             n += in_flight_actions()
+        except Exception:
+            pass
+        try:  # live PvP multiplayer matches (Connect 4 / Battleship). These void + refund on a
+              # restart, so wait for an in-progress match to settle rather than interrupt it.
+            from lib.core.file_operations import load_persistent_views
+            _views = load_persistent_views() or {}
+            n += sum(1 for v in _views.values()
+                     if isinstance(v, dict) and v.get("type") in ("connect4", "battleship"))
         except Exception:
             pass
         return n
