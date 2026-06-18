@@ -62,6 +62,29 @@ MAX_RENDERS_BEFORE_RESTART = 20  # restarting every 2 renders stalled the event 
 MAX_IDLE_TIME_SECONDS = 180  # Shut down Chrome after 3 minutes of inactivity
 _last_render_time = 0
 
+
+def _sweep_chrome_tmp(max_age_seconds=60):
+    """Headless Chrome leaks per-process temp dirs in /tmp (crashpad / shared-memory / scoped
+    dirs) whenever it crashes - they pile up and eventually fill the disk, which then breaks
+    rendering (half-drawn cards, missing icons). Remove the STALE ones (older than
+    max_age_seconds, so an in-flight render's dir is never touched). Runs on each Chrome
+    (re)start, so /tmp stays clean on its own."""
+    import glob, tempfile
+    now = time.time()
+    tmp = tempfile.gettempdir()
+    removed = 0
+    for pat in (".org.chromium.*", ".com.google.Chrome.*", "scoped_dir*"):
+        for path in glob.glob(os.path.join(tmp, pat)):
+            try:
+                if now - os.path.getmtime(path) > max_age_seconds:
+                    shutil.rmtree(path, ignore_errors=True)
+                    removed += 1
+            except OSError:
+                pass
+    if removed:
+        logging.info(f"Swept {removed} leaked Chrome temp dir(s) from {tmp}.")
+
+
 def get_browser():
     """Get the persistent browser instance, restarting it periodically to clear memory leaks."""
     global _browser, _render_count, _last_render_time
@@ -89,6 +112,7 @@ def get_browser():
         if os.path.exists(user_data_dir):
             shutil.rmtree(user_data_dir, ignore_errors=True)
         os.makedirs(user_data_dir, exist_ok=True)
+        _sweep_chrome_tmp()   # also clear leaked /tmp Chrome temp dirs so the disk can't fill
             
         try:
             chrome_service = Service(ChromeDriverManager().install())
