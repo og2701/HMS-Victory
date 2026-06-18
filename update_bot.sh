@@ -10,12 +10,12 @@ echo "======================================"
 echo " Starting HMS-Victory Update Sequence "
 echo "======================================"
 
-# 0. Ensure systemd waits for the in-bot graceful drain (up to 2 min for active games -
-#    including live Connect 4 / Battleship PvP matches - to finish) before sending SIGKILL.
+# 0. Ensure systemd waits for the in-bot graceful drain (up to ~10 min for active games -
+#    including whole live Connect 4 / Battleship PvP matches - to finish) before sending SIGKILL.
 #    Idempotent drop-in; safe to run every time.
-echo "[0/3] Ensuring graceful-stop timeout (150s)..."
+echo "[0/3] Ensuring graceful-stop timeout (630s)..."
 sudo mkdir -p /etc/systemd/system/hms-victory.service.d
-printf '[Service]\nTimeoutStopSec=150\n' | sudo tee /etc/systemd/system/hms-victory.service.d/timeout.conf >/dev/null
+printf '[Service]\nTimeoutStopSec=630\n' | sudo tee /etc/systemd/system/hms-victory.service.d/timeout.conf >/dev/null
 sudo systemctl daemon-reload
 
 # 1. Stop the bot. systemctl now blocks while the bot drains active games (maintenance mode

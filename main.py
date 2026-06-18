@@ -530,7 +530,7 @@ async def graceful_shutdown(client, sig_name):
     # We deliberately do NOT count at-rest persistent-view hands (blackjack/HL/video poker/
     # red dog/TCP sitting in persistent_views.json): they reattach cleanly on boot, so
     # waiting for them is pointless - and an abandoned hand (dealt, walked away) would
-    # otherwise pin the drain at the full 2-minute cap on every single restart. The brief
+    # otherwise pin the drain at the full max-wait cap on every single restart. The brief
     # dangerous windows for those games (a click mid-redraw, a deal mid-send) are already
     # covered by the in-flight counter below. Connect 4 / Battleship ARE counted, though:
     # they void + refund on restart (not a clean reattach), so an in-progress PvP match
@@ -554,18 +554,22 @@ async def graceful_shutdown(client, sig_name):
             n += in_flight_actions()
         except Exception:
             pass
-        try:  # live PvP multiplayer matches (Connect 4 / Battleship). These void + refund on a
-              # restart, so wait for an in-progress match to settle rather than interrupt it.
+        try:  # live PvP matches (Connect 4 / Battleship): two humans, and they void + refund on
+              # a restart, so wait for the WHOLE match to finish rather than interrupt it. vs-AI
+              # Connect 4 is single-player (it just refunds on restart), so it's NOT counted -
+              # an abandoned AI game can't hold the deploy for its 10-min human clock.
             from lib.core.file_operations import load_persistent_views
             _views = load_persistent_views() or {}
             n += sum(1 for v in _views.values()
-                     if isinstance(v, dict) and v.get("type") in ("connect4", "battleship"))
+                     if isinstance(v, dict) and (
+                         v.get("type") == "battleship"
+                         or (v.get("type") == "connect4" and not v.get("ai"))))
         except Exception:
             pass
         return n
 
     try:
-        wait_seconds, max_wait = 0, 120  # up to 2 minutes
+        wait_seconds, max_wait = 0, 600  # up to 10 minutes - long enough for a whole PvP match
         while wait_seconds < max_wait:
             active = _count_active_games()
             if active == 0:
