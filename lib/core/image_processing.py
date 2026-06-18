@@ -73,7 +73,10 @@ def _sweep_chrome_tmp(max_age_seconds=60):
     now = time.time()
     tmp = tempfile.gettempdir()
     removed = 0
-    for pat in (".org.chromium.*", ".com.google.Chrome.*", "scoped_dir*"):
+    # Chrome names these "org.chromium.XXXXXX" / "com.google.Chrome.XXXXXX" (no leading dot on
+    # this build); keep the dotted variants too for older/other builds.
+    for pat in ("org.chromium.*", ".org.chromium.*",
+                "com.google.Chrome.*", ".com.google.Chrome.*", "scoped_dir*"):
         for path in glob.glob(os.path.join(tmp, pat)):
             try:
                 if now - os.path.getmtime(path) > max_age_seconds:
