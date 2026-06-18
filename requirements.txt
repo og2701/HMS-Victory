@@ -8,3 +8,4 @@ apscheduler
 openai>=1.12.0
 aiofiles
 db-sqlite3
+bitbully>=0.0.79   # perfect (strongly-solved) Connect 4 AI; optional - falls back to lib/economy/connect4_ai

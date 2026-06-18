@@ -77,6 +77,7 @@ class Connect4View(discord.ui.View):
         self.channel_id = channel_id
         self.ai_player = ai_player       # 1|2 if that seat is the bank-funded AI, else None
         self.board = [[0] * COLS for _ in range(ROWS)]
+        self.moves = []                  # columns played in order (fed to the perfect solver)
         self.turn = random.choice([1, 2])   # who moves first is random (first-move edge is real)
         self.game_over = False
         self.message = None
@@ -98,11 +99,17 @@ class Connect4View(discord.ui.View):
             depth = getattr(config, "CONNECT4_AI_DEPTH", 12)
             budget = getattr(config, "CONNECT4_AI_TIME", 1.5)
             try:
-                from lib.economy import connect4_ai
+                from lib.economy import connect4_ai, connect4_perfect
                 loop = asyncio.get_event_loop()
-                col = await loop.run_in_executor(
-                    _AI_EXECUTOR, lambda: connect4_ai.best_move(self.board, self.ai_player,
-                                                                depth=depth, time_budget=budget))
+                # Perfect play first (bitbully, strongly-solved). If it isn't installed it returns
+                # None and we fall back to the in-house negamax engine - so the bot works either way.
+                _hist = list(self.moves)
+                col = await loop.run_in_executor(_AI_EXECUTOR,
+                                                 lambda: connect4_perfect.best_move(_hist))
+                if col is None:
+                    col = await loop.run_in_executor(
+                        _AI_EXECUTOR, lambda: connect4_ai.best_move(self.board, self.ai_player,
+                                                                    depth=depth, time_budget=budget))
             except Exception:
                 logger.error("connect4 AI move failed; picking a fallback column", exc_info=True)
                 col = next((c for c in range(COLS) if self.board[0][c] == 0), None)
@@ -146,6 +153,7 @@ class Connect4View(discord.ui.View):
         for r in range(ROWS - 1, -1, -1):
             if self.board[r][col] == 0:
                 self.board[r][col] = player
+                self.moves.append(col)       # record move order for the perfect solver
                 return r
         return None
 
@@ -588,6 +596,10 @@ async def _start_ai_game(interaction: Interaction, bet: int):
     game = Connect4View(user.id, p1_name, bot_id, "HMS Victory \U0001F916", bet,
                         interaction.channel_id, ai_player=2)
     game.client = interaction.client
+    # The AI plays PERFECTLY (solved game), so it always moves SECOND - that hands the human the
+    # first-move advantage, the only real chance to beat a perfect player, and keeps the
+    # "first to beat the AI" bounty winnable. (A perfect player moving first would be unbeatable.)
+    game.turn = game._human_player()
     try:
         await interaction.response.send_message(embed=game._embed(), view=game)
         game.message = await interaction.original_response()
@@ -601,9 +613,7 @@ async def _start_ai_game(interaction: Interaction, bet: int):
         "type": "connect4", "ai": True,
         "p1_id": user.id, "p2_id": bot_id, "stake": bet, "channel_id": interaction.channel_id,
     })
-    game.start()
-    if game.turn == game.ai_player:          # AI moves first
-        await game._ai_take_turn()
+    game.start()   # the human moves first (set above), so no AI opening move
 
 
 async def handle_connect4_command(interaction: Interaction, opponent: Member, bet: int):
