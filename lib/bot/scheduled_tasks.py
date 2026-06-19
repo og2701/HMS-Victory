@@ -688,39 +688,9 @@ async def apply_wealth_demurrage(client):
         current_date_str = datetime.now(pytz.timezone("Europe/London")).strftime("%Y-%m-%d")
         _update_daily_metric_file(current_date_str, "demurrage_total", total)
 
-        await _notify_demurrage(client, charged, threshold, rate, _now)
+        # Demurrage runs silently in the background - no DM / notification to users.
     except Exception as e:
         logger.error(f"Error applying wealth demurrage: {e}", exc_info=True)
-
-
-async def _notify_demurrage(client, charged, threshold, rate, now_ts):
-    """DM each user the first time demurrage ever hits them, so it's never a silent leak."""
-    try:
-        from lib.core.file_operations import load_json_file, save_json_file
-        path = os.path.join(JSON_DATA_DIR, "demurrage_notified.json")
-        notified = load_json_file(path) or {}
-        changed = False
-        for uid, amount, _ in charged:
-            if str(uid) in notified:
-                continue
-            try:
-                user = client.get_user(int(uid)) or await client.fetch_user(int(uid))
-                await user.send(
-                    f"\U0001F3DB️ **Treasury notice** — your balance is over **{threshold:,}** "
-                    f"UKPence, so a small **{rate:.0%}/week** charge now applies to the amount *above* "
-                    f"that line (this week: **-{amount:,}** UKP to the treasury).\n\n"
-                    f"It only ever touches the surplus above {threshold:,} — spending or investing it "
-                    f"(shop, bonds, bets, gifting) stops the drain. It's there so no single person can "
-                    f"hoard the whole economy, not to punish doing well."
-                )
-                notified[str(uid)] = now_ts
-                changed = True
-            except Exception:
-                pass
-        if changed:
-            save_json_file(path, notified)
-    except Exception:
-        logger.error("Demurrage notify failed", exc_info=True)
 
 
 async def process_economy_logs(client):

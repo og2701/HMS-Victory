@@ -100,13 +100,14 @@ class BankManager:
                     VALUES (?, ?)
                 ''', (str(BOT_ID), new_bot_balance))
                 
-                # Sync bank table stats and tax collected
-                tax_add = amount if "Wealth tax" in description else 0
+                # Everything routed through deposit_tax IS a tax (wealth tax, inactivity tax,
+                # wealth demurrage), so the full amount always counts toward total_tax_collected -
+                # not just descriptions containing "Wealth tax".
                 c.execute('''
                     UPDATE bank
                     SET balance = ?, total_revenue = total_revenue + ?, total_tax_collected = total_tax_collected + ?, last_updated = ?
                     WHERE id = 1
-                ''', (new_bot_balance, amount, tax_add, now))
+                ''', (new_bot_balance, amount, amount, now))
                 
                 c.execute('COMMIT')
 
