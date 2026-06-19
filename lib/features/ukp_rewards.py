@@ -587,6 +587,12 @@ class BenefitsFineConfirmView(discord.ui.View):
                 f"✅ **Fine Paid!** <@{payer_id}> paid the fine of **{fine_amount:,} UKPence** for <@{uid}>. Their benefits ban has been lifted and their offense history has been reset!",
                 ephemeral=False
             )
+            # Generosity badge: paying off SOMEONE ELSE's benefits fine.
+            try:
+                from lib.features.income_badges import award_badge_safe
+                await award_badge_safe(interaction.client, payer_id, "good_samaritan")
+            except Exception:
+                log.debug("good_samaritan badge award failed", exc_info=True)
         self.stop()
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, emoji="❌")

@@ -767,6 +767,7 @@ def init_db():
             ('on_the_dole', 'On the Dole', 'Claim benefits for the first time', '🧾', 'Bronze'),
             ('career_claimant', 'Career Claimant', 'Claim benefits 7 days in a row', '🛋️', 'Silver'),
             ('rock_bottom', 'Rock Bottom', 'Claim benefits with under 5 UKPence to your name', '🪨', 'Bronze'),
+            ('good_samaritan', 'Good Samaritan', "Pay off another member's benefits fine for them", '🤝', 'Silver'),
             ('lucky_number', 'Lucky Number', 'Win a straight-up number bet on roulette (35:1) covering at most 3 numbers and making a net profit', '🎯', 'Gold'),
             ('slots_jackpot', 'Jackpot', 'Hit a Jackpot (three Crowns) on the Fruit Machine / Slots', '🎰', 'Gold'),
             ('zero_hero', 'Zero Hero', 'Be at the roulette table when the ball lands on the green zero', '🟢', 'Silver'),
