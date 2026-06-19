@@ -299,6 +299,29 @@ def init_db():
                 c.execute(f"ALTER TABLE bank ADD COLUMN {_col} INTEGER NOT NULL DEFAULT 0")
             except sqlite3.OperationalError:
                 pass
+        # One-time backfill: deposit_tax historically only credited total_tax_collected for
+        # "Wealth tax" descriptions, so the inactivity tax + wealth demurrage were dropped from the
+        # tax figure. Fold those missing amounts (from the durable user_transactions ledger - taxes
+        # are stored as negative entries) into total_tax_collected EXACTLY ONCE; the tax_backfill_v1
+        # guard makes it impossible to double-count on any later boot. The wealth tax already in the
+        # counter is preserved (we only ADD the missing pieces).
+        try:
+            c.execute("ALTER TABLE bank ADD COLUMN tax_backfill_v1 INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            _bf = c.execute("SELECT COALESCE(tax_backfill_v1, 0) FROM bank WHERE id = 1").fetchone()
+            if _bf is not None and not _bf[0]:
+                _missing = c.execute(
+                    "SELECT COALESCE(SUM(-amount), 0) FROM user_transactions "
+                    "WHERE reason LIKE 'Inactivity tax%' OR reason LIKE 'Wealth demurrage%'"
+                ).fetchone()[0] or 0
+                c.execute("UPDATE bank SET total_tax_collected = total_tax_collected + ?, "
+                          "tax_backfill_v1 = 1 WHERE id = 1", (_missing,))
+                print(f"[db] Tax backfill: added {_missing} UKP (historical inactivity tax + "
+                      f"demurrage) to total_tax_collected.")
+        except sqlite3.Error as _e:
+            print(f"[db] Tax backfill skipped (will retry next boot): {_e}")
         c.execute('''
             CREATE TABLE IF NOT EXISTS daily_summaries (
                 date TEXT PRIMARY KEY,
