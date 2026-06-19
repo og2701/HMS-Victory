@@ -132,6 +132,13 @@ class AClient(discord.Client):
 
     async def on_ready(self):
         await on_ready(self, tree, self.scheduler)
+        # One-off: award the Good Samaritan badge (with DM) to anyone who already paid someone
+        # else's benefits fine. Once per process; award_badge_with_notify is idempotent so a
+        # reconnect/restart can never re-DM or re-pay.
+        if not getattr(self, "_gs_backfill_done", False):
+            self._gs_backfill_done = True
+            import asyncio
+            asyncio.create_task(_backfill_good_samaritan(self))
         # The two loops below are a one-off cosmetic backfill of buttons onto
         # already-posted prediction / scheduled-pred messages. on_ready fires on
         # every gateway reconnect, so gate it to run once per process (mirrors the
@@ -502,6 +509,26 @@ client = AClient()
 tree = discord.app_commands.CommandTree(client)
 
 define_commands(tree, client)
+
+async def _backfill_good_samaritan(client):
+    """One-off: award the Good Samaritan badge (+ DM + reward) to anyone who has already paid
+    someone ELSE's benefits fine. Identified from the durable user_transactions ledger; awarded
+    via award_badge_with_notify, which is idempotent (only newly-awarded users get the DM/reward),
+    so this is safe to run on every boot."""
+    try:
+        from database import DatabaseManager
+        from lib.bot.event_handlers import award_badge_with_notify
+        rows = DatabaseManager.fetch_all(
+            "SELECT DISTINCT user_id FROM user_transactions "
+            "WHERE reason LIKE 'Paid benefits fraud fine for %'")
+        for (uid,) in rows or []:
+            try:
+                await award_badge_with_notify(client, int(uid), "good_samaritan")
+            except Exception:
+                logger.error("good_samaritan backfill failed for %s", uid, exc_info=True)
+    except Exception:
+        logger.error("good_samaritan backfill query failed", exc_info=True)
+
 
 async def graceful_shutdown(client, sig_name):
     """Drain cleanly on SIGTERM/SIGINT (systemctl restart, ./update_bot.sh, Ctrl-C).
