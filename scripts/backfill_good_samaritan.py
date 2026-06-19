@@ -48,11 +48,38 @@ class BackfillClient(discord.Client):
         await self.close()
 
 
-if __name__ == "__main__":
+def _load_token():
+    """Resolve the bot token. The bot itself reads it from the systemd unit's
+    Environment=DISCORD_TOKEN=...; that env isn't inherited when this script is run by hand, so
+    fall back to env -> .env -> reading it straight from the unit file (never printed)."""
+    tok = os.getenv("DISCORD_TOKEN")
+    if tok:
+        return tok
     load_dotenv()
-    token = os.getenv("DISCORD_TOKEN")
+    tok = os.getenv("DISCORD_TOKEN")
+    if tok:
+        return tok
+    import re
+    import subprocess
+    unit = "/etc/systemd/system/hms-victory.service"
+    text = ""
+    try:
+        with open(unit) as f:
+            text = f.read()
+    except (PermissionError, FileNotFoundError):
+        try:
+            text = subprocess.run(["sudo", "-n", "cat", unit],
+                                  capture_output=True, text=True).stdout
+        except Exception:
+            text = ""
+    m = re.search(r'DISCORD_TOKEN=["\']?([^"\'\s]+)', text)
+    return m.group(1) if m else None
+
+
+if __name__ == "__main__":
+    token = _load_token()
     if not token:
-        print("Error: DISCORD_TOKEN is missing in the environment (.env or env var).")
+        print("Error: couldn't find DISCORD_TOKEN (env, .env, or the systemd unit).")
         sys.exit(1)
     client = BackfillClient(intents=discord.Intents.default())
     client.run(token)
