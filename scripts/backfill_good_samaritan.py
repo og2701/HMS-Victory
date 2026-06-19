@@ -5,17 +5,44 @@ Run once on the VM:
 
     cd /home/ubuntu/HMS-Victory && venv/bin/python3 scripts/backfill_good_samaritan.py
 
-Idempotent: award_badge_with_notify only notifies/pays a user who doesn't already hold the badge,
-and this script also skips anyone who already has it - so re-running is safe (no double DMs).
+Idempotent: it skips anyone who already holds the badge, and award_badge_with_notify only
+notifies/pays a user who doesn't already have it - so re-running is safe (no double DMs).
 """
 import os
+import re
+import subprocess
 import sys
-
-import discord
-from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+
+def _load_env_from_unit():
+    """The bot's secrets (DISCORD_TOKEN, OPENAI_TOKEN, ...) live in the systemd unit's
+    Environment= lines, which aren't inherited when this script is run by hand. Load them into
+    os.environ so every import behaves exactly as it does under the bot. (Never printed.)"""
+    unit = "/etc/systemd/system/hms-victory.service"
+    text = ""
+    try:
+        with open(unit) as f:
+            text = f.read()
+    except (PermissionError, FileNotFoundError):
+        try:
+            text = subprocess.run(["sudo", "-n", "cat", unit],
+                                  capture_output=True, text=True).stdout
+        except Exception:
+            text = ""
+    for m in re.finditer(r'Environment="?([A-Z_][A-Z0-9_]*)=([^"\n]+)', text):
+        os.environ.setdefault(m.group(1), m.group(2).strip().rstrip('"'))
+
+
+_load_env_from_unit()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
+import discord  # noqa: E402
 from database import DatabaseManager  # noqa: E402
 
 
@@ -48,38 +75,10 @@ class BackfillClient(discord.Client):
         await self.close()
 
 
-def _load_token():
-    """Resolve the bot token. The bot itself reads it from the systemd unit's
-    Environment=DISCORD_TOKEN=...; that env isn't inherited when this script is run by hand, so
-    fall back to env -> .env -> reading it straight from the unit file (never printed)."""
-    tok = os.getenv("DISCORD_TOKEN")
-    if tok:
-        return tok
-    load_dotenv()
-    tok = os.getenv("DISCORD_TOKEN")
-    if tok:
-        return tok
-    import re
-    import subprocess
-    unit = "/etc/systemd/system/hms-victory.service"
-    text = ""
-    try:
-        with open(unit) as f:
-            text = f.read()
-    except (PermissionError, FileNotFoundError):
-        try:
-            text = subprocess.run(["sudo", "-n", "cat", unit],
-                                  capture_output=True, text=True).stdout
-        except Exception:
-            text = ""
-    m = re.search(r'DISCORD_TOKEN=["\']?([^"\'\s]+)', text)
-    return m.group(1) if m else None
-
-
 if __name__ == "__main__":
-    token = _load_token()
+    token = os.getenv("DISCORD_TOKEN")
     if not token:
-        print("Error: couldn't find DISCORD_TOKEN (env, .env, or the systemd unit).")
+        print("Error: couldn't find DISCORD_TOKEN (systemd unit / env / .env).")
         sys.exit(1)
     client = BackfillClient(intents=discord.Intents.default())
     client.run(token)
