@@ -845,12 +845,7 @@ async def on_ready(client, tree, scheduler):
     if not getattr(client, "_views_reattached", False):
         reattach_persistent_views(client)
         client._views_reattached = True
-    loaded = _load()
-    client.predictions = {}
-    for msg_id_str, pd in loaded.items():
-        p = Prediction.from_dict(pd)
-        client.predictions[p.msg_id] = p
-    logger.info("Persistent views reattached and loaded.")
+        logger.info("Persistent views reattached.")
     for command in tree.get_commands():
         logger.info(f"Command loaded: {command.name}")
         await asyncio.sleep(0.1)
