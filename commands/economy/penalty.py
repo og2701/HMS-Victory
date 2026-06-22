@@ -15,12 +15,12 @@ Money flow (mirrors the other casino games; the fixed 800k UKP supply is conserv
     • Loss:   nothing paid - the staked bet stays in the bank.
 
 Fairness: multiplier after k goals is (1 - edge) / P(score)^k, so EV is a constant (1 - edge) of
-the stake whatever you do - cashing out at one goal or chasing all five has the same expected
-return. The house keeps a flat ~2% edge.
+the stake whatever you do. The house keeps a flat ~2% edge.
 
-The board is a Components V2 LayoutView: a rendered scene (keeper + ball composited by Pillow) plus
-a row of aim buttons and a Cash Out button. In-play games are persisted by message id and their
-click routing is re-registered on restart (reattach_penalty_view); terminal boards are dropped.
+The board is a classic embed: a colour + title that call the round and whether it was a goal or a
+save, a rendered scene (keeper + ball composited by Pillow) as the embed image, and a View of aim
+buttons + Cash Out below. In-play games persist by message id and their click routing is
+re-registered on restart (reattach_penalty_view); terminal boards are dropped.
 """
 import io
 import os
@@ -35,7 +35,7 @@ from lib.economy.economy_manager import get_bb, remove_bb
 from lib.economy.casino_drain import action_in_flight, deal_in_flight
 from lib.economy.casino_stats import record_result
 from commands.economy.casino_base import (
-    build_layout, credit_from_bank, reject_if_maintenance, save_state, delete_state,
+    credit_from_bank, reject_if_maintenance, save_state, delete_state,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,14 +46,20 @@ SPOT_LABEL = {"tl": "Top L", "tr": "Top R", "c": "Centre", "bl": "Bottom L", "br
 SPOT_EMOJI = {"tl": "↖️", "tr": "↗️", "c": "🎯", "bl": "↙️", "br": "↘️"}
 MAX_GOALS = 5
 
+# embed colours by state
+_BLUE = discord.Colour(0x00247D)     # round 1, yet to shoot
+_GREEN = discord.Colour(0x2ECC71)    # goal / cashed out
+_RED = discord.Colour(0xE74C3C)      # saved
+_GOLD = discord.Colour(0xF1C40F)     # clean sheet
+
 # --- image compositing ---------------------------------------------------------
 _ASSET_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                           "data", "penalty")
 _WORK_W = 1000                       # working/output width (downscaled from the 1672px source)
-_BALL_FRACTION = 0.099               # ball width as a fraction of the canvas width
+_BALL_FRACTION = 0.15                # ball width as a fraction of the canvas width
 # ball CENTRE as a fraction of (width, height) - calibrated against the dive art
 _ANCHORS = {
-    "tl": (0.20, 0.26), "tr": (0.80, 0.26), "c": (0.50, 0.47),
+    "tl": (0.20, 0.26), "tr": (0.80, 0.26), "c": (0.50, 0.43),
     "bl": (0.17, 0.69), "br": (0.83, 0.69),
 }
 _GUARD = {}          # spot/"ready" -> pre-scaled RGBA scene
@@ -62,8 +68,7 @@ _assets_loaded = False
 
 
 def _ensure_assets():
-    """Load + pre-scale the art once. On any failure the game still runs with the
-    native-text fallback (build_layout handles image=None)."""
+    """Load + pre-scale the art once. On any failure the game still runs without the image."""
     global _assets_loaded, _BALL
     if _assets_loaded:
         return
@@ -79,7 +84,8 @@ def _ensure_assets():
         bw = int(_BALL_FRACTION * _WORK_W)
         _BALL = ball.resize((bw, round(ball.height * bw / ball.width)), Image.LANCZOS)
     except Exception:
-        logger.warning("Penalty art failed to load; falling back to native text.", exc_info=True)
+        logger.warning("Penalty art failed to load; the embed will show without an image.",
+                       exc_info=True)
         _GUARD.clear()
         _BALL = None
 
@@ -110,7 +116,7 @@ def _render(game) -> io.BytesIO:
         buf.seek(0)
         return buf
     except Exception:
-        logger.warning("Penalty render failed; falling back to native text.", exc_info=True)
+        logger.warning("Penalty render failed; the embed will show without an image.", exc_info=True)
         return None
 
 
@@ -218,86 +224,86 @@ def save_game(game: PenaltyGame):
 
 
 # ---------------------------------------------------------------------------
-# Rendering (Components V2: scene image + aim row + controls)
+# Rendering (classic embed + image + a View of buttons)
 # ---------------------------------------------------------------------------
-def _native_text(game: PenaltyGame) -> str:
-    """Text-only fallback (used if the art can't render)."""
-    return _status_text(game)
-
-
-def _status_text(game: PenaltyGame) -> str:
+def _embed_head(game: PenaltyGame):
+    """(colour, title) - the at-a-glance read: round number, goal vs save vs cash-out."""
     if game.state == "over":
         if game.outcome == "lose":
-            return (f"## 🧤 Saved!\n"
-                    f"The keeper guessed **{SPOT_LABEL[game.last_kick]}** and palmed it away — "
-                    f"you lost **{game.bet:,} UKPence**.\n"
-                    f"-# Scored {game.goals} before the save. Better luck next spot-kick.")
+            return _RED, f"🧤 SAVED!  ·  {game.goals}/5 scored"
         if game.goals >= MAX_GOALS:
-            return (f"## 🏆 Clean Sheet!\n"
-                    f"Five from five — won **{game.payout:,} UKPence** at **{game.multiplier():.2f}×**!\n"
-                    f"-# The perfect shootout. 🇬🇧")
-        return (f"## 💰 Cashed Out\n"
-                f"Banked **{game.payout:,} UKPence** at **{game.multiplier():.2f}×** after "
-                f"**{game.goals}** goal(s).\n-# Knowing when to stop is the whole game.")
-
-    # aiming
+            return _GOLD, "🏆 CLEAN SHEET!  ·  5 of 5"
+        return _GREEN, f"💰 Cashed Out  ·  {game.goals}/5 scored"
     if game.goals == 0:
-        return (f"## ⚽ Penalty Shootout\n"
-                f"Stake **{game.bet:,} UKPence**. Pick a corner and beat the keeper.\n"
-                f"-# Each goal lifts your multiplier (×1.25). If the keeper guesses your corner, "
-                f"you lose the lot — so cash out while you're ahead.")
-    nxt = game.multiplier(game.goals + 1)
-    return (f"## ⚽ GOAL!  ({game.goals} scored)\n"
-            f"Now **{game.multiplier():.2f}×** → cash out **{game.current_payout():,} UKPence**.\n"
-            f"-# Next goal → {nxt:.2f}× ({game.payout_for(game.goals + 1):,}). "
-            f"Shoot again, or bank it while you're ahead.")
+        return _BLUE, "⚽ Penalty Shootout  ·  Round 1 of 5"
+    return _GREEN, f"⚽ GOAL!  ·  Round {game.goals + 1} of 5"
 
 
-def _aim_row(game: PenaltyGame) -> discord.ui.ActionRow:
-    row = discord.ui.ActionRow()
-    for spot in SPOTS:
-        btn = discord.ui.Button(
-            style=discord.ButtonStyle.secondary, label=SPOT_LABEL[spot], emoji=SPOT_EMOJI[spot],
-            custom_id=f"penalty:{game.game_id}:kick:{spot}")
-        btn.callback = _make_kick_cb(game, spot)
-        row.add_item(btn)
-    return row
-
-
-def _controls_row(game: PenaltyGame) -> discord.ui.ActionRow:
-    row = discord.ui.ActionRow()
+def _status_desc(game: PenaltyGame) -> str:
     if game.state == "over":
-        again = discord.ui.Button(
-            style=discord.ButtonStyle.primary, label="Play Again", emoji="🔁",
-            custom_id=f"penalty:{game.game_id}:again")
-        again.callback = _make_again_cb(game)
-        row.add_item(again)
-    else:                                       # aiming
+        if game.outcome == "lose":
+            return (f"The keeper guessed **{SPOT_LABEL[game.last_kick]}** and kept it out.\n"
+                    f"You lost your stake of **{game.bet:,} UKPence**.")
+        if game.goals >= MAX_GOALS:
+            return (f"Five out of five past the keeper!\n"
+                    f"Won **{game.payout:,} UKPence** at **{game.multiplier():.2f}×**.")
+        return (f"Banked **{game.payout:,} UKPence** at **{game.multiplier():.2f}×** "
+                f"after **{game.goals}** goal(s).")
+    if game.goals == 0:
+        return (f"Stake **{game.bet:,} UKPence**. Pick a corner and beat the keeper.\n"
+                f"Score to build your multiplier, then cash out before he saves one.")
+    nxt = game.multiplier(game.goals + 1)
+    return (f"Now **{game.multiplier():.2f}×** · cash out for **{game.current_payout():,} UKPence**.\n"
+            f"Next goal lifts you to **{nxt:.2f}×** ({game.payout_for(game.goals + 1):,}). "
+            f"Shoot again, or bank it.")
+
+
+def _embed(game: PenaltyGame, has_image: bool) -> discord.Embed:
+    colour, title = _embed_head(game)
+    e = discord.Embed(colour=colour, title=title, description=_status_desc(game))
+    if has_image:
+        e.set_image(url=f"attachment://penalty_{game.game_id}.jpg")
+    return e
+
+
+def _build_view(game: PenaltyGame) -> discord.ui.View:
+    view = discord.ui.View(timeout=None)
+    if game.state == "aiming":
+        for spot in SPOTS:                       # five aim buttons fill row 0
+            btn = discord.ui.Button(
+                style=discord.ButtonStyle.secondary, label=SPOT_LABEL[spot],
+                emoji=SPOT_EMOJI[spot], row=0, custom_id=f"penalty:{game.game_id}:kick:{spot}")
+            btn.callback = _make_kick_cb(game, spot)
+            view.add_item(btn)
         ready = game.goals >= 1
         cash = discord.ui.Button(
-            style=discord.ButtonStyle.success, emoji="💰",
+            style=discord.ButtonStyle.success, emoji="💰", row=1,
             label=(f"Cash Out  {game.current_payout():,}" if ready else "Cash Out"),
             custom_id=f"penalty:{game.game_id}:cash", disabled=not ready)
         if ready:
             cash.callback = _make_cash_cb(game)
-        row.add_item(cash)
+        view.add_item(cash)
+    else:                                        # over
+        again = discord.ui.Button(
+            style=discord.ButtonStyle.primary, label="Play Again", emoji="🔁", row=1,
+            custom_id=f"penalty:{game.game_id}:again")
+        again.callback = _make_again_cb(game)
+        view.add_item(again)
     rules = discord.ui.Button(
-        style=discord.ButtonStyle.secondary, label="Rules", emoji="📖",
+        style=discord.ButtonStyle.secondary, label="Rules", emoji="📖", row=1,
         custom_id=f"penalty:{game.game_id}:rules")
     rules.callback = _show_rules
-    row.add_item(rules)
-    return row
+    view.add_item(rules)
+    return view
 
 
-def build_penalty_layout(game: PenaltyGame):
-    """Return (view, files) for the current game state."""
+def build_penalty_message(game: PenaltyGame):
+    """Return (embed, view, file) for the current state. file is None if the art can't render."""
     image = _render(game)
-    first_row = _aim_row(game) if game.state == "aiming" else _controls_row(game)
-    view, files = build_layout(image, f"penalty_{game.game_id}.jpg", first_row,
-                               native_text=_native_text(game))
-    if game.state == "aiming":
-        view.add_item(_controls_row(game))
-    return view, files
+    file = discord.File(image, filename=f"penalty_{game.game_id}.jpg") if image is not None else None
+    embed = _embed(game, has_image=file is not None)
+    view = _build_view(game)
+    return embed, view, file
 
 
 # ---------------------------------------------------------------------------
@@ -328,15 +334,16 @@ def _not_your_game(interaction: Interaction, game: PenaltyGame) -> bool:
     return interaction.user.id != game.player_id
 
 
-async def _safe_edit(interaction: Interaction, view, files) -> bool:
+async def _safe_edit(interaction: Interaction, embed, view, file) -> bool:
     """Refresh the board, surviving a lapsed interaction token (see mines._safe_edit_board)."""
+    attachments = [file] if file is not None else []
     try:
-        await interaction.response.edit_message(view=view, attachments=files)
+        await interaction.response.edit_message(embed=embed, view=view, attachments=attachments)
         return True
     except (discord.NotFound, discord.InteractionResponded):
         try:
             if interaction.message is not None:
-                await interaction.message.edit(view=view, attachments=files)
+                await interaction.message.edit(embed=embed, view=view, attachments=attachments)
                 return True
         except discord.HTTPException:
             logger.debug("Penalty board fallback edit failed", exc_info=True)
@@ -346,8 +353,8 @@ async def _safe_edit(interaction: Interaction, view, files) -> bool:
 
 
 async def _rerender(interaction: Interaction, game: PenaltyGame):
-    view, files = build_penalty_layout(game)
-    await _safe_edit(interaction, view, files)
+    embed, view, file = build_penalty_message(game)
+    await _safe_edit(interaction, embed, view, file)
     if game.message_id is not None:
         try:
             interaction.client.add_view(view, message_id=game.message_id)
@@ -442,8 +449,8 @@ async def _handle_again(interaction: Interaction, old_game: PenaltyGame):
 
     new_game = PenaltyGame.new(old_game.player_id, old_game.player_name, old_game.channel_id, bet)
     new_game.message_id = old_game.message_id
-    view, files = build_penalty_layout(new_game)
-    if not await _safe_edit(interaction, view, files):
+    embed, view, file = build_penalty_message(new_game)
+    if not await _safe_edit(interaction, embed, view, file):
         logger.error("Penalty replay failed before showing the new board; refunding stake.")
         credit_from_bank(old_game.player_id, bet, "Penalty stake refund (replay failed)")
         old_game.replayed = False
@@ -459,23 +466,15 @@ async def _show_rules(interaction: Interaction):
     import config
     min_bet = getattr(config, "PENALTY_MIN_BET", 5)
     max_bet = getattr(config, "PENALTY_MAX_BET", 5_000)
-    max_win = getattr(config, "PENALTY_MAX_WIN", 0)
-    cap_str = f"; wins are capped at {max_win:,}" if max_win > 0 else ""
     rules = (
-        "## ⚽ Penalty Shootout - House Rules\n"
-        "Take up to **five** penalties against the Queen's Guard keeper. Each shot, pick a "
-        "corner:\n\n"
-        "- The keeper dives to a **random** corner — he saves a fair **1 in 5** (20%), so you "
-        "score **80%** of the time.\n"
-        "- **GOAL** → your multiplier climbs **×1.25** a goal: 1.25× → 1.53× → 1.91× → 2.39× → "
-        "**2.99×** for a clean sheet.\n"
-        "- **SAVED** (keeper guesses your corner) → you lose the stake.\n"
-        "- **Cash Out** after any goal to take **stake × multiplier**; **five from five** is a "
-        "clean sheet at the top multiplier.\n\n"
-        f"- **Bets:** {min_bet:,} - {max_bet:,} UKPence{cap_str}. Stakes go to the house bank; "
-        "wins are paid from it.\n\n"
-        "-# The house keeps a flat ~2% edge whatever you do — cashing out early or chasing the "
-        "clean sheet has the same expected return. Good luck. 🇬🇧"
+        "## ⚽ Penalty Shootout · House Rules\n"
+        "Step up and take up to five penalties against the keeper.\n\n"
+        "- Pick a corner to shoot. Beat the keeper and you score, and every goal lifts your "
+        "multiplier.\n"
+        "- Guess wrong and he saves it, and your stake is gone.\n"
+        "- **Cash Out** after any goal to take your winnings, or push your luck for more.\n"
+        "- Slot all five for a clean sheet and the top prize.\n\n"
+        f"Bets **{min_bet:,}** to **{max_bet:,}** UKPence. Good luck. 🇬🇧"
     )
     await interaction.response.send_message(rules, ephemeral=True)
 
@@ -520,8 +519,11 @@ async def handle_penalty_command(interaction: Interaction, amount: int):
     try:
         await interaction.response.defer(thinking=True)
         game = PenaltyGame.new(interaction.user.id, name, interaction.channel_id, amount)
-        view, files = build_penalty_layout(game)
-        msg = await interaction.followup.send(view=view, files=files)
+        embed, view, file = build_penalty_message(game)
+        kwargs = {"embed": embed, "view": view}
+        if file is not None:
+            kwargs["file"] = file
+        msg = await interaction.followup.send(**kwargs)
     except Exception:
         logger.error("Penalty deal failed; refunding stake.", exc_info=True)
         credit_from_bank(interaction.user.id, amount, "Penalty stake refund (deal failed)")
@@ -561,7 +563,7 @@ def reattach_penalty_view(client, key, value):
         return
     try:
         game.message_id = int(key)
-        view, _ = build_penalty_layout(game)
+        view = _build_view(game)
         client.add_view(view, message_id=int(key))
     except Exception as e:
         logger.error(f"Failed to reattach penalty view {key}: {e}", exc_info=True)
