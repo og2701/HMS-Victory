@@ -5,11 +5,9 @@ keeper dives the wrong way it's a GOAL and your multiplier climbs; if he guesses
 SAVES it and the stake is lost. Cash out after any goal to bank ``stake x multiplier``. Five from
 five is a clean sheet at the top multiplier.
 
-Difficulty just sets how often the keeper reads your corner (P(save)), which sets the per-goal
-multiplier - same 2% house edge throughout:
-    • Easy   - keeper saves 20% -> 1.25x per goal -> up to ~2.99x
-    • Pro    - keeper saves 40% -> 1.67x per goal -> up to ~12.6x
-    • Legend - keeper saves 60% -> 2.50x per goal -> up to ~95x
+The keeper is honest - he dives to a random one of the five corners, so he saves a true 1/5 (20%)
+and you score 80% of the time. That fixes the ladder: 1.25x a goal, up to ~2.99x for a clean
+sheet. It's a high-hit-rate, low-variance game by design (the counterweight to Mines).
 
 Money flow (mirrors the other casino games; the fixed 800k UKP supply is conserved):
     • Stake:  remove_bb(uid, bet)   - to_bank=True, the stake enters the house bank.
@@ -17,7 +15,8 @@ Money flow (mirrors the other casino games; the fixed 800k UKP supply is conserv
     • Loss:   nothing paid - the staked bet stays in the bank.
 
 Fairness: multiplier after k goals is (1 - edge) / P(score)^k, so EV is a constant (1 - edge) of
-the stake whatever you do. Wins can be capped (PENALTY_MAX_WIN; 0 = uncapped).
+the stake whatever you do - cashing out at one goal or chasing all five has the same expected
+return. The house keeps a flat ~2% edge.
 
 The board is a Components V2 LayoutView: a rendered scene (keeper + ball composited by Pillow) plus
 a row of aim buttons and a Cash Out button. In-play games are persisted by message id and their
@@ -45,13 +44,6 @@ logger = logging.getLogger(__name__)
 SPOTS = ["tl", "tr", "c", "bl", "br"]
 SPOT_LABEL = {"tl": "Top L", "tr": "Top R", "c": "Centre", "bl": "Bottom L", "br": "Bottom R"}
 SPOT_EMOJI = {"tl": "↖️", "tr": "↗️", "c": "🎯", "bl": "↙️", "br": "↘️"}
-
-# --- difficulties: P(score) per shot; the rest is derived ----------------------
-DIFFICULTY = {
-    "easy":   {"label": "Easy",   "emoji": "🟢", "score": 0.80},
-    "pro":    {"label": "Pro",    "emoji": "🟠", "score": 0.60},
-    "legend": {"label": "Legend", "emoji": "🔴", "score": 0.40},
-}
 MAX_GOALS = 5
 
 # --- image compositing ---------------------------------------------------------
@@ -126,17 +118,16 @@ def _render(game) -> io.BytesIO:
 # Game model
 # ---------------------------------------------------------------------------
 class PenaltyGame:
-    def __init__(self, game_id, player_id, player_name, channel_id, bet, difficulty,
-                 *, goals=0, state="choosing", outcome=None, payout=0, message_id=None,
+    def __init__(self, game_id, player_id, player_name, channel_id, bet,
+                 *, goals=0, state="aiming", outcome=None, payout=0, message_id=None,
                  last_kick=None, last_dove=None, last_result=None):
         self.game_id = game_id
         self.player_id = int(player_id)
         self.player_name = player_name
         self.channel_id = channel_id
         self.bet = int(bet)
-        self.difficulty = difficulty           # None until chosen; key into DIFFICULTY
         self.goals = int(goals)
-        self.state = state                     # "choosing" | "aiming" | "over"
+        self.state = state                     # "aiming" | "over"
         self.outcome = outcome                 # None | "win" | "lose"
         self.payout = int(payout)
         self.message_id = message_id
@@ -148,11 +139,12 @@ class PenaltyGame:
 
     @classmethod
     def new(cls, player_id, player_name, channel_id, bet):
-        return cls(uuid.uuid4().hex[:12], player_id, player_name, channel_id, bet, None)
+        return cls(uuid.uuid4().hex[:12], player_id, player_name, channel_id, bet)
 
     # --- maths ---
     def _score_prob(self) -> float:
-        return DIFFICULTY.get(self.difficulty, DIFFICULTY["easy"])["score"]
+        import config
+        return getattr(config, "PENALTY_SCORE_PROB", 0.80)
 
     def multiplier(self, k=None) -> float:
         import config
@@ -171,13 +163,6 @@ class PenaltyGame:
         return self.payout_for(self.goals)
 
     # --- transitions ---
-    def choose(self, difficulty) -> bool:
-        if self.state != "choosing" or difficulty not in DIFFICULTY:
-            return False
-        self.difficulty = difficulty
-        self.state = "aiming"
-        return True
-
     def kick(self, spot) -> str:
         """Take a penalty at `spot`. Returns 'goal' | 'save' | 'cleansheet' | 'ignore'."""
         if self.state != "aiming" or spot not in SPOTS:
@@ -191,7 +176,7 @@ class PenaltyGame:
                 self.cash_out()
                 return "cleansheet"
             return "goal"
-        # keeper read the corner
+        # keeper guessed the corner
         self.last_result = "save"
         self.last_dove = spot
         self.state = "over"
@@ -209,9 +194,9 @@ class PenaltyGame:
         return {
             "type": "penalty", "game_id": self.game_id, "player_id": self.player_id,
             "player_name": self.player_name, "channel_id": self.channel_id,
-            "message_id": self.message_id, "bet": self.bet, "difficulty": self.difficulty,
-            "goals": self.goals, "state": self.state, "outcome": self.outcome,
-            "payout": self.payout, "last_kick": self.last_kick, "last_dove": self.last_dove,
+            "message_id": self.message_id, "bet": self.bet, "goals": self.goals,
+            "state": self.state, "outcome": self.outcome, "payout": self.payout,
+            "last_kick": self.last_kick, "last_dove": self.last_dove,
             "last_result": self.last_result,
         }
 
@@ -220,9 +205,8 @@ class PenaltyGame:
         return cls(
             game_id=d["game_id"], player_id=d["player_id"],
             player_name=d.get("player_name", "Player"), channel_id=d.get("channel_id"),
-            bet=d["bet"], difficulty=d.get("difficulty"), goals=d.get("goals", 0),
-            state=d.get("state", "choosing"), outcome=d.get("outcome"),
-            payout=d.get("payout", 0), message_id=d.get("message_id"),
+            bet=d["bet"], goals=d.get("goals", 0), state=d.get("state", "aiming"),
+            outcome=d.get("outcome"), payout=d.get("payout", 0), message_id=d.get("message_id"),
             last_kick=d.get("last_kick"), last_dove=d.get("last_dove"),
             last_result=d.get("last_result"),
         )
@@ -242,58 +226,31 @@ def _native_text(game: PenaltyGame) -> str:
 
 
 def _status_text(game: PenaltyGame) -> str:
-    if game.state == "choosing":
-        import config
-        e = getattr(config, "PENALTY_HOUSE_EDGE", 0.02)
-        lines = []
-        for key in ("easy", "pro", "legend"):
-            d = DIFFICULTY[key]
-            per = (1 - e) / d["score"]
-            top = (1 - e) * (1 / d["score"]) ** MAX_GOALS
-            lines.append(f"{d['emoji']} **{d['label']}** — {per:.2f}× a goal, up to **{top:.1f}×**")
-        return ("## ⚽ Penalty Shootout\n"
-                f"Stake **{game.bet:,} UKPence**. Pick how good the keeper is — the tougher he is, "
-                "the more often he'll guess your corner, but the bigger your multipliers.\n"
-                + "\n".join(f"-# {ln}" for ln in lines))
-
-    diff = DIFFICULTY.get(game.difficulty, DIFFICULTY["easy"])
-    tag = f"{diff['emoji']} {diff['label']}"
     if game.state == "over":
         if game.outcome == "lose":
             return (f"## 🧤 Saved!\n"
                     f"The keeper guessed **{SPOT_LABEL[game.last_kick]}** and palmed it away — "
                     f"you lost **{game.bet:,} UKPence**.\n"
-                    f"-# {tag} · scored {game.goals} before the save. Better luck next spot-kick.")
+                    f"-# Scored {game.goals} before the save. Better luck next spot-kick.")
         if game.goals >= MAX_GOALS:
             return (f"## 🏆 Clean Sheet!\n"
                     f"Five from five — won **{game.payout:,} UKPence** at **{game.multiplier():.2f}×**!\n"
-                    f"-# {tag} · the perfect shootout. 🇬🇧")
+                    f"-# The perfect shootout. 🇬🇧")
         return (f"## 💰 Cashed Out\n"
                 f"Banked **{game.payout:,} UKPence** at **{game.multiplier():.2f}×** after "
-                f"**{game.goals}** goal(s).\n-# {tag} · knowing when to stop is the whole game.")
+                f"**{game.goals}** goal(s).\n-# Knowing when to stop is the whole game.")
 
     # aiming
     if game.goals == 0:
-        return (f"## ⚽ Penalty Shootout — {tag}\n"
-                f"Stake **{game.bet:,}**. Pick a corner to shoot.\n"
-                f"-# Score to build your multiplier. If the keeper guesses your corner, you lose the lot.")
+        return (f"## ⚽ Penalty Shootout\n"
+                f"Stake **{game.bet:,} UKPence**. Pick a corner and beat the keeper.\n"
+                f"-# Each goal lifts your multiplier (×1.25). If the keeper guesses your corner, "
+                f"you lose the lot — so cash out while you're ahead.")
     nxt = game.multiplier(game.goals + 1)
-    return (f"## ⚽ GOAL!  ({game.goals} scored) — {tag}\n"
+    return (f"## ⚽ GOAL!  ({game.goals} scored)\n"
             f"Now **{game.multiplier():.2f}×** → cash out **{game.current_payout():,} UKPence**.\n"
             f"-# Next goal → {nxt:.2f}× ({game.payout_for(game.goals + 1):,}). "
             f"Shoot again, or bank it while you're ahead.")
-
-
-def _difficulty_row(game: PenaltyGame) -> discord.ui.ActionRow:
-    row = discord.ui.ActionRow()
-    for key in ("easy", "pro", "legend"):
-        d = DIFFICULTY[key]
-        btn = discord.ui.Button(
-            style=discord.ButtonStyle.primary, label=d["label"], emoji=d["emoji"],
-            custom_id=f"penalty:{game.game_id}:diff:{key}")
-        btn.callback = _make_diff_cb(game, key)
-        row.add_item(btn)
-    return row
 
 
 def _aim_row(game: PenaltyGame) -> discord.ui.ActionRow:
@@ -315,7 +272,7 @@ def _controls_row(game: PenaltyGame) -> discord.ui.ActionRow:
             custom_id=f"penalty:{game.game_id}:again")
         again.callback = _make_again_cb(game)
         row.add_item(again)
-    elif game.state == "aiming":
+    else:                                       # aiming
         ready = game.goals >= 1
         cash = discord.ui.Button(
             style=discord.ButtonStyle.success, emoji="💰",
@@ -335,31 +292,17 @@ def _controls_row(game: PenaltyGame) -> discord.ui.ActionRow:
 def build_penalty_layout(game: PenaltyGame):
     """Return (view, files) for the current game state."""
     image = _render(game)
-    action_rows = []
-    if game.state == "choosing":
-        action_rows.append(_difficulty_row(game))
-    elif game.state == "aiming":
-        action_rows.append(_aim_row(game))
-    action_rows.append(_controls_row(game))
-
-    # build_layout takes a single action row; add the rest to the returned view directly.
-    view, files = build_layout(image, f"penalty_{game.game_id}.jpg", action_rows[0],
+    first_row = _aim_row(game) if game.state == "aiming" else _controls_row(game)
+    view, files = build_layout(image, f"penalty_{game.game_id}.jpg", first_row,
                                native_text=_native_text(game))
-    for extra in action_rows[1:]:
-        view.add_item(extra)
+    if game.state == "aiming":
+        view.add_item(_controls_row(game))
     return view, files
 
 
 # ---------------------------------------------------------------------------
 # Interaction handling
 # ---------------------------------------------------------------------------
-def _make_diff_cb(game: PenaltyGame, key: str):
-    async def _cb(interaction: Interaction):
-        with action_in_flight():
-            await _handle_choose(interaction, game, key)
-    return _cb
-
-
 def _make_kick_cb(game: PenaltyGame, spot: str):
     async def _cb(interaction: Interaction):
         with action_in_flight():
@@ -410,25 +353,6 @@ async def _rerender(interaction: Interaction, game: PenaltyGame):
             interaction.client.add_view(view, message_id=game.message_id)
         except Exception:
             logger.debug("Penalty add_view after refresh failed (non-fatal)", exc_info=True)
-
-
-async def _handle_choose(interaction: Interaction, game: PenaltyGame, key: str):
-    if _not_your_game(interaction, game):
-        await interaction.response.send_message(
-            "This isn't your game - start your own with `/penalty`.", ephemeral=True)
-        return
-    if game.busy or game.state != "choosing":
-        await interaction.response.defer()
-        return
-    game.busy = True
-    try:
-        if not game.choose(key):
-            await interaction.response.defer()
-            return
-        save_game(game)
-        await _rerender(interaction, game)
-    finally:
-        game.busy = False
 
 
 async def _handle_kick(interaction: Interaction, game: PenaltyGame, spot: str):
@@ -541,17 +465,17 @@ async def _show_rules(interaction: Interaction):
         "## ⚽ Penalty Shootout - House Rules\n"
         "Take up to **five** penalties against the Queen's Guard keeper. Each shot, pick a "
         "corner:\n\n"
-        "- The keeper dives the **wrong** way → **GOAL**, and your multiplier climbs.\n"
-        "- The keeper **reads your corner** → **SAVED**, and you lose the stake.\n"
+        "- The keeper dives to a **random** corner — he saves a fair **1 in 5** (20%), so you "
+        "score **80%** of the time.\n"
+        "- **GOAL** → your multiplier climbs **×1.25** a goal: 1.25× → 1.53× → 1.91× → 2.39× → "
+        "**2.99×** for a clean sheet.\n"
+        "- **SAVED** (keeper guesses your corner) → you lose the stake.\n"
         "- **Cash Out** after any goal to take **stake × multiplier**; **five from five** is a "
         "clean sheet at the top multiplier.\n\n"
-        "**Difficulty** sets how often the keeper guesses right:\n"
-        "🟢 **Easy** saves 20% → 1.25× a goal (up to ~2.99×)\n"
-        "🟠 **Pro** saves 40% → 1.67× a goal (up to ~12.6×)\n"
-        "🔴 **Legend** saves 60% → 2.50× a goal (up to ~95×)\n\n"
         f"- **Bets:** {min_bet:,} - {max_bet:,} UKPence{cap_str}. Stakes go to the house bank; "
         "wins are paid from it.\n\n"
-        "-# The house keeps a ~2% edge whatever you do. Good luck. 🇬🇧"
+        "-# The house keeps a flat ~2% edge whatever you do — cashing out early or chasing the "
+        "clean sheet has the same expected return. Good luck. 🇬🇧"
     )
     await interaction.response.send_message(rules, ephemeral=True)
 
@@ -632,7 +556,7 @@ def reattach_penalty_view(client, key, value):
         logger.error(f"Pruning malformed penalty entry {key}: {e}", exc_info=True)
         delete_state(key)
         return
-    if game.state not in ("choosing", "aiming"):
+    if game.state != "aiming":
         delete_state(key)
         return
     try:
