@@ -35,6 +35,7 @@ from commands.economy.blackjack import handle_blackjack_command
 from commands.economy.higher_lower import handle_higherlower_command
 from commands.economy.slots import handle_slots_command
 from commands.economy.mines import handle_mines_command
+from commands.economy.penalty import handle_penalty_command
 from commands.economy.video_poker import handle_videopoker_command
 from commands.economy.red_dog import handle_reddog_command
 from commands.economy.roulette import handle_roulette_command
@@ -526,6 +527,12 @@ def define_commands(tree, client):
         if await _require_casino_channel(interaction):
             return
         await handle_mines_command(interaction, amount)
+
+    @command("penalty", "Beat the keeper from the spot - score to build your multiplier (UKPence)")
+    async def penalty_command(interaction: Interaction, amount: app_commands.Range[int, 1]):
+        if await _require_casino_channel(interaction):
+            return
+        await handle_penalty_command(interaction, amount)
 
     @command("connect4", "Connect 4 for UKPence - challenge someone, or leave opponent blank to play the AI")
     async def connect4_command(interaction: Interaction, bet: app_commands.Range[int, 1],

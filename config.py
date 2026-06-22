@@ -88,6 +88,14 @@ MINES_MAX_WIN = 0             # payout ceiling; 0 = no cap (a lucky board pays t
                               # multiplier - if the bank can't cover it, credit_from_bank
                               # mints the win and logs CRITICAL; amend the supply after)
 
+# Penalty Shootout (commands/economy/penalty.py)
+PENALTY_ENABLED = True
+PENALTY_MIN_BET = 5
+PENALTY_MAX_BET = 5_000
+PENALTY_HOUSE_EDGE = 0.02     # fraction of the stake the house keeps (EV-constant)
+PENALTY_MAX_WIN = 50_000      # payout ceiling; 0 = no cap. Bounds the bank's exposure on the
+                              # Legend ladder (up to ~95x), which would otherwise dwarf a max bet.
+
 # One-time UKPence reward paid (from the bank) when a badge is earned, by rarity. A tier
 # set to 0 pays nothing. Used by the live grant hook and scripts/backfill_badge_rewards.py.
 BADGE_REWARDS = {"Bronze": 25, "Silver": 100, "Gold": 500, "Secret": 1000}
