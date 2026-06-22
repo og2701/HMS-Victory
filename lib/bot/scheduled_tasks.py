@@ -496,6 +496,12 @@ async def _purge_message_archive(client):
 
 
 def schedule_client_jobs(client, scheduler):
+    # Keep one headless Chrome warm for the whole process: pre-warms it ~15s after boot and
+    # recycles it for memory leaks in the background, so /rank and casino renders rarely cold-start.
+    from lib.core.image_processing import maintain_render_engine
+    scheduler.add_job(maintain_render_engine, IntervalTrigger(seconds=60), id="render_engine_keeper",
+                      name="Keep headless Chrome warm", next_run_time=discord.utils.utcnow() + timedelta(seconds=15))
+
     scheduler.add_job(_bond_maturity_tick, IntervalTrigger(minutes=2), args=[client], id="bond_maturity_job", name="Pay matured bonds")
     scheduler.add_job(_purge_message_archive, CronTrigger(hour=4, minute=30, timezone="Europe/London"), args=[client], id="purge_message_archive_job", name="Purge old message archive rows")
     scheduler.add_job(award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client], id="award_booster_bonus_job", name="Award Daily Booster UKPence & Log SOD Circulation")

@@ -55,12 +55,15 @@ chrome_options.add_argument("--incognito") # Don't persist session data to disk
 import time
 _browser = None
 _render_count = 0
-MAX_RENDERS_BEFORE_RESTART = 20  # restarting every 2 renders stalled the event loop
-                                 # constantly (chromedriver re-init), expiring button
-                                 # defers (10062) across the games. Idle-restart below
-                                 # still frees memory when quiet.
-MAX_IDLE_TIME_SECONDS = 180  # Shut down Chrome after 3 minutes of inactivity
-_last_render_time = 0
+_browser_started_at = 0.0
+# One headless Chrome stays warm for the whole bot process (torn down only when the process exits,
+# e.g. on a deploy restart). It is NOT shut down on idle; instead maintain_render_engine() recycles
+# it for memory leaks in the background, while no render is in flight, so /rank and the casino games
+# almost never pay a cold launch. These thresholds drive that background recycle.
+_RECYCLE_AFTER_RENDERS = 15      # background keeper recycles once this many renders have happened
+MAX_BROWSER_AGE_SECONDS = 1800   # ...or after 30 min of life (slow-leak backstop), if it rendered
+MAX_RENDERS_BEFORE_RESTART = 30  # inline hard cap get_browser uses (also set on a render failure
+                                 # to force a relaunch on the next call)
 _chromedriver_path = None  # resolved once, reused on every restart
 
 
@@ -100,52 +103,51 @@ def _sweep_chrome_tmp(max_age_seconds=60):
         logging.info(f"Swept {removed} leaked Chrome temp dir(s) from {tmp}.")
 
 
-def get_browser():
-    """Get the persistent browser instance, restarting it periodically to clear memory leaks."""
-    global _browser, _render_count, _last_render_time
-    
-    current_time = time.time()
-    idle_time = current_time - _last_render_time
-    
-    # Needs restart if: reached max renders, OR has been idle too long (but is currently running)
-    needs_restart = _render_count >= MAX_RENDERS_BEFORE_RESTART or (_browser is not None and idle_time > MAX_IDLE_TIME_SECONDS)
-    
-    if _browser is None or needs_restart:
-        if _browser is not None:
-            reason = f"reached {MAX_RENDERS_BEFORE_RESTART} renders" if _render_count >= MAX_RENDERS_BEFORE_RESTART else f"idle for {idle_time:.0f}s"
-            logging.info(f"Restarting headless Chrome engine ({reason}) to clear memory.")
-            try:
-                # Quit the driver cleanly to kill the underlying Chrome process
-                _browser.quit()
-            except Exception as e:
-                logging.warning(f"Error while quitting Chrome: {e}")
-            finally:
-                # GUARANTEE the reference is wiped so webdriver.Chrome() is forced to run again below
-                _browser = None
-                
-        # Fast disk cleanup of Chrome user data
-        if os.path.exists(user_data_dir):
-            shutil.rmtree(user_data_dir, ignore_errors=True)
-        os.makedirs(user_data_dir, exist_ok=True)
-        _sweep_chrome_tmp()   # also clear leaked /tmp Chrome temp dirs so the disk can't fill
-            
+def _launch_browser():
+    """Tear down any existing Chrome and start a fresh one. The caller MUST hold rendering_lock
+    (or otherwise guarantee no screenshot is in flight) so the browser is never quit mid-render."""
+    global _browser, _render_count, _browser_started_at
+
+    if _browser is not None:
+        logging.info("Recycling headless Chrome engine to clear memory.")
         try:
-            chrome_service = Service(_get_chromedriver_path())
-            _browser = webdriver.Chrome(service=chrome_service, options=chrome_options)
+            _browser.quit()   # kill the underlying Chrome process
         except Exception as e:
-            logging.warning(f"Failed to use ChromeDriverManager, falling back to default driver: {e}")
-            _browser = webdriver.Chrome(options=chrome_options)
-        
-        # Warm up Chrome so the first real render doesn't fail
-        try:
-            _browser.get("about:blank")
-        except Exception:
-            pass
-            
-        _render_count = 0
-        
+            logging.warning(f"Error while quitting Chrome: {e}")
+        finally:
+            _browser = None
+
+    # Fresh profile + clear leaked /tmp Chrome dirs so the disk can't fill
+    if os.path.exists(user_data_dir):
+        shutil.rmtree(user_data_dir, ignore_errors=True)
+    os.makedirs(user_data_dir, exist_ok=True)
+    _sweep_chrome_tmp()
+
+    try:
+        _browser = webdriver.Chrome(service=Service(_get_chromedriver_path()), options=chrome_options)
+    except Exception as e:
+        logging.warning(f"Failed to use ChromeDriverManager, falling back to default driver: {e}")
+        _browser = webdriver.Chrome(options=chrome_options)
+
+    try:
+        _browser.get("about:blank")   # warm up so the first real render doesn't fail
+    except Exception:
+        pass
+
+    _render_count = 0
+    _browser_started_at = time.time()
+    return _browser
+
+
+def get_browser():
+    """Return the live headless Chrome, launching it if it is down or has hit the inline render
+    cap. There is no idle shutdown: the engine is kept warm for the bot's whole life and recycled
+    for memory leaks in the background by maintain_render_engine(), so a user render rarely waits
+    on a launch."""
+    global _render_count
+    if _browser is None or _render_count >= MAX_RENDERS_BEFORE_RESTART:
+        _launch_browser()
     _render_count += 1
-    _last_render_time = time.time()
     return _browser
 
 def cleanup_browser():
@@ -164,6 +166,36 @@ atexit.register(cleanup_browser)
 
 # Global lock to prevent concurrent heavy image processing (critical for t3.micro)
 rendering_lock = asyncio.Semaphore(1)
+
+
+def _maintain_render_engine_sync():
+    """Pre-warm or leak-recycle the engine. Caller holds rendering_lock, so no render is in flight."""
+    if _browser is None:
+        _launch_browser()                       # pre-warm (just after boot, or after a crash)
+        return "warmed"
+    # Only recycle a browser that has actually rendered (leaks accumulate with use); a browser that
+    # is simply sitting idle at 0 renders is left warm rather than needlessly relaunched.
+    if _render_count >= _RECYCLE_AFTER_RENDERS or (
+            _render_count > 0 and (time.time() - _browser_started_at) > MAX_BROWSER_AGE_SECONDS):
+        _launch_browser()                       # proactive leak recycle, off the user path
+        return "recycled"
+    return None
+
+
+async def maintain_render_engine():
+    """Keep one headless Chrome warm for the bot's lifetime. Scheduled every ~60s: it pre-warms the
+    engine and recycles it for memory leaks HERE, in the background while no render is in flight, so
+    /rank and the casino games almost never pay a cold launch. Holding rendering_lock guarantees we
+    never quit a browser mid-screenshot (and a recycle only ever delays a render that arrives during
+    the ~2s relaunch, which would have paid that cost as a cold start anyway)."""
+    loop = asyncio.get_running_loop()
+    async with rendering_lock:
+        try:
+            result = await loop.run_in_executor(None, _maintain_render_engine_sync)
+            if result:
+                logging.info(f"Render engine {result} by the background keeper.")
+        except Exception:
+            logging.warning("Render engine keeper tick failed", exc_info=True)
 
 def trim_image(im: Image.Image, tolerance: int = 6) -> Image.Image:
     """Trim near-white margins from a rendered HTML screenshot."""
