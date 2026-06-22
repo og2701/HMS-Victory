@@ -955,6 +955,33 @@ async def on_message(client, message):
     if await handle_politics_control_command(client, message):
         return
 
+    # Staff warning command to deter political discussion in general chat.
+    trigger = message.content.lower().strip()
+    if trigger in ["polwarn", "!polwarn"]:
+        is_staff = hasattr(message.author, "roles") and any(
+            role.id in [ROLES.DEPUTY_PM, ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE, ROLES.PCSO]
+            for role in message.author.roles
+        )
+        if message.author.id == USERS.OGGERS or is_staff:
+            ref = message.reference
+            try:
+                await message.delete()
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+            
+            embed = discord.Embed(
+                title="🚫 Politics in General Chat",
+                description=(
+                    "We don't want political discussions on this server.\n\n"
+                    "General chat is kept strictly non-political to keep the environment relaxed. "
+                    "We do have a private politics channel, but it is restricted to active, established "
+                    "members to limit the drama. Please keep all political topics out of chat."
+                ),
+                color=0xE74C3C
+            )
+            await message.channel.send(embed=embed, reference=ref, mention_author=False)
+            return
+
     # oggers toggles the piggy-react feature on/off; the command message is removed.
     if message.author.id == USERS.OGGERS and message.content.lower().strip() == "piggyreact":
         try:
