@@ -97,8 +97,6 @@ def _format_line(row, client):
     content = (row["content"] or "").replace("\n", " ").strip()
     if not content and row["attachments"]:
         content = "(attachment only)"
-    if len(content) > 180:
-        content = content[:177] + "…"
     line = f"`{when}` **{who}**: {content}"
     if row["attachments"]:
         try:
@@ -129,14 +127,18 @@ async def handle_raw_bulk_delete(client, payload) -> None:
         header += f"\n-# {missing} message(s) predate the {RETENTION_DAYS}-day archive (or were bot messages) and can't be recovered."
 
     lines = [_format_line(r, client) for r in rows]
-    # Chunk into embeds (4096-char description cap); first embed carries the header.
+    # Chunk into embeds (4096-char description cap); first embed carries the header. A single
+    # message longer than the cap (rare, e.g. a ~4000-char Nitro post) is hard-split across pages
+    # so the whole thing is still logged rather than dropped or erroring the send.
+    LIMIT = 3900
     chunks, cur = [], header
     for line in lines:
-        if len(cur) + len(line) + 1 > 3900:
-            chunks.append(cur)
-            cur = line
-        else:
-            cur += "\n" + line
+        for piece in (line[i:i + LIMIT] for i in range(0, len(line), LIMIT)):
+            if cur and len(cur) + 1 + len(piece) > LIMIT:
+                chunks.append(cur)
+                cur = piece
+            else:
+                cur = piece if not cur else f"{cur}\n{piece}"
     chunks.append(cur)
     for i, desc in enumerate(chunks[:10]):
         embed = discord.Embed(
