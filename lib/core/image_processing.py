@@ -61,6 +61,18 @@ MAX_RENDERS_BEFORE_RESTART = 20  # restarting every 2 renders stalled the event 
                                  # still frees memory when quiet.
 MAX_IDLE_TIME_SECONDS = 180  # Shut down Chrome after 3 minutes of inactivity
 _last_render_time = 0
+_chromedriver_path = None  # resolved once, reused on every restart
+
+
+def _get_chromedriver_path():
+    """Resolve the chromedriver path once and cache it. ChromeDriverManager().install() does a
+    version check (and can hit the network / disk) every call - running it on every idle restart
+    was a chunk of the cold-start cost. Resolve it on the first launch only; later restarts reuse
+    the path. Falls back to a fresh resolve if the cached binary somehow goes missing."""
+    global _chromedriver_path
+    if _chromedriver_path is None or not os.path.exists(_chromedriver_path):
+        _chromedriver_path = ChromeDriverManager().install()
+    return _chromedriver_path
 
 
 def _sweep_chrome_tmp(max_age_seconds=60):
@@ -118,7 +130,7 @@ def get_browser():
         _sweep_chrome_tmp()   # also clear leaked /tmp Chrome temp dirs so the disk can't fill
             
         try:
-            chrome_service = Service(ChromeDriverManager().install())
+            chrome_service = Service(_get_chromedriver_path())
             _browser = webdriver.Chrome(service=chrome_service, options=chrome_options)
         except Exception as e:
             logging.warning(f"Failed to use ChromeDriverManager, falling back to default driver: {e}")
