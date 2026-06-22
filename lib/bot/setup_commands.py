@@ -282,6 +282,11 @@ def define_commands(tree, client):
     #         embed.set_footer(text=f"by {interaction.user.display_name}")
     #         await interaction.response.send_message(embed=embed)
 
+    @command("bets", "See every open prediction and your bet on each (side, stake, potential return)")
+    async def bets_command(interaction: Interaction):
+        from commands.economy.bets_dashboard import open_bets_dashboard
+        await open_bets_dashboard(interaction)
+
     @command("pred-create", "Create a UKPence prediction (2-5 outcomes)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
     async def pred_create(interaction: Interaction, options: app_commands.Range[int, 2, 5] = 2):
         # Opens a modal: two outcome boxes for a 2-way prediction, or one
