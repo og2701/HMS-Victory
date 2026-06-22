@@ -579,6 +579,7 @@ async def apply_inactivity_tax(client):
     try:
         from database import DatabaseManager
         import time
+        import config
         
         now = int(time.time())
         limit = now - (60 * 24 * 60 * 60) # 60 days
@@ -603,10 +604,12 @@ async def apply_inactivity_tax(client):
         
         _tax_now = int(datetime.now(pytz.utc).timestamp())
         taxed = []  # (uid, tax_amount, new_balance) for the statement ledger
+        rate = float(getattr(config, "INACTIVITY_TAX_RATE", 0.20))
         with DatabaseManager.locked_connection() as conn:
             c = conn.cursor()
             for uid, balance in dormant_users:
-                tax_amount = int(balance * 0.05)
+                tax_amount = int(balance * rate)
+
                 if tax_amount > 0:
                     c.execute("UPDATE ukpence SET balance = balance - ? WHERE user_id = ?", (tax_amount, uid))
                     # keep the balance graph accurate: this path bypasses remove_amount

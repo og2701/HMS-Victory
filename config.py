@@ -114,7 +114,9 @@ BENEFITS_BAN_RAMP = [1, 3, 7, 14]   # benefits-fraud cooldown (days), ramps per 
 # excess above the threshold is ever charged, so normal players never feel it.
 WEALTH_DEMURRAGE_ENABLED = True
 WEALTH_DEMURRAGE_THRESHOLD = 20000   # only balance above this is charged
-WEALTH_DEMURRAGE_RATE = 0.01         # fraction of the excess taken per weekly run (1%)
+WEALTH_DEMURRAGE_RATE = 0.05         # fraction of the excess taken per weekly run (5%)
+INACTIVITY_TAX_RATE = 0.20           # fraction of total balance taken per weekly run (20%)
+
 
 HOF_REWARD = 100                  # UKP DM'd to a message's author on Hall of Fame entry
 TICKET_REWARD = 100               # UKP a staff member can grant a ticket's opener
