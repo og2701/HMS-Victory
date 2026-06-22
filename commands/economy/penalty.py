@@ -3,11 +3,11 @@
 You take up to five penalties against a Queen's Guard keeper. Pick a corner each shot: if the
 keeper dives the wrong way it's a GOAL and your multiplier climbs; if he guesses your corner he
 SAVES it and the stake is lost. Cash out after any goal to bank ``stake x multiplier``. Five from
-five is a clean sheet at the top multiplier.
+five wins the top multiplier.
 
 The keeper is honest - he dives to a random one of the five corners, so he saves a true 1/5 (20%)
-and you score 80% of the time. That fixes the ladder: 1.25x a goal, up to ~2.99x for a clean
-sheet. It's a high-hit-rate, low-variance game by design (the counterweight to Mines).
+and you score 80% of the time. That fixes the ladder: 1.25x a goal, up to ~2.99x for all five.
+It's a high-hit-rate, low-variance game by design (the counterweight to Mines).
 
 Money flow (mirrors the other casino games; the fixed 800k UKP supply is conserved):
     • Stake:  remove_bb(uid, bet)   - to_bank=True, the stake enters the house bank.
@@ -50,7 +50,7 @@ MAX_GOALS = 5
 _BLUE = discord.Colour(0x00247D)     # round 1, yet to shoot
 _GREEN = discord.Colour(0x2ECC71)    # goal / cashed out
 _RED = discord.Colour(0xE74C3C)      # saved
-_GOLD = discord.Colour(0xF1C40F)     # clean sheet
+_GOLD = discord.Colour(0xF1C40F)     # five from five
 
 # --- image compositing ---------------------------------------------------------
 _ASSET_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -170,7 +170,7 @@ class PenaltyGame:
 
     # --- transitions ---
     def kick(self, spot) -> str:
-        """Take a penalty at `spot`. Returns 'goal' | 'save' | 'cleansheet' | 'ignore'."""
+        """Take a penalty at `spot`. Returns 'goal' | 'save' | 'perfect' | 'ignore'."""
         if self.state != "aiming" or spot not in SPOTS:
             return "ignore"
         self.last_kick = spot
@@ -180,7 +180,7 @@ class PenaltyGame:
             self.goals += 1
             if self.goals >= MAX_GOALS:
                 self.cash_out()
-                return "cleansheet"
+                return "perfect"
             return "goal"
         # keeper guessed the corner
         self.last_result = "save"
@@ -232,7 +232,7 @@ def _embed_head(game: PenaltyGame):
         if game.outcome == "lose":
             return _RED, f"🧤 SAVED!  ·  {game.goals}/5 scored"
         if game.goals >= MAX_GOALS:
-            return _GOLD, "🏆 CLEAN SHEET!  ·  5 of 5"
+            return _GOLD, "🏆 FIVE FROM FIVE!"
         return _GREEN, f"💰 Cashed Out  ·  {game.goals}/5 scored"
     if game.goals == 0:
         return _BLUE, "⚽ Penalty Shootout  ·  Round 1 of 5"
@@ -376,12 +376,12 @@ async def _handle_kick(interaction: Interaction, game: PenaltyGame, spot: str):
         if result == "ignore":
             await interaction.response.defer()
             return
-        if result in ("save", "cleansheet"):
+        if result in ("save", "perfect"):
             # Terminal. Drop the persisted board BEFORE paying so we never leave a paid,
             # resumable game that could re-mint on the next boot.
             delete_state(game.message_id)
-            if result == "cleansheet":
-                credit_from_bank(game.player_id, game.payout, reason="Penalty clean sheet")
+            if result == "perfect":
+                credit_from_bank(game.player_id, game.payout, reason="Penalty five from five")
                 record_result(game.player_id, "penalty", game.bet, game.bet, game.payout, "win")
             else:
                 record_result(game.player_id, "penalty", game.bet, game.bet, 0, "lose")
@@ -473,7 +473,7 @@ async def _show_rules(interaction: Interaction):
         "multiplier.\n"
         "- Guess wrong and he saves it, and your stake is gone.\n"
         "- **Cash Out** after any goal to take your winnings, or push your luck for more.\n"
-        "- Slot all five for a clean sheet and the top prize.\n\n"
+        "- Slot all five for the top prize.\n\n"
         f"Bets **{min_bet:,}** to **{max_bet:,}** UKPence. Good luck. 🇬🇧"
     )
     await interaction.response.send_message(rules, ephemeral=True)

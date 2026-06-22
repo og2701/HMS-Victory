@@ -91,7 +91,7 @@ MINES_MAX_WIN = 0             # payout ceiling; 0 = no cap (a lucky board pays t
 # Penalty Shootout (commands/economy/penalty.py)
 PENALTY_ENABLED = True
 PENALTY_MIN_BET = 5
-PENALTY_MAX_BET = 5_000
+PENALTY_MAX_BET = 1_000
 PENALTY_HOUSE_EDGE = 0.02     # fraction of the stake the house keeps (EV-constant)
 PENALTY_SCORE_PROB = 0.80     # P(score) per shot = an honest keeper saving a fair 1/5 of corners.
                               # Sets the ladder: 1.25x a goal, up to ~2.99x for a clean sheet.
