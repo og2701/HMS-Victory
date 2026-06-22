@@ -72,12 +72,14 @@ class BetsDashboardView(discord.ui.LayoutView):
         now = time.time()
         live = self._live()
         open_n = sum(1 for p in live if not p.locked)
-        mine_n = sum(1 for p in live if self._my(p)[0] is not None)
+        mine = [p for p in live if self._my(p)[0] is not None]
+        mine_locked = sum(1 for p in mine if p.locked)
+        in_note = f"**{len(mine)}**" + (f" ({mine_locked} locked)" if mine_locked else "")
 
         header = discord.ui.Container(accent_colour=_BLUE)
         header.add_item(discord.ui.TextDisplay(
             "## 📊 Your Bets\n"
-            f"-# **{open_n}** open · you're in **{mine_n}** · 💰 **{get_bb(self.user_id):,}** UKP · "
+            f"-# **{open_n}** open · you're in {in_note} · 💰 **{get_bb(self.user_id):,}** UKP · "
             f"filter: **{_FILTER_LABEL[self.filter]}**"))
         self.add_item(header)
         self.add_item(discord.ui.ActionRow(*self._filter_buttons()))
