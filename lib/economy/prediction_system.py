@@ -736,6 +736,50 @@ class PredSelectView(discord.ui.View):
         await interaction.response.edit_message(content=f"Managing: **{p.title}**", view=view)
 
 
+class ConfirmResolveView(discord.ui.View):
+    def __init__(self, admin_view: "PredAdminView", side: int, option_label: str):
+        super().__init__(timeout=60)
+        self.admin_view = admin_view
+        self.side = side
+        self.option_label = option_label
+
+    @discord.ui.button(label="Yes, Resolve", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(content=f"⏳ Settling prediction with **{self.option_label}**...", view=None)
+        await self.admin_view._resolve(interaction, self.side, already_deferred=True)
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(content=f"Managing: **{self.admin_view.pred.title}**", view=self.admin_view)
+        self.stop()
+
+
+class ConfirmDrawView(discord.ui.View):
+    def __init__(self, admin_view: "PredAdminView"):
+        super().__init__(timeout=60)
+        self.admin_view = admin_view
+
+    @discord.ui.button(label="Yes, Draw", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(content="⏳ Settling prediction as a **Draw** (refunding)...", view=None)
+        await self.admin_view._draw_confirmed(interaction)
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(content=f"Managing: **{self.admin_view.pred.title}**", view=self.admin_view)
+        self.stop()
+
+
 class PredAdminView(discord.ui.View):
     def __init__(self, pred: Prediction, client: discord.Client):
         super().__init__(timeout=600)
@@ -756,7 +800,13 @@ class PredAdminView(discord.ui.View):
 
     def _make_resolve_cb(self, side: int):
         async def _cb(interaction: discord.Interaction):
-            await self._resolve(interaction, side)
+            opt = self.pred.options[side - 1]
+            confirm_view = ConfirmResolveView(self, side, opt)
+            await interaction.response.edit_message(
+                content=f"⚠️ **Are you sure** you want to resolve this prediction?\n"
+                        f"Winner: **{opt}**",
+                view=confirm_view
+            )
         return _cb
 
     @discord.ui.button(label="Lock", style=discord.ButtonStyle.danger, row=0)
@@ -795,21 +845,22 @@ class PredAdminView(discord.ui.View):
 
     @discord.ui.button(label="Draw", style=discord.ButtonStyle.secondary, row=0)
     async def draw(self, interaction: discord.Interaction, _btn: discord.ui.Button):
-        # Same idempotency claim as _resolve: pop synchronously before any await so
-        # a double-click can't refund every bettor twice (which would mint UKP).
+        confirm_view = ConfirmDrawView(self)
+        await interaction.response.edit_message(
+            content="⚠️ **Are you sure** you want to declare this prediction a **Draw** (all bets will be refunded)?",
+            view=confirm_view
+        )
+
+    async def _draw_confirmed(self, interaction: discord.Interaction):
         if self.pred.msg_id not in self.client.predictions:
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 "This prediction has already been resolved.", ephemeral=True
             )
         self.client.predictions.pop(self.pred.msg_id, None)
         self.pred.locked = True
-        await interaction.response.defer(ephemeral=True)
         for side, pool in self.pred.bets.items():
             for uid, amt in pool.items():
-                # Bets were banked when staked (remove_bb to_bank=True), so refund from bank is correct
                 add_bb(uid, amt, reason=f"Prediction refund (Draw): {self.pred.title[:50]}", taxable=False)
-        # Keep the bet amounts on display (don't zero them) and mark it drawn so the
-        # re-rendered message shows what everyone had staked + that it was refunded.
         self.pred.drawn = True
         try:
             msg = await _fetch_pred_message(interaction, self.pred, self.client)
@@ -817,25 +868,26 @@ class PredAdminView(discord.ui.View):
         except discord.NotFound:
             pass
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
-        await interaction.followup.send("🟡 Draw called - all bets refunded.", ephemeral=True)
+        try:
+            await interaction.followup.edit_message(message_id="@original", content="✅ Settle complete. Result was a **Draw** (all bets refunded).", view=None)
+        except discord.NotFound:
+            pass
         self.stop()
 
-    async def _resolve(self, interaction: discord.Interaction, winner: int):
-        # Idempotency guard. Claiming the prediction (the pop below) happens
-        # synchronously before any await, so a double-click - or two open admin
-        # panels sharing this Prediction - cannot both pay out: the second
-        # invocation finds it already gone from the live registry and bails.
+    async def _resolve(self, interaction: discord.Interaction, winner: int, already_deferred: bool = False):
         if self.pred.msg_id not in self.client.predictions:
-            return await interaction.response.send_message(
-                "This prediction has already been resolved.", ephemeral=True
-            )
+            if already_deferred:
+                return await interaction.followup.send("This prediction has already been resolved.", ephemeral=True)
+            else:
+                return await interaction.response.send_message(
+                    "This prediction has already been resolved.", ephemeral=True
+                )
         self.client.predictions.pop(self.pred.msg_id, None)
         self.pred.locked = True
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
 
-        # Defer now (big pools can take >3s to pay out, which would otherwise
-        # surface as "interaction failed").
-        await interaction.response.defer(ephemeral=True)
+        if not already_deferred:
+            await interaction.response.defer(ephemeral=True)
 
         payouts = self.pred.resolve(winner)
         win_side = self.pred.options[winner - 1]
@@ -919,9 +971,12 @@ class PredAdminView(discord.ui.View):
 
         asyncio.create_task(award_streaks())
 
-        # We deferred at the top, so the admin panel response is a followup.
+        # We deferred at the top or edited the original message, so update the admin panel.
         try:
-            await interaction.followup.send("✅ Resolved & paid out.", ephemeral=True)
+            if already_deferred:
+                await interaction.followup.edit_message(message_id="@original", content=f"✅ Settle complete. Winner: **{win_side}**", view=None)
+            else:
+                await interaction.followup.send("✅ Resolved & paid out.", ephemeral=True)
         except discord.NotFound:
             pass  # Admin interaction might be old/invalid too
         self.stop()
