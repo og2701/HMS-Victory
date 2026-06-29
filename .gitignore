@@ -20,4 +20,7 @@ data/iceberg_cache.png
 data/slots_results/
 .chrome_data/
 scripts-local/
+.agents/
+scratch/
+
 
