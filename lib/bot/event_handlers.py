@@ -926,6 +926,22 @@ async def on_message(client, message):
     if await handle_hate_speech_message(client, message):
         return
 
+    # New-member welcome rewards. The join "X joined" system message is always captured
+    # (cheap type check); for normal messages we only do work while a welcome window is
+    # open, and fire-and-forget so it never blocks the rest of on_message.
+    try:
+        from lib.features.ukp_rewards import (
+            note_join_system_message,
+            handle_welcome_reward,
+            welcome_window_open,
+        )
+        if message.type == discord.MessageType.new_member:
+            note_join_system_message(message)
+        elif welcome_window_open() and not message.author.bot:
+            asyncio.create_task(handle_welcome_reward(client, message))
+    except Exception:
+        logger.debug("welcome reward hook failed", exc_info=True)
+
     # Battleship threads are "pseudo-locked": real locking blocks button interactions, so any
     # message posted there by anyone other than the bot (chat, or Fletcher's auto-summon) is
     # deleted to keep the board + ephemerals clean.
@@ -1262,6 +1278,12 @@ async def on_interaction(interaction: Interaction):
 async def on_member_join(member):
     try:
         await handle_new_member_anti_raid(member)
+        # Open the welcome window so members who greet this newcomer can earn UKPence.
+        try:
+            from lib.features.ukp_rewards import register_new_member_join
+            register_new_member_join(member)
+        except Exception:
+            logger.debug("register_new_member_join failed", exc_info=True)
         role = member.guild.get_role(ROLES.MEMBER)
         if role:
             await member.add_roles(role)

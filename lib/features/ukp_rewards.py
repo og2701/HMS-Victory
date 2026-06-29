@@ -218,6 +218,190 @@ async def handle_bump_reward(client, message):
 
 
 # ---------------------------------------------------------------------------
+# Welcoming a new member
+# ---------------------------------------------------------------------------
+# When someone joins we open a short "welcome window". The first WELCOME_MAX_WELCOMERS
+# members who greet that newcomer inside the window each earn WELCOME_REWARD. A greeting
+# is any of:
+#   - replying to Discord's "Glad you're here, X" join system message,
+#   - @mentioning the newcomer,
+#   - posting a welcome-worded message in the join channel (the loose, fallback signal).
+# One payout per (welcomer -> newcomer) pair; self-welcomes and bots don't count.
+#
+# State (config.WELCOME_TRACKING_FILE), keyed by newcomer id:
+#   {"joined_at": epoch, "system_msg_id": int|None, "channel_id": int|None, "welcomers": [ids]}
+#
+# An in-memory window gate (_welcome_window_until) keeps the per-message path free when no
+# one has joined recently; it resets on restart, which only means welcome windows open
+# during downtime are dropped (the bot couldn't have paid them out then anyway).
+_WELCOME_RE = re.compile(
+    r"\bwelcome\b|\bwelcom\b|\bwelc\b|\bwlcm\b|\bwlc\b|\bwilkommen\b|"
+    r"glad (?:you|u)(?:'?re| are)?(?: here| with us| to)|good to have (?:you|u)|"
+    r"enjoy your stay|welcome aboard|welcome to the (?:server|sub|community)",
+    re.IGNORECASE,
+)
+
+_welcome_window_until = 0.0  # epoch until which at least one welcome window is open
+
+
+def _welcome_window_secs() -> int:
+    return int(getattr(config, "WELCOME_WINDOW_MINUTES", 15)) * 60
+
+
+def _extend_welcome_window() -> None:
+    global _welcome_window_until
+    _welcome_window_until = max(_welcome_window_until, time.time() + _welcome_window_secs())
+
+
+def welcome_window_open() -> bool:
+    """Cheap in-memory gate so on_message only does work shortly after a join."""
+    return time.time() < _welcome_window_until
+
+
+def _prune_welcome_store(store: dict) -> dict:
+    cutoff = int(time.time()) - _welcome_window_secs()
+    return {k: v for k, v in store.items()
+            if isinstance(v, dict) and v.get("joined_at", 0) >= cutoff}
+
+
+def register_new_member_join(member) -> None:
+    """Open a welcome window for a newly joined member. Called from on_member_join.
+    Preserves a record the join system message may already have created (event ordering)."""
+    try:
+        if getattr(member, "bot", False):
+            return
+        store = _prune_welcome_store(load_json_file(config.WELCOME_TRACKING_FILE) or {})
+        prev = store.get(str(member.id)) or {}
+        store[str(member.id)] = {
+            "joined_at": int(time.time()),
+            "system_msg_id": prev.get("system_msg_id"),
+            "channel_id": prev.get("channel_id"),
+            "welcomers": prev.get("welcomers", []),
+        }
+        save_json_file(config.WELCOME_TRACKING_FILE, store)
+        _extend_welcome_window()
+    except Exception:
+        log.debug("register_new_member_join failed", exc_info=True)
+
+
+def note_join_system_message(message) -> bool:
+    """Record the id of Discord's auto 'X joined' system message so replies to it can be
+    matched to the newcomer. Returns True if this was a join system message (so the caller
+    can skip the welcome-reward path for it). Creates the record if the join event hasn't
+    landed yet, so it works regardless of which arrives first."""
+    try:
+        if message.type != discord.MessageType.new_member:
+            return False
+        store = _prune_welcome_store(load_json_file(config.WELCOME_TRACKING_FILE) or {})
+        nid = str(message.author.id)
+        rec = store.get(nid) or {"joined_at": int(time.time()), "welcomers": []}
+        rec["system_msg_id"] = message.id
+        rec["channel_id"] = message.channel.id
+        rec.setdefault("joined_at", int(time.time()))
+        rec.setdefault("welcomers", [])
+        store[nid] = rec
+        save_json_file(config.WELCOME_TRACKING_FILE, store)
+        _extend_welcome_window()
+    except Exception:
+        log.debug("note_join_system_message failed", exc_info=True)
+    return True
+
+
+def _welcome_targets(message, store: dict) -> set:
+    """Which pending newcomer ids (as strings) this message welcomes."""
+    targets = set()
+
+    # Reply to the join system message (or directly to the newcomer's own message).
+    ref = message.reference
+    if ref is not None:
+        ref_id = getattr(ref, "message_id", None)
+        if ref_id is not None:
+            for nid, rec in store.items():
+                if rec.get("system_msg_id") == ref_id:
+                    targets.add(nid)
+        resolved = getattr(ref, "resolved", None)
+        if isinstance(resolved, discord.Message) and resolved.author and str(resolved.author.id) in store:
+            targets.add(str(resolved.author.id))
+
+    # @mention of a pending newcomer - mentioning a brand-new member is itself a welcome.
+    for u in message.mentions:
+        if str(u.id) in store:
+            targets.add(str(u.id))
+
+    # Loose fallback: a welcome-worded message in the join channel, with no explicit target.
+    # Attributed to the most recently joined pending newcomer.
+    if not targets and message.content and _WELCOME_RE.search(message.content):
+        general = getattr(getattr(config, "CHANNELS", None), "GENERAL", 0)
+        in_join_channel = message.channel.id == general or any(
+            rec.get("channel_id") == message.channel.id for rec in store.values()
+        )
+        if in_join_channel:
+            newest = max(store.items(), key=lambda kv: kv[1].get("joined_at", 0))
+            targets.add(newest[0])
+
+    return targets
+
+
+async def handle_welcome_reward(client, message) -> None:
+    """Pay the first WELCOME_MAX_WELCOMERS members who welcome a newcomer in the window."""
+    try:
+        if message.guild is None or message.author is None or getattr(message.author, "bot", False):
+            return
+
+        store = _prune_welcome_store(load_json_file(config.WELCOME_TRACKING_FILE) or {})
+        if not store:
+            return
+
+        targets = _welcome_targets(message, store)
+        if not targets:
+            return
+
+        welcomer = message.author
+        amount = int(getattr(config, "WELCOME_REWARD", 20))
+        cap = int(getattr(config, "WELCOME_MAX_WELCOMERS", 5))
+
+        # Critical section: load -> check -> pay -> save with NO await in between, so two
+        # near-simultaneous welcome messages can't both slip past the cap or double-pay
+        # (asyncio is single-threaded; without an await this runs atomically). _pay/add_bb
+        # are synchronous; the channel send + bookkeeping happen afterwards.
+        paid_for = 0
+        for nid in targets:
+            rec = store.get(nid)
+            if rec is None or str(welcomer.id) == nid:
+                continue  # no record, or you can't welcome yourself
+            welcomers = rec.setdefault("welcomers", [])
+            if welcomer.id in welcomers or len(welcomers) >= cap:
+                continue  # already paid for this newcomer, or its pot is used up
+            if not _pay(welcomer.id, amount, "Welcomed a new member"):
+                continue
+            welcomers.append(welcomer.id)
+            paid_for += 1
+        if not paid_for:
+            return
+        save_json_file(config.WELCOME_TRACKING_FILE, store)
+
+        total = amount * paid_for
+        try:
+            who = "a new member" if paid_for == 1 else f"{paid_for} new members"
+            await message.channel.send(
+                f"\U0001F44B <@{welcomer.id}> earned **{total:,} UKPence** for welcoming {who}!",
+                allowed_mentions=discord.AllowedMentions(users=True),
+                delete_after=600,  # self-destruct after 10 minutes to keep chat tidy
+            )
+        except Exception:
+            log.debug("welcome reward message failed", exc_info=True)
+
+        try:
+            from lib.features.income_badges import record_income_source, bump_daily_income
+            bump_daily_income("welcome_total", total)
+            await record_income_source(client, welcomer.id, "welcome")
+        except Exception:
+            log.debug("welcome reward bookkeeping failed", exc_info=True)
+    except Exception:
+        log.error("handle_welcome_reward failed", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
 # /benefits
 # ---------------------------------------------------------------------------
 _BENEFITS_SUCCESS = [

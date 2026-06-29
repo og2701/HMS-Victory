@@ -132,6 +132,9 @@ HOF_REWARD = 100                  # UKP DM'd to a message's author on Hall of Fa
 TICKET_REWARD = 100               # UKP a staff member can grant a ticket's opener
 DISBOARD_BOT_ID = 302050872383242240   # DISBOARD: the /bump bot
 BUMP_REWARD = 50                  # UKP for the member who bumps the server on DISBOARD (max once per ~2h, DISBOARD's own cooldown)
+WELCOME_REWARD = 20               # UKP for welcoming a new member (reply to the join message, @mention them, or post a welcome shortly after they join)
+WELCOME_WINDOW_MINUTES = 15       # how long after a join a welcome still pays out
+WELCOME_MAX_WELCOMERS = 5         # only the first N welcomers per newcomer are paid (stops a join wave being farmed)
 # Channels whose messages can't enter the Hall of Fame (announcements etc. always get a
 # lot of reactions but aren't organic HoF-worthy posts). Bot/webhook and Discord
 # announcement-type channels are also excluded automatically in the HoF check.
@@ -185,6 +188,7 @@ XP_FILE = os.path.join(JSON_DATA_DIR, "chat_leaderboard.json")
 ECONOMY_METRICS_FILE = os.path.join(JSON_DATA_DIR, "economy_metrics.json")
 TREE_WATER_FILE = os.path.join(JSON_DATA_DIR, "tree_water_rewards.json")
 BUMP_REWARD_FILE = os.path.join(JSON_DATA_DIR, "bump_rewards.json")
+WELCOME_TRACKING_FILE = os.path.join(JSON_DATA_DIR, "welcome_tracking.json")  # pending newcomers + who's already been paid for welcoming them
 BENEFITS_FILE = os.path.join(JSON_DATA_DIR, "benefits_claims.json")
 HOF_REWARD_CLAIMS_FILE = os.path.join(JSON_DATA_DIR, "hof_reward_claims.json")  # last UK day each user earned HoF UKP
 EARNED_SOURCES_FILE = os.path.join(JSON_DATA_DIR, "earned_sources.json")
