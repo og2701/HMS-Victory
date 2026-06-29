@@ -93,7 +93,7 @@ MINES_MAX_WIN = 0             # payout ceiling; 0 = no cap (a lucky board pays t
 # and the whole stake is lost. Each upgrade carries a flat CHEST_HOUSE_EDGE, so the success
 # odds are DERIVED from the multipliers below - every push is equally house-favoured, so there
 # is no exploitable stopping point (the edge is the same wherever the player cashes out).
-CHEST_ENABLED = True
+CHEST_ENABLED = False
 CHEST_MIN_BET = 5
 CHEST_MAX_BET = 1_000
 CHEST_HOUSE_EDGE = 0.05       # flat edge per upgrade; odds are computed from this + multipliers

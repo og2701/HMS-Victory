@@ -21,12 +21,15 @@ The board is a Components V2 LayoutView: a status panel plus an Upgrade / Cash O
 control row. In-play games are persisted by message id and re-registered on restart
 (reattach_chest_view); terminal boards are dropped.
 """
+import io
+import os
 import uuid
 import random
 import logging
 
 import discord
 from discord import Interaction
+from PIL import Image
 
 import config
 from lib.economy.economy_manager import get_bb, remove_bb
@@ -160,7 +163,50 @@ def save_game(game: ChestGame):
 
 
 # ---------------------------------------------------------------------------
-# Rendering (Components V2: status panel + Upgrade / Cash Out / Rules)
+# Chest art (data/chest/<tier>.png + shattered.png; downscaled + cached once).
+# Transparent PNGs that float on the message background. Missing/unreadable art falls
+# back silently to the text-only panel.
+# ---------------------------------------------------------------------------
+_ASSET_DIR = os.path.join("data", "chest")
+_ASSET_PX = 320                      # board display size; source art is 1024² transparent PNG
+_asset_cache = {}                    # name -> PNG bytes | None (None = missing/failed)
+
+
+def _asset_bytes(name: str):
+    """Load data/chest/<name>.png, downscale to _ASSET_PX and cache the PNG bytes (the source
+    art is ~1.3 MB each - far too heavy to re-upload on every click). Returns None (cached) if
+    the file is missing/unreadable so the board falls back to the text panel."""
+    if name in _asset_cache:
+        return _asset_cache[name]
+    data = None
+    path = os.path.join(_ASSET_DIR, f"{name}.png")
+    try:
+        if os.path.exists(path):
+            with Image.open(path) as im:
+                im = im.convert("RGBA")
+                im.thumbnail((_ASSET_PX, _ASSET_PX), Image.LANCZOS)
+                buf = io.BytesIO()
+                im.save(buf, format="PNG")
+                data = buf.getvalue()
+    except Exception:
+        logger.debug("chest asset load failed: %s", name, exc_info=True)
+        data = None
+    _asset_cache[name] = data
+    return data
+
+
+def _board_image(game: "ChestGame"):
+    """(png_bytes | None, filename) for the current board: the held chest's art, or the
+    shattered chest on a loss."""
+    if game.state == "over" and game.outcome == "lose":
+        name = "shattered"
+    else:
+        name = str(_tiers()[game.tier][0]).lower()
+    return _asset_bytes(name), "chest.png"
+
+
+# ---------------------------------------------------------------------------
+# Rendering (Components V2: chest art + status panel + Upgrade / Cash Out / Rules)
 # ---------------------------------------------------------------------------
 def _tier_label(tier: int) -> str:
     name, emoji, _ = _tiers()[tier]
@@ -241,8 +287,17 @@ def _again_button(game: ChestGame) -> discord.ui.Button:
     return btn
 
 
-def build_chest_layout(game: ChestGame) -> discord.ui.LayoutView:
+def build_chest_layout(game: ChestGame):
+    """Return (view, files). The chest art (if present) goes in a MediaGallery above the
+    status panel; files must be re-sent on every edit (attachments=files)."""
     view = discord.ui.LayoutView(timeout=None)
+    files = []
+    img_bytes, fname = _board_image(game)
+    if img_bytes is not None:
+        files = [discord.File(io.BytesIO(img_bytes), filename=fname)]
+        gallery = discord.ui.MediaGallery()
+        gallery.add_item(media=f"attachment://{fname}")
+        view.add_item(gallery)
     box = discord.ui.Container(accent_colour=ACCENT)
     box.add_item(discord.ui.TextDisplay(_status_text(game)))
     view.add_item(box)
@@ -254,7 +309,7 @@ def build_chest_layout(game: ChestGame) -> discord.ui.LayoutView:
         controls.add_item(_cash_button(game))
     controls.add_item(_rules_button(game))
     view.add_item(controls)
-    return view
+    return view, files
 
 
 # ---------------------------------------------------------------------------
@@ -281,15 +336,16 @@ def _make_again_cb(old_game: ChestGame):
     return _cb
 
 
-async def _safe_edit_board(interaction: Interaction, view) -> bool:
-    """Refresh the board, surviving a dead interaction token (mirrors mines._safe_edit_board)."""
+async def _safe_edit_board(interaction: Interaction, view, files) -> bool:
+    """Refresh the board, surviving a dead interaction token (mirrors mines._safe_edit_board).
+    Passes attachments=files so the chest image swaps as the tier changes."""
     try:
-        await interaction.response.edit_message(view=view)
+        await interaction.response.edit_message(view=view, attachments=files)
         return True
     except (discord.NotFound, discord.InteractionResponded):
         try:
             if interaction.message is not None:
-                await interaction.message.edit(view=view)
+                await interaction.message.edit(view=view, attachments=files)
                 return True
         except discord.HTTPException:
             logger.debug("Chest board fallback edit failed", exc_info=True)
@@ -299,8 +355,8 @@ async def _safe_edit_board(interaction: Interaction, view) -> bool:
 
 
 async def _rerender(interaction: Interaction, game: ChestGame):
-    view = build_chest_layout(game)
-    await _safe_edit_board(interaction, view)
+    view, files = build_chest_layout(game)
+    await _safe_edit_board(interaction, view, files)
     # Re-register routing for the freshly-built view (keeps Rules / Play Again live once
     # the board is terminal). The view always reflects current state, so never stale.
     if game.message_id is not None:
@@ -401,8 +457,8 @@ async def _handle_again(interaction: Interaction, old_game: ChestGame):
 
     new_game = ChestGame.new(old_game.player_id, old_game.player_name, old_game.channel_id, bet)
     new_game.message_id = old_game.message_id
-    view = build_chest_layout(new_game)
-    if not await _safe_edit_board(interaction, view):
+    view, files = build_chest_layout(new_game)
+    if not await _safe_edit_board(interaction, view, files):
         logger.error("Chest replay failed before showing the new board; refunding stake.")
         credit_from_bank(old_game.player_id, bet, "Chest stake refund (replay failed)")
         old_game.replayed = False
@@ -484,8 +540,8 @@ async def handle_chest_command(interaction: Interaction, amount: int):
     try:
         await interaction.response.defer(thinking=True)
         game = ChestGame.new(interaction.user.id, name, interaction.channel_id, amount)
-        view = build_chest_layout(game)
-        msg = await interaction.followup.send(view=view)
+        view, files = build_chest_layout(game)
+        msg = await interaction.followup.send(view=view, files=files)
     except Exception:
         logger.error("Chest deal failed; refunding stake.", exc_info=True)
         credit_from_bank(interaction.user.id, amount, "Chest stake refund (deal failed)")
@@ -526,7 +582,7 @@ def reattach_chest_view(client, key, value):
         return
     try:
         game.message_id = int(key)
-        view = build_chest_layout(game)
+        view, _files = build_chest_layout(game)   # files not needed; the message keeps its image
         client.add_view(view, message_id=int(key))
     except Exception as e:
         logger.error(f"Failed to reattach chest view {key}: {e}", exc_info=True)
