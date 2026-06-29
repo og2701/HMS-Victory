@@ -380,17 +380,8 @@ async def handle_welcome_reward(client, message) -> None:
             return
         save_json_file(config.WELCOME_TRACKING_FILE, store)
 
+        # Paid silently - no channel announcement. Bookkeeping only.
         total = amount * paid_for
-        try:
-            who = "a new member" if paid_for == 1 else f"{paid_for} new members"
-            await message.channel.send(
-                f"\U0001F44B <@{welcomer.id}> earned **{total:,} UKPence** for welcoming {who}!",
-                allowed_mentions=discord.AllowedMentions(users=True),
-                delete_after=600,  # self-destruct after 10 minutes to keep chat tidy
-            )
-        except Exception:
-            log.debug("welcome reward message failed", exc_info=True)
-
         try:
             from lib.features.income_badges import record_income_source, bump_daily_income
             bump_daily_income("welcome_total", total)
