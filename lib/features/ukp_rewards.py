@@ -380,14 +380,44 @@ async def handle_welcome_reward(client, message) -> None:
             return
         save_json_file(config.WELCOME_TRACKING_FILE, store)
 
-        # Paid silently - no channel announcement. Bookkeeping only.
+        # Decide (and persist) whether this is the welcomer's first-ever welcome reward while
+        # still inside the await-free section, so two near-simultaneous welcomes from the same
+        # person can't both think they're "first" and double-DM. We piggyback on the earned-
+        # sources store that record_income_source also uses ("welcome" present == earned before).
+        first_time = False
+        try:
+            src_store = load_json_file(config.EARNED_SOURCES_FILE) or {}
+            srcs = set(src_store.get(str(welcomer.id), []))
+            if "welcome" not in srcs:
+                first_time = True
+                srcs.add("welcome")
+                src_store[str(welcomer.id)] = sorted(srcs)
+                save_json_file(config.EARNED_SOURCES_FILE, src_store)
+        except Exception:
+            log.debug("welcome first-time check failed", exc_info=True)
+
+        # Paid silently - no channel announcement. Bookkeeping + a one-time DM heads-up.
         total = amount * paid_for
         try:
             from lib.features.income_badges import record_income_source, bump_daily_income
             bump_daily_income("welcome_total", total)
+            # Idempotent: record_income_source won't re-add "welcome", but still runs the
+            # jack_of_all_trades (5 distinct sources) check.
             await record_income_source(client, welcomer.id, "welcome")
         except Exception:
             log.debug("welcome reward bookkeeping failed", exc_info=True)
+
+        if first_time:
+            try:
+                await welcomer.send(
+                    f"\U0001F44B Thanks for welcoming a new member - you've earned "
+                    f"**{amount:,} UKPence**!\n\n"
+                    f"You'll get **{amount:,} UKPence** every time you welcome someone new from "
+                    "now on. It happens automatically and silently, so this is the only time "
+                    "you'll be notified about it. \U0001FA99"
+                )
+            except Exception:
+                log.debug("welcome first-time DM failed (DMs closed?)", exc_info=True)
     except Exception:
         log.error("handle_welcome_reward failed", exc_info=True)
 
