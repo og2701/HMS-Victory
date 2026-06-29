@@ -78,7 +78,9 @@ async def handle_ukpence_guide_command(interaction: discord.Interaction):
     spend.add_field(name="🔮 Predictions & /wager",
                     value="Bet on event outcomes, or challenge another player to a head-to-head wager.", inline=False)
     spend.add_field(name="💸 /pay",
-                    value="Send UKP straight to another member - no fee.", inline=False)
+                    value="Send UKP straight to another member - no fee, up to **10,000/day** total "
+                          "(resets at midnight). Paying the bank doesn't count toward that limit.",
+                    inline=False)
     spend.add_field(name="🛍️ /shop",
                     value="Spend on shutcoins, VIP cases, custom emojis & roles, and more.", inline=False)
     spend.add_field(name="📋 Handy commands",
@@ -122,6 +124,6 @@ async def handle_ukpence_guide_command(interaction: discord.Interaction):
               "before Friday doesn't lower the bill - and the person you send to isn't charged for "
               "money just passing through.",
         inline=False)
-    tax.set_footer(text="Move money freely - /pay still has no fee. The taxes only follow where it really sits.")
+    tax.set_footer(text="/pay has no fee but is capped at 10,000/day per person. The taxes just follow where the money really sits.")
 
     await interaction.response.send_message(embeds=[earn, spend, tax], ephemeral=True)

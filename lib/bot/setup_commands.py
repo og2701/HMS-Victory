@@ -404,7 +404,35 @@ def define_commands(tree, client):
             return await interaction.response.send_message("Enter a positive amount.", ephemeral=True)
         if recipient.id == interaction.user.id:
             return await interaction.response.send_message("You cannot pay yourself.", ephemeral=True)
-            
+
+        # Daily anti-shuffle cap: at most DAILY_PAY_CAP UKP sent to OTHER MEMBERS per UK day.
+        # Pays to the bank (recipient = bot) are exempt - that's money leaving circulation, not
+        # shuffling - so this only governs user→user transfers.
+        if recipient.id != interaction.client.user.id:
+            import config
+            from database import DatabaseManager
+            cap = int(getattr(config, "DAILY_PAY_CAP", 10000))
+            uk = pytz.timezone("Europe/London")
+            midnight = datetime.now(uk).replace(hour=0, minute=0, second=0, microsecond=0)
+            day_start = int(midnight.timestamp())
+            sent_row = DatabaseManager.fetch_one(
+                "SELECT COALESCE(SUM(amount), 0) FROM pay_transfers "
+                "WHERE payer_id = ? AND recipient_id != ? AND timestamp >= ?",
+                (str(interaction.user.id), str(interaction.client.user.id), day_start),
+            )
+            sent_today = int(sent_row[0]) if sent_row else 0
+            remaining = cap - sent_today
+            if amount > remaining:
+                reset = int((midnight + timedelta(days=1)).timestamp())
+                if remaining <= 0:
+                    msg = (f"💸 You've hit the daily limit of **{cap:,} UKPence** in transfers to "
+                           f"other members. It resets <t:{reset}:R>.")
+                else:
+                    msg = (f"💸 That would exceed the daily transfer limit of **{cap:,} UKPence** to "
+                           f"other members. You've sent **{sent_today:,}** today, so you can still "
+                           f"send **{remaining:,}** more. Resets <t:{reset}:R>.")
+                return await interaction.response.send_message(msg, ephemeral=True)
+
         if recipient.id == interaction.client.user.id:
             # Pay to bot goes directly to bank
             if not remove_bb(interaction.user.id, amount, reason=f"/pay to HMS Victory (Bank)", to_bank=True):

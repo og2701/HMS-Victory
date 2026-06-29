@@ -133,6 +133,10 @@ INACTIVITY_TAX_RATE = 0.20           # fraction of total balance taken per weekl
 # just passing through. Demurrage additionally bases the charge on your PEAK balance over the
 # window, so dipping below the threshold right before the weekly snapshot doesn't help either.
 TRANSFER_LOOKBACK_DAYS = 7
+# Daily anti-shuffle cap: the most UKP one person can /pay to OTHER MEMBERS per UK day
+# (resets at midnight). Pays to the bank are exempt - that's money leaving circulation, not
+# shuffling. Caps how fast a hoard can be relocated across accounts to dodge demurrage.
+DAILY_PAY_CAP = 10000
 
 
 HOF_REWARD = 100                  # UKP DM'd to a message's author on Hall of Fame entry
