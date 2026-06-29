@@ -19,6 +19,7 @@ from commands.economy.red_dog import handle_reddog_command
 from commands.economy.three_card_poker import handle_tcp_command
 from commands.economy.roulette import handle_roulette_command
 from commands.economy.mines import handle_mines_command
+from commands.economy.chest import handle_chest_command
 from commands.economy.penalty import handle_penalty_command
 from lib.economy.casino_stats import get_net_standings
 
@@ -51,6 +52,9 @@ GAMES = [
     {"key": "mines", "label": "Mines", "emoji": "💣",
      "handler": handle_mines_command,
      "desc": "Reveal gems and cash out before you hit a mine."},
+    {"key": "chest", "label": "Chest Upgrade", "emoji": "🧰",
+     "handler": handle_chest_command,
+     "desc": "Risk it to level up the chest - cash out before it shatters."},
     {"key": "penalty", "label": "Penalty Shootout", "emoji": "⚽",
      "handler": handle_penalty_command,
      "desc": "Beat the keeper from the spot - score to build your multiplier."},

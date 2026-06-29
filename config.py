@@ -88,6 +88,25 @@ MINES_MAX_WIN = 0             # payout ceiling; 0 = no cap (a lucky board pays t
                               # multiplier - if the bank can't cover it, credit_from_bank
                               # mints the win and logs CRITICAL; amend the supply after)
 
+# Chest Upgrade - a linear "press your luck" ladder. Open the free Wood chest (1x), then
+# choose, tier by tier, whether to risk it to upgrade; a failed upgrade shatters the chest
+# and the whole stake is lost. Each upgrade carries a flat CHEST_HOUSE_EDGE, so the success
+# odds are DERIVED from the multipliers below - every push is equally house-favoured, so there
+# is no exploitable stopping point (the edge is the same wherever the player cashes out).
+CHEST_ENABLED = True
+CHEST_MIN_BET = 5
+CHEST_MAX_BET = 1_000
+CHEST_HOUSE_EDGE = 0.05       # flat edge per upgrade; odds are computed from this + multipliers
+CHEST_MAX_WIN = 0             # payout ceiling; 0 = no cap (max bet already bounds the 8x payout)
+# (name, emoji, cash-out multiplier). The first tier is the free starting chest at 1.0x;
+# success odds to reach each later tier are derived from CHEST_HOUSE_EDGE, not stored.
+CHEST_TIERS = [
+    ("Wood", "🪵", 1.0),
+    ("Silver", "🥈", 1.8),
+    ("Gold", "🥇", 3.5),
+    ("Diamond", "💎", 8.0),
+]
+
 # Penalty Shootout (commands/economy/penalty.py)
 PENALTY_ENABLED = True
 PENALTY_MIN_BET = 5
