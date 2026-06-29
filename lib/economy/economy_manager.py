@@ -243,6 +243,41 @@ def get_bb(user_id: int) -> int:
 def set_bb(user_id: int, amount: int, reason: str = "Unspecified") -> None:
     UKPenceManager.set_balance(user_id, amount, reason=reason)
 
+def recent_transfer_io(user_id, days: int = None) -> tuple[int, int]:
+    """(inflow, outflow): total UKP /pay'd TO and FROM this user in the last `days`.
+
+    Reads the pay_transfers ledger (every /pay leg is logged there). Used to make the taxes
+    shuffle-proof: money you moved out is still counted as yours, money moved to you isn't."""
+    import time
+    import config
+    if days is None:
+        days = int(getattr(config, "TRANSFER_LOOKBACK_DAYS", 7))
+    cutoff = int(time.time()) - days * 86400
+    try:
+        inflow = DatabaseManager.fetch_one(
+            "SELECT COALESCE(SUM(amount), 0) FROM pay_transfers WHERE recipient_id = ? AND timestamp > ?",
+            (str(user_id), cutoff))
+        outflow = DatabaseManager.fetch_one(
+            "SELECT COALESCE(SUM(amount), 0) FROM pay_transfers WHERE payer_id = ? AND timestamp > ?",
+            (str(user_id), cutoff))
+        return (int(inflow[0]) if inflow else 0, int(outflow[0]) if outflow else 0)
+    except Exception:
+        return (0, 0)
+
+
+def effective_wealth(user_id, balance: int = None, days: int = None) -> int:
+    """Balance adjusted so moving UKP between accounts doesn't change it:
+
+        effective = balance + recently sent out − recently received   (clamped at 0)
+
+    Shoving UKP onto an alt/friend (or splitting a hoard) leaves your effective wealth
+    unchanged - the outflow is added back - while the recipient isn't double-counted for
+    funds just passing through. This is the base every tax is charged on."""
+    bal = balance if balance is not None else UKPenceManager.get_balance(user_id)
+    inflow, outflow = recent_transfer_io(user_id, days)
+    return max(0, bal + outflow - inflow)
+
+
 WEALTH_TAX_BRACKETS = [
     (10_000, 0.00),
     (20_000, 0.60),
@@ -294,7 +329,9 @@ def add_bb(user_id: int, amount: int, reason: str = "Unspecified",
             return False
 
         if taxable and amount > 0:
-            current_balance = UKPenceManager.get_balance(user_id)
+            # Bracket by effective wealth, not raw balance, so parking UKP on an alt to sit
+            # under 10k doesn't earn you tax-free.
+            current_balance = effective_wealth(user_id)
             tax_amount = compute_wealth_tax(current_balance, amount)
             if tax_amount > 0:
                 gross = amount

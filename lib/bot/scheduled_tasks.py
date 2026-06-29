@@ -611,19 +611,33 @@ async def apply_inactivity_tax(client):
         _tax_now = int(datetime.now(pytz.utc).timestamp())
         taxed = []  # (uid, tax_amount, new_balance) for the statement ledger
         rate = float(getattr(config, "INACTIVITY_TAX_RATE", 0.20))
+
+        # Charge on effective wealth (balance + recently sent − recently received) so a dormant
+        # hoarder can't escape by shoving their stash onto another account just before the run.
+        # effective_wealth opens its own connections, so compute the plan BEFORE taking the lock;
+        # the tax is clamped to the real balance so it never takes more than is there.
+        from lib.economy.economy_manager import effective_wealth
+        plans = []  # (uid, tax_amount)
+        for uid, balance in dormant_users:
+            tax_amount = min(int(effective_wealth(uid, balance) * rate), int(balance))
+            if tax_amount > 0:
+                plans.append((uid, tax_amount))
+
         with DatabaseManager.locked_connection() as conn:
             c = conn.cursor()
-            for uid, balance in dormant_users:
-                tax_amount = int(balance * rate)
-
-                if tax_amount > 0:
-                    c.execute("UPDATE ukpence SET balance = balance - ? WHERE user_id = ?", (tax_amount, uid))
-                    # keep the balance graph accurate: this path bypasses remove_amount
-                    c.execute("INSERT INTO balance_history (user_id, ts, balance) VALUES (?, ?, ?)",
-                              (str(uid), _tax_now, balance - tax_amount))
-                    taxed.append((uid, tax_amount, balance - tax_amount))
-                    total_reclaimed += tax_amount
-                    taxed_count += 1
+            for uid, tax_amount in plans:
+                r = c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(uid),)).fetchone()
+                bal = int(r[0]) if r and r[0] is not None else 0
+                amt = min(tax_amount, bal)
+                if amt <= 0:
+                    continue
+                c.execute("UPDATE ukpence SET balance = balance - ? WHERE user_id = ?", (amt, uid))
+                # keep the balance graph accurate: this path bypasses remove_amount
+                c.execute("INSERT INTO balance_history (user_id, ts, balance) VALUES (?, ?, ?)",
+                          (str(uid), _tax_now, bal - amt))
+                taxed.append((uid, amt, bal - amt))
+                total_reclaimed += amt
+                taxed_count += 1
 
             conn.commit()
 
@@ -651,36 +665,82 @@ async def apply_wealth_demurrage(client):
     """Weekly demurrage on hoarded wealth: charge a small % of the portion of each balance ABOVE
     the configured threshold, paid to the bank. Unlike the income wealth-tax this taxes the
     STOCK, so it can't be dodged by earning through untaxed channels (gambling/predictions) - a
-    soft cap on hoarding. Supply is conserved (the charge goes to the bank)."""
+    soft cap on hoarding. Supply is conserved (the charge goes to the bank).
+
+    Shuffle-proof: the charge is based on the GREATER of (a) the account's peak balance over the
+    lookback window and (b) its current balance plus UKP it sent out in the window, minus UKP it
+    was sent (so transit isn't double-counted). That defeats both splitting a hoard across alts
+    and dipping below the threshold just before the snapshot. The charge is clamped to the real
+    balance, so it never drives anyone negative."""
     try:
-        import config
+        import config, time
         if not getattr(config, "WEALTH_DEMURRAGE_ENABLED", True):
             return
         threshold = int(getattr(config, "WEALTH_DEMURRAGE_THRESHOLD", 20000))
         rate = float(getattr(config, "WEALTH_DEMURRAGE_RATE", 0.01))
+        window_days = int(getattr(config, "TRANSFER_LOOKBACK_DAYS", 7))
         if rate <= 0 or threshold < 0:
             return
 
         from database import DatabaseManager
         from config import BOT_ID
-        rich = DatabaseManager.fetch_all(
-            "SELECT user_id, balance FROM ukpence WHERE balance > ? AND user_id != ?",
-            (threshold, str(BOT_ID)))
-        if not rich:
-            logger.info("[ECONOMY] Demurrage: nobody above the %s threshold.", threshold)
+        from lib.economy.economy_manager import recent_transfer_io
+
+        now = int(time.time())
+        window_start = now - window_days * 86400
+
+        # Candidates: anyone currently over the threshold, anyone who SENT UKP in the window (a
+        # possible splitter now sitting under it), or anyone whose balance PEAKED above it during
+        # the window (a snapshot-timing dodger). Union, then judge each by effective wealth.
+        cand = set()
+        for src, params in (
+            ("SELECT user_id FROM ukpence WHERE balance > ? AND user_id != ?", (threshold, str(BOT_ID))),
+            ("SELECT DISTINCT payer_id FROM pay_transfers WHERE timestamp > ?", (window_start,)),
+            ("SELECT DISTINCT user_id FROM balance_history WHERE ts > ? AND balance > ?", (window_start, threshold)),
+        ):
+            for row in (DatabaseManager.fetch_all(src, params) or []):
+                if row and row[0] is not None:
+                    cand.add(str(row[0]))
+        cand.discard(str(BOT_ID))
+        if not cand:
+            logger.info("[ECONOMY] Demurrage: no candidates above the %s threshold.", threshold)
             return
 
+        # Phase 1 (no lock - these helpers open their own connections): work out what each
+        # candidate owes from a read-only snapshot.
+        plans = []  # (uid, amount)
+        for uid in cand:
+            bal_row = DatabaseManager.fetch_one("SELECT balance FROM ukpence WHERE user_id = ?", (uid,))
+            bal = int(bal_row[0]) if bal_row and bal_row[0] is not None else 0
+            if bal <= 0:
+                continue
+            peak_row = DatabaseManager.fetch_one(
+                "SELECT MAX(balance) FROM balance_history WHERE user_id = ? AND ts > ?", (uid, window_start))
+            peak = max(bal, int(peak_row[0]) if peak_row and peak_row[0] is not None else 0)
+            inflow, outflow = recent_transfer_io(uid, window_days)
+            effective = max(0, max(peak, bal + outflow) - inflow)
+            amount = int((effective - threshold) * rate)
+            if amount > 0:
+                plans.append((uid, amount))
+        if not plans:
+            logger.info("[ECONOMY] Demurrage: nobody's effective excess rounded above 0.")
+            return
+
+        # Phase 2 (locked): re-read each balance and apply, clamped so nobody goes negative.
         _now = int(datetime.now(pytz.utc).timestamp())
         charged = []  # (uid, amount, new_balance)
         with DatabaseManager.locked_connection() as conn:
             c = conn.cursor()
-            for uid, balance in rich:
-                amount = int((balance - threshold) * rate)
-                if amount > 0:
-                    c.execute("UPDATE ukpence SET balance = balance - ? WHERE user_id = ?", (amount, uid))
-                    c.execute("INSERT INTO balance_history (user_id, ts, balance) VALUES (?, ?, ?)",
-                              (str(uid), _now, balance - amount))
-                    charged.append((uid, amount, balance - amount))
+            for uid, amount in plans:
+                r = c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (uid,)).fetchone()
+                bal = int(r[0]) if r and r[0] is not None else 0
+                amt = min(amount, bal)
+                if amt <= 0:
+                    continue
+                c.execute("UPDATE ukpence SET balance = balance - ? WHERE user_id = ?", (amt, uid))
+                c.execute("INSERT INTO balance_history (user_id, ts, balance) VALUES (?, ?, ?)",
+                          (uid, _now, bal - amt))
+                charged.append((uid, amt, bal - amt))
             conn.commit()
 
         if not charged:

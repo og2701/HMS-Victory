@@ -1,7 +1,7 @@
 """The /ukpence guide: a full, ephemeral walkthrough of the UKPence economy.
 
 Plain embeds (not a baked image) so it stays accurate as amounts change and renders
-crisply on mobile. Deliberately leaves out the wealth tax.
+crisply on mobile.
 """
 
 import discord
@@ -92,4 +92,36 @@ async def handle_ukpence_guide_command(interaction: discord.Interaction):
                     inline=False)
     spend.set_footer(text="HMS Victory · A closed economy - total UKP fixed at 800,000")
 
-    await interaction.response.send_message(embeds=[earn, spend], ephemeral=True)
+    tax = discord.Embed(
+        title="🏛️ Taxes & demurrage",
+        colour=ACCENT,
+        description=(
+            "To keep UKP circulating, the bank claws a little back from the wealthy - normal "
+            "balances never feel it."
+        ),
+    )
+    tax.add_field(
+        name="📈 Wealth tax (on earnings)",
+        value="Passive earnings are taxed once your wealth passes **10k** (**60%** to 20k, "
+              "**85%** to 30k, **95%** above) - so the rich earn slower. Winnings from gambling, "
+              "predictions and wagers are never taxed.",
+        inline=False)
+    tax.add_field(
+        name="🏚️ Wealth demurrage (on hoards)",
+        value="**5% per week** on the part of a balance above **20k**, taken every Friday.",
+        inline=False)
+    tax.add_field(
+        name="💤 Inactivity tax",
+        value="Go dormant for **60+ days** and **20% per week** of your balance returns to the bank.",
+        inline=False)
+    tax.add_field(
+        name="🔀 No dodging by shuffling",
+        value="All three are charged on your **effective wealth** = your balance **+** what you've "
+              "sent out **−** what you've been sent (last 7 days), and demurrage uses your **highest** "
+              "balance that week. So parking UKP on an alt, splitting it up, or emptying out right "
+              "before Friday doesn't lower the bill - and the person you send to isn't charged for "
+              "money just passing through.",
+        inline=False)
+    tax.set_footer(text="Move money freely - /pay still has no fee. The taxes only follow where it really sits.")
+
+    await interaction.response.send_message(embeds=[earn, spend, tax], ephemeral=True)

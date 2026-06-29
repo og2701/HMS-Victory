@@ -127,6 +127,13 @@ WEALTH_DEMURRAGE_THRESHOLD = 20000   # only balance above this is charged
 WEALTH_DEMURRAGE_RATE = 0.05         # fraction of the excess taken per weekly run (5%)
 INACTIVITY_TAX_RATE = 0.20           # fraction of total balance taken per weekly run (20%)
 
+# Anti-shuffle: all three taxes are charged on "effective wealth" = balance + UKP you've sent
+# out − UKP you've been sent, over this window. Moving money onto an alt/friend (or splitting a
+# hoard) therefore doesn't lower your tax base, and the recipient isn't double-charged for funds
+# just passing through. Demurrage additionally bases the charge on your PEAK balance over the
+# window, so dipping below the threshold right before the weekly snapshot doesn't help either.
+TRANSFER_LOOKBACK_DAYS = 7
+
 
 HOF_REWARD = 100                  # UKP DM'd to a message's author on Hall of Fame entry
 TICKET_REWARD = 100               # UKP a staff member can grant a ticket's opener
