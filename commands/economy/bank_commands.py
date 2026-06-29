@@ -50,6 +50,7 @@ async def handle_bank_status_command(interaction: discord.Interaction):
     embed.add_field(name="🎡 Roulette", value=_short_pl(ledger['roulette_net']), inline=True)
     embed.add_field(name="💣 Mines", value=_short_pl(ledger['mines_net']), inline=True)
     embed.add_field(name="⚽ Penalty Shootout", value=_short_pl(ledger['penalty_net']), inline=True)
+    embed.add_field(name="🧰 Chest Upgrade", value=_short_pl(ledger['chest_net']), inline=True)
 
     casino_net = ledger['casino_net']
     casino_sign = "+" if casino_net >= 0 else "-"
