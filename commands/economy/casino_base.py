@@ -289,6 +289,22 @@ def credit_from_bank(uid: int, amount: int, reason: str):
         UKPenceManager.add_amount(uid, amount, reason=f"{reason} [bank insolvent - minted]")
 
 
+def settle_pvp_pot(winner_id: int, loser_id: int, pot: int, reason: str, own_stake: int = None) -> int:
+    """Pay a 1v1 PvP winner the pot MINUS the silent house rake (the rake stays in the bank),
+    and record the net loser→winner flow so the anti-shuffle wealth taxes see it like a /pay.
+    WINS only - never draws/refunds/vs-AI. Returns the rake withheld.
+
+    own_stake: the winner's own buy-in (returned to them), so the recorded transfer is just what
+    actually changed hands. Defaults to half the pot (equal-stake 1v1)."""
+    from lib.economy.economy_manager import pvp_rake, record_game_transfer
+    rake = pvp_rake(pot)
+    credit_from_bank(winner_id, pot - rake, reason)
+    if loser_id is not None:
+        stake = (pot // 2) if own_stake is None else int(own_stake)
+        record_game_transfer(loser_id, winner_id, (pot - rake) - stake)
+    return rake
+
+
 # ---------------------------------------------------------------------------
 # Persistence (generic; keyed by message_id, entry carries its own 'type')
 # ---------------------------------------------------------------------------

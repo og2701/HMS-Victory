@@ -468,6 +468,21 @@ def init_db():
                 amount INTEGER NOT NULL
             )
         ''')
+        # Net loser→winner flow from PvP games (Connect 4, Battleship, wagers). Kept separate
+        # from pay_transfers so it feeds ONLY the anti-shuffle effective-wealth calc (it stops
+        # "lose on purpose" being an untracked way to move UKP), without touching the /pay cap,
+        # philanthropist badge, or benefits checks that read pay_transfers.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS game_transfers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp INTEGER NOT NULL,
+                loser_id TEXT NOT NULL,
+                winner_id TEXT NOT NULL,
+                amount INTEGER NOT NULL
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_game_loser ON game_transfers(loser_id)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_game_winner ON game_transfers(winner_id)')
         c.execute('''
             CREATE TABLE IF NOT EXISTS badges (
                 id TEXT PRIMARY KEY,

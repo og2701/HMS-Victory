@@ -244,25 +244,72 @@ def set_bb(user_id: int, amount: int, reason: str = "Unspecified") -> None:
     UKPenceManager.set_balance(user_id, amount, reason=reason)
 
 def recent_transfer_io(user_id, days: int = None) -> tuple[int, int]:
-    """(inflow, outflow): total UKP /pay'd TO and FROM this user in the last `days`.
+    """(inflow, outflow): total UKP moved TO and FROM this user in the last `days`.
 
-    Reads the pay_transfers ledger (every /pay leg is logged there). Used to make the taxes
-    shuffle-proof: money you moved out is still counted as yours, money moved to you isn't."""
+    Counts both /pay transfers (pay_transfers) and the net loser→winner flow from PvP games
+    (game_transfers) - games are a real transfer channel too, so 'lose on purpose' must count.
+    Used to make the taxes shuffle-proof: money you moved out is still counted as yours, money
+    moved to you isn't. Each source is guarded so a missing table can't zero out the other."""
     import time
     import config
     if days is None:
         days = int(getattr(config, "TRANSFER_LOOKBACK_DAYS", 7))
     cutoff = int(time.time()) - days * 86400
+    uid = str(user_id)
+    inflow = outflow = 0
     try:
-        inflow = DatabaseManager.fetch_one(
+        r = DatabaseManager.fetch_one(
             "SELECT COALESCE(SUM(amount), 0) FROM pay_transfers WHERE recipient_id = ? AND timestamp > ?",
-            (str(user_id), cutoff))
-        outflow = DatabaseManager.fetch_one(
+            (uid, cutoff))
+        inflow += int(r[0]) if r and r[0] is not None else 0
+        r = DatabaseManager.fetch_one(
             "SELECT COALESCE(SUM(amount), 0) FROM pay_transfers WHERE payer_id = ? AND timestamp > ?",
-            (str(user_id), cutoff))
-        return (int(inflow[0]) if inflow else 0, int(outflow[0]) if outflow else 0)
+            (uid, cutoff))
+        outflow += int(r[0]) if r and r[0] is not None else 0
     except Exception:
-        return (0, 0)
+        pass
+    try:
+        r = DatabaseManager.fetch_one(
+            "SELECT COALESCE(SUM(amount), 0) FROM game_transfers WHERE winner_id = ? AND timestamp > ?",
+            (uid, cutoff))
+        inflow += int(r[0]) if r and r[0] is not None else 0
+        r = DatabaseManager.fetch_one(
+            "SELECT COALESCE(SUM(amount), 0) FROM game_transfers WHERE loser_id = ? AND timestamp > ?",
+            (uid, cutoff))
+        outflow += int(r[0]) if r and r[0] is not None else 0
+    except Exception:
+        pass
+    return (inflow, outflow)
+
+
+def pvp_rake(pot: int) -> int:
+    """House rake skimmed (silently) from a player-vs-player pot before the winner is paid; the
+    rake stays in the bank. A small sink + friction so 'stake and lose on purpose' isn't a free
+    way to move UKP around the /pay cap and the wealth taxes. Wins only - never draws/refunds."""
+    import config
+    rate = float(getattr(config, "PVP_RAKE_RATE", 0.05))
+    if rate <= 0 or pot <= 0:
+        return 0
+    return int(pot * rate)
+
+
+def record_game_transfer(loser_id, winner_id, amount) -> None:
+    """Log a PvP game's net loser→winner flow (already net of the rake) so recent_transfer_io /
+    effective_wealth treat it like a /pay. Its own table, so it only affects the anti-shuffle
+    taxes - not the /pay cap, philanthropist badge, or benefits."""
+    try:
+        amount = int(amount)
+    except (TypeError, ValueError):
+        return
+    if amount <= 0 or not loser_id or not winner_id or str(loser_id) == str(winner_id):
+        return
+    try:
+        import time
+        DatabaseManager.execute(
+            "INSERT INTO game_transfers (timestamp, loser_id, winner_id, amount) VALUES (?, ?, ?, ?)",
+            (int(time.time()), str(loser_id), str(winner_id), amount))
+    except Exception:
+        pass
 
 
 def effective_wealth(user_id, balance: int = None, days: int = None) -> int:

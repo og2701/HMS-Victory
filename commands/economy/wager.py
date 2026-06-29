@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands, Interaction, Member
 from config import CHANNELS, ROLES
-from lib.economy.economy_manager import get_bb, remove_bb, add_bb
+from lib.economy.economy_manager import get_bb, remove_bb, add_bb, pvp_rake, record_game_transfer
 from lib.core.discord_helpers import has_any_role
 from lib.core.file_operations import load_persistent_views, save_persistent_views
 
@@ -49,8 +49,12 @@ class WagerDecisionView(discord.ui.View):
             add_bb(self.opponent_id, self.amount, reason="Wager cancelled/refund", taxable=False)
             result_msg = f"🤝 **Wager Cancelled/Draw!** The pot of {pot:,} UKPence has been refunded to both <@{self.challenger_id}> and <@{self.opponent_id}>."
         else:
-            # Winner takes all
-            add_bb(winner_id, pot, reason="Wager win", taxable=False)
+            # Winner takes the pot minus a silent house rake; record the net loser→winner flow
+            # so it counts toward effective wealth like a /pay (anti-shuffle).
+            loser_id = self.opponent_id if winner_id == self.challenger_id else self.challenger_id
+            rake = pvp_rake(pot)
+            add_bb(winner_id, pot - rake, reason="Wager win", taxable=False)
+            record_game_transfer(loser_id, winner_id, (pot - rake) - self.amount)
             result_msg = f"🏆 **Wager Resolved!** <@{winner_id}> has won the {pot:,} UKPence pot against their opponent for: *{self.topic}*"
 
         # Disable all buttons

@@ -137,6 +137,12 @@ TRANSFER_LOOKBACK_DAYS = 7
 # (resets at midnight). Pays to the bank are exempt - that's money leaving circulation, not
 # shuffling. Caps how fast a hoard can be relocated across accounts to dodge demurrage.
 DAILY_PAY_CAP = 10000
+# House rake on player-vs-player pots (Connect 4, Battleship, wagers): the winner is paid the
+# pot minus this %, which stays in the bank. Applied silently, only to genuine wins (never
+# draws/refunds/vs-AI). Stops "stake and lose on purpose" being a free, uncapped, untaxed way
+# to move UKP around the /pay cap and the wealth taxes - a thrown game now costs more than the
+# demurrage it dodges.
+PVP_RAKE_RATE = 0.05
 
 
 HOF_REWARD = 100                  # UKP DM'd to a message's author on Hall of Fame entry

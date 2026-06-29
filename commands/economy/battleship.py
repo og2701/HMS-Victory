@@ -32,7 +32,7 @@ from discord import Interaction, Member
 import config
 from lib.economy.economy_manager import get_bb, remove_bb
 from commands.economy.casino_base import (
-    credit_from_bank, save_state, delete_state, reject_if_maintenance,
+    credit_from_bank, settle_pvp_pot, save_state, delete_state, reject_if_maintenance,
 )
 
 logger = logging.getLogger(__name__)
@@ -577,7 +577,8 @@ class BattleshipGame:
         self._cancel_timer()
         if self.escrow_key is not None:
             delete_state(self.escrow_key)            # delete-before-credit: never double-pay on reboot
-        credit_from_bank(self._uid(winner), self.stake * 2, "Battleship win")
+        settle_pvp_pot(self._uid(winner), self._uid(self._opp(winner)), self.stake * 2,
+                       "Battleship win", own_stake=self.stake)
         try:
             from lib.economy import pvp_stats
             pvp_stats.record_result("battleship", self._uid(winner), self._uid(self._opp(winner)),

@@ -29,7 +29,7 @@ from discord import Interaction, Member
 import config
 from lib.economy.economy_manager import get_bb, remove_bb
 from commands.economy.casino_base import (
-    credit_from_bank, save_state, delete_state, reject_if_maintenance,
+    credit_from_bank, settle_pvp_pot, save_state, delete_state, reject_if_maintenance,
 )
 
 logger = logging.getLogger(__name__)
@@ -390,7 +390,7 @@ class Connect4View(discord.ui.View):
             credit_from_bank(self.p1_id, self.stake, "Connect 4 draw refund")
             credit_from_bank(self.p2_id, self.stake, "Connect 4 draw refund")
         else:
-            credit_from_bank(wid, pot, "Connect 4 win")
+            settle_pvp_pot(wid, lid, pot, "Connect 4 win", own_stake=self.stake)
         # Log the match (unified PvP stats) and award the winner their badges (best-effort).
         try:
             from lib.economy import pvp_stats
