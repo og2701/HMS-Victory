@@ -116,13 +116,7 @@ def _asset_bytes(name: str):
 # each onto the board at its scored region (number → angle, ring → radius), so the board shows
 # your actual darts accumulating. Pure-PIL (no numpy); sprites + tips are cached on first use.
 _BOARD_PX = 512
-_DART_LEN = 120
-_NUM_ORDER = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5]
-# Ring radius as a fraction of the board IMAGE width (calibrated to data/darts/board.png:
-# bull ~0.07, treble ring ~0.25, single beds ~0.32, double ring ~0.37, surround ~0.44).
-_RING_FRAC = {"Single": 0.32, "Treble": 0.25, "Double": 0.37}
-_BULL_FRAC = 0.07
-_MISS_FRAC = 0.44
+_DART_LEN = 108
 _render_cache = {}
 
 
@@ -203,29 +197,6 @@ def _dart_sprites():
     return _render_cache["darts"]
 
 
-def _dart_xy(label: str, rng) -> tuple:
-    """Where on the board a dart with this region label lands (radius by ring, angle by number,
-    with a little jitter kept inside the segment). Radii are fractions of the board width."""
-    cx = cy = _BOARD_PX / 2.0
-    W = _BOARD_PX
-    if label.startswith("Bullseye"):
-        r, ang = 0.0, rng.uniform(0, 2 * math.pi)
-    elif label.startswith("Bull"):
-        r, ang = _BULL_FRAC * W, rng.uniform(0, 2 * math.pi)
-    elif label.startswith("missed"):
-        r, ang = _MISS_FRAC * W, rng.uniform(0, 2 * math.pi)
-    else:
-        parts = label.split()
-        try:
-            kind, n = parts[0], int(parts[1])
-            idx = _NUM_ORDER.index(n)
-        except Exception:
-            return cx, cy
-        ang = math.radians(idx * 18) + rng.uniform(-0.07, 0.07)
-        r = _RING_FRAC.get(kind, 0.32) * W * rng.uniform(0.96, 1.03)
-    return cx + r * math.sin(ang), cy - r * math.cos(ang)
-
-
 def _render_play_board(game):
     """Composite the thrown darts onto the board → PNG bytes. None if the art's missing."""
     base = _base_board()
@@ -233,18 +204,24 @@ def _render_play_board(game):
     if base is None or not sprites:
         return None
     img = base.copy()
-    cx = cy = _BOARD_PX / 2.0
+    W = _BOARD_PX
+    cx = cy = W / 2.0
+    gx, gy = cx, cy - W * 0.06              # grouping centre, just above the bull
     try:
         seed0 = int(game.game_id, 16)
     except (ValueError, TypeError):
         seed0 = abs(hash(game.game_id))
-    for i, (label, _v) in enumerate(game.throws):
+    # Decorative grouping: with full side-view sprites you can't pin a dart's tip to its exact
+    # bed AND keep the dart on the board (tip-in-bed → shaft sails off the rim), so the darts are
+    # shown as a natural cluster that always sits cleanly on the board, tips pointing inward. The
+    # scored values are listed in the text panel, which is the authoritative record.
+    for i in range(len(game.throws)):
         sprite, have = sprites[i % len(sprites)]
         rng = random.Random((seed0 + i * 2654435761) & 0xFFFFFFFF)
-        x, y = _dart_xy(label, rng)
-        # Orient so the tip sits in the bed and the FLIGHT points toward centre, keeping the whole
-        # dart on the board (flights-out sailed off the rim and looked mis-placed). Small spread.
-        want = math.atan2(y - cy, x - cx) + rng.uniform(-0.13, 0.13)
+        ang = i * 2.39996 + rng.uniform(-0.3, 0.3)               # golden-angle spread
+        rad = W * (0.045 + 0.03 * i)                             # tight cluster near the bull
+        x, y = gx + rad * math.cos(ang), gy + rad * math.sin(ang)
+        want = math.atan2(gy - y, gx - x) + rng.uniform(-0.2, 0.2)  # tips toward the group centre
         rot, (tx, ty) = _oriented(sprite, have, want)
         img.alpha_composite(rot, (round(x - tx), round(y - ty)))
     buf = io.BytesIO()
