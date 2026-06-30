@@ -20,6 +20,7 @@ Player-paced clicks (no timer), persisted by message id and resumed on restart, 
 """
 import io
 import os
+import math
 import random
 import logging
 
@@ -108,6 +109,119 @@ def _asset_bytes(name: str):
         logger.debug("darts asset load failed: %s", name, exc_info=True)
     _asset_cache[name] = data
     return data
+
+
+# --- live board compositing: stick the thrown darts into board.png -------------
+# The dart sprites (data/darts/dart_NN.png) are full darts at assorted angles. We tip-anchor
+# each onto the board at its scored region (number → angle, ring → radius), so the board shows
+# your actual darts accumulating. Pure-PIL (no numpy); sprites + tips are cached on first use.
+_BOARD_PX = 512
+_DART_LEN = 178
+_NUM_ORDER = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5]
+_RING_FRAC = {"Single": 0.46, "Treble": 0.62, "Double": 0.93}
+_render_cache = {}
+
+
+def _tip_of(sprite):
+    """Pixel of the dart's TIP (its narrow point) in `sprite`. The two ends of the dart are the
+    farthest-apart opaque pixels; the tip is whichever end has fewer neighbours (the flight end
+    is wide). Analysed on a small alpha thumbnail, then scaled to the sprite - pure PIL."""
+    W, H = sprite.size
+    aw = 100
+    ah = max(1, round(H * aw / W))
+    a = sprite.getchannel("A").resize((aw, ah))
+    px = a.load()
+    pts = [(x, y) for y in range(ah) for x in range(aw) if px[x, y] > 40]
+    if not pts:
+        return (W / 2, H / 2)
+    cx = sum(p[0] for p in pts) / len(pts)
+    cy = sum(p[1] for p in pts) / len(pts)
+    far = lambda fx, fy: max(pts, key=lambda p: (p[0] - fx) ** 2 + (p[1] - fy) ** 2)
+    p1 = far(cx, cy)
+    p2 = far(*p1)
+    r2 = (aw * 0.13) ** 2
+    width = lambda p: sum(1 for q in pts if (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2 < r2)
+    tip = p1 if width(p1) <= width(p2) else p2
+    return (tip[0] * W / aw, tip[1] * H / ah)
+
+
+def _base_board():
+    if "base" not in _render_cache:
+        img = None
+        try:
+            path = os.path.join(_ASSET_DIR, "board.png")
+            if os.path.exists(path):
+                img = Image.open(path).convert("RGBA").resize((_BOARD_PX, _BOARD_PX), Image.LANCZOS)
+        except Exception:
+            logger.debug("darts base board load failed", exc_info=True)
+        _render_cache["base"] = img
+    return _render_cache["base"]
+
+
+def _dart_sprites():
+    """List of (scaled sprite, tip_xy), one per data/darts/dart_NN.png (cached)."""
+    if "darts" not in _render_cache:
+        out = []
+        for i in range(1, 13):
+            path = os.path.join(_ASSET_DIR, f"dart_{i:02d}.png")
+            if not os.path.exists(path):
+                continue
+            try:
+                im = Image.open(path).convert("RGBA")
+                bbox = im.getbbox()
+                if bbox:
+                    im = im.crop(bbox)
+                w, h = im.size
+                s = _DART_LEN / max(w, h)
+                im = im.resize((max(1, round(w * s)), max(1, round(h * s))), Image.LANCZOS)
+                out.append((im, _tip_of(im)))
+            except Exception:
+                logger.debug("darts sprite load failed: %s", path, exc_info=True)
+        _render_cache["darts"] = out
+    return _render_cache["darts"]
+
+
+def _dart_xy(label: str, rng) -> tuple:
+    """Where on the board a dart with this region label lands (with a little jitter)."""
+    cx = cy = _BOARD_PX / 2.0
+    R = _BOARD_PX * 0.36
+    if label.startswith("Bullseye"):
+        r, ang = 0.0, rng.uniform(0, 2 * math.pi)
+    elif label.startswith("Bull"):
+        r, ang = 0.06 * R, rng.uniform(0, 2 * math.pi)
+    elif label.startswith("missed"):
+        r, ang = 1.05 * R, rng.uniform(0, 2 * math.pi)
+    else:
+        parts = label.split()
+        try:
+            kind, n = parts[0], int(parts[1])
+            idx = _NUM_ORDER.index(n)
+        except Exception:
+            return cx, cy
+        ang = math.radians(idx * 18) + rng.uniform(-0.08, 0.08)
+        r = _RING_FRAC.get(kind, 0.46) * R * rng.uniform(0.95, 1.04)
+    return cx + r * math.sin(ang), cy - r * math.cos(ang)
+
+
+def _render_play_board(game):
+    """Composite the thrown darts onto the board → PNG bytes. None if the art's missing."""
+    base = _base_board()
+    sprites = _dart_sprites()
+    if base is None or not sprites:
+        return None
+    img = base.copy()
+    try:
+        seed0 = int(game.game_id, 16)
+    except (ValueError, TypeError):
+        seed0 = abs(hash(game.game_id))
+    for i, (label, _v) in enumerate(game.throws):
+        sp, (tx, ty) = sprites[i % len(sprites)]
+        rng = random.Random((seed0 + i * 2654435761) & 0xFFFFFFFF)
+        x, y = _dart_xy(label, rng)
+        img.alpha_composite(sp, (round(x - tx), round(y - ty)))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 class DartsGame:
@@ -228,8 +342,13 @@ def _status_text(game: DartsGame) -> str:
 
 
 def _board_image(game: DartsGame):
+    # Terminal: the purpose-made win/bust art. Playing: the live board with your darts stuck in
+    # it (falling back to the static board, then text, if the art's absent).
     if game.state == "done":
         return (_asset_bytes("win") if game.result == "win" else _asset_bytes("bust")), "darts.png"
+    composite = _render_play_board(game)
+    if composite is not None:
+        return composite, "darts.png"
     return _asset_bytes("board"), "darts.png"
 
 
