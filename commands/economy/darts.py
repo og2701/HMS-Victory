@@ -242,9 +242,9 @@ def _render_play_board(game):
         sprite, have = sprites[i % len(sprites)]
         rng = random.Random((seed0 + i * 2654435761) & 0xFFFFFFFF)
         x, y = _dart_xy(label, rng)
-        # Point the dart inward (tip in the bed, flight out toward the rim) with a little spread,
-        # so every dart reads as stuck in the board rather than sailing off at its sprite angle.
-        want = math.atan2(cy - y, cx - x) + rng.uniform(-0.13, 0.13)
+        # Orient so the tip sits in the bed and the FLIGHT points toward centre, keeping the whole
+        # dart on the board (flights-out sailed off the rim and looked mis-placed). Small spread.
+        want = math.atan2(y - cy, x - cx) + rng.uniform(-0.13, 0.13)
         rot, (tx, ty) = _oriented(sprite, have, want)
         img.alpha_composite(rot, (round(x - tx), round(y - ty)))
     buf = io.BytesIO()
