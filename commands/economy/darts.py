@@ -320,40 +320,45 @@ def _throws_line(game: DartsGame) -> str:
 
 def _status_text(game: DartsGame) -> str:
     bust = int(getattr(config, "DARTS_BUST", 60))
+    floor = getattr(config, "DARTS_PAYOUTS", [(34,)])[0][0]
+    darts_max = int(getattr(config, "DARTS_DARTS", 3))
     if game.state == "done":
         if game.result == "bust":
-            return (f"## 💥 Bust!\n"
-                    f"{_throws_line(game)}\nTotal **{game.total}** - over {bust}. "
-                    f"Lost **{game.bet:,} UKPence**.")
+            return (f"## 💥 Bust on {game.total}!\n{_throws_line(game)}\n"
+                    f"Went over **{bust}** - lost **{game.bet:,} UKPence**.")
         if game.result == "short":
-            return (f"## 🎯 Fell Short\n"
-                    f"{_throws_line(game)}\nTotal **{game.total}** - you needed "
-                    f"**{getattr(config,'DARTS_PAYOUTS',[(34,)])[0][0]}+** to score. "
-                    f"Lost **{game.bet:,} UKPence**.")
+            return (f"## 🎯 Fell short on {game.total}\n{_throws_line(game)}\n"
+                    f"Needed **{floor}+** to win - lost **{game.bet:,} UKPence**.")
         mult = _payout_mult(game.total)
-        return (f"## 🎯 Darts - Stood on {game.total}\n"
-                f"{_throws_line(game)}\nBanked **{game.payout:,} UKPence** at **{mult:g}×**! 🎉")
+        return (f"## 🎯 Stood on {game.total} — {mult:g}× win!\n{_throws_line(game)}\n"
+                f"Banked **{game.payout:,} UKPence**. 🎉")
     # playing
+    if game.darts == 0:
+        return (f"## 🎯 Darts\n"
+                f"Stake **{game.bet:,}**. Get as close to **{bust}** as you dare without going "
+                f"over - the higher you finish, the bigger the win.\n"
+                f"**🎯 Throw** your first dart (up to {darts_max}).\n"
+                f"-# pays from {floor}+:  {_paytable_line()}")
     mult = _payout_mult(game.total)
     if mult >= 1.0:
-        stand_line = f"**✋ Stand** to bank **{game.payout_now():,} UKPence** ({mult:g}×), or **🎯 Throw** for more."
+        line = (f"**✋ Stand** to win **{game.payout_now():,}** ({mult:g}×)   or   "
+                f"**🎯 Throw** to climb _(over {bust} busts)_")
     else:
-        floor = getattr(config, "DARTS_PAYOUTS", [(34,)])[0][0]
-        stand_line = f"You need **{floor}+** to score - **🎯 Throw** again. (Standing now loses.)"
-    return (f"## 🎯 Darts\n"
-            f"{_throws_line(game)}\nTotal: **{game.total}**  ·  dart {game.darts}/"
-            f"{int(getattr(config,'DARTS_DARTS',3))}\n{stand_line}\n"
+        line = f"Need **{floor}+** to win - **🎯 Throw** again _(over {bust} busts)_"
+    return (f"## 🎯 Darts — score {game.total}\n"
+            f"{_throws_line(game)}  ·  dart {game.darts}/{darts_max}\n"
+            f"{line}\n"
             f"-# {_paytable_line()}")
 
 
 def _board_image(game: DartsGame):
-    # Terminal: the purpose-made win/bust art. Playing: the live board with your darts stuck in
-    # it (falling back to the static board, then text, if the art's absent).
-    if game.state == "done":
-        return (_asset_bytes("win") if game.result == "win" else _asset_bytes("bust")), "darts.png"
+    # Always show the live board with your ACTUAL darts stuck where they landed - including the
+    # final frame, so it reflects what you threw. Falls back to static art, then text.
     composite = _render_play_board(game)
     if composite is not None:
         return composite, "darts.png"
+    if game.state == "done":
+        return (_asset_bytes("win") if game.result == "win" else _asset_bytes("bust")), "darts.png"
     return _asset_bytes("board"), "darts.png"
 
 
@@ -403,7 +408,8 @@ def _build(game: DartsGame):
     controls = discord.ui.ActionRow()
     if game.state == "playing":
         controls.add_item(_throw_button(game))
-        controls.add_item(_stand_button(game))
+        if game.darts >= 1:                      # nothing to stand on until you've thrown
+            controls.add_item(_stand_button(game))
     else:
         controls.add_item(_again_button(game))
     controls.add_item(_rules_button(game))
@@ -536,8 +542,7 @@ async def _handle_again(interaction: Interaction, old_game: DartsGame):
 
     game = DartsGame.new(old_game.player_id, old_game.player_name, old_game.channel_id, bet)
     game.message_id = old_game.message_id
-    game.throw_dart()                                  # auto-throw the first dart
-    save_game(game)
+    save_game(game)                                    # fresh board; the player throws each dart
     view, files = _build(game)
     try:
         await interaction.response.edit_message(view=view, attachments=files)
@@ -564,16 +569,16 @@ async def _show_rules(interaction: Interaction):
     floor = getattr(config, "DARTS_PAYOUTS", [(34,)])[0][0]
     rules = (
         "## 🎯 Darts - House Rules\n"
-        f"Throw up to **{darts} darts**; your score adds up. **✋ Stand** to bank a multiplier by "
-        f"how high you got - but if a throw takes you **over {bust}** you **bust** and lose the "
-        "stake.\n\n"
-        f"- Each dart lands on a real, **area-weighted** board: singles are common, **trebles & "
-        "doubles are rare** (less space) but worth far more - and a small chance to miss.\n"
-        f"- Your first dart is thrown on the deal; then **🎯 Throw** or **✋ Stand** for darts 2 "
-        "& 3 (the 3rd stands automatically).\n"
-        f"- **Paytable:** {_paytable_line()}. Below **{floor}** is a loss.\n"
+        f"Like blackjack with darts: **get as close to {bust} as you can without going over.** "
+        f"Throw darts to build your score, then **✋ Stand** to bank it - the higher you finish, "
+        f"the bigger the payout. Go **over {bust}** and you **bust** (lose the stake).\n\n"
+        f"- **🎯 Throw** to add a dart (up to **{darts}**); **✋ Stand** any time to lock your score. "
+        f"After the {darts}rd dart you stand automatically.\n"
+        f"- **Payout by final score:** {_paytable_line()}.  Finish under **{floor}** and you lose.\n"
+        f"- Each dart hits a real, **area-weighted** board - singles are common, **trebles & "
+        "doubles rare** (less space) but worth far more, so they're the jackpot *and* the trap.\n"
         f"- **Bets:** {min_bet:,} - {max_bet:,} UKPence. Stakes go to the house bank; wins paid from it.\n\n"
-        "-# Trebles are a jackpot and a trap - the closer to the line, the bigger the prize. 🇬🇧"
+        "-# Tip: a score in the high 50s is the sweet spot - push too hard and you sail past 60. 🇬🇧"
     )
     await interaction.response.send_message(rules, ephemeral=True)
 
@@ -607,7 +612,6 @@ async def handle_darts_command(interaction: Interaction, amount: int):
 
     name = discord.utils.escape_markdown(interaction.user.display_name)
     game = DartsGame.new(interaction.user.id, name, interaction.channel_id, amount)
-    game.throw_dart()                                  # auto-throw the first dart on the deal
     try:
         await interaction.response.defer(thinking=True)
         view, files = _build(game)
