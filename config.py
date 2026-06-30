@@ -118,8 +118,8 @@ CRASH_MIN_BET = 5
 CRASH_MAX_BET = 1_000
 CRASH_HOUSE_EDGE = 0.03      # baked into the bust distribution (edge is identical at any cash-out)
 CRASH_MAX_MULT = 25.0        # auto-cash + bust ceiling (caps round length and bank exposure)
-CRASH_GROWTH = 1.07          # multiplier ×= this each tick (~reaches 2x in ~10 ticks)
-CRASH_TICK_SECS = 1.3        # seconds between live multiplier updates
+CRASH_GROWTH = 1.15          # multiplier ×= this each 5s surge (~2x in 5 surges, 25x ceiling in ~23)
+CRASH_TICK_SECS = 5.0        # seconds between surges; the board shows a live <t:..:R> countdown
 
 # Penalty Shootout (commands/economy/penalty.py)
 PENALTY_ENABLED = True

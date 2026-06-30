@@ -22,6 +22,7 @@ in-memory), so a persisted escrow record is refunded + voided on startup (reatta
 import io
 import os
 import math
+import time
 import uuid
 import random
 import asyncio
@@ -172,15 +173,20 @@ def _status_text(game: CrashGame) -> str:
     if game.state == "voided":
         return ("## ⚓ Run Aborted\n"
                 "The bot restarted mid-run, so this round was voided and your stake refunded.")
+    # Next surge time as a Discord relative timestamp - the client animates the countdown
+    # ("in 5s… 4… 3") between the bot's edits, so the round feels live without per-second edits.
+    next_ts = int(time.time()) + max(1, round(_tick()))
     if game.ticks == 0:
         return (f"## 🚢 Blockade Run\n"
                 f"Stake **{game.bet:,}** · setting sail into the enemy blockade...\n"
-                f"-# The multiplier's about to climb. **⚓ Drop Anchor** to bank it before they "
-                f"catch you.")
+                f"⏳ First surge <t:{next_ts}:R>\n"
+                f"-# The multiplier climbs with each surge. **⚓ Drop Anchor** to bank it before "
+                f"they catch you.")
     return (f"## 🚢 Blockade Run\n"
-            f"**{game.mult:.2f}×**  ·  anchor now to bank **{game.payout_now():,} UKPence**\n"
-            f"-# Running the blockade... every second the prize climbs, but the longer you sail "
-            f"the likelier they sink you. **⚓ Drop Anchor** while you're ahead.")
+            f"# {game.mult:.2f}×\n"
+            f"Anchor now to bank **{game.payout_now():,} UKPence**  ·  ⏳ next surge <t:{next_ts}:R>\n"
+            f"-# The longer you sail the bigger the prize - and the likelier they sink you. "
+            f"**⚓ Drop Anchor** while you're ahead.")
 
 
 def _board_image(game: CrashGame):
