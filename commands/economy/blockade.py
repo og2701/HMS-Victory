@@ -194,7 +194,9 @@ def _board_image(game: CrashGame):
         return _asset_bytes("escaped"), "blockade.png"
     if game.state in ("busted", "voided"):
         return _asset_bytes("sunk"), "blockade.png"
-    return None, None                              # running: text-only (fast edits, no upload)
+    # running: a dedicated 'sailing' ship if present, else reuse the triumphant 'escaped' one.
+    # At a 5s surge cadence re-uploading the ship each tick is cheap (was text-only at 1.3s).
+    return (_asset_bytes("sailing") or _asset_bytes("escaped")), "blockade.png"
 
 
 def _anchor_button(game: CrashGame) -> discord.ui.Button:
