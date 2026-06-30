@@ -515,6 +515,12 @@ def reattach_persistent_views(client):
                 reattach_crash_view(client, key, value)
             except Exception as e:
                 logger.error(f"Failed to reattach blockade view {key}: {e}")
+        elif isinstance(value, dict) and value.get("type") == "darts":
+            try:
+                from commands.economy.darts import reattach_darts_view
+                reattach_darts_view(client, key, value)
+            except Exception as e:
+                logger.error(f"Failed to reattach darts view {key}: {e}")
         elif isinstance(value, dict) and value.get("type") == "penalty":
             try:
                 from commands.economy.penalty import reattach_penalty_view

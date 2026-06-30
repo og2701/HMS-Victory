@@ -21,6 +21,7 @@ from commands.economy.roulette import handle_roulette_command
 from commands.economy.mines import handle_mines_command
 from commands.economy.chest import handle_chest_command
 from commands.economy.blockade import handle_blockade_command
+from commands.economy.darts import handle_darts_command
 from commands.economy.penalty import handle_penalty_command
 from lib.economy.casino_stats import get_net_standings
 
@@ -59,6 +60,9 @@ GAMES = [
     {"key": "blockade", "label": "Blockade Run", "emoji": "🚢",
      "handler": handle_blockade_command,
      "desc": "Run the blockade - bank the climbing multiplier before they sink you."},
+    {"key": "darts", "label": "Darts", "emoji": "🎯",
+     "handler": handle_darts_command,
+     "desc": "Throw up to 3 darts - stand on a high score without going bust."},
     {"key": "penalty", "label": "Penalty Shootout", "emoji": "⚽",
      "handler": handle_penalty_command,
      "desc": "Beat the keeper from the spot - score to build your multiplier."},

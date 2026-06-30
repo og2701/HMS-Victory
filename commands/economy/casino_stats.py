@@ -80,7 +80,8 @@ async def handle_casino_stats_command(interaction: discord.Interaction, member: 
         "mines": "💣 Mines",
         "penalty": "⚽ Penalty Shootout",
         "chest": "🧰 Chest Upgrade",
-        "blockade": "🚢 Blockade Run"
+        "blockade": "🚢 Blockade Run",
+        "darts": "🎯 Darts"
     }
     
     for row in games:

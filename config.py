@@ -107,6 +107,22 @@ CHEST_TIERS = [
     ("Diamond", "💎", 8.0),
 ]
 
+# --- Darts (vs-the-house "darts blackjack") --------------------------------------
+# Throw up to 3 darts; each lands on an AREA-WEIGHTED board region (singles common, trebles &
+# doubles rare). Your score accumulates - Stand to bank a multiplier by how high you got, but go
+# over DARTS_BUST and the throw busts (lose the stake). Optimal play (stand at 51+) leaves the
+# house a ~7% edge; the maths live in scratch (optimal-stopping DP + sim).
+DARTS_ENABLED = True
+DARTS_MIN_BET = 5
+DARTS_MAX_BET = 1_000
+DARTS_DARTS = 3              # max darts per round
+DARTS_BUST = 60             # a running total over this busts (lose the stake)
+DARTS_MISS_PROB = 0.05      # chance a throw misses the board entirely (scores 0)
+DARTS_MAX_WIN = 0           # payout ceiling; 0 = none (8x of the max bet already bounds it)
+# (min_total, max_total, multiplier): standing with a total in a band pays that ×; below the
+# first band's floor is a loss, over DARTS_BUST busts. Tuned to ~7% house edge under optimal play.
+DARTS_PAYOUTS = [(34, 43, 1.0), (44, 51, 2.0), (52, 58, 4.0), (59, 60, 8.0)]
+
 # --- Blockade Run (vs-the-house "crash") -----------------------------------------
 # Your ship runs the enemy blockade. Each "Sail On" click pushes deeper and lifts the multiplier;
 # Drop Anchor to bank stake×multiplier before a hidden, pre-rolled bust point sinks you (lose the

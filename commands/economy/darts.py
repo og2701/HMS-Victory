@@ -1,0 +1,532 @@
+"""Darts - a single-player "darts blackjack" for UKPence.
+
+Throw up to 3 darts. Each lands on an AREA-WEIGHTED board region (singles are common, trebles
+and doubles rare, bulls rarer, with a small chance to miss the board). Your score accumulates.
+**Stand** to bank a multiplier set by how high you got - but if a throw takes your total over
+DARTS_BUST you **bust** and lose the stake. So it's blackjack with darts: push for a bigger band
+without going over.
+
+Money flow (mirrors the other casino games; the fixed 800k UKP supply is conserved):
+    • Stake:  remove_bb(uid, bet)   - to_bank=True, the stake enters the house bank.
+    • Win:    credit_from_bank(uid, stake×mult)  - paid out of the bank.
+    • Loss:   nothing paid - the staked bet stays in the bank (fell short or bust).
+
+Fairness: with the area-weighted board the round's outcome distribution is fixed, and the
+paytable + bust ceiling are tuned (optimal-stopping DP, see scratch) so optimal play - stand at
+51+ - still leaves the house a ~7% edge. The first dart is thrown on the deal; the player then
+chooses Throw/Stand for darts 2 and 3 (the 3rd auto-stands).
+
+Player-paced clicks (no timer), persisted by message id and resumed on restart, like Mines/Chest.
+"""
+import io
+import os
+import random
+import logging
+
+import discord
+from discord import Interaction
+from PIL import Image
+
+import config
+from lib.economy.economy_manager import get_bb, remove_bb
+from lib.economy.casino_drain import action_in_flight, deal_in_flight
+from lib.economy.casino_stats import record_result
+from commands.economy.casino_base import (
+    credit_from_bank, reject_if_maintenance, save_state, delete_state, ACCENT,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# --- area-weighted dartboard (relative areas from real board geometry) -----------
+def _build_regions():
+    def ann(r2, r1): return r1 * r1 - r2 * r2          # area ∝ r1²−r2² (π cancels)
+    a_in50, a_out25 = 6.35 ** 2, ann(6.35, 15.9)
+    a_trbl, a_dbl = ann(99, 107), ann(162, 170)
+    a_total = 170 ** 2
+    a_singles = a_total - a_in50 - a_out25 - a_trbl - a_dbl
+    miss = float(getattr(config, "DARTS_MISS_PROB", 0.05))
+    sc = (1.0 - miss) / a_total
+    regs = [(0, "missed the board", miss),
+            (50, "Bullseye", a_in50 * sc),
+            (25, "Bull", a_out25 * sc)]
+    for n in range(1, 21):
+        regs.append((n,     f"Single {n}",  (a_singles / 20) * sc))
+        regs.append((2 * n, f"Double {n}",  (a_dbl / 20) * sc))
+        regs.append((3 * n, f"Treble {n}",  (a_trbl / 20) * sc))
+    return regs
+
+
+_REGIONS = _build_regions()
+_REG_CHOICES = [(lbl, v) for v, lbl, _ in _REGIONS]   # (label, value) - matches game.throws
+_REG_WEIGHTS = [w for *_, w in _REGIONS]
+
+
+def _throw_one():
+    """A single area-weighted dart: (label, value)."""
+    return random.choices(_REG_CHOICES, weights=_REG_WEIGHTS, k=1)[0]
+
+
+def _payout_mult(total: int) -> float:
+    if total > int(getattr(config, "DARTS_BUST", 60)):
+        return 0.0
+    for lo, hi, mu in getattr(config, "DARTS_PAYOUTS", [(34, 43, 1.0), (44, 51, 2.0),
+                                                        (52, 58, 4.0), (59, 60, 8.0)]):
+        if lo <= total <= hi:
+            return float(mu)
+    return 0.0
+
+
+def _paytable_line() -> str:
+    parts = []
+    for lo, hi, mu in getattr(config, "DARTS_PAYOUTS", []):
+        rng = f"{lo}" if lo == hi else f"{lo}-{hi}"
+        parts.append(f"{rng}→**{mu:g}×**")
+    return " · ".join(parts) + f" · >{int(getattr(config,'DARTS_BUST',60))} bust"
+
+
+# --- optional art (data/darts/<name>.png; text fallback if absent) ---------------
+_ASSET_DIR = os.path.join("data", "darts")
+_ASSET_PX = 320
+_asset_cache = {}
+
+
+def _asset_bytes(name: str):
+    if name in _asset_cache:
+        return _asset_cache[name]
+    data = None
+    path = os.path.join(_ASSET_DIR, f"{name}.png")
+    try:
+        if os.path.exists(path):
+            with Image.open(path) as im:
+                im = im.convert("RGBA")
+                im.thumbnail((_ASSET_PX, _ASSET_PX), Image.LANCZOS)
+                buf = io.BytesIO()
+                im.save(buf, format="PNG")
+                data = buf.getvalue()
+    except Exception:
+        logger.debug("darts asset load failed: %s", name, exc_info=True)
+    _asset_cache[name] = data
+    return data
+
+
+class DartsGame:
+    """One round of Darts. `throws` is the list of (label, value) thrown so far."""
+
+    def __init__(self, game_id, player_id, player_name, channel_id, bet, *,
+                 throws=None, state="playing", result=None, payout=0, message_id=None):
+        self.game_id = game_id
+        self.player_id = int(player_id)
+        self.player_name = player_name
+        self.channel_id = channel_id
+        self.bet = int(bet)
+        self.throws = [tuple(t) for t in (throws or [])]   # [(label, value), ...]
+        self.state = state                  # playing | done
+        self.result = result                # None | "win" | "short" | "bust"
+        self.payout = int(payout)
+        self.message_id = message_id
+        self.message = None              # transient: the discord.Message (for edit fallbacks)
+        self.busy = False
+        self.replayed = False
+
+    @classmethod
+    def new(cls, player_id, player_name, channel_id, bet):
+        return cls(__import__("uuid").uuid4().hex[:12], player_id, player_name, channel_id, bet)
+
+    # --- maths/transitions (sync, await-free) ---
+    @property
+    def total(self) -> int:
+        return sum(v for _, v in self.throws)
+
+    @property
+    def darts(self) -> int:
+        return len(self.throws)
+
+    def payout_now(self) -> int:
+        return int(self.bet * _payout_mult(self.total))
+
+    def can_act(self) -> bool:
+        return self.state == "playing"
+
+    def throw_dart(self) -> str:
+        """Throw one dart. Returns 'thrown' | 'bust' | 'max' (auto-stood on the last dart)."""
+        if self.state != "playing":
+            return "noop"
+        self.throws.append(_throw_one())
+        if self.total > int(getattr(config, "DARTS_BUST", 60)):
+            self.state = "done"
+            self.result = "bust"
+            self.payout = 0
+            return "bust"
+        if self.darts >= int(getattr(config, "DARTS_DARTS", 3)):
+            self.stand()                    # out of darts - forced to stand
+            return "max"
+        return "thrown"
+
+    def stand(self) -> int:
+        if self.state != "playing":
+            return self.payout
+        mult = _payout_mult(self.total)
+        self.payout = int(self.bet * mult)
+        self.state = "done"
+        self.result = "win" if mult >= 1.0 else "short"
+        return self.payout
+
+    # --- serialisation (running games persist + resume across a restart) ---
+    def to_dict(self) -> dict:
+        return {"type": "darts", "game_id": self.game_id, "player_id": self.player_id,
+                "player_name": self.player_name, "channel_id": self.channel_id,
+                "message_id": self.message_id, "bet": self.bet, "throws": self.throws,
+                "state": self.state, "result": self.result, "payout": self.payout}
+
+    @classmethod
+    def from_dict(cls, d: dict):
+        return cls(d["game_id"], d["player_id"], d.get("player_name", "Player"),
+                   d.get("channel_id"), d["bet"], throws=d.get("throws", []),
+                   state=d.get("state", "playing"), result=d.get("result"),
+                   payout=d.get("payout", 0), message_id=d.get("message_id"))
+
+
+def save_game(game: DartsGame):
+    if game.message_id is not None and game.state == "playing":
+        save_state(game.message_id, game.to_dict())
+
+
+# ---------------------------------------------------------------------------
+# Rendering (Components V2: optional art + status panel + Throw / Stand / Rules)
+# ---------------------------------------------------------------------------
+def _throws_line(game: DartsGame) -> str:
+    return "  ·  ".join(f"🎯 {lbl} (**{v}**)" for lbl, v in game.throws) or "—"
+
+
+def _status_text(game: DartsGame) -> str:
+    bust = int(getattr(config, "DARTS_BUST", 60))
+    if game.state == "done":
+        if game.result == "bust":
+            return (f"## 💥 Bust!\n"
+                    f"{_throws_line(game)}\nTotal **{game.total}** - over {bust}. "
+                    f"Lost **{game.bet:,} UKPence**.")
+        if game.result == "short":
+            return (f"## 🎯 Fell Short\n"
+                    f"{_throws_line(game)}\nTotal **{game.total}** - you needed "
+                    f"**{getattr(config,'DARTS_PAYOUTS',[(34,)])[0][0]}+** to score. "
+                    f"Lost **{game.bet:,} UKPence**.")
+        mult = _payout_mult(game.total)
+        return (f"## 🎯 Darts - Stood on {game.total}\n"
+                f"{_throws_line(game)}\nBanked **{game.payout:,} UKPence** at **{mult:g}×**! 🎉")
+    # playing
+    mult = _payout_mult(game.total)
+    if mult >= 1.0:
+        stand_line = f"**✋ Stand** to bank **{game.payout_now():,} UKPence** ({mult:g}×), or **🎯 Throw** for more."
+    else:
+        floor = getattr(config, "DARTS_PAYOUTS", [(34,)])[0][0]
+        stand_line = f"You need **{floor}+** to score - **🎯 Throw** again. (Standing now loses.)"
+    return (f"## 🎯 Darts\n"
+            f"{_throws_line(game)}\nTotal: **{game.total}**  ·  dart {game.darts}/"
+            f"{int(getattr(config,'DARTS_DARTS',3))}\n{stand_line}\n"
+            f"-# {_paytable_line()}")
+
+
+def _board_image(game: DartsGame):
+    if game.state == "done":
+        return (_asset_bytes("win") if game.result == "win" else _asset_bytes("bust")), "darts.png"
+    return _asset_bytes("board"), "darts.png"
+
+
+def _throw_button(game: DartsGame) -> discord.ui.Button:
+    btn = discord.ui.Button(style=discord.ButtonStyle.primary, label="Throw Dart", emoji="🎯",
+                            custom_id=f"darts:{game.game_id}:throw")
+    btn.callback = _make_throw_cb(game)
+    return btn
+
+
+def _stand_button(game: DartsGame) -> discord.ui.Button:
+    can_score = _payout_mult(game.total) >= 1.0
+    label = (f"Stand  {game.payout_now():,}" if can_score else "Stand")
+    btn = discord.ui.Button(style=discord.ButtonStyle.success, label=label, emoji="✋",
+                            custom_id=f"darts:{game.game_id}:stand")
+    btn.callback = _make_stand_cb(game)
+    return btn
+
+
+def _rules_button(game: DartsGame) -> discord.ui.Button:
+    btn = discord.ui.Button(style=discord.ButtonStyle.secondary, label="Rules", emoji="📖",
+                            custom_id=f"darts:{game.game_id}:rules")
+    btn.callback = _show_rules
+    return btn
+
+
+def _again_button(game: DartsGame) -> discord.ui.Button:
+    btn = discord.ui.Button(style=discord.ButtonStyle.primary, label="Play Again", emoji="🔁",
+                            custom_id=f"darts:{game.game_id}:again")
+    btn.callback = _make_again_cb(game)
+    return btn
+
+
+def _build(game: DartsGame):
+    """Return (view, files)."""
+    view = discord.ui.LayoutView(timeout=None)
+    files = []
+    data, fname = _board_image(game)
+    if data is not None:
+        files = [discord.File(io.BytesIO(data), filename=fname)]
+        gallery = discord.ui.MediaGallery()
+        gallery.add_item(media=f"attachment://{fname}")
+        view.add_item(gallery)
+    box = discord.ui.Container(accent_colour=ACCENT)
+    box.add_item(discord.ui.TextDisplay(_status_text(game)))
+    view.add_item(box)
+    controls = discord.ui.ActionRow()
+    if game.state == "playing":
+        controls.add_item(_throw_button(game))
+        controls.add_item(_stand_button(game))
+    else:
+        controls.add_item(_again_button(game))
+    controls.add_item(_rules_button(game))
+    view.add_item(controls)
+    return view, files
+
+
+# ---------------------------------------------------------------------------
+# Settlement
+# ---------------------------------------------------------------------------
+def _settle(game: DartsGame):
+    delete_state(game.message_id)
+    if game.payout > 0:
+        credit_from_bank(game.player_id, game.payout, reason="Darts win")
+    outcome = "win" if game.payout > game.bet else ("push" if game.payout == game.bet else "lose")
+    record_result(game.player_id, "darts", game.bet, game.bet, game.payout, outcome)
+
+
+async def _rerender(interaction: Interaction, game: DartsGame):
+    view, files = _build(game)
+    try:
+        await interaction.response.edit_message(view=view, attachments=files)
+    except (discord.NotFound, discord.InteractionResponded):
+        try:
+            target = game.message if getattr(game, "message", None) else interaction.message
+            if target is not None:
+                await target.edit(view=view, attachments=files)
+        except discord.HTTPException:
+            logger.debug("darts fallback edit failed", exc_info=True)
+    try:
+        interaction.client.add_view(view, message_id=game.message_id)
+    except Exception:
+        logger.debug("darts add_view failed", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Interaction handling
+# ---------------------------------------------------------------------------
+def _make_throw_cb(game):
+    async def _cb(interaction: Interaction):
+        with action_in_flight():
+            await _handle_throw(interaction, game)
+    return _cb
+
+
+def _make_stand_cb(game):
+    async def _cb(interaction: Interaction):
+        with action_in_flight():
+            await _handle_stand(interaction, game)
+    return _cb
+
+
+def _make_again_cb(game):
+    async def _cb(interaction: Interaction):
+        with action_in_flight():
+            await _handle_again(interaction, game)
+    return _cb
+
+
+def _not_your_game(interaction: Interaction, game: DartsGame) -> bool:
+    return interaction.user.id != game.player_id
+
+
+async def _handle_throw(interaction: Interaction, game: DartsGame):
+    if _not_your_game(interaction, game):
+        await interaction.response.send_message(
+            "This isn't your game - start your own with `/darts`.", ephemeral=True)
+        return
+    if game.busy or game.state != "playing":
+        await interaction.response.defer()
+        return
+    game.busy = True
+    try:
+        result = game.throw_dart()
+        if result in ("bust", "max"):
+            _settle(game)
+        else:
+            save_game(game)
+        await _rerender(interaction, game)
+    finally:
+        game.busy = False
+
+
+async def _handle_stand(interaction: Interaction, game: DartsGame):
+    if _not_your_game(interaction, game):
+        await interaction.response.send_message(
+            "This isn't your game - start your own with `/darts`.", ephemeral=True)
+        return
+    if game.busy or game.state != "playing":
+        await interaction.response.defer()
+        return
+    game.busy = True
+    try:
+        game.stand()
+        _settle(game)
+        await _rerender(interaction, game)
+    finally:
+        game.busy = False
+
+
+async def _handle_again(interaction: Interaction, old_game: DartsGame):
+    if _not_your_game(interaction, old_game):
+        await interaction.response.send_message(
+            "This isn't your game - start your own with `/darts`.", ephemeral=True)
+        return
+    if old_game.replayed:
+        await interaction.response.defer()
+        return
+    old_game.replayed = True
+    bet = old_game.bet
+    min_bet = getattr(config, "DARTS_MIN_BET", 5)
+    max_bet = getattr(config, "DARTS_MAX_BET", 1_000)
+    if await reject_if_maintenance(interaction):
+        old_game.replayed = False
+        return
+    if not getattr(config, "DARTS_ENABLED", True):
+        old_game.replayed = False
+        await interaction.response.send_message("The darts board is closed.", ephemeral=True)
+        return
+    if bet < min_bet or bet > max_bet:
+        old_game.replayed = False
+        await interaction.response.send_message(
+            f"Bets must be between {min_bet:,} and {max_bet:,} UKPence.", ephemeral=True)
+        return
+    if get_bb(old_game.player_id) < bet or not remove_bb(old_game.player_id, bet, reason="Darts bet"):
+        old_game.replayed = False
+        await interaction.response.send_message(
+            f"You need {bet:,} UKPence to play again.", ephemeral=True)
+        return
+
+    game = DartsGame.new(old_game.player_id, old_game.player_name, old_game.channel_id, bet)
+    game.message_id = old_game.message_id
+    game.throw_dart()                                  # auto-throw the first dart
+    save_game(game)
+    view, files = _build(game)
+    try:
+        await interaction.response.edit_message(view=view, attachments=files)
+    except (discord.NotFound, discord.InteractionResponded):
+        try:
+            await (old_game.message or interaction.message).edit(view=view, attachments=files)
+        except discord.HTTPException:
+            logger.error("Darts replay failed; refunding stake.")
+            credit_from_bank(game.player_id, bet, "Darts stake refund (replay failed)")
+            delete_state(game.message_id)
+            old_game.replayed = False
+            return
+    try:
+        interaction.client.add_view(view, message_id=game.message_id)
+    except Exception:
+        logger.debug("darts replay add_view failed", exc_info=True)
+
+
+async def _show_rules(interaction: Interaction):
+    min_bet = getattr(config, "DARTS_MIN_BET", 5)
+    max_bet = getattr(config, "DARTS_MAX_BET", 1_000)
+    bust = int(getattr(config, "DARTS_BUST", 60))
+    darts = int(getattr(config, "DARTS_DARTS", 3))
+    floor = getattr(config, "DARTS_PAYOUTS", [(34,)])[0][0]
+    rules = (
+        "## 🎯 Darts - House Rules\n"
+        f"Throw up to **{darts} darts**; your score adds up. **✋ Stand** to bank a multiplier by "
+        f"how high you got - but if a throw takes you **over {bust}** you **bust** and lose the "
+        "stake.\n\n"
+        f"- Each dart lands on a real, **area-weighted** board: singles are common, **trebles & "
+        "doubles are rare** (less space) but worth far more - and a small chance to miss.\n"
+        f"- Your first dart is thrown on the deal; then **🎯 Throw** or **✋ Stand** for darts 2 "
+        "& 3 (the 3rd stands automatically).\n"
+        f"- **Paytable:** {_paytable_line()}. Below **{floor}** is a loss.\n"
+        f"- **Bets:** {min_bet:,} - {max_bet:,} UKPence. Stakes go to the house bank; wins paid from it.\n\n"
+        "-# Trebles are a jackpot and a trap - the closer to the line, the bigger the prize. 🇬🇧"
+    )
+    await interaction.response.send_message(rules, ephemeral=True)
+
+
+# ---------------------------------------------------------------------------
+# Command entry
+# ---------------------------------------------------------------------------
+@deal_in_flight
+async def handle_darts_command(interaction: Interaction, amount: int):
+    if await reject_if_maintenance(interaction):
+        return
+    if not getattr(config, "DARTS_ENABLED", True):
+        await interaction.response.send_message("The darts board is closed.", ephemeral=True)
+        return
+    min_bet = getattr(config, "DARTS_MIN_BET", 5)
+    max_bet = getattr(config, "DARTS_MAX_BET", 1_000)
+    if amount < min_bet:
+        await interaction.response.send_message(f"The minimum bet is {min_bet:,} UKPence.", ephemeral=True)
+        return
+    if amount > max_bet:
+        await interaction.response.send_message(f"The maximum bet is {max_bet:,} UKPence.", ephemeral=True)
+        return
+    if get_bb(interaction.user.id) < amount:
+        await interaction.response.send_message(
+            f"You don't have enough UKPence. Your balance is {get_bb(interaction.user.id):,}.", ephemeral=True)
+        return
+    if not remove_bb(interaction.user.id, amount, reason="Darts bet"):
+        await interaction.response.send_message(
+            f"You don't have enough UKPence. Your balance is {get_bb(interaction.user.id):,}.", ephemeral=True)
+        return
+
+    name = discord.utils.escape_markdown(interaction.user.display_name)
+    game = DartsGame.new(interaction.user.id, name, interaction.channel_id, amount)
+    game.throw_dart()                                  # auto-throw the first dart on the deal
+    try:
+        await interaction.response.defer(thinking=True)
+        view, files = _build(game)
+        msg = await interaction.followup.send(view=view, files=files)
+    except Exception:
+        logger.error("Darts deal failed; refunding stake.", exc_info=True)
+        credit_from_bank(interaction.user.id, amount, "Darts stake refund (deal failed)")
+        try:
+            await interaction.followup.send(
+                "Something went wrong at the oche - your stake has been refunded.", ephemeral=True)
+        except Exception:
+            pass
+        return
+
+    game.message_id = msg.id
+    try:
+        if game.state == "playing":
+            save_game(game)
+            interaction.client.add_view(view, message_id=msg.id)
+        else:
+            delete_state(msg.id)
+    except Exception:
+        logger.error("Darts post-send persistence issue (game is live).", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Restart recovery (called from event_handlers.reattach_persistent_views)
+# ---------------------------------------------------------------------------
+def reattach_darts_view(client, key, value):
+    """Re-register click routing for an in-play game after a restart (fully serialised, so it
+    resumes). Terminal/malformed entries are pruned."""
+    try:
+        game = DartsGame.from_dict(value)
+    except Exception as e:
+        logger.error(f"Pruning malformed darts entry {key}: {e}", exc_info=True)
+        delete_state(key)
+        return
+    if game.state != "playing":
+        delete_state(key)
+        return
+    try:
+        game.message_id = int(key)
+        view, _files = _build(game)
+        client.add_view(view, message_id=int(key))
+    except Exception as e:
+        logger.error(f"Failed to reattach darts view {key}: {e}", exc_info=True)
