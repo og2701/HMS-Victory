@@ -49,6 +49,7 @@ class BankManager:
                 mines_in_add = amount if "Mines" in description else 0
                 penalty_in_add = amount if "Penalty" in description else 0
                 chest_in_add = amount if "Chest" in description else 0
+                blockade_in_add = amount if "Blockade" in description else 0
                 tax_add = amount if "Wealth tax" in description else 0
                 c.execute('''
                     UPDATE bank
@@ -63,11 +64,12 @@ class BankManager:
                         total_mines_in = total_mines_in + ?,
                         total_penalty_in = total_penalty_in + ?,
                         total_chest_in = total_chest_in + ?,
+                        total_blockade_in = total_blockade_in + ?,
                         total_tax_collected = total_tax_collected + ?, last_updated = ?
                     WHERE id = 1
                 ''', (new_bot_balance, amount, bj_in_add, hl_in_add, slots_in_add,
                       vp_in_add, reddog_in_add, tcp_in_add, roulette_in_add, mines_in_add,
-                      penalty_in_add, chest_in_add, tax_add, now))
+                      penalty_in_add, chest_in_add, blockade_in_add, tax_add, now))
                 
                 c.execute('COMMIT')
 
@@ -161,6 +163,7 @@ class BankManager:
                     mines_out_add = amount if "Mines" in description else 0
                     penalty_out_add = amount if "Penalty" in description else 0
                     chest_out_add = amount if "Chest" in description else 0
+                    blockade_out_add = amount if "Blockade" in description else 0
                     c.execute('''
                         UPDATE bank
                         SET balance = ?,
@@ -174,11 +177,12 @@ class BankManager:
                             total_mines_out = total_mines_out + ?,
                             total_penalty_out = total_penalty_out + ?,
                             total_chest_out = total_chest_out + ?,
+                            total_blockade_out = total_blockade_out + ?,
                             last_updated = ?
                         WHERE id = 1
                     ''', (new_balance, bj_out_add, hl_out_add, slots_out_add,
                           vp_out_add, reddog_out_add, tcp_out_add, roulette_out_add,
-                          mines_out_add, penalty_out_add, chest_out_add, now))
+                          mines_out_add, penalty_out_add, chest_out_add, blockade_out_add, now))
                     
                     c.execute('COMMIT')
 
@@ -245,19 +249,20 @@ class BankManager:
                 "total_roulette_in, total_roulette_out, "
                 "total_mines_in, total_mines_out, "
                 "total_penalty_in, total_penalty_out, "
-                "total_chest_in, total_chest_out")
+                "total_chest_in, total_chest_out, "
+                "total_blockade_in, total_blockade_out")
         result = DatabaseManager.fetch_one(f"SELECT {cols} FROM bank WHERE id = 1")
         if result:
             (tax, bj_in, bj_out, hl_in, hl_out, sl_in, sl_out,
              vp_in, vp_out, rd_in, rd_out, tcp_in, tcp_out, ro_in, ro_out,
-             mi_in, mi_out, pen_in, pen_out, ch_in, ch_out) = result
+             mi_in, mi_out, pen_in, pen_out, ch_in, ch_out, bl_in, bl_out) = result
         else:
             tax = bj_in = bj_out = hl_in = hl_out = sl_in = sl_out = 0
             vp_in = vp_out = rd_in = rd_out = tcp_in = tcp_out = ro_in = ro_out = 0
-            mi_in = mi_out = pen_in = pen_out = ch_in = ch_out = 0
+            mi_in = mi_out = pen_in = pen_out = ch_in = ch_out = bl_in = bl_out = 0
 
-        casino_in = bj_in + hl_in + sl_in + vp_in + rd_in + tcp_in + ro_in + mi_in + pen_in + ch_in
-        casino_out = bj_out + hl_out + sl_out + vp_out + rd_out + tcp_out + ro_out + mi_out + pen_out + ch_out
+        casino_in = bj_in + hl_in + sl_in + vp_in + rd_in + tcp_in + ro_in + mi_in + pen_in + ch_in + bl_in
+        casino_out = bj_out + hl_out + sl_out + vp_out + rd_out + tcp_out + ro_out + mi_out + pen_out + ch_out + bl_out
         return {
             "tax_collected": tax,
             "blackjack_in": bj_in, "blackjack_out": bj_out, "blackjack_net": bj_in - bj_out,
@@ -270,6 +275,7 @@ class BankManager:
             "mines_in": mi_in, "mines_out": mi_out, "mines_net": mi_in - mi_out,
             "penalty_in": pen_in, "penalty_out": pen_out, "penalty_net": pen_in - pen_out,
             "chest_in": ch_in, "chest_out": ch_out, "chest_net": ch_in - ch_out,
+            "blockade_in": bl_in, "blockade_out": bl_out, "blockade_net": bl_in - bl_out,
             "casino_in": casino_in, "casino_out": casino_out, "casino_net": casino_in - casino_out,
         }
 

@@ -107,6 +107,20 @@ CHEST_TIERS = [
     ("Diamond", "💎", 8.0),
 ]
 
+# --- Blockade Run (vs-the-house "crash") -----------------------------------------
+# Your ship runs the enemy blockade; a multiplier climbs each tick (the message live-updates).
+# Drop Anchor to bank stake×multiplier before a hidden, pre-rolled bust point sinks you (lose the
+# stake). The bust distribution bakes in a flat CRASH_HOUSE_EDGE, so every cash-out target carries
+# the same edge - there's no exploitable strategy, only how much nerve you have. The max
+# multiplier bounds both the round length and the bank's tail exposure.
+CRASH_ENABLED = True
+CRASH_MIN_BET = 5
+CRASH_MAX_BET = 1_000
+CRASH_HOUSE_EDGE = 0.03      # baked into the bust distribution (edge is identical at any cash-out)
+CRASH_MAX_MULT = 25.0        # auto-cash + bust ceiling (caps round length and bank exposure)
+CRASH_GROWTH = 1.07          # multiplier ×= this each tick (~reaches 2x in ~10 ticks)
+CRASH_TICK_SECS = 1.3        # seconds between live multiplier updates
+
 # Penalty Shootout (commands/economy/penalty.py)
 PENALTY_ENABLED = True
 PENALTY_MIN_BET = 5

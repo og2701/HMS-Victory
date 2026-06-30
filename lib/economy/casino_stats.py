@@ -29,6 +29,7 @@ GAME_LABELS = {
     "mines": "Mines",
     "penalty": "Penalty Shootout",
     "chest": "Chest Upgrade",
+    "blockade": "Blockade Run",
 }
 
 
@@ -61,8 +62,8 @@ def record_result(user_id, game: str, bet, staked, payout, outcome=None) -> None
 
 
 # Number of distinct house games (blackjack, higherlower, slots, videopoker, reddog, tcp,
-# roulette, mines, penalty, chest) - all of them recorded here. Connect 4 is PvP and lives elsewhere.
-_CASINO_GAME_COUNT = 10
+# roulette, mines, penalty, chest, blockade) - all recorded here. Connect 4 is PvP and lives elsewhere.
+_CASINO_GAME_COUNT = 11
 
 
 def _award_silently(user_id, badge_id):

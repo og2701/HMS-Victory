@@ -20,6 +20,7 @@ from commands.economy.three_card_poker import handle_tcp_command
 from commands.economy.roulette import handle_roulette_command
 from commands.economy.mines import handle_mines_command
 from commands.economy.chest import handle_chest_command
+from commands.economy.blockade import handle_blockade_command
 from commands.economy.penalty import handle_penalty_command
 from lib.economy.casino_stats import get_net_standings
 
@@ -55,6 +56,9 @@ GAMES = [
     {"key": "chest", "label": "Chest Upgrade", "emoji": "🧰",
      "handler": handle_chest_command,
      "desc": "Risk it to level up the chest - cash out before it shatters."},
+    {"key": "blockade", "label": "Blockade Run", "emoji": "🚢",
+     "handler": handle_blockade_command,
+     "desc": "Run the blockade - bank the climbing multiplier before they sink you."},
     {"key": "penalty", "label": "Penalty Shootout", "emoji": "⚽",
      "handler": handle_penalty_command,
      "desc": "Beat the keeper from the spot - score to build your multiplier."},
