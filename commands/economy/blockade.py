@@ -88,6 +88,24 @@ def _asset_bytes(name: str):
     return data
 
 
+def _raw_asset(filename: str):
+    """Raw bytes of data/blockade/<filename>, cached and untouched (NOT run through the PNG
+    resizer) so an animation is preserved. None if absent/unreadable."""
+    key = "_raw_" + filename
+    if key in _asset_cache:
+        return _asset_cache[key]
+    data = None
+    path = os.path.join(_ASSET_DIR, filename)
+    try:
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                data = f.read()
+    except Exception:
+        logger.debug("blockade raw asset load failed: %s", filename, exc_info=True)
+    _asset_cache[key] = data
+    return data
+
+
 class CrashGame:
     """One Blockade Run. The bust point is fixed at deal; `mult` is the displayed multiplier,
     advanced one tick at a time by the ticker loop."""
@@ -108,6 +126,8 @@ class CrashGame:
         self.message = None           # discord.Message the loop edits
         self.client = None
         self.task = None              # the ticker asyncio.Task
+        self.img_url = None           # CDN url of the uploaded sailing ship (referenced each surge)
+        self.replayed = False         # set once Sail Again has launched the next run on this message
 
     @classmethod
     def new(cls, player_id, player_name, channel_id, bet):
@@ -189,13 +209,20 @@ def _status_text(game: CrashGame) -> str:
             f"**⚓ Drop Anchor** while you're ahead.")
 
 
-def _board_image(game: CrashGame):
+def _upload_image(game: CrashGame):
+    """(bytes, filename) to UPLOAD for the current state. Running prefers the ANIMATED sailing
+    webp (uploaded once, then referenced by url - see _build); terminal uses the static PNGs."""
     if game.state == "cashed":
         return _asset_bytes("escaped"), "blockade.png"
     if game.state in ("busted", "voided"):
         return _asset_bytes("sunk"), "blockade.png"
-    # running: a dedicated 'sailing' ship if present, else reuse the triumphant 'escaped' one.
-    # At a 5s surge cadence re-uploading the ship each tick is cheap (was text-only at 1.3s).
+    # Prefer an ANIMATED ship - WebP first (it has a transparent background, so it floats on the
+    # message like the other art; an animated GIF can't do real alpha and would show an opaque
+    # box). Fall back to a static PNG (a dedicated 'sailing.png', else the triumphant 'escaped').
+    for ext in ("webp", "gif"):
+        anim = _raw_asset(f"sailing.{ext}")
+        if anim is not None:
+            return anim, f"blockade.{ext}"
     return (_asset_bytes("sailing") or _asset_bytes("escaped")), "blockade.png"
 
 
@@ -227,15 +254,25 @@ def _again_button(game: CrashGame) -> discord.ui.Button:
 
 
 def _build(game: CrashGame):
-    """Return (view, files)."""
+    """Return (view, files).
+
+    While running, the (animated) sailing ship is uploaded ONCE and then referenced by its CDN
+    url every surge - so the animation plays continuously and we never re-upload the ~4MB webp
+    or reset it. `files` is empty in that case and the surge edit leaves the attachment in place.
+    The opening frame (no url yet) and the terminal escaped/sunk art are real uploads."""
     view = discord.ui.LayoutView(timeout=None)
     files = []
-    img_bytes, fname = _board_image(game)
-    if img_bytes is not None:
-        files = [discord.File(io.BytesIO(img_bytes), filename=fname)]
+    if game.state == "running" and game.img_url:
         gallery = discord.ui.MediaGallery()
-        gallery.add_item(media=f"attachment://{fname}")
+        gallery.add_item(media=game.img_url)                 # reference the uploaded ship
         view.add_item(gallery)
+    else:
+        data, fname = _upload_image(game)
+        if data is not None:
+            files = [discord.File(io.BytesIO(data), filename=fname)]
+            gallery = discord.ui.MediaGallery()
+            gallery.add_item(media=f"attachment://{fname}")
+            view.add_item(gallery)
     box = discord.ui.Container(accent_colour=ACCENT)
     box.add_item(discord.ui.TextDisplay(_status_text(game)))
     view.add_item(box)
@@ -249,8 +286,23 @@ def _build(game: CrashGame):
     return view, files
 
 
-# payout at the current displayed multiplier (used in the live text)
-CrashGame.payout_now = lambda self: int(self.bet * self.mult)
+async def _apply_edit(msg, view, files):
+    """Edit the board. With files -> upload/replace the attachment (opening frame, terminal art);
+    without -> leave the existing attachment untouched (running surges reference it by url, so the
+    animation isn't re-sent or reset)."""
+    if files:
+        await msg.edit(view=view, attachments=files)
+    else:
+        await msg.edit(view=view)
+
+
+def _capture_img_url(game: CrashGame, msg):
+    """Remember the CDN url of the ship we just uploaded, so subsequent surges reference it."""
+    try:
+        atts = getattr(msg, "attachments", None)
+        game.img_url = atts[0].url if atts else None
+    except Exception:
+        game.img_url = None
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +323,7 @@ async def _refresh(game: CrashGame):
     """Re-render the live message and re-register button routing for the new view."""
     view, files = _build(game)
     try:
-        await game.message.edit(view=view, attachments=files)
+        await _apply_edit(game.message, view, files)
         if game.client is not None and game.message_id is not None:
             game.client.add_view(view, message_id=game.message_id)
     except discord.HTTPException:
@@ -341,9 +393,15 @@ async def _handle_anchor(interaction: Interaction, game: CrashGame):
         await interaction.response.edit_message(view=view, attachments=files)
     except (discord.NotFound, discord.InteractionResponded):
         try:
-            await game.message.edit(view=view, attachments=files)
+            await _apply_edit(game.message, view, files)
         except discord.HTTPException:
             logger.debug("blockade anchor fallback edit failed", exc_info=True)
+    # Re-register the terminal view so its Sail Again / Rules buttons actually route (an
+    # interaction edit alone doesn't persist the routing).
+    try:
+        interaction.client.add_view(view, message_id=game.message_id)
+    except Exception:
+        logger.debug("blockade anchor add_view failed", exc_info=True)
 
 
 async def _handle_again(interaction: Interaction, old_game: CrashGame):
@@ -351,23 +409,29 @@ async def _handle_again(interaction: Interaction, old_game: CrashGame):
         await interaction.response.send_message(
             "This isn't your run - start your own with `/blockade`.", ephemeral=True)
         return
-    if await reject_if_maintenance(interaction):
+    # Claim the replay before any await so two fast clicks can't both re-deal (reset on any
+    # early bail so a genuine retry still works). The old run is terminal by the time this shows.
+    if old_game.replayed:
+        await interaction.response.defer()
         return
-    if not getattr(config, "CRASH_ENABLED", True):
-        await interaction.response.send_message("The blockade is closed.", ephemeral=True)
-        return
+    old_game.replayed = True
     bet = old_game.bet
     min_bet = getattr(config, "CRASH_MIN_BET", 5)
     max_bet = getattr(config, "CRASH_MAX_BET", 1_000)
+    if await reject_if_maintenance(interaction):
+        old_game.replayed = False
+        return
+    if not getattr(config, "CRASH_ENABLED", True):
+        old_game.replayed = False
+        await interaction.response.send_message("The blockade is closed.", ephemeral=True)
+        return
     if bet < min_bet or bet > max_bet:
+        old_game.replayed = False
         await interaction.response.send_message(
             f"Bets must be between {min_bet:,} and {max_bet:,} UKPence.", ephemeral=True)
         return
-    # One live game per message: if a new run is already on this message, bail.
-    if _GAMES.get(old_game.message_id) is not old_game:
-        await interaction.response.defer()
-        return
     if get_bb(old_game.player_id) < bet or not remove_bb(old_game.player_id, bet, reason="Blockade Run bet"):
+        old_game.replayed = False
         await interaction.response.send_message(
             f"You need {bet:,} UKPence to sail again.", ephemeral=True)
         return
@@ -378,18 +442,28 @@ async def _handle_again(interaction: Interaction, old_game: CrashGame):
     game.client = old_game.client
     _GAMES[game.message_id] = game                 # replace the old (terminal) game
     save_state(game.message_id, game.escrow())
-    view, files = _build(game)
+    view, files = _build(game)                     # opening frame uploads the ship afresh
     try:
         await interaction.response.edit_message(view=view, attachments=files)
+        try:
+            _capture_img_url(game, await interaction.original_response())
+        except Exception:
+            game.img_url = None
     except (discord.NotFound, discord.InteractionResponded):
         try:
-            await game.message.edit(view=view, attachments=files)
+            msg = await game.message.edit(view=view, attachments=files)
+            _capture_img_url(game, msg)
         except discord.HTTPException:
             logger.error("Blockade replay failed to show the new board; refunding stake.")
             credit_from_bank(game.player_id, bet, "Blockade Run stake refund (replay failed)")
             delete_state(game.message_id)
             _GAMES.pop(game.message_id, None)
+            old_game.replayed = False
             return
+    try:
+        interaction.client.add_view(view, message_id=game.message_id)
+    except Exception:
+        logger.debug("blockade replay add_view failed", exc_info=True)
     game.task = asyncio.create_task(_ticker(game))
 
 
@@ -459,6 +533,7 @@ async def handle_blockade_command(interaction: Interaction, amount: int):
     game.message = msg
     game.message_id = msg.id
     game.client = interaction.client
+    _capture_img_url(game, msg)                  # remember the uploaded ship's url for later surges
     _GAMES[msg.id] = game
     try:
         save_state(msg.id, game.escrow())        # so a restart mid-run refunds the stake
