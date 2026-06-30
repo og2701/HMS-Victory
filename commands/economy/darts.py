@@ -118,7 +118,11 @@ def _asset_bytes(name: str):
 _BOARD_PX = 512
 _DART_LEN = 178
 _NUM_ORDER = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5]
-_RING_FRAC = {"Single": 0.46, "Treble": 0.62, "Double": 0.93}
+# Ring radius as a fraction of the board IMAGE width (calibrated to data/darts/board.png:
+# bull ~0.07, treble ring ~0.25, single beds ~0.32, double ring ~0.37, surround ~0.44).
+_RING_FRAC = {"Single": 0.32, "Treble": 0.25, "Double": 0.37}
+_BULL_FRAC = 0.07
+_MISS_FRAC = 0.44
 _render_cache = {}
 
 
@@ -182,15 +186,16 @@ def _dart_sprites():
 
 
 def _dart_xy(label: str, rng) -> tuple:
-    """Where on the board a dart with this region label lands (with a little jitter)."""
+    """Where on the board a dart with this region label lands (radius by ring, angle by number,
+    with a little jitter kept inside the segment). Radii are fractions of the board width."""
     cx = cy = _BOARD_PX / 2.0
-    R = _BOARD_PX * 0.36
+    W = _BOARD_PX
     if label.startswith("Bullseye"):
         r, ang = 0.0, rng.uniform(0, 2 * math.pi)
     elif label.startswith("Bull"):
-        r, ang = 0.06 * R, rng.uniform(0, 2 * math.pi)
+        r, ang = _BULL_FRAC * W, rng.uniform(0, 2 * math.pi)
     elif label.startswith("missed"):
-        r, ang = 1.05 * R, rng.uniform(0, 2 * math.pi)
+        r, ang = _MISS_FRAC * W, rng.uniform(0, 2 * math.pi)
     else:
         parts = label.split()
         try:
@@ -198,8 +203,8 @@ def _dart_xy(label: str, rng) -> tuple:
             idx = _NUM_ORDER.index(n)
         except Exception:
             return cx, cy
-        ang = math.radians(idx * 18) + rng.uniform(-0.08, 0.08)
-        r = _RING_FRAC.get(kind, 0.46) * R * rng.uniform(0.95, 1.04)
+        ang = math.radians(idx * 18) + rng.uniform(-0.07, 0.07)
+        r = _RING_FRAC.get(kind, 0.32) * W * rng.uniform(0.96, 1.03)
     return cx + r * math.sin(ang), cy - r * math.cos(ang)
 
 
