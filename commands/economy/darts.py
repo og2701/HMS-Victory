@@ -116,7 +116,7 @@ def _asset_bytes(name: str):
 # each onto the board at its scored region (number → angle, ring → radius), so the board shows
 # your actual darts accumulating. Pure-PIL (no numpy); sprites + tips are cached on first use.
 _BOARD_PX = 512
-_DART_LEN = 178
+_DART_LEN = 120
 _NUM_ORDER = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5]
 # Ring radius as a fraction of the board IMAGE width (calibrated to data/darts/board.png:
 # bull ~0.07, treble ring ~0.25, single beds ~0.32, double ring ~0.37, surround ~0.44).
@@ -126,27 +126,43 @@ _MISS_FRAC = 0.44
 _render_cache = {}
 
 
-def _tip_of(sprite):
-    """Pixel of the dart's TIP (its narrow point) in `sprite`. The two ends of the dart are the
-    farthest-apart opaque pixels; the tip is whichever end has fewer neighbours (the flight end
-    is wide). Analysed on a small alpha thumbnail, then scaled to the sprite - pure PIL."""
+def _ends(sprite):
+    """(tip, flight) pixels of the dart in `sprite`. The two ends are the farthest-apart opaque
+    pixels; the tip is whichever end has fewer neighbours (the flight is the wide end). Analysed
+    on a small alpha thumbnail then scaled back - pure PIL."""
     W, H = sprite.size
-    aw = 100
+    aw = 110
     ah = max(1, round(H * aw / W))
     a = sprite.getchannel("A").resize((aw, ah))
     px = a.load()
     pts = [(x, y) for y in range(ah) for x in range(aw) if px[x, y] > 40]
     if not pts:
-        return (W / 2, H / 2)
+        return (W / 2.0, H / 2.0), (W / 2.0, H / 2.0)
     cx = sum(p[0] for p in pts) / len(pts)
     cy = sum(p[1] for p in pts) / len(pts)
-    far = lambda fx, fy: max(pts, key=lambda p: (p[0] - fx) ** 2 + (p[1] - fy) ** 2)
-    p1 = far(cx, cy)
-    p2 = far(*p1)
+    p1 = max(pts, key=lambda p: (p[0] - cx) ** 2 + (p[1] - cy) ** 2)
+    p2 = max(pts, key=lambda p: (p[0] - p1[0]) ** 2 + (p[1] - p1[1]) ** 2)
     r2 = (aw * 0.13) ** 2
     width = lambda p: sum(1 for q in pts if (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2 < r2)
-    tip = p1 if width(p1) <= width(p2) else p2
-    return (tip[0] * W / aw, tip[1] * H / ah)
+    tip, fl = (p1, p2) if width(p1) <= width(p2) else (p2, p1)
+    sx, sy = W / aw, H / ah
+    return (tip[0] * sx, tip[1] * sy), (fl[0] * sx, fl[1] * sy)
+
+
+def _oriented(sprite, have_angle, want_angle):
+    """Rotate `sprite` so the dart points along want_angle (flight→tip), returning
+    (rotated_sprite, new_tip). Tries both rotation signs and keeps whichever actually lands the
+    dart on the wanted angle (robust to PIL's rotation convention)."""
+    best = None
+    for sign in (1, -1):
+        rot = sprite.rotate(sign * math.degrees(want_angle - have_angle),
+                            expand=True, resample=Image.BICUBIC)
+        tip, fl = _ends(rot)
+        got = math.atan2(tip[1] - fl[1], tip[0] - fl[0])
+        err = abs(((got - want_angle + math.pi) % (2 * math.pi)) - math.pi)
+        if best is None or err < best[0]:
+            best = (err, rot, tip)
+    return best[1], best[2]
 
 
 def _base_board():
@@ -163,7 +179,8 @@ def _base_board():
 
 
 def _dart_sprites():
-    """List of (scaled sprite, tip_xy), one per data/darts/dart_NN.png (cached)."""
+    """List of (scaled sprite, dart_angle) for each data/darts/dart_NN.png (cached). dart_angle is
+    the sprite's flight→tip direction, used to rotate it to point into the board."""
     if "darts" not in _render_cache:
         out = []
         for i in range(1, 13):
@@ -178,7 +195,8 @@ def _dart_sprites():
                 w, h = im.size
                 s = _DART_LEN / max(w, h)
                 im = im.resize((max(1, round(w * s)), max(1, round(h * s))), Image.LANCZOS)
-                out.append((im, _tip_of(im)))
+                tip, fl = _ends(im)
+                out.append((im, math.atan2(tip[1] - fl[1], tip[0] - fl[0])))
             except Exception:
                 logger.debug("darts sprite load failed: %s", path, exc_info=True)
         _render_cache["darts"] = out
@@ -215,15 +233,20 @@ def _render_play_board(game):
     if base is None or not sprites:
         return None
     img = base.copy()
+    cx = cy = _BOARD_PX / 2.0
     try:
         seed0 = int(game.game_id, 16)
     except (ValueError, TypeError):
         seed0 = abs(hash(game.game_id))
     for i, (label, _v) in enumerate(game.throws):
-        sp, (tx, ty) = sprites[i % len(sprites)]
+        sprite, have = sprites[i % len(sprites)]
         rng = random.Random((seed0 + i * 2654435761) & 0xFFFFFFFF)
         x, y = _dart_xy(label, rng)
-        img.alpha_composite(sp, (round(x - tx), round(y - ty)))
+        # Point the dart inward (tip in the bed, flight out toward the rim) with a little spread,
+        # so every dart reads as stuck in the board rather than sailing off at its sprite angle.
+        want = math.atan2(cy - y, cx - x) + rng.uniform(-0.13, 0.13)
+        rot, (tx, ty) = _oriented(sprite, have, want)
+        img.alpha_composite(rot, (round(x - tx), round(y - ty)))
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
