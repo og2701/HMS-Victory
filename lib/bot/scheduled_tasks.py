@@ -667,11 +667,12 @@ async def apply_wealth_demurrage(client):
     STOCK, so it can't be dodged by earning through untaxed channels (gambling/predictions) - a
     soft cap on hoarding. Supply is conserved (the charge goes to the bank).
 
-    Shuffle-proof: the charge is based on the GREATER of (a) the account's peak balance over the
-    lookback window and (b) its current balance plus UKP it sent out in the window, minus UKP it
-    was sent (so transit isn't double-counted). That defeats both splitting a hoard across alts
-    and dipping below the threshold just before the snapshot. The charge is clamped to the real
-    balance, so it never drives anyone negative."""
+    Shuffle-proof: the charge is based on effective wealth = current balance + UKP sent out in
+    the window − UKP received (so money parked on an alt/split across accounts still counts as
+    yours, and money just passing through isn't double-counted). It is NOT based on a peak
+    balance: money genuinely lost gambling or spent in the shop lowers your balance for real, so
+    it shouldn't be taxed - only money you still hold or have shuffled out should. The charge is
+    clamped to the real balance, so it never drives anyone negative."""
     try:
         import config, time
         if not getattr(config, "WEALTH_DEMURRAGE_ENABLED", True):
@@ -689,14 +690,15 @@ async def apply_wealth_demurrage(client):
         now = int(time.time())
         window_start = now - window_days * 86400
 
-        # Candidates: anyone currently over the threshold, anyone who SENT UKP in the window (a
-        # possible splitter now sitting under it), or anyone whose balance PEAKED above it during
-        # the window (a snapshot-timing dodger). Union, then judge each by effective wealth.
+        # Candidates: anyone currently over the threshold, or anyone who SENT UKP in the window
+        # (a possible splitter now sitting under it - their outflow still counts as theirs).
+        # Union, then judge each by effective wealth. Every chargeable user is covered by one of
+        # these two: to have effective wealth over the threshold you must either hold more than it
+        # now, or have sent the difference out recently.
         cand = set()
         for src, params in (
             ("SELECT user_id FROM ukpence WHERE balance > ? AND user_id != ?", (threshold, str(BOT_ID))),
             ("SELECT DISTINCT payer_id FROM pay_transfers WHERE timestamp > ?", (window_start,)),
-            ("SELECT DISTINCT user_id FROM balance_history WHERE ts > ? AND balance > ?", (window_start, threshold)),
         ):
             for row in (DatabaseManager.fetch_all(src, params) or []):
                 if row and row[0] is not None:
@@ -714,11 +716,10 @@ async def apply_wealth_demurrage(client):
             bal = int(bal_row[0]) if bal_row and bal_row[0] is not None else 0
             if bal <= 0:
                 continue
-            peak_row = DatabaseManager.fetch_one(
-                "SELECT MAX(balance) FROM balance_history WHERE user_id = ? AND ts > ?", (uid, window_start))
-            peak = max(bal, int(peak_row[0]) if peak_row and peak_row[0] is not None else 0)
+            # Effective wealth = what you hold + what you've shuffled out − what you've been sent.
+            # No peak term: money lost/spent genuinely left, so it isn't taxed.
             inflow, outflow = recent_transfer_io(uid, window_days)
-            effective = max(0, max(peak, bal + outflow) - inflow)
+            effective = max(0, bal + outflow - inflow)
             amount = int((effective - threshold) * rate)
             if amount > 0:
                 plans.append((uid, amount))

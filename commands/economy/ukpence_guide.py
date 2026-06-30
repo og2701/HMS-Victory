@@ -119,10 +119,10 @@ async def handle_ukpence_guide_command(interaction: discord.Interaction):
     tax.add_field(
         name="🔀 No dodging by shuffling",
         value="All three are charged on your **effective wealth** = your balance **+** what you've "
-              "sent out **−** what you've been sent (last 7 days), and demurrage uses your **highest** "
-              "balance that week. So parking UKP on an alt, splitting it up, or emptying out right "
-              "before Friday doesn't lower the bill - and the person you send to isn't charged for "
-              "money just passing through.",
+              "sent out **−** what you've been sent (last 7 days). So parking UKP on an alt or "
+              "splitting it across accounts doesn't lower the bill, and the person you send to "
+              "isn't charged for money just passing through. Money you genuinely lose or spend "
+              "isn't taxed - only what you still hold or have shuffled out.",
         inline=False)
     tax.set_footer(text="/pay has no fee but is capped at 10,000/day per person. The taxes just follow where the money really sits.")
 
