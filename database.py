@@ -832,8 +832,7 @@ def init_db():
             # Darts
             ('on_the_wire', 'On the Wire', 'Stand on 59 or 60 in Darts - the razor-edge top band', '🪒', 'Gold'),
             ('bullseye', 'Bullseye', 'Land a bullseye (50) with a single dart', '🐂', 'Silver'),
-            # Cross-game (secret): top tier in all three new games
-            ('nerves_of_steel', 'Nerves of Steel', 'Hit the top tier in Chest, Blockade Run and Darts', '🔱', 'Secret'),
+            # (The cross-game secret badge is seeded from the encrypted blob below, not here.)
         ]
         for b_id, b_name, b_desc, b_icon, b_rarity in badges:
             c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)",

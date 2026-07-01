@@ -49,15 +49,17 @@ async def award_higherlower_badges(client, game):
 
 
 # ---------------------------------------------------------------------------
-# Cross-game "pinnacle" tracking for the secret 'nerves_of_steel' badge:
-# hit the TOP tier in Chest, Blockade Run AND Darts.
+# Cross-game "pinnacle" tracking for the secret cross-game badge: hit the TOP
+# tier in all three new games. The badge id/name lives only in the encrypted
+# secret config (neutral key "a8"); we resolve it via secret_config.bid so the
+# open repo never names it.
 # ---------------------------------------------------------------------------
 _PINNACLES = {"chest", "blockade", "darts"}
 
 
 async def _record_pinnacle(client, user_id, which):
-    """Note a top-tier win in one of the three new games; award nerves_of_steel once all three
-    are done. Best-effort; a per-user list persists in config.GAME_PINNACLE_FILE."""
+    """Note a top-tier win in one of the three new games; award the secret cross-game badge once
+    all three are done. Best-effort; a per-user list persists in config.GAME_PINNACLE_FILE."""
     try:
         import config
         from lib.core.file_operations import load_json_file, save_json_file
@@ -69,7 +71,9 @@ async def _record_pinnacle(client, user_id, which):
             store[str(user_id)] = sorted(got)
             save_json_file(config.GAME_PINNACLE_FILE, store)
         if _PINNACLES <= got:
-            await award_badge_with_notify(client, user_id, "nerves_of_steel")
+            from lib.economy import secret_config as _sc
+            if (_b := _sc.bid("a8")):
+                await award_badge_with_notify(client, user_id, _b)
     except Exception:
         logger.error("pinnacle record failed", exc_info=True)
 
