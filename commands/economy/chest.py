@@ -397,6 +397,9 @@ async def _handle_upgrade(interaction: Interaction, game: ChestGame):
         else:                               # "up" - still playing, persist the new tier
             save_game(game)
         await _rerender(interaction, game)
+        if game.state == "over":
+            from lib.economy.game_badges import award_chest_badges
+            await award_chest_badges(interaction.client, game)
     finally:
         game.busy = False
 
@@ -418,6 +421,8 @@ async def _handle_cashout(interaction: Interaction, game: ChestGame):
         # tier 0 cash-out is a break-even refund of the stake; still log it for the stats.
         record_result(game.player_id, "chest", game.bet, game.bet, payout, "win")
         await _rerender(interaction, game)
+        from lib.economy.game_badges import award_chest_badges
+        await award_chest_badges(interaction.client, game)
     finally:
         game.busy = False
 

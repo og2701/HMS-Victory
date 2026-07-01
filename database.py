@@ -821,6 +821,19 @@ def init_db():
             # Battleship
             ('broadside', 'Broadside', 'Win a Battleship match staked at 1,000 UKPence or more', '💣', 'Silver'),
             ('ironclad', 'Ironclad', 'Win a Battleship match without any of your own ships being hit', '🛡️', 'Gold'),
+            # Chest Upgrade
+            ('diamond_chest', 'Diamond Chest', 'Reach the Diamond chest (the 8x top tier) in Chest Upgrade', '🔷', 'Silver'),
+            ('so_close', 'So Close', 'Shatter your chest going for the Diamond upgrade', '😩', 'Bronze'),
+            ('cold_feet', 'Cold Feet', 'Take your stake back from the Wood chest without risking an upgrade', '🥶', 'Bronze'),
+            # Blockade Run
+            ('ran_the_gauntlet', 'Ran the Gauntlet', 'Reach the maximum multiplier in Blockade Run', '🎖️', 'Gold'),
+            ('steady_nerves', 'Steady Nerves', 'Drop anchor at 10x or higher in Blockade Run', '🧭', 'Silver'),
+            ('davy_jones', "Davy Jones' Locker", 'Get sunk in Blockade Run', '🌊', 'Bronze'),
+            # Darts
+            ('on_the_wire', 'On the Wire', 'Stand on 59 or 60 in Darts - the razor-edge top band', '🪒', 'Gold'),
+            ('bullseye', 'Bullseye', 'Land a bullseye (50) with a single dart', '🐂', 'Silver'),
+            # Cross-game (secret): top tier in all three new games
+            ('nerves_of_steel', 'Nerves of Steel', 'Hit the top tier in Chest, Blockade Run and Darts', '🔱', 'Secret'),
         ]
         for b_id, b_name, b_desc, b_icon, b_rarity in badges:
             c.execute("INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) VALUES (?, ?, ?, ?, ?)",

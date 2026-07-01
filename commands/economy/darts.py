@@ -489,6 +489,9 @@ async def _handle_throw(interaction: Interaction, game: DartsGame):
         else:
             save_game(game)
         await _rerender(interaction, game)
+        if game.state == "done":
+            from lib.economy.game_badges import award_darts_badges
+            await award_darts_badges(interaction.client, game)
     finally:
         game.busy = False
 
@@ -506,6 +509,8 @@ async def _handle_stand(interaction: Interaction, game: DartsGame):
         game.stand()
         _settle(game)
         await _rerender(interaction, game)
+        from lib.economy.game_badges import award_darts_badges
+        await award_darts_badges(interaction.client, game)
     finally:
         game.busy = False
 

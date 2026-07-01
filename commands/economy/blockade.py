@@ -383,6 +383,9 @@ async def _handle_sail(interaction: Interaction, game: CrashGame):
         else:                                       # "sail" - still running, persist the new notch
             save_game(game)
         await _rerender(interaction, game)
+        if game.state != "running":
+            from lib.economy.game_badges import award_blockade_badges
+            await award_blockade_badges(interaction.client, game)
     finally:
         game.busy = False
 
@@ -401,6 +404,8 @@ async def _handle_anchor(interaction: Interaction, game: CrashGame):
         game.cash_out()
         _settle_cash(game, "Blockade Run cashout")
         await _rerender(interaction, game)
+        from lib.economy.game_badges import award_blockade_badges
+        await award_blockade_badges(interaction.client, game)
     finally:
         game.busy = False
 
