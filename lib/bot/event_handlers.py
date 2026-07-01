@@ -1509,6 +1509,19 @@ async def handle_shut_reaction(reaction, user):
     client = reaction.message._state._get_client()
     has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
     message_author = reaction.message.author
+    # Members and PCSOs cannot shut staff (Border Force or higher)
+    if not has_role:
+        is_target_staff = hasattr(message_author, "roles") and any(
+            role.id in [ROLES.DEPUTY_PM, ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]
+            for role in message_author.roles
+        )
+        if is_target_staff:
+            logger.info(f"User {user} (non-staff) tried to shut staff member {message_author}. Blocked.")
+            try:
+                await reaction.remove(user)
+            except Exception:
+                pass
+            return
     if message_author.is_timed_out():
         logger.info(f"User {message_author} is already timed out. Skipping further actions.")
         return
