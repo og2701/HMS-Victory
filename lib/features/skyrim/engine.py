@@ -47,6 +47,9 @@ SPEECH_SKILL_SCALE = 30              # (persuade)
 CRIT_CHANCE = 0.08                   # clean-strike chance: double damage, double loot on the kill
 BOUNTY_CHANCE = 0.06                 # per trash room: a named variant (+1 hp, 3x loot, 2x XP)
 DAILY_CLEAR_MULT = 1.5               # the daily delve pays a fatter clear bonus
+AMBUSH_BONUS = 20                    # attack bonus when striking from successful stealth
+LOCKED_CHEST_CHANCE = 0.25           # chance a chest room is master-locked (Lockpicking territory)
+SKILLS = ("blade", "marksman", "destruction", "sneak", "speech", "lockpicking")
 
 
 def _today_str() -> str:
@@ -77,8 +80,32 @@ def _profiles() -> dict:
     return load_json_file(config.SKYRIM_PROFILES_FILE) or {}
 
 
+def _migrate(profile: dict) -> dict:
+    """Upgrade an old class-era profile in place. The fixed classes are gone -
+    the old class key becomes the Guardian Stone (keys match), and the single
+    class-flavoured weapon skill moves into the matching attack style. Idempotent
+    and safe on new profiles."""
+    if "stone" not in profile:
+        profile["stone"] = profile.pop("class", "warrior")
+    skills = profile["skills"]
+    if "weapon" in skills:
+        style = {"warrior": "blade", "mage": "destruction", "thief": "marksman"}.get(
+            profile["stone"], "blade")
+        skills[style] = max(skills.get(style, 15), skills.pop("weapon"))
+    for s in SKILLS:
+        skills.setdefault(s, 15)
+    profile.setdefault("armour_style", "heavy")
+    return profile
+
+
 def get_profile(user_id) -> dict | None:
-    return _profiles().get(str(user_id))
+    p = _profiles().get(str(user_id))
+    if p is None:
+        return None
+    if "stone" not in p or "weapon" in p.get("skills", {}):
+        _migrate(p)
+        save_profile(p)          # one-time upgrade persists on first touch
+    return _migrate(p)           # cheap idempotent defaults for newer fields
 
 
 def save_profile(profile: dict):
@@ -88,22 +115,25 @@ def save_profile(profile: dict):
 
 
 def all_profiles() -> dict:
-    return _profiles()
+    return {k: _migrate(v) for k, v in _profiles().items()}
 
 
-def create_profile(user_id, name: str, class_key: str) -> dict:
-    cls = D.CLASSES[class_key]
+def create_profile(user_id, name: str, stone_key: str) -> dict:
+    stone = D.STONES[stone_key]
+    skills = {s: 15 for s in SKILLS}
+    skills.update(stone["start"])
     profile = {
         "user_id": int(user_id),
         "name": name,
-        "class": class_key,
+        "stone": stone_key,
         "xp": 0,
-        "skills": dict(cls["start"]),            # weapon / sneak / speech
+        "skills": skills,
         "perks": {},                             # perk key -> ranks taken
         "septims": 0,
         "potions": 2,           # kind start: a full belt for the first delve or two
         "weapon_tier": 0,
         "armour_tier": 0,
+        "armour_style": "heavy",                 # heavy (soak) or light (sneak) - free to switch
         "souls": 0,
         "words": 0,                              # shout words known (0..3)
         "stats": {"delves": 0, "clears": 0, "deaths": 0, "kills": 0, "sneaks": 0,
@@ -139,15 +169,29 @@ def potion_cap(profile) -> int:
     return BASE_POTION_CAP + perk_rank(profile, "alchemist")
 
 
-def weapon_skill_name(profile) -> str:
-    return D.CLASSES[profile["class"]]["weapon_skill"]
+def archetype(profile) -> str:
+    """Your build is what you practised. Top-two pair titles first, then the
+    single top skill; undeveloped characters are just Adventurers."""
+    ranked = sorted(profile["skills"].items(), key=lambda kv: kv[1], reverse=True)
+    (s1, v1), (s2, v2) = ranked[0], ranked[1]
+    # 35+: a stone-blessed START (30) is not yet a title - titles are practised into
+    if v1 >= 35 and v2 >= 35:
+        pair = D.ARCHETYPE_PAIRS.get(frozenset((s1, s2)))
+        if pair:
+            return pair
+    if v1 >= 35:
+        return D.ARCHETYPE_SINGLE.get(s1, "Adventurer")
+    return "Adventurer"
 
 
 def gear_name(profile, slot: str) -> str:
+    """Weapon flavour follows your most-practised attack style."""
     tier = D.GEAR_TIERS[profile[f"{slot}_tier"]]
-    kind = "sword" if slot == "weapon" else "armour"
     if slot == "weapon":
-        kind = {"warrior": "sword", "mage": "staff", "thief": "bow"}[profile["class"]]
+        best = max(D.STYLES, key=lambda s: profile["skills"][s])
+        kind = {"blade": "sword", "marksman": "bow", "destruction": "staff"}[best]
+    else:
+        kind = f"{profile.get('armour_style', 'heavy')} armour"
     return f"{tier['emoji']} {tier['name']} {kind}"
 
 
@@ -159,13 +203,14 @@ def _clamp(p: float) -> int:
     return int(max(ROLL_MIN, min(ROLL_MAX, round(p))))
 
 
-def fight_pct(profile, enemy_key: str, delve=None) -> int:
+def fight_pct(profile, enemy_key: str, style: str, delve=None) -> int:
+    """Success chance for attacking with one of the three styles - the style's
+    skill and its matchup against the enemy type both matter."""
     e = D.ENEMIES[enemy_key]
-    cls = D.CLASSES[profile["class"]]
     p = (e["fight"]
-         + _skill_component(profile["skills"]["weapon"], FIGHT_SKILL_SCALE)
+         + _skill_component(profile["skills"][style], FIGHT_SKILL_SCALE)
          + D.WEAPON_FIGHT_PER_TIER * profile["weapon_tier"]
-         + cls["fight_aff"].get(e["type"], 0)
+         + D.STYLE_AFF[e["type"]][style]
          + 4 * perk_rank(profile, "honed_edge")
          + weather_today()["fight"])
     if delve is not None:
@@ -173,19 +218,25 @@ def fight_pct(profile, enemy_key: str, delve=None) -> int:
             p += GROUNDED_BONUS
         if delve.blessed:
             p += BLESSING_BONUS
+        if delve.ambush:
+            p += AMBUSH_BONUS
     return _clamp(p)
+
+
+def best_style(profile, enemy_key: str, delve=None) -> str:
+    return max(D.STYLES, key=lambda s: fight_pct(profile, enemy_key, s, delve))
 
 
 def sneak_pct(profile, enemy_key: str) -> int | None:
     e = D.ENEMIES[enemy_key]
     if e["sneak"] is None:
         return None
-    cls = D.CLASSES[profile["class"]]
-    p = (e["sneak"]
+    p = (e["sneak"] + 4
          + _skill_component(profile["skills"]["sneak"], SNEAK_SKILL_SCALE)
-         + cls["sneak_mod"]
          + 6 * perk_rank(profile, "muffled")
          + weather_today()["sneak"])
+    if profile.get("armour_style") == "light" and profile["armour_tier"] >= 1:
+        p += D.LIGHT_SNEAK_BONUS
     return _clamp(p)
 
 
@@ -193,25 +244,39 @@ def persuade_pct(profile, enemy_key: str) -> int | None:
     e = D.ENEMIES[enemy_key]
     if e.get("persuade") is None:
         return None
-    cls = D.CLASSES[profile["class"]]
-    p = (e["persuade"]
+    p = (e["persuade"] + 2
          + _skill_component(profile["skills"]["speech"], SPEECH_SKILL_SCALE)
-         + cls["persuade_mod"]
          + 7 * perk_rank(profile, "persuasive"))
     return _clamp(p)
 
 
+def lockpick_pct(profile) -> int:
+    return _clamp(35 + _skill_component(profile["skills"]["lockpicking"], 45))
+
+
+def chest_trap_chance(profile) -> float:
+    """A practised eye spots the needle trap before it fires."""
+    return max(0.08, 0.25 - 0.17 * (profile["skills"]["lockpicking"] - 15) / 85)
+
+
 def soak_pct(profile) -> int:
-    return min(SOAK_CAP, D.ARMOUR_SOAK_PER_TIER * profile["armour_tier"]
+    per_tier = (D.LIGHT_SOAK_PER_TIER if profile.get("armour_style") == "light"
+                else D.ARMOUR_SOAK_PER_TIER)
+    return min(SOAK_CAP, per_tier * profile["armour_tier"]
                + 6 * perk_rank(profile, "juggernaut"))
 
 
 def _skill_up(profile, which: str) -> int:
-    """Improve a skill by use (fast early, slow late). Returns the gain."""
+    """Improve a skill by use (fast early, slow late). Your Guardian Stone's
+    skills learn faster. Returns the gain."""
     cur = profile["skills"][which]
-    gain = max(1, (100 - cur) // 25) if cur < 100 else 0
+    if cur >= 100:
+        return 0
+    gain = max(1, (100 - cur) // 25)
+    if which in D.STONES[profile["stone"]]["boost"]:
+        gain += 1
     profile["skills"][which] = min(100, cur + gain)
-    return gain
+    return profile["skills"][which] - cur
 
 
 def add_xp(profile, amount: int) -> tuple:
@@ -303,8 +368,11 @@ def build_rooms(loc_key: str, rng=None) -> list:
         if rng.random() < BOUNTY_CHANCE:
             room["bounty"] = True                  # a named variant: +1 hp, triple loot
         rooms.append(room)
-    rooms += [{"kind": "event", "key": k, "boss": False, "resolved": False}
-              for k in _draw_events(n_events, rng)]
+    for k in _draw_events(n_events, rng):
+        room = {"kind": "event", "key": k, "boss": False, "resolved": False}
+        if k == "chest" and rng.random() < LOCKED_CHEST_CHANCE:
+            room["locked"] = True                  # a master lock: Lockpicking territory
+        rooms.append(room)
     rng.shuffle(rooms)
     if loc.get("word_wall"):
         rooms.append({"kind": "event", "key": "wordwall", "boss": False, "resolved": False})
@@ -351,11 +419,14 @@ class Delve:
                  idx=0, hearts=None, satchel=0, shout_charges=None, engaged=False,
                  spotted=False, grounded=False, blessed=False, state="playing",
                  log=None, message_id=None, xp_gained=0, kills=0, result_line="",
-                 delve_id=None, enemy_hp=None, daily=False, fan=False):
+                 delve_id=None, enemy_hp=None, daily=False, fan=False,
+                 ambush=False, hp_warned=False):
         import uuid
         self.delve_id = delve_id or uuid.uuid4().hex[:12]
         self.daily = bool(daily)                  # the shared once-a-day dungeon
         self.fan = bool(fan)                      # the Adoring Fan absorbs one wound
+        self.ambush = bool(ambush)                # hidden and in position to strike
+        self.hp_warned = bool(hp_warned)          # the one-heart potion nudge was shown
         self.player_id = int(player_id)
         self.player_name = player_name
         self.channel_id = channel_id
@@ -423,6 +494,7 @@ class Delve:
     def _advance(self, profile):
         """Step to the next room, or finish the delve if the boss room is done."""
         self.engaged = self.spotted = self.grounded = False
+        self.ambush = self.hp_warned = False
         if self.idx >= len(self.rooms) - 1:
             self._finish_clear(profile)
             return
@@ -487,9 +559,25 @@ class Delve:
         base = e.get("heavy", HEAVY_HIT_CHANCE.get(e["tier"], 0.0))
         return base + weather_today()["heavy"]
 
-    def act_attack(self, profile) -> None:
+    def _confirm_low_hp(self, profile) -> bool:
+        """One heart + potions in the belt = warn once before a risky swing, so
+        newer players learn what the 🧪 button is for. Returns True if the click
+        was consumed by the warning."""
+        if self.hearts == 1 and profile["potions"] > 0 and not self.hp_warned:
+            self.hp_warned = True
+            self.say("⚠️ **One heart left - and you're carrying a potion!** 🧪 heals you "
+                     "first. If you truly want to fight on one heart, press the attack again.")
+            return True
+        return False
+
+    def act_attack(self, profile, style: str = None) -> None:
         e = self.enemy()
-        p = fight_pct(profile, self.room["key"], self)
+        if self._confirm_low_hp(profile):
+            return
+        style = style if style in D.STYLES else best_style(profile, self.room["key"], self)
+        p = fight_pct(profile, self.room["key"], style, self)
+        was_ambush = self.ambush
+        self.ambush = False
         if random.random() * 100 < p:
             crit = random.random() < CRIT_CHANCE
             self.enemy_hp -= 2 if crit else 1
@@ -507,14 +595,16 @@ class Delve:
                     self.say("**Alduin takes wing again**, laughing in the old tongue. "
                              "Bring him down!")
             else:
-                self._kill(profile, e, crit=crit)
+                self._kill(profile, e, style, crit=crit, ambush=was_ambush)
         else:
             self.engaged = True
+            if was_ambush:
+                self.say("Your strike goes wide - the ambush is blown!")
             self._wound(profile, e["wound"], knee_chance=0.10 if e["type"] == "human" else 0.0,
                         heavy=self._heavy(e))
 
-    def _kill(self, profile, e, crit=False):
-        gain = _skill_up(profile, "weapon")
+    def _kill(self, profile, e, style, crit=False, ambush=False):
+        gain = _skill_up(profile, style)
         tier = e["tier"]
         bounty = bool(self.room.get("bounty"))
         xp = DRAGON_KILL_XP if e["type"] == "dragon" else 12 * tier
@@ -531,13 +621,15 @@ class Delve:
         self.kills += 1
         profile["stats"]["kills"] += 1
         line = ""
+        if ambush:
+            line += D.pick(D.AMBUSH_KILL_LINES) + "  "
         if crit:
             line += D.pick(D.CRIT_LINES) + "  "
         line += f"{D.pick(e['kill'])}  (+{gained} XP, +{loot} septims"
         if bounty:
             line += ", bounty claimed"
         if gain:
-            line += f", {weapon_skill_name(profile)} +{gain}"
+            line += f", {D.STYLES[style]['name']} +{gain}"
         line += ")"
         if e["type"] == "dragon":
             profile["souls"] += 1
@@ -551,28 +643,39 @@ class Delve:
         self._advance(profile)
 
     def act_sneak(self, profile) -> None:
+        """Slip into stealth. Success doesn't skip the room any more - it earns a
+        CHOICE: ambush (attack at +AMBUSH_BONUS) or slip past quietly."""
         e = self.enemy()
         p = sneak_pct(profile, self.room["key"])
-        if p is None or self.engaged or self.spotted:
+        if p is None or self.engaged or self.spotted or self.ambush:
             return
         if random.random() * 100 < p:
             gain = _skill_up(profile, "sneak")
-            gained, ups = add_xp(profile, 8 * e["tier"])
-            self.xp_gained += gained
-            profile["stats"]["sneaks"] += 1
-            line = f"{D.pick(D.SNEAK_LINES)}  (+{gained} XP"
+            self.ambush = True
+            line = D.pick(D.AMBUSH_READY_LINES)
             if gain:
-                line += f", Sneak +{gain}"
-            line += ")"
-            if ups:
-                line += f"\n🆙 **Level up! You are now level {level(profile)}** (+{ups} perk point)."
+                line += f"  (Sneak +{gain})"
             self.say(line)
-            self._advance(profile)
         else:
             self.spotted = True
             self.engaged = True
             self.say(D.pick(D.SPOTTED_LINES))
             self._wound(profile, e["wound"], heavy=self._heavy(e))
+
+    def act_slip(self, profile) -> None:
+        """From ambush position: take the quiet exit instead of the knife."""
+        if not self.ambush:
+            return
+        e = self.enemy()
+        self.ambush = False
+        gained, ups = add_xp(profile, 8 * e["tier"])
+        self.xp_gained += gained
+        profile["stats"]["sneaks"] += 1
+        line = f"{D.pick(D.SNEAK_LINES)}  (+{gained} XP)"
+        if ups:
+            line += f"\n🆙 **Level up! You are now level {level(profile)}** (+{ups} perk point)."
+        self.say(line)
+        self._advance(profile)
 
     def act_persuade(self, profile) -> None:
         e = self.enemy()
@@ -631,6 +734,7 @@ class Delve:
             return
         profile["potions"] -= 1
         self.hearts += 1
+        self.hp_warned = False
         self.say("You drink a health potion. The wound knits before your eyes.  ❤️ +1")
 
     def act_leave(self, profile) -> None:
@@ -676,8 +780,26 @@ class Delve:
             self._advance(profile)
             return
 
-        if key == "chest" and choice == "open":
-            if random.random() < 0.25:
+        if key == "chest" and choice == "pick":
+            # a master-locked strongbox: one careful attempt, double the loot
+            p = lockpick_pct(profile)
+            if random.random() * 100 < p:
+                gain = _skill_up(profile, "lockpicking")
+                loot = _septims(profile, 2 * (40 + random.randint(0, 80)))
+                self.satchel += loot
+                gained, _ = add_xp(profile, 12)
+                self.xp_gained += gained
+                line = (f"The lock gives with a whisper. Inside: **{loot} septims**."
+                        f"  (+{gained} XP")
+                if gain:
+                    line += f", Lockpicking +{gain}"
+                self.say(line + ")")
+            else:
+                self.say("The pick snaps deep in the mechanism. Whatever is in there stays there.")
+            self._advance(profile)
+            return
+        if key == "chest" and choice == "open" and not r.get("locked"):
+            if random.random() < chest_trap_chance(profile):
                 loot = _septims(profile, 20 + random.randint(0, 40))
                 self.satchel += loot
                 if self._wound(profile, ["A needle trap! Poison burns up your arm."]) != "dead":
@@ -799,7 +921,8 @@ class Delve:
                 "state": self.state, "log": self.log, "message_id": self.message_id,
                 "xp_gained": self.xp_gained, "kills": self.kills,
                 "result_line": self.result_line, "enemy_hp": self.enemy_hp,
-                "daily": self.daily, "fan": self.fan}
+                "daily": self.daily, "fan": self.fan,
+                "ambush": self.ambush, "hp_warned": self.hp_warned}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Delve":
@@ -812,7 +935,8 @@ class Delve:
                    message_id=d.get("message_id"), xp_gained=d.get("xp_gained", 0),
                    kills=d.get("kills", 0), result_line=d.get("result_line", ""),
                    delve_id=d.get("delve_id"), enemy_hp=d.get("enemy_hp"),
-                   daily=d.get("daily", False), fan=d.get("fan", False))
+                   daily=d.get("daily", False), fan=d.get("fan", False),
+                   ambush=d.get("ambush", False), hp_warned=d.get("hp_warned", False))
 
 
 # ---------------------------------------------------------------------------
@@ -910,7 +1034,7 @@ def record_daily_result(profile, delve: Delve):
         today = _today_str()
         day = store.get(today) or {}
         day[str(profile["user_id"])] = {
-            "name": profile["name"], "class": profile["class"], "state": delve.state,
+            "name": profile["name"], "stone": profile["stone"], "state": delve.state,
             "satchel": delve.satchel, "kills": delve.kills,
             "rooms": delve.idx + (1 if delve.state == "cleared" else 0),
             "total_rooms": len(delve.rooms), "xp": delve.xp_gained,
@@ -959,6 +1083,13 @@ def alduin_available(profile) -> bool:
 # ---------------------------------------------------------------------------
 def home_owned(profile, key: str) -> bool:
     return key in (profile.get("home") or [])
+
+
+def toggle_armour_style(profile) -> str:
+    """Swap between heavy (full soak) and light (quieter) armour. Free, like
+    re-equipping - the smith just looks at you differently. Returns the new style."""
+    profile["armour_style"] = "light" if profile.get("armour_style") != "light" else "heavy"
+    return profile["armour_style"]
 
 
 def buy_home(profile, key: str) -> str | None:

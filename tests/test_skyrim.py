@@ -66,10 +66,49 @@ def _event_room_delve(profile, event_key, extra_rooms=1):
 # ---------------------------------------------------------------------------
 def test_profile_roundtrip():
     p = _profile()
-    assert E.get_profile(1)["class"] == "warrior"
+    assert E.get_profile(1)["stone"] == "warrior"
     p["septims"] = 123
     E.save_profile(p)
     assert E.get_profile(1)["septims"] == 123
+
+
+def test_class_era_profile_migrates():
+    """Profiles from before the stones rework upgrade seamlessly on first read."""
+    import json
+    store = json.load(open(config.SKYRIM_PROFILES_FILE)) if os.path.exists(
+        config.SKYRIM_PROFILES_FILE) else {}
+    store["999"] = {
+        "user_id": 999, "name": "OldTimer", "class": "thief", "xp": 500,
+        "skills": {"weapon": 47, "sneak": 33, "speech": 25},
+        "perks": {"stalwart": 1}, "septims": 800, "potions": 1,
+        "weapon_tier": 2, "armour_tier": 1, "souls": 1, "words": 1,
+        "stats": {"delves": 9, "clears": 5, "deaths": 2, "kills": 20, "sneaks": 8,
+                  "persuades": 3, "dragons": 1, "sweetrolls": 1, "flees": 1, "launched": 0},
+        "stamina": {"date": "2026-01-01", "used": 0}, "active_delve": None,
+        "created": "2026-01-01",
+    }
+    json.dump(store, open(config.SKYRIM_PROFILES_FILE, "w"))
+    p = E.get_profile(999)
+    assert p["stone"] == "thief"
+    assert "class" not in p and "weapon" not in p["skills"]
+    assert p["skills"]["marksman"] == 47          # thief's weapon skill -> Marksman
+    assert p["skills"]["sneak"] == 33 and p["skills"]["speech"] == 25
+    assert p["skills"]["blade"] == 15 and p["skills"]["lockpicking"] == 15
+    assert p["armour_style"] == "heavy"
+    assert p["septims"] == 800 and p["souls"] == 1     # nothing else touched
+    # and the upgrade persisted
+    assert "weapon" not in (json.load(open(config.SKYRIM_PROFILES_FILE))["999"]["skills"])
+
+
+def test_archetype_titles():
+    p = _profile()
+    assert E.archetype(p) == "Adventurer"          # nothing at 30 yet
+    p["skills"]["sneak"] = 45
+    p["skills"]["marksman"] = 40
+    assert E.archetype(p) == "Stealth Archer"
+    p["skills"]["destruction"] = 60
+    p["skills"]["blade"] = 50
+    assert E.archetype(p) == "Spellsword"
 
 
 def test_level_curve():
@@ -90,28 +129,33 @@ def test_level_curve():
 def test_percentages_clamped_and_typed():
     p = _profile("thief")
     for key in D.ENEMIES:
-        f = E.fight_pct(p, key)
-        assert E.ROLL_MIN <= f <= E.ROLL_MAX
+        for style in D.STYLES:
+            f = E.fight_pct(p, key, style)
+            assert E.ROLL_MIN <= f <= E.ROLL_MAX
     assert E.sneak_pct(p, "dragon") is None            # can't sneak past the boss arena
     assert E.persuade_pct(p, "wolf") is None           # can't reason with a wolf
     assert E.persuade_pct(p, "bandit") is not None
-    # class affinity: warriors out-fight mages against bandits, mages against draugr
-    w, m = _profile("warrior"), _profile("mage")
-    w["skills"]["weapon"] = m["skills"]["weapon"] = 50
-    assert E.fight_pct(w, "bandit") > E.fight_pct(m, "bandit")
-    assert E.fight_pct(m, "draugr") > E.fight_pct(w, "draugr")
+    # style-vs-type: at equal skill, fire beats arrows against the walking dead
+    q = _profile("warrior")
+    for st in D.STYLES:
+        q["skills"][st] = 50
+    assert E.fight_pct(q, "draugr", "destruction") > E.fight_pct(q, "draugr", "marksman")
+    assert E.fight_pct(q, "bandit", "blade") > E.fight_pct(q, "bandit", "destruction")
+    assert E.best_style(q, "draugr") == "destruction"
 
 
-def test_skill_up_diminishes():
-    p = _profile()
-    p["skills"]["weapon"] = 15
-    early = E._skill_up(p, "weapon")
-    p["skills"]["weapon"] = 95
-    late = E._skill_up(p, "weapon")
+def test_skill_up_diminishes_and_stone_boosts():
+    p = _profile()                       # warrior stone boosts blade
+    p["skills"]["blade"] = 15
+    early = E._skill_up(p, "blade")
+    p["skills"]["blade"] = 95
+    late = E._skill_up(p, "blade")
     assert early > late >= 1
-    p["skills"]["weapon"] = 100
-    assert E._skill_up(p, "weapon") == 0
-    assert p["skills"]["weapon"] == 100
+    p["skills"]["blade"] = 100
+    assert E._skill_up(p, "blade") == 0
+    # the stone-blessed skill learns faster than an unblessed one at equal level
+    p["skills"]["blade"] = p["skills"]["speech"] = 40
+    assert E._skill_up(p, "blade") > E._skill_up(p, "speech")
 
 
 # ---------------------------------------------------------------------------
@@ -270,9 +314,9 @@ def test_weather_is_deterministic_and_applied():
         E.weather_today = lambda date_str=None: {"key": "x", "name": "T", "emoji": "t",
                                                  "desc": "", "fight": 10, "sneak": 10,
                                                  "loot": 2.0, "xp": 2.0, "heavy": 0.0}
-        boosted = E.fight_pct(p, "bandit")
+        boosted = E.fight_pct(p, "bandit", "blade")
         E.weather_today = lambda date_str=None: {"key": "clear", **D.WEATHERS["clear"]}
-        base = E.fight_pct(p, "bandit")
+        base = E.fight_pct(p, "bandit", "blade")
     finally:
         E.weather_today = real
     assert boosted == base + 10
@@ -323,13 +367,17 @@ def test_property_chain_and_comforts():
 def test_sneak_success_and_spotted():
     p = _profile("thief")
     d = _enemy_room_delve(p, "bandit")
+    base = E.fight_pct(p, "bandit", "blade", d)
     E.random = _fixed_rolls(0.0)
     try:
         d.act_sneak(p)
     finally:
         _restore_random()
-    assert d.idx == 1 and d.satchel == 0        # no loot from sneaking
-    assert p["stats"]["sneaks"] == 1
+    assert d.ambush and d.idx == 0              # hidden: the room is not passed yet
+    assert E.fight_pct(p, "bandit", "blade", d) == min(E.ROLL_MAX, base + E.AMBUSH_BONUS)
+    d.act_slip(p)
+    assert d.idx == 1 and d.satchel == 0        # slipping past takes no loot
+    assert p["stats"]["sneaks"] == 1 and not d.ambush
 
     d2 = _enemy_room_delve(p, "bandit")
     E.random = _fixed_rolls(0.999)
@@ -357,7 +405,7 @@ def test_shout_clears_room_and_grounds_dragon():
     d2.shout_charges = 1
     d2.act_shout(p)
     assert d2.grounded and d2.idx == 0 and d2.shout_charges == 0
-    assert E.fight_pct(p, "dragon", d2) > E.fight_pct(p, "dragon")
+    assert E.fight_pct(p, "dragon", "blade", d2) > E.fight_pct(p, "dragon", "blade")
 
 
 def test_potion_and_leave_and_flee():
@@ -485,6 +533,90 @@ def test_stamina():
     assert E.delves_left(p) == per_day - 1
     p["stamina"]["date"] = "2000-01-01"          # a new day resets it
     assert E.delves_left(p) == per_day
+
+
+def test_ambush_attack_and_blown_ambush():
+    p = _profile("thief")
+    d = _enemy_room_delve(p, "bandit")
+    d.ambush = True
+    E.random = _fixed_rolls(0.0, 0.99)             # hit lands, no crit
+    try:
+        d.act_attack(p)
+    finally:
+        _restore_random()
+    assert d.idx == 1 and d.kills == 1 and not d.ambush
+
+    d2 = _enemy_room_delve(p, "bandit")
+    d2.ambush = True
+    E.random = _fixed_rolls(0.999)                 # strike misses: ambush blown
+    try:
+        d2.act_attack(p)
+    finally:
+        _restore_random()
+    assert d2.engaged and not d2.ambush
+
+
+def test_low_hp_warning_consumes_first_click():
+    p = _profile()
+    p["potions"] = 1
+    d = _enemy_room_delve(p, "bandit")
+    d.hearts = 1
+    hp_before = d.enemy_hp
+    d.act_attack(p)                                # consumed by the warning: no roll
+    assert d.hp_warned and d.hearts == 1 and d.enemy_hp == hp_before and d.playing()
+    assert any("One heart left" in l for l in d.log)
+    E.random = _fixed_rolls(0.0, 0.99)
+    try:
+        d.act_attack(p)                            # second click really attacks
+    finally:
+        _restore_random()
+    assert d.idx == 1
+    # no potions = no warning: the choice doesn't exist
+    p2 = E.create_profile(2, "Potionless", "warrior")
+    p2["potions"] = 0
+    d2 = _enemy_room_delve(p2, "bandit")
+    d2.hearts = 1
+    E.random = _fixed_rolls(0.0, 0.99)
+    try:
+        d2.act_attack(p2)
+    finally:
+        _restore_random()
+    assert d2.idx == 1                             # went straight through
+
+
+def test_locked_chest_and_trap_eye():
+    p = _profile()
+    rooms = [{"kind": "event", "key": "chest", "boss": False, "resolved": False, "locked": True},
+             {"kind": "enemy", "key": "skeever", "boss": False, "resolved": False}]
+    d = E.Delve(p["user_id"], "T", 0, "embershard", rooms, hearts=3, shout_charges=0)
+    d.act_event(p, "open")                         # locked: "open" must do nothing
+    assert d.idx == 0 and d.satchel == 0
+    lock_before = p["skills"]["lockpicking"]
+    E.random = _fixed_rolls(0.0)                   # the pick succeeds
+    try:
+        d.act_event(p, "pick")
+    finally:
+        _restore_random()
+    assert d.idx == 1 and d.satchel >= 80          # double-loot floor
+    assert p["skills"]["lockpicking"] > lock_before
+    # a practised eye makes ordinary chests safer
+    novice, master = dict(p), dict(p)
+    novice["skills"] = dict(p["skills"]); master["skills"] = dict(p["skills"])
+    novice["skills"]["lockpicking"] = 15
+    master["skills"]["lockpicking"] = 100
+    assert E.chest_trap_chance(master) < E.chest_trap_chance(novice)
+
+
+def test_armour_styles():
+    p = _profile()
+    p["armour_tier"] = 3
+    heavy_soak = E.soak_pct(p)
+    sneak_heavy = E.sneak_pct(p, "bandit")
+    assert E.toggle_armour_style(p) == "light"
+    assert E.soak_pct(p) < heavy_soak
+    assert E.sneak_pct(p, "bandit") == min(E.ROLL_MAX, sneak_heavy + D.LIGHT_SNEAK_BONUS)
+    assert E.toggle_armour_style(p) == "heavy"
+    assert E.soak_pct(p) == heavy_soak
 
 
 # ---------------------------------------------------------------------------

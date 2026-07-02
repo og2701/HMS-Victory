@@ -9,38 +9,67 @@ delves read differently. Numbers are percentages on a clamped success roll
 import random
 
 # ---------------------------------------------------------------------------
-# Classes (the Guardian Stones). Weapon skill is one number under the hood; only
-# its NAME differs by class, so a mage "swings" Destruction the way a warrior
-# swings One-Handed.
+# The Guardian Stones. Skyrim has no classes: you become what you practise.
+# A stone is a BLESSING, not a cage - every skill is open to everyone; your
+# stone's skills simply level faster (and start a little higher).
+# (Profiles from the old class system migrate 1:1 - the keys match on purpose.)
 # ---------------------------------------------------------------------------
-CLASSES = {
+STONES = {
     "warrior": {
-        "name": "Warrior", "emoji": "⚔️", "stone": "The Warrior Stone",
-        "weapon_skill": "One-Handed", "attack_verb": "swing",
-        "start": {"weapon": 30, "sneak": 15, "speech": 15},
-        "fight_aff": {"human": 8, "beast": 8, "undead": 0, "monster": 0, "construct": -4, "dragon": 0},
-        "sneak_mod": -5,          # plate boots on stone floors
-        "persuade_mod": 2,        # intimidation counts as charm in Skyrim
-        "blurb": "Steel and stubbornness. Hits harder than anyone, sneaks like a dropped kettle.",
+        "name": "The Warrior Stone", "emoji": "⚔️",
+        "boost": ["blade"],
+        "start": {"blade": 30},
+        "blurb": "Blades come easily to you. Everything else comes eventually.",
     },
     "mage": {
-        "name": "Mage", "emoji": "🔮", "stone": "The Mage Stone",
-        "weapon_skill": "Destruction", "attack_verb": "cast",
-        "start": {"weapon": 32, "sneak": 18, "speech": 20},
-        "fight_aff": {"human": 0, "beast": 4, "undead": 10, "monster": -4, "construct": 8, "dragon": 4},
-        "sneak_mod": 5,
-        "persuade_mod": 0,
-        "blurb": "Fire, frost and shock. Burns the dead and shorts out the Dwemer's toys.",
+        "name": "The Mage Stone", "emoji": "🔮",
+        "boost": ["destruction"],
+        "start": {"destruction": 30},
+        "blurb": "Destruction magic comes easily to you. Fire solves so much.",
     },
     "thief": {
-        "name": "Thief", "emoji": "🗡️", "stone": "The Thief Stone",
-        "weapon_skill": "Marksman", "attack_verb": "loose an arrow",
-        "start": {"weapon": 25, "sneak": 28, "speech": 22},
-        "fight_aff": {"human": 6, "beast": 4, "undead": -4, "monster": 0, "construct": -4, "dragon": 0},
-        "sneak_mod": 10,
-        "persuade_mod": 5,
-        "blurb": "Shadows, arrows and a silver tongue. Why fight what never saw you?",
+        "name": "The Thief Stone", "emoji": "🗡️",
+        "boost": ["marksman", "sneak", "lockpicking"],
+        "start": {"marksman": 24, "sneak": 28},
+        "blurb": "Bows, shadows and other people's locks come easily to you.",
     },
+}
+
+# The three ways to hurt something. Every enemy room offers all three - pick the
+# tool that fits the foe, and the skill you use is the skill that grows.
+STYLES = {
+    "blade": {"name": "One-Handed", "emoji": "⚔️", "label": "Blade"},
+    "marksman": {"name": "Marksman", "emoji": "🏹", "label": "Bow"},
+    "destruction": {"name": "Destruction", "emoji": "🔥", "label": "Fire"},
+}
+
+# Style vs enemy type: the rock-paper-Skyrim layer. Arrows do little to walking
+# bones, fire purges them; trolls dread flame; Dwemer plate turns arrows but
+# shorts out under shock-flavoured Destruction.
+STYLE_AFF = {
+    "human":     {"blade": 6, "marksman": 4, "destruction": 0},
+    "beast":     {"blade": 4, "marksman": 6, "destruction": 2},
+    "undead":    {"blade": 0, "marksman": -5, "destruction": 10},
+    "monster":   {"blade": 1, "marksman": -1, "destruction": 6},
+    "construct": {"blade": -3, "marksman": -6, "destruction": 7},
+    "dragon":    {"blade": 0, "marksman": 4, "destruction": 2},
+}
+
+# Derived titles - your build is what you did, not what you picked. Pairs are
+# checked first (both skills must be your top two, each 35+), then the single
+# top skill; fresh characters are just Adventurers.
+ARCHETYPE_PAIRS = {
+    frozenset(("sneak", "marksman")): "Stealth Archer",
+    frozenset(("sneak", "destruction")): "Nightblade",
+    frozenset(("sneak", "blade")): "Assassin",
+    frozenset(("blade", "destruction")): "Spellsword",
+    frozenset(("marksman", "destruction")): "Arcane Archer",
+    frozenset(("blade", "marksman")): "Mercenary",
+    frozenset(("speech", "lockpicking")): "Charlatan",
+}
+ARCHETYPE_SINGLE = {
+    "blade": "Warrior", "marksman": "Ranger", "destruction": "Mage",
+    "sneak": "Shadow", "speech": "Silver-Tongue", "lockpicking": "Burglar",
 }
 
 # ---------------------------------------------------------------------------
@@ -51,7 +80,7 @@ CLASSES = {
 ENEMIES = {
     "skeever": {
         "name": "Skeever", "emoji": "🐀", "type": "beast", "tier": 1,
-        "fight": 62, "sneak": 48, "persuade": None, "art": "skeever",
+        "fight": 64, "sneak": 48, "persuade": None, "art": "skeever",
         "hint": "Tiny claws skitter across the stone ahead...",
         "intro": ["A **Skeever** darts out of a crack in the wall, teeth bared.",
                   "Something furry and hideous scurries into your path - a **Skeever**."],
@@ -62,7 +91,7 @@ ENEMIES = {
     },
     "wolf": {
         "name": "Wolf", "emoji": "🐺", "type": "beast", "tier": 1,
-        "fight": 58, "sneak": 42, "persuade": None, "art": "wolf",
+        "fight": 60, "sneak": 42, "persuade": None, "art": "wolf",
         "hint": "A low growl rolls out of the dark ahead...",
         "intro": ["A **Wolf** slinks from the shadows, hackles raised.",
                   "Yellow eyes catch the torchlight - a **Wolf**, and it's hungry."],
@@ -73,7 +102,7 @@ ENEMIES = {
     },
     "bandit": {
         "name": "Bandit", "emoji": "🗡️", "type": "human", "tier": 1,
-        "fight": 58, "sneak": 55, "persuade": 45, "art": "bandit",
+        "fight": 60, "sneak": 55, "persuade": 45, "art": "bandit",
         "hint": "Someone ahead is complaining about guard shifts...",
         "intro": ["A **Bandit** steps out from behind a pillar. \"Should've paid the toll.\"",
                   "\"Well, well. Wandered into the wrong cave, friend.\" A **Bandit** draws steel."],
@@ -365,7 +394,8 @@ INTRO_TEXT = (
     "same as us. No headsman today though - a dragon saw to that.\n\n"
     "Skyrim is yours to take: delve its ruins, learn its words of power, and maybe - "
     "if the old blood runs in you - slay its dragons.\n\n"
-    "**Choose your Guardian Stone.** It shapes how you fight, sneak and speak. Choose once."
+    "**Touch a Guardian Stone.** A blessing, not a cage: every skill is open to you, and "
+    "you become whatever you practise. Your stone's arts simply come faster."
 )
 
 DEATH_LINES = [
@@ -397,6 +427,19 @@ SNEAK_LINES = [
     "One patient breath at a time, you ghost through unseen.",
     "You count the footsteps, pick your moment, and simply walk by.",
 ]
+
+AMBUSH_READY_LINES = [
+    "You settle into the shadows, utterly unseen. It has no idea you are here.",
+    "Hidden. Patient. Its back is to you and the moment is yours to choose.",
+]
+
+AMBUSH_KILL_LINES = [
+    "It never hears the strike that ends it. The room stays silent.",
+    "One clean blow from the dark - over before it began.",
+]
+
+LOCKED_CHEST_TEXT = ("A strongbox squats in the corner, banded in iron - and fitted with a "
+                     "**master lock**. Whatever is inside, someone wanted it kept.")
 
 SPOTTED_LINES = [
     "A loose stone turns under your foot - every head snaps toward you.",
@@ -437,8 +480,13 @@ GEAR_TIERS = [
     {"key": "daedric", "name": "Daedric", "emoji": "😈", "price": 9000, "dragons": 0},
     {"key": "dragonbone", "name": "Dragonbone", "emoji": "🐲", "price": 15000, "dragons": 5},
 ]
-WEAPON_FIGHT_PER_TIER = 4      # +4% attack per tier above Iron
-ARMOUR_SOAK_PER_TIER = 5       # +5% chance per tier to shrug off a wound
+WEAPON_FIGHT_PER_TIER = 4      # +4% attack per tier above Iron (all three styles)
+ARMOUR_SOAK_PER_TIER = 5       # heavy armour: +5% chance per tier to shrug off a wound
+# Armour comes in two styles, switchable free at Belethor's:
+#   heavy - the full soak above, worn loud
+#   light - reduced soak, but you move like a rumour
+LIGHT_SOAK_PER_TIER = 3
+LIGHT_SNEAK_BONUS = 6
 POTION_PRICE = 40
 
 # ---------------------------------------------------------------------------

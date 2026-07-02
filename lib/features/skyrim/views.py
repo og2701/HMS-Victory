@@ -99,8 +99,8 @@ def _bar(value: int, lo: int = 15, hi: int = 100, width: int = 8) -> str:
 
 
 def _status_line(delve: E.Delve, profile) -> str:
-    cls = D.CLASSES[profile["class"]]
-    bits = [f"{cls['emoji']} <@{delve.player_id}> Lv {E.level(profile)}",
+    stone = D.STONES[profile["stone"]]
+    bits = [f"{stone['emoji']} <@{delve.player_id}> Lv {E.level(profile)}",
             _hearts_str(delve, profile), f"🧪 {profile['potions']}"]
     if profile["words"] > 0:
         bits.append(f"🗣️ {delve.shout_charges}")
@@ -148,6 +148,9 @@ def _delve_text(delve: E.Delve, profile) -> str:
                          f"telling blow{'s' if delve.enemy_hp != 1 else ''}")
         if delve.grounded:
             lines.append("-# The dragon is **grounded** - now is your chance!")
+        if delve.ambush:
+            lines.append(f"-# 🥷 You are **hidden and in position** - strike at "
+                         f"+{E.AMBUSH_BONUS}%, or slip past unseen.")
     else:
         ev = D.EVENTS[r["key"]]
         lines.append(f"{ev['emoji']} {ev['text']}")
@@ -193,16 +196,25 @@ def build_delve_layout(delve: E.Delve, profile):
     if r["kind"] == "enemy":
         key = r["key"]
         e = D.ENEMIES[key]
-        row1.add_item(_btn(discord.ButtonStyle.danger, f"Attack {E.fight_pct(profile, key, delve)}%",
-                           f"skyrim:{did}:atk", _make_cb(delve, "atk"), emoji="⚔️"))
-        p_snk = E.sneak_pct(profile, key)
-        if p_snk is not None and not delve.engaged:
-            row1.add_item(_btn(discord.ButtonStyle.primary, f"Sneak {p_snk}%",
-                               f"skyrim:{did}:snk", _make_cb(delve, "snk"), emoji="🥷"))
-        p_per = E.persuade_pct(profile, key)
-        if p_per is not None and not delve.engaged:
-            row1.add_item(_btn(discord.ButtonStyle.primary, f"Persuade {p_per}%",
-                               f"skyrim:{did}:per", _make_cb(delve, "per"), emoji="💬"))
+        # three ways to hurt it - pick the tool that fits the foe (odds shown
+        # already include the ambush bonus when you're hidden and in position)
+        for skey, sd in D.STYLES.items():
+            row1.add_item(_btn(discord.ButtonStyle.danger,
+                               f"{sd['label']} {E.fight_pct(profile, key, skey, delve)}%",
+                               f"skyrim:{did}:atk:{skey}", _make_cb(delve, f"atk:{skey}"),
+                               emoji=sd["emoji"]))
+        if delve.ambush:
+            row1.add_item(_btn(discord.ButtonStyle.primary, "Slip past",
+                               f"skyrim:{did}:slp", _make_cb(delve, "slp"), emoji="🥷"))
+        else:
+            p_snk = E.sneak_pct(profile, key)
+            if p_snk is not None and not delve.engaged:
+                row1.add_item(_btn(discord.ButtonStyle.primary, f"Sneak {p_snk}%",
+                                   f"skyrim:{did}:snk", _make_cb(delve, "snk"), emoji="🥷"))
+            p_per = E.persuade_pct(profile, key)
+            if p_per is not None and not delve.engaged:
+                row1.add_item(_btn(discord.ButtonStyle.primary, f"Persuade {p_per}%",
+                                   f"skyrim:{did}:per", _make_cb(delve, "per"), emoji="💬"))
         if profile["words"] > 0 and delve.shout_charges > 0 and \
                 not (e["type"] == "dragon" and delve.grounded):
             shout = " ".join(D.SHOUT_WORDS[:profile["words"]])
@@ -217,19 +229,11 @@ def build_delve_layout(delve: E.Delve, profile):
                            emoji="🏃" if delve.engaged else "🚪"))
     else:
         key = r["key"]
-        choices = {
-            "chest": [("🧰", "Open it", "open"), ("🚶", "Move on", "skip")],
-            "sweetroll": [("🍩", "Take the sweetroll", "take"), ("🚶", "Walk away", "skip")],
-            "shrine": [("🙏", "Pray", "pray"), ("🚶", "Move on", "skip")],
-            "satchel": [("🧪", "Take it", "take"), ("🚶", "Move on", "skip")],
-            "maiq": [("💬", "Talk to M'aiq", "talk"), ("🚶", "Move on", "skip")],
-            "wordwall": [("🗣️", "Approach the wall", "approach"), ("🚶", "Move on", "skip")],
-            "giant": [("🚶", "Back away slowly", "retreat"), ("🧀", "About that cheese...", "approach")],
-            "knee_trap": [("🚶", "Limp onward", "continue")],
-            "mudcrab": [("🦀", "Trade with the crab", "trade"), ("🚶", "Move on", "skip")],
-            "nazeem": [("😤", "\"Yes, actually.\"", "yes"), ("😮‍💨", "Sigh deeply", "sigh")],
-            "adoring_fan": [("🤩", "Let him follow", "adopt"), ("👉", "Send him home", "skip")],
-        }[key]
+        if key == "chest" and r.get("locked"):
+            choices = [("🔓", f"Pick the lock {E.lockpick_pct(profile)}%", "pick"),
+                       ("🚶", "Move on", "skip")]
+        else:
+            choices = _EVENT_CHOICES[key]
         for emoji, label, act in choices:
             row1.add_item(_btn(discord.ButtonStyle.primary, label,
                                f"skyrim:{did}:evt:{act}", _make_cb(delve, f"evt:{act}"),
@@ -241,6 +245,21 @@ def build_delve_layout(delve: E.Delve, profile):
     if row2.children:
         view.add_item(row2)
     return view, files
+
+
+_EVENT_CHOICES = {
+    "chest": [("🧰", "Open it", "open"), ("🚶", "Move on", "skip")],
+    "sweetroll": [("🍩", "Take the sweetroll", "take"), ("🚶", "Walk away", "skip")],
+    "shrine": [("🙏", "Pray", "pray"), ("🚶", "Move on", "skip")],
+    "satchel": [("🧪", "Take it", "take"), ("🚶", "Move on", "skip")],
+    "maiq": [("💬", "Talk to M'aiq", "talk"), ("🚶", "Move on", "skip")],
+    "wordwall": [("🗣️", "Approach the wall", "approach"), ("🚶", "Move on", "skip")],
+    "giant": [("🚶", "Back away slowly", "retreat"), ("🧀", "About that cheese...", "approach")],
+    "knee_trap": [("🚶", "Limp onward", "continue")],
+    "mudcrab": [("🦀", "Trade with the crab", "trade"), ("🚶", "Move on", "skip")],
+    "nazeem": [("😤", "\"Yes, actually.\"", "yes"), ("😮‍💨", "Sigh deeply", "sigh")],
+    "adoring_fan": [("🤩", "Let him follow", "adopt"), ("👉", "Send him home", "skip")],
+}
 
 
 # ---------------------------------------------------------------------------
@@ -301,8 +320,12 @@ async def _handle_delve_click(interaction: Interaction, delve: E.Delve, action: 
 
     delve.busy = True
     try:
-        if action == "atk":
+        if action == "atk":                       # legacy pre-styles button: best tool
             delve.act_attack(profile)
+        elif action.startswith("atk:"):
+            delve.act_attack(profile, action.split(":", 1)[1])
+        elif action == "slp":
+            delve.act_slip(profile)
         elif action == "snk":
             delve.act_sneak(profile)
         elif action == "per":
@@ -381,15 +404,15 @@ def _back_row():
 
 
 def _hub_text(profile) -> str:
-    cls = D.CLASSES[profile["class"]]
+    cls = D.STONES[profile["stone"]]
     left = E.delves_left(profile)
     into, need = D.xp_into_level(profile["xp"])
     daily_bit = ("📅 daily delve **available**" if E.daily_available(profile)
                  else "📅 daily delve done")
     return (
         f"## 🐉 Skyrim\n"
-        f"{cls['emoji']} **{profile['name']}** - Level {E.level(profile)} {cls['name']}"
-        f"  ·  💰 {profile['septims']:,} septims\n"
+        f"{cls['emoji']} **{profile['name']}** - Level {E.level(profile)} "
+        f"{E.archetype(profile)}  ·  💰 {profile['septims']:,} septims\n"
         f"-# XP {_bar(into, 0, need)} {into}/{need} to next level\n"
         f"-# {E.weather_line()}\n"
         f"-# 🛌 {left}/{getattr(config, 'SKYRIM_DELVES_PER_DAY', 3)} delves left today  ·  {daily_bit}\n\n"
@@ -422,16 +445,16 @@ async def _hub_root(interaction: Interaction):
 async def _show_class_pick(interaction: Interaction, *, first_response=False):
     rows = []
     row = discord.ui.ActionRow()
-    for key, cls in D.CLASSES.items():
+    for key, stone in D.STONES.items():
         async def _pick(inter: Interaction, k=key):
             if E.get_profile(inter.user.id) is None:
                 name = discord.utils.escape_markdown(inter.user.display_name)
                 E.create_profile(inter.user.id, name, k)
             await _hub_root(inter)
-        row.add_item(_cb_btn(discord.ButtonStyle.primary, cls["name"], cls["emoji"], _pick))
+        row.add_item(_cb_btn(discord.ButtonStyle.primary, stone["name"], stone["emoji"], _pick))
     rows.append(row)
     text = "## 🐉 Skyrim\n" + D.INTRO_TEXT + "\n\n" + "\n".join(
-        f"{c['emoji']} **{c['name']}** - {c['blurb']}" for c in D.CLASSES.values())
+        f"{st['emoji']} **{st['name']}** - {st['blurb']}" for st in D.STONES.values())
     view, files = _panel_view(text, rows, art_key="intro")
     if first_response:
         await interaction.response.send_message(view=view, files=files, ephemeral=True)
@@ -591,19 +614,24 @@ def _notice_view(text: str):
 
 # --- character sheet -------------------------------------------------------------
 def _sheet_text(profile) -> str:
-    cls = D.CLASSES[profile["class"]]
+    stone = D.STONES[profile["stone"]]
     s = profile["skills"]
     st = profile["stats"]
     into, need = D.xp_into_level(profile["xp"])
     words = " ".join(D.SHOUT_WORDS[:profile["words"]]) if profile["words"] else "not yet learned"
+    boosted = set(stone["boost"])
+    skill_rows = [("blade", "One-Handed"), ("marksman", "Marksman"),
+                  ("destruction", "Destruction"), ("sneak", "Sneak"),
+                  ("speech", "Speech"), ("lockpicking", "Lockpicking")]
     lines = [
-        f"## {cls['emoji']} {profile['name']} - Level {E.level(profile)} {cls['name']}",
-        f"-# {cls['stone']}  ·  XP {_bar(into, 0, need)} {into}/{need}",
+        f"## {stone['emoji']} {profile['name']} - Level {E.level(profile)} {E.archetype(profile)}",
+        f"-# Blessed by {stone['name']}  ·  XP {_bar(into, 0, need)} {into}/{need}",
         "",
-        "**Skills** (improve by use)",
-        f"{cls['weapon_skill']:<12} **{s['weapon']}** {_bar(s['weapon'])}",
-        f"{'Sneak':<12} **{s['sneak']}** {_bar(s['sneak'])}",
-        f"{'Speech':<12} **{s['speech']}** {_bar(s['speech'])}",
+        "**Skills** (improve by use; ✨ = stone-blessed, learns faster)",
+    ] + [
+        f"{label:<12} **{s[key]}** {_bar(s[key])}" + ("  ✨" if key in boosted else "")
+        for key, label in skill_rows
+    ] + [
         "",
         f"**Gear**: {E.gear_name(profile, 'weapon')}  ·  {E.gear_name(profile, 'armour')} "
         f"(soaks {E.soak_pct(profile)}% of hits)",
@@ -663,9 +691,15 @@ def _shop_text(profile) -> str:
             req = f"  (needs {nxt['dragons']} dragons slain)" if nxt["dragons"] else ""
             lines.append(f"{'⚔️' if slot == 'weapon' else '🛡️'} Upgrade to **{nxt['emoji']} "
                          f"{nxt['name']}** - {price:,} septims{req}")
+    style = profile.get("armour_style", "heavy")
+    other = "light" if style == "heavy" else "heavy"
+    lines.append(f"👕 Armour style: **{style}** - "
+                 + ("full protection, worn loud." if style == "heavy"
+                    else f"quieter (+{D.LIGHT_SNEAK_BONUS} sneak), thinner protection."))
     lines.append("")
-    lines.append(f"-# Weapons add +{D.WEAPON_FIGHT_PER_TIER}% attack per tier; armour adds "
-                 f"+{D.ARMOUR_SOAK_PER_TIER}% wound absorption per tier.")
+    lines.append(f"-# Weapons add +{D.WEAPON_FIGHT_PER_TIER}% to all attack styles per tier; "
+                 f"heavy armour soaks {D.ARMOUR_SOAK_PER_TIER}%/tier, light {D.LIGHT_SOAK_PER_TIER}%/tier. "
+                 f"Switching to {other} is free.")
     return "\n".join(lines)
 
 
@@ -697,6 +731,14 @@ async def _hub_shop(interaction: Interaction, notice: str = ""):
         async def _cb(inter: Interaction, w=what):
             await _buy(inter, w)
         row.add_item(_cb_btn(discord.ButtonStyle.primary, label, emoji, _cb))
+    other = "light" if profile.get("armour_style", "heavy") == "heavy" else "heavy"
+
+    async def _swap(inter: Interaction):
+        p = E.get_profile(inter.user.id)
+        new_style = E.toggle_armour_style(p)
+        E.save_profile(p)
+        await _hub_shop(inter, notice=f"-# 👕 Re-fitted: you now wear **{new_style}** armour.")
+    row.add_item(_cb_btn(discord.ButtonStyle.secondary, f"Go {other}", "👕", _swap))
     row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Property", "🏠", _hub_property))
     await _edit_panel(interaction, text, [row, _back_row()])
 
@@ -797,7 +839,7 @@ def _daily_results_text() -> str:
         return (not cleared, -r["satchel"] if cleared else -r["rooms"], -r["kills"])
     medals = ["🥇", "🥈", "🥉"]
     for i, r in enumerate(sorted(results.values(), key=sort_key)[:12]):
-        cls = D.CLASSES.get(r.get("class"), D.CLASSES["warrior"])
+        cls = D.STONES.get(r.get("stone", r.get("class")), D.STONES["warrior"])
         rank = medals[i] if i < len(medals) else f"`{i + 1:>2}.`"
         if r["state"] == "cleared":
             outcome = f"✅ cleared  ·  💰 {r['satchel']:,}"
@@ -846,7 +888,7 @@ async def _hub_rankings(interaction: Interaction):
         lines.append("No adventurers yet. The ruins wait.")
     medals = ["🥇", "🥈", "🥉"]
     for i, p in enumerate(profiles):
-        cls = D.CLASSES[p["class"]]
+        cls = D.STONES[p["stone"]]
         rank = medals[i] if i < len(medals) else f"`{i + 1:>2}.`"
         st = p["stats"]
         flair = ""
@@ -867,18 +909,24 @@ def _help_text() -> str:
         "A persistent adventure: your character, skills, gear and dragon souls are kept "
         "forever. Run `/skyrim` for your hub, then **Adventure** to delve.\n\n"
         "**Delves** - a run of rooms ending in a boss. Each enemy shows your odds up front:\n"
-        "- ⚔️ **Attack** - kill for full loot and XP. Fail and you take a wound.\n"
-        "- 🥷 **Sneak** - slip past for XP (no loot). Get spotted and the fight is on.\n"
+        "- ⚔️🏹🔥 **Attack** - three styles (One-Handed, Marksman, Destruction), each its "
+        "own skill, each better against some foes (fire purges draugr; arrows bounce off "
+        "bones). The style you use is the skill that grows.\n"
+        "- 🥷 **Sneak** - slip into hiding. Then choose: **ambush** for a big attack bonus, "
+        "or slip past for XP. Get spotted and the fight is on.\n"
         "- 💬 **Persuade** - humans only. Talk your way through, sometimes at a profit.\n"
         "- 🗣️ **Shout** - the Voice flattens a room (dragons get grounded instead). "
         "Charges = words you know.\n"
         "- 🧪 **Potion** / 🚪 **Leave** - patch up, or walk out with your satchel. "
-        "Fleeing mid-fight spills a third of it.\n\n"
+        "Fleeing mid-fight spills a third of it.\n"
+        "- 🔓 **Master-locked chests** - Lockpicking territory: double loot, one careful try.\n\n"
         "**The stakes** - XP, skill-ups, gear, souls and potions bank instantly. The "
         "**septims in your satchel** only bank when you leave or clear - die and they stay "
         "in the dungeon.\n\n"
-        "**Skills level by use** (swing to get better at swinging), your class shapes the "
-        "odds, and perks stack on top - spend points in the hub.\n\n"
+        "**No classes - you become what you practise.** Every skill levels by use; your "
+        "Guardian Stone just makes its skills learn faster. Your title (Stealth Archer, "
+        "Spellsword...) is earned, not picked. Armour comes **heavy** (tougher) or "
+        "**light** (quieter) - switch free at Belethor's. Perks stack on top.\n\n"
         "**Dragons** - sighted once you're strong enough. Slay one and its **soul** is "
         "yours; spend souls at **Word Walls** to learn FUS, then RO, then DAH.\n\n"
         "**The wilds** - each UK day has a shared **weather** roll that tilts the odds for "
