@@ -539,6 +539,12 @@ def reattach_persistent_views(client):
                 reattach_battleship_view(client, key, value)
             except Exception as e:
                 logger.error(f"Failed to recover battleship game {key}: {e}")
+        elif isinstance(value, dict) and value.get("type") == "skyrim":
+            try:
+                from lib.features.skyrim import reattach_skyrim_view
+                reattach_skyrim_view(client, key, value)
+            except Exception as e:
+                logger.error(f"Failed to reattach skyrim delve {key}: {e}")
         elif isinstance(value, dict):
             view = RoleButtonView(value)
             client.add_view(view, message_id=key)

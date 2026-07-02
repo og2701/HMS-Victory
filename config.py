@@ -146,6 +146,16 @@ PENALTY_SCORE_PROB = 0.80     # P(score) per shot = an honest keeper saving a fa
 PENALTY_MAX_WIN = 0           # payout ceiling; 0 = no cap (the ~2.99x top multiplier is already
                               # self-limiting, so a max bet can't dwarf the bank).
 
+# --- Skyrim (standalone persistent RPG - NOT a casino game, no UKPence anywhere) ---
+# Every member gets a persistent Dovahkiin: skills that level by use, gear tiers, dragon
+# souls and shout words. /skyrim opens an ephemeral hub; delves (dungeon runs) post as
+# public boards. Progress always banks - only the septims in the delve satchel are at
+# stake. Septims are an internal currency with no UKPence bridge, so this sits entirely
+# outside the economy (no bank flows, no casino channel gate, no /casino listing).
+SKYRIM_ENABLED = True
+SKYRIM_DELVES_PER_DAY = 3          # stamina: delves per UK day (resets at midnight UK)
+SKYRIM_DRAGON_MIN_LEVEL = 8        # dragon lairs appear as destinations from this level
+
 # One-time UKPence reward paid (from the bank) when a badge is earned, by rarity. A tier
 # set to 0 pays nothing. Used by the live grant hook and scripts/backfill_badge_rewards.py.
 BADGE_REWARDS = {"Bronze": 25, "Silver": 100, "Gold": 500, "Secret": 1000}
@@ -259,6 +269,7 @@ BENEFITS_FILE = os.path.join(JSON_DATA_DIR, "benefits_claims.json")
 HOF_REWARD_CLAIMS_FILE = os.path.join(JSON_DATA_DIR, "hof_reward_claims.json")  # last UK day each user earned HoF UKP
 EARNED_SOURCES_FILE = os.path.join(JSON_DATA_DIR, "earned_sources.json")
 WORDLE_STATE_FILE = os.path.join(JSON_DATA_DIR, "wordle_state.json")
+SKYRIM_PROFILES_FILE = os.path.join(JSON_DATA_DIR, "skyrim_profiles.json")  # persistent Dovahkiin characters
 # Fletcher bot posts the same message-link summary HMS does; auto-delete its duplicate.
 FLETCHER_DEDUPE_ENABLED = True
 FLETCHER_BOT_ID = None            # set to Fletcher's user id for an exact match (optional)
