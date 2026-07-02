@@ -37,19 +37,23 @@ _asset_cache = {}
 # Art
 # ---------------------------------------------------------------------------
 def _asset_bytes(name: str):
-    """data/skyrim/<name>.png downscaled + cached; None (cached) when absent."""
+    """data/skyrim/<name>.webp (or .png) downscaled + cached; None (cached) when
+    absent. Scenes ship as WebP - a fraction of PNG's size on the VM's small disk -
+    and are re-encoded to a 512px WebP for the actual Discord upload."""
     if name in _asset_cache:
         return _asset_cache[name]
     data = None
-    path = os.path.join(_ASSET_DIR, f"{name}.png")
     try:
-        if os.path.exists(path):
-            with Image.open(path) as im:
-                im = im.convert("RGBA")
-                im.thumbnail((_ASSET_PX, _ASSET_PX), Image.LANCZOS)
-                buf = io.BytesIO()
-                im.save(buf, format="PNG")
-                data = buf.getvalue()
+        for ext in ("webp", "png"):
+            path = os.path.join(_ASSET_DIR, f"{name}.{ext}")
+            if os.path.exists(path):
+                with Image.open(path) as im:
+                    im = im.convert("RGB")
+                    im.thumbnail((_ASSET_PX, _ASSET_PX), Image.LANCZOS)
+                    buf = io.BytesIO()
+                    im.save(buf, format="WEBP", quality=85)
+                    data = buf.getvalue()
+                break
     except Exception:
         logger.debug("skyrim asset load failed: %s", name, exc_info=True)
     _asset_cache[name] = data
@@ -71,7 +75,7 @@ def _scene_art(delve: E.Delve) -> str:
     return D.EVENTS[r["key"]]["art"]
 
 
-def _gallery_files(view: discord.ui.LayoutView, art_key: str, fname: str = "skyrim.png"):
+def _gallery_files(view: discord.ui.LayoutView, art_key: str, fname: str = "skyrim.webp"):
     data = _asset_bytes(art_key)
     if data is None:
         return []
