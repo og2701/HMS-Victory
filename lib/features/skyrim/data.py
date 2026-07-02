@@ -68,7 +68,7 @@ ARCHETYPE_PAIRS = {
     frozenset(("speech", "lockpicking")): "Charlatan",
 }
 ARCHETYPE_SINGLE = {
-    "blade": "Warrior", "marksman": "Ranger", "destruction": "Mage",
+    "blade": "Blademaster", "marksman": "Ranger", "destruction": "Pyromancer",
     "sneak": "Shadow", "speech": "Silver-Tongue", "lockpicking": "Burglar",
 }
 
