@@ -713,7 +713,7 @@ def define_commands(tree, client):
         from lib.features.wordle import handle_wordle_command
         await handle_wordle_command(interaction)
 
-    @command("skyrim", "Adventure in Skyrim - delve ruins, level up, slay dragons (no UKPence)")
+    @command("skyrim", "Adventure in Skyrim - delve ruins, level up, slay dragons")
     async def skyrim_command(interaction: Interaction):
         from lib.features.skyrim import handle_skyrim_command
         await handle_skyrim_command(interaction)
