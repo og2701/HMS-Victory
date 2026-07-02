@@ -99,11 +99,12 @@ def _bar(value: int, lo: int = 15, hi: int = 100, width: int = 8) -> str:
 
 
 def _status_line(delve: E.Delve, profile) -> str:
-    bits = [_hearts_str(delve, profile), f"🧪 {profile['potions']}"]
+    cls = D.CLASSES[profile["class"]]
+    bits = [f"{cls['emoji']} <@{delve.player_id}> Lv {E.level(profile)}",
+            _hearts_str(delve, profile), f"🧪 {profile['potions']}"]
     if profile["words"] > 0:
         bits.append(f"🗣️ {delve.shout_charges}")
     bits.append(f"💰 {delve.satchel:,} in satchel")
-    bits.append(f"Lv {E.level(profile)}")
     return "  ·  ".join(bits)
 
 
@@ -477,7 +478,9 @@ async def _launch_delve(interaction: Interaction, loc_key: str):
     delve = E.start_delve(profile, interaction.channel_id, loc_key)
     view, files = build_delve_layout(delve, profile)
     try:
-        msg = await interaction.channel.send(view=view, files=files)
+        # the owner pill in the status line must render but never ping
+        msg = await interaction.channel.send(
+            view=view, files=files, allowed_mentions=discord.AllowedMentions.none())
     except discord.HTTPException:
         logger.error("skyrim: failed to post delve board", exc_info=True)
         await interaction.response.edit_message(
