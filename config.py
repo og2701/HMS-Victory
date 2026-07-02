@@ -155,6 +155,10 @@ PENALTY_MAX_WIN = 0           # payout ceiling; 0 = no cap (the ~2.99x top multi
 SKYRIM_ENABLED = True
 SKYRIM_DELVES_PER_DAY = 3          # stamina: delves per UK day (resets at midnight UK)
 SKYRIM_DRAGON_MIN_LEVEL = 8        # dragon lairs appear as destinations from this level
+SKYRIM_ALDUIN_MIN_LEVEL = 20       # Skuldafn (the Alduin fight) needs this level...
+SKYRIM_ALDUIN_MIN_DRAGONS = 5      # ...plus all 3 shout words and this many dragons slain.
+                                   # One attempt per UK day, offered as a picker button only
+                                   # (nothing in Skyrim ever posts on its own).
 
 # One-time UKPence reward paid (from the bank) when a badge is earned, by rarity. A tier
 # set to 0 pays nothing. Used by the live grant hook and scripts/backfill_badge_rewards.py.
@@ -270,6 +274,7 @@ HOF_REWARD_CLAIMS_FILE = os.path.join(JSON_DATA_DIR, "hof_reward_claims.json")  
 EARNED_SOURCES_FILE = os.path.join(JSON_DATA_DIR, "earned_sources.json")
 WORDLE_STATE_FILE = os.path.join(JSON_DATA_DIR, "wordle_state.json")
 SKYRIM_PROFILES_FILE = os.path.join(JSON_DATA_DIR, "skyrim_profiles.json")  # persistent Dovahkiin characters
+SKYRIM_DAILY_FILE = os.path.join(JSON_DATA_DIR, "skyrim_daily.json")  # today's shared-dungeon results board
 # Fletcher bot posts the same message-link summary HMS does; auto-delete its duplicate.
 FLETCHER_DEDUPE_ENABLED = True
 FLETCHER_BOT_ID = None            # set to Fletcher's user id for an exact match (optional)

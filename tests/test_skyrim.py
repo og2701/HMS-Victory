@@ -180,7 +180,8 @@ def test_boss_hp_staggers():
     p = _profile()
     d = _enemy_room_delve(p, "dragon", boss=False, extra_rooms=1)
     assert d.enemy_hp == 3
-    E.random = _fixed_rolls(0.0)
+    # alternate: attack roll succeeds (0.0), crit roll fails (0.99)
+    E.random = _fixed_rolls(0.0, 0.99, 0.0, 0.99, 0.0, 0.99)
     try:
         d.act_attack(p)
         assert d.enemy_hp == 2 and d.engaged and d.playing()
@@ -191,6 +192,132 @@ def test_boss_hp_staggers():
         _restore_random()
     assert d.idx == 1
     assert p["souls"] == 1 and p["stats"]["dragons"] == 1
+
+
+def test_crit_double_damage():
+    p = _profile()
+    d = _enemy_room_delve(p, "draugr_deathlord", boss=True, extra_rooms=1)
+    assert d.enemy_hp == 2
+    E.random = _fixed_rolls(0.0)                # attack succeeds AND crits
+    try:
+        d.act_attack(p)                         # 2 damage: straight through the boss
+    finally:
+        _restore_random()
+    assert d.idx == 1 and d.kills == 1
+
+
+def test_bounty_room_tougher_and_richer():
+    p = _profile()
+    rooms = [{"kind": "enemy", "key": "bandit", "boss": False, "resolved": False, "bounty": True},
+             {"kind": "enemy", "key": "skeever", "boss": False, "resolved": False}]
+    d = E.Delve(p["user_id"], "T", 0, "embershard", rooms,
+                hearts=3, shout_charges=0)
+    assert d.enemy_hp == 2                      # +1 hp for the named variant
+    E.random = _fixed_rolls(0.0, 0.99, 0.0, 0.99, 0.5)   # two clean non-crit hits
+    try:
+        d.act_attack(p)
+        assert d.playing() and d.idx == 0
+        d.act_attack(p)
+    finally:
+        _restore_random()
+    assert d.idx == 1
+    assert d.satchel >= 3 * 12                  # triple loot floor for a tier-1 bounty
+
+
+def test_adoring_fan_absorbs_a_wound():
+    p = _profile()
+    d = _enemy_room_delve(p, "troll")
+    d.fan = True
+    E.random = _fixed_rolls(0.999)              # attack misses, soak fails
+    try:
+        hearts = d.hearts
+        d.act_attack(p)
+    finally:
+        _restore_random()
+    assert d.hearts == hearts                   # the fan took it
+    assert not d.fan
+
+
+def test_alduin_takes_wing_again():
+    p = _profile()
+    p["words"] = 3
+    d = _enemy_room_delve(p, "alduin", boss=True, extra_rooms=0)
+    d.shout_charges = 3
+    assert d.enemy_hp == D.ENEMIES["alduin"]["hp"]
+    d.act_shout(p)
+    assert d.grounded
+    E.random = _fixed_rolls(0.0, 0.99, 0.0, 0.99)        # two clean non-crit hits: 8 -> 6
+    try:
+        d.act_attack(p)
+        d.act_attack(p)
+    finally:
+        _restore_random()
+    assert d.enemy_hp == max(D.ALDUIN_REFLIGHT_HP)
+    assert not d.grounded                        # reflight threshold hit
+    d.act_shout(p)                               # ground him again
+    assert d.grounded and d.shout_charges == 1
+
+
+def test_weather_is_deterministic_and_applied():
+    w1 = E.weather_today("2026-07-02")
+    w2 = E.weather_today("2026-07-02")
+    assert w1 == w2
+    assert any(E.weather_today(f"2026-07-{d:02d}")["key"] != w1["key"] for d in range(1, 29)) \
+        or w1["key"] == "clear"                  # not literally frozen forever
+    p = _profile()
+    real = E.weather_today
+    try:
+        E.weather_today = lambda date_str=None: {"key": "x", "name": "T", "emoji": "t",
+                                                 "desc": "", "fight": 10, "sneak": 10,
+                                                 "loot": 2.0, "xp": 2.0, "heavy": 0.0}
+        boosted = E.fight_pct(p, "bandit")
+        E.weather_today = lambda date_str=None: {"key": "clear", **D.WEATHERS["clear"]}
+        base = E.fight_pct(p, "bandit")
+    finally:
+        E.weather_today = real
+    assert boosted == base + 10
+
+
+def test_daily_delve_shared_and_once():
+    p1 = E.create_profile(11, "A", "warrior")
+    p2 = E.create_profile(12, "B", "thief")
+    assert E.daily_available(p1)
+    d1 = E.start_delve(p1, 0, None, kind="daily")
+    d2 = E.start_delve(p2, 0, None, kind="daily")
+    assert d1.location == d2.location
+    assert d1.rooms == d2.rooms                  # same seeded layout for everyone
+    assert d1.daily and not E.daily_available(p1)
+    d1.state = "dead"
+    E.record_daily_result(p1, d1)
+    res = E.daily_results()
+    assert res[str(p1["user_id"])]["state"] == "dead"
+
+
+def test_alduin_gates_and_daily_attempt():
+    p = _profile()
+    assert not E.alduin_available(p)
+    p["xp"] = 60_000
+    p["words"] = 3
+    p["stats"]["dragons"] = 5
+    ready, _line = E.alduin_ready(p)
+    assert ready and E.alduin_available(p)
+    E.start_delve(p, 0, "skuldafn", kind="alduin")
+    assert not E.alduin_available(p)             # one attempt per day
+
+
+def test_property_chain_and_comforts():
+    p = _profile()
+    p["septims"] = 20_000
+    assert E.buy_home(p, "alchemy_lab") is not None      # needs Breezehome first
+    assert E.buy_home(p, "breezehome") is None
+    assert E.buy_home(p, "breezehome") is not None       # no double-buy
+    assert E.buy_home(p, "alchemy_lab") is None
+    p["potions"] = 0
+    d = E.start_delve(p, 0, "embershard")
+    assert d.blessed                                     # well-rested
+    assert p["potions"] == 1                             # the lab brewed one
+    d2 = E.start_delve(p, 0, "embershard")
+    assert not d2.blessed                                # only the first delve of the day
 
 
 def test_sneak_success_and_spotted():

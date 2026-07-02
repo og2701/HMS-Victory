@@ -212,7 +212,24 @@ ENEMIES = {
         "wound": ["Dragonfire washes the ridge. You are somewhere in it.",
                   "Its tail catches you like a battering ram."],
     },
+    "alduin": {
+        "name": "Alduin", "emoji": "🌑", "type": "dragon", "tier": 5, "boss": True, "hp": 8,
+        "heavy": 0.6, "fight": 6, "sneak": None, "persuade": None, "art": "alduin",
+        "hint": "The sky itself is wrong up there. He is waiting.",
+        "intro": ["**ALDUIN** descends through a burning sky. **\"Zu'u lost daal. I have returned.\"**",
+                  "The World-Eater lands, and the temple groans under him. **ALDUIN** turns his gaze on you."],
+        "kill": ["Alduin unravels into burning threads of light, screaming his refusal into the void. "
+                 "The sky clears. **The World-Eater is undone.**",
+                 "\"Dovahkiin... you cannot...\"  You can. You did. **Alduin is no more.**"],
+        "wound": ["**\"YOL TOOR SHUL!\"** A wall of dragonfire swallows the terrace - and you with it.",
+                  "His tail sweep hits like a falling longhouse.",
+                  "**\"FUS RO DAH!\"** The World-Eater Shouts back, and the world obliges him."],
+    },
 }
+
+# Alduin takes wing again at these hp thresholds - he must be grounded with a
+# shout each time, so the fight is a war over your shout charges.
+ALDUIN_REFLIGHT_HP = (6, 4, 2)
 
 # ---------------------------------------------------------------------------
 # Locations. rooms = total encounter slots INCLUDING the boss. min_level gates
@@ -284,6 +301,14 @@ LOCATIONS = {
         "desc": "A high peak in Winterhold, and the dragon that claims it.",
         "dragon_lair": True,
     },
+    "skuldafn": {
+        "name": "Skuldafn", "emoji": "🌑", "difficulty": "THE WORLD-EATER", "min_level": 20,
+        "rooms": 2, "events": 0, "pool": {"draugr_deathlord": 1},
+        "boss": "alduin", "word_wall": False, "clear_septims": 1000, "art": "skuldafn",
+        "arrive": "The dragon temple at the roof of the world. No road leads home from here but victory.",
+        "desc": "Alduin's seat. One attempt per day - bring everything you have.",
+        "alduin": True,       # never offered normally; the picker adds it when you are ready
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -305,6 +330,14 @@ EVENTS = {
                   "text": "A tripwire glints - too late."},
     "giant": {"weight": 1, "emoji": "🦣", "art": "giant",
               "text": "The passage opens onto a camp: a cookfire, painted cows, and a **Giant** leaning on a club the size of a rowboat."},
+    "mudcrab": {"weight": 2, "emoji": "🦀", "art": "mudcrab",
+                "text": "A **mudcrab** blocks the path, clacking imperiously. It appears to be... a merchant?"},
+    "nazeem": {"weight": 1, "emoji": "☁️", "art": "nazeem",
+               "text": "Impossibly, **Nazeem** is here. \"Do you get to the Cloud District very often? "
+                       "Oh, what am I saying - of course you don't.\""},
+    "adoring_fan": {"weight": 1, "emoji": "🤩", "art": "adoring_fan",
+                    "text": "A wood elf in yellow bursts from behind a pillar. **\"By Azura! By Azura! "
+                            "By Azura! It's YOU! The Grand Champion!\"** (Wrong game, but he is undeterred.)"},
     "wordwall": {"weight": 0, "emoji": "🗣️", "art": "wordwall",   # placed, never drawn
                  "text": "A great curved wall rises out of the dark, carved edge to edge in dragon script. It is **chanting**."},
 }
@@ -399,10 +432,10 @@ GEAR_TIERS = [
     {"key": "iron", "name": "Iron", "emoji": "🪨", "price": 0, "dragons": 0},
     {"key": "steel", "name": "Steel", "emoji": "⚙️", "price": 300, "dragons": 0},
     {"key": "elven", "name": "Elven", "emoji": "🌿", "price": 700, "dragons": 0},
-    {"key": "glass", "name": "Glass", "emoji": "💚", "price": 1500, "dragons": 0},
-    {"key": "ebony", "name": "Ebony", "emoji": "⬛", "price": 3000, "dragons": 0},
-    {"key": "daedric", "name": "Daedric", "emoji": "😈", "price": 6000, "dragons": 0},
-    {"key": "dragonbone", "name": "Dragonbone", "emoji": "🐲", "price": 9000, "dragons": 3},
+    {"key": "glass", "name": "Glass", "emoji": "💚", "price": 1800, "dragons": 0},
+    {"key": "ebony", "name": "Ebony", "emoji": "⬛", "price": 4000, "dragons": 0},
+    {"key": "daedric", "name": "Daedric", "emoji": "😈", "price": 9000, "dragons": 0},
+    {"key": "dragonbone", "name": "Dragonbone", "emoji": "🐲", "price": 15000, "dragons": 5},
 ]
 WEAPON_FIGHT_PER_TIER = 4      # +4% attack per tier above Iron
 ARMOUR_SOAK_PER_TIER = 5       # +5% chance per tier to shrug off a wound
@@ -433,6 +466,62 @@ PERKS = {
 SHOUT_WORDS = ["FUS", "RO", "DAH"]           # each costs 1 dragon soul at a Word Wall
 
 # ---------------------------------------------------------------------------
+# Weather - ONE roll per UK day, deterministic from the date (see engine.weather_today),
+# the same for every player. Purely reactive: it is only ever shown when someone opens
+# the hub or delves; nothing is posted on a schedule.
+#   fight/sneak: additive % on those rolls · loot/xp: multipliers · heavy: added
+#   chance that a boss wound is a crushing blow.
+# ---------------------------------------------------------------------------
+WEATHERS = {
+    "clear": {"weight": 4, "name": "Clear Skies", "emoji": "☀️",
+              "desc": "A rare kind day in Skyrim. No modifiers.",
+              "fight": 0, "sneak": 0, "loot": 1.0, "xp": 1.0, "heavy": 0.0},
+    "blizzard": {"weight": 2, "name": "Blizzard", "emoji": "🌨️",
+                 "desc": "Howling snow hides you well, but numbs your hands.",
+                 "fight": -4, "sneak": 8, "loot": 1.0, "xp": 1.0, "heavy": 0.0},
+    "fog": {"weight": 2, "name": "Sea Fog", "emoji": "🌫️",
+            "desc": "A thick coastal fog. Perfect sneaking weather.",
+            "fight": 0, "sneak": 6, "loot": 1.0, "xp": 1.0, "heavy": 0.0},
+    "bounty": {"weight": 2, "name": "Merchant's Day", "emoji": "🪙",
+               "desc": "Caravans lost a lot of cargo lately. Finders keepers.",
+               "fight": 0, "sneak": 0, "loot": 1.3, "xp": 1.0, "heavy": 0.0},
+    "bloodmoon": {"weight": 1, "name": "Blood Moon", "emoji": "🌕",
+                  "desc": "Everything out there is angrier tonight. Glory pays double.",
+                  "fight": 0, "sneak": -5, "loot": 1.0, "xp": 1.5, "heavy": 0.15},
+}
+
+# ---------------------------------------------------------------------------
+# Crits - a clean strike does double damage (and doubles the loot on a killing
+# blow). Bounty rooms - rare named variants worth triple, one extra hit tough.
+# ---------------------------------------------------------------------------
+CRIT_LINES = [
+    "**A perfect strike** - clean through the guard, no answer possible.",
+    "**Critical hit!** You read the opening a heartbeat early and make it count.",
+    "**A devastating blow** - the kind bards exaggerate later. Not this time.",
+]
+
+BOUNTY_TITLES = {
+    "human": "Notorious", "beast": "Alpha", "undead": "Ancient",
+    "monster": "Dread", "construct": "Master-wrought", "dragon": "Elder",
+}
+
+# ---------------------------------------------------------------------------
+# Property - Belethor's septim sinks. Breezehome first, then furnishings.
+# Small comforts, not power spikes: effects apply to the FIRST delve of each day.
+# ---------------------------------------------------------------------------
+HOME_ITEMS = {
+    "breezehome": {"name": "Breezehome", "emoji": "🏠", "price": 5000, "requires": None,
+                   "desc": "A house in Whiterun. Well-rested: your first delve each day "
+                           "starts Blessed (+5% attack)."},
+    "alchemy_lab": {"name": "Alchemy Lab", "emoji": "⚗️", "price": 3000, "requires": "breezehome",
+                    "desc": "A home laboratory. Brews you 1 free potion before your first "
+                            "delve each day (up to your cap)."},
+    "trophy_room": {"name": "Trophy Room", "emoji": "🏆", "price": 8000, "requires": "breezehome",
+                    "desc": "Somewhere to hang the dragon skulls. Pure bragging rights - "
+                            "adds a 🏆 to your name on the rankings."},
+}
+
+# ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
 def pick(lines, **fmt):
@@ -442,8 +531,13 @@ def pick(lines, **fmt):
 
 
 def xp_needed(level: int) -> int:
-    """XP required to go from `level` to `level + 1`."""
-    return 75 + 35 * (level - 1)
+    """XP required to go from `level` to `level + 1`. Linear early (levels feel
+    quick in week one), quadratic past level 8 so the climb genuinely stretches:
+    roughly L20 in a month of daily play, L30 a multi-month grind."""
+    need = 75 + 35 * (level - 1)
+    if level > 8:
+        need += 8 * (level - 8) ** 2
+    return need
 
 
 def level_from_xp(xp: int) -> int:

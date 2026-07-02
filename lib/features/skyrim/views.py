@@ -111,14 +111,15 @@ def _status_line(delve: E.Delve, profile) -> str:
 def _delve_text(delve: E.Delve, profile) -> str:
     loc = delve.loc
     n = len(delve.rooms)
+    daily_tag = "  ·  📅 Daily Delve" if delve.daily else ""
     if delve.playing():
         r = delve.room
         if r["kind"] == "enemy" and r["boss"]:
-            head = f"## {loc['emoji']} {loc['name']} - the final chamber"
+            head = f"## {loc['emoji']} {loc['name']} - the final chamber{daily_tag}"
         else:
-            head = f"## {loc['emoji']} {loc['name']} - room {delve.idx + 1}/{n}"
+            head = f"## {loc['emoji']} {loc['name']} - room {delve.idx + 1}/{n}{daily_tag}"
     else:
-        head = f"## {loc['emoji']} {loc['name']}"
+        head = f"## {loc['emoji']} {loc['name']}{daily_tag}"
     lines = [head, _status_line(delve, profile), ""]
     if delve.log:
         lines.extend(delve.log)
@@ -138,7 +139,11 @@ def _delve_text(delve: E.Delve, profile) -> str:
             lines.append(f"{e['emoji']} The **{e['name']}** presses the attack!")
         else:
             lines.append(f"{e['emoji']} {D.pick(e['intro'])}")
-        if e.get("hp", 1) > 1:
+        if r.get("bounty"):
+            title = D.BOUNTY_TITLES.get(e["type"], "Notorious")
+            lines.append(f"-# 🏴 A **{title} {e['name']}** - a marked bounty. Tougher, "
+                         f"but worth triple.")
+        if delve.enemy_hp > 1 or (e.get("hp", 1) > 1 and delve.enemy_hp > 0):
             lines.append(f"-# {'🩸' * delve.enemy_hp} it will take {delve.enemy_hp} more "
                          f"telling blow{'s' if delve.enemy_hp != 1 else ''}")
         if delve.grounded:
@@ -221,6 +226,9 @@ def build_delve_layout(delve: E.Delve, profile):
             "wordwall": [("🗣️", "Approach the wall", "approach"), ("🚶", "Move on", "skip")],
             "giant": [("🚶", "Back away slowly", "retreat"), ("🧀", "About that cheese...", "approach")],
             "knee_trap": [("🚶", "Limp onward", "continue")],
+            "mudcrab": [("🦀", "Trade with the crab", "trade"), ("🚶", "Move on", "skip")],
+            "nazeem": [("😤", "\"Yes, actually.\"", "yes"), ("😮‍💨", "Sigh deeply", "sigh")],
+            "adoring_fan": [("🤩", "Let him follow", "adopt"), ("👉", "Send him home", "skip")],
         }[key]
         for emoji, label, act in choices:
             row1.add_item(_btn(discord.ButtonStyle.primary, label,
@@ -316,6 +324,8 @@ async def _handle_delve_click(interaction: Interaction, delve: E.Delve, action: 
             E.save_delve(delve)
         else:
             E.delete_delve(delve.message_id)
+            if delve.daily:
+                E.record_daily_result(profile, delve)
         await _rerender_delve(interaction, delve, profile)
     finally:
         delve.busy = False
@@ -350,6 +360,9 @@ def _hub_rows(profile):
     row1.add_item(_cb_btn(discord.ButtonStyle.primary,
                           f"Perks ({pts})" if pts else "Perks", "📜", _hub_perks))
     row2 = discord.ui.ActionRow()
+    daily_label = "Daily Delve" if E.daily_available(profile) else "Daily Results"
+    row2.add_item(_cb_btn(discord.ButtonStyle.success if E.daily_available(profile)
+                          else discord.ButtonStyle.secondary, daily_label, "📅", _hub_daily))
     row2.add_item(_cb_btn(discord.ButtonStyle.secondary, "Rankings", "🏆", _hub_rankings))
     row2.add_item(_cb_btn(discord.ButtonStyle.secondary, "How it works", "📖", _hub_help))
     return [row1, row2]
@@ -371,11 +384,15 @@ def _hub_text(profile) -> str:
     cls = D.CLASSES[profile["class"]]
     left = E.delves_left(profile)
     into, need = D.xp_into_level(profile["xp"])
+    daily_bit = ("📅 daily delve **available**" if E.daily_available(profile)
+                 else "📅 daily delve done")
     return (
         f"## 🐉 Skyrim\n"
         f"{cls['emoji']} **{profile['name']}** - Level {E.level(profile)} {cls['name']}"
-        f"  ·  💰 {profile['septims']:,} septims  ·  🛌 {left}/{getattr(config, 'SKYRIM_DELVES_PER_DAY', 3)} delves left today\n"
-        f"-# XP {_bar(into, 0, need)} {into}/{need} to next level\n\n"
+        f"  ·  💰 {profile['septims']:,} septims\n"
+        f"-# XP {_bar(into, 0, need)} {into}/{need} to next level\n"
+        f"-# {E.weather_line()}\n"
+        f"-# 🛌 {left}/{getattr(config, 'SKYRIM_DELVES_PER_DAY', 3)} delves left today  ·  {daily_bit}\n\n"
         f"Delve the ruins of Skyrim, learn words of power, slay dragons. Levels, gear, "
         f"souls and skills are yours forever - only the **septims in your satchel** are at "
         f"stake when you die.\n"
@@ -427,6 +444,12 @@ async def _hub_adventure(interaction: Interaction):
     await _open_location_picker(interaction, edit_hub=True)
 
 
+def _delve_jump_url(interaction: Interaction, delve: E.Delve) -> str | None:
+    if interaction.guild_id is None or delve.channel_id is None or delve.message_id is None:
+        return None
+    return f"https://discord.com/channels/{interaction.guild_id}/{delve.channel_id}/{delve.message_id}"
+
+
 async def _open_location_picker(interaction: Interaction, edit_hub: bool = False):
     """From the hub (edit in place) or a finished delve board (fresh ephemeral)."""
     profile = E.get_profile(interaction.user.id)
@@ -436,46 +459,100 @@ async def _open_location_picker(interaction: Interaction, edit_hub: bool = False
         else:
             await interaction.response.send_message("Run `/skyrim` first.", ephemeral=True)
         return
-    left = E.delves_left(profile)
-    if left <= 0:
-        msg = ("🛌 You need to rest - no delves left today. "
-               "They reset at midnight (UK time).")
-        if edit_hub:
-            await _edit_panel(interaction, f"## 🗺️ Adventure\n{msg}", [_back_row()])
-        else:
-            await interaction.response.send_message(msg, ephemeral=True)
-        return
 
-    offers = E.offer_locations(profile)
-    lines = [f"## 🗺️ Where to, Dovahkiin?",
+    # A delve already underway? Offer the way back before anything else - starting
+    # a new one silently walks out of the old one, which surprises people.
+    live = E.load_delve(profile.get("active_delve")) if profile.get("active_delve") else None
+    if live is not None and live.playing():
+        loc = live.loc
+        text = (f"## 🗺️ You are mid-delve\n"
+                f"{loc['emoji']} **{loc['name']}** - room {live.idx + 1}/{len(live.rooms)}, "
+                f"💰 {live.satchel:,} in the satchel.\n"
+                f"Starting a new delve walks out of this one first (the satchel banks safely).")
+        row = discord.ui.ActionRow()
+        url = _delve_jump_url(interaction, live)
+        if url:
+            row.add_item(discord.ui.Button(style=discord.ButtonStyle.link,
+                                           label="Return to delve", url=url, emoji="↩️"))
+
+        async def _new(inter: Interaction):
+            await _show_offers(inter, edit_hub=True)
+        row.add_item(_cb_btn(discord.ButtonStyle.danger, "Abandon and delve anew", "🗺️", _new))
+        rows = [row] + ([_back_row()] if edit_hub else [])
+        if edit_hub:
+            await _edit_panel(interaction, text, rows)
+        else:
+            view, files = _panel_view(text, rows)
+            await interaction.response.send_message(view=view, files=files, ephemeral=True)
+        return
+    await _show_offers(interaction, edit_hub=edit_hub)
+
+
+async def _show_offers(interaction: Interaction, edit_hub: bool = False):
+    profile = E.get_profile(interaction.user.id)
+    left = E.delves_left(profile)
+    lines = ["## 🗺️ Where to, Dovahkiin?",
+             f"-# {E.weather_line()}",
              f"-# 🛌 {left} delve{'s' if left != 1 else ''} left today  ·  "
              f"the satchel is at stake, everything else is forever\n"]
-    row = discord.ui.ActionRow()
-    for key in offers:
-        loc = D.LOCATIONS[key]
-        lines.append(f"{loc['emoji']} **{loc['name']}**  ·  {loc['difficulty']}  ·  "
-                     f"{loc['rooms']} rooms - {loc['desc']}")
+    rows = []
+    if left <= 0:
+        lines.append("🛌 You need to rest - no delves left today. They reset at midnight "
+                     "(UK time). The 📅 **Daily Delve** in the hub is separate, if you "
+                     "haven't braved it yet.")
+    else:
+        row = discord.ui.ActionRow()
+        for key in E.offer_locations(profile):
+            loc = D.LOCATIONS[key]
+            lines.append(f"{loc['emoji']} **{loc['name']}**  ·  {loc['difficulty']}  ·  "
+                         f"{loc['rooms']} rooms - {loc['desc']}")
 
-        async def _go(inter: Interaction, k=key):
-            await _launch_delve(inter, k)
-        row.add_item(_cb_btn(
-            discord.ButtonStyle.danger if D.LOCATIONS[key].get("dragon_lair")
-            else discord.ButtonStyle.primary, loc["name"], loc["emoji"], _go))
-    rows = [row] + ([_back_row()] if edit_hub else [])
+            async def _go(inter: Interaction, k=key):
+                await _launch_delve(inter, k)
+            row.add_item(_cb_btn(
+                discord.ButtonStyle.danger if D.LOCATIONS[key].get("dragon_lair")
+                else discord.ButtonStyle.primary, loc["name"], loc["emoji"], _go))
+        rows.append(row)
+
+    # Skuldafn - shown only once earned; its attempt is daily and separate from stamina.
+    ready, req_line = E.alduin_ready(profile)
+    if E.alduin_available(profile):
+        loc = D.LOCATIONS["skuldafn"]
+        lines.append(f"\n🌑 **{loc['name']}**  ·  {loc['difficulty']} - {loc['desc']}")
+        arow = discord.ui.ActionRow()
+
+        async def _alduin(inter: Interaction):
+            await _launch_delve(inter, "skuldafn", kind="alduin")
+        arow.add_item(_cb_btn(discord.ButtonStyle.danger, "Face Alduin", "🌑", _alduin))
+        rows.append(arow)
+    elif ready:
+        lines.append("\n-# 🌑 Alduin waits at Skuldafn - one attempt per day. Return tomorrow.")
+    elif E.level(profile) >= 12:
+        lines.append(f"\n-# 🌑 Greybeards' whisper: the World-Eater will meet you when you are "
+                     f"ready - {req_line}.")
+
+    rows += [_back_row()] if edit_hub else []
     if edit_hub:
+        # a button on an ephemeral panel (hub, or the mid-delve prompt): edit in place
         await _edit_panel(interaction, "\n".join(lines), rows)
     else:
+        # a button on the PUBLIC delve board (Delve Again): never edit that message
         view, files = _panel_view("\n".join(lines), rows)
         await interaction.response.send_message(view=view, files=files, ephemeral=True)
 
 
-async def _launch_delve(interaction: Interaction, loc_key: str):
+async def _launch_delve(interaction: Interaction, loc_key: str, kind: str = "normal"):
     profile = E.get_profile(interaction.user.id)
-    if profile is None or E.delves_left(profile) <= 0:
+    blocked = (profile is None
+               or (kind == "normal" and E.delves_left(profile) <= 0)
+               or (kind == "daily" and not E.daily_available(profile))
+               or (kind == "alduin" and not E.alduin_available(profile)))
+    if blocked:
         await interaction.response.edit_message(
-            view=_notice_view("🛌 You need to rest - no delves left today."), attachments=[])
+            view=_notice_view("🛌 Not today - that delve isn't available right now."),
+            attachments=[])
         return
-    delve = E.start_delve(profile, interaction.channel_id, loc_key)
+    delve = E.start_delve(profile, interaction.channel_id, loc_key, kind=kind)
     view, files = build_delve_layout(delve, profile)
     try:
         # the owner pill in the status line must render but never ping
@@ -486,7 +563,7 @@ async def _launch_delve(interaction: Interaction, loc_key: str):
         await interaction.response.edit_message(
             view=_notice_view("Couldn't post your delve here - try another channel."),
             attachments=[])
-        E.save_profile(profile)      # stamina already spent; keep the books straight
+        E.save_profile(profile)      # the attempt is already spent; keep the books straight
         return
     delve.message_id = msg.id
     profile["active_delve"] = msg.id
@@ -496,10 +573,12 @@ async def _launch_delve(interaction: Interaction, loc_key: str):
         interaction.client.add_view(view, message_id=msg.id)
     except Exception:
         logger.debug("skyrim add_view on launch failed", exc_info=True)
-    loc = D.LOCATIONS[loc_key]
-    await interaction.response.edit_message(
-        view=_notice_view(f"{loc['emoji']} Off to **{loc['name']}** - good hunting, Dovahkiin."),
-        attachments=[])
+    loc = delve.loc
+    send_off = {
+        "daily": f"📅 Today's shared dungeon: **{loc['name']}**. Same rooms for everyone - your dice.",
+        "alduin": "🌑 **Skuldafn.** The Greybeards are singing. Go.",
+    }.get(kind, f"{loc['emoji']} Off to **{loc['name']}** - good hunting, Dovahkiin.")
+    await interaction.response.edit_message(view=_notice_view(send_off), attachments=[])
 
 
 def _notice_view(text: str):
@@ -533,10 +612,18 @@ def _sheet_text(profile) -> str:
         f"soul{'s' if profile['souls'] != 1 else ''}",
         f"**Septims**: 💰 {profile['septims']:,}",
     ]
+    if profile.get("alduin_slain"):
+        n = profile["alduin_slain"]
+        lines.insert(2, f"⭐ **Slayer of Alduin**{f' (x{n})' if n > 1 else ''} - the "
+                        f"World-Eater fell to this one.")
     if profile["perks"]:
         perk_bits = [f"{D.PERKS[k]['emoji']} {D.PERKS[k]['name']} {r}/{D.PERKS[k]['ranks']}"
                      for k, r in profile["perks"].items()]
         lines.append(f"**Perks**: {'  ·  '.join(perk_bits)}")
+    if profile.get("home"):
+        home_bits = [f"{D.HOME_ITEMS[k]['emoji']} {D.HOME_ITEMS[k]['name']}"
+                     for k in profile["home"] if k in D.HOME_ITEMS]
+        lines.append(f"**Property**: {'  ·  '.join(home_bits)}")
     lines += [
         "",
         f"**Deeds**: {st['delves']} delves · {st['clears']} cleared · {st['deaths']} deaths · "
@@ -610,7 +697,48 @@ async def _hub_shop(interaction: Interaction, notice: str = ""):
         async def _cb(inter: Interaction, w=what):
             await _buy(inter, w)
         row.add_item(_cb_btn(discord.ButtonStyle.primary, label, emoji, _cb))
+    row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Property", "🏠", _hub_property))
     await _edit_panel(interaction, text, [row, _back_row()])
+
+
+# --- property (Breezehome and furnishings) -------------------------------------------
+async def _hub_property(interaction: Interaction, notice: str = ""):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None:
+        await _show_class_pick(interaction)
+        return
+    lines = ["## 🏠 Property - Belethor's side business",
+             "-# \"A house? I know a man who knows a Jarl. For a price.\"",
+             "",
+             f"💰 Your septims: **{profile['septims']:,}**", ""]
+    row = discord.ui.ActionRow()
+    for key, item in D.HOME_ITEMS.items():
+        owned = E.home_owned(profile, key)
+        tick = "✅ owned" if owned else f"{item['price']:,} septims"
+        lines.append(f"{item['emoji']} **{item['name']}** ({tick}) - {item['desc']}")
+        purchasable = (not owned
+                       and (not item["requires"] or E.home_owned(profile, item["requires"])))
+        if purchasable:
+            async def _buy_home(inter: Interaction, k=key):
+                p = E.get_profile(inter.user.id)
+                err = E.buy_home(p, k)
+                if err is None:
+                    E.save_profile(p)
+                    note = f"-# ✅ {D.HOME_ITEMS[k]['name']} is yours. \"Pleasure doing business!\""
+                else:
+                    note = f"-# {err}"
+                await _hub_property(inter, notice=note)
+            row.add_item(_cb_btn(discord.ButtonStyle.primary, f"Buy {item['name']}",
+                                 item["emoji"], _buy_home))
+    if notice:
+        lines += ["", notice]
+
+    async def _back_to_shop(inter: Interaction):
+        await _hub_shop(inter)
+    brow = discord.ui.ActionRow()
+    brow.add_item(_cb_btn(discord.ButtonStyle.secondary, "Back to shop", "🏪", _back_to_shop))
+    rows = ([row] if row.children else []) + [brow, _back_row()]
+    await _edit_panel(interaction, "\n".join(lines), rows)
 
 
 # --- perks -------------------------------------------------------------------------
@@ -653,6 +781,63 @@ async def _hub_perks(interaction: Interaction, notice: str = ""):
     await _edit_panel(interaction, "\n".join(lines), rows)
 
 
+# --- the daily delve ---------------------------------------------------------------
+def _daily_results_text() -> str:
+    loc = E.daily_location()
+    lines = [f"## 📅 Daily Delve - {loc['emoji']} {loc['name']}",
+             f"-# {E.weather_line()}  ·  same rooms for everyone, one attempt each, "
+             f"{E.DAILY_CLEAR_MULT:g}x clear bonus", ""]
+    results = E.daily_results()
+    if not results:
+        lines.append("No attempts yet today. The dungeon waits.")
+        return "\n".join(lines)
+
+    def sort_key(r):
+        cleared = r["state"] == "cleared"
+        return (not cleared, -r["satchel"] if cleared else -r["rooms"], -r["kills"])
+    medals = ["🥇", "🥈", "🥉"]
+    for i, r in enumerate(sorted(results.values(), key=sort_key)[:12]):
+        cls = D.CLASSES.get(r.get("class"), D.CLASSES["warrior"])
+        rank = medals[i] if i < len(medals) else f"`{i + 1:>2}.`"
+        if r["state"] == "cleared":
+            outcome = f"✅ cleared  ·  💰 {r['satchel']:,}"
+        elif r["state"] == "dead":
+            outcome = f"💀 died in room {r['rooms'] + 1}"
+        elif r["state"] == "launched":
+            outcome = "🦣 launched into orbit"
+        else:
+            outcome = f"🚪 left after room {r['rooms']}"
+        lines.append(f"{rank} {cls['emoji']} **{r['name']}** - {outcome}  ·  ⚔️ {r['kills']}")
+    return "\n".join(lines)
+
+
+async def _hub_daily(interaction: Interaction):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None:
+        await _show_class_pick(interaction)
+        return
+    if not E.daily_available(profile):
+        await _edit_panel(interaction, _daily_results_text(), [_back_row()])
+        return
+    loc = E.daily_location()
+    text = (f"## 📅 Daily Delve - {loc['emoji']} {loc['name']}\n"
+            f"-# {E.weather_line()}\n\n"
+            f"{loc['desc']}\n"
+            f"One shared dungeon per day: **everyone faces the same rooms**, the dice are "
+            f"your own. One attempt, separate from your normal delves, and the clear bonus "
+            f"pays {E.DAILY_CLEAR_MULT:g}x. Results land on the daily board.")
+    row = discord.ui.ActionRow()
+
+    async def _go(inter: Interaction):
+        await _launch_delve(inter, loc["key"], kind="daily")
+    row.add_item(_cb_btn(discord.ButtonStyle.success, "Set out", "📅", _go))
+
+    async def _board(inter: Interaction):
+        await _edit_panel(inter, _daily_results_text(), [_back_row()])
+    row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Today's board", "📋", _board))
+    await _edit_panel(interaction, text, [row, _back_row()])
+
+
 # --- rankings ------------------------------------------------------------------------
 async def _hub_rankings(interaction: Interaction):
     profiles = sorted(E.all_profiles().values(), key=lambda p: p["xp"], reverse=True)[:10]
@@ -664,7 +849,12 @@ async def _hub_rankings(interaction: Interaction):
         cls = D.CLASSES[p["class"]]
         rank = medals[i] if i < len(medals) else f"`{i + 1:>2}.`"
         st = p["stats"]
-        lines.append(f"{rank} {cls['emoji']} **{p['name']}** - Lv {E.level(p)}  ·  "
+        flair = ""
+        if p.get("alduin_slain"):
+            flair += " ⭐"
+        if E.home_owned(p, "trophy_room"):
+            flair += " 🏆"
+        lines.append(f"{rank} {cls['emoji']} **{p['name']}**{flair} - Lv {E.level(p)}  ·  "
                      f"🐉 {st['dragons']}  ·  🏰 {st['clears']} cleared  ·  "
                      f"💰 {p['septims']:,}")
     await _edit_panel(interaction, "\n".join(lines), [_back_row()])
@@ -691,6 +881,17 @@ def _help_text() -> str:
         "odds, and perks stack on top - spend points in the hub.\n\n"
         "**Dragons** - sighted once you're strong enough. Slay one and its **soul** is "
         "yours; spend souls at **Word Walls** to learn FUS, then RO, then DAH.\n\n"
+        "**The wilds** - each UK day has a shared **weather** roll that tilts the odds for "
+        "everyone; a clean strike **crits** for double; rare 🏴 **bounty** enemies are "
+        "tougher but pay triple.\n\n"
+        "**📅 The Daily Delve** - one shared dungeon per day, same rooms for everyone, one "
+        "attempt each, fatter clear bonus, and a board to compare scars on. Doesn't use "
+        "your normal delves.\n\n"
+        "**🏠 Property** - Belethor sells Breezehome and furnishings for septims. Comforts, "
+        "not power: a blessing and a brewed potion on your first delve each day.\n\n"
+        "**🌑 Alduin** - at level 20, with the full Shout and 5 dragons down, Skuldafn "
+        "opens. One attempt per day. He takes wing mid-fight; only the Voice brings him "
+        "back down. Slay him for the ⭐ title.\n\n"
         f"-# {getattr(config, 'SKYRIM_DELVES_PER_DAY', 3)} delves per day, reset at "
         "midnight (UK). No UKPence involved anywhere - glory only."
     )

@@ -44,10 +44,30 @@ HEAVY_HIT_CHANCE = {4: 0.35, 5: 0.50}   # by enemy tier: chance a wound is a cru
 FIGHT_SKILL_SCALE = 24               # max % a skill adds at 100 (fight)
 SNEAK_SKILL_SCALE = 22               # (sneak)
 SPEECH_SKILL_SCALE = 30              # (persuade)
+CRIT_CHANCE = 0.08                   # clean-strike chance: double damage, double loot on the kill
+BOUNTY_CHANCE = 0.06                 # per trash room: a named variant (+1 hp, 3x loot, 2x XP)
+DAILY_CLEAR_MULT = 1.5               # the daily delve pays a fatter clear bonus
 
 
 def _today_str() -> str:
     return datetime.datetime.now(_UK).date().isoformat()
+
+
+# ---------------------------------------------------------------------------
+# Weather - one deterministic roll per UK day, identical for everyone. Purely
+# reactive: computed when someone looks, never posted on a schedule.
+# ---------------------------------------------------------------------------
+def weather_today(date_str: str = None) -> dict:
+    date_str = date_str or _today_str()
+    rng = random.Random(f"skyrim-weather-{date_str}")
+    keys = list(D.WEATHERS)
+    w = rng.choices(keys, weights=[D.WEATHERS[k]["weight"] for k in keys], k=1)[0]
+    return {"key": w, **D.WEATHERS[w]}
+
+
+def weather_line(w: dict = None) -> str:
+    w = w or weather_today()
+    return f"{w['emoji']} **{w['name']}** - {w['desc']}"
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +166,8 @@ def fight_pct(profile, enemy_key: str, delve=None) -> int:
          + _skill_component(profile["skills"]["weapon"], FIGHT_SKILL_SCALE)
          + D.WEAPON_FIGHT_PER_TIER * profile["weapon_tier"]
          + cls["fight_aff"].get(e["type"], 0)
-         + 4 * perk_rank(profile, "honed_edge"))
+         + 4 * perk_rank(profile, "honed_edge")
+         + weather_today()["fight"])
     if delve is not None:
         if delve.grounded and e["type"] == "dragon":
             p += GROUNDED_BONUS
@@ -163,7 +184,8 @@ def sneak_pct(profile, enemy_key: str) -> int | None:
     p = (e["sneak"]
          + _skill_component(profile["skills"]["sneak"], SNEAK_SKILL_SCALE)
          + cls["sneak_mod"]
-         + 6 * perk_rank(profile, "muffled"))
+         + 6 * perk_rank(profile, "muffled")
+         + weather_today()["sneak"])
     return _clamp(p)
 
 
@@ -193,16 +215,18 @@ def _skill_up(profile, which: str) -> int:
 
 
 def add_xp(profile, amount: int) -> tuple:
-    """Bank XP (Quick Study applies). Returns (gained, levels_gained)."""
-    amount = int(round(amount * (1 + 0.10 * perk_rank(profile, "quick_study"))))
+    """Bank XP (Quick Study + weather apply). Returns (gained, levels_gained)."""
+    amount = int(round(amount * (1 + 0.10 * perk_rank(profile, "quick_study"))
+                       * weather_today()["xp"]))
     before = level(profile)
     profile["xp"] += amount
     return amount, level(profile) - before
 
 
 def _septims(profile, amount: int) -> int:
-    """Scale a septim find by Deep Pockets."""
-    return int(round(amount * (1 + 0.20 * perk_rank(profile, "deep_pockets"))))
+    """Scale a septim find by Deep Pockets and the day's weather."""
+    return int(round(amount * (1 + 0.20 * perk_rank(profile, "deep_pockets"))
+                     * weather_today()["loot"]))
 
 
 # --- stamina -----------------------------------------------------------------
@@ -255,27 +279,33 @@ def load_delve(message_id) -> "Delve | None":
 # ---------------------------------------------------------------------------
 # Delve generation
 # ---------------------------------------------------------------------------
-def _draw_events(count: int) -> list:
+def _draw_events(count: int, rng=random) -> list:
     pool = [(k, v["weight"]) for k, v in D.EVENTS.items() if v["weight"] > 0]
     keys = [k for k, _ in pool]
     weights = [w for _, w in pool]
-    return [random.choices(keys, weights=weights, k=1)[0] for _ in range(count)]
+    return [rng.choices(keys, weights=weights, k=1)[0] for _ in range(count)]
 
 
-def build_rooms(loc_key: str) -> list:
+def build_rooms(loc_key: str, rng=None) -> list:
     """Room list for a fresh delve: shuffled trash + events, optional word wall,
-    boss last. Each room: {kind, key, boss, resolved}."""
+    boss last. Each room: {kind, key, boss, resolved} (+ bounty on rare named
+    variants). Pass a seeded rng for the shared daily layout."""
+    rng = rng or random
     loc = D.LOCATIONS[loc_key]
     n_fill = loc["rooms"] - 1
     n_events = min(loc["events"], n_fill - 1)      # always at least one trash fight
     enemy_keys = list(loc["pool"].keys())
     enemy_weights = list(loc["pool"].values())
-    rooms = [{"kind": "enemy", "key": random.choices(enemy_keys, weights=enemy_weights, k=1)[0],
-              "boss": False, "resolved": False}
-             for _ in range(n_fill - n_events)]
+    rooms = []
+    for _ in range(n_fill - n_events):
+        room = {"kind": "enemy", "key": rng.choices(enemy_keys, weights=enemy_weights, k=1)[0],
+                "boss": False, "resolved": False}
+        if rng.random() < BOUNTY_CHANCE:
+            room["bounty"] = True                  # a named variant: +1 hp, triple loot
+        rooms.append(room)
     rooms += [{"kind": "event", "key": k, "boss": False, "resolved": False}
-              for k in _draw_events(n_events)]
-    random.shuffle(rooms)
+              for k in _draw_events(n_events, rng)]
+    rng.shuffle(rooms)
     if loc.get("word_wall"):
         rooms.append({"kind": "event", "key": "wordwall", "boss": False, "resolved": False})
     rooms.append({"kind": "enemy", "key": loc["boss"], "boss": True, "resolved": False})
@@ -284,11 +314,13 @@ def build_rooms(loc_key: str) -> list:
 
 def offer_locations(profile) -> list:
     """Up to three destinations suited to the character's level: the easiest thing
-    still worth doing, something on-level, and the most dangerous thing unlocked."""
+    still worth doing, something on-level, and the most dangerous thing unlocked.
+    Skuldafn is never offered here - the picker adds it via alduin_available."""
     lvl = level(profile)
     dragon_min = int(getattr(config, "SKYRIM_DRAGON_MIN_LEVEL", 8))
     open_locs = [k for k, v in D.LOCATIONS.items()
-                 if lvl >= v["min_level"] and (not v.get("dragon_lair") or lvl >= dragon_min)]
+                 if not v.get("alduin")
+                 and lvl >= v["min_level"] and (not v.get("dragon_lair") or lvl >= dragon_min)]
     open_locs.sort(key=lambda k: D.LOCATIONS[k]["min_level"])
     if len(open_locs) <= 3:
         return open_locs
@@ -302,6 +334,13 @@ def offer_locations(profile) -> list:
     return out
 
 
+def _room_hp(room: dict) -> int:
+    """Hits the room's enemy can take: its base hp, +1 for a bounty variant."""
+    if room["kind"] != "enemy":
+        return 1
+    return D.ENEMIES[room["key"]].get("hp", 1) + (1 if room.get("bounty") else 0)
+
+
 # ---------------------------------------------------------------------------
 # The Delve
 # ---------------------------------------------------------------------------
@@ -312,9 +351,11 @@ class Delve:
                  idx=0, hearts=None, satchel=0, shout_charges=None, engaged=False,
                  spotted=False, grounded=False, blessed=False, state="playing",
                  log=None, message_id=None, xp_gained=0, kills=0, result_line="",
-                 delve_id=None, enemy_hp=None):
+                 delve_id=None, enemy_hp=None, daily=False, fan=False):
         import uuid
         self.delve_id = delve_id or uuid.uuid4().hex[:12]
+        self.daily = bool(daily)                  # the shared once-a-day dungeon
+        self.fan = bool(fan)                      # the Adoring Fan absorbs one wound
         self.player_id = int(player_id)
         self.player_name = player_name
         self.channel_id = channel_id
@@ -334,10 +375,11 @@ class Delve:
         self.xp_gained = int(xp_gained)           # display total for the summary
         self.kills = int(kills)
         self.result_line = result_line
-        # remaining hits the CURRENT enemy can take (bosses 2, dragons 3, trash 1)
+        # remaining hits the CURRENT enemy can take (bosses 2, dragons 3+, trash 1,
+        # bounty variants +1)
         if enemy_hp is None:
             r = self.rooms[self.idx] if self.rooms else None
-            enemy_hp = D.ENEMIES[r["key"]].get("hp", 1) if r and r["kind"] == "enemy" else 1
+            enemy_hp = _room_hp(r) if r else 1
         self.enemy_hp = int(enemy_hp)
         self.busy = False                         # transient: drop double-clicks
 
@@ -386,12 +428,14 @@ class Delve:
             return
         self.idx += 1
         r = self.room
-        self.enemy_hp = D.ENEMIES[r["key"]].get("hp", 1) if r["kind"] == "enemy" else 1
+        self.enemy_hp = _room_hp(r)
         if r["kind"] == "event" and r["key"] == "knee_trap":
             self._spring_knee_trap(profile)
 
     def _finish_clear(self, profile):
         bonus = _septims(profile, self.loc["clear_septims"])
+        if self.daily:
+            bonus = int(bonus * DAILY_CLEAR_MULT)
         self.satchel += bonus
         gained, _ = add_xp(profile, 25)
         self.xp_gained += gained
@@ -404,14 +448,19 @@ class Delve:
                             f"**{self.xp_gained} XP**.")
         self.say(D.pick(D.CLEAR_LINES, location=self.loc["name"]))
 
-    def _wound(self, profile, lines, knee_chance=0.0, tier=1) -> str:
-        """Take a hit: armour may soak it, otherwise lose a heart (death at 0).
-        Bosses and dragons land a crushing 2-heart blow some of the time.
-        Returns 'soaked' | 'wounded' | 'dead'."""
+    def _wound(self, profile, lines, knee_chance=0.0, heavy=0.0) -> str:
+        """Take a hit: armour may soak it, the Adoring Fan may take it for you,
+        otherwise lose a heart (death at 0). `heavy` is the chance of a crushing
+        2-heart blow. Returns 'soaked' | 'wounded' | 'dead'."""
         if random.random() * 100 < soak_pct(profile):
             self.say("Your armour turns the blow - no harm done.")
             return "soaked"
-        loss = 2 if random.random() < HEAVY_HIT_CHANCE.get(tier, 0.0) else 1
+        if self.fan:
+            self.fan = False
+            self.say("The Adoring Fan hurls himself into the blow with a delighted shriek. "
+                     "He'll... he'll be fine. Probably.  (wound absorbed)")
+            return "soaked"
+        loss = 2 if random.random() < heavy else 1
         self.hearts -= loss
         if random.random() < knee_chance:
             self.say(D.WOUND_KNEE_LINE)
@@ -432,34 +481,61 @@ class Delve:
         self.say(D.pick(D.DEATH_LINES, location=self.loc["name"]))
 
     # --- enemy actions ------------------------------------------------------------
+    def _heavy(self, e) -> float:
+        """Chance this enemy's hit is a crushing 2-heart blow (enemy override or
+        tier default, plus the day's weather)."""
+        base = e.get("heavy", HEAVY_HIT_CHANCE.get(e["tier"], 0.0))
+        return base + weather_today()["heavy"]
+
     def act_attack(self, profile) -> None:
         e = self.enemy()
         p = fight_pct(profile, self.room["key"], self)
         if random.random() * 100 < p:
-            self.enemy_hp -= 1
+            crit = random.random() < CRIT_CHANCE
+            self.enemy_hp -= 2 if crit else 1
             if self.enemy_hp > 0:
                 # a big foe takes the hit and keeps coming - the fight is on
                 self.engaged = True
                 lines = D.STAGGER_DRAGON_LINES if e["type"] == "dragon" else D.STAGGER_LINES
-                self.say(D.pick(lines) + f"  ({'🩸' * self.enemy_hp} to go)")
+                line = (D.pick(D.CRIT_LINES) + "  " if crit else "") + D.pick(lines)
+                self.say(line + f"  ({'🩸' * self.enemy_hp} to go)")
+                # Alduin takes wing again at set thresholds - ground him anew or
+                # fight at a heavy disadvantage. His fight is a war over shouts.
+                if self.room["key"] == "alduin" and self.enemy_hp in D.ALDUIN_REFLIGHT_HP \
+                        and self.grounded:
+                    self.grounded = False
+                    self.say("**Alduin takes wing again**, laughing in the old tongue. "
+                             "Bring him down!")
             else:
-                self._kill(profile, e)
+                self._kill(profile, e, crit=crit)
         else:
             self.engaged = True
             self._wound(profile, e["wound"], knee_chance=0.10 if e["type"] == "human" else 0.0,
-                        tier=e["tier"])
+                        heavy=self._heavy(e))
 
-    def _kill(self, profile, e):
+    def _kill(self, profile, e, crit=False):
         gain = _skill_up(profile, "weapon")
         tier = e["tier"]
+        bounty = bool(self.room.get("bounty"))
         xp = DRAGON_KILL_XP if e["type"] == "dragon" else 12 * tier
+        if bounty:
+            xp *= 2
         gained, ups = add_xp(profile, xp)
         self.xp_gained += gained
         loot = _septims(profile, tier * 12 + random.randint(0, 8))
+        if bounty:
+            loot *= 3
+        if crit:
+            loot *= 2
         self.satchel += loot
         self.kills += 1
         profile["stats"]["kills"] += 1
-        line = f"{D.pick(e['kill'])}  (+{gained} XP, +{loot} septims"
+        line = ""
+        if crit:
+            line += D.pick(D.CRIT_LINES) + "  "
+        line += f"{D.pick(e['kill'])}  (+{gained} XP, +{loot} septims"
+        if bounty:
+            line += ", bounty claimed"
         if gain:
             line += f", {weapon_skill_name(profile)} +{gain}"
         line += ")"
@@ -467,6 +543,8 @@ class Delve:
             profile["souls"] += 1
             profile["stats"]["dragons"] += 1
             line += "  🐉 **+1 dragon soul**"
+        if self.room["key"] == "alduin":
+            profile["alduin_slain"] = profile.get("alduin_slain", 0) + 1
         if ups:
             line += f"\n🆙 **Level up! You are now level {level(profile)}** (+{ups} perk point)."
         self.say(line)
@@ -494,7 +572,7 @@ class Delve:
             self.spotted = True
             self.engaged = True
             self.say(D.pick(D.SPOTTED_LINES))
-            self._wound(profile, e["wound"], tier=e["tier"])
+            self._wound(profile, e["wound"], heavy=self._heavy(e))
 
     def act_persuade(self, profile) -> None:
         e = self.enemy()
@@ -523,7 +601,7 @@ class Delve:
         else:
             self.engaged = True
             self.say("Your silver tongue turns to lead - steel comes out instead.")
-            self._wound(profile, e["wound"], tier=e["tier"])
+            self._wound(profile, e["wound"], heavy=self._heavy(e))
 
     def act_shout(self, profile) -> None:
         if self.shout_charges <= 0 or profile["words"] <= 0:
@@ -660,6 +738,34 @@ class Delve:
                 self.say("The wall chants, but the word slides off your mind. It needs the "
                          "strength of a **dragon's soul** to stick.")
             self._advance(profile)
+        elif key == "mudcrab" and choice == "trade":
+            coin = _septims(profile, 30 + random.randint(0, 30))
+            self.satchel += coin
+            self.say("You lay out your spare junk. The mudcrab appraises it with one claw, "
+                     f"clacks twice, and pays. +{coin} septims. He drives a hard bargain, for a crab.")
+            self._advance(profile)
+        elif key == "nazeem":
+            if choice == "yes":
+                gained, _ = add_xp(profile, 10)
+                self.xp_gained += gained
+                self.say("\"Yes, actually. Most days.\" Nazeem is visibly shaken. He leaves "
+                         f"without another word.  (+{gained} XP. Worth it.)")
+            else:
+                gained, _ = add_xp(profile, 5)
+                self.xp_gained += gained
+                self.say(f"You sigh, deeply, from the soul. Even the dungeon feels it.  (+{gained} XP)")
+            self._advance(profile)
+        elif key == "adoring_fan":
+            if choice == "adopt":
+                self.fan = True
+                self.say("\"I'll follow you FOREVER, Grand Champion!\" He will follow you for "
+                         "exactly one wound, which he will heroically absorb.  🤩 (fan acquired)")
+            else:
+                gained, _ = add_xp(profile, 5)
+                self.xp_gained += gained
+                self.say("You point at the horizon and tell him the Grand Champion went that way. "
+                         f"He sprints off, weeping with joy.  (+{gained} XP)")
+            self._advance(profile)
         elif key == "giant":
             if choice == "retreat":
                 self.say("You back away slowly. The giant watches you go, then returns to its cows. Wise.")
@@ -692,7 +798,8 @@ class Delve:
                 "spotted": self.spotted, "grounded": self.grounded, "blessed": self.blessed,
                 "state": self.state, "log": self.log, "message_id": self.message_id,
                 "xp_gained": self.xp_gained, "kills": self.kills,
-                "result_line": self.result_line, "enemy_hp": self.enemy_hp}
+                "result_line": self.result_line, "enemy_hp": self.enemy_hp,
+                "daily": self.daily, "fan": self.fan}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Delve":
@@ -704,7 +811,8 @@ class Delve:
                    state=d.get("state", "playing"), log=d.get("log"),
                    message_id=d.get("message_id"), xp_gained=d.get("xp_gained", 0),
                    kills=d.get("kills", 0), result_line=d.get("result_line", ""),
-                   delve_id=d.get("delve_id"), enemy_hp=d.get("enemy_hp"))
+                   delve_id=d.get("delve_id"), enemy_hp=d.get("enemy_hp"),
+                   daily=d.get("daily", False), fan=d.get("fan", False))
 
 
 # ---------------------------------------------------------------------------
@@ -712,29 +820,161 @@ class Delve:
 # ---------------------------------------------------------------------------
 def abandon_active(profile):
     """Close a previous still-open delve safely: bank its satchel (an implicit
-    Leave - never punitive) and drop its persisted state so the old buttons die."""
+    Leave - never punitive) and drop its persisted state so the old buttons die.
+    An abandoned daily still counts as that day's attempt and is recorded as left."""
     mid = profile.get("active_delve")
     if not mid:
         return
     old = load_delve(mid)
     if old is not None and old.playing():
         profile["septims"] += old.satchel
+        if old.daily:
+            old.state = "left"
+            record_daily_result(profile, old)
         logger.info("skyrim: auto-banked %s septims from %s's abandoned delve",
                     old.satchel, profile["user_id"])
     delete_delve(mid)
     profile["active_delve"] = None
 
 
-def start_delve(profile, channel_id, loc_key) -> Delve:
+def _first_delve_of_day_comforts(profile, delve: Delve):
+    """Breezehome comforts, applied once per UK day on whichever delve is first."""
+    if profile.get("last_delve_date") == _today_str():
+        return
+    profile["last_delve_date"] = _today_str()
+    if home_owned(profile, "breezehome"):
+        delve.blessed = True
+        delve.say(f"🏠 Well-rested from a night in Breezehome.  (+{BLESSING_BONUS}% attack today's first delve)")
+    if home_owned(profile, "alchemy_lab") and profile["potions"] < potion_cap(profile):
+        profile["potions"] += 1
+        delve.say("⚗️ Your alchemy lab left a fresh potion by the door.  🧪 +1")
+
+
+def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
+    """Begin a delve. kind: 'normal' (spends stamina) | 'daily' (the shared seeded
+    dungeon, once per day, no stamina) | 'alduin' (Skuldafn, once per day, no stamina).
+    Callers must have checked availability; this marks the attempt."""
     abandon_active(profile)
-    spend_stamina(profile)
+    if kind == "daily":
+        date, loc_key, rng = _daily_layout()
+        profile["daily"] = {"date": date}
+        delve = Delve(profile["user_id"], profile["name"], channel_id, loc_key,
+                      build_rooms(loc_key, rng), hearts=heart_max(profile),
+                      shout_charges=profile["words"], daily=True)
+        delve.say(D.LOCATIONS[loc_key]["arrive"])
+    elif kind == "alduin":
+        profile["alduin"] = {"date": _today_str()}
+        delve = Delve.start(profile, channel_id, "skuldafn")
+    else:
+        spend_stamina(profile)
+        delve = Delve.start(profile, channel_id, loc_key)
     profile["stats"]["delves"] += 1
-    return Delve.start(profile, channel_id, loc_key)
+    w = weather_today()
+    if w["key"] != "clear":
+        delve.say(weather_line(w))
+    _first_delve_of_day_comforts(profile, delve)
+    return delve
 
 
 # ---------------------------------------------------------------------------
-# Shop / perks (called from the hub views)
+# The Daily Delve - one shared, seeded dungeon per UK day. Same rooms for
+# everyone (your own dice), one attempt each, results on a shared board.
+# Entirely button-driven: nothing is ever posted on a schedule.
 # ---------------------------------------------------------------------------
+def _daily_layout() -> tuple:
+    """(date_str, loc_key, seeded_rng) for today's shared dungeon."""
+    date = _today_str()
+    rng = random.Random(f"skyrim-daily-{date}")
+    pool = sorted(k for k, v in D.LOCATIONS.items()
+                  if not v.get("dragon_lair") and not v.get("alduin"))
+    return date, rng.choice(pool), rng
+
+
+def daily_location() -> dict:
+    _date, loc_key, _rng = _daily_layout()
+    return {"key": loc_key, **D.LOCATIONS[loc_key]}
+
+
+def daily_available(profile) -> bool:
+    return (profile.get("daily") or {}).get("date") != _today_str()
+
+
+def _daily_store() -> dict:
+    return load_json_file(config.SKYRIM_DAILY_FILE) or {}
+
+
+def record_daily_result(profile, delve: Delve):
+    """Write this attempt onto today's shared board (best-effort, last write wins)."""
+    try:
+        store = _daily_store()
+        today = _today_str()
+        day = store.get(today) or {}
+        day[str(profile["user_id"])] = {
+            "name": profile["name"], "class": profile["class"], "state": delve.state,
+            "satchel": delve.satchel, "kills": delve.kills,
+            "rooms": delve.idx + (1 if delve.state == "cleared" else 0),
+            "total_rooms": len(delve.rooms), "xp": delve.xp_gained,
+        }
+        # keep only today + yesterday; the board is ephemeral history
+        keep = sorted(store.keys())[-1:]
+        store = {k: v for k, v in store.items() if k in keep}
+        store[today] = day
+        save_json_file(config.SKYRIM_DAILY_FILE, store)
+    except Exception:
+        logger.error("skyrim: failed to record daily result", exc_info=True)
+
+
+def daily_results() -> dict:
+    """Today's attempts, keyed by user id string."""
+    return _daily_store().get(_today_str()) or {}
+
+
+# ---------------------------------------------------------------------------
+# Alduin - the endgame. Gated hard, one attempt per day, never auto-triggered:
+# the location picker offers Skuldafn only when the character has earned it.
+# ---------------------------------------------------------------------------
+def alduin_ready(profile) -> tuple:
+    """(ready, requirements_line). Ready means the gates are met, regardless of
+    whether today's attempt is spent."""
+    need_lvl = int(getattr(config, "SKYRIM_ALDUIN_MIN_LEVEL", 20))
+    need_drag = int(getattr(config, "SKYRIM_ALDUIN_MIN_DRAGONS", 5))
+    lvl_ok = level(profile) >= need_lvl
+    words_ok = profile["words"] >= len(D.SHOUT_WORDS)
+    drag_ok = profile["stats"]["dragons"] >= need_drag
+    words_str = "✅" if words_ok else f"{profile['words']}/3"
+    drags_str = "✅" if drag_ok else str(profile["stats"]["dragons"])
+    line = (f"level {need_lvl}+ ({'✅' if lvl_ok else level(profile)}) · "
+            f"FUS RO DAH ({words_str}) · "
+            f"{need_drag} dragons slain ({drags_str})")
+    return (lvl_ok and words_ok and drag_ok), line
+
+
+def alduin_available(profile) -> bool:
+    ready, _ = alduin_ready(profile)
+    return ready and (profile.get("alduin") or {}).get("date") != _today_str()
+
+
+# ---------------------------------------------------------------------------
+# Shop / perks / property (called from the hub views)
+# ---------------------------------------------------------------------------
+def home_owned(profile, key: str) -> bool:
+    return key in (profile.get("home") or [])
+
+
+def buy_home(profile, key: str) -> str | None:
+    """Buy Breezehome or a furnishing. Returns an error line, or None on success."""
+    item = D.HOME_ITEMS.get(key)
+    if item is None:
+        return "Belethor has never heard of it."
+    if home_owned(profile, key):
+        return f"You already own {item['name']}."
+    if item["requires"] and not home_owned(profile, item["requires"]):
+        return f"You need {D.HOME_ITEMS[item['requires']]['name']} first."
+    if profile["septims"] < item["price"]:
+        return f"{item['name']} costs {item['price']:,} septims - you have {profile['septims']:,}."
+    profile["septims"] -= item["price"]
+    profile["home"] = sorted((profile.get("home") or []) + [key])
+    return None
 def buy_potion(profile) -> str | None:
     if profile["potions"] >= potion_cap(profile):
         return "Your potion pockets are full."
