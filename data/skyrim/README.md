@@ -20,3 +20,11 @@ convert a fresh drop:
 | skeever, wolf, bandit, draugr, spider, necromancer, troll, hagraven, falmer | trash encounters |
 | bandit_chief, deathlord, the_caller, centurion, dragon | bosses |
 | chest, sweetroll, shrine, satchel, maiq, knee_trap, giant, wordwall | events |
+| fork | the branching Fork event (safe way vs deep way) |
+| fallen | a Fallen Adventurer's corpse (loot it or lay them to rest) |
+| mimic | a Mimic chest mid-bite (an enemy; variant of `chest`) |
+| soul_cairn | the endless Soul Cairn descent (post-Alduin endgame) |
+
+The **Named Dragons of the Week** all reuse `dragon.webp` - no per-dragon art needed.
+New expansion scenes fall back to text like every other, so they can be dropped in
+whenever. Only `fork`, `fallen`, `mimic`, `soul_cairn` are new to generate.
