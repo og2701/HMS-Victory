@@ -261,6 +261,40 @@ ENEMIES = {
 ALDUIN_REFLIGHT_HP = (6, 4, 2)
 
 # ---------------------------------------------------------------------------
+# Named Dragons of the Week. Both dragon lairs share ONE named dragon per UK week,
+# chosen deterministically (see engine.dragon_of_the_week) - the same for everyone,
+# rotating every Monday. Each is the base Dragon (tier 5, 3 hp, 16 fight) with a
+# small delta and a twist, so the road to Alduin stops being ten identical fights.
+# A per-character Dragon Wall records first kills. Reuses the existing dragon art.
+#   hp/fight     - deltas on the base dragon;  crush - added crushing-blow chance
+#   breath       - flavour word;  twist - one-line hook shown in the intro
+# ---------------------------------------------------------------------------
+DRAGON_ROSTER = {
+    "mirmulnir":  {"name": "Mirmulnir", "breath": "YOL TOOR SHUL", "hp": 0, "fight": 4,
+                   "crush": 0.0, "twist": "The first dragon of the new age - and the most straightforward."},
+    "sahloknir":  {"name": "Sahloknir", "breath": "FO KRAH DIIN", "hp": 0, "fight": 0,
+                   "crush": 0.10, "twist": "Raised from the dead once already - its frost breath bites to the bone."},
+    "vuljotnaak": {"name": "Vuljotnaak", "breath": "YOL TOOR SHUL", "hp": 1, "fight": 2,
+                   "crush": 0.0, "twist": "An old, earthbound brute - thick-scaled and slow to fall."},
+    "nahagliiv":  {"name": "Nahagliiv", "breath": "FO KRAH DIIN", "hp": 0, "fight": -2,
+                   "crush": 0.15, "twist": "Reckless and furious - it hits like a rockslide but overreaches."},
+    "viinturuth": {"name": "Viinturuth", "breath": "YOL TOOR SHUL", "hp": 1, "fight": 0,
+                   "crush": 0.08, "twist": "A conjured guardian, grimly patient. It does not tire."},
+    "kruziikrel": {"name": "Kruziikrel", "breath": "FO KRAH DIIN", "hp": 0, "fight": 3,
+                   "crush": 0.0, "twist": "A Dragon Cultist's pet - eager, but never fully wild."},
+    "relonikiv":  {"name": "Relonikiv", "breath": "YOL TOOR SHUL", "hp": 0, "fight": 5,
+                   "crush": 0.0, "twist": "Young and impatient. It burns hot and drops fast."},
+    "vulthuryol": {"name": "Vulthuryol", "breath": "YOL TOOR SHUL", "hp": 2, "fight": -2,
+                   "crush": 0.05, "twist": "Roused from the deep dark of Blackreach - vast, and slow to notice pain."},
+    "naaslaarum": {"name": "Naaslaarum", "breath": "FO KRAH DIIN", "hp": 1, "fight": 0,
+                   "crush": 0.12, "twist": "One of a hunting pair - it fights like it expects a sister at your back."},
+    "odahviing":  {"name": "Odahviing", "breath": "YOL TOOR SHUL", "hp": 2, "fight": 2,
+                   "crush": 0.10, "twist": "Proud, canny, and genuinely dangerous - the finest flier on the roster."},
+    "paarthurnax_kin": {"name": "Voslaarum", "breath": "FO KRAH DIIN", "hp": 2, "fight": 0,
+                        "crush": 0.15, "twist": "Ancient and cold-hearted - the closest thing to Alduin you'll meet at a lair."},
+}
+
+# ---------------------------------------------------------------------------
 # Locations. rooms = total encounter slots INCLUDING the boss. min_level gates
 # the option; dragon lairs additionally need SKYRIM_DRAGON_MIN_LEVEL.
 # ---------------------------------------------------------------------------
@@ -514,6 +548,54 @@ PERKS = {
 SHOUT_WORDS = ["FUS", "RO", "DAH"]           # each costs 1 dragon soul at a Word Wall
 
 # ---------------------------------------------------------------------------
+# Alchemy - the Ingredient Pouch & the Lab Bench. Enemies drop ingredients that
+# ride in the AT-RISK satchel (lost on death, kept when you walk out). At the Lab
+# Bench (a Breezehome upgrade) you brew them into potions using known recipes. This
+# is the big lever on the late-game economy: a reason to fight past "I own everything".
+# ---------------------------------------------------------------------------
+INGREDIENTS = {
+    "blue_flower":   {"name": "Blue Mountain Flower", "emoji": "🌼"},
+    "nightshade":    {"name": "Nightshade", "emoji": "🌸"},
+    "spider_egg":    {"name": "Spider Egg", "emoji": "🕸️"},
+    "troll_fat":     {"name": "Troll Fat", "emoji": "🫙"},
+    "bone_meal":     {"name": "Bone Meal", "emoji": "🦴"},
+    "frost_salts":   {"name": "Frost Salts", "emoji": "❄️"},
+    "hagraven_claw": {"name": "Hagraven Claw", "emoji": "🪶"},
+    "void_salts":    {"name": "Void Salts", "emoji": "🔮"},
+    "dragon_scale":  {"name": "Dragon Scale", "emoji": "🐲"},
+    "deathbell":     {"name": "Deathbell", "emoji": "🔔"},
+}
+# What each enemy TYPE tends to drop (dragons handled specially -> dragon_scale).
+INGREDIENT_DROPS = {
+    "beast":     ["blue_flower", "spider_egg", "deathbell"],
+    "human":     ["blue_flower", "nightshade", "deathbell"],
+    "undead":    ["bone_meal", "frost_salts", "void_salts"],
+    "monster":   ["troll_fat", "hagraven_claw", "nightshade"],
+    "construct": ["void_salts", "frost_salts"],
+}
+
+# Recipes - a fixed cost in ingredients brews one of a few useful potions at the
+# Lab Bench. Kept short deliberately (a button game can't carry a full alchemy tree).
+#   makes: a profile effect key the bench applies;  small, readable outcomes only.
+RECIPES = {
+    "healing":   {"name": "Potion of Healing", "emoji": "🧪", "makes": "potion",
+                  "cost": {"blue_flower": 1, "bone_meal": 1},
+                  "desc": "One health potion for your belt (respects your pocket cap)."},
+    "vigor":     {"name": "Draught of Vigor", "emoji": "❤️", "makes": "heart_delve",
+                  "cost": {"troll_fat": 1, "blue_flower": 1},
+                  "desc": "Your NEXT delve begins with +1 max heart."},
+    "fortitude": {"name": "Elixir of Fortitude", "emoji": "🛡️", "makes": "soak_delve",
+                  "cost": {"troll_fat": 1, "frost_salts": 1, "bone_meal": 1},
+                  "desc": "Your NEXT delve: +10% armour soak."},
+    "fury":      {"name": "Philtre of Fury", "emoji": "🔥", "makes": "fight_delve",
+                  "cost": {"nightshade": 1, "hagraven_claw": 1},
+                  "desc": "Your NEXT delve: +6% attack."},
+    "true_shot": {"name": "Draught of True Shot", "emoji": "🎯", "makes": "crit_delve",
+                  "cost": {"void_salts": 1, "deathbell": 1, "spider_egg": 1},
+                  "desc": "Your NEXT delve: +6% crit chance."},
+}
+
+# ---------------------------------------------------------------------------
 # Weather - ONE roll per UK day, deterministic from the date (see engine.weather_today),
 # the same for every player. Purely reactive: it is only ever shown when someone opens
 # the hub or delves; nothing is posted on a schedule.
@@ -551,6 +633,102 @@ CRIT_LINES = [
 BOUNTY_TITLES = {
     "human": "Notorious", "beast": "Alpha", "undead": "Ancient",
     "monster": "Dread", "construct": "Master-wrought", "dragon": "Elder",
+}
+
+# ---------------------------------------------------------------------------
+# Marked Affixes - elite modifiers rolled onto ordinary enemies (like bounties,
+# but they change HOW the fight plays, not just its numbers). Effects SUBTRACT or
+# GATE rather than add, so they survive the 86% clamp and stay meaningful at the
+# ceiling. Telegraphed one room ahead through the existing hint channel.
+#   all_fight   - flat % on every attack style (negative = harder)
+#   gate_style  - a style that barely works, +gate_penalty (default -45)
+#   ward_break  - the ONE style that shatters its ward cleanly; any other style's
+#                 first landed hit is absorbed (wasted) breaking the ward
+#   hp          - extra telling blows it takes
+#   crush       - added chance a wound it deals is a crushing 2-heart blow
+#   carry       - a wound it deals bleeds into the NEXT room unless you drink first
+#   loot_mult / xp_mult - the reward for the trouble
+#   types       - enemy types it can attach to;  min_tier - earliest enemy tier
+# ---------------------------------------------------------------------------
+AFFIXES = {
+    "frenzied": {"tag": "Frenzied", "emoji": "🩸", "min_tier": 1,
+                 "types": {"beast", "human", "monster"},
+                 "telegraph": "...something ahead is snarling, wild and past all reason.",
+                 "all_fight": -12, "crush": 0.18, "loot_mult": 2.0, "xp_mult": 1.5,
+                 "desc": "Wild and past reason - its guard is gone, but it hits like a landslide."},
+    "warded": {"tag": "Warded", "emoji": "🔵", "min_tier": 2,
+               "types": {"human", "undead", "monster", "construct"},
+               "telegraph": "...a cold blue ward-light pulses on the walls ahead.",
+               "ward_break": "destruction", "loot_mult": 1.6, "xp_mult": 1.3,
+               "desc": "A ward turns the first blow aside - only **Fire** shatters it cleanly."},
+    "bonebound": {"tag": "Bonebound", "emoji": "🦴", "min_tier": 2,
+                  "types": {"undead"},
+                  "telegraph": "...bones rattle ahead, bound in something arrows won't bite.",
+                  "gate_style": "marksman", "loot_mult": 1.5, "xp_mult": 1.3,
+                  "desc": "Arrows pass clean through the wrappings - bring a **Blade** or **Fire**."},
+    "venomous": {"tag": "Venomous", "emoji": "🟢", "min_tier": 2,
+                 "types": {"beast", "monster"},
+                 "telegraph": "...a sick green ichor drips from something in the dark ahead.",
+                 "carry": True, "all_fight": -4, "loot_mult": 1.6, "xp_mult": 1.4,
+                 "desc": "Its venom lingers - a wound it lands **bleeds into the next room** unless you drink."},
+    "quickened": {"tag": "Quickened", "emoji": "💨", "min_tier": 2,
+                  "types": {"beast", "human", "monster"},
+                  "telegraph": "...whatever waits ahead is moving fast. Too fast.",
+                  "hp": 1, "all_fight": -6, "loot_mult": 1.7, "xp_mult": 1.5,
+                  "desc": "Fast and slippery - it shrugs off the first telling blow and needs another."},
+    "dread": {"tag": "Dread", "emoji": "💀", "min_tier": 3,
+              "types": {"undead", "monster", "construct"},
+              "telegraph": "...the air ahead goes grave-cold. Something the dead themselves fear.",
+              "all_fight": -8, "crush": 0.22, "hp": 1, "loot_mult": 2.5, "xp_mult": 2.0,
+              "desc": "An elite horror: tougher, and every blow it lands could crush you."},
+}
+AFFIX_CHANCE_BY_LEVEL = ((8, 0.0), (10, 0.15), (15, 0.28), (999, 0.32))   # ramps in at L8+
+
+# ---------------------------------------------------------------------------
+# Capstone Doctrines - each skill hitting 100 unlocks a permanent pick-ONE-of-two
+# mastery, so two maxed characters fight the same room differently. Effects use a
+# small set of hooks the engine reads (so they compose cleanly):
+#   fight (+% attack, optional vs / vs_any / style)  ·  crit (+chance, optional style)
+#   soak · sneak · persuade (+%)  ·  loot_mult (x septims)  ·  heart / potion_cap (+N)
+# ---------------------------------------------------------------------------
+DOCTRINES = {
+    "blade": {
+        "warmaster": {"name": "Warmaster", "emoji": "⚔️", "fight": 8, "style": "blade",
+                      "desc": "+8% attack with the Blade."},
+        "bulwark": {"name": "Bulwark", "emoji": "🛡️", "soak": 8,
+                    "desc": "+8% chance your armour soaks a wound."},
+    },
+    "marksman": {
+        "deadeye": {"name": "Deadeye", "emoji": "🎯", "crit": 0.08, "style": "marksman",
+                    "desc": "+8% crit chance with the Bow."},
+        "hunter": {"name": "Hunter", "emoji": "🐺", "fight": 10, "vs": "beast",
+                   "desc": "+10% attack against beasts."},
+    },
+    "destruction": {
+        "incinerate": {"name": "Incinerate", "emoji": "🔥", "fight": 12, "style": "destruction",
+                       "vs_any": ["undead", "monster"],
+                       "desc": "+12% Fire attack against undead & monsters."},
+        "impact": {"name": "Impact", "emoji": "💥", "crit": 0.06, "style": "destruction",
+                   "desc": "+6% crit chance with Fire."},
+    },
+    "sneak": {
+        "ghost": {"name": "Ghost", "emoji": "👤", "sneak": 10,
+                  "desc": "+10% Sneak."},
+        "nightstalker": {"name": "Nightstalker", "emoji": "🌘", "crit": 0.10,
+                         "desc": "+10% crit chance on every attack - a killer's timing."},
+    },
+    "speech": {
+        "silver_tongue": {"name": "Silver Tongue", "emoji": "💬", "persuade": 10,
+                          "desc": "+10% Persuade."},
+        "haggler": {"name": "Haggler", "emoji": "💰", "loot_mult": 1.25,
+                    "desc": "+25% septims from every source."},
+    },
+    "lockpicking": {
+        "locksmith": {"name": "Locksmith", "emoji": "🔓", "loot_mult": 1.15,
+                      "desc": "+15% septims - you find the caches others miss."},
+        "survivor": {"name": "Survivor", "emoji": "🧪", "potion_cap": 1,
+                     "desc": "+1 potion pocket."},
+    },
 }
 
 # ---------------------------------------------------------------------------

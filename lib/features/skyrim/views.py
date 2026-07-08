@@ -135,10 +135,20 @@ def _delve_text(delve: E.Delve, profile) -> str:
     r = delve.room
     if r["kind"] == "enemy":
         e = D.ENEMIES[r["key"]]
+        nd = E.named_dragon(delve)
+        name = nd["name"] if nd else e["name"]
         if delve.engaged:
-            lines.append(f"{e['emoji']} The **{e['name']}** presses the attack!")
+            lines.append(f"{e['emoji']} The **{name}** presses the attack!")
         else:
-            lines.append(f"{e['emoji']} {D.pick(e['intro'])}")
+            intro = D.pick(e["intro"])
+            if nd:                                # name the week's dragon in place of "Dragon"
+                intro = intro.replace("**Dragon**", f"**{nd['name']}**")
+            lines.append(f"{e['emoji']} {intro}")
+        if nd:
+            lines.append(f"-# 🐲 **{nd['name']}** - {nd['twist']}")
+        if r.get("affix"):
+            aff = D.AFFIXES[r["affix"]]
+            lines.append(f"-# {aff['emoji']} **{aff['tag']} {e['name']}** - {aff['desc']}")
         if r.get("bounty"):
             title = D.BOUNTY_TITLES.get(e["type"], "Notorious")
             lines.append(f"-# 🏴 A **{title} {e['name']}** - a marked bounty. Tougher, "
@@ -146,8 +156,13 @@ def _delve_text(delve: E.Delve, profile) -> str:
         if delve.enemy_hp > 1 or (e.get("hp", 1) > 1 and delve.enemy_hp > 0):
             lines.append(f"-# {'🩸' * delve.enemy_hp} it will take {delve.enemy_hp} more "
                          f"telling blow{'s' if delve.enemy_hp != 1 else ''}")
+        if e["type"] == "dragon" and not delve.grounded:
+            lines.append("-# ☁️ **Airborne** - blades and fire barely reach it. Loose arrows, "
+                         "or **Shout** it out of the sky.")
         if delve.grounded:
-            lines.append("-# The dragon is **grounded** - now is your chance!")
+            lines.append("-# 🪨 The dragon is **grounded** - every style bites now. Press it!")
+        if delve.venom:
+            lines.append("-# 🟢 **Venom in your blood** - drink before you leave this room.")
         if delve.ambush:
             lines.append(f"-# 🥷 You are **hidden and in position** - strike at "
                          f"+{E.AMBUSH_BONUS}%, or slip past unseen.")
@@ -199,8 +214,10 @@ def build_delve_layout(delve: E.Delve, profile):
         # three ways to hurt it - pick the tool that fits the foe (odds shown
         # already include the ambush bonus when you're hidden and in position)
         for skey, sd in D.STYLES.items():
-            row1.add_item(_btn(discord.ButtonStyle.danger,
-                               f"{sd['label']} {E.fight_pct(profile, key, skey, delve)}%",
+            pct = E.fight_pct(profile, key, skey, delve)
+            over = int(round(E.overkill_crit(profile, key, skey, delve) * 100))
+            label = f"{sd['label']} {pct}%" + (f"  ⚡{over}" if over else "")
+            row1.add_item(_btn(discord.ButtonStyle.danger, label,
                                f"skyrim:{did}:atk:{skey}", _make_cb(delve, f"atk:{skey}"),
                                emoji=sd["emoji"]))
         if delve.ambush:
@@ -215,12 +232,8 @@ def build_delve_layout(delve: E.Delve, profile):
             if p_per is not None and not delve.engaged:
                 row1.add_item(_btn(discord.ButtonStyle.primary, f"Persuade {p_per}%",
                                    f"skyrim:{did}:per", _make_cb(delve, "per"), emoji="💬"))
-        if profile["words"] > 0 and delve.shout_charges > 0 and \
-                not (e["type"] == "dragon" and delve.grounded):
-            shout = " ".join(D.SHOUT_WORDS[:profile["words"]])
-            row2.add_item(_btn(discord.ButtonStyle.success, f"{shout}  ({delve.shout_charges})",
-                               f"skyrim:{did}:sht", _make_cb(delve, "sht"), emoji="🗣️"))
-        if profile["potions"] > 0 and delve.hearts < E.heart_max(profile):
+        shout_row = _shout_control(delve, profile, e)
+        if profile["potions"] > 0 and (delve.hearts < E.heart_max(profile) or delve.venom):
             row2.add_item(_btn(discord.ButtonStyle.secondary, f"Potion ({profile['potions']})",
                                f"skyrim:{did}:pot", _make_cb(delve, "pot"), emoji="🧪"))
         leave_label = "Flee" if delve.engaged else f"Leave ({delve.satchel:,})"
@@ -228,6 +241,7 @@ def build_delve_layout(delve: E.Delve, profile):
                            f"skyrim:{did}:lve", _make_cb(delve, "lve"),
                            emoji="🏃" if delve.engaged else "🚪"))
     else:
+        shout_row = None
         key = r["key"]
         if key == "chest" and r.get("locked"):
             choices = [("🔓", f"Pick the lock {E.lockpick_pct(profile)}%", "pick"),
@@ -242,9 +256,49 @@ def build_delve_layout(delve: E.Delve, profile):
             row2.add_item(_btn(discord.ButtonStyle.secondary, f"Leave ({delve.satchel:,})",
                                f"skyrim:{did}:lve", _make_cb(delve, "lve"), emoji="🚪"))
     view.add_item(row1)
+    if shout_row is not None:
+        view.add_item(shout_row)
     if row2.children:
         view.add_item(row2)
     return view, files
+
+
+# The Words of Power loadout. One known word = a single FUS button (in row2). Two or
+# three = a select of the shouts you can afford, so the shared charge pool becomes a
+# rationing choice without spending action-row buttons the fight can't spare.
+_SHOUT_EFFECTS = {
+    1: ("FUS", "Ground a dragon, or stagger a foe (1 charge)"),
+    2: ("FUS RO", "Flatten a room; ground + chip a dragon (2 charges)"),
+    3: ("FUS RO DAH", "The full Thu'um: 2 damage to anything (3 charges)"),
+}
+
+
+def _shout_control(delve: E.Delve, profile, e):
+    words = profile.get("words", 0)
+    if words <= 0 or delve.shout_charges <= 0:
+        return None
+    grounded_dragon = e["type"] == "dragon" and delve.grounded
+    costs = [c for c in range(1, min(words, delve.shout_charges) + 1)
+             if not (grounded_dragon and c == 1)]     # FUS is wasted on a grounded dragon
+    if not costs:
+        return None
+    row = discord.ui.ActionRow()
+    did = delve.delve_id
+    if costs == [1]:
+        row.add_item(_btn(discord.ButtonStyle.success, f"FUS  ({delve.shout_charges})",
+                          f"skyrim:{did}:sht:1", _make_cb(delve, "sht:1"), emoji="🗣️"))
+        return row
+    select = discord.ui.Select(placeholder=f"🗣️ Shout - {delve.shout_charges} charge(s) in the Voice",
+                               custom_id=f"skyrim:{did}:shtsel", min_values=1, max_values=1)
+    for c in costs:
+        name, desc = _SHOUT_EFFECTS[c]
+        select.add_option(label=name, value=str(c), description=desc, emoji="🗣️")
+
+    async def _on_shout(inter: Interaction):
+        await _handle_delve_click(inter, delve, f"sht:{select.values[0]}")
+    select.callback = _on_shout
+    row.add_item(select)
+    return row
 
 
 _EVENT_CHOICES = {
@@ -330,8 +384,9 @@ async def _handle_delve_click(interaction: Interaction, delve: E.Delve, action: 
             delve.act_sneak(profile)
         elif action == "per":
             delve.act_persuade(profile)
-        elif action == "sht":
-            delve.act_shout(profile)
+        elif action == "sht" or action.startswith("sht:"):
+            cost = int(action.split(":", 1)[1]) if ":" in action else None
+            delve.act_shout(profile, cost)
         elif action == "pot":
             delve.act_potion(profile)
         elif action == "lve":

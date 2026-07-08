@@ -39,17 +39,33 @@ BASE_POTION_CAP = 2
 FLEE_KEEP = 0.7                      # fraction of the satchel kept when fleeing a fight
 DRAGON_KILL_XP = 120
 GROUNDED_BONUS = 20                  # fight bonus after shouting a dragon out of the sky
+# Skyfire - while a dragon is still AIRBORNE (not grounded), your tools matter: a
+# bow is the weapon for the sky, blades and staves barely reach it. Grounding it with
+# the Voice (or just bringing marksman) is the read. Applied per attack style.
+SKYFIRE_AIR = {"blade": -16, "destruction": -9, "marksman": 6}
 BLESSING_BONUS = 5                   # fight bonus from praying at a shrine on full hearts
 HEAVY_HIT_CHANCE = {4: 0.35, 5: 0.50}   # by enemy tier: chance a wound is a crushing 2-heart blow
 FIGHT_SKILL_SCALE = 24               # max % a skill adds at 100 (fight)
 SNEAK_SKILL_SCALE = 22               # (sneak)
 SPEECH_SKILL_SCALE = 30              # (persuade)
 CRIT_CHANCE = 0.08                   # clean-strike chance: double damage, double loot on the kill
+# Overkill - odds earned PAST the display cap don't vanish. Every OVERKILL_PER_CRIT
+# points of surplus (raw attack % above ROLL_MAX) become +1% crit, up to a cap. This
+# is the keystone: it's what stops every attack button reading a flat 86% at endgame,
+# so gear, affinity, ambush, grounding and doctrines all keep mattering at the ceiling.
+OVERKILL_PER_CRIT = 3
+OVERKILL_CRIT_CAP = 14               # max extra crit % from overkill (on top of CRIT_CHANCE)
 BOUNTY_CHANCE = 0.06                 # per trash room: a named variant (+1 hp, 3x loot, 2x XP)
 DAILY_CLEAR_MULT = 1.5               # the daily delve pays a fatter clear bonus
 AMBUSH_BONUS = 20                    # attack bonus when striking from successful stealth
 LOCKED_CHEST_CHANCE = 0.25           # chance a chest room is master-locked (Lockpicking territory)
 SKILLS = ("blade", "marksman", "destruction", "sneak", "speech", "lockpicking")
+# Tempering (The Grindstone): gear can be sharpened past its tier with septims +
+# looted materials. Grades stack ON TOP of tier, and the fight bonus deliberately
+# feeds overkill at the ceiling rather than the clamp.
+TEMPER_MAX_GRADE = 5
+TEMPER_FIGHT_PER_GRADE = 3           # +% attack per weapon grade
+TEMPER_SOAK_PER_GRADE = 2            # +% soak per armour grade
 
 
 def _today_str() -> str:
@@ -74,6 +90,27 @@ def weather_line(w: dict = None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Named Dragon of the Week - one shared, deterministic roster pick per UK week,
+# same for everyone, rotating each Monday. Purely reactive, like the weather.
+# ---------------------------------------------------------------------------
+def dragon_of_the_week(date_str: str = None) -> str:
+    date_str = date_str or _today_str()
+    y, w, _ = datetime.date.fromisoformat(date_str).isocalendar()
+    rng = random.Random(f"skyrim-dragon-{y}-{w}")
+    return rng.choice(sorted(D.DRAGON_ROSTER))
+
+
+def named_dragon(delve) -> dict | None:
+    """The roster entry for THIS delve's dragons, if the current foe is a plain
+    dragon (Alduin is always himself, never a roster pick)."""
+    key = getattr(delve, "dragon", None)
+    r = delve.room if delve and delve.rooms else None
+    if key and r and r["kind"] == "enemy" and r["key"] == "dragon":
+        return D.DRAGON_ROSTER.get(key)
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Profiles
 # ---------------------------------------------------------------------------
 def _profiles() -> dict:
@@ -95,6 +132,19 @@ def _migrate(profile: dict) -> dict:
     for s in SKILLS:
         skills.setdefault(s, 15)
     profile.setdefault("armour_style", "heavy")
+    # Expansion fields - all default empty so old profiles keep working untouched.
+    profile.setdefault("doctrines", {})          # skill -> chosen mastery (Capstone Doctrines)
+    profile.setdefault("legendary", {})          # skill -> times made Legendary (prestige)
+    profile.setdefault("temper", {"weapon": 0, "armour": 0})   # The Grindstone grades
+    profile.setdefault("ingredients", {})        # banked alchemy ingredients
+    profile.setdefault("materials", {})          # banked tempering materials
+    profile.setdefault("recipes", ["healing"])   # known brewing recipes (start with healing)
+    profile.setdefault("nextdelve", {})          # brewed one-delve elixir queued for next delve
+    profile.setdefault("dragon_wall", [])        # named dragons slain (bestiary)
+    profile.setdefault("allegiance", None)       # chosen NPC faction key
+    profile.setdefault("faction", {})            # faction -> {rank, favour}
+    profile.setdefault("soulcairn", {"best": 0}) # deepest Soul Cairn descent
+    profile.setdefault("expedition", None)       # an out-on-a-timer expedition, if any
     return profile
 
 
@@ -162,11 +212,12 @@ def perk_rank(profile, key) -> int:
 
 
 def heart_max(profile) -> int:
-    return BASE_HEARTS + perk_rank(profile, "stalwart")
+    return BASE_HEARTS + perk_rank(profile, "stalwart") + int(doctrine_flat(profile, "heart"))
 
 
 def potion_cap(profile) -> int:
-    return BASE_POTION_CAP + perk_rank(profile, "alchemist")
+    return (BASE_POTION_CAP + perk_rank(profile, "alchemist")
+            + int(doctrine_flat(profile, "potion_cap")))
 
 
 def archetype(profile) -> str:
@@ -203,24 +254,123 @@ def _clamp(p: float) -> int:
     return int(max(ROLL_MIN, min(ROLL_MAX, round(p))))
 
 
-def fight_pct(profile, enemy_key: str, style: str, delve=None) -> int:
-    """Success chance for attacking with one of the three styles - the style's
-    skill and its matchup against the enemy type both matter."""
+def _fight_raw(profile, enemy_key: str, style: str, delve=None) -> float:
+    """The UNCLAMPED attack percentage. fight_pct clamps this for display and the
+    hit roll; overkill_crit reads the surplus above the cap so earned odds past the
+    ceiling convert to crit instead of silently vanishing."""
     e = D.ENEMIES[enemy_key]
     p = (e["fight"]
          + _skill_component(profile["skills"][style], FIGHT_SKILL_SCALE)
          + D.WEAPON_FIGHT_PER_TIER * profile["weapon_tier"]
+         + temper_fight_bonus(profile)
          + D.STYLE_AFF[e["type"]][style]
          + 4 * perk_rank(profile, "honed_edge")
          + weather_today()["fight"])
     if delve is not None:
-        if delve.grounded and e["type"] == "dragon":
-            p += GROUNDED_BONUS
+        if e["type"] == "dragon":
+            if delve.grounded:
+                p += GROUNDED_BONUS
+            else:
+                p += SKYFIRE_AIR.get(style, 0)     # airborne: bring a bow or ground it
         if delve.blessed:
             p += BLESSING_BONUS
         if delve.ambush:
             p += AMBUSH_BONUS
-    return _clamp(p)
+        p += _affix_fight_delta(profile, enemy_key, style, delve)
+        p += doctrine_fight_bonus(profile, e, style)
+        p += (delve.buffs or {}).get("fight", 0)   # a brewed Philtre of Fury
+        nd = named_dragon(delve)
+        if nd:
+            p += nd.get("fight", 0)              # this week's dragon is easier/harder to land
+    return p
+
+
+def fight_pct(profile, enemy_key: str, style: str, delve=None) -> int:
+    """Success chance for attacking with one of the three styles - the style's
+    skill and its matchup against the enemy type both matter."""
+    return _clamp(_fight_raw(profile, enemy_key, style, delve))
+
+
+def overkill_crit(profile, enemy_key: str, style: str, delve=None) -> float:
+    """Extra crit chance (0..OVERKILL_CRIT_CAP%) earned by attack odds pushed past
+    the display cap - the keystone that keeps choices meaningful at the ceiling."""
+    surplus = _fight_raw(profile, enemy_key, style, delve) - ROLL_MAX
+    if surplus <= 0:
+        return 0.0
+    return min(OVERKILL_CRIT_CAP, int(surplus // OVERKILL_PER_CRIT)) / 100.0
+
+
+def crit_chance(profile, enemy_key: str, style: str, delve=None) -> float:
+    """The full clean-strike chance for this attack: base crit + overkill surplus +
+    any crit-granting doctrines that apply to this foe/style."""
+    e = D.ENEMIES[enemy_key]
+    buff = (delve.buffs or {}).get("crit", 0) / 100.0 if delve else 0.0
+    return (CRIT_CHANCE + overkill_crit(profile, enemy_key, style, delve)
+            + doctrine_crit_bonus(profile, e, style) + buff)
+
+
+# --- hooks filled in by later systems (defined here so _fight_raw always resolves;
+#     each reads a profile/room field that _migrate defaults, so they are safe on any
+#     profile and simply contribute 0 until that system is in play) --------------------
+def temper_fight_bonus(profile) -> float:
+    """+% attack from the weapon's tempering grade (The Grindstone)."""
+    return TEMPER_FIGHT_PER_GRADE * (profile.get("temper") or {}).get("weapon", 0)
+
+
+def _doctrines(profile) -> list:
+    """The mastery dicts a character has chosen (Capstone Doctrines)."""
+    return [D.DOCTRINES[s][c] for s, c in (profile.get("doctrines") or {}).items()
+            if c in D.DOCTRINES.get(s, {})]
+
+
+def doctrine_flat(profile, key: str) -> float:
+    """Sum an unconditional numeric doctrine hook (soak, sneak, persuade, heart, ...)."""
+    return sum(d.get(key, 0) for d in _doctrines(profile))
+
+
+def doctrine_loot_mult(profile) -> float:
+    m = 1.0
+    for d in _doctrines(profile):
+        m *= d.get("loot_mult", 1.0)
+    return m
+
+
+def _doc_applies(doc: dict, enemy: dict, style: str) -> bool:
+    if doc.get("style") not in (None, style):
+        return False
+    if doc.get("vs") not in (None, enemy["type"]):
+        return False
+    if doc.get("vs_any") and enemy["type"] not in doc["vs_any"]:
+        return False
+    return True
+
+
+def doctrine_fight_bonus(profile, enemy: dict, style: str) -> float:
+    """Attack % from chosen masteries that apply to this foe/style."""
+    return sum(d["fight"] for d in _doctrines(profile)
+               if d.get("fight") and _doc_applies(d, enemy, style))
+
+
+def doctrine_crit_bonus(profile, enemy: dict, style: str) -> float:
+    return sum(d["crit"] for d in _doctrines(profile)
+               if d.get("crit") and _doc_applies(d, enemy, style))
+
+
+def _affix_fight_delta(profile, enemy_key: str, style: str, delve) -> float:
+    """Attack-% swing from the current room's elite affix (Marked Affixes). Affixes
+    subtract or gate rather than add, so they survive the clamp."""
+    room = getattr(delve, "room", None)
+    if not room or not room.get("affix"):
+        return 0.0
+    aff = D.AFFIXES.get(room["affix"])
+    if not aff:
+        return 0.0
+    delta = 0.0
+    if aff.get("all_fight"):
+        delta += aff["all_fight"]
+    if aff.get("gate_style") == style:      # this style barely works on it
+        delta += aff.get("gate_penalty", -40)
+    return delta
 
 
 def best_style(profile, enemy_key: str, delve=None) -> str:
@@ -234,6 +384,7 @@ def sneak_pct(profile, enemy_key: str) -> int | None:
     p = (e["sneak"] + 4
          + _skill_component(profile["skills"]["sneak"], SNEAK_SKILL_SCALE)
          + 6 * perk_rank(profile, "muffled")
+         + doctrine_flat(profile, "sneak")
          + weather_today()["sneak"])
     if profile.get("armour_style") == "light" and profile["armour_tier"] >= 1:
         p += D.LIGHT_SNEAK_BONUS
@@ -246,7 +397,8 @@ def persuade_pct(profile, enemy_key: str) -> int | None:
         return None
     p = (e["persuade"] + 2
          + _skill_component(profile["skills"]["speech"], SPEECH_SKILL_SCALE)
-         + 7 * perk_rank(profile, "persuasive"))
+         + 7 * perk_rank(profile, "persuasive")
+         + doctrine_flat(profile, "persuade"))
     return _clamp(p)
 
 
@@ -262,8 +414,11 @@ def chest_trap_chance(profile) -> float:
 def soak_pct(profile) -> int:
     per_tier = (D.LIGHT_SOAK_PER_TIER if profile.get("armour_style") == "light"
                 else D.ARMOUR_SOAK_PER_TIER)
-    return min(SOAK_CAP, per_tier * profile["armour_tier"]
-               + 6 * perk_rank(profile, "juggernaut"))
+    raw = (per_tier * profile["armour_tier"]
+           + 6 * perk_rank(profile, "juggernaut")
+           + TEMPER_SOAK_PER_GRADE * (profile.get("temper") or {}).get("armour", 0)
+           + int(doctrine_flat(profile, "soak")))
+    return min(SOAK_CAP + 15, raw)          # tempering/doctrines can push past the base cap
 
 
 def _skill_up(profile, which: str) -> int:
@@ -289,9 +444,10 @@ def add_xp(profile, amount: int) -> tuple:
 
 
 def _septims(profile, amount: int) -> int:
-    """Scale a septim find by Deep Pockets and the day's weather."""
+    """Scale a septim find by Deep Pockets, the day's weather and any Haggler-style
+    doctrine multiplier."""
     return int(round(amount * (1 + 0.20 * perk_rank(profile, "deep_pockets"))
-                     * weather_today()["loot"]))
+                     * weather_today()["loot"] * doctrine_loot_mult(profile)))
 
 
 # --- stamina -----------------------------------------------------------------
@@ -351,10 +507,29 @@ def _draw_events(count: int, rng=random) -> list:
     return [rng.choices(keys, weights=weights, k=1)[0] for _ in range(count)]
 
 
-def build_rooms(loc_key: str, rng=None) -> list:
+def _affix_chance(char_level: int) -> float:
+    for cap, chance in D.AFFIX_CHANCE_BY_LEVEL:
+        if char_level <= cap:
+            return chance
+    return 0.0
+
+
+def _roll_affix(enemy_key: str, char_level: int, rng) -> str | None:
+    """Maybe mark an ordinary enemy with an elite affix eligible for its type/tier.
+    Gated on character level so newer players never meet a Dread horror."""
+    if rng.random() >= _affix_chance(char_level):
+        return None
+    e = D.ENEMIES[enemy_key]
+    eligible = [k for k, a in D.AFFIXES.items()
+                if e["type"] in a["types"] and e["tier"] >= a["min_tier"]]
+    return rng.choice(eligible) if eligible else None
+
+
+def build_rooms(loc_key: str, rng=None, affix_level: int = 0) -> list:
     """Room list for a fresh delve: shuffled trash + events, optional word wall,
     boss last. Each room: {kind, key, boss, resolved} (+ bounty on rare named
-    variants). Pass a seeded rng for the shared daily layout."""
+    variants, + affix on rare elite variants). Pass a seeded rng for the shared
+    daily layout; affix_level gates elite modifiers (0 = none, e.g. the daily)."""
     rng = rng or random
     loc = D.LOCATIONS[loc_key]
     n_fill = loc["rooms"] - 1
@@ -367,6 +542,10 @@ def build_rooms(loc_key: str, rng=None) -> list:
                 "boss": False, "resolved": False}
         if rng.random() < BOUNTY_CHANCE:
             room["bounty"] = True                  # a named variant: +1 hp, triple loot
+        elif affix_level:                          # bounty OR affix, never both
+            aff = _roll_affix(room["key"], affix_level, rng)
+            if aff:
+                room["affix"] = aff
         rooms.append(room)
     for k in _draw_events(n_events, rng):
         room = {"kind": "event", "key": k, "boss": False, "resolved": False}
@@ -403,10 +582,13 @@ def offer_locations(profile) -> list:
 
 
 def _room_hp(room: dict) -> int:
-    """Hits the room's enemy can take: its base hp, +1 for a bounty variant."""
+    """Hits the room's enemy can take: base hp, +1 for a bounty, + any affix hp."""
     if room["kind"] != "enemy":
         return 1
-    return D.ENEMIES[room["key"]].get("hp", 1) + (1 if room.get("bounty") else 0)
+    hp = D.ENEMIES[room["key"]].get("hp", 1) + (1 if room.get("bounty") else 0)
+    if room.get("affix"):
+        hp += D.AFFIXES.get(room["affix"], {}).get("hp", 0)
+    return hp
 
 
 # ---------------------------------------------------------------------------
@@ -420,13 +602,21 @@ class Delve:
                  spotted=False, grounded=False, blessed=False, state="playing",
                  log=None, message_id=None, xp_gained=0, kills=0, result_line="",
                  delve_id=None, enemy_hp=None, daily=False, fan=False,
-                 ambush=False, hp_warned=False):
+                 ambush=False, hp_warned=False, venom=False, ingredients=None,
+                 dragon=None, phase=None, depth=0, kind="normal", buffs=None):
         import uuid
         self.delve_id = delve_id or uuid.uuid4().hex[:12]
         self.daily = bool(daily)                  # the shared once-a-day dungeon
+        self.kind = kind                          # normal | daily | alduin | soulcairn | expedition
         self.fan = bool(fan)                      # the Adoring Fan absorbs one wound
         self.ambush = bool(ambush)                # hidden and in position to strike
         self.hp_warned = bool(hp_warned)          # the one-heart potion nudge was shown
+        self.venom = bool(venom)                  # a Venomous wound waiting to bleed next room
+        self.ingredients = dict(ingredients or {})  # at-risk alchemy drops (lost on death)
+        self.dragon = dragon                      # named dragon key for this run's dragons
+        self.phase = phase                        # Skyfire phase: air | dive | grounded | None
+        self.depth = int(depth)                   # Soul Cairn depth reached
+        self.buffs = dict(buffs or {})            # brewed one-delve elixir effects
         self.player_id = int(player_id)
         self.player_name = player_name
         self.channel_id = channel_id
@@ -447,19 +637,28 @@ class Delve:
         self.kills = int(kills)
         self.result_line = result_line
         # remaining hits the CURRENT enemy can take (bosses 2, dragons 3+, trash 1,
-        # bounty variants +1)
+        # bounty variants +1, affix/named-dragon bonuses on top)
         if enemy_hp is None:
             r = self.rooms[self.idx] if self.rooms else None
-            enemy_hp = _room_hp(r) if r else 1
+            enemy_hp = self._hp_for(r) if r else 1
         self.enemy_hp = int(enemy_hp)
         self.busy = False                         # transient: drop double-clicks
+
+    def _hp_for(self, room) -> int:
+        hp = _room_hp(room)
+        nd_key = getattr(self, "dragon", None)
+        if nd_key and room and room["kind"] == "enemy" and room["key"] == "dragon":
+            hp += D.DRAGON_ROSTER.get(nd_key, {}).get("hp", 0)
+        return hp
 
     # --- construction ---------------------------------------------------------
     @classmethod
     def start(cls, profile, channel_id, loc_key):
         loc = D.LOCATIONS[loc_key]
-        d = cls(profile["user_id"], profile["name"], channel_id, loc_key, build_rooms(loc_key),
-                hearts=heart_max(profile), shout_charges=profile["words"])
+        d = cls(profile["user_id"], profile["name"], channel_id, loc_key,
+                build_rooms(loc_key, affix_level=level(profile)),
+                hearts=heart_max(profile), shout_charges=profile["words"],
+                dragon=dragon_of_the_week())
         d.say(loc["arrive"])
         return d
 
@@ -481,10 +680,15 @@ class Delve:
         self.log = self.log[-3:]
 
     def next_hint(self) -> str | None:
-        """Whisper what waits in the NEXT room (enemies only) so shouts can be planned."""
+        """Whisper what waits in the NEXT room (enemies only) so shouts and the right
+        tool can be planned - including a telegraph for any elite affix on it."""
         j = self.idx + 1
         if self.state == "playing" and j < len(self.rooms) and self.rooms[j]["kind"] == "enemy":
-            return D.ENEMIES[self.rooms[j]["key"]]["hint"]
+            r = self.rooms[j]
+            hint = D.ENEMIES[r["key"]]["hint"]
+            if r.get("affix"):
+                hint += "  " + D.AFFIXES[r["affix"]]["telegraph"]
+            return hint
         return None
 
     def playing(self) -> bool:
@@ -495,12 +699,18 @@ class Delve:
         """Step to the next room, or finish the delve if the boss room is done."""
         self.engaged = self.spotted = self.grounded = False
         self.ambush = self.hp_warned = False
+        self.phase = None
         if self.idx >= len(self.rooms) - 1:
             self._finish_clear(profile)
             return
         self.idx += 1
         r = self.room
-        self.enemy_hp = _room_hp(r)
+        self.enemy_hp = self._hp_for(r)
+        if self.venom:                       # a Venomous wound bleeds into this room
+            self.venom = False
+            self.say("🟢 The lingering venom flares as you press on - it sears before it fades.")
+            if self._wound(profile, ["Venom burns through your veins."]) == "dead":
+                return
         if r["kind"] == "event" and r["key"] == "knee_trap":
             self._spring_knee_trap(profile)
 
@@ -512,6 +722,7 @@ class Delve:
         gained, _ = add_xp(profile, 25)
         self.xp_gained += gained
         profile["septims"] += self.satchel
+        self._bank_ingredients(profile)
         profile["stats"]["clears"] += 1
         profile["active_delve"] = None
         self.state = "cleared"
@@ -524,7 +735,8 @@ class Delve:
         """Take a hit: armour may soak it, the Adoring Fan may take it for you,
         otherwise lose a heart (death at 0). `heavy` is the chance of a crushing
         2-heart blow. Returns 'soaked' | 'wounded' | 'dead'."""
-        if random.random() * 100 < soak_pct(profile):
+        soak = min(SOAK_CAP + 15, soak_pct(profile) + self.buffs.get("soak", 0))
+        if random.random() * 100 < soak:
             self.say("Your armour turns the blow - no harm done.")
             return "soaked"
         if self.fan:
@@ -538,6 +750,10 @@ class Delve:
             self.say(D.WOUND_KNEE_LINE)
         else:
             self.say(D.pick(lines) + ("  💥 **A crushing blow!** (-2 ❤️)" if loss == 2 else ""))
+        aff = self.affix()                       # a Venomous elite leaves a bleed behind
+        if aff and aff.get("carry"):
+            self.venom = True
+            self.say("🟢 The wound festers - drink before you leave this room, or it bleeds on.")
         if self.hearts <= 0:
             self._die(profile)
             return "dead"
@@ -555,8 +771,14 @@ class Delve:
     # --- enemy actions ------------------------------------------------------------
     def _heavy(self, e) -> float:
         """Chance this enemy's hit is a crushing 2-heart blow (enemy override or
-        tier default, plus the day's weather)."""
+        tier default, + the day's weather, + any elite affix / named-dragon menace)."""
         base = e.get("heavy", HEAVY_HIT_CHANCE.get(e["tier"], 0.0))
+        aff = self.affix()
+        if aff:
+            base += aff.get("crush", 0.0)
+        nd = named_dragon(self)
+        if nd:
+            base += nd.get("crush", 0.0)
         return base + weather_today()["heavy"]
 
     def _confirm_low_hp(self, profile) -> bool:
@@ -570,6 +792,27 @@ class Delve:
             return True
         return False
 
+    def affix(self) -> dict | None:
+        """The current room's elite modifier, if any (Marked Affixes)."""
+        r = self.rooms[self.idx] if self.rooms else None
+        if r and r.get("affix"):
+            return D.AFFIXES.get(r["affix"])
+        return None
+
+    def _ward_absorbs(self, style: str) -> bool:
+        """A Warded elite turns the first landed blow aside unless it's the style
+        that shatters the ward (Fire). Returns True if the hit was wasted."""
+        aff = self.affix()
+        if not aff or not aff.get("ward_break") or self.room.get("ward_broken"):
+            return False
+        self.room["ward_broken"] = True
+        if style == aff["ward_break"]:
+            self.say(f"{aff['emoji']} **Fire shatters the ward** in a spray of blue sparks!")
+            return False
+        self.say(f"{aff['emoji']} The **ward flares** and swallows your blow whole - "
+                 f"it takes **Fire** to break it. The fight is on.")
+        return True
+
     def act_attack(self, profile, style: str = None) -> None:
         e = self.enemy()
         if self._confirm_low_hp(profile):
@@ -579,7 +822,11 @@ class Delve:
         was_ambush = self.ambush
         self.ambush = False
         if random.random() * 100 < p:
-            crit = random.random() < CRIT_CHANCE
+            # a landed hit may be soaked by an elite ward before it does anything
+            if self._ward_absorbs(style):
+                self.engaged = True
+                return
+            crit = random.random() < crit_chance(profile, self.room["key"], style, self)
             self.enemy_hp -= 2 if crit else 1
             if self.enemy_hp > 0:
                 # a big foe takes the hit and keeps coming - the fight is on
@@ -587,13 +834,7 @@ class Delve:
                 lines = D.STAGGER_DRAGON_LINES if e["type"] == "dragon" else D.STAGGER_LINES
                 line = (D.pick(D.CRIT_LINES) + "  " if crit else "") + D.pick(lines)
                 self.say(line + f"  ({'🩸' * self.enemy_hp} to go)")
-                # Alduin takes wing again at set thresholds - ground him anew or
-                # fight at a heavy disadvantage. His fight is a war over shouts.
-                if self.room["key"] == "alduin" and self.enemy_hp in D.ALDUIN_REFLIGHT_HP \
-                        and self.grounded:
-                    self.grounded = False
-                    self.say("**Alduin takes wing again**, laughing in the old tongue. "
-                             "Bring him down!")
+                self._alduin_reflight_check()
             else:
                 self._kill(profile, e, style, crit=crit, ambush=was_ambush)
         else:
@@ -603,13 +844,47 @@ class Delve:
             self._wound(profile, e["wound"], knee_chance=0.10 if e["type"] == "human" else 0.0,
                         heavy=self._heavy(e))
 
+    def _drop_ingredient(self, profile, e, aff) -> str | None:
+        """A kill may drop an alchemy ingredient into the at-risk pouch. Elites and
+        bounties drop more often; dragons always yield a scale."""
+        chance = 0.16
+        if aff:
+            chance += 0.45
+        if self.room.get("bounty"):
+            chance += 0.30
+        if e["type"] == "dragon":
+            key = "dragon_scale"
+        else:
+            if random.random() > chance:
+                return None
+            table = D.INGREDIENT_DROPS.get(e["type"])
+            if not table:
+                return None
+            key = random.choice(table)
+        self.ingredients[key] = self.ingredients.get(key, 0) + 1
+        ing = D.INGREDIENTS[key]
+        return f"{ing['emoji']} {ing['name']}"
+
+    def _bank_ingredients(self, profile):
+        """Move the pouch into the character's stores - called wherever the satchel
+        banks (leave/flee/clear/launch). Death is the only thing that loses them."""
+        if not self.ingredients:
+            return
+        store = profile.setdefault("ingredients", {})
+        for k, n in self.ingredients.items():
+            store[k] = store.get(k, 0) + n
+        self.ingredients = {}
+
     def _kill(self, profile, e, style, crit=False, ambush=False):
         gain = _skill_up(profile, style)
         tier = e["tier"]
         bounty = bool(self.room.get("bounty"))
+        aff = self.affix()
         xp = DRAGON_KILL_XP if e["type"] == "dragon" else 12 * tier
         if bounty:
             xp *= 2
+        if aff:
+            xp = int(xp * aff.get("xp_mult", 1.0))
         gained, ups = add_xp(profile, xp)
         self.xp_gained += gained
         loot = _septims(profile, tier * 12 + random.randint(0, 8))
@@ -617,24 +892,38 @@ class Delve:
             loot *= 3
         if crit:
             loot *= 2
+        if aff:
+            loot = int(loot * aff.get("loot_mult", 1.0))
         self.satchel += loot
         self.kills += 1
         profile["stats"]["kills"] += 1
+        drop = self._drop_ingredient(profile, e, aff)      # at-risk alchemy loot
         line = ""
         if ambush:
             line += D.pick(D.AMBUSH_KILL_LINES) + "  "
         if crit:
             line += D.pick(D.CRIT_LINES) + "  "
+        if aff:
+            line += f"{aff['emoji']} The **{aff['tag']} {e['name']}** falls.  "
         line += f"{D.pick(e['kill'])}  (+{gained} XP, +{loot} septims"
         if bounty:
             line += ", bounty claimed"
         if gain:
             line += f", {D.STYLES[style]['name']} +{gain}"
+        if drop:
+            line += f", {drop}"
         line += ")"
         if e["type"] == "dragon":
             profile["souls"] += 1
             profile["stats"]["dragons"] += 1
             line += "  🐉 **+1 dragon soul**"
+            nd_key = getattr(self, "dragon", None)
+            if self.room["key"] == "dragon" and nd_key:
+                wall = profile.setdefault("dragon_wall", [])
+                nd = D.DRAGON_ROSTER[nd_key]
+                if nd_key not in wall:
+                    wall.append(nd_key)
+                    line += f"  🐲 **{nd['name']}** joins your Dragon Wall!"
         if self.room["key"] == "alduin":
             profile["alduin_slain"] = profile.get("alduin_slain", 0) + 1
         if ups:
@@ -706,42 +995,99 @@ class Delve:
             self.say("Your silver tongue turns to lead - steel comes out instead.")
             self._wound(profile, e["wound"], heavy=self._heavy(e))
 
-    def act_shout(self, profile) -> None:
-        if self.shout_charges <= 0 or profile["words"] <= 0:
+    def _alduin_reflight_check(self):
+        """After ANY damage to Alduin, he takes wing again at set thresholds - the
+        fight is a war over shout charges. Shared by weapon hits and DAH."""
+        if self.room["key"] == "alduin" and self.enemy_hp in D.ALDUIN_REFLIGHT_HP \
+                and self.grounded:
+            self.grounded = False
+            self.say("**Alduin takes wing again**, laughing in the old tongue. Bring him down!")
+
+    def shout_cost_available(self, profile) -> int:
+        """The largest shout (in words) you could spend right now."""
+        return min(profile.get("words", 0), self.shout_charges)
+
+    def act_shout(self, profile, cost=None) -> None:
+        """The Words of Power loadout. Spend 1, 2 or 3 charges from your pool for a
+        different effect - a rationing puzzle, not a spam button:
+          FUS (1)         - stagger: ground a dragon, or chip one telling blow.
+          FUS RO (2)      - the old room-flatten (loot + move on); grounds+chips a dragon.
+          FUS RO DAH (3)  - the true Thu'um: 2 damage to ANYTHING (dragons included)."""
+        words = profile.get("words", 0)
+        if words <= 0 or self.shout_charges <= 0:
             return
         e = self.enemy()
         if e is None:
             return
-        if e["type"] == "dragon" and self.grounded:
-            return                       # already grounded - don't waste the charge
-        shout = " ".join(D.SHOUT_WORDS[:profile["words"]])
-        self.shout_charges -= 1
-        if e["type"] == "dragon":
+        cost = 1 if cost is None else int(cost)          # plain shout = FUS (cheap ground)
+        cost = max(1, min(cost, words, self.shout_charges))
+        is_dragon = e["type"] == "dragon"
+        if is_dragon and self.grounded and cost == 1:
+            return                                       # already grounded - FUS is wasted
+        shout = " ".join(D.SHOUT_WORDS[:cost])
+        self.shout_charges -= cost
+
+        if cost >= 3:                                    # FUS RO DAH - true damage
+            if is_dragon:
+                self.grounded = True
+            self.enemy_hp -= 2
+            self.say(f"**\"{shout}!\"** The whole Thu'um lands like a god's own fist.")
+            if self.enemy_hp <= 0:
+                self._kill(profile, e, best_style(profile, self.room["key"], self))
+            else:
+                self.engaged = True
+                self.say(f"  ({'🩸' * self.enemy_hp} to go)")
+                self._alduin_reflight_check()
+            return
+
+        if is_dragon:                                    # FUS / FUS RO on a dragon: ground it
             self.grounded = True
             self.say(D.pick(D.SHOUT_DRAGON_LINES, shout=shout))
-        else:
-            self.say(D.pick(D.SHOUT_CLEAR_LINES, shout=shout, enemy=e["name"]))
-            # a shouted room still yields its loot - the Voice is not subtle but it is thorough
-            loot = _septims(profile, e["tier"] * 12 + random.randint(0, 8))
-            self.satchel += loot
-            gained, _ = add_xp(profile, 6 * e["tier"])
-            self.xp_gained += gained
-            self.say(f"You pick through the wreckage.  (+{gained} XP, +{loot} septims)")
-            self._advance(profile)
+            if cost == 2:                                # RO also chips a blow off it
+                self.enemy_hp = max(1, self.enemy_hp - 1)
+                self.say(f"The Voice cracks scale from bone.  ({'🩸' * self.enemy_hp} to go)")
+                self._alduin_reflight_check()
+            return
+
+        if cost == 1:                                    # FUS on a non-dragon: a stagger
+            self.enemy_hp -= 1
+            if self.enemy_hp <= 0:
+                self._kill(profile, e, best_style(profile, self.room["key"], self))
+            else:
+                self.engaged = True
+                self.say(f"**\"{shout}!\"** The {e['name']} is hurled back, reeling.  "
+                         f"({'🩸' * self.enemy_hp} to go)")
+            return
+
+        # FUS RO on a non-dragon - the thorough room-flatten (loot + move on)
+        self.say(D.pick(D.SHOUT_CLEAR_LINES, shout=shout, enemy=e["name"]))
+        loot = _septims(profile, e["tier"] * 12 + random.randint(0, 8))
+        self.satchel += loot
+        gained, _ = add_xp(profile, 6 * e["tier"])
+        self.xp_gained += gained
+        self.say(f"You pick through the wreckage.  (+{gained} XP, +{loot} septims)")
+        self._advance(profile)
 
     def act_potion(self, profile) -> None:
-        if profile["potions"] <= 0 or self.hearts >= heart_max(profile):
+        if profile["potions"] <= 0 or (self.hearts >= heart_max(profile) and not self.venom):
             return
         profile["potions"] -= 1
-        self.hearts += 1
         self.hp_warned = False
-        self.say("You drink a health potion. The wound knits before your eyes.  ❤️ +1")
+        cured = self.venom
+        self.venom = False
+        if self.hearts < heart_max(profile):
+            self.hearts += 1
+        line = "You drink a health potion. The wound knits before your eyes.  ❤️ +1"
+        if cured:
+            line += "  🟢 The venom neutralises."
+        self.say(line)
 
     def act_leave(self, profile) -> None:
         """Leave with the satchel; mid-fight it becomes a flee and loot spills."""
         if not self.playing():
             return
         profile["active_delve"] = None
+        self._bank_ingredients(profile)          # the pouch comes home either way
         if self.engaged:
             kept = int(self.satchel * FLEE_KEEP)
             profile["septims"] += kept
@@ -895,6 +1241,7 @@ class Delve:
             elif choice == "approach":
                 if random.random() < 0.5:
                     profile["septims"] += self.satchel
+                    self._bank_ingredients(profile)
                     profile["stats"]["launched"] += 1
                     profile["active_delve"] = None
                     self.state = "launched"
@@ -922,7 +1269,10 @@ class Delve:
                 "xp_gained": self.xp_gained, "kills": self.kills,
                 "result_line": self.result_line, "enemy_hp": self.enemy_hp,
                 "daily": self.daily, "fan": self.fan,
-                "ambush": self.ambush, "hp_warned": self.hp_warned}
+                "ambush": self.ambush, "hp_warned": self.hp_warned,
+                "venom": self.venom, "ingredients": self.ingredients,
+                "dragon": self.dragon, "phase": self.phase, "depth": self.depth,
+                "kind": self.kind, "buffs": self.buffs}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Delve":
@@ -936,7 +1286,10 @@ class Delve:
                    kills=d.get("kills", 0), result_line=d.get("result_line", ""),
                    delve_id=d.get("delve_id"), enemy_hp=d.get("enemy_hp"),
                    daily=d.get("daily", False), fan=d.get("fan", False),
-                   ambush=d.get("ambush", False), hp_warned=d.get("hp_warned", False))
+                   ambush=d.get("ambush", False), hp_warned=d.get("hp_warned", False),
+                   venom=d.get("venom", False), ingredients=d.get("ingredients"),
+                   dragon=d.get("dragon"), phase=d.get("phase"), depth=d.get("depth", 0),
+                   kind=d.get("kind", "normal"), buffs=d.get("buffs"))
 
 
 # ---------------------------------------------------------------------------
