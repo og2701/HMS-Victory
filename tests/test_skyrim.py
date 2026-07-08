@@ -800,25 +800,27 @@ def test_expedition_roundtrip():
     assert msg and p["septims"] > before and p["expedition"] is None
 
 
-def test_expedition_log_grows_and_stays_put():
+def test_expedition_log_dispatches_and_window():
     p = _profile()
     p["xp"] = 3000
     assert E.start_expedition(p, "ruin") is None       # 3-day errand
     carl = p["expedition"]["carl"]
-    # day 1: two lines, stable across repeated opens, drawn from the ruin pool
-    log1 = E.expedition_log(p)
-    assert len(log1) == 2 and log1 == E.expedition_log(p)
-    assert all(l.startswith("Day 1:") for l in log1)
-    assert any(carl in l or "{carl}" not in raw
-               for l, raw in zip(log1, D.EXPEDITION_LOGS["ruin"]))
-    # two days in: four lines, and the day-1 entries are unchanged
-    p["expedition"]["start"] = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
-    log2 = E.expedition_log(p)
-    assert len(log2) == 4 and log2[:2] != [] and all(l.startswith(("Day 1:", "Day 2:")) for l in log2)
-    # long past the end: capped at the expedition's length (3 days -> 6 lines)
+    # a finished trip has its full schedule: 5-7 dispatches per day, 3 days
     p["expedition"]["start"] = "2000-01-01"
-    assert len(E.expedition_log(p)) == 6
-    assert E.expedition_log(p) == E.expedition_log(p)
+    full = E.expedition_log(p, limit=0)
+    assert 15 <= len(full) <= 21
+    assert full == E.expedition_log(p, limit=0)        # deterministic between opens
+    # entries are timestamped, in day order, and the carl features by name
+    assert all(l.startswith("Day ") and " · " in l and " - " in l for l in full)
+    days = [int(l.split(" ")[1]) for l in full]
+    assert days == sorted(days) and days[0] == 1 and days[-1] == 3
+    assert any(carl in l for l in full)
+    # the default window shows only the latest 10
+    assert E.expedition_log(p) == full[-E.EXPEDITION_LOG_SHOW:]
+    # a trip started today only shows dispatches whose time has already passed
+    p["expedition"]["start"] = datetime.date.today().isoformat()
+    today_log = E.expedition_log(p, limit=0)
+    assert len(today_log) <= 7 and all(l.startswith("Day 1") for l in today_log)
 
 
 if __name__ == "__main__":

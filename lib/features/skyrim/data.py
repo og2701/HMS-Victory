@@ -807,9 +807,21 @@ EXPEDITIONS = {
 HOUSECARLS = ["Lydia", "Jordis", "Argis", "Iona", "Valdimar", "Rayya"]
 
 # Away-logs: what the housecarl gets up to out there. Rendered (never posted) when
-# the Expeditions panel opens - two lines per elapsed day, drawn deterministically
-# per expedition so the story stays put and simply grows as the days pass.
-# {carl} is the housecarl's name.
+# the Expeditions panel opens - 5-7 timestamped dispatches per day at seeded times,
+# deterministic per expedition so the story stays put and simply accretes; the panel
+# shows the latest handful. {carl} is the housecarl's name.
+EXPEDITION_LOGS_COMMON = [
+    "{carl} makes camp early and mends a bootstrap that has been complaining for miles.",
+    "A mudcrab challenges {carl} for the path. It is stepped over.",
+    "{carl} writes a short letter home. It is mostly about the weather.",
+    "Rations check: hardtack, dried snowberries, and exactly one sweetroll, guarded closely.",
+    "{carl} whets the blade by firelight until it sings.",
+    "Cold rain from the north. {carl} pulls the hood lower and keeps walking.",
+    "A passing guard nods at {carl}. 'No lollygaggin'.' None was planned.",
+    "{carl} counts the coin purse twice. It comes out the same both times, reassuringly.",
+    "Clear night. {carl} names the constellations wrong with total confidence.",
+    "{carl} shares the fire with a quiet pilgrim of Stendarr. Good company, few words.",
+]
 EXPEDITION_LOGS = {
     "roads": [
         "{carl} waves a merchant caravan through and pockets a grateful tip.",
@@ -822,6 +834,12 @@ EXPEDITION_LOGS = {
         "{carl} points a lost Khajiit caravan back toward the city gates.",
         "Quiet watch. {carl} sharpens the blade twice just for something to do.",
         "A drunk Nord challenged {carl} to a fistfight, lost, and paid up laughing.",
+        "{carl} helps a farmer wrestle a painted cow back onto the road. Neither enjoys it.",
+        "Two Vigilants of Stendarr pass heading north. {carl} wishes them luck, quietly.",
+        "{carl} settles a fare dispute between a carriage driver and a very tall passenger.",
+        "The toll ledger balances for once. {carl} celebrates with an apple.",
+        "{carl} chases a pickpocket half a mile, then lets the winded fool crawl off.",
+        "A courier sprints past in no boots whatsoever. {carl} decides not to ask.",
     ],
     "hunt": [
         "{carl} takes an elk at eighty paces. Dinner is handled.",
@@ -834,6 +852,12 @@ EXPEDITION_LOGS = {
         "{carl} skins a troll and swears never to smell anything again.",
         "Hagraven feathers on the wind - {carl} moves camp two valleys over.",
         "{carl} loses an arrow to a goat on a cliff. The goat seemed smug about it.",
+        "{carl} smokes the day's catch over juniper. The whole camp smells expensive.",
+        "Fresh bear prints, big ones. {carl} elects to hunt in the other direction.",
+        "{carl} frees a fox from an old snare and pretends not to have done it.",
+        "A thunderstorm rolls down the valley. {carl} waits it out and counts the seconds.",
+        "{carl} finds an abandoned hunter's blind and claims it in your name.",
+        "The venison is good tonight. {carl} eats like a Jarl and regrets nothing.",
     ],
     "ruin": [
         "{carl} sketches the outer arches by torchlight. The stonework is older than the Empire.",
@@ -846,6 +870,12 @@ EXPEDITION_LOGS = {
         "Frostbite spiders in the antechamber. {carl} burns the webs and moves on.",
         "{carl} lifts a burial crown, thinks better of it, and puts it back. Mostly.",
         "Deep tremors in the night. {carl} sleeps in armour and keeps the torch lit.",
+        "{carl} rubs charcoal over a carved lintel and rolls up a rather good impression.",
+        "The lower stair is flooded to the knee. {carl} charts it anyway, swearing richly.",
+        "An old cave-in blocks the east wing. {carl} marks it 'later' with real optimism.",
+        "{carl} finds a skeleton mid-reach for a coin purse. The purse is claimed. Respectfully.",
+        "Something answered the echo test. {carl} does not run the echo test again.",
+        "{carl} lights the great brazier just to see the hall once. Worth the whale oil.",
     ],
 }
 

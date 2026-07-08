@@ -1914,29 +1914,49 @@ def start_expedition(profile, key: str) -> str | None:
     return None
 
 
-def expedition_log(profile) -> list:
-    """The housecarl's away-log: two flavour lines per elapsed day, drawn
-    deterministically from the expedition's seed so the story stays put between
-    opens and simply grows as UK days pass. Purely rendered - never posted."""
+EXPEDITION_LOG_SHOW = 10             # the panel shows only the latest dispatches
+
+
+def _expedition_schedule(profile, e, exp) -> list:
+    """The expedition's FULL dispatch schedule, deterministic from its seed:
+    5-7 entries per day at sorted times between 07:30 and 21:30, lines drawn from
+    the errand's pool + the common pool via seeded shuffle (recycled if a long
+    trip outruns the pool). Returns [(day_no, minute_of_day, line), ...]."""
+    rng = random.Random(f"skyrim-expedition-{profile['user_id']}-{e['start']}-{e['key']}")
+    pool = D.EXPEDITION_LOGS.get(e["key"], []) + D.EXPEDITION_LOGS_COMMON
+    order = []
+    schedule = []
+    for day in range(1, exp["days"] + 1):
+        for minute in sorted(rng.randint(450, 1290) for _ in range(rng.randint(5, 7))):
+            if not order:
+                order = rng.sample(pool, len(pool))      # reshuffle when exhausted
+            schedule.append((day, minute, order.pop()))
+    return schedule
+
+
+def expedition_log(profile, limit: int = EXPEDITION_LOG_SHOW) -> list:
+    """The housecarl's away-log: every dispatch whose (seeded) send-time has passed,
+    newest last, trimmed to the latest `limit`. Deterministic per expedition, so the
+    story stays put between opens and simply accretes through the day. Rendered on
+    open, never posted."""
     e = profile.get("expedition")
     if not e:
         return []
     exp = D.EXPEDITIONS.get(e["key"])
-    pool = D.EXPEDITION_LOGS.get(e["key"])
-    if not exp or not pool:
+    if not exp:
         return []
     start = datetime.date.fromisoformat(e["start"])
-    today = datetime.date.fromisoformat(_today_str())
-    days_gone = (today - start).days + 1                 # day 1 starts immediately
-    days_shown = max(1, min(days_gone, exp["days"]))
-    rng = random.Random(f"skyrim-expedition-{profile['user_id']}-{e['start']}-{e['key']}")
-    lines = rng.sample(pool, min(len(pool), exp["days"] * 2))
+    now = datetime.datetime.now(_UK)
     carl = e.get("carl", "Your housecarl")
     out = []
-    for day in range(days_shown):
-        for line in lines[day * 2:day * 2 + 2]:
-            out.append(f"Day {day + 1}: {line.format(carl=carl)}")
-    return out
+    for day, minute, line in _expedition_schedule(profile, e, exp):
+        stamp = _UK.localize(datetime.datetime.combine(
+            start + datetime.timedelta(days=day - 1),
+            datetime.time(minute // 60, minute % 60)))
+        if stamp <= now:
+            out.append(f"Day {day} · {minute // 60:02d}:{minute % 60:02d} - "
+                       f"{line.format(carl=carl)}")
+    return out[-limit:] if limit else out
 
 
 def collect_expedition(profile) -> str | None:
