@@ -1358,32 +1358,48 @@ async def _hub_daily(interaction: Interaction):
     await _edit_panel(interaction, text, [row, _back_row()])
 
 
+def _ascii_name(name: str) -> str:
+    """A monospace-safe display name: drop markdown escapes and non-ASCII (flags,
+    emoji) so the leaderboard columns line up in a code block."""
+    clean = "".join(c for c in name.replace("\\", "") if c.isascii()).strip()
+    return clean or "".join(c for c in name if c.isprintable())[:12] or "?"
+
+
 # --- rankings ------------------------------------------------------------------------
 async def _hub_rankings(interaction: Interaction):
     profiles = sorted(E.all_profiles().values(), key=lambda p: p["xp"], reverse=True)[:10]
-    lines = ["## 🏆 Legends of Skyrim", ""]
+    lines = ["## 🏆 Legends of Skyrim"]
     if not profiles:
         lines.append("No adventurers yet. The ruins wait.")
-    medals = ["🥇", "🥈", "🥉"]
+        await _edit_panel(interaction, "\n".join(lines), [_back_row()])
+        return
+    # A monospace code block so the columns actually align. Emoji break monospace,
+    # so medals/stones/flags stay out of the grid; achievement badges go below.
+    grid = [f"{'#':<3} {'Adventurer':<12} {'Lv':>2} {'Drg':>3} {'Clr':>3} {'Septims':>8}"]
+    badges = []
     for i, p in enumerate(profiles):
-        cls = D.STONES[p["stone"]]
-        rank = medals[i] if i < len(medals) else f"`{i + 1:>2}.`"
         st = p["stats"]
-        flair = ""
+        grid.append(f"{str(i + 1) + '.':<3} {_ascii_name(p['name'])[:12]:<12} {E.level(p):>2} "
+                    f"{st['dragons']:>3} {st['clears']:>3} {p['septims']:>8,}")
+        marks = ""
         if p.get("alduin_slain"):
-            flair += " ⭐"
-        if E.home_owned(p, "trophy_room"):
-            flair += " 🏆"
+            marks += "⭐"
         if E.legendary_stars(p):
-            flair += f" ✨{E.legendary_stars(p)}"
+            marks += f"✨{E.legendary_stars(p)}"
+        if E.home_owned(p, "trophy_room"):
+            marks += "🏆"
         best = E.soulcairn_best(p)
-        cairn = f"  ·  💀 depth {best}" if best else ""
-        lines.append(f"{rank} {cls['emoji']} **{p['name']}**{flair} - Lv {E.level(p)}  ·  "
-                     f"🐉 {st['dragons']}  ·  🏰 {st['clears']} cleared  ·  "
-                     f"💰 {p['septims']:,}{cairn}")
+        if best:
+            marks += f"💀{best}"
+        if marks:
+            badges.append(f"{_ascii_name(p['name'])} {marks}")
+    lines.append("```\n" + "\n".join(grid) + "\n```")
+    if badges:
+        lines.append("-# ⭐ Alduin  ✨ Legendary  🏆 Trophy Room  💀 Soul Cairn depth")
+        lines.append("-# " + "   ".join(badges))
     obit = E.latest_obituary()
     if obit:
-        lines += ["", obit]
+        lines.append(obit)
     await _edit_panel(interaction, "\n".join(lines), [_back_row()])
 
 
