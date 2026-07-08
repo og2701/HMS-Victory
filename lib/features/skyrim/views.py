@@ -71,7 +71,15 @@ def _scene_art(delve: E.Delve) -> str:
         return "leave"
     r = delve.room
     if r["kind"] == "enemy":
-        return D.ENEMIES[r["key"]]["art"]
+        e = D.ENEMIES[r["key"]]
+        # Dragons change picture with the fight: airborne (wheeling, breathing) vs
+        # grounded (slammed down by the Voice). Falls back to the base art if the
+        # <art>_air / <art>_grounded variants haven't been dropped yet.
+        if e["type"] == "dragon":
+            variant = f"{e['art']}_{'grounded' if delve.grounded else 'air'}"
+            if _asset_bytes(variant) is not None:
+                return variant
+        return e["art"]
     return D.EVENTS[r["key"]]["art"]
 
 

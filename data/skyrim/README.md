@@ -28,3 +28,14 @@ convert a fresh drop:
 The **Named Dragons of the Week** all reuse `dragon.webp` - no per-dragon art needed.
 New expansion scenes fall back to text like every other, so they can be dropped in
 whenever. Only `fork`, `fallen`, `mimic`, `soul_cairn` are new to generate.
+
+**Dragon fight states (optional):** the delve view swaps the dragon picture by state -
+`<art>_air` while it's airborne, `<art>_grounded` once the Voice slams it down - and
+falls back to the base `<art>` if a variant is absent. Drop any of these to enable it:
+
+| file (.webp) | shown for |
+|---|---|
+| dragon_air | a normal dragon still in the sky (blades/fire miss, use a bow) |
+| dragon_grounded | a normal dragon shouted to the ground (every style bites) |
+| alduin_air | Alduin airborne between reflights |
+| alduin_grounded | Alduin grounded and open to attack |
