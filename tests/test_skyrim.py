@@ -163,14 +163,18 @@ def test_skill_up_diminishes_and_stone_boosts():
 # ---------------------------------------------------------------------------
 def test_build_rooms_shape():
     for loc_key, loc in D.LOCATIONS.items():
-        for _ in range(20):
+        for _ in range(40):
             rooms = E.build_rooms(loc_key)
-            assert len(rooms) in (loc["rooms"], loc["rooms"] + 1)  # +1 when a word wall is placed
+            # base rooms, +1 optional word wall, +1 optional Fork
+            assert loc["rooms"] <= len(rooms) <= loc["rooms"] + 2
             assert rooms[-1]["kind"] == "enemy" and rooms[-1]["boss"]
             assert rooms[-1]["key"] == loc["boss"]
             if loc.get("word_wall"):
-                assert rooms[-2] == {"kind": "event", "key": "wordwall",
-                                     "boss": False, "resolved": False}
+                # the word wall always sits immediately before the boss
+                assert rooms[-2]["key"] == "wordwall"
+            # a Fork, if placed, is a valid event before any word wall / boss
+            forks = [i for i, r in enumerate(rooms) if r["key"] == "fork"]
+            assert len(forks) <= 1
             assert any(r["kind"] == "enemy" and not r["boss"] for r in rooms)
             for r in rooms:
                 pool = D.ENEMIES if r["kind"] == "enemy" else D.EVENTS

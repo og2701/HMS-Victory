@@ -59,6 +59,9 @@ BOUNTY_CHANCE = 0.06                 # per trash room: a named variant (+1 hp, 3
 DAILY_CLEAR_MULT = 1.5               # the daily delve pays a fatter clear bonus
 AMBUSH_BONUS = 20                    # attack bonus when striking from successful stealth
 LOCKED_CHEST_CHANCE = 0.25           # chance a chest room is master-locked (Lockpicking territory)
+MIMIC_CHANCE = 0.18                  # chance a chest room is secretly a Mimic (it bites)
+FORK_CHANCE = 0.45                   # chance a delve offers a branching Fork before the boss
+SOULCAIRN_DRAIN = 2                  # attack % the Soul Cairn steals per depth descended
 SKILLS = ("blade", "marksman", "destruction", "sneak", "speech", "lockpicking")
 # Tempering (The Grindstone): gear can be sharpened past its tier with septims +
 # looted materials. Grades stack ON TOP of tier, and the fight bonus deliberately
@@ -284,6 +287,8 @@ def _fight_raw(profile, enemy_key: str, style: str, delve=None) -> float:
         p += _affix_fight_delta(profile, enemy_key, style, delve)
         p += doctrine_fight_bonus(profile, e, style)
         p += (delve.buffs or {}).get("fight", 0)   # a brewed Philtre of Fury
+        if getattr(delve, "kind", None) == "soulcairn":
+            p -= SOULCAIRN_DRAIN * delve.depth      # the deep gnaws your odds
         nd = named_dragon(delve)
         if nd:
             p += nd.get("fight", 0)              # this week's dragon is easier/harder to land
@@ -519,15 +524,20 @@ def _affix_chance(char_level: int) -> float:
     return 0.0
 
 
+def _eligible_affix(enemy_key: str, rng) -> str | None:
+    """Any affix that can attach to this enemy's type/tier (ignores the level gate)."""
+    e = D.ENEMIES[enemy_key]
+    eligible = [k for k, a in D.AFFIXES.items()
+                if e["type"] in a["types"] and e["tier"] >= a["min_tier"]]
+    return rng.choice(eligible) if eligible else None
+
+
 def _roll_affix(enemy_key: str, char_level: int, rng) -> str | None:
     """Maybe mark an ordinary enemy with an elite affix eligible for its type/tier.
     Gated on character level so newer players never meet a Dread horror."""
     if rng.random() >= _affix_chance(char_level):
         return None
-    e = D.ENEMIES[enemy_key]
-    eligible = [k for k, a in D.AFFIXES.items()
-                if e["type"] in a["types"] and e["tier"] >= a["min_tier"]]
-    return rng.choice(eligible) if eligible else None
+    return _eligible_affix(enemy_key, rng)
 
 
 def build_rooms(loc_key: str, rng=None, affix_level: int = 0) -> list:
@@ -554,10 +564,16 @@ def build_rooms(loc_key: str, rng=None, affix_level: int = 0) -> list:
         rooms.append(room)
     for k in _draw_events(n_events, rng):
         room = {"kind": "event", "key": k, "boss": False, "resolved": False}
-        if k == "chest" and rng.random() < LOCKED_CHEST_CHANCE:
-            room["locked"] = True                  # a master lock: Lockpicking territory
+        if k == "chest":
+            if rng.random() < MIMIC_CHANCE:
+                room["mimic"] = True               # it bites when you open it
+            elif rng.random() < LOCKED_CHEST_CHANCE:
+                room["locked"] = True              # a master lock: Lockpicking territory
         rooms.append(room)
     rng.shuffle(rooms)
+    # A Fork before the boss: a genuine risk/reward choice with honest hints.
+    if len(rooms) >= 2 and rng.random() < FORK_CHANCE:
+        rooms.append({"kind": "event", "key": "fork", "boss": False, "resolved": False})
     if loc.get("word_wall"):
         rooms.append({"kind": "event", "key": "wordwall", "boss": False, "resolved": False})
     rooms.append({"kind": "enemy", "key": loc["boss"], "boss": True, "resolved": False})
@@ -571,7 +587,7 @@ def offer_locations(profile) -> list:
     lvl = level(profile)
     dragon_min = int(getattr(config, "SKYRIM_DRAGON_MIN_LEVEL", 8))
     open_locs = [k for k, v in D.LOCATIONS.items()
-                 if not v.get("alduin")
+                 if not v.get("alduin") and not v.get("soulcairn")
                  and lvl >= v["min_level"] and (not v.get("dragon_lair") or lvl >= dragon_min)]
     open_locs.sort(key=lambda k: D.LOCATIONS[k]["min_level"])
     if len(open_locs) <= 3:
@@ -586,6 +602,25 @@ def offer_locations(profile) -> list:
     return out
 
 
+def _soulcairn_room(depth: int, rng) -> dict:
+    """One floor of the endless descent - tougher pools and richer affixes the deeper
+    you go. Each floor's foe also gains hp every few depths."""
+    if depth < 3:
+        pool = ["draugr", "frostbite_spider", "necromancer"]
+    elif depth < 7:
+        pool = ["draugr", "necromancer", "troll", "falmer", "draugr_deathlord"]
+    else:
+        pool = ["draugr_deathlord", "the_caller", "dwarven_centurion", "troll", "hagraven"]
+    key = rng.choice(pool)
+    room = {"kind": "enemy", "key": key, "boss": False, "resolved": False, "soul": True}
+    if depth >= 2 and rng.random() < min(0.65, 0.2 + 0.05 * depth):
+        aff = _eligible_affix(key, rng)
+        if aff:
+            room["affix"] = aff
+    room["soul_hp"] = depth // 4                 # +1 hp every 4 depths, on top of base
+    return room
+
+
 def _room_hp(room: dict) -> int:
     """Hits the room's enemy can take: base hp, +1 for a bounty, + any affix hp."""
     if room["kind"] != "enemy":
@@ -593,6 +628,7 @@ def _room_hp(room: dict) -> int:
     hp = D.ENEMIES[room["key"]].get("hp", 1) + (1 if room.get("bounty") else 0)
     if room.get("affix"):
         hp += D.AFFIXES.get(room["affix"], {}).get("hp", 0)
+    hp += int(room.get("soul_hp", 0))            # Soul Cairn depth scaling
     return hp
 
 
@@ -706,6 +742,9 @@ class Delve:
         self.ambush = self.hp_warned = False
         self.phase = None
         if self.idx >= len(self.rooms) - 1:
+            if self.kind == "soulcairn":
+                self._descend(profile)
+                return
             self._finish_clear(profile)
             return
         self.idx += 1
@@ -718,6 +757,19 @@ class Delve:
                 return
         if r["kind"] == "event" and r["key"] == "knee_trap":
             self._spring_knee_trap(profile)
+
+    def _descend(self, profile):
+        """The Soul Cairn never ends - clearing a floor drops you to the next, deeper
+        and richer, until you die or choose to climb out with your haul."""
+        self.depth += 1
+        self.rooms.append(_soulcairn_room(self.depth, random))
+        self.idx = len(self.rooms) - 1
+        self.enemy_hp = self._hp_for(self.room)
+        sc = profile.setdefault("soulcairn", {"best": 0})
+        if self.depth > int(sc.get("best", 0)):
+            sc["best"] = self.depth
+        self.say(f"⬇️ You descend. **Depth {self.depth}.** The soul-light thins; the cold "
+                 f"gnaws {SOULCAIRN_DRAIN * self.depth}% off your every strike now.")
 
     def _finish_clear(self, profile):
         bonus = _septims(profile, self.loc["clear_septims"])
@@ -1105,9 +1157,32 @@ class Delve:
         else:
             profile["septims"] += self.satchel
             self.state = "left"
-            self.result_line = (f"You walk out with **{self.satchel:,} septims** and "
-                                f"**{self.xp_gained} XP**.")
+            if self.kind == "soulcairn":
+                best = int((profile.get("soulcairn") or {}).get("best", 0))
+                self.result_line = (f"You climb out of the Cairn at **depth {self.depth}** with "
+                                    f"**{self.satchel:,} septims** and **{self.xp_gained} XP**. "
+                                    f"Deepest ever: **{best}**.")
+            else:
+                self.result_line = (f"You walk out with **{self.satchel:,} septims** and "
+                                    f"**{self.xp_gained} XP**.")
             self.say(D.pick(D.LEAVE_LINES))
+
+    def _take_deep_fork(self, profile):
+        """The deep way: an extra elite (guaranteed affix) guarding a locked strongbox,
+        inserted right before the boss. Richer, riskier - an honest choice."""
+        loc = self.loc
+        pool = list(loc["pool"].keys())
+        weights = list(loc["pool"].values())
+        ekey = random.choices(pool, weights=weights, k=1)[0]
+        elite = {"kind": "enemy", "key": ekey, "boss": False, "resolved": False}
+        aff = _eligible_affix(ekey, random)
+        if aff:
+            elite["affix"] = aff
+        chest = {"kind": "event", "key": "chest", "boss": False, "resolved": False, "locked": True}
+        self.rooms[self.idx + 1:self.idx + 1] = [elite, chest]
+        self.say("You take the deep way down. The air thickens - something elite is guarding "
+                 "a strongbox in the dark.")
+        self._advance(profile)
 
     # --- event actions --------------------------------------------------------------
     def _spring_knee_trap(self, profile):
@@ -1126,6 +1201,23 @@ class Delve:
         key = r["key"]
         if key == "knee_trap" and choice == "continue":
             self._advance(profile)
+            return
+        if key == "chest" and r.get("mimic") and choice == "open":
+            # it bites: the chest becomes a fight in place
+            r["kind"] = "enemy"
+            r["key"] = "mimic"
+            r["was_mimic"] = True
+            r.pop("mimic", None)
+            self.enemy_hp = self._hp_for(r)
+            self.engaged = True
+            self.say(D.pick(D.ENEMIES["mimic"]["intro"]))
+            return
+        if key == "fork":
+            if choice == "deep":
+                self._take_deep_fork(profile)
+            else:
+                self.say("You take the low, safe road. The exit is close now.")
+                self._advance(profile)
             return
         if choice == "skip":
             self.say("You move on. Curiosity has killed sturdier adventurers.")
@@ -1459,6 +1551,39 @@ def alduin_ready(profile) -> tuple:
 def alduin_available(profile) -> bool:
     ready, _ = alduin_ready(profile)
     return ready and (profile.get("alduin") or {}).get("date") != _today_str()
+
+
+# ---------------------------------------------------------------------------
+# The Soul Cairn - post-Alduin endless descent. Unlocked by slaying Alduin, one
+# attempt per UK day (matching Alduin's cap, so it never becomes a binge). The
+# only prize is the depth record - it's you versus how deep you dare.
+# ---------------------------------------------------------------------------
+def soulcairn_unlocked(profile) -> bool:
+    return bool(profile.get("alduin_slain"))
+
+
+def soulcairn_available(profile) -> bool:
+    return (soulcairn_unlocked(profile)
+            and (profile.get("soulcairn") or {}).get("date") != _today_str())
+
+
+def soulcairn_best(profile) -> int:
+    return int((profile.get("soulcairn") or {}).get("best", 0))
+
+
+def start_soulcairn(profile, channel_id) -> Delve:
+    """Begin the day's descent. Callers must have checked availability."""
+    abandon_active(profile)
+    sc = profile.setdefault("soulcairn", {"best": 0})
+    sc["date"] = _today_str()
+    d = Delve(profile["user_id"], profile["name"], channel_id, "soul_cairn",
+              [_soulcairn_room(0, random)], hearts=heart_max(profile),
+              shout_charges=profile["words"], kind="soulcairn", dragon=dragon_of_the_week())
+    d.say(D.LOCATIONS["soul_cairn"]["arrive"])
+    profile["stats"]["delves"] += 1
+    _apply_brew_buffs(profile, d)
+    _first_delve_of_day_comforts(profile, d)
+    return d
 
 
 # ---------------------------------------------------------------------------

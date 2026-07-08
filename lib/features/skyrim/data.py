@@ -181,6 +181,17 @@ ENEMIES = {
         "wound": ["Its jagged blade finds you in the dark.",
                   "You forget it hunts by sound - it doesn't miss twice."],
     },
+    "mimic": {
+        "name": "Mimic", "emoji": "🧰", "type": "monster", "tier": 3,
+        "fight": 42, "sneak": None, "persuade": None, "art": "mimic",
+        "hint": "A chest sits a little too still in the dark ahead...",
+        "intro": ["The chest sprouts a ring of teeth and lunges - a **Mimic**!",
+                  "You reach for the lid and the lid reaches back. **Mimic!**"],
+        "kill": ["The Mimic splinters into ordinary planks - and a very real pile of gold.",
+                 "It gives up its hoard with a wooden shriek."],
+        "wound": ["Wooden teeth clamp down hard.",
+                  "It headbutts you with the full weight of a loaded strongbox."],
+    },
     # --- bosses ---------------------------------------------------------------
     "bandit_chief": {
         "name": "Bandit Chief", "emoji": "⚔️", "type": "human", "tier": 4, "boss": True,
@@ -364,6 +375,16 @@ LOCATIONS = {
         "desc": "A high peak in Winterhold, and the dragon that claims it.",
         "dragon_lair": True,
     },
+    "soul_cairn": {
+        "name": "The Soul Cairn", "emoji": "💀", "difficulty": "ENDLESS", "min_level": 20,
+        "rooms": 1, "events": 0, "pool": {"draugr": 1},
+        "boss": "draugr_deathlord", "word_wall": False, "clear_septims": 0, "art": "soul_cairn",
+        "arrive": "A grey waste of bone and soul-light stretches past seeing. There is no floor "
+                  "to this place - only *down*. How deep do you dare?",
+        "desc": "An endless descent unlocked by slaying Alduin. Depth drains your odds; the only "
+                "prize is how deep you dared. One attempt per day.",
+        "soulcairn": True,       # never offered as a normal delve; the picker adds it when earned
+    },
     "skuldafn": {
         "name": "Skuldafn", "emoji": "🌑", "difficulty": "THE WORLD-EATER", "min_level": 20,
         "rooms": 2, "events": 0, "pool": {"draugr_deathlord": 1},
@@ -403,6 +424,9 @@ EVENTS = {
                             "By Azura! It's YOU! The Grand Champion!\"** (Wrong game, but he is undeterred.)"},
     "wordwall": {"weight": 0, "emoji": "🗣️", "art": "wordwall",   # placed, never drawn
                  "text": "A great curved wall rises out of the dark, carved edge to edge in dragon script. It is **chanting**."},
+    "fork": {"weight": 0, "emoji": "🔀", "art": "fork",           # placed, never drawn
+             "text": "The passage splits. A **low, safe way** curves toward the exit - and a "
+                     "**deep way** drops into the dark, where the air smells of gold and trouble."},
 }
 
 M_AIQ_LINES = [

@@ -114,7 +114,9 @@ def _delve_text(delve: E.Delve, profile) -> str:
     daily_tag = "  ·  📅 Daily Delve" if delve.daily else ""
     if delve.playing():
         r = delve.room
-        if r["kind"] == "enemy" and r["boss"]:
+        if getattr(delve, "kind", None) == "soulcairn":
+            head = f"## 💀 The Soul Cairn - Depth {delve.depth}"
+        elif r["kind"] == "enemy" and r["boss"]:
             head = f"## {loc['emoji']} {loc['name']} - the final chamber{daily_tag}"
         else:
             head = f"## {loc['emoji']} {loc['name']} - room {delve.idx + 1}/{n}{daily_tag}"
@@ -310,6 +312,7 @@ _EVENT_CHOICES = {
     "wordwall": [("🗣️", "Approach the wall", "approach"), ("🚶", "Move on", "skip")],
     "giant": [("🚶", "Back away slowly", "retreat"), ("🧀", "About that cheese...", "approach")],
     "knee_trap": [("🚶", "Limp onward", "continue")],
+    "fork": [("🪙", "The deep way", "deep"), ("🚶", "The safe way", "safe")],
     "mudcrab": [("🦀", "Trade with the crab", "trade"), ("🚶", "Move on", "skip")],
     "nazeem": [("😤", "\"Yes, actually.\"", "yes"), ("😮‍💨", "Sigh deeply", "sigh")],
     "adoring_fan": [("🤩", "Let him follow", "adopt"), ("👉", "Send him home", "skip")],
@@ -609,6 +612,21 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
         lines.append(f"\n-# 🌑 Greybeards' whisper: the World-Eater will meet you when you are "
                      f"ready - {req_line}.")
 
+    # The Soul Cairn - unlocked once Alduin is down; one endless descent per day.
+    if E.soulcairn_unlocked(profile):
+        best = E.soulcairn_best(profile)
+        best_str = f"  ·  deepest: **{best}**" if best else ""
+        if E.soulcairn_available(profile):
+            lines.append(f"\n💀 **The Soul Cairn**  ·  ENDLESS - how deep do you dare?{best_str}")
+            srow = discord.ui.ActionRow()
+
+            async def _cairn(inter: Interaction):
+                await _launch_delve(inter, "soul_cairn", kind="soulcairn")
+            srow.add_item(_cb_btn(discord.ButtonStyle.danger, "Descend the Soul Cairn", "💀", _cairn))
+            rows.append(srow)
+        else:
+            lines.append(f"\n-# 💀 The Soul Cairn is spent for today{best_str}. Return tomorrow.")
+
     rows += [_back_row()] if edit_hub else []
     if edit_hub:
         # a button on an ephemeral panel (hub, or the mid-delve prompt): edit in place
@@ -624,13 +642,17 @@ async def _launch_delve(interaction: Interaction, loc_key: str, kind: str = "nor
     blocked = (profile is None
                or (kind == "normal" and E.delves_left(profile) <= 0)
                or (kind == "daily" and not E.daily_available(profile))
-               or (kind == "alduin" and not E.alduin_available(profile)))
+               or (kind == "alduin" and not E.alduin_available(profile))
+               or (kind == "soulcairn" and not E.soulcairn_available(profile)))
     if blocked:
         await interaction.response.edit_message(
             view=_notice_view("🛌 Not today - that delve isn't available right now."),
             attachments=[])
         return
-    delve = E.start_delve(profile, interaction.channel_id, loc_key, kind=kind)
+    if kind == "soulcairn":
+        delve = E.start_soulcairn(profile, interaction.channel_id)
+    else:
+        delve = E.start_delve(profile, interaction.channel_id, loc_key, kind=kind)
     view, files = build_delve_layout(delve, profile)
     try:
         # the owner pill in the status line must render but never ping
@@ -655,6 +677,7 @@ async def _launch_delve(interaction: Interaction, loc_key: str, kind: str = "nor
     send_off = {
         "daily": f"📅 Today's shared dungeon: **{loc['name']}**. Same rooms for everyone - your dice.",
         "alduin": "🌑 **Skuldafn.** The Greybeards are singing. Go.",
+        "soulcairn": "💀 **The Soul Cairn.** Down you go. Leave with your haul before it takes you.",
     }.get(kind, f"{loc['emoji']} Off to **{loc['name']}** - good hunting, Dovahkiin.")
     await interaction.response.edit_message(view=_notice_view(send_off), attachments=[])
 
