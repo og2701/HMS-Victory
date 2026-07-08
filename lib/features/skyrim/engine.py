@@ -1914,6 +1914,31 @@ def start_expedition(profile, key: str) -> str | None:
     return None
 
 
+def expedition_log(profile) -> list:
+    """The housecarl's away-log: two flavour lines per elapsed day, drawn
+    deterministically from the expedition's seed so the story stays put between
+    opens and simply grows as UK days pass. Purely rendered - never posted."""
+    e = profile.get("expedition")
+    if not e:
+        return []
+    exp = D.EXPEDITIONS.get(e["key"])
+    pool = D.EXPEDITION_LOGS.get(e["key"])
+    if not exp or not pool:
+        return []
+    start = datetime.date.fromisoformat(e["start"])
+    today = datetime.date.fromisoformat(_today_str())
+    days_gone = (today - start).days + 1                 # day 1 starts immediately
+    days_shown = max(1, min(days_gone, exp["days"]))
+    rng = random.Random(f"skyrim-expedition-{profile['user_id']}-{e['start']}-{e['key']}")
+    lines = rng.sample(pool, min(len(pool), exp["days"] * 2))
+    carl = e.get("carl", "Your housecarl")
+    out = []
+    for day in range(days_shown):
+        for line in lines[day * 2:day * 2 + 2]:
+            out.append(f"Day {day + 1}: {line.format(carl=carl)}")
+    return out
+
+
 def collect_expedition(profile) -> str | None:
     e = profile.get("expedition")
     if not e:

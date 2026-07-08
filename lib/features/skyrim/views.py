@@ -1246,6 +1246,11 @@ def _expedition_text(profile) -> str:
             lines.append(f"✅ **{carl}** is back from **{exp['name']}** - collect the haul below.")
         else:
             lines.append(f"⏳ **{carl}** is away on **{exp['name']}** - returns **{e['return']}** (UK).")
+        log = E.expedition_log(profile)
+        if log:
+            lines.append("")
+            lines.append("📜 **Word from the road:**")
+            lines += [f"-# {entry}" for entry in log]
     elif E.level(profile) < int(getattr(E.config, "SKYRIM_DRAGON_MIN_LEVEL", 8)):
         lines.append("-# 🔒 You earn a housecarl to send at level 8.")
     else:

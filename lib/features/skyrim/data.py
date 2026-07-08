@@ -806,6 +806,49 @@ EXPEDITIONS = {
 }
 HOUSECARLS = ["Lydia", "Jordis", "Argis", "Iona", "Valdimar", "Rayya"]
 
+# Away-logs: what the housecarl gets up to out there. Rendered (never posted) when
+# the Expeditions panel opens - two lines per elapsed day, drawn deterministically
+# per expedition so the story stays put and simply grows as the days pass.
+# {carl} is the housecarl's name.
+EXPEDITION_LOGS = {
+    "roads": [
+        "{carl} waves a merchant caravan through and pockets a grateful tip.",
+        "{carl} escorts a pilgrim as far as the shrine and gets a blessing for it.",
+        "A wolf tried the horses. The wolf regrets this.",
+        "{carl} breaks up a toll scam run by two bandits in stolen guard armour.",
+        "A carriage wheel shattered at the crossroads - {carl} lifted the axle alone.",
+        "{carl} shares a fire with a travelling bard and learns exactly one new verse.",
+        "Someone reported a dragon. It was a very large hawk. {carl} logged it anyway.",
+        "{carl} points a lost Khajiit caravan back toward the city gates.",
+        "Quiet watch. {carl} sharpens the blade twice just for something to do.",
+        "A drunk Nord challenged {carl} to a fistfight, lost, and paid up laughing.",
+    ],
+    "hunt": [
+        "{carl} takes an elk at eighty paces. Dinner is handled.",
+        "Troll tracks by the river - {carl} marks the cave and gives it a wide berth.",
+        "{carl} trades pelts with a Forsworn scout under a very tense truce.",
+        "Rain all day. {carl} waits it out under a rock ledge, cursing the Reach.",
+        "A sabre cat stalked the camp for an hour. {carl} stared it down.",
+        "{carl} finds a hunter's shrine of Hircine and leaves a strip of venison.",
+        "The snare line came up full. {carl} whistles the whole way back to camp.",
+        "{carl} skins a troll and swears never to smell anything again.",
+        "Hagraven feathers on the wind - {carl} moves camp two valleys over.",
+        "{carl} loses an arrow to a goat on a cliff. The goat seemed smug about it.",
+    ],
+    "ruin": [
+        "{carl} sketches the outer arches by torchlight. The stonework is older than the Empire.",
+        "A pressure plate clicks under {carl}'s boot. Nothing fires. Nobody breathes.",
+        "{carl} pries a soul gem from a sconce and wraps it in a bedroll.",
+        "Draugr in the lower gallery - {carl} bars the door and maps around them.",
+        "{carl} copies a wall of dragon-script by candle stub. It hums faintly.",
+        "The bridge is out. {carl} finds the flooded stair the old texts promised.",
+        "{carl} shares hardtack with a terrified scholar found hiding in an alcove.",
+        "Frostbite spiders in the antechamber. {carl} burns the webs and moves on.",
+        "{carl} lifts a burial crown, thinks better of it, and puts it back. Mostly.",
+        "Deep tremors in the night. {carl} sleeps in armour and keeps the torch lit.",
+    ],
+}
+
 # NPC names for auto-generated Fallen Adventurer corpses (so death-content appears
 # even with only a few live players). Real players' deaths are used first.
 NPC_FALLEN = ["Bjorn One-Eye", "Ingrid the Lost", "Ralof's cousin", "Sven the Bard",

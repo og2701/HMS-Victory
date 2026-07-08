@@ -8,6 +8,7 @@ import os
 import sys
 import types
 import random
+import datetime
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -797,6 +798,27 @@ def test_expedition_roundtrip():
     before = p["septims"]
     msg = E.collect_expedition(p)
     assert msg and p["septims"] > before and p["expedition"] is None
+
+
+def test_expedition_log_grows_and_stays_put():
+    p = _profile()
+    p["xp"] = 3000
+    assert E.start_expedition(p, "ruin") is None       # 3-day errand
+    carl = p["expedition"]["carl"]
+    # day 1: two lines, stable across repeated opens, drawn from the ruin pool
+    log1 = E.expedition_log(p)
+    assert len(log1) == 2 and log1 == E.expedition_log(p)
+    assert all(l.startswith("Day 1:") for l in log1)
+    assert any(carl in l or "{carl}" not in raw
+               for l, raw in zip(log1, D.EXPEDITION_LOGS["ruin"]))
+    # two days in: four lines, and the day-1 entries are unchanged
+    p["expedition"]["start"] = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    log2 = E.expedition_log(p)
+    assert len(log2) == 4 and log2[:2] != [] and all(l.startswith(("Day 1:", "Day 2:")) for l in log2)
+    # long past the end: capped at the expedition's length (3 days -> 6 lines)
+    p["expedition"]["start"] = "2000-01-01"
+    assert len(E.expedition_log(p)) == 6
+    assert E.expedition_log(p) == E.expedition_log(p)
 
 
 if __name__ == "__main__":
