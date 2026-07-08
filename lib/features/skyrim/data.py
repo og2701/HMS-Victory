@@ -514,6 +514,16 @@ GEAR_TIERS = [
     {"key": "daedric", "name": "Daedric", "emoji": "😈", "price": 9000, "dragons": 0},
     {"key": "dragonbone", "name": "Dragonbone", "emoji": "🐲", "price": 15000, "dragons": 5},
 ]
+# The Grindstone tempering ladder - cost to reach each next grade (weapon or armour).
+# Materials come from the at-risk ingredient pouch; dragon scales gate the top grades,
+# tying the finest gear to dragon-hunting.
+TEMPER_COSTS = [
+    {"septims": 500,  "mats": {"bone_meal": 2}},
+    {"septims": 1200, "mats": {"frost_salts": 2}},
+    {"septims": 2500, "mats": {"void_salts": 2}},
+    {"septims": 5000, "mats": {"dragon_scale": 1}},
+    {"septims": 9000, "mats": {"dragon_scale": 2}},
+]
 WEAPON_FIGHT_PER_TIER = 4      # +4% attack per tier above Iron (all three styles)
 ARMOUR_SOAK_PER_TIER = 5       # heavy armour: +5% chance per tier to shrug off a wound
 # Armour comes in two styles, switchable free at Belethor's:

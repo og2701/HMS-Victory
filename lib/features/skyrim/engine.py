@@ -215,6 +215,11 @@ def heart_max(profile) -> int:
     return BASE_HEARTS + perk_rank(profile, "stalwart") + int(doctrine_flat(profile, "heart"))
 
 
+def delve_heart_max(delve, profile) -> int:
+    """Heart cap for a specific delve - includes a brewed Draught of Vigor's bonus."""
+    return heart_max(profile) + (int(delve.buffs.get("heart", 0)) if delve else 0)
+
+
 def potion_cap(profile) -> int:
     return (BASE_POTION_CAP + perk_rank(profile, "alchemist")
             + int(doctrine_flat(profile, "potion_cap")))
@@ -1069,13 +1074,14 @@ class Delve:
         self._advance(profile)
 
     def act_potion(self, profile) -> None:
-        if profile["potions"] <= 0 or (self.hearts >= heart_max(profile) and not self.venom):
+        cap = delve_heart_max(self, profile)
+        if profile["potions"] <= 0 or (self.hearts >= cap and not self.venom):
             return
         profile["potions"] -= 1
         self.hp_warned = False
         cured = self.venom
         self.venom = False
-        if self.hearts < heart_max(profile):
+        if self.hearts < cap:
             self.hearts += 1
         line = "You drink a health potion. The wound knits before your eyes.  ❤️ +1"
         if cured:
@@ -1345,12 +1351,36 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
     else:
         spend_stamina(profile)
         delve = Delve.start(profile, channel_id, loc_key)
+    delve.kind = kind
     profile["stats"]["delves"] += 1
     w = weather_today()
     if w["key"] != "clear":
         delve.say(weather_line(w))
+    _apply_brew_buffs(profile, delve)
     _first_delve_of_day_comforts(profile, delve)
     return delve
+
+
+def _apply_brew_buffs(profile, delve: Delve):
+    """Consume any brewed one-delve elixir queued at the Lab Bench (Ingredient Pouch)."""
+    nxt = profile.get("nextdelve") or {}
+    if not nxt:
+        return
+    delve.buffs = dict(nxt)
+    profile["nextdelve"] = {}
+    if nxt.get("heart"):
+        delve.hearts += int(nxt["heart"])
+    bits = []
+    if nxt.get("fight"):
+        bits.append(f"+{nxt['fight']}% attack")
+    if nxt.get("crit"):
+        bits.append(f"+{nxt['crit']}% crit")
+    if nxt.get("soak"):
+        bits.append(f"+{nxt['soak']}% soak")
+    if nxt.get("heart"):
+        bits.append(f"+{nxt['heart']} heart")
+    if bits:
+        delve.say("🧪 Your brewed elixir courses through you.  (" + ", ".join(bits) + " this delve)")
 
 
 # ---------------------------------------------------------------------------
@@ -1495,4 +1525,124 @@ def take_perk(profile, key: str) -> str | None:
     if perk_rank(profile, key) >= D.PERKS[key]["ranks"]:
         return "That perk is already at its highest rank."
     profile["perks"][key] = perk_rank(profile, key) + 1
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Capstone Doctrines - each skill hitting 100 unlocks a permanent pick-one-of-two
+# mastery. Two maxed characters fight the same room differently.
+# ---------------------------------------------------------------------------
+def doctrine_choices_open(profile) -> list:
+    """Skills at 100 that haven't chosen a doctrine yet."""
+    return [s for s in SKILLS if profile["skills"].get(s, 0) >= 100
+            and s not in (profile.get("doctrines") or {}) and s in D.DOCTRINES]
+
+
+def choose_doctrine(profile, skill: str, choice: str) -> str | None:
+    if skill not in D.DOCTRINES or choice not in D.DOCTRINES[skill]:
+        return "No such doctrine."
+    if profile["skills"].get(skill, 0) < 100:
+        return "You must master that skill (100) first."
+    if skill in (profile.get("doctrines") or {}):
+        return "That mastery is already chosen - it is permanent."
+    profile.setdefault("doctrines", {})[skill] = choice
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Legendary Skills - reset a mastered (100) skill to 15 for a permanent star. The
+# doctrine you earned stays; the climb begins again. Skyrim's own prestige loop.
+# ---------------------------------------------------------------------------
+def legendary_ready(profile) -> list:
+    return [s for s in SKILLS if profile["skills"].get(s, 0) >= 100]
+
+
+def make_legendary(profile, skill: str) -> str | None:
+    if skill not in SKILLS:
+        return "No such skill."
+    if profile["skills"].get(skill, 0) < 100:
+        return "Only a mastered skill (100) can be made Legendary."
+    profile["skills"][skill] = 15
+    profile.setdefault("legendary", {})[skill] = int((profile.get("legendary") or {}).get(skill, 0)) + 1
+    return None
+
+
+def legendary_stars(profile) -> int:
+    return sum(int(v) for v in (profile.get("legendary") or {}).values())
+
+
+# ---------------------------------------------------------------------------
+# The Lab Bench - brew looted ingredients into potions / one-delve elixirs. Needs
+# the Alchemy Lab. Ingredients ride at risk in the satchel, so brewing rewards
+# surviving the delve, not just clearing it.
+# ---------------------------------------------------------------------------
+def can_brew(profile, recipe_key: str) -> bool:
+    r = D.RECIPES.get(recipe_key)
+    if not r:
+        return False
+    have = profile.get("ingredients") or {}
+    return all(have.get(k, 0) >= n for k, n in r["cost"].items())
+
+
+def brew(profile, recipe_key: str) -> str | None:
+    """Consume ingredients to brew a recipe. Returns an error line, or None on success."""
+    r = D.RECIPES.get(recipe_key)
+    if not r:
+        return "No such recipe."
+    if not home_owned(profile, "alchemy_lab"):
+        return "You need an Alchemy Lab (a Breezehome upgrade) to brew."
+    if not can_brew(profile, recipe_key):
+        return "You lack the ingredients for that."
+    store = profile["ingredients"]
+    for k, n in r["cost"].items():
+        store[k] -= n
+        if store[k] <= 0:
+            del store[k]
+    makes = r["makes"]
+    if makes == "potion":
+        if profile["potions"] >= potion_cap(profile):
+            # refund gracefully rather than waste ingredients
+            for k, n in r["cost"].items():
+                store[k] = store.get(k, 0) + n
+            return "Your potion pockets are already full."
+        profile["potions"] += 1
+        return None
+    # otherwise a one-delve elixir, queued for the next delve (overwrites any queued)
+    effect = {"heart_delve": ("heart", 1), "soak_delve": ("soak", 10),
+              "fight_delve": ("fight", 6), "crit_delve": ("crit", 6)}.get(makes)
+    if effect:
+        profile["nextdelve"] = {effect[0]: effect[1]}
+    return None
+
+
+# ---------------------------------------------------------------------------
+# The Grindstone - temper weapon/armour past its tier with septims + looted
+# ingredients (dragon scales at the top). A clamp-proof septim/materials sink.
+# ---------------------------------------------------------------------------
+def temper_cost(grade: int) -> dict:
+    """Cost to go from `grade` to grade+1 (shared by weapon and armour)."""
+    idx = min(grade, len(D.TEMPER_COSTS) - 1)
+    return D.TEMPER_COSTS[idx]
+
+
+def temper(profile, slot: str) -> str | None:
+    if slot not in ("weapon", "armour"):
+        return "Temper what, exactly?"
+    grade = (profile.get("temper") or {}).get(slot, 0)
+    if grade >= TEMPER_MAX_GRADE:
+        return "That gear is honed as fine as the Grindstone allows."
+    cost = temper_cost(grade)
+    if profile["septims"] < cost["septims"]:
+        return f"Tempering costs {cost['septims']:,} septims - you have {profile['septims']:,}."
+    have = profile.get("ingredients") or {}
+    missing = [f"{n}× {D.INGREDIENTS[k]['name']}" for k, n in cost["mats"].items()
+               if have.get(k, 0) < n]
+    if missing:
+        return "You still need " + ", ".join(missing) + "."
+    profile["septims"] -= cost["septims"]
+    for k, n in cost["mats"].items():
+        have[k] -= n
+        if have[k] <= 0:
+            del have[k]
+    profile.setdefault("temper", {"weapon": 0, "armour": 0})[slot] = grade + 1
     return None

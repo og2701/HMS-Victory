@@ -707,6 +707,22 @@ def _sheet_text(profile) -> str:
         home_bits = [f"{D.HOME_ITEMS[k]['emoji']} {D.HOME_ITEMS[k]['name']}"
                      for k in profile["home"] if k in D.HOME_ITEMS]
         lines.append(f"**Property**: {'  ·  '.join(home_bits)}")
+    temper = profile.get("temper") or {}
+    if temper.get("weapon") or temper.get("armour"):
+        lines.append(f"**Tempering**: ⚔️ +{temper.get('weapon', 0)}  ·  🛡️ +{temper.get('armour', 0)} "
+                     f"(Grindstone grades)")
+    doc = profile.get("doctrines") or {}
+    if doc:
+        doc_bits = [f"{D.DOCTRINES[sk][ch]['emoji']} {D.DOCTRINES[sk][ch]['name']}"
+                    for sk, ch in doc.items() if ch in D.DOCTRINES.get(sk, {})]
+        lines.append(f"**Doctrines**: {'  ·  '.join(doc_bits)}")
+    if E.legendary_stars(profile):
+        lines.append(f"**Legendary**: {'⭐' * min(6, E.legendary_stars(profile))} "
+                     f"({E.legendary_stars(profile)} resets)")
+    wall = profile.get("dragon_wall") or []
+    if wall:
+        names = ", ".join(D.DRAGON_ROSTER[k]["name"] for k in wall if k in D.DRAGON_ROSTER)
+        lines.append(f"**🐲 Dragon Wall** ({len(wall)}/{len(D.DRAGON_ROSTER)}): {names}")
     lines += [
         "",
         f"**Deeds**: {st['delves']} delves · {st['clears']} cleared · {st['deaths']} deaths · "
@@ -723,7 +739,13 @@ async def _hub_character(interaction: Interaction):
     if profile is None:
         await _show_class_pick(interaction)
         return
-    await _edit_panel(interaction, _sheet_text(profile), [_back_row()])
+    row = discord.ui.ActionRow()
+    open_n = len(E.doctrine_choices_open(profile))
+    m_label = f"Masteries ({open_n})" if open_n else "Masteries"
+    row.add_item(_cb_btn(discord.ButtonStyle.primary if open_n else discord.ButtonStyle.secondary,
+                         m_label, "✨", _hub_masteries))
+    row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Back", "⬅️", _hub_root))
+    await _edit_panel(interaction, _sheet_text(profile), [row])
 
 
 # --- shop --------------------------------------------------------------------------
@@ -795,7 +817,10 @@ async def _hub_shop(interaction: Interaction, notice: str = ""):
         await _hub_shop(inter, notice=f"-# 👕 Re-fitted: you now wear **{new_style}** armour.")
     row.add_item(_cb_btn(discord.ButtonStyle.secondary, f"Go {other}", "👕", _swap))
     row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Property", "🏠", _hub_property))
-    await _edit_panel(interaction, text, [row, _back_row()])
+    craft = discord.ui.ActionRow()
+    craft.add_item(_cb_btn(discord.ButtonStyle.primary, "Grindstone", "🪓", _hub_grindstone))
+    craft.add_item(_cb_btn(discord.ButtonStyle.primary, "Lab Bench", "⚗️", _hub_alchemy))
+    await _edit_panel(interaction, text, [row, craft, _back_row()])
 
 
 # --- property (Breezehome and furnishings) -------------------------------------------
@@ -876,6 +901,214 @@ async def _hub_perks(interaction: Interaction, notice: str = ""):
         rows.append(srow)
     rows.append(_back_row())
     await _edit_panel(interaction, "\n".join(lines), rows)
+
+
+# --- masteries (Capstone Doctrines + Legendary Skills) ------------------------------
+_SKILL_LABELS = {"blade": "One-Handed", "marksman": "Marksman", "destruction": "Destruction",
+                 "sneak": "Sneak", "speech": "Speech", "lockpicking": "Lockpicking"}
+
+
+def _masteries_text(profile) -> str:
+    lines = ["## ✨ Masteries",
+             "-# Every skill you carry to **100** unlocks a permanent **Doctrine** - pick one of "
+             "two. Make a mastered skill **Legendary** to reset it to 15 for a ⭐ (the Doctrine "
+             "stays). This is how two maxed Dragonborn end up fighting differently.", ""]
+    chosen = profile.get("doctrines") or {}
+    if chosen:
+        lines.append("**Your Doctrines**")
+        for sk, ch in chosen.items():
+            doc = D.DOCTRINES[sk][ch]
+            lines.append(f"{doc['emoji']} **{doc['name']}** ({_SKILL_LABELS.get(sk, sk)}) - {doc['desc']}")
+        lines.append("")
+    stars = E.legendary_stars(profile)
+    if stars:
+        lines.append(f"⭐ **Legendary skills reset:** {stars}")
+        lines.append("")
+    open_choices = E.doctrine_choices_open(profile)
+    if open_choices:
+        lines.append("**Doctrines to choose** (a skill just hit 100):")
+        for sk in open_choices:
+            opts = D.DOCTRINES[sk]
+            pair = "  vs  ".join(f"{d['emoji']} {d['name']}" for d in opts.values())
+            lines.append(f"- {_SKILL_LABELS.get(sk, sk)}: {pair}")
+    if not open_choices and not chosen:
+        lines.append("-# No skill at 100 yet. Master one and its Doctrine unlocks here.")
+    return "\n".join(lines)
+
+
+async def _hub_masteries(interaction: Interaction, notice: str = ""):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None:
+        await _show_class_pick(interaction)
+        return
+    text = _masteries_text(profile)
+    if notice:
+        text += f"\n\n{notice}"
+    rows = []
+    open_choices = E.doctrine_choices_open(profile)
+    if open_choices:
+        dsel = discord.ui.Select(placeholder="Choose a Doctrine (permanent)...")
+        for sk in open_choices:
+            for ch, doc in D.DOCTRINES[sk].items():
+                dsel.add_option(label=f"{_SKILL_LABELS.get(sk, sk)}: {doc['name']}",
+                                value=f"{sk}:{ch}", emoji=doc["emoji"],
+                                description=doc["desc"][:100])
+
+        async def _on_doctrine(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            sk, ch = dsel.values[0].split(":", 1)
+            err = E.choose_doctrine(p, sk, ch)
+            if err is None:
+                E.save_profile(p)
+                doc = D.DOCTRINES[sk][ch]
+                await _hub_masteries(inter, notice=f"-# ✅ **{doc['name']}** learned - it is yours for good.")
+            else:
+                await _hub_masteries(inter, notice=f"-# {err}")
+        dsel.callback = _on_doctrine
+        drow = discord.ui.ActionRow()
+        drow.add_item(dsel)
+        rows.append(drow)
+    ready = E.legendary_ready(profile)
+    if ready:
+        lsel = discord.ui.Select(placeholder="Make a skill Legendary (reset to 15 for a ⭐)...")
+        for sk in ready:
+            lsel.add_option(label=f"{_SKILL_LABELS.get(sk, sk)} → Legendary",
+                            value=sk, emoji="⭐",
+                            description="Resets this skill to 15. Keeps its Doctrine.")
+
+        async def _on_legendary(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            sk = lsel.values[0]
+            err = E.make_legendary(p, sk)
+            if err is None:
+                E.save_profile(p)
+                await _hub_masteries(inter, notice=f"-# ⭐ **{_SKILL_LABELS.get(sk, sk)}** is now Legendary. "
+                                                   f"The climb begins again.")
+            else:
+                await _hub_masteries(inter, notice=f"-# {err}")
+        lsel.callback = _on_legendary
+        lrow = discord.ui.ActionRow()
+        lrow.add_item(lsel)
+        rows.append(lrow)
+    rows.append(_back_row())
+    await _edit_panel(interaction, text, rows)
+
+
+# --- the Lab Bench (brewing) --------------------------------------------------------
+def _alchemy_text(profile) -> str:
+    lines = ["## ⚗️ The Lab Bench",
+             "-# Brew looted ingredients into potions and one-delve elixirs. Ingredients ride "
+             "at risk in your satchel, so it pays to walk out alive.", ""]
+    pouch = profile.get("ingredients") or {}
+    if pouch:
+        bits = [f"{D.INGREDIENTS[k]['emoji']} {D.INGREDIENTS[k]['name']} ×{n}"
+                for k, n in sorted(pouch.items()) if k in D.INGREDIENTS]
+        lines.append("**Your pouch:** " + "  ·  ".join(bits))
+    else:
+        lines.append("**Your pouch is empty.** Elites, bounties and dragons drop the good stuff.")
+    lines.append("")
+    if not E.home_owned(profile, "alchemy_lab"):
+        lines.append("-# 🔒 You need an **Alchemy Lab** (a Breezehome upgrade in Property) to brew.")
+        return "\n".join(lines)
+    lines.append("**Recipes**")
+    for key, r in D.RECIPES.items():
+        cost = "  ".join(f"{D.INGREDIENTS[k]['emoji']}×{n}" for k, n in r["cost"].items())
+        tick = "✅" if E.can_brew(profile, key) else "◻️"
+        lines.append(f"{tick} {r['emoji']} **{r['name']}** - {r['desc']}  ({cost})")
+    return "\n".join(lines)
+
+
+async def _hub_alchemy(interaction: Interaction, notice: str = ""):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None:
+        await _show_class_pick(interaction)
+        return
+    text = _alchemy_text(profile)
+    if notice:
+        text += f"\n\n{notice}"
+    rows = []
+    if E.home_owned(profile, "alchemy_lab"):
+        brewable = [k for k in D.RECIPES if E.can_brew(profile, k)]
+        if brewable:
+            sel = discord.ui.Select(placeholder="Brew a recipe...")
+            for k in brewable:
+                r = D.RECIPES[k]
+                sel.add_option(label=r["name"], value=k, emoji=r["emoji"],
+                               description=r["desc"][:100])
+
+            async def _on_brew(inter: Interaction):
+                p = E.get_profile(inter.user.id)
+                err = E.brew(p, sel.values[0])
+                if err is None:
+                    E.save_profile(p)
+                    r = D.RECIPES[sel.values[0]]
+                    await _hub_alchemy(inter, notice=f"-# {r['emoji']} Brewed **{r['name']}**.")
+                else:
+                    await _hub_alchemy(inter, notice=f"-# {err}")
+            sel.callback = _on_brew
+            srow = discord.ui.ActionRow()
+            srow.add_item(sel)
+            rows.append(srow)
+    back = discord.ui.ActionRow()
+    back.add_item(_cb_btn(discord.ButtonStyle.secondary, "Back to shop", "🏪",
+                          lambda i: _hub_shop(i)))
+    rows += [back, _back_row()]
+    await _edit_panel(interaction, text, rows)
+
+
+# --- the Grindstone (tempering) -----------------------------------------------------
+def _grindstone_text(profile) -> str:
+    temper = profile.get("temper") or {"weapon": 0, "armour": 0}
+    lines = ["## 🪓 The Grindstone",
+             "-# Hone gear past its tier with septims and looted materials. Bonuses that the "
+             "86% cap can't swallow: sharper weapons feed **Overkill**, tougher armour soaks more.", "",
+             f"💰 Your septims: **{profile['septims']:,}**"]
+    pouch = profile.get("ingredients") or {}
+    if pouch:
+        bits = [f"{D.INGREDIENTS[k]['emoji']}×{n}" for k, n in sorted(pouch.items()) if k in D.INGREDIENTS]
+        lines.append("🎒 Materials: " + "  ".join(bits))
+    lines.append("")
+    for slot, emoji in (("weapon", "⚔️"), ("armour", "🛡️")):
+        g = temper.get(slot, 0)
+        star = "✦" * g + "·" * (E.TEMPER_MAX_GRADE - g)
+        if g >= E.TEMPER_MAX_GRADE:
+            lines.append(f"{emoji} **{slot.title()}** [{star}] - honed to perfection.")
+        else:
+            c = E.temper_cost(g)
+            mats = "  ".join(f"{D.INGREDIENTS[k]['emoji']}×{n}" for k, n in c["mats"].items())
+            eff = (f"+{E.TEMPER_FIGHT_PER_GRADE}% attack" if slot == "weapon"
+                   else f"+{E.TEMPER_SOAK_PER_GRADE}% soak")
+            lines.append(f"{emoji} **{slot.title()}** [{star}] → grade {g + 1} ({eff}): "
+                         f"{c['septims']:,} septims + {mats}")
+    return "\n".join(lines)
+
+
+async def _hub_grindstone(interaction: Interaction, notice: str = ""):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None:
+        await _show_class_pick(interaction)
+        return
+    text = _grindstone_text(profile)
+    if notice:
+        text += f"\n\n{notice}"
+    row = discord.ui.ActionRow()
+    for slot, emoji in (("weapon", "⚔️"), ("armour", "🛡️")):
+        if (profile.get("temper") or {}).get(slot, 0) < E.TEMPER_MAX_GRADE:
+            async def _temper(inter: Interaction, s=slot):
+                p = E.get_profile(inter.user.id)
+                err = E.temper(p, s)
+                if err is None:
+                    E.save_profile(p)
+                    await _hub_grindstone(inter, notice=f"-# 🪓 Your {s} rings sharper - grade "
+                                                        f"{p['temper'][s]}.")
+                else:
+                    await _hub_grindstone(inter, notice=f"-# {err}")
+            row.add_item(_cb_btn(discord.ButtonStyle.primary, f"Temper {slot}", emoji, _temper))
+    back = discord.ui.ActionRow()
+    back.add_item(_cb_btn(discord.ButtonStyle.secondary, "Back to shop", "🏪",
+                          lambda i: _hub_shop(i)))
+    rows = ([row] if row.children else []) + [back, _back_row()]
+    await _edit_panel(interaction, text, rows)
 
 
 # --- the daily delve ---------------------------------------------------------------
