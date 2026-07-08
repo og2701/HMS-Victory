@@ -1358,15 +1358,6 @@ async def _hub_daily(interaction: Interaction):
     await _edit_panel(interaction, text, [row, _back_row()])
 
 
-_FIGSP = " "          # figure space: digit-width, and Discord won't collapse it
-
-
-def _rj(value, width: int) -> str:
-    """Right-justify with figure spaces so numeric columns line up in Discord's
-    proportional (but tabular-digit) font."""
-    return str(value).rjust(width, _FIGSP)
-
-
 # --- rankings ------------------------------------------------------------------------
 async def _hub_rankings(interaction: Interaction):
     profiles = sorted(E.all_profiles().values(), key=lambda p: p["xp"], reverse=True)[:10]
@@ -1376,7 +1367,7 @@ async def _hub_rankings(interaction: Interaction):
     medals = ["🥇", "🥈", "🥉"]
     for i, p in enumerate(profiles):
         cls = D.STONES[p["stone"]]
-        rank = medals[i] if i < len(medals) else f"{_rj(i + 1, 2)}."
+        rank = medals[i] if i < len(medals) else f"`{i + 1:>2}.`"
         st = p["stats"]
         flair = ""
         if p.get("alduin_slain"):
@@ -1386,11 +1377,10 @@ async def _hub_rankings(interaction: Interaction):
         if E.legendary_stars(p):
             flair += f" ✨{E.legendary_stars(p)}"
         best = E.soulcairn_best(p)
-        flair += f" 💀{best}" if best else ""
-        # numbers on the LEFT (figure-space padded so they align), ragged name trails right
-        stats = (f"Lv{_rj(E.level(p), 2)}  🐉{_rj(st['dragons'], 2)}  "
-                 f"🏰{_rj(st['clears'], 2)}  💰{_rj(format(p['septims'], ','), 7)}")
-        lines.append(f"{rank}  {stats}   {cls['emoji']} **{p['name']}**{flair}")
+        cairn = f"  ·  💀 {best}" if best else ""
+        lines.append(f"{rank} {cls['emoji']} **{p['name']}**{flair} - Lv {E.level(p)}  ·  "
+                     f"🐉 {st['dragons']}  ·  🏰 {st['clears']}  ·  "
+                     f"💰 {p['septims']:,}{cairn}")
     obit = E.latest_obituary()
     if obit:
         lines += ["", obit]
