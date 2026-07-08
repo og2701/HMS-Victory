@@ -275,6 +275,7 @@ EARNED_SOURCES_FILE = os.path.join(JSON_DATA_DIR, "earned_sources.json")
 WORDLE_STATE_FILE = os.path.join(JSON_DATA_DIR, "wordle_state.json")
 SKYRIM_PROFILES_FILE = os.path.join(JSON_DATA_DIR, "skyrim_profiles.json")  # persistent Dovahkiin characters
 SKYRIM_DAILY_FILE = os.path.join(JSON_DATA_DIR, "skyrim_daily.json")  # today's shared-dungeon results board
+SKYRIM_GRAVEYARD_FILE = os.path.join(JSON_DATA_DIR, "skyrim_graveyard.json")  # fallen adventurers (corpses + obituary)
 # Fletcher bot posts the same message-link summary HMS does; auto-delete its duplicate.
 FLETCHER_DEDUPE_ENABLED = True
 FLETCHER_BOT_ID = None            # set to Fletcher's user id for an exact match (optional)

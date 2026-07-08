@@ -165,8 +165,8 @@ def test_build_rooms_shape():
     for loc_key, loc in D.LOCATIONS.items():
         for _ in range(40):
             rooms = E.build_rooms(loc_key)
-            # base rooms, +1 optional word wall, +1 optional Fork
-            assert loc["rooms"] <= len(rooms) <= loc["rooms"] + 2
+            # base rooms, +1 each optional: word wall, Fork, Fallen corpse
+            assert loc["rooms"] <= len(rooms) <= loc["rooms"] + 3
             assert rooms[-1]["kind"] == "enemy" and rooms[-1]["boss"]
             assert rooms[-1]["key"] == loc["boss"]
             if loc.get("word_wall"):
@@ -645,6 +645,158 @@ def test_shop():
     p["stats"]["dragons"] = D.GEAR_TIERS[-1]["dragons"]
     assert E.buy_gear(p, "weapon") is None
     assert E.buy_gear(p, "weapon") == "Nothing finer exists in Tamriel."
+
+
+# ---------------------------------------------------------------------------
+# Expansion: Overkill, affixes, named dragons, shouts, doctrines, crafting, endgame
+# ---------------------------------------------------------------------------
+def test_overkill_converts_surplus_to_crit():
+    p = _profile("warrior")
+    for st in D.STYLES:
+        p["skills"][st] = 100
+    p["weapon_tier"] = 6
+    # a maxed warrior vs a weak foe blows past the cap -> real crit bonus, clamped
+    assert E.fight_pct(p, "skeever", "blade") == E.ROLL_MAX
+    over = E.overkill_crit(p, "skeever", "blade")
+    assert 0 < over <= E.OVERKILL_CRIT_CAP / 100.0
+    assert E.crit_chance(p, "skeever", "blade") > E.CRIT_CHANCE
+    # a fresh character at the low end gets no overkill
+    assert E.overkill_crit(_profile(), "troll", "destruction") == 0.0
+
+
+def test_named_dragon_weekly_and_deltas():
+    d1 = E.dragon_of_the_week("2026-07-08")
+    assert d1 in D.DRAGON_ROSTER
+    assert E.dragon_of_the_week("2026-07-08") == d1          # deterministic within a week
+    p = _profile()
+    rooms = [{"kind": "enemy", "key": "dragon", "boss": True, "resolved": False}]
+    d = E.Delve(p["user_id"], "T", 0, "ancients_ascent", rooms, hearts=5,
+                shout_charges=0, dragon="odahviing")
+    assert d.enemy_hp == D.ENEMIES["dragon"]["hp"] + D.DRAGON_ROSTER["odahviing"]["hp"]
+    assert E.named_dragon(d)["name"] == "Odahviing"
+
+
+def test_skyfire_airborne_penalty():
+    p = _profile()
+    for st in D.STYLES:
+        p["skills"][st] = 60
+    rooms = [{"kind": "enemy", "key": "dragon", "boss": True, "resolved": False}]
+    d = E.Delve(p["user_id"], "T", 0, "ancients_ascent", rooms, hearts=5, shout_charges=1)
+    air_blade = E.fight_pct(p, "dragon", "blade", d)
+    air_bow = E.fight_pct(p, "dragon", "marksman", d)
+    assert air_bow > air_blade                              # bow is the sky weapon
+    d.grounded = True
+    assert E.fight_pct(p, "dragon", "blade", d) > air_blade  # grounding rewards melee
+
+
+def test_shout_loadout_costs():
+    p = _profile()
+    p["words"] = 3
+    # FUS RO DAH deals 2 true damage to a dragon and grounds it
+    rooms = [{"kind": "enemy", "key": "dragon", "boss": True, "resolved": False}]
+    d = E.Delve(p["user_id"], "T", 0, "ancients_ascent", rooms, hearts=5, shout_charges=3)
+    hp = d.enemy_hp
+    d.act_shout(p, 3)
+    assert d.enemy_hp == hp - 2 and d.grounded and d.shout_charges == 0
+    # FUS (1) grounds without wasting the whole pool
+    d2 = E.Delve(p["user_id"], "T", 0, "ancients_ascent",
+                 [{"kind": "enemy", "key": "dragon", "boss": True, "resolved": False}],
+                 hearts=5, shout_charges=3)
+    d2.act_shout(p, 1)
+    assert d2.grounded and d2.shout_charges == 2
+
+
+def test_marked_affix_ward_and_venom():
+    p = _profile("mage")
+    p["skills"]["destruction"] = 80
+    # a Warded foe absorbs the first non-fire hit
+    rooms = [{"kind": "enemy", "key": "draugr", "boss": False, "resolved": False, "affix": "warded"},
+             {"kind": "enemy", "key": "skeever", "boss": False, "resolved": False}]
+    d = E.Delve(p["user_id"], "T", 0, "bleak_falls", rooms, hearts=3, shout_charges=0)
+    hp = d.enemy_hp
+    E.random = _fixed_rolls(0.0)                    # the blow lands...
+    try:
+        d.act_attack(p, "blade")                   # ...but the ward eats it
+        assert d.enemy_hp == hp and d.room.get("ward_broken")
+    finally:
+        _restore_random()
+
+
+def test_doctrines_and_legendary():
+    p = _profile()
+    for st in E.SKILLS:
+        p["skills"][st] = 100
+    assert "blade" in E.doctrine_choices_open(p)
+    assert E.choose_doctrine(p, "blade", "warmaster") is None
+    assert E.choose_doctrine(p, "blade", "warmaster") is not None   # permanent, no re-pick
+    # warmaster adds blade attack (feeds overkill at the ceiling)
+    q = _profile()
+    q["skills"]["blade"] = 100
+    base = E._fight_raw(q, "bandit", "blade")
+    q["doctrines"] = {"blade": "warmaster"}
+    assert E._fight_raw(q, "bandit", "blade") == base + 8
+    # legendary resets the skill, keeps the doctrine, banks a star
+    assert E.make_legendary(p, "blade") is None
+    assert p["skills"]["blade"] == 15 and E.legendary_stars(p) == 1
+    assert p["doctrines"]["blade"] == "warmaster"
+
+
+def test_alchemy_and_tempering():
+    p = _profile()
+    p["home"] = ["breezehome", "alchemy_lab"]
+    p["ingredients"] = {"nightshade": 1, "hagraven_claw": 1}
+    assert E.can_brew(p, "fury")
+    assert E.brew(p, "fury") is None
+    assert p["nextdelve"] == {"fight": 6}          # queued for the next delve
+    assert "nightshade" not in p["ingredients"]    # consumed
+    # tempering spends septims + materials and raises the grade
+    p["septims"] = 1000
+    p["ingredients"] = {"bone_meal": 2}
+    assert E.temper(p, "weapon") is None
+    assert p["temper"]["weapon"] == 1
+    assert E.temper_fight_bonus(p) == E.TEMPER_FIGHT_PER_GRADE
+
+
+def test_soulcairn_gated_and_drains():
+    p = _profile()
+    assert not E.soulcairn_unlocked(p)             # need Alduin down first
+    p["alduin_slain"] = 1
+    p["xp"] = 60_000
+    assert E.soulcairn_available(p)
+    d = E.start_soulcairn(p, 0)
+    assert d.kind == "soulcairn" and d.depth == 0
+    assert not E.soulcairn_available(p)            # one attempt per day
+    d.depth = 5
+    base = E._fight_raw(p, "draugr", "blade")      # no delve
+    drained = E._fight_raw(p, "draugr", "blade", d)
+    assert drained <= base - E.SOULCAIRN_DRAIN * 5
+
+
+def test_factions_weekly_task():
+    p = _profile()
+    p["xp"] = 3000                                 # level 8+
+    assert E.join_faction(p, "companions") is None
+    goal, prog, done = E.faction_progress(p)
+    assert prog == 0 and not done
+    p["stats"]["kills"] = p["faction"]["snap"] + goal
+    assert E.faction_progress(p)[2]                # done
+    res = E.claim_faction(p)
+    assert res and "favour" in res
+    assert E.faction_favour(p) >= 1
+    assert "already claimed" in E.claim_faction(p).lower()   # once a week
+
+
+def test_expedition_roundtrip():
+    p = _profile()
+    p["xp"] = 3000
+    assert E.start_expedition(p, "roads") is None
+    assert E.expedition(p)["key"] == "roads"
+    assert E.start_expedition(p, "hunt") is not None   # only one at a time
+    p["expedition"]["return"] = "2000-01-01"           # force it home
+    assert E.expedition_ready(p)
+    before = p["septims"]
+    msg = E.collect_expedition(p)
+    assert msg and p["septims"] > before and p["expedition"] is None
 
 
 if __name__ == "__main__":

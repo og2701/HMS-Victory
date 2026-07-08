@@ -170,7 +170,12 @@ def _delve_text(delve: E.Delve, profile) -> str:
                          f"+{E.AMBUSH_BONUS}%, or slip past unseen.")
     else:
         ev = D.EVENTS[r["key"]]
-        lines.append(f"{ev['emoji']} {ev['text']}")
+        text = ev["text"]
+        if r["key"] == "fallen" and r.get("corpse"):
+            who = r["corpse"].get("name", "a fallen soul")
+            tag = " (their end is fresh)" if r["corpse"].get("real") else ""
+            text = f"A body slumps against the wall - **{who}**{tag}, satchel still in cold hands."
+        lines.append(f"{ev['emoji']} {text}")
     hint = delve.next_hint()
     if hint:
         lines.append(f"-# {hint}")
@@ -313,6 +318,7 @@ _EVENT_CHOICES = {
     "giant": [("🚶", "Back away slowly", "retreat"), ("🧀", "About that cheese...", "approach")],
     "knee_trap": [("🚶", "Limp onward", "continue")],
     "fork": [("🪙", "The deep way", "deep"), ("🚶", "The safe way", "safe")],
+    "fallen": [("💰", "Loot the satchel", "loot"), ("⚰️", "Lay them to rest", "honor")],
     "mudcrab": [("🦀", "Trade with the crab", "trade"), ("🚶", "Move on", "skip")],
     "nazeem": [("😤", "\"Yes, actually.\"", "yes"), ("😮‍💨", "Sigh deeply", "sigh")],
     "adoring_fan": [("🤩", "Let him follow", "adopt"), ("👉", "Send him home", "skip")],
@@ -444,9 +450,18 @@ def _hub_rows(profile):
     daily_label = "Daily Delve" if E.daily_available(profile) else "Daily Results"
     row2.add_item(_cb_btn(discord.ButtonStyle.success if E.daily_available(profile)
                           else discord.ButtonStyle.secondary, daily_label, "📅", _hub_daily))
-    row2.add_item(_cb_btn(discord.ButtonStyle.secondary, "Rankings", "🏆", _hub_rankings))
-    row2.add_item(_cb_btn(discord.ButtonStyle.secondary, "How it works", "📖", _hub_help))
-    return [row1, row2]
+    # Factions + Expeditions light up when there's something to collect this week/day
+    fac_ready = profile.get("allegiance") and E.faction_progress(profile)[2] \
+        and not (profile.get("faction") or {}).get("claimed")
+    row2.add_item(_cb_btn(discord.ButtonStyle.success if fac_ready else discord.ButtonStyle.secondary,
+                          "Factions", "🏰", _hub_factions))
+    exp_ready = E.expedition_ready(profile)
+    row2.add_item(_cb_btn(discord.ButtonStyle.success if exp_ready else discord.ButtonStyle.secondary,
+                          "Expedition", "🧭", _hub_expedition))
+    row3 = discord.ui.ActionRow()
+    row3.add_item(_cb_btn(discord.ButtonStyle.secondary, "Rankings", "🏆", _hub_rankings))
+    row3.add_item(_cb_btn(discord.ButtonStyle.secondary, "How it works", "📖", _hub_help))
+    return [row1, row2, row3]
 
 
 def _cb_btn(style, label, emoji, cb):
@@ -1134,6 +1149,150 @@ async def _hub_grindstone(interaction: Interaction, notice: str = ""):
     await _edit_panel(interaction, text, rows)
 
 
+# --- NPC factions -------------------------------------------------------------------
+def _factions_text(profile) -> str:
+    lines = ["## 🏰 Factions of Skyrim",
+             "-# Swear to a faction and each week they set you a task in a skill the endgame "
+             "tends to forget. Finish it for favour, rank and coin.", ""]
+    fac_key = profile.get("allegiance")
+    if fac_key in D.FACTIONS:
+        fac = D.FACTIONS[fac_key]
+        goal, prog, done = E.faction_progress(profile)
+        rank = E.faction_rank(profile)
+        lines.append(f"{fac['emoji']} **{fac['name']}** - you are **{rank}** "
+                     f"(favour {E.faction_favour(profile)})")
+        bar = _bar(min(prog, goal), 0, goal, 10)
+        state = "✅ ready to claim" if done else f"{prog}/{goal}"
+        lines.append(f"-# This week: **{goal} {fac['verb']}**  {bar}  {state}")
+        lines.append("")
+        lines.append("**The word from the other guilds this week:**")
+        for name, n in E.faction_rivals(profile):
+            lines.append(f"-# {name} has been busy - {n} deeds done.")
+    else:
+        if E.level(profile) < int(getattr(E.config, "SKYRIM_DRAGON_MIN_LEVEL", 8)):
+            lines.append("-# 🔒 The great factions only take proven adventurers (level 8+).")
+        else:
+            lines.append("**Choose an allegiance:**")
+            for k, fac in D.FACTIONS.items():
+                lines.append(f"{fac['emoji']} **{fac['name']}** ({fac['seat']}) - {fac['blurb']}  "
+                             f"Weekly task: {fac['goal']} {fac['verb']}.")
+    return "\n".join(lines)
+
+
+async def _hub_factions(interaction: Interaction, notice: str = ""):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None:
+        await _show_class_pick(interaction)
+        return
+    text = _factions_text(profile)
+    if notice:
+        text += f"\n\n{notice}"
+    rows = []
+    fac_key = profile.get("allegiance")
+    can_join = E.level(profile) >= int(getattr(E.config, "SKYRIM_DRAGON_MIN_LEVEL", 8))
+    if fac_key in D.FACTIONS:
+        _g, _p, done = E.faction_progress(profile)
+        if done:
+            row = discord.ui.ActionRow()
+
+            async def _claim(inter: Interaction):
+                p = E.get_profile(inter.user.id)
+                res = E.claim_faction(p)
+                E.save_profile(p)
+                await _hub_factions(inter, notice=f"-# 🏅 {res}" if res and "favour" in res
+                                    else f"-# {res}")
+            row.add_item(_cb_btn(discord.ButtonStyle.success, "Claim this week's favour", "🏅", _claim))
+            rows.append(row)
+    elif can_join:
+        sel = discord.ui.Select(placeholder="Swear an allegiance...")
+        for k, fac in D.FACTIONS.items():
+            sel.add_option(label=fac["name"], value=k, emoji=fac["emoji"],
+                           description=f"Weekly: {fac['goal']} {fac['verb']}"[:100])
+
+        async def _join(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            err = E.join_faction(p, sel.values[0])
+            if err is None:
+                E.save_profile(p)
+                await _hub_factions(inter, notice=f"-# 🤝 You run with {D.FACTIONS[sel.values[0]]['name']} now.")
+            else:
+                await _hub_factions(inter, notice=f"-# {err}")
+        sel.callback = _join
+        srow = discord.ui.ActionRow()
+        srow.add_item(sel)
+        rows.append(srow)
+    rows.append(_back_row())
+    await _edit_panel(interaction, text, rows)
+
+
+# --- idle expeditions ---------------------------------------------------------------
+def _expedition_text(profile) -> str:
+    lines = ["## 🧭 Expeditions",
+             "-# Send your housecarl on an errand for a day or more, then collect the haul when "
+             "you next open the hub. It runs while you're away - no delves spent.", ""]
+    e = E.expedition(profile)
+    if e:
+        exp = D.EXPEDITIONS[e["key"]]
+        carl = e.get("carl", "Your housecarl")
+        if E.expedition_ready(profile):
+            lines.append(f"✅ **{carl}** is back from **{exp['name']}** - collect the haul below.")
+        else:
+            lines.append(f"⏳ **{carl}** is away on **{exp['name']}** - returns **{e['return']}** (UK).")
+    elif E.level(profile) < int(getattr(E.config, "SKYRIM_DRAGON_MIN_LEVEL", 8)):
+        lines.append("-# 🔒 You earn a housecarl to send at level 8.")
+    else:
+        lines.append("**Send your housecarl:**")
+        for k, exp in D.EXPEDITIONS.items():
+            ing = f"  ·  {D.INGREDIENTS[exp['ingredient']]['emoji']} {D.INGREDIENTS[exp['ingredient']]['name']}" \
+                  if exp.get("ingredient") else ""
+            lines.append(f"{exp['emoji']} **{exp['name']}** ({exp['days']}d) - "
+                         f"~{exp['septims']} septims, {exp['xp']} XP{ing}. {exp['desc']}")
+    return "\n".join(lines)
+
+
+async def _hub_expedition(interaction: Interaction, notice: str = ""):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None:
+        await _show_class_pick(interaction)
+        return
+    text = _expedition_text(profile)
+    if notice:
+        text += f"\n\n{notice}"
+    rows = []
+    e = E.expedition(profile)
+    can = E.level(profile) >= int(getattr(E.config, "SKYRIM_DRAGON_MIN_LEVEL", 8))
+    if e and E.expedition_ready(profile):
+        row = discord.ui.ActionRow()
+
+        async def _collect(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            res = E.collect_expedition(p)
+            E.save_profile(p)
+            await _hub_expedition(inter, notice=f"-# 🎁 {res}")
+        row.add_item(_cb_btn(discord.ButtonStyle.success, "Collect the haul", "🎁", _collect))
+        rows.append(row)
+    elif not e and can:
+        sel = discord.ui.Select(placeholder="Send an expedition...")
+        for k, exp in D.EXPEDITIONS.items():
+            sel.add_option(label=f"{exp['name']} ({exp['days']}d)", value=k, emoji=exp["emoji"],
+                           description=exp["desc"][:100])
+
+        async def _send(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            err = E.start_expedition(p, sel.values[0])
+            if err is None:
+                E.save_profile(p)
+                await _hub_expedition(inter, notice=f"-# 🧭 Off they go on **{D.EXPEDITIONS[sel.values[0]]['name']}**.")
+            else:
+                await _hub_expedition(inter, notice=f"-# {err}")
+        sel.callback = _send
+        srow = discord.ui.ActionRow()
+        srow.add_item(sel)
+        rows.append(srow)
+    rows.append(_back_row())
+    await _edit_panel(interaction, text, rows)
+
+
 # --- the daily delve ---------------------------------------------------------------
 def _daily_results_text() -> str:
     loc = E.daily_location()
@@ -1207,9 +1366,16 @@ async def _hub_rankings(interaction: Interaction):
             flair += " ⭐"
         if E.home_owned(p, "trophy_room"):
             flair += " 🏆"
+        if E.legendary_stars(p):
+            flair += f" ✨{E.legendary_stars(p)}"
+        best = E.soulcairn_best(p)
+        cairn = f"  ·  💀 depth {best}" if best else ""
         lines.append(f"{rank} {cls['emoji']} **{p['name']}**{flair} - Lv {E.level(p)}  ·  "
                      f"🐉 {st['dragons']}  ·  🏰 {st['clears']} cleared  ·  "
-                     f"💰 {p['septims']:,}")
+                     f"💰 {p['septims']:,}{cairn}")
+    obit = E.latest_obituary()
+    if obit:
+        lines += ["", obit]
     await _edit_panel(interaction, "\n".join(lines), [_back_row()])
 
 
@@ -1251,6 +1417,22 @@ def _help_text() -> str:
         "**🌑 Alduin** - at level 20, with the full Shout and 5 dragons down, Skuldafn "
         "opens. One attempt per day. He takes wing mid-fight; only the Voice brings him "
         "back down. Slay him for the ⭐ title.\n\n"
+        "**⚡ Overkill** - once your odds are pinned at the cap, the surplus becomes bonus "
+        "**crit** (shown on the button). Gear, tempering, affinity and grounding still matter "
+        "at the top.\n"
+        "**Elite foes** - rare **affixed** enemies (Warded needs Fire, Bonebound shrugs off "
+        "arrows, Venomous bleeds into the next room...) are telegraphed a room ahead. Bounties "
+        "still pay triple.\n"
+        "**The Voice** - **FUS** grounds/staggers (1 charge), **FUS RO** flattens a room (2), "
+        "**FUS RO DAH** deals 2 damage to anything (3). Ration the pool. A **week's dragon** "
+        "rotates the roster; airborne dragons need a **bow** or a shout.\n"
+        "**Masteries** - carry a skill to 100 for a permanent **Doctrine** (pick one of two); "
+        "make it **Legendary** to reset it to 15 for a ⭐.\n"
+        "**Crafting** - kills drop **ingredients** into your at-risk satchel; brew them at the "
+        "**Lab Bench**, or feed them to the **Grindstone** to temper gear past its tier.\n"
+        "**More to do** - swear to a **Faction** for weekly tasks, send a housecarl on an "
+        "**Expedition**, loot **Fallen Adventurers**, brave the **Forks** and **Mimics**, and "
+        "once Alduin is down, descend the endless **Soul Cairn** (one attempt a day).\n\n"
         f"-# {getattr(config, 'SKYRIM_DELVES_PER_DAY', 3)} delves per day, reset at "
         "midnight (UK). No UKPence involved anywhere - glory only."
     )

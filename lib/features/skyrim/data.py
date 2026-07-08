@@ -427,6 +427,8 @@ EVENTS = {
     "fork": {"weight": 0, "emoji": "🔀", "art": "fork",           # placed, never drawn
              "text": "The passage splits. A **low, safe way** curves toward the exit - and a "
                      "**deep way** drops into the dark, where the air smells of gold and trouble."},
+    "fallen": {"weight": 0, "emoji": "⚰️", "art": "fallen",       # placed from the graveyard
+               "text": "A body slumps against the wall, satchel still clutched in cold hands."},
 }
 
 M_AIQ_LINES = [
@@ -764,6 +766,51 @@ DOCTRINES = {
                      "desc": "+1 potion pocket."},
     },
 }
+
+# ---------------------------------------------------------------------------
+# NPC Factions - a light allegiance you swear at Lv 8+. Each week your faction sets
+# a task built from a verb the endgame maths tends to abandon; complete it for favour
+# (a rank ladder + a septim/XP stipend). The rival factions' standings are NPC-
+# simulated and deterministic-by-week, so the world feels populated with only a few
+# real players. Deliberately light: no guild-vs-guild backend (that's for the
+# standalone bot); this is flavour + a reason to use your neglected skills.
+# ---------------------------------------------------------------------------
+FACTIONS = {
+    "companions": {"name": "The Companions", "emoji": "🛡️", "stat": "kills", "goal": 40,
+                   "verb": "killing blows", "seat": "Jorrvaskr, Whiterun",
+                   "blurb": "Warriors of honour. They respect a body count."},
+    "thieves": {"name": "The Thieves Guild", "emoji": "🗝️", "stat": "sneaks", "goal": 14,
+                "verb": "clean sneaks", "seat": "The Ratway, Riften",
+                "blurb": "Shadows and profit. Be unseen, be paid."},
+    "college": {"name": "College of Winterhold", "emoji": "🔮", "stat": "persuades", "goal": 12,
+                "verb": "parleys won", "seat": "Winterhold",
+                "blurb": "Scholars who would rather talk than fight. Usually."},
+}
+FACTION_RANKS = ["Initiate", "Member", "Sworn", "Champion", "Harbinger"]
+FACTION_NPC_RIVALS = ["Vilkas", "Brynjolf", "Tolfdir", "Aela", "Karliah", "Faralda",
+                      "Njada", "Delvin", "Sergius"]
+
+# ---------------------------------------------------------------------------
+# Idle Expeditions - send your housecarl on a multi-day errand and collect the haul
+# when they return. Date-based (whole UK days), collected only when you open the hub,
+# so nothing is ever posted on a schedule. The idle complement to active delves - it
+# answers "what is there to do once my delves are done today?".
+# ---------------------------------------------------------------------------
+EXPEDITIONS = {
+    "roads":  {"name": "Patrol the roads", "emoji": "🛡️", "days": 1, "septims": 350, "xp": 90,
+               "ingredient": None, "desc": "A day guarding the trade road. Steady, safe coin."},
+    "hunt":   {"name": "Hunt the Reach", "emoji": "🏹", "days": 2, "septims": 850, "xp": 220,
+               "ingredient": "troll_fat", "desc": "Two days hunting game and trolls in the hills."},
+    "ruin":   {"name": "Chart a far ruin", "emoji": "🗺️", "days": 3, "septims": 1700, "xp": 480,
+               "ingredient": "void_salts", "desc": "Three days mapping a distant barrow. Real spoils."},
+}
+HOUSECARLS = ["Lydia", "Jordis", "Argis", "Iona", "Valdimar", "Rayya"]
+
+# NPC names for auto-generated Fallen Adventurer corpses (so death-content appears
+# even with only a few live players). Real players' deaths are used first.
+NPC_FALLEN = ["Bjorn One-Eye", "Ingrid the Lost", "Ralof's cousin", "Sven the Bard",
+              "Mjoll's rival", "a nameless sellsword", "Gjalund of Dawnstar",
+              "Hroki Fair-Hair", "an Imperial deserter"]
 
 # ---------------------------------------------------------------------------
 # Property - Belethor's septim sinks. Breezehome first, then furnishings.

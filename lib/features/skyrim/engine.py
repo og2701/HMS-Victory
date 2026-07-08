@@ -62,6 +62,7 @@ LOCKED_CHEST_CHANCE = 0.25           # chance a chest room is master-locked (Loc
 MIMIC_CHANCE = 0.18                  # chance a chest room is secretly a Mimic (it bites)
 FORK_CHANCE = 0.45                   # chance a delve offers a branching Fork before the boss
 SOULCAIRN_DRAIN = 2                  # attack % the Soul Cairn steals per depth descended
+FALLEN_CHANCE = 0.20                 # chance a delve holds a Fallen Adventurer's corpse
 SKILLS = ("blade", "marksman", "destruction", "sneak", "speech", "lockpicking")
 # Tempering (The Grindstone): gear can be sharpened past its tier with septims +
 # looted materials. Grades stack ON TOP of tier, and the fight bonus deliberately
@@ -271,6 +272,7 @@ def _fight_raw(profile, enemy_key: str, style: str, delve=None) -> float:
          + _skill_component(profile["skills"][style], FIGHT_SKILL_SCALE)
          + D.WEAPON_FIGHT_PER_TIER * profile["weapon_tier"]
          + temper_fight_bonus(profile)
+         + doctrine_fight_bonus(profile, e, style)   # a permanent mastery, always applies
          + D.STYLE_AFF[e["type"]][style]
          + 4 * perk_rank(profile, "honed_edge")
          + weather_today()["fight"])
@@ -285,7 +287,6 @@ def _fight_raw(profile, enemy_key: str, style: str, delve=None) -> float:
         if delve.ambush:
             p += AMBUSH_BONUS
         p += _affix_fight_delta(profile, enemy_key, style, delve)
-        p += doctrine_fight_bonus(profile, e, style)
         p += (delve.buffs or {}).get("fight", 0)   # a brewed Philtre of Fury
         if getattr(delve, "kind", None) == "soulcairn":
             p -= SOULCAIRN_DRAIN * delve.depth      # the deep gnaws your odds
@@ -570,6 +571,9 @@ def build_rooms(loc_key: str, rng=None, affix_level: int = 0) -> list:
             elif rng.random() < LOCKED_CHEST_CHANCE:
                 room["locked"] = True              # a master lock: Lockpicking territory
         rooms.append(room)
+    if rng.random() < FALLEN_CHANCE:
+        rooms.append({"kind": "event", "key": "fallen", "boss": False, "resolved": False,
+                      "corpse": _make_fallen_corpse(loc_key, rng)})
     rng.shuffle(rooms)
     # A Fork before the boss: a genuine risk/reward choice with honest hints.
     if len(rooms) >= 2 and rng.random() < FORK_CHANCE:
@@ -821,6 +825,8 @@ class Delve:
         profile["active_delve"] = None
         self.state = "dead"
         lost = self.satchel
+        if self.kind not in ("soulcairn",) and lost > 0:
+            record_fallen(profile, self)          # leave a corpse for the next delver here
         self.result_line = (f"**You died.** The satchel - **{lost:,} septims** - stays in "
                             f"{self.loc['name']}. Your XP, gear and souls are safe.")
         self.say(D.pick(D.DEATH_LINES, location=self.loc["name"]))
@@ -1289,6 +1295,27 @@ class Delve:
             self.xp_gained += gained
             self.say(f"{D.pick(D.M_AIQ_LINES)}  (+{gained} XP. Wisdom, probably.)")
             self._advance(profile)
+        elif key == "fallen":
+            corpse = r.get("corpse") or {}
+            who = corpse.get("name", "a fallen soul")
+            if choice == "loot":
+                loot = _septims(profile, int(corpse.get("satchel", 100)))
+                self.satchel += loot
+                if random.random() < 0.35:
+                    self.say(f"You pry the satchel free (+{loot} septims) - and the corpse's "
+                             f"hand snaps shut on your wrist!")
+                    if self._wound(profile, ["The restless dead do not forgive grave-robbers."]) == "dead":
+                        return
+                else:
+                    self.say(f"You take what **{who}** no longer needs. +{loot} septims.")
+                self._advance(profile)
+            else:                                 # honour / bury them
+                gained, _ = add_xp(profile, 20)
+                self.xp_gained += gained
+                self.blessed = True
+                self.say(f"You lay **{who}** to rest with a word to Arkay. The Divines mark it.  "
+                         f"(+{gained} XP, Blessed +{BLESSING_BONUS}% attack this delve)")
+                self._advance(profile)
         elif key == "wordwall" and choice == "approach":
             if profile["words"] >= len(D.SHOUT_WORDS):
                 self.say("The wall chants a word you already know. The Voice hums along.")
@@ -1771,3 +1798,178 @@ def temper(profile, slot: str) -> str | None:
             del have[k]
     profile.setdefault("temper", {"weapon": 0, "armour": 0})[slot] = grade + 1
     return None
+
+
+# ---------------------------------------------------------------------------
+# NPC Factions - swear an allegiance at Lv 8+, complete a weekly verb-task for
+# favour and a stipend. Light by design (see data.FACTIONS).
+# ---------------------------------------------------------------------------
+def _iso_week(date_str: str = None) -> list:
+    y, w, _ = datetime.date.fromisoformat(date_str or _today_str()).isocalendar()
+    return [y, w]
+
+
+def join_faction(profile, key: str) -> str | None:
+    if key not in D.FACTIONS:
+        return "No such faction."
+    if level(profile) < int(getattr(config, "SKYRIM_DRAGON_MIN_LEVEL", 8)):
+        return "The great factions only take proven adventurers (level 8+)."
+    if profile.get("allegiance") == key:
+        return f"You already run with {D.FACTIONS[key]['name']}."
+    profile["allegiance"] = key
+    # reset the weekly tracker to snapshot against the new faction's stat
+    profile["faction"] = {}
+    faction_state(profile)
+    return None
+
+
+def faction_state(profile) -> dict:
+    """Weekly tracker - snapshots the tracked stat at the start of each ISO week."""
+    f = profile.setdefault("faction", {})
+    wk = _iso_week()
+    if f.get("week") != wk:
+        fac = profile.get("allegiance")
+        stat = D.FACTIONS[fac]["stat"] if fac in D.FACTIONS else None
+        f["week"] = wk
+        f["snap"] = int(profile["stats"].get(stat, 0)) if stat else 0
+        f["claimed"] = False
+    return f
+
+
+def faction_progress(profile) -> tuple:
+    """(goal, progress, done) for this week's task, or (0, 0, False) if unaffiliated."""
+    fac = profile.get("allegiance")
+    if fac not in D.FACTIONS:
+        return (0, 0, False)
+    f = faction_state(profile)
+    prog = int(profile["stats"].get(D.FACTIONS[fac]["stat"], 0)) - int(f.get("snap", 0))
+    goal = D.FACTIONS[fac]["goal"]
+    return (goal, max(0, prog), prog >= goal)
+
+
+def faction_favour(profile) -> int:
+    return int((profile.get("faction") or {}).get("favour", 0))
+
+
+def faction_rank(profile) -> str:
+    fav = faction_favour(profile)
+    return D.FACTION_RANKS[min(len(D.FACTION_RANKS) - 1, fav // 2)]
+
+
+def claim_faction(profile) -> str | None:
+    goal, prog, done = faction_progress(profile)
+    if profile.get("allegiance") not in D.FACTIONS:
+        return "You owe no faction your allegiance yet."
+    if not done:
+        return f"The week's work isn't finished ({prog}/{goal})."
+    f = faction_state(profile)
+    if f.get("claimed"):
+        return "You've already claimed this week's favour. Come back next week."
+    f["claimed"] = True
+    f["favour"] = faction_favour(profile) + 1
+    rank_i = min(len(D.FACTION_RANKS) - 1, f["favour"] // 2)
+    reward = _septims(profile, 400 + 150 * rank_i)
+    profile["septims"] += reward
+    gained, _ = add_xp(profile, 120 + 40 * rank_i)
+    return f"favour +1 ({D.FACTION_RANKS[rank_i]}), +{reward} septims, +{gained} XP"
+
+
+def faction_rivals(profile) -> list:
+    """Deterministic NPC standings for flavour - the world feels busy with few players."""
+    wk = _iso_week()
+    rng = random.Random(f"skyrim-faction-{wk[0]}-{wk[1]}")
+    names = list(D.FACTION_NPC_RIVALS)
+    rng.shuffle(names)
+    return [(n, rng.randint(2, 9)) for n in names[:3]]
+
+
+# ---------------------------------------------------------------------------
+# Idle Expeditions - send a housecarl on a multi-day errand, collect on open.
+# ---------------------------------------------------------------------------
+def _date_plus(days: int) -> str:
+    return (datetime.date.fromisoformat(_today_str()) + datetime.timedelta(days=days)).isoformat()
+
+
+def expedition(profile) -> dict | None:
+    return profile.get("expedition")
+
+
+def expedition_ready(profile) -> bool:
+    e = profile.get("expedition")
+    return bool(e) and _today_str() >= e["return"]
+
+
+def start_expedition(profile, key: str) -> str | None:
+    if key not in D.EXPEDITIONS:
+        return "No such expedition."
+    if profile.get("expedition"):
+        return "Your housecarl is already out on an errand."
+    if level(profile) < int(getattr(config, "SKYRIM_DRAGON_MIN_LEVEL", 8)):
+        return "You have no housecarl to send yet (level 8+ earns you one)."
+    exp = D.EXPEDITIONS[key]
+    import random as _r
+    carl = D.HOUSECARLS[_r.Random(f"{profile['user_id']}-{_today_str()}").randrange(len(D.HOUSECARLS))]
+    profile["expedition"] = {"key": key, "start": _today_str(),
+                             "return": _date_plus(exp["days"]), "carl": carl}
+    return None
+
+
+def collect_expedition(profile) -> str | None:
+    e = profile.get("expedition")
+    if not e:
+        return "No expedition to collect."
+    if not expedition_ready(profile):
+        return f"Still out - returns {e['return']}."
+    exp = D.EXPEDITIONS[e["key"]]
+    septims = _septims(profile, exp["septims"])
+    profile["septims"] += septims
+    gained, _ = add_xp(profile, exp["xp"])
+    parts = [f"+{septims} septims", f"+{gained} XP"]
+    if exp.get("ingredient"):
+        ing = exp["ingredient"]
+        store = profile.setdefault("ingredients", {})
+        store[ing] = store.get(ing, 0) + 1
+        parts.append(f"{D.INGREDIENTS[ing]['emoji']} {D.INGREDIENTS[ing]['name']}")
+    carl = e.get("carl", "Your housecarl")
+    profile["expedition"] = None
+    return f"{carl} returns from **{exp['name']}** with " + ", ".join(parts) + "."
+
+
+# ---------------------------------------------------------------------------
+# Fallen Adventurers - a death leaves a lootable corpse for the next delver there,
+# and an obituary. Real deaths are used first; NPC corpses fill in for a small server.
+# ---------------------------------------------------------------------------
+def _graveyard() -> list:
+    return load_json_file(config.SKYRIM_GRAVEYARD_FILE) or []
+
+
+def record_fallen(profile, delve):
+    """Add a death to the shared graveyard (kept short). Best-effort."""
+    try:
+        grave = _graveyard()
+        grave.append({"name": profile.get("name", "an adventurer"), "loc": delve.location,
+                      "room": delve.idx + 1, "satchel": int(delve.satchel), "date": _today_str(),
+                      "user_id": profile.get("user_id")})
+        grave = grave[-40:]                       # ephemeral history
+        save_json_file(config.SKYRIM_GRAVEYARD_FILE, grave)
+    except Exception:
+        logger.error("skyrim: failed to record fallen adventurer", exc_info=True)
+
+
+def latest_obituary() -> str | None:
+    grave = _graveyard()
+    if not grave:
+        return None
+    g = grave[-1]
+    loc = D.LOCATIONS.get(g["loc"], {}).get("name", "the wilds")
+    return f"⚰️ RIP **{g['name']}** - fell in {loc}, room {g['room']}, {g['satchel']:,} septims lost."
+
+
+def _make_fallen_corpse(loc_key: str, rng) -> dict:
+    """A corpse for a delve at loc_key: a real death here if one exists, else an NPC."""
+    grave = [g for g in _graveyard() if g.get("loc") == loc_key and int(g.get("satchel", 0)) > 0]
+    if grave and rng.random() < 0.7:
+        g = rng.choice(grave)
+        return {"name": g["name"], "satchel": min(int(g["satchel"]), 4000), "real": True}
+    return {"name": rng.choice(D.NPC_FALLEN),
+            "satchel": rng.randint(1, 4) * 60, "real": False}
