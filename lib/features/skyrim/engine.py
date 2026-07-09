@@ -63,6 +63,9 @@ MIMIC_CHANCE = 0.18                  # chance a chest room is secretly a Mimic (
 FORK_CHANCE = 0.45                   # chance a delve offers a branching Fork before the boss
 SOULCAIRN_DRAIN = 2                  # attack % the Soul Cairn steals per depth descended
 FALLEN_CHANCE = 0.20                 # chance a delve holds a Fallen Adventurer's corpse
+PACT_MULT_CAP = 4.0                  # max combined satchel multiplier from stacked pacts
+PACT_MIN_LEVEL = 10                  # pacts unlock once the ordinary maps start feeling easy
+PACT_ROLL_MAX = 72                   # Boethiah's Proving: the attack ceiling drops to this
 SKILLS = ("blade", "marksman", "destruction", "sneak", "speech", "lockpicking")
 # Tempering (The Grindstone): gear can be sharpened past its tier with septims +
 # looted materials. Grades stack ON TOP of tier, and the fight bonus deliberately
@@ -122,6 +125,43 @@ def route_tag(loc_key: str, date_str: str = None) -> str:
     return f"  ·  {c['emoji']} **{c['name']}** - {c['desc']}"
 
 
+def stirred_rank(profile, loc_key: str) -> int:
+    """How Stirred a location runs for this character: one rank per 3 levels above
+    its gate, capped at the ladder's end. Applied only to the day's DEEP offer, so
+    the top road is a frontier at every level while easy/mid stay safe farms."""
+    loc = D.LOCATIONS.get(loc_key) or {}
+    return max(0, min(len(D.STIRRED_RANKS),
+                      (level(profile) - int(loc.get("min_level", 1))) // 3))
+
+
+def stirred_name(rank: int) -> str:
+    return D.STIRRED_RANKS[min(rank, len(D.STIRRED_RANKS)) - 1] if rank > 0 else ""
+
+
+def deep_offer(profile, date_str: str = None) -> str | None:
+    """The day's deep-band destination (the one that runs Stirred), if bands are
+    in play at this character's level."""
+    offers = offer_locations(profile, date_str)
+    return offers[2] if len(offers) >= 3 else None
+
+
+def pact_mult(delve) -> float:
+    """The combined satchel multiplier from this delve's sworn pacts, capped."""
+    m = 1.0
+    for k in getattr(delve, "pacts", None) or []:
+        m *= D.PACTS.get(k, {}).get("mult", 1.0)
+    return min(PACT_MULT_CAP, m)
+
+
+def swear_pacts(profile, keys: list) -> str | None:
+    """Queue pacts for the NEXT normal delve. Returns an error line, or None."""
+    if level(profile) < PACT_MIN_LEVEL:
+        return f"The Princes don't bargain with the unproven (level {PACT_MIN_LEVEL}+)."
+    keys = [k for k in keys if k in D.PACTS]
+    profile["nextpacts"] = keys
+    return None
+
+
 def named_dragon(delve) -> dict | None:
     """The roster entry for THIS delve's dragons, if the current foe is a plain
     dragon (Alduin is always himself, never a roster pick)."""
@@ -162,6 +202,7 @@ def _migrate(profile: dict) -> dict:
     profile.setdefault("materials", {})          # banked tempering materials
     profile.setdefault("recipes", ["healing"])   # known brewing recipes (start with healing)
     profile.setdefault("nextdelve", {})          # brewed one-delve elixir queued for next delve
+    profile.setdefault("nextpacts", [])          # Daedric pacts sworn for the next delve
     profile.setdefault("dragon_wall", [])        # named dragons slain (bestiary)
     profile.setdefault("allegiance", None)       # chosen NPC faction key
     profile.setdefault("faction", {})            # faction -> {rank, favour}
@@ -306,6 +347,7 @@ def _fight_raw(profile, enemy_key: str, style: str, delve=None) -> float:
             p += AMBUSH_BONUS
         p += _affix_fight_delta(profile, enemy_key, style, delve)
         p += (delve.buffs or {}).get("fight", 0)   # a brewed Philtre of Fury
+        p -= D.STIRRED_FIGHT_PER_RANK * getattr(delve, "stirred", 0)   # the deep offer bites
         if getattr(delve, "kind", None) == "soulcairn":
             p -= SOULCAIRN_DRAIN * delve.depth      # the deep gnaws your odds
         nd = named_dragon(delve)
@@ -316,8 +358,10 @@ def _fight_raw(profile, enemy_key: str, style: str, delve=None) -> float:
 
 def fight_pct(profile, enemy_key: str, style: str, delve=None) -> int:
     """Success chance for attacking with one of the three styles - the style's
-    skill and its matchup against the enemy type both matter."""
-    return _clamp(_fight_raw(profile, enemy_key, style, delve))
+    skill and its matchup against the enemy type both matter. Boethiah's Proving
+    lowers the ceiling itself: every swing can miss again."""
+    hi = PACT_ROLL_MAX if delve and "boethiah" in getattr(delve, "pacts", []) else ROLL_MAX
+    return int(max(ROLL_MIN, min(hi, round(_fight_raw(profile, enemy_key, style, delve)))))
 
 
 def overkill_crit(profile, enemy_key: str, style: str, delve=None) -> float:
@@ -684,7 +728,7 @@ class Delve:
                  delve_id=None, enemy_hp=None, daily=False, fan=False,
                  ambush=False, hp_warned=False, venom=False, ingredients=None,
                  dragon=None, phase=None, depth=0, kind="normal", buffs=None,
-                 route=None):
+                 route=None, pacts=None, stirred=0):
         import uuid
         self.delve_id = delve_id or uuid.uuid4().hex[:12]
         self.daily = bool(daily)                  # the shared once-a-day dungeon
@@ -699,6 +743,8 @@ class Delve:
         self.depth = int(depth)                   # Soul Cairn depth reached
         self.buffs = dict(buffs or {})            # brewed one-delve elixir effects
         self.route = route                        # the day's route condition key
+        self.pacts = list(pacts or [])            # Daedric pacts sworn for this delve
+        self.stirred = int(stirred)               # deep-offer danger rank (0 = plain)
         self.player_id = int(player_id)
         self.player_name = player_name
         self.channel_id = channel_id
@@ -731,6 +777,8 @@ class Delve:
         nd_key = getattr(self, "dragon", None)
         if nd_key and room and room["kind"] == "enemy" and room["key"] == "dragon":
             hp += D.DRAGON_ROSTER.get(nd_key, {}).get("hp", 0)
+        if room and room.get("boss") and self.stirred >= 3:
+            hp += 1                              # a Deadly+ den breeds a tougher master
         return hp
 
     # --- construction ---------------------------------------------------------
@@ -825,9 +873,18 @@ class Delve:
         cond = D.ROUTE_CONDITIONS.get(self.route)
         if cond:
             bonus = int(bonus * cond.get("clear_mult", 1.0))   # Rich Pickings pays out
+        if self.stirred:
+            bonus = int(bonus * (1 + D.STIRRED_CLEAR_PER_RANK * self.stirred))
         self.satchel += bonus
         gained, _ = add_xp(profile, 25)
         self.xp_gained += gained
+        tail = ""
+        mult = pact_mult(self)
+        if mult > 1.0:
+            self.satchel = int(self.satchel * mult)
+            st = profile["stats"]
+            st["pact_clears"] = int(st.get("pact_clears", 0)) + 1
+            tail = f"  ⚖️ The Princes honour the pact: **x{mult:g}**."
         profile["septims"] += self.satchel
         self._bank_ingredients(profile)
         profile["stats"]["clears"] += 1
@@ -835,7 +892,7 @@ class Delve:
         self.state = "cleared"
         self.result_line = (f"Cleared! Banked **{self.satchel:,} septims** "
                             f"(including a {bonus:,} haul from the final chamber) and "
-                            f"**{self.xp_gained} XP**.")
+                            f"**{self.xp_gained} XP**.{tail}")
         self.say(D.pick(D.CLEAR_LINES, location=self.loc["name"]))
 
     def _wound(self, profile, lines, knee_chance=0.0, heavy=0.0) -> str:
@@ -880,7 +937,10 @@ class Delve:
     # --- enemy actions ------------------------------------------------------------
     def _heavy(self, e) -> float:
         """Chance this enemy's hit is a crushing 2-heart blow (enemy override or
-        tier default, + the day's weather, + any elite affix / named-dragon menace)."""
+        tier default, + the day's weather, + any elite affix / named-dragon menace).
+        Under Dagon's Toll, every wound crushes."""
+        if "dagon" in self.pacts:
+            return 1.0
         base = e.get("heavy", HEAVY_HIT_CHANCE.get(e["tier"], 0.0))
         aff = self.affix()
         if aff:
@@ -1003,6 +1063,8 @@ class Delve:
             loot *= 2
         if aff:
             loot = int(loot * aff.get("loot_mult", 1.0))
+        if self.stirred:
+            loot = int(loot * (1 + D.STIRRED_LOOT_PER_RANK * self.stirred))
         self.satchel += loot
         self.kills += 1
         profile["stats"]["kills"] += 1
@@ -1178,6 +1240,9 @@ class Delve:
         self._advance(profile)
 
     def act_potion(self, profile) -> None:
+        if "namira" in self.pacts:
+            self.say("🐀 **Namira's Fast holds.** The bottle stays corked.")
+            return
         cap = delve_heart_max(self, profile)
         if profile["potions"] <= 0 or (self.hearts >= cap and not self.venom):
             return
@@ -1193,13 +1258,18 @@ class Delve:
         self.say(line)
 
     def act_leave(self, profile) -> None:
-        """Leave with the satchel; mid-fight it becomes a flee and loot spills."""
+        """Leave with the satchel; mid-fight it becomes a flee and loot spills.
+        Clavicus Vile's Bargain permits neither."""
         if not self.playing():
+            return
+        if "clavicus" in self.pacts:
+            self.say("😈 **The Bargain holds.** There is no way out but through - or under.")
             return
         profile["active_delve"] = None
         self._bank_ingredients(profile)          # the pouch comes home either way
+        mult = pact_mult(self)
         if self.engaged:
-            kept = int(self.satchel * FLEE_KEEP)
+            kept = int(self.satchel * FLEE_KEEP * mult)
             profile["septims"] += kept
             profile["stats"]["flees"] += 1
             self.state = "fled"
@@ -1207,6 +1277,7 @@ class Delve:
                                 f"the rest spilled behind you. **{self.xp_gained} XP** banked.")
             self.say(D.pick(D.FLEE_LINES))
         else:
+            self.satchel = int(self.satchel * mult)
             profile["septims"] += self.satchel
             self.state = "left"
             if self.kind == "soulcairn":
@@ -1411,6 +1482,7 @@ class Delve:
                 self._advance(profile)
             elif choice == "approach":
                 if random.random() < 0.5:
+                    self.satchel = int(self.satchel * pact_mult(self))
                     profile["septims"] += self.satchel
                     self._bank_ingredients(profile)
                     profile["stats"]["launched"] += 1
@@ -1443,7 +1515,8 @@ class Delve:
                 "ambush": self.ambush, "hp_warned": self.hp_warned,
                 "venom": self.venom, "ingredients": self.ingredients,
                 "dragon": self.dragon, "phase": self.phase, "depth": self.depth,
-                "kind": self.kind, "buffs": self.buffs, "route": self.route}
+                "kind": self.kind, "buffs": self.buffs, "route": self.route,
+                "pacts": self.pacts, "stirred": self.stirred}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Delve":
@@ -1460,7 +1533,8 @@ class Delve:
                    ambush=d.get("ambush", False), hp_warned=d.get("hp_warned", False),
                    venom=d.get("venom", False), ingredients=d.get("ingredients"),
                    dragon=d.get("dragon"), phase=d.get("phase"), depth=d.get("depth", 0),
-                   kind=d.get("kind", "normal"), buffs=d.get("buffs"), route=d.get("route"))
+                   kind=d.get("kind", "normal"), buffs=d.get("buffs"), route=d.get("route"),
+                   pacts=d.get("pacts"), stirred=d.get("stirred", 0))
 
 
 # ---------------------------------------------------------------------------
@@ -1525,6 +1599,21 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
     else:
         spend_stamina(profile)
         delve = Delve.start(profile, channel_id, loc_key)
+        # the day's DEEP offer runs Stirred: a frontier at every level
+        if loc_key == deep_offer(profile):
+            delve.stirred = stirred_rank(profile, loc_key)
+            if delve.stirred:
+                name = stirred_name(delve.stirred)
+                delve.say(f"🔥 The place is **{name}** (rank {delve.stirred}) - foes fight "
+                          f"-{D.STIRRED_FIGHT_PER_RANK * delve.stirred}% harder to face, "
+                          f"the haul runs +{int(D.STIRRED_CLEAR_PER_RANK * delve.stirred * 100)}%.")
+        # sworn pacts bind to the next normal delve only
+        pacts = profile.get("nextpacts") or []
+        if pacts:
+            profile["nextpacts"] = []
+            delve.pacts = pacts
+            names = ", ".join(f"{D.PACTS[k]['emoji']} {D.PACTS[k]['name']}" for k in pacts)
+            delve.say(f"⚖️ **Pacts sworn:** {names}  (satchel x{pact_mult(delve):g} if you bank it)")
     delve.kind = kind
     profile["stats"]["delves"] += 1
     w = weather_today()

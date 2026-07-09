@@ -113,6 +113,10 @@ def _status_line(delve: E.Delve, profile) -> str:
     if profile["words"] > 0:
         bits.append(f"🗣️ {delve.shout_charges}")
     bits.append(f"💰 {delve.satchel:,} in satchel")
+    if delve.stirred:
+        bits.append(f"🔥 {E.stirred_name(delve.stirred)}")
+    if delve.pacts:
+        bits.append(f"⚖️ x{E.pact_mult(delve):g}")
     return "  ·  ".join(bits)
 
 
@@ -248,13 +252,15 @@ def build_delve_layout(delve: E.Delve, profile):
                 row1.add_item(_btn(discord.ButtonStyle.primary, f"Persuade {p_per}%",
                                    f"skyrim:{did}:per", _make_cb(delve, "per"), emoji="💬"))
         shout_row = _shout_control(delve, profile, e)
-        if profile["potions"] > 0 and (delve.hearts < E.heart_max(profile) or delve.venom):
+        if profile["potions"] > 0 and (delve.hearts < E.heart_max(profile) or delve.venom) \
+                and "namira" not in delve.pacts:
             row2.add_item(_btn(discord.ButtonStyle.secondary, f"Potion ({profile['potions']})",
                                f"skyrim:{did}:pot", _make_cb(delve, "pot"), emoji="🧪"))
-        leave_label = "Flee" if delve.engaged else f"Leave ({delve.satchel:,})"
-        row2.add_item(_btn(discord.ButtonStyle.secondary, leave_label,
-                           f"skyrim:{did}:lve", _make_cb(delve, "lve"),
-                           emoji="🏃" if delve.engaged else "🚪"))
+        if "clavicus" not in delve.pacts:
+            leave_label = "Flee" if delve.engaged else f"Leave ({delve.satchel:,})"
+            row2.add_item(_btn(discord.ButtonStyle.secondary, leave_label,
+                               f"skyrim:{did}:lve", _make_cb(delve, "lve"),
+                               emoji="🏃" if delve.engaged else "🚪"))
     else:
         shout_row = None
         key = r["key"]
@@ -607,10 +613,17 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
                      "haven't braved it yet.")
     else:
         row = discord.ui.ActionRow()
+        deep = E.deep_offer(profile)
         for key in E.offer_locations(profile):
             loc = D.LOCATIONS[key]
+            stir = ""
+            if key == deep and E.stirred_rank(profile, key):
+                r = E.stirred_rank(profile, key)
+                stir = (f"  ·  🔥 **{E.stirred_name(r)}** - foes -"
+                        f"{D.STIRRED_FIGHT_PER_RANK * r}% to face, haul +"
+                        f"{int(D.STIRRED_CLEAR_PER_RANK * r * 100)}%")
             lines.append(f"{loc['emoji']} **{loc['name']}**  ·  {loc['difficulty']}  ·  "
-                         f"{loc['rooms']} rooms - {loc['desc']}{E.route_tag(key)}")
+                         f"{loc['rooms']} rooms - {loc['desc']}{E.route_tag(key)}{stir}")
 
             async def _go(inter: Interaction, k=key):
                 await _launch_delve(inter, k)
@@ -618,6 +631,15 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
                 discord.ButtonStyle.danger if D.LOCATIONS[key].get("dragon_lair")
                 else discord.ButtonStyle.primary, loc["name"], loc["emoji"], _go))
         rows.append(row)
+        if E.level(profile) >= E.PACT_MIN_LEVEL:
+            sworn = profile.get("nextpacts") or []
+            if sworn:
+                names = ", ".join(D.PACTS[k]["name"] for k in sworn if k in D.PACTS)
+                lines.append(f"\n⚖️ **Sworn for the next delve:** {names}")
+            prow = discord.ui.ActionRow()
+            prow.add_item(_cb_btn(discord.ButtonStyle.secondary,
+                                  f"Pacts ({len(sworn)})" if sworn else "Pacts", "⚖️", _hub_pacts))
+            rows.append(prow)
 
     # Skuldafn - shown only once earned; its attempt is daily and separate from stamina.
     ready, req_line = E.alduin_ready(profile)
@@ -1156,6 +1178,59 @@ async def _hub_grindstone(interaction: Interaction, notice: str = ""):
                           lambda i: _hub_shop(i)))
     rows = ([row] if row.children else []) + [back, _back_row()]
     await _edit_panel(interaction, text, rows)
+
+
+# --- Daedric pacts ------------------------------------------------------------------
+async def _hub_pacts(interaction: Interaction, notice: str = ""):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None:
+        await _show_class_pick(interaction)
+        return
+    sworn = profile.get("nextpacts") or []
+    lines = ["## ⚖️ Daedric Pacts",
+             "-# Swear curses on your **next delve** for a multiplied satchel if you bank it. "
+             "Death loses everything, as ever. Pacts don't bind the Daily, Skuldafn or the "
+             "Cairn - the Princes want to watch you *choose* it.", ""]
+    for key, pact in D.PACTS.items():
+        tick = "⚖️" if key in sworn else "◻️"
+        lines.append(f"{tick} {pact['emoji']} **{pact['name']}** (x{pact['mult']:g}) - {pact['desc']}")
+    if sworn:
+        fake = E.Delve(profile["user_id"], "x", 0, "embershard",
+                       [{"kind": "enemy", "key": "skeever", "boss": False, "resolved": False}],
+                       hearts=1, shout_charges=0, pacts=sworn)
+        lines.append(f"\n**Sworn:** satchel **x{E.pact_mult(fake):g}** on your next delve "
+                     f"(cap x{E.PACT_MULT_CAP:g}).")
+    if notice:
+        lines += ["", notice]
+    rows = []
+    sel = discord.ui.Select(placeholder="Swear your pacts (pick none to clear)...",
+                            min_values=0, max_values=len(D.PACTS))
+    for key, pact in D.PACTS.items():
+        sel.add_option(label=f"{pact['name']} (x{pact['mult']:g})", value=key,
+                       emoji=pact["emoji"], description=pact["desc"][:100],
+                       default=key in sworn)
+
+    async def _swear(inter: Interaction):
+        p = E.get_profile(inter.user.id)
+        err = E.swear_pacts(p, list(sel.values))
+        if err is None:
+            E.save_profile(p)
+            n = len(p.get("nextpacts") or [])
+            note = (f"-# ⚖️ {n} pact{'s' if n != 1 else ''} sworn." if n
+                    else "-# The Princes shrug. No pacts bound.")
+            await _hub_pacts(inter, notice=note)
+        else:
+            await _hub_pacts(inter, notice=f"-# {err}")
+    sel.callback = _swear
+    srow = discord.ui.ActionRow()
+    srow.add_item(sel)
+    rows.append(srow)
+    brow = discord.ui.ActionRow()
+    brow.add_item(_cb_btn(discord.ButtonStyle.secondary, "To the roads", "🗺️",
+                          lambda i: _show_offers(i, edit_hub=True)))
+    rows.append(brow)
+    rows.append(_back_row())
+    await _edit_panel(interaction, "\n".join(lines), rows)
 
 
 # --- NPC factions -------------------------------------------------------------------

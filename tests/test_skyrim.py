@@ -243,6 +243,70 @@ def test_expanded_map_pool_sound():
         assert rooms[-1]["key"] == loc["boss"]
 
 
+def test_stirred_deep_offer_bites_and_pays():
+    p = _profile()
+    p["xp"] = 60_000                                   # far past every map's gate
+    deep = E.deep_offer(p)
+    assert deep is not None
+    r = E.stirred_rank(p, deep)
+    assert r >= 3                                      # deeply outgrown -> high rank
+    d = E.start_delve(p, 0, deep)
+    assert d.stirred == r
+    # the malus lands on every attack roll (compare against an unstirred twin)
+    d0 = E.Delve(p["user_id"], "T", 0, deep, list(d.rooms), hearts=5, shout_charges=0)
+    key = next(rm["key"] for rm in d.rooms if rm["kind"] == "enemy")
+    assert (E._fight_raw(p, key, "blade", d)
+            == E._fight_raw(p, key, "blade", d0) - D.STIRRED_FIGHT_PER_RANK * r)
+    # a Deadly+ den breeds a tougher master
+    boss_room = d.rooms[-1]
+    assert d._hp_for(boss_room) == d0._hp_for(boss_room) + (1 if r >= 3 else 0)
+    # fresh characters see no stirred anywhere
+    q = _profile()
+    assert all(E.stirred_rank(q, k) == 0 for k in E.offer_locations(q))
+
+
+def test_daedric_pacts():
+    p = _profile()
+    assert E.swear_pacts(p, ["boethiah"]) is not None  # level-gated
+    p["xp"] = 10_000                                   # level 10+
+    assert E.swear_pacts(p, ["boethiah", "namira", "dagon", "clavicus", "bogus"]) is None
+    assert p["nextpacts"] == ["boethiah", "namira", "dagon", "clavicus"]
+    d = E.start_delve(p, 0, "embershard")
+    assert d.pacts == p.get("nextpacts", []) or p["nextpacts"] == []   # consumed
+    assert d.pacts == ["boethiah", "namira", "dagon", "clavicus"]
+    assert E.pact_mult(d) == E.PACT_MULT_CAP           # 1.5*1.4*1.6*1.7 caps at 4
+    # Boethiah: the ceiling drops to 72
+    for st in D.STYLES:
+        p["skills"][st] = 100
+    p["weapon_tier"] = 6
+    assert E.fight_pct(p, "skeever", "blade", d) == E.PACT_ROLL_MAX
+    # Namira: the bottle stays corked
+    p["potions"] = 2
+    d.hearts = 1
+    d.act_potion(p)
+    assert p["potions"] == 2 and d.hearts == 1
+    # Dagon: every wound crushes
+    assert d._heavy(D.ENEMIES["skeever"]) == 1.0
+    # Clavicus: no way out
+    d.act_leave(p)
+    assert d.playing()
+    # banking honours the pact: clear a one-room pact delve and check the x4
+    q = E.create_profile(3, "Sworn", "warrior")
+    q["xp"] = 10_000
+    rooms = [{"kind": "enemy", "key": "skeever", "boss": True, "resolved": False}]
+    d2 = E.Delve(q["user_id"], "S", 0, "embershard", rooms, hearts=3, shout_charges=0,
+                 pacts=["clavicus", "dagon", "boethiah", "namira"])
+    E.random = _fixed_rolls(0.0, 0.99)
+    try:
+        d2.act_attack(q)
+    finally:
+        _restore_random()
+    assert d2.state == "cleared"
+    plain = int(D.LOCATIONS["embershard"]["clear_septims"])
+    assert d2.satchel >= plain * E.PACT_MULT_CAP       # whole satchel multiplied
+    assert q["stats"].get("pact_clears") == 1
+
+
 def test_offers_rotate_daily():
     p = _profile()
     p["xp"] = 60_000                                   # everything unlocked

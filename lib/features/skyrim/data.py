@@ -453,6 +453,37 @@ LOCATIONS = {
 }
 
 # ---------------------------------------------------------------------------
+# Stirred ranks - the DEEP offer on the day's picker scales with how far you've
+# outgrown it, so the top road is a frontier at every level and failure stays
+# possible: foes fight harder (a flat, clamp-proof malus on your rolls), the boss
+# toughens at rank 3+, and the haul scales to match. Easy/mid offers stay plain -
+# the choice is a genuine self-assessment, not a habit. Rank = (level above the
+# location) // 3, capped at the ladder's end.
+# ---------------------------------------------------------------------------
+STIRRED_RANKS = ["Restless", "Roused", "Seething", "Deadly", "Nightmare"]
+STIRRED_FIGHT_PER_RANK = 4          # -% on every attack roll per rank
+STIRRED_CLEAR_PER_RANK = 0.25       # +25% clear haul per rank
+STIRRED_LOOT_PER_RANK = 0.08        # +8% kill loot per rank
+
+# ---------------------------------------------------------------------------
+# Daedric Pacts - opt-in curses sworn before a delve, each multiplying the satchel
+# you bank if you make it out. This is the difficulty dial for characters who have
+# outgrown the ordinary maps: the game never gets harder unless you ask it to, and
+# then it pays you for the trouble. Stack any combination (total capped in engine).
+# Death under a pact is a normal death - the whole satchel stays in the dungeon.
+# ---------------------------------------------------------------------------
+PACTS = {
+    "boethiah": {"name": "Boethiah's Proving", "emoji": "⚔️", "mult": 1.5,
+                 "desc": "Your attack ceiling drops to 72% - every swing can miss again."},
+    "namira": {"name": "Namira's Fast", "emoji": "🐀", "mult": 1.4,
+               "desc": "No potions. What you carry in hearts is all you get."},
+    "dagon": {"name": "Dagon's Toll", "emoji": "🔥", "mult": 1.6,
+              "desc": "Every wound you take is a crushing blow (-2 ❤️)."},
+    "clavicus": {"name": "Clavicus Vile's Bargain", "emoji": "😈", "mult": 1.7,
+                 "desc": "No leaving, no fleeing. Clear it or die in it."},
+}
+
+# ---------------------------------------------------------------------------
 # Route conditions - a date-seeded tag each location may carry for the day, shown
 # on the picker and applied to delves there. Same for everyone, rotating daily like
 # the weather, so the SAME map plays differently across the week and picking a
