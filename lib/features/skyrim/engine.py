@@ -104,6 +104,24 @@ def dragon_of_the_week(date_str: str = None) -> str:
     return rng.choice(sorted(D.DRAGON_ROSTER))
 
 
+def route_condition(loc_key: str, date_str: str = None) -> str | None:
+    """The location's route condition for the day (or None for a plain road) -
+    deterministic per UK date + location, shared by everyone, like the weather."""
+    rng = random.Random(f"skyrim-route-{date_str or _today_str()}-{loc_key}")
+    keys = [None] + list(D.ROUTE_CONDITIONS)
+    weights = [D.ROUTE_NONE_WEIGHT] + [D.ROUTE_CONDITIONS[k]["weight"] for k in D.ROUTE_CONDITIONS]
+    return rng.choices(keys, weights=weights, k=1)[0]
+
+
+def route_tag(loc_key: str, date_str: str = None) -> str:
+    """A short picker suffix for the day's condition, or '' for a plain road."""
+    key = route_condition(loc_key, date_str)
+    if not key:
+        return ""
+    c = D.ROUTE_CONDITIONS[key]
+    return f"  ·  {c['emoji']} **{c['name']}** - {c['desc']}"
+
+
 def named_dragon(delve) -> dict | None:
     """The roster entry for THIS delve's dragons, if the current foe is a plain
     dragon (Alduin is always himself, never a roster pick)."""
@@ -541,28 +559,38 @@ def _roll_affix(enemy_key: str, char_level: int, rng) -> str | None:
     return _eligible_affix(enemy_key, rng)
 
 
-def build_rooms(loc_key: str, rng=None, affix_level: int = 0) -> list:
+def build_rooms(loc_key: str, rng=None, affix_level: int = 0, route: str = None) -> list:
     """Room list for a fresh delve: shuffled trash + events, optional word wall,
     boss last. Each room: {kind, key, boss, resolved} (+ bounty on rare named
     variants, + affix on rare elite variants). Pass a seeded rng for the shared
-    daily layout; affix_level gates elite modifiers (0 = none, e.g. the daily)."""
+    daily layout; affix_level gates elite modifiers (0 = none, e.g. the daily);
+    route applies the day's route condition (extra room, forced spawns...)."""
     rng = rng or random
     loc = D.LOCATIONS[loc_key]
-    n_fill = loc["rooms"] - 1
+    cond = D.ROUTE_CONDITIONS.get(route) or {}
+    n_fill = loc["rooms"] - 1 + (1 if cond.get("extra_room") else 0)
     n_events = min(loc["events"], n_fill - 1)      # always at least one trash fight
+    bounty_chance = BOUNTY_CHANCE * cond.get("bounty_mult", 1)
     enemy_keys = list(loc["pool"].keys())
     enemy_weights = list(loc["pool"].values())
     rooms = []
     for _ in range(n_fill - n_events):
         room = {"kind": "enemy", "key": rng.choices(enemy_keys, weights=enemy_weights, k=1)[0],
                 "boss": False, "resolved": False}
-        if rng.random() < BOUNTY_CHANCE:
+        if rng.random() < bounty_chance:
             room["bounty"] = True                  # a named variant: +1 hp, triple loot
         elif affix_level:                          # bounty OR affix, never both
             aff = _roll_affix(room["key"], affix_level, rng)
             if aff:
                 room["affix"] = aff
         rooms.append(room)
+    if cond.get("force_affix") and affix_level >= 8:
+        plain = [r for r in rooms if not r.get("affix") and not r.get("bounty")]
+        if plain:
+            target = rng.choice(plain)
+            aff = _eligible_affix(target["key"], rng)
+            if aff:
+                target["affix"] = aff              # the nest's elite, guaranteed
     for k in _draw_events(n_events, rng):
         room = {"kind": "event", "key": k, "boss": False, "resolved": False}
         if k == "chest":
@@ -571,7 +599,9 @@ def build_rooms(loc_key: str, rng=None, affix_level: int = 0) -> list:
             elif rng.random() < LOCKED_CHEST_CHANCE:
                 room["locked"] = True              # a master lock: Lockpicking territory
         rooms.append(room)
-    if rng.random() < FALLEN_CHANCE:
+    if cond.get("force_mudcrab"):
+        rooms.append({"kind": "event", "key": "mudcrab", "boss": False, "resolved": False})
+    if cond.get("force_fallen") or rng.random() < FALLEN_CHANCE:
         rooms.append({"kind": "event", "key": "fallen", "boss": False, "resolved": False,
                       "corpse": _make_fallen_corpse(loc_key, rng)})
     rng.shuffle(rooms)
@@ -653,7 +683,8 @@ class Delve:
                  log=None, message_id=None, xp_gained=0, kills=0, result_line="",
                  delve_id=None, enemy_hp=None, daily=False, fan=False,
                  ambush=False, hp_warned=False, venom=False, ingredients=None,
-                 dragon=None, phase=None, depth=0, kind="normal", buffs=None):
+                 dragon=None, phase=None, depth=0, kind="normal", buffs=None,
+                 route=None):
         import uuid
         self.delve_id = delve_id or uuid.uuid4().hex[:12]
         self.daily = bool(daily)                  # the shared once-a-day dungeon
@@ -667,6 +698,7 @@ class Delve:
         self.phase = phase                        # Skyfire phase: air | dive | grounded | None
         self.depth = int(depth)                   # Soul Cairn depth reached
         self.buffs = dict(buffs or {})            # brewed one-delve elixir effects
+        self.route = route                        # the day's route condition key
         self.player_id = int(player_id)
         self.player_name = player_name
         self.channel_id = channel_id
@@ -705,11 +737,17 @@ class Delve:
     @classmethod
     def start(cls, profile, channel_id, loc_key):
         loc = D.LOCATIONS[loc_key]
+        route = None if loc.get("alduin") else route_condition(loc_key)
         d = cls(profile["user_id"], profile["name"], channel_id, loc_key,
-                build_rooms(loc_key, affix_level=level(profile)),
+                build_rooms(loc_key, affix_level=level(profile), route=route),
                 hearts=heart_max(profile), shout_charges=profile["words"],
-                dragon=dragon_of_the_week())
+                dragon=dragon_of_the_week(), route=route)
         d.say(loc["arrive"])
+        cond = D.ROUTE_CONDITIONS.get(route)
+        if cond:
+            if cond.get("blessed"):
+                d.blessed = True
+            d.say(f"{cond['emoji']} **{cond['name']}** - {cond['desc']}.")
         return d
 
     # --- helpers ---------------------------------------------------------------
@@ -784,6 +822,9 @@ class Delve:
         bonus = _septims(profile, self.loc["clear_septims"])
         if self.daily:
             bonus = int(bonus * DAILY_CLEAR_MULT)
+        cond = D.ROUTE_CONDITIONS.get(self.route)
+        if cond:
+            bonus = int(bonus * cond.get("clear_mult", 1.0))   # Rich Pickings pays out
         self.satchel += bonus
         gained, _ = add_xp(profile, 25)
         self.xp_gained += gained
@@ -1402,7 +1443,7 @@ class Delve:
                 "ambush": self.ambush, "hp_warned": self.hp_warned,
                 "venom": self.venom, "ingredients": self.ingredients,
                 "dragon": self.dragon, "phase": self.phase, "depth": self.depth,
-                "kind": self.kind, "buffs": self.buffs}
+                "kind": self.kind, "buffs": self.buffs, "route": self.route}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Delve":
@@ -1419,7 +1460,7 @@ class Delve:
                    ambush=d.get("ambush", False), hp_warned=d.get("hp_warned", False),
                    venom=d.get("venom", False), ingredients=d.get("ingredients"),
                    dragon=d.get("dragon"), phase=d.get("phase"), depth=d.get("depth", 0),
-                   kind=d.get("kind", "normal"), buffs=d.get("buffs"))
+                   kind=d.get("kind", "normal"), buffs=d.get("buffs"), route=d.get("route"))
 
 
 # ---------------------------------------------------------------------------
@@ -1465,10 +1506,16 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
     if kind == "daily":
         date, loc_key, rng = _daily_layout()
         profile["daily"] = {"date": date}
+        route = route_condition(loc_key)          # today's condition, shared like the layout
         delve = Delve(profile["user_id"], profile["name"], channel_id, loc_key,
-                      build_rooms(loc_key, rng), hearts=heart_max(profile),
-                      shout_charges=profile["words"], daily=True)
+                      build_rooms(loc_key, rng, route=route), hearts=heart_max(profile),
+                      shout_charges=profile["words"], daily=True, route=route)
         delve.say(D.LOCATIONS[loc_key]["arrive"])
+        cond = D.ROUTE_CONDITIONS.get(route)
+        if cond:
+            if cond.get("blessed"):
+                delve.blessed = True
+            delve.say(f"{cond['emoji']} **{cond['name']}** - {cond['desc']}.")
     elif kind == "alduin":
         profile["alduin"] = {"date": _today_str()}
         delve = Delve.start(profile, channel_id, "skuldafn")

@@ -190,6 +190,59 @@ def test_offer_locations_gates_dragons():
     assert any(D.LOCATIONS[k].get("dragon_lair") for k in E.offer_locations(p))
 
 
+def test_route_conditions_deterministic_and_applied():
+    # deterministic per (date, location), and not always plain
+    assert E.route_condition("embershard", "2026-07-09") == E.route_condition("embershard", "2026-07-09")
+    rolled = {E.route_condition(k, f"2026-07-{d:02d}")
+              for k in D.LOCATIONS for d in range(1, 15)}
+    assert None in rolled and len(rolled) > 3          # plain roads AND real conditions
+    # structural effects, checked against identical seeds
+    base = E.build_rooms("embershard", rng=random.Random(7))
+    over = E.build_rooms("embershard", rng=random.Random(7), route="overrun")
+    assert (sum(1 for r in over if r["kind"] == "enemy")
+            == sum(1 for r in base if r["kind"] == "enemy") + 1)
+    way = E.build_rooms("embershard", rng=random.Random(7), route="waylaid")
+    assert any(r["key"] == "fallen" for r in way)
+    crab = E.build_rooms("embershard", rng=random.Random(7), route="caravan")
+    assert any(r["key"] == "mudcrab" for r in crab)
+    nest = E.build_rooms("labyrinthian", rng=random.Random(7), affix_level=20, route="elites")
+    assert any(r.get("affix") for r in nest)
+    # Rich Pickings multiplies the clear bonus; Quiet Roads blesses from the door
+    p = _profile()
+    rooms = [{"kind": "enemy", "key": "skeever", "boss": True, "resolved": False}]
+    d = E.Delve(p["user_id"], "T", 0, "embershard", rooms, hearts=3, shout_charges=0,
+                route="rich")
+    E.random = _fixed_rolls(0.0, 0.99)
+    try:
+        d.act_attack(p)
+    finally:
+        _restore_random()
+    assert d.state == "cleared"
+    rich_expected = int(int(D.LOCATIONS["embershard"]["clear_septims"])
+                        * D.ROUTE_CONDITIONS["rich"]["clear_mult"])
+    assert d.satchel >= rich_expected                  # clear bonus scaled (plus kill loot)
+    real = E.route_condition
+    try:
+        E.route_condition = lambda loc, date_str=None: "quiet"
+        d2 = E.Delve.start(p, 0, "embershard")
+        assert d2.blessed and d2.route == "quiet"
+    finally:
+        E.route_condition = real
+
+
+def test_expanded_map_pool_sound():
+    # every location still generates valid rooms and the new ones are reachable
+    assert len([k for k, v in D.LOCATIONS.items()
+                if not v.get("alduin") and not v.get("soulcairn")]) >= 15
+    for key in ("redorans_retreat", "white_river", "silent_moons", "hillgrunds_tomb",
+                "rannveigs_fast", "alftand", "forelhost", "dragontooth"):
+        loc = D.LOCATIONS[key]
+        assert loc["boss"] in D.ENEMIES and D.ENEMIES[loc["boss"]].get("boss")
+        assert all(k in D.ENEMIES for k in loc["pool"])
+        rooms = E.build_rooms(key)
+        assert rooms[-1]["key"] == loc["boss"]
+
+
 def test_offers_rotate_daily():
     p = _profile()
     p["xp"] = 60_000                                   # everything unlocked

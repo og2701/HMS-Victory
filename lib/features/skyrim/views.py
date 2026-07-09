@@ -610,7 +610,7 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
         for key in E.offer_locations(profile):
             loc = D.LOCATIONS[key]
             lines.append(f"{loc['emoji']} **{loc['name']}**  ·  {loc['difficulty']}  ·  "
-                         f"{loc['rooms']} rooms - {loc['desc']}")
+                         f"{loc['rooms']} rooms - {loc['desc']}{E.route_tag(key)}")
 
             async def _go(inter: Interaction, k=key):
                 await _launch_delve(inter, k)

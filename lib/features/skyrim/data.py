@@ -331,6 +331,20 @@ LOCATIONS = {
         "arrive": "Cages line the walls. Someone has been running pit fights down here.",
         "desc": "A cave of wolf-pit gamblers and their stock.",
     },
+    "redorans_retreat": {
+        "name": "Redoran's Retreat", "emoji": "🦊", "difficulty": "Easy", "min_level": 1,
+        "rooms": 5, "events": 1, "pool": {"bandit": 6, "skeever": 2, "wolf": 2},
+        "boss": "bandit_chief", "word_wall": False, "clear_septims": 55, "art": "redorans",
+        "arrive": "A small cave, a big fire, and voices splitting yesterday's takings.",
+        "desc": "A modest bandit hideaway on the tundra's edge.",
+    },
+    "white_river": {
+        "name": "White River Watch", "emoji": "🏹", "difficulty": "Easy", "min_level": 2,
+        "rooms": 5, "events": 1, "pool": {"bandit": 5, "wolf": 4, "skeever": 1},
+        "boss": "bandit_chief", "word_wall": False, "clear_septims": 60, "art": "white_river",
+        "arrive": "A lookout who cannot see far, and stairs cut into the river cliff.",
+        "desc": "A bandit cave above the White River falls.",
+    },
     "bleak_falls": {
         "name": "Bleak Falls Barrow", "emoji": "🏔️", "difficulty": "Medium", "min_level": 3,
         "rooms": 6, "events": 2, "pool": {"draugr": 5, "skeever": 2, "frostbite_spider": 3, "bandit": 1},
@@ -344,6 +358,27 @@ LOCATIONS = {
         "boss": "the_caller", "word_wall": False, "clear_septims": 100, "art": "fellglow",
         "arrive": "Failed College students, someone said. The purple light in the windows says failed at ethics, not magic.",
         "desc": "A ruined keep full of necromancers who left the College on bad terms.",
+    },
+    "silent_moons": {
+        "name": "Silent Moons Camp", "emoji": "🌙", "difficulty": "Medium", "min_level": 3,
+        "rooms": 6, "events": 2, "pool": {"bandit": 5, "necromancer": 3, "wolf": 2},
+        "boss": "the_caller", "word_wall": False, "clear_septims": 90, "art": "silent_moons",
+        "arrive": "A ruined forge under the open sky. The anvils only sing when the moons are up.",
+        "desc": "Bandits squatting on an old lunar forge - and something stranger with them.",
+    },
+    "hillgrunds_tomb": {
+        "name": "Hillgrund's Tomb", "emoji": "⚰️", "difficulty": "Medium", "min_level": 4,
+        "rooms": 6, "events": 2, "pool": {"draugr": 6, "frostbite_spider": 2, "skeever": 2},
+        "boss": "draugr_deathlord", "word_wall": False, "clear_septims": 100, "art": "hillgrund",
+        "arrive": "A family crypt with the door forced from the inside. Wonderful.",
+        "desc": "A noble family's barrow, no longer at rest.",
+    },
+    "rannveigs_fast": {
+        "name": "Rannveig's Fast", "emoji": "🌬️", "difficulty": "Hard", "min_level": 5,
+        "rooms": 6, "events": 2, "pool": {"draugr": 5, "necromancer": 3, "frostbite_spider": 2},
+        "boss": "draugr_deathlord", "word_wall": True, "clear_septims": 130, "art": "rannveig",
+        "arrive": "Sorrow on the wind, and fresh footprints going in. Only one set.",
+        "desc": "A haunted fort above Hjaalmarch, its word wall singing to no one.",
     },
     "chillwind": {
         "name": "Chillwind Depths", "emoji": "🦇", "difficulty": "Hard", "min_level": 6,
@@ -359,6 +394,20 @@ LOCATIONS = {
         "arrive": "A city of the dead, older than the Empire. Even the wind sounds like a warning here.",
         "desc": "The great ruin of the ancient mages. Nothing gentle lives here.",
     },
+    "alftand": {
+        "name": "Alftand", "emoji": "⚙️", "difficulty": "Hard", "min_level": 6,
+        "rooms": 7, "events": 2, "pool": {"falmer": 5, "frostbite_spider": 3, "troll": 2},
+        "boss": "dwarven_centurion", "word_wall": False, "clear_septims": 160, "art": "alftand",
+        "arrive": "A glacier has swallowed half the ruin. The machinery underneath never noticed.",
+        "desc": "A Dwemer delve under the ice, crawling with what the Dwemer left behind.",
+    },
+    "forelhost": {
+        "name": "Forelhost", "emoji": "🏯", "difficulty": "Hard", "min_level": 7,
+        "rooms": 7, "events": 2, "pool": {"draugr": 6, "hagraven": 2, "necromancer": 2},
+        "boss": "draugr_deathlord", "word_wall": True, "clear_septims": 170, "art": "forelhost",
+        "arrive": "The last refuge of the dragon cult, sealed on itself like a fist.",
+        "desc": "A mountaintop monastery where the dragon cult made its final stand.",
+    },
     "ancients_ascent": {
         "name": "Ancient's Ascent", "emoji": "🐉", "difficulty": "DRAGON", "min_level": 8,
         "rooms": 4, "events": 1, "pool": {"wolf": 3, "troll": 2, "hagraven": 2},
@@ -373,6 +422,14 @@ LOCATIONS = {
         "boss": "dragon", "word_wall": True, "clear_septims": 260, "art": "dragon_lair",
         "arrive": "The wind up here could flay paint from a shield. Something answers it, roar for roar.",
         "desc": "A high peak in Winterhold, and the dragon that claims it.",
+        "dragon_lair": True,
+    },
+    "dragontooth": {
+        "name": "Dragontooth Crater", "emoji": "🦷", "difficulty": "DRAGON", "min_level": 9,
+        "rooms": 4, "events": 1, "pool": {"hagraven": 3, "troll": 2, "wolf": 2},
+        "boss": "dragon", "word_wall": True, "clear_septims": 240, "art": "dragon_lair",
+        "arrive": "The Reach falls away below. In the crater's bowl, old fire has glassed the stone.",
+        "desc": "A jagged crater in the far Reach, warmed by something that never left.",
         "dragon_lair": True,
     },
     "soul_cairn": {
@@ -393,6 +450,31 @@ LOCATIONS = {
         "desc": "Alduin's seat. One attempt per day - bring everything you have.",
         "alduin": True,       # never offered normally; the picker adds it when you are ready
     },
+}
+
+# ---------------------------------------------------------------------------
+# Route conditions - a date-seeded tag each location may carry for the day, shown
+# on the picker and applied to delves there. Same for everyone, rotating daily like
+# the weather, so the SAME map plays differently across the week and picking a
+# destination is a real decision, not a habit. `weight` is the draw weight;
+# ROUTE_NONE_WEIGHT is the chance of a plain, untagged road.
+# ---------------------------------------------------------------------------
+ROUTE_NONE_WEIGHT = 8
+ROUTE_CONDITIONS = {
+    "rich": {"weight": 2, "name": "Rich Pickings", "emoji": "💰",
+             "desc": "the clear haul pays half again (x1.5)", "clear_mult": 1.5},
+    "overrun": {"weight": 2, "name": "Overrun", "emoji": "🐀",
+                "desc": "one extra foe prowls it - more risk, more glory", "extra_room": True},
+    "quiet": {"weight": 2, "name": "Quiet Roads", "emoji": "🕊️",
+              "desc": "you arrive rested: Blessed (+5% attack) from the door", "blessed": True},
+    "hunted": {"weight": 2, "name": "Marked Prey", "emoji": "🏴",
+               "desc": "bounty heads are about - marked foes far likelier", "bounty_mult": 4},
+    "elites": {"weight": 1, "name": "Elite Nest", "emoji": "💀",
+               "desc": "something elite has moved in (guaranteed affixed foe)", "force_affix": True},
+    "waylaid": {"weight": 1, "name": "A Fallen Soul", "emoji": "⚰️",
+                "desc": "someone didn't make it out - their satchel waits inside", "force_fallen": True},
+    "caravan": {"weight": 1, "name": "Caravan Nearby", "emoji": "🦀",
+                "desc": "a trader has camped along the way", "force_mudcrab": True},
 }
 
 # ---------------------------------------------------------------------------
