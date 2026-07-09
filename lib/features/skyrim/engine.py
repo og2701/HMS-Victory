@@ -116,15 +116,6 @@ def route_condition(loc_key: str, date_str: str = None) -> str | None:
     return rng.choices(keys, weights=weights, k=1)[0]
 
 
-def route_tag(loc_key: str, date_str: str = None) -> str:
-    """A short picker suffix for the day's condition, or '' for a plain road."""
-    key = route_condition(loc_key, date_str)
-    if not key:
-        return ""
-    c = D.ROUTE_CONDITIONS[key]
-    return f"  ·  {c['emoji']} **{c['name']}** - {c['desc']}"
-
-
 _TYPE_LABEL = {"human": "men", "beast": "beasts", "undead": "undead",
                "monster": "monsters", "construct": "constructs", "dragon": "dragons"}
 

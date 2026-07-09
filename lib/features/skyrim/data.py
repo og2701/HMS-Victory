@@ -492,19 +492,19 @@ PACTS = {
 # ---------------------------------------------------------------------------
 ROUTE_NONE_WEIGHT = 8
 ROUTE_CONDITIONS = {
-    "rich": {"weight": 2, "name": "Rich Pickings", "emoji": "💰",
+    "rich": {"weight": 2, "name": "Rich Pickings", "emoji": "💰", "short": "clear x1.5",
              "desc": "the clear haul pays half again (x1.5)", "clear_mult": 1.5},
-    "overrun": {"weight": 2, "name": "Overrun", "emoji": "🐀",
+    "overrun": {"weight": 2, "name": "Overrun", "emoji": "🐀", "short": "+1 foe",
                 "desc": "one extra foe prowls it - more risk, more glory", "extra_room": True},
-    "quiet": {"weight": 2, "name": "Quiet Roads", "emoji": "🕊️",
+    "quiet": {"weight": 2, "name": "Quiet Roads", "emoji": "🕊️", "short": "blessed +5%",
               "desc": "you arrive rested: Blessed (+5% attack) from the door", "blessed": True},
-    "hunted": {"weight": 2, "name": "Marked Prey", "emoji": "🏴",
+    "hunted": {"weight": 2, "name": "Marked Prey", "emoji": "🏴", "short": "bounties x4",
                "desc": "bounty heads are about - marked foes far likelier", "bounty_mult": 4},
-    "elites": {"weight": 1, "name": "Elite Nest", "emoji": "💀",
+    "elites": {"weight": 1, "name": "Elite Nest", "emoji": "💀", "short": "an elite waits",
                "desc": "something elite has moved in (guaranteed affixed foe)", "force_affix": True},
-    "waylaid": {"weight": 1, "name": "A Fallen Soul", "emoji": "⚰️",
+    "waylaid": {"weight": 1, "name": "A Fallen Soul", "emoji": "⚰️", "short": "a corpse waits",
                 "desc": "someone didn't make it out - their satchel waits inside", "force_fallen": True},
-    "caravan": {"weight": 1, "name": "Caravan Nearby", "emoji": "🦀",
+    "caravan": {"weight": 1, "name": "Caravan Nearby", "emoji": "🦀", "short": "trader inside",
                 "desc": "a trader has camped along the way", "force_mudcrab": True},
 }
 

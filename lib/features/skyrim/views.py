@@ -603,9 +603,8 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
     left = E.delves_left(profile)
     lines = ["## 🗺️ Where to, Dovahkiin?",
              f"-# {E.weather_line()}",
-             f"-# 🛌 {left} delve{'s' if left != 1 else ''} left today  ·  "
-             f"the satchel is at stake, everything else is forever  ·  "
-             f"⛰️ the roads change with the dawn\n"]
+             f"-# 🛌 {left} delve{'s' if left != 1 else ''} left  ·  "
+             f"💰 only the satchel is at stake  ·  ⛰️ new roads at dawn\n"]
     rows = []
     if left <= 0:
         lines.append("🛌 You need to rest - no delves left today. They reset at midnight "
@@ -616,16 +615,21 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
         deep = E.deep_offer(profile)
         for key in E.offer_locations(profile):
             loc = D.LOCATIONS[key]
-            stir = ""
+            # the location line stays clean; every modifier lives on a small chip line
+            lines.append(f"{loc['emoji']} **{loc['name']}** - {loc['desc']}")
+            bits = [loc["difficulty"], f"{loc['rooms']} rooms"]
+            drops = E.location_drops(key)
+            if drops:
+                bits.append(f"🧪{drops}")
+            rc = E.route_condition(key)
+            if rc:
+                c = D.ROUTE_CONDITIONS[rc]
+                bits.append(f"{c['emoji']} {c['name']}: {c['short']}")
             if key == deep and E.stirred_rank(profile, key):
                 r = E.stirred_rank(profile, key)
-                stir = (f"  ·  🔥 **{E.stirred_name(r)}** - foes -"
-                        f"{D.STIRRED_FIGHT_PER_RANK * r}% to face, haul +"
-                        f"{int(D.STIRRED_CLEAR_PER_RANK * r * 100)}%")
-            drops = E.location_drops(key)
-            drop_bit = f"  ·  🧪{drops}" if drops else ""
-            lines.append(f"{loc['emoji']} **{loc['name']}**  ·  {loc['difficulty']}  ·  "
-                         f"{loc['rooms']} rooms - {loc['desc']}{drop_bit}{E.route_tag(key)}{stir}")
+                bits.append(f"🔥 {E.stirred_name(r)}: -{D.STIRRED_FIGHT_PER_RANK * r}% / "
+                            f"+{int(D.STIRRED_CLEAR_PER_RANK * r * 100)}%")
+            lines.append("-# " + "  ·  ".join(bits))
 
             async def _go(inter: Interaction, k=key):
                 await _launch_delve(inter, k)
