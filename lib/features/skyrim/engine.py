@@ -1507,8 +1507,11 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
         date, loc_key, rng = _daily_layout()
         profile["daily"] = {"date": date}
         route = route_condition(loc_key)          # today's condition, shared like the layout
+        # the shared layout rolls elites too (affix_level 15 ~ a seasoned delver) -
+        # seeded, so everyone faces the same marked foes on the same board
         delve = Delve(profile["user_id"], profile["name"], channel_id, loc_key,
-                      build_rooms(loc_key, rng, route=route), hearts=heart_max(profile),
+                      build_rooms(loc_key, rng, affix_level=15, route=route),
+                      hearts=heart_max(profile),
                       shout_charges=profile["words"], daily=True, route=route)
         delve.say(D.LOCATIONS[loc_key]["arrive"])
         cond = D.ROUTE_CONDITIONS.get(route)

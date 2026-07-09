@@ -800,7 +800,7 @@ AFFIXES = {
               "all_fight": -8, "crush": 0.22, "hp": 1, "loot_mult": 2.5, "xp_mult": 2.0,
               "desc": "An elite horror: tougher, and every blow it lands could crush you."},
 }
-AFFIX_CHANCE_BY_LEVEL = ((8, 0.0), (10, 0.15), (15, 0.28), (999, 0.32))   # ramps in at L8+
+AFFIX_CHANCE_BY_LEVEL = ((8, 0.0), (10, 0.20), (15, 0.35), (999, 0.42))   # ramps in at L8+
 
 # ---------------------------------------------------------------------------
 # Capstone Doctrines - each skill hitting 100 unlocks a permanent pick-ONE-of-two
