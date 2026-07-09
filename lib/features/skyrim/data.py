@@ -759,7 +759,7 @@ BOUNTY_TITLES = {
 # GATE rather than add, so they survive the 86% clamp and stay meaningful at the
 # ceiling. Telegraphed one room ahead through the existing hint channel.
 #   all_fight   - flat % on every attack style (negative = harder)
-#   gate_style  - a style that barely works, +gate_penalty (default -45)
+#   gate_style  - a style that barely works, +gate_penalty (default -40)
 #   ward_break  - the ONE style that shatters its ward cleanly; any other style's
 #                 first landed hit is absorbed (wasted) breaking the ward
 #   hp          - extra telling blows it takes
