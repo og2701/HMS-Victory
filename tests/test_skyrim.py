@@ -243,6 +243,29 @@ def test_expanded_map_pool_sound():
         assert rooms[-1]["key"] == loc["boss"]
 
 
+def test_ingredient_sources_and_location_drops():
+    src = E.ingredient_sources()
+    assert set(src) == set(D.INGREDIENTS)              # every ingredient has a source
+    assert src["dragon_scale"] == ["dragons"]
+    assert "undead" in src["bone_meal"]
+    # a bandit mine hints herbs; a dragon lair hints scales
+    assert E.location_drops("embershard")
+    assert D.INGREDIENTS["dragon_scale"]["emoji"] in E.location_drops("ancients_ascent")
+
+
+def test_daily_always_features_a_marked_foe():
+    p1 = E.create_profile(21, "A", "warrior")
+    p2 = E.create_profile(22, "B", "thief")
+    d1 = E.start_delve(p1, 0, None, kind="daily")
+    d2 = E.start_delve(p2, 0, None, kind="daily")
+    assert d1.rooms == d2.rooms                        # still the same board for everyone
+    assert any(r.get("affix") for r in d1.rooms)       # and it always has a marked foe
+    assert E.daily_affixes()                           # the panel tease agrees
+    assert set(E.daily_affixes()) == {r["affix"] for r in d1.rooms if r.get("affix")}
+    # the daily never rolls the Soul Cairn as its location
+    assert not D.LOCATIONS[d1.location].get("soulcairn")
+
+
 def test_stirred_deep_offer_bites_and_pays():
     p = _profile()
     p["xp"] = 60_000                                   # far past every map's gate

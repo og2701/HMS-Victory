@@ -622,8 +622,10 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
                 stir = (f"  ·  🔥 **{E.stirred_name(r)}** - foes -"
                         f"{D.STIRRED_FIGHT_PER_RANK * r}% to face, haul +"
                         f"{int(D.STIRRED_CLEAR_PER_RANK * r * 100)}%")
+            drops = E.location_drops(key)
+            drop_bit = f"  ·  🧪{drops}" if drops else ""
             lines.append(f"{loc['emoji']} **{loc['name']}**  ·  {loc['difficulty']}  ·  "
-                         f"{loc['rooms']} rooms - {loc['desc']}{E.route_tag(key)}{stir}")
+                         f"{loc['rooms']} rooms - {loc['desc']}{drop_bit}{E.route_tag(key)}{stir}")
 
             async def _go(inter: Interaction, k=key):
                 await _launch_delve(inter, k)
@@ -1084,6 +1086,10 @@ def _alchemy_text(profile) -> str:
         cost = "  ".join(f"{D.INGREDIENTS[k]['emoji']}×{n}" for k, n in r["cost"].items())
         tick = "✅" if E.can_brew(profile, key) else "◻️"
         lines.append(f"{tick} {r['emoji']} **{r['name']}** - {r['desc']}  ({cost})")
+    src = E.ingredient_sources()
+    guide = "  ·  ".join(f"{D.INGREDIENTS[k]['emoji']} {', '.join(src[k])}"
+                         for k in D.INGREDIENTS if k in src)
+    lines.append(f"\n-# 🏹 Where to hunt: {guide}")
     return "\n".join(lines)
 
 
@@ -1149,6 +1155,11 @@ def _grindstone_text(profile) -> str:
                    else f"+{E.TEMPER_SOAK_PER_GRADE}% soak")
             lines.append(f"{emoji} **{slot.title()}** [{star}] → grade {g + 1} ({eff}): "
                          f"{c['septims']:,} septims + {mats}")
+    src = E.ingredient_sources()
+    mats_used = sorted({m for c in D.TEMPER_COSTS for m in c["mats"]})
+    guide = "  ·  ".join(f"{D.INGREDIENTS[m]['emoji']} {D.INGREDIENTS[m]['name']} - "
+                         f"{', '.join(src.get(m, ['?']))}" for m in mats_used)
+    lines.append(f"\n-# 🏹 Where to hunt: {guide}")
     return "\n".join(lines)
 
 
@@ -1386,11 +1397,19 @@ async def _hub_expedition(interaction: Interaction, notice: str = ""):
 
 
 # --- the daily delve ---------------------------------------------------------------
+def _daily_marked_line() -> str:
+    affs = E.daily_affixes()
+    if not affs:
+        return ""
+    bits = "  ".join(f"{D.AFFIXES[a]['emoji']} {D.AFFIXES[a]['tag']}" for a in affs)
+    return f"\n-# 🗡️ Word from inside - marked foes today: {bits}"
+
+
 def _daily_results_text() -> str:
     loc = E.daily_location()
     lines = [f"## 📅 Daily Delve - {loc['emoji']} {loc['name']}",
              f"-# {E.weather_line()}  ·  same rooms for everyone, one attempt each, "
-             f"{E.DAILY_CLEAR_MULT:g}x clear bonus", ""]
+             f"{E.DAILY_CLEAR_MULT:g}x clear bonus" + _daily_marked_line(), ""]
     results = E.daily_results()
     if not results:
         lines.append("No attempts yet today. The dungeon waits.")
@@ -1425,7 +1444,7 @@ async def _hub_daily(interaction: Interaction):
         return
     loc = E.daily_location()
     text = (f"## 📅 Daily Delve - {loc['emoji']} {loc['name']}\n"
-            f"-# {E.weather_line()}\n\n"
+            f"-# {E.weather_line()}{_daily_marked_line()}\n\n"
             f"{loc['desc']}\n"
             f"One shared dungeon per day: **everyone faces the same rooms**, the dice are "
             f"your own. One attempt, separate from your normal delves, and the clear bonus "
@@ -1521,7 +1540,10 @@ def _help_text() -> str:
         "**Masteries** - carry a skill to 100 for a permanent **Doctrine** (pick one of two); "
         "make it **Legendary** to reset it to 15 for a ⭐.\n"
         "**Crafting** - kills drop **ingredients** into your at-risk satchel; brew them at the "
-        "**Lab Bench**, or feed them to the **Grindstone** to temper gear past its tier.\n"
+        "**Lab Bench**, or feed them to the **Grindstone** to temper gear past its tier. Drops "
+        "follow the foe: undead shed the smithing salts, monsters the fats and claws, men and "
+        "beasts the herbs, dragons their scales - the 🧪 icons on the map picker show what "
+        "hunts where, so the easy roads still have a job once you've outgrown them.\n"
         "**More to do** - swear to a **Faction** for weekly tasks, send a housecarl on an "
         "**Expedition**, loot **Fallen Adventurers**, brave the **Forks** and **Mimics**, and "
         "once Alduin is down, descend the endless **Soul Cairn** (one attempt a day).\n\n"

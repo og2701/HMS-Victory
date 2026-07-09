@@ -125,6 +125,39 @@ def route_tag(loc_key: str, date_str: str = None) -> str:
     return f"  ·  {c['emoji']} **{c['name']}** - {c['desc']}"
 
 
+_TYPE_LABEL = {"human": "men", "beast": "beasts", "undead": "undead",
+               "monster": "monsters", "construct": "constructs", "dragon": "dragons"}
+
+
+def ingredient_sources() -> dict:
+    """ingredient key -> list of enemy-type labels that drop it (dragons included) -
+    the reverse of INGREDIENT_DROPS, for showing players WHERE to hunt things."""
+    out = {"dragon_scale": ["dragons"]}
+    for etype, drops in D.INGREDIENT_DROPS.items():
+        for k in drops:
+            out.setdefault(k, [])
+            label = _TYPE_LABEL.get(etype, etype)
+            if label not in out[k]:
+                out[k].append(label)
+    return out
+
+
+def location_drops(loc_key: str, cap: int = 3) -> str:
+    """A compact emoji hint of what a location's foes drop, for the picker line.
+    The boss's drop leads (a lair's headline is the 🐲 scale, not the trash herbs)."""
+    loc = D.LOCATIONS.get(loc_key) or {}
+    seen, out = set(), []
+    for ekey in [loc.get("boss")] + list(loc.get("pool", {})):
+        e = D.ENEMIES.get(ekey) or {}
+        drops = (["dragon_scale"] if e.get("type") == "dragon"
+                 else D.INGREDIENT_DROPS.get(e.get("type"), []))
+        for k in drops:
+            if k not in seen:
+                seen.add(k)
+                out.append(D.INGREDIENTS[k]["emoji"])
+    return "".join(out[:cap])
+
+
 def stirred_rank(profile, loc_key: str) -> int:
     """How Stirred a location runs for this character: one rank per 3 levels above
     its gate, capped at the ladder's end. Applied only to the day's DEEP offer, so
@@ -646,8 +679,12 @@ def build_rooms(loc_key: str, rng=None, affix_level: int = 0, route: str = None)
     if cond.get("force_mudcrab"):
         rooms.append({"kind": "event", "key": "mudcrab", "boss": False, "resolved": False})
     if cond.get("force_fallen") or rng.random() < FALLEN_CHANCE:
+        # corpse picking reads the (mutable) graveyard, so it gets a DERIVED rng -
+        # exactly one draw from the main stream - or the shared daily layout would
+        # drift between players whenever someone died mid-day
+        crng = random.Random(rng.random())
         rooms.append({"kind": "event", "key": "fallen", "boss": False, "resolved": False,
-                      "corpse": _make_fallen_corpse(loc_key, rng)})
+                      "corpse": _make_fallen_corpse(loc_key, crng)})
     rng.shuffle(rooms)
     # A Fork before the boss: a genuine risk/reward choice with honest hints.
     if len(rooms) >= 2 and rng.random() < FORK_CHANCE:
@@ -1578,14 +1615,12 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
     Callers must have checked availability; this marks the attempt."""
     abandon_active(profile)
     if kind == "daily":
-        date, loc_key, rng = _daily_layout()
+        # the shared layout rolls elites like a seasoned delver's map and always
+        # features at least one - seeded, so everyone faces the same marked foes
+        date, loc_key, route, rooms = _daily_rooms()
         profile["daily"] = {"date": date}
-        route = route_condition(loc_key)          # today's condition, shared like the layout
-        # the shared layout rolls elites too (affix_level 15 ~ a seasoned delver) -
-        # seeded, so everyone faces the same marked foes on the same board
         delve = Delve(profile["user_id"], profile["name"], channel_id, loc_key,
-                      build_rooms(loc_key, rng, affix_level=15, route=route),
-                      hearts=heart_max(profile),
+                      rooms, hearts=heart_max(profile),
                       shout_charges=profile["words"], daily=True, route=route)
         delve.say(D.LOCATIONS[loc_key]["arrive"])
         cond = D.ROUTE_CONDITIONS.get(route)
@@ -1656,8 +1691,40 @@ def _daily_layout() -> tuple:
     date = _today_str()
     rng = random.Random(f"skyrim-daily-{date}")
     pool = sorted(k for k, v in D.LOCATIONS.items()
-                  if not v.get("dragon_lair") and not v.get("alduin"))
+                  if not v.get("dragon_lair") and not v.get("alduin")
+                  and not v.get("soulcairn"))
     return date, rng.choice(pool), rng
+
+
+def _ensure_affix(rooms: list, rng) -> None:
+    """Guarantee at least one Marked (affixed) foe in a room list - the daily
+    always features one, so the counter-play read comes up every day."""
+    if any(r.get("affix") for r in rooms if r["kind"] == "enemy"):
+        return
+    cands = [r for r in rooms if r["kind"] == "enemy"
+             and not r["boss"] and not r.get("bounty")]
+    if not cands:
+        return
+    target = rng.choice(cands)
+    aff = _eligible_affix(target["key"], rng)
+    if aff:
+        target["affix"] = aff
+
+
+def _daily_rooms() -> tuple:
+    """(date, loc_key, route, rooms) for today's shared dungeon - THE single
+    builder, so the delve and any preview always agree on the layout."""
+    date, loc_key, rng = _daily_layout()
+    route = route_condition(loc_key)
+    rooms = build_rooms(loc_key, rng, affix_level=15, route=route)
+    _ensure_affix(rooms, rng)
+    return date, loc_key, route, rooms
+
+
+def daily_affixes() -> list:
+    """The affix keys marked on today's shared board (for the daily panel tease)."""
+    _date, _loc, _route, rooms = _daily_rooms()
+    return sorted({r["affix"] for r in rooms if r.get("affix")})
 
 
 def daily_location() -> dict:
