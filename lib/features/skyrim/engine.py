@@ -372,6 +372,7 @@ def _fight_raw(profile, enemy_key: str, style: str, delve=None) -> float:
         p += _affix_fight_delta(profile, enemy_key, style, delve)
         p += (delve.buffs or {}).get("fight", 0)   # a brewed Philtre of Fury
         p -= D.STIRRED_FIGHT_PER_RANK * getattr(delve, "stirred", 0)   # the deep offer bites
+        p -= 3 * getattr(delve, "echo", 0)          # an Echoed Skuldafn fights back harder
         if getattr(delve, "kind", None) == "soulcairn":
             p -= SOULCAIRN_DRAIN * delve.depth      # the deep gnaws your odds
         nd = named_dragon(delve)
@@ -756,7 +757,7 @@ class Delve:
                  delve_id=None, enemy_hp=None, daily=False, fan=False,
                  ambush=False, hp_warned=False, venom=False, ingredients=None,
                  dragon=None, phase=None, depth=0, kind="normal", buffs=None,
-                 route=None, pacts=None, stirred=0):
+                 route=None, pacts=None, stirred=0, echo=0):
         import uuid
         self.delve_id = delve_id or uuid.uuid4().hex[:12]
         self.daily = bool(daily)                  # the shared once-a-day dungeon
@@ -773,6 +774,7 @@ class Delve:
         self.route = route                        # the day's route condition key
         self.pacts = list(pacts or [])            # Daedric pacts sworn for this delve
         self.stirred = int(stirred)               # deep-offer danger rank (0 = plain)
+        self.echo = int(echo)                     # Alduin's Echoes: past kills harden him
         self.player_id = int(player_id)
         self.player_name = player_name
         self.channel_id = channel_id
@@ -807,6 +809,8 @@ class Delve:
             hp += D.DRAGON_ROSTER.get(nd_key, {}).get("hp", 0)
         if room and room.get("boss") and self.stirred >= 3:
             hp += 1                              # a Deadly+ den breeds a tougher master
+        if room and room.get("key") == "alduin":
+            hp += self.echo                      # each Echo returns him a heart stronger
         return hp
 
     # --- construction ---------------------------------------------------------
@@ -903,6 +907,8 @@ class Delve:
             bonus = int(bonus * cond.get("clear_mult", 1.0))   # Rich Pickings pays out
         if self.stirred:
             bonus = int(bonus * (1 + D.STIRRED_CLEAR_PER_RANK * self.stirred))
+        if self.echo:
+            bonus = int(bonus * (1 + 0.25 * self.echo))        # his soul burns brighter each return
         self.satchel += bonus
         gained, _ = add_xp(profile, 25)
         self.xp_gained += gained
@@ -1544,7 +1550,7 @@ class Delve:
                 "venom": self.venom, "ingredients": self.ingredients,
                 "dragon": self.dragon, "phase": self.phase, "depth": self.depth,
                 "kind": self.kind, "buffs": self.buffs, "route": self.route,
-                "pacts": self.pacts, "stirred": self.stirred}
+                "pacts": self.pacts, "stirred": self.stirred, "echo": self.echo}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Delve":
@@ -1562,7 +1568,7 @@ class Delve:
                    venom=d.get("venom", False), ingredients=d.get("ingredients"),
                    dragon=d.get("dragon"), phase=d.get("phase"), depth=d.get("depth", 0),
                    kind=d.get("kind", "normal"), buffs=d.get("buffs"), route=d.get("route"),
-                   pacts=d.get("pacts"), stirred=d.get("stirred", 0))
+                   pacts=d.get("pacts"), stirred=d.get("stirred", 0), echo=d.get("echo", 0))
 
 
 # ---------------------------------------------------------------------------
@@ -1622,6 +1628,11 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
     elif kind == "alduin":
         profile["alduin"] = {"date": _today_str()}
         delve = Delve.start(profile, channel_id, "skuldafn")
+        delve.echo = alduin_echo(profile)
+        if delve.echo:
+            delve.say(f"🌑 **Echo {delve.echo}** - you have undone him before, and he "
+                      f"remembers. Harder to face, a heart stronger, and a richer soul "
+                      f"to take (+{25 * delve.echo}%).")
     else:
         spend_stamina(profile)
         delve = Delve.start(profile, channel_id, loc_key)
@@ -1761,11 +1772,20 @@ def daily_results() -> dict:
 # Alduin - the endgame. Gated hard, one attempt per day, never auto-triggered:
 # the location picker offers Skuldafn only when the character has earned it.
 # ---------------------------------------------------------------------------
+def alduin_echo(profile) -> int:
+    """How many times this character has undone the World-Eater (capped for the
+    fight's scaling). Each echo hardens the rematch and raises its dragon price."""
+    return min(int(profile.get("alduin_slain") or 0), 4)
+
+
 def alduin_ready(profile) -> tuple:
     """(ready, requirements_line). Ready means the gates are met, regardless of
-    whether today's attempt is spent."""
+    whether today's attempt is spent. Every past kill raises the dragon price -
+    the World-Eater does not grant rematches cheaply."""
     need_lvl = int(getattr(config, "SKYRIM_ALDUIN_MIN_LEVEL", 20))
-    need_drag = int(getattr(config, "SKYRIM_ALDUIN_MIN_DRAGONS", 5))
+    need_drag = (int(getattr(config, "SKYRIM_ALDUIN_MIN_DRAGONS", 5))
+                 + int(getattr(config, "SKYRIM_ALDUIN_DRAGONS_PER_ECHO", 3))
+                 * int(profile.get("alduin_slain") or 0))
     lvl_ok = level(profile) >= need_lvl
     words_ok = profile["words"] >= len(D.SHOUT_WORDS)
     drag_ok = profile["stats"]["dragons"] >= need_drag

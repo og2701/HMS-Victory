@@ -288,6 +288,29 @@ def test_stirred_deep_offer_bites_and_pays():
     assert all(E.stirred_rank(q, k) == 0 for k in E.offer_locations(q))
 
 
+def test_alduin_echoes():
+    p = _profile()
+    p["xp"] = 60_000
+    p["words"] = 3
+    p["stats"]["dragons"] = 5
+    assert E.alduin_ready(p)[0]                        # first meeting: 5 dragons suffice
+    p["alduin_slain"] = 2
+    assert not E.alduin_ready(p)[0]                    # rematch price: 5 + 3 per kill = 11
+    p["stats"]["dragons"] = 11
+    assert E.alduin_ready(p)[0]
+    d = E.start_delve(p, 0, "skuldafn", kind="alduin")
+    assert d.echo == 2
+    # he returns a heart stronger per echo, and harder to face
+    alduin_room = d.rooms[-1]
+    assert d._hp_for(alduin_room) == D.ENEMIES["alduin"]["hp"] + 2
+    d0 = E.Delve(p["user_id"], "T", 0, "skuldafn", list(d.rooms), hearts=5, shout_charges=3)
+    assert (E._fight_raw(p, "alduin", "blade", d)
+            == E._fight_raw(p, "alduin", "blade", d0) - 6)
+    # the cap holds: past kills beyond 4 don't stack forever
+    p["alduin_slain"] = 9
+    assert E.alduin_echo(p) == 4
+
+
 def test_daedric_pacts():
     p = _profile()
     assert E.swear_pacts(p, ["boethiah"]) is not None  # level-gated

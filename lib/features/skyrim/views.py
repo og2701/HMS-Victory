@@ -651,12 +651,15 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
     ready, req_line = E.alduin_ready(profile)
     if E.alduin_available(profile):
         loc = D.LOCATIONS["skuldafn"]
-        lines.append(f"\n🌑 **{loc['name']}**  ·  {loc['difficulty']} - {loc['desc']}")
+        echo = E.alduin_echo(profile)
+        echo_bit = f"  ·  🌑 Echo {echo}: he returns stronger" if echo else ""
+        lines.append(f"\n🌑 **{loc['name']}**  ·  {loc['difficulty']} - {loc['desc']}{echo_bit}")
         arow = discord.ui.ActionRow()
 
         async def _alduin(inter: Interaction):
             await _launch_delve(inter, "skuldafn", kind="alduin")
-        arow.add_item(_cb_btn(discord.ButtonStyle.danger, "Face Alduin", "🌑", _alduin))
+        label = f"Face Alduin (Echo {echo})" if echo else "Face Alduin"
+        arow.add_item(_cb_btn(discord.ButtonStyle.danger, label, "🌑", _alduin))
         rows.append(arow)
     elif ready:
         lines.append("\n-# 🌑 Alduin waits at Skuldafn - one attempt per day. Return tomorrow.")
@@ -1531,7 +1534,9 @@ def _help_text() -> str:
         "not power: a blessing and a brewed potion on your first delve each day.\n\n"
         "**🌑 Alduin** - at level 20, with the full Shout and 5 dragons down, Skuldafn "
         "opens. One attempt per day. He takes wing mid-fight; only the Voice brings him "
-        "back down. Slay him for the ⭐ title.\n\n"
+        "back down. Slay him for the ⭐ title - but the World-Eater **echoes**: every "
+        "victory returns him a heart stronger, harder to face, and demanding more dragons "
+        "slain before he'll meet you again. His soul pays richer each time.\n\n"
         "**⚡ Overkill** - once your odds are pinned at the cap, the surplus becomes bonus "
         "**crit** (shown on the button). Gear, tempering, affinity and grounding still matter "
         "at the top.\n"
