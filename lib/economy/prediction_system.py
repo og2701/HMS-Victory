@@ -843,6 +843,35 @@ class PredAdminView(discord.ui.View):
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
         await interaction.followup.send("🔓 Unlocked.", ephemeral=True)
 
+    @discord.ui.button(label="View Bettors", style=discord.ButtonStyle.secondary, row=0)
+    async def view_bettors(self, interaction: discord.Interaction, _btn: discord.ui.Button):
+        totals = self.pred.totals()
+        e = discord.Embed(title=f"Bettors: {self.pred.title}"[:256], color=0x5865F2)
+        for i, opt in enumerate(self.pred.options):
+            side = i + 1
+            pool = self.pred.bets.get(side, {})
+            emoji = _OPTION_EMOJIS[i % len(_OPTION_EMOJIS)]
+            field_name = f"{emoji} {opt} - {_fmt_money(totals[i])} UKP ({len(pool)} bettors)"[:256]
+            if not pool:
+                e.add_field(name=field_name, value="*No bets*", inline=False)
+                continue
+            lines = []
+            length = 0
+            entries = sorted(pool.items(), key=lambda x: x[1], reverse=True)
+            for shown, (uid, amt) in enumerate(entries):
+                member = interaction.guild.get_member(uid) if interaction.guild else None
+                name = discord.utils.escape_markdown(member.display_name) if member else f"<@{uid}>"
+                line = f"`{shown + 1}.` {name} - **{_fmt_money(amt)}**"
+                # Field values cap at 1024 chars (and the whole embed at 6000);
+                # stop early and summarise the tail rather than failing to send.
+                if length + len(line) + 1 > 950:
+                    lines.append(f"*...and {len(entries) - shown} more*")
+                    break
+                lines.append(line)
+                length += len(line) + 1
+            e.add_field(name=field_name, value="\n".join(lines), inline=False)
+        await interaction.response.send_message(embed=e, ephemeral=True)
+
     @discord.ui.button(label="Draw", style=discord.ButtonStyle.secondary, row=0)
     async def draw(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         confirm_view = ConfirmDrawView(self)
