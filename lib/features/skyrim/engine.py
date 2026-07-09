@@ -584,26 +584,31 @@ def build_rooms(loc_key: str, rng=None, affix_level: int = 0) -> list:
     return rooms
 
 
-def offer_locations(profile) -> list:
-    """Up to three destinations suited to the character's level: the easiest thing
-    still worth doing, something on-level, and the most dangerous thing unlocked.
-    Skuldafn is never offered here - the picker adds it via alduin_available."""
+def offer_locations(profile, date_str: str = None) -> list:
+    """The day's destinations. One pick from each difficulty band of what the
+    character has unlocked (easy / mid / deep), rotating deterministically per UK
+    day like the weather - so the picker changes each dawn instead of showing the
+    same three maps forever. Once dragon lairs are unlocked, one is always offered
+    too (soul-hunting is never blocked for a day). Skuldafn and the Soul Cairn are
+    never offered here - the picker adds those via their own availability checks."""
     lvl = level(profile)
     dragon_min = int(getattr(config, "SKYRIM_DRAGON_MIN_LEVEL", 8))
+    rng = random.Random(f"skyrim-offers-{date_str or _today_str()}")
     open_locs = [k for k, v in D.LOCATIONS.items()
                  if not v.get("alduin") and not v.get("soulcairn")
-                 and lvl >= v["min_level"] and (not v.get("dragon_lair") or lvl >= dragon_min)]
+                 and not v.get("dragon_lair") and lvl >= v["min_level"]]
     open_locs.sort(key=lambda k: D.LOCATIONS[k]["min_level"])
     if len(open_locs) <= 3:
-        return open_locs
-    picks = [open_locs[0], open_locs[len(open_locs) // 2], open_locs[-1]]
-    # de-dup while keeping order (possible when few locations are open)
-    seen, out = set(), []
-    for p in picks:
-        if p not in seen:
-            seen.add(p)
-            out.append(p)
-    return out
+        picks = list(open_locs)
+    else:
+        n = len(open_locs)
+        bands = (open_locs[:n // 3], open_locs[n // 3:(2 * n) // 3], open_locs[(2 * n) // 3:])
+        picks = [rng.choice(band) for band in bands if band]
+    lairs = sorted(k for k, v in D.LOCATIONS.items()
+                   if v.get("dragon_lair") and lvl >= dragon_min and lvl >= v["min_level"])
+    if lairs:
+        picks.append(rng.choice(lairs))
+    return picks
 
 
 def _soulcairn_room(depth: int, rng) -> dict:

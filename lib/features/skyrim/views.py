@@ -598,7 +598,8 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
     lines = ["## 🗺️ Where to, Dovahkiin?",
              f"-# {E.weather_line()}",
              f"-# 🛌 {left} delve{'s' if left != 1 else ''} left today  ·  "
-             f"the satchel is at stake, everything else is forever\n"]
+             f"the satchel is at stake, everything else is forever  ·  "
+             f"⛰️ the roads change with the dawn\n"]
     rows = []
     if left <= 0:
         lines.append("🛌 You need to rest - no delves left today. They reset at midnight "

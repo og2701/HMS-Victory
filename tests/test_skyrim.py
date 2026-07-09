@@ -190,6 +190,28 @@ def test_offer_locations_gates_dragons():
     assert any(D.LOCATIONS[k].get("dragon_lair") for k in E.offer_locations(p))
 
 
+def test_offers_rotate_daily():
+    p = _profile()
+    p["xp"] = 60_000                                   # everything unlocked
+    seen = set()
+    for d in range(1, 15):
+        date = f"2026-07-{d:02d}"
+        offers = E.offer_locations(p, date)
+        assert offers == E.offer_locations(p, date)    # stable within a day
+        assert 1 <= len(offers) <= 4
+        assert len(set(offers)) == len(offers)         # no duplicates
+        # every offer is genuinely unlocked, and exactly one dragon lair rides along
+        assert all(E.level(p) >= D.LOCATIONS[k]["min_level"] for k in offers)
+        assert sum(1 for k in offers if D.LOCATIONS[k].get("dragon_lair")) == 1
+        assert not any(D.LOCATIONS[k].get("alduin") or D.LOCATIONS[k].get("soulcairn")
+                       for k in offers)
+        seen.add(tuple(offers))
+    assert len(seen) > 1                               # the roads actually change
+    # a fresh character still gets the gentle fixed openers
+    q = _profile()
+    assert E.offer_locations(q, "2026-07-01") == E.offer_locations(q, "2026-07-02")
+
+
 # ---------------------------------------------------------------------------
 # Combat
 # ---------------------------------------------------------------------------
