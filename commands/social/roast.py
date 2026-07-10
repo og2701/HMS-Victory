@@ -85,8 +85,9 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here are the recent pathetic chat messages from {user.display_name}. Read them, find the most embarrassing or stupid things they said, and mercilessly roast them for it:\n\n{input_text}"},
             ],
-            max_tokens=500,
-            temperature=1.0,
+            # GPT-5 family: max_tokens is rejected (use max_completion_tokens) and
+            # only the default temperature is supported.
+            max_completion_tokens=500,
         )
 
         summary = response.choices[0].message.content.strip()

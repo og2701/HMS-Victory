@@ -63,8 +63,9 @@ async def glaze(interaction, channel: TextChannel = None, user: Member = None):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here are the recent chat messages from {user.display_name}. Read them, find specific things they said, and provide a legendary, overly posh British compliment directly based on those topics:\n\n{input_text}"},
             ],
-            max_tokens=250,
-            temperature=0.8,
+            # GPT-5 family: max_tokens is rejected (use max_completion_tokens) and
+            # only the default temperature is supported.
+            max_completion_tokens=250,
         )
 
         summary = response.choices[0].message.content.strip()
