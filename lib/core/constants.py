@@ -49,6 +49,7 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🎩": "British 'rp'/posh talk - 'the queens english'",
     "🏰": "Shakespearean English (do not use Chaucerian Middle English)",
     "🦴": "Caveman talk - completely rewrite the message as primitive caveman speech: drop small grammar words (a, the, is, are, of), turn 'I/me/my' into 'me', use short broken present-tense fragments and the simplest possible words. Keep all the meaning but make it sound like a club-wielding caveman",
+    "💎": "Posh Chav - completely rewrite the message so it blends extremely posh, upper-class British RP vocabulary (e.g. 'I say', 'one is', 'splendid', 'rather') with aggressive UK street/chav/roadman slang and fillers (e.g. 'innit', 'bruv', 'safe', 'fuming', 'peak', 'bloke'). The tone should be an incongruous, hilarious hybrid of high-society politeness and council-estate street attitude",
 }
 
 # --- Translation Global Blacklist ---
