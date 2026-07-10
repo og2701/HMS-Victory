@@ -58,7 +58,7 @@ async def glaze(interaction, channel: TextChannel = None, user: Member = None):
 
     try:
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5.4-nano",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here are the recent chat messages from {user.display_name}. Read them, find specific things they said, and provide a legendary, overly posh British compliment directly based on those topics:\n\n{input_text}"},

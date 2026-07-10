@@ -15,6 +15,7 @@ from commands.creative.iceberg.get_iceberg import show_iceberg
 
 from commands.social.roast import roast
 from commands.social.glaze import glaze
+from commands.social.whatsgoingon import whatsgoingon
 
 from commands.economy.economy_state import handle_ukpeconomy_command
 from commands.economy.shop import handle_shop_command
