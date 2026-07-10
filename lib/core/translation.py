@@ -42,7 +42,7 @@ target_language_mappings = {
     "Over the top 'roadman' speak": "Roadman",
     "British 'rp'/posh talk - 'the queens english'": "The Queen's English",
     "Over the top american yank speak": "Yank",
-    "Shakespearean English (using thee, thou, thy, hath, art, etc. - do not use Chaucerian Middle English spelling)": "Olde English",
+    "Shakespearean English (using thee, thou, thy, hath, art, etc. - do not use Chaucerian Middle English)": "Olde English",
     # Keyed off the constants source so the footer label can't drift from the prompt.
     FLAG_LANGUAGE_MAPPINGS["🦴"]: "🦴 Caveman",
 }

@@ -47,7 +47,7 @@ FLAG_LANGUAGE_MAPPINGS = {
     # Stylistic translations
     "🏴‍☠️": "Pirate Speak", "🤓": "Nerd Speak", "🥷": "Over the top 'roadman' speak",
     "🎩": "British 'rp'/posh talk - 'the queens english'",
-    "🏰": "Shakespearean English (using thee, thou, thy, hath, art, etc. - do not use Chaucerian Middle English spelling)",
+    "🏰": "Shakespearean English (using thee, thou, thy, hath, art, etc. - do not use Chaucerian Middle English)",
     "🦴": "Caveman talk - completely rewrite the message as primitive caveman speech: drop small grammar words (a, the, is, are, of), turn 'I/me/my' into 'me', use short broken present-tense fragments and the simplest possible words. Keep all the meaning but make it sound like a club-wielding caveman",
 }
 
