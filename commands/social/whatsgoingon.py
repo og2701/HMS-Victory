@@ -1,3 +1,4 @@
+import re
 import time
 import logging
 import traceback
@@ -35,12 +36,30 @@ PLAIN_PROMPT = (
     "messages in order.\n"
     "- Name the participants naturally, e.g. \"Alice and Bob argued about X; Bob reckoned Y.\"\n"
     "- Summarise in your own words. Only quote directly if a short quote is essential.\n"
-    "- If images or links were shared, mention that briefly.\n"
-    "- Skip noise: bot commands, one-off reactions, and dead-end messages that went nowhere.\n"
+    "- If images, GIFs or links were shared, mention that briefly - but NEVER read out a "
+    "URL or domain name. Say \"shared a GIF\" or \"linked an article\", not the address.\n"
+    "- Skip noise entirely: bot commands, one-off reactions, and topics that fizzled out or "
+    "went nowhere. Leave them out completely - do not mention that something was brief, "
+    "unresolved, or skipped. Covering fewer topics well beats covering everything.\n"
     "- Use British English.\n"
     "- Keep the whole summary under 250 words. If the chat was quiet, a sentence or two is fine.\n"
     "Return only the summary text, no preamble."
 )
+
+
+# Keeps letters, digits, spaces and name-ish punctuation; drops emoji, symbols and
+# other decoration. \w is Unicode-aware so accented/CJK names survive.
+_NAME_JUNK = re.compile(r"[^\w\s'\-\.]")
+
+
+def _plain_name(user) -> str:
+    """Decorated display names read terribly on a screen reader ('ribbon Bryan
+    ribbon'), so strip them down to plain text before they enter the transcript."""
+    name = _NAME_JUNK.sub("", user.display_name).strip()
+    if not name:
+        # Display name was pure decoration; fall back to the account name.
+        name = _NAME_JUNK.sub("", user.name).strip() or "someone"
+    return name
 
 
 def _clean_content(msg: discord.Message) -> str:
@@ -75,9 +94,9 @@ async def _build_transcript(channel, cutoff: datetime) -> tuple[str, int, int]:
         reply = ""
         ref = msg.reference.resolved if msg.reference else None
         if isinstance(ref, discord.Message) and not ref.author.bot:
-            reply = f" (replying to {ref.author.display_name})"
+            reply = f" (replying to {_plain_name(ref.author)})"
         stamp = msg.created_at.astimezone(timezone.utc).strftime("%H:%M")
-        lines.append(f"[{stamp}] {msg.author.display_name}{reply}: {content}")
+        lines.append(f"[{stamp}] {_plain_name(msg.author)}{reply}: {content}")
         participants.add(msg.author.id)
 
     transcript = "\n".join(lines)
