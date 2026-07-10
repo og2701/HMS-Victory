@@ -16,7 +16,7 @@ from lib.features.summary import post_summary
 from lib.economy.economy_manager import get_shutcoins, set_shutcoins
 from lib.economy.prediction_system import PredAdminView, PredSelectView, PredictionCreateModal, PredictionScheduleModal
 from lib.economy.economy_manager import get_bb, set_bb, add_bb, remove_bb
-from typing import Optional, Literal
+from typing import Optional
 from commands.economy.shop import handle_shop_command
 from commands.economy.bank_commands import (
     handle_bank_status_command
@@ -199,13 +199,13 @@ def define_commands(tree, client):
     async def glaze_command(interaction: Interaction, channel: TextChannel = None, user: Member = None):
         await glaze(interaction, channel, user)
 
-    @command("whatsgoingon", "Catch up on recent chat in this channel - screen-reader friendly summary (only you see it)")
-    async def whatsgoingon_command(interaction: Interaction, minutes: int = 10, style: Literal["plain", "roast"] = "plain"):
-        await whatsgoingon(interaction, minutes, style)
+    @command("whatsgoingon", "Catch up on the last 10 minutes of chat - screen-reader friendly summary (only you see it)")
+    async def whatsgoingon_command(interaction: Interaction):
+        await whatsgoingon(interaction)
 
-    @command("wgo", "Short for /whatsgoingon - summary of recent chat (only you see it)")
-    async def wgo_command(interaction: Interaction, minutes: int = 10, style: Literal["plain", "roast"] = "plain"):
-        await whatsgoingon(interaction, minutes, style)
+    @command("wgo", "Short for /whatsgoingon - summary of the last 10 minutes of chat (only you see it)")
+    async def wgo_command(interaction: Interaction):
+        await whatsgoingon(interaction)
 
     @command("vc-control", "Toggles server mute/deafen perms for a user", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
     async def vc_control(interaction: Interaction, user: Member):

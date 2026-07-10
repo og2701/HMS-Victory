@@ -3,7 +3,6 @@ import logging
 import traceback
 from datetime import datetime, timedelta, timezone
 from os import getenv
-from typing import Literal
 
 import discord
 from openai import AsyncOpenAI
@@ -13,9 +12,7 @@ client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"), max_retries=5, timeout=60.0
 logger = logging.getLogger(__name__)
 
 MODEL = "gpt-5.4-nano"
-DEFAULT_MINUTES = 10
-MIN_MINUTES = 2
-MAX_MINUTES = 60
+WINDOW_MINUTES = 10
 MAX_MESSAGES = 300
 # ~12k tokens of transcript, well under the model's window; keeps cost + latency flat
 MAX_TRANSCRIPT_CHARS = 48_000
@@ -43,20 +40,6 @@ PLAIN_PROMPT = (
     "- Use British English.\n"
     "- Keep the whole summary under 250 words. If the chat was quiet, a sentence or two is fine.\n"
     "Return only the summary text, no preamble."
-)
-
-ROAST_PROMPT = (
-    "You summarise recent Discord chat so someone who just arrived can catch up, in the "
-    "style of a dry, sarcastic British panel-show host recapping events. Take the mick out "
-    "of what people said and did, but the recap must still be genuinely informative: someone "
-    "reading it should actually understand what happened and who was involved.\n"
-    "- Write flowing prose in short paragraphs. No bullet points, no headers, no emoji.\n"
-    "- Untangle interleaved conversations and recap each topic as a thread.\n"
-    "- Mock the ideas and the chat behaviour, never sexuality, race, gender, religion or "
-    "any protected characteristic.\n"
-    "- Use British English and British humour.\n"
-    "- Keep the whole recap under 250 words.\n"
-    "Return only the recap text, no preamble."
 )
 
 
@@ -105,9 +88,7 @@ async def _build_transcript(channel, cutoff: datetime) -> tuple[str, int, int]:
     return transcript, len(lines), len(participants)
 
 
-async def whatsgoingon(interaction: discord.Interaction,
-                       minutes: int = DEFAULT_MINUTES,
-                       style: Literal["plain", "roast"] = "plain"):
+async def whatsgoingon(interaction: discord.Interaction):
     now = time.monotonic()
     last = _last_use.get(interaction.user.id)
     if last is not None and now - last < COOLDOWN_SECONDS:
@@ -117,10 +98,9 @@ async def whatsgoingon(interaction: discord.Interaction,
         )
     _last_use[interaction.user.id] = now
 
-    minutes = max(MIN_MINUTES, min(MAX_MINUTES, minutes))
     await interaction.response.defer(ephemeral=True)
 
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=WINDOW_MINUTES)
     try:
         transcript, msg_count, people = await _build_transcript(interaction.channel, cutoff)
     except discord.Forbidden:
@@ -130,18 +110,17 @@ async def whatsgoingon(interaction: discord.Interaction,
 
     if not transcript:
         return await interaction.followup.send(
-            f"It's been quiet - no chat in the last {minutes} minutes.", ephemeral=True
+            f"It's been quiet - no chat in the last {WINDOW_MINUTES} minutes.", ephemeral=True
         )
 
-    system_prompt = ROAST_PROMPT if style == "roast" else PLAIN_PROMPT
     try:
         response = await client.chat.completions.create(
             model=MODEL,
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": PLAIN_PROMPT},
                 {"role": "user", "content": (
                     f"Chat from the #{interaction.channel.name} channel over the last "
-                    f"{minutes} minutes (times are UTC):\n\n{transcript}"
+                    f"{WINDOW_MINUTES} minutes (times are UTC):\n\n{transcript}"
                 )},
             ],
             max_completion_tokens=600,
@@ -157,7 +136,7 @@ async def whatsgoingon(interaction: discord.Interaction,
         )
 
     header = (
-        f"Catch-up for the last {minutes} minutes: "
+        f"Catch-up for the last {WINDOW_MINUTES} minutes: "
         f"{msg_count} messages from {people} people.\n\n"
     )
     # Ephemeral messages cap at 2000 chars; the prompt asks for <250 words so this
