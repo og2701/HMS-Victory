@@ -284,6 +284,7 @@ def _migrate(profile: dict) -> dict:
     # the persistent Voice - existing characters are grandfathered in at full breath
     profile.setdefault("voice", {"charges": int(profile.get("words", 0)),
                                  "date": _today_str()})
+    profile.setdefault("meditations", 0)         # perk points spent stilling the Voice
     return profile
 
 
@@ -342,8 +343,25 @@ def level(profile) -> int:
 
 
 def perk_points(profile) -> int:
-    spent = sum(profile["perks"].values())
+    spent = sum(profile["perks"].values()) + int(profile.get("meditations") or 0)
     return max(0, level(profile) - 1 - spent)
+
+
+def meditate(profile) -> str | None:
+    """Spend a perk point to still the mind and restore the Voice in full - the
+    overflow sink for characters whose perk table is long since maxed. Returns an
+    error line, or None on success."""
+    if perk_points(profile) <= 0:
+        return "No perk points to spend - level up first."
+    if int(profile.get("words", 0)) <= 0:
+        return "You have no Voice yet to still."
+    if voice_charges(profile) >= int(profile["words"]):
+        return "Your breath is already full."
+    profile["meditations"] = int(profile.get("meditations") or 0) + 1
+    v = _voice(profile)
+    v["charges"] = int(profile["words"])
+    v["date"] = _today_str()
+    return None
 
 
 def perk_rank(profile, key) -> int:

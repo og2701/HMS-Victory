@@ -302,6 +302,24 @@ def test_stirred_band_scaling():
     assert all(E.stirred_rank(q, k) == 0 for k in E.offer_locations(q))
 
 
+def test_meditation_sink():
+    p = _profile()
+    p["xp"] = 60_000                                   # a pile of levels -> spare points
+    p["words"] = 3
+    for key, perk in D.PERKS.items():                  # perk table fully maxed
+        p["perks"][key] = perk["ranks"]
+    spare = E.perk_points(p)
+    assert spare > 0                                   # points still accrue past the table
+    p["voice"] = {"charges": 0, "date": E._today_str()}
+    assert E.meditate(p) is None                       # ...and now have somewhere to go
+    assert E.voice_charges(p) == 3
+    assert E.perk_points(p) == spare - 1               # the point is truly spent
+    assert E.meditate(p) == "Your breath is already full."
+    q = _profile()
+    q["xp"] = 1_000
+    assert E.meditate(q) is not None                   # no Voice yet, no meditation
+
+
 def test_voice_is_persistent():
     p = _profile()
     p["words"] = 3

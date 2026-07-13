@@ -953,6 +953,10 @@ async def _hub_perks(interaction: Interaction, notice: str = ""):
     for key, perk in D.PERKS.items():
         have = E.perk_rank(profile, key)
         lines.append(f"{perk['emoji']} **{perk['name']}** {have}/{perk['ranks']} - {perk['desc']}")
+    if profile.get("words", 0) > 0:
+        lines.append(f"🧘 **Meditation** - spend a point to still the mind and restore the "
+                     f"Voice in full (breath {E.voice_charges(profile)}/{profile['words']}). "
+                     f"The Greybeards approve. ({int(profile.get('meditations') or 0)} so far)")
     if notice:
         lines += ["", notice]
     rows = []
@@ -978,6 +982,19 @@ async def _hub_perks(interaction: Interaction, notice: str = ""):
             srow = discord.ui.ActionRow()
             srow.add_item(select)
             rows.append(srow)
+        if profile.get("words", 0) > 0 and E.voice_charges(profile) < profile["words"]:
+            async def _meditate(inter: Interaction):
+                p = E.get_profile(inter.user.id)
+                err = E.meditate(p)
+                if err is None:
+                    E.save_profile(p)
+                    await _hub_perks(inter, notice="-# 🧘 The mind stills. Your breath returns "
+                                                   "in full.")
+                else:
+                    await _hub_perks(inter, notice=f"-# {err}")
+            mrow = discord.ui.ActionRow()
+            mrow.add_item(_cb_btn(discord.ButtonStyle.primary, "Meditate (1 pt)", "🧘", _meditate))
+            rows.append(mrow)
     rows.append(_back_row())
     await _edit_panel(interaction, "\n".join(lines), rows)
 
