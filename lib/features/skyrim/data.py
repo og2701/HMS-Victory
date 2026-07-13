@@ -479,8 +479,10 @@ PACTS = {
                "desc": "No potions. What you carry in hearts is all you get."},
     "dagon": {"name": "Dagon's Toll", "emoji": "🔥", "mult": 1.6,
               "desc": "Every wound you take is a crushing blow (-2 ❤️)."},
-    "clavicus": {"name": "Clavicus Vile's Bargain", "emoji": "😈", "mult": 1.7,
-                 "desc": "No leaving, no fleeing. Clear it or die in it."},
+    "clavicus": {"name": "Clavicus Vile's Bargain", "emoji": "😈", "mult": 1.2,
+                 "per_other": 0.25, "mult_note": "x1.2, +0.25 per other pact",
+                 "desc": "No leaving, no fleeing. Clear it or die in it. His cut grows "
+                         "with the company he traps you with."},
 }
 
 # ---------------------------------------------------------------------------

@@ -275,17 +275,57 @@ def test_stirred_deep_offer_bites_and_pays():
     assert r >= 3                                      # deeply outgrown -> high rank
     d = E.start_delve(p, 0, deep)
     assert d.stirred == r
-    # the malus lands on every attack roll (compare against an unstirred twin)
-    d0 = E.Delve(p["user_id"], "T", 0, deep, list(d.rooms), hearts=5, shout_charges=0)
+    # the malus lands on every attack roll (compare the delve against itself with
+    # the rank zeroed, so the day's route condition can't skew the twin)
     key = next(rm["key"] for rm in d.rooms if rm["kind"] == "enemy")
-    assert (E._fight_raw(p, key, "blade", d)
-            == E._fight_raw(p, key, "blade", d0) - D.STIRRED_FIGHT_PER_RANK * r)
+    with_rank = E._fight_raw(p, key, "blade", d)
+    d.stirred = 0
+    base = E._fight_raw(p, key, "blade", d)
+    d.stirred = r
+    assert with_rank == base - D.STIRRED_FIGHT_PER_RANK * r
     # a Deadly+ den breeds a tougher master
     boss_room = d.rooms[-1]
-    assert d._hp_for(boss_room) == d0._hp_for(boss_room) + (1 if r >= 3 else 0)
+    hp_with = d._hp_for(boss_room)
+    d.stirred = 0
+    hp_base = d._hp_for(boss_room)
+    d.stirred = r
+    assert hp_with == hp_base + (1 if r >= 3 else 0)
     # fresh characters see no stirred anywhere
     q = _profile()
     assert all(E.stirred_rank(q, k) == 0 for k in E.offer_locations(q))
+
+
+def test_drink_opening():
+    # a tier-3 foe strikes while you swig mid-fight (after the heal, never crushing)
+    p = _profile()
+    p["potions"] = 2
+    d = _enemy_room_delve(p, "troll")
+    d.engaged = True
+    d.hearts = 1
+    E.random = _fixed_rolls(0.999)                 # soak fails: the opening lands
+    try:
+        d.act_potion(p)
+    finally:
+        _restore_random()
+    assert p["potions"] == 1
+    assert d.hearts == 1                           # healed to 2, struck back to 1 - tempo lost
+    assert d.playing()                             # the swig itself can never kill
+    # small foes can't punish the drink
+    d2 = _enemy_room_delve(p, "bandit")
+    d2.engaged = True
+    d2.hearts = 1
+    E.random = _fixed_rolls(0.999)
+    try:
+        d2.act_potion(p)
+    finally:
+        _restore_random()
+    assert d2.hearts == 2                          # clean heal
+    # and drinking BETWEEN fights (not engaged) is always safe
+    p["potions"] = 1
+    d3 = _enemy_room_delve(p, "troll")
+    d3.hearts = 1
+    d3.act_potion(p)
+    assert d3.hearts == 2
 
 
 def test_alduin_echoes():
@@ -320,7 +360,15 @@ def test_daedric_pacts():
     d = E.start_delve(p, 0, "embershard")
     assert d.pacts == p.get("nextpacts", []) or p["nextpacts"] == []   # consumed
     assert d.pacts == ["boethiah", "namira", "dagon", "clavicus"]
-    assert E.pact_mult(d) == E.PACT_MULT_CAP           # 1.5*1.4*1.6*1.7 caps at 4
+    assert E.pact_mult(d) == E.PACT_MULT_CAP           # full stack caps at 4
+    # Clavicus prices himself by the company: nearly free alone, richer stacked
+    solo = E.Delve(p["user_id"], "T", 0, "embershard",
+                   [{"kind": "enemy", "key": "skeever", "boss": False, "resolved": False}],
+                   hearts=3, shout_charges=0, pacts=["clavicus"])
+    assert E.pact_mult(solo) == 1.2
+    duo = E.Delve(p["user_id"], "T", 0, "embershard", list(solo.rooms),
+                  hearts=3, shout_charges=0, pacts=["clavicus", "boethiah"])
+    assert abs(E.pact_mult(duo) - 1.45 * 1.5) < 1e-9
     # Boethiah: the ceiling drops to 72
     for st in D.STYLES:
         p["skills"][st] = 100

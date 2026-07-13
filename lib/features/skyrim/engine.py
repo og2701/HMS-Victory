@@ -63,6 +63,7 @@ MIMIC_CHANCE = 0.18                  # chance a chest room is secretly a Mimic (
 FORK_CHANCE = 0.45                   # chance a delve offers a branching Fork before the boss
 SOULCAIRN_DRAIN = 2                  # attack % the Soul Cairn steals per depth descended
 FALLEN_CHANCE = 0.20                 # chance a delve holds a Fallen Adventurer's corpse
+DRINK_OPENING_TIER = 3               # foes this tough strike while you drink mid-fight
 PACT_MULT_CAP = 4.0                  # max combined satchel multiplier from stacked pacts
 PACT_MIN_LEVEL = 10                  # pacts unlock once the ordinary maps start feeling easy
 PACT_ROLL_MAX = 72                   # Boethiah's Proving: the attack ceiling drops to this
@@ -170,10 +171,18 @@ def deep_offer(profile, date_str: str = None) -> str | None:
 
 
 def pact_mult(delve) -> float:
-    """The combined satchel multiplier from this delve's sworn pacts, capped."""
+    """The combined satchel multiplier from this delve's sworn pacts, capped.
+    Clavicus prices himself by the company: alone his bargain is nearly free
+    (a strong delver never fled anyway), so his cut grows with each other pact
+    that makes being trapped genuinely dangerous."""
+    pacts = getattr(delve, "pacts", None) or []
     m = 1.0
-    for k in getattr(delve, "pacts", None) or []:
-        m *= D.PACTS.get(k, {}).get("mult", 1.0)
+    for k in pacts:
+        p = D.PACTS.get(k, {})
+        mult = p.get("mult", 1.0)
+        if p.get("per_other"):
+            mult += p["per_other"] * (len(pacts) - 1)
+        m *= mult
     return min(PACT_MULT_CAP, m)
 
 
@@ -990,8 +999,12 @@ class Delve:
         was consumed by the warning."""
         if self.hearts == 1 and profile["potions"] > 0 and not self.hp_warned:
             self.hp_warned = True
-            self.say("⚠️ **One heart left - and you're carrying a potion!** 🧪 heals you "
-                     "first. If you truly want to fight on one heart, press the attack again.")
+            line = ("⚠️ **One heart left - and you're carrying a potion!** 🧪 heals you "
+                    "first. If you truly want to fight on one heart, press the attack again.")
+            e = self.enemy() if self.room["kind"] == "enemy" else None
+            if self.engaged and e and e["tier"] >= DRINK_OPENING_TIER:
+                line += "  (Drinking mid-fight gives it an opening - it may strike while you swig.)"
+            self.say(line)
             return True
         return False
 
@@ -1290,6 +1303,12 @@ class Delve:
         if cured:
             line += "  🟢 The venom neutralises."
         self.say(line)
+        # a serious foe doesn't watch you drink: mid-fight healing costs tempo (the
+        # blow lands AFTER the heal and never crushes, so the swig itself can't kill)
+        e = self.enemy() if self.room["kind"] == "enemy" else None
+        if self.engaged and e and e["tier"] >= DRINK_OPENING_TIER:
+            self.say(f"{e['emoji']} The **{e['name']}** strikes while you swig!")
+            self._wound(profile, e["wound"], heavy=0.0)
 
     def act_leave(self, profile) -> None:
         """Leave with the satchel; mid-fight it becomes a flee and loot spills.

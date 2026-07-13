@@ -1211,7 +1211,8 @@ async def _hub_pacts(interaction: Interaction, notice: str = ""):
              "Cairn - the Princes want to watch you *choose* it.", ""]
     for key, pact in D.PACTS.items():
         tick = "⚖️" if key in sworn else "◻️"
-        lines.append(f"{tick} {pact['emoji']} **{pact['name']}** (x{pact['mult']:g}) - {pact['desc']}")
+        price = pact.get("mult_note") or f"x{pact['mult']:g}"
+        lines.append(f"{tick} {pact['emoji']} **{pact['name']}** ({price}) - {pact['desc']}")
     if sworn:
         fake = E.Delve(profile["user_id"], "x", 0, "embershard",
                        [{"kind": "enemy", "key": "skeever", "boss": False, "resolved": False}],
@@ -1224,7 +1225,8 @@ async def _hub_pacts(interaction: Interaction, notice: str = ""):
     sel = discord.ui.Select(placeholder="Swear your pacts (pick none to clear)...",
                             min_values=0, max_values=len(D.PACTS))
     for key, pact in D.PACTS.items():
-        sel.add_option(label=f"{pact['name']} (x{pact['mult']:g})", value=key,
+        price = pact.get("mult_note") or f"x{pact['mult']:g}"
+        sel.add_option(label=f"{pact['name']} ({price})", value=key,
                        emoji=pact["emoji"], description=pact["desc"][:100],
                        default=key in sworn)
 
