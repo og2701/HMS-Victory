@@ -768,7 +768,8 @@ def _sheet_text(profile) -> str:
         f"**Gear**: {E.gear_name(profile, 'weapon')}  ·  {E.gear_name(profile, 'armour')} "
         f"(soaks {E.soak_pct(profile)}% of hits)",
         f"**Hearts**: {'❤️' * E.heart_max(profile)}  ·  🧪 {profile['potions']}/{E.potion_cap(profile)} potions",
-        f"**The Voice**: 🗣️ {words} ({profile['words']}/3 words)  ·  🐉 {profile['souls']} unspent "
+        f"**The Voice**: 🗣️ {words} ({profile['words']}/3 words)  ·  "
+        f"breath {E.voice_charges(profile)}/{profile['words']}  ·  🐉 {profile['souls']} unspent "
         f"soul{'s' if profile['souls'] != 1 else ''}",
         f"**Septims**: 💰 {profile['septims']:,}",
     ]
@@ -1560,8 +1561,10 @@ def _help_text() -> str:
         "arrows, Venomous bleeds into the next room...) are telegraphed a room ahead. Bounties "
         "still pay triple.\n"
         "**The Voice** - **FUS** grounds/staggers (1 charge), **FUS RO** flattens a room (2), "
-        "**FUS RO DAH** deals 2 damage to anything (3). Ration the pool. A **week's dragon** "
-        "rotates the roster; airborne dragons need a **bow** or a shout.\n"
+        "**FUS RO DAH** deals 2 damage to anything (3). Your breath is **persistent**: it no "
+        "longer refills at every door - you regain 1 charge at dawn (UK), and **absorbing a "
+        "dragon soul renews it in full**. Skuldafn alone grants a full Voice at the gate. "
+        "A **week's dragon** rotates the roster; airborne dragons need a **bow** or a shout.\n"
         "**Masteries** - carry a skill to 100 for a permanent **Doctrine** (pick one of two); "
         "make it **Legendary** to reset it to 15 for a ⭐.\n"
         "**Crafting** - kills drop **ingredients** into your at-risk satchel; brew them at the "

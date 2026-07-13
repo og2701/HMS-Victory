@@ -149,6 +149,41 @@ def location_drops(loc_key: str, cap: int = 3) -> str:
     return "".join(out[:cap])
 
 
+def _voice(profile) -> dict:
+    return profile.setdefault("voice", {"charges": int(profile.get("words", 0)),
+                                        "date": _today_str()})
+
+
+def voice_charges(profile) -> int:
+    """Persistent shout charges - the Voice no longer refills free at every door.
+    It regains one charge at each UK dawn (capped at words known), and absorbing a
+    dragon's soul renews it in full. Skuldafn alone grants a full Voice at the gate:
+    the Alduin fight is designed as a war over three charges."""
+    v = _voice(profile)
+    cap = int(profile.get("words", 0))
+    today = _today_str()
+    if v.get("date") != today:
+        try:
+            days = max(0, (datetime.date.fromisoformat(today)
+                           - datetime.date.fromisoformat(v.get("date", today))).days)
+        except ValueError:
+            days = 1
+        v["charges"] = int(v.get("charges", 0)) + days
+        v["date"] = today
+    v["charges"] = max(0, min(cap, int(v.get("charges", 0))))
+    return v["charges"]
+
+
+def _sync_voice(profile, delve, charges: int):
+    """Mirror a delve's remaining charges back onto the character - except at
+    Skuldafn, where the full Voice is the Greybeards' loan, not yours to keep."""
+    if getattr(delve, "kind", None) == "alduin":
+        return
+    v = _voice(profile)
+    v["charges"] = max(0, min(int(profile.get("words", 0)), int(charges)))
+    v["date"] = _today_str()
+
+
 def prowess(profile) -> int:
     """The character's rough power: level plus a nod to gear and tempering. What
     the wilds answer to when a location stirs."""
@@ -246,6 +281,9 @@ def _migrate(profile: dict) -> dict:
     profile.setdefault("expedition", None)       # an out-on-a-timer expedition, if any
     profile.setdefault("exp_log", [])            # the last few expedition returns
     profile.setdefault("exp_totals", {"count": 0, "septims": 0, "xp": 0})
+    # the persistent Voice - existing characters are grandfathered in at full breath
+    profile.setdefault("voice", {"charges": int(profile.get("words", 0)),
+                                 "date": _today_str()})
     return profile
 
 
@@ -834,7 +872,7 @@ class Delve:
         route = None if loc.get("alduin") else route_condition(loc_key)
         d = cls(profile["user_id"], profile["name"], channel_id, loc_key,
                 build_rooms(loc_key, affix_level=level(profile), route=route),
-                hearts=heart_max(profile), shout_charges=profile["words"],
+                hearts=heart_max(profile), shout_charges=voice_charges(profile),
                 dragon=dragon_of_the_week(), route=route)
         d.say(loc["arrive"])
         # locations answer strength by band: Hard/DRAGON stay dangerous at any power
@@ -1145,6 +1183,10 @@ class Delve:
             profile["souls"] += 1
             profile["stats"]["dragons"] += 1
             line += "  🐉 **+1 dragon soul**"
+            if profile.get("words", 0) > 0 and self.shout_charges < profile["words"]:
+                self.shout_charges = int(profile["words"])
+                _sync_voice(profile, self, self.shout_charges)
+                line += "  🗣️ **the soul renews your Thu'um**"
             nd_key = getattr(self, "dragon", None)
             if self.room["key"] == "dragon" and nd_key:
                 wall = profile.setdefault("dragon_wall", [])
@@ -1254,6 +1296,7 @@ class Delve:
             return                                       # already grounded - FUS is wasted
         shout = " ".join(D.SHOUT_WORDS[:cost])
         self.shout_charges -= cost
+        _sync_voice(profile, self, self.shout_charges)   # spent breath stays spent
 
         if cost >= 3:                                    # FUS RO DAH - true damage
             if is_dragon:
@@ -1497,6 +1540,7 @@ class Delve:
                 profile["souls"] -= 1
                 profile["words"] += 1
                 self.shout_charges += 1
+                _sync_voice(profile, self, self.shout_charges)
                 word = D.SHOUT_WORDS[profile["words"] - 1]
                 known = " ".join(D.SHOUT_WORDS[:profile["words"]])
                 self.say(f"A dragon's soul burns away and the word **{word}** sears into your mind."
@@ -1641,7 +1685,7 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
         profile["daily"] = {"date": date}
         delve = Delve(profile["user_id"], profile["name"], channel_id, loc_key,
                       rooms, hearts=heart_max(profile),
-                      shout_charges=profile["words"], daily=True, route=route)
+                      shout_charges=voice_charges(profile), daily=True, route=route)
         delve.say(D.LOCATIONS[loc_key]["arrive"])
         cond = D.ROUTE_CONDITIONS.get(route)
         if cond:
@@ -1651,6 +1695,9 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
     elif kind == "alduin":
         profile["alduin"] = {"date": _today_str()}
         delve = Delve.start(profile, channel_id, "skuldafn")
+        # the fight is designed as a war over three charges: the Greybeards' song
+        # grants a full Voice at the gate (a loan - it doesn't refill your own)
+        delve.shout_charges = int(profile.get("words", 0))
         delve.echo = alduin_echo(profile)
         if delve.echo:
             delve.say(f"🌑 **Echo {delve.echo}** - you have undone him before, and he "
@@ -1842,7 +1889,7 @@ def start_soulcairn(profile, channel_id) -> Delve:
     sc["date"] = _today_str()
     d = Delve(profile["user_id"], profile["name"], channel_id, "soul_cairn",
               [_soulcairn_room(0, random)], hearts=heart_max(profile),
-              shout_charges=profile["words"], kind="soulcairn", dragon=dragon_of_the_week())
+              shout_charges=voice_charges(profile), kind="soulcairn", dragon=dragon_of_the_week())
     d.say(D.LOCATIONS["soul_cairn"]["arrive"])
     profile["stats"]["delves"] += 1
     _apply_brew_buffs(profile, d)

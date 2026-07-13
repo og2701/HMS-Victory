@@ -302,6 +302,48 @@ def test_stirred_band_scaling():
     assert all(E.stirred_rank(q, k) == 0 for k in E.offer_locations(q))
 
 
+def test_voice_is_persistent():
+    p = _profile()
+    p["words"] = 3
+    assert E.voice_charges(p) == 3                     # grandfathered in at full breath
+    # spend the whole Voice in one delve...
+    d = _enemy_room_delve(p, "troll", extra_rooms=3)
+    assert d.shout_charges == 3
+    d.act_shout(p, 2)                                  # FUS RO flattens the troll
+    d.act_shout(p, 1)                                  # FUS staggers the next
+    assert d.shout_charges == 0 and E.voice_charges(p) == 0
+    # ...and the next delve starts empty: no free refill at the door
+    d2 = E.Delve.start(p, 0, "embershard")
+    assert d2.shout_charges == 0
+    # a new dawn returns one charge (two days -> two)
+    p["voice"]["date"] = "2000-01-01"
+    p["voice"]["charges"] = 0
+    assert E.voice_charges(p) == 3                     # long gap caps at words known
+    p["voice"]["date"] = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    p["voice"]["charges"] = 0
+    assert E.voice_charges(p) == 1
+    # absorbing a dragon soul renews the Thu'um in full
+    p["voice"]["charges"] = 0
+    d3 = _enemy_room_delve(p, "dragon", boss=False, extra_rooms=1)
+    d3.shout_charges = 0
+    d3.enemy_hp = 1
+    E.random = _fixed_rolls(0.0, 0.99)
+    try:
+        d3.act_attack(p)                               # the kill
+    finally:
+        _restore_random()
+    assert d3.shout_charges == 3 and E.voice_charges(p) == 3
+    # Skuldafn grants a full Voice at the gate - as a loan, not a refill
+    p["voice"]["charges"] = 0
+    p["voice"]["date"] = E._today_str()
+    p["xp"] = 60_000
+    p["stats"]["dragons"] = 5
+    d4 = E.start_delve(p, 0, "skuldafn", kind="alduin")
+    assert d4.shout_charges == 3
+    d4.act_shout(p, 1)                                 # grounding Alduin's trash floor... spends the loan
+    assert E.voice_charges(p) == 0                     # your own breath untouched
+
+
 def test_alduin_echoes():
     p = _profile()
     p["xp"] = 60_000
