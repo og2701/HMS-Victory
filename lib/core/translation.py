@@ -45,7 +45,6 @@ target_language_mappings = {
     "Shakespearean English (do not use Chaucerian Middle English)": "Olde English",
     # Keyed off the constants source so the footer label can't drift from the prompt.
     FLAG_LANGUAGE_MAPPINGS["🦴"]: "🦴 Caveman",
-    FLAG_LANGUAGE_MAPPINGS["💎"]: "💎 Posh Chav",
 }
 
 user_translation_timestamps = defaultdict(list)
