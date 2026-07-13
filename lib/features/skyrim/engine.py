@@ -63,7 +63,6 @@ MIMIC_CHANCE = 0.18                  # chance a chest room is secretly a Mimic (
 FORK_CHANCE = 0.45                   # chance a delve offers a branching Fork before the boss
 SOULCAIRN_DRAIN = 2                  # attack % the Soul Cairn steals per depth descended
 FALLEN_CHANCE = 0.20                 # chance a delve holds a Fallen Adventurer's corpse
-DRINK_OPENING_TIER = 3               # foes this tough strike while you drink mid-fight
 PACT_MULT_CAP = 4.0                  # max combined satchel multiplier from stacked pacts
 PACT_MIN_LEVEL = 10                  # pacts unlock once the ordinary maps start feeling easy
 PACT_ROLL_MAX = 72                   # Boethiah's Proving: the attack ceiling drops to this
@@ -150,24 +149,28 @@ def location_drops(loc_key: str, cap: int = 3) -> str:
     return "".join(out[:cap])
 
 
+def prowess(profile) -> int:
+    """The character's rough power: level plus a nod to gear and tempering. What
+    the wilds answer to when a location stirs."""
+    gear = (profile.get("weapon_tier", 0) + profile.get("armour_tier", 0)
+            + (profile.get("temper") or {}).get("weapon", 0)
+            + (profile.get("temper") or {}).get("armour", 0))
+    return level(profile) + gear // 4
+
+
 def stirred_rank(profile, loc_key: str) -> int:
-    """How Stirred a location runs for this character: one rank per 3 levels above
-    its gate, capped at the ladder's end. Applied only to the day's DEEP offer, so
-    the top road is a frontier at every level while easy/mid stay safe farms."""
+    """How Stirred a location runs for this character - BY BAND. Easy maps never
+    stir; Medium firms up mildly; Hard and dragon lairs stay genuinely dangerous
+    at any power level. Rank grows with prowess above the location's gate."""
     loc = D.LOCATIONS.get(loc_key) or {}
-    return max(0, min(len(D.STIRRED_RANKS),
-                      (level(profile) - int(loc.get("min_level", 1))) // 3))
+    per, cap = D.STIRRED_BANDS.get(loc.get("difficulty"), (0, 0))
+    if not per:
+        return 0
+    return max(0, min(cap, (prowess(profile) - int(loc.get("min_level", 1))) // per))
 
 
 def stirred_name(rank: int) -> str:
     return D.STIRRED_RANKS[min(rank, len(D.STIRRED_RANKS)) - 1] if rank > 0 else ""
-
-
-def deep_offer(profile, date_str: str = None) -> str | None:
-    """The day's deep-band destination (the one that runs Stirred), if bands are
-    in play at this character's level."""
-    offers = offer_locations(profile, date_str)
-    return offers[2] if len(offers) >= 3 else None
 
 
 def pact_mult(delve) -> float:
@@ -832,6 +835,12 @@ class Delve:
                 hearts=heart_max(profile), shout_charges=profile["words"],
                 dragon=dragon_of_the_week(), route=route)
         d.say(loc["arrive"])
+        # locations answer strength by band: Hard/DRAGON stay dangerous at any power
+        d.stirred = stirred_rank(profile, loc_key)
+        if d.stirred:
+            d.say(f"🔥 The place is **{stirred_name(d.stirred)}** (rank {d.stirred}) - foes "
+                  f"fight -{D.STIRRED_FIGHT_PER_RANK * d.stirred}% harder to face, the haul "
+                  f"runs +{int(D.STIRRED_CLEAR_PER_RANK * d.stirred * 100)}%.")
         cond = D.ROUTE_CONDITIONS.get(route)
         if cond:
             if cond.get("blessed"):
@@ -999,12 +1008,8 @@ class Delve:
         was consumed by the warning."""
         if self.hearts == 1 and profile["potions"] > 0 and not self.hp_warned:
             self.hp_warned = True
-            line = ("⚠️ **One heart left - and you're carrying a potion!** 🧪 heals you "
-                    "first. If you truly want to fight on one heart, press the attack again.")
-            e = self.enemy() if self.room["kind"] == "enemy" else None
-            if self.engaged and e and e["tier"] >= DRINK_OPENING_TIER:
-                line += "  (Drinking mid-fight gives it an opening - it may strike while you swig.)"
-            self.say(line)
+            self.say("⚠️ **One heart left - and you're carrying a potion!** 🧪 heals you "
+                     "first. If you truly want to fight on one heart, press the attack again.")
             return True
         return False
 
@@ -1303,12 +1308,6 @@ class Delve:
         if cured:
             line += "  🟢 The venom neutralises."
         self.say(line)
-        # a serious foe doesn't watch you drink: mid-fight healing costs tempo (the
-        # blow lands AFTER the heal and never crushes, so the swig itself can't kill)
-        e = self.enemy() if self.room["kind"] == "enemy" else None
-        if self.engaged and e and e["tier"] >= DRINK_OPENING_TIER:
-            self.say(f"{e['emoji']} The **{e['name']}** strikes while you swig!")
-            self._wound(profile, e["wound"], heavy=0.0)
 
     def act_leave(self, profile) -> None:
         """Leave with the satchel; mid-fight it becomes a flee and loot spills.
@@ -1655,14 +1654,6 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
     else:
         spend_stamina(profile)
         delve = Delve.start(profile, channel_id, loc_key)
-        # the day's DEEP offer runs Stirred: a frontier at every level
-        if loc_key == deep_offer(profile):
-            delve.stirred = stirred_rank(profile, loc_key)
-            if delve.stirred:
-                name = stirred_name(delve.stirred)
-                delve.say(f"🔥 The place is **{name}** (rank {delve.stirred}) - foes fight "
-                          f"-{D.STIRRED_FIGHT_PER_RANK * delve.stirred}% harder to face, "
-                          f"the haul runs +{int(D.STIRRED_CLEAR_PER_RANK * delve.stirred * 100)}%.")
         # sworn pacts bind to the next normal delve only
         pacts = profile.get("nextpacts") or []
         if pacts:

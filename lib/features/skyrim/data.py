@@ -453,14 +453,16 @@ LOCATIONS = {
 }
 
 # ---------------------------------------------------------------------------
-# Stirred ranks - the DEEP offer on the day's picker scales with how far you've
-# outgrown it, so the top road is a frontier at every level and failure stays
-# possible: foes fight harder (a flat, clamp-proof malus on your rolls), the boss
-# toughens at rank 3+, and the haul scales to match. Easy/mid offers stay plain -
-# the choice is a genuine self-assessment, not a habit. Rank = (level above the
-# location) // 3, capped at the ladder's end.
+# Stirred ranks - locations answer the delver's strength, BY BAND. Easy maps never
+# stir (safe farms, retraining grounds, forever). Medium firms up mildly as you
+# outgrow it. Hard and dragon maps stay genuinely dangerous at any power level:
+# foes fight harder (a flat, clamp-proof malus on your rolls), the boss toughens
+# at rank 3+, and the haul scales to match. Rank grows with prowess (level + gear)
+# above the location's gate - see engine.stirred_rank.
+#   band: (levels_per_rank, rank_cap)  ·  0 per_rank = never stirs
 # ---------------------------------------------------------------------------
 STIRRED_RANKS = ["Restless", "Roused", "Seething", "Deadly", "Nightmare"]
+STIRRED_BANDS = {"Easy": (0, 0), "Medium": (5, 3), "Hard": (3, 5), "DRAGON": (3, 4)}
 STIRRED_FIGHT_PER_RANK = 4          # -% on every attack roll per rank
 STIRRED_CLEAR_PER_RANK = 0.25       # +25% clear haul per rank
 STIRRED_LOOT_PER_RANK = 0.08        # +8% kill loot per rank

@@ -612,7 +612,6 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
                      "haven't braved it yet.")
     else:
         row = discord.ui.ActionRow()
-        deep = E.deep_offer(profile)
         for key in E.offer_locations(profile):
             loc = D.LOCATIONS[key]
             # the location line stays clean; every modifier lives on a small chip line
@@ -625,8 +624,8 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
             if rc:
                 c = D.ROUTE_CONDITIONS[rc]
                 bits.append(f"{c['emoji']} {c['name']}: {c['short']}")
-            if key == deep and E.stirred_rank(profile, key):
-                r = E.stirred_rank(profile, key)
+            r = E.stirred_rank(profile, key)
+            if r:
                 bits.append(f"🔥 {E.stirred_name(r)}: -{D.STIRRED_FIGHT_PER_RANK * r}% / "
                             f"+{int(D.STIRRED_CLEAR_PER_RANK * r * 100)}%")
             lines.append("-# " + "  ·  ".join(bits))
@@ -963,20 +962,21 @@ async def _hub_perks(interaction: Interaction, notice: str = ""):
                 select.add_option(label=f"{perk['name']} ({E.perk_rank(profile, key)}/{perk['ranks']})",
                                   value=key, emoji=perk["emoji"], description=perk["desc"][:100])
 
-        async def _on_pick(inter: Interaction):
-            p = E.get_profile(inter.user.id)
-            err = E.take_perk(p, select.values[0])
-            if err is None:
-                E.save_profile(p)
-                perk = D.PERKS[select.values[0]]
-                await _hub_perks(inter, notice=f"-# ✅ {perk['name']} is now rank "
-                                               f"{E.perk_rank(p, select.values[0])}.")
-            else:
-                await _hub_perks(inter, notice=f"-# {err}")
-        select.callback = _on_pick
-        srow = discord.ui.ActionRow()
-        srow.add_item(select)
-        rows.append(srow)
+        if select.options:
+            async def _on_pick(inter: Interaction):
+                p = E.get_profile(inter.user.id)
+                err = E.take_perk(p, select.values[0])
+                if err is None:
+                    E.save_profile(p)
+                    perk = D.PERKS[select.values[0]]
+                    await _hub_perks(inter, notice=f"-# ✅ {perk['name']} is now rank "
+                                                   f"{E.perk_rank(p, select.values[0])}.")
+                else:
+                    await _hub_perks(inter, notice=f"-# {err}")
+            select.callback = _on_pick
+            srow = discord.ui.ActionRow()
+            srow.add_item(select)
+            rows.append(srow)
     rows.append(_back_row())
     await _edit_panel(interaction, "\n".join(lines), rows)
 

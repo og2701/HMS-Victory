@@ -266,66 +266,40 @@ def test_daily_always_features_a_marked_foe():
     assert not D.LOCATIONS[d1.location].get("soulcairn")
 
 
-def test_stirred_deep_offer_bites_and_pays():
+def test_stirred_band_scaling():
     p = _profile()
     p["xp"] = 60_000                                   # far past every map's gate
-    deep = E.deep_offer(p)
-    assert deep is not None
-    r = E.stirred_rank(p, deep)
-    assert r >= 3                                      # deeply outgrown -> high rank
-    d = E.start_delve(p, 0, deep)
-    assert d.stirred == r
-    # the malus lands on every attack roll (compare the delve against itself with
-    # the rank zeroed, so the day's route condition can't skew the twin)
+    p["weapon_tier"] = 6
+    p["armour_tier"] = 6
+    # easy never stirs; medium mildly (capped 3); hard fully (5); lairs capped at 4
+    assert E.stirred_rank(p, "embershard") == 0
+    assert 1 <= E.stirred_rank(p, "fellglow") <= 3
+    assert E.stirred_rank(p, "labyrinthian") == 5
+    assert 1 <= E.stirred_rank(p, "ancients_ascent") <= 4
+    # gear counts toward prowess
+    naked = dict(p, weapon_tier=0, armour_tier=0)
+    assert E.prowess(p) > E.prowess(naked)
+    # applied on ANY launch of a hard map: malus on every roll, tougher master
+    d = E.Delve.start(p, 0, "labyrinthian")
+    r = d.stirred
+    assert r == 5
     key = next(rm["key"] for rm in d.rooms if rm["kind"] == "enemy")
     with_rank = E._fight_raw(p, key, "blade", d)
     d.stirred = 0
     base = E._fight_raw(p, key, "blade", d)
     d.stirred = r
     assert with_rank == base - D.STIRRED_FIGHT_PER_RANK * r
-    # a Deadly+ den breeds a tougher master
     boss_room = d.rooms[-1]
     hp_with = d._hp_for(boss_room)
     d.stirred = 0
     hp_base = d._hp_for(boss_room)
     d.stirred = r
-    assert hp_with == hp_base + (1 if r >= 3 else 0)
-    # fresh characters see no stirred anywhere
+    assert hp_with == hp_base + 1
+    # Skuldafn never stirs (Alduin has Echoes for that); easy maps never stir
+    assert E.stirred_rank(p, "skuldafn") == 0
+    # fresh characters see no stirring anywhere they can reach
     q = _profile()
     assert all(E.stirred_rank(q, k) == 0 for k in E.offer_locations(q))
-
-
-def test_drink_opening():
-    # a tier-3 foe strikes while you swig mid-fight (after the heal, never crushing)
-    p = _profile()
-    p["potions"] = 2
-    d = _enemy_room_delve(p, "troll")
-    d.engaged = True
-    d.hearts = 1
-    E.random = _fixed_rolls(0.999)                 # soak fails: the opening lands
-    try:
-        d.act_potion(p)
-    finally:
-        _restore_random()
-    assert p["potions"] == 1
-    assert d.hearts == 1                           # healed to 2, struck back to 1 - tempo lost
-    assert d.playing()                             # the swig itself can never kill
-    # small foes can't punish the drink
-    d2 = _enemy_room_delve(p, "bandit")
-    d2.engaged = True
-    d2.hearts = 1
-    E.random = _fixed_rolls(0.999)
-    try:
-        d2.act_potion(p)
-    finally:
-        _restore_random()
-    assert d2.hearts == 2                          # clean heal
-    # and drinking BETWEEN fights (not engaged) is always safe
-    p["potions"] = 1
-    d3 = _enemy_room_delve(p, "troll")
-    d3.hearts = 1
-    d3.act_potion(p)
-    assert d3.hearts == 2
 
 
 def test_alduin_echoes():
