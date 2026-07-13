@@ -1359,6 +1359,20 @@ def _expedition_text(profile) -> str:
                   if exp.get("ingredient") else ""
             lines.append(f"{exp['emoji']} **{exp['name']}** ({exp['days']}d) - "
                          f"~{exp['septims']} septims, {exp['xp']} XP{ing}. {exp['desc']}")
+    ledger = profile.get("exp_log") or []
+    if ledger:
+        lines.append("")
+        lines.append("📒 **The ledger** - last returns:")
+        for entry in reversed(ledger):
+            exp = D.EXPEDITIONS.get(entry.get("key"), {})
+            ing_bit = f", {D.INGREDIENTS[entry['ing']]['emoji']}" if entry.get("ing") else ""
+            lines.append(f"-# {exp.get('emoji', '🧭')} {entry['date']} · {entry['carl']}, "
+                         f"{exp.get('name', 'an errand')}: +{entry['septims']:,} septims, "
+                         f"+{entry['xp']} XP{ing_bit}")
+        tot = profile.get("exp_totals") or {}
+        if tot.get("count"):
+            lines.append(f"-# 📦 All time: {tot['count']} errand{'s' if tot['count'] != 1 else ''} · "
+                         f"+{tot['septims']:,} septims · +{tot['xp']:,} XP")
     return "\n".join(lines)
 
 

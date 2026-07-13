@@ -244,6 +244,8 @@ def _migrate(profile: dict) -> dict:
     profile.setdefault("faction", {})            # faction -> {rank, favour}
     profile.setdefault("soulcairn", {"best": 0}) # deepest Soul Cairn descent
     profile.setdefault("expedition", None)       # an out-on-a-timer expedition, if any
+    profile.setdefault("exp_log", [])            # the last few expedition returns
+    profile.setdefault("exp_totals", {"count": 0, "septims": 0, "xp": 0})
     return profile
 
 
@@ -2205,6 +2207,7 @@ def collect_expedition(profile) -> str | None:
     profile["septims"] += septims
     gained, _ = add_xp(profile, exp["xp"])
     parts = [f"+{septims} septims", f"+{gained} XP"]
+    ing = None
     if exp.get("ingredient"):
         ing = exp["ingredient"]
         store = profile.setdefault("ingredients", {})
@@ -2212,6 +2215,15 @@ def collect_expedition(profile) -> str | None:
         parts.append(f"{D.INGREDIENTS[ing]['emoji']} {D.INGREDIENTS[ing]['name']}")
     carl = e.get("carl", "Your housecarl")
     profile["expedition"] = None
+    # the ledger: the last few returns, and the all-time tally
+    log = profile.setdefault("exp_log", [])
+    log.append({"key": e["key"], "carl": carl, "date": _today_str(),
+                "septims": septims, "xp": gained, "ing": ing})
+    profile["exp_log"] = log[-3:]
+    tot = profile.setdefault("exp_totals", {"count": 0, "septims": 0, "xp": 0})
+    tot["count"] += 1
+    tot["septims"] += septims
+    tot["xp"] += gained
     return f"{carl} returns from **{exp['name']}** with " + ", ".join(parts) + "."
 
 

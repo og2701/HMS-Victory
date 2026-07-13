@@ -1005,6 +1005,16 @@ def test_expedition_roundtrip():
     before = p["septims"]
     msg = E.collect_expedition(p)
     assert msg and p["septims"] > before and p["expedition"] is None
+    # the ledger: last returns recorded, capped at 3, totals accumulate
+    assert len(p["exp_log"]) == 1 and p["exp_log"][0]["key"] == "roads"
+    assert p["exp_totals"]["count"] == 1 and p["exp_totals"]["septims"] > 0
+    for _ in range(4):
+        E.start_expedition(p, "hunt")
+        p["expedition"]["return"] = "2000-01-01"
+        E.collect_expedition(p)
+    assert len(p["exp_log"]) == 3                      # only the latest three kept
+    assert all(entry["key"] == "hunt" for entry in p["exp_log"])
+    assert p["exp_totals"]["count"] == 5               # ...but the tally never forgets
 
 
 def test_expedition_log_dispatches_and_window():
