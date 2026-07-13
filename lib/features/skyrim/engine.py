@@ -839,8 +839,9 @@ class Delve:
         d.stirred = stirred_rank(profile, loc_key)
         if d.stirred:
             d.say(f"🔥 The place is **{stirred_name(d.stirred)}** (rank {d.stirred}) - foes "
-                  f"fight -{D.STIRRED_FIGHT_PER_RANK * d.stirred}% harder to face, the haul "
-                  f"runs +{int(D.STIRRED_CLEAR_PER_RANK * d.stirred * 100)}%.")
+                  f"fight -{D.STIRRED_FIGHT_PER_RANK * d.stirred}% harder to face, pierce "
+                  f"armour and crush; the haul runs "
+                  f"+{int(D.STIRRED_CLEAR_PER_RANK * d.stirred * 100)}%.")
         cond = D.ROUTE_CONDITIONS.get(route)
         if cond:
             if cond.get("blessed"):
@@ -952,6 +953,7 @@ class Delve:
         otherwise lose a heart (death at 0). `heavy` is the chance of a crushing
         2-heart blow. Returns 'soaked' | 'wounded' | 'dead'."""
         soak = min(SOAK_CAP + 15, soak_pct(profile) + self.buffs.get("soak", 0))
+        soak = max(0, soak - D.STIRRED_SOAK_PER_RANK * self.stirred)   # stirred foes pierce armour
         if random.random() * 100 < soak:
             self.say("Your armour turns the blow - no harm done.")
             return "soaked"
@@ -994,6 +996,7 @@ class Delve:
         if "dagon" in self.pacts:
             return 1.0
         base = e.get("heavy", HEAVY_HIT_CHANCE.get(e["tier"], 0.0))
+        base += D.STIRRED_CRUSH_PER_RANK * self.stirred   # stirred foes hit harder
         aff = self.affix()
         if aff:
             base += aff.get("crush", 0.0)

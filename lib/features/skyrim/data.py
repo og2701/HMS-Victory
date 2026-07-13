@@ -464,6 +464,8 @@ LOCATIONS = {
 STIRRED_RANKS = ["Restless", "Roused", "Seething", "Deadly", "Nightmare"]
 STIRRED_BANDS = {"Easy": (0, 0), "Medium": (5, 3), "Hard": (3, 5), "DRAGON": (3, 4)}
 STIRRED_FIGHT_PER_RANK = 4          # -% on every attack roll per rank
+STIRRED_SOAK_PER_RANK = 6           # stirred foes pierce armour: -% soak per rank
+STIRRED_CRUSH_PER_RANK = 0.05       # +crushing-blow chance per rank
 STIRRED_CLEAR_PER_RANK = 0.25       # +25% clear haul per rank
 STIRRED_LOOT_PER_RANK = 0.08        # +8% kill loot per rank
 
