@@ -33,7 +33,11 @@ logger = logging.getLogger(__name__)
 MAX_PART_SIZE = 8 * 1024 * 1024
 
 
-from lib.bot.backup_manager import restore_database_if_missing, restore_json_if_missing
+from lib.bot.backup_manager import (
+    DatabaseRecoveryError,
+    restore_database_if_missing,
+    restore_json_if_missing,
+)
 
 
 class AClient(discord.Client):
@@ -47,6 +51,8 @@ class AClient(discord.Client):
         self.maintenance_mode = False  # set True during graceful shutdown to refuse new coin-deducting actions
         self._shutting_down = False    # re-entrancy guard for graceful_shutdown
         self._prediction_backfill_done = False  # on_ready button-backfill runs once per process
+        self._ready_initialisation_state = "pending"
+        self._scheduler_jobs_registered = False
         self.scheduler = AsyncIOScheduler()
         self.image_cache = {}
         self.stage_events=set()
@@ -131,7 +137,9 @@ class AClient(discord.Client):
         logger.info("Persistent prediction views registered in setup_hook.")
 
     async def on_ready(self):
-        await on_ready(self, tree, self.scheduler)
+        ready_initialised = await on_ready(self, tree, self.scheduler)
+        if not ready_initialised:
+            return
         # The two loops below are a one-off cosmetic backfill of buttons onto
         # already-posted prediction / scheduled-pred messages. on_ready fires on
         # every gateway reconnect, so gate it to run once per process (mirrors the
@@ -653,7 +661,14 @@ async def main():
             except (NotImplementedError, RuntimeError):
                 pass  # platform without add_signal_handler support
 
-        await restore_database_if_missing()
+        try:
+            await restore_database_if_missing()
+        except DatabaseRecoveryError:
+            logger.critical(
+                "database.db recovery failed; stopping before schema initialisation "
+                "or Discord startup."
+            )
+            raise
         await restore_json_if_missing()
         init_db()
         await client.start(os.getenv("DISCORD_TOKEN"))

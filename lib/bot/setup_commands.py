@@ -46,6 +46,8 @@ from commands.economy.three_card_poker import handle_tcp_command
 from commands.economy.casino import handle_casino_command
 from lib.economy.lottery import handle_lottery_command, handle_lottery_start_command, handle_lottery_draw_command
 from commands.economy.casino_stats import handle_casino_stats_command
+from commands.moderation.anti_raid import open_anti_raid_control
+from commands.social.inbox import handle_inbox_command
 
 async def _require_casino_channel(interaction) -> bool:
     """Gate casino games + lottery to the allowed channels. Returns True (and sends an
@@ -235,6 +237,10 @@ def define_commands(tree, client):
     async def toggle_anti_raid_command(interaction: Interaction):
         await toggle_anti_raid(interaction)
 
+    @command("anti-raid", "Open the private anti-raid control centre", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    async def anti_raid_control_command(interaction: Interaction):
+        await open_anti_raid_control(interaction)
+
     @command("toggle-quarantine", "Add or remove the quarantine role from a user.", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
     async def toggle_quarantine_command(interaction: Interaction, user: Member):
         quarantine_role = interaction.guild.get_role(962009285116710922)
@@ -270,6 +276,10 @@ def define_commands(tree, client):
             )
             return
         await interaction.followup.send(file=file)
+
+    @command("inbox", "Open your private notification inbox")
+    async def inbox_command(interaction: Interaction):
+        await handle_inbox_command(interaction)
 
     @command("leaderboard", "Displays a paginated leaderboard of top XP holders (in increments of 30).")
     async def leaderboard_command(interaction: Interaction):
@@ -444,9 +454,19 @@ def define_commands(tree, client):
                            f"send **{remaining:,}** more. Resets <t:{reset}:R>.")
                 return await interaction.response.send_message(msg, ephemeral=True)
 
+        import time
+        from database import DatabaseManager
+        now_ts = int(time.time())
+
         if recipient.id == interaction.client.user.id:
             # Pay to bot goes directly to bank
-            if not remove_bb(interaction.user.id, amount, reason=f"/pay to HMS Victory (Bank)", to_bank=True):
+            if not remove_bb(
+                interaction.user.id,
+                amount,
+                reason="/pay to HMS Victory (Bank)",
+                to_bank=True,
+                record_pay_transfer=True,
+            ):
                 return await interaction.response.send_message("Insufficient UKPence.", ephemeral=True)
             
             # Award the victory_sponsor badge
@@ -455,10 +475,10 @@ def define_commands(tree, client):
         else:
             # Atomic user→user move: both balances update in one transaction or
             # neither does, so the closed-economy total can never drift on a /pay.
-            from database import DatabaseManager
             if not DatabaseManager.transfer(
                 interaction.user.id, recipient.id, amount,
                 reason=f"/pay {interaction.user.display_name} → {recipient.display_name}",
+                record_pay_transfer=True,
             ):
                 return await interaction.response.send_message("Insufficient UKPence.", ephemeral=True)
         embed = Embed(
@@ -475,14 +495,7 @@ def define_commands(tree, client):
             allowed_mentions=discord.AllowedMentions(users=[recipient], everyone=False, roles=False),
         )
 
-        # Database logging
-        from database import DatabaseManager
-        import time
-        now_ts = int(time.time())
-        DatabaseManager.execute(
-            "INSERT INTO pay_transfers (timestamp, payer_id, recipient_id, amount) VALUES (?, ?, ?, ?)",
-            (now_ts, str(interaction.user.id), str(recipient.id), amount)
-        )
+        # The /pay audit row committed atomically with the balance movement above.
         
         # Check philanthropist badge
         total_paid_res = DatabaseManager.fetch_one(

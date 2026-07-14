@@ -496,55 +496,78 @@ async def _purge_message_archive(client):
 
 
 def schedule_client_jobs(client, scheduler):
+    """Register/start process jobs once across repeated gateway ready events."""
+    if not getattr(client, "_scheduler_jobs_registered", False):
+        _register_client_jobs(client, scheduler)
+        client._scheduler_jobs_registered = True
+        logger.info("APScheduler jobs registered.")
+    else:
+        logger.info("APScheduler jobs already registered; skipping duplicate registration.")
+
+    if not getattr(scheduler, "running", False):
+        scheduler.start()
+        logger.info("APScheduler started.")
+    else:
+        logger.info("APScheduler already running; skipping duplicate start.")
+
+
+def _add_process_job(scheduler, function, trigger=None, *, id, **kwargs):
+    """Add a stable process job so a partial registration pass is retry-safe."""
+    kwargs.update(id=id, replace_existing=True)
+    if trigger is None:
+        return scheduler.add_job(function, **kwargs)
+    return scheduler.add_job(function, trigger, **kwargs)
+
+
+def _register_client_jobs(client, scheduler):
     # Keep one headless Chrome warm for the whole process: pre-warms it ~15s after boot and
     # recycles it for memory leaks in the background, so /rank and casino renders rarely cold-start.
     from lib.core.image_processing import maintain_render_engine
-    scheduler.add_job(maintain_render_engine, IntervalTrigger(seconds=60), id="render_engine_keeper",
-                      name="Keep headless Chrome warm", next_run_time=discord.utils.utcnow() + timedelta(seconds=15))
+    _add_process_job(scheduler, maintain_render_engine, IntervalTrigger(seconds=60),
+                     id="render_engine_keeper", name="Keep headless Chrome warm",
+                     next_run_time=discord.utils.utcnow() + timedelta(seconds=15))
 
-    scheduler.add_job(_bond_maturity_tick, IntervalTrigger(minutes=2), args=[client], id="bond_maturity_job", name="Pay matured bonds")
-    scheduler.add_job(_purge_message_archive, CronTrigger(hour=4, minute=30, timezone="Europe/London"), args=[client], id="purge_message_archive_job", name="Purge old message archive rows")
-    scheduler.add_job(award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client], id="award_booster_bonus_job", name="Award Daily Booster UKPence & Log SOD Circulation")
-    scheduler.add_job(daily_summary, CronTrigger(hour=0, minute=1, timezone="Europe/London"), args=[client], id="daily_summary_job", name="Daily Summary, Chat Rewards & Economy Metrics")
-    scheduler.add_job(post_daily_economy_stats, CronTrigger(hour=0, minute=5, timezone="Europe/London"), args=[client], id="post_daily_economy_stats_job", name="Post Daily UKPence Economy Stats")
+    _add_process_job(scheduler, _bond_maturity_tick, IntervalTrigger(minutes=2), args=[client], id="bond_maturity_job", name="Pay matured bonds")
+    _add_process_job(scheduler, _purge_message_archive, CronTrigger(hour=4, minute=30, timezone="Europe/London"), args=[client], id="purge_message_archive_job", name="Purge old message archive rows")
+    _add_process_job(scheduler, award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client], id="award_booster_bonus_job", name="Award Daily Booster UKPence & Log SOD Circulation")
+    _add_process_job(scheduler, daily_summary, CronTrigger(hour=0, minute=1, timezone="Europe/London"), args=[client], id="daily_summary_job", name="Daily Summary, Chat Rewards & Economy Metrics")
+    _add_process_job(scheduler, post_daily_economy_stats, CronTrigger(hour=0, minute=5, timezone="Europe/London"), args=[client], id="post_daily_economy_stats_job", name="Post Daily UKPence Economy Stats")
 
-    scheduler.add_job(weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=2, timezone="Europe/London"), args=[client])
-    scheduler.add_job(monthly_summary, CronTrigger(day=1, hour=0, minute=3, timezone="Europe/London"), args=[client])
-    scheduler.add_job(client.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=4, timezone="Europe/London"))
+    _add_process_job(scheduler, weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=2, timezone="Europe/London"), args=[client], id="weekly_summary_job")
+    _add_process_job(scheduler, monthly_summary, CronTrigger(day=1, hour=0, minute=3, timezone="Europe/London"), args=[client], id="monthly_summary_job")
+    _add_process_job(scheduler, client.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=4, timezone="Europe/London"), id="clear_image_cache_job")
     # scheduler.add_job(backup_bot, IntervalTrigger(minutes=30, timezone="Europe/London"), args=[client])
-    scheduler.add_job(sweep_predictions, IntervalTrigger(seconds=30), args=[client])
-    scheduler.add_job(award_stage_bonuses, IntervalTrigger(minutes=1), args=[client], id="award_stage_bonuses_interval", name="Award Stage UKPence (Interval)") # Runs every minute
-    scheduler.add_job(cleanup_thread_members, IntervalTrigger(days=1, timezone="Europe/London"), args=[client], next_run_time=discord.utils.utcnow() + timedelta(minutes=5))
+    _add_process_job(scheduler, sweep_predictions, IntervalTrigger(seconds=30), args=[client], id="sweep_predictions_interval")
+    _add_process_job(scheduler, award_stage_bonuses, IntervalTrigger(minutes=1), args=[client], id="award_stage_bonuses_interval", name="Award Stage UKPence (Interval)") # Runs every minute
+    _add_process_job(scheduler, cleanup_thread_members, IntervalTrigger(days=1, timezone="Europe/London"), args=[client], id="cleanup_thread_members_job", next_run_time=discord.utils.utcnow() + timedelta(minutes=5))
 
-    scheduler.add_job(mute_visitors, CronTrigger(hour=3, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="mute_visitors_job", name="Mute visitors overnight")
-    scheduler.add_job(unmute_visitors, CronTrigger(hour=7, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="unmute_visitors_job", name="Unmute visitors in the morning")
+    _add_process_job(scheduler, mute_visitors, CronTrigger(hour=3, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="mute_visitors_job", name="Mute visitors overnight")
+    _add_process_job(scheduler, unmute_visitors, CronTrigger(hour=7, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="unmute_visitors_job", name="Unmute visitors in the morning")
     
-    scheduler.add_job(backup_database, IntervalTrigger(minutes=5, timezone="Europe/London"), args=[client], id="backup_database_job", name="Backup SQLite Database")
-    scheduler.add_job(backup_json_data, IntervalTrigger(minutes=5, timezone="Europe/London"), args=[client], id="backup_json_data_job", name="Backup JSON State")
-    scheduler.add_job(cleanup_webhook_reactions, IntervalTrigger(minutes=1), args=[client], id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
+    _add_process_job(scheduler, backup_database, IntervalTrigger(minutes=5, timezone="Europe/London"), args=[client], id="backup_database_job", name="Backup SQLite Database")
+    _add_process_job(scheduler, backup_json_data, IntervalTrigger(minutes=5, timezone="Europe/London"), args=[client], id="backup_json_data_job", name="Backup JSON State")
+    _add_process_job(scheduler, cleanup_webhook_reactions, IntervalTrigger(minutes=1), args=[client], id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
 
-    scheduler.add_job(process_economy_logs, IntervalTrigger(seconds=15), args=[client], id="process_economy_logs_interval", name="Process Economy Log Queue")
+    _add_process_job(scheduler, process_economy_logs, IntervalTrigger(seconds=15), args=[client], id="process_economy_logs_interval", name="Process Economy Log Queue")
     # One-shot on boot: clean up gate notices orphaned by a restart mid-delete_after
-    scheduler.add_job(sweep_orphaned_gate_messages, args=[client], id="sweep_gate_orphans_boot", name="Sweep Orphaned Gate Messages", next_run_time=discord.utils.utcnow() + timedelta(seconds=20))
+    _add_process_job(scheduler, sweep_orphaned_gate_messages, args=[client], id="sweep_gate_orphans_boot", name="Sweep Orphaned Gate Messages", next_run_time=discord.utils.utcnow() + timedelta(seconds=20))
     # Frequent tick, not a 12h interval: the 12h cycle lives in the DB (last_restock),
     # so it survives the frequent deploy restarts that reset in-process interval timers.
     # next_run_time so the first catch-up fires right after boot rather than one
     # full interval later (the APScheduler default that broke the original 12h job).
-    scheduler.add_job(auto_restock_shop, IntervalTrigger(minutes=10), args=[client], id="auto_restock_shop_interval", name="Automated Shop Restock", next_run_time=discord.utils.utcnow() + timedelta(seconds=30))
+    _add_process_job(scheduler, auto_restock_shop, IntervalTrigger(minutes=10), args=[client], id="auto_restock_shop_interval", name="Automated Shop Restock", next_run_time=discord.utils.utcnow() + timedelta(seconds=30))
 
-    scheduler.add_job(apply_inactivity_tax, CronTrigger(day_of_week="fri", hour=0, minute=0, timezone="Europe/London"), args=[client], id="apply_inactivity_tax_job", name="Weekly Inactivity Tax")
+    _add_process_job(scheduler, apply_inactivity_tax, CronTrigger(day_of_week="fri", hour=0, minute=0, timezone="Europe/London"), args=[client], id="apply_inactivity_tax_job", name="Weekly Inactivity Tax")
 
-    scheduler.add_job(apply_wealth_demurrage, CronTrigger(day_of_week="fri", hour=0, minute=5, timezone="Europe/London"), args=[client], id="apply_wealth_demurrage_job", name="Weekly Wealth Demurrage")
+    _add_process_job(scheduler, apply_wealth_demurrage, CronTrigger(day_of_week="fri", hour=0, minute=5, timezone="Europe/London"), args=[client], id="apply_wealth_demurrage_job", name="Weekly Wealth Demurrage")
 
     # Lottery tick (every 2 min): while a round is open - started manually by staff via
     # /lottery-start - this posts the periodic reminders and draws a sold-out round once
     # it passes its minimum runtime. No weekly auto-draw/auto-open: the lottery is manual.
-    scheduler.add_job(_lottery_tick, IntervalTrigger(minutes=2), args=[client],
-                      id="lottery_tick_job", name="Lottery tick (reminders + sellout)")
+    _add_process_job(scheduler, _lottery_tick, IntervalTrigger(minutes=2), args=[client],
+                     id="lottery_tick_job", name="Lottery tick (reminders + sellout)")
 
     _register_pending_scheduled_predictions(client, scheduler)
-
-    scheduler.start()
 
 
 async def _lottery_tick(client):
@@ -605,11 +628,6 @@ async def apply_inactivity_tax(client):
             logger.info("[ECONOMY] No dormant users found for inactivity tax.")
             return
 
-        total_reclaimed = 0
-        taxed_count = 0
-        
-        _tax_now = int(datetime.now(pytz.utc).timestamp())
-        taxed = []  # (uid, tax_amount, new_balance) for the statement ledger
         rate = float(getattr(config, "INACTIVITY_TAX_RATE", 0.20))
 
         # Charge on effective wealth (balance + recently sent − recently received) so a dormant
@@ -623,32 +641,19 @@ async def apply_inactivity_tax(client):
             if tax_amount > 0:
                 plans.append((uid, tax_amount))
 
-        with DatabaseManager.locked_connection() as conn:
-            c = conn.cursor()
-            for uid, tax_amount in plans:
-                r = c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(uid),)).fetchone()
-                bal = int(r[0]) if r and r[0] is not None else 0
-                amt = min(tax_amount, bal)
-                if amt <= 0:
-                    continue
-                c.execute("UPDATE ukpence SET balance = balance - ? WHERE user_id = ?", (amt, uid))
-                # keep the balance graph accurate: this path bypasses remove_amount
-                c.execute("INSERT INTO balance_history (user_id, ts, balance) VALUES (?, ?, ?)",
-                          (str(uid), _tax_now, bal - amt))
-                taxed.append((uid, amt, bal - amt))
-                total_reclaimed += amt
-                taxed_count += 1
+        charged = BankManager.collect_tax_batch(
+            plans,
+            description="Inactivity tax (60+ days dormant)",
+            bank_description="Inactivity Tax (60+ days dormant)",
+        )
+        if charged is None:
+            logger.error("[ECONOMY] Inactivity tax batch failed; no charges were committed.")
+            return
 
-            conn.commit()
-
-        # Statement ledger entries (outside the lock - record_transaction opens its own write)
-        from lib.economy.economy_manager import record_transaction
-        for uid, tax_amount, new_balance in taxed:
-            record_transaction(uid, -tax_amount, new_balance,
-                               "Inactivity tax (60+ days dormant)", ts=_tax_now)
+        total_reclaimed = sum(amount for _, amount, _ in charged)
+        taxed_count = len(charged)
 
         if total_reclaimed > 0:
-            BankManager.deposit_tax(total_reclaimed, description=f"Inactivity Tax (60+ days dormant) from {taxed_count} users")
             logger.info(f"[ECONOMY] Inactivity Tax reclaimed {total_reclaimed} UKP from {taxed_count} users.")
             
             # Update specific metric if needed
@@ -727,33 +732,23 @@ async def apply_wealth_demurrage(client):
             logger.info("[ECONOMY] Demurrage: nobody's effective excess rounded above 0.")
             return
 
-        # Phase 2 (locked): re-read each balance and apply, clamped so nobody goes negative.
-        _now = int(datetime.now(pytz.utc).timestamp())
-        charged = []  # (uid, amount, new_balance)
-        with DatabaseManager.locked_connection() as conn:
-            c = conn.cursor()
-            for uid, amount in plans:
-                r = c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (uid,)).fetchone()
-                bal = int(r[0]) if r and r[0] is not None else 0
-                amt = min(amount, bal)
-                if amt <= 0:
-                    continue
-                c.execute("UPDATE ukpence SET balance = balance - ? WHERE user_id = ?", (amt, uid))
-                c.execute("INSERT INTO balance_history (user_id, ts, balance) VALUES (?, ?, ?)",
-                          (uid, _now, bal - amt))
-                charged.append((uid, amt, bal - amt))
-            conn.commit()
+        # Phase 2: re-read/clamp every balance, write each user ledger, and credit
+        # the bank as tax in one all-or-nothing transaction.
+        label = f"Wealth demurrage ({rate:.0%}/wk over {threshold:,})"
+        charged = BankManager.collect_tax_batch(
+            plans,
+            description=label,
+            bank_description="Weekly wealth demurrage",
+        )
+        if charged is None:
+            logger.error("[ECONOMY] Demurrage batch failed; no charges were committed.")
+            return
 
         if not charged:
             logger.info("[ECONOMY] Demurrage: nobody's excess rounded above 0.")
             return
 
         total = sum(a for _, a, _ in charged)
-        from lib.economy.economy_manager import record_transaction
-        label = f"Wealth demurrage ({rate:.0%}/wk over {threshold:,})"
-        for uid, amount, new_balance in charged:
-            record_transaction(uid, -amount, new_balance, label, ts=_now)
-        BankManager.deposit_tax(total, description=f"Wealth demurrage from {len(charged)} users")
         logger.info(f"[ECONOMY] Demurrage reclaimed {total} UKP from {len(charged)} users.")
         current_date_str = datetime.now(pytz.timezone("Europe/London")).strftime("%Y-%m-%d")
         _update_daily_metric_file(current_date_str, "demurrage_total", total)

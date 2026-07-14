@@ -3,6 +3,7 @@ from discord.ui import View, Button
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
 import asyncio
+import logging
 import os
 import time
 import random
@@ -12,8 +13,20 @@ from datetime import timedelta
 from config import ROLES, CHANNELS, USERS, BASE_DIR
 from lib.economy.economy_manager import add_shutcoins, add_bb, get_bb, remove_bb
 from lib.economy.shop_inventory import ShopInventory
+from lib.features.inbox import create_notification
 from database import DatabaseManager
 from commands.creative.iceberg.add_to_iceberg import add_iceberg_text
+
+log = logging.getLogger(__name__)
+
+
+def _store_shop_notice(user_id, title: str, body: str) -> None:
+    """Persist an outcome without coupling it to best-effort Discord DMs."""
+    try:
+        create_notification(user_id, "shop", title, body)
+    except Exception:
+        log.warning("shop inbox notification failed", exc_info=True)
+
 
 class ShopItem(ABC):
     """Abstract base class for all shop items."""
@@ -171,6 +184,12 @@ class IcebergApprovalView(View):
             
             # Update database
             DatabaseManager.execute("UPDATE pending_iceberg_submissions SET status = 'approved' WHERE id = ?", (self.submission_id,))
+
+            _store_shop_notice(
+                user_id,
+                "Iceberg submission approved",
+                f'Your iceberg submission "{text}" was approved and added to the iceberg.',
+            )
             
             embed = interaction.message.embeds[0]
             embed.title = "✅ Iceberg Submission - APPROVED"
@@ -181,7 +200,7 @@ class IcebergApprovalView(View):
                 item.disabled = True
             
             await interaction.message.edit(embed=embed, view=self)
-            
+
             # Notify user
             try:
                 user = await interaction.client.fetch_user(int(user_id))
@@ -231,6 +250,13 @@ class IcebergApprovalView(View):
                 # Refund only if they actually paid
                 if price > 0:
                     add_bb(user_id, price, reason=f"Iceberg submission denied: {text[:50]}", taxable=False)
+
+                refund = f" You were refunded {price:,} UKPence." if price > 0 else ""
+                _store_shop_notice(
+                    user_id,
+                    "Iceberg submission denied",
+                    f'Your iceberg submission "{text}" was denied. Reason: {reason}.{refund}',
+                )
 
                 embed = modal_interaction.message.embeds[0]
                 embed.title = "❌ Iceberg Submission - DENIED"
@@ -895,6 +921,12 @@ class RankBgApprovalView(View):
             "UPDATE pending_rank_background_submissions SET status = 'approved' WHERE id = ?", (self.submission_id,)
         )
 
+        _store_shop_notice(
+            user_id,
+            "Rank background approved",
+            "Your custom rank-card background was approved and equipped. Run /rank to see it.",
+        )
+
         embed = interaction.message.embeds[0] if interaction.message.embeds else discord.Embed()
         embed.title = "✅ Custom Rank Background - APPROVED"
         embed.color = 0x57F287
@@ -955,6 +987,13 @@ class RankBgApprovalView(View):
                     os.remove(os.path.join(_RANK_CARDS_DIR, filename))
                 except OSError:
                     pass
+
+                refund = f" You were refunded {price:,} UKPence." if price and price > 0 else ""
+                _store_shop_notice(
+                    user_id,
+                    "Rank background denied",
+                    f"Your custom rank-card background was denied. Reason: {reason}.{refund}",
+                )
 
                 embed = modal_interaction.message.embeds[0] if modal_interaction.message.embeds else discord.Embed()
                 embed.title = "❌ Custom Rank Background - DENIED"

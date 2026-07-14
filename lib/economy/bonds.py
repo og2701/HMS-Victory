@@ -6,12 +6,13 @@ table, and maturity is driven by a periodic scan (lib/bot/scheduled_tasks) rathe
 in-memory timers - so it's fully restart-safe: an overdue bond simply pays out on the
 next tick after the bot comes back.
 
-Economy: opening a bond is remove_bb(to_bank) (principal -> bank); maturity / early exit
-pays from the bank via add_bb(taxable=False). The bank nets -interest per matured bond,
-which is the intended drain of the over-full bank back to savers. One active bond per user.
+Economy: each bond state change and its UKP movement share one SQLite transaction.
+The bank nets -interest per matured bond, which is the intended drain of the over-full
+bank back to savers. One active bond per user.
 """
 
 import logging
+import sqlite3
 import time
 
 import discord
@@ -19,7 +20,9 @@ from discord import Interaction
 
 import config
 from database import DatabaseManager
-from lib.economy.economy_manager import add_bb, remove_bb, get_bb
+from lib.economy.bank_manager import BankManager
+from lib.economy.economy_manager import UKPenceManager, get_bb
+from lib.features.inbox import create_notification
 
 log = logging.getLogger(__name__)
 ACCENT = discord.Colour(0x1C6B46)
@@ -49,10 +52,6 @@ def active_bond_principal(user_id) -> int:
         "SELECT COALESCE(SUM(principal), 0) FROM bonds WHERE user_id = ? AND status = 'active'",
         (str(user_id),))
     return int(r[0]) if r else 0
-
-
-def _credit(uid, amount, reason):
-    return add_bb(int(uid), int(amount), reason=reason, taxable=False)
 
 
 def _recent_received(uid, days) -> int:
@@ -93,44 +92,173 @@ def open_bond(user_id, principal, term_days):
             f"You can only bond **{own:,} UKPence** of your own. **{received:,}** arrived from "
             f"other users in the last {days} day(s) and can't be locked in a bond (anti-funnel). "
             f"Wait for it to age out, or bond a smaller amount.")
-    if not remove_bb(int(user_id), int(principal), reason="Bond deposit"):
-        return None, "You don't have enough UKPence."
     now = int(time.time())
-    DatabaseManager.execute_insert(
-        "INSERT INTO bonds (user_id, principal, rate_pct, term_days, opened_ts, matures_ts, status) "
-        "VALUES (?, ?, ?, ?, ?, ?, 'active')",
-        (str(user_id), int(principal), int(terms[term_days]), int(term_days), now, now + term_days * 86400))
-    return get_active(user_id), None
+    change = None
+    bond_id = None
+    try:
+        with DatabaseManager.locked_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT 1 FROM bonds WHERE user_id = ? AND status = 'active' LIMIT 1",
+                (str(user_id),),
+            )
+            if cursor.fetchone() is not None:
+                return None, "You already have an active bond - you can only hold one at a time."
+
+            change = UKPenceManager._remove_amount_in_transaction(
+                cursor,
+                int(user_id),
+                int(principal),
+                "Bond deposit",
+                now,
+            )
+            if change is None:
+                return None, "You don't have enough UKPence."
+            BankManager._deposit_in_transaction(
+                cursor,
+                int(principal),
+                "Bond deposit",
+                now,
+            )
+            cursor.execute(
+                "INSERT INTO bonds "
+                "(user_id, principal, rate_pct, term_days, opened_ts, matures_ts, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'active')",
+                (
+                    str(user_id),
+                    int(principal),
+                    int(terms[term_days]),
+                    int(term_days),
+                    now,
+                    now + term_days * 86400,
+                ),
+            )
+            bond_id = cursor.lastrowid
+    except sqlite3.Error:
+        log.error("bond open transaction failed", exc_info=True)
+        return None, "The bond could not be opened safely. Your balance was not changed."
+
+    UKPenceManager._finish_change(change, bankrupt=True)
+    row = DatabaseManager.fetch_one(
+        f"SELECT {_COLS} FROM bonds WHERE id = ?", (bond_id,)
+    )
+    return _row_to_bond(row), None
 
 
 def withdraw_early(user_id):
     """Refund principal minus the early-exit penalty (interest forfeited).
     Returns (refund, penalty, error_message)."""
-    g = get_active(user_id)
-    if not g:
-        return 0, 0, "You don't have an active bond."
-    pen_pct = getattr(config, "BOND_EARLY_PENALTY_PCT", 10)
-    penalty = g["principal"] * pen_pct // 100
-    refund = g["principal"] - penalty
-    # Close it first so a retry can't double-refund.
-    DatabaseManager.execute("UPDATE bonds SET status = 'withdrawn' WHERE id = ? AND status = 'active'", (g["id"],))
-    _credit(user_id, refund, "Bond early withdrawal")
+    now = int(time.time())
+    change = None
+    penalty = refund = 0
+    try:
+        with DatabaseManager.locked_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"SELECT {_COLS} FROM bonds "
+                "WHERE user_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
+                (str(user_id),),
+            )
+            g = _row_to_bond(cursor.fetchone())
+            if not g:
+                return 0, 0, "You don't have an active bond."
+
+            pen_pct = getattr(config, "BOND_EARLY_PENALTY_PCT", 10)
+            penalty = g["principal"] * pen_pct // 100
+            refund = g["principal"] - penalty
+            if not BankManager._withdraw_in_transaction(
+                cursor, refund, "Bond early withdrawal", now
+            ):
+                return 0, 0, "The Server Bank cannot cover this withdrawal right now."
+            change = UKPenceManager._add_amount_in_transaction(
+                cursor,
+                int(user_id),
+                refund,
+                "Bond early withdrawal",
+                now,
+            )
+            cursor.execute(
+                "UPDATE bonds SET status = 'withdrawn' "
+                "WHERE id = ? AND status = 'active'",
+                (g["id"],),
+            )
+            if cursor.rowcount != 1:
+                raise sqlite3.IntegrityError("active bond changed during early withdrawal")
+    except sqlite3.Error:
+        log.error("bond early-withdrawal transaction failed", exc_info=True)
+        return 0, 0, "The bond could not be withdrawn safely. Your balance was not changed."
+
+    UKPenceManager._finish_change(change, high_roller=True)
     return refund, penalty, None
 
 
 async def mature_due(client):
     """Pay out every matured active bond (principal + interest) and DM the holder.
-    Idempotent: each bond is flipped to 'matured' before it's paid, so a re-run or a
-    crash can't double-pay."""
+    Idempotent: state and payout commit together, so a re-run or crash can neither
+    double-pay nor mark an unpaid bond as matured."""
     now = int(time.time())
     rows = DatabaseManager.fetch_all(
         f"SELECT {_COLS} FROM bonds WHERE status = 'active' AND matures_ts <= ?", (now,)) or []
     for r in rows:
-        g = _row_to_bond(r)
-        interest = interest_for(g["principal"], g["rate_pct"])
-        payout = g["principal"] + interest
-        DatabaseManager.execute("UPDATE bonds SET status = 'matured' WHERE id = ? AND status = 'active'", (g["id"],))
-        _credit(g["user_id"], payout, "Bond maturity")
+        queued = _row_to_bond(r)
+        change = None
+        try:
+            with DatabaseManager.locked_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    f"SELECT {_COLS} FROM bonds "
+                    "WHERE id = ? AND status = 'active' AND matures_ts <= ?",
+                    (queued["id"], now),
+                )
+                g = _row_to_bond(cursor.fetchone())
+                if not g:
+                    continue
+                interest = interest_for(g["principal"], g["rate_pct"])
+                payout = g["principal"] + interest
+                if not BankManager._withdraw_in_transaction(
+                    cursor, payout, "Bond maturity", now
+                ):
+                    log.error(
+                        "bank cannot cover matured bond id=%s payout=%s; left active for retry",
+                        g["id"],
+                        payout,
+                    )
+                    continue
+                change = UKPenceManager._add_amount_in_transaction(
+                    cursor,
+                    int(g["user_id"]),
+                    payout,
+                    "Bond maturity",
+                    now,
+                )
+                cursor.execute(
+                    "UPDATE bonds SET status = 'matured' "
+                    "WHERE id = ? AND status = 'active'",
+                    (g["id"],),
+                )
+                if cursor.rowcount != 1:
+                    raise sqlite3.IntegrityError("active bond changed during maturity")
+        except sqlite3.Error:
+            log.error("bond maturity transaction failed for id=%s", queued["id"], exc_info=True)
+            continue
+
+        UKPenceManager._finish_change(change, high_roller=True)
+        notice_body = (
+            f"Your {g['term_days']}-day bond matured and paid {payout:,} UKPence "
+            f"({g['principal']:,} principal plus {interest:,} interest)."
+        )
+        try:
+            create_notification(
+                g["user_id"],
+                "economy",
+                "Bond matured",
+                notice_body,
+                created_at=now,
+            )
+        except Exception:
+            # Inbox persistence and Discord delivery are deliberately independent:
+            # a temporary storage failure must not suppress the existing DM path.
+            log.warning("bond maturity inbox notification failed", exc_info=True)
         try:
             user = client.get_user(int(g["user_id"])) or await client.fetch_user(int(g["user_id"]))
             await user.send(

@@ -56,12 +56,32 @@ def _install_stubs():
 
 
 def _load_mines():
-    _install_stubs()
-    path = os.path.join(ROOT, "commands", "economy", "mines.py")
-    spec = importlib.util.spec_from_file_location("mines_under_test", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    # Keep collection isolated: the module under test retains references to these
+    # stubs after loading, but unrelated tests must continue seeing the real
+    # discord/economy modules in the shared pytest process.
+    keys = (
+        "discord",
+        "discord.ui",
+        "lib.economy.economy_manager",
+        "commands",
+        "commands.economy",
+        "commands.economy.casino_base",
+    )
+    missing = object()
+    previous = {key: sys.modules.get(key, missing) for key in keys}
+    try:
+        _install_stubs()
+        path = os.path.join(ROOT, "commands", "economy", "mines.py")
+        spec = importlib.util.spec_from_file_location("mines_under_test", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        for key, value in previous.items():
+            if value is missing:
+                sys.modules.pop(key, None)
+            else:
+                sys.modules[key] = value
 
 
 MINES = _load_mines()

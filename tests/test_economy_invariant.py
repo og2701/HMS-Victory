@@ -30,6 +30,7 @@ def _fresh_economy(tmpdir):
     database.init_db()
     import lib.economy.economy_manager as economy_manager
     import lib.economy.bank_manager as bank_manager
+    economy_manager._HIST_LAST.clear()
     return economy_manager, bank_manager, database
 
 
@@ -43,16 +44,16 @@ class _Skip(Exception):
 
 
 def _require_discord():
-    """prediction_system imports discord at module load. Skip (rather than fail)
-    the prediction tests when discord isn't installed in this environment."""
+    """Skip prediction tests when their optional runtime deps are unavailable."""
     try:
         import discord  # noqa: F401
+        from PIL import Image  # noqa: F401
     except ImportError:
         try:
             import pytest
-            pytest.skip("discord not installed")
+            pytest.skip("prediction runtime dependencies not installed")
         except ImportError:
-            raise _Skip("discord not installed")
+            raise _Skip("prediction runtime dependencies not installed")
 
 
 def test_initial_supply_is_800k():
@@ -103,6 +104,176 @@ def test_remove_insufficient_is_noop():
         em.add_bb(user, 100, from_bank=True, taxable=False)
         assert em.remove_bb(user, 999, to_bank=True) is False
         assert em.get_bb(user) == 100
+        assert _total_supply(database) == TOTAL_SUPPLY
+
+
+def test_bank_payment_records_pay_audit_and_conserves_supply():
+    with tempfile.TemporaryDirectory() as d:
+        em, _, database = _fresh_economy(d)
+        user = 665
+        from config import BOT_ID
+
+        assert em.add_bb(user, 500, reason="seed", taxable=False) is True
+        assert em.remove_bb(
+            user,
+            200,
+            reason="/pay to HMS Victory (Bank)",
+            to_bank=True,
+            record_pay_transfer=True,
+        ) is True
+
+        assert database.DatabaseManager.fetch_all(
+            "SELECT payer_id, recipient_id, amount FROM pay_transfers"
+        ) == [(str(user), str(BOT_ID), 200)]
+        assert em.get_bb(user) == 300
+        assert _total_supply(database) == TOTAL_SUPPLY
+
+
+def test_atomic_bank_user_moves_update_balances_stats_and_ledgers():
+    with tempfile.TemporaryDirectory() as d:
+        em, _, database = _fresh_economy(d)
+        user = 667
+        from config import BOT_ID
+
+        initial_bank = em.get_bb(BOT_ID)
+        assert em.add_bb(
+            user, 500, reason="Blackjack payout", taxable=False
+        ) is True
+        assert em.remove_bb(
+            user, 200, reason="Blackjack bet", to_bank=True
+        ) is True
+
+        assert em.get_bb(user) == 300
+        assert em.get_bb(BOT_ID) == initial_bank - 300
+        bank_row = database.DatabaseManager.fetch_one(
+            "SELECT balance, total_revenue, total_blackjack_in, total_blackjack_out "
+            "FROM bank WHERE id = 1"
+        )
+        assert bank_row == (initial_bank - 300, 200, 200, 500)
+        assert _total_supply(database) == TOTAL_SUPPLY
+
+        economy_log_count = database.DatabaseManager.fetch_one(
+            "SELECT COUNT(*) FROM economy_transactions"
+        )[0]
+        assert economy_log_count == 4
+        history = database.DatabaseManager.fetch_all(
+            "SELECT balance FROM balance_history WHERE user_id = ? ORDER BY id",
+            (str(user),),
+        )
+        assert history == [(500,), (300,)]
+        statement = database.DatabaseManager.fetch_all(
+            "SELECT amount, balance_after, reason FROM user_transactions "
+            "WHERE user_id = ? ORDER BY id",
+            (str(user),),
+        )
+        assert statement == [
+            (500, 500, "Blackjack payout"),
+            (-200, 300, "Blackjack bet"),
+        ]
+
+
+def test_taxed_credit_updates_tax_accounting_in_same_conserved_move():
+    with tempfile.TemporaryDirectory() as d:
+        em, _, database = _fresh_economy(d)
+        user = 668
+        from config import BOT_ID
+
+        assert em.add_bb(user, 12_000, reason="seed", taxable=False) is True
+        bank_before = em.get_bb(BOT_ID)
+        log_count_before = database.DatabaseManager.fetch_one(
+            "SELECT COUNT(*) FROM economy_transactions"
+        )[0]
+
+        assert em.add_bb(user, 1_000, reason="taxed reward", taxable=True) is True
+
+        # The 10k-20k bracket taxes this earning at 60%: 1,000 gross,
+        # 600 returned as tax, and 400 credited to the user.
+        assert em.get_bb(user) == 12_400
+        assert em.get_bb(BOT_ID) == bank_before - 400
+        bank_row = database.DatabaseManager.fetch_one(
+            "SELECT balance, total_revenue, total_tax_collected FROM bank WHERE id = 1"
+        )
+        assert bank_row == (bank_before - 400, 600, 600)
+        assert database.DatabaseManager.fetch_one(
+            "SELECT COUNT(*) FROM economy_transactions"
+        )[0] == log_count_before + 3
+        last_statement = database.DatabaseManager.fetch_one(
+            "SELECT amount, balance_after, reason FROM user_transactions "
+            "WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+            (str(user),),
+        )
+        assert last_statement[0:2] == (400, 12_400)
+        assert "gross: 1,000" in last_statement[2]
+        assert "tax: -600" in last_statement[2]
+        assert _total_supply(database) == TOTAL_SUPPLY
+
+
+def test_bulk_handout_deduplicates_recipients_and_conserves_supply():
+    with tempfile.TemporaryDirectory() as d:
+        em, bank_manager, database = _fresh_economy(d)
+        first, second = 669, 670
+        from config import BOT_ID
+
+        bank_before = em.get_bb(BOT_ID)
+        assert bank_manager.BankManager.transfer_to_users(
+            [first, second, first],
+            250,
+            description="Handout by test",
+            user_reason="ukpadd test",
+        ) is True
+
+        assert em.get_bb(first) == 260
+        assert em.get_bb(second) == 260
+        assert em.get_bb(BOT_ID) == bank_before - 520
+        assert database.DatabaseManager.fetch_one(
+            "SELECT balance FROM bank WHERE id = 1"
+        )[0] == bank_before - 520
+        assert database.DatabaseManager.fetch_one(
+            "SELECT COUNT(*) FROM user_transactions WHERE reason = 'ukpadd test'"
+        )[0] == 2
+        assert _total_supply(database) == TOTAL_SUPPLY
+
+
+def test_atomic_tax_batch_clamps_combines_and_conserves_supply():
+    with tempfile.TemporaryDirectory() as d:
+        em, bank_manager, database = _fresh_economy(d)
+        first, second = 671, 672
+        from config import BOT_ID
+
+        assert em.add_bb(first, 1_000, reason="seed", taxable=False) is True
+        assert em.add_bb(second, 400, reason="seed", taxable=False) is True
+        bank_before = em.get_bb(BOT_ID)
+        stats_before = database.DatabaseManager.fetch_one(
+            "SELECT total_revenue, total_tax_collected FROM bank WHERE id = 1"
+        )
+        log_count_before = database.DatabaseManager.fetch_one(
+            "SELECT COUNT(*) FROM economy_transactions"
+        )[0]
+
+        charged = bank_manager.BankManager.collect_tax_batch(
+            [(first, 300), (second, 900), (first, 50)],
+            description="Inactivity tax",
+            bank_description="Inactivity tax from 2 users",
+        )
+
+        assert charged == [
+            (str(first), 350, 650),
+            (str(second), 400, 0),
+        ]
+        assert em.get_bb(first) == 650
+        assert em.get_bb(second) == 0
+        assert em.get_bb(BOT_ID) == bank_before + 750
+        bank_row = database.DatabaseManager.fetch_one(
+            "SELECT balance, total_revenue, total_tax_collected FROM bank WHERE id = 1"
+        )
+        assert bank_row == (
+            bank_before + 750,
+            stats_before[0] + 750,
+            stats_before[1] + 750,
+        )
+        assert database.DatabaseManager.fetch_one(
+            "SELECT COUNT(*) FROM economy_transactions"
+        )[0] == log_count_before + 3
         assert _total_supply(database) == TOTAL_SUPPLY
 
 

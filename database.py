@@ -130,18 +130,33 @@ class DatabaseManager:
                 print(f"[db] WAL checkpoint failed: {e}")
 
     @staticmethod
-    def transfer(src_id, dst_id, amount: int, reason: str = "Transfer") -> bool:
+    def transfer(
+        src_id,
+        dst_id,
+        amount: int,
+        reason: str = "Transfer",
+        *,
+        record_pay_transfer: bool = False,
+    ) -> bool:
         """Atomically move ``amount`` UKP from one user to another.
 
-        Both balance rows update inside a single locked transaction or neither
-        does, so the closed-economy total is always conserved. Returns False
-        (touching nothing) if the source lacks funds. The bank is just the bot's
-        own user row, so this also covers user↔bank moves.
+        Both balance rows, balance-history points, statement entries, and the
+        optional /pay audit row update in one locked transaction or none do. The
+        closed-economy total and anti-shuffle audit therefore cannot drift apart.
+        Returns False (touching nothing) if the source lacks funds.
         """
-        if amount <= 0:
+        if amount <= 0 or str(src_id) == str(dst_id):
             return False
         import time
         now = int(time.time())
+        from lib.economy.economy_manager import (
+            _mark_balance_point_committed,
+            _record_balance_point_in_transaction,
+            _record_transaction_in_transaction,
+        )
+
+        src_history = None
+        dst_history = None
         with DatabaseManager.transaction() as c:
             c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(src_id),))
             row = c.fetchone()
@@ -166,19 +181,41 @@ class DatabaseManager:
                 "INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)",
                 (now, f"🔁 <@{src_id}> → <@{dst_id}> `{amount:,}` UKP|{reason}"),
             )
+            new_src_balance = old_src_balance - amount
+            new_dst_balance = old_dst_balance + amount
+            src_history = _record_balance_point_in_transaction(
+                c, src_id, new_src_balance, now,
+            )
+            dst_history = _record_balance_point_in_transaction(
+                c, dst_id, new_dst_balance, now,
+            )
+            _record_transaction_in_transaction(
+                c,
+                src_id,
+                -amount,
+                new_src_balance,
+                reason,
+                counterparty_id=dst_id,
+                ts=now,
+            )
+            _record_transaction_in_transaction(
+                c,
+                dst_id,
+                amount,
+                new_dst_balance,
+                reason,
+                counterparty_id=src_id,
+                ts=now,
+            )
+            if record_pay_transfer:
+                c.execute(
+                    "INSERT INTO pay_transfers "
+                    "(timestamp, payer_id, recipient_id, amount) VALUES (?, ?, ?, ?)",
+                    (now, str(src_id), str(dst_id), amount),
+                )
 
-        new_src_balance = old_src_balance - amount
-        new_dst_balance = old_dst_balance + amount
-        # /pay bypasses set_balance/remove_amount, so record both legs here for the balance
-        # graph (balance_history) and the statement ledger (user_transactions), after commit.
-        try:
-            from lib.economy.economy_manager import record_balance_point, record_transaction
-            record_balance_point(src_id, new_src_balance, now)
-            record_balance_point(dst_id, new_dst_balance, now)
-            record_transaction(src_id, -amount, new_src_balance, reason, counterparty_id=dst_id, ts=now)
-            record_transaction(dst_id, amount, new_dst_balance, reason, counterparty_id=src_id, ts=now)
-        except Exception:
-            pass
+        _mark_balance_point_committed(src_history)
+        _mark_balance_point_committed(dst_history)
 
         from config import BOT_ID
         if new_dst_balance >= 30000 and old_dst_balance < 30000 and str(dst_id) != str(BOT_ID):
@@ -584,6 +621,30 @@ def init_db():
         ''')
         c.execute('CREATE INDEX IF NOT EXISTS idx_bonds_user ON bonds(user_id)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_bonds_status ON bonds(status)')
+
+        # Durable user notifications: producers persist here before attempting a
+        # best-effort DM, so closed DMs and transient Discord failures do not lose
+        # important bond, shop, badge, or moderation outcomes.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                category TEXT NOT NULL,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL,
+                jump_url TEXT,
+                created_at INTEGER NOT NULL,
+                read_at INTEGER
+            )
+        ''')
+        c.execute('''
+            CREATE INDEX IF NOT EXISTS idx_notifications_user_created
+            ON notifications(user_id, created_at)
+        ''')
+        c.execute('''
+            CREATE INDEX IF NOT EXISTS idx_notifications_user_read
+            ON notifications(user_id, read_at)
+        ''')
         
         c.execute('''
             CREATE TABLE IF NOT EXISTS iceberg (

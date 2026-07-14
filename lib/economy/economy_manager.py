@@ -42,26 +42,72 @@ _HIST_MIN_GAP = 20       # seconds: coalesce rapid small changes
 _HIST_MIN_DELTA = 50     # ...unless the balance jumps by at least this much
 
 
+def _balance_point_row(user_id, balance, ts=None, *, force: bool = False):
+    """Return a history row when the throttle says this point is meaningful.
+
+    The caller is responsible for inserting the row and only updating the in-memory
+    throttle after the surrounding SQLite transaction has committed.
+    """
+    import time
+    from config import BOT_ID
+
+    uid = str(user_id)
+    if uid == str(BOT_ID):
+        return None
+    now = int(ts) if ts is not None else int(time.time())
+    value = int(balance)
+    last = _HIST_LAST.get(uid)
+    if (not force and last is not None and (now - last[0]) < _HIST_MIN_GAP
+            and abs(value - last[1]) < _HIST_MIN_DELTA):
+        return None
+    return (uid, now, value)
+
+
+def _record_balance_point_in_transaction(cursor, user_id, balance, ts=None,
+                                         *, force: bool = False):
+    row = _balance_point_row(user_id, balance, ts, force=force)
+    if row is not None:
+        cursor.execute(
+            "INSERT INTO balance_history (user_id, ts, balance) VALUES (?, ?, ?)",
+            row,
+        )
+    return row
+
+
+def _mark_balance_point_committed(row) -> None:
+    if row is not None:
+        _HIST_LAST[row[0]] = (row[1], row[2])
+
+
 def record_balance_point(user_id, balance, ts=None):
     """Append the user's new balance to balance_history so /balance can plot the true curve.
     Records on every meaningful change (any source flows through set_balance/remove_amount),
     lightly throttled so chat/stage ticks don't flood the table. Skips the bank (BOT_ID)."""
+    row = None
     try:
-        import time
-        from config import BOT_ID
-        uid = str(user_id)
-        if uid == str(BOT_ID):
-            return
-        now = int(ts) if ts is not None else int(time.time())
-        last = _HIST_LAST.get(uid)
-        if last is not None and (now - last[0]) < _HIST_MIN_GAP and abs(balance - last[1]) < _HIST_MIN_DELTA:
-            return
-        _HIST_LAST[uid] = (now, int(balance))
-        DatabaseManager.execute(
-            "INSERT INTO balance_history (user_id, ts, balance) VALUES (?, ?, ?)",
-            (uid, now, int(balance)))
+        with DatabaseManager.locked_connection() as conn:
+            row = _record_balance_point_in_transaction(conn.cursor(), user_id, balance, ts)
     except Exception:
-        pass
+        return
+    _mark_balance_point_committed(row)
+
+
+def _record_transaction_in_transaction(cursor, user_id, amount, balance_after,
+                                       reason="Unspecified", counterparty_id=None,
+                                       ts=None) -> None:
+    import time
+    from config import BOT_ID
+
+    uid = str(user_id)
+    if uid == str(BOT_ID) or not int(amount):
+        return
+    now = int(ts) if ts is not None else int(time.time())
+    cursor.execute(
+        "INSERT INTO user_transactions (user_id, ts, amount, balance_after, reason, counterparty_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (uid, now, int(amount), int(balance_after), str(reason)[:200],
+         str(counterparty_id) if counterparty_id else None),
+    )
 
 
 def record_transaction(user_id, amount, balance_after, reason="Unspecified",
@@ -72,22 +118,126 @@ def record_transaction(user_id, amount, balance_after, reason="Unspecified",
     and both legs of a /pay transfer. Not throttled (unlike balance_history) so the statement
     shows the true itemised history. Skips the bank (BOT_ID) and no-op zero-amount moves."""
     try:
-        import time
-        from config import BOT_ID
-        uid = str(user_id)
-        if uid == str(BOT_ID) or not int(amount):
-            return
-        now = int(ts) if ts is not None else int(time.time())
-        DatabaseManager.execute(
-            "INSERT INTO user_transactions (user_id, ts, amount, balance_after, reason, counterparty_id) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (uid, now, int(amount), int(balance_after), str(reason)[:200],
-             str(counterparty_id) if counterparty_id else None))
+        with DatabaseManager.locked_connection() as conn:
+            _record_transaction_in_transaction(
+                conn.cursor(), user_id, amount, balance_after, reason,
+                counterparty_id=counterparty_id, ts=ts,
+            )
     except Exception:
         pass
 
 
 class UKPenceManager:
+    @staticmethod
+    def _get_balance_in_transaction(cursor, user_id: int):
+        cursor.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(user_id),))
+        row = cursor.fetchone()
+        return row[0] if row else 0
+
+    @staticmethod
+    def _record_change_in_transaction(cursor, user_id: int, old_balance, new_balance,
+                                      reason: str, now: int, log_text: str,
+                                      *, force_history: bool = False):
+        cursor.execute(
+            "INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)",
+            (now, log_text),
+        )
+        history_row = _record_balance_point_in_transaction(
+            cursor, user_id, new_balance, now, force=force_history,
+        )
+        _record_transaction_in_transaction(
+            cursor, user_id, new_balance - old_balance, new_balance, reason, ts=now,
+        )
+        return (user_id, old_balance, new_balance, history_row)
+
+    @staticmethod
+    def _set_balance_in_transaction(cursor, user_id: int, amount: int,
+                                    reason: str, now: int):
+        old_balance = UKPenceManager._get_balance_in_transaction(cursor, user_id)
+        cursor.execute(
+            "INSERT OR REPLACE INTO ukpence (user_id, balance) VALUES (?, ?)",
+            (str(user_id), amount),
+        )
+        log_text = (
+            f"⚖️ <@{user_id}> balance set to `{amount:,}` UKP "
+            f"(was `{old_balance:,}`)|{reason}"
+        )
+        return UKPenceManager._record_change_in_transaction(
+            cursor, user_id, old_balance, amount, reason, now, log_text,
+        )
+
+    @staticmethod
+    def _add_amount_in_transaction(cursor, user_id: int, amount: int,
+                                   reason: str, now: int):
+        old_balance = UKPenceManager._get_balance_in_transaction(cursor, user_id)
+        new_balance = old_balance + amount
+        cursor.execute(
+            "INSERT OR REPLACE INTO ukpence (user_id, balance) VALUES (?, ?)",
+            (str(user_id), new_balance),
+        )
+        log_text = (
+            f"⚖️ <@{user_id}> balance set to `{new_balance:,}` UKP "
+            f"(was `{old_balance:,}`)|{reason}"
+        )
+        return UKPenceManager._record_change_in_transaction(
+            cursor, user_id, old_balance, new_balance, reason, now, log_text,
+        )
+
+    @staticmethod
+    def _remove_amount_in_transaction(cursor, user_id: int, amount: int,
+                                      reason: str, now: int,
+                                      *, force_history: bool = False):
+        if amount < 0:
+            return None
+        cursor.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(user_id),))
+        row = cursor.fetchone()
+        if row is None or row[0] < amount:
+            return None
+        old_balance = row[0]
+        new_balance = old_balance - amount
+        cursor.execute(
+            "UPDATE ukpence SET balance = ? WHERE user_id = ?",
+            (new_balance, str(user_id)),
+        )
+        log_text = f"💸 <@{user_id}> paid `{amount:,}` UKP|{reason}"
+        return UKPenceManager._record_change_in_transaction(
+            cursor, user_id, old_balance, new_balance, reason, now, log_text,
+            force_history=force_history,
+        )
+
+    @staticmethod
+    def _finish_change(change, *, high_roller: bool = False,
+                       bankrupt: bool = False) -> None:
+        if change is None:
+            return
+        user_id, old_balance, new_balance, history_row = change
+        _mark_balance_point_committed(history_row)
+
+        from config import BOT_ID
+        if str(user_id) == str(BOT_ID):
+            return
+        if high_roller and new_balance >= 30000 and old_balance < 30000:
+            try:
+                from lib.bot.event_handlers import award_badge_notify
+                award_badge_notify(user_id, 'high_roller')
+                # Hidden badge: crossing this milestone a certain way (id in the encrypted config).
+                from lib.core.file_operations import load_json_file
+                import config as _cfg
+                from lib.economy import secret_config as _sc
+                rec = (load_json_file(_cfg.BENEFITS_FILE) or {}).get(str(user_id))
+                claimed = bool(rec.get("last")) if isinstance(rec, dict) else bool(rec)
+                badge_id = _sc.bid("a5")
+                if not claimed and badge_id:
+                    award_badge_notify(user_id, badge_id)
+            except Exception:
+                pass
+        if bankrupt and new_balance == 0 and old_balance >= 1000:
+            try:
+                from lib.bot.event_handlers import award_badge_notify
+                award_badge_notify(user_id, 'bankrupt')
+            except Exception:
+                pass
+
     @staticmethod
     def get_all_balances() -> dict:
         rows = DatabaseManager.fetch_all("SELECT user_id, balance FROM ukpence")
@@ -118,70 +268,32 @@ class UKPenceManager:
     def set_balance(user_id: int, amount: int, reason: str = "Unspecified") -> None:
         import time
         now = int(time.time())
-        old_balance = UKPenceManager.get_balance(user_id)
-        DatabaseManager.execute("INSERT OR REPLACE INTO ukpence (user_id, balance) VALUES (?, ?)", (str(user_id), amount))
-
-        from config import BOT_ID
-        if amount >= 30000 and old_balance < 30000 and str(user_id) != str(BOT_ID):
-            from lib.bot.event_handlers import award_badge_notify
-            award_badge_notify(user_id, 'high_roller')
-            # Hidden badge: crossing this milestone a certain way (id in the encrypted config).
-            try:
-                from lib.core.file_operations import load_json_file
-                import config as _cfg
-                from lib.economy import secret_config as _sc
-                _rec = (load_json_file(_cfg.BENEFITS_FILE) or {}).get(str(user_id))
-                _claimed = bool(_rec.get("last")) if isinstance(_rec, dict) else bool(_rec)
-                _b = _sc.bid("a5")
-                if not _claimed and _b:
-                    award_badge_notify(user_id, _b)
-            except Exception:
-                pass
-            
-        log_text = f"⚖️ <@{user_id}> balance set to `{amount:,}` UKP (was `{old_balance:,}`)|{reason}"
-        DatabaseManager.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
-        record_balance_point(user_id, amount, now)
-        # Signed ledger entry for the statement (delta = new - old; covers add_amount and admin sets).
-        record_transaction(user_id, amount - old_balance, amount, reason, ts=now)
+        with DatabaseManager.locked_connection() as conn:
+            change = UKPenceManager._set_balance_in_transaction(
+                conn.cursor(), user_id, amount, reason, now,
+            )
+        UKPenceManager._finish_change(change, high_roller=True)
         
     @staticmethod
     def add_amount(user_id: int, amount: int, reason: str = "Unspecified") -> None:
-        current = UKPenceManager.get_balance(user_id)
-        UKPenceManager.set_balance(user_id, current + amount, reason=reason)
+        import time
+        now = int(time.time())
+        with DatabaseManager.locked_connection() as conn:
+            change = UKPenceManager._add_amount_in_transaction(
+                conn.cursor(), user_id, amount, reason, now,
+            )
+        UKPenceManager._finish_change(change, high_roller=True)
 
     @staticmethod
     def remove_amount(user_id: int, amount: int, reason: str = "Unspecified") -> bool:
-        # Atomic update: only subtract if the balance is sufficient
-        new_balance = None
+        import time
+        now = int(time.time())
         with DatabaseManager.locked_connection() as conn:
-            c = conn.cursor()
-
-            c.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(user_id),))
-            res = c.fetchone()
-            old_balance = res[0] if res else 0
-
-            c.execute(
-                "UPDATE ukpence SET balance = balance - ? WHERE user_id = ? AND balance >= ?",
-                (amount, str(user_id), amount)
+            change = UKPenceManager._remove_amount_in_transaction(
+                conn.cursor(), user_id, amount, reason, now,
             )
-            success = c.rowcount > 0
-            if success:
-                new_balance = old_balance - amount
-                from config import BOT_ID
-                if new_balance == 0 and old_balance >= 1000 and str(user_id) != str(BOT_ID):
-                    from lib.bot.event_handlers import award_badge_notify
-                    award_badge_notify(user_id, 'bankrupt')
-                
-                import time
-                now = int(time.time())
-                log_text = f"💸 <@{user_id}> paid `{amount:,}` UKP|{reason}"
-                c.execute("INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)", (now, log_text))
-
-            conn.commit()
-        if new_balance is not None:  # record after the lock is released to avoid a nested write
-            record_balance_point(user_id, new_balance)
-            record_transaction(user_id, -amount, new_balance, reason, ts=now)
-        return success
+        UKPenceManager._finish_change(change, bankrupt=True)
+        return change is not None
 
 class EconomyMetrics:
     @staticmethod
@@ -282,6 +394,40 @@ def recent_transfer_io(user_id, days: int = None) -> tuple[int, int]:
     return (inflow, outflow)
 
 
+def _recent_transfer_io_in_transaction(cursor, user_id, days: int = None) -> tuple[int, int]:
+    """Cursor-scoped form used while a bank/user move holds the database lock."""
+    import time
+    import config
+
+    if days is None:
+        days = int(getattr(config, "TRANSFER_LOOKBACK_DAYS", 7))
+    cutoff = int(time.time()) - days * 86400
+    uid = str(user_id)
+    inflow = outflow = 0
+    for table, incoming_col, outgoing_col in (
+        ("pay_transfers", "recipient_id", "payer_id"),
+        ("game_transfers", "winner_id", "loser_id"),
+    ):
+        try:
+            cursor.execute(
+                f"SELECT COALESCE(SUM(amount), 0) FROM {table} "
+                f"WHERE {incoming_col} = ? AND timestamp > ?",
+                (uid, cutoff),
+            )
+            row = cursor.fetchone()
+            inflow += int(row[0]) if row and row[0] is not None else 0
+            cursor.execute(
+                f"SELECT COALESCE(SUM(amount), 0) FROM {table} "
+                f"WHERE {outgoing_col} = ? AND timestamp > ?",
+                (uid, cutoff),
+            )
+            row = cursor.fetchone()
+            outflow += int(row[0]) if row and row[0] is not None else 0
+        except Exception:
+            pass
+    return (inflow, outflow)
+
+
 def pvp_rake(pot: int) -> int:
     """House rake skimmed (silently) from a player-vs-player pot before the winner is paid; the
     rake stays in the bank. A small sink + friction so 'stake and lose on purpose' isn't a free
@@ -322,6 +468,17 @@ def effective_wealth(user_id, balance: int = None, days: int = None) -> int:
     funds just passing through. This is the base every tax is charged on."""
     bal = balance if balance is not None else UKPenceManager.get_balance(user_id)
     inflow, outflow = recent_transfer_io(user_id, days)
+    return max(0, bal + outflow - inflow)
+
+
+def _effective_wealth_in_transaction(cursor, user_id, balance: int = None,
+                                     days: int = None) -> int:
+    bal = (
+        balance
+        if balance is not None
+        else UKPenceManager._get_balance_in_transaction(cursor, user_id)
+    )
+    inflow, outflow = _recent_transfer_io_in_transaction(cursor, user_id, days)
     return max(0, bal + outflow - inflow)
 
 
@@ -372,30 +529,15 @@ def add_bb(user_id: int, amount: int, reason: str = "Unspecified",
     """
     if from_bank:
         from lib.economy.bank_manager import BankManager
-        if not BankManager.withdraw(amount, description=reason):
-            return False
-
-        if taxable and amount > 0:
-            # Bracket by effective wealth, not raw balance, so parking UKP on an alt to sit
-            # under 10k doesn't earn you tax-free.
-            current_balance = effective_wealth(user_id)
-            tax_amount = compute_wealth_tax(current_balance, amount)
-            if tax_amount > 0:
-                gross = amount
-                amount -= tax_amount
-                effective_rate = tax_amount / gross
-                # deposit_tax (not deposit) so it also increments total_tax_collected;
-                # plain deposit only bumped total_revenue, leaving the tax counter at 0.
-                BankManager.deposit_tax(
-                    tax_amount,
-                    description=f"Wealth tax on '{reason}' (gross: {gross:,}, rate: {effective_rate:.0%})",
-                )
-                reason = f"{reason} [gross: {gross:,}, tax: -{tax_amount:,} ({effective_rate:.0%})]"
+        return BankManager.transfer_to_user(
+            user_id, amount, description=reason, taxable=taxable,
+        )
 
     UKPenceManager.add_amount(user_id, amount, reason=reason)
     return True
 
-def remove_bb(user_id: int, amount: int, reason: str = "Unspecified", to_bank: bool = True) -> bool:
+def remove_bb(user_id: int, amount: int, reason: str = "Unspecified",
+              to_bank: bool = True, *, record_pay_transfer: bool = False) -> bool:
     """Debit a user of UKP.
     
     to_bank=True (default): deposits the deducted amount back to the server bank - UKP is conserved.
@@ -403,11 +545,19 @@ def remove_bb(user_id: int, amount: int, reason: str = "Unspecified", to_bank: b
                    add_bb on the recipient handles the bank side.
     Returns True if the user had sufficient funds, False otherwise.
     """
-    success = UKPenceManager.remove_amount(user_id, amount, reason=reason)
-    if success and to_bank:
+    if amount < 0:
+        return False
+    if record_pay_transfer and (not to_bank or amount <= 0):
+        return False
+    if to_bank and amount > 0:
         from lib.economy.bank_manager import BankManager
-        BankManager.deposit(amount, description=reason)
-    return success
+        return BankManager.transfer_from_user(
+            user_id,
+            amount,
+            description=reason,
+            record_pay_transfer=record_pay_transfer,
+        )
+    return UKPenceManager.remove_amount(user_id, amount, reason=reason)
 
 def ensure_bb(user_id: int) -> None:
     UKPenceManager.ensure_user(user_id)

@@ -3,7 +3,6 @@ from typing import List
 
 from config import ROLES
 from lib.economy.bank_manager import BankManager
-from lib.economy.economy_manager import add_bb, ensure_bb
 
 
 def _is_deputy_pm(user) -> bool:
@@ -57,15 +56,16 @@ class UKPAddAmountModal(discord.ui.Modal, title="UKPence Handout"):
             )
             return
 
-        # Perform the transaction
-        success = BankManager.withdraw(total_cost, description=f"Handout by {interaction.user.name}")
+        # The bank debit, every recipient credit, balance history, and statement
+        # entries commit together. A failure for any recipient rolls back all of it.
+        success = BankManager.transfer_to_users(
+            [member.id for member in self.selected_members],
+            amount_val,
+            description=f"Handout by {interaction.user.name}",
+            user_reason="ukpadd (Deputy PM grant)",
+        )
         
         if success:
-            from config import CHANNELS
-            for member in self.selected_members:
-                ensure_bb(member.id)
-                add_bb(member.id, amount_val, reason="ukpadd (Deputy PM grant)", from_bank=False)
-                
             new_balance = BankManager.get_balance()
             
             users_list_str = ", ".join(m.mention for m in self.selected_members[:10])

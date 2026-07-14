@@ -389,6 +389,26 @@ async def award_badge_with_notify(client, user_id: int, badge_id: str):
 
         badge_name, badge_desc, badge_icon, badge_rarity = badge_info
 
+        # Keep the durable inbox independent of Discord delivery. A failed inbox
+        # write is logged, but must never suppress the existing channel log or DM.
+        try:
+            from lib.features.inbox import create_notification
+
+            reward_text = (
+                f"+{reward_paid:,} UKPence" if reward_paid else "No UKPence reward"
+            )
+            create_notification(
+                user_id=user_id,
+                category="badge",
+                title=f"Badge earned: {badge_name}",
+                body=f"{badge_desc}\nReward: {reward_text}",
+            )
+        except Exception:
+            logger.error(
+                f"Badge inbox notification failed for {user_id}/{badge_id}",
+                exc_info=True,
+            )
+
         # Log to bot-usage-log
         log_channel = client.get_channel(CHANNELS.BOT_USAGE_LOG)
         user_mention = f"<@{user_id}>"
@@ -845,6 +865,26 @@ async def process_forum_threads(client, message):
 
 
 async def on_ready(client, tree, scheduler):
+    """Run process boot work once, even when Discord re-emits ``on_ready``."""
+    state = getattr(client, "_ready_initialisation_state", "pending")
+    if state in {"running", "complete"}:
+        logger.info("Ready initialisation is %s; gateway reconnect is a no-op.", state)
+        return state == "complete"
+
+    client._ready_initialisation_state = "running"
+    try:
+        await _run_ready_initialisation(client, tree, scheduler)
+    except Exception:
+        # A later ready event may safely retry. Scheduler registration/startup have
+        # their own guards, so a failure in a later boot action cannot duplicate jobs.
+        client._ready_initialisation_state = "pending"
+        raise
+    else:
+        client._ready_initialisation_state = "complete"
+        return True
+
+
+async def _run_ready_initialisation(client, tree, scheduler):
     set_badge_notify_client(client)
     try:
         from lib.economy.poker import escrow as _poker_escrow
