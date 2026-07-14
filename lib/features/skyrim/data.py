@@ -1068,7 +1068,7 @@ PIT_CHAMPS = [
     {"name": "Yrsarald Thrice-Pierced", "fight": 66, "hp": 5, "guard": 25, "art": "pit_yrsarald", "quirk": "reckless",
      "quirk_desc": "turns it into a brawl - you BOTH hit far more often",
      "taunt": "\"Three spears couldn't do it. What are you bringing?\"", "style": "reckless power"},
-    {"name": "The Caged Bear", "fight": 70, "hp": 6, "guard": 30, "art": "pit_bear", "quirk": "bear",
+    {"name": "The Caged Bear", "fight": 70, "hp": 6, "guard": 30, "art": "pit_bear", "quirk": "bear", "kind": "beast",
      "quirk_desc": "every hit crushes two hearts... but bears are easily distracted",
      "taunt": "(It is an actual bear.)", "style": "being a bear"},
 ]

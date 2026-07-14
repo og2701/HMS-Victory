@@ -437,8 +437,12 @@ async def _handle_delve_click(interaction: Interaction, delve: E.Delve, action: 
 # Ephemeral hub - one message that edits itself between panels
 # ---------------------------------------------------------------------------
 def _panel_view(text: str, rows, art_key: str = None):
-    """(view, files) - a Container panel + button rows for the ephemeral hub."""
-    view = discord.ui.LayoutView(timeout=900)
+    """(view, files) - a Container panel + button rows for the ephemeral hub.
+    No timeout: each click brings its own interaction token, so there's no reason
+    to let a panel's buttons die after 15 minutes ('This interaction failed' on a
+    scrolled-back hub, mid-bout or otherwise). Restarts still orphan old panels -
+    /skyrim again is the recovery, and any open Pit bout resumes."""
+    view = discord.ui.LayoutView(timeout=None)
     files = _gallery_files(view, art_key) if art_key else []
     box = discord.ui.Container(accent_colour=ACCENT)
     box.add_item(discord.ui.TextDisplay(text))

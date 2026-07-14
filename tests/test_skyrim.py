@@ -465,7 +465,10 @@ def test_the_pit():
     assert E.pit_state(p)["rank"] == 1
     assert E.pit_available(p)                           # you fight while you WIN...
     assert E.pit_fatigue(p) == E.PIT_FATIGUE_PER_BOUT   # ...but the arms remember
+    hurt = E.pit_state(p)["hearts_today"]
+    assert hurt == E.heart_max(p) - 1                   # Snilf's round-one hit stays with you
     assert E.pit_begin(p) and E.pit_bout_active(p)["fatigue"] == E.PIT_FATIGUE_PER_BOUT
+    assert E.pit_bout_active(p)["me"] == hurt           # wounds carry between bouts
     E.pit_state(p)["bout"] = None                       # walk away from the rematch
     E.pit_state(p)["last"] = "lost"
     assert not E.pit_available(p)                       # a loss ends the day

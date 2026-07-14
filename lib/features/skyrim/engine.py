@@ -2232,12 +2232,16 @@ def pit_title(rank: int) -> str:
     return D.PIT_TITLES[min(max(rank, 1), len(D.PIT_TITLES)) - 1] if rank > 0 else "Unranked"
 
 
-def _pit_attack_pct(profile) -> int:
-    """Your arena hit chance - the same build maths as a delve, no delve modifiers."""
+def _pit_attack_pct(profile, champ=None) -> int:
+    """Your arena hit chance - the full build counts: skills, weapon tier,
+    tempering, Honed Edge, and your attack Doctrines (the Bear is a beast -
+    Hunters know what to do with beasts)."""
     style = max(D.STYLES, key=lambda s: profile["skills"][s])
+    foe = {"type": (champ or {}).get("kind", "human")}
     p = (44 + _skill_component(profile["skills"][style], FIGHT_SKILL_SCALE)
          + D.WEAPON_FIGHT_PER_TIER * profile["weapon_tier"]
          + temper_fight_bonus(profile)
+         + doctrine_fight_bonus(profile, foe, style)
          + 4 * perk_rank(profile, "honed_edge"))
     return _clamp(p)
 
@@ -2252,23 +2256,29 @@ def pit_begin(profile) -> list:
     s = pit_state(profile)
     champ = D.PIT_CHAMPS[s["rank"]]
     if s.get("date") != _today_str():
-        s["bouts_today"] = 0                     # fresh legs at dawn
+        s["bouts_today"] = 0                     # fresh legs at dawn...
+        s["hearts_today"] = heart_max(profile)   # ...and mended wounds
     s["date"] = _today_str()
     fatigue = PIT_FATIGUE_PER_BOUT * int(s.get("bouts_today", 0))
     s["bouts_today"] = int(s.get("bouts_today", 0)) + 1
-    s["bout"] = {"rank": s["rank"], "me": heart_max(profile), "foe": champ["hp"],
+    hearts = min(int(s.get("hearts_today", heart_max(profile))), heart_max(profile))
+    s["bout"] = {"rank": s["rank"], "me": max(1, hearts), "foe": champ["hp"],
                  "round": 1, "ward": champ.get("quirk") == "veteran",
                  "staggered": False, "opening": False, "fatigue": fatigue}
     lines = [f"🗡️ **The Pit, Windhelm.** Bout {s['rank'] + 1}: **{champ['name']}**.",
              f"-# {champ['taunt']}  ·  ({champ['quirk_desc']})"]
     if fatigue:
         lines.append(f"-# 😮‍💨 Your arms remember today's earlier fights: -{fatigue}% to hit.")
+    if s["bout"]["me"] < heart_max(profile):
+        lines.append(f"-# 🩹 You carry today's wounds into the ring: "
+                     f"{'❤️' * s['bout']['me']} - no one heals between bouts.")
     return lines
 
 
 def _pit_foe_strike(profile, b, champ, lines, guarding=False, note=""):
     quirk = champ.get("quirk")
     guard = min(SOAK_CAP, soak_pct(profile))
+    guard = max(0, guard - int(b.get("fatigue", 0)) // 2)   # tired arms hold the shield low
     if quirk == "silent":
         guard //= 2                              # her thrusts slip the seams
     fatk = max(5, champ["fight"] + (15 if quirk == "reckless" else 0) - guard)
@@ -2292,7 +2302,7 @@ def _pit_foe_strike(profile, b, champ, lines, guarding=False, note=""):
 
 def _pit_me_strike(profile, b, champ, lines, power=False):
     quirk = champ.get("quirk")
-    eff = _pit_attack_pct(profile) + (15 if quirk == "reckless" else 0)
+    eff = _pit_attack_pct(profile, champ) + (15 if quirk == "reckless" else 0)
     eff -= int(b.get("fatigue", 0))              # today's earlier bouts weigh on the arms
     if b.get("staggered"):
         eff -= 15                                # her shieldwall is still closed
@@ -2356,6 +2366,7 @@ def pit_action(profile, action: str) -> tuple:
     if b["foe"] <= 0:
         s["bout"] = None
         s["last"] = "won"
+        s["hearts_today"] = max(1, b["me"])      # today's wounds follow you to the next bout
         s["rank"] += 1
         record_best(profile, "pit_rank", s["rank"])
         log_add(profile, "pit", champ["name"])
@@ -2370,8 +2381,8 @@ def pit_action(profile, action: str) -> tuple:
                          "until the month turns.")
         elif pit_available(profile):
             lines.append(f"-# 📣 The crowd chants for MORE - {D.PIT_CHAMPS[s['rank']]['name']} "
-                         f"is warming up. Fight on (fatigued "
-                         f"-{pit_fatigue(profile)}%), or bank the win and rest.")
+                         f"is warming up. Fight on at {'❤️' * int(s['hearts_today'])} and "
+                         f"-{pit_fatigue(profile)}% tired, or bank the win and rest.")
         return "won", lines
     if b["me"] <= 0:
         s["bout"] = None
