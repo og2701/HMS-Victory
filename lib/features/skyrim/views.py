@@ -990,9 +990,11 @@ async def _hub_pit(interaction: Interaction):
             if not (E.level(p) >= 5 and E.pit_available(p)):
                 await _hub_pit(inter)
                 return
+            foe = D.PIT_CHAMPS[E.pit_state(p)["rank"]]
             _won, log = E.pit_bout(p)
             E.save_profile(p)
-            view, files = _panel_view("\n".join(log), [_pit_back_row()], art_key="pit")
+            view, files = _panel_view("\n".join(log), [_pit_back_row()],
+                                      art_key=_pit_art(foe))
             await inter.response.edit_message(view=view, attachments=files)
         frow = discord.ui.ActionRow()
         frow.add_item(_cb_btn(discord.ButtonStyle.danger, "Step into the Pit", "🗡️", _fight))
@@ -1000,7 +1002,14 @@ async def _hub_pit(interaction: Interaction):
     elif E.level(profile) >= 5 and rank < len(D.PIT_CHAMPS):
         lines.append("\n-# 💤 You've had your bout today. The crowd expects you tomorrow.")
     rows.append(_back_row())
-    await _edit_panel(interaction, "\n".join(lines), rows)
+    next_art = _pit_art(D.PIT_CHAMPS[rank]) if rank < len(D.PIT_CHAMPS) else "pit"
+    await _edit_panel(interaction, "\n".join(lines), rows, art_key=next_art)
+
+
+def _pit_art(champ: dict) -> str:
+    """The champion's portrait, or the arena until their art is dropped."""
+    key = champ.get("art")
+    return key if key and _asset_bytes(key) is not None else "pit"
 
 
 def _pit_back_row():

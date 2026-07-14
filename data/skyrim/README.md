@@ -31,6 +31,7 @@ convert a fresh drop:
 | karstaag | Karstaag, the frost-troll king legend hunt |
 | vale_dragon | Voslaarum & Naaslaarum, the twin dragons (shared by both) |
 | pit | The Pit arena panel (Windhelm bout results) |
+| pit_snilf, pit_rolff, pit_adelaisa, pit_uzoga, pit_bero, pit_hama, pit_ulfberth, pit_widow, pit_yrsarald, pit_bear | Pit champion portraits (bout preview + result; arena scene until dropped) |
 
 The **Named Dragons of the Week** all reuse `dragon.webp` - no per-dragon art needed.
 New expansion scenes fall back to text like every other, so they can be dropped in
