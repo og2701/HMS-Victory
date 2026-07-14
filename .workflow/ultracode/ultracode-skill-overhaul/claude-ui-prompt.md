@@ -171,7 +171,7 @@ Implement a single server polling loop:
 2. After each request completes, schedule the next request with `setTimeout` at roughly one second. Do not use an overlapping `setInterval`.
 3. Keep the last good run visible during transient failures.
 4. Change connection state to `Reconnecting`, display one concise conditional message, and retry automatically with a small bounded backoff. Do not replace the run with fake client data.
-5. Surface `payload.warning` while still rendering the server-supplied waiting state.
+5. Surface `payload.warning`. If no valid run has ever loaded, render the server-supplied waiting state. If a last-good run exists, retain its Work and Activity, change the connection label to `Waiting`, and show the warning banner until a valid payload returns.
 6. Pause or slow routine polling while the document is hidden; fetch immediately on `visibilitychange` to visible and on window focus.
 7. Prevent duplicate loops when focus/visibility events fire.
 8. If the meaningful payload has not changed (prefer `revision`/`updated_at`, with a safe fallback), avoid rebuilding lists or causing visual flicker.
