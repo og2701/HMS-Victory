@@ -985,58 +985,6 @@ async def open_anti_raid_control(interaction: Interaction) -> None:
         pass
 
 
-async def toggle_anti_raid(interaction: Interaction) -> None:
-    """Backward-compatible toggle command backed by safe idempotent transitions."""
-    await interaction.response.defer(ephemeral=True)
-    if interaction.guild is None:
-        await interaction.followup.send("This command only works in the server.", ephemeral=True)
-        return
-    if is_anti_raid_enabled():
-        result = await disable_anti_raid(interaction.guild)
-        title = "Anti-Raid Disabled" if not result.active else "Anti-Raid Still Enabled"
-        description = (
-            "New joins will no longer be quarantined. Role permissions were restored."
-            if not result.active
-            else "The permission restore was incomplete, so protection remains enabled."
-        )
-    else:
-        result = await enable_anti_raid(interaction.guild)
-        if result.changed:
-            await send_backup_file(interaction.guild)
-        title = "Anti-Raid Enabled" if result.active else "Anti-Raid Not Enabled"
-        description = (
-            "New joins are quarantined and high-abuse role permissions were restricted."
-            if result.active
-            else "Protection could not be enabled safely."
-        )
-    if result.failures:
-        description += f"\n\n⚠️ **Partial failures**\n{_failure_summary(result.failures)}"
-    view = discord.ui.LayoutView(timeout=None)
-    card = discord.ui.Container(accent_colour=0xE74C3C if result.active else 0x2ECC71)
-    card.add_item(
-        discord.ui.TextDisplay(
-            f"## {'🔴' if result.active else '🟢'} {title}\n{description}"
-        )
-    )
-    card.add_item(discord.ui.Separator())
-    card.add_item(
-        discord.ui.TextDisplay(
-            f"-# Triggered by {interaction.user.mention} · use /anti-raid for the full control centre"
-        )
-    )
-    view.add_item(card)
-    await _log_action(
-        interaction.guild,
-        f"Legacy anti-raid toggle by {interaction.user} ({interaction.user.id}): "
-        f"active={result.active}, failures={len(result.failures)}.",
-    )
-    await interaction.followup.send(
-        view=view,
-        ephemeral=True,
-        allowed_mentions=discord.AllowedMentions.none(),
-    )
-
-
 async def handle_new_member_anti_raid(member: discord.Member) -> AntiRaidJoinOutcome:
     """Record and quarantine a join, returning a fail-closed onboarding gate."""
     try:
