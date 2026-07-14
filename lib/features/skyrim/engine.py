@@ -292,7 +292,7 @@ def _migrate(profile: dict) -> dict:
     profile.setdefault("companions", [])         # befriended strays (keys)
     profile.setdefault("companion", None)        # the active friend
     profile.setdefault("rumours", {})            # legend hunts heard/slain
-    profile.setdefault("pit", {"month": None, "rank": 0, "date": None, "best": 0})
+    profile.setdefault("pit", {"season": None, "rank": 0, "date": None, "best": 0})
     # backfill what honesty allows: the Cairn depth record already existed
     if (profile.get("soulcairn") or {}).get("best"):
         profile["records"].setdefault("depth", int(profile["soulcairn"]["best"]))
@@ -2188,17 +2188,20 @@ def buy_rumour(profile, key: str) -> str | None:
 # ---------------------------------------------------------------------------
 # The Pit - Windhelm's unsanctioned arena. One bout per UK day, simulated round
 # by round with your REAL build against a ladder of champions. No satchel at
-# stake - lose and you simply limp home until tomorrow. Rank resets monthly.
+# stake - lose and you simply limp home until tomorrow. Rank resets each Monday.
 # ---------------------------------------------------------------------------
 def pit_state(profile) -> dict:
-    s = profile.setdefault("pit", {"month": None, "rank": 0, "date": None, "best": 0})
-    ym = _today_str()[:7]
-    if s.get("month") != ym:
+    s = profile.setdefault("pit", {"season": None, "rank": 0, "date": None, "best": 0})
+    wk = str(_iso_week())
+    if "season" not in s:                        # pre-weekly profiles: adopt the current
+        s["season"] = wk                         # week without wiping their climb
+        s.pop("month", None)
+    if s.get("season") != wk:
         s["best"] = max(int(s.get("best", 0)), int(s.get("rank", 0)))
-        s["month"] = ym
+        s["season"] = wk
         s["rank"] = 0
         s["date"] = None
-        s["bout"] = None                         # a bout left hanging dies with the month
+        s["bout"] = None                         # a bout left hanging dies with the week
     return s
 
 
@@ -2378,7 +2381,7 @@ def pit_action(profile, action: str) -> tuple:
                      f"(+{prize} septims, +{gained} XP)")
         if s["rank"] >= len(D.PIT_CHAMPS):
             lines.append("👑 **THE PIT HAS A NEW CHAMPION.** Your name goes on the wall "
-                         "until the month turns.")
+                         "until Monday.")
         elif pit_available(profile):
             lines.append(f"-# 📣 The crowd chants for MORE - {D.PIT_CHAMPS[s['rank']]['name']} "
                          f"is warming up. Fight on at {'❤️' * int(s['hearts_today'])} and "

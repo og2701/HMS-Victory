@@ -476,7 +476,7 @@ def test_the_pit():
     assert E.records_of(p)["pit_rank"] == 1
     assert E.pit_title(1) == D.PIT_TITLES[0]
     # the month turning resets the rank (and any hanging bout), remembers the best
-    p["pit"]["month"] = "1999-01"
+    p["pit"]["season"] = "[1999, 1]"
     p["pit"]["bout"] = {"rank": 0}
     s = E.pit_state(p)
     assert s["rank"] == 0 and s["best"] == 1 and s["bout"] is None and E.pit_available(p)
@@ -485,7 +485,7 @@ def test_the_pit():
              "veteran", "silent", "reckless", "bear"}
     assert all(c.get("quirk") in known and c.get("quirk_desc") for c in D.PIT_CHAMPS)
     # Old Ulfberth shrugs off your first landed blow...
-    p["pit"] = {"month": E._today_str()[:7], "rank": 6, "date": None, "best": 0}
+    p["pit"] = {"season": str(E._iso_week()), "rank": 6, "date": None, "best": 0}
     E.pit_begin(p)
     seen = []
     E.random = _fixed_rolls(*([0.0, 0.99] * 12))       # I always hit, he always misses
@@ -498,7 +498,7 @@ def test_the_pit():
         _restore_random()
     assert state == "won" and any("Forty years" in l for l in seen)
     # ...the bear's hits crush when you swing openly, but a set guard can't be crushed
-    p["pit"] = {"month": E._today_str()[:7], "rank": 9, "date": None, "best": 0}
+    p["pit"] = {"season": str(E._iso_week()), "rank": 9, "date": None, "best": 0}
     E.pit_begin(p)
     hearts = E.pit_bout_active(p)["me"]
     E.random = _fixed_rolls(0.5, 0.0, 0.5)             # not distracted; its hit lands

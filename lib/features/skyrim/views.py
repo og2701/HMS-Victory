@@ -968,7 +968,7 @@ async def _hub_pit(interaction: Interaction):
     lines = ["## 🗡️ The Pit - Windhelm",
              "-# Fight while you win: each victory offers the next rung, but fatigue mounts "
              "(-6% per extra bout) and a loss ends your day. No satchel at stake - glory "
-             "only. The board wipes clean when the month turns.", ""]
+             "only. The board wipes clean each Monday (UK).", ""]
     if E.level(profile) < 5:
         lines.append("-# 🔒 The Pit doesn't book novices (level 5+).")
     lines.append(f"**Your standing:** {E.pit_title(rank)} (rank {rank}/{len(D.PIT_CHAMPS)})"
@@ -979,14 +979,14 @@ async def _hub_pit(interaction: Interaction):
         lines.append(f"-# ⚠️ Word in the stands: {champ['quirk_desc']}.")
     else:
         lines.append("👑 **You ARE the Pit Champion.** Nothing left but to hold the title "
-                     "until the month turns.")
+                     "until Monday - defend it next week.")
     # the standings: every fighter this month
     board = sorted(((E.pit_state(p).get("rank", 0), p["name"])
                     for p in E.all_profiles().values()), reverse=True)
     board = [(r, n) for r, n in board if r > 0][:6]
     if board:
         lines.append("")
-        lines.append("**This month's board:** " + "  ·  ".join(
+        lines.append("**This week's board:** " + "  ·  ".join(
             f"**{n}** {E.pit_title(r)} ({r})" for r, n in board))
     rows = []
     if E.pit_bout_active(profile):
@@ -1926,7 +1926,7 @@ def _help_text() -> str:
         "day's first delve (one rest day a week forgiven).\n"
         "**🗡️ The Pit** (Windhelm, level 5+) - climb a ladder of champions round by round "
         "(Strike / Power blow / Guard). Fight on while you win at mounting fatigue; a loss "
-        "ends your day. Glory only; the board resets monthly. **🗣️ Rumours** at Belethor's "
+        "ends your day. Glory only; the board resets each Monday. **🗣️ Rumours** at Belethor's "
         "sell the locations of three one-time LEGEND hunts - the hardest fights in the "
         "game, each with a permanent trophy.\n\n"
         f"-# {getattr(config, 'SKYRIM_DELVES_PER_DAY', 3)} delves per day, reset at "
