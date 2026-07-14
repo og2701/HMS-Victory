@@ -451,40 +451,63 @@ def test_the_pit():
         p["skills"][s] = 100
     p["weapon_tier"] = 6
     assert E.pit_available(p)
-    E.random = _fixed_rolls(0.0)                        # every swing lands: flawless bout
+    # the bout is INTERACTIVE: begin opens it, each action plays one round
+    intro = E.pit_begin(p)
+    assert intro and E.pit_bout_active(p) and not E.pit_available(p)
+    E.random = _fixed_rolls(0.0)                        # everyone lands everything
     try:
-        won, log = E.pit_bout(p)
+        state1, _ = E.pit_action(p, "strike")           # Snilf 2hp: chip, take a hit
+        assert state1 == "playing" and E.pit_bout_active(p)["foe"] == 1
+        state2, log = E.pit_action(p, "strike")         # and down he goes
     finally:
         _restore_random()
-    assert won and E.pit_state(p)["rank"] == 1
+    assert state2 == "won" and E.pit_bout_active(p) is None
+    assert E.pit_state(p)["rank"] == 1
     assert not E.pit_available(p)                       # one bout per day
     assert D.PIT_CHAMPS[0]["name"] in p["log"]["pit"]
     assert E.records_of(p)["pit_rank"] == 1
     assert E.pit_title(1) == D.PIT_TITLES[0]
-    # the month turning resets the rank but remembers the best
+    # the month turning resets the rank (and any hanging bout), remembers the best
     p["pit"]["month"] = "1999-01"
+    p["pit"]["bout"] = {"rank": 0}
     s = E.pit_state(p)
-    assert s["rank"] == 0 and s["best"] == 1 and E.pit_available(p)
-    # every champion declares a quirk the sim knows how to run
+    assert s["rank"] == 0 and s["best"] == 1 and s["bout"] is None and E.pit_available(p)
+    # every champion declares a quirk the engine knows how to run
     known = {None, "drunk", "quick", "shieldwall", "butcher", "riposte",
              "veteran", "silent", "reckless", "bear"}
     assert all(c.get("quirk") in known and c.get("quirk_desc") for c in D.PIT_CHAMPS)
     # Old Ulfberth shrugs off your first landed blow...
     p["pit"] = {"month": E._today_str()[:7], "rank": 6, "date": None, "best": 0}
-    E.random = _fixed_rolls(*([0.0, 0.99] * 8))        # I always hit, he always misses
+    E.pit_begin(p)
+    seen = []
+    E.random = _fixed_rolls(*([0.0, 0.99] * 12))       # I always hit, he always misses
     try:
-        won, log = E.pit_bout(p)
+        state = "playing"
+        while state == "playing":
+            state, lines = E.pit_action(p, "strike")
+            seen += lines
     finally:
         _restore_random()
-    assert won and any("Forty years" in l for l in log)
-    # ...and the bear's every landed hit crushes two hearts
+    assert state == "won" and any("Forty years" in l for l in seen)
+    # ...the bear's hits crush when you swing openly, but a set guard can't be crushed
     p["pit"] = {"month": E._today_str()[:7], "rank": 9, "date": None, "best": 0}
-    E.random = _fixed_rolls(*([0.99, 0.5, 0.0] * 8))   # I miss; it's not distracted; it hits
+    E.pit_begin(p)
+    hearts = E.pit_bout_active(p)["me"]
+    E.random = _fixed_rolls(0.5, 0.0, 0.5)             # not distracted; its hit lands
     try:
-        won, log = E.pit_bout(p)
+        _state, lines = E.pit_action(p, "guard")
     finally:
         _restore_random()
-    assert not won and any("crushing" in l for l in log)
+    assert E.pit_bout_active(p)["me"] == hearts - 1    # guarded: one heart, not two
+    assert not any("crushing" in l for l in lines)
+    E.random = _fixed_rolls(0.99, 0.5, 0.0)            # I miss; not distracted; it lands
+    try:
+        state, lines = E.pit_action(p, "strike")
+    finally:
+        _restore_random()
+    assert any("crushing" in l for l in lines)         # open swing: crushed for two...
+    assert state == "lost" and E.pit_bout_active(p) is None   # ...and counted out
+    assert E.pit_state(p)["rank"] == 9                 # no rank lost on a loss
 
 
 def test_meditation_sink():

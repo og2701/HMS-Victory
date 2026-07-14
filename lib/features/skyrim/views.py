@@ -984,18 +984,23 @@ async def _hub_pit(interaction: Interaction):
         lines.append("**This month's board:** " + "  ·  ".join(
             f"**{n}** {E.pit_title(r)} ({r})" for r, n in board))
     rows = []
-    if E.level(profile) >= 5 and E.pit_available(profile):
+    if E.pit_bout_active(profile):
+        # a bout is already open (maybe resumed after a restart) - back into it
+        async def _resume(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            await _show_pit_bout(inter, p, ["The crowd parts - your bout is still on."])
+        frow = discord.ui.ActionRow()
+        frow.add_item(_cb_btn(discord.ButtonStyle.danger, "Return to your bout", "🗡️", _resume))
+        rows.append(frow)
+    elif E.level(profile) >= 5 and E.pit_available(profile):
         async def _fight(inter: Interaction):
             p = E.get_profile(inter.user.id)
             if not (E.level(p) >= 5 and E.pit_available(p)):
                 await _hub_pit(inter)
                 return
-            foe = D.PIT_CHAMPS[E.pit_state(p)["rank"]]
-            _won, log = E.pit_bout(p)
+            intro = E.pit_begin(p)
             E.save_profile(p)
-            view, files = _panel_view("\n".join(log), [_pit_back_row()],
-                                      art_key=_pit_art(foe))
-            await inter.response.edit_message(view=view, attachments=files)
+            await _show_pit_bout(inter, p, intro)
         frow = discord.ui.ActionRow()
         frow.add_item(_cb_btn(discord.ButtonStyle.danger, "Step into the Pit", "🗡️", _fight))
         rows.append(frow)
@@ -1010,6 +1015,47 @@ def _pit_art(champ: dict) -> str:
     """The champion's portrait, or the arena until their art is dropped."""
     key = champ.get("art")
     return key if key and _asset_bytes(key) is not None else "pit"
+
+
+async def _show_pit_bout(interaction: Interaction, profile, last_lines):
+    """The live bout panel: your hearts vs their blood, the last round's story, and
+    the three choices - Strike, Power blow, Guard."""
+    b = E.pit_bout_active(profile)
+    if not b:                                    # the bout just ended - back to the hall
+        await _hub_pit(interaction)
+        return
+    champ = D.PIT_CHAMPS[b["rank"]]
+    lines = [f"## 🗡️ {champ['name']}  ·  round {b['round']}/{E.PIT_ROUNDS}",
+             f"-# ⚠️ {champ['quirk_desc']}",
+             "",
+             f"**You** {'❤️' * max(0, b['me'])}   vs   "
+             f"**{champ['name']}** {'🩸' * max(0, b['foe'])}", ""]
+    lines += last_lines
+    if b.get("staggered"):
+        lines.append("-# 🛡️ Her shieldwall is closed - your next swing is at -15%.")
+    if b.get("opening"):
+        lines.append("-# 👁️ You see an opening - your next strike is at +10%.")
+
+    async def _act(inter: Interaction, action: str):
+        p = E.get_profile(inter.user.id)
+        state, story = E.pit_action(p, action)
+        E.save_profile(p)
+        if state == "playing":
+            await _show_pit_bout(inter, p, story)
+        else:
+            view, files = _panel_view("\n".join(story), [_pit_back_row()],
+                                      art_key=_pit_art(champ))
+            await inter.response.edit_message(view=view, attachments=files)
+
+    row = discord.ui.ActionRow()
+    for label, emoji, action in (("Strike", "⚔️", "strike"),
+                                 ("Power blow", "💥", "power"),
+                                 ("Guard", "🛡️", "guard")):
+        async def _cb(inter: Interaction, a=action):
+            await _act(inter, a)
+        row.add_item(_cb_btn(discord.ButtonStyle.danger if action != "guard"
+                             else discord.ButtonStyle.primary, label, emoji, _cb))
+    await _edit_panel(interaction, "\n".join(lines), [row], art_key=_pit_art(champ))
 
 
 def _pit_back_row():

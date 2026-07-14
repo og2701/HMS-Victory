@@ -2198,12 +2198,19 @@ def pit_state(profile) -> dict:
         s["month"] = ym
         s["rank"] = 0
         s["date"] = None
+        s["bout"] = None                         # a bout left hanging dies with the month
     return s
+
+
+def pit_bout_active(profile) -> dict | None:
+    """The in-progress bout, if one is open (it persists - a restart resumes it)."""
+    return pit_state(profile).get("bout")
 
 
 def pit_available(profile) -> bool:
     s = pit_state(profile)
-    return s.get("date") != _today_str() and s["rank"] < len(D.PIT_CHAMPS)
+    return (not s.get("bout") and s.get("date") != _today_str()
+            and s["rank"] < len(D.PIT_CHAMPS))
 
 
 def pit_title(rank: int) -> str:
@@ -2220,101 +2227,136 @@ def _pit_attack_pct(profile) -> int:
     return _clamp(p)
 
 
-def pit_bout(profile) -> tuple:
-    """Fight today's ladder opponent - round by round, with the champion's
-    signature quirk in play. Returns (won, log_lines). One per UK day."""
+PIT_ROUNDS = 12
+
+
+def pit_begin(profile) -> list:
+    """Step into the Pit: opens today's bout against the next champion. The bout
+    lives on the profile until it ends, so a restart (or closing the panel)
+    resumes it. Returns the intro lines."""
     s = pit_state(profile)
     champ = D.PIT_CHAMPS[s["rank"]]
-    quirk = champ.get("quirk")
     s["date"] = _today_str()
-    me_hp = heart_max(profile)
-    foe_hp = champ["hp"]
-    patk = _pit_attack_pct(profile) + (15 if quirk == "reckless" else 0)
+    s["bout"] = {"rank": s["rank"], "me": heart_max(profile), "foe": champ["hp"],
+                 "round": 1, "ward": champ.get("quirk") == "veteran",
+                 "staggered": False, "opening": False}
+    return [f"🗡️ **The Pit, Windhelm.** Bout {s['rank'] + 1}: **{champ['name']}**.",
+            f"-# {champ['taunt']}  ·  ({champ['quirk_desc']})"]
+
+
+def _pit_foe_strike(profile, b, champ, lines, guarding=False, note=""):
+    quirk = champ.get("quirk")
     guard = min(SOAK_CAP, soak_pct(profile))
     if quirk == "silent":
         guard //= 2                              # her thrusts slip the seams
     fatk = max(5, champ["fight"] + (15 if quirk == "reckless" else 0) - guard)
-    ward = quirk == "veteran"                    # he reads your first landed blow
-    staggered = False                            # shieldwall: -15% after you connect
-    log = [f"🗡️ **The Pit, Windhelm.** Bout {s['rank'] + 1}: **{champ['name']}**.",
-           f"-# {champ['taunt']}  ·  ({champ['quirk_desc']})"]
+    if guarding:
+        fatk = max(5, fatk // 2)                 # a raised guard turns most of it
+    if quirk == "bear" and random.random() < 0.20:
+        lines.append("-# The bear pauses to sniff at something in the sand. "
+                     "The crowd holds its breath.")
+        return
+    if random.random() * 100 < fatk:
+        crush = (not guarding                    # a set guard can't be crushed through
+                 and (quirk == "bear" or (quirk == "butcher" and random.random() < 0.25)))
+        b["me"] -= 2 if crush else 1
+        tag = "  💥 crushing!" if crush else ""
+        lines.append(f"-# {note}{champ['name']}'s {champ['style']} get through{tag} "
+                     f"({'❤️' * max(0, b['me'])} left).")
+    else:
+        lines.append(f"-# {note}{champ['name']} comes on - you "
+                     f"{'take it on your guard' if guarding else 'slip aside'}.")
 
-    def foe_strikes(rnd, note=""):
-        nonlocal me_hp
-        if quirk == "bear" and random.random() < 0.20:
-            log.append(f"-# Round {rnd}: the bear pauses to sniff at something in the "
-                       f"sand. The crowd holds its breath.")
+
+def _pit_me_strike(profile, b, champ, lines, power=False):
+    quirk = champ.get("quirk")
+    eff = _pit_attack_pct(profile) + (15 if quirk == "reckless" else 0)
+    if b.get("staggered"):
+        eff -= 15                                # her shieldwall is still closed
+    if power:
+        eff -= 15                                # winding up telegraphs
+    if b.pop("opening", False):
+        eff += 10                                # the gap your guard bought
+    if random.random() * 100 < eff:
+        b["staggered"] = quirk == "shieldwall"
+        if b.get("ward"):
+            b["ward"] = False
+            lines.append(f"-# Your best blow lands - and {champ['name']} rolls with it "
+                         f"like it was nothing. Forty years of feints.")
             return
-        if random.random() * 100 < fatk:
-            loss = 2 if (quirk == "bear" or (quirk == "butcher" and random.random() < 0.25)) else 1
-            me_hp -= loss
-            crush = "  💥 crushing!" if loss == 2 else ""
-            log.append(f"-# Round {rnd}: {note}{champ['name']}'s {champ['style']} get "
-                       f"through{crush} ({'❤️' * max(0, me_hp)} left).")
+        b["foe"] -= 2 if power else 1
+        if b["foe"] > 0:
+            what = "POWER blow CRACKS home" if power else "blow lands"
+            lines.append(f"-# Your {what} - {champ['name']} reels ({'🩸' * b['foe']} left).")
+    else:
+        b["staggered"] = False
+        lines.append(f"-# Your {'power blow' if power else 'swing'} goes wide.")
+        if quirk == "riposte" and random.random() < 0.5:
+            _pit_foe_strike(profile, b, champ, lines,
+                            note="your miss sings back at you - ")
 
-    def i_strike(rnd):
-        nonlocal foe_hp, ward, staggered
-        eff = patk - (15 if staggered else 0)
-        if random.random() * 100 < eff:
-            staggered = quirk == "shieldwall"
-            if ward:
-                ward = False
-                log.append(f"-# Round {rnd}: your best blow lands - and {champ['name']} "
-                           f"rolls with it like it was nothing. Forty years of feints.")
-                return
-            foe_hp -= 1
-            if foe_hp > 0:
-                log.append(f"-# Round {rnd}: your blow lands - {champ['name']} reels "
-                           f"({'🩸' * foe_hp} left).")
-        else:
-            staggered = False
-            if quirk == "riposte" and random.random() < 0.5:
-                foe_strikes(rnd, note="your miss sings back at you - ")
 
-    for rnd in range(1, 13):
-        if quirk == "drunk" and random.random() < 0.10:
-            foe_hp -= 1
-            if foe_hp <= 0:
-                log.append(f"-# Round {rnd}: {champ['name']} swings, misses, and falls "
-                           f"over his own boots. The crowd is DELIGHTED.")
-                break
-            log.append(f"-# Round {rnd}: {champ['name']} trips over nothing and headbutts "
-                       f"the wall ({'🩸' * foe_hp} left).")
-        if quirk == "quick":
-            foe_strikes(rnd)
-            if me_hp <= 0:
-                break
-            i_strike(rnd)
-            if foe_hp <= 0:
-                break
+def pit_action(profile, action: str) -> tuple:
+    """Play one round of the open bout: 'strike' | 'power' | 'guard'. Returns
+    (state, lines) where state is playing | won | lost | draw."""
+    s = pit_state(profile)
+    b = s.get("bout")
+    if not b:
+        return "none", []
+    champ = D.PIT_CHAMPS[b["rank"]]
+    quirk = champ.get("quirk")
+    guarding = action == "guard"
+    lines = [f"**Round {b['round']}** - you "
+             + {"strike": "strike", "power": "wind up a power blow",
+                "guard": "set your guard and watch"}.get(action, "strike") + "."]
+    if guarding:
+        b["opening"] = True                      # patience buys a gap next round
+    if quirk == "drunk" and random.random() < 0.10:
+        b["foe"] -= 1
+        if b["foe"] > 0:
+            lines.append(f"-# {champ['name']} trips over nothing and headbutts the wall "
+                         f"({'🩸' * b['foe']} left).")
         else:
-            i_strike(rnd)
-            if foe_hp <= 0:
-                break
-            foe_strikes(rnd)
-            if me_hp <= 0:
-                break
-    won = foe_hp <= 0
-    if won:
+            lines.append(f"-# {champ['name']} swings, misses, and falls over his own "
+                         f"boots. The crowd is DELIGHTED.")
+    if b["foe"] > 0:
+        if quirk == "quick":                     # she moves before you do, every round
+            _pit_foe_strike(profile, b, champ, lines, guarding=guarding)
+            if b["me"] > 0 and not guarding:
+                _pit_me_strike(profile, b, champ, lines, power=(action == "power"))
+        else:
+            if not guarding:
+                _pit_me_strike(profile, b, champ, lines, power=(action == "power"))
+            if b["foe"] > 0 and b["me"] > 0:
+                _pit_foe_strike(profile, b, champ, lines, guarding=guarding)
+    # resolve the round
+    if b["foe"] <= 0:
+        s["bout"] = None
         s["rank"] += 1
         record_best(profile, "pit_rank", s["rank"])
         log_add(profile, "pit", champ["name"])
         prize = _septims(profile, 60 + 40 * s["rank"])
         profile["septims"] += prize
         gained, _ = add_xp(profile, 15 + 10 * s["rank"])
-        log.append(f"🏆 **{champ['name']} yields!** The crowd roars. You are now "
-                   f"**{pit_title(s['rank'])}** (rank {s['rank']}/{len(D.PIT_CHAMPS)}).  "
-                   f"(+{prize} septims, +{gained} XP)")
+        lines.append(f"🏆 **{champ['name']} yields!** The crowd roars. You are now "
+                     f"**{pit_title(s['rank'])}** (rank {s['rank']}/{len(D.PIT_CHAMPS)}).  "
+                     f"(+{prize} septims, +{gained} XP)")
         if s["rank"] >= len(D.PIT_CHAMPS):
-            log.append("👑 **THE PIT HAS A NEW CHAMPION.** Your name goes on the wall "
-                       "until the month turns.")
-    elif me_hp <= 0:
-        log.append(f"💤 {champ['name']} stands over you as the crowd counts you out. "
-                   f"No rank lost - limp home, train, return tomorrow.")
-    else:
-        log.append("🤝 Twelve rounds and no decision - the crowd calls it a draw. "
-                   "Come back tomorrow.")
-    return won, log
+            lines.append("👑 **THE PIT HAS A NEW CHAMPION.** Your name goes on the wall "
+                         "until the month turns.")
+        return "won", lines
+    if b["me"] <= 0:
+        s["bout"] = None
+        lines.append(f"💤 {champ['name']} stands over you as the crowd counts you out. "
+                     f"No rank lost - limp home, train, return tomorrow.")
+        return "lost", lines
+    if b["round"] >= PIT_ROUNDS:
+        s["bout"] = None
+        lines.append("🤝 Twelve rounds and no decision - the crowd calls it a draw. "
+                     "Come back tomorrow.")
+        return "draw", lines
+    b["round"] += 1
+    return "playing", lines
 
 
 def start_soulcairn(profile, channel_id) -> Delve:
