@@ -29,6 +29,7 @@ ANTI_RAID_LOG_CHANNEL_ID = 1172677237988929646
 BATCH_SIZE = 10
 MAX_RECENT_JOINS = 100
 RECENT_JOIN_TTL_SECONDS = 24 * 60 * 60
+ROLE_PERMISSION_BACKUP_VERSION = 2
 STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
 
 # Permissions stripped from every editable role while a raid lockdown is active.
@@ -55,6 +56,14 @@ class AntiRaidTransition:
     @property
     def successful(self) -> bool:
         return not self.failures
+
+
+@dataclass(frozen=True)
+class AntiRaidJoinOutcome:
+    """Join enforcement result used to gate normal onboarding roles."""
+
+    protection_active: bool
+    quarantined: bool
 
 
 def _anti_raid_state_payload(
@@ -254,54 +263,119 @@ def _join_velocity(records: Iterable[dict[str, Any]], now: int | None = None) ->
 
 
 def backup_role_permissions(guild: discord.Guild) -> None:
-    """Store full permission integers so a successful restore is exact."""
-    role_permissions = {str(role.id): role.permissions.value for role in guild.roles}
-    atomic_write_json(PERMISSIONS_BACKUP_FILE, role_permissions, indent=2)
+    """Store a guild-bound, complete snapshot of every role we will restrict."""
+    role_permissions = {
+        str(role.id): role.permissions.value
+        for role in guild.roles
+        if not role.managed
+    }
+    if not role_permissions:
+        raise ValueError("guild has no restorable unmanaged roles")
+    atomic_write_json(
+        PERMISSIONS_BACKUP_FILE,
+        {
+            "version": ROLE_PERMISSION_BACKUP_VERSION,
+            "guild_id": str(guild.id),
+            "created_at": int(time.time()),
+            "roles": role_permissions,
+        },
+        indent=2,
+    )
+
+
+def _prepare_role_permission_restore(
+    guild: discord.Guild,
+) -> tuple[list[tuple[discord.Role, discord.Permissions]], list[str]]:
+    """Validate backup identity, coverage, and values before making any edits."""
+    if not os.path.exists(PERMISSIONS_BACKUP_FILE):
+        return [], ["The role-permission backup is missing; lockdown remains enabled."]
+    try:
+        with open(PERMISSIONS_BACKUP_FILE, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if not isinstance(payload, dict):
+            raise ValueError("backup root is not an object")
+
+        is_structured = any(
+            key in payload for key in ("version", "guild_id", "roles", "created_at")
+        )
+        if is_structured:
+            if payload.get("version") != ROLE_PERMISSION_BACKUP_VERSION:
+                raise ValueError("backup version is unsupported")
+            if str(payload.get("guild_id")) != str(guild.id):
+                raise ValueError("backup belongs to a different guild")
+            if (
+                isinstance(payload.get("created_at"), bool)
+                or not isinstance(payload.get("created_at"), int)
+                or payload["created_at"] < 0
+            ):
+                raise ValueError("backup timestamp is invalid")
+            role_permissions = payload.get("roles")
+        else:
+            # Compatibility with the original role-id keyed backup.
+            role_permissions = payload
+        if not isinstance(role_permissions, dict) or not role_permissions:
+            raise ValueError("backup contains no role permissions")
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        return [], [f"The role-permission backup could not be validated: {exc}"]
+
+    roles = [role for role in guild.roles if not role.managed]
+    if not roles:
+        return [], ["The guild has no restorable unmanaged roles."]
+    missing_role_ids = [
+        str(role.id) for role in roles if str(role.id) not in role_permissions
+    ]
+    if missing_role_ids:
+        shown = ", ".join(missing_role_ids[:5])
+        suffix = "…" if len(missing_role_ids) > 5 else ""
+        return [], [
+            "The role-permission backup does not cover every live role "
+            f"(missing: {shown}{suffix}); lockdown remains enabled."
+        ]
+
+    prepared: list[tuple[discord.Role, discord.Permissions]] = []
+    invalid: list[str] = []
+    for role in roles:
+        try:
+            saved = role_permissions[str(role.id)]
+            if isinstance(saved, dict):
+                # Compatibility with the oldest one-bit backup format.
+                external_apps = saved.get("use_external_apps")
+                if not isinstance(external_apps, bool):
+                    raise ValueError("legacy use_external_apps value is missing or invalid")
+                permissions = discord.Permissions(role.permissions.value)
+                permissions.update(use_external_apps=external_apps)
+            else:
+                if isinstance(saved, bool):
+                    raise ValueError("permission integer cannot be boolean")
+                permission_value = int(saved)
+                if permission_value < 0:
+                    raise ValueError("permission integer cannot be negative")
+                permissions = discord.Permissions(permission_value)
+            prepared.append((role, permissions))
+        except (TypeError, ValueError, KeyError) as exc:
+            invalid.append(f"{role.name}: invalid backup ({exc})")
+    return ([], invalid) if invalid else (prepared, [])
 
 
 async def restore_role_permissions(guild: discord.Guild) -> list[str]:
     """Restore editable roles, returning every failure instead of hiding partial work."""
-    if not os.path.exists(PERMISSIONS_BACKUP_FILE):
-        return ["The role-permission backup is missing; lockdown remains enabled."]
-    try:
-        with open(PERMISSIONS_BACKUP_FILE, "r", encoding="utf-8") as handle:
-            role_permissions = json.load(handle)
-        if not isinstance(role_permissions, dict):
-            raise ValueError("backup root is not an object")
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        return [f"The role-permission backup could not be read: {exc}"]
-
-    roles = [
-        role
-        for role in guild.roles
-        if not role.managed and str(role.id) in role_permissions
-    ]
+    prepared, validation_failures = _prepare_role_permission_restore(guild)
+    if validation_failures:
+        return validation_failures
     failures: list[str] = []
-    for offset in range(0, len(roles), BATCH_SIZE):
-        batch = roles[offset : offset + BATCH_SIZE]
+    for offset in range(0, len(prepared), BATCH_SIZE):
+        batch = prepared[offset : offset + BATCH_SIZE]
         pending: list[tuple[discord.Role, Any]] = []
-        for role in batch:
-            try:
-                saved = role_permissions[str(role.id)]
-                if isinstance(saved, dict):
-                    # Compatibility with the legacy one-bit backup format.
-                    permissions = discord.Permissions(role.permissions.value)
-                    permissions.update(
-                        use_external_apps=saved.get("use_external_apps", True)
-                    )
-                else:
-                    permissions = discord.Permissions(int(saved))
-                pending.append(
-                    (
-                        role,
-                        role.edit(
-                            permissions=permissions,
-                            reason="Anti-raid lockdown disabled by staff",
-                        ),
-                    )
+        for role, permissions in batch:
+            pending.append(
+                (
+                    role,
+                    role.edit(
+                        permissions=permissions,
+                        reason="Anti-raid lockdown disabled by staff",
+                    ),
                 )
-            except (TypeError, ValueError, KeyError) as exc:
-                failures.append(f"{role.name}: invalid backup ({exc})")
+            )
         if pending:
             results = await asyncio.gather(
                 *(operation for _, operation in pending), return_exceptions=True
@@ -310,7 +384,7 @@ async def restore_role_permissions(guild: discord.Guild) -> list[str]:
                 if isinstance(result, Exception):
                     failures.append(f"{role.name}: {result}")
                     logger.warning("Failed to restore permissions for %s: %s", role.name, result)
-        if offset + BATCH_SIZE < len(roles):
+        if offset + BATCH_SIZE < len(prepared):
             await asyncio.sleep(1)
     return failures
 
@@ -561,18 +635,30 @@ def build_control_embed(
         value=f"Last 10 minutes: **{ten_minutes}**\nLast hour: **{one_hour}**",
         inline=True,
     )
-    backup = "Saved" if os.path.exists(PERMISSIONS_BACKUP_FILE) else "Missing"
+    _, backup_failures = _prepare_role_permission_restore(guild)
+    if not os.path.exists(PERMISSIONS_BACKUP_FILE):
+        backup = "Missing"
+    elif backup_failures:
+        backup = "Invalid"
+    else:
+        backup = "Ready"
     role_state = "Ready" if guild.get_role(QUARANTINE_ROLE_ID) else "Missing ⚠️"
     embed.add_field(
         name="Safety checks",
         value=(
             f"Recovery backup: **{backup}**"
-            + (" ⚠️" if active and backup == "Missing" else "")
+            + (" ⚠️" if active and backup != "Ready" else "")
             + f"\nQuarantine role: **{role_state}**"
             + f"\nEnforcement: **{'Degraded ⚠️' if active and degraded else 'Healthy'}**"
         ),
         inline=True,
     )
+    if active and backup_failures:
+        embed.add_field(
+            name="Recovery warning",
+            value=_failure_summary(backup_failures),
+            inline=False,
+        )
     if active and degraded and mode_state["failures"]:
         embed.add_field(
             name="Enforcement failures",
@@ -930,15 +1016,15 @@ async def toggle_anti_raid(interaction: Interaction) -> None:
     )
 
 
-async def handle_new_member_anti_raid(member: discord.Member) -> None:
-    """Record every join and quarantine it when protection is active."""
+async def handle_new_member_anti_raid(member: discord.Member) -> AntiRaidJoinOutcome:
+    """Record and quarantine a join, returning a fail-closed onboarding gate."""
     try:
         record_recent_join(member)
     except Exception:
         # History is operational context, not a prerequisite for enforcement.
         logger.exception("Could not persist recent anti-raid join for %s", member.id)
     if not is_anti_raid_enabled():
-        return
+        return AntiRaidJoinOutcome(protection_active=False, quarantined=False)
 
     quarantine_role = member.guild.get_role(QUARANTINE_ROLE_ID)
     if quarantine_role is None:
@@ -947,7 +1033,7 @@ async def handle_new_member_anti_raid(member: discord.Member) -> None:
             member.guild,
             f"⚠️ Anti-raid could not quarantine {member} ({member.id}): role is missing.",
         )
-        return
+        return AntiRaidJoinOutcome(protection_active=True, quarantined=False)
     try:
         await member.add_roles(quarantine_role, reason="Anti-raid protection is active")
         try:
@@ -963,9 +1049,39 @@ async def handle_new_member_anti_raid(member: discord.Member) -> None:
             member.guild,
             f"🛡️ Anti-raid quarantined {member} ({member.id}) on join.",
         )
+        return AntiRaidJoinOutcome(protection_active=True, quarantined=True)
     except (discord.Forbidden, discord.HTTPException) as exc:
         logger.error("Could not quarantine joining member %s: %s", member.id, exc)
         await _log_action(
             member.guild,
             f"⚠️ Anti-raid failed to quarantine {member} ({member.id}): {exc}",
         )
+        return AntiRaidJoinOutcome(protection_active=True, quarantined=False)
+
+
+async def grant_normal_member_role_if_safe(
+    member: discord.Member,
+    role: discord.Role | None,
+) -> bool:
+    """Grant normal access only while protection is atomically confirmed inactive."""
+    async with _mode_lock:
+        if is_anti_raid_enabled():
+            return False
+        if role is not None:
+            await member.add_roles(role, reason="Normal member onboarding")
+        return True
+
+
+async def handle_new_member_roles(
+    member: discord.Member,
+    normal_role: discord.Role | None,
+) -> AntiRaidJoinOutcome:
+    """Apply exactly one safe role path: quarantine or normal membership, never both."""
+    outcome = await handle_new_member_anti_raid(member)
+    if outcome.protection_active:
+        return outcome
+    if not await grant_normal_member_role_if_safe(member, normal_role):
+        # Protection activated between the initial check and normal onboarding.
+        # No normal role was granted, so remain fail-closed for staff review.
+        return AntiRaidJoinOutcome(protection_active=True, quarantined=False)
+    return outcome

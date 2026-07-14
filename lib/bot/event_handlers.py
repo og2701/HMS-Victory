@@ -23,7 +23,7 @@ from lib.economy.bank_manager import BankManager
 from lib.economy.prediction_system import prediction_embed, _save, _load, Prediction, BetButtons
 
 from commands.moderation.persistant_role_buttons import handleRoleButtonInteraction
-from commands.moderation.anti_raid import handle_new_member_anti_raid
+from commands.moderation.anti_raid import handle_new_member_roles
 from commands.moderation.archive_channel import ArchiveButtonView, schedule_archive_move
 from commands.moderation.overnight_mute import mute_visitors, unmute_visitors
 
@@ -1341,16 +1341,22 @@ async def on_interaction(interaction: Interaction):
 
 async def on_member_join(member):
     try:
-        await handle_new_member_anti_raid(member)
+        role = member.guild.get_role(ROLES.MEMBER)
+        anti_raid_outcome = await handle_new_member_roles(member, role)
+        if anti_raid_outcome.protection_active:
+            logger.info(
+                "Skipped normal onboarding role for %s while anti-raid protection is active "
+                "(quarantined=%s).",
+                member.id,
+                anti_raid_outcome.quarantined,
+            )
+            return
         # Open the welcome window so members who greet this newcomer can earn UKPence.
         try:
             from lib.features.ukp_rewards import register_new_member_join
             register_new_member_join(member)
         except Exception:
             logger.debug("register_new_member_join failed", exc_info=True)
-        role = member.guild.get_role(ROLES.MEMBER)
-        if role:
-            await member.add_roles(role)
     except discord.NotFound:
         logger.info(f"Member {member.id} left before roles could be assigned.")
     except discord.Forbidden:

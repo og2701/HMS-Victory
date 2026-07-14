@@ -6,6 +6,8 @@ Added a private `/anti-raid` staff control centre showing protection status, rec
 
 Mode transitions are idempotent and fail closed: enabling preflights the quarantine role and bot hierarchy, writes the permission backup before activating, and persists in-progress or partial enforcement failures. Disabling restores permissions before clearing active state. The canonical active/degraded state is a backed-up JSON document, with automatic migration from the legacy extensionless marker, so disaster recovery cannot silently forget an active lockdown. Degraded enforcement is visible and has an explicit retry action that never overwrites the original permission backup.
 
+Permission snapshots are versioned, guild-bound, non-empty, and validated for complete live-role coverage and valid values before any restore edit begins. Empty, stale, wrong-guild, incomplete, or malformed backups keep protection active. Join handling has one mode-locked role path: an active or newly activated lockdown never grants the normal member role, including when quarantine assignment itself fails.
+
 Every join is recorded in a bounded 24-hour operational history, but account age is context only and no automatic ban path exists.
 
 Successful quarantine and release actions create generic durable inbox notices without storing raid evidence.
@@ -18,7 +20,7 @@ Successful quarantine and release actions create generic durable inbox notices w
 
 ## Verification
 
-- `uv run --with-requirements requirements.txt --with pytest python -m pytest tests/test_anti_raid.py -q` — 10 passed.
+- `uv run --with-requirements requirements.txt --with pytest python -m pytest tests/test_anti_raid.py -q` — 16 passed.
 - Changed modules compile successfully.
 - `git diff --check` passed.
 

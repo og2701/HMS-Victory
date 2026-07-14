@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime, timezone
+import json
 import os
 import sys
 
@@ -15,6 +16,56 @@ class _Member:
         self.id = user_id
         self.display_name = name
         self.created_at = datetime.fromtimestamp(1_000, timezone.utc)
+
+
+class _Permissions:
+    def __init__(self, value: int):
+        self.value = value
+
+
+class _Role:
+    def __init__(self, role_id: int, value: int = 0, *, managed: bool = False):
+        self.id = role_id
+        self.name = f"role-{role_id}"
+        self.permissions = _Permissions(value)
+        self.managed = managed
+        self.edits = []
+
+    async def edit(self, *, permissions, reason):
+        self.permissions = permissions
+        self.edits.append((permissions.value, reason))
+
+
+class _Guild:
+    def __init__(self, guild_id: int, roles):
+        self.id = guild_id
+        self.roles = list(roles)
+
+
+class _JoinGuild:
+    def __init__(self, quarantine_role):
+        self.quarantine_role = quarantine_role
+
+    def get_role(self, role_id):
+        if role_id == anti_raid.QUARANTINE_ROLE_ID:
+            return self.quarantine_role
+        return None
+
+    def get_channel(self, _channel_id):
+        return None
+
+
+class _JoinMember(_Member):
+    def __init__(self, user_id: int, quarantine_role):
+        super().__init__(user_id)
+        self.guild = _JoinGuild(quarantine_role)
+        self.added_roles = []
+
+    async def add_roles(self, role, *, reason=None):
+        self.added_roles.append((role, reason))
+
+    def __str__(self):
+        return self.display_name
 
 
 def _isolated_state(monkeypatch, tmp_path):
@@ -221,3 +272,132 @@ def test_corrupt_state_fails_closed_and_surfaces_degraded_mode(monkeypatch, tmp_
     assert state["active"] is True
     assert state["degraded"] is True
     assert "unreadable" in state["failures"][0]
+
+
+def test_permission_backup_is_versioned_guild_bound_and_restorable(monkeypatch, tmp_path):
+    _, _, backup_file = _isolated_state(monkeypatch, tmp_path)
+    role = _Role(10, value=12345)
+    guild = _Guild(100, [role])
+
+    anti_raid.backup_role_permissions(guild)
+    payload = json.loads(backup_file.read_text(encoding="utf-8"))
+    role.permissions = _Permissions(0)
+    failures = asyncio.run(anti_raid.restore_role_permissions(guild))
+
+    assert payload["version"] == anti_raid.ROLE_PERMISSION_BACKUP_VERSION
+    assert payload["guild_id"] == "100"
+    assert payload["roles"] == {"10": 12345}
+    assert failures == []
+    assert role.permissions.value == 12345
+
+
+def test_empty_permission_backup_keeps_lockdown_active(monkeypatch, tmp_path):
+    state_file, _, backup_file = _isolated_state(monkeypatch, tmp_path)
+    anti_raid.set_anti_raid_status(True)
+    backup_file.write_text("{}", encoding="utf-8")
+    role = _Role(10)
+
+    result = asyncio.run(anti_raid.disable_anti_raid(_Guild(100, [role])))
+
+    assert result.active is True
+    assert result.changed is False
+    assert "no role permissions" in result.failures[0]
+    assert role.edits == []
+    assert json.loads(state_file.read_text(encoding="utf-8"))["active"] is True
+
+
+def test_wrong_guild_or_incomplete_backup_never_edits_roles(monkeypatch, tmp_path):
+    _isolated_state(monkeypatch, tmp_path)
+    first = _Role(10, value=111)
+    backup_guild = _Guild(999, [first])
+    anti_raid.backup_role_permissions(backup_guild)
+
+    live = _Guild(100, [first, _Role(20, value=222)])
+    prepared, wrong_guild_failures = anti_raid._prepare_role_permission_restore(live)
+    assert prepared == []
+    assert "different guild" in wrong_guild_failures[0]
+    assert first.edits == []
+
+    anti_raid.backup_role_permissions(_Guild(100, [first]))
+    prepared, coverage_failures = anti_raid._prepare_role_permission_restore(live)
+    assert prepared == []
+    assert "does not cover every live role" in coverage_failures[0]
+    assert first.edits == []
+
+
+def test_active_join_reports_quarantine_success_and_missing_role_failure(monkeypatch, tmp_path):
+    _isolated_state(monkeypatch, tmp_path)
+    anti_raid.set_anti_raid_status(True)
+    monkeypatch.setattr(anti_raid, "record_recent_join", lambda _member: None)
+    monkeypatch.setattr(anti_raid, "mark_join_quarantined", lambda _user_id: None)
+    monkeypatch.setattr(
+        anti_raid,
+        "_persist_moderation_notice",
+        lambda *_args, **_kwargs: None,
+    )
+
+    async def no_log(_guild, _message):
+        return None
+
+    monkeypatch.setattr(anti_raid, "_log_action", no_log)
+    quarantine_role = object()
+    successful_member = _JoinMember(42, quarantine_role)
+    missing_role_member = _JoinMember(43, None)
+
+    success = asyncio.run(anti_raid.handle_new_member_anti_raid(successful_member))
+    failure = asyncio.run(anti_raid.handle_new_member_anti_raid(missing_role_member))
+
+    assert success == anti_raid.AntiRaidJoinOutcome(True, True)
+    assert successful_member.added_roles == [
+        (quarantine_role, "Anti-raid protection is active")
+    ]
+    assert failure == anti_raid.AntiRaidJoinOutcome(True, False)
+    assert missing_role_member.added_roles == []
+
+
+def test_member_join_never_grants_normal_role_for_any_active_outcome(monkeypatch):
+    class Member:
+        id = 99
+
+    async def unexpected_grant(_member, _role):
+        raise AssertionError("normal member role must not be granted during anti-raid")
+
+    monkeypatch.setattr(
+        anti_raid,
+        "grant_normal_member_role_if_safe",
+        unexpected_grant,
+    )
+    for quarantined in (True, False):
+        async def active_outcome(_member, quarantined=quarantined):
+            return anti_raid.AntiRaidJoinOutcome(True, quarantined)
+
+        monkeypatch.setattr(
+            anti_raid,
+            "handle_new_member_anti_raid",
+            active_outcome,
+        )
+        result = asyncio.run(anti_raid.handle_new_member_roles(Member(), object()))
+        assert result == anti_raid.AntiRaidJoinOutcome(True, quarantined)
+
+
+def test_member_join_fails_closed_if_protection_activates_before_normal_role(monkeypatch):
+    async def initially_inactive(_member):
+        return anti_raid.AntiRaidJoinOutcome(False, False)
+
+    async def protection_activated(_member, _role):
+        return False
+
+    monkeypatch.setattr(
+        anti_raid,
+        "handle_new_member_anti_raid",
+        initially_inactive,
+    )
+    monkeypatch.setattr(
+        anti_raid,
+        "grant_normal_member_role_if_safe",
+        protection_activated,
+    )
+
+    result = asyncio.run(anti_raid.handle_new_member_roles(object(), object()))
+
+    assert result == anti_raid.AntiRaidJoinOutcome(True, False)
