@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 import discord
-from discord import Embed
 from discord.interactions import Interaction
 
 from config import JSON_DATA_DIR, PERMISSIONS_BACKUP_FILE, ROLES
@@ -601,108 +600,94 @@ def _member_option(member: discord.Member) -> discord.SelectOption:
     )
 
 
-def build_control_embed(
-    guild: discord.Guild,
-    *,
-    notice: str | None = None,
-    selected_member_ids: Iterable[int] = (),
-) -> Embed:
+def _panel_theme(active: bool, degraded: bool) -> tuple[int, str]:
+    """Accent colour and status line for the current protection state."""
+    if active and degraded:
+        return 0xF39C12, (
+            "🟠 **Protection enabled - degraded**\n"
+            "-# New members are still quarantined, but one or more role operations need attention."
+        )
+    if active:
+        return 0xE74C3C, (
+            "🔴 **Protection enabled**\n"
+            "-# New members are quarantined and high-abuse role permissions are restricted."
+        )
+    return 0x2ECC71, (
+        "🟢 **Protection disabled**\n"
+        "-# Normal join handling is active."
+    )
+
+
+def _vitals_block(guild: discord.Guild, records: list[dict[str, Any]]) -> tuple[str, list[str]]:
+    """One compact status block plus any backup warnings worth their own panel line."""
     mode_state = _load_anti_raid_state()
     active = bool(mode_state["active"])
     degraded = bool(mode_state["degraded"])
-    records = _load_recent_joins()
     ten_minutes, one_hour = _join_velocity(records)
-    quarantined = _quarantined_members(guild)
-    selected = {int(member_id) for member_id in selected_member_ids}
 
-    embed = Embed(
-        title="Anti-Raid Control Centre",
-        description=(
-            (
-                "🟠 **Protection enabled but degraded** — new members remain quarantined, "
-                "but one or more role operations need attention."
-                if degraded
-                else "🔴 **Protection enabled** — new members are quarantined and high-abuse "
-                "role permissions are restricted."
-            )
-            if active
-            else "🟢 **Protection disabled** — normal join handling is active."
-        ),
-        color=0xF39C12 if active and degraded else (0xE74C3C if active else 0x2ECC71),
-    )
-    embed.add_field(
-        name="Join velocity",
-        value=f"Last 10 minutes: **{ten_minutes}**\nLast hour: **{one_hour}**",
-        inline=True,
-    )
     _, backup_failures = _prepare_role_permission_restore(guild)
     if not os.path.exists(PERMISSIONS_BACKUP_FILE):
-        backup = "Missing"
+        backup_ok, backup_text = False, "Missing"
     elif backup_failures:
-        backup = "Invalid"
+        backup_ok, backup_text = False, "Invalid"
     else:
-        backup = "Ready"
-    role_state = "Ready" if guild.get_role(QUARANTINE_ROLE_ID) else "Missing ⚠️"
-    embed.add_field(
-        name="Safety checks",
-        value=(
-            f"Recovery backup: **{backup}**"
-            + (" ⚠️" if active and backup != "Ready" else "")
-            + f"\nQuarantine role: **{role_state}**"
-            + f"\nEnforcement: **{'Degraded ⚠️' if active and degraded else 'Healthy'}**"
-        ),
-        inline=True,
-    )
+        backup_ok, backup_text = True, "Ready"
+    role_ok = guild.get_role(QUARANTINE_ROLE_ID) is not None
+    enforcement_ok = not (active and degraded)
+
+    def check(ok: bool, warn: bool) -> str:
+        return "✅" if ok else ("⚠️" if warn else "◻️")
+
+    lines = [
+        f"📈 **Join velocity** · **{ten_minutes}** in the last 10 min · **{one_hour}** in the last hour",
+        f"{check(backup_ok, active)} **Recovery backup** · {backup_text}",
+        f"{check(role_ok, True)} **Quarantine role** · {'Ready' if role_ok else 'Missing'}",
+        f"{check(enforcement_ok, True)} **Enforcement** · {'Healthy' if enforcement_ok else 'Degraded'}",
+    ]
+
+    warnings: list[str] = []
     if active and backup_failures:
-        embed.add_field(
-            name="Recovery warning",
-            value=_failure_summary(backup_failures),
-            inline=False,
-        )
+        warnings.append(f"⚠️ **Recovery warning**\n{_failure_summary(backup_failures)[:600]}")
     if active and degraded and mode_state["failures"]:
-        embed.add_field(
-            name="Enforcement failures",
-            value=_failure_summary(mode_state["failures"]),
-            inline=False,
+        warnings.append(f"⚠️ **Enforcement failures**\n{_failure_summary(mode_state['failures'])[:600]}")
+    return "\n".join(lines), warnings
+
+
+def _quarantine_block(
+    quarantined: list[discord.Member], selected: set[int]
+) -> str:
+    if not quarantined:
+        return "### 👥 Quarantine · empty\n-# No members currently hold the quarantine role."
+    lines = [f"### 👥 Quarantine · {len(quarantined)} member{'s' if len(quarantined) != 1 else ''}"]
+    for member in quarantined[:10]:
+        marker = " ☑️" if member.id in selected else ""
+        lines.append(
+            f"• {discord.utils.escape_markdown(member.display_name)} · {member.mention} (`{member.id}`){marker}"
         )
+    if len(quarantined) > 10:
+        lines.append(f"-# …and {len(quarantined) - 10} more")
+    return "\n".join(lines)[:900]
 
-    if quarantined:
-        lines = []
-        for member in quarantined[:10]:
-            marker = " ← selected" if member.id in selected else ""
-            lines.append(f"• {discord.utils.escape_markdown(member.display_name)} (`{member.id}`){marker}")
-        if len(quarantined) > 10:
-            lines.append(f"• …and {len(quarantined) - 10} more")
-        quarantine_value = "\n".join(lines)
-    else:
-        quarantine_value = "No members currently have the quarantine role."
-    embed.add_field(
-        name=f"Quarantined members ({len(quarantined)})",
-        value=quarantine_value[:1024],
-        inline=False,
-    )
 
-    recent_lines = []
+def _recent_joins_block(records: list[dict[str, Any]]) -> str:
+    lines = ["### 🕒 Recent joins"]
     for record in reversed(records[-8:]):
         account_age_days = max(
             0, (record["joined_at"] - record.get("account_created_at", record["joined_at"])) // 86400
         )
-        state = "quarantined" if record.get("quarantined") else "joined"
         if record.get("released_at"):
-            state = "released"
-        recent_lines.append(
-            f"• `{record['username']}` (`{record['user_id']}`) — {state}, "
-            f"<t:{record['joined_at']}:R>, account {account_age_days}d old"
+            icon = "🔓"
+        elif record.get("quarantined"):
+            icon = "🛡️"
+        else:
+            icon = "👋"
+        lines.append(
+            f"{icon} `{record['username']}` (`{record['user_id']}`) · <t:{record['joined_at']}:R> "
+            f"· account {account_age_days}d old"
         )
-    embed.add_field(
-        name="Recent joins",
-        value="\n".join(recent_lines)[:1024] if recent_lines else "No joins recorded in the last 24 hours.",
-        inline=False,
-    )
-    if notice:
-        embed.add_field(name="Last action", value=notice[:1024], inline=False)
-    embed.set_footer(text="Private staff view • account age is context only; no automatic bans")
-    return embed
+    if len(lines) == 1:
+        lines.append("-# No joins recorded in the last 24 hours.")
+    return "\n".join(lines)[:900]
 
 
 def _is_staff(member: discord.Member) -> bool:
@@ -713,23 +698,21 @@ class QuarantineMemberSelect(discord.ui.Select):
     def __init__(self, members: list[discord.Member]):
         visible = members[:25]
         super().__init__(
-            placeholder="Select quarantined members to release",
+            placeholder="Select quarantined members to release…",
             min_values=1,
             max_values=len(visible),
             options=[_member_option(member) for member in visible],
-            row=1,
         )
 
     async def callback(self, interaction: Interaction) -> None:
         dashboard: AntiRaidControlView = self.view  # type: ignore[assignment]
         dashboard.selected_member_ids = [int(value) for value in self.values]
-        dashboard.release_button.disabled = False
         dashboard.notice = (
             f"Selected {len(dashboard.selected_member_ids)} member(s). "
             "Use Release selected to remove the quarantine role."
         )
+        dashboard.render(keep_selection=True)
         await interaction.response.edit_message(
-            embed=dashboard.embed(),
             view=dashboard,
             allowed_mentions=discord.AllowedMentions.none(),
         )
@@ -739,8 +722,8 @@ class AntiRaidModeButton(discord.ui.Button):
     def __init__(self, active: bool):
         super().__init__(
             label="Disable protection" if active else "Enable protection",
+            emoji="🔓" if active else "🛑",
             style=discord.ButtonStyle.success if active else discord.ButtonStyle.danger,
-            row=0,
         )
         self.target_active = not active
 
@@ -770,9 +753,8 @@ class AntiRaidModeButton(discord.ui.Button):
             f"Anti-raid protection action by {interaction.user} ({interaction.user.id}): "
             f"active={result.active}, failures={len(result.failures)}.",
         )
-        dashboard.rebuild_components()
+        dashboard.render()
         await interaction.edit_original_response(
-            embed=dashboard.embed(),
             view=dashboard,
             allowed_mentions=discord.AllowedMentions.none(),
         )
@@ -780,14 +762,13 @@ class AntiRaidModeButton(discord.ui.Button):
 
 class RefreshButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Refresh", style=discord.ButtonStyle.secondary, row=0)
+        super().__init__(label="Refresh", emoji="🔄", style=discord.ButtonStyle.secondary)
 
     async def callback(self, interaction: Interaction) -> None:
         dashboard: AntiRaidControlView = self.view  # type: ignore[assignment]
         dashboard.notice = "Dashboard refreshed."
-        dashboard.rebuild_components()
+        dashboard.render()
         await interaction.response.edit_message(
-            embed=dashboard.embed(),
             view=dashboard,
             allowed_mentions=discord.AllowedMentions.none(),
         )
@@ -797,8 +778,8 @@ class RetryEnforcementButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
             label="Retry enforcement",
+            emoji="🔁",
             style=discord.ButtonStyle.primary,
-            row=0,
         )
 
     async def callback(self, interaction: Interaction) -> None:
@@ -817,21 +798,20 @@ class RetryEnforcementButton(discord.ui.Button):
             f"Anti-raid enforcement retry by {interaction.user} ({interaction.user.id}): "
             f"failures={len(result.failures)}.",
         )
-        dashboard.rebuild_components()
+        dashboard.render()
         await interaction.edit_original_response(
-            embed=dashboard.embed(),
             view=dashboard,
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
 
 class ReleaseButton(discord.ui.Button):
-    def __init__(self):
+    def __init__(self, *, disabled: bool = True):
         super().__init__(
             label="Release selected",
+            emoji="🔓",
             style=discord.ButtonStyle.danger,
-            disabled=True,
-            row=2,
+            disabled=disabled,
         )
 
     async def callback(self, interaction: Interaction) -> None:
@@ -846,8 +826,8 @@ class ReleaseButton(discord.ui.Button):
         quarantine_role = dashboard.guild.get_role(QUARANTINE_ROLE_ID)
         if quarantine_role is None:
             dashboard.notice = "❌ The quarantine role no longer exists; nobody was changed."
-            dashboard.rebuild_components()
-            await interaction.edit_original_response(embed=dashboard.embed(), view=dashboard)
+            dashboard.render()
+            await interaction.edit_original_response(view=dashboard)
             return
 
         released: list[int] = []
@@ -885,16 +865,19 @@ class ReleaseButton(discord.ui.Button):
             f"Anti-raid quarantine release by {interaction.user} ({interaction.user.id}): "
             f"released={released}, failures={len(failed)}.",
         )
-        dashboard.rebuild_components()
+        dashboard.render()
         await interaction.edit_original_response(
-            embed=dashboard.embed(),
             view=dashboard,
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
 
-class AntiRaidControlView(discord.ui.View):
-    """Owner-checked, staff-only incident dashboard; never bans members."""
+class AntiRaidControlView(discord.ui.LayoutView):
+    """Owner-checked, staff-only incident dashboard; never bans members.
+
+    Rendered entirely with Components V2: one accent-coloured container whose
+    content is rebuilt from persisted state on every action.
+    """
 
     def __init__(self, guild: discord.Guild, author_id: int):
         super().__init__(timeout=300)
@@ -903,8 +886,7 @@ class AntiRaidControlView(discord.ui.View):
         self.selected_member_ids: list[int] = []
         self.notice: str | None = None
         self.message: discord.Message | None = None
-        self.release_button = ReleaseButton()
-        self.rebuild_components()
+        self.render()
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         if interaction.user.id != self.author_id:
@@ -921,30 +903,62 @@ class AntiRaidControlView(discord.ui.View):
             return False
         return True
 
-    def rebuild_components(self) -> None:
+    def render(self, *, keep_selection: bool = False) -> None:
+        """Rebuild the whole panel from persisted state and current selection."""
+        if not keep_selection:
+            self.selected_member_ids = []
         self.clear_items()
-        self.selected_member_ids = []
-        mode_state = _load_anti_raid_state()
-        self.add_item(AntiRaidModeButton(bool(mode_state["active"])))
-        self.add_item(RefreshButton())
-        if mode_state["active"] and mode_state["degraded"]:
-            self.add_item(RetryEnforcementButton())
-        quarantined = _quarantined_members(self.guild)
-        if quarantined:
-            self.add_item(QuarantineMemberSelect(quarantined))
-            self.release_button = ReleaseButton()
-            self.add_item(self.release_button)
 
-    def embed(self) -> Embed:
-        return build_control_embed(
-            self.guild,
-            notice=self.notice,
-            selected_member_ids=self.selected_member_ids,
+        mode_state = _load_anti_raid_state()
+        active = bool(mode_state["active"])
+        degraded = bool(mode_state["degraded"])
+        records = _load_recent_joins()
+        quarantined = _quarantined_members(self.guild)
+        selected = set(self.selected_member_ids)
+
+        accent, status = _panel_theme(active, degraded)
+        panel = discord.ui.Container(accent_colour=accent)
+
+        panel.add_item(
+            discord.ui.Section(
+                discord.ui.TextDisplay(f"## 🛡️ Anti-Raid Control Centre\n{status}"),
+                accessory=AntiRaidModeButton(active),
+            )
         )
+        panel.add_item(discord.ui.Separator())
+
+        vitals, warnings = _vitals_block(self.guild, records)
+        panel.add_item(discord.ui.TextDisplay(vitals))
+        for warning in warnings:
+            panel.add_item(discord.ui.TextDisplay(warning))
+        panel.add_item(discord.ui.Separator())
+
+        panel.add_item(discord.ui.TextDisplay(_quarantine_block(quarantined, selected)))
+        if quarantined:
+            panel.add_item(discord.ui.ActionRow(QuarantineMemberSelect(quarantined)))
+            panel.add_item(discord.ui.ActionRow(ReleaseButton(disabled=not selected)))
+        panel.add_item(discord.ui.Separator())
+
+        panel.add_item(discord.ui.TextDisplay(_recent_joins_block(records)))
+        if self.notice:
+            panel.add_item(discord.ui.Separator())
+            panel.add_item(discord.ui.TextDisplay(f"📋 **Last action**\n{self.notice[:400]}"))
+
+        controls: list[discord.ui.Item] = [RefreshButton()]
+        if active and degraded:
+            controls.append(RetryEnforcementButton())
+        panel.add_item(discord.ui.ActionRow(*controls))
+        panel.add_item(
+            discord.ui.TextDisplay(
+                "-# Private staff view · account age is context only · no automatic bans"
+            )
+        )
+        self.add_item(panel)
 
     async def on_timeout(self) -> None:
-        for child in self.children:
-            child.disabled = True
+        for child in self.walk_children():
+            if hasattr(child, "disabled"):
+                child.disabled = True
         if self.message is not None:
             try:
                 await self.message.edit(view=self)
@@ -961,7 +975,6 @@ async def open_anti_raid_control(interaction: Interaction) -> None:
         return
     view = AntiRaidControlView(interaction.guild, interaction.user.id)
     await interaction.response.send_message(
-        embed=view.embed(),
         view=view,
         ephemeral=True,
         allowed_mentions=discord.AllowedMentions.none(),
@@ -997,20 +1010,28 @@ async def toggle_anti_raid(interaction: Interaction) -> None:
             else "Protection could not be enabled safely."
         )
     if result.failures:
-        description += f"\n\n**Partial failures**\n{_failure_summary(result.failures)}"
-    embed = Embed(
-        title=title,
-        description=description,
-        color=0xE74C3C if result.active else 0x2ECC71,
+        description += f"\n\n⚠️ **Partial failures**\n{_failure_summary(result.failures)}"
+    view = discord.ui.LayoutView(timeout=None)
+    card = discord.ui.Container(accent_colour=0xE74C3C if result.active else 0x2ECC71)
+    card.add_item(
+        discord.ui.TextDisplay(
+            f"## {'🔴' if result.active else '🟢'} {title}\n{description}"
+        )
     )
-    embed.set_footer(text=f"Triggered by {interaction.user.name}")
+    card.add_item(discord.ui.Separator())
+    card.add_item(
+        discord.ui.TextDisplay(
+            f"-# Triggered by {interaction.user.mention} · use /anti-raid for the full control centre"
+        )
+    )
+    view.add_item(card)
     await _log_action(
         interaction.guild,
         f"Legacy anti-raid toggle by {interaction.user} ({interaction.user.id}): "
         f"active={result.active}, failures={len(result.failures)}.",
     )
     await interaction.followup.send(
-        embed=embed,
+        view=view,
         ephemeral=True,
         allowed_mentions=discord.AllowedMentions.none(),
     )
