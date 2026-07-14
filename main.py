@@ -35,6 +35,7 @@ MAX_PART_SIZE = 8 * 1024 * 1024
 
 from lib.bot.backup_manager import (
     DatabaseRecoveryError,
+    JSONRecoveryError,
     restore_database_if_missing,
     restore_json_if_missing,
 )
@@ -63,6 +64,13 @@ class AClient(discord.Client):
         self.predictions={int(k):Prediction.from_dict(v) for k,v in load_predictions().items()}
         self._pending_uploads = {}  # For custom emoji/sticker uploads
         self.session: Optional[aiohttp.ClientSession] = None
+
+    def reload_recovered_json_state(self):
+        """Refresh constructor-loaded state after disaster recovery, before login."""
+        self.predictions = {
+            int(key): Prediction.from_dict(value)
+            for key, value in load_predictions().items()
+        }
 
     async def setup_hook(self):
         self.session = aiohttp.ClientSession()
@@ -669,6 +677,19 @@ async def main():
                 "or Discord startup."
             )
             raise
-        await restore_json_if_missing()
+        try:
+            json_restored = await restore_json_if_missing()
+        except JSONRecoveryError:
+            logger.critical(
+                "JSON state recovery failed; stopping before schema initialisation "
+                "or Discord startup."
+            )
+            raise
+        if json_restored:
+            # AClient is constructed at module import time, before asynchronous
+            # recovery can run. Refresh prediction state now so setup_hook builds
+            # persistent views from the restored files rather than the pre-restore
+            # empty snapshot.
+            client.reload_recovered_json_state()
         init_db()
         await client.start(os.getenv("DISCORD_TOKEN"))

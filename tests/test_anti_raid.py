@@ -18,10 +18,12 @@ class _Member:
 
 
 def _isolated_state(monkeypatch, tmp_path):
-    active = tmp_path / "anti_raid_active"
+    active = tmp_path / "anti_raid_state.json"
+    legacy = tmp_path / "anti_raid_active"
     recent = tmp_path / "recent.json"
     backup = tmp_path / "permissions.json"
-    monkeypatch.setattr(anti_raid, "ANTI_RAID_FILE", str(active))
+    monkeypatch.setattr(anti_raid, "ANTI_RAID_FILE", str(legacy))
+    monkeypatch.setattr(anti_raid, "ANTI_RAID_STATE_FILE", str(active))
     monkeypatch.setattr(anti_raid, "ANTI_RAID_RECENT_FILE", str(recent))
     monkeypatch.setattr(anti_raid, "PERMISSIONS_BACKUP_FILE", str(backup))
     return active, recent, backup
@@ -97,7 +99,7 @@ def test_join_velocity_uses_ten_minute_and_hour_windows():
 
 def test_enable_is_idempotent_and_does_not_replace_backup(monkeypatch, tmp_path):
     active, _, _ = _isolated_state(monkeypatch, tmp_path)
-    active.touch()
+    anti_raid.set_anti_raid_status(True)
 
     def unexpected_backup(_guild):
         raise AssertionError("an already-active transition must not rewrite the backup")
@@ -130,6 +132,22 @@ def test_enable_keeps_join_protection_on_partial_role_failure(monkeypatch, tmp_p
     assert result.active is True
     assert result.changed is True
     assert result.failures == ("Senior role: forbidden",)
+    assert anti_raid.get_anti_raid_state()["degraded"] is True
+
+    def unexpected_backup(_guild):
+        raise AssertionError("retry must preserve the original permission backup")
+
+    async def complete_retry(_guild):
+        return []
+
+    monkeypatch.setattr(anti_raid, "backup_role_permissions", unexpected_backup)
+    monkeypatch.setattr(anti_raid, "disable_role_permissions", complete_retry)
+    retry = asyncio.run(anti_raid.enable_anti_raid(Guild()))
+
+    assert retry.active is True
+    assert retry.changed is False
+    assert retry.successful is True
+    assert anti_raid.get_anti_raid_state()["degraded"] is False
 
 
 def test_enable_refuses_to_activate_without_quarantine_role(monkeypatch, tmp_path):
@@ -149,7 +167,7 @@ def test_enable_refuses_to_activate_without_quarantine_role(monkeypatch, tmp_pat
 
 def test_disable_fails_closed_when_restore_is_partial(monkeypatch, tmp_path):
     active, _, _ = _isolated_state(monkeypatch, tmp_path)
-    active.touch()
+    anti_raid.set_anti_raid_status(True)
 
     async def partial_restore(_guild):
         return ["Moderator: forbidden"]
@@ -161,11 +179,14 @@ def test_disable_fails_closed_when_restore_is_partial(monkeypatch, tmp_path):
     assert result.active is True
     assert result.changed is False
     assert result.failures == ("Moderator: forbidden",)
+    state = anti_raid.get_anti_raid_state()
+    assert state["active"] is True
+    assert state["degraded"] is True
 
 
 def test_disable_clears_marker_only_after_complete_restore(monkeypatch, tmp_path):
     active, _, _ = _isolated_state(monkeypatch, tmp_path)
-    active.touch()
+    anti_raid.set_anti_raid_status(True)
 
     async def complete_restore(_guild):
         return []
@@ -173,7 +194,30 @@ def test_disable_clears_marker_only_after_complete_restore(monkeypatch, tmp_path
     monkeypatch.setattr(anti_raid, "restore_role_permissions", complete_restore)
     result = asyncio.run(anti_raid.disable_anti_raid(object()))
 
-    assert not active.exists()
+    assert active.exists()
+    assert anti_raid.get_anti_raid_state()["active"] is False
     assert result.active is False
     assert result.changed is True
     assert result.successful is True
+
+
+def test_legacy_active_marker_is_migrated_to_backed_up_json(monkeypatch, tmp_path):
+    state_file, _, _ = _isolated_state(monkeypatch, tmp_path)
+    with open(anti_raid.ANTI_RAID_FILE, "w", encoding="utf-8"):
+        pass
+
+    assert anti_raid.is_anti_raid_enabled() is True
+    assert state_file.suffix == ".json"
+    assert state_file.exists()
+    assert anti_raid.get_anti_raid_state()["active"] is True
+
+
+def test_corrupt_state_fails_closed_and_surfaces_degraded_mode(monkeypatch, tmp_path):
+    state_file, _, _ = _isolated_state(monkeypatch, tmp_path)
+    state_file.write_text("{not-json", encoding="utf-8")
+
+    state = anti_raid.get_anti_raid_state()
+
+    assert state["active"] is True
+    assert state["degraded"] is True
+    assert "unreadable" in state["failures"][0]

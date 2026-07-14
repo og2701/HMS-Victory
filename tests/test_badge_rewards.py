@@ -27,6 +27,9 @@ def _fresh_db(tmp):
 def _stub_casino_base():
     # credit_from_bank -> real add_bb (from_bank=True, non-taxable); no discord needed.
     from lib.economy.economy_manager import add_bb
+    keys = ("commands", "commands.economy", "commands.economy.casino_base")
+    missing = object()
+    previous = {key: sys.modules.get(key, missing) for key in keys}
     for p in ("commands", "commands.economy"):
         if p not in sys.modules:
             m = types.ModuleType(p)
@@ -35,51 +38,63 @@ def _stub_casino_base():
     cb = types.ModuleType("commands.economy.casino_base")
     cb.credit_from_bank = lambda uid, amount, reason="": add_bb(uid, amount, reason=reason, taxable=False)
     sys.modules["commands.economy.casino_base"] = cb
+    return previous, missing
+
+
+def _restore_modules(previous, missing):
+    for key, value in previous.items():
+        if value is missing:
+            sys.modules.pop(key, None)
+        else:
+            sys.modules[key] = value
 
 
 def run():
     with tempfile.TemporaryDirectory() as tmp:
         db = _fresh_db(tmp)
-        _stub_casino_base()
-        import config
-        from lib.economy import badge_rewards as br
-        from lib.economy.economy_manager import get_bb
-        BANK = int(config.BOT_ID)
+        previous, missing = _stub_casino_base()
+        try:
+            import config
+            from lib.economy import badge_rewards as br
+            from lib.economy.economy_manager import get_bb
+            BANK = int(config.BOT_ID)
 
-        def supply():
-            return sum(r[0] for r in db.DatabaseManager.fetch_all("SELECT balance FROM ukpence"))
+            def supply():
+                return sum(r[0] for r in db.DatabaseManager.fetch_all("SELECT balance FROM ukpence"))
 
-        uid = 424242
-        assert supply() == 800_000, supply()
-        bank0 = get_bb(BANK)
+            uid = 424242
+            assert supply() == 800_000, supply()
+            bank0 = get_bb(BANK)
 
-        # Gold badge (high_roller) -> 500, taken from the bank, supply conserved.
-        assert config.BADGE_REWARDS["Gold"] == 500
-        assert br.pay_badge_reward(uid, "high_roller") == 500
-        assert get_bb(uid) == 500
-        assert get_bb(BANK) == bank0 - 500
-        assert supply() == 800_000
+            # Gold badge (high_roller) -> 500, taken from the bank, supply conserved.
+            assert config.BADGE_REWARDS["Gold"] == 500
+            assert br.pay_badge_reward(uid, "high_roller") == 500
+            assert get_bb(uid) == 500
+            assert get_bb(BANK) == bank0 - 500
+            assert supply() == 800_000
 
-        # Idempotent: a re-run (and the live hook firing again) pays nothing.
-        assert br.pay_badge_reward(uid, "high_roller") == 0
-        assert get_bb(uid) == 500
-        assert br.already_paid(uid, "high_roller") is True
+            # Idempotent: a re-run (and the live hook firing again) pays nothing.
+            assert br.pay_badge_reward(uid, "high_roller") == 0
+            assert get_bb(uid) == 500
+            assert br.already_paid(uid, "high_roller") is True
 
-        # Each tier pays its configured amount; unknown badge pays 0.
-        assert br.pay_badge_reward(uid, "roaster") == 25            # Bronze
-        assert br.pay_badge_reward(uid, "philanthropist") == 100    # Silver
-        # Secret-tier reward. The real secret badges live in the encrypted config (not the open
-        # seed), so insert a throwaway Secret badge directly to exercise the reward tier.
-        db.DatabaseManager.execute(
-            "INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) "
-            "VALUES (?, ?, ?, ?, ?)", ("test_secret", "Test", "[REDACTED]", "🔒", "Secret"))
-        assert br.pay_badge_reward(uid, "test_secret") == 1000      # Secret
-        assert br.pay_badge_reward(uid, "does_not_exist") == 0
-        assert get_bb(uid) == 500 + 25 + 100 + 1000
-        assert supply() == 800_000
+            # Each tier pays its configured amount; unknown badge pays 0.
+            assert br.pay_badge_reward(uid, "roaster") == 25            # Bronze
+            assert br.pay_badge_reward(uid, "philanthropist") == 100    # Silver
+            # Secret-tier reward. The real secret badges live in the encrypted config (not the open
+            # seed), so insert a throwaway Secret badge directly to exercise the reward tier.
+            db.DatabaseManager.execute(
+                "INSERT OR REPLACE INTO badges (id, name, description, icon_path, rarity) "
+                "VALUES (?, ?, ?, ?, ?)", ("test_secret", "Test", "[REDACTED]", "🔒", "Secret"))
+            assert br.pay_badge_reward(uid, "test_secret") == 1000      # Secret
+            assert br.pay_badge_reward(uid, "does_not_exist") == 0
+            assert get_bb(uid) == 500 + 25 + 100 + 1000
+            assert supply() == 800_000
 
-        print(f"OK: user={get_bb(uid)} bank={get_bb(BANK)} supply={supply()} (conserved)")
-        return True
+            print(f"OK: user={get_bb(uid)} bank={get_bb(BANK)} supply={supply()} (conserved)")
+            return True
+        finally:
+            _restore_modules(previous, missing)
 
 
 _TESTS = [run]

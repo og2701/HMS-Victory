@@ -536,6 +536,27 @@ def add_bb(user_id: int, amount: int, reason: str = "Unspecified",
     UKPenceManager.add_amount(user_id, amount, reason=reason)
     return True
 
+
+def credit_casino_payout(user_id: int, amount: int, reason: str) -> bool:
+    """Pay a tax-exempt casino obligation, minting only on confirmed insolvency.
+
+    Returns ``True`` when the explicit insolvency policy had to mint the payout
+    and ``False`` when the bank paid normally (or the amount was a no-op). A
+    ``BankStorageError`` from the bank path is deliberately not caught: failed
+    durable storage must abort settlement rather than enter the mint fallback.
+    """
+    if amount <= 0:
+        return False
+    if add_bb(user_id, amount, reason=reason, taxable=False):
+        return False
+    UKPenceManager.add_amount(
+        user_id,
+        amount,
+        reason=f"{reason} [bank insolvent - minted]",
+    )
+    return True
+
+
 def remove_bb(user_id: int, amount: int, reason: str = "Unspecified",
               to_bank: bool = True, *, record_pay_transfer: bool = False) -> bool:
     """Debit a user of UKP.

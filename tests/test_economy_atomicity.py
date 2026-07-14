@@ -76,18 +76,29 @@ def _fail_before_insert(database, table, trigger_name):
     """)
 
 
+def _assert_bank_storage_error(bank_module, callback):
+    try:
+        callback()
+        raise AssertionError("injected bank storage failure did not propagate")
+    except bank_module.BankStorageError:
+        pass
+
+
 def test_bank_to_user_rolls_back_at_each_durable_ledger():
     """Each ledger fails after at least one balance/accounting write has run."""
     for table in ("economy_transactions", "balance_history", "user_transactions"):
         with tempfile.TemporaryDirectory() as tmpdir:
-            economy, _, database = _fresh_economy(tmpdir)
+            economy, bank_module, database = _fresh_economy(tmpdir)
             user_id = 10_001
             before = _snapshot(database)
             _fail_before_insert(database, table, f"fail_{table}")
 
-            assert economy.add_bb(
-                user_id, 500, reason="Blackjack payout", taxable=False
-            ) is False
+            _assert_bank_storage_error(
+                bank_module,
+                lambda: economy.add_bb(
+                    user_id, 500, reason="Blackjack payout", taxable=False
+                ),
+            )
 
             assert _snapshot(database) == before
             assert economy.get_bb(user_id) == 0
@@ -97,7 +108,7 @@ def test_bank_to_user_rolls_back_at_each_durable_ledger():
 
 def test_taxed_bank_credit_rolls_back_gross_withdrawal_and_tax_refund():
     with tempfile.TemporaryDirectory() as tmpdir:
-        economy, _, database = _fresh_economy(tmpdir)
+        economy, bank_module, database = _fresh_economy(tmpdir)
         user_id = 10_002
         assert economy.add_bb(
             user_id, 12_000, reason="seed", taxable=False
@@ -108,9 +119,12 @@ def test_taxed_bank_credit_rolls_back_gross_withdrawal_and_tax_refund():
 
         # At 12k, this normally withdraws 1,000 gross, returns 600 tax to the
         # bank, and credits 400. The late statement failure must undo all of it.
-        assert economy.add_bb(
-            user_id, 1_000, reason="taxed reward", taxable=True
-        ) is False
+        _assert_bank_storage_error(
+            bank_module,
+            lambda: economy.add_bb(
+                user_id, 1_000, reason="taxed reward", taxable=True
+            ),
+        )
 
         assert _snapshot(database) == before
         assert economy._HIST_LAST == history_cache_before
@@ -179,6 +193,87 @@ def test_direct_user_credit_rolls_back_balance_and_history_on_ledger_failure():
 
         assert _snapshot(database) == before
         assert str(user_id) not in economy._HIST_LAST
+
+
+def test_casino_storage_failure_aborts_without_entering_mint_fallback():
+    from commands.economy import blackjack, casino_base, higher_lower, slots
+
+    payout_callers = (
+        casino_base.credit_from_bank,
+        blackjack._credit,
+        higher_lower._credit,
+        slots._credit,
+    )
+    for offset, payout in enumerate(payout_callers):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            economy, bank_module, database = _fresh_economy(tmpdir)
+            user_id = 10_014 + offset
+            before = _snapshot(database)
+            database.DatabaseManager.execute("""
+                CREATE TRIGGER fail_bank_accounting_update
+                BEFORE UPDATE ON bank
+                BEGIN
+                    SELECT RAISE(ABORT, 'injected bank accounting failure');
+                END
+            """)
+
+            _assert_bank_storage_error(
+                bank_module,
+                lambda payout=payout: payout(user_id, 75, "Casino win"),
+            )
+
+            assert _snapshot(database) == before
+            assert economy.get_bb(user_id) == 0
+            assert str(user_id) not in economy._HIST_LAST
+            assert _total_supply(database) == TOTAL_SUPPLY
+
+
+def test_casino_confirmed_insolvency_still_mints_promised_payout():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        economy, bank_module, database = _fresh_economy(tmpdir)
+        user_id = 10_018
+        assert bank_module.BankManager.set_balance(
+            0, description="test confirmed insolvency"
+        ) is True
+
+        assert economy.credit_casino_payout(
+            user_id, 75, "Blackjack win"
+        ) is True
+
+        assert economy.get_bb(user_id) == 75
+        assert bank_module.BankManager.get_balance() == 0
+        transaction = database.DatabaseManager.fetch_one(
+            "SELECT amount, balance_after, reason FROM user_transactions "
+            "WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+            (str(user_id),),
+        )
+        assert transaction == (
+            75,
+            75,
+            "Blackjack win [bank insolvent - minted]",
+        )
+
+
+def test_missing_bank_balance_row_is_storage_failure_not_insolvency():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        economy, bank_module, database = _fresh_economy(tmpdir)
+        from config import BOT_ID
+
+        user_id = 10_019
+        database.DatabaseManager.execute(
+            "DELETE FROM ukpence WHERE user_id = ?", (str(BOT_ID),)
+        )
+        before = _snapshot(database)
+
+        _assert_bank_storage_error(
+            bank_module,
+            lambda: economy.credit_casino_payout(
+                user_id, 75, "Blackjack win"
+            ),
+        )
+
+        assert _snapshot(database) == before
+        assert economy.get_bb(user_id) == 0
 
 
 def test_bulk_bank_to_users_rolls_back_every_recipient_on_late_failure():

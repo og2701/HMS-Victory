@@ -159,6 +159,30 @@ def mark_notification_read(user_id, notification_id, *, read_at=None) -> bool:
     return changed > 0
 
 
+def mark_notifications_read(user_id, notification_ids, *, read_at=None) -> int:
+    """Mark a bounded set of owned notifications read in one transaction."""
+    uid = _required_text("user_id", user_id)
+    try:
+        ids = sorted({int(notification_id) for notification_id in notification_ids})
+    except (TypeError, ValueError) as exc:
+        raise ValueError("notification_ids must contain integers") from exc
+    if any(notification_id < 1 for notification_id in ids):
+        raise ValueError("notification_ids must be positive")
+    if len(ids) > MAX_PAGE_SIZE:
+        raise ValueError(
+            f"notification_ids cannot contain more than {MAX_PAGE_SIZE} entries"
+        )
+    if not ids:
+        return 0
+    read_timestamp = _timestamp(read_at, default_now=True)
+    placeholders = ", ".join("?" for _ in ids)
+    return DatabaseManager.execute(
+        f"UPDATE notifications SET read_at = ? "
+        f"WHERE user_id = ? AND read_at IS NULL AND id IN ({placeholders})",
+        (read_timestamp, uid, *ids),
+    )
+
+
 def mark_all_notifications_read(user_id, *, read_at=None) -> int:
     """Mark every unread notification owned by ``user_id`` and return the count."""
     uid = _required_text("user_id", user_id)

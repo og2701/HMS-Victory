@@ -8,12 +8,12 @@ fails, it falls back to a native CV2 text layout, exactly like build_prediction_
 
 Economy model (UKP is conserved; the server bank is the house):
     • Stake:  remove_bb(uid, bet)              - to_bank=True, stake enters the bank.
-    • Win:    add_bb(uid, 2·staked, taxable=False)        - paid from the bank.
-    • BJ 3:2: add_bb(uid, staked + ⌊3·staked/2⌋, taxable=False).
-    • Push:   add_bb(uid, staked, taxable=False)          - stake refunded.
+    • Win:    credit_casino_payout(uid, 2·staked)        - paid from the bank.
+    • BJ 3:2: credit_casino_payout(uid, staked + ⌊3·staked/2⌋).
+    • Push:   credit_casino_payout(uid, staked)          - stake refunded.
     • Loss:   nothing - the staked UKP stays in the bank (the house edge / sink).
 Gaming payouts are tax-exempt (taxable=False) like wager wins, so the small house edge
-is a mild UKPence sink rather than a faucet. See lib/economy/economy_manager.add_bb.
+is a mild UKPence sink rather than a faucet. See economy_manager.credit_casino_payout.
 """
 
 import asyncio
@@ -27,7 +27,7 @@ import uuid
 import discord
 from discord import Interaction
 
-from lib.economy.economy_manager import get_bb, add_bb, remove_bb, UKPenceManager
+from lib.economy.economy_manager import get_bb, remove_bb, credit_casino_payout
 from lib.economy.casino_stats import record_result, session_footer_html
 from lib.economy.casino_drain import action_in_flight, deal_in_flight
 from lib.core.file_operations import (
@@ -224,12 +224,11 @@ def _credit(uid: int, amount: int, reason: str):
     mint the payout directly rather than rob a legitimate winner, and log loudly."""
     if amount <= 0:
         return
-    if not add_bb(uid, amount, reason=reason, taxable=False):
+    if credit_casino_payout(uid, amount, reason):
         logger.critical(
             "Bank insolvent paying blackjack %s of %s UKP to %s - minting to honour the win.",
             reason, amount, uid,
         )
-        UKPenceManager.add_amount(uid, amount, reason=f"{reason} [bank insolvent - minted]")
 
 
 def _decide(game: BlackjackGame):

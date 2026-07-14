@@ -7,7 +7,7 @@ a "Spin Again" button re-spins in-session (it just dies after a restart, like a 
 hand's Play Again). A busy flag drops double-clicks during the render.
 
 Economy (UKP conserved; bank is the house): stake -> bank via remove_bb; a winning spin
-pays mult x bet from the bank via add_bb(taxable=False). A losing spin keeps the stake.
+pays mult x bet via the atomic casino payout helper. A losing spin keeps the stake.
 The win is credited only after the result message is on screen; a failed render/send
 refunds the stake (nothing was credited yet).
 """
@@ -22,7 +22,7 @@ import uuid
 import discord
 from discord import Interaction
 
-from lib.economy.economy_manager import get_bb, add_bb, remove_bb, UKPenceManager
+from lib.economy.economy_manager import get_bb, remove_bb, credit_casino_payout
 from lib.economy.casino_drain import deal_in_flight
 from lib.economy.casino_stats import record_result, session_footer_html
 from lib.core.file_operations import read_html_template
@@ -115,10 +115,9 @@ class SlotMachine:
 def _credit(uid: int, amount: int, reason: str):
     if amount <= 0:
         return
-    if not add_bb(uid, amount, reason=reason, taxable=False):
+    if credit_casino_payout(uid, amount, reason):
         logger.critical("Bank insolvent paying %s of %s to %s - minting to honour the win.",
                         reason, amount, uid)
-        UKPenceManager.add_amount(uid, amount, reason=f"{reason} [bank insolvent - minted]")
 
 
 # ---------------------------------------------------------------------------

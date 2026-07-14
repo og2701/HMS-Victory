@@ -49,6 +49,19 @@ from commands.economy.casino_stats import handle_casino_stats_command
 from commands.moderation.anti_raid import open_anti_raid_control
 from commands.social.inbox import handle_inbox_command
 
+
+def _usage_channel_label(interaction) -> str:
+    """Return a safe command-log location for guild and DM interactions."""
+    channel = getattr(interaction, "channel", None)
+    mention = getattr(channel, "mention", None)
+    if mention:
+        return mention
+    if getattr(interaction, "guild", None) is None:
+        return "a DM"
+    channel_id = getattr(interaction, "channel_id", None) or getattr(channel, "id", None)
+    return f"<#{channel_id}>" if channel_id else "an unknown channel"
+
+
 async def _require_casino_channel(interaction) -> bool:
     """Gate casino games + lottery to the allowed channels. Returns True (and sends an
     ephemeral nudge to the casino channel) when the command should be blocked here."""
@@ -90,7 +103,7 @@ def define_commands(tree, client):
                     uk_tz = pytz.timezone("Europe/London")
                     now = datetime.now(uk_tz).strftime("%Y-%m-%d %H:%M:%S")
                     asyncio.create_task(channel.send(
-                        f"{now} - {interaction.user} (ID {interaction.user.id}) used /{interaction.command.name} in {interaction.channel.mention} with args: {param_str}"
+                        f"{now} - {interaction.user} (ID {interaction.user.id}) used /{interaction.command.name} in {_usage_channel_label(interaction)} with args: {param_str}"
                     ))
                 return await func(*args, **kwargs)
             wrapper.__signature__ = inspect.signature(func)

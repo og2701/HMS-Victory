@@ -2,7 +2,7 @@
 
 ## Outcome
 
-Implemented a durable, user-scoped notification store and an owner-only ephemeral `/inbox` UI. Added persisted-before-DM producers for bond maturity and selected shop approval/refund outcomes. Parent integration added the schema, indexes, slash command, and is wiring badge and moderation producers.
+Implemented a durable, user-scoped notification store and an owner-only ephemeral `/inbox` UI. Added persisted-before-DM producers for bond maturity, shop approval/refund outcomes, badges, quarantine, and quarantine release. The UI provides pagination, mark-page-read, mark-all-read, and clear-read controls; every mutation remains owner-scoped. Shared command logging now works for both guild channels and DMs.
 
 ## Files
 
@@ -15,8 +15,7 @@ Implemented a durable, user-scoped notification store and an owner-only ephemera
 
 ## Verification
 
-- Worker: `python3 tests/test_inbox.py` — 6/6 passed.
-- Parent repeat: `python3 tests/test_inbox.py` — 6/6 passed.
+- `python3 tests/test_inbox.py` — 7/7 passed, including page-level ownership/isolation and UI state.
 - Owned modules compiled successfully and passed `git diff --check`.
 
 ## Remaining manual check

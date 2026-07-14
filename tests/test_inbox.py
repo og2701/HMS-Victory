@@ -118,6 +118,26 @@ def test_mark_all_and_clear_read_never_touch_other_users():
         assert inbox.clear_read_notifications("alice") == 0
 
 
+def test_mark_page_read_is_owned_bounded_and_idempotent():
+    with _fresh_inbox() as (inbox, _):
+        alice_ids = [
+            inbox.create_notification("alice", "test", title, "Body", created_at=100)
+            for title in ("One", "Two", "Three")
+        ]
+        bob_id = inbox.create_notification(
+            "bob", "test", "Private", "Body", created_at=100
+        )
+
+        assert inbox.mark_notifications_read(
+            "alice", [alice_ids[0], alice_ids[2], bob_id], read_at=200
+        ) == 2
+        assert inbox.count_unread_notifications("alice") == 1
+        assert inbox.count_unread_notifications("bob") == 1
+        assert inbox.mark_notifications_read(
+            "alice", [alice_ids[0], alice_ids[2]], read_at=300
+        ) == 0
+
+
 def test_unread_filter_and_validation():
     with _fresh_inbox() as (inbox, _):
         read_id = inbox.create_notification(1, "test", "Read", "Body", created_at=100)
@@ -175,19 +195,25 @@ def test_ui_embed_paginates_and_reports_unread_state():
                 first.fields[0].name,
                 first.fields[0].value,
                 view.next_button.disabled,
+                view.mark_page_button.disabled,
             )
+            marked = view.mark_current_page_read()
+            after_mark = view.build_embed().description
             view.page = 1
             second = view.build_embed()
-            return first_state, len(second.fields), second.footer.text
+            return first_state, marked, after_mark, len(second.fields), second.footer.text
 
-        first, second_field_count, second_footer = asyncio.run(render())
-        field_count, description, field_name, field_value, next_disabled = first
+        first, marked, after_mark, second_field_count, second_footer = asyncio.run(render())
+        field_count, description, field_name, field_value, next_disabled, mark_page_disabled = first
         assert field_count == 5
         assert "6 unread" in description
         assert "Unread" in field_name
         assert "\\*\\*unsafe\\*\\*" in field_name
         assert "@everyone" not in field_value
         assert next_disabled is False
+        assert mark_page_disabled is False
+        assert marked == 5
+        assert "1 unread" in after_mark
         assert second_field_count == 1
         assert second_footer == "Page 2 of 2"
 

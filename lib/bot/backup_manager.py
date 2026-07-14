@@ -2,6 +2,8 @@ import discord
 import os
 import logging
 import io
+import json
+import shutil
 import zipfile
 import asyncio
 import sqlite3
@@ -15,17 +17,38 @@ logger = logging.getLogger(__name__)
 MAX_PART_SIZE = 8 * 1024 * 1024
 MAX_DATABASE_BACKUP_BYTES = 512 * 1024 * 1024
 MAX_DATABASE_ARCHIVE_BYTES = 512 * 1024 * 1024
+MAX_JSON_ARCHIVE_BYTES = 64 * 1024 * 1024
+MAX_JSON_TOTAL_BYTES = 128 * 1024 * 1024
+MAX_JSON_FILE_BYTES = 16 * 1024 * 1024
+MAX_JSON_FILES = 10_000
 ALLOW_EMPTY_DB_BOOTSTRAP_ENV = "ALLOW_EMPTY_DB_BOOTSTRAP"
+ECONOMY_TOTAL_SUPPLY = 800_000
 ESSENTIAL_DATABASE_TABLES = frozenset({
     "bank",
     "economy_transactions",
     "ukpence",
     "xp",
 })
+ESSENTIAL_DATABASE_COLUMNS = {
+    "bank": frozenset({"id", "balance"}),
+    "economy_transactions": frozenset({"id", "timestamp", "log_text"}),
+    "ukpence": frozenset({"user_id", "balance"}),
+    "xp": frozenset({"user_id", "xp", "last_xp_time"}),
+}
+ESSENTIAL_PRIMARY_KEYS = {
+    "bank": "id",
+    "economy_transactions": "id",
+    "ukpence": "user_id",
+    "xp": "user_id",
+}
 
 
 class DatabaseRecoveryError(RuntimeError):
     """Raised when a missing live database cannot be restored safely."""
+
+
+class JSONRecoveryError(RuntimeError):
+    """Raised when missing JSON state cannot be restored safely."""
 
 
 def _zip_folder_to_buffer(folder_path) -> io.BytesIO:
@@ -74,7 +97,7 @@ def _empty_database_bootstrap_allowed() -> bool:
 
 
 def _validate_database_candidate(candidate_path: Path) -> None:
-    """Reject corrupt/non-HMS SQLite files before they can become the live DB."""
+    """Reject corrupt, incomplete, or logically invalid HMS databases."""
     if not candidate_path.is_file() or candidate_path.stat().st_size == 0:
         raise DatabaseRecoveryError("Downloaded database backup is empty or missing.")
 
@@ -95,20 +118,137 @@ def _validate_database_candidate(candidate_path: Path) -> None:
                     "SELECT name FROM sqlite_master WHERE type = 'table'"
                 )
             }
+
+            missing_tables = ESSENTIAL_DATABASE_TABLES - present_tables
+            if missing_tables:
+                raise DatabaseRecoveryError(
+                    "Downloaded backup is missing essential tables: "
+                    + ", ".join(sorted(missing_tables))
+                )
+
+            table_info = {
+                table: {
+                    row[1]: row
+                    for row in connection.execute(
+                        f'PRAGMA table_info("{table}")'
+                    )
+                }
+                for table in ESSENTIAL_DATABASE_TABLES
+            }
+            missing_columns = {
+                table: sorted(required - set(table_info[table]))
+                for table, required in ESSENTIAL_DATABASE_COLUMNS.items()
+                if required - set(table_info[table])
+            }
+            if missing_columns:
+                details = "; ".join(
+                    f"{table}: {', '.join(columns)}"
+                    for table, columns in sorted(missing_columns.items())
+                )
+                raise DatabaseRecoveryError(
+                    f"Downloaded backup has incompatible essential table schemas ({details})."
+                )
+
+            invalid_primary_keys = [
+                f"{table}.{column}"
+                for table, column in ESSENTIAL_PRIMARY_KEYS.items()
+                if not table_info[table][column][5]
+            ]
+            if invalid_primary_keys:
+                raise DatabaseRecoveryError(
+                    "Downloaded backup is missing essential primary keys: "
+                    + ", ".join(sorted(invalid_primary_keys))
+                )
+
+            foreign_key_errors = connection.execute(
+                "PRAGMA foreign_key_check"
+            ).fetchall()
+            if foreign_key_errors:
+                raise DatabaseRecoveryError(
+                    "Downloaded backup failed SQLite foreign-key validation."
+                )
+
+            invalid_balance_count = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM ukpence
+                WHERE user_id IS NULL
+                   OR TRIM(CAST(user_id AS TEXT)) = ''
+                   OR balance IS NULL
+                   OR typeof(balance) NOT IN ('integer', 'real')
+                   OR balance < 0
+                   OR balance != CAST(balance AS INTEGER)
+                """
+            ).fetchone()[0]
+            if invalid_balance_count:
+                raise DatabaseRecoveryError(
+                    "Downloaded backup contains invalid UKP account rows."
+                )
+
+            account_count, total_balance = connection.execute(
+                "SELECT COUNT(*), COALESCE(SUM(balance), 0) FROM ukpence"
+            ).fetchone()
+            if account_count < 1:
+                raise DatabaseRecoveryError(
+                    "Downloaded backup violates the closed-economy supply invariant: "
+                    "there are no UKP accounts."
+                )
+
+            bot_balance_rows = connection.execute(
+                "SELECT balance FROM ukpence WHERE CAST(user_id AS TEXT) = ?",
+                (str(BOT_ID),),
+            ).fetchall()
+            if len(bot_balance_rows) != 1:
+                raise DatabaseRecoveryError(
+                    "Downloaded backup does not contain exactly one bot-bank UKP account."
+                )
+
+            bank_rows = connection.execute(
+                "SELECT balance FROM bank WHERE id = 1"
+            ).fetchall()
+            if len(bank_rows) != 1:
+                raise DatabaseRecoveryError(
+                    "Downloaded backup does not contain the canonical bank row (id = 1)."
+                )
+
+            bot_balance = bot_balance_rows[0][0]
+            bank_balance = bank_rows[0][0]
+            if (
+                bank_balance is None
+                or type(bank_balance) not in (int, float)
+                or bank_balance < 0
+                or bank_balance != int(bank_balance)
+            ):
+                raise DatabaseRecoveryError(
+                    "Downloaded backup contains an invalid canonical bank balance."
+                )
+            if bank_balance != bot_balance:
+                raise DatabaseRecoveryError(
+                    "Downloaded backup has mismatched bank and bot-account balances."
+                )
+
+            non_bot_total = connection.execute(
+                "SELECT COALESCE(SUM(balance), 0) FROM ukpence "
+                "WHERE CAST(user_id AS TEXT) != ?",
+                (str(BOT_ID),),
+            ).fetchone()[0]
+            expected_reserve = max(ECONOMY_TOTAL_SUPPLY - non_bot_total, 0)
+            if bot_balance != expected_reserve:
+                raise DatabaseRecoveryError(
+                    "Downloaded backup violates the closed-economy supply invariant: "
+                    f"expected a {expected_reserve!r} UKP bot reserve for "
+                    f"{non_bot_total!r} UKP in user accounts, found {bot_balance!r}."
+                )
+            if total_balance != non_bot_total + bot_balance:
+                raise DatabaseRecoveryError(
+                    "Downloaded backup contains inconsistent UKP balance totals."
+                )
     except DatabaseRecoveryError:
         raise
     except sqlite3.Error as exc:
         raise DatabaseRecoveryError(
             f"Downloaded backup is not a readable SQLite database: {exc}"
         ) from exc
-
-    missing_tables = ESSENTIAL_DATABASE_TABLES - present_tables
-    if missing_tables:
-        raise DatabaseRecoveryError(
-            "Downloaded backup is missing essential tables: "
-            + ", ".join(sorted(missing_tables))
-        )
-
 
 def _extract_database_candidate(zip_path: Path, candidate_path: Path) -> None:
     """Extract the one supported archive member without trusting ZIP paths."""
@@ -340,59 +480,335 @@ async def send_json_files(client, folder_path, channel_id):
 
 
 JSON_BACKUP_PREFIX = "json_backup_"
-JSON_BACKUP_DIRS = ["data/json", "daily_summaries", "balance_snapshots"]
+JSON_BACKUP_DIRS = ("data/json", "daily_summaries", "balance_snapshots")
 
 
-async def restore_json_if_missing():
-    """If data/json is missing/empty on startup, restore the latest JSON backup from Discord."""
-    json_dir = "data/json"
-    has_contents = os.path.isdir(json_dir) and any(
-        f.endswith(".json") for f in os.listdir(json_dir)
+def _json_root_for_member(member_path: PurePosixPath):
+    for root in JSON_BACKUP_DIRS:
+        root_parts = PurePosixPath(root).parts
+        if member_path.parts[: len(root_parts)] == root_parts:
+            return root
+    return None
+
+
+def _allowed_json_directory(member_path: PurePosixPath) -> bool:
+    """Allow explicit ZIP directory entries that lead only to approved roots."""
+    if not member_path.parts:
+        return False
+    for root in JSON_BACKUP_DIRS:
+        root_parts = PurePosixPath(root).parts
+        if (
+            member_path.parts[: len(root_parts)] == root_parts
+            or root_parts[: len(member_path.parts)] == member_path.parts
+        ):
+            return True
+    return False
+
+
+def _validate_existing_json_root(base_path: Path, relative_root: str) -> None:
+    """Refuse roots whose current shape could escape a staged directory swap."""
+    cursor = base_path
+    for part in PurePosixPath(relative_root).parts:
+        cursor = cursor / part
+        if cursor.is_symlink():
+            raise JSONRecoveryError(
+                f"JSON restore target contains a symlink: {cursor}"
+            )
+
+    if not cursor.exists():
+        return
+    if not cursor.is_dir():
+        raise JSONRecoveryError(
+            f"JSON restore target is not a directory: {cursor}"
+        )
+    for existing_path in cursor.rglob("*"):
+        if existing_path.is_symlink():
+            raise JSONRecoveryError(
+                f"JSON restore target contains a symlink: {existing_path}"
+            )
+
+
+def _stage_json_restore_archive(
+    zip_path: Path,
+    base_path: Path,
+    staging_root: Path,
+):
+    """Validate every member and JSON document before any live path is changed."""
+    represented_roots = set()
+    extracted_members = []
+    seen_paths = set()
+    declared_total = 0
+
+    try:
+        with zipfile.ZipFile(zip_path, "r") as archive:
+            for member in archive.infolist():
+                raw_name = member.filename
+                member_path = PurePosixPath(raw_name)
+                unix_mode = member.external_attr >> 16
+                file_type = stat.S_IFMT(unix_mode)
+                if (
+                    not raw_name
+                    or member_path.is_absolute()
+                    or "\\" in raw_name
+                    or ".." in member_path.parts
+                    or stat.S_ISLNK(unix_mode)
+                ):
+                    raise JSONRecoveryError(
+                        f"Unsafe path or link in JSON backup ZIP: {raw_name!r}"
+                    )
+                if member.flag_bits & 0x1:
+                    raise JSONRecoveryError(
+                        "Encrypted JSON backup ZIPs are not supported."
+                    )
+
+                if member.is_dir():
+                    if not _allowed_json_directory(member_path):
+                        raise JSONRecoveryError(
+                            f"Unexpected directory in JSON backup ZIP: {raw_name!r}"
+                        )
+                    if file_type not in (0, stat.S_IFDIR):
+                        raise JSONRecoveryError(
+                            f"Unsupported directory type in JSON backup ZIP: {raw_name!r}"
+                        )
+                    continue
+
+                root = _json_root_for_member(member_path)
+                if root is None or member_path.suffix.lower() != ".json":
+                    raise JSONRecoveryError(
+                        f"Unexpected file in JSON backup ZIP: {raw_name!r}"
+                    )
+                if file_type not in (0, stat.S_IFREG):
+                    raise JSONRecoveryError(
+                        f"Unsupported file type in JSON backup ZIP: {raw_name!r}"
+                    )
+                normalised_name = member_path.as_posix()
+                if normalised_name in seen_paths:
+                    raise JSONRecoveryError(
+                        f"Duplicate file in JSON backup ZIP: {normalised_name!r}"
+                    )
+                seen_paths.add(normalised_name)
+                if len(seen_paths) > MAX_JSON_FILES:
+                    raise JSONRecoveryError(
+                        f"JSON backup contains more than {MAX_JSON_FILES:,} files."
+                    )
+                if member.file_size > MAX_JSON_FILE_BYTES:
+                    raise JSONRecoveryError(
+                        f"JSON backup member {raw_name!r} exceeds the per-file size limit."
+                    )
+                declared_total += member.file_size
+                if declared_total > MAX_JSON_TOTAL_BYTES:
+                    raise JSONRecoveryError(
+                        "JSON backup expands beyond the supported total size limit."
+                    )
+                represented_roots.add(root)
+                extracted_members.append((member, member_path))
+
+            if not any(root == "data/json" for root in represented_roots):
+                raise JSONRecoveryError(
+                    "JSON backup does not contain any data/json state files."
+                )
+
+            for relative_root in represented_roots:
+                _validate_existing_json_root(base_path, relative_root)
+                source_root = base_path / relative_root
+                staged_root = staging_root / relative_root
+                staged_root.parent.mkdir(parents=True, exist_ok=True)
+                if source_root.exists():
+                    shutil.copytree(source_root, staged_root)
+                else:
+                    staged_root.mkdir(parents=True)
+
+            actual_total = 0
+            for member, member_path in extracted_members:
+                target_path = staging_root.joinpath(*member_path.parts)
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                if target_path.is_symlink() or not target_path.parent.is_dir():
+                    raise JSONRecoveryError(
+                        f"Unsafe staged JSON restore path: {member.filename!r}"
+                    )
+
+                copied = 0
+                with archive.open(member, "r") as source, target_path.open("wb") as target:
+                    while chunk := source.read(1024 * 1024):
+                        copied += len(chunk)
+                        actual_total += len(chunk)
+                        if copied > MAX_JSON_FILE_BYTES:
+                            raise JSONRecoveryError(
+                                f"JSON backup member {member.filename!r} exceeded its size limit."
+                            )
+                        if actual_total > MAX_JSON_TOTAL_BYTES:
+                            raise JSONRecoveryError(
+                                "JSON backup exceeded its total uncompressed size limit."
+                            )
+                        target.write(chunk)
+
+                try:
+                    with target_path.open("r", encoding="utf-8") as restored_file:
+                        json.load(restored_file)
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise JSONRecoveryError(
+                        f"JSON backup member {member.filename!r} is not valid UTF-8 JSON: {exc}"
+                    ) from exc
+    except JSONRecoveryError:
+        raise
+    except (OSError, RuntimeError, zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
+        raise JSONRecoveryError(
+            f"Could not safely stage JSON backup ZIP: {exc}"
+        ) from exc
+
+    return represented_roots
+
+
+def _remove_restore_path(path: Path) -> None:
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    elif path.exists() or path.is_symlink():
+        path.unlink()
+
+
+def _promote_staged_json_roots(
+    base_path: Path,
+    staging_root: Path,
+    rollback_root: Path,
+    represented_roots,
+) -> None:
+    """Swap validated directory trees into place and roll back on any error."""
+    operations = []
+    try:
+        ordered_roots = [root for root in JSON_BACKUP_DIRS if root in represented_roots]
+        for index, relative_root in enumerate(ordered_roots):
+            target_root = base_path / relative_root
+            staged_root = staging_root / relative_root
+            previous_root = rollback_root / f"{index}-{relative_root.replace('/', '-') }"
+            operation = {
+                "target": target_root,
+                "previous": previous_root,
+                "old_moved": False,
+                "new_installed": False,
+            }
+            operations.append(operation)
+
+            target_root.parent.mkdir(parents=True, exist_ok=True)
+            previous_root.parent.mkdir(parents=True, exist_ok=True)
+            if target_root.exists():
+                os.replace(target_root, previous_root)
+                operation["old_moved"] = True
+            os.replace(staged_root, target_root)
+            operation["new_installed"] = True
+    except Exception as exc:
+        rollback_errors = []
+        for operation in reversed(operations):
+            try:
+                if operation["new_installed"]:
+                    _remove_restore_path(operation["target"])
+                if operation["old_moved"] and operation["previous"].exists():
+                    operation["target"].parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(operation["previous"], operation["target"])
+            except Exception as rollback_exc:
+                rollback_errors.append(str(rollback_exc))
+        details = f" Rollback errors: {'; '.join(rollback_errors)}" if rollback_errors else ""
+        raise JSONRecoveryError(
+            f"Could not atomically promote restored JSON state: {exc}.{details}"
+        ) from exc
+
+
+async def restore_json_if_missing(base_path=".", *, client_factory=None):
+    """Restore missing JSON state through a validated, rollback-safe directory swap."""
+    base_path = Path(base_path).resolve()
+    base_path.mkdir(parents=True, exist_ok=True)
+    json_dir = base_path / "data/json"
+    if json_dir.is_symlink() or (json_dir.exists() and not json_dir.is_dir()):
+        raise JSONRecoveryError(f"Unsafe existing JSON state path: {json_dir}")
+    if json_dir.exists():
+        _validate_existing_json_root(base_path, "data/json")
+    has_contents = json_dir.is_dir() and any(
+        path.is_file() for path in json_dir.rglob("*.json")
     )
     if has_contents:
-        return
+        return False
 
     logger.warning("data/json is missing or empty. Attempting to restore from backup...")
 
-    intents = discord.Intents.default()
-    temp_client = discord.Client(intents=intents)
+    if _empty_database_bootstrap_allowed():
+        logger.warning(
+            "%s is enabled; allowing empty first-install JSON state. Disable this "
+            "flag immediately after the first successful boot.",
+            ALLOW_EMPTY_DB_BOOTSTRAP_ENV,
+        )
+        return False
 
     bot_token = os.getenv("DISCORD_TOKEN")
     if not bot_token:
-        logger.error("Bot token not found. Cannot restore JSON backup.")
-        return
+        raise JSONRecoveryError(
+            "data/json is missing and DISCORD_TOKEN is unavailable, so JSON state "
+            "cannot be restored."
+        )
 
+    temp_client = None
     try:
+        factory = client_factory or _default_recovery_client_factory
+        temp_client = factory()
         await temp_client.login(bot_token)
         archive_channel = await temp_client.fetch_channel(CHANNELS.DATA_BACKUP)
 
         latest = None
         async for message in archive_channel.history(limit=200):
             for attachment in message.attachments:
-                if attachment.filename.startswith(JSON_BACKUP_PREFIX) and attachment.filename.endswith(".zip"):
+                filename = attachment.filename.lower()
+                if filename.startswith(JSON_BACKUP_PREFIX) and filename.endswith(".zip"):
                     latest = attachment
                     break
             if latest:
                 break
 
         if not latest:
-            logger.warning("No JSON backup found in last 200 messages.")
-            return
+            raise JSONRecoveryError(
+                "No JSON backup was found in the last 200 data-backup messages."
+            )
 
         logger.info(f"Found latest JSON backup: {latest.filename}")
-        zip_path = "temp_json_backup.zip"
-        await latest.save(zip_path)
-        try:
-            with zipfile.ZipFile(zip_path, "r") as zf:
-                zf.extractall(".")
-            logger.info("Successfully restored JSON data from backup.")
-        finally:
-            if os.path.exists(zip_path):
-                os.remove(zip_path)
-    except Exception as e:
-        logger.error(f"Failed during JSON restore: {e}")
+        with tempfile.TemporaryDirectory(prefix=".json.restore-", dir=base_path) as temp_dir:
+            temp_root = Path(temp_dir)
+            zip_path = temp_root / "download.zip"
+            staging_root = temp_root / "staged"
+            rollback_root = temp_root / "previous"
+            staging_root.mkdir()
+            rollback_root.mkdir()
+
+            await latest.save(str(zip_path))
+            if zip_path.stat().st_size > MAX_JSON_ARCHIVE_BYTES:
+                raise JSONRecoveryError(
+                    "Downloaded JSON backup exceeds the supported archive size limit."
+                )
+            represented_roots = _stage_json_restore_archive(
+                zip_path, base_path, staging_root
+            )
+            _promote_staged_json_roots(
+                base_path, staging_root, rollback_root, represented_roots
+            )
+        logger.info("Validated and atomically restored JSON data from backup.")
+        return True
+    except JSONRecoveryError:
+        logger.critical(
+            "JSON recovery failed; refusing to boot with missing state.",
+            exc_info=True,
+        )
+        raise
+    except Exception as exc:
+        logger.critical(
+            "JSON recovery failed; refusing to boot with missing state.",
+            exc_info=True,
+        )
+        raise JSONRecoveryError(f"JSON backup recovery failed: {exc}") from exc
     finally:
-        await temp_client.close()
+        if temp_client is not None:
+            try:
+                await temp_client.close()
+            except Exception:
+                logger.warning(
+                    "Failed to close temporary JSON recovery client.",
+                    exc_info=True,
+                )
 
 
 async def backup_json_data(client):

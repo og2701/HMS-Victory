@@ -10,15 +10,24 @@ logger = logging.getLogger(__name__)
 # Amount inside a bank-ledger log line, e.g. "🏦 Bank deposit: `1,234` UKP|...".
 _LEDGER_AMOUNT = re.compile(r"`([\d,]+(?:\.\d+)?)`")
 
+
+class BankStorageError(RuntimeError):
+    """The bank transfer could not complete because durable storage failed."""
+
+
 class BankManager:
     """Manages the server's bank balance from shop purchases"""
 
     @staticmethod
-    def _bot_balance_in_transaction(cursor):
+    def _bot_balance_in_transaction(cursor, *, required: bool = True):
         from config import BOT_ID
         cursor.execute('SELECT balance FROM ukpence WHERE user_id = ?', (str(BOT_ID),))
         row = cursor.fetchone()
-        return row[0] if row else 0
+        if row is None:
+            if required:
+                raise sqlite3.IntegrityError("bank BOT_ID balance row is missing")
+            return 0
+        return row[0]
 
     @staticmethod
     def _set_bot_balance_in_transaction(cursor, amount) -> None:
@@ -94,7 +103,15 @@ class BankManager:
 
     @staticmethod
     def _withdraw_in_transaction(cursor, amount, description: str, now: int) -> bool:
+        cursor.execute("SELECT balance FROM bank WHERE id = 1")
+        bank_row = cursor.fetchone()
+        if bank_row is None:
+            raise sqlite3.IntegrityError("bank accounting row id=1 is missing")
         current_balance = BankManager._bot_balance_in_transaction(cursor)
+        if current_balance < 0 or bank_row[0] != current_balance:
+            raise sqlite3.IntegrityError(
+                "bank balance and BOT_ID balance are invalid or out of sync"
+            )
         if current_balance < amount:
             return False
         new_balance = current_balance - amount
@@ -182,7 +199,12 @@ class BankManager:
     @staticmethod
     def transfer_to_user(user_id: int, amount: int, description: str = "Unspecified",
                          *, taxable: bool = True) -> bool:
-        """Atomically pay one user from the bank, including tax and every ledger."""
+        """Atomically pay one user from the bank, including tax and every ledger.
+
+        For a valid positive payout, ``False`` means only that the bank genuinely
+        lacks the gross amount. SQLite/storage failures raise ``BankStorageError``
+        so callers must never mistake a broken commit for insolvency.
+        """
         if amount < 0:
             return False
         now = int(time.time())
@@ -232,8 +254,9 @@ class BankManager:
             UKPenceManager._finish_change(change, high_roller=True)
             return True
         except sqlite3.Error as e:
-            logger.error(f"Error transferring {amount} UKP from bank to {user_id}: {e}")
-            return False
+            message = f"Error transferring {amount} UKP from bank to {user_id}: {e}"
+            logger.error(message)
+            raise BankStorageError(message) from e
 
     @staticmethod
     def transfer_to_users(recipient_ids, amount: int,
@@ -520,7 +543,9 @@ class BankManager:
         try:
             with DatabaseManager.locked_connection() as conn:
                 cursor = conn.cursor()
-                old_balance = BankManager._bot_balance_in_transaction(cursor)
+                old_balance = BankManager._bot_balance_in_transaction(
+                    cursor, required=False,
+                )
                 BankManager._set_bot_balance_in_transaction(cursor, amount)
                 cursor.execute('''
                     UPDATE bank

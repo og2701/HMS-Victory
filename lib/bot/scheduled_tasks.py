@@ -603,6 +603,10 @@ def _register_pending_scheduled_predictions(client, scheduler):
         logger.info(f"Registered {len(rows)} pending scheduled predictions.")
     except Exception as e:
         logger.error(f"Failed to register pending scheduled predictions: {e}", exc_info=True)
+        # The outer registration pass must remain incomplete so a reconnect can
+        # retry. Every process/prediction job has a stable replacing ID, making
+        # the full retry safe even when some jobs were added before this failure.
+        raise
 
 async def apply_inactivity_tax(client):
     try:

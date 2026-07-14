@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 # Both files live in the persistent data directory so protection and operational
 # context survive a process restart regardless of the bot's working directory.
 ANTI_RAID_FILE = os.path.join(JSON_DATA_DIR, "anti_raid_active")
+ANTI_RAID_STATE_FILE = os.path.join(JSON_DATA_DIR, "anti_raid_state.json")
 ANTI_RAID_RECENT_FILE = os.path.join(JSON_DATA_DIR, "anti_raid_recent_joins.json")
 QUARANTINE_ROLE_ID = 962009285116710922
 ANTI_RAID_LOG_CHANNEL_ID = 1172677237988929646
@@ -56,12 +57,83 @@ class AntiRaidTransition:
         return not self.failures
 
 
+def _anti_raid_state_payload(
+    active: bool,
+    failures: Iterable[str] = (),
+) -> dict[str, Any]:
+    clean_failures = [str(failure)[:500] for failure in failures if str(failure).strip()]
+    return {
+        "version": 1,
+        "active": bool(active),
+        "degraded": bool(clean_failures),
+        "failures": clean_failures[:20],
+        "updated_at": int(time.time()),
+    }
+
+
+def _load_anti_raid_state() -> dict[str, Any]:
+    """Load the backed-up state, failing closed if it is corrupt.
+
+    The old extensionless marker is migrated on first read so an already-active
+    deployment gains disaster-recovery coverage without rewriting its permission
+    backup or changing the live mode.
+    """
+    if os.path.exists(ANTI_RAID_STATE_FILE):
+        try:
+            with open(ANTI_RAID_STATE_FILE, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if not isinstance(payload, dict) or not isinstance(payload.get("active"), bool):
+                raise ValueError("state root or active flag is invalid")
+            raw_failures = payload.get("failures", [])
+            if not isinstance(raw_failures, list):
+                raise ValueError("failures is not a list")
+            failures = [str(value)[:500] for value in raw_failures[:20]]
+            return {
+                "version": 1,
+                "active": payload["active"],
+                "degraded": bool(payload.get("degraded", False) or failures),
+                "failures": failures,
+                "updated_at": int(payload.get("updated_at", 0) or 0),
+            }
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            logger.error("Anti-raid state is unreadable; failing closed: %s", exc)
+            return _anti_raid_state_payload(
+                True,
+                (f"The persisted anti-raid state is unreadable: {exc}",),
+            )
+
+    if os.path.exists(ANTI_RAID_FILE):
+        migrated = _anti_raid_state_payload(True)
+        try:
+            atomic_write_json(ANTI_RAID_STATE_FILE, migrated, indent=2)
+        except Exception:
+            logger.exception("Could not migrate legacy anti-raid marker to JSON state")
+        return migrated
+
+    return _anti_raid_state_payload(False)
+
+
+def get_anti_raid_state() -> dict[str, Any]:
+    return dict(_load_anti_raid_state())
+
+
 def is_anti_raid_enabled() -> bool:
-    return os.path.exists(ANTI_RAID_FILE)
+    return bool(_load_anti_raid_state()["active"])
 
 
-def set_anti_raid_status(active: bool) -> None:
-    set_file_status(ANTI_RAID_FILE, active)
+def set_anti_raid_status(active: bool, failures: Iterable[str] = ()) -> None:
+    """Persist canonical JSON state first; retain the old marker for compatibility."""
+    atomic_write_json(
+        ANTI_RAID_STATE_FILE,
+        _anti_raid_state_payload(active, failures),
+        indent=2,
+    )
+    try:
+        set_file_status(ANTI_RAID_FILE, active)
+    except Exception:
+        # The backed-up JSON file is authoritative. A legacy marker failure must
+        # not reverse or misreport a successfully persisted transition.
+        logger.warning("Could not update legacy anti-raid marker", exc_info=True)
 
 
 def _safe_name(value: Any, fallback: str = "Unknown member") -> str:
@@ -279,47 +351,79 @@ async def disable_role_permissions(guild: discord.Guild) -> list[str]:
 
 
 async def enable_anti_raid(guild: discord.Guild) -> AntiRaidTransition:
-    """Enable protection once; the flag is set before slow role edits for join safety."""
+    """Enable or retry protection without ever replacing an active-mode backup."""
     async with _mode_lock:
-        if is_anti_raid_enabled():
+        state = _load_anti_raid_state()
+        if state["active"] and not state["degraded"]:
             return AntiRaidTransition(active=True, changed=False)
         quarantine_role = guild.get_role(QUARANTINE_ROLE_ID)
         if quarantine_role is None:
+            failures = ("Lockdown was not enabled because the quarantine role is missing.",)
+            if state["active"]:
+                try:
+                    set_anti_raid_status(True, failures)
+                except Exception:
+                    logger.exception("Could not persist degraded anti-raid preflight state")
             return AntiRaidTransition(
-                active=False,
+                active=bool(state["active"]),
                 changed=False,
-                failures=("Lockdown was not enabled because the quarantine role is missing.",),
+                failures=failures,
             )
         guild_member = getattr(guild, "me", None)
         if guild_member is not None:
             if not guild_member.guild_permissions.manage_roles:
+                failures = ("Lockdown was not enabled because the bot lacks Manage Roles.",)
+                if state["active"]:
+                    try:
+                        set_anti_raid_status(True, failures)
+                    except Exception:
+                        logger.exception("Could not persist degraded anti-raid preflight state")
                 return AntiRaidTransition(
-                    active=False,
+                    active=bool(state["active"]),
                     changed=False,
-                    failures=("Lockdown was not enabled because the bot lacks Manage Roles.",),
+                    failures=failures,
                 )
             if quarantine_role >= guild_member.top_role:
+                failures = ("Lockdown was not enabled because the quarantine role is above the bot.",)
+                if state["active"]:
+                    try:
+                        set_anti_raid_status(True, failures)
+                    except Exception:
+                        logger.exception("Could not persist degraded anti-raid preflight state")
+                return AntiRaidTransition(
+                    active=bool(state["active"]),
+                    changed=False,
+                    failures=failures,
+                )
+
+        changed = not state["active"]
+        if changed:
+            try:
+                backup_role_permissions(guild)
+                # Persist a deliberately degraded active state before slow Discord
+                # edits. A crash here still quarantines joins and exposes Retry.
+                set_anti_raid_status(
+                    True,
+                    ("Role restriction enforcement did not finish; retry it from the control centre.",),
+                )
+            except Exception as exc:
+                logger.exception("Could not initialise anti-raid lockdown")
                 return AntiRaidTransition(
                     active=False,
                     changed=False,
-                    failures=("Lockdown was not enabled because the quarantine role is above the bot.",),
+                    failures=(f"Lockdown was not enabled: {exc}",),
                 )
-        try:
-            backup_role_permissions(guild)
-            set_anti_raid_status(True)
-        except Exception as exc:
-            logger.exception("Could not initialise anti-raid lockdown")
-            return AntiRaidTransition(
-                active=False,
-                changed=False,
-                failures=(f"Lockdown was not enabled: {exc}",),
-            )
         try:
             failures = await disable_role_permissions(guild)
         except Exception as exc:
             logger.exception("Unexpected anti-raid restriction failure")
             failures = [f"Unexpected restriction failure: {exc}"]
-        return AntiRaidTransition(active=True, changed=True, failures=tuple(failures))
+        try:
+            set_anti_raid_status(True, failures)
+        except Exception as exc:
+            logger.exception("Could not persist final anti-raid enforcement state")
+            failures = [*failures, f"Could not persist enforcement state: {exc}"]
+        return AntiRaidTransition(active=True, changed=changed, failures=tuple(failures))
 
 
 async def disable_anti_raid(guild: discord.Guild) -> AntiRaidTransition:
@@ -333,6 +437,11 @@ async def disable_anti_raid(guild: discord.Guild) -> AntiRaidTransition:
             logger.exception("Unexpected anti-raid restore failure")
             failures = [f"Unexpected restore failure: {exc}"]
         if failures:
+            try:
+                set_anti_raid_status(True, failures)
+            except Exception as exc:
+                logger.exception("Could not persist failed anti-raid restore state")
+                failures = [*failures, f"Could not persist restore failure: {exc}"]
             return AntiRaidTransition(active=True, changed=False, failures=tuple(failures))
         try:
             set_anti_raid_status(False)
@@ -424,7 +533,9 @@ def build_control_embed(
     notice: str | None = None,
     selected_member_ids: Iterable[int] = (),
 ) -> Embed:
-    active = is_anti_raid_enabled()
+    mode_state = _load_anti_raid_state()
+    active = bool(mode_state["active"])
+    degraded = bool(mode_state["degraded"])
     records = _load_recent_joins()
     ten_minutes, one_hour = _join_velocity(records)
     quarantined = _quarantined_members(guild)
@@ -433,12 +544,17 @@ def build_control_embed(
     embed = Embed(
         title="Anti-Raid Control Centre",
         description=(
-            "🔴 **Protection enabled** — new members are quarantined and high-abuse "
-            "role permissions are restricted."
+            (
+                "🟠 **Protection enabled but degraded** — new members remain quarantined, "
+                "but one or more role operations need attention."
+                if degraded
+                else "🔴 **Protection enabled** — new members are quarantined and high-abuse "
+                "role permissions are restricted."
+            )
             if active
             else "🟢 **Protection disabled** — normal join handling is active."
         ),
-        color=0xE74C3C if active else 0x2ECC71,
+        color=0xF39C12 if active and degraded else (0xE74C3C if active else 0x2ECC71),
     )
     embed.add_field(
         name="Join velocity",
@@ -453,9 +569,16 @@ def build_control_embed(
             f"Recovery backup: **{backup}**"
             + (" ⚠️" if active and backup == "Missing" else "")
             + f"\nQuarantine role: **{role_state}**"
+            + f"\nEnforcement: **{'Degraded ⚠️' if active and degraded else 'Healthy'}**"
         ),
         inline=True,
     )
+    if active and degraded and mode_state["failures"]:
+        embed.add_field(
+            name="Enforcement failures",
+            value=_failure_summary(mode_state["failures"]),
+            inline=False,
+        )
 
     if quarantined:
         lines = []
@@ -584,6 +707,38 @@ class RefreshButton(discord.ui.Button):
         )
 
 
+class RetryEnforcementButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="Retry enforcement",
+            style=discord.ButtonStyle.primary,
+            row=0,
+        )
+
+    async def callback(self, interaction: Interaction) -> None:
+        dashboard: AntiRaidControlView = self.view  # type: ignore[assignment]
+        await interaction.response.defer(ephemeral=True)
+        result = await enable_anti_raid(dashboard.guild)
+        if result.failures:
+            dashboard.notice = (
+                f"⚠️ Enforcement retry still has {len(result.failures)} failure(s).\n"
+                f"{_failure_summary(result.failures)}"
+            )
+        else:
+            dashboard.notice = "✅ Anti-raid enforcement retry completed successfully."
+        await _log_action(
+            dashboard.guild,
+            f"Anti-raid enforcement retry by {interaction.user} ({interaction.user.id}): "
+            f"failures={len(result.failures)}.",
+        )
+        dashboard.rebuild_components()
+        await interaction.edit_original_response(
+            embed=dashboard.embed(),
+            view=dashboard,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+
 class ReleaseButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
@@ -683,8 +838,11 @@ class AntiRaidControlView(discord.ui.View):
     def rebuild_components(self) -> None:
         self.clear_items()
         self.selected_member_ids = []
-        self.add_item(AntiRaidModeButton(is_anti_raid_enabled()))
+        mode_state = _load_anti_raid_state()
+        self.add_item(AntiRaidModeButton(bool(mode_state["active"])))
         self.add_item(RefreshButton())
+        if mode_state["active"] and mode_state["degraded"]:
+            self.add_item(RetryEnforcementButton())
         quarantined = _quarantined_members(self.guild)
         if quarantined:
             self.add_item(QuarantineMemberSelect(quarantined))

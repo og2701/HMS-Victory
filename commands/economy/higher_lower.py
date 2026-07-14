@@ -11,7 +11,7 @@ persistent_views.json (so a restart never strands a debited stake), a busy-guard
 drops double-clicks during a render, and a Rules button on the opening hand.
 
 Economy (UKP conserved; the bank is the house): stake -> bank via remove_bb; a cash-out
-pays bet x cumulative-multiplier from the bank via add_bb(taxable=False); a bust pays
+pays bet x cumulative-multiplier via the atomic casino payout helper; a bust pays
 nothing (the stake stays in the bank as the edge). Per-step EV multiplies by the payout
 factor (<1), so the house edge compounds the longer a player rides.
 """
@@ -27,7 +27,7 @@ import uuid
 import discord
 from discord import Interaction
 
-from lib.economy.economy_manager import get_bb, add_bb, remove_bb, UKPenceManager
+from lib.economy.economy_manager import get_bb, remove_bb, credit_casino_payout
 from lib.economy.casino_stats import record_result, session_footer_html
 from lib.economy.casino_drain import action_in_flight, deal_in_flight
 from lib.core.file_operations import (
@@ -230,10 +230,9 @@ def delete_game(message_id):
 def _credit(uid: int, amount: int, reason: str):
     if amount <= 0:
         return
-    if not add_bb(uid, amount, reason=reason, taxable=False):
+    if credit_casino_payout(uid, amount, reason):
         logger.critical("Bank insolvent paying %s of %s to %s - minting to honour the win.",
                         reason, amount, uid)
-        UKPenceManager.add_amount(uid, amount, reason=f"{reason} [bank insolvent - minted]")
 
 
 def _payout(game: HigherLowerGame):

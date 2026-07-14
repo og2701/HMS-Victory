@@ -17,12 +17,14 @@ Parent integration wired Deputy PM bulk handouts, both scheduled tax jobs, user 
 - `tests/test_economy_atomicity.py`
 - `tests/test_economy_invariant.py`
 
+Independent review additionally separated confirmed bank insolvency from SQLite or integrity failures. Casino payouts may enter the existing explicit mint fallback only after a valid, synchronised bank state proves the balance is insufficient; storage faults now raise and leave settlement unchanged.
+
 ## Verification
 
-- `python3 tests/test_economy_atomicity.py` — 8/8 passed.
+- `python3 tests/test_economy_atomicity.py` — 15/15 passed, including late-ledger, bond-state, bulk-recipient, tax-batch, casino-storage, and missing-bank-row fault injection.
 - `python3 tests/test_economy_invariant.py` — 14 passed, 4 optional-dependency skips.
 - Full `tests/` pytest run with requirements — passed as part of integration verification.
 
 ## Residual policy
 
-Explicit casino insolvency fallbacks still mint a payout by existing policy; the direct credit and ledgers are transactional, but that deliberate fallback can increase total supply.
+Explicit casino insolvency fallbacks still mint a payout by existing policy; the direct credit and ledgers are transactional, but that deliberate fallback can increase total supply. Storage failures cannot enter that fallback.

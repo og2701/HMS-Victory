@@ -4,7 +4,9 @@
 
 Discord reconnects no longer repeat successful process boot work. Scheduler registration and start are independently guarded, while every process job has a stable ID and replacement semantics so a retry after partial registration cannot duplicate jobs.
 
-Database startup now validates both existing and restored SQLite files with `quick_check` and essential-schema checks. Restore downloads stay in same-filesystem temporary paths, ZIP input is tightly constrained and size-bounded, and promotion uses atomic replacement. Missing credentials/backups, corrupt data, unsafe archives, or an invalid existing database stop startup before `init_db`. Empty bootstrap requires explicit `ALLOW_EMPTY_DB_BOOTSTRAP=true` and only applies when the database path is absent.
+Database startup now validates both existing and restored SQLite files with `quick_check`, foreign-key checks, essential columns/primary keys, valid account rows, and the canonical bank/bot reserve invariant. Restore downloads stay in same-filesystem temporary paths, ZIP input is tightly constrained and size-bounded, and promotion uses atomic replacement. Missing credentials/backups, corrupt data, unsafe archives, or an invalid existing database stop startup before `init_db`.
+
+Legacy JSON restore was replaced with bounded allow-listed extraction into staging, UTF-8 JSON parsing, same-filesystem directory swaps, and rollback of every promoted root on failure. Missing JSON backup state now fails startup unless the explicit first-install bootstrap flag is enabled. Constructor-loaded predictions are refreshed after recovery and before Discord login.
 
 ## Files
 
@@ -17,10 +19,10 @@ Database startup now validates both existing and restored SQLite files with `qui
 
 ## Verification
 
-- `python3 tests/test_lifecycle_safety.py` — 14/14 passed.
+- `python3 tests/test_lifecycle_safety.py` — 28/28 passed, including pending-prediction scheduler retries, logical DB rejection, JSON traversal/corruption rejection, and multi-root promotion rollback.
 - Current workspace `database.db` passed the new validator.
 - Changed modules compiled and passed whitespace validation.
 
 ## Operational note
 
-A recovery failure can cause the service manager to restart repeatedly, but it cannot silently initialise an empty production database.
+A recovery failure can cause the service manager to restart repeatedly, but it cannot silently initialise an empty production database or continue with missing JSON state.

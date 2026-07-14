@@ -5,7 +5,7 @@ so each game module only has to express its own rules, view and handlers.
 
 Economy convention (UKP conserved; the server bank is the house):
   • stake:  remove_bb(uid, bet, reason="<Game> bet")     - stake enters the bank.
-  • payout: credit_from_bank(uid, amount, "<Game> win")  - add_bb(taxable=False) from bank.
+  • payout: credit_from_bank(uid, amount, "<Game> win")  - atomic tax-exempt bank payout.
   • loss:   nothing - the stake stays in the bank as the edge.
 The reason string MUST contain the game's bank keyword (e.g. "Video Poker", "Red Dog",
 "Three Card Poker") so lib/economy/bank_manager routes it to that game's P/L counters.
@@ -18,7 +18,7 @@ import random
 
 import discord
 
-from lib.economy.economy_manager import add_bb, UKPenceManager
+from lib.economy.economy_manager import credit_casino_payout
 from lib.core.file_operations import (
     read_html_template,
     load_persistent_views,
@@ -283,10 +283,9 @@ def credit_from_bank(uid: int, amount: int, reason: str):
     the payout rather than rob a legitimate winner, and log loudly."""
     if amount <= 0:
         return
-    if not add_bb(uid, amount, reason=reason, taxable=False):
+    if credit_casino_payout(uid, amount, reason):
         logger.critical("Bank insolvent paying %s of %s to %s - minting to honour the win.",
                         reason, amount, uid)
-        UKPenceManager.add_amount(uid, amount, reason=f"{reason} [bank insolvent - minted]")
 
 
 def settle_pvp_pot(winner_id: int, loser_id: int, pot: int, reason: str, own_stake: int = None) -> int:

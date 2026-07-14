@@ -11,6 +11,7 @@ from lib.features.inbox import (
     count_unread_notifications,
     list_notifications,
     mark_all_notifications_read,
+    mark_notifications_read,
 )
 
 
@@ -55,6 +56,7 @@ class InboxView(discord.ui.View):
         self.total = 0
         self.unread = 0
         self.total_pages = 1
+        self.current_unread_ids: list[int] = []
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.owner_id:
@@ -76,6 +78,9 @@ class InboxView(discord.ui.View):
             limit=PAGE_SIZE,
             offset=self.page * PAGE_SIZE,
         )
+        self.current_unread_ids = [
+            notification.id for notification in notifications if notification.is_unread
+        ]
         self._sync_buttons()
 
         embed = discord.Embed(
@@ -111,8 +116,13 @@ class InboxView(discord.ui.View):
     def _sync_buttons(self) -> None:
         self.previous_button.disabled = self.page <= 0
         self.next_button.disabled = self.page >= self.total_pages - 1
+        self.mark_page_button.disabled = not self.current_unread_ids
         self.mark_all_button.disabled = self.unread == 0
         self.clear_read_button.disabled = self.total == self.unread
+
+    def mark_current_page_read(self) -> int:
+        """Mark only the currently rendered owner's unread rows."""
+        return mark_notifications_read(self.owner_id, self.current_unread_ids)
 
     async def _edit(self, interaction: discord.Interaction) -> None:
         try:
@@ -138,6 +148,19 @@ class InboxView(discord.ui.View):
     @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary, row=0)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.page += 1
+        await self._edit(interaction)
+
+    @discord.ui.button(label="Mark page read", style=discord.ButtonStyle.primary, row=1)
+    async def mark_page_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            self.mark_current_page_read()
+        except Exception:
+            log.exception("Failed to mark the current inbox page read")
+            await interaction.response.send_message(
+                "This page could not be updated. Please try again.",
+                ephemeral=True,
+            )
+            return
         await self._edit(interaction)
 
     @discord.ui.button(label="Mark all read", style=discord.ButtonStyle.primary, row=0)
