@@ -252,6 +252,62 @@ ENEMIES = {
         "wound": ["Dragonfire washes the ridge. You are somewhere in it.",
                   "Its tail catches you like a battering ram."],
     },
+    # --- legends (Rumours at Belethor's) ---------------------------------------
+    # Fixed brutal statlines - deliberately NOT stirred; each demands a different
+    # answer. Slain once, remembered forever.
+    "ebony_warrior": {
+        "name": "The Ebony Warrior", "emoji": "🖤", "type": "human", "tier": 5, "boss": True,
+        "hp": 6, "heavy": 0.5, "fight": 12, "sneak": None, "persuade": None,
+        "art": "ebony_warrior", "shout_immune": True,
+        "hint": "A lone figure in ebony waits ahead, arms folded. He has been waiting for you.",
+        "intro": ["**The Ebony Warrior** rises. \"A final challenge, before Sovngarde takes me. "
+                  "Do not hold back.\"",
+                  "**The Ebony Warrior** draws his blade with terrible calm. \"Make it worthy.\""],
+        "kill": ["He falls to one knee, smiling behind the helm. \"Sovngarde... at last.\" "
+                 "You have granted a warrior his rest.",
+                 "\"Well... fought...\" The Ebony Warrior dies content. Few gifts are greater."],
+        "wound": ["His ebony blade finds the seam in your guard. A lesson.",
+                  "He counters faster than thought. This is what a lifetime of war looks like."],
+    },
+    "karstaag": {
+        "name": "Karstaag", "emoji": "❄️", "type": "monster", "tier": 5, "boss": True,
+        "hp": 7, "heavy": 0.6, "fight": 10, "sneak": None, "persuade": None,
+        "art": "karstaag", "style_gate": {"destruction": -40},
+        "hint": "The cold ahead is wrong - old, angry, and aware of you.",
+        "intro": ["**KARSTAAG** crashes through the ice wall, frost boiling off his hide. "
+                  "The king of trolls has been dead before. It didn't take.",
+                  "The mist parts around a mountain that moves. **KARSTAAG** has your scent."],
+        "kill": ["Karstaag shatters like a glacier calving - a roar, then avalanche, then silence.",
+                 "The frost king falls, and the valley's cold lifts like a held breath released."],
+        "wound": ["A fist of ice the size of a cart door hammers you flat.",
+                  "His frost closes over you like a fist. Your bones ache for days ahead."],
+    },
+    "naaslaarum": {
+        "name": "Naaslaarum", "emoji": "🐉", "type": "dragon", "tier": 5, "hp": 4,
+        "heavy": 0.5, "fight": 10, "sneak": None, "persuade": None, "art": "vale_dragon",
+        "hint": "Beneath the frozen lake, something vast is circling.",
+        "intro": ["The lake EXPLODES - **Naaslaarum** erupts through the ice in a pillar of "
+                  "frost and fury.",
+                  "**Naaslaarum** breaches like a whale of scale and hate, ice sheeting off her wings."],
+        "kill": ["Naaslaarum crashes through the ice and does not rise. Somewhere above, "
+                 "her twin SCREAMS.",
+                 "Her soul tears free - and the sky answers with a scream of grief and rage."],
+        "wound": ["Frost breath turns the world white. You are somewhere in the white.",
+                  "Her dive shatters the ice beneath you both."],
+    },
+    "voslaarum": {
+        "name": "Voslaarum", "emoji": "🐲", "type": "dragon", "tier": 5, "boss": True,
+        "hp": 5, "heavy": 0.6, "fight": 8, "sneak": None, "persuade": None,
+        "art": "vale_dragon", "reflight": (3,),
+        "hint": "The second shadow under the ice has stopped circling. It is coming up.",
+        "intro": ["**VOSLAARUM** lands where his twin fell, and the glacier cracks to the "
+                  "horizon. He is not here to duel. He is here to avenge.",
+                  "**VOSLAARUM** descends screaming her name. There will be no parley."],
+        "kill": ["The twins lie still beneath the vale. The oldest silence returns to the lake.",
+                 "Voslaarum falls beside his twin. Even his soul comes to you grieving."],
+        "wound": ["Grief makes him savage - the tail sweep catches you mid-dodge.",
+                  "**\"FO KRAH DIIN!\"** The vale itself seems to freeze with his breath."],
+    },
     "alduin": {
         "name": "Alduin", "emoji": "🌑", "type": "dragon", "tier": 5, "boss": True, "hp": 8,
         "heavy": 0.6, "fight": 6, "sneak": None, "persuade": None, "art": "alduin",
@@ -442,6 +498,35 @@ LOCATIONS = {
                 "prize is how deep you dared. One attempt per day.",
         "soulcairn": True,       # never offered as a normal delve; the picker adds it when earned
     },
+    # --- legend lairs (unlocked by Rumours at Belethor's, hidden until heard) ----
+    "last_vigil": {
+        "name": "The Last Vigil", "emoji": "🖤", "difficulty": "LEGEND", "min_level": 15,
+        "rooms": 2, "events": 0, "pool": {"draugr_deathlord": 1},
+        "boss": "ebony_warrior", "word_wall": False, "clear_septims": 900, "art": "last_vigil",
+        "arrive": "A mountain shrine, swept clean. A campfire, one bedroll, and armour stands "
+                  "polished for a funeral. The honoured dead test all who approach him.",
+        "desc": "A veteran of every war awaits his last, best death. The Voice will not move him.",
+        "rumour": True,
+    },
+    "castle_karstaag": {
+        "name": "Castle Karstaag", "emoji": "🏔️", "difficulty": "LEGEND", "min_level": 15,
+        "rooms": 2, "events": 0, "pool": {"troll": 1},
+        "boss": "karstaag", "word_wall": False, "clear_septims": 900, "art": "castle_karstaag",
+        "arrive": "A castle carved of glacier ice, older than any map. The cold here does not "
+                  "care about your fire.",
+        "desc": "The dead frost-troll king, twice-crowned and twice-buried. Fire is useless here.",
+        "rumour": True,
+    },
+    "forgotten_vale": {
+        "name": "The Forgotten Vale", "emoji": "🧊", "difficulty": "LEGEND", "min_level": 18,
+        "rooms": 2, "events": 0, "pool": {"naaslaarum": 1},
+        "boss": "voslaarum", "word_wall": False, "clear_septims": 1500, "art": "forgotten_vale",
+        "arrive": "A hidden vale of frozen waterfalls, and a lake of black ice. Two vast "
+                  "shadows circle beneath it. They have already seen you.",
+        "desc": "Twin dragons beneath the ice. Two groundings, one Voice, no mercy. The "
+                "hardest fight in Skyrim.",
+        "rumour": True,
+    },
     "skuldafn": {
         "name": "Skuldafn", "emoji": "🌑", "difficulty": "THE WORLD-EATER", "min_level": 20,
         "rooms": 2, "events": 0, "pool": {"draugr_deathlord": 1},
@@ -548,6 +633,9 @@ EVENTS = {
                      "**deep way** drops into the dark, where the air smells of gold and trouble."},
     "fallen": {"weight": 0, "emoji": "⚰️", "art": "fallen",       # placed from the graveyard
                "text": "A body slumps against the wall, satchel still clutched in cold hands."},
+    "stray": {"weight": 1, "emoji": "🐾", "art": "stray",
+              "text": "Something small has been following you for three rooms. It steps into "
+                      "the torchlight and sits down, hopeful."},
 }
 
 M_AIQ_LINES = [
@@ -657,7 +745,7 @@ GEAR_TIERS = [
     {"key": "glass", "name": "Glass", "emoji": "💚", "price": 1800, "dragons": 0},
     {"key": "ebony", "name": "Ebony", "emoji": "⬛", "price": 4000, "dragons": 0},
     {"key": "daedric", "name": "Daedric", "emoji": "😈", "price": 9000, "dragons": 0},
-    {"key": "dragonbone", "name": "Dragonbone", "emoji": "🐲", "price": 15000, "dragons": 5},
+    {"key": "dragonbone", "name": "Dragonbone", "emoji": "🐲", "price": 15000, "dragons": 25},
 ]
 # The Grindstone tempering ladder - cost to reach each next grade (weapon or armour).
 # Materials come from the at-risk ingredient pouch; dragon scales gate the top grades,
@@ -885,6 +973,86 @@ DOCTRINES = {
                      "desc": "+1 potion pocket."},
     },
 }
+
+# ---------------------------------------------------------------------------
+# Rumours at Belethor's - buy a whisper, unlock a LEGEND lair on the picker. Each
+# is a one-time hunt with a fixed brutal statline (never stirred): beat it once,
+# keep the trophy forever. The coin sink the late game deserves.
+# ---------------------------------------------------------------------------
+RUMOURS = {
+    "ebony_warrior": {"loc": "last_vigil", "price": 2500, "min_level": 15,
+                      "name": "A warrior in ebony", "emoji": "🖤",
+                      "blurb": "\"Fellow came through asking for the strongest soul in Skyrim. "
+                               "Left a map to a mountain shrine. Wanted to be followed.\""},
+    "karstaag": {"loc": "castle_karstaag", "price": 2500, "min_level": 15,
+                 "name": "The frost king wakes", "emoji": "❄️",
+                 "blurb": "\"Hunters won't go near the old ice castle any more. Say the cold "
+                          "there has a NAME again.\""},
+    "vale_twins": {"loc": "forgotten_vale", "price": 4000, "min_level": 18,
+                   "name": "Two shadows under the ice", "emoji": "🧊",
+                   "blurb": "\"A Falmer-tale: a hidden vale, a frozen lake, and TWO dragons "
+                            "beneath it. Nobody who checked has come back to laugh about it.\""},
+}
+# which slain enemy marks which rumour done
+RUMOUR_BOSS = {"ebony_warrior": "ebony_warrior", "karstaag": "karstaag",
+               "voslaarum": "vale_twins"}
+
+# ---------------------------------------------------------------------------
+# Companions - befriended at the rare 🐾 Stray event, kept forever, one active at
+# a time. Small passives, big attachment. {carl}-style delve flavour included.
+# ---------------------------------------------------------------------------
+COMPANIONS = {
+    "meeko": {"name": "Meeko", "emoji": "🐕", "species": "a shaggy grey dog",
+              "passive": "Takes the first wound for you once per delve. Good boy.",
+              "found": "The dog pads over and leans against your leg with his whole weight. "
+                       "You have been chosen.",
+              "guard": True},
+    "vix": {"name": "Vix", "emoji": "🦊", "species": "a snow fox",
+            "passive": "A forager's nose: +8% ingredient drop chance.",
+            "found": "The fox drops a frost mirriam sprig at your feet and looks insufferably "
+                     "pleased with herself.",
+            "forage": 0.08},
+    "pincer": {"name": "Pincer", "emoji": "🦀", "species": "an unusually shrewd mudcrab",
+               "passive": "A merchant's instincts: +5% septims from all sources.",
+               "found": "The mudcrab clacks twice, produces a tiny coin from somewhere, and "
+                        "offers it up. A business partnership is proposed.",
+               "barter": 1.05},
+    "corvus": {"name": "Corvus", "emoji": "🐦‍⬛", "species": "a one-eyed raven",
+               "passive": "Sees the openings you miss: +2% crit chance.",
+               "found": "The raven lands on your shoulder, inspects your ear, and stays. "
+                        "Apparently that's settled then.",
+               "crit": 0.02},
+}
+
+# ---------------------------------------------------------------------------
+# The Pit - Windhelm's unsanctioned arena. One bout per UK day against a ladder
+# of named champions, simulated round by round with your real build. Rank resets
+# monthly (best rank remembered); no satchel at stake, glory only.
+# ---------------------------------------------------------------------------
+PIT_CHAMPS = [
+    {"name": "Snilf the Bold", "fight": 30, "hp": 2, "guard": 0,
+     "taunt": "\"I've beaten three men and a goat!\"", "style": "wild swings"},
+    {"name": "Rolff Stone-Fist", "fight": 36, "hp": 2, "guard": 5,
+     "taunt": "\"Go back to the Grey Quarter- oh, you're here to FIGHT me? Ha!\"", "style": "brawler's hooks"},
+    {"name": "Adelaisa the Quick", "fight": 42, "hp": 2, "guard": 10,
+     "taunt": "\"Blink and it's over.\"", "style": "darting cuts"},
+    {"name": "Uzoga gra-Shurkul", "fight": 46, "hp": 3, "guard": 10,
+     "taunt": "\"Malacath watches. Entertain him.\"", "style": "methodical strikes"},
+    {"name": "Bero the Butcher", "fight": 50, "hp": 3, "guard": 15,
+     "taunt": "\"I name my cleavers. You'll meet both.\"", "style": "cleaver work"},
+    {"name": "Sword-Singer Hama", "fight": 54, "hp": 3, "guard": 20,
+     "taunt": "\"The blade sings. Try to keep the rhythm.\"", "style": "flowing bladework"},
+    {"name": "Old Ulfberth", "fight": 58, "hp": 4, "guard": 20,
+     "taunt": "\"Forty years in the Pit, whelp. Sit down.\"", "style": "veteran's patience"},
+    {"name": "The Widow of Windhelm", "fight": 62, "hp": 4, "guard": 25,
+     "taunt": "\"...\"", "style": "silent, perfect thrusts"},
+    {"name": "Yrsarald Thrice-Pierced", "fight": 66, "hp": 5, "guard": 25,
+     "taunt": "\"Three spears couldn't do it. What are you bringing?\"", "style": "reckless power"},
+    {"name": "The Caged Bear", "fight": 70, "hp": 6, "guard": 30,
+     "taunt": "(It is an actual bear.)", "style": "being a bear"},
+]
+PIT_TITLES = ["Pit Dog", "Scrapper", "Bloodied", "Contender", "Crowd's Favourite",
+              "Duellist", "Veteran", "Widowmaker", "Thrice-Feared", "PIT CHAMPION"]
 
 # ---------------------------------------------------------------------------
 # NPC Factions - a light allegiance you swear at Lv 8+. Each week your faction sets

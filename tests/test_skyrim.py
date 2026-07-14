@@ -302,6 +302,149 @@ def test_stirred_band_scaling():
     assert all(E.stirred_rank(q, k) == 0 for k in E.offer_locations(q))
 
 
+def test_streaks_grow_and_forgive():
+    p = _profile()
+    count, first = E.update_streak(p)
+    assert (count, first) == (1, True)
+    assert E.update_streak(p) == (1, False)            # same day: no double-dip
+    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    p["streak"] = {"count": 4, "date": yesterday, "grace": None}
+    assert E.update_streak(p) == (5, True)             # consecutive day extends
+    # one missed day per week is quietly forgiven...
+    two_ago = (datetime.date.today() - datetime.timedelta(days=2)).isoformat()
+    p["streak"] = {"count": 6, "date": two_ago, "grace": None}
+    assert E.update_streak(p)[0] == 7
+    # ...but only once: a second gap the same week resets
+    p["streak"]["date"] = two_ago
+    assert E.update_streak(p)[0] == 1
+    assert E.streak_bonus_pct(3) == 6 and E.streak_bonus_pct(99) == 20
+    assert (p.get("records") or {}).get("streak", 0) >= 1
+
+
+def test_records_and_collection():
+    p = _profile()
+    assert E.record_best(p, "satchel", 500)
+    assert not E.record_best(p, "satchel", 400)        # lesser marks don't overwrite
+    assert E.records_of(p)["satchel"] == 500
+    # a cleared delve logs the place, the kill logs the beast, brewing logs the recipe
+    rooms = [{"kind": "enemy", "key": "skeever", "boss": True, "resolved": False}]
+    d = E.Delve(p["user_id"], "T", 0, "embershard", rooms, hearts=3, shout_charges=0)
+    E.random = _fixed_rolls(0.0, 0.99)
+    try:
+        d.act_attack(p)
+    finally:
+        _restore_random()
+    book = p["log"]
+    assert book["kills"].get("skeever") == 1 and "embershard" in book["clears"]
+    assert E.records_of(p)["satchel"] >= 50            # the clear set a real record
+    pct = E.collection_pct(p)
+    assert 0 < pct < 100
+    assert len(E.collection_summary(p)) == 11
+    # backfill: an old cairn best becomes a record on migrate
+    q = E.create_profile(7, "Old", "warrior")
+    q["soulcairn"] = {"best": 12}
+    E.save_profile(q)
+    assert E.records_of(E.get_profile(7)).get("depth") == 12
+
+
+def test_companions():
+    p = _profile()
+    found = E.befriend_stray(p)
+    assert found in D.COMPANIONS and p["companion"] == found
+    # each stray is a NEW friend until the menagerie is full, then None
+    for _ in range(6):
+        E.befriend_stray(p)
+    assert sorted(p["companions"]) == sorted(D.COMPANIONS)
+    assert E.befriend_stray(p) is None
+    # passives: the fox forages, the crab barters, the raven sharpens, Meeko guards
+    p["companion"] = "pincer"
+    base = E._septims(dict(p, companion=None), 100)
+    assert E._septims(p, 100) > base
+    p["companion"] = "corvus"
+    assert E.crit_chance(p, "bandit", "blade") >= E.CRIT_CHANCE + 0.02
+    p["companion"] = "meeko"
+    d = _enemy_room_delve(p, "troll")
+    d.engaged = True
+    E.random = _fixed_rolls(0.999)                     # attack misses, soak fails
+    try:
+        hearts = d.hearts
+        d.act_attack(p)
+    finally:
+        _restore_random()
+    assert d.hearts == hearts and d.pet_used           # Meeko took it
+    assert d.to_dict()["pet_used"] is True
+
+
+def test_rumours_and_legends():
+    p = _profile()
+    p["xp"] = 60_000
+    p["septims"] = 10_000
+    assert E.buy_rumour(p, "ebony_warrior") is None
+    assert p["septims"] == 7_500 and E.heard_rumours(p) == ["ebony_warrior"]
+    assert E.buy_rumour(p, "ebony_warrior") is not None      # no double-buy
+    # legend lairs: pure duels - no forks, corpses or route conditions, never stirred
+    d = E.start_delve(p, 0, "last_vigil")
+    assert [r["key"] for r in d.rooms] == ["draugr_deathlord", "ebony_warrior"]
+    assert d.route is None and d.stirred == 0
+    # the Ebony Warrior shrugs off the Thu'um without costing a charge
+    d.idx = 1
+    d.enemy_hp = d._hp_for(d.room)
+    d.shout_charges = 3
+    d.act_shout(p, 3)
+    assert d.shout_charges == 3 and d.enemy_hp == D.ENEMIES["ebony_warrior"]["hp"]
+    # Karstaag gates fire; the twins' second dragon reflights once
+    q = _profile("mage")
+    assert (E.fight_pct(q, "karstaag", "destruction")
+            < E.fight_pct(q, "karstaag", "blade"))
+    p["rumours"]["vale_twins"] = "heard"
+    d2 = E.start_delve(p, 0, "forgotten_vale")
+    d2.idx = 1                                          # Voslaarum, hp 5, reflight at 3
+    d2.enemy_hp = 5
+    d2.grounded = True
+    E.random = _fixed_rolls(0.0, 0.99, 0.0, 0.99)       # two clean hits: 5 -> 3
+    try:
+        d2.act_attack(p)
+        d2.act_attack(p)
+    finally:
+        _restore_random()
+    assert d2.enemy_hp == 3 and not d2.grounded         # he takes wing again
+    # the killing blow settles the rumour forever
+    d2.grounded = True
+    d2.enemy_hp = 1
+    E.random = _fixed_rolls(0.0, 0.99)
+    try:
+        d2.act_attack(p)
+    finally:
+        _restore_random()
+    assert p["rumours"]["vale_twins"] == "slain"
+    assert "vale_twins" in p["log"]["legends"]
+    # picker and daily never offer legend lairs uninvited
+    assert all(not D.LOCATIONS[k].get("rumour") for k in E.offer_locations(p))
+
+
+def test_the_pit():
+    p = _profile()
+    p["xp"] = 60_000
+    for s in p["skills"]:
+        p["skills"][s] = 100
+    p["weapon_tier"] = 6
+    assert E.pit_available(p)
+    E.random = _fixed_rolls(0.0)                        # every swing lands: flawless bout
+    try:
+        won, log = E.pit_bout(p)
+    finally:
+        _restore_random()
+    assert won and E.pit_state(p)["rank"] == 1
+    assert not E.pit_available(p)                       # one bout per day
+    assert D.PIT_CHAMPS[0]["name"] in p["log"]["pit"]
+    assert E.records_of(p)["pit_rank"] == 1
+    assert E.pit_title(1) == D.PIT_TITLES[0]
+    # the month turning resets the rank but remembers the best
+    p["pit"]["month"] = "1999-01"
+    s = E.pit_state(p)
+    assert s["rank"] == 0 and s["best"] == 1 and E.pit_available(p)
+
+
 def test_meditation_sink():
     p = _profile()
     p["xp"] = 60_000                                   # a pile of levels -> spare points

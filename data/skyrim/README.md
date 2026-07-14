@@ -25,6 +25,12 @@ convert a fresh drop:
 | mimic | a Mimic chest mid-bite (an enemy; variant of `chest`) |
 | soul_cairn | the endless Soul Cairn descent (post-Alduin endgame) |
 
+| stray | the 🐾 stray-companion event (befriend it!) |
+| ebony_warrior | the Ebony Warrior legend hunt |
+| karstaag | Karstaag, the frost-troll king legend hunt |
+| vale_dragon | Voslaarum & Naaslaarum, the twin dragons (shared by both) |
+| pit | The Pit arena panel (Windhelm bout results) |
+
 The **Named Dragons of the Week** all reuse `dragon.webp` - no per-dragon art needed.
 New expansion scenes fall back to text like every other, so they can be dropped in
 whenever. Only `fork`, `fallen`, `mimic`, `soul_cairn` are new to generate.

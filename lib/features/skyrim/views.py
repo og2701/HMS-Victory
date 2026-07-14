@@ -333,6 +333,7 @@ _EVENT_CHOICES = {
     "knee_trap": [("🚶", "Limp onward", "continue")],
     "fork": [("🪙", "The deep way", "deep"), ("🚶", "The safe way", "safe")],
     "fallen": [("💰", "Loot the satchel", "loot"), ("⚰️", "Lay them to rest", "honor")],
+    "stray": [("🐾", "Befriend it", "befriend"), ("🚶", "Shoo it home", "skip")],
     "mudcrab": [("🦀", "Trade with the crab", "trade"), ("🚶", "Move on", "skip")],
     "nazeem": [("😤", "\"Yes, actually.\"", "yes"), ("😮‍💨", "Sigh deeply", "sigh")],
     "adoring_fan": [("🤩", "Let him follow", "adopt"), ("👉", "Send him home", "skip")],
@@ -453,17 +454,23 @@ async def _edit_panel(interaction: Interaction, text: str, rows, art_key: str = 
 
 
 def _hub_rows(profile):
+    """The hub keeps a strict 9-button budget: everything character-ish (perks,
+    masteries, collection, records, companion) lives INSIDE Character; crafting and
+    rumours live inside Belethor's; pacts and legend lairs live on the Adventure
+    picker. Buttons go green only when something is actionable right now."""
     row1 = discord.ui.ActionRow()
     row1.add_item(_cb_btn(discord.ButtonStyle.success, "Adventure", "🗺️", _hub_adventure))
-    row1.add_item(_cb_btn(discord.ButtonStyle.primary, "Character", "👤", _hub_character))
-    row1.add_item(_cb_btn(discord.ButtonStyle.primary, "Belethor's", "🏪", _hub_shop))
     pts = E.perk_points(profile)
     row1.add_item(_cb_btn(discord.ButtonStyle.primary,
-                          f"Perks ({pts})" if pts else "Perks", "📜", _hub_perks))
-    row2 = discord.ui.ActionRow()
+                          f"Character ({pts})" if pts else "Character", "👤", _hub_character))
+    row1.add_item(_cb_btn(discord.ButtonStyle.primary, "Belethor's", "🏪", _hub_shop))
     daily_label = "Daily Delve" if E.daily_available(profile) else "Daily Results"
-    row2.add_item(_cb_btn(discord.ButtonStyle.success if E.daily_available(profile)
+    row1.add_item(_cb_btn(discord.ButtonStyle.success if E.daily_available(profile)
                           else discord.ButtonStyle.secondary, daily_label, "📅", _hub_daily))
+    row2 = discord.ui.ActionRow()
+    pit_ready = E.level(profile) >= 5 and E.pit_available(profile)
+    row2.add_item(_cb_btn(discord.ButtonStyle.success if pit_ready
+                          else discord.ButtonStyle.secondary, "The Pit", "🗡️", _hub_pit))
     # Factions + Expeditions light up when there's something to collect this week/day
     fac_ready = profile.get("allegiance") and E.faction_progress(profile)[2] \
         and not (profile.get("faction") or {}).get("claimed")
@@ -496,13 +503,16 @@ def _hub_text(profile) -> str:
     into, need = D.xp_into_level(profile["xp"])
     daily_bit = ("📅 daily delve **available**" if E.daily_available(profile)
                  else "📅 daily delve done")
+    streak = E.current_streak(profile)
+    streak_bit = f"  ·  🔥 {streak}-day streak" if streak >= 2 else ""
     return (
         f"## 🐉 Skyrim\n"
         f"{cls['emoji']} **{profile['name']}** - Level {E.level(profile)} "
         f"{E.archetype(profile)}  ·  💰 {profile['septims']:,} septims\n"
         f"-# XP {_bar(into, 0, need)} {into}/{need} to next level\n"
         f"-# {E.weather_line()}\n"
-        f"-# 🛌 {left}/{getattr(config, 'SKYRIM_DELVES_PER_DAY', 3)} delves left today  ·  {daily_bit}\n\n"
+        f"-# 🛌 {left}/{getattr(config, 'SKYRIM_DELVES_PER_DAY', 3)} delves left today  ·  "
+        f"{daily_bit}{streak_bit}\n\n"
         f"Delve the ruins of Skyrim, learn words of power, slay dragons. Levels, gear, "
         f"souls and skills are yours forever - only the **septims in your satchel** are at "
         f"stake when you die.\n"
@@ -681,6 +691,20 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
         else:
             lines.append(f"\n-# 💀 The Soul Cairn is spent for today{best_str}. Return tomorrow.")
 
+    # Legend hunts - rumours heard at Belethor's, not yet settled. They cost a
+    # normal delve and they are exactly as bad an idea as they sound.
+    heard = E.heard_rumours(profile)
+    if heard and left > 0:
+        lrow = discord.ui.ActionRow()
+        for rk in heard[:3]:
+            loc = D.LOCATIONS[D.RUMOURS[rk]["loc"]]
+            lines.append(f"\n{loc['emoji']} **{loc['name']}**  ·  {loc['difficulty']} - {loc['desc']}")
+
+            async def _hunt(inter: Interaction, k=D.RUMOURS[rk]["loc"]):
+                await _launch_delve(inter, k)
+            lrow.add_item(_cb_btn(discord.ButtonStyle.danger, loc["name"], "🖤", _hunt))
+        rows.append(lrow)
+
     rows += [_back_row()] if edit_hub else []
     if edit_hub:
         # a button on an ephemeral panel (hub, or the mid-delve prompt): edit in place
@@ -744,11 +768,12 @@ def _notice_view(text: str):
     return view
 
 
-# --- character sheet -------------------------------------------------------------
+# --- character (a sub-hub: the sheet, plus everything that IS your character) -------
 def _sheet_text(profile) -> str:
+    """The slim sheet: who you are and what you fight with. Deeds live in Records,
+    the Dragon Wall and trophies live in the Collection - one panel, one job."""
     stone = D.STONES[profile["stone"]]
     s = profile["skills"]
-    st = profile["stats"]
     into, need = D.xp_into_level(profile["xp"])
     words = " ".join(D.SHOUT_WORDS[:profile["words"]]) if profile["words"] else "not yet learned"
     boosted = set(stone["boost"])
@@ -758,57 +783,46 @@ def _sheet_text(profile) -> str:
     lines = [
         f"## {stone['emoji']} {profile['name']} - Level {E.level(profile)} {E.archetype(profile)}",
         f"-# Blessed by {stone['name']}  ·  XP {_bar(into, 0, need)} {into}/{need}",
+    ]
+    if profile.get("alduin_slain"):
+        n = profile["alduin_slain"]
+        lines.append(f"⭐ **Slayer of Alduin**{f' (x{n})' if n > 1 else ''}")
+    lines += [
         "",
         "**Skills** (improve by use; ✨ = stone-blessed, learns faster)",
     ] + [
         f"{label:<12} **{s[key]}** {_bar(s[key])}" + ("  ✨" if key in boosted else "")
         for key, label in skill_rows
-    ] + [
+    ]
+    temper = profile.get("temper") or {}
+    t_bit = (f"  ·  🪓 +{temper.get('weapon', 0)}/+{temper.get('armour', 0)} tempered"
+             if temper.get("weapon") or temper.get("armour") else "")
+    lines += [
         "",
         f"**Gear**: {E.gear_name(profile, 'weapon')}  ·  {E.gear_name(profile, 'armour')} "
-        f"(soaks {E.soak_pct(profile)}% of hits)",
-        f"**Hearts**: {'❤️' * E.heart_max(profile)}  ·  🧪 {profile['potions']}/{E.potion_cap(profile)} potions",
-        f"**The Voice**: 🗣️ {words} ({profile['words']}/3 words)  ·  "
-        f"breath {E.voice_charges(profile)}/{profile['words']}  ·  🐉 {profile['souls']} unspent "
-        f"soul{'s' if profile['souls'] != 1 else ''}",
-        f"**Septims**: 💰 {profile['septims']:,}",
+        f"(soaks {E.soak_pct(profile)}%){t_bit}",
+        f"**Hearts**: {'❤️' * E.heart_max(profile)}  ·  🧪 {profile['potions']}/{E.potion_cap(profile)}"
+        f"  ·  💰 {profile['septims']:,}",
+        f"**The Voice**: 🗣️ {words}  ·  breath {E.voice_charges(profile)}/{profile['words']}"
+        f"  ·  🐉 {profile['souls']} soul{'s' if profile['souls'] != 1 else ''}",
     ]
-    if profile.get("alduin_slain"):
-        n = profile["alduin_slain"]
-        lines.insert(2, f"⭐ **Slayer of Alduin**{f' (x{n})' if n > 1 else ''} - the "
-                        f"World-Eater fell to this one.")
-    if profile["perks"]:
-        perk_bits = [f"{D.PERKS[k]['emoji']} {D.PERKS[k]['name']} {r}/{D.PERKS[k]['ranks']}"
-                     for k, r in profile["perks"].items()]
-        lines.append(f"**Perks**: {'  ·  '.join(perk_bits)}")
-    if profile.get("home"):
-        home_bits = [f"{D.HOME_ITEMS[k]['emoji']} {D.HOME_ITEMS[k]['name']}"
-                     for k in profile["home"] if k in D.HOME_ITEMS]
-        lines.append(f"**Property**: {'  ·  '.join(home_bits)}")
-    temper = profile.get("temper") or {}
-    if temper.get("weapon") or temper.get("armour"):
-        lines.append(f"**Tempering**: ⚔️ +{temper.get('weapon', 0)}  ·  🛡️ +{temper.get('armour', 0)} "
-                     f"(Grindstone grades)")
     doc = profile.get("doctrines") or {}
     if doc:
         doc_bits = [f"{D.DOCTRINES[sk][ch]['emoji']} {D.DOCTRINES[sk][ch]['name']}"
                     for sk, ch in doc.items() if ch in D.DOCTRINES.get(sk, {})]
-        lines.append(f"**Doctrines**: {'  ·  '.join(doc_bits)}")
-    if E.legendary_stars(profile):
-        lines.append(f"**Legendary**: {'⭐' * min(6, E.legendary_stars(profile))} "
-                     f"({E.legendary_stars(profile)} resets)")
-    wall = profile.get("dragon_wall") or []
-    if wall:
-        names = ", ".join(D.DRAGON_ROSTER[k]["name"] for k in wall if k in D.DRAGON_ROSTER)
-        lines.append(f"**🐲 Dragon Wall** ({len(wall)}/{len(D.DRAGON_ROSTER)}): {names}")
-    lines += [
-        "",
-        f"**Deeds**: {st['delves']} delves · {st['clears']} cleared · {st['deaths']} deaths · "
-        f"{st['kills']} kills · {st['dragons']} dragons · {st['sneaks']} sneaks · "
-        f"{st['persuades']} persuasions · {st['sweetrolls']} sweetrolls",
-    ]
-    if st.get("launched"):
-        lines.append(f"-# ...and launched into low orbit by a giant, {st['launched']} time(s).")
+        star = f"  ·  ⭐x{E.legendary_stars(profile)}" if E.legendary_stars(profile) else ""
+        lines.append(f"**Doctrines**: {'  ·  '.join(doc_bits)}{star}")
+    pet = E.active_companion(profile)
+    if pet:
+        lines.append(f"**Companion**: {pet['emoji']} {pet['name']} - {pet['passive']}")
+    streak = E.current_streak(profile)
+    pts = E.perk_points(profile)
+    foot = [f"📦 collection {E.collection_pct(profile)}%"]
+    if streak >= 2:
+        foot.append(f"🔥 {streak}-day streak")
+    if pts:
+        foot.append(f"📜 {pts} perk point{'s' if pts != 1 else ''} to spend")
+    lines += ["", "-# " + "  ·  ".join(foot)]
     return "\n".join(lines)
 
 
@@ -822,8 +836,185 @@ async def _hub_character(interaction: Interaction):
     m_label = f"Masteries ({open_n})" if open_n else "Masteries"
     row.add_item(_cb_btn(discord.ButtonStyle.primary if open_n else discord.ButtonStyle.secondary,
                          m_label, "✨", _hub_masteries))
+    pts = E.perk_points(profile)
+    row.add_item(_cb_btn(discord.ButtonStyle.primary if pts else discord.ButtonStyle.secondary,
+                         f"Perks ({pts})" if pts else "Perks", "📜", _hub_perks))
+    row.add_item(_cb_btn(discord.ButtonStyle.secondary,
+                         f"Collection {E.collection_pct(profile)}%", "📦", _hub_collection))
+    row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Records", "🎖️", _hub_records))
+    row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Companion", "🐾", _hub_companion))
+    await _edit_panel(interaction, _sheet_text(profile), [row, _back_row()])
+
+
+# --- the Collection Log ---------------------------------------------------------
+async def _hub_collection(interaction: Interaction):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None:
+        await _show_class_pick(interaction)
+        return
+    lines = [f"## 📦 The Collection Log - {E.collection_pct(profile)}%",
+             "-# Everything unique, ever. Fill the book.", ""]
+    name_of = {**{k: v["name"] for k, v in D.ENEMIES.items()},
+               **{k: v["name"] for k, v in D.DRAGON_ROSTER.items()},
+               **{k: v["name"] for k, v in D.LOCATIONS.items()},
+               **{k: v["name"] for k, v in D.RUMOURS.items()},
+               **{k: v["name"] for k, v in D.COMPANIONS.items()},
+               **{k: v["tag"] for k, v in D.AFFIXES.items()}}
+    for emoji, label, done, total, missing in E.collection_summary(profile):
+        bar = _bar(done, 0, max(1, total), 6)
+        line = f"{emoji} **{label}**  {bar}  {done}/{total}"
+        if 0 < len(missing) <= 3:
+            gaps = ", ".join(str(name_of.get(m, m)) for m in missing)
+            line += f"  ·  -# missing: {gaps}"
+        lines.append(line)
+    await _edit_panel(interaction, "\n".join(lines), [_char_back_row()])
+
+
+# --- the Hall of Records ----------------------------------------------------------
+async def _hub_records(interaction: Interaction):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None:
+        await _show_class_pick(interaction)
+        return
+    r = E.records_of(profile)
+    st = profile["stats"]
+    lines = ["## 🎖️ Hall of Records",
+             "-# Personal bests, kept forever. Every delve is an attempt.", ""]
+    bests = [("💰", "Richest satchel banked", r.get("satchel"), "septims"),
+             ("⚔️", "Most kills in one delve", r.get("kills_delve"), "kills"),
+             ("🩸", "Biggest single kill", r.get("kill_loot"), "septims"),
+             ("💀", "Deepest Soul Cairn descent", r.get("depth"), "floors"),
+             ("🔥", "Longest delve streak", r.get("streak"), "days"),
+             ("🗡️", "Best Pit rank", r.get("pit_rank"), None)]
+    for emoji, label, val, unit in bests:
+        if val:
+            shown = (E.pit_title(val) if label.startswith("Best Pit")
+                     else f"{val:,}{' ' + unit if unit else ''}")
+            lines.append(f"{emoji} **{label}**: {shown}")
+        else:
+            lines.append(f"-# {emoji} {label}: no mark set yet")
+    lines += [
+        "", "**Career deeds**",
+        f"-# {st['delves']} delves · {st['clears']} cleared · {st['deaths']} deaths · "
+        f"{st['kills']} kills · {st['dragons']} dragons · {st['sneaks']} sneaks · "
+        f"{st['persuades']} persuasions · {st['sweetrolls']} sweetrolls · "
+        f"{int(st.get('pact_clears', 0))} pact clears · "
+        f"{int(profile.get('meditations') or 0)} meditations",
+    ]
+    if st.get("launched"):
+        lines.append(f"-# ...and launched into low orbit by a giant, {st['launched']} time(s).")
+    await _edit_panel(interaction, "\n".join(lines), [_char_back_row()])
+
+
+# --- the Companion ----------------------------------------------------------------
+async def _hub_companion(interaction: Interaction, notice: str = ""):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None:
+        await _show_class_pick(interaction)
+        return
+    owned = profile.get("companions") or []
+    lines = ["## 🐾 Companions",
+             "-# Strays found on the road, kept forever. One walks with you at a time.", ""]
+    if not owned:
+        lines.append("The road has offered you no friends yet. Keep an eye out for the "
+                     "🐾 **stray** - something small may choose you.")
+    for key in D.COMPANIONS:
+        pet = D.COMPANIONS[key]
+        if key in owned:
+            tick = "🐾" if profile.get("companion") == key else "▫️"
+            lines.append(f"{tick} {pet['emoji']} **{pet['name']}** ({pet['species']}) - {pet['passive']}")
+        else:
+            lines.append(f"-# ❔ Someone out there hasn't found you yet...")
+    if notice:
+        lines += ["", notice]
+    rows = []
+    if len(owned) > 1:
+        sel = discord.ui.Select(placeholder="Who walks with you today?")
+        for key in owned:
+            pet = D.COMPANIONS[key]
+            sel.add_option(label=pet["name"], value=key, emoji=pet["emoji"],
+                           description=pet["passive"][:100],
+                           default=profile.get("companion") == key)
+
+        async def _pick(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            if sel.values[0] in (p.get("companions") or []):
+                p["companion"] = sel.values[0]
+                E.save_profile(p)
+                pet = D.COMPANIONS[sel.values[0]]
+                await _hub_companion(inter, notice=f"-# {pet['emoji']} **{pet['name']}** trots "
+                                                   f"to your side.")
+            else:
+                await _hub_companion(inter)
+        sel.callback = _pick
+        srow = discord.ui.ActionRow()
+        srow.add_item(sel)
+        rows.append(srow)
+    rows.append(_char_back_row())
+    await _edit_panel(interaction, "\n".join(lines), rows)
+
+
+def _char_back_row():
+    row = discord.ui.ActionRow()
+    row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Character", "👤", _hub_character))
     row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Back", "⬅️", _hub_root))
-    await _edit_panel(interaction, _sheet_text(profile), [row])
+    return row
+
+
+# --- The Pit ------------------------------------------------------------------------
+async def _hub_pit(interaction: Interaction):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None:
+        await _show_class_pick(interaction)
+        return
+    s = E.pit_state(profile)
+    rank = int(s.get("rank", 0))
+    lines = ["## 🗡️ The Pit - Windhelm",
+             "-# One bout a day, your real build against the ladder. No satchel at stake - "
+             "glory only. The board wipes clean when the month turns.", ""]
+    if E.level(profile) < 5:
+        lines.append("-# 🔒 The Pit doesn't book novices (level 5+).")
+    lines.append(f"**Your standing:** {E.pit_title(rank)} (rank {rank}/{len(D.PIT_CHAMPS)})"
+                 + (f"  ·  best ever: {E.pit_title(int(s.get('best', 0)))}" if s.get("best") else ""))
+    if rank < len(D.PIT_CHAMPS):
+        champ = D.PIT_CHAMPS[rank]
+        lines.append(f"**Next bout:** {champ['name']} - known for {champ['style']}.")
+    else:
+        lines.append("👑 **You ARE the Pit Champion.** Nothing left but to hold the title "
+                     "until the month turns.")
+    # the standings: every fighter this month
+    board = sorted(((E.pit_state(p).get("rank", 0), p["name"])
+                    for p in E.all_profiles().values()), reverse=True)
+    board = [(r, n) for r, n in board if r > 0][:6]
+    if board:
+        lines.append("")
+        lines.append("**This month's board:** " + "  ·  ".join(
+            f"**{n}** {E.pit_title(r)} ({r})" for r, n in board))
+    rows = []
+    if E.level(profile) >= 5 and E.pit_available(profile):
+        async def _fight(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            if not (E.level(p) >= 5 and E.pit_available(p)):
+                await _hub_pit(inter)
+                return
+            _won, log = E.pit_bout(p)
+            E.save_profile(p)
+            view, files = _panel_view("\n".join(log), [_pit_back_row()], art_key="pit")
+            await inter.response.edit_message(view=view, attachments=files)
+        frow = discord.ui.ActionRow()
+        frow.add_item(_cb_btn(discord.ButtonStyle.danger, "Step into the Pit", "🗡️", _fight))
+        rows.append(frow)
+    elif E.level(profile) >= 5 and rank < len(D.PIT_CHAMPS):
+        lines.append("\n-# 💤 You've had your bout today. The crowd expects you tomorrow.")
+    rows.append(_back_row())
+    await _edit_panel(interaction, "\n".join(lines), rows)
+
+
+def _pit_back_row():
+    row = discord.ui.ActionRow()
+    row.add_item(_cb_btn(discord.ButtonStyle.secondary, "The Pit", "🗡️", _hub_pit))
+    row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Back", "⬅️", _hub_root))
+    return row
 
 
 # --- shop --------------------------------------------------------------------------
@@ -898,6 +1089,7 @@ async def _hub_shop(interaction: Interaction, notice: str = ""):
     craft = discord.ui.ActionRow()
     craft.add_item(_cb_btn(discord.ButtonStyle.primary, "Grindstone", "🪓", _hub_grindstone))
     craft.add_item(_cb_btn(discord.ButtonStyle.primary, "Lab Bench", "⚗️", _hub_alchemy))
+    craft.add_item(_cb_btn(discord.ButtonStyle.secondary, "Rumours", "🗣️", _hub_rumours))
     await _edit_panel(interaction, text, [row, craft, _back_row()])
 
 
@@ -1088,6 +1280,62 @@ async def _hub_masteries(interaction: Interaction, notice: str = ""):
         rows.append(lrow)
     rows.append(_back_row())
     await _edit_panel(interaction, text, rows)
+
+
+# --- Rumours at Belethor's ------------------------------------------------------------
+async def _hub_rumours(interaction: Interaction, notice: str = ""):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None:
+        await _show_class_pick(interaction)
+        return
+    state = E.rumours_of(profile)
+    lines = ["## 🗣️ Rumours - Belethor leans in",
+             "-# \"For a few septims I'll tell you where the LEGENDS sleep. One-time hunts, "
+             "friend - the kind you tell grandchildren about. If you get to have any.\"",
+             "", f"💰 Your septims: **{profile['septims']:,}**", ""]
+    for key, r in D.RUMOURS.items():
+        loc = D.LOCATIONS[r["loc"]]
+        if state.get(key) == "slain":
+            lines.append(f"✅ {r['emoji']} **{r['name'].capitalize()}** - settled. "
+                         f"{loc['name']} stands quiet, because of you.")
+        elif state.get(key) == "heard":
+            lines.append(f"🗺️ {r['emoji']} **{r['name'].capitalize()}** - heard. "
+                         f"**{loc['name']}** waits on your Adventure map.")
+        else:
+            lines.append(f"❔ {r['emoji']} **{r['name'].capitalize()}** ({r['price']:,} septims, "
+                         f"level {r['min_level']}+)\n-# {r['blurb']}")
+    if notice:
+        lines += ["", notice]
+    rows = []
+    buyable = [k for k, r in D.RUMOURS.items() if not state.get(k)
+               and E.level(profile) >= r["min_level"]]
+    if buyable:
+        sel = discord.ui.Select(placeholder="Buy a whisper...")
+        for k in buyable:
+            r = D.RUMOURS[k]
+            sel.add_option(label=f"{r['name'].capitalize()} ({r['price']:,})", value=k,
+                           emoji=r["emoji"], description=r["blurb"][:100])
+
+        async def _buy(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            err = E.buy_rumour(p, sel.values[0])
+            if err is None:
+                E.save_profile(p)
+                loc = D.LOCATIONS[D.RUMOURS[sel.values[0]]["loc"]]
+                await _hub_rumours(inter, notice=f"-# 🗺️ Belethor marks your map: "
+                                                 f"**{loc['name']}**. \"Pleasure doing business. "
+                                                 f"Try to come back.\"")
+            else:
+                await _hub_rumours(inter, notice=f"-# {err}")
+        sel.callback = _buy
+        srow = discord.ui.ActionRow()
+        srow.add_item(sel)
+        rows.append(srow)
+    back = discord.ui.ActionRow()
+    back.add_item(_cb_btn(discord.ButtonStyle.secondary, "Back to shop", "🏪",
+                          lambda i: _hub_shop(i)))
+    rows += [back, _back_row()]
+    await _edit_panel(interaction, "\n".join(lines), rows)
 
 
 # --- the Lab Bench (brewing) --------------------------------------------------------
@@ -1592,7 +1840,15 @@ def _help_text() -> str:
         "hunts where, so the easy roads still have a job once you've outgrown them.\n"
         "**More to do** - swear to a **Faction** for weekly tasks, send a housecarl on an "
         "**Expedition**, loot **Fallen Adventurers**, brave the **Forks** and **Mimics**, and "
-        "once Alduin is down, descend the endless **Soul Cairn** (one attempt a day).\n\n"
+        "once Alduin is down, descend the endless **Soul Cairn** (one attempt a day).\n"
+        "**Character** holds your **📦 Collection Log** (fill the book), **🎖️ Hall of "
+        "Records** (personal bests), and your **🐾 Companion** - befriend the rare stray "
+        "on the road. Delving daily builds a **🔥 streak** that pays a loot bonus on the "
+        "day's first delve (one rest day a week forgiven).\n"
+        "**🗡️ The Pit** (Windhelm, level 5+) - one arena bout a day against a ladder of "
+        "champions, glory only; the board resets monthly. **🗣️ Rumours** at Belethor's "
+        "sell the locations of three one-time LEGEND hunts - the hardest fights in the "
+        "game, each with a permanent trophy.\n\n"
         f"-# {getattr(config, 'SKYRIM_DELVES_PER_DAY', 3)} delves per day, reset at "
         "midnight (UK). No UKPence involved anywhere - glory only."
     )

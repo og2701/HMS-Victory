@@ -285,6 +285,17 @@ def _migrate(profile: dict) -> dict:
     profile.setdefault("voice", {"charges": int(profile.get("words", 0)),
                                  "date": _today_str()})
     profile.setdefault("meditations", 0)         # perk points spent stilling the Voice
+    profile.setdefault("streak", {"count": 0, "date": None, "grace": None})
+    profile.setdefault("records", {})            # Hall of Records personal bests
+    profile.setdefault("log", {"kills": {}, "affixes": [], "events": [], "brews": [],
+                               "clears": [], "pacts": [], "legends": [], "pit": []})
+    profile.setdefault("companions", [])         # befriended strays (keys)
+    profile.setdefault("companion", None)        # the active friend
+    profile.setdefault("rumours", {})            # legend hunts heard/slain
+    profile.setdefault("pit", {"month": None, "rank": 0, "date": None, "best": 0})
+    # backfill what honesty allows: the Cairn depth record already existed
+    if (profile.get("soulcairn") or {}).get("best"):
+        profile["records"].setdefault("depth", int(profile["soulcairn"]["best"]))
     return profile
 
 
@@ -427,6 +438,7 @@ def _fight_raw(profile, enemy_key: str, style: str, delve=None) -> float:
          + temper_fight_bonus(profile)
          + doctrine_fight_bonus(profile, e, style)   # a permanent mastery, always applies
          + D.STYLE_AFF[e["type"]][style]
+         + (e.get("style_gate") or {}).get(style, 0)  # a legend's innate immunity (Karstaag)
          + 4 * perk_rank(profile, "honed_edge")
          + weather_today()["fight"])
     if delve is not None:
@@ -473,8 +485,9 @@ def crit_chance(profile, enemy_key: str, style: str, delve=None) -> float:
     any crit-granting doctrines that apply to this foe/style."""
     e = D.ENEMIES[enemy_key]
     buff = (delve.buffs or {}).get("crit", 0) / 100.0 if delve else 0.0
+    pet = companion_bonus(profile, "crit")           # Corvus sees the openings
     return (CRIT_CHANCE + overkill_crit(profile, enemy_key, style, delve)
-            + doctrine_crit_bonus(profile, e, style) + buff)
+            + doctrine_crit_bonus(profile, e, style) + buff + pet)
 
 
 # --- hooks filled in by later systems (defined here so _fight_raw always resolves;
@@ -522,6 +535,151 @@ def doctrine_fight_bonus(profile, enemy: dict, style: str) -> float:
 def doctrine_crit_bonus(profile, enemy: dict, style: str) -> float:
     return sum(d["crit"] for d in _doctrines(profile)
                if d.get("crit") and _doc_applies(d, enemy, style))
+
+
+# ---------------------------------------------------------------------------
+# Companions - one active friend, small passive, found at the 🐾 Stray event.
+# ---------------------------------------------------------------------------
+def active_companion(profile) -> dict | None:
+    key = profile.get("companion")
+    return D.COMPANIONS.get(key) if key else None
+
+
+def companion_bonus(profile, kind: str) -> float:
+    pet = active_companion(profile)
+    return float(pet.get(kind, 0)) if pet else 0.0
+
+
+def befriend_stray(profile) -> str | None:
+    """Adopt whichever stray found you (deterministic pick from the species you
+    don't yet have). Returns the companion key, or None if the menagerie is full."""
+    owned = set(profile.get("companions") or [])
+    unowned = [k for k in D.COMPANIONS if k not in owned]
+    if not unowned:
+        return None
+    key = random.choice(unowned)
+    profile.setdefault("companions", []).append(key)
+    if not profile.get("companion"):
+        profile["companion"] = key               # first friend follows immediately
+    return key
+
+
+# ---------------------------------------------------------------------------
+# Delve streaks - consecutive days delved. The first delve of each day pays a
+# small loot bonus that grows with the streak; one missed day per ISO week is
+# quietly forgiven. Computed when you play - nothing is ever posted.
+# ---------------------------------------------------------------------------
+STREAK_LOOT_PER_DAY = 2              # +% loot on the day's first delve, per streak day
+STREAK_LOOT_CAP = 20
+
+
+def update_streak(profile) -> tuple:
+    """Advance the streak for a delve started today. Returns (count, first_of_day)."""
+    s = profile.setdefault("streak", {"count": 0, "date": None, "grace": None})
+    today = _today_str()
+    if s.get("date") == today:
+        return int(s.get("count", 0)), False
+    if s.get("date"):
+        gap = (datetime.date.fromisoformat(today)
+               - datetime.date.fromisoformat(s["date"])).days
+        wk = str(_iso_week())
+        if gap == 1:
+            s["count"] = int(s.get("count", 0)) + 1
+        elif gap == 2 and s.get("grace") != wk:
+            s["grace"] = wk                      # a rest day, quietly forgiven
+            s["count"] = int(s.get("count", 0)) + 1
+        else:
+            s["count"] = 1
+    else:
+        s["count"] = 1
+    s["date"] = today
+    record_best(profile, "streak", s["count"])
+    return int(s["count"]), True
+
+
+def streak_bonus_pct(count: int) -> int:
+    return min(STREAK_LOOT_CAP, STREAK_LOOT_PER_DAY * max(0, int(count)))
+
+
+def current_streak(profile) -> int:
+    """The streak as of today (0 if it has lapsed beyond the grace day)."""
+    s = profile.get("streak") or {}
+    if not s.get("date"):
+        return 0
+    gap = (datetime.date.fromisoformat(_today_str())
+           - datetime.date.fromisoformat(s["date"])).days
+    return int(s.get("count", 0)) if gap <= 2 else 0
+
+
+# ---------------------------------------------------------------------------
+# Hall of Records - personal bests, kept forever. Career deeds (the old stats)
+# are shown alongside them, which is as much backfill as honesty allows.
+# ---------------------------------------------------------------------------
+def record_best(profile, key: str, value) -> bool:
+    """Keep the best value ever seen. Returns True when a record falls."""
+    r = profile.setdefault("records", {})
+    if value and value > int(r.get(key, 0)):
+        r[key] = int(value)
+        return True
+    return False
+
+
+def records_of(profile) -> dict:
+    return profile.get("records") or {}
+
+
+# ---------------------------------------------------------------------------
+# The Collection Log - one ledger of everything unique ever done. Counts live
+# under profile["log"]; each category renders as done/total in the Character hub.
+# ---------------------------------------------------------------------------
+def _log(profile) -> dict:
+    return profile.setdefault("log", {"kills": {}, "affixes": [], "events": [],
+                                      "brews": [], "clears": [], "pacts": [],
+                                      "legends": [], "pit": []})
+
+
+def log_add(profile, category: str, key: str):
+    book = _log(profile)
+    if category == "kills":
+        book["kills"][key] = int(book["kills"].get(key, 0)) + 1
+        return
+    lst = book.setdefault(category, [])
+    if key not in lst:
+        lst.append(key)
+
+
+def collection_summary(profile) -> list:
+    """[(emoji, label, done, total, missing_names)] for the Collection panel."""
+    book = _log(profile)
+    cairn_steps = [10, 20, 30, 40, 50]
+    best_depth = soulcairn_best(profile)
+    rows = [
+        ("⚔️", "Bestiary", [k for k in D.ENEMIES if book["kills"].get(k)], list(D.ENEMIES)),
+        ("💀", "Marked foes", book.get("affixes", []), list(D.AFFIXES)),
+        ("🐲", "Dragon Wall", profile.get("dragon_wall") or [], list(D.DRAGON_ROSTER)),
+        ("🎲", "Encounters", book.get("events", []), [k for k in D.EVENTS]),
+        ("🏰", "Places cleared", book.get("clears", []),
+         [k for k, v in D.LOCATIONS.items() if not v.get("soulcairn")]),
+        ("🧪", "Recipes brewed", book.get("brews", []), list(D.RECIPES)),
+        ("⚖️", "Pacts honoured", book.get("pacts", []), list(D.PACTS)),
+        ("🖤", "Legends slain", book.get("legends", []), list(D.RUMOURS)),
+        ("🗡️", "Pit champions", book.get("pit", []), [c["name"] for c in D.PIT_CHAMPS]),
+        ("🐾", "Companions", profile.get("companions") or [], list(D.COMPANIONS)),
+        ("🕳️", "Cairn depths", [s for s in cairn_steps if best_depth >= s], cairn_steps),
+    ]
+    out = []
+    for emoji, label, done, total in rows:
+        done_set = [d for d in done if d in total]
+        missing = [t for t in total if t not in done_set]
+        out.append((emoji, label, len(done_set), len(total), missing))
+    return out
+
+
+def collection_pct(profile) -> int:
+    rows = collection_summary(profile)
+    done = sum(r[2] for r in rows)
+    total = sum(r[3] for r in rows) or 1
+    return int(100 * done / total)
 
 
 def _affix_fight_delta(profile, enemy_key: str, style: str, delve) -> float:
@@ -612,10 +770,11 @@ def add_xp(profile, amount: int) -> tuple:
 
 
 def _septims(profile, amount: int) -> int:
-    """Scale a septim find by Deep Pockets, the day's weather and any Haggler-style
-    doctrine multiplier."""
+    """Scale a septim find by Deep Pockets, the day's weather, any Haggler-style
+    doctrine multiplier, and a shrewd mudcrab's business instincts."""
+    barter = companion_bonus(profile, "barter") or 1.0
     return int(round(amount * (1 + 0.20 * perk_rank(profile, "deep_pockets"))
-                     * weather_today()["loot"] * doctrine_loot_mult(profile)))
+                     * weather_today()["loot"] * doctrine_loot_mult(profile) * barter))
 
 
 # --- stamina -----------------------------------------------------------------
@@ -740,7 +899,7 @@ def build_rooms(loc_key: str, rng=None, affix_level: int = 0, route: str = None)
         rooms.append(room)
     if cond.get("force_mudcrab"):
         rooms.append({"kind": "event", "key": "mudcrab", "boss": False, "resolved": False})
-    if cond.get("force_fallen") or rng.random() < FALLEN_CHANCE:
+    if not loc.get("rumour") and (cond.get("force_fallen") or rng.random() < FALLEN_CHANCE):
         # corpse picking reads the (mutable) graveyard, so it gets a DERIVED rng -
         # exactly one draw from the main stream - or the shared daily layout would
         # drift between players whenever someone died mid-day
@@ -749,7 +908,8 @@ def build_rooms(loc_key: str, rng=None, affix_level: int = 0, route: str = None)
                       "corpse": _make_fallen_corpse(loc_key, crng)})
     rng.shuffle(rooms)
     # A Fork before the boss: a genuine risk/reward choice with honest hints.
-    if len(rooms) >= 2 and rng.random() < FORK_CHANCE:
+    # (Legend lairs are duels - no side paths, no corpses, no distractions.)
+    if not loc.get("rumour") and len(rooms) >= 2 and rng.random() < FORK_CHANCE:
         rooms.append({"kind": "event", "key": "fork", "boss": False, "resolved": False})
     if loc.get("word_wall"):
         rooms.append({"kind": "event", "key": "wordwall", "boss": False, "resolved": False})
@@ -768,7 +928,7 @@ def offer_locations(profile, date_str: str = None) -> list:
     dragon_min = int(getattr(config, "SKYRIM_DRAGON_MIN_LEVEL", 8))
     rng = random.Random(f"skyrim-offers-{date_str or _today_str()}")
     open_locs = [k for k, v in D.LOCATIONS.items()
-                 if not v.get("alduin") and not v.get("soulcairn")
+                 if not v.get("alduin") and not v.get("soulcairn") and not v.get("rumour")
                  and not v.get("dragon_lair") and lvl >= v["min_level"]]
     open_locs.sort(key=lambda k: D.LOCATIONS[k]["min_level"])
     if len(open_locs) <= 3:
@@ -827,7 +987,7 @@ class Delve:
                  delve_id=None, enemy_hp=None, daily=False, fan=False,
                  ambush=False, hp_warned=False, venom=False, ingredients=None,
                  dragon=None, phase=None, depth=0, kind="normal", buffs=None,
-                 route=None, pacts=None, stirred=0, echo=0):
+                 route=None, pacts=None, stirred=0, echo=0, pet_used=False):
         import uuid
         self.delve_id = delve_id or uuid.uuid4().hex[:12]
         self.daily = bool(daily)                  # the shared once-a-day dungeon
@@ -845,6 +1005,7 @@ class Delve:
         self.pacts = list(pacts or [])            # Daedric pacts sworn for this delve
         self.stirred = int(stirred)               # deep-offer danger rank (0 = plain)
         self.echo = int(echo)                     # Alduin's Echoes: past kills harden him
+        self.pet_used = bool(pet_used)            # the companion's once-per-delve save spent
         self.player_id = int(player_id)
         self.player_name = player_name
         self.channel_id = channel_id
@@ -887,7 +1048,7 @@ class Delve:
     @classmethod
     def start(cls, profile, channel_id, loc_key):
         loc = D.LOCATIONS[loc_key]
-        route = None if loc.get("alduin") else route_condition(loc_key)
+        route = None if (loc.get("alduin") or loc.get("rumour")) else route_condition(loc_key)
         d = cls(profile["user_id"], profile["name"], channel_id, loc_key,
                 build_rooms(loc_key, affix_level=level(profile), route=route),
                 hearts=heart_max(profile), shout_charges=voice_charges(profile),
@@ -972,6 +1133,7 @@ class Delve:
         sc = profile.setdefault("soulcairn", {"best": 0})
         if self.depth > int(sc.get("best", 0)):
             sc["best"] = self.depth
+        record_best(profile, "depth", self.depth)
         self.say(f"⬇️ You descend. **Depth {self.depth}.** The soul-light thins; the cold "
                  f"gnaws {SOULCAIRN_DRAIN * self.depth}% off your every strike now.")
 
@@ -986,6 +1148,7 @@ class Delve:
             bonus = int(bonus * (1 + D.STIRRED_CLEAR_PER_RANK * self.stirred))
         if self.echo:
             bonus = int(bonus * (1 + 0.25 * self.echo))        # his soul burns brighter each return
+        bonus = int(bonus * (1 + self.buffs.get("loot", 0) / 100.0))   # streak's first-delve bonus
         self.satchel += bonus
         gained, _ = add_xp(profile, 25)
         self.xp_gained += gained
@@ -996,9 +1159,14 @@ class Delve:
             st = profile["stats"]
             st["pact_clears"] = int(st.get("pact_clears", 0)) + 1
             tail = f"  ⚖️ The Princes honour the pact: **x{mult:g}**."
+            for k in self.pacts:
+                log_add(profile, "pacts", k)     # a pact honoured, banked and survived
         profile["septims"] += self.satchel
         self._bank_ingredients(profile)
         profile["stats"]["clears"] += 1
+        log_add(profile, "clears", self.location)
+        record_best(profile, "satchel", self.satchel)
+        record_best(profile, "kills_delve", self.kills)
         profile["active_delve"] = None
         self.state = "cleared"
         self.result_line = (f"Cleared! Banked **{self.satchel:,} septims** "
@@ -1019,6 +1187,12 @@ class Delve:
             self.fan = False
             self.say("The Adoring Fan hurls himself into the blow with a delighted shriek. "
                      "He'll... he'll be fine. Probably.  (wound absorbed)")
+            return "soaked"
+        pet = active_companion(profile)
+        if pet and pet.get("guard") and not self.pet_used:
+            self.pet_used = True
+            self.say(f"{pet['emoji']} **{pet['name']}** takes the blow and shakes it off "
+                     f"like rain. Good boy.  (wound absorbed - once per delve)")
             return "soaked"
         loss = 2 if random.random() < heavy else 1
         self.hearts -= loss
@@ -1128,8 +1302,8 @@ class Delve:
 
     def _drop_ingredient(self, profile, e, aff) -> str | None:
         """A kill may drop an alchemy ingredient into the at-risk pouch. Elites and
-        bounties drop more often; dragons always yield a scale."""
-        chance = 0.16
+        bounties drop more often; dragons always yield a scale; a fox helps."""
+        chance = 0.16 + companion_bonus(profile, "forage")
         if aff:
             chance += 0.45
         if self.room.get("bounty"):
@@ -1178,9 +1352,14 @@ class Delve:
             loot = int(loot * aff.get("loot_mult", 1.0))
         if self.stirred:
             loot = int(loot * (1 + D.STIRRED_LOOT_PER_RANK * self.stirred))
+        loot = int(loot * (1 + self.buffs.get("loot", 0) / 100.0))   # streak's first-delve bonus
         self.satchel += loot
         self.kills += 1
         profile["stats"]["kills"] += 1
+        log_add(profile, "kills", self.room["key"])
+        if self.room.get("affix"):
+            log_add(profile, "affixes", self.room["affix"])
+        record_best(profile, "kill_loot", loot)
         drop = self._drop_ingredient(profile, e, aff)      # at-risk alchemy loot
         line = ""
         if ambush:
@@ -1214,6 +1393,11 @@ class Delve:
                     line += f"  🐲 **{nd['name']}** joins your Dragon Wall!"
         if self.room["key"] == "alduin":
             profile["alduin_slain"] = profile.get("alduin_slain", 0) + 1
+        rumour_key = D.RUMOUR_BOSS.get(self.room["key"])
+        if rumour_key and (profile.get("rumours") or {}).get(rumour_key) == "heard":
+            profile["rumours"][rumour_key] = "slain"
+            log_add(profile, "legends", rumour_key)
+            line += f"\n🖤 **A legend falls.** {D.RUMOURS[rumour_key]['name'].capitalize()} - done. Forever."
         if ups:
             line += f"\n🆙 **Level up! You are now level {level(profile)}** (+{ups} perk point)."
         self.say(line)
@@ -1284,12 +1468,20 @@ class Delve:
             self._wound(profile, e["wound"], heavy=self._heavy(e))
 
     def _alduin_reflight_check(self):
-        """After ANY damage to Alduin, he takes wing again at set thresholds - the
-        fight is a war over shout charges. Shared by weapon hits and DAH."""
-        if self.room["key"] == "alduin" and self.enemy_hp in D.ALDUIN_REFLIGHT_HP \
-                and self.grounded:
+        """After ANY damage to a reflight-capable dragon, it takes wing again at
+        set hp thresholds - the fight is a war over shout charges. Alduin does it
+        thrice; Voslaarum, grieving, once. Shared by weapon hits and DAH."""
+        e = self.enemy()
+        if e is None or not self.grounded:
+            return
+        thresholds = (D.ALDUIN_REFLIGHT_HP if self.room["key"] == "alduin"
+                      else tuple(e.get("reflight") or ()))
+        if self.enemy_hp in thresholds:
             self.grounded = False
-            self.say("**Alduin takes wing again**, laughing in the old tongue. Bring him down!")
+            if self.room["key"] == "alduin":
+                self.say("**Alduin takes wing again**, laughing in the old tongue. Bring him down!")
+            else:
+                self.say(f"**{e['name']} takes wing again**, screaming. Bring it down!")
 
     def shout_cost_available(self, profile) -> int:
         """The largest shout (in words) you could spend right now."""
@@ -1306,6 +1498,10 @@ class Delve:
             return
         e = self.enemy()
         if e is None:
+            return
+        if e.get("shout_immune"):
+            self.say("🖤 The Thu'um breaks on the ebony helm like surf on rock. He does not "
+                     "even slow.  (no charge spent - this one must be fought)")
             return
         cost = 1 if cost is None else int(cost)          # plain shout = FUS (cheap ground)
         cost = max(1, min(cost, words, self.shout_charges))
@@ -1397,6 +1593,11 @@ class Delve:
         else:
             self.satchel = int(self.satchel * mult)
             profile["septims"] += self.satchel
+            record_best(profile, "satchel", self.satchel)
+            record_best(profile, "kills_delve", self.kills)
+            if mult > 1.0:
+                for k in self.pacts:
+                    log_add(profile, "pacts", k)   # walked out alive under the pact
             self.state = "left"
             if self.kind == "soulcairn":
                 best = int((profile.get("soulcairn") or {}).get("best", 0))
@@ -1440,8 +1641,29 @@ class Delve:
         if r["kind"] != "event":
             return
         key = r["key"]
+        log_add(profile, "events", key)          # the Collection Log remembers encounters
         if key == "knee_trap" and choice == "continue":
             self._advance(profile)
+            return
+        if key == "stray":
+            if choice == "befriend":
+                found = befriend_stray(profile)
+                if found:
+                    pet = D.COMPANIONS[found]
+                    self.say(f"{pet['emoji']} {pet['found']}\n**{pet['name']}** ({pet['species']}) "
+                             f"joins you - {pet['passive']}")
+                else:
+                    coin = _septims(profile, 40)
+                    self.satchel += coin
+                    self.say("It's one of Vix's cousins, and she does NOT approve of strays "
+                             f"in the party. It leaves a shiny trinket and scarpers. +{coin} septims")
+                self._advance(profile)
+            else:
+                gained, _ = add_xp(profile, 5)
+                self.xp_gained += gained
+                self.say(f"You shoo it homeward. It watches you leave with enormous eyes. "
+                         f"You feel like a monster.  (+{gained} XP, somehow)")
+                self._advance(profile)
             return
         if key == "chest" and r.get("mimic") and choice == "open":
             # it bites: the chest becomes a fight in place
@@ -1635,7 +1857,8 @@ class Delve:
                 "venom": self.venom, "ingredients": self.ingredients,
                 "dragon": self.dragon, "phase": self.phase, "depth": self.depth,
                 "kind": self.kind, "buffs": self.buffs, "route": self.route,
-                "pacts": self.pacts, "stirred": self.stirred, "echo": self.echo}
+                "pacts": self.pacts, "stirred": self.stirred, "echo": self.echo,
+                "pet_used": self.pet_used}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Delve":
@@ -1653,7 +1876,8 @@ class Delve:
                    venom=d.get("venom", False), ingredients=d.get("ingredients"),
                    dragon=d.get("dragon"), phase=d.get("phase"), depth=d.get("depth", 0),
                    kind=d.get("kind", "normal"), buffs=d.get("buffs"), route=d.get("route"),
-                   pacts=d.get("pacts"), stirred=d.get("stirred", 0), echo=d.get("echo", 0))
+                   pacts=d.get("pacts"), stirred=d.get("stirred", 0), echo=d.get("echo", 0),
+                   pet_used=d.get("pet_used", False))
 
 
 # ---------------------------------------------------------------------------
@@ -1738,8 +1962,20 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
     if w["key"] != "clear":
         delve.say(weather_line(w))
     _apply_brew_buffs(profile, delve)
+    _apply_streak(profile, delve)
     _first_delve_of_day_comforts(profile, delve)
     return delve
+
+
+def _apply_streak(profile, delve: Delve):
+    """Advance the delve streak; the day's FIRST delve carries the streak's loot
+    bonus (+2%/day, capped at +20%)."""
+    count, first = update_streak(profile)
+    if first and count >= 2:
+        pct = streak_bonus_pct(count)
+        delve.buffs["loot"] = delve.buffs.get("loot", 0) + pct
+        delve.say(f"🔥 **{count}-day streak** - the road knows you now.  "
+                  f"(+{pct}% loot on today's first delve)")
 
 
 def _apply_brew_buffs(profile, delve: Delve):
@@ -1775,7 +2011,7 @@ def _daily_layout() -> tuple:
     rng = random.Random(f"skyrim-daily-{date}")
     pool = sorted(k for k, v in D.LOCATIONS.items()
                   if not v.get("dragon_lair") and not v.get("alduin")
-                  and not v.get("soulcairn"))
+                  and not v.get("soulcairn") and not v.get("rumour"))
     return date, rng.choice(pool), rng
 
 
@@ -1901,6 +2137,124 @@ def soulcairn_best(profile) -> int:
     return int((profile.get("soulcairn") or {}).get("best", 0))
 
 
+# ---------------------------------------------------------------------------
+# Rumours at Belethor's - coin buys a whisper; a whisper opens a LEGEND lair.
+# One-time hunts with fixed brutal statlines. Beaten once, remembered forever.
+# ---------------------------------------------------------------------------
+def rumours_of(profile) -> dict:
+    return profile.setdefault("rumours", {})
+
+
+def heard_rumours(profile) -> list:
+    """Rumour keys heard but not yet settled - these lairs show on the picker."""
+    return [k for k, v in rumours_of(profile).items() if v == "heard" and k in D.RUMOURS]
+
+
+def buy_rumour(profile, key: str) -> str | None:
+    r = D.RUMOURS.get(key)
+    if not r:
+        return "Belethor has never heard that one."
+    state = rumours_of(profile).get(key)
+    if state == "slain":
+        return "That legend is already yours. Belethor tells YOUR version now."
+    if state == "heard":
+        return "You've already paid for that whisper - the road is marked on your map."
+    if level(profile) < r["min_level"]:
+        return (f"Belethor looks you over. \"Come back when you look level {r['min_level']}, "
+                f"friend. I don't sell funerals.\"")
+    if profile["septims"] < r["price"]:
+        return f"That whisper costs {r['price']:,} septims - you have {profile['septims']:,}."
+    profile["septims"] -= r["price"]
+    rumours_of(profile)[key] = "heard"
+    return None
+
+
+# ---------------------------------------------------------------------------
+# The Pit - Windhelm's unsanctioned arena. One bout per UK day, simulated round
+# by round with your REAL build against a ladder of champions. No satchel at
+# stake - lose and you simply limp home until tomorrow. Rank resets monthly.
+# ---------------------------------------------------------------------------
+def pit_state(profile) -> dict:
+    s = profile.setdefault("pit", {"month": None, "rank": 0, "date": None, "best": 0})
+    ym = _today_str()[:7]
+    if s.get("month") != ym:
+        s["best"] = max(int(s.get("best", 0)), int(s.get("rank", 0)))
+        s["month"] = ym
+        s["rank"] = 0
+        s["date"] = None
+    return s
+
+
+def pit_available(profile) -> bool:
+    s = pit_state(profile)
+    return s.get("date") != _today_str() and s["rank"] < len(D.PIT_CHAMPS)
+
+
+def pit_title(rank: int) -> str:
+    return D.PIT_TITLES[min(max(rank, 1), len(D.PIT_TITLES)) - 1] if rank > 0 else "Unranked"
+
+
+def _pit_attack_pct(profile) -> int:
+    """Your arena hit chance - the same build maths as a delve, no delve modifiers."""
+    style = max(D.STYLES, key=lambda s: profile["skills"][s])
+    p = (44 + _skill_component(profile["skills"][style], FIGHT_SKILL_SCALE)
+         + D.WEAPON_FIGHT_PER_TIER * profile["weapon_tier"]
+         + temper_fight_bonus(profile)
+         + 4 * perk_rank(profile, "honed_edge"))
+    return _clamp(p)
+
+
+def pit_bout(profile) -> tuple:
+    """Fight today's ladder opponent. Returns (won, log_lines). One per UK day."""
+    s = pit_state(profile)
+    champ = D.PIT_CHAMPS[s["rank"]]
+    s["date"] = _today_str()
+    me_hp = heart_max(profile)
+    foe_hp = champ["hp"]
+    patk = _pit_attack_pct(profile)
+    guard = min(SOAK_CAP, soak_pct(profile))
+    log = [f"🗡️ **The Pit, Windhelm.** Bout {s['rank'] + 1}: **{champ['name']}**.",
+           f"-# {champ['taunt']}"]
+    for rnd in range(1, 13):
+        if random.random() * 100 < patk:
+            foe_hp -= 1
+            if foe_hp <= 0:
+                break
+            log.append(f"-# Round {rnd}: your blow lands - {champ['name']} reels "
+                       f"({'🩸' * foe_hp} left).")
+        elif random.random() * 100 < max(5, champ['fight'] - guard):
+            me_hp -= 1
+            if me_hp <= 0:
+                break
+            log.append(f"-# Round {rnd}: {champ['name']}'s {champ['style']} get through "
+                       f"({'❤️' * me_hp} left).")
+        else:
+            log.append(f"-# Round {rnd}: you trade feints - the crowd jeers happily.")
+        if rnd >= 12:
+            break
+    won = foe_hp <= 0
+    if won:
+        s["rank"] += 1
+        record_best(profile, "pit_rank", s["rank"])
+        log_add(profile, "pit", champ["name"])
+        prize = _septims(profile, 60 + 40 * s["rank"])
+        profile["septims"] += prize
+        gained, _ = add_xp(profile, 15 + 10 * s["rank"])
+        log.append(f"🏆 **{champ['name']} yields!** The crowd roars. You are now "
+                   f"**{pit_title(s['rank'])}** (rank {s['rank']}/{len(D.PIT_CHAMPS)}).  "
+                   f"(+{prize} septims, +{gained} XP)")
+        if s["rank"] >= len(D.PIT_CHAMPS):
+            log.append("👑 **THE PIT HAS A NEW CHAMPION.** Your name goes on the wall "
+                       "until the month turns.")
+    elif me_hp <= 0:
+        log.append(f"💤 {champ['name']} stands over you as the crowd counts you out. "
+                   f"No rank lost - limp home, train, return tomorrow.")
+    else:
+        log.append("🤝 Twelve rounds and no decision - the crowd calls it a draw. "
+                   "Come back tomorrow.")
+    return won, log
+
+
 def start_soulcairn(profile, channel_id) -> Delve:
     """Begin the day's descent. Callers must have checked availability."""
     abandon_active(profile)
@@ -1912,6 +2266,7 @@ def start_soulcairn(profile, channel_id) -> Delve:
     d.say(D.LOCATIONS["soul_cairn"]["arrive"])
     profile["stats"]["delves"] += 1
     _apply_brew_buffs(profile, d)
+    _apply_streak(profile, d)
     _first_delve_of_day_comforts(profile, d)
     return d
 
@@ -2061,12 +2416,14 @@ def brew(profile, recipe_key: str) -> str | None:
                 store[k] = store.get(k, 0) + n
             return "Your potion pockets are already full."
         profile["potions"] += 1
+        log_add(profile, "brews", recipe_key)
         return None
     # otherwise a one-delve elixir, queued for the next delve (overwrites any queued)
     effect = {"heart_delve": ("heart", 1), "soak_delve": ("soak", 10),
               "fight_delve": ("fight", 6), "crit_delve": ("crit", 6)}.get(makes)
     if effect:
         profile["nextdelve"] = {effect[0]: effect[1]}
+    log_add(profile, "brews", recipe_key)
     return None
 
 
