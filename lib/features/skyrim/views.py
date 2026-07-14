@@ -1006,8 +1006,10 @@ async def _hub_pit(interaction: Interaction):
         frow.add_item(_cb_btn(discord.ButtonStyle.danger, "Step into the Pit", "🗡️", _fight))
         rows.append(frow)
     elif E.level(profile) >= 5 and rank < len(D.PIT_CHAMPS):
-        lines.append("\n-# 💤 Your day in the Pit ended on a loss. Fresh legs at dawn - "
-                     "the crowd expects you tomorrow.")
+        ending = {"lost": "Your day in the Pit ended on a loss.",
+                  "draw": "Your day in the Pit ended in a stubborn draw."}
+        lines.append(f"\n-# 💤 {ending.get(s.get('last'), 'Your day in the Pit is spent.')} "
+                     f"Fresh legs at dawn - the crowd expects you tomorrow.")
     rows.append(_back_row())
     next_art = _pit_art(D.PIT_CHAMPS[rank]) if rank < len(D.PIT_CHAMPS) else "pit"
     await _edit_panel(interaction, "\n".join(lines), rows, art_key=next_art)
