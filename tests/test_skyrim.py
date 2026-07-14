@@ -465,6 +465,26 @@ def test_the_pit():
     p["pit"]["month"] = "1999-01"
     s = E.pit_state(p)
     assert s["rank"] == 0 and s["best"] == 1 and E.pit_available(p)
+    # every champion declares a quirk the sim knows how to run
+    known = {None, "drunk", "quick", "shieldwall", "butcher", "riposte",
+             "veteran", "silent", "reckless", "bear"}
+    assert all(c.get("quirk") in known and c.get("quirk_desc") for c in D.PIT_CHAMPS)
+    # Old Ulfberth shrugs off your first landed blow...
+    p["pit"] = {"month": E._today_str()[:7], "rank": 6, "date": None, "best": 0}
+    E.random = _fixed_rolls(*([0.0, 0.99] * 8))        # I always hit, he always misses
+    try:
+        won, log = E.pit_bout(p)
+    finally:
+        _restore_random()
+    assert won and any("Forty years" in l for l in log)
+    # ...and the bear's every landed hit crushes two hearts
+    p["pit"] = {"month": E._today_str()[:7], "rank": 9, "date": None, "best": 0}
+    E.random = _fixed_rolls(*([0.99, 0.5, 0.0] * 8))   # I miss; it's not distracted; it hits
+    try:
+        won, log = E.pit_bout(p)
+    finally:
+        _restore_random()
+    assert not won and any("crushing" in l for l in log)
 
 
 def test_meditation_sink():

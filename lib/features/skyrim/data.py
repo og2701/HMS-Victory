@@ -1029,26 +1029,47 @@ COMPANIONS = {
 # of named champions, simulated round by round with your real build. Rank resets
 # monthly (best rank remembered); no satchel at stake, glory only.
 # ---------------------------------------------------------------------------
+# Each champion fights DIFFERENTLY - a signature quirk, declared before the bout,
+# so the ladder is ten puzzles rather than one loop with bigger numbers:
+#   drunk      - 10%/round he stumbles and hurts himself
+#   quick      - she strikes FIRST each round
+#   shieldwall - after you land a hit, your next swing is -15%
+#   butcher    - his hits crush (25% chance, -2 ❤️)
+#   riposte    - when you miss, 50% she answers with a free strike
+#   veteran    - reads your first landed hit and shrugs it off entirely
+#   silent     - her thrusts slip armour: your guard counts half
+#   reckless   - a brawl: BOTH of you +15% to hit
+#   bear       - every hit crushes (-2 ❤️), but 20%/round it's distracted
 PIT_CHAMPS = [
-    {"name": "Snilf the Bold", "fight": 30, "hp": 2, "guard": 0,
+    {"name": "Snilf the Bold", "fight": 30, "hp": 2, "guard": 0, "quirk": None,
+     "quirk_desc": "no tricks - everyone starts somewhere",
      "taunt": "\"I've beaten three men and a goat!\"", "style": "wild swings"},
-    {"name": "Rolff Stone-Fist", "fight": 36, "hp": 2, "guard": 5,
+    {"name": "Rolff Stone-Fist", "fight": 36, "hp": 2, "guard": 5, "quirk": "drunk",
+     "quirk_desc": "fights drunk - sometimes his worst enemy is the floor",
      "taunt": "\"Go back to the Grey Quarter- oh, you're here to FIGHT me? Ha!\"", "style": "brawler's hooks"},
-    {"name": "Adelaisa the Quick", "fight": 42, "hp": 2, "guard": 10,
+    {"name": "Adelaisa the Quick", "fight": 42, "hp": 2, "guard": 10, "quirk": "quick",
+     "quirk_desc": "strikes first every round - end it fast or bleed early",
      "taunt": "\"Blink and it's over.\"", "style": "darting cuts"},
-    {"name": "Uzoga gra-Shurkul", "fight": 46, "hp": 3, "guard": 10,
+    {"name": "Uzoga gra-Shurkul", "fight": 46, "hp": 3, "guard": 10, "quirk": "shieldwall",
+     "quirk_desc": "closes her guard after taking a hit - your follow-up swings at -15%",
      "taunt": "\"Malacath watches. Entertain him.\"", "style": "methodical strikes"},
-    {"name": "Bero the Butcher", "fight": 50, "hp": 3, "guard": 15,
+    {"name": "Bero the Butcher", "fight": 50, "hp": 3, "guard": 15, "quirk": "butcher",
+     "quirk_desc": "his cleavers can crush - some hits cost two hearts",
      "taunt": "\"I name my cleavers. You'll meet both.\"", "style": "cleaver work"},
-    {"name": "Sword-Singer Hama", "fight": 54, "hp": 3, "guard": 20,
+    {"name": "Sword-Singer Hama", "fight": 54, "hp": 3, "guard": 20, "quirk": "riposte",
+     "quirk_desc": "punishes misses with a free riposte - swing true or not at all",
      "taunt": "\"The blade sings. Try to keep the rhythm.\"", "style": "flowing bladework"},
-    {"name": "Old Ulfberth", "fight": 58, "hp": 4, "guard": 20,
+    {"name": "Old Ulfberth", "fight": 58, "hp": 4, "guard": 20, "quirk": "veteran",
+     "quirk_desc": "reads your first landed blow and shrugs it off entirely",
      "taunt": "\"Forty years in the Pit, whelp. Sit down.\"", "style": "veteran's patience"},
-    {"name": "The Widow of Windhelm", "fight": 62, "hp": 4, "guard": 25,
+    {"name": "The Widow of Windhelm", "fight": 62, "hp": 4, "guard": 25, "quirk": "silent",
+     "quirk_desc": "finds the seams - your armour counts for half",
      "taunt": "\"...\"", "style": "silent, perfect thrusts"},
-    {"name": "Yrsarald Thrice-Pierced", "fight": 66, "hp": 5, "guard": 25,
+    {"name": "Yrsarald Thrice-Pierced", "fight": 66, "hp": 5, "guard": 25, "quirk": "reckless",
+     "quirk_desc": "turns it into a brawl - you BOTH hit far more often",
      "taunt": "\"Three spears couldn't do it. What are you bringing?\"", "style": "reckless power"},
-    {"name": "The Caged Bear", "fight": 70, "hp": 6, "guard": 30,
+    {"name": "The Caged Bear", "fight": 70, "hp": 6, "guard": 30, "quirk": "bear",
+     "quirk_desc": "every hit crushes two hearts... but bears are easily distracted",
      "taunt": "(It is an actual bear.)", "style": "being a bear"},
 ]
 PIT_TITLES = ["Pit Dog", "Scrapper", "Bloodied", "Contender", "Crowd's Favourite",

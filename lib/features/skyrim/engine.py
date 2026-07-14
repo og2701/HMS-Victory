@@ -2221,33 +2221,79 @@ def _pit_attack_pct(profile) -> int:
 
 
 def pit_bout(profile) -> tuple:
-    """Fight today's ladder opponent. Returns (won, log_lines). One per UK day."""
+    """Fight today's ladder opponent - round by round, with the champion's
+    signature quirk in play. Returns (won, log_lines). One per UK day."""
     s = pit_state(profile)
     champ = D.PIT_CHAMPS[s["rank"]]
+    quirk = champ.get("quirk")
     s["date"] = _today_str()
     me_hp = heart_max(profile)
     foe_hp = champ["hp"]
-    patk = _pit_attack_pct(profile)
+    patk = _pit_attack_pct(profile) + (15 if quirk == "reckless" else 0)
     guard = min(SOAK_CAP, soak_pct(profile))
+    if quirk == "silent":
+        guard //= 2                              # her thrusts slip the seams
+    fatk = max(5, champ["fight"] + (15 if quirk == "reckless" else 0) - guard)
+    ward = quirk == "veteran"                    # he reads your first landed blow
+    staggered = False                            # shieldwall: -15% after you connect
     log = [f"🗡️ **The Pit, Windhelm.** Bout {s['rank'] + 1}: **{champ['name']}**.",
-           f"-# {champ['taunt']}"]
+           f"-# {champ['taunt']}  ·  ({champ['quirk_desc']})"]
+
+    def foe_strikes(rnd, note=""):
+        nonlocal me_hp
+        if quirk == "bear" and random.random() < 0.20:
+            log.append(f"-# Round {rnd}: the bear pauses to sniff at something in the "
+                       f"sand. The crowd holds its breath.")
+            return
+        if random.random() * 100 < fatk:
+            loss = 2 if (quirk == "bear" or (quirk == "butcher" and random.random() < 0.25)) else 1
+            me_hp -= loss
+            crush = "  💥 crushing!" if loss == 2 else ""
+            log.append(f"-# Round {rnd}: {note}{champ['name']}'s {champ['style']} get "
+                       f"through{crush} ({'❤️' * max(0, me_hp)} left).")
+
+    def i_strike(rnd):
+        nonlocal foe_hp, ward, staggered
+        eff = patk - (15 if staggered else 0)
+        if random.random() * 100 < eff:
+            staggered = quirk == "shieldwall"
+            if ward:
+                ward = False
+                log.append(f"-# Round {rnd}: your best blow lands - and {champ['name']} "
+                           f"rolls with it like it was nothing. Forty years of feints.")
+                return
+            foe_hp -= 1
+            if foe_hp > 0:
+                log.append(f"-# Round {rnd}: your blow lands - {champ['name']} reels "
+                           f"({'🩸' * foe_hp} left).")
+        else:
+            staggered = False
+            if quirk == "riposte" and random.random() < 0.5:
+                foe_strikes(rnd, note="your miss sings back at you - ")
+
     for rnd in range(1, 13):
-        if random.random() * 100 < patk:
+        if quirk == "drunk" and random.random() < 0.10:
             foe_hp -= 1
             if foe_hp <= 0:
+                log.append(f"-# Round {rnd}: {champ['name']} swings, misses, and falls "
+                           f"over his own boots. The crowd is DELIGHTED.")
                 break
-            log.append(f"-# Round {rnd}: your blow lands - {champ['name']} reels "
-                       f"({'🩸' * foe_hp} left).")
-        elif random.random() * 100 < max(5, champ['fight'] - guard):
-            me_hp -= 1
+            log.append(f"-# Round {rnd}: {champ['name']} trips over nothing and headbutts "
+                       f"the wall ({'🩸' * foe_hp} left).")
+        if quirk == "quick":
+            foe_strikes(rnd)
             if me_hp <= 0:
                 break
-            log.append(f"-# Round {rnd}: {champ['name']}'s {champ['style']} get through "
-                       f"({'❤️' * me_hp} left).")
+            i_strike(rnd)
+            if foe_hp <= 0:
+                break
         else:
-            log.append(f"-# Round {rnd}: you trade feints - the crowd jeers happily.")
-        if rnd >= 12:
-            break
+            i_strike(rnd)
+            if foe_hp <= 0:
+                break
+            foe_strikes(rnd)
+            if me_hp <= 0:
+                break
     won = foe_hp <= 0
     if won:
         s["rank"] += 1

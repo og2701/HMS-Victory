@@ -485,8 +485,8 @@ def _hub_rows(profile):
     return [row1, row2, row3]
 
 
-def _cb_btn(style, label, emoji, cb):
-    b = discord.ui.Button(style=style, label=label, emoji=emoji)
+def _cb_btn(style, label, emoji, cb, disabled=False):
+    b = discord.ui.Button(style=style, label=label, emoji=emoji, disabled=disabled)
     b.callback = cb
     return b
 
@@ -971,6 +971,7 @@ async def _hub_pit(interaction: Interaction):
     if rank < len(D.PIT_CHAMPS):
         champ = D.PIT_CHAMPS[rank]
         lines.append(f"**Next bout:** {champ['name']} - known for {champ['style']}.")
+        lines.append(f"-# ⚠️ Word in the stands: {champ['quirk_desc']}.")
     else:
         lines.append("👑 **You ARE the Pit Champion.** Nothing left but to hold the title "
                      "until the month turns.")
@@ -1138,8 +1139,12 @@ async def _hub_perks(interaction: Interaction, notice: str = ""):
         have = E.perk_rank(profile, key)
         lines.append(f"{perk['emoji']} **{perk['name']}** {have}/{perk['ranks']} - {perk['desc']}")
     if profile.get("words", 0) > 0:
+        breath = E.voice_charges(profile)
+        full = breath >= profile["words"]
+        state = ("your breath is already **full** - nothing to restore"
+                 if full else f"breath {breath}/{profile['words']}")
         lines.append(f"🧘 **Meditation** - spend a point to still the mind and restore the "
-                     f"Voice in full (breath {E.voice_charges(profile)}/{profile['words']}). "
+                     f"Voice in full ({state}). "
                      f"The Greybeards approve. ({int(profile.get('meditations') or 0)} so far)")
     if notice:
         lines += ["", notice]
@@ -1166,7 +1171,9 @@ async def _hub_perks(interaction: Interaction, notice: str = ""):
             srow = discord.ui.ActionRow()
             srow.add_item(select)
             rows.append(srow)
-        if profile.get("words", 0) > 0 and E.voice_charges(profile) < profile["words"]:
+        if profile.get("words", 0) > 0:
+            full = E.voice_charges(profile) >= profile["words"]
+
             async def _meditate(inter: Interaction):
                 p = E.get_profile(inter.user.id)
                 err = E.meditate(p)
@@ -1177,7 +1184,10 @@ async def _hub_perks(interaction: Interaction, notice: str = ""):
                 else:
                     await _hub_perks(inter, notice=f"-# {err}")
             mrow = discord.ui.ActionRow()
-            mrow.add_item(_cb_btn(discord.ButtonStyle.primary, "Meditate (1 pt)", "🧘", _meditate))
+            mrow.add_item(_cb_btn(discord.ButtonStyle.secondary if full
+                                  else discord.ButtonStyle.primary,
+                                  "Meditate - breath already full" if full else "Meditate (1 pt)",
+                                  "🧘", _meditate, disabled=full))
             rows.append(mrow)
     rows.append(_back_row())
     await _edit_panel(interaction, "\n".join(lines), rows)
