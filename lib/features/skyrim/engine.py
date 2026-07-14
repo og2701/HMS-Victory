@@ -1695,6 +1695,7 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
     """Begin a delve. kind: 'normal' (spends stamina) | 'daily' (the shared seeded
     dungeon, once per day, no stamina) | 'alduin' (Skuldafn, once per day, no stamina).
     Callers must have checked availability; this marks the attempt."""
+    faction_state(profile)  # ensure weekly faction challenge snapshots before delve progress starts
     abandon_active(profile)
     if kind == "daily":
         # the shared layout rolls elites like a seasoned delver's map and always

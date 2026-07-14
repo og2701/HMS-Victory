@@ -1307,6 +1307,7 @@ async def _hub_factions(interaction: Interaction, notice: str = ""):
         await _show_class_pick(interaction)
         return
     text = _factions_text(profile)
+    E.save_profile(profile)  # Persist week rollover if it just occurred in _factions_text
     if notice:
         text += f"\n\n{notice}"
     rows = []
