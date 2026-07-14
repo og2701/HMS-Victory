@@ -132,7 +132,9 @@ Do not create a wall of cards. Use a simple DOM reading order and at most these 
    - No controls or buttons.
 
 2. Overview
-   - One compact five-step rail: `Plan → Explore → Build → Verify → Ship`.
+   - One compact five-step rail: `Plan → Explore → Build → Verify → Done`. `Done` means the recorded run is terminal; it does not imply commit, push, publish, deploy, or any other external action.
+   - Derive the active rail step deterministically, in this precedence order: terminal `complete` or `cancelled` → `Done`; phase `verifying` or `recovering`, or run status `verifying` → `Verify`; phase `discovering` → `Explore`; run status `planning` or `waiting_for_approval`, or phase `understanding`, `planning`, or `awaiting_input` before execution begins → `Plan`; all other executing/integrating states → `Build`.
+   - A blocked run keeps the last meaningful step from its phase and shows `Blocked` in the status/banner. Recovery maps to `Verify`. A cancelled run maps to `Done` but remains visibly labelled `Cancelled`, never `Complete`.
    - Show current/completed/blocked steps with text and restrained semantic styling; never colour alone.
    - In the same surface, show only the three useful totals: packets completed/total, required checks passed/total, and active/known agents.
    - If approval is pending, recovery is active, or blockers exist, surface the most important condition here without adding another permanent card.
