@@ -347,6 +347,28 @@ def test_records_and_collection():
     assert E.records_of(E.get_profile(7)).get("depth") == 12
 
 
+def test_collection_backfills_what_stats_prove():
+    q = E.create_profile(8, "Vet", "warrior")
+    q["stats"]["dragons"] = 7
+    q["stats"]["sweetrolls"] = 3
+    q["stats"]["launched"] = 1
+    q["alduin_slain"] = 2
+    q.pop("log", None)                                 # a pre-collection profile
+    E.save_profile(q)
+    q = E.get_profile(8)                               # migrate claims the provables
+    book = q["log"]
+    assert book["kills"]["dragon"] == 7 and book["kills"]["alduin"] == 2
+    assert "skuldafn" in book["clears"]
+    assert "sweetroll" in book["events"] and "giant" in book["events"]
+    # idempotent: a second load neither doubles nor resets...
+    E.save_profile(q)
+    q = E.get_profile(8)
+    assert q["log"]["kills"]["dragon"] == 7
+    # ...and live play increments from the seeded count
+    E.log_add(q, "kills", "dragon")
+    assert q["log"]["kills"]["dragon"] == 8
+
+
 def test_companions():
     p = _profile()
     found = E.befriend_stray(p)

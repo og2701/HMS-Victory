@@ -296,6 +296,22 @@ def _migrate(profile: dict) -> dict:
     # backfill what honesty allows: the Cairn depth record already existed
     if (profile.get("soulcairn") or {}).get("best"):
         profile["records"].setdefault("depth", int(profile["soulcairn"]["best"]))
+    # ...and the Collection Log claims everything the old stats can PROVE. Totals
+    # were all that was ever recorded, so most of the book starts blank - but
+    # dragons, Alduin, the sweetroll and the giant launch are matters of record.
+    # (Idempotent: counts seed only when absent; presence lists dedupe.)
+    st, book = profile["stats"], profile["log"]
+    if int(st.get("dragons", 0)) and "dragon" not in book["kills"]:
+        book["kills"]["dragon"] = int(st["dragons"])
+    if profile.get("alduin_slain"):
+        if "alduin" not in book["kills"]:
+            book["kills"]["alduin"] = int(profile["alduin_slain"])
+        if "skuldafn" not in book["clears"]:
+            book["clears"].append("skuldafn")
+    if int(st.get("sweetrolls", 0)) and "sweetroll" not in book["events"]:
+        book["events"].append("sweetroll")
+    if int(st.get("launched", 0)) and "giant" not in book["events"]:
+        book["events"].append("giant")
     return profile
 
 

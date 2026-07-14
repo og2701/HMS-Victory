@@ -854,19 +854,9 @@ async def _hub_collection(interaction: Interaction):
         return
     lines = [f"## 📦 The Collection Log - {E.collection_pct(profile)}%",
              "-# Everything unique, ever. Fill the book.", ""]
-    name_of = {**{k: v["name"] for k, v in D.ENEMIES.items()},
-               **{k: v["name"] for k, v in D.DRAGON_ROSTER.items()},
-               **{k: v["name"] for k, v in D.LOCATIONS.items()},
-               **{k: v["name"] for k, v in D.RUMOURS.items()},
-               **{k: v["name"] for k, v in D.COMPANIONS.items()},
-               **{k: v["tag"] for k, v in D.AFFIXES.items()}}
-    for emoji, label, done, total, missing in E.collection_summary(profile):
+    for emoji, label, done, total, _missing in E.collection_summary(profile):
         bar = _bar(done, 0, max(1, total), 6)
-        line = f"{emoji} **{label}**  {bar}  {done}/{total}"
-        if 0 < len(missing) <= 3:
-            gaps = ", ".join(str(name_of.get(m, m)) for m in missing)
-            line += f"  ·  -# missing: {gaps}"
-        lines.append(line)
+        lines.append(f"{emoji} **{label}**  {bar}  {done}/{total}")
     await _edit_panel(interaction, "\n".join(lines), [_char_back_row()])
 
 
