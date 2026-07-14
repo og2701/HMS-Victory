@@ -951,7 +951,9 @@ async def _hub_companion(interaction: Interaction, notice: str = ""):
         srow.add_item(sel)
         rows.append(srow)
     rows.append(_char_back_row())
-    await _edit_panel(interaction, "\n".join(lines), rows)
+    active = E.active_companion(profile)
+    await _edit_panel(interaction, "\n".join(lines), rows,
+                      art_key=active.get("art") if active else None)
 
 
 def _char_back_row():

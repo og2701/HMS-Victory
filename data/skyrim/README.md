@@ -25,7 +25,8 @@ convert a fresh drop:
 | mimic | a Mimic chest mid-bite (an enemy; variant of `chest`) |
 | soul_cairn | the endless Soul Cairn descent (post-Alduin endgame) |
 
-| stray | the 🐾 stray-companion event (befriend it!) |
+| stray | the 🐾 stray-companion event - keep it AMBIGUOUS (species revealed on befriending) |
+| pet_meeko, pet_vix, pet_pincer, pet_corvus | companion portraits (Companion panel shows the active one) |
 | ebony_warrior | the Ebony Warrior legend hunt |
 | karstaag | Karstaag, the frost-troll king legend hunt |
 | vale_dragon | Voslaarum & Naaslaarum, the twin dragons (shared by both) |

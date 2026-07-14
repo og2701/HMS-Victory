@@ -1002,22 +1002,22 @@ RUMOUR_BOSS = {"ebony_warrior": "ebony_warrior", "karstaag": "karstaag",
 # a time. Small passives, big attachment. {carl}-style delve flavour included.
 # ---------------------------------------------------------------------------
 COMPANIONS = {
-    "meeko": {"name": "Meeko", "emoji": "🐕", "species": "a shaggy grey dog",
+    "meeko": {"name": "Meeko", "emoji": "🐕", "species": "a shaggy grey dog", "art": "pet_meeko",
               "passive": "Takes the first wound for you once per delve. Good boy.",
               "found": "The dog pads over and leans against your leg with his whole weight. "
                        "You have been chosen.",
               "guard": True},
-    "vix": {"name": "Vix", "emoji": "🦊", "species": "a snow fox",
+    "vix": {"name": "Vix", "emoji": "🦊", "species": "a snow fox", "art": "pet_vix",
             "passive": "A forager's nose: +8% ingredient drop chance.",
             "found": "The fox drops a frost mirriam sprig at your feet and looks insufferably "
                      "pleased with herself.",
             "forage": 0.08},
-    "pincer": {"name": "Pincer", "emoji": "🦀", "species": "an unusually shrewd mudcrab",
+    "pincer": {"name": "Pincer", "emoji": "🦀", "species": "an unusually shrewd mudcrab", "art": "pet_pincer",
                "passive": "A merchant's instincts: +5% septims from all sources.",
                "found": "The mudcrab clacks twice, produces a tiny coin from somewhere, and "
                         "offers it up. A business partnership is proposed.",
                "barter": 1.05},
-    "corvus": {"name": "Corvus", "emoji": "🐦‍⬛", "species": "a one-eyed raven",
+    "corvus": {"name": "Corvus", "emoji": "🐦‍⬛", "species": "a one-eyed raven", "art": "pet_corvus",
                "passive": "Sees the openings you miss: +2% crit chance.",
                "found": "The raven lands on your shoulder, inspects your ear, and stays. "
                         "Apparently that's settled then.",
