@@ -463,7 +463,12 @@ def test_the_pit():
         _restore_random()
     assert state2 == "won" and E.pit_bout_active(p) is None
     assert E.pit_state(p)["rank"] == 1
-    assert not E.pit_available(p)                       # one bout per day
+    assert E.pit_available(p)                           # you fight while you WIN...
+    assert E.pit_fatigue(p) == E.PIT_FATIGUE_PER_BOUT   # ...but the arms remember
+    assert E.pit_begin(p) and E.pit_bout_active(p)["fatigue"] == E.PIT_FATIGUE_PER_BOUT
+    E.pit_state(p)["bout"] = None                       # walk away from the rematch
+    E.pit_state(p)["last"] = "lost"
+    assert not E.pit_available(p)                       # a loss ends the day
     assert D.PIT_CHAMPS[0]["name"] in p["log"]["pit"]
     assert E.records_of(p)["pit_rank"] == 1
     assert E.pit_title(1) == D.PIT_TITLES[0]

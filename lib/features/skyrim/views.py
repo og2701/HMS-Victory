@@ -962,8 +962,9 @@ async def _hub_pit(interaction: Interaction):
     s = E.pit_state(profile)
     rank = int(s.get("rank", 0))
     lines = ["## 🗡️ The Pit - Windhelm",
-             "-# One bout a day, your real build against the ladder. No satchel at stake - "
-             "glory only. The board wipes clean when the month turns.", ""]
+             "-# Fight while you win: each victory offers the next rung, but fatigue mounts "
+             "(-6% per extra bout) and a loss ends your day. No satchel at stake - glory "
+             "only. The board wipes clean when the month turns.", ""]
     if E.level(profile) < 5:
         lines.append("-# 🔒 The Pit doesn't book novices (level 5+).")
     lines.append(f"**Your standing:** {E.pit_title(rank)} (rank {rank}/{len(D.PIT_CHAMPS)})"
@@ -1005,7 +1006,8 @@ async def _hub_pit(interaction: Interaction):
         frow.add_item(_cb_btn(discord.ButtonStyle.danger, "Step into the Pit", "🗡️", _fight))
         rows.append(frow)
     elif E.level(profile) >= 5 and rank < len(D.PIT_CHAMPS):
-        lines.append("\n-# 💤 You've had your bout today. The crowd expects you tomorrow.")
+        lines.append("\n-# 💤 Your day in the Pit ended on a loss. Fresh legs at dawn - "
+                     "the crowd expects you tomorrow.")
     rows.append(_back_row())
     next_art = _pit_art(D.PIT_CHAMPS[rank]) if rank < len(D.PIT_CHAMPS) else "pit"
     await _edit_panel(interaction, "\n".join(lines), rows, art_key=next_art)
@@ -1042,10 +1044,24 @@ async def _show_pit_bout(interaction: Interaction, profile, last_lines):
         E.save_profile(p)
         if state == "playing":
             await _show_pit_bout(inter, p, story)
-        else:
-            view, files = _panel_view("\n".join(story), [_pit_back_row()],
-                                      art_key=_pit_art(champ))
-            await inter.response.edit_message(view=view, attachments=files)
+            return
+        rows = []
+        if state == "won" and E.pit_available(p):
+            async def _fight_on(inter2: Interaction):
+                p2 = E.get_profile(inter2.user.id)
+                if not E.pit_available(p2):
+                    await _hub_pit(inter2)
+                    return
+                intro = E.pit_begin(p2)
+                E.save_profile(p2)
+                await _show_pit_bout(inter2, p2, intro)
+            frow = discord.ui.ActionRow()
+            frow.add_item(_cb_btn(discord.ButtonStyle.danger,
+                                  f"Fight on (-{E.pit_fatigue(p)}% tired)", "😮‍💨", _fight_on))
+            rows.append(frow)
+        rows.append(_pit_back_row())
+        view, files = _panel_view("\n".join(story), rows, art_key=_pit_art(champ))
+        await inter.response.edit_message(view=view, attachments=files)
 
     row = discord.ui.ActionRow()
     for label, emoji, action in (("Strike", "⚔️", "strike"),
@@ -1902,8 +1918,9 @@ def _help_text() -> str:
         "Records** (personal bests), and your **🐾 Companion** - befriend the rare stray "
         "on the road. Delving daily builds a **🔥 streak** that pays a loot bonus on the "
         "day's first delve (one rest day a week forgiven).\n"
-        "**🗡️ The Pit** (Windhelm, level 5+) - one arena bout a day against a ladder of "
-        "champions, glory only; the board resets monthly. **🗣️ Rumours** at Belethor's "
+        "**🗡️ The Pit** (Windhelm, level 5+) - climb a ladder of champions round by round "
+        "(Strike / Power blow / Guard). Fight on while you win at mounting fatigue; a loss "
+        "ends your day. Glory only; the board resets monthly. **🗣️ Rumours** at Belethor's "
         "sell the locations of three one-time LEGEND hunts - the hardest fights in the "
         "game, each with a permanent trophy.\n\n"
         f"-# {getattr(config, 'SKYRIM_DELVES_PER_DAY', 3)} delves per day, reset at "

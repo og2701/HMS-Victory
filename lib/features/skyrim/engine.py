@@ -2207,10 +2207,25 @@ def pit_bout_active(profile) -> dict | None:
     return pit_state(profile).get("bout")
 
 
+PIT_FATIGUE_PER_BOUT = 6             # -% attack per extra bout fought the same day
+
+
 def pit_available(profile) -> bool:
+    """You may fight while you WIN: a fresh day always offers a bout, and a same-day
+    win offers the next rung immediately (at mounting fatigue). A loss or draw ends
+    your day - the crowd wants you back tomorrow."""
     s = pit_state(profile)
-    return (not s.get("bout") and s.get("date") != _today_str()
-            and s["rank"] < len(D.PIT_CHAMPS))
+    if s.get("bout") or s["rank"] >= len(D.PIT_CHAMPS):
+        return False
+    return s.get("date") != _today_str() or s.get("last") == "won"
+
+
+def pit_fatigue(profile) -> int:
+    """The attack malus your NEXT bout would carry from today's earlier fights."""
+    s = pit_state(profile)
+    if s.get("date") != _today_str():
+        return 0
+    return PIT_FATIGUE_PER_BOUT * int(s.get("bouts_today", 0))
 
 
 def pit_title(rank: int) -> str:
@@ -2231,17 +2246,24 @@ PIT_ROUNDS = 12
 
 
 def pit_begin(profile) -> list:
-    """Step into the Pit: opens today's bout against the next champion. The bout
-    lives on the profile until it ends, so a restart (or closing the panel)
-    resumes it. Returns the intro lines."""
+    """Step into the Pit: opens a bout against the next champion. The bout lives on
+    the profile until it ends, so a restart (or closing the panel) resumes it.
+    Same-day rematches carry fatigue. Returns the intro lines."""
     s = pit_state(profile)
     champ = D.PIT_CHAMPS[s["rank"]]
+    if s.get("date") != _today_str():
+        s["bouts_today"] = 0                     # fresh legs at dawn
     s["date"] = _today_str()
+    fatigue = PIT_FATIGUE_PER_BOUT * int(s.get("bouts_today", 0))
+    s["bouts_today"] = int(s.get("bouts_today", 0)) + 1
     s["bout"] = {"rank": s["rank"], "me": heart_max(profile), "foe": champ["hp"],
                  "round": 1, "ward": champ.get("quirk") == "veteran",
-                 "staggered": False, "opening": False}
-    return [f"🗡️ **The Pit, Windhelm.** Bout {s['rank'] + 1}: **{champ['name']}**.",
-            f"-# {champ['taunt']}  ·  ({champ['quirk_desc']})"]
+                 "staggered": False, "opening": False, "fatigue": fatigue}
+    lines = [f"🗡️ **The Pit, Windhelm.** Bout {s['rank'] + 1}: **{champ['name']}**.",
+             f"-# {champ['taunt']}  ·  ({champ['quirk_desc']})"]
+    if fatigue:
+        lines.append(f"-# 😮‍💨 Your arms remember today's earlier fights: -{fatigue}% to hit.")
+    return lines
 
 
 def _pit_foe_strike(profile, b, champ, lines, guarding=False, note=""):
@@ -2271,6 +2293,7 @@ def _pit_foe_strike(profile, b, champ, lines, guarding=False, note=""):
 def _pit_me_strike(profile, b, champ, lines, power=False):
     quirk = champ.get("quirk")
     eff = _pit_attack_pct(profile) + (15 if quirk == "reckless" else 0)
+    eff -= int(b.get("fatigue", 0))              # today's earlier bouts weigh on the arms
     if b.get("staggered"):
         eff -= 15                                # her shieldwall is still closed
     if power:
@@ -2332,6 +2355,7 @@ def pit_action(profile, action: str) -> tuple:
     # resolve the round
     if b["foe"] <= 0:
         s["bout"] = None
+        s["last"] = "won"
         s["rank"] += 1
         record_best(profile, "pit_rank", s["rank"])
         log_add(profile, "pit", champ["name"])
@@ -2344,14 +2368,20 @@ def pit_action(profile, action: str) -> tuple:
         if s["rank"] >= len(D.PIT_CHAMPS):
             lines.append("👑 **THE PIT HAS A NEW CHAMPION.** Your name goes on the wall "
                          "until the month turns.")
+        elif pit_available(profile):
+            lines.append(f"-# 📣 The crowd chants for MORE - {D.PIT_CHAMPS[s['rank']]['name']} "
+                         f"is warming up. Fight on (fatigued "
+                         f"-{pit_fatigue(profile)}%), or bank the win and rest.")
         return "won", lines
     if b["me"] <= 0:
         s["bout"] = None
+        s["last"] = "lost"
         lines.append(f"💤 {champ['name']} stands over you as the crowd counts you out. "
                      f"No rank lost - limp home, train, return tomorrow.")
         return "lost", lines
     if b["round"] >= PIT_ROUNDS:
         s["bout"] = None
+        s["last"] = "draw"
         lines.append("🤝 Twelve rounds and no decision - the crowd calls it a draw. "
                      "Come back tomorrow.")
         return "draw", lines
