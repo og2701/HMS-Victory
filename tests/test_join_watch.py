@@ -54,8 +54,8 @@ class FakeChannel:
     def __init__(self):
         self.sent = []
 
-    async def send(self, **kwargs):
-        self.sent.append(kwargs)
+    async def send(self, *args, **kwargs):
+        self.sent.append({"args": args, **kwargs})
 
 
 class FakeMessage:
@@ -243,6 +243,23 @@ def test_verdict_parsing_tolerates_wrapping():
     assert parsed == {"verdict": "troll", "confidence": 0.8}
     parsed = join_watch._parse_verdict('noise {"verdict": "fine", "confidence": 1} noise')
     assert parsed["verdict"] == "fine"
+
+
+def test_toggle_announcement_names_the_mod(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    join_watch.set_join_watch_state(True, "semi final trolls")
+    client = FakeClient()
+    actor = FakeMember(member_id=42)
+
+    asyncio.run(join_watch.announce_toggle(client, actor, True))
+    asyncio.run(join_watch.announce_toggle(client, actor, False))
+
+    assert len(client.police.sent) == 2
+    armed_text = client.police.sent[0]["args"][0] if "args" in client.police.sent[0] else client.police.sent[0].get("content")
+    disarmed_text = client.police.sent[1]["args"][0] if "args" in client.police.sent[1] else client.police.sent[1].get("content")
+    assert actor.mention in armed_text and "armed" in armed_text
+    assert "semi final trolls" in armed_text
+    assert actor.mention in disarmed_text and "disarmed" in disarmed_text
 
 
 def test_disarming_clears_scan_progress(monkeypatch, tmp_path):

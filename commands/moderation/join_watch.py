@@ -490,16 +490,43 @@ def _report_view(
     return view
 
 
-async def _send_report(
-    client: Any, member: Any, entry: dict[str, Any], reason: str, confidence: float, action: str
-) -> None:
+async def _police_channel(client: Any) -> Any:
     channel = client.get_channel(CHANNELS.POLICE_STATION)
     if channel is None:
         try:
             channel = await client.fetch_channel(CHANNELS.POLICE_STATION)
         except Exception:
             logger.warning("join-watch could not reach the police station channel")
-            return
+            return None
+    return channel
+
+
+async def announce_toggle(client: Any, actor: Any, enabled: bool) -> None:
+    """Tell the police station who armed or disarmed join-watch."""
+    channel = await _police_channel(client)
+    if channel is None:
+        return
+    if enabled:
+        state = get_join_watch_state()
+        text = (
+            f"🔎 {actor.mention} armed join-watch - new joiners' first "
+            f"{MAX_SCANNED_MESSAGES} messages are now AI-screened.\n"
+            f"-# Context: {state['context'][:300]}"
+        )
+    else:
+        text = f"💤 {actor.mention} disarmed join-watch - new joiners are no longer screened."
+    try:
+        await channel.send(text, allowed_mentions=discord.AllowedMentions.none())
+    except Exception:
+        logger.exception("join-watch could not post the police station toggle notice")
+
+
+async def _send_report(
+    client: Any, member: Any, entry: dict[str, Any], reason: str, confidence: float, action: str
+) -> None:
+    channel = await _police_channel(client)
+    if channel is None:
+        return
     try:
         await channel.send(
             view=_report_view(member, entry, reason, confidence, action),

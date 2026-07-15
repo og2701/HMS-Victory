@@ -17,6 +17,7 @@ from config import JSON_DATA_DIR, PERMISSIONS_BACKUP_FILE, ROLES, USERS
 from commands.moderation.join_watch import (
     MAX_SCANNED_MESSAGES as JW_MAX_MESSAGES,
     TIMEOUT_HOURS as JW_TIMEOUT_HOURS,
+    announce_toggle as announce_join_watch_toggle,
     get_join_watch_state,
     set_join_watch_state,
 )
@@ -811,6 +812,7 @@ class JoinWatchToggleButton(discord.ui.Button):
             view=dashboard,
             allowed_mentions=discord.AllowedMentions.none(),
         )
+        await announce_join_watch_toggle(interaction.client, interaction.user, state["enabled"])
         await _log_action(
             dashboard.guild,
             f"Join-watch {'armed' if state['enabled'] else 'disarmed'} by "
@@ -832,6 +834,7 @@ class JoinWatchContextModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: Interaction) -> None:
         # Setting the context arms screening; a fresh context implies an active incident.
+        was_armed = get_join_watch_state()["enabled"]
         set_join_watch_state(True, self.context_input.value)
         self.dashboard.notice = "🔎 Join-watch context updated; screening is armed."
         self.dashboard.render()
@@ -839,6 +842,8 @@ class JoinWatchContextModal(discord.ui.Modal):
             view=self.dashboard,
             allowed_mentions=discord.AllowedMentions.none(),
         )
+        if not was_armed:
+            await announce_join_watch_toggle(interaction.client, interaction.user, True)
         await _log_action(
             self.dashboard.guild,
             f"Join-watch context updated by {interaction.user} ({interaction.user.id}).",
