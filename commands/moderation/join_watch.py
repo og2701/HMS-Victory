@@ -121,12 +121,19 @@ def _snapshot(message: Any) -> dict[str, Any]:
     }
 
 
+# Only actual member messages count; system messages (join notices, boosts, pins)
+# are authored by the member but are not something they wrote.
+_SCREENED_MESSAGE_TYPES = (discord.MessageType.default, discord.MessageType.reply)
+
+
 async def maybe_watch_message(client: Any, message: Any) -> None:
     """on_message hook: screen a registered new joiner's message, acting at most once."""
     try:
         if not join_watch_enabled():
             return
         if message.guild is None:
+            return
+        if getattr(message, "type", discord.MessageType.default) not in _SCREENED_MESSAGE_TYPES:
             return
         member = message.author
         # Only members registered by register_join are watched; staff exemption is

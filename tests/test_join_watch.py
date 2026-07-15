@@ -245,6 +245,36 @@ def test_verdict_parsing_tolerates_wrapping():
     assert parsed["verdict"] == "fine"
 
 
+def test_system_join_message_is_not_screened(monkeypatch, tmp_path):
+    import discord
+
+    _fresh(monkeypatch, tmp_path)
+    join_watch.set_join_watch_state(True)
+    member = FakeMember()
+    client = FakeClient()
+    evaluated = []
+
+    async def fake_evaluate(_client, _member, messages):
+        evaluated.append(len(messages))
+        return {"verdict": "unsure", "confidence": 0.5, "reason": "thin"}
+
+    monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
+    join_watch.register_join(member)
+
+    # The "X joined the server" system message is authored by the member but
+    # must be neither screened nor counted.
+    system_message = FakeMessage(member, "")
+    system_message.type = discord.MessageType.new_member
+    asyncio.run(join_watch.maybe_watch_message(client, system_message))
+    assert evaluated == []
+    assert join_watch._buffers[member.id]["messages"] == []
+
+    real = FakeMessage(member, "hello")
+    real.type = discord.MessageType.default
+    asyncio.run(join_watch.maybe_watch_message(client, real))
+    assert evaluated == [1]
+
+
 def test_toggle_announcement_names_the_mod(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path)
     join_watch.set_join_watch_state(True, "semi final trolls")
