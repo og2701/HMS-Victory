@@ -450,8 +450,8 @@ def test_protection_toggle_announcement_names_the_mod():
     asyncio.run(anti_raid._announce_protection_toggle(client, _Actor(), True, 0))
     asyncio.run(anti_raid._announce_protection_toggle(client, _Actor(), False, 3))
 
-    enabled_text = client.police.sent[0]["args"][0]
-    disabled_text = client.police.sent[1]["args"][0]
+    enabled_text = json.dumps(client.police.sent[0]["view"].to_components())
+    disabled_text = json.dumps(client.police.sent[1]["view"].to_components())
     assert "<@42>" in enabled_text and "enabled" in enabled_text
     assert "<@42>" in disabled_text and "disabled" in disabled_text
     assert "3 role operation(s) failed" in disabled_text

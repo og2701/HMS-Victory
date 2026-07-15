@@ -576,17 +576,23 @@ async def _announce_protection_toggle(
             return
     if active:
         text = (
-            f"🔴 {actor.mention} enabled anti-raid protection - new joins are quarantined "
+            "## 🔴 Anti-raid protection enabled\n"
+            f"{actor.mention} enabled protection - new joins are quarantined "
             "and high-abuse role permissions are restricted."
         )
     else:
         text = (
-            f"🟢 {actor.mention} disabled anti-raid protection - normal join handling restored."
+            "## 🟢 Anti-raid protection disabled\n"
+            f"{actor.mention} disabled protection - normal join handling restored."
         )
     if failures:
         text += f"\n-# {failures} role operation(s) failed; see /anti-raid for details."
+    view = discord.ui.LayoutView(timeout=None)
+    card = discord.ui.Container(accent_colour=0xE74C3C if active else 0x2ECC71)
+    card.add_item(discord.ui.TextDisplay(text))
+    view.add_item(card)
     try:
-        await channel.send(text, allowed_mentions=discord.AllowedMentions.none())
+        await channel.send(view=view, allowed_mentions=discord.AllowedMentions.none())
     except Exception:
         logger.exception("Could not post the anti-raid toggle notice")
 

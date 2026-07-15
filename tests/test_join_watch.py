@@ -285,8 +285,9 @@ def test_toggle_announcement_names_the_mod(monkeypatch, tmp_path):
     asyncio.run(join_watch.announce_toggle(client, actor, False))
 
     assert len(client.police.sent) == 2
-    armed_text = client.police.sent[0]["args"][0] if "args" in client.police.sent[0] else client.police.sent[0].get("content")
-    disarmed_text = client.police.sent[1]["args"][0] if "args" in client.police.sent[1] else client.police.sent[1].get("content")
+    import json as _json
+    armed_text = _json.dumps(client.police.sent[0]["view"].to_components())
+    disarmed_text = _json.dumps(client.police.sent[1]["view"].to_components())
     assert actor.mention in armed_text and "armed" in armed_text
     assert "semi final trolls" in armed_text
     assert actor.mention in disarmed_text and "disarmed" in disarmed_text

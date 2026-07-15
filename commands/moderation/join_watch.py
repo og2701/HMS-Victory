@@ -516,14 +516,22 @@ async def announce_toggle(client: Any, actor: Any, enabled: bool) -> None:
     if enabled:
         state = get_join_watch_state()
         text = (
-            f"🔎 {actor.mention} armed join-watch - new joiners' first "
+            "## 🔎 AI join-watch armed\n"
+            f"{actor.mention} armed join-watch - new joiners' first "
             f"{MAX_SCANNED_MESSAGES} messages are now AI-screened.\n"
             f"-# Context: {state['context'][:300]}"
         )
     else:
-        text = f"💤 {actor.mention} disarmed join-watch - new joiners are no longer screened."
+        text = (
+            "## 💤 AI join-watch disarmed\n"
+            f"{actor.mention} disarmed join-watch - new joiners are no longer screened."
+        )
+    view = discord.ui.LayoutView(timeout=None)
+    card = discord.ui.Container(accent_colour=0xE74C3C if enabled else 0x2ECC71)
+    card.add_item(discord.ui.TextDisplay(text))
+    view.add_item(card)
     try:
-        await channel.send(text, allowed_mentions=discord.AllowedMentions.none())
+        await channel.send(view=view, allowed_mentions=discord.AllowedMentions.none())
     except Exception:
         logger.exception("join-watch could not post the police station toggle notice")
 
