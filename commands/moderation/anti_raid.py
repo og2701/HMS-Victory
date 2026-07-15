@@ -13,7 +13,7 @@ from typing import Any, Iterable
 import discord
 from discord.interactions import Interaction
 
-from config import JSON_DATA_DIR, PERMISSIONS_BACKUP_FILE, ROLES
+from config import CHANNELS, JSON_DATA_DIR, PERMISSIONS_BACKUP_FILE, ROLES
 from commands.moderation.join_watch import (
     MAX_SCANNED_MESSAGES as JW_MAX_MESSAGES,
     TIMEOUT_HOURS as JW_TIMEOUT_HOURS,
@@ -563,6 +563,34 @@ async def send_backup_file(guild: discord.Guild) -> None:
             logger.warning("Could not send anti-raid permission backup: %s", exc)
 
 
+async def _announce_protection_toggle(
+    client: Any, actor: Any, active: bool, failures: int
+) -> None:
+    """Tell the police station who enabled or disabled anti-raid protection."""
+    channel = client.get_channel(CHANNELS.POLICE_STATION)
+    if channel is None:
+        try:
+            channel = await client.fetch_channel(CHANNELS.POLICE_STATION)
+        except Exception:
+            logger.warning("Could not reach the police station for the anti-raid notice")
+            return
+    if active:
+        text = (
+            f"🔴 {actor.mention} enabled anti-raid protection - new joins are quarantined "
+            "and high-abuse role permissions are restricted."
+        )
+    else:
+        text = (
+            f"🟢 {actor.mention} disabled anti-raid protection - normal join handling restored."
+        )
+    if failures:
+        text += f"\n-# {failures} role operation(s) failed; see /anti-raid for details."
+    try:
+        await channel.send(text, allowed_mentions=discord.AllowedMentions.none())
+    except Exception:
+        logger.exception("Could not post the anti-raid toggle notice")
+
+
 async def _log_action(guild: discord.Guild, message: str) -> None:
     channel = guild.get_channel(ANTI_RAID_LOG_CHANNEL_ID)
     if channel:
@@ -815,6 +843,10 @@ class AntiRaidModeButton(discord.ui.Button):
             view=dashboard,
             allowed_mentions=discord.AllowedMentions.none(),
         )
+        if result.changed:
+            await _announce_protection_toggle(
+                interaction.client, interaction.user, result.active, len(result.failures)
+            )
 
 
 class JoinWatchToggleButton(discord.ui.Button):

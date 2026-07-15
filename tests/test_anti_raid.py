@@ -426,3 +426,32 @@ def test_roles_at_or_above_bot_are_never_touched(monkeypatch, tmp_path):
     failures = asyncio.run(anti_raid.restore_role_permissions(guild))
     assert failures == []
     assert len(below.edits) == 2 and not bot_top.edits and not above.edits
+
+
+def test_protection_toggle_announcement_names_the_mod():
+    class _Channel:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, *args, **kwargs):
+            self.sent.append({"args": args, **kwargs})
+
+    class _Client:
+        def __init__(self):
+            self.police = _Channel()
+
+        def get_channel(self, _channel_id):
+            return self.police
+
+    class _Actor:
+        mention = "<@42>"
+
+    client = _Client()
+    asyncio.run(anti_raid._announce_protection_toggle(client, _Actor(), True, 0))
+    asyncio.run(anti_raid._announce_protection_toggle(client, _Actor(), False, 3))
+
+    enabled_text = client.police.sent[0]["args"][0]
+    disabled_text = client.police.sent[1]["args"][0]
+    assert "<@42>" in enabled_text and "enabled" in enabled_text
+    assert "<@42>" in disabled_text and "disabled" in disabled_text
+    assert "3 role operation(s) failed" in disabled_text
