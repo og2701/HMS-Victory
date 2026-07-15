@@ -13,7 +13,14 @@ from typing import Any, Iterable
 import discord
 from discord.interactions import Interaction
 
-from config import JSON_DATA_DIR, PERMISSIONS_BACKUP_FILE, ROLES
+from config import JSON_DATA_DIR, PERMISSIONS_BACKUP_FILE, ROLES, USERS
+from commands.moderation.join_watch import (
+    MAX_MEMBER_AGE_HOURS as JW_MAX_AGE_HOURS,
+    MAX_SCANNED_MESSAGES as JW_MAX_MESSAGES,
+    TIMEOUT_HOURS as JW_TIMEOUT_HOURS,
+    get_join_watch_state,
+    set_join_watch_state,
+)
 from lib.core.file_operations import atomic_write_json, set_file_status
 
 logger = logging.getLogger(__name__)
@@ -669,6 +676,23 @@ def _quarantine_block(
     return "\n".join(lines)[:900]
 
 
+def _join_watch_block() -> str:
+    state = get_join_watch_state()
+    if state["enabled"]:
+        return (
+            "### 🔎 AI join-watch · Armed\n"
+            f"-# The first {JW_MAX_MESSAGES} messages from anyone who joined in the last "
+            f"{JW_MAX_AGE_HOURS}h are AI-screened; a confident troll verdict gets a "
+            f"{JW_TIMEOUT_HOURS}h timeout and a police station report.\n"
+            f"**Context** {state['context'][:300]}"
+        )
+    return (
+        "### 🔎 AI join-watch · Disarmed\n"
+        f"-# When armed, the first {JW_MAX_MESSAGES} messages from new joiners are "
+        "AI-screened for raid trolling."
+    )
+
+
 def _recent_joins_block(records: list[dict[str, Any]]) -> str:
     lines = ["### 🕒 Recent joins"]
     for record in reversed(records[-8:]):
@@ -758,6 +782,81 @@ class AntiRaidModeButton(discord.ui.Button):
             view=dashboard,
             allowed_mentions=discord.AllowedMentions.none(),
         )
+
+
+class JoinWatchToggleButton(discord.ui.Button):
+    def __init__(self, armed: bool):
+        super().__init__(
+            label="Disarm join-watch" if armed else "Arm join-watch",
+            emoji="🔎",
+            style=discord.ButtonStyle.success if armed else discord.ButtonStyle.danger,
+        )
+        self.target_armed = not armed
+
+    async def callback(self, interaction: Interaction) -> None:
+        dashboard: AntiRaidControlView = self.view  # type: ignore[assignment]
+        if interaction.user.id != USERS.OGGERS:
+            await interaction.response.send_message(
+                "Only oggers can operate join-watch.", ephemeral=True
+            )
+            return
+        state = set_join_watch_state(self.target_armed)
+        dashboard.notice = (
+            "🔎 Join-watch armed; new joiners' first messages are now AI-screened."
+            if state["enabled"]
+            else "💤 Join-watch disarmed."
+        )
+        dashboard.render()
+        await interaction.response.edit_message(
+            view=dashboard,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        await _log_action(
+            dashboard.guild,
+            f"Join-watch {'armed' if state['enabled'] else 'disarmed'} by "
+            f"{interaction.user} ({interaction.user.id}).",
+        )
+
+
+class JoinWatchContextModal(discord.ui.Modal):
+    def __init__(self, dashboard: "AntiRaidControlView"):
+        super().__init__(title="Join-watch incident context")
+        self.dashboard = dashboard
+        self.context_input = discord.ui.TextInput(
+            label="Why is screening on right now?",
+            style=discord.TextStyle.paragraph,
+            default=get_join_watch_state()["context"],
+            max_length=1000,
+        )
+        self.add_item(self.context_input)
+
+    async def on_submit(self, interaction: Interaction) -> None:
+        # Setting the context arms screening; a fresh context implies an active incident.
+        set_join_watch_state(True, self.context_input.value)
+        self.dashboard.notice = "🔎 Join-watch context updated; screening is armed."
+        self.dashboard.render()
+        await interaction.response.edit_message(
+            view=self.dashboard,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        await _log_action(
+            self.dashboard.guild,
+            f"Join-watch context updated by {interaction.user} ({interaction.user.id}).",
+        )
+
+
+class JoinWatchContextButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Edit context", emoji="📝", style=discord.ButtonStyle.secondary)
+
+    async def callback(self, interaction: Interaction) -> None:
+        dashboard: AntiRaidControlView = self.view  # type: ignore[assignment]
+        if interaction.user.id != USERS.OGGERS:
+            await interaction.response.send_message(
+                "Only oggers can operate join-watch.", ephemeral=True
+            )
+            return
+        await interaction.response.send_modal(JoinWatchContextModal(dashboard))
 
 
 class RefreshButton(discord.ui.Button):
@@ -931,6 +1030,16 @@ class AntiRaidControlView(discord.ui.LayoutView):
         panel.add_item(discord.ui.TextDisplay(vitals))
         for warning in warnings:
             panel.add_item(discord.ui.TextDisplay(warning))
+        panel.add_item(discord.ui.Separator())
+
+        panel.add_item(discord.ui.TextDisplay(_join_watch_block()))
+        if self.author_id == USERS.OGGERS:
+            panel.add_item(
+                discord.ui.ActionRow(
+                    JoinWatchToggleButton(get_join_watch_state()["enabled"]),
+                    JoinWatchContextButton(),
+                )
+            )
         panel.add_item(discord.ui.Separator())
 
         panel.add_item(discord.ui.TextDisplay(_quarantine_block(quarantined, selected)))

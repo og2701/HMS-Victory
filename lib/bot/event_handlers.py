@@ -990,6 +990,15 @@ async def on_message(client, message):
     if await handle_hate_speech_message(client, message):
         return
 
+    # Oggers' join-watch: AI screening of new joiners' first messages during raids.
+    # Fire-and-forget so a Gemini round-trip never blocks the rest of on_message.
+    try:
+        from commands.moderation.join_watch import join_watch_enabled, maybe_watch_message
+        if join_watch_enabled() and not message.author.bot:
+            asyncio.create_task(maybe_watch_message(client, message))
+    except Exception:
+        logger.debug("join-watch hook failed", exc_info=True)
+
     # New-member welcome rewards. The join "X joined" system message is always captured
     # (cheap type check); for normal messages we only do work while a welcome window is
     # open, and fire-and-forget so it never blocks the rest of on_message.
