@@ -2,6 +2,8 @@
 
 ## Objective and exclusions
 
+Overhaul Ultracode into a proportional, recoverable, evidence-driven workflow and deliver a complete Claude dashboard prompt.
+
 Overhaul `/Users/ogme01/.codex/skills/ultracode` into a proportional, recoverable, evidence-driven engineering workflow. Deliver a self-contained prompt for Claude to implement the dashboard redesign; do not edit dashboard frontend files in this run.
 
 Excluded: deployment, publishing, commits, pushes, machine-wide installation, unrelated HMS Victory/Skyrim changes, and direct UI implementation.
