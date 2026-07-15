@@ -688,7 +688,8 @@ def _join_watch_block() -> str:
     return (
         "### 🔎 AI join-watch · Disarmed\n"
         f"-# When armed, members who join are listened to and their first "
-        f"{JW_MAX_MESSAGES} messages AI-screened for raid trolling."
+        f"{JW_MAX_MESSAGES} messages AI-screened for raid trolling.\n"
+        f"**Context** {state['context'][:300]}"
     )
 
 
