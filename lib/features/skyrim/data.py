@@ -310,7 +310,7 @@ ENEMIES = {
     },
     "alduin": {
         "name": "Alduin", "emoji": "🌑", "type": "dragon", "tier": 5, "boss": True, "hp": 8,
-        "heavy": 0.6, "fight": 6, "sneak": None, "persuade": None, "art": "alduin",
+        "heavy": 0.6, "retaliate": 0.3, "fight": 6, "sneak": None, "persuade": None, "art": "alduin",
         "hint": "The sky itself is wrong up there. He is waiting.",
         "intro": ["**ALDUIN** descends through a burning sky. **\"Zu'u lost daal. I have returned.\"**",
                   "The World-Eater lands, and the temple groans under him. **ALDUIN** turns his gaze on you."],

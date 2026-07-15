@@ -45,6 +45,10 @@ GROUNDED_BONUS = 20                  # fight bonus after shouting a dragon out o
 SKYFIRE_AIR = {"blade": -16, "destruction": -9, "marksman": 6}
 BLESSING_BONUS = 5                   # fight bonus from praying at a shrine on full hearts
 HEAVY_HIT_CHANCE = {4: 0.35, 5: 0.50}   # by enemy tier: chance a wound is a crushing 2-heart blow
+# Big foes ANSWER: when your landed blow doesn't finish a multi-heart tier-4+ foe,
+# it may strike back - long boss fights cost blood by design, not only via misses.
+# (Trash stays one-roll: hit it and it never answers.) Per-enemy "retaliate" overrides.
+RETALIATE_BY_TIER = {4: 0.15, 5: 0.20}
 FIGHT_SKILL_SCALE = 24               # max % a skill adds at 100 (fight)
 SNEAK_SKILL_SCALE = 22               # (sneak)
 SPEECH_SKILL_SCALE = 30              # (persuade)
@@ -915,7 +919,8 @@ def build_rooms(loc_key: str, rng=None, affix_level: int = 0, route: str = None)
         rooms.append(room)
     if cond.get("force_mudcrab"):
         rooms.append({"kind": "event", "key": "mudcrab", "boss": False, "resolved": False})
-    if not loc.get("rumour") and (cond.get("force_fallen") or rng.random() < FALLEN_CHANCE):
+    if not loc.get("rumour") and not loc.get("alduin") \
+            and (cond.get("force_fallen") or rng.random() < FALLEN_CHANCE):
         # corpse picking reads the (mutable) graveyard, so it gets a DERIVED rng -
         # exactly one draw from the main stream - or the shared daily layout would
         # drift between players whenever someone died mid-day
@@ -924,8 +929,9 @@ def build_rooms(loc_key: str, rng=None, affix_level: int = 0, route: str = None)
                       "corpse": _make_fallen_corpse(loc_key, crng)})
     rng.shuffle(rooms)
     # A Fork before the boss: a genuine risk/reward choice with honest hints.
-    # (Legend lairs are duels - no side paths, no corpses, no distractions.)
-    if not loc.get("rumour") and len(rooms) >= 2 and rng.random() < FORK_CHANCE:
+    # (Legend lairs and Skuldafn are set-pieces - no side paths, no corpses.)
+    if not loc.get("rumour") and not loc.get("alduin") \
+            and len(rooms) >= 2 and rng.random() < FORK_CHANCE:
         rooms.append({"kind": "event", "key": "fork", "boss": False, "resolved": False})
     if loc.get("word_wall"):
         rooms.append({"kind": "event", "key": "wordwall", "boss": False, "resolved": False})
@@ -1307,6 +1313,14 @@ class Delve:
                 line = (D.pick(D.CRIT_LINES) + "  " if crit else "") + D.pick(lines)
                 self.say(line + f"  ({'🩸' * self.enemy_hp} to go)")
                 self._alduin_reflight_check()
+                # ...and it ANSWERS: a wounded boss doesn't wait for you to miss.
+                # An answer is a quick lash, never a crushing windup - frequent
+                # pressure, not coin-flip swing.
+                retaliate = e.get("retaliate", RETALIATE_BY_TIER.get(e["tier"], 0.0))
+                if retaliate and random.random() < retaliate:
+                    self.say(f"{e['emoji']} The **{e['name']}** answers!")
+                    if self._wound(profile, e["wound"], heavy=0.0) == "dead":
+                        return
             else:
                 self._kill(profile, e, style, crit=crit, ambush=was_ambush)
         else:

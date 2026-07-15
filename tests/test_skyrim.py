@@ -423,7 +423,7 @@ def test_rumours_and_legends():
     d2.idx = 1                                          # Voslaarum, hp 5, reflight at 3
     d2.enemy_hp = 5
     d2.grounded = True
-    E.random = _fixed_rolls(0.0, 0.99, 0.0, 0.99)       # two clean hits: 5 -> 3
+    E.random = _fixed_rolls(0.0, 0.99, 0.99, 0.0, 0.99, 0.99)  # two clean hits (no answer): 5 -> 3
     try:
         d2.act_attack(p)
         d2.act_attack(p)
@@ -578,6 +578,37 @@ def test_voice_is_persistent():
     assert E.voice_charges(p) == 0                     # your own breath untouched
 
 
+def test_bosses_answer_your_blows():
+    p = _profile()
+    # a landed non-lethal hit on a tier-4+ boss can draw an immediate answer
+    d = _enemy_room_delve(p, "draugr_deathlord", boss=True, extra_rooms=1)
+    assert d.enemy_hp == 2
+    E.random = _fixed_rolls(0.0, 0.99, 0.0, 0.999)     # hit, no crit, ANSWER fires, soak fails
+    try:
+        hearts = d.hearts
+        d.act_attack(p)
+    finally:
+        _restore_random()
+    assert d.enemy_hp == 1
+    assert d.hearts == hearts - 1                      # the answer is a jab, never crushing
+    assert any("answers" in l for l in d.log)
+    # tier-3 multi-hp foes (a Quickened wolf, a Mimic) never answer
+    q = _profile()
+    d2 = _enemy_room_delve(q, "mimic", boss=False, extra_rooms=1)
+    d2.enemy_hp = 2
+    E.random = _fixed_rolls(0.0, 0.99, 0.0, 0.0)       # would-be answer rolls go unused
+    try:
+        hearts = d2.hearts
+        d2.act_attack(q)
+    finally:
+        _restore_random()
+    assert d2.hearts == hearts
+    # and Skuldafn is a sealed set-piece: two rooms, no corpses, no forks
+    for _ in range(60):
+        rooms = E.build_rooms("skuldafn")
+        assert [r["key"] for r in rooms] == ["draugr_deathlord", "alduin"]
+
+
 def test_alduin_echoes():
     p = _profile()
     p["xp"] = 60_000
@@ -713,7 +744,7 @@ def test_boss_hp_staggers():
     d = _enemy_room_delve(p, "dragon", boss=False, extra_rooms=1)
     assert d.enemy_hp == 3
     # alternate: attack roll succeeds (0.0), crit roll fails (0.99)
-    E.random = _fixed_rolls(0.0, 0.99, 0.0, 0.99, 0.0, 0.99)
+    E.random = _fixed_rolls(0.0, 0.99, 0.99, 0.0, 0.99, 0.99, 0.0, 0.99)
     try:
         d.act_attack(p)
         assert d.enemy_hp == 2 and d.engaged and d.playing()
@@ -778,7 +809,7 @@ def test_alduin_takes_wing_again():
     assert d.enemy_hp == D.ENEMIES["alduin"]["hp"]
     d.act_shout(p)
     assert d.grounded
-    E.random = _fixed_rolls(0.0, 0.99, 0.0, 0.99)        # two clean non-crit hits: 8 -> 6
+    E.random = _fixed_rolls(0.0, 0.99, 0.99, 0.0, 0.99, 0.99)   # two clean hits (no answer): 8 -> 6
     try:
         d.act_attack(p)
         d.act_attack(p)
