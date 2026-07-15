@@ -81,6 +81,12 @@ class AClient(discord.Client):
             self.add_dynamic_items(FollowupButton)
         except Exception as e:
             logger.warning(f"Could not register Analyse User follow-up button: {e}")
+        # Persistent 'Remove timeout' buttons on join-watch police station reports.
+        try:
+            from commands.moderation.join_watch import UntimeoutButton
+            self.add_dynamic_items(UntimeoutButton)
+        except Exception as e:
+            logger.warning(f"Could not register join-watch untimeout button: {e}")
         from lib.economy.prediction_system import BetButtons, build_prediction_layout
         for p in self.predictions.values():
             if not p.locked:

@@ -15,7 +15,6 @@ from discord.interactions import Interaction
 
 from config import JSON_DATA_DIR, PERMISSIONS_BACKUP_FILE, ROLES, USERS
 from commands.moderation.join_watch import (
-    MAX_MEMBER_AGE_HOURS as JW_MAX_AGE_HOURS,
     MAX_SCANNED_MESSAGES as JW_MAX_MESSAGES,
     TIMEOUT_HOURS as JW_TIMEOUT_HOURS,
     get_join_watch_state,
@@ -681,15 +680,15 @@ def _join_watch_block() -> str:
     if state["enabled"]:
         return (
             "### 🔎 AI join-watch · Armed\n"
-            f"-# The first {JW_MAX_MESSAGES} messages from anyone who joined in the last "
-            f"{JW_MAX_AGE_HOURS}h are AI-screened; a confident troll verdict gets a "
+            f"-# Listening to everyone who joins from now on: their first {JW_MAX_MESSAGES} "
+            f"messages are AI-screened, and a confident troll verdict gets a "
             f"{JW_TIMEOUT_HOURS}h timeout and a police station report.\n"
             f"**Context** {state['context'][:300]}"
         )
     return (
         "### 🔎 AI join-watch · Disarmed\n"
-        f"-# When armed, the first {JW_MAX_MESSAGES} messages from new joiners are "
-        "AI-screened for raid trolling."
+        f"-# When armed, members who join are listened to and their first "
+        f"{JW_MAX_MESSAGES} messages AI-screened for raid trolling."
     )
 
 

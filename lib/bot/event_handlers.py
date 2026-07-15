@@ -1350,6 +1350,13 @@ async def on_interaction(interaction: Interaction):
 
 async def on_member_join(member):
     try:
+        # Oggers' join-watch: start listening to this joiner's first messages
+        # (before the anti-raid early return, so quarantined joiners are covered).
+        try:
+            from commands.moderation.join_watch import register_join
+            register_join(member)
+        except Exception:
+            logger.debug("join-watch registration failed", exc_info=True)
         role = member.guild.get_role(ROLES.MEMBER)
         anti_raid_outcome = await handle_new_member_roles(member, role)
         if anti_raid_outcome.protection_active:

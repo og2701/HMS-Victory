@@ -1,11 +1,12 @@
 """Join-watch: oggers-only AI screening of new joiners' first messages.
 
-While armed, the first few messages from recently joined members are sent to
-Gemini together with profile context (names, account age, avatar and banner
-images). Members the model confidently judges to be hostile raid trolls are
-timed out and reported to the police station. The armed/disarmed toggle and
-incident context survive restarts; per-member scan progress is in-memory only,
-so a restart simply restarts a member's scan window.
+An active listener: arming it does not backtrack. Members who join while it is
+armed are registered on join, and their first few messages are sent to Gemini
+together with profile context (names, account age, avatar and banner images).
+Members the model confidently judges to be hostile raid trolls are timed out
+and reported to the police station. The armed/disarmed toggle and incident
+context survive restarts; the watch list is in-memory only, so a restart stops
+watching members who joined before it.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from lib.core.file_operations import load_json_file, save_json_file
 logger = logging.getLogger(__name__)
 
 MAX_SCANNED_MESSAGES = 5
-MAX_MEMBER_AGE_HOURS = 48
+MAX_WATCHED_MEMBERS = 1000  # raid-scale bound on the in-memory watch list
 TIMEOUT_HOURS = 24
 # A timeout is only applied on a confident "troll" verdict; a confident "fine"
 # verdict stops scanning early. Anything else keeps watching up to the cap.
@@ -84,14 +85,25 @@ def _eligible(member: Any) -> bool:
         return False
     if getattr(member, "id", None) == USERS.OGGERS:
         return False
-    joined_at = getattr(member, "joined_at", None)
-    if joined_at is None:
-        return False
-    if discord.utils.utcnow() - joined_at > timedelta(hours=MAX_MEMBER_AGE_HOURS):
-        return False
     if any(getattr(role, "id", None) in STAFF_ROLE_IDS for role in getattr(member, "roles", [])):
         return False
     return True
+
+
+def register_join(member: Any) -> None:
+    """on_member_join hook: start listening to a member who joined while armed.
+
+    Arming never backtracks; only joins that happen while the watch is armed
+    are screened.
+    """
+    if not join_watch_enabled() or not _eligible(member):
+        return
+    while len(_buffers) >= MAX_WATCHED_MEMBERS:
+        evicted = next(iter(_buffers))
+        _buffers.pop(evicted, None)
+        _locks.pop(evicted, None)
+    _buffers.setdefault(member.id, {"messages": [], "done": False})
+    logger.info("join-watch is now listening to new joiner %s", member.id)
 
 
 def _snapshot(message: Any) -> dict[str, Any]:
@@ -103,23 +115,28 @@ def _snapshot(message: Any) -> dict[str, Any]:
         "content": content,
         "jump_url": getattr(message, "jump_url", ""),
         "ts": int(message.created_at.timestamp()),
+        # Live reference kept so a troll verdict can delete the evidence trail;
+        # never persisted and never sent to the model.
+        "message": message,
     }
 
 
 async def maybe_watch_message(client: Any, message: Any) -> None:
-    """on_message hook: screen an eligible new joiner's message, acting at most once."""
+    """on_message hook: screen a registered new joiner's message, acting at most once."""
     try:
         if not join_watch_enabled():
             return
         if message.guild is None:
             return
         member = message.author
-        if not _eligible(member):
+        # Only members registered by register_join are watched; staff exemption is
+        # re-checked in case they were given a role after joining.
+        if getattr(member, "id", None) not in _buffers or not _eligible(member):
             return
         lock = _locks.setdefault(member.id, asyncio.Lock())
         async with lock:
-            entry = _buffers.setdefault(member.id, {"messages": [], "done": False})
-            if entry["done"]:
+            entry = _buffers.get(member.id)
+            if entry is None or entry["done"]:
                 return
             entry["messages"].append(_snapshot(message))
             verdict = await _evaluate(client, member, entry["messages"])
@@ -309,6 +326,27 @@ async def _evaluate(
 
 
 # --- enforcement + reporting ------------------------------------------------------
+async def _delete_recorded_messages(entry: dict[str, Any]) -> tuple[int, int]:
+    """Delete the flagged messages, marking each snapshot; contents stay in the report."""
+    deleted = 0
+    total = 0
+    for snapshot in entry["messages"]:
+        message = snapshot.get("message")
+        if message is None:
+            continue
+        total += 1
+        try:
+            await message.delete()
+            snapshot["deleted"] = True
+            deleted += 1
+        except discord.NotFound:
+            snapshot["deleted"] = True
+            deleted += 1
+        except (discord.Forbidden, discord.HTTPException):
+            snapshot["deleted"] = False
+    return deleted, total
+
+
 async def _action_troll(
     client: Any, member: Any, entry: dict[str, Any], verdict: dict[str, Any], confidence: float
 ) -> None:
@@ -323,10 +361,66 @@ async def _action_troll(
         action = "timeout FAILED: missing permission or role hierarchy"
     except discord.HTTPException as exc:
         action = f"timeout FAILED: {exc.__class__.__name__}"
+    deleted, total = await _delete_recorded_messages(entry)
+    action += f" · {deleted}/{total} message(s) deleted"
     logger.info(
         "join-watch flagged member %s at %.0f%% confidence: %s", member.id, confidence * 100, action
     )
     await _send_report(client, member, entry, reason, confidence, action)
+
+
+class UntimeoutButton(
+    discord.ui.DynamicItem[discord.ui.Button], template=r"joinwatch:untimeout:(?P<uid>\d+)"
+):
+    """Persistent 'Remove timeout' button on police station reports (staff only)."""
+
+    def __init__(self, user_id: int):
+        self.user_id = int(user_id)
+        super().__init__(
+            discord.ui.Button(
+                label="Remove timeout",
+                emoji="🔓",
+                style=discord.ButtonStyle.secondary,
+                custom_id=f"joinwatch:untimeout:{self.user_id}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match["uid"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        clicker_roles = getattr(interaction.user, "roles", [])
+        if not any(getattr(role, "id", None) in STAFF_ROLE_IDS for role in clicker_roles):
+            await interaction.response.send_message(
+                "Only staff can remove join-watch timeouts.", ephemeral=True
+            )
+            return
+        guild = interaction.guild
+        member = guild.get_member(self.user_id) if guild else None
+        if member is None and guild is not None:
+            try:
+                member = await guild.fetch_member(self.user_id)
+            except discord.HTTPException:
+                member = None
+        if member is None:
+            await interaction.response.send_message(
+                "That member is no longer in the server.", ephemeral=True
+            )
+            return
+        try:
+            await member.timeout(
+                None, reason=f"Join-watch timeout removed by {interaction.user}"
+            )
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            await interaction.response.send_message(
+                f"Could not remove the timeout: {exc}", ephemeral=True
+            )
+            return
+        await interaction.response.send_message(
+            f"🔓 {interaction.user.mention} removed the join-watch timeout for {member.mention}.",
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
 
 def _report_view(
@@ -372,13 +466,21 @@ def _report_view(
 
     lines = []
     for i, m in enumerate(entry["messages"], 1):
-        link = f" · [jump]({m['jump_url']})" if m.get("jump_url") else ""
+        if m.get("deleted"):
+            suffix = " · ✂️ deleted"
+        elif m.get("deleted") is False:
+            suffix = f" · ⚠️ could not delete · [jump]({m['jump_url']})" if m.get("jump_url") else " · ⚠️ could not delete"
+        elif m.get("jump_url"):
+            suffix = f" · [jump]({m['jump_url']})"
+        else:
+            suffix = ""
         lines.append(
-            f"{i}. **{m['channel']}** <t:{m['ts']}:R>{link}\n"
+            f"{i}. **{m['channel']}** <t:{m['ts']}:R>{suffix}\n"
             f"{discord.utils.escape_markdown(m['content'])[:300]}"
         )
     card.add_item(discord.ui.TextDisplay(("### Messages\n" + "\n".join(lines))[:1500]))
     card.add_item(discord.ui.Separator())
+    card.add_item(discord.ui.ActionRow(UntimeoutButton(member.id)))
     card.add_item(
         discord.ui.TextDisplay(
             f"-# Action: {action} · flagged by join-watch AI screening; review and undo if wrong"

@@ -68,6 +68,10 @@ class FakeMessage:
         self.jump_url = "https://discord.com/channels/1/2/3"
         self.created_at = datetime.now(timezone.utc)
         self.id = 999
+        self.deleted = False
+
+    async def delete(self):
+        self.deleted = True
 
 
 class FakeClient:
@@ -111,14 +115,41 @@ def test_eligibility_rules(monkeypatch, tmp_path):
 
     assert join_watch._eligible(FakeMember(member_id=join_watch.USERS.OGGERS)) is False
 
-    old_member = FakeMember(joined_minutes_ago=(join_watch.MAX_MEMBER_AGE_HOURS + 1) * 60)
-    assert join_watch._eligible(old_member) is False
-
     staff = FakeMember(roles=[FakeRole(next(iter(join_watch.STAFF_ROLE_IDS)))])
     assert join_watch._eligible(staff) is False
 
 
-def test_confident_troll_verdict_times_out_and_reports(monkeypatch, tmp_path):
+def test_only_members_who_join_while_armed_are_watched(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    join_watch.set_join_watch_state(True)
+    client = FakeClient()
+    evaluated = []
+
+    async def fake_evaluate(_client, _member, messages):
+        evaluated.append(len(messages))
+        return {"verdict": "unsure", "confidence": 0.5, "reason": "thin"}
+
+    monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
+
+    # Joined before arming (never registered): messages are ignored, no backtracking.
+    unregistered = FakeMember(member_id=1)
+    asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(unregistered, "hola")))
+    assert evaluated == []
+
+    # Joined while armed: registered and screened.
+    registered = FakeMember(member_id=2)
+    join_watch.register_join(registered)
+    asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(registered, "hola")))
+    assert evaluated == [1]
+
+    # Joins while disarmed are not registered.
+    join_watch.set_join_watch_state(False)
+    late = FakeMember(member_id=3)
+    join_watch.register_join(late)
+    assert late.id not in join_watch._buffers
+
+
+def test_confident_troll_verdict_times_out_deletes_and_reports(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path)
     join_watch.set_join_watch_state(True)
     member = FakeMember()
@@ -128,12 +159,20 @@ def test_confident_troll_verdict_times_out_and_reports(monkeypatch, tmp_path):
         return {"verdict": "troll", "confidence": 0.92, "reason": "Joined to spread hate."}
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
-    asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, "england scum etc")))
+    join_watch.register_join(member)
+    trigger = FakeMessage(member, "england scum etc")
+    asyncio.run(join_watch.maybe_watch_message(client, trigger))
 
     assert len(member.timeouts) == 1
     assert "Join-watch" in member.timeouts[0][1]
+    assert trigger.deleted is True
     assert len(client.police.sent) == 1
     assert client.police.sent[0]["view"] is not None
+    # The card keeps the deleted message content and carries the untimeout button.
+    import json as _json
+    payload = _json.dumps(client.police.sent[0]["view"].to_components())
+    assert "england scum etc" in payload
+    assert f"joinwatch:untimeout:{member.id}" in payload
     # Actioned members are never screened again.
     asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, "another message")))
     assert len(member.timeouts) == 1
@@ -151,6 +190,7 @@ def test_unsure_verdicts_stop_after_message_cap_without_action(monkeypatch, tmp_
         return {"verdict": "unsure", "confidence": 0.4, "reason": "Not enough yet."}
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
+    join_watch.register_join(member)
     for i in range(join_watch.MAX_SCANNED_MESSAGES + 2):
         asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, f"msg {i}")))
 
@@ -171,6 +211,7 @@ def test_confident_fine_verdict_clears_early(monkeypatch, tmp_path):
         return {"verdict": "fine", "confidence": 0.9, "reason": "Normal newcomer."}
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
+    join_watch.register_join(member)
     asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, "hello everyone")))
     asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, "how do i get roles")))
 
@@ -188,6 +229,7 @@ def test_evaluation_error_never_times_anyone_out(monkeypatch, tmp_path):
         return None
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
+    join_watch.register_join(member)
     for i in range(join_watch.MAX_SCANNED_MESSAGES):
         asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, f"msg {i}")))
     assert member.timeouts == []

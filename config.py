@@ -314,8 +314,8 @@ BATTLESHIP_ACCEPT_SECONDS = 300    # opponent has this long to accept the challe
 BATTLESHIP_FORFEIT_SECONDS = 120   # 2 min to set up / make each move, or you forfeit the pot
 # "Analyse User" moderation tool (Gemini). Reads GEMINI_API_KEY from the environment.
 GEMINI_MODEL = "gemini-2.5-flash"
-# Join-watch raid screening can use a different (e.g. cheaper) model; falls back to GEMINI_MODEL.
-JOIN_WATCH_GEMINI_MODEL = GEMINI_MODEL
+# Join-watch raid screening model (image-capable). Falls back to GEMINI_MODEL if unset.
+JOIN_WATCH_GEMINI_MODEL = "gemini-3.5-flash"
 RULES_CHANNEL_ID = None            # set to your rules channel id for accurate analysis (else data/rules.txt / generic)
 USER_ANALYSIS_MSG_LIMIT = 1000     # hard cap on messages gathered (only heavy chatters reach it)
 USER_ANALYSIS_MIN_MSGS = 150       # collect at least this many before stopping a non-heavy chatter early
