@@ -518,6 +518,63 @@ def test_the_pit():
     assert E.pit_state(p)["rank"] == 9                 # no rank lost on a loss
 
 
+def test_daily_moods():
+    # deterministic per date, and every mood turns up across a couple of months
+    assert E.daily_mood("2026-07-15") == E.daily_mood("2026-07-15")
+    seen = {E.daily_mood(f"2026-{m:02d}-{d:02d}") for m in (6, 7, 8) for d in range(1, 29)}
+    assert seen == set(D.DAILY_MOODS)
+    # the mood reshapes the dungeon: extra_rooms grows and shrinks the fill
+    base = E.build_rooms("bleak_falls", rng=random.Random(3))
+    long = E.build_rooms("bleak_falls", rng=random.Random(3), extra_rooms=3)
+    short = E.build_rooms("bleak_falls", rng=random.Random(3), extra_rooms=-2)
+    count = lambda rooms: sum(1 for r in rooms if r["kind"] == "enemy" and not r["boss"])
+    assert count(long) == count(base) + 3
+    assert count(short) < count(base)
+    # a NIGHTMARE daily stirs everyone and pays accordingly
+    real = E.daily_mood
+    try:
+        E.daily_mood = lambda date_str=None: "nightmare"
+        q = E.create_profile(21, "Doomed", "warrior")
+        d = E.start_delve(q, 0, None, kind="daily")
+        assert d.mood == "nightmare" and d.stirred == 5
+        assert d.to_dict()["mood"] == "nightmare"
+    finally:
+        E.daily_mood = real
+    # the mood's clear multiplier applies on top of the daily bonus
+    q2 = E.create_profile(22, "Paid", "warrior")
+    rooms = [{"kind": "enemy", "key": "skeever", "boss": True, "resolved": False}]
+    d2 = E.Delve(q2["user_id"], "P", 0, "embershard", rooms, hearts=3, shout_charges=0,
+                 daily=True, mood="quiet")
+    E.random = _fixed_rolls(0.0, 0.99)
+    try:
+        d2.act_attack(q2)
+    finally:
+        _restore_random()
+    expected = int(int(D.LOCATIONS["embershard"]["clear_septims"])
+                   * E.DAILY_CLEAR_MULT * D.DAILY_MOODS["quiet"]["clear_mult"])
+    assert d2.state == "cleared" and abs(d2.satchel - expected) <= expected  # scaled down
+
+
+def test_faction_news_and_members():
+    news = E.faction_news()
+    assert news == E.faction_news()                    # stable within the week
+    assert 3 <= len(news) <= 4
+    assert all(fk in D.FACTIONS and line for fk, line in news)
+    a = E.create_profile(31, "Sworn A", "warrior")
+    a["xp"] = 3000
+    E.join_faction(a, "companions")
+    E.save_profile(a)
+    b = E.create_profile(32, "Sworn B", "thief")
+    b["xp"] = 3000
+    E.join_faction(b, "thieves")
+    E.save_profile(b)
+    members = E.faction_members(E.all_profiles())
+    names = [m[1] for m in members]
+    assert "Sworn A" in names and "Sworn B" in names
+    row = next(m for m in members if m[1] == "Sworn A")
+    assert row[0] == "companions" and row[5] == D.FACTIONS["companions"]["goal"]
+
+
 def test_meditation_sink():
     p = _profile()
     p["xp"] = 60_000                                   # a pile of levels -> spare points

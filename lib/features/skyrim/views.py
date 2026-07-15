@@ -374,7 +374,9 @@ async def _handle_delve_click(interaction: Interaction, delve: E.Delve, action: 
 
     # Buttons that work on finished boards (and never mutate the delve).
     if action == "help":
-        await interaction.response.send_message(_help_text(), ephemeral=True)
+        text, rows = _help_panel("start")
+        view, files = _panel_view(text, rows)
+        await interaction.response.send_message(view=view, files=files, ephemeral=True)
         return
     if action == "sheet":
         profile = E.get_profile(interaction.user.id)
@@ -468,7 +470,9 @@ def _hub_rows(profile):
     row1.add_item(_cb_btn(discord.ButtonStyle.primary,
                           f"Character ({pts})" if pts else "Character", "👤", _hub_character))
     row1.add_item(_cb_btn(discord.ButtonStyle.primary, "Belethor's", "🏪", _hub_shop))
-    daily_label = "Daily Delve" if E.daily_available(profile) else "Daily Results"
+    mood_emoji = D.DAILY_MOODS[E.daily_mood()]["emoji"]
+    daily_label = (f"Daily Delve {mood_emoji}".strip() if E.daily_available(profile)
+                   else "Daily Results")
     row1.add_item(_cb_btn(discord.ButtonStyle.success if E.daily_available(profile)
                           else discord.ButtonStyle.secondary, daily_label, "📅", _hub_daily))
     row2 = discord.ui.ActionRow()
@@ -1613,18 +1617,28 @@ def _factions_text(profile) -> str:
         bar = _bar(min(prog, goal), 0, goal, 10)
         state = "✅ ready to claim" if done else f"{prog}/{goal}"
         lines.append(f"-# This week: **{goal} {fac['verb']}**  {bar}  {state}")
-        lines.append("")
-        lines.append("**The word from the other guilds this week:**")
-        for name, n in E.faction_rivals(profile):
-            lines.append(f"-# {name} has been busy - {n} deeds done.")
+    elif E.level(profile) < int(getattr(E.config, "SKYRIM_DRAGON_MIN_LEVEL", 8)):
+        lines.append("-# 🔒 The great factions only take proven adventurers (level 8+).")
     else:
-        if E.level(profile) < int(getattr(E.config, "SKYRIM_DRAGON_MIN_LEVEL", 8)):
-            lines.append("-# 🔒 The great factions only take proven adventurers (level 8+).")
-        else:
-            lines.append("**Choose an allegiance:**")
-            for k, fac in D.FACTIONS.items():
-                lines.append(f"{fac['emoji']} **{fac['name']}** ({fac['seat']}) - {fac['blurb']}  "
-                             f"Weekly task: {fac['goal']} {fac['verb']}.")
+        lines.append("**Choose an allegiance:**")
+        for k, fac in D.FACTIONS.items():
+            lines.append(f"{fac['emoji']} **{fac['name']}** ({fac['seat']}) - {fac['blurb']}  "
+                         f"Weekly task: {fac['goal']} {fac['verb']}.")
+    # the REAL fellowship first: every sworn player on the server, live progress
+    members = E.faction_members(E.all_profiles())
+    others = [m for m in members if m[1] != profile.get("name")]
+    if others:
+        lines.append("")
+        lines.append("**Sworn this week:**")
+        for fk, name, rank, favour, prog, goal, done in others[:6]:
+            f = D.FACTIONS[fk]
+            state = "✅ claimable" if done else f"{prog}/{goal} {f['verb']}"
+            lines.append(f"-# {f['emoji']} **{name}** - {rank} (favour {favour})  ·  {state}")
+    # ...then the guild-hall gossip beneath
+    lines.append("")
+    lines.append("**Word around the halls:**")
+    for fk, line in E.faction_news():
+        lines.append(f"-# {D.FACTIONS[fk]['emoji']} {line}")
     return "\n".join(lines)
 
 
@@ -1774,11 +1788,19 @@ def _daily_marked_line() -> str:
     return f"\n-# 🗡️ Word from inside - marked foes today: {bits}"
 
 
+def _daily_mood_line() -> str:
+    mood = D.DAILY_MOODS[E.daily_mood()]
+    if not mood["emoji"]:
+        return ""
+    return f"\n{mood['emoji']} **{mood['name']}** - {mood['desc']}."
+
+
 def _daily_results_text() -> str:
     loc = E.daily_location()
     lines = [f"## 📅 Daily Delve - {loc['emoji']} {loc['name']}",
              f"-# {E.weather_line()}  ·  same rooms for everyone, one attempt each, "
-             f"{E.DAILY_CLEAR_MULT:g}x clear bonus" + _daily_marked_line(), ""]
+             f"{E.DAILY_CLEAR_MULT:g}x clear bonus" + _daily_marked_line()
+             + _daily_mood_line(), ""]
     results = E.daily_results()
     if not results:
         lines.append("No attempts yet today. The dungeon waits.")
@@ -1813,7 +1835,7 @@ async def _hub_daily(interaction: Interaction):
         return
     loc = E.daily_location()
     text = (f"## 📅 Daily Delve - {loc['emoji']} {loc['name']}\n"
-            f"-# {E.weather_line()}{_daily_marked_line()}\n\n"
+            f"-# {E.weather_line()}{_daily_marked_line()}{_daily_mood_line()}\n\n"
             f"{loc['desc']}\n"
             f"One shared dungeon per day: **everyone faces the same rooms**, the dice are "
             f"your own. One attempt, separate from your normal delves, and the clear bonus "
@@ -1860,82 +1882,123 @@ async def _hub_rankings(interaction: Interaction):
 
 
 # --- help -------------------------------------------------------------------------
-def _help_text() -> str:
-    return (
-        "## 📖 Skyrim - How it works\n"
+# The old single-page help outgrew Discord's 4000-char message budget and the
+# button simply died. Paged now: one topic per page, chosen by select.
+HELP_PAGES = {
+    "start": ("🐉", "The basics", 
+        "## 📖 The basics\n"
         "A persistent adventure: your character, skills, gear and dragon souls are kept "
         "forever. Run `/skyrim` for your hub, then **Adventure** to delve.\n\n"
-        "**Delves** - a run of rooms ending in a boss. Each enemy shows your odds up front:\n"
-        "- ⚔️🏹🔥 **Attack** - three styles (One-Handed, Marksman, Destruction), each its "
-        "own skill, each better against some foes (fire purges draugr; arrows bounce off "
-        "bones). The style you use is the skill that grows.\n"
-        "- 🥷 **Sneak** - slip into hiding. Then choose: **ambush** for a big attack bonus, "
-        "or slip past for XP. Get spotted and the fight is on.\n"
+        "**Delves** - a run of rooms ending in a boss, with your odds shown on every button:\n"
+        "- ⚔️🏹🔥 **Attack** - three styles, each its own skill, each better against some "
+        "foes (fire purges draugr; arrows bounce off bones). The style you use is the skill "
+        "that grows.\n"
+        "- 🥷 **Sneak** - hide, then choose: **ambush** at a big bonus, or slip past for XP.\n"
         "- 💬 **Persuade** - humans only. Talk your way through, sometimes at a profit.\n"
-        "- 🗣️ **Shout** - the Voice flattens a room (dragons get grounded instead). "
-        "Charges = words you know.\n"
-        "- 🧪 **Potion** / 🚪 **Leave** - patch up, or walk out with your satchel. "
-        "Fleeing mid-fight spills a third of it.\n"
-        "- 🔓 **Master-locked chests** - Lockpicking territory: double loot, one careful try.\n\n"
-        "**The stakes** - XP, skill-ups, gear, souls and potions bank instantly. The "
-        "**septims in your satchel** only bank when you leave or clear - die and they stay "
-        "in the dungeon.\n\n"
-        "**No classes - you become what you practise.** Every skill levels by use; your "
-        "Guardian Stone just makes its skills learn faster. Your title (Stealth Archer, "
-        "Spellsword...) is earned, not picked. Armour comes **heavy** (tougher) or "
-        "**light** (quieter) - switch free at Belethor's. Perks stack on top.\n\n"
-        "**Dragons** - sighted once you're strong enough. Slay one and its **soul** is "
-        "yours; spend souls at **Word Walls** to learn FUS, then RO, then DAH.\n\n"
-        "**The wilds** - each UK day has a shared **weather** roll that tilts the odds for "
-        "everyone; a clean strike **crits** for double; rare 🏴 **bounty** enemies are "
-        "tougher but pay triple.\n\n"
-        "**📅 The Daily Delve** - one shared dungeon per day, same rooms for everyone, one "
-        "attempt each, fatter clear bonus, and a board to compare scars on. Doesn't use "
-        "your normal delves.\n\n"
-        "**🏠 Property** - Belethor sells Breezehome and furnishings for septims. Comforts, "
-        "not power: a blessing and a brewed potion on your first delve each day.\n\n"
-        "**🌑 Alduin** - at level 20, with the full Shout and 5 dragons down, Skuldafn "
-        "opens. One attempt per day. He takes wing mid-fight; only the Voice brings him "
-        "back down. Slay him for the ⭐ title - but the World-Eater **echoes**: every "
-        "victory returns him a heart stronger, harder to face, and demanding more dragons "
-        "slain before he'll meet you again. His soul pays richer each time.\n\n"
-        "**⚡ Overkill** - once your odds are pinned at the cap, the surplus becomes bonus "
-        "**crit** (shown on the button). Gear, tempering, affinity and grounding still matter "
-        "at the top.\n"
-        "**Elite foes** - rare **affixed** enemies (Warded needs Fire, Bonebound shrugs off "
-        "arrows, Venomous bleeds into the next room...) are telegraphed a room ahead. Bounties "
-        "still pay triple.\n"
+        "- 🧪 **Potion** / 🚪 **Leave** - patch up, or walk out with your satchel. Fleeing "
+        "mid-fight spills a third.\n\n"
+        "**The stakes** - XP, skills, gear, souls and potions bank instantly. The **septims "
+        "and ingredients in your satchel** bank only when you leave or clear - die and they "
+        "stay behind (as a corpse another player may find).\n\n"
+        "**No classes** - you become what you practise; your Guardian Stone just learns its "
+        "arts faster. Titles like Stealth Archer are earned, not picked."),
+    "combat": ("⚔️", "Combat, elites & the Voice",
+        "## ⚔️ Combat, elites & the Voice\n"
+        "**⚡ Overkill** - odds pushed past the 86% cap become bonus **crit**, shown on the "
+        "button. Gear, tempering, affinity and grounding always matter.\n"
+        "**Elites** - rare **affixed** foes telegraphed a room ahead: Warded needs Fire, "
+        "Bonebound shrugs off arrows, Venomous bleeds into the next room... 🏴 bounties pay "
+        "triple. Big bosses **answer your blows** - they don't wait for you to miss.\n"
         "**The Voice** - **FUS** grounds/staggers (1 charge), **FUS RO** flattens a room (2), "
-        "**FUS RO DAH** deals 2 damage to anything (3). Your breath is **persistent**: it no "
-        "longer refills at every door - you regain 1 charge at dawn (UK), and **absorbing a "
-        "dragon soul renews it in full**. Skuldafn alone grants a full Voice at the gate. "
-        "A **week's dragon** rotates the roster; airborne dragons need a **bow** or a shout.\n"
-        "**Masteries** - carry a skill to 100 for a permanent **Doctrine** (pick one of two); "
-        "make it **Legendary** to reset it to 15 for a ⭐.\n"
-        "**Crafting** - kills drop **ingredients** into your at-risk satchel; brew them at the "
-        "**Lab Bench**, or feed them to the **Grindstone** to temper gear past its tier. Drops "
-        "follow the foe: undead shed the smithing salts, monsters the fats and claws, men and "
-        "beasts the herbs, dragons their scales - the 🧪 icons on the map picker show what "
-        "hunts where, so the easy roads still have a job once you've outgrown them.\n"
-        "**More to do** - swear to a **Faction** for weekly tasks, send a housecarl on an "
-        "**Expedition**, loot **Fallen Adventurers**, brave the **Forks** and **Mimics**, and "
-        "once Alduin is down, descend the endless **Soul Cairn** (one attempt a day).\n"
-        "**Character** holds your **📦 Collection Log** (fill the book), **🎖️ Hall of "
-        "Records** (personal bests), and your **🐾 Companion** - befriend the rare stray "
-        "on the road. Delving daily builds a **🔥 streak** that pays a loot bonus on the "
-        "day's first delve (one rest day a week forgiven).\n"
-        "**🗡️ The Pit** (Windhelm, level 5+) - climb a ladder of champions round by round "
-        "(Strike / Power blow / Guard). Fight on while you win at mounting fatigue; a loss "
-        "ends your day. Glory only; the board resets each Monday. **🗣️ Rumours** at Belethor's "
-        "sell the locations of three one-time LEGEND hunts - the hardest fights in the "
-        "game, each with a permanent trophy.\n\n"
-        f"-# {getattr(config, 'SKYRIM_DELVES_PER_DAY', 3)} delves per day, reset at "
-        "midnight (UK). No UKPence involved anywhere - glory only."
-    )
+        "**FUS RO DAH** deals 2 damage to anything (3). Breath is **persistent**: +1 charge "
+        "at dawn (UK), and **a dragon's soul renews it in full**. Meditation (a perk point) "
+        "restores it on demand.\n"
+        "**Dragons** - a named **dragon of the week** holds the lairs. Airborne dragons need "
+        "a **bow** or a grounding shout; souls buy words at Word Walls and refuel the Voice.\n"
+        "**Locations answer strength**: Hard maps and lairs run **Stirred** at high power - "
+        "harder to hit, armour-piercing, crushing - and pay more. Easy maps stay easy."),
+    "character": ("👤", "Your character",
+        "## 👤 Your character\n"
+        "**Perks** - one point per level. The table maxes out; spare points fund "
+        "🧘 **Meditation** (full breath on demand).\n"
+        "**✨ Masteries** - a skill at 100 unlocks a permanent **Doctrine** (pick one of "
+        "two); make the skill **Legendary** to reset it to 15 for a ⭐ and climb again.\n"
+        "**📦 Collection Log** - one ledger of everything unique: bestiary, marked foes, "
+        "dragons, encounters, places, recipes, pacts, legends, champions, companions, "
+        "Cairn depths. Fill the book.\n"
+        "**🎖️ Hall of Records** - personal bests: richest satchel, deepest Cairn, longest "
+        "streak, best Pit rank and more.\n"
+        "**🐾 Companions** - befriend the rare stray: Meeko guards, Vix forages, Pincer "
+        "barters, Corvus spots crits. One walks with you at a time.\n"
+        "**🔥 Streaks** - delve daily and the day's first delve pays up to +20% loot. One "
+        "missed day a week is quietly forgiven."),
+    "town": ("🏪", "Belethor's & crafting",
+        "## 🏪 Belethor's & crafting\n"
+        "**Gear** - weapon and armour tiers up to Dragonbone (25 dragons slain to wear "
+        "their bones). Armour comes **heavy** (tougher) or **light** (quieter) - switch free.\n"
+        "**🪓 The Grindstone** - temper gear past its tier with septims + materials; the "
+        "bonuses feed Overkill and soak past their caps.\n"
+        "**⚗️ The Lab Bench** (Alchemy Lab upgrade) - brew looted ingredients into potions "
+        "and one-delve elixirs. Drops follow the foe: undead shed smithing salts, monsters "
+        "fats and claws, men and beasts herbs, dragons scales - the 🧪 icons on the picker "
+        "show what hunts where.\n"
+        "**🏠 Property** - Breezehome and furnishings: comforts like a blessing and a free "
+        "brew on the day's first delve.\n"
+        "**🗣️ Rumours** - buy a whisper, unlock a one-time **LEGEND** hunt: the Ebony "
+        "Warrior (deaf to the Voice), Karstaag (fire is useless), and the twin dragons of "
+        "the Forgotten Vale. Permanent trophies for the worthy."),
+    "world": ("🌍", "The world & the daily",
+        "## 🌍 The world & the daily\n"
+        "**Weather** turns daily and tilts everyone's odds; **routes** rotate at dawn with "
+        "conditions (Rich Pickings, Marked Prey, Elite Nest...) shown on the picker.\n"
+        "**📅 The Daily Delve** - one shared dungeon a day, same rooms for everyone, one "
+        "attempt, results on a board. Its **mood** varies: quiet sprints, marathon Long "
+        "Hauls, Deadly days - and the rare 😱 **NIGHTMARE** most will not survive (clear it "
+        "for glory and a fat purse). Doesn't spend your delves.\n"
+        "**🏰 Factions** (L8+) - swear to the Companions, Thieves or College; a weekly task "
+        "in a neglected skill pays favour, rank and coin.\n"
+        "**🧭 Expeditions** (L8+) - send your housecarl away for 1-3 days; collect the haul "
+        "and read the road-log when they return.\n"
+        "**🗡️ The Pit** (L5+) - Windhelm's arena ladder, round by round (Strike / Power "
+        "blow / Guard), each champion with a signature trick. Fight on while you win as "
+        "fatigue mounts and wounds carry; a loss ends your day. Board resets each Monday."),
+    "endgame": ("🌑", "Endgame",
+        "## 🌑 Endgame\n"
+        "**Alduin** - at level 20 with the full Shout and 5 dragons slain, Skuldafn opens: "
+        "a war over your shout charges as he takes wing again and again. Slay him for the "
+        "⭐ - but the World-Eater **echoes**: each victory returns him a heart stronger, "
+        "harder to face, demanding more dragons before a rematch, and paying richer.\n"
+        "**💀 The Soul Cairn** - unlocked by Alduin's fall: an endless daily descent where "
+        "the deep drains your odds. The prize is the depth record.\n"
+        "**⚖️ Daedric Pacts** (L10+, on the Adventure picker) - swear curses for a "
+        "multiplied satchel: Boethiah caps your odds at 72%, Namira corks the potions, "
+        "Dagon makes every wound crush, Clavicus seals the exits. Stack them (cap x4). "
+        "Death loses everything, as ever.\n"
+        "**🖤 Legends** - the three Rumour hunts are the hardest fights in the game, "
+        "never Stirred, pure duels. Slain once, remembered forever."),
+}
+
+
+def _help_panel(page: str):
+    emoji, label, text = HELP_PAGES.get(page, HELP_PAGES["start"])
+    text += (f"\n\n-# {getattr(config, 'SKYRIM_DELVES_PER_DAY', 3)} delves per day, reset "
+             f"at midnight (UK). No UKPence involved anywhere - glory only.")
+    sel = discord.ui.Select(placeholder="📖 More chapters...")
+    for key, (em, lab, _t) in HELP_PAGES.items():
+        sel.add_option(label=lab, value=key, emoji=em or "📖", default=key == page)
+
+    async def _turn(inter: Interaction):
+        t2, rows2 = _help_panel(sel.values[0])
+        await _edit_panel(inter, t2, rows2)
+    sel.callback = _turn
+    srow = discord.ui.ActionRow()
+    srow.add_item(sel)
+    return text, [srow, _back_row()]
 
 
 async def _hub_help(interaction: Interaction):
-    await _edit_panel(interaction, _help_text(), [_back_row()])
+    text, rows = _help_panel("start")
+    await _edit_panel(interaction, text, rows)
 
 
 # ---------------------------------------------------------------------------

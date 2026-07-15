@@ -877,7 +877,8 @@ def _roll_affix(enemy_key: str, char_level: int, rng) -> str | None:
     return _eligible_affix(enemy_key, rng)
 
 
-def build_rooms(loc_key: str, rng=None, affix_level: int = 0, route: str = None) -> list:
+def build_rooms(loc_key: str, rng=None, affix_level: int = 0, route: str = None,
+                extra_rooms: int = 0) -> list:
     """Room list for a fresh delve: shuffled trash + events, optional word wall,
     boss last. Each room: {kind, key, boss, resolved} (+ bounty on rare named
     variants, + affix on rare elite variants). Pass a seeded rng for the shared
@@ -886,7 +887,7 @@ def build_rooms(loc_key: str, rng=None, affix_level: int = 0, route: str = None)
     rng = rng or random
     loc = D.LOCATIONS[loc_key]
     cond = D.ROUTE_CONDITIONS.get(route) or {}
-    n_fill = loc["rooms"] - 1 + (1 if cond.get("extra_room") else 0)
+    n_fill = max(1, loc["rooms"] - 1 + (1 if cond.get("extra_room") else 0) + int(extra_rooms))
     n_events = min(loc["events"], n_fill - 1)      # always at least one trash fight
     bounty_chance = BOUNTY_CHANCE * cond.get("bounty_mult", 1)
     enemy_keys = list(loc["pool"].keys())
@@ -1009,7 +1010,7 @@ class Delve:
                  delve_id=None, enemy_hp=None, daily=False, fan=False,
                  ambush=False, hp_warned=False, venom=False, ingredients=None,
                  dragon=None, phase=None, depth=0, kind="normal", buffs=None,
-                 route=None, pacts=None, stirred=0, echo=0, pet_used=False):
+                 route=None, pacts=None, stirred=0, echo=0, pet_used=False, mood=None):
         import uuid
         self.delve_id = delve_id or uuid.uuid4().hex[:12]
         self.daily = bool(daily)                  # the shared once-a-day dungeon
@@ -1028,6 +1029,7 @@ class Delve:
         self.stirred = int(stirred)               # deep-offer danger rank (0 = plain)
         self.echo = int(echo)                     # Alduin's Echoes: past kills harden him
         self.pet_used = bool(pet_used)            # the companion's once-per-delve save spent
+        self.mood = mood                          # the daily's shared mood key
         self.player_id = int(player_id)
         self.player_name = player_name
         self.channel_id = channel_id
@@ -1162,7 +1164,8 @@ class Delve:
     def _finish_clear(self, profile):
         bonus = _septims(profile, self.loc["clear_septims"])
         if self.daily:
-            bonus = int(bonus * DAILY_CLEAR_MULT)
+            bonus = int(bonus * DAILY_CLEAR_MULT
+                        * D.DAILY_MOODS.get(self.mood, {}).get("clear_mult", 1.0))
         cond = D.ROUTE_CONDITIONS.get(self.route)
         if cond:
             bonus = int(bonus * cond.get("clear_mult", 1.0))   # Rich Pickings pays out
@@ -1888,7 +1891,7 @@ class Delve:
                 "dragon": self.dragon, "phase": self.phase, "depth": self.depth,
                 "kind": self.kind, "buffs": self.buffs, "route": self.route,
                 "pacts": self.pacts, "stirred": self.stirred, "echo": self.echo,
-                "pet_used": self.pet_used}
+                "pet_used": self.pet_used, "mood": self.mood}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Delve":
@@ -1907,7 +1910,7 @@ class Delve:
                    dragon=d.get("dragon"), phase=d.get("phase"), depth=d.get("depth", 0),
                    kind=d.get("kind", "normal"), buffs=d.get("buffs"), route=d.get("route"),
                    pacts=d.get("pacts"), stirred=d.get("stirred", 0), echo=d.get("echo", 0),
-                   pet_used=d.get("pet_used", False))
+                   pet_used=d.get("pet_used", False), mood=d.get("mood"))
 
 
 # ---------------------------------------------------------------------------
@@ -1954,12 +1957,16 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
     if kind == "daily":
         # the shared layout rolls elites like a seasoned delver's map and always
         # features at least one - seeded, so everyone faces the same marked foes
-        date, loc_key, route, rooms = _daily_rooms()
+        date, loc_key, route, mood, rooms = _daily_rooms()
         profile["daily"] = {"date": date}
         delve = Delve(profile["user_id"], profile["name"], channel_id, loc_key,
                       rooms, hearts=heart_max(profile),
-                      shout_charges=voice_charges(profile), daily=True, route=route)
+                      shout_charges=voice_charges(profile), daily=True, route=route,
+                      mood=mood, stirred=D.DAILY_MOODS[mood]["stirred"])
         delve.say(D.LOCATIONS[loc_key]["arrive"])
+        m = D.DAILY_MOODS[mood]
+        if mood != "plain":
+            delve.say(f"{m['emoji']} **{m['name']}** - {m['desc']}.")
         cond = D.ROUTE_CONDITIONS.get(route)
         if cond:
             if cond.get("blessed"):
@@ -2045,6 +2052,14 @@ def _daily_layout() -> tuple:
     return date, rng.choice(pool), rng
 
 
+def daily_mood(date_str: str = None) -> str:
+    """Today's shared-dungeon MOOD - shape and danger, identical for everyone,
+    deterministic per UK date (its own seed stream so layouts stay stable)."""
+    rng = random.Random(f"skyrim-daily-mood-{date_str or _today_str()}")
+    keys = list(D.DAILY_MOODS)
+    return rng.choices(keys, weights=[D.DAILY_MOODS[k]["weight"] for k in keys], k=1)[0]
+
+
 def _ensure_affix(rooms: list, rng) -> None:
     """Guarantee at least one Marked (affixed) foe in a room list - the daily
     always features one, so the counter-play read comes up every day."""
@@ -2061,18 +2076,20 @@ def _ensure_affix(rooms: list, rng) -> None:
 
 
 def _daily_rooms() -> tuple:
-    """(date, loc_key, route, rooms) for today's shared dungeon - THE single
+    """(date, loc_key, route, mood, rooms) for today's shared dungeon - THE single
     builder, so the delve and any preview always agree on the layout."""
     date, loc_key, rng = _daily_layout()
     route = route_condition(loc_key)
-    rooms = build_rooms(loc_key, rng, affix_level=15, route=route)
+    mood = daily_mood(date)
+    rooms = build_rooms(loc_key, rng, affix_level=15, route=route,
+                        extra_rooms=D.DAILY_MOODS[mood]["rooms"])
     _ensure_affix(rooms, rng)
-    return date, loc_key, route, rooms
+    return date, loc_key, route, mood, rooms
 
 
 def daily_affixes() -> list:
     """The affix keys marked on today's shared board (for the daily panel tease)."""
-    _date, _loc, _route, rooms = _daily_rooms()
+    _date, _loc, _route, _mood, rooms = _daily_rooms()
     return sorted({r["affix"] for r in rooms if r.get("affix")})
 
 
@@ -2696,13 +2713,33 @@ def claim_faction(profile) -> str | None:
     return f"favour +1 ({D.FACTION_RANKS[rank_i]}), +{reward} septims, +{gained} XP"
 
 
-def faction_rivals(profile) -> list:
-    """Deterministic NPC standings for flavour - the world feels busy with few players."""
+def faction_news() -> list:
+    """This week's guild-hall gossip: [(faction_key, line)] - one seeded deed per
+    chosen NPC, deterministic per ISO week and identical for everyone. Renders
+    beneath the REAL players' standings so the halls feel busy on a quiet server."""
     wk = _iso_week()
     rng = random.Random(f"skyrim-faction-{wk[0]}-{wk[1]}")
-    names = list(D.FACTION_NPC_RIVALS)
-    rng.shuffle(names)
-    return [(n, rng.randint(2, 9)) for n in names[:3]]
+    npcs = list(D.FACTION_NPCS)
+    rng.shuffle(npcs)
+    out = []
+    for npc in npcs[:4]:
+        deed = rng.choice(npc["deeds"]).format(n=rng.randint(2, 9))
+        out.append((npc["faction"], f"**{npc['name']}** {deed}."))
+    return out
+
+
+def faction_members(profiles: dict) -> list:
+    """Every sworn REAL player: [(faction_key, name, rank, favour, prog, goal,
+    done)] sorted by favour - the actual fellowship, shown above the gossip."""
+    out = []
+    for p in profiles.values():
+        fac = p.get("allegiance")
+        if fac not in D.FACTIONS:
+            continue
+        goal, prog, done = faction_progress(p)
+        out.append((fac, p.get("name", "?"), faction_rank(p), faction_favour(p),
+                    prog, goal, done))
+    return sorted(out, key=lambda r: -r[3])
 
 
 # ---------------------------------------------------------------------------

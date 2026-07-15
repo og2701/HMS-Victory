@@ -575,6 +575,31 @@ PACTS = {
 }
 
 # ---------------------------------------------------------------------------
+# Daily moods - the shared dungeon changes SHAPE day to day, deterministic per UK
+# date and identical for everyone (a fair board). Quiet sprints, marathon hauls,
+# and the rare NIGHTMARE the whole server wipes on together. `stirred` reuses the
+# stirred machinery (fight/soak/crush maluses, +25% clear & +8% loot per rank);
+# `rooms` shifts the dungeon's length.
+# ---------------------------------------------------------------------------
+DAILY_MOODS = {
+    "plain": {"weight": 5, "name": "an ordinary day", "emoji": "", "rooms": 0,
+              "stirred": 0, "clear_mult": 1.0,
+              "desc": "the dungeon as the gods intended"},
+    "quiet": {"weight": 2, "name": "A Quiet Road", "emoji": "🕊️", "rooms": -2,
+              "stirred": 0, "clear_mult": 0.8,
+              "desc": "short and shallow - in, out, home for supper (lighter clear)"},
+    "long": {"weight": 2, "name": "The Long Haul", "emoji": "🥾", "rooms": 3,
+             "stirred": 0, "clear_mult": 1.4,
+             "desc": "the deep survey: far more rooms - pace your hearts and potions"},
+    "deadly": {"weight": 2, "name": "A Deadly Day", "emoji": "☠️", "rooms": 0,
+               "stirred": 3, "clear_mult": 1.0,
+               "desc": "everything inside is Seething - harder to hit, armour-piercing, crushing"},
+    "nightmare": {"weight": 1, "name": "NIGHTMARE", "emoji": "😱", "rooms": 2,
+                  "stirred": 5, "clear_mult": 1.3,
+                  "desc": "longer, and everything at its worst - most will die. Glory to any who clear it"},
+}
+
+# ---------------------------------------------------------------------------
 # Route conditions - a date-seeded tag each location may carry for the day, shown
 # on the picker and applied to delves there. Same for everyone, rotating daily like
 # the weather, so the SAME map plays differently across the week and picking a
@@ -1095,8 +1120,33 @@ FACTIONS = {
                 "blurb": "Scholars who would rather talk than fight. Usually."},
 }
 FACTION_RANKS = ["Initiate", "Member", "Sworn", "Champion", "Harbinger"]
-FACTION_NPC_RIVALS = ["Vilkas", "Brynjolf", "Tolfdir", "Aela", "Karliah", "Faralda",
-                      "Njada", "Delvin", "Sergius"]
+# The guild-hall gossip: named NPCs with faction ties and deed lines ({n} filled
+# with a seeded weekly count). Rendered on the Factions panel beneath the REAL
+# players' standings, so the halls feel busy even on a quiet server.
+FACTION_NPCS = [
+    {"name": "Vilkas", "faction": "companions",
+     "deeds": ["put down a giant that wandered too near Pelagia Farm ({n} swings, he counted)",
+               "cleared {n} bandits out of a mill they'd 'liberated'"]},
+    {"name": "Aela the Huntress", "faction": "companions",
+     "deeds": ["dragged a sabre cat carcass into Jorrvaskr like it weighed nothing ({n} arrows in it)",
+               "tracked a poacher ring for {n} days and ended it in one"]},
+    {"name": "Njada Stonearm", "faction": "companions",
+     "deeds": ["won {n} straight shield-brawls in the yard and is unbearable about it"]},
+    {"name": "Brynjolf", "faction": "thieves",
+     "deeds": ["lifted {n} purses at the Solitude market and bought everyone a round",
+               "swapped {n} ledgers in the Emperor's own counting-house, allegedly"]},
+    {"name": "Karliah", "faction": "thieves",
+     "deeds": ["walked through {n} guard patrols unseen, out of professional boredom"]},
+    {"name": "Delvin Mallory", "faction": "thieves",
+     "deeds": ["fenced {n} 'lost' heirlooms back to their original owners. Twice each"]},
+    {"name": "Tolfdir", "faction": "college",
+     "deeds": ["talked a draugr into standing down ({n} minutes of patient lecturing)",
+               "negotiated {n} new manuscripts out of a very suspicious courier"]},
+    {"name": "Faralda", "faction": "college",
+     "deeds": ["turned {n} would-be applicants away with a single raised eyebrow"]},
+    {"name": "Sergius Turrianus", "faction": "college",
+     "deeds": ["sweet-talked {n} jarls into funding 'essential enchantment research'"]},
+]
 
 # ---------------------------------------------------------------------------
 # Idle Expeditions - send your housecarl on a multi-day errand and collect the haul
