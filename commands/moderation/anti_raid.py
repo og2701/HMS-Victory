@@ -13,7 +13,7 @@ from typing import Any, Iterable
 import discord
 from discord.interactions import Interaction
 
-from config import JSON_DATA_DIR, PERMISSIONS_BACKUP_FILE, ROLES, USERS
+from config import JSON_DATA_DIR, PERMISSIONS_BACKUP_FILE, ROLES
 from commands.moderation.join_watch import (
     MAX_SCANNED_MESSAGES as JW_MAX_MESSAGES,
     TIMEOUT_HOURS as JW_TIMEOUT_HOURS,
@@ -268,12 +268,28 @@ def _join_velocity(records: Iterable[dict[str, Any]], now: int | None = None) ->
     )
 
 
+def _editable_roles(guild: discord.Guild) -> list[discord.Role]:
+    """Roles the bot can actually edit: unmanaged and strictly below its top role.
+
+    Roles at or above the bot in the hierarchy 403 on edit, which previously
+    left every enable/disable pass permanently degraded.
+    """
+    roles = [role for role in guild.roles if not getattr(role, "managed", False)]
+    me = getattr(guild, "me", None)
+    top_role = getattr(me, "top_role", None) if me is not None else None
+    if top_role is None:
+        return roles
+    top_position = getattr(top_role, "position", None)
+    if top_position is None:
+        return roles
+    return [role for role in roles if getattr(role, "position", 0) < top_position]
+
+
 def backup_role_permissions(guild: discord.Guild) -> None:
     """Store a guild-bound, complete snapshot of every role we will restrict."""
     role_permissions = {
         str(role.id): role.permissions.value
-        for role in guild.roles
-        if not role.managed
+        for role in _editable_roles(guild)
     }
     if not role_permissions:
         raise ValueError("guild has no restorable unmanaged roles")
@@ -324,7 +340,7 @@ def _prepare_role_permission_restore(
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         return [], [f"The role-permission backup could not be validated: {exc}"]
 
-    roles = [role for role in guild.roles if not role.managed]
+    roles = _editable_roles(guild)
     if not roles:
         return [], ["The guild has no restorable unmanaged roles."]
     missing_role_ids = [
@@ -397,7 +413,7 @@ async def restore_role_permissions(guild: discord.Guild) -> list[str]:
 
 async def disable_role_permissions(guild: discord.Guild) -> list[str]:
     """Apply the restricted permission set and report partial failures."""
-    roles = [role for role in guild.roles if not role.managed]
+    roles = _editable_roles(guild)
     failures: list[str] = []
     for offset in range(0, len(roles), BATCH_SIZE):
         batch = roles[offset : offset + BATCH_SIZE]
@@ -754,15 +770,31 @@ class AntiRaidModeButton(discord.ui.Button):
 
     async def callback(self, interaction: Interaction) -> None:
         dashboard: AntiRaidControlView = self.view  # type: ignore[assignment]
-        await interaction.response.defer(ephemeral=True)
-        if self.target_active:
-            result = await enable_anti_raid(dashboard.guild)
-            if result.changed:
-                await send_backup_file(dashboard.guild)
-            action = "enabled"
-        else:
-            result = await disable_anti_raid(dashboard.guild)
-            action = "disabled"
+        # Role edits are batched and rate-limited, so this can take a while;
+        # show a working panel immediately and lock the controls meanwhile.
+        dashboard.notice = (
+            "⏳ Enabling protection - backing up and restricting role permissions. "
+            "This can take a minute…"
+            if self.target_active
+            else "⏳ Disabling protection - restoring role permissions. This can take a minute…"
+        )
+        dashboard.busy = True
+        dashboard.render()
+        await interaction.response.edit_message(
+            view=dashboard,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        try:
+            if self.target_active:
+                result = await enable_anti_raid(dashboard.guild)
+                if result.changed:
+                    await send_backup_file(dashboard.guild)
+                action = "enabled"
+            else:
+                result = await disable_anti_raid(dashboard.guild)
+                action = "disabled"
+        finally:
+            dashboard.busy = False
 
         if result.failures:
             dashboard.notice = (
@@ -796,9 +828,9 @@ class JoinWatchToggleButton(discord.ui.Button):
 
     async def callback(self, interaction: Interaction) -> None:
         dashboard: AntiRaidControlView = self.view  # type: ignore[assignment]
-        if interaction.user.id != USERS.OGGERS:
+        if not _is_staff(interaction.user):
             await interaction.response.send_message(
-                "Only oggers can operate join-watch.", ephemeral=True
+                "Only staff can operate join-watch.", ephemeral=True
             )
             return
         state = set_join_watch_state(self.target_armed)
@@ -856,9 +888,9 @@ class JoinWatchContextButton(discord.ui.Button):
 
     async def callback(self, interaction: Interaction) -> None:
         dashboard: AntiRaidControlView = self.view  # type: ignore[assignment]
-        if interaction.user.id != USERS.OGGERS:
+        if not _is_staff(interaction.user):
             await interaction.response.send_message(
-                "Only oggers can operate join-watch.", ephemeral=True
+                "Only staff can operate join-watch.", ephemeral=True
             )
             return
         await interaction.response.send_modal(JoinWatchContextModal(dashboard))
@@ -888,8 +920,17 @@ class RetryEnforcementButton(discord.ui.Button):
 
     async def callback(self, interaction: Interaction) -> None:
         dashboard: AntiRaidControlView = self.view  # type: ignore[assignment]
-        await interaction.response.defer(ephemeral=True)
-        result = await enable_anti_raid(dashboard.guild)
+        dashboard.notice = "⏳ Retrying enforcement - reapplying role restrictions…"
+        dashboard.busy = True
+        dashboard.render()
+        await interaction.response.edit_message(
+            view=dashboard,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        try:
+            result = await enable_anti_raid(dashboard.guild)
+        finally:
+            dashboard.busy = False
         if result.failures:
             dashboard.notice = (
                 f"⚠️ Enforcement retry still has {len(result.failures)} failure(s).\n"
@@ -990,6 +1031,7 @@ class AntiRaidControlView(discord.ui.LayoutView):
         self.selected_member_ids: list[int] = []
         self.notice: str | None = None
         self.message: discord.Message | None = None
+        self.busy = False
         self.render()
 
     async def interaction_check(self, interaction: Interaction) -> bool:
@@ -1038,13 +1080,12 @@ class AntiRaidControlView(discord.ui.LayoutView):
         panel.add_item(discord.ui.Separator())
 
         panel.add_item(discord.ui.TextDisplay(_join_watch_block()))
-        if self.author_id == USERS.OGGERS:
-            panel.add_item(
-                discord.ui.ActionRow(
-                    JoinWatchToggleButton(get_join_watch_state()["enabled"]),
-                    JoinWatchContextButton(),
-                )
+        panel.add_item(
+            discord.ui.ActionRow(
+                JoinWatchToggleButton(get_join_watch_state()["enabled"]),
+                JoinWatchContextButton(),
             )
+        )
         panel.add_item(discord.ui.Separator())
 
         panel.add_item(discord.ui.TextDisplay(_quarantine_block(quarantined, selected)))
@@ -1068,6 +1109,10 @@ class AntiRaidControlView(discord.ui.LayoutView):
             )
         )
         self.add_item(panel)
+        if self.busy:
+            for child in self.walk_children():
+                if hasattr(child, "disabled"):
+                    child.disabled = True
 
     async def on_timeout(self) -> None:
         for child in self.walk_children():

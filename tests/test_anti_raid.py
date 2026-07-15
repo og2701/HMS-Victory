@@ -401,3 +401,28 @@ def test_member_join_fails_closed_if_protection_activates_before_normal_role(mon
     result = asyncio.run(anti_raid.handle_new_member_roles(object(), object()))
 
     assert result == anti_raid.AntiRaidJoinOutcome(True, False)
+
+
+def test_roles_at_or_above_bot_are_never_touched(monkeypatch, tmp_path):
+    _isolated_state(monkeypatch, tmp_path)
+    below = _Role(1, 7)
+    below.position = 1
+    bot_top = _Role(2, 7)
+    bot_top.position = 5
+    above = _Role(3, 7)
+    above.position = 9
+    guild = _Guild(100, [below, bot_top, above])
+    guild.me = type("_Me", (), {"top_role": bot_top})()
+
+    anti_raid.backup_role_permissions(guild)
+    with open(anti_raid.PERMISSIONS_BACKUP_FILE, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    assert set(payload["roles"]) == {"1"}
+
+    failures = asyncio.run(anti_raid.disable_role_permissions(guild))
+    assert failures == []
+    assert below.edits and not bot_top.edits and not above.edits
+
+    failures = asyncio.run(anti_raid.restore_role_permissions(guild))
+    assert failures == []
+    assert len(below.edits) == 2 and not bot_top.edits and not above.edits
