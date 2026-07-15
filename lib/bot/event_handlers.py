@@ -2063,6 +2063,7 @@ async def on_stage_instance_delete(stage_instance):
                     client.stage_join_times[m.id] = start_time_utc
 
     if total_awarded_on_delete > 0:
+        from lib.bot.scheduled_tasks import _update_daily_metric_file
         _update_daily_metric_file(current_date_str, "stage_rewards_total", total_awarded_on_delete)
         logger.info(f"[STAGE END] Added {total_awarded_on_delete} to stage_rewards_total for {current_date_str} from instance delete.")
 
