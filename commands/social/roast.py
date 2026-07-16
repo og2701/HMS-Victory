@@ -72,7 +72,8 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         f"4. **IDENTITY NEUTRAL**: NEVER base roasts on sexuality, race, gender, religion, or any protected group. Even if the history contains these, IGNORE them. Focus entirely on chat behavior, ego, and cringe. "
         f"5. **NEGATIVE CONSTRAINT**: BANNED: 'wazzock', 'plonker', 'pillock', 'doughnut', 'troglodyte'. These are too safe/corny. No 'as [adjective] as [noun]' similes unless they are truly inspired. "
         f"6. **CATCH STRAYS (OPTIONAL, ONLY IF IT ENHANCES THE ROAST)**: Only catch a stray if it genuinely **adds to or amplifies** the main roast on {user.display_name} - e.g. a named third party is implicated in the same embarrassing moment, shares the same cringe trait, or their involvement makes the main jab land harder. If the stray is tangential, standalone, or doesn't tie into the main roast, **do not include one**. When you do catch one, **name them directly** and roast them on something specific they said or did. NEVER throw a generic stray at 'the rest of the chat', 'everyone else', or any vague group - lazy collective jabs are BANNED. "
-        f"7. **BREVITY IS VITAL**: This must be a single, short, savage paragraph. Max 4-5 lines. Cut the filler, go straight for the throat. "
+        f"7. **LENGTH AND DENSITY**: One single relentless paragraph of roughly 150-220 words. Not shorter. Every sentence must land a NEW specific blow drawn from the history - no filler, no summarising, no repeating a hit in different words. Chain the blows so each builds on the last: open by establishing what a walking disaster they are, pile through 4-6 distinct specific embarrassments, and close with a final dismissive gut-punch that writes them off entirely. "
+        f"8. **NO MERCY ARC**: The paragraph never softens. No backhanded compliments at the end, no 'but we love them really', no moral. The last sentence should be the cruellest. "
         f"The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
         f"Use **British English spellings and heavy, filthy British idioms/slang** throughout. "
         f"Return **only** the roast paragraph. No disclaimers, no filler-just pure, foul-mouthed British annihilation."
@@ -80,14 +81,16 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
 
     try:
         response = await client.chat.completions.create(
-            model="gpt-5.4-nano",
+            # mini over nano: the roast lives or dies on wit and specificity.
+            model="gpt-5.4-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Here are the recent pathetic chat messages from {user.display_name}. Read them, find the most embarrassing or stupid things they said, and mercilessly roast them for it:\n\n{input_text}"},
             ],
             # GPT-5 family: max_tokens is rejected (use max_completion_tokens) and
-            # only the default temperature is supported.
-            max_completion_tokens=500,
+            # only the default temperature is supported. Reasoning tokens share
+            # this budget, so a tight cap silently truncates the roast itself.
+            max_completion_tokens=2048,
         )
 
         summary = response.choices[0].message.content.strip()
