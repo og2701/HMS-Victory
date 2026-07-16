@@ -176,10 +176,12 @@ def test_confident_troll_verdict_times_out_deletes_and_reports(monkeypatch, tmp_
     payload = _json.dumps(client.police.sent[0]["view"].to_components())
     assert "england scum etc" in payload
     assert f"joinwatch:untimeout:{member.id}" in payload
-    # Every scan is audited in the bot usage log with its outcome.
+    # Every scan is audited in the bot usage log with its outcome, link and quote.
     assert len(client.usage_log.sent) == 1
     log_line = client.usage_log.sent[0]["args"][0]
     assert "1/20" in log_line and "troll" in log_line and "timed out" in log_line
+    assert trigger.jump_url in log_line
+    assert "> england scum etc" in log_line
     # Actioned members are never screened again.
     asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, "another message")))
     assert len(member.timeouts) == 1

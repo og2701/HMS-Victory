@@ -530,15 +530,24 @@ async def _log_scan(
             return
         latest = entry["messages"][-1] if entry["messages"] else {}
         name = getattr(member, "display_name", None) or getattr(member, "name", None) or member.id
+        where = latest.get("channel", "?")
+        if latest.get("jump_url"):
+            where += f" ([jump]({latest['jump_url']}))"
         text = (
             f"🔎 join-watch scanned message {len(entry['messages'])}/{MAX_SCANNED_MESSAGES} "
-            f"from {name} (`{member.id}`) in {latest.get('channel', '?')} - "
+            f"from {name} (`{member.id}`) in {where} - "
             f"verdict: {call} ({confidence:.0%}) - {outcome}"
         )
         reason = " ".join(str((verdict or {}).get("reason", "")).split())[:200]
         if reason:
             text += f" - {reason}"
-        await channel.send(text[:1900], allowed_mentions=discord.AllowedMentions.none())
+        if latest.get("content"):
+            text += f"\n> {latest['content'][:300]}"
+        await channel.send(
+            text[:1900],
+            allowed_mentions=discord.AllowedMentions.none(),
+            suppress_embeds=True,
+        )
     except Exception:
         logger.debug("join-watch could not write the usage-log line", exc_info=True)
 
