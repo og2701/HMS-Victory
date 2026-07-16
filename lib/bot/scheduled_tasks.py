@@ -770,9 +770,19 @@ async def process_economy_logs(client):
         if not logs:
             return
             
-        bot_log_channel = client.get_channel(CHANNELS.BOT_USAGE_LOG)
-        economy_thread = client.get_channel(CHANNELS.ECONOMY_LOG_THREAD)
-        
+        async def _thread(channel_id):
+            # Threads fall out of the cache once auto-archived; fetching revives them.
+            channel = client.get_channel(channel_id)
+            if channel is None:
+                try:
+                    channel = await client.fetch_channel(channel_id)
+                except Exception:
+                    return None
+            return channel
+
+        economy_log_thread = await _thread(CHANNELS.ECONOMY_LOG_THREAD)
+        passive_rewards_thread = await _thread(CHANNELS.PASSIVE_CHAT_REWARDS_THREAD)
+
         usage_embed = discord.Embed(title="💰 Economy Activity", color=0x2ecc71)
         economy_embed = discord.Embed(title="📈 Chat Activity Rewards", color=0x3498db)
         
@@ -792,20 +802,20 @@ async def process_economy_logs(client):
             field_name = f"<t:{timestamp}:T> - {reason_stripped}"
             field_value = description_part.strip()
             
-            if reason_stripped == "Chatting activity reward" and economy_thread:
+            if reason_stripped == "Chatting activity reward" and passive_rewards_thread:
                 economy_embed.add_field(name=field_name, value=field_value, inline=False)
                 economy_count += 1
-            elif bot_log_channel:
+            elif economy_log_thread:
                 usage_embed.add_field(name=field_name, value=field_value, inline=False)
                 usage_count += 1
                 
             ids_to_delete.append(log_id)
         
         if ids_to_delete:
-            if usage_count > 0 and bot_log_channel:
-                await bot_log_channel.send(embed=usage_embed)
-            if economy_count > 0 and economy_thread:
-                await economy_thread.send(embed=economy_embed)
+            if usage_count > 0 and economy_log_thread:
+                await economy_log_thread.send(embed=usage_embed)
+            if economy_count > 0 and passive_rewards_thread:
+                await passive_rewards_thread.send(embed=economy_embed)
                 
             placeholders = ",".join(["?"] * len(ids_to_delete))
             DatabaseManager.execute(f"DELETE FROM economy_transactions WHERE id IN ({placeholders})", tuple(ids_to_delete))
