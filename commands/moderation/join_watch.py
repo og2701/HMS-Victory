@@ -1,12 +1,13 @@
-"""Join-watch: oggers-only AI screening of new joiners' first messages.
+"""Join-watch: staff-toggled AI screening of new joiners' first messages.
 
 An active listener: arming it does not backtrack. Members who join while it is
-armed are registered on join, and their first few messages are sent to Gemini
-together with profile context (names, account age, avatar and banner images).
-Members the model confidently judges to be hostile raid trolls are timed out
-and reported to the police station. The armed/disarmed toggle and incident
-context survive restarts; the watch list is in-memory only, so a restart stops
-watching members who joined before it.
+armed are registered on join, and their first few messages are sent to an AI
+model (OpenAI primary, Gemini fallback) together with profile context (names,
+account age, avatar and banner images). Members the model confidently judges
+to be hostile raid trolls are timed out and reported to the police station.
+The armed/disarmed toggle and incident context survive restarts; the watch
+list is in-memory only, so a restart stops watching members who joined before
+it.
 """
 
 from __future__ import annotations
@@ -264,14 +265,21 @@ Respond with raw JSON only:
 {{"verdict": "troll" | "unsure" | "fine", "confidence": <0.0-1.0>, "reason": "<one or two short sentences>"}}"""
 
 
-def _screening_model() -> str:
+def _openai_model() -> str:
+    return getattr(config, "JOIN_WATCH_OPENAI_MODEL", None) or "gpt-5.4-mini"
+
+
+def _gemini_model() -> str:
     return getattr(config, "JOIN_WATCH_GEMINI_MODEL", None) or getattr(
         config, "GEMINI_MODEL", "gemini-2.5-flash"
     )
 
 
-# USD per 1M input/output tokens (output includes thinking), for the cost footer.
-_GEMINI_PRICES_PER_MTOK = {
+# USD per 1M input/output tokens (output includes reasoning/thinking), for the
+# cost footer. Verified against the official OpenAI and Gemini rate cards.
+_PRICES_PER_MTOK = {
+    "gpt-5.4-mini": (0.75, 4.50),
+    "gpt-5.4-nano": (0.20, 1.25),
     "gemini-3.5-flash": (1.50, 9.00),
     "gemini-3.1-flash-lite": (0.25, 1.50),
     "gemini-3.1-pro-preview": (2.00, 12.00),
@@ -281,19 +289,80 @@ _GEMINI_PRICES_PER_MTOK = {
 }
 
 
-def _cost_footer(usage: dict[str, int] | None) -> str | None:
+def _cost_footer(usage: dict[str, Any] | None) -> str | None:
     if not isinstance(usage, dict):
         return None
     input_tokens = int(usage.get("input", 0) or 0)
     output_tokens = int(usage.get("output", 0) or 0)
     if not (input_tokens or output_tokens):
         return None
-    line = f"{input_tokens:,} in / {output_tokens:,} out tokens"
-    prices = _GEMINI_PRICES_PER_MTOK.get(_screening_model())
+    model = str(usage.get("model") or "")
+    line = f"{model} · " if model else ""
+    line += f"{input_tokens:,} in / {output_tokens:,} out tokens"
+    prices = _PRICES_PER_MTOK.get(model)
     if prices:
         cost = input_tokens / 1e6 * prices[0] + output_tokens / 1e6 * prices[1]
         line = f"est. cost ${cost:.4f} · {line}"
     return line
+
+
+async def _call_openai_json(
+    prompt: str, images: list[tuple[str, bytes]]
+) -> tuple[str | None, str | None, dict[str, Any] | None]:
+    key = os.getenv("OPENAI_TOKEN") or os.getenv("OPENAI_API_KEY")
+    if not key:
+        return None, "no OpenAI key in the environment", None
+    try:
+        from openai import AsyncOpenAI
+    except ImportError:
+        return None, "openai package not installed", None
+    model = _openai_model()
+    content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+    for mime, blob in images:
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{mime};base64,{base64.b64encode(blob).decode('ascii')}",
+                    "detail": "low",
+                },
+            }
+        )
+    request = dict(
+        model=model,
+        messages=[{"role": "user", "content": content}],
+        response_format={"type": "json_object"},
+        # GPT-5 family: max_tokens is rejected (use max_completion_tokens) and
+        # only the default temperature is supported. Reasoning is billed as
+        # output, so keep the effort down for this simple judgment.
+        max_completion_tokens=2048,
+    )
+    client = AsyncOpenAI(api_key=key, max_retries=2, timeout=60.0)
+    response, last_error = None, None
+    for attempt in (dict(request, reasoning_effort="low"), request):
+        try:
+            response = await client.chat.completions.create(**attempt)
+            break
+        except Exception as exc:
+            last_error = exc
+            if "reasoning_effort" not in str(exc):
+                break
+    if response is None:
+        return None, f"request failed: {last_error}", None
+    usage_meta = getattr(response, "usage", None)
+    usage = None
+    if usage_meta is not None:
+        usage = {
+            "input": int(getattr(usage_meta, "prompt_tokens", 0) or 0),
+            # completion_tokens includes reasoning tokens, which are billed.
+            "output": int(getattr(usage_meta, "completion_tokens", 0) or 0),
+            "model": model,
+        }
+    choices = getattr(response, "choices", None) or []
+    text = ((choices[0].message.content or "") if choices else "").strip()
+    if not text:
+        return None, "no text in response", usage
+    return text, None, usage
 
 
 async def _call_gemini_json(
@@ -302,7 +371,7 @@ async def _call_gemini_json(
     key = os.getenv("GEMINI_TOKEN") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not key:
         return None, "no Gemini key in the environment", None
-    model = _screening_model()
+    model = _gemini_model()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
     parts: list[dict[str, Any]] = [{"text": prompt}]
     for mime, blob in images:
@@ -345,6 +414,7 @@ async def _call_gemini_json(
         # Thinking tokens are billed as output on 2.5+ models.
         "output": int(meta.get("candidatesTokenCount", 0) or 0)
         + int(meta.get("thoughtsTokenCount", 0) or 0),
+        "model": model,
     }
     candidate = (data.get("candidates") or [{}])[0]
     answer_parts = (candidate.get("content") or {}).get("parts") or []
@@ -371,11 +441,17 @@ def _parse_verdict(raw: str | None) -> dict[str, Any] | None:
 
 async def _evaluate(
     client: Any, member: Any, messages: list[dict[str, Any]]
-) -> tuple[dict[str, Any] | None, dict[str, int] | None]:
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     context = get_join_watch_state()["context"]
     images = await _profile_images(client, member)
     prompt = _build_prompt(member, messages, context, [label for label, _, _ in images])
-    raw, err, usage = await _call_gemini_json(prompt, [(mime, blob) for _, mime, blob in images])
+    image_blobs = [(mime, blob) for _, mime, blob in images]
+    raw, err, usage = await _call_openai_json(prompt, image_blobs)
+    if err:
+        logger.warning(
+            "join-watch openai error for member %s: %s; falling back to gemini", member.id, err
+        )
+        raw, err, usage = await _call_gemini_json(prompt, image_blobs)
     if err:
         logger.warning("join-watch gemini error for member %s: %s", member.id, err)
         return None, usage

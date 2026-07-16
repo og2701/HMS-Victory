@@ -130,7 +130,7 @@ def test_only_members_who_join_while_armed_are_watched(monkeypatch, tmp_path):
 
     async def fake_evaluate(_client, _member, messages):
         evaluated.append(len(messages))
-        return {"verdict": "unsure", "confidence": 0.5, "reason": "thin"}, {"input": 1500, "output": 50}
+        return {"verdict": "unsure", "confidence": 0.5, "reason": "thin"}, {"input": 1500, "output": 50, "model": "gpt-5.4-mini"}
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
 
@@ -160,7 +160,7 @@ def test_confident_troll_verdict_times_out_deletes_and_reports(monkeypatch, tmp_
 
     async def fake_evaluate(_client, _member, _messages):
         return ({"verdict": "troll", "confidence": 0.92, "reason": "Joined to spread hate."},
-                {"input": 2000, "output": 100})
+                {"input": 2000, "output": 100, "model": "gpt-5.4-mini"})
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
     join_watch.register_join(member)
@@ -184,7 +184,8 @@ def test_confident_troll_verdict_times_out_deletes_and_reports(monkeypatch, tmp_
     assert "1/20" in log_line and "troll" in log_line and "timed out" in log_line
     assert trigger.jump_url in log_line
     assert "> england scum etc" in log_line
-    assert "est. cost $" in log_line and "2,000 in / 100 out tokens" in log_line
+    # 2,000 in x $0.75/M + 100 out x $4.50/M = $0.00195, rounded in the footer.
+    assert "est. cost $0.0020" in log_line and "2,000 in / 100 out tokens" in log_line
     # Actioned members are never screened again.
     asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, "another message")))
     assert len(member.timeouts) == 1
@@ -199,7 +200,7 @@ def test_unsure_verdicts_stop_after_message_cap_without_action(monkeypatch, tmp_
 
     async def fake_evaluate(_client, _member, messages):
         calls.append(len(messages))
-        return {"verdict": "unsure", "confidence": 0.4, "reason": "Not enough yet."}, {"input": 1500, "output": 50}
+        return {"verdict": "unsure", "confidence": 0.4, "reason": "Not enough yet."}, {"input": 1500, "output": 50, "model": "gpt-5.4-mini"}
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
     join_watch.register_join(member)
@@ -225,7 +226,7 @@ def test_fine_verdicts_keep_scanning_to_the_cap(monkeypatch, tmp_path):
 
     async def fake_evaluate(_client, _member, messages):
         calls.append(len(messages))
-        return {"verdict": "fine", "confidence": 0.9, "reason": "Normal newcomer."}, {"input": 1500, "output": 50}
+        return {"verdict": "fine", "confidence": 0.9, "reason": "Normal newcomer."}, {"input": 1500, "output": 50, "model": "gpt-5.4-mini"}
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
     join_watch.register_join(member)
@@ -254,6 +255,42 @@ def test_evaluation_error_never_times_anyone_out(monkeypatch, tmp_path):
     assert client.police.sent == []
 
 
+def test_cost_footer_prices_known_models():
+    assert join_watch._cost_footer(None) is None
+    assert join_watch._cost_footer({"input": 0, "output": 0}) is None
+    footer = join_watch._cost_footer({"input": 1_000_000, "output": 1_000_000, "model": "gpt-5.4-mini"})
+    assert footer == "est. cost $5.2500 · gpt-5.4-mini · 1,000,000 in / 1,000,000 out tokens"
+    # Unknown models still report token counts, just without a price.
+    footer = join_watch._cost_footer({"input": 100, "output": 10, "model": "mystery-model"})
+    assert "est. cost" not in footer and "100 in / 10 out tokens" in footer
+
+
+def test_evaluate_falls_back_to_gemini_when_openai_fails(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    join_watch.set_join_watch_state(True)
+    member = FakeMember()
+
+    async def no_images(_client, _member):
+        return []
+
+    async def openai_down(_prompt, _images):
+        return None, "request failed: boom", None
+
+    async def gemini_ok(_prompt, _images):
+        return ('{"verdict": "fine", "confidence": 0.8, "reason": "ok"}', None,
+                {"input": 1200, "output": 40, "model": "gemini-3.5-flash"})
+
+    monkeypatch.setattr(join_watch, "_profile_images", no_images)
+    monkeypatch.setattr(join_watch, "_call_openai_json", openai_down)
+    monkeypatch.setattr(join_watch, "_call_gemini_json", gemini_ok)
+
+    verdict, usage = asyncio.run(join_watch._evaluate(FakeClient(), member, [
+        {"channel": "#general", "content": "hi"},
+    ]))
+    assert verdict == {"verdict": "fine", "confidence": 0.8, "reason": "ok"}
+    assert usage["model"] == "gemini-3.5-flash"
+
+
 def test_verdict_parsing_tolerates_wrapping():
     assert join_watch._parse_verdict(None) is None
     assert join_watch._parse_verdict("not json at all") is None
@@ -274,7 +311,7 @@ def test_system_join_message_is_not_screened(monkeypatch, tmp_path):
 
     async def fake_evaluate(_client, _member, messages):
         evaluated.append(len(messages))
-        return {"verdict": "unsure", "confidence": 0.5, "reason": "thin"}, {"input": 1500, "output": 50}
+        return {"verdict": "unsure", "confidence": 0.5, "reason": "thin"}, {"input": 1500, "output": 50, "model": "gpt-5.4-mini"}
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
     join_watch.register_join(member)
