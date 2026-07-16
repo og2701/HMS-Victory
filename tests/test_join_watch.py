@@ -273,10 +273,10 @@ def test_evaluate_falls_back_to_gemini_when_openai_fails(monkeypatch, tmp_path):
     async def no_images(_client, _member):
         return []
 
-    async def openai_down(_prompt, _images):
+    async def openai_down(_static, _images, _dynamic, cache_key=None):
         return None, "request failed: boom", None
 
-    async def gemini_ok(_prompt, _images):
+    async def gemini_ok(_static, _images, _dynamic):
         return ('{"verdict": "fine", "confidence": 0.8, "reason": "ok"}', None,
                 {"input": 1200, "output": 40, "model": "gemini-3.5-flash"})
 

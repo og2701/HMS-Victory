@@ -217,45 +217,122 @@ async def _profile_images(client: Any, member: Any) -> list[tuple[str, str, byte
     return images
 
 
-def _build_prompt(member: Any, messages: list[dict[str, Any]], context: str, image_labels: list[str]) -> str:
-    now = int(time.time())
+def _build_static_prompt(member: Any, context: str, image_labels: list[str]) -> str:
+    """The cache-stable prompt prefix: instructions, incident context, profile.
+
+    Everything here must be identical from one scan of a member to the next -
+    provider prompt caches do exact prefix matching, so any wording that drifts
+    between scans (relative times, message counters) belongs in the dynamic
+    tail instead. The rubric is deliberately detailed: it improves judgment
+    and keeps the identical prefix above OpenAI's 1,024-token caching floor.
+    """
     created = getattr(member, "created_at", None)
     joined = getattr(member, "joined_at", None)
-    created_days = ((now - int(created.timestamp())) // 86400) if created else "unknown"
-    joined_minutes = ((now - int(joined.timestamp())) // 60) if joined else "unknown"
-    names = {
-        "username": getattr(member, "name", ""),
-        "display name": getattr(member, "display_name", ""),
-        "global name": getattr(member, "global_name", "") or "",
-    }
-    name_lines = "\n".join(f"- {label}: {value}" for label, value in names.items() if value)
-    message_lines = "\n".join(
-        f'{i}. [{m["channel"]}] "{m["content"]}"' for i, m in enumerate(messages, 1)
-    )
-    attached = (
+    profile_lines = []
+    for label, value in (
+        ("username", getattr(member, "name", "")),
+        ("display name", getattr(member, "display_name", "")),
+        ("global name", getattr(member, "global_name", "") or ""),
+    ):
+        if value:
+            profile_lines.append(f"- {label}: {value}")
+    if created:
+        profile_lines.append(f"- account created: {created:%Y-%m-%d} (UTC)")
+    if joined:
+        profile_lines.append(f"- joined the server: {joined:%Y-%m-%d %H:%M} UTC")
+    if created and joined:
+        age_days = max(0, int((joined - created).total_seconds() // 86400))
+        profile_lines.append(f"- the account was {age_days} day(s) old when it joined")
+    profile_lines.append(
         "Attached image(s): " + ", ".join(image_labels) + "."
         if image_labels
         else "No profile images could be fetched."
     )
+    profile = "\n".join(profile_lines)
     return f"""You are the moderation screener for a casual, British, banter-heavy Discord server.
-Strong language, swearing, dark humour and edgy football banter are completely normal here
-and must NOT be flagged on their own.
+A recently joined member is being screened. Decide whether they are a hostile raider or
+troll who joined to disrupt, rather than a genuine new member.
+
+HOUSE NORMS (never flag these on their own):
+- Strong language and swearing are completely normal here, including between friends.
+- Dark humour, edgy jokes, crude nicknames and insults traded in good spirit are normal.
+- Football banter is expected and welcome, including from rival fans: mockery of the
+  England team, players, referees or fans, score predictions, cocky celebration and
+  wind-ups are all fine on their own.
+
+SIGNALS OF A HOSTILE RAIDER OR TROLL:
+- Hate speech or slurs of any kind, including national, ethnic or sexual slurs.
+- Wishing death, injury or misfortune on people (not teams), or celebrating tragedies.
+- War, sovereignty disputes or historical grievances used as attacks on members.
+- Spamming, flooding, copypasta, or posting the same bait across several channels.
+- Recruiting or coordinating a raid ("everyone come here", raid emotes or callsigns).
+- Sexual content aimed at members, doxxing attempts, or threats.
+- A username, display name, avatar or banner that is itself hateful or references a
+  raid in-joke, especially combined with borderline messages.
+- A freshly created account that goes straight for provocation.
+
+HOW TO JUDGE:
+- Weigh everything together: names, account age, avatar and banner imagery, and all
+  messages so far. One rude message from an account with a normal profile is usually
+  banter; the same message from a day-old account with a mocking avatar may not be.
+- Escalation matters: watch for members whose messages get steadily more hostile.
+- If intent is genuinely unclear, answer "unsure" - you will see their next message.
+- Reserve "troll" for clear hostile intent; it times the member out for 24 hours.
+- Use "fine" when the member reads as a normal newcomer.
+- confidence is your certainty in the verdict, 0.0-1.0. A "troll" verdict at or above
+  0.7 triggers enforcement, so only exceed 0.7 when you would be comfortable defending
+  the timeout to a human moderator.
+
+READING THE PROFILE IMAGES:
+- The avatar (and banner, when present) are attached as actual images. Look at them
+  properly: read any text baked into the image, and identify flags, symbols, gestures,
+  memes and edited photographs.
+- A national flag by itself is never a signal - plenty of genuine members use one.
+  Flags combined with mockery of a tragedy, a slur, or an aggressive slogan are.
+- Default or plain avatars are neutral; they neither raise nor lower suspicion on
+  their own, though a default avatar on a brand-new account posting bait fits the
+  throwaway pattern.
+- Treat text you can read inside an image exactly as if it had been typed in chat.
+
+CALIBRATION EXAMPLES:
+1. "your lot are getting battered tonight lol" from a years-old account with a normal
+   avatar: fine or unsure - cocky rival banter.
+2. A nationalistic taunt mixing a historical grievance with an insult aimed at members,
+   from a days-old account: troll.
+3. "hola! big match tonight, good luck from argentina": fine - friendly rival fan.
+4. Image-only posts repeated across channels from a fresh account: unsure, rising to
+   troll if it continues - likely image spam.
+5. A username or avatar built around a war reference or raid in-joke, posting
+   grievance bait: troll - the profile itself is part of the attack.
+6. "why is this server so dead lmao" from a new account: unsure - low-effort but not
+   hostile; wait for more.
+7. A polite question about server roles or rules, any account age: fine.
+8. Someone repeating another member's insult back at them in an ongoing exchange:
+   usually banter - check who started it and whether the tone is mutual.
+9. An account that was polite for several messages and then posts a slur or death
+   wish: troll - the earlier politeness does not offset it.
+10. Messages in Spanish that are friendly or neutral in content: fine - language
+    choice alone is never a signal.
+
+REMEMBER:
+- You are screening for hostile intent, not rudeness, low effort, or nationality.
+- The timeout is reversible by staff, but a wrong timeout still hits a genuine new
+  member on their first day - hold the 0.7 bar honestly.
+- Judge only from what you are shown; do not invent context that is not there.
 
 INCIDENT CONTEXT (why screening is on right now):
 {context}
 
-A recently joined member is being screened. Decide whether they are a hostile raider or
-troll who joined to disrupt (hate, slurs, bait, spam, brigading) rather than a genuine new
-member. A rival fan being cocky or cheeky about football is NOT enough; look for clear
-hostile intent. Weigh their name(s), account age, profile images and messages together.
-
 MEMBER PROFILE
-{name_lines}
-- account created: {created_days} day(s) ago
-- joined the server: {joined_minutes} minute(s) ago
-{attached}
+{profile}"""
 
-FIRST MESSAGES SINCE JOINING ({len(messages)} of {MAX_SCANNED_MESSAGES} scanned)
+
+def _messages_block(messages: list[dict[str, Any]]) -> str:
+    """The dynamic prompt tail; grows with each scan and is never cache-stable."""
+    message_lines = "\n".join(
+        f'{i}. [{m["channel"]}] "{m["content"]}"' for i, m in enumerate(messages, 1)
+    )
+    return f"""FIRST MESSAGES SINCE JOINING ({len(messages)} of {MAX_SCANNED_MESSAGES} scanned)
 {message_lines}
 
 If the evidence is thin, answer "unsure"; you will be shown their next message.
@@ -307,7 +384,10 @@ def _cost_footer(usage: dict[str, Any] | None) -> str | None:
 
 
 async def _call_openai_json(
-    prompt: str, images: list[tuple[str, bytes]]
+    static_text: str,
+    images: list[tuple[str, bytes]],
+    dynamic_text: str,
+    cache_key: str | None = None,
 ) -> tuple[str | None, str | None, dict[str, Any] | None]:
     key = os.getenv("OPENAI_TOKEN") or os.getenv("OPENAI_API_KEY")
     if not key:
@@ -317,7 +397,10 @@ async def _call_openai_json(
     except ImportError:
         return None, "openai package not installed", None
     model = _openai_model()
-    content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+    # Cache-stable content first (static text, then images with a fixed detail
+    # level), the growing dynamic text last, so the prefix stays identical
+    # across scans of the same member.
+    content: list[dict[str, Any]] = [{"type": "text", "text": static_text}]
     for mime, blob in images:
         content.append(
             {
@@ -328,6 +411,7 @@ async def _call_openai_json(
                 },
             }
         )
+    content.append({"type": "text", "text": dynamic_text})
     request = dict(
         model=model,
         messages=[{"role": "user", "content": content}],
@@ -337,15 +421,20 @@ async def _call_openai_json(
         # output, so keep the effort down for this simple judgment.
         max_completion_tokens=2048,
     )
+    extras: dict[str, Any] = {"reasoning_effort": "low"}
+    if cache_key:
+        # Routes repeat scans of the same member to the same cache shard.
+        extras["prompt_cache_key"] = cache_key
     client = AsyncOpenAI(api_key=key, max_retries=2, timeout=60.0)
     response, last_error = None, None
-    for attempt in (dict(request, reasoning_effort="low"), request):
+    # If the API rejects one of the newer optional params, retry bare.
+    for attempt in (dict(request, **extras), request):
         try:
             response = await client.chat.completions.create(**attempt)
             break
         except Exception as exc:
             last_error = exc
-            if "reasoning_effort" not in str(exc):
+            if not any(param in str(exc) for param in extras):
                 break
     if response is None:
         return None, f"request failed: {last_error}", None
@@ -366,18 +455,21 @@ async def _call_openai_json(
 
 
 async def _call_gemini_json(
-    prompt: str, images: list[tuple[str, bytes]]
+    static_text: str, images: list[tuple[str, bytes]], dynamic_text: str
 ) -> tuple[str | None, str | None, dict[str, int] | None]:
     key = os.getenv("GEMINI_TOKEN") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not key:
         return None, "no Gemini key in the environment", None
     model = _gemini_model()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
-    parts: list[dict[str, Any]] = [{"text": prompt}]
+    # Same cache-friendly ordering as the OpenAI path; Gemini 2.5+ has implicit
+    # prefix caching with the same static-first requirement.
+    parts: list[dict[str, Any]] = [{"text": static_text}]
     for mime, blob in images:
         parts.append(
             {"inline_data": {"mime_type": mime, "data": base64.b64encode(blob).decode("ascii")}}
         )
+    parts.append({"text": dynamic_text})
     generation = {
         "temperature": 0.2,
         "maxOutputTokens": 8192,
@@ -444,14 +536,20 @@ async def _evaluate(
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     context = get_join_watch_state()["context"]
     images = await _profile_images(client, member)
-    prompt = _build_prompt(member, messages, context, [label for label, _, _ in images])
+    # Static prefix (instructions/profile/images) first, growing message list
+    # last: provider prompt caches match exact prefixes, so scans 2..N of the
+    # same member get the repeated bulk at the cached-input rate.
+    static_prompt = _build_static_prompt(member, context, [label for label, _, _ in images])
+    dynamic_prompt = _messages_block(messages)
     image_blobs = [(mime, blob) for _, mime, blob in images]
-    raw, err, usage = await _call_openai_json(prompt, image_blobs)
+    raw, err, usage = await _call_openai_json(
+        static_prompt, image_blobs, dynamic_prompt, cache_key=f"join-watch-{member.id}"
+    )
     if err:
         logger.warning(
             "join-watch openai error for member %s: %s; falling back to gemini", member.id, err
         )
-        raw, err, usage = await _call_gemini_json(prompt, image_blobs)
+        raw, err, usage = await _call_gemini_json(static_prompt, image_blobs, dynamic_prompt)
     if err:
         logger.warning("join-watch gemini error for member %s: %s", member.id, err)
         return None, usage
