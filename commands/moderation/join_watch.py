@@ -29,7 +29,7 @@ from lib.core.file_operations import load_json_file, save_json_file
 
 logger = logging.getLogger(__name__)
 
-MAX_SCANNED_MESSAGES = 5
+MAX_SCANNED_MESSAGES = 20
 MAX_WATCHED_MEMBERS = 1000  # raid-scale bound on the in-memory watch list
 TIMEOUT_HOURS = 24
 # A timeout is only applied on a confident "troll" verdict; a confident "fine"
@@ -155,22 +155,28 @@ async def maybe_watch_message(client: Any, message: Any) -> None:
 async def _apply_verdict(
     client: Any, member: Any, entry: dict[str, Any], verdict: dict[str, Any] | None
 ) -> None:
-    call = str((verdict or {}).get("verdict", "unsure")).lower()
+    call = str(verdict.get("verdict", "unsure")).lower() if verdict else "no verdict (model error)"
     try:
         confidence = max(0.0, min(1.0, float((verdict or {}).get("confidence", 0))))
     except (TypeError, ValueError):
         confidence = 0.0
     if call == "troll" and confidence >= ACT_CONFIDENCE:
         entry["done"] = True
+        outcome = f"timed out for {TIMEOUT_HOURS}h and reported"
         await _action_troll(client, member, entry, verdict or {}, confidence)
     elif call == "fine" and confidence >= CLEAR_CONFIDENCE:
         entry["done"] = True
+        outcome = "cleared - stopped watching"
         logger.info(
             "join-watch cleared member %s after %d message(s)", member.id, len(entry["messages"])
         )
     elif len(entry["messages"]) >= MAX_SCANNED_MESSAGES:
         entry["done"] = True
+        outcome = "no confident verdict - stopped watching"
         logger.info("join-watch finished watching member %s without a confident verdict", member.id)
+    else:
+        outcome = "still watching"
+    await _log_scan(client, member, entry, verdict, call, confidence, outcome)
 
 
 # --- Gemini ---------------------------------------------------------------------
@@ -497,20 +503,49 @@ def _report_view(
     return view
 
 
-async def _police_channel(client: Any) -> Any:
-    channel = client.get_channel(CHANNELS.POLICE_STATION)
+async def _get_channel(client: Any, channel_id: int) -> Any:
+    channel = client.get_channel(channel_id)
     if channel is None:
         try:
-            channel = await client.fetch_channel(CHANNELS.POLICE_STATION)
+            channel = await client.fetch_channel(channel_id)
         except Exception:
-            logger.warning("join-watch could not reach the police station channel")
+            logger.warning("join-watch could not reach channel %s", channel_id)
             return None
     return channel
 
 
+async def _log_scan(
+    client: Any,
+    member: Any,
+    entry: dict[str, Any],
+    verdict: dict[str, Any] | None,
+    call: str,
+    confidence: float,
+    outcome: str,
+) -> None:
+    """Best-effort per-scan audit line in the bot usage log; never blocks screening."""
+    try:
+        channel = await _get_channel(client, CHANNELS.BOT_USAGE_LOG)
+        if channel is None:
+            return
+        latest = entry["messages"][-1] if entry["messages"] else {}
+        name = getattr(member, "display_name", None) or getattr(member, "name", None) or member.id
+        text = (
+            f"🔎 join-watch scanned message {len(entry['messages'])}/{MAX_SCANNED_MESSAGES} "
+            f"from {name} (`{member.id}`) in {latest.get('channel', '?')} - "
+            f"verdict: {call} ({confidence:.0%}) - {outcome}"
+        )
+        reason = " ".join(str((verdict or {}).get("reason", "")).split())[:200]
+        if reason:
+            text += f" - {reason}"
+        await channel.send(text[:1900], allowed_mentions=discord.AllowedMentions.none())
+    except Exception:
+        logger.debug("join-watch could not write the usage-log line", exc_info=True)
+
+
 async def announce_toggle(client: Any, actor: Any, enabled: bool) -> None:
     """Tell the police station who armed or disarmed join-watch."""
-    channel = await _police_channel(client)
+    channel = await _get_channel(client, CHANNELS.POLICE_STATION)
     if channel is None:
         return
     if enabled:
@@ -539,7 +574,7 @@ async def announce_toggle(client: Any, actor: Any, enabled: bool) -> None:
 async def _send_report(
     client: Any, member: Any, entry: dict[str, Any], reason: str, confidence: float, action: str
 ) -> None:
-    channel = await _police_channel(client)
+    channel = await _get_channel(client, CHANNELS.POLICE_STATION)
     if channel is None:
         return
     try:

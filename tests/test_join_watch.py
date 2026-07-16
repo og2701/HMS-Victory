@@ -77,9 +77,12 @@ class FakeMessage:
 class FakeClient:
     def __init__(self):
         self.police = FakeChannel()
+        self.usage_log = FakeChannel()
 
     def get_channel(self, channel_id):
-        return self.police
+        if channel_id == join_watch.CHANNELS.POLICE_STATION:
+            return self.police
+        return self.usage_log
 
     async def fetch_user(self, user_id):
         raise RuntimeError("no network in tests")
@@ -173,6 +176,10 @@ def test_confident_troll_verdict_times_out_deletes_and_reports(monkeypatch, tmp_
     payload = _json.dumps(client.police.sent[0]["view"].to_components())
     assert "england scum etc" in payload
     assert f"joinwatch:untimeout:{member.id}" in payload
+    # Every scan is audited in the bot usage log with its outcome.
+    assert len(client.usage_log.sent) == 1
+    log_line = client.usage_log.sent[0]["args"][0]
+    assert "1/20" in log_line and "troll" in log_line and "timed out" in log_line
     # Actioned members are never screened again.
     asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, "another message")))
     assert len(member.timeouts) == 1
@@ -197,6 +204,10 @@ def test_unsure_verdicts_stop_after_message_cap_without_action(monkeypatch, tmp_
     assert calls == list(range(1, join_watch.MAX_SCANNED_MESSAGES + 1))
     assert member.timeouts == []
     assert client.police.sent == []
+    # One audit line per scan; the final one records that watching stopped.
+    assert len(client.usage_log.sent) == join_watch.MAX_SCANNED_MESSAGES
+    assert "stopped watching" in client.usage_log.sent[-1]["args"][0]
+    assert "still watching" in client.usage_log.sent[0]["args"][0]
 
 
 def test_confident_fine_verdict_clears_early(monkeypatch, tmp_path):
