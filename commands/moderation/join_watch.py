@@ -32,10 +32,9 @@ logger = logging.getLogger(__name__)
 MAX_SCANNED_MESSAGES = 20
 MAX_WATCHED_MEMBERS = 1000  # raid-scale bound on the in-memory watch list
 TIMEOUT_HOURS = 24
-# A timeout is only applied on a confident "troll" verdict; a confident "fine"
-# verdict stops scanning early. Anything else keeps watching up to the cap.
+# A timeout is only applied on a confident "troll" verdict. Every watched member
+# is scanned for all MAX_SCANNED_MESSAGES messages unless actioned first.
 ACT_CONFIDENCE = 0.7
-CLEAR_CONFIDENCE = 0.7
 STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
 
 DEFAULT_CONTEXT = (
@@ -146,14 +145,18 @@ async def maybe_watch_message(client: Any, message: Any) -> None:
             if entry is None or entry["done"]:
                 return
             entry["messages"].append(_snapshot(message))
-            verdict = await _evaluate(client, member, entry["messages"])
-            await _apply_verdict(client, member, entry, verdict)
+            verdict, usage = await _evaluate(client, member, entry["messages"])
+            await _apply_verdict(client, member, entry, verdict, usage)
     except Exception:
         logger.exception("join-watch screening failed for message %s", getattr(message, "id", "?"))
 
 
 async def _apply_verdict(
-    client: Any, member: Any, entry: dict[str, Any], verdict: dict[str, Any] | None
+    client: Any,
+    member: Any,
+    entry: dict[str, Any],
+    verdict: dict[str, Any] | None,
+    usage: dict[str, int] | None,
 ) -> None:
     call = str(verdict.get("verdict", "unsure")).lower() if verdict else "no verdict (model error)"
     try:
@@ -164,19 +167,13 @@ async def _apply_verdict(
         entry["done"] = True
         outcome = f"timed out for {TIMEOUT_HOURS}h and reported"
         await _action_troll(client, member, entry, verdict or {}, confidence)
-    elif call == "fine" and confidence >= CLEAR_CONFIDENCE:
-        entry["done"] = True
-        outcome = "cleared - stopped watching"
-        logger.info(
-            "join-watch cleared member %s after %d message(s)", member.id, len(entry["messages"])
-        )
     elif len(entry["messages"]) >= MAX_SCANNED_MESSAGES:
         entry["done"] = True
-        outcome = "no confident verdict - stopped watching"
-        logger.info("join-watch finished watching member %s without a confident verdict", member.id)
+        outcome = "scan complete - no action"
+        logger.info("join-watch finished watching member %s without action", member.id)
     else:
         outcome = "still watching"
-    await _log_scan(client, member, entry, verdict, call, confidence, outcome)
+    await _log_scan(client, member, entry, verdict, call, confidence, outcome, usage)
 
 
 # --- Gemini ---------------------------------------------------------------------
@@ -267,15 +264,45 @@ Respond with raw JSON only:
 {{"verdict": "troll" | "unsure" | "fine", "confidence": <0.0-1.0>, "reason": "<one or two short sentences>"}}"""
 
 
-async def _call_gemini_json(
-    prompt: str, images: list[tuple[str, bytes]]
-) -> tuple[str | None, str | None]:
-    key = os.getenv("GEMINI_TOKEN") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if not key:
-        return None, "no Gemini key in the environment"
-    model = getattr(config, "JOIN_WATCH_GEMINI_MODEL", None) or getattr(
+def _screening_model() -> str:
+    return getattr(config, "JOIN_WATCH_GEMINI_MODEL", None) or getattr(
         config, "GEMINI_MODEL", "gemini-2.5-flash"
     )
+
+
+# USD per 1M input/output tokens (output includes thinking), for the cost footer.
+_GEMINI_PRICES_PER_MTOK = {
+    "gemini-3.5-flash": (1.50, 9.00),
+    "gemini-3.1-flash-lite": (0.25, 1.50),
+    "gemini-3.1-pro-preview": (2.00, 12.00),
+    "gemini-2.5-flash": (0.30, 2.50),
+    "gemini-2.5-flash-lite": (0.10, 0.40),
+    "gemini-2.5-pro": (1.25, 10.00),
+}
+
+
+def _cost_footer(usage: dict[str, int] | None) -> str | None:
+    if not isinstance(usage, dict):
+        return None
+    input_tokens = int(usage.get("input", 0) or 0)
+    output_tokens = int(usage.get("output", 0) or 0)
+    if not (input_tokens or output_tokens):
+        return None
+    line = f"{input_tokens:,} in / {output_tokens:,} out tokens"
+    prices = _GEMINI_PRICES_PER_MTOK.get(_screening_model())
+    if prices:
+        cost = input_tokens / 1e6 * prices[0] + output_tokens / 1e6 * prices[1]
+        line = f"est. cost ${cost:.4f} · {line}"
+    return line
+
+
+async def _call_gemini_json(
+    prompt: str, images: list[tuple[str, bytes]]
+) -> tuple[str | None, str | None, dict[str, int] | None]:
+    key = os.getenv("GEMINI_TOKEN") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not key:
+        return None, "no Gemini key in the environment", None
+    model = _screening_model()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
     parts: list[dict[str, Any]] = [{"text": prompt}]
     for mime, blob in images:
@@ -299,17 +326,24 @@ async def _call_gemini_json(
             ) as resp:
                 status, data = resp.status, await resp.json()
     except Exception as exc:
-        return None, f"request failed: {exc}"
+        return None, f"request failed: {exc}", None
     if status != 200:
-        return None, f"HTTP {status}: {str(data)[:300]}"
+        return None, f"HTTP {status}: {str(data)[:300]}", None
+    meta = data.get("usageMetadata") or {}
+    usage = {
+        "input": int(meta.get("promptTokenCount", 0) or 0),
+        # Thinking tokens are billed as output on 2.5+ models.
+        "output": int(meta.get("candidatesTokenCount", 0) or 0)
+        + int(meta.get("thoughtsTokenCount", 0) or 0),
+    }
     candidate = (data.get("candidates") or [{}])[0]
     answer_parts = (candidate.get("content") or {}).get("parts") or []
     text = "".join(
         p.get("text", "") for p in answer_parts if isinstance(p, dict) and not p.get("thought")
     )
     if not text:
-        return None, f"no text (finishReason={candidate.get('finishReason')})"
-    return text, None
+        return None, f"no text (finishReason={candidate.get('finishReason')})", usage
+    return text, None, usage
 
 
 def _parse_verdict(raw: str | None) -> dict[str, Any] | None:
@@ -327,15 +361,15 @@ def _parse_verdict(raw: str | None) -> dict[str, Any] | None:
 
 async def _evaluate(
     client: Any, member: Any, messages: list[dict[str, Any]]
-) -> dict[str, Any] | None:
+) -> tuple[dict[str, Any] | None, dict[str, int] | None]:
     context = get_join_watch_state()["context"]
     images = await _profile_images(client, member)
     prompt = _build_prompt(member, messages, context, [label for label, _, _ in images])
-    raw, err = await _call_gemini_json(prompt, [(mime, blob) for _, mime, blob in images])
+    raw, err, usage = await _call_gemini_json(prompt, [(mime, blob) for _, mime, blob in images])
     if err:
         logger.warning("join-watch gemini error for member %s: %s", member.id, err)
-        return None
-    return _parse_verdict(raw)
+        return None, usage
+    return _parse_verdict(raw), usage
 
 
 # --- enforcement + reporting ------------------------------------------------------
@@ -522,32 +556,44 @@ async def _log_scan(
     call: str,
     confidence: float,
     outcome: str,
+    usage: dict[str, int] | None,
 ) -> None:
-    """Best-effort per-scan audit line in the bot usage log; never blocks screening."""
+    """Best-effort per-scan audit card in the bot usage log; never blocks screening."""
     try:
         channel = await _get_channel(client, CHANNELS.BOT_USAGE_LOG)
         if channel is None:
             return
         latest = entry["messages"][-1] if entry["messages"] else {}
         name = getattr(member, "display_name", None) or getattr(member, "name", None) or member.id
+        if "timed out" in outcome:
+            colour = 0xE74C3C
+        elif call == "fine":
+            colour = 0x2ECC71
+        elif call == "troll":
+            colour = 0xF39C12  # suspicious but below the action threshold
+        else:
+            colour = 0x95A5A6
         where = latest.get("channel", "?")
         if latest.get("jump_url"):
-            where += f" ([jump]({latest['jump_url']}))"
+            where += f" · [jump]({latest['jump_url']})"
         text = (
-            f"🔎 join-watch scanned message {len(entry['messages'])}/{MAX_SCANNED_MESSAGES} "
-            f"from {name} (`{member.id}`) in {where} - "
-            f"verdict: {call} ({confidence:.0%}) - {outcome}"
+            f"🔎 **{discord.utils.escape_markdown(str(name))}** (`{member.id}`) · "
+            f"message {len(entry['messages'])}/{MAX_SCANNED_MESSAGES} · {where}\n"
+            f"🤖 **{call}** ({confidence:.0%}) · {outcome}"
         )
         reason = " ".join(str((verdict or {}).get("reason", "")).split())[:200]
         if reason:
-            text += f" - {reason}"
+            text += f"\n-# {reason}"
         if latest.get("content"):
             text += f"\n> {latest['content'][:300]}"
-        await channel.send(
-            text[:1900],
-            allowed_mentions=discord.AllowedMentions.none(),
-            suppress_embeds=True,
-        )
+        cost_line = _cost_footer(usage)
+        if cost_line:
+            text += f"\n-# {cost_line}"
+        view = discord.ui.LayoutView(timeout=None)
+        card = discord.ui.Container(accent_colour=colour)
+        card.add_item(discord.ui.TextDisplay(text[:1900]))
+        view.add_item(card)
+        await channel.send(view=view, allowed_mentions=discord.AllowedMentions.none())
     except Exception:
         logger.debug("join-watch could not write the usage-log line", exc_info=True)
 

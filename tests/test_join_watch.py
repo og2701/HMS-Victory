@@ -130,7 +130,7 @@ def test_only_members_who_join_while_armed_are_watched(monkeypatch, tmp_path):
 
     async def fake_evaluate(_client, _member, messages):
         evaluated.append(len(messages))
-        return {"verdict": "unsure", "confidence": 0.5, "reason": "thin"}
+        return {"verdict": "unsure", "confidence": 0.5, "reason": "thin"}, {"input": 1500, "output": 50}
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
 
@@ -159,7 +159,8 @@ def test_confident_troll_verdict_times_out_deletes_and_reports(monkeypatch, tmp_
     client = FakeClient()
 
     async def fake_evaluate(_client, _member, _messages):
-        return {"verdict": "troll", "confidence": 0.92, "reason": "Joined to spread hate."}
+        return ({"verdict": "troll", "confidence": 0.92, "reason": "Joined to spread hate."},
+                {"input": 2000, "output": 100})
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
     join_watch.register_join(member)
@@ -171,17 +172,19 @@ def test_confident_troll_verdict_times_out_deletes_and_reports(monkeypatch, tmp_
     assert trigger.deleted is True
     assert len(client.police.sent) == 1
     assert client.police.sent[0]["view"] is not None
-    # The card keeps the deleted message content and carries the untimeout button.
     import json as _json
+    # The card keeps the deleted message content and carries the untimeout button.
     payload = _json.dumps(client.police.sent[0]["view"].to_components())
     assert "england scum etc" in payload
     assert f"joinwatch:untimeout:{member.id}" in payload
-    # Every scan is audited in the bot usage log with its outcome, link and quote.
+    # Every scan is audited in the bot usage log as a card with outcome, link,
+    # quote and estimated AI cost.
     assert len(client.usage_log.sent) == 1
-    log_line = client.usage_log.sent[0]["args"][0]
+    log_line = _json.dumps(client.usage_log.sent[0]["view"].to_components())
     assert "1/20" in log_line and "troll" in log_line and "timed out" in log_line
     assert trigger.jump_url in log_line
     assert "> england scum etc" in log_line
+    assert "est. cost $" in log_line and "2,000 in / 100 out tokens" in log_line
     # Actioned members are never screened again.
     asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, "another message")))
     assert len(member.timeouts) == 1
@@ -196,7 +199,7 @@ def test_unsure_verdicts_stop_after_message_cap_without_action(monkeypatch, tmp_
 
     async def fake_evaluate(_client, _member, messages):
         calls.append(len(messages))
-        return {"verdict": "unsure", "confidence": 0.4, "reason": "Not enough yet."}
+        return {"verdict": "unsure", "confidence": 0.4, "reason": "Not enough yet."}, {"input": 1500, "output": 50}
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
     join_watch.register_join(member)
@@ -206,13 +209,14 @@ def test_unsure_verdicts_stop_after_message_cap_without_action(monkeypatch, tmp_
     assert calls == list(range(1, join_watch.MAX_SCANNED_MESSAGES + 1))
     assert member.timeouts == []
     assert client.police.sent == []
-    # One audit line per scan; the final one records that watching stopped.
+    # One audit card per scan; the final one records that the scan finished.
+    import json as _json
     assert len(client.usage_log.sent) == join_watch.MAX_SCANNED_MESSAGES
-    assert "stopped watching" in client.usage_log.sent[-1]["args"][0]
-    assert "still watching" in client.usage_log.sent[0]["args"][0]
+    assert "scan complete - no action" in _json.dumps(client.usage_log.sent[-1]["view"].to_components())
+    assert "still watching" in _json.dumps(client.usage_log.sent[0]["view"].to_components())
 
 
-def test_confident_fine_verdict_clears_early(monkeypatch, tmp_path):
+def test_fine_verdicts_keep_scanning_to_the_cap(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path)
     join_watch.set_join_watch_state(True)
     member = FakeMember()
@@ -221,14 +225,15 @@ def test_confident_fine_verdict_clears_early(monkeypatch, tmp_path):
 
     async def fake_evaluate(_client, _member, messages):
         calls.append(len(messages))
-        return {"verdict": "fine", "confidence": 0.9, "reason": "Normal newcomer."}
+        return {"verdict": "fine", "confidence": 0.9, "reason": "Normal newcomer."}, {"input": 1500, "output": 50}
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
     join_watch.register_join(member)
-    asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, "hello everyone")))
-    asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, "how do i get roles")))
+    for i in range(join_watch.MAX_SCANNED_MESSAGES + 2):
+        asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, f"msg {i}")))
 
-    assert calls == [1]
+    # A confident "fine" no longer stops the watch; all messages up to the cap are scanned.
+    assert calls == list(range(1, join_watch.MAX_SCANNED_MESSAGES + 1))
     assert member.timeouts == []
 
 
@@ -239,7 +244,7 @@ def test_evaluation_error_never_times_anyone_out(monkeypatch, tmp_path):
     client = FakeClient()
 
     async def fake_evaluate(_client, _member, _messages):
-        return None
+        return None, None
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
     join_watch.register_join(member)
@@ -269,7 +274,7 @@ def test_system_join_message_is_not_screened(monkeypatch, tmp_path):
 
     async def fake_evaluate(_client, _member, messages):
         evaluated.append(len(messages))
-        return {"verdict": "unsure", "confidence": 0.5, "reason": "thin"}
+        return {"verdict": "unsure", "confidence": 0.5, "reason": "thin"}, {"input": 1500, "output": 50}
 
     monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
     join_watch.register_join(member)
