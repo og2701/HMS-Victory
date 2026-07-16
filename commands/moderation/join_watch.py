@@ -309,24 +309,34 @@ async def _call_gemini_json(
         parts.append(
             {"inline_data": {"mime_type": mime, "data": base64.b64encode(blob).decode("ascii")}}
         )
-    body = {
-        "contents": [{"role": "user", "parts": parts}],
-        "generationConfig": {
-            # Thinking tokens share the output budget on 2.5+ models; the answer
-            # itself is a tiny JSON object, so leave plenty of headroom.
-            "temperature": 0.2,
-            "maxOutputTokens": 8192,
-            "responseMimeType": "application/json",
-        },
+    generation = {
+        "temperature": 0.2,
+        "maxOutputTokens": 8192,
+        "responseMimeType": "application/json",
     }
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url, json=body, timeout=aiohttp.ClientTimeout(total=60)
-            ) as resp:
-                status, data = resp.status, await resp.json()
-    except Exception as exc:
-        return None, f"request failed: {exc}", None
+    # Thinking tokens are billed as output ($9/M on 3.5-flash) and dominate the
+    # per-scan cost, so cap them; the verdict is a simple judgment. Models that
+    # reject thinkingConfig (400) are retried without it.
+    attempts = [
+        dict(generation, thinkingConfig={"thinkingBudget": 256}),
+        generation,
+    ]
+    status, data = None, None
+    for generation_config in attempts:
+        body = {
+            "contents": [{"role": "user", "parts": parts}],
+            "generationConfig": generation_config,
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url, json=body, timeout=aiohttp.ClientTimeout(total=60)
+                ) as resp:
+                    status, data = resp.status, await resp.json()
+        except Exception as exc:
+            return None, f"request failed: {exc}", None
+        if status != 400:
+            break
     if status != 200:
         return None, f"HTTP {status}: {str(data)[:300]}", None
     meta = data.get("usageMetadata") or {}
