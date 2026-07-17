@@ -4,7 +4,7 @@ from openai import AsyncOpenAI
 from datetime import datetime
 from os import getenv
 from lib.core.discord_helpers import fetch_messages_with_context, estimate_tokens
-from config import USERS, SUMMARISE_DAILY_LIMIT
+from config import USERS, ROAST_DAILY_LIMIT
 from database import DatabaseManager
 
 client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"), max_retries=5, timeout=60.0)
@@ -30,9 +30,9 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         row = DatabaseManager.fetch_one(
             "SELECT count FROM roast_usage WHERE user_id = ? AND date = ?", (uid, today)
         )
-        if (row[0] if row else 0) >= SUMMARISE_DAILY_LIMIT:
+        if (row[0] if row else 0) >= ROAST_DAILY_LIMIT:
             await interaction.response.send_message(
-                f"You've hit the daily limit of {SUMMARISE_DAILY_LIMIT} usages for this command", ephemeral=True
+                f"You've hit the daily limit of {ROAST_DAILY_LIMIT} usages for this command", ephemeral=True
             )
             return
         DatabaseManager.execute(

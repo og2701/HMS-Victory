@@ -10,7 +10,7 @@ CHROME_PATH = os.getenv("CHROME_PATH", "/usr/bin/google-chrome")
 
 # --- Feature Toggles & Limits ---
 SHUTCOIN_ENABLED = True
-SUMMARISE_DAILY_LIMIT = 10
+ROAST_DAILY_LIMIT = 4  # per-user /roast uses per UTC day (oggers exempt)
 # Prediction view style (checked in priority order):
 #   PREDICTION_CV2_ENABLED   - native Components V2 layout: one block per outcome
 #                              with stats, a Bet button and a coloured proportion
