@@ -35,7 +35,7 @@ MAX_WATCHED_MEMBERS = 1000  # raid-scale bound on the in-memory watch list
 TIMEOUT_HOURS = 24
 # A timeout is only applied on a confident "troll" verdict. Every watched member
 # is scanned for all MAX_SCANNED_MESSAGES messages unless actioned first.
-ACT_CONFIDENCE = 0.7
+ACT_CONFIDENCE = 0.85
 STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
 
 DEFAULT_CONTEXT = (
@@ -259,6 +259,10 @@ HOUSE NORMS (never flag these on their own):
 - Football banter is expected and welcome, including from rival fans: mockery of the
   England team, players, referees or fans, score predictions, cocky celebration and
   wind-ups are all fine on their own.
+- Gloating at England's expense - including pointed digs at "the English", "the brits"
+  or "anglo-saxons" as a nation or fanbase - is still banter on its own, even during an
+  incident. National-group teasing only becomes hostile when combined with slurs,
+  threats, wishing harm on people, targeting a specific member, spam, or coordination.
 
 SIGNALS OF A HOSTILE RAIDER OR TROLL:
 - Hate speech or slurs of any kind, including national, ethnic or sexual slurs.
@@ -279,9 +283,12 @@ HOW TO JUDGE:
 - If intent is genuinely unclear, answer "unsure" - you will see their next message.
 - Reserve "troll" for clear hostile intent; it times the member out for 24 hours.
 - Use "fine" when the member reads as a normal newcomer.
+- The incident context explains why screening is on; it does NOT lower the bar for
+  "troll". During an incident you will see many cheeky rival fans - the overwhelming
+  majority are not raiders, and a false timeout on a genuine newcomer is a real cost.
 - confidence is your certainty in the verdict, 0.0-1.0. A "troll" verdict at or above
-  0.7 triggers enforcement, so only exceed 0.7 when you would be comfortable defending
-  the timeout to a human moderator.
+  0.85 triggers enforcement, so only exceed 0.85 when the messages alone would justify
+  the timeout to a human moderator with no incident context at all.
 
 READING THE PROFILE IMAGES:
 - The avatar (and banner, when present) are attached as actual images. Look at them
@@ -313,6 +320,10 @@ CALIBRATION EXAMPLES:
    wish: troll - the earlier politeness does not offset it.
 10. Messages in Spanish that are friendly or neutral in content: fine - language
     choice alone is never a signal.
+11. A polite greeting followed by "must be a good day for the anglo-saxons seeing
+    their rivals humiliated": fine or unsure - smug national-group gloating with no
+    slur, no threat and no targeted member is banter, NOT the escalation pattern in
+    example 9. Do not confuse turning cheeky with turning hostile.
 
 REMEMBER:
 - You are screening for hostile intent, not rudeness, low effort, or nationality.
