@@ -563,6 +563,13 @@ class RoastAccessItem(ShopItem):
         await interaction.user.add_roles(roast_access_role)
         return f"You now have access to the `/roast` command! Use it wisely..."
 
+def emoji_slot_usage(guild) -> Tuple[int, int]:
+    """(static, animated) emoji counts. Discord caps each type separately at
+    guild.emoji_limit, so a 'not full' total can still reject one type."""
+    static_count = sum(1 for emoji in guild.emojis if not emoji.animated)
+    return static_count, len(guild.emojis) - static_count
+
+
 class CustomEmojiStickerItem(ShopItem):
     """Shop item for adding custom emoji or sticker to server."""
 
@@ -575,18 +582,21 @@ class CustomEmojiStickerItem(ShopItem):
         if not can_purchase:
             return False, reason
 
-        # Check server limits - only warn if both are at practical capacity
-        emoji_count = len(user.guild.emojis)
+        # Only block the purchase when every slot type is genuinely full.
+        static_count, animated_count = emoji_slot_usage(user.guild)
         sticker_count = len(user.guild.stickers)
         emoji_limit = user.guild.emoji_limit
         sticker_limit = user.guild.sticker_limit
 
-        # Use practical limits: ~500 for emojis (Discord's real max), boost limit for stickers
-        emoji_at_capacity = emoji_count >= 500
+        emoji_at_capacity = static_count >= emoji_limit and animated_count >= emoji_limit
         sticker_at_capacity = sticker_count >= sticker_limit
 
         if emoji_at_capacity and sticker_at_capacity:
-            return False, f"Server has reached both emoji capacity ({emoji_count}/~500) and sticker limit ({sticker_count}/{sticker_limit})"
+            return False, (
+                f"Server emoji slots are full (static {static_count}/{emoji_limit}, "
+                f"animated {animated_count}/{emoji_limit}) and so are stickers "
+                f"({sticker_count}/{sticker_limit})"
+            )
 
         return True, ""
 
@@ -598,7 +608,7 @@ class CustomEmojiStickerItem(ShopItem):
         view = CustomEmojiStickerView(interaction.user)
 
         guild = interaction.guild
-        emoji_count = len(guild.emojis)
+        static_count, animated_count = emoji_slot_usage(guild)
         sticker_count = len(guild.stickers)
         emoji_limit = guild.emoji_limit
         sticker_limit = guild.sticker_limit
@@ -609,14 +619,14 @@ class CustomEmojiStickerItem(ShopItem):
             color=0xff6600
         )
 
-        # Show more realistic emoji capacity info
-        emoji_status = f"{emoji_count}/{emoji_limit}"
-        if emoji_count > emoji_limit:
-            emoji_status += f" (over boost limit, ~500 max)"
-
+        # Discord caps static and animated emoji slots separately.
         embed.add_field(
             name="📊 Server Capacity",
-            value=f"**Emojis:** {emoji_status}\n**Stickers:** {sticker_count}/{sticker_limit}",
+            value=(
+                f"**Static emojis:** {static_count}/{emoji_limit}\n"
+                f"**Animated emojis:** {animated_count}/{emoji_limit}\n"
+                f"**Stickers:** {sticker_count}/{sticker_limit}"
+            ),
             inline=False
         )
 

@@ -990,16 +990,23 @@ class CustomEmojiStickerView(View):
 
         self.choice = select.values[0]
         guild = interaction.guild
-        emoji_count = len(guild.emojis)
+        from lib.economy.shop_items import emoji_slot_usage
+        static_count, animated_count = emoji_slot_usage(guild)
         sticker_count = len(guild.stickers)
         emoji_limit = guild.emoji_limit
         sticker_limit = guild.sticker_limit
 
+        # Discord caps static and animated emoji slots separately, so emoji
+        # uploads are only impossible when both types are full.
         if self.choice == "emoji":
-            if emoji_count >= 500:
-                await interaction.response.send_message(f"❌ Server emoji limit reached ({emoji_count}/~500 max). Please choose sticker instead.", ephemeral=True)
+            if static_count >= emoji_limit and animated_count >= emoji_limit:
+                await interaction.response.send_message(
+                    f"❌ Server emoji slots are full (static {static_count}/{emoji_limit}, "
+                    f"animated {animated_count}/{emoji_limit}). Please choose sticker instead.",
+                    ephemeral=True,
+                )
                 return
-        else:  
+        else:
             if sticker_count >= sticker_limit:
                 await interaction.response.send_message(f"❌ Server sticker limit reached ({sticker_count}/{sticker_limit}). Please choose emoji instead.", ephemeral=True)
                 return
@@ -1012,6 +1019,24 @@ class CustomEmojiStickerView(View):
 
         if self.choice == "emoji":
             embed.add_field(name="Requirements", value="• File must be PNG, JPG, or GIF\n• Max 256KB\n• Recommended: 128x128px\n• Name must be 2-32 characters (alphanumeric + underscores)", inline=False)
+            if static_count >= emoji_limit:
+                embed.add_field(
+                    name="⚠️ Static slots full",
+                    value=(
+                        f"Static (PNG/JPG) emoji slots are full ({static_count}/{emoji_limit}). "
+                        "Only an animated GIF emoji can be added right now."
+                    ),
+                    inline=False,
+                )
+            elif animated_count >= emoji_limit:
+                embed.add_field(
+                    name="⚠️ Animated slots full",
+                    value=(
+                        f"Animated (GIF) emoji slots are full ({animated_count}/{emoji_limit}). "
+                        "Only a static PNG/JPG emoji can be added right now."
+                    ),
+                    inline=False,
+                )
         else:
             embed.add_field(name="Requirements", value="• File must be PNG, GIF, or Lottie JSON\n• Max 512KB for static, 512KB for animated\n• Name must be 2-30 characters\n• Description is optional", inline=False)
 
@@ -1098,6 +1123,21 @@ class EmojiStickerApprovalView(View):
             result_message = ""
 
             if self.upload_data['type'] == 'emoji':
+                # Discord caps static and animated emoji slots separately; check
+                # the pool this file actually needs so a full pool produces a
+                # clear message (and refund) instead of a raw 400.
+                from lib.economy.shop_items import emoji_slot_usage
+                is_animated = self.file_data[:4] == b"GIF8"
+                static_count, animated_count = emoji_slot_usage(guild)
+                kind_count = animated_count if is_animated else static_count
+                if kind_count >= guild.emoji_limit:
+                    kind = "animated (GIF)" if is_animated else "static (PNG/JPG)"
+                    other = "static" if is_animated else "animated GIF"
+                    raise RuntimeError(
+                        f"the server's {kind} emoji slots are full "
+                        f"({kind_count}/{guild.emoji_limit}). Free up a slot of that "
+                        f"type, or have the buyer resubmit as {other}."
+                    )
                 emoji = await guild.create_custom_emoji(
                     name=self.upload_data['name'],
                     image=self.file_data,
