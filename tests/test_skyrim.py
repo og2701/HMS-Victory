@@ -1781,3 +1781,17 @@ if __name__ == "__main__":
                 traceback.print_exc()
     print("ALL PASS" if not failed else f"{failed} FAILURES")
     sys.exit(1 if failed else 0)
+
+
+def test_duel_prize_scales_with_level_gap():
+    from lib.features.skyrim.engine import duel_prize_mult
+
+    # Peers pay the full purse; brave challenges pay more, capped at +80%.
+    assert duel_prize_mult(10, 10) == 1.0
+    assert duel_prize_mult(10, 15) == 1.4
+    assert duel_prize_mult(5, 40) == 1.8
+
+    # Stomping downward decays to nothing by 15 levels below.
+    assert duel_prize_mult(10, 5) == abs(1.0 - 5 / 15.0)
+    assert duel_prize_mult(30, 15) == 0.0
+    assert duel_prize_mult(30, 1) == 0.0

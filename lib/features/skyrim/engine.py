@@ -2680,7 +2680,19 @@ def pit_action(profile, action: str) -> tuple:
 # ghost is frozen at challenge time); win or lose, both ledgers remember.
 # ---------------------------------------------------------------------------
 DUEL_GHOST_FIGHT_CAP = 80            # even a perfect ghost telegraphs a little
-DUEL_PRIZE = (150, 60)               # (septims, xp) from the house for a win
+DUEL_PRIZE = (150, 60)               # (septims, xp) base prize at a fair matchup
+
+
+def duel_prize_mult(my_level: int, ghost_level: int) -> float:
+    """Reward scaling by level gap, so the optimal duel is a fair (or brave) one.
+
+    Peers pay the full purse; punching up pays up to +80%; stomping downward
+    decays to nothing at 15 levels below you - a Lv 30 beating a Lv 1 ghost
+    fights for pride alone."""
+    gap = int(my_level) - int(ghost_level)
+    if gap <= 0:
+        return min(1.8, 1.0 + (-gap) * 0.08)
+    return max(0.0, 1.0 - gap / 15.0)
 
 
 def ghost_of(rival) -> dict:
@@ -2722,9 +2734,15 @@ def duel_begin(profile, rival) -> list:
                                 "foe": ghost["hp"], "round": 1, "fatigue": 0,
                                 "ward": ghost["quirk"] == "veteran",
                                 "staggered": False, "opening": False}}
+    mult = duel_prize_mult(level(profile), ghost["level"])
+    stake = (f"the circle's purse: ~{int(round(DUEL_PRIZE[0] * mult))} septims, "
+             f"~{int(round(DUEL_PRIZE[1] * mult))} XP"
+             if mult > 0 else
+             "the circle offers nothing for this mismatch - fight for pride alone")
     return [f"⚔️ **The duelling circle.** You face **{ghost['name']}** "
             f"(Lv {ghost['level']}).",
-            f"-# {ghost['taunt']}  ·  ({ghost['quirk_desc']})"]
+            f"-# {ghost['taunt']}  ·  ({ghost['quirk_desc']})",
+            f"-# {stake}"]
 
 
 def duel_action(profile, action: str) -> tuple:
@@ -2749,11 +2767,16 @@ def duel_action(profile, action: str) -> tuple:
         profile["duel"] = None
         st["duel_wins"] = int(st.get("duel_wins", 0)) + 1
         _h2h(profile, ghost["uid"], won=True)
-        prize = _septims(profile, DUEL_PRIZE[0])
+        mult = duel_prize_mult(level(profile), int(ghost.get("level") or level(profile)))
+        prize = _septims(profile, int(round(DUEL_PRIZE[0] * mult)))
         profile["septims"] += prize
-        gained, _ = add_xp(profile, DUEL_PRIZE[1])
-        lines.append(f"🏆 **The ghost scatters like morning mist.** The circle pays "
-                     f"its respects.  (+{prize} septims, +{gained} XP)")
+        gained, _ = add_xp(profile, int(round(DUEL_PRIZE[1] * mult)))
+        if prize or gained:
+            lines.append(f"🏆 **The ghost scatters like morning mist.** The circle pays "
+                         f"its respects.  (+{prize} septims, +{gained} XP)")
+        else:
+            lines.append("🏆 **The ghost scatters like morning mist.** The circle "
+                         "pays nothing for a mismatch - that one was for pride.")
         found = roll_wonder(profile, {"duel"}, WONDER_SIDE_CHANCE)
         if found:
             lines.append(wonder_line(found))
