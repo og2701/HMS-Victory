@@ -825,6 +825,15 @@ def save_delve(delve: "Delve"):
     save_persistent_views(views)
 
 
+def save_pit_board(message_id, profile):
+    """Register a PUBLIC Pit board for restart reattachment (same registry as the
+    delve boards; remove with delete_delve)."""
+    views = load_persistent_views()
+    views[str(message_id)] = {"type": "skyrim", "pit": True,
+                              "user_id": int(profile["user_id"])}
+    save_persistent_views(views)
+
+
 def delete_delve(message_id):
     if message_id is None:
         return

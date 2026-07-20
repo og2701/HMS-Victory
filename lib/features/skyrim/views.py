@@ -993,13 +993,20 @@ async def _hub_pit(interaction: Interaction):
         lines.append("**This week's board:** " + "  ·  ".join(
             f"**{n}** {E.pit_title(r)} ({r})" for r, n in board))
     rows = []
-    if E.pit_bout_active(profile):
-        # a bout is already open (maybe resumed after a restart) - back into it
-        async def _resume(inter: Interaction):
-            p = E.get_profile(inter.user.id)
-            await _show_pit_bout(inter, p, ["The crowd parts - your bout is still on."])
+    bout = E.pit_bout_active(profile)
+    if bout:
+        # a bout is live on a public board - point back at it (or repost it)
         frow = discord.ui.ActionRow()
-        frow.add_item(_cb_btn(discord.ButtonStyle.danger, "Return to your bout", "🗡️", _resume))
+        if interaction.guild_id and bout.get("channel_id") and bout.get("message_id"):
+            url = (f"https://discord.com/channels/{interaction.guild_id}/"
+                   f"{bout['channel_id']}/{bout['message_id']}")
+            frow.add_item(discord.ui.Button(style=discord.ButtonStyle.link,
+                                            label="Return to your bout", url=url, emoji="🗡️"))
+
+        async def _repost(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            await _post_pit_board(inter, p, ["The crowd parts - the bout is still on."])
+        frow.add_item(_cb_btn(discord.ButtonStyle.secondary, "Repost the board", "📋", _repost))
         rows.append(frow)
     elif E.level(profile) >= 5 and E.pit_available(profile):
         async def _fight(inter: Interaction):
@@ -1008,8 +1015,7 @@ async def _hub_pit(interaction: Interaction):
                 await _hub_pit(inter)
                 return
             intro = E.pit_begin(p)
-            E.save_profile(p)
-            await _show_pit_bout(inter, p, intro)
+            await _post_pit_board(inter, p, intro)
         frow = discord.ui.ActionRow()
         frow.add_item(_cb_btn(discord.ButtonStyle.danger, "Step into the Pit", "🗡️", _fight))
         rows.append(frow)
@@ -1029,66 +1035,155 @@ def _pit_art(champ: dict) -> str:
     return key if key and _asset_bytes(key) is not None else "pit"
 
 
-async def _show_pit_bout(interaction: Interaction, profile, last_lines):
-    """The live bout panel: your hearts vs their blood, the last round's story, and
-    the three choices - Strike, Power blow, Guard."""
+async def _post_pit_board(interaction: Interaction, profile, intro_lines):
+    """Post (or re-post) the live bout as a PUBLIC channel message - spectators
+    welcome, exactly like a delve board - then turn the ephemeral into a send-off."""
     b = E.pit_bout_active(profile)
-    if not b:                                    # the bout just ended - back to the hall
+    if not b:
         await _hub_pit(interaction)
         return
-    champ = D.PIT_CHAMPS[b["rank"]]
-    lines = [f"## 🗡️ {champ['name']}  ·  round {b['round']}/{E.PIT_ROUNDS}",
-             f"-# ⚠️ {champ['quirk_desc']}",
-             "",
-             f"**You** {'❤️' * max(0, b['me'])}   vs   "
-             f"**{champ['name']}** {'🩸' * max(0, b['foe'])}", ""]
-    lines += last_lines
-    if b.get("staggered"):
-        lines.append("-# 🛡️ Her shieldwall is closed - your next swing is at -15%.")
-    if b.get("opening"):
-        lines.append("-# 👁️ You see an opening - your next strike is at +10%.")
+    old_mid = b.get("message_id")
+    view, files = _pit_board_layout(profile, intro_lines)
+    try:
+        msg = await interaction.channel.send(
+            view=view, files=files, allowed_mentions=discord.AllowedMentions.none())
+    except discord.HTTPException:
+        logger.error("skyrim: failed to post pit board", exc_info=True)
+        E.save_profile(profile)
+        await interaction.response.edit_message(
+            view=_notice_view("Couldn't post the bout here - try another channel."),
+            attachments=[])
+        return
+    if old_mid:
+        E.delete_delve(old_mid)
+    b["message_id"] = msg.id
+    b["channel_id"] = interaction.channel_id
+    E.save_profile(profile)
+    E.save_pit_board(msg.id, profile)
+    try:
+        interaction.client.add_view(view, message_id=msg.id)
+    except Exception:
+        logger.debug("skyrim pit add_view on post failed", exc_info=True)
+    await interaction.response.edit_message(
+        view=_notice_view("🗡️ **The Pit roars.** Your bout is live in the channel - "
+                          "the crowd is watching."), attachments=[])
 
-    async def _act(inter: Interaction, action: str):
-        p = E.get_profile(inter.user.id)
+
+def _pit_board_layout(profile, last_lines, champ=None, offer=True):
+    """The PUBLIC Pit board - spectators welcome, like a delve. Shows the fighter's
+    mention pill (never pings), the champion's portrait, both health bars and the
+    round story; only the fighter can press the buttons."""
+    uid = int(profile["user_id"])
+    b = E.pit_bout_active(profile)
+    view = discord.ui.LayoutView(timeout=None)
+    if b:
+        champ = D.PIT_CHAMPS[b["rank"]]
+        files = _gallery_files(view, _pit_art(champ))
+        lines = [f"## 🗡️ The Pit - bout {b['rank'] + 1}: {champ['name']}",
+                 f"🥊 <@{uid}> {'❤️' * max(0, b['me'])}   vs   "
+                 f"**{champ['name']}** {'🩸' * max(0, b['foe'])}"
+                 f"  ·  round {b['round']}/{E.PIT_ROUNDS}",
+                 f"-# ⚠️ {champ['quirk_desc']}", ""]
+        lines += list(last_lines)
+        if b.get("fatigue"):
+            lines.append(f"-# 😮‍💨 Fighting tired: -{b['fatigue']}% to hit.")
+        if b.get("staggered"):
+            lines.append("-# 🛡️ Her shieldwall is closed - your next swing is at -15%.")
+        if b.get("opening"):
+            lines.append("-# 👁️ You see an opening - your next strike is at +10%.")
+        box = discord.ui.Container(accent_colour=ACCENT)
+        box.add_item(discord.ui.TextDisplay("\n".join(lines)))
+        view.add_item(box)
+        row = discord.ui.ActionRow()
+        for label, emoji, action in (("Strike", "⚔️", "strike"),
+                                     ("Power blow", "💥", "power"),
+                                     ("Guard", "🛡️", "guard")):
+            row.add_item(_btn(discord.ButtonStyle.danger if action != "guard"
+                              else discord.ButtonStyle.primary, label,
+                              f"skyrimpit:{uid}:{action}", _make_pit_cb(uid, action),
+                              emoji=emoji))
+        view.add_item(row)
+        return view, files
+    # the sand settles: a terminal record (with a fight-on offer while the run lives)
+    files = _gallery_files(view, _pit_art(champ) if champ else "pit")
+    lines = [f"## 🗡️ The Pit", f"🥊 <@{uid}>", ""] + list(last_lines)
+    box = discord.ui.Container(accent_colour=ACCENT)
+    box.add_item(discord.ui.TextDisplay("\n".join(lines)))
+    view.add_item(box)
+    if offer and E.level(profile) >= 5 and E.pit_available(profile):
+        row = discord.ui.ActionRow()
+        row.add_item(_btn(discord.ButtonStyle.danger,
+                          f"Fight on (-{E.pit_fatigue(profile)}% tired)",
+                          f"skyrimpit:{uid}:fighton", _make_pit_cb(uid, "fighton"),
+                          emoji="😮‍💨"))
+        row.add_item(_btn(discord.ButtonStyle.secondary, "Bank it and rest",
+                          f"skyrimpit:{uid}:rest", _make_pit_cb(uid, "rest"),
+                          emoji="🛌"))
+        view.add_item(row)
+    return view, files
+
+
+def _make_pit_cb(owner_id: int, action: str):
+    async def _cb(interaction: Interaction):
+        await _handle_pit_click(interaction, owner_id, action)
+    return _cb
+
+
+async def _handle_pit_click(interaction: Interaction, owner_id: int, action: str):
+    if interaction.user.id != owner_id:
+        await interaction.response.send_message(
+            "Not your bout - the Pit takes all comers: `/skyrim` → **The Pit**.",
+            ephemeral=True)
+        return
+    p = E.get_profile(owner_id)
+    if p is None:
+        await interaction.response.send_message("Run `/skyrim` first.", ephemeral=True)
+        return
+    mid = interaction.message.id if interaction.message else None
+    if action in ("strike", "power", "guard"):
+        b = E.pit_bout_active(p)
+        if not b or (mid and b.get("message_id") not in (None, mid)):
+            await interaction.response.defer()          # a stale board
+            return
+        champ = D.PIT_CHAMPS[b["rank"]]
         state, story = E.pit_action(p, action)
         E.save_profile(p)
-        if state == "playing":
-            await _show_pit_bout(inter, p, story)
+        run_over = state != "playing" and not (state == "won" and E.pit_available(p))
+        if run_over and mid:
+            E.delete_delve(mid)                         # the record needs no routing
+        view, files = _pit_board_layout(p, story, champ=champ)
+        await interaction.response.edit_message(view=view, attachments=files)
+        if mid and not run_over:
+            try:
+                interaction.client.add_view(view, message_id=mid)
+            except Exception:
+                logger.debug("skyrim pit add_view failed", exc_info=True)
+    elif action == "fighton":
+        if not (E.level(p) >= 5 and E.pit_available(p)):
+            await interaction.response.send_message(
+                "The Pit is done with you today - fresh legs at dawn.", ephemeral=True)
             return
-        rows = []
-        if state == "won" and E.pit_available(p):
-            async def _fight_on(inter2: Interaction):
-                p2 = E.get_profile(inter2.user.id)
-                if not E.pit_available(p2):
-                    await _hub_pit(inter2)
-                    return
-                intro = E.pit_begin(p2)
-                E.save_profile(p2)
-                await _show_pit_bout(inter2, p2, intro)
-            frow = discord.ui.ActionRow()
-            frow.add_item(_cb_btn(discord.ButtonStyle.danger,
-                                  f"Fight on (-{E.pit_fatigue(p)}% tired)", "😮‍💨", _fight_on))
-            rows.append(frow)
-        rows.append(_pit_back_row())
-        view, files = _panel_view("\n".join(story), rows, art_key=_pit_art(champ))
-        await inter.response.edit_message(view=view, attachments=files)
-
-    row = discord.ui.ActionRow()
-    for label, emoji, action in (("Strike", "⚔️", "strike"),
-                                 ("Power blow", "💥", "power"),
-                                 ("Guard", "🛡️", "guard")):
-        async def _cb(inter: Interaction, a=action):
-            await _act(inter, a)
-        row.add_item(_cb_btn(discord.ButtonStyle.danger if action != "guard"
-                             else discord.ButtonStyle.primary, label, emoji, _cb))
-    await _edit_panel(interaction, "\n".join(lines), [row], art_key=_pit_art(champ))
-
-
-def _pit_back_row():
-    row = discord.ui.ActionRow()
-    row.add_item(_cb_btn(discord.ButtonStyle.secondary, "The Pit", "🗡️", _hub_pit))
-    row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Back", "⬅️", _hub_root))
-    return row
+        intro = E.pit_begin(p)
+        b = E.pit_bout_active(p)
+        b["message_id"] = mid
+        b["channel_id"] = interaction.channel_id
+        E.save_profile(p)
+        if mid:
+            E.save_pit_board(mid, p)
+        view, files = _pit_board_layout(p, intro)
+        await interaction.response.edit_message(view=view, attachments=files)
+        if mid:
+            try:
+                interaction.client.add_view(view, message_id=mid)
+            except Exception:
+                logger.debug("skyrim pit add_view failed", exc_info=True)
+    elif action == "rest":
+        if mid:
+            E.delete_delve(mid)
+        view, files = _pit_board_layout(
+            p, ["🛌 The day's winnings are banked - the crowd drinks to the one who "
+                "knew when to stop."], offer=False)
+        await interaction.response.edit_message(view=view, attachments=files)
 
 
 # --- shop --------------------------------------------------------------------------
@@ -2017,8 +2112,20 @@ async def handle_skyrim_command(interaction: Interaction):
 
 
 def reattach_skyrim_view(client, key, value):
-    """Re-register routing for an in-play delve after a restart; prune anything
-    terminal or malformed so it can't wedge future boots."""
+    """Re-register routing for an in-play delve (or a live Pit board) after a
+    restart; prune anything terminal or malformed so it can't wedge future boots."""
+    if isinstance(value, dict) and value.get("pit"):
+        profile = E.get_profile(value.get("user_id"))
+        bout = E.pit_bout_active(profile) if profile else None
+        if not bout or bout.get("message_id") != int(key):
+            E.delete_delve(key)
+            return
+        try:
+            view, _files = _pit_board_layout(profile, ["The bout resumes - the crowd never left."])
+            client.add_view(view, message_id=int(key))
+        except Exception as e:
+            logger.error(f"Failed to reattach pit board {key}: {e}", exc_info=True)
+        return
     try:
         delve = E.Delve.from_dict(value)
     except Exception as e:
