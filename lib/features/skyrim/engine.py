@@ -3708,22 +3708,45 @@ def wb_march(profile) -> tuple:
     dealt = 0
     lines = [boss["arrive"]]
     exchanges = WB_EXCHANGES + (1 if homestead_built(profile, "war_room") else 0)
+    # every boss fights in its own voice (hit/miss/answer pools drawn from data's
+    # own rng, so the exchange dice stay untouched); the beats mark the pool's
+    # story-turns once per hunt-crossing
+    half = store["max"] // 2
+    half_told = store["hp"] <= half
+    blood_told = store["hp"] <= 10
+    last_line = {}                                # no pool repeats itself back-to-back
+
+    def _fresh(kind, fallback):
+        pool = boss.get(kind) or [fallback]
+        picks = [l for l in pool if l != last_line.get(kind)] or pool
+        last_line[kind] = D.pick(picks)
+        return last_line[kind]
+
     for _ in range(exchanges):
         if random.random() * 100 < atk:
             d = 2 if random.random() < crit else 1
             dealt += d
-            lines.append(f"-# Your blow lands{' - a CLEAN strike' if d == 2 else ''} "
-                         f"(**-{d}** from the pool).")
+            swing = _fresh("hit", "Your blow lands")
+            tag = "💥 A CLEAN strike - " if d == 2 else ""
+            lines.append(f"-# {tag}{swing} (**-{d}**).")
+            remaining = store["hp"] - dealt
+            if not half_told and remaining <= half:
+                half_told = True
+                lines.append("-# ⚔️ **The hunt turns** - half its hearts are spent.")
+            if not blood_told and remaining <= 10 and remaining > 0:
+                blood_told = True
+                lines.append("-# 🩸 **It is nearly done** - the whole hold smells the kill.")
         else:
-            lines.append(f"-# {boss['name']} turns your blow aside.")
+            lines.append(f"-# {_fresh('miss', boss['name'] + ' turns your blow aside')}.")
         if dealt >= store["hp"]:
             break                                 # the killing blow - stop swinging
         if random.random() * 100 < fatk:
             loss = 2 if random.random() < boss.get("crush", 0.0) else 1
             hearts -= loss
-            lines.append(f"-# {boss['style'].capitalize()} answers"
-                         f"{' - a CRUSHING blow' if loss == 2 else ''} "
-                         f"({'❤️' * max(0, hearts)} left).")
+            answer = _fresh("answer", f"{boss['style'].capitalize()} answers")
+            hearts_str = "❤️" * hearts if hearts > 0 else "💀 none"
+            lines.append(f"-# {answer}{' - 💥 a CRUSHING blow' if loss == 2 else ''} "
+                         f"({hearts_str} left).")
             if hearts <= 0:
                 lines.append("The shield-bearers drag you clear. Your wounds mend by "
                              "morning - the damage you dealt stands.")
