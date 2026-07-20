@@ -3533,8 +3533,8 @@ def set_shrine(profile, key: str) -> str | None:
 # MARCHES. All state lives in one shared file; everything is computed when a
 # player looks (the week rolls over lazily), nothing is ever posted on a schedule.
 # ---------------------------------------------------------------------------
-WB_BASE_HP = 50                      # the pool a fresh hunt starts at...
-WB_HP_PER_STREAK = 6                 # ...growing with each consecutive weekly kill
+WB_BASE_HP = 75                      # the pool a fresh hunt starts at...
+WB_HP_PER_STREAK = 8                 # ...growing with each consecutive weekly kill
 WB_EXCHANGES = 6                     # blows traded per march (or until you're carried off)
 WB_MIN_LEVEL = 5
 

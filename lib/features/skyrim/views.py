@@ -2551,21 +2551,26 @@ HELP_PAGES = {
         "**🗣️ Rumours** - buy a whisper, unlock a one-time **LEGEND** hunt: the Ebony "
         "Warrior (deaf to the Voice), Karstaag (fire is useless), and the twin dragons of "
         "the Forgotten Vale. Permanent trophies for the worthy."),
-    "world": ("🌍", "The world & the daily",
-        "## 🌍 The world & the daily\n"
+    "world": ("🌍", "The world & the Notice Board",
+        "## 🌍 The world & the Notice Board\n"
         "**Weather** turns daily and tilts everyone's odds; **routes** rotate at dawn with "
         "conditions (Rich Pickings, Marked Prey, Elite Nest...) shown on the picker.\n"
-        "**📅 The Daily Delve** - one shared dungeon a day, same rooms for everyone, one "
-        "attempt, results on a board. Its **mood** varies: quiet sprints, marathon Long "
-        "Hauls, Deadly days - and the rare 😱 **NIGHTMARE** most will not survive (clear it "
-        "for glory and a fat purse). Doesn't spend your delves.\n"
-        "**🏰 Factions** (L8+) - swear to the Companions, Thieves or College; a weekly task "
-        "in a neglected skill pays favour, rank and coin.\n"
-        "**🧭 Expeditions** (L8+) - send your housecarl away for 1-3 days; collect the haul "
-        "and read the road-log when they return.\n"
-        "**🗡️ The Pit** (L5+) - Windhelm's arena ladder, round by round (Strike / Power "
-        "blow / Guard), each champion with a signature trick. Fight on while you win as "
-        "fatigue mounts and wounds carry; a loss ends your day. Board resets each Monday."),
+        "**📌 The Notice Board** gathers the shared, rotating content:\n"
+        "- 📅 **The Daily Delve** - one shared dungeon a day, same rooms for everyone, one "
+        "attempt, results on a board. Its **mood** varies - quiet sprints, Long Hauls, "
+        "Deadly days, the rare 😱 **NIGHTMARE**. Doesn't spend your delves.\n"
+        "- 📋 **The Task Board** - 8 weekly challenges, fresh each Monday. Progress counts "
+        "as you play; claim the bounties on the board. Sweep all 8 for a bonus, and race "
+        "the others for the week's points.\n"
+        "- 📯 **The Week's Hunt** - a shared boss with one pooled heart total. **March** on "
+        "it once a day (a public sortie with your real build); fell it before Monday and "
+        "everyone who marched shares the spoils. Kill streaks grow the next one.\n"
+        "**🏰 Factions** (L8+) - swear an allegiance; a weekly task in a neglected skill "
+        "pays favour, rank and coin.\n"
+        "**🗡️ The Pit** (L5+) - Windhelm's arena ladder, round by round, each champion "
+        "with a signature trick. Fight on while you win; a loss ends your day. Resets "
+        "Monday. **⚔️ Ghost Duels** live here too - fight a snapshot of a rival's build, "
+        "once per rival per day. Win or lose, their ghost tells them everything."),
     "endgame": ("🌑", "Endgame",
         "## 🌑 Endgame\n"
         "**Alduin** - at level 20 with the full Shout and 5 dragons slain, Skuldafn opens: "
@@ -2580,6 +2585,23 @@ HELP_PAGES = {
         "Death loses everything, as ever.\n"
         "**🖤 Legends** - the three Rumour hunts are the hardest fights in the game, "
         "never Stirred, pure duels. Slain once, remembered forever."),
+    "long_game": ("🏛️", "The estate & the Hall",
+        "## 🏛️ The long game\n"
+        "**🏡 The Homestead** (Holdings) - buy the Lakeview deed and build the estate "
+        "room by room. Builds take real hours and days; finished rooms provide daily "
+        "(a garden's ingredients, a brewery's potion), collected whenever you open the "
+        "panel - up to 3 days accrue, so time away is never punished. The Watchtower "
+        "shows tomorrow's routes, the Shrine grants a standing blessing, the Quarters "
+        "staff a **second expedition**, and the Great Hall crowns the estate.\n"
+        "**✨ Wonders** - ultra-rare trophies rolled on every kill (bosses, dragons, the "
+        "Pit, the Hunt, the circle and your own floorboards chase rarer ones). No pity "
+        "timer - when one hits, the whole channel hears about it. The shelf survives "
+        "everything.\n"
+        "**🏛️ Legacy Rebirth** (Character → Hall of Legends) - beat Alduin and you may "
+        "**retire**: the character resets to level 1, the ACCOUNT does not - collection, "
+        "records, wonders, companions, career deeds and the estate persist, and each "
+        "retirement banks a permanent **boon** (pick one of three). Retirement N demands "
+        "Alduin beaten N times, each at a harder Echo. Five seats wait in the Hall."),
 }
 
 

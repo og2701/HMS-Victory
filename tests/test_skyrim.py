@@ -1680,6 +1680,30 @@ def test_homestead_builds_and_yields():
     assert E.homestead_yield_days(p) == 4
 
 
+def test_task_attainability_rule():
+    """The design rule: per-delve tasks are CHOICE-gated, dice-count tasks are
+    cumulative with generous weekly headroom for a once-a-day player (~21 delves,
+    ~5 kills and ~0.7 chests per delve, 7 dailies, several Pit bouts)."""
+    weekly_capacity = {"kill": 60, "chest": 10, "sneak": 8, "persuade": 8,
+                       "daily": 7, "clear": 12, "pit_win": 6, "march": 7}
+    for key, t in D.TASKS.items():
+        # every target fits inside half the realistic weekly capacity
+        cap = weekly_capacity[t["kind"]]
+        if t.get("dragon"):
+            cap = 7                                        # a lair is OFFERED daily at L8+ -
+                                                           # hunting dragons is a choice, not dice
+        if t.get("bounty"):
+            cap = 5                                        # ~6% of trash rooms, boostable x4
+        assert t["n"] * 2 <= cap or t["n"] == 1, \
+            f"{key} wants {t['n']} of a ~{cap}/week event - luck-gated"
+        # single-shot tasks must be choice-based, not dice-count-based
+        if t["n"] == 1:
+            assert any(t.get(f) for f in
+                       ("diff", "no_potion", "style_only", "stirred_min", "deep",
+                        "unwounded", "no_potion_delve", "dragon")), \
+                f"{key} is a one-shot task with no skill/choice gate"
+
+
 def test_legacy_rebirth():
     p = _profile()
     # the gate: retirement N demands Alduin undone N times
