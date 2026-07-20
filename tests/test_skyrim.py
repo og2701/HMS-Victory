@@ -1530,7 +1530,16 @@ def test_weekly_task_board():
            any(D.TASKS[k]["kind"] == "clear" for k in prog)
 
 
+def _wipe_profiles():
+    """A hermetic world for tests whose maths read EVERY profile (the hunt's
+    actives head-count) - other tests leak saved characters into the store, and
+    the stdlib runner orders tests alphabetically, not by definition."""
+    E.save_json_file(config.SKYRIM_PROFILES_FILE, {})
+
+
 def test_the_weeks_hunt():
+    _wipe_profiles()
+    E._wb_save({})                                     # force a fresh spawn
     # a fresh week posts a full-pool boss from the roster
     store = E.world_boss()
     assert store["boss"] in D.WORLD_BOSSES
@@ -1592,6 +1601,7 @@ def test_the_weeks_hunt():
 
 
 def test_hunt_pool_scales_with_active_hunters():
+    _wipe_profiles()
     for i in range(4):
         p = E.create_profile(800 + i, f"Active{i}", "warrior")
         p["last_delve_date"] = E._today_str()
