@@ -797,10 +797,16 @@ def _sheet_text(profile) -> str:
     skill_rows = [("blade", "One-Handed"), ("marksman", "Marksman"),
                   ("destruction", "Destruction"), ("sneak", "Sneak"),
                   ("speech", "Speech"), ("lockpicking", "Lockpicking")]
+    legend = E.legacy_rank(profile)
+    legend_bit = f"  ·  🏛️ Legend {'⭐' * legend}" if legend else ""
     lines = [
-        f"## {stone['emoji']} {profile['name']} - Level {E.level(profile)} {E.archetype(profile)}",
+        f"## {stone['emoji']} {profile['name']} - Level {E.level(profile)} {E.archetype(profile)}{legend_bit}",
         f"-# Blessed by {stone['name']}  ·  XP {_bar(into, 0, need)} {into}/{need}",
     ]
+    if legend:
+        boons = [D.BOONS[b] for b in E.legacy(profile).get("boons", []) if b in D.BOONS]
+        if boons:
+            lines.append("-# 🏛️ Boons: " + "  ·  ".join(f"{b['emoji']} {b['name']}" for b in boons))
     if profile.get("alduin_slain"):
         n = profile["alduin_slain"]
         lines.append(f"⭐ **Slayer of Alduin**{f' (x{n})' if n > 1 else ''}")
@@ -864,7 +870,110 @@ async def _hub_character(interaction: Interaction):
                          f"Collection {E.collection_pct(profile)}%", "📦", _hub_collection))
     row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Records", "🎖️", _hub_records))
     row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Companion", "🐾", _hub_companion))
-    await _edit_panel(interaction, _sheet_text(profile), [row, _back_row()])
+    rows = [row]
+    ready, _line = E.retire_ready(profile)
+    if ready or E.legacy_rank(profile) or profile.get("alduin_slain"):
+        hrow = discord.ui.ActionRow()
+        hrow.add_item(_cb_btn(discord.ButtonStyle.danger if ready
+                              else discord.ButtonStyle.secondary,
+                              "Hall of Legends" + (" - retirement awaits" if ready else ""),
+                              "🏛️", _hub_hall))
+        rows.append(hrow)
+    rows.append(_back_row())
+    await _edit_panel(interaction, _sheet_text(profile), rows)
+
+
+# --- the Hall of Legends (Legacy Rebirth) --------------------------------------------
+def _hall_text(profile) -> str:
+    lg = E.legacy(profile)
+    ready, req_line = E.retire_ready(profile)
+    lines = ["## 🏛️ The Hall of Legends",
+             "-# Retire a champion and begin again. Level, skills, gear, gold, perks and "
+             "the Voice reset to a fresh start; your collection, records, wonders, "
+             "companions and the estate persist - and each legend banks a permanent boon.",
+             ""]
+    if lg.get("boons"):
+        lines.append("**Your boons** (forever):")
+        for b in lg["boons"]:
+            boon = D.BOONS.get(b)
+            if boon:
+                lines.append(f"-# {boon['emoji']} **{boon['name']}** - {boon['desc']}")
+        lines.append("")
+    for i, ep in enumerate(lg.get("epitaphs") or [], start=1):
+        boon = D.BOONS.get(ep.get("boon"), {})
+        lines.append(f"⭐ **Legend {i} - {ep.get('name', '?')}**: {ep.get('days', 0)} days, "
+                     f"level {ep.get('level', '?')}, {ep.get('dragons', 0)} dragons, "
+                     f"Alduin x{ep.get('alduin', 0)}. Took {boon.get('name', 'a boon')}.")
+        if ep.get("line"):
+            lines.append(f"-# {ep['line']}")
+    if lg.get("epitaphs"):
+        lines.append("")
+    if ready:
+        lines.append("🏛️ **The Hall is ready for you.** Choose the boon your legend "
+                     "leaves behind - then retire. There is no undoing it.")
+    else:
+        lines.append(f"-# The next retirement asks: {req_line}. Every kill hardens his "
+                     f"Echo - each legend is earned against a worse World-Eater.")
+    return "\n".join(lines)
+
+
+async def _hub_hall(interaction: Interaction, notice: str = ""):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None:
+        await _show_class_pick(interaction)
+        return
+    text = _hall_text(profile)
+    if notice:
+        text += f"\n\n{notice}"
+    rows = []
+    ready, _line = E.retire_ready(profile)
+    if ready:
+        sel = discord.ui.Select(placeholder="🏛️ Choose your legend's boon...")
+        for k in E.boon_offer(profile):
+            b = D.BOONS[k]
+            sel.add_option(label=b["name"], value=k, emoji=b["emoji"],
+                           description=b["desc"][:100])
+
+        async def _choose(inter: Interaction):
+            await _hall_confirm(inter, sel.values[0])
+        sel.callback = _choose
+        srow = discord.ui.ActionRow()
+        srow.add_item(sel)
+        rows.append(srow)
+    rows.append(_char_back_row())
+    await _edit_panel(interaction, text, rows)
+
+
+async def _hall_confirm(interaction: Interaction, boon_key: str):
+    profile = E.get_profile(interaction.user.id)
+    if profile is None or boon_key not in D.BOONS:
+        await _hub_hall(interaction)
+        return
+    b = D.BOONS[boon_key]
+    text = ("## 🏛️ The last question\n"
+            f"Retire **{profile['name']}** (level {E.level(profile)}, "
+            f"{profile['stats'].get('dragons', 0)} dragons, "
+            f"{profile['septims']:,} septims) and take "
+            f"{b['emoji']} **{b['name']}** - {b['desc']}\n\n"
+            "⚠️ **This cannot be undone.** Level, skills, gear, gold, perks, doctrines "
+            "and the Voice all reset. The collection, records, wonders, companions, "
+            "career deeds and the estate stay yours forever.")
+    row = discord.ui.ActionRow()
+
+    async def _do(inter: Interaction):
+        p = E.get_profile(inter.user.id)
+        err = E.retire(p, boon_key)
+        E.save_profile(p)
+        if err:
+            await _hub_hall(inter, notice=f"-# {err}")
+            return
+        n = E.legacy_rank(p)
+        await _hub_hall(inter, notice=f"🏛️ **Legend {n} takes their seat in the Hall.**\n"
+                                      f"Hey, you. You're finally awake... again. "
+                                      f"{b['emoji']} {b['name']} rides with you this time.")
+    row.add_item(_cb_btn(discord.ButtonStyle.danger, "Retire them, forever", "🏛️", _do))
+    row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Not yet", "⬅️", _hub_hall))
+    await _edit_panel(interaction, text, [row, _char_back_row()])
 
 
 # --- the Collection Log ---------------------------------------------------------
@@ -2355,6 +2464,8 @@ async def _hub_rankings(interaction: Interaction):
         rank = medals[i] if i < len(medals) else f"`{i + 1:>2}.`"
         st = p["stats"]
         flair = ""
+        if E.legacy_rank(p):
+            flair += f" 🏛️{E.legacy_rank(p)}"
         if p.get("alduin_slain"):
             flair += " ⭐"
         if E.home_owned(p, "trophy_room"):

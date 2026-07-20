@@ -1680,6 +1680,69 @@ def test_homestead_builds_and_yields():
     assert E.homestead_yield_days(p) == 4
 
 
+def test_legacy_rebirth():
+    p = _profile()
+    # the gate: retirement N demands Alduin undone N times
+    ready, line = E.retire_ready(p)
+    assert not ready and "Alduin" in line
+    assert E.retire(p, "old_soul") is not None
+    p["alduin_slain"] = 1
+    ready, _ = E.retire_ready(p)
+    assert ready
+    # the offer is 3 unowned boons, stable between opens
+    offer = E.boon_offer(p)
+    assert len(offer) == 3 and offer == E.boon_offer(p)
+    assert all(k in D.BOONS for k in offer)
+    assert E.retire(p, next(k for k in D.BOONS if k not in offer)) is not None
+    # a rich veteran retires: progression resets, the account persists
+    p["xp"] = 50000
+    p["septims"] = 9999
+    p["weapon_tier"] = 5
+    p["armour_tier"] = 4
+    p["perks"] = {"stalwart": 2}
+    p["words"] = 3
+    p["souls"] = 7
+    p["wonders"] = ["golden_sweetroll"]
+    p["stats"]["dragons"] = 30
+    E.homestead(p)["built"]["land"] = "2020-01-01"
+    boon = offer[0]
+    assert E.retire(p, boon) is None
+    assert E.level(p) == 1 and p["septims"] == 0 and p["words"] == 0
+    assert p["perks"] == {} and p["armour_tier"] == 0
+    if boon == "heirloom":
+        assert p["weapon_tier"] == 5                       # the blade passes down
+    else:
+        assert p["weapon_tier"] == 0
+    assert p["wonders"] == ["golden_sweetroll"]            # the shelf persists
+    assert p["stats"]["dragons"] == 30                     # career deeds persist
+    assert "land" in E.homestead(p)["built"]               # the estate persists
+    lg = E.legacy(p)
+    assert lg["rank"] == 1 and lg["boons"] == [boon]
+    ep = lg["epitaphs"][0]
+    assert ep["dragons"] == 30 and ep["alduin"] == 1 and ep["boon"] == boon
+    # the next retirement needs a SECOND Alduin kill (at a harder Echo)
+    ready, _ = E.retire_ready(p)
+    assert not ready
+    p["alduin_slain"] = 2
+    ready, _ = E.retire_ready(p)
+    assert ready
+    assert boon not in E.boon_offer(p)                     # boons never repeat
+    # boons actually bite
+    q = E.create_profile(21, "Boonful", "warrior")
+    base_hearts = E.heart_max(q)
+    base_delves = E.delves_left(q)
+    E.legacy(q)["boons"] = ["blooded", "long_stride", "coin_wise", "old_soul"]
+    assert E.heart_max(q) == base_hearts + 1
+    assert E.delves_left(q) == base_delves + 1
+    assert E.shop_price(q, 100) == 90
+    q2 = E.create_profile(22, "Plain", "warrior")
+    E.random = _fixed_rolls(0.5)
+    got_boon, _ = E.add_xp(q, 100)
+    got_plain, _ = E.add_xp(q2, 100)
+    _restore_random()
+    assert got_boon > got_plain                            # Old Soul pays
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

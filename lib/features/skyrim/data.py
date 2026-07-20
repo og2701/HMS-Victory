@@ -1513,6 +1513,43 @@ HOME_ITEMS = {
 }
 
 # ---------------------------------------------------------------------------
+# Legacy Rebirth - the Hall of Legends. Beat Alduin and you may RETIRE: level,
+# skills, gear, gold, perks and the Voice reset to a fresh start; the collection,
+# records, companions, wonders and the homestead all persist. Each retirement
+# banks a permanent BOON (pick one of three offered) and a legend rank shown by
+# your name. Retirement N demands Alduin beaten N times - and every kill hardens
+# his Echo, so each legend is earned against a worse World-Eater.
+# ---------------------------------------------------------------------------
+BOONS = {
+    "old_soul": {"name": "Old Soul", "emoji": "📚",
+                 "desc": "+10% XP, forever. The climb remembers your feet."},
+    "blooded": {"name": "Blooded", "emoji": "❤️",
+                "desc": "+1 max heart, forever. Dying twice teaches you not to."},
+    "quartermaster": {"name": "Quartermaster", "emoji": "🧪",
+                      "desc": "Your potion belt refills to its cap at the first "
+                              "delve of each day."},
+    "heirloom": {"name": "The Heirloom Blade", "emoji": "⚔️",
+                 "desc": "Your weapon - tier and tempering - passes down through "
+                         "this retirement."},
+    "coin_wise": {"name": "Coin-Wise", "emoji": "💰",
+                  "desc": "Belethor's prices run 10% kinder, forever."},
+    "dragon_marked": {"name": "Dragon-Marked", "emoji": "🐲",
+                      "desc": "Dragon souls burn brighter: every dragon yields 2."},
+    "long_stride": {"name": "Long Stride", "emoji": "🥾",
+                    "desc": "+1 delve per day, forever."},
+    "wayfarer": {"name": "Wayfarer", "emoji": "🧭",
+                 "desc": "Expeditions return +25% septims."},
+}
+LEGACY_MAX = 5
+LEGACY_EPITAPHS = [
+    "The ruins still whisper the name.",
+    "Retired to the Hall with every finger accounted for.",
+    "Bought a round for the whole hall on the way out.",
+    "The dragons of that age slept easier after.",
+    "Left the boots by the door for the next one.",
+]
+
+# ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
 def pick(lines, **fmt):

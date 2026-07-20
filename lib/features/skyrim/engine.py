@@ -306,6 +306,7 @@ def _migrate(profile: dict) -> dict:
     profile.setdefault("homestead", {"built": {}, "building": None, "done_at": None,
                                      "last_collect": None, "shrine": None})
     profile.setdefault("expedition2", None)      # the Quarters' second housecarl errand
+    profile.setdefault("legacy", {"rank": 0, "boons": [], "epitaphs": []})
     # backfill what honesty allows: the Cairn depth record already existed
     if (profile.get("soulcairn") or {}).get("best"):
         profile["records"].setdefault("depth", int(profile["soulcairn"]["best"]))
@@ -409,7 +410,8 @@ def perk_rank(profile, key) -> int:
 
 
 def heart_max(profile) -> int:
-    return BASE_HEARTS + perk_rank(profile, "stalwart") + int(doctrine_flat(profile, "heart"))
+    return (BASE_HEARTS + perk_rank(profile, "stalwart") + int(doctrine_flat(profile, "heart"))
+            + (1 if has_boon(profile, "blooded") else 0))
 
 
 def delve_heart_max(delve, profile) -> int:
@@ -951,6 +953,7 @@ def add_xp(profile, amount: int) -> tuple:
     """Bank XP (Quick Study + weather apply). Returns (gained, levels_gained)."""
     amount = int(round(amount * (1 + 0.10 * perk_rank(profile, "quick_study"))
                        * (1 + homestead_bonus(profile, "xp"))
+                       * _boon_xp_mult(profile)
                        * weather_today()["xp"]))
     before = level(profile)
     profile["xp"] += amount
@@ -967,7 +970,8 @@ def _septims(profile, amount: int) -> int:
 
 # --- stamina -----------------------------------------------------------------
 def delves_left(profile) -> int:
-    per_day = int(getattr(config, "SKYRIM_DELVES_PER_DAY", 3))
+    per_day = (int(getattr(config, "SKYRIM_DELVES_PER_DAY", 3))
+               + (1 if has_boon(profile, "long_stride") else 0))
     st = profile.get("stamina") or {}
     if st.get("date") != _today_str():
         return per_day
@@ -1599,9 +1603,10 @@ class Delve:
             line += f", {drop}"
         line += ")"
         if e["type"] == "dragon":
-            profile["souls"] += 1
+            souls = 2 if has_boon(profile, "dragon_marked") else 1
+            profile["souls"] += souls
             profile["stats"]["dragons"] += 1
-            line += "  🐉 **+1 dragon soul**"
+            line += f"  🐉 **+{souls} dragon soul{'s' if souls > 1 else ''}**"
             if profile.get("words", 0) > 0 and self.shout_charges < profile["words"]:
                 self.shout_charges = int(profile["words"])
                 _sync_voice(profile, self, self.shout_charges)
@@ -2155,6 +2160,10 @@ def _first_delve_of_day_comforts(profile, delve: Delve):
     if home_owned(profile, "alchemy_lab") and profile["potions"] < potion_cap(profile):
         profile["potions"] += 1
         delve.say("⚗️ Your alchemy lab left a fresh potion by the door.  🧪 +1")
+    if has_boon(profile, "quartermaster") and profile["potions"] < potion_cap(profile):
+        got = potion_cap(profile) - profile["potions"]
+        profile["potions"] = potion_cap(profile)
+        delve.say(f"🧪 The Quartermaster's habit dies hard - your belt is filled.  (+{got})")
 
 
 def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
@@ -2848,11 +2857,12 @@ def buy_home(profile, key: str) -> str | None:
     profile["home"] = sorted((profile.get("home") or []) + [key])
     return None
 def buy_potion(profile) -> str | None:
+    price = shop_price(profile, D.POTION_PRICE)
     if profile["potions"] >= potion_cap(profile):
         return "Your potion pockets are full."
-    if profile["septims"] < D.POTION_PRICE:
-        return f"A health potion is {D.POTION_PRICE} septims. \"Come back with coin, friend.\""
-    profile["septims"] -= D.POTION_PRICE
+    if profile["septims"] < price:
+        return f"A health potion is {price} septims. \"Come back with coin, friend.\""
+    profile["septims"] -= price
     profile["potions"] += 1
     return None
 
@@ -2863,7 +2873,7 @@ def buy_gear(profile, slot: str) -> str | None:
     if tier_now >= len(D.GEAR_TIERS) - 1:
         return "Nothing finer exists in Tamriel."
     nxt = D.GEAR_TIERS[tier_now + 1]
-    price = nxt["price"] if slot == "weapon" else int(nxt["price"] * 0.8)
+    price = shop_price(profile, nxt["price"] if slot == "weapon" else int(nxt["price"] * 0.8))
     if profile["stats"]["dragons"] < nxt["dragons"]:
         return (f"{nxt['name']} gear is forged from dragon bone - Belethor eyes you doubtfully. "
                 f"\"Slay {nxt['dragons']} dragons and we'll talk.\" "
@@ -3219,7 +3229,8 @@ def collect_expedition(profile, slot: int = 1) -> str | None:
     if not expedition_ready(profile, slot):
         return f"Still out - returns {e['return']}."
     exp = D.EXPEDITIONS[e["key"]]
-    septims = _septims(profile, exp["septims"])
+    base = int(exp["septims"] * (1.25 if has_boon(profile, "wayfarer") else 1.0))
+    septims = _septims(profile, base)
     profile["septims"] += septims
     gained, _ = add_xp(profile, exp["xp"])
     parts = [f"+{septims} septims", f"+{gained} XP"]
@@ -3241,6 +3252,110 @@ def collect_expedition(profile, slot: int = 1) -> str | None:
     tot["septims"] += septims
     tot["xp"] += gained
     return f"{carl} returns from **{exp['name']}** with " + ", ".join(parts) + "."
+
+
+# ---------------------------------------------------------------------------
+# Legacy Rebirth - the Hall of Legends. The character resets; the ACCOUNT keeps
+# growing: collection, records, wonders, companions, rumours, the homestead and
+# the career stats all persist, plus one permanent boon per retirement. The gate
+# rides Alduin's Echoes - retirement N demands the World-Eater undone N times.
+# ---------------------------------------------------------------------------
+def legacy(profile) -> dict:
+    return profile.setdefault("legacy", {"rank": 0, "boons": [], "epitaphs": []})
+
+
+def legacy_rank(profile) -> int:
+    return int(legacy(profile).get("rank", 0))
+
+
+def has_boon(profile, key: str) -> bool:
+    return key in legacy(profile).get("boons", [])
+
+
+def retire_ready(profile) -> tuple:
+    """(ready, requirement_line). Retirement N needs Alduin undone N times - and
+    since every kill hardens his Echo, each retirement is bought against a worse
+    World-Eater."""
+    lg = legacy(profile)
+    need = int(lg.get("rank", 0)) + 1
+    slain = int(profile.get("alduin_slain") or 0)
+    if lg.get("rank", 0) >= D.LEGACY_MAX:
+        return False, f"the Hall holds {D.LEGACY_MAX} legends - yours is complete"
+    line = (f"Alduin undone **{need}** time{'s' if need != 1 else ''} "
+            f"({'✅' if slain >= need else slain})")
+    return slain >= need, line
+
+
+def boon_offer(profile) -> list:
+    """The three boons fate offers THIS retirement - seeded per character and
+    rank, so reopening the Hall never rerolls them."""
+    lg = legacy(profile)
+    owned = set(lg.get("boons", []))
+    pool = sorted(k for k in D.BOONS if k not in owned)
+    rng = random.Random(f"skyrim-legacy-{profile['user_id']}-{lg.get('rank', 0)}")
+    return rng.sample(pool, min(3, len(pool)))
+
+
+def retire(profile, boon_key: str) -> str | None:
+    """Retire the character into the Hall of Legends. Returns an error line, or
+    None on success (the profile is reborn in place)."""
+    ready, line = retire_ready(profile)
+    if not ready:
+        return f"The Hall isn't ready for you: {line}."
+    if boon_key not in boon_offer(profile):
+        return "Fate never offered that boon."
+    lg = legacy(profile)
+    # the epitaph - written before anything resets
+    try:
+        days = max(0, (datetime.date.fromisoformat(_today_str())
+                       - datetime.date.fromisoformat(profile.get("created") or _today_str())).days)
+    except ValueError:
+        days = 0
+    lg["epitaphs"].append({
+        "name": profile.get("name", "a Dovahkiin"), "days": days,
+        "level": level(profile), "dragons": int(profile["stats"].get("dragons", 0)),
+        "alduin": int(profile.get("alduin_slain") or 0), "date": _today_str(),
+        "boon": boon_key,
+        "line": random.choice(D.LEGACY_EPITAPHS)})
+    lg["boons"].append(boon_key)
+    lg["rank"] = int(lg.get("rank", 0)) + 1
+    # the rebirth: character progression resets; the account does not
+    abandon_active(profile)
+    keep_weapon = boon_key == "heirloom" or has_boon(profile, "heirloom")
+    stone = D.STONES.get(profile.get("stone")) or D.STONES["warrior"]
+    profile["xp"] = 0
+    profile["skills"] = {s: 15 for s in SKILLS}
+    profile["skills"].update(stone["start"])
+    profile["perks"] = {}
+    profile["meditations"] = 0
+    profile["septims"] = 0
+    profile["potions"] = 2
+    profile["souls"] = 0
+    profile["words"] = 0
+    profile["voice"] = {"charges": 0, "date": _today_str()}
+    profile["armour_tier"] = 0
+    temper = profile.setdefault("temper", {"weapon": 0, "armour": 0})
+    temper["armour"] = 0
+    if not keep_weapon:
+        profile["weapon_tier"] = 0
+        temper["weapon"] = 0
+    profile["doctrines"] = {}
+    profile["legendary"] = {}
+    profile["ingredients"] = {}
+    profile["nextdelve"] = {}
+    profile["nextpacts"] = []
+    profile["created"] = _today_str()
+    record_best(profile, "legend_rank", lg["rank"])
+    return None
+
+
+def _boon_xp_mult(profile) -> float:
+    return 1.10 if has_boon(profile, "old_soul") else 1.0
+
+
+def shop_price(profile, amount: int) -> int:
+    """Belethor's ask, after a Coin-Wise legend's discount."""
+    return int(round(amount * (0.9 if has_boon(profile, "coin_wise") else 1.0)))
 
 
 # ---------------------------------------------------------------------------
