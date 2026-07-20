@@ -39,6 +39,7 @@ convert a fresh drop:
 | notice_board | the Notice Board panel (daily + tasks + hunt) |
 | hall_of_legends | the Hall of Legends panel (Legacy Rebirth) |
 | duel_circle | ghost-duel boards (falls back to `pit` until dropped) |
+| duel_victory, duel_defeat | settled duels: the ghost scattered / the player counted out (fall back to `duel_circle`) |
 
 The **Named Dragons of the Week** all reuse `dragon.webp` - no per-dragon art needed.
 New expansion scenes fall back to text like every other, so they can be dropped in

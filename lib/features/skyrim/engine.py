@@ -2773,11 +2773,11 @@ def duel_action(profile, action: str) -> tuple:
         profile["septims"] += prize
         gained, _ = add_xp(profile, int(round(DUEL_PRIZE[1] * mult)))
         if prize or gained:
-            lines.append(f"🏆 **The ghost scatters like morning mist.** The circle pays "
-                         f"its respects.  (+{prize} septims, +{gained} XP)")
+            lines.append(f"🏆 **{ghost['name']} scatters like morning mist.** The circle "
+                         f"pays its respects.  (+{prize} septims, +{gained} XP)")
         else:
-            lines.append("🏆 **The ghost scatters like morning mist.** The circle "
-                         "pays nothing for a mismatch - that one was for pride.")
+            lines.append(f"🏆 **{ghost['name']} scatters like morning mist.** The circle "
+                         f"pays nothing for a mismatch - that one was for pride.")
         found = roll_wonder(profile, {"duel"}, WONDER_SIDE_CHANCE)
         if found:
             lines.append(wonder_line(found))

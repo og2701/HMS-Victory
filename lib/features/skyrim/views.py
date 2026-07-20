@@ -1356,15 +1356,19 @@ async def _handle_pit_click(interaction: Interaction, owner_id: int, action: str
 
 
 # --- Ghost Duels (the circle behind the Pit) -----------------------------------------
-def _duel_board_layout(profile, last_lines, ghost=None):
+def _duel_board_layout(profile, last_lines, ghost=None, outcome=None):
     """The PUBLIC duel board - the challenger's mention pill, the ghost's numbers,
-    round story and the same three-button rhythm as a Pit bout."""
+    round story and the same three-button rhythm as a Pit bout. A settled duel
+    swaps to the victory/defeat scene (when dropped) and names the opponent."""
     uid = int(profile["user_id"])
     duel = profile.get("duel") or {}
     b, g = duel.get("bout"), duel.get("ghost") or ghost
     view = discord.ui.LayoutView(timeout=None)
-    circle = "duel_circle" if _asset_bytes("duel_circle") is not None else "pit"
-    files = _gallery_files(view, circle)
+    art = "duel_circle" if _asset_bytes("duel_circle") is not None else "pit"
+    key = {"won": "duel_victory", "lost": "duel_defeat"}.get(outcome)
+    if key and _asset_bytes(key) is not None:
+        art = key
+    files = _gallery_files(view, art)
     if b and g:
         lines = [f"## ⚔️ The duelling circle - vs {g['name']}",
                  f"🥊 <@{uid}> {'❤️' * max(0, b['me'])}   vs   "
@@ -1389,7 +1393,9 @@ def _duel_board_layout(profile, last_lines, ghost=None):
                               emoji=emoji))
         view.add_item(row)
         return view, files
-    lines = ["## ⚔️ The duelling circle", f"🥊 <@{uid}>", ""] + list(last_lines)
+    head = f"## ⚔️ The duelling circle" + (f" - vs {g['name']}" if g else "")
+    pill = f"🥊 <@{uid}>" + (f"   vs   **{g['name']}** (Lv {g['level']})" if g else "")
+    lines = [head, pill, ""] + list(last_lines)
     box = discord.ui.Container(accent_colour=ACCENT)
     box.add_item(discord.ui.TextDisplay("\n".join(lines)))
     view.add_item(box)
@@ -1422,7 +1428,7 @@ async def _handle_duel_click(interaction: Interaction, owner_id: int, action: st
     E.save_profile(p)
     if state != "playing" and mid:
         E.delete_delve(mid)                              # the record needs no routing
-    view, files = _duel_board_layout(p, story, ghost=ghost)
+    view, files = _duel_board_layout(p, story, ghost=ghost, outcome=state)
     await interaction.response.edit_message(view=view, attachments=files)
     if mid and state == "playing":
         try:
