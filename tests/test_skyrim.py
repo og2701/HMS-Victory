@@ -1534,7 +1534,9 @@ def test_the_weeks_hunt():
     # a fresh week posts a full-pool boss from the roster
     store = E.world_boss()
     assert store["boss"] in D.WORLD_BOSSES
-    assert store["hp"] == store["max"] == E.WB_BASE_HP and store["streak"] == 0
+    # nobody has delved in this fresh test world, so the pool sits at the floor
+    assert store["hp"] == store["max"] == E.WB_MIN_HP and store["streak"] == 0
+    assert store["actives"] == 0
     # novices don't march; a proven blade does, once per day
     p = _profile()
     assert not E.wb_available(p)
@@ -1575,14 +1577,32 @@ def test_the_weeks_hunt():
     store["week"] = "2020-1"
     E._wb_save(store)
     nxt = E.world_boss()
-    assert nxt["streak"] == 1 and nxt["max"] == E.WB_BASE_HP + E.WB_HP_PER_STREAK
+    assert nxt["streak"] == 1 and nxt["max"] == E.WB_MIN_HP + E.WB_HP_PER_STREAK
+    # the closed week is kept for the notice board
+    lw = nxt["last_week"]
+    assert lw["boss"] == old_boss and lw["slain"] and lw["marchers"] == 2
+    assert lw["top"]["damage"] >= 6
     assert nxt["boss"] != old_boss
     # ...and an escaped hunt resets the streak
     nxt["week"] = "2020-2"
     nxt["slain"] = None
     E._wb_save(nxt)
     reset = E.world_boss()
-    assert reset["streak"] == 0 and reset["max"] == E.WB_BASE_HP
+    assert reset["streak"] == 0 and reset["max"] == E.WB_MIN_HP
+
+
+def test_hunt_pool_scales_with_active_hunters():
+    for i in range(4):
+        p = E.create_profile(800 + i, f"Active{i}", "warrior")
+        p["last_delve_date"] = E._today_str()
+        E.save_profile(p)
+    idle = E.create_profile(899, "Idle", "warrior")
+    idle["last_delve_date"] = "2020-01-01"
+    E.save_profile(idle)
+    E._wb_save({})                                     # force a fresh spawn
+    store = E.world_boss()
+    assert store["actives"] == 4
+    assert store["hp"] == store["max"] == E.WB_HP_PER_ACTIVE * 4
 
 
 def test_ghost_duels():
@@ -1795,3 +1815,42 @@ def test_duel_prize_scales_with_level_gap():
     assert duel_prize_mult(10, 5) == abs(1.0 - 5 / 15.0)
     assert duel_prize_mult(30, 15) == 0.0
     assert duel_prize_mult(30, 1) == 0.0
+
+
+def test_holding_wings_bonuses_and_banner():
+    p = _profile()
+    hs = E.homestead(p)
+    hs["built"] = {"land": "2000-01-01", "hall": "2000-01-01",
+                   "great_hall": "2000-01-01"}
+    # the wings grant standing bonuses that stack with the shrine
+    base_soak = E.soak_pct(p)
+    hs["built"]["armoury"] = "2000-01-02"
+    assert E.soak_pct(p) == base_soak + 2
+    assert E.homestead_bonus(p, "xp") == 0
+    hs["built"]["library"] = "2000-01-02"
+    assert E.homestead_bonus(p, "xp") == 0.05
+    hs["built"]["observatory"] = "2000-01-02"
+    assert E.homestead_bonus(p, "sneak") == 3
+    # the war room buys an extra exchange on the hunt march
+    assert "war_room" in D.HOMESTEAD and D.HOMESTEAD["war_room"]["requires"] == "armoury"
+    # banners are cosmetic, gated on the hall, and shown once chosen
+    assert E.set_banner(p, "wolf") is None
+    assert E.house_banner(p)["emoji"] == "🐺"
+    assert E.set_banner(p, "nonsense") is not None
+    fresh = E.create_profile(901, "Hall-less", "warrior")
+    assert E.set_banner(fresh, "wolf") is not None
+
+
+def test_greenhouse_and_cellar_double_yields():
+    p = _profile()
+    hs = E.homestead(p)
+    hs["built"] = {"land": "2000-01-01", "hall": "2000-01-01",
+                   "garden": "2000-01-05", "greenhouse": "2000-01-05",
+                   "brewery": "2000-01-05", "cellar": "2000-01-05"}
+    p["potions"] = 0
+    pouch_before = sum((p.get("ingredients") or {}).values())
+    res = E.collect_homestead(p)
+    assert res
+    # 3 capped days, doubled: 6 ingredients; the still brews toward the cap too
+    assert sum(p["ingredients"].values()) == pouch_before + 6
+    assert p["potions"] > 0

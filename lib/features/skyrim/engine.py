@@ -899,6 +899,7 @@ def sneak_pct(profile, enemy_key: str) -> int | None:
          + _skill_component(profile["skills"]["sneak"], SNEAK_SKILL_SCALE)
          + 6 * perk_rank(profile, "muffled")
          + doctrine_flat(profile, "sneak")
+         + int(homestead_bonus(profile, "sneak"))   # the Observatory reads the roads
          + weather_today()["sneak"])
     if profile.get("armour_style") == "light" and profile["armour_tier"] >= 1:
         p += D.LIGHT_SNEAK_BONUS
@@ -3252,7 +3253,8 @@ def collect_expedition(profile, slot: int = 1) -> str | None:
     if not expedition_ready(profile, slot):
         return f"Still out - returns {e['return']}."
     exp = D.EXPEDITIONS[e["key"]]
-    base = int(exp["septims"] * (1.25 if has_boon(profile, "wayfarer") else 1.0))
+    base = int(exp["septims"] * (1.25 if has_boon(profile, "wayfarer") else 1.0)
+               * (1.15 if homestead_built(profile, "stables") else 1.0))
     septims = _septims(profile, base)
     profile["septims"] += septims
     gained, _ = add_xp(profile, exp["xp"])
@@ -3500,7 +3502,8 @@ def collect_homestead(profile) -> str | None:
         if k == "garden":
             store = profile.setdefault("ingredients", {})
             got = {}
-            for _ in range(days):
+            per_day = 2 if homestead_built(profile, "greenhouse") else 1
+            for _ in range(days * per_day):
                 ing = random.choice(D.HOMESTEAD_GARDEN_POOL)
                 store[ing] = store.get(ing, 0) + 1
                 got[ing] = got.get(ing, 0) + 1
@@ -3508,7 +3511,8 @@ def collect_homestead(profile) -> str | None:
         else:
             brewed = 0
             coin = 0
-            for _ in range(days):
+            per_day = 2 if homestead_built(profile, "cellar") else 1
+            for _ in range(days * per_day):
                 if profile["potions"] < potion_cap(profile):
                     profile["potions"] += 1
                     brewed += 1
@@ -3538,8 +3542,33 @@ def shrine_blessing(profile) -> dict | None:
 
 
 def homestead_bonus(profile, kind: str) -> float:
+    """Standing estate bonuses: the shrine blessing plus every finished room's
+    permanent effect (library XP, armoury soak, observatory sneak)."""
+    total = 0.0
     b = shrine_blessing(profile)
-    return float(b.get(kind, 0)) if b else 0.0
+    if b:
+        total += float(b.get(kind, 0))
+    for room, effects in D.HOMESTEAD_ROOM_BONUSES.items():
+        if homestead_built(profile, room):
+            total += float(effects.get(kind, 0))
+    return total
+
+
+def house_banner(profile) -> dict | None:
+    """The chosen house sigil, if the hall stands and one has been raised."""
+    hs = homestead(profile)
+    if "hall" not in hs["built"]:
+        return None
+    return D.HOUSE_BANNERS.get(hs.get("banner"))
+
+
+def set_banner(profile, key: str) -> str | None:
+    if not homestead_built(profile, "hall"):
+        return "A banner needs a hall to fly over."
+    if key not in D.HOUSE_BANNERS:
+        return "No weaver in Skyrim knows that sigil."
+    homestead(profile)["banner"] = key
+    return None
 
 
 def set_shrine(profile, key: str) -> str | None:
@@ -3556,8 +3585,10 @@ def set_shrine(profile, key: str) -> str | None:
 # MARCHES. All state lives in one shared file; everything is computed when a
 # player looks (the week rolls over lazily), nothing is ever posted on a schedule.
 # ---------------------------------------------------------------------------
-WB_BASE_HP = 75                      # the pool a fresh hunt starts at...
-WB_HP_PER_STREAK = 8                 # ...growing with each consecutive weekly kill
+WB_MIN_HP = 40                       # the floor a fresh hunt never spawns below
+WB_HP_PER_ACTIVE = 25                # pool hearts per active hunter at spawn (3 actives ≈ 75)
+WB_ACTIVE_DAYS = 2                   # "active" = delved within this many days of the spawn
+WB_HP_PER_STREAK = 8                 # the pool grows with each consecutive weekly kill
 WB_EXCHANGES = 6                     # blows traded per march (or until you're carried off)
 WB_MIN_LEVEL = 5
 
@@ -3570,9 +3601,41 @@ def _wb_save(store: dict):
     save_json_file(config.SKYRIM_WORLDBOSS_FILE, store)
 
 
+def _wb_active_hunters(date_str: str = None) -> int:
+    """How many characters have delved within WB_ACTIVE_DAYS of the spawn - the
+    head-count the new hunt's pool is sized against."""
+    today = datetime.date.fromisoformat(date_str or _today_str())
+    count = 0
+    for p in all_profiles().values():
+        last = p.get("last_delve_date")
+        if not last:
+            continue
+        try:
+            gap = (today - datetime.date.fromisoformat(last)).days
+        except ValueError:
+            continue
+        if 0 <= gap <= WB_ACTIVE_DAYS:
+            count += 1
+    return count
+
+
+def _wb_last_week_record(store: dict) -> dict | None:
+    """A closing summary of the week that just ended, for the notice board."""
+    if not store.get("week"):
+        return None
+    strikers = sorted(((int(s.get("damage", 0)), s.get("name", "?"))
+                       for s in (store.get("strikes") or {}).values()), reverse=True)
+    top = {"name": strikers[0][1], "damage": strikers[0][0]} if strikers else None
+    return {"week": store["week"], "boss": store.get("boss"),
+            "slain": store.get("slain"), "hp": int(store.get("hp", 0)),
+            "max": int(store.get("max", 0)), "marchers": len(store.get("strikes") or {}),
+            "top": top}
+
+
 def world_boss(date_str: str = None) -> dict:
-    """This week's hunt state, rolling the week over (and growing/shrinking the
-    next boss by the kill streak) if nobody has looked since Monday."""
+    """This week's hunt state, rolling the week over if nobody has looked since
+    Monday. The fresh pool is sized to the ACTIVE hunters at spawn (plus the
+    kill-streak ratchet), and the closed week is kept as last_week."""
     y, w = _iso_week(date_str)
     wk = f"{y}-{w}"
     store = _wb_store()
@@ -3580,13 +3643,16 @@ def world_boss(date_str: str = None) -> dict:
         streak = int(store.get("streak", 0))
         if store.get("week"):                     # a real previous week ended
             streak = streak + 1 if store.get("slain") else 0
+        last_week = _wb_last_week_record(store)
         rng = random.Random(f"skyrim-hunt-{wk}")
         pool = sorted(D.WORLD_BOSSES)
         if store.get("boss") in pool and len(pool) > 1:
             pool.remove(store["boss"])            # never the same hunt twice running
-        hp = WB_BASE_HP + WB_HP_PER_STREAK * streak
+        actives = _wb_active_hunters(date_str)
+        hp = max(WB_MIN_HP, WB_HP_PER_ACTIVE * actives) + WB_HP_PER_STREAK * streak
         store = {"week": wk, "boss": rng.choice(pool), "hp": hp, "max": hp,
-                 "streak": streak, "strikes": {}, "slain": None, "shares": {}}
+                 "streak": streak, "actives": actives, "strikes": {},
+                 "slain": None, "shares": {}, "last_week": last_week}
         _wb_save(store)
     return store
 
@@ -3641,7 +3707,8 @@ def wb_march(profile) -> tuple:
     hearts = heart_max(profile)
     dealt = 0
     lines = [boss["arrive"]]
-    for _ in range(WB_EXCHANGES):
+    exchanges = WB_EXCHANGES + (1 if homestead_built(profile, "war_room") else 0)
+    for _ in range(exchanges):
         if random.random() * 100 < atk:
             d = 2 if random.random() < crit else 1
             dealt += d

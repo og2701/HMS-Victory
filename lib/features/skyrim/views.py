@@ -2071,6 +2071,10 @@ def _holdings_text(profile) -> str:
         lines.append("-# Buy the deed and the builders take it from there.")
     else:
         built = [D.HOMESTEAD[k] for k in D.HOMESTEAD if k in hs["built"]]
+        banner = E.house_banner(profile)
+        if banner:
+            lines.append(f"{banner['emoji']} **House of {banner['name']}** flies over the "
+                         f"gate - {banner['line']}.")
         lines.append("**The estate:** " + "  ".join(f"{r['emoji']} {r['name']}" for r in built))
         if hs.get("building"):
             room = D.HOMESTEAD[hs["building"]]
@@ -2244,6 +2248,25 @@ async def _hub_holdings(interaction: Interaction, notice: str = ""):
         erow = discord.ui.ActionRow()
         erow.add_item(esel)
         rows.append(erow)
+    if E.homestead_built(profile, "hall"):
+        bnsel = discord.ui.Select(placeholder="🚩 Raise a house banner...")
+        for k, b in D.HOUSE_BANNERS.items():
+            bnsel.add_option(label=b["name"], value=k, emoji=b["emoji"],
+                             description=b["line"][:100],
+                             default=hs.get("banner") == k)
+
+        async def _raise_banner(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            err = E.set_banner(p, bnsel.values[0])
+            E.save_profile(p)
+            b = D.HOUSE_BANNERS[bnsel.values[0]]
+            await _hub_holdings(inter, notice=f"-# 🚩 {b['emoji']} **{b['name']}** takes "
+                                              f"the wind above the hall." if err is None
+                                              else f"-# {err}")
+        bnsel.callback = _raise_banner
+        bnrow = discord.ui.ActionRow()
+        bnrow.add_item(bnsel)
+        rows.append(bnrow)
     if E.homestead_built(profile, "shrine_wing"):
         ksel = discord.ui.Select(placeholder="🕯️ Kneel at the shrine...")
         for k, b in D.SHRINE_BLESSINGS.items():
@@ -2355,13 +2378,29 @@ def _notice_text(profile) -> str:
         lines.append(f"{'🟥' if store['hp'] <= store['max'] // 4 else '❤️'} "
                      f"{_bar(store['hp'], 0, store['max'], 12)} "
                      f"**{store['hp']}/{store['max']}** hearts left"
-                     + (f"  ·  💪 streak {store['streak']}" if store.get("streak") else ""))
+                     + (f"  ·  💪 streak {store['streak']}" if store.get("streak") else "")
+                     + (f"  ·  🏹 sized for {store['actives']} hunter"
+                        f"{'s' if store['actives'] != 1 else ''}"
+                        if store.get("actives") else ""))
     strikers = sorted(((len(set(s.get("days") or [])), int(s.get("damage", 0)),
                         s.get("name", "?")) for s in store["strikes"].values()),
                       key=lambda r: -r[1])
     if strikers:
         lines.append("-# ⚔️ " + "  ·  ".join(
             f"**{n}** {dmg} dmg ({d}d)" for d, dmg, n in strikers[:5]))
+    lw = store.get("last_week")
+    if lw and lw.get("boss") in D.WORLD_BOSSES:
+        lb = D.WORLD_BOSSES[lw["boss"]]
+        if lw.get("slain"):
+            tale = (f"felled by {lw['marchers']} hunter"
+                    f"{'s' if lw['marchers'] != 1 else ''}")
+        elif lw.get("marchers"):
+            tale = f"escaped with {lw['hp']}/{lw['max']} hearts still beating"
+        else:
+            tale = "went unhunted, and knows it"
+        top = lw.get("top")
+        top_bit = f" - first blade **{top['name']}** ({top['damage']} dmg)" if top else ""
+        lines.append(f"-# 🪦 Last week: {lb['emoji']} **{lb['name']}** {tale}{top_bit}.")
     if not store.get("slain"):
         if E.level(profile) < E.WB_MIN_LEVEL:
             lines.append(f"-# 🔒 The hunt takes proven blades only (level {E.WB_MIN_LEVEL}+).")
@@ -2453,36 +2492,113 @@ async def _post_march_board(interaction: Interaction, profile):
 
 
 # --- rankings ------------------------------------------------------------------------
-async def _hub_rankings(interaction: Interaction):
-    profiles = sorted(E.all_profiles().values(), key=lambda p: p["xp"], reverse=True)[:10]
-    lines = ["## 🏆 Legends of Skyrim", ""]
-    if not profiles:
-        lines.append("No adventurers yet. The ruins wait.")
+_RANK_BOARDS = {
+    "legends": ("🏆", "Legends of Skyrim", "level and deeds, the whole story"),
+    "wealth": ("💰", "The Coffers", "who holds the septims"),
+    "slayers": ("🐉", "Dragonslayers", "souls taken from the sky"),
+    "hunters": ("📯", "The Week's Hunt", "damage on this week's shared boss"),
+    "duellists": ("⚔️", "The Duelling Circle", "ghosts scattered"),
+    "streaks": ("🔥", "The Long Roads", "unbroken days of delving"),
+    "depths": ("💀", "The Soul Cairn", "the deepest anyone has crawled back from"),
+    "wonders": ("🏺", "The Wonder-Keepers", "shelves of the impossibly rare"),
+}
+
+
+def _legends_line(p) -> str:
+    st = p["stats"]
+    flair = ""
+    banner = E.house_banner(p)
+    if banner:
+        flair += f" {banner['emoji']}"
+    if E.legacy_rank(p):
+        flair += f" 🏛️{E.legacy_rank(p)}"
+    if p.get("alduin_slain"):
+        flair += " ⭐"
+    if E.home_owned(p, "trophy_room"):
+        flair += " 🏆"
+    if E.homestead_built(p, "great_hall"):
+        flair += " 🏰"
+    if E.legendary_stars(p):
+        flair += f" ✨{E.legendary_stars(p)}"
+    best = E.soulcairn_best(p)
+    cairn = f"  ·  💀 {best}" if best else ""
+    return (f"{flair} - Lv {E.level(p)}  ·  🐉 {st['dragons']}  ·  "
+            f"🏰 {st['clears']}  ·  💰 {p['septims']:,}{cairn}")
+
+
+def _rank_metric(board: str, uid, p, hunt_store) -> tuple:
+    """(sort_value, detail_line) for one profile on one board; legends returns
+    its full flair line."""
+    st = p["stats"]
+    if board == "wealth":
+        return int(p["septims"]), f"💰 **{p['septims']:,}** septims"
+    if board == "slayers":
+        v = int(st.get("dragons", 0))
+        extra = f"  ·  ⭐ Alduin ×{p.get('alduin_slain')}" if p.get("alduin_slain") else ""
+        return v, f"🐉 **{v}** dragon{'s' if v != 1 else ''}{extra}"
+    if board == "hunters":
+        s = (hunt_store.get("strikes") or {}).get(str(uid)) or {}
+        dmg, days = int(s.get("damage", 0)), len(set(s.get("days") or []))
+        return dmg, f"⚔️ **{dmg}** dmg  ·  {days} march{'es' if days != 1 else ''}"
+    if board == "duellists":
+        v = int(st.get("duel_wins", 0))
+        return v, f"🏆 **{v}** ghost{'s' if v != 1 else ''} scattered"
+    if board == "streaks":
+        v = E.current_streak(p)
+        return v, f"🔥 **{v}** day{'s' if v != 1 else ''}"
+    if board == "depths":
+        v = int(E.soulcairn_best(p) or 0)
+        return v, f"💀 depth **{v}**"
+    if board == "wonders":
+        ws = [k for k in (p.get("wonders") or []) if k in D.WONDERS]
+        shelf = " ".join(D.WONDERS[k]["emoji"] for k in ws[:8])
+        return len(ws), (f"🏺 **{len(ws)}**  {shelf}").rstrip()
+    return int(p["xp"]), _legends_line(p)
+
+
+async def _hub_rankings(interaction: Interaction, board: str = "legends"):
+    if board not in _RANK_BOARDS:
+        board = "legends"
+    emoji, title, sub = _RANK_BOARDS[board]
+    hunt_store = E.world_boss()
+    scored = []
+    for uid, p in E.all_profiles().items():
+        value, detail = _rank_metric(board, uid, p, hunt_store)
+        scored.append((value, int(p["xp"]), str(uid), p, detail))
+    scored.sort(key=lambda r: (-r[0], -r[1]))
+    shown = [r for r in scored if board == "legends" or r[0] > 0][:10]
+
+    lines = [f"## {emoji} {title}", f"-# {sub}", ""]
+    if not shown:
+        lines.append("No names on this board yet. The ruins wait.")
     medals = ["🥇", "🥈", "🥉"]
-    for i, p in enumerate(profiles):
+    for i, (_v, _xp, _uid, p, detail) in enumerate(shown):
         cls = D.STONES[p["stone"]]
         rank = medals[i] if i < len(medals) else f"`{i + 1:>2}.`"
-        st = p["stats"]
-        flair = ""
-        if E.legacy_rank(p):
-            flair += f" 🏛️{E.legacy_rank(p)}"
-        if p.get("alduin_slain"):
-            flair += " ⭐"
-        if E.home_owned(p, "trophy_room"):
-            flair += " 🏆"
-        if E.homestead_built(p, "great_hall"):
-            flair += " 🏰"
-        if E.legendary_stars(p):
-            flair += f" ✨{E.legendary_stars(p)}"
-        best = E.soulcairn_best(p)
-        cairn = f"  ·  💀 {best}" if best else ""
-        lines.append(f"{rank} {cls['emoji']} **{p['name']}**{flair} - Lv {E.level(p)}  ·  "
-                     f"🐉 {st['dragons']}  ·  🏰 {st['clears']}  ·  "
-                     f"💰 {p['septims']:,}{cairn}")
-    obit = E.latest_obituary()
-    if obit:
-        lines += ["", obit]
-    await _edit_panel(interaction, "\n".join(lines), [_back_row()])
+        if board == "legends":
+            lines.append(f"{rank} {cls['emoji']} **{p['name']}**{detail}")
+        else:
+            lines.append(f"{rank} {cls['emoji']} **{p['name']}** - Lv {E.level(p)}  ·  {detail}")
+    me = str(interaction.user.id)
+    pos = next((i for i, r in enumerate(scored) if r[2] == me), None)
+    if pos is not None and pos >= len(shown):
+        lines += ["", f"-# Your seat: #{pos + 1} of {len(scored)}."]
+    if board == "legends":
+        obit = E.latest_obituary()
+        if obit:
+            lines += ["", obit]
+
+    bsel = discord.ui.Select(placeholder="🏅 Another board...")
+    for key, (b_emoji, b_title, b_sub) in _RANK_BOARDS.items():
+        bsel.add_option(label=b_title, value=key, emoji=b_emoji,
+                        description=b_sub[:100], default=key == board)
+
+    async def _switch(inter: Interaction):
+        await _hub_rankings(inter, board=bsel.values[0])
+    bsel.callback = _switch
+    srow = discord.ui.ActionRow()
+    srow.add_item(bsel)
+    await _edit_panel(interaction, "\n".join(lines), [srow, _back_row()])
 
 
 # --- help -------------------------------------------------------------------------
@@ -2562,9 +2678,11 @@ HELP_PAGES = {
         "- 📋 **The Task Board** - 8 weekly challenges, fresh each Monday. Progress counts "
         "as you play; claim the bounties on the board. Sweep all 8 for a bonus, and race "
         "the others for the week's points.\n"
-        "- 📯 **The Week's Hunt** - a shared boss with one pooled heart total. **March** on "
-        "it once a day (a public sortie with your real build); fell it before Monday and "
-        "everyone who marched shares the spoils. Kill streaks grow the next one.\n"
+        "- 📯 **The Week's Hunt** - a shared boss with one pooled heart total, **sized on "
+        "Monday to how many hunters were actually abroad** that week. **March** on it once "
+        "a day (a public sortie with your real build); fell it before Monday and everyone "
+        "who marched shares the spoils. Kill streaks grow the next one, and last week's "
+        "fate hangs on the board.\n"
         "**🏰 Factions** (L8+) - swear an allegiance; a weekly task in a neglected skill "
         "pays favour, rank and coin.\n"
         "**🗡️ The Pit** (L5+) - Windhelm's arena ladder, round by round, each champion "
@@ -2593,6 +2711,12 @@ HELP_PAGES = {
         "panel - up to 3 days accrue, so time away is never punished. The Watchtower "
         "shows tomorrow's routes, the Shrine grants a standing blessing, the Quarters "
         "staff a **second expedition**, and the Great Hall crowns the estate.\n"
+        "**Beyond the Great Hall** the estate branches: the working grounds (Stables, "
+        "Greenhouse, Deep Cellar) double your yields and fatten expeditions, the "
+        "Scholar's wing (Library → Observatory) sharpens mind and step, and the "
+        "soldier's wing (Armoury → War Room) hardens you and buys an extra exchange "
+        "on the Week's Hunt. Once the Small Hall stands, raise a **house banner** - "
+        "your sigil flies on the estate and the rankings.\n"
         "**✨ Wonders** - ultra-rare trophies rolled on every kill (bosses, dragons, the "
         "Pit, the Hunt, the circle and your own floorboards chase rarer ones). No pity "
         "timer - when one hits, the whole channel hears about it. The shelf survives "

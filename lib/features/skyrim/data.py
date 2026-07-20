@@ -768,19 +768,20 @@ GEAR_TIERS = [
     {"key": "steel", "name": "Steel", "emoji": "⚙️", "price": 300, "dragons": 0},
     {"key": "elven", "name": "Elven", "emoji": "🌿", "price": 700, "dragons": 0},
     {"key": "glass", "name": "Glass", "emoji": "💚", "price": 1800, "dragons": 0},
-    {"key": "ebony", "name": "Ebony", "emoji": "⬛", "price": 4000, "dragons": 0},
-    {"key": "daedric", "name": "Daedric", "emoji": "😈", "price": 9000, "dragons": 0},
-    {"key": "dragonbone", "name": "Dragonbone", "emoji": "🐲", "price": 15000, "dragons": 25},
+    {"key": "ebony", "name": "Ebony", "emoji": "⬛", "price": 6000, "dragons": 0},
+    {"key": "daedric", "name": "Daedric", "emoji": "😈", "price": 14000, "dragons": 0},
+    {"key": "dragonbone", "name": "Dragonbone", "emoji": "🐲", "price": 25000, "dragons": 25},
 ]
 # The Grindstone tempering ladder - cost to reach each next grade (weapon or armour).
 # Materials come from the at-risk ingredient pouch; dragon scales gate the top grades,
-# tying the finest gear to dragon-hunting.
+# tying the finest gear to dragon-hunting. The upper grades are priced as true
+# late-game sinks: veterans hold five-figure purses, and prices should still sting.
 TEMPER_COSTS = [
     {"septims": 500,  "mats": {"bone_meal": 2}},
     {"septims": 1200, "mats": {"frost_salts": 2}},
-    {"septims": 2500, "mats": {"void_salts": 2}},
-    {"septims": 5000, "mats": {"dragon_scale": 1}},
-    {"septims": 9000, "mats": {"dragon_scale": 2}},
+    {"septims": 3000, "mats": {"void_salts": 2}},
+    {"septims": 8000, "mats": {"dragon_scale": 1}},
+    {"septims": 16000, "mats": {"dragon_scale": 2}},
 ]
 WEAPON_FIGHT_PER_TIER = 4      # +4% attack per tier above Iron (all three styles)
 ARMOUR_SOAK_PER_TIER = 5       # heavy armour: +5% chance per tier to shrug off a wound
@@ -1164,6 +1165,38 @@ WORLD_BOSSES = {
         "arrive": "The barrow door stands open from the inside. The air tastes of copper and lightning.",
         "slain": "Otar's mask cracks and the scream finally stops. The barrow accepts him back.",
         "escape": "Otar sinks back into his barrow to knit his strength. He remembers you."},
+    "greymaw": {
+        "name": "Old Greymaw, the Harvest-Wolf", "emoji": "🐺", "type": "beast", "fight": 55,
+        "crush": 0.22, "art": "hunt_greymaw", "style": "teeth that learned patience",
+        "blurb": "A wolf old enough to know shepherds' tricks and big enough not to care. "
+                 "Every autumn the flocks thin; this autumn the hold said enough.",
+        "arrive": "The flock has gone silent. On the ridge above, something grey stops chewing.",
+        "slain": "Old Greymaw dies as he lived: unhurried. The shepherds will drink your name.",
+        "escape": "Greymaw melts into the treeline with a lamb across his back, unhurried as ever."},
+    "iron_colossus": {
+        "name": "The Iron Colossus of Mzund", "emoji": "⚙️", "type": "construct", "fight": 58,
+        "crush": 0.35, "art": "hunt_colossus", "style": "four thousand years of momentum",
+        "blurb": "The Dwemer built it to guard a door that no longer exists. It has widened "
+                 "its definition of the door.",
+        "arrive": "The ground counts a heartbeat it doesn't have. Steam parts, and it is very tall.",
+        "slain": "The Colossus kneels with a sound like a falling belltower, and finally rests.",
+        "escape": "The Colossus marches back beneath the mountain, patrolling a door made of nothing."},
+    "tide_mother": {
+        "name": "The Tide-Mother of Hela's Water", "emoji": "🦑", "type": "monster", "fight": 57,
+        "crush": 0.28, "art": "hunt_tide_mother", "style": "arms enough for everyone",
+        "blurb": "Fishermen stopped counting her arms at nine and stopped fishing at ten. "
+                 "The harbour wants its nets back.",
+        "arrive": "The water goes glass-flat. Then the flatness reaches for your ankle.",
+        "slain": "The Tide-Mother sinks in her own ink. By morning the nets come up full.",
+        "escape": "She slides back under the ice-line with half the season's catch."},
+    "sky_shadow": {
+        "name": "Vulthara, the Sky-Shadow", "emoji": "🌑", "type": "dragon", "fight": 60,
+        "crush": 0.3, "art": "hunt_sky_shadow", "style": "a stormfront with a grudge",
+        "blurb": "A dragon that hunts by starlight and eats beacons first. The roads go "
+                 "dark a village at a time.",
+        "arrive": "The stars go out one wingspan at a time. The dark clears its throat.",
+        "slain": "Vulthara falls like night ending. Her soul burns bright enough to read by.",
+        "escape": "The Sky-Shadow banks north, and another watchtower's beacon goes dark."},
 }
 
 # ---------------------------------------------------------------------------
@@ -1485,6 +1518,49 @@ HOMESTEAD = {
                    "mats": {"dragon_scale": 2}, "hours": 72, "requires": "quarters",
                    "desc": "A hall worthy of a Jarl. Yields accrue for 4 days instead "
                            "of 3, and your name gains the 🏰 on the rankings."},
+    # --- the working estate: second-tier upgrades of the yield rooms -------------
+    "stables": {"name": "The Stables", "emoji": "🐴", "septims": 4500, "mats": {},
+                "hours": 24, "requires": "hall",
+                "desc": "Fresh horses for the road. Expeditions return 15% richer."},
+    "greenhouse": {"name": "The Greenhouse", "emoji": "🪴", "septims": 8000,
+                   "mats": {"nightshade": 2}, "hours": 36, "requires": "garden",
+                   "desc": "Glass over the beds; nothing sleeps for winter. The garden "
+                           "yields TWO ingredients a day."},
+    "cellar": {"name": "The Deep Cellar", "emoji": "🛢️", "septims": 8000,
+               "mats": {"frost_salts": 2}, "hours": 36, "requires": "brewery",
+               "desc": "Cold stone and patience doubled. The still brews TWO potions "
+                       "a day."},
+    # --- the two wings: a scholar's path and a soldier's path, off the Great Hall ---
+    "library": {"name": "The Library", "emoji": "📚", "septims": 15000, "mats": {},
+                "hours": 48, "requires": "great_hall",
+                "desc": "A wall of stolen and honest books alike. +5% XP, always."},
+    "observatory": {"name": "The Observatory", "emoji": "🔭", "septims": 30000,
+                    "mats": {"void_salts": 2}, "hours": 72, "requires": "library",
+                    "desc": "A brass eye on the heavens. You read the roads before "
+                            "walking them: +3% sneak, always."},
+    "armoury": {"name": "The Armoury", "emoji": "🛡️", "septims": 15000, "mats": {},
+                "hours": 48, "requires": "great_hall",
+                "desc": "Racked steel, oiled and waiting. +2% armour soak, always."},
+    "war_room": {"name": "The War Room", "emoji": "🗺️", "septims": 30000,
+                 "mats": {"dragon_scale": 1}, "hours": 72, "requires": "armoury",
+                 "desc": "Maps, markers and a plan. Your marches on the Week's Hunt "
+                         "trade an EXTRA exchange."},
+}
+# Standing bonuses granted by finished rooms (summed with the shrine blessing).
+HOMESTEAD_ROOM_BONUSES = {
+    "library": {"xp": 0.05},
+    "armoury": {"soak": 2},
+    "observatory": {"sneak": 3},
+}
+# House banners - pure cosmetics, chosen once the Small Hall stands. The sigil
+# flies over the estate and beside your name on the rankings.
+HOUSE_BANNERS = {
+    "wolf": {"name": "The Wolf", "emoji": "🐺", "line": "swift, loyal, seldom alone"},
+    "bear": {"name": "The Bear", "emoji": "🐻", "line": "strength that can wait"},
+    "dragon": {"name": "The Dragon", "emoji": "🐉", "line": "born of the old fire"},
+    "hawk": {"name": "The Hawk", "emoji": "🦅", "line": "far-seeing, quick to stoop"},
+    "moons": {"name": "The Moons", "emoji": "🌙", "line": "patient as the tide"},
+    "blades": {"name": "The Crossed Blades", "emoji": "⚔️", "line": "settled the old way"},
 }
 HOMESTEAD_GARDEN_POOL = ["blue_flower", "nightshade", "deathbell"]
 SHRINE_BLESSINGS = {
