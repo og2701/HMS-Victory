@@ -32,6 +32,7 @@ convert a fresh drop:
 | vale_dragon | Voslaarum & Naaslaarum, the twin dragons (shared by both) |
 | pit | The Pit arena panel (Windhelm bout results) |
 | pit_snilf, pit_rolff, pit_adelaisa, pit_uzoga, pit_bero, pit_hama, pit_ulfberth, pit_widow, pit_yrsarald, pit_bear | Pit champion portraits (bout preview + result; arena scene until dropped) |
+| pit_hjoromir, pit_sisters, pit_korst, pit_stone_guest, pit_master | Pit champions 11-15, beyond the Bear |
 
 The **Named Dragons of the Week** all reuse `dragon.webp` - no per-dragon art needed.
 New expansion scenes fall back to text like every other, so they can be dropped in

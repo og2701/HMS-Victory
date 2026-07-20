@@ -1096,9 +1096,35 @@ PIT_CHAMPS = [
     {"name": "The Caged Bear", "fight": 70, "hp": 6, "guard": 30, "art": "pit_bear", "quirk": "bear", "kind": "beast",
      "quirk_desc": "every hit crushes two hearts... but bears are easily distracted",
      "taunt": "(It is an actual bear.)", "style": "being a bear"},
+    # --- beyond the bear: the rungs nobody sane climbs -------------------------
+    {"name": "Hjoromir the Twice-Dead", "fight": 64, "hp": 4, "guard": 25,
+     "art": "pit_hjoromir", "quirk": "unyielding",
+     "quirk_desc": "died twice already and didn't care for it - the first killing blow won't keep him down",
+     "taunt": "\"Sovngarde sent me back. Twice. Guess why.\"", "style": "corpse-cold patience"},
+    {"name": "The Sisters Vess & Vex", "fight": 66, "hp": 5, "guard": 25,
+     "art": "pit_sisters", "quirk": "twin",
+     "quirk_desc": "two fighters, one entry fee - when one blade lands, the second follows",
+     "taunt": "\"She softens them.\" \"She finishes them.\" (They point at each other.)",
+     "style": "mirrored bladework"},
+    {"name": "Bloodmarked Korst", "fight": 64, "hp": 5, "guard": 28,
+     "art": "pit_korst", "quirk": "blood",
+     "quirk_desc": "smells blood - once you're below half hearts he becomes something else",
+     "taunt": "\"You'll do fine. You're already bleeding somewhere, aren't you?\"",
+     "style": "a hunter's escalation"},
+    {"name": "The Stone Guest", "fight": 58, "hp": 6, "guard": 34,
+     "art": "pit_stone_guest", "quirk": "stone",
+     "quirk_desc": "a statue that walked out of an old temple - power blows just chip it",
+     "taunt": "(It says nothing. It has been waiting here longer than Windhelm.)",
+     "style": "geological indifference"},
+    {"name": "The Pit Master", "fight": 66, "hp": 5, "guard": 30,
+     "art": "pit_master", "quirk": "master",
+     "quirk_desc": "founded this arena and has never lost in it - strikes first AND reads your best blow",
+     "taunt": "\"I built this pit. I've watched every trick you know get invented.\"",
+     "style": "everything, perfected"},
 ]
 PIT_TITLES = ["Pit Dog", "Scrapper", "Bloodied", "Contender", "Crowd's Favourite",
-              "Duellist", "Veteran", "Widowmaker", "Thrice-Feared", "PIT CHAMPION"]
+              "Duellist", "Veteran", "Widowmaker", "Thrice-Feared", "Bear-Slayer",
+              "Deathless", "Twin-Breaker", "Blood-Proof", "Stone-Breaker", "PIT CHAMPION"]
 
 # ---------------------------------------------------------------------------
 # NPC Factions - a light allegiance you swear at Lv 8+. Each week your faction sets

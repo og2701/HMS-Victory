@@ -2306,7 +2306,7 @@ def pit_begin(profile) -> list:
     s["bouts_today"] = int(s.get("bouts_today", 0)) + 1
     hearts = min(int(s.get("hearts_today", heart_max(profile))), heart_max(profile))
     s["bout"] = {"rank": s["rank"], "me": max(1, hearts), "foe": champ["hp"],
-                 "round": 1, "ward": champ.get("quirk") == "veteran",
+                 "round": 1, "ward": champ.get("quirk") in ("veteran", "master"),
                  "staggered": False, "opening": False, "fatigue": fatigue}
     lines = [f"🗡️ **The Pit, Windhelm.** Bout {s['rank'] + 1}: **{champ['name']}**.",
              f"-# {champ['taunt']}  ·  ({champ['quirk_desc']})"]
@@ -2318,13 +2318,16 @@ def pit_begin(profile) -> list:
     return lines
 
 
-def _pit_foe_strike(profile, b, champ, lines, guarding=False, note=""):
+def _pit_foe_strike(profile, b, champ, lines, guarding=False, note="", chained=False):
     quirk = champ.get("quirk")
     guard = min(SOAK_CAP, soak_pct(profile))
     guard = max(0, guard - int(b.get("fatigue", 0)) // 2)   # tired arms hold the shield low
     if quirk == "silent":
         guard //= 2                              # her thrusts slip the seams
-    fatk = max(5, champ["fight"] + (15 if quirk == "reckless" else 0) - guard)
+    fatk = champ["fight"] + (15 if quirk == "reckless" else 0)
+    if quirk == "blood" and b["me"] <= max(1, heart_max(profile) // 2):
+        fatk += 20                               # Korst smells it now
+    fatk = max(5, fatk - guard)
     if guarding:
         fatk = max(5, fatk // 2)                 # a raised guard turns most of it
     if quirk == "bear" and random.random() < 0.20:
@@ -2338,6 +2341,10 @@ def _pit_foe_strike(profile, b, champ, lines, guarding=False, note=""):
         tag = "  💥 crushing!" if crush else ""
         lines.append(f"-# {note}{champ['name']}'s {champ['style']} get through{tag} "
                      f"({'❤️' * max(0, b['me'])} left).")
+        # the Sisters: when one blade lands, the second follows
+        if quirk == "twin" and not chained and b["me"] > 0 and random.random() < 0.4:
+            _pit_foe_strike(profile, b, champ, lines, guarding=guarding,
+                            note="the second blade follows - ", chained=True)
     else:
         lines.append(f"-# {note}{champ['name']} comes on - you "
                      f"{'take it on your guard' if guarding else 'slip aside'}.")
@@ -2360,8 +2367,17 @@ def _pit_me_strike(profile, b, champ, lines, power=False):
             lines.append(f"-# Your best blow lands - and {champ['name']} rolls with it "
                          f"like it was nothing. Forty years of feints.")
             return
-        b["foe"] -= 2 if power else 1
-        if b["foe"] > 0:
+        dmg = 2 if power and quirk != "stone" else 1
+        if power and quirk == "stone":
+            lines.append("-# Your power blow CRACKS against it... and chips off dust. "
+                         "Stone doesn't care how hard you wind up.")
+        b["foe"] -= dmg
+        if b["foe"] <= 0 and quirk == "unyielding" and not b.get("unyielded"):
+            b["unyielded"] = True
+            b["foe"] = 1
+            lines.append(f"-# {champ['name']} drops... and gets back up, annoyed. "
+                         f"\"Told you. Twice already.\"  (🩸 left)")
+        elif b["foe"] > 0:
             what = "POWER blow CRACKS home" if power else "blow lands"
             lines.append(f"-# Your {what} - {champ['name']} reels ({'🩸' * b['foe']} left).")
     else:
@@ -2396,7 +2412,7 @@ def pit_action(profile, action: str) -> tuple:
             lines.append(f"-# {champ['name']} swings, misses, and falls over his own "
                          f"boots. The crowd is DELIGHTED.")
     if b["foe"] > 0:
-        if quirk == "quick":                     # she moves before you do, every round
+        if quirk in ("quick", "master"):         # they move before you do, every round
             _pit_foe_strike(profile, b, champ, lines, guarding=guarding)
             if b["me"] > 0 and not guarding:
                 _pit_me_strike(profile, b, champ, lines, power=(action == "power"))

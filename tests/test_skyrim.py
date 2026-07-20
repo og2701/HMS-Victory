@@ -482,8 +482,32 @@ def test_the_pit():
     assert s["rank"] == 0 and s["best"] == 1 and s["bout"] is None and E.pit_available(p)
     # every champion declares a quirk the engine knows how to run
     known = {None, "drunk", "quick", "shieldwall", "butcher", "riposte",
-             "veteran", "silent", "reckless", "bear"}
+             "veteran", "silent", "reckless", "bear",
+             "unyielding", "twin", "blood", "stone", "master"}
     assert all(c.get("quirk") in known and c.get("quirk_desc") for c in D.PIT_CHAMPS)
+    assert len(D.PIT_CHAMPS) == len(D.PIT_TITLES) == 15
+    # Hjoromir refuses the first killing blow...
+    p["pit"] = {"season": str(E._iso_week()), "rank": 10, "date": None, "best": 0}
+    E.pit_begin(p)
+    b = E.pit_bout_active(p)
+    b["foe"] = 1
+    E.random = _fixed_rolls(0.0, 0.99, 0.99, 0.99)     # my hit lands; he misses back
+    try:
+        state, lines = E.pit_action(p, "strike")
+    finally:
+        _restore_random()
+    assert state == "playing" and E.pit_bout_active(p)["foe"] == 1   # back up at 1
+    assert any("gets back up" in l for l in lines)
+    # ...and the Stone Guest turns power blows into chip damage
+    p["pit"] = {"season": str(E._iso_week()), "rank": 13, "date": None, "best": 0}
+    E.pit_begin(p)
+    hp0 = E.pit_bout_active(p)["foe"]
+    E.random = _fixed_rolls(0.0, 0.99, 0.99, 0.99)
+    try:
+        E.pit_action(p, "power")
+    finally:
+        _restore_random()
+    assert E.pit_bout_active(p)["foe"] == hp0 - 1      # 2-damage swing chips for 1
     # Old Ulfberth shrugs off your first landed blow...
     p["pit"] = {"season": str(E._iso_week()), "rank": 6, "date": None, "best": 0}
     E.pit_begin(p)
