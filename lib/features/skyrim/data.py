@@ -1050,6 +1050,70 @@ COMPANIONS = {
 }
 
 # ---------------------------------------------------------------------------
+# The Task Board - 8 weekly challenges pinned to the Notice Board, seeded per ISO
+# week and identical for everyone. Progress is tracked PASSIVELY (the engine
+# counts as you play; no buttons); rewards are claimed on the board. Design rule:
+# per-delve tasks are about CHOICES (no potions, one style, the deep way); anything
+# dice-count-based is cumulative across the week so the RNG averages out.
+#   kind    - the engine event it counts (see engine.task_event)
+#   n       - target count;  band - easy (1pt) | medium (2pt) | hard (4pt)
+#   filters - style / bounty / dragon / diff / no_potion / style_only /
+#             stirred_min / deep / unwounded / no_potion_delve
+# ---------------------------------------------------------------------------
+TASKS = {
+    # --- easy: show up and play (1 pt) --------------------------------------
+    "clears_3":      {"band": "easy", "emoji": "🏰", "kind": "clear", "n": 3,
+                      "name": "Clear 3 delves"},
+    "kills_20":      {"band": "easy", "emoji": "⚔️", "kind": "kill", "n": 20,
+                      "name": "Slay 20 foes"},
+    "chests_5":      {"band": "easy", "emoji": "🧰", "kind": "chest", "n": 5,
+                      "name": "Loot 5 chests"},
+    "daily_2":       {"band": "easy", "emoji": "📅", "kind": "daily", "n": 2,
+                      "name": "Brave the daily delve twice"},
+    "sneaks_3":      {"band": "easy", "emoji": "🥷", "kind": "sneak", "n": 3,
+                      "name": "Slip past 3 foes unseen"},
+    "blade_12":      {"band": "easy", "emoji": "⚔️", "kind": "kill", "style": "blade", "n": 12,
+                      "name": "Fell 12 foes with the Blade"},
+    "bow_12":        {"band": "easy", "emoji": "🏹", "kind": "kill", "style": "marksman", "n": 12,
+                      "name": "Fell 12 foes with the Bow"},
+    "fire_12":       {"band": "easy", "emoji": "🔥", "kind": "kill", "style": "destruction", "n": 12,
+                      "name": "Fell 12 foes with Fire"},
+    # --- medium: play differently (2 pts) ------------------------------------
+    "clear_hard":    {"band": "medium", "emoji": "🏔️", "kind": "clear", "diff": ["Hard"], "n": 1,
+                      "name": "Clear a Hard delve"},
+    "clear_dry":     {"band": "medium", "emoji": "🚱", "kind": "clear", "no_potion": True, "n": 1,
+                      "name": "Clear a delve without drinking"},
+    "bounties_2":    {"band": "medium", "emoji": "🏴", "kind": "kill", "bounty": True, "n": 2,
+                      "name": "Claim 2 bounty heads"},
+    "persuades_4":   {"band": "medium", "emoji": "💬", "kind": "persuade", "n": 4,
+                      "name": "Win 4 parleys"},
+    "pit_wins_2":    {"band": "medium", "emoji": "🗡️", "kind": "pit_win", "n": 2,
+                      "name": "Win 2 Pit bouts"},
+    "blade_only":    {"band": "medium", "emoji": "⚔️", "kind": "clear", "style_only": "blade", "n": 1,
+                      "name": "Clear a delve using only the Blade"},
+    "bow_only":      {"band": "medium", "emoji": "🏹", "kind": "clear", "style_only": "marksman", "n": 1,
+                      "name": "Clear a delve using only the Bow"},
+    "fire_only":     {"band": "medium", "emoji": "🔥", "kind": "clear", "style_only": "destruction", "n": 1,
+                      "name": "Clear a delve using only Fire"},
+    # --- hard: prove something (4 pts) ---------------------------------------
+    "dragon_dry":    {"band": "hard", "emoji": "🐉", "kind": "kill", "dragon": True,
+                      "no_potion_delve": True, "n": 1,
+                      "name": "Slay a dragon without drinking that delve"},
+    "clear_stirred": {"band": "hard", "emoji": "🔥", "kind": "clear", "stirred_min": 2, "n": 1,
+                      "name": "Clear a delve Stirred to rank 2+"},
+    "deep_clear":    {"band": "hard", "emoji": "🔀", "kind": "clear", "deep": True, "n": 1,
+                      "name": "Take the deep way at a Fork - and still clear"},
+    "pit_unwounded": {"band": "hard", "emoji": "🛡️", "kind": "pit_win", "unwounded": True, "n": 1,
+                      "name": "Fell a Pit champion unwounded"},
+    "dragons_3":     {"band": "hard", "emoji": "🐲", "kind": "kill", "dragon": True, "n": 3,
+                      "name": "Slay 3 dragons this week"},
+}
+TASK_DRAW = {"easy": 3, "medium": 3, "hard": 2}       # 8 pinned per week
+TASK_POINTS = {"easy": 1, "medium": 2, "hard": 4}
+TASK_REWARDS = {"easy": (150, 60), "medium": (350, 140), "hard": (800, 300)}  # (septims, xp)
+TASK_ALL_BONUS = (800, 250)                            # sweep the board
+
+# ---------------------------------------------------------------------------
 # Wonders - ultra-rare cosmetic trophies rolled on kills (and won in the Pit,
 # the duelling circle, the weekly hunt and under your own floorboards). Pure
 # chase: no power, no pity timer, announced to the whole channel when one hits.

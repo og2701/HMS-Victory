@@ -1469,6 +1469,66 @@ def test_wonders_chase_drops():
     assert any("A WONDER" in l for l in d.log)
 
 
+def test_weekly_task_board():
+    # the pinned 8: deterministic per week, 3 easy / 3 medium / 2 hard
+    week = E.weekly_tasks("2026-07-20")
+    assert week == E.weekly_tasks("2026-07-22")        # same all week
+    assert week != E.weekly_tasks("2026-07-27")        # fresh on Monday
+    bands = [D.TASKS[k]["band"] for k in E.weekly_tasks()]
+    assert bands.count("easy") == 3 and bands.count("medium") == 3 and bands.count("hard") == 2
+    # every authored task kind has a matcher the engine actually emits
+    assert {t["kind"] for t in D.TASKS.values()} <= {
+        "kill", "clear", "chest", "daily", "sneak", "persuade", "pit_win", "march"}
+    p = _profile()
+    # events count against matching tasks and cap at n
+    for _ in range(50):
+        E.task_event(p, "kill", style="blade", bounty=False, dragon=False, potions_used=0)
+    ts = E.task_state(p)
+    for key in E.weekly_tasks():
+        t = D.TASKS[key]
+        if t["kind"] == "kill" and not t.get("bounty") and not t.get("dragon") \
+                and t.get("style") in (None, "blade"):
+            assert ts["prog"][key] == t["n"]           # capped, complete
+        elif t["kind"] == "kill" and t.get("style") not in (None, "blade"):
+            assert ts["prog"].get(key, 0) == 0         # wrong style never counts
+    # choice-filtered clears: a potion-free, blade-pure, deep, stirred clear
+    E.task_event(p, "clear", diff="Hard", potions_used=0, styles=["blade"],
+                 stirred=3, deep=True)
+    rows = {k: (done, comp) for k, _t, done, comp, _c in E.task_progress(p)}
+    for key in E.weekly_tasks():
+        t = D.TASKS[key]
+        if t["kind"] == "clear" and t.get("style_only") in (None, "blade"):
+            assert rows[key][0] >= 1
+    # ...but a drinking clear fails the dry task
+    p2 = E.create_profile(3, "Thirsty", "warrior")
+    E.task_event(p2, "clear", diff="Easy", potions_used=2, styles=["blade"], stirred=0, deep=False)
+    for key, t, done, _comp, _c in E.task_progress(p2):
+        if t.get("no_potion"):
+            assert done == 0
+    # claiming pays once; completed points show in the weekly race
+    pts, total = E.task_points(p)
+    assert 0 < pts <= total
+    before = p["septims"]
+    res = E.claim_tasks(p)
+    assert res and p["septims"] > before
+    assert E.claim_tasks(p) is None                    # nothing left unclaimed
+    E.save_profile(p)
+    assert any(name == "Tester" for name, _pts in E.task_leaders(E.all_profiles()))
+    # a real delve emits the hooks end to end (kill + clear)
+    p3 = E.create_profile(4, "Doer", "warrior")
+    rooms = [{"kind": "enemy", "key": "skeever", "boss": True, "resolved": False}]
+    d = E.Delve(p3["user_id"], "T", 0, "embershard", rooms, hearts=3, shout_charges=0)
+    E.random = _fixed_rolls(0.5, 0.99)                 # hit (roll 50 < pct), no crit
+    try:
+        d.act_attack(p3, "blade")
+    finally:
+        _restore_random()
+    assert d.state == "cleared"
+    prog = E.task_state(p3)["prog"]
+    assert any(D.TASKS[k]["kind"] == "kill" for k in prog) or \
+           any(D.TASKS[k]["kind"] == "clear" for k in prog)
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

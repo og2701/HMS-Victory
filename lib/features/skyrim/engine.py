@@ -298,6 +298,7 @@ def _migrate(profile: dict) -> dict:
     profile.setdefault("rumours", {})            # legend hunts heard/slain
     profile.setdefault("pit", {"season": None, "rank": 0, "date": None, "best": 0})
     profile.setdefault("wonders", [])            # ultra-rare trophies found (keys)
+    profile.setdefault("tasks", {})              # the weekly Task Board tracker
     # backfill what honesty allows: the Cairn depth record already existed
     if (profile.get("soulcairn") or {}).get("best"):
         profile["records"].setdefault("depth", int(profile["soulcairn"]["best"]))
@@ -735,6 +736,130 @@ def wonder_line(key: str) -> str:
             f"-# one of only {len(D.WONDERS)} wonders in all Skyrim, kept forever")
 
 
+# ---------------------------------------------------------------------------
+# The Task Board - 8 weekly challenges, seeded per ISO week, identical for all.
+# Progress counts PASSIVELY as you play (task_event is called from the delve, the
+# Pit and the boss hunt); rewards are claimed on the Notice Board. Choice-based
+# tasks are per-delve; dice-based ones are cumulative across the week.
+# ---------------------------------------------------------------------------
+def weekly_tasks(date_str: str = None) -> list:
+    """This week's 8 pinned task keys - 3 easy, 3 medium, 2 hard, seeded."""
+    y, w = _iso_week(date_str)
+    rng = random.Random(f"skyrim-tasks-{y}-{w}")
+    out = []
+    for band, count in D.TASK_DRAW.items():
+        pool = sorted(k for k, t in D.TASKS.items() if t["band"] == band)
+        out.extend(rng.sample(pool, min(count, len(pool))))
+    return out
+
+
+def task_state(profile) -> dict:
+    """The weekly tracker - progress and claims wipe with the ISO week."""
+    ts = profile.setdefault("tasks", {})
+    wk = f"{_iso_week()[0]}-{_iso_week()[1]}"
+    if ts.get("week") != wk:
+        ts.clear()
+        ts.update({"week": wk, "prog": {}, "claimed": [], "bonus": False})
+    return ts
+
+
+def _task_matches(t: dict, kind: str, ctx: dict) -> bool:
+    if t["kind"] != kind:
+        return False
+    if t.get("style") and ctx.get("style") != t["style"]:
+        return False
+    for flag in ("bounty", "dragon", "unwounded", "deep"):
+        if t.get(flag) and not ctx.get(flag):
+            return False
+    if t.get("no_potion") and ctx.get("potions_used", 0) != 0:
+        return False
+    if t.get("no_potion_delve") and ctx.get("potions_used", 0) != 0:
+        return False
+    if t.get("diff") and ctx.get("diff") not in t["diff"]:
+        return False
+    if t.get("style_only") and set(ctx.get("styles") or ()) != {t["style_only"]}:
+        return False
+    if t.get("stirred_min") and ctx.get("stirred", 0) < t["stirred_min"]:
+        return False
+    return True
+
+
+def task_event(profile, kind: str, **ctx):
+    """Count a play event against this week's matching tasks (progress caps at n)."""
+    ts = task_state(profile)
+    for key in weekly_tasks():
+        t = D.TASKS.get(key)
+        if t and _task_matches(t, kind, ctx):
+            cur = int(ts["prog"].get(key, 0))
+            if cur < t["n"]:
+                ts["prog"][key] = cur + 1
+
+
+def task_progress(profile) -> list:
+    """[(key, task, done_n, complete, claimed)] for this week's board."""
+    ts = task_state(profile)
+    out = []
+    for key in weekly_tasks():
+        t = D.TASKS[key]
+        done = min(int(ts["prog"].get(key, 0)), t["n"])
+        out.append((key, t, done, done >= t["n"], key in ts["claimed"]))
+    return out
+
+
+def task_points(profile) -> tuple:
+    """(points_earned, points_possible) this week - complete tasks count, claimed
+    or not. The friendly race number on the board."""
+    rows = task_progress(profile)
+    earned = sum(D.TASK_POINTS[t["band"]] for _k, t, _d, comp, _c in rows if comp)
+    total = sum(D.TASK_POINTS[t["band"]] for _k, t, _d, _comp, _c in rows)
+    return earned, total
+
+
+def tasks_claimable(profile) -> bool:
+    return any(comp and not claimed for _k, _t, _d, comp, claimed in task_progress(profile))
+
+
+def claim_tasks(profile) -> str | None:
+    """Pay out every complete, unclaimed task (plus the sweep bonus when the whole
+    board is done). Returns the payout line, or None if nothing was claimable."""
+    ts = task_state(profile)
+    septims = xp = paid = 0
+    for key, t, _done, comp, claimed in task_progress(profile):
+        if comp and not claimed:
+            s, x = D.TASK_REWARDS[t["band"]]
+            septims += s
+            xp += x
+            paid += 1
+            ts["claimed"].append(key)
+    if not paid:
+        return None
+    swept = all(comp for _k, _t, _d, comp, _c in task_progress(profile))
+    bits = []
+    if swept and not ts.get("bonus"):
+        ts["bonus"] = True
+        septims += D.TASK_ALL_BONUS[0]
+        xp += D.TASK_ALL_BONUS[1]
+        bits.append("🧹 **the board swept clean** - bonus paid")
+    septims = _septims(profile, septims)
+    profile["septims"] += septims
+    gained, _ = add_xp(profile, xp)
+    st = profile["stats"]
+    st["tasks_done"] = int(st.get("tasks_done", 0)) + paid
+    bits.insert(0, f"{paid} task{'s' if paid != 1 else ''} honoured: "
+                   f"+{septims:,} septims, +{gained} XP")
+    return "  ·  ".join(bits)
+
+
+def task_leaders(profiles: dict) -> list:
+    """[(name, points)] of everyone with points this week, best first."""
+    out = []
+    for p in profiles.values():
+        pts, _total = task_points(p)
+        if pts > 0:
+            out.append((p.get("name", "?"), pts))
+    return sorted(out, key=lambda r: -r[1])
+
+
 def _affix_fight_delta(profile, enemy_key: str, style: str, delve) -> float:
     """Attack-% swing from the current room's elite affix (Marked Affixes). Affixes
     subtract or gate rather than add, so they survive the clamp."""
@@ -1052,7 +1177,8 @@ class Delve:
                  delve_id=None, enemy_hp=None, daily=False, fan=False,
                  ambush=False, hp_warned=False, venom=False, ingredients=None,
                  dragon=None, phase=None, depth=0, kind="normal", buffs=None,
-                 route=None, pacts=None, stirred=0, echo=0, pet_used=False, mood=None):
+                 route=None, pacts=None, stirred=0, echo=0, pet_used=False, mood=None,
+                 potions_used=0, styles_used=None, took_deep=False):
         import uuid
         self.delve_id = delve_id or uuid.uuid4().hex[:12]
         self.daily = bool(daily)                  # the shared once-a-day dungeon
@@ -1072,6 +1198,9 @@ class Delve:
         self.echo = int(echo)                     # Alduin's Echoes: past kills harden him
         self.pet_used = bool(pet_used)            # the companion's once-per-delve save spent
         self.mood = mood                          # the daily's shared mood key
+        self.potions_used = int(potions_used)     # drinks this delve (dry-clear tasks)
+        self.styles_used = list(styles_used or [])  # attack styles swung (style-purity tasks)
+        self.took_deep = bool(took_deep)          # braved the deep way at a Fork
         self.player_id = int(player_id)
         self.player_name = player_name
         self.channel_id = channel_id
@@ -1232,6 +1361,9 @@ class Delve:
         self._bank_ingredients(profile)
         profile["stats"]["clears"] += 1
         log_add(profile, "clears", self.location)
+        task_event(profile, "clear", diff=self.loc["difficulty"],
+                   potions_used=self.potions_used, styles=self.styles_used,
+                   stirred=self.stirred, deep=self.took_deep)
         record_best(profile, "satchel", self.satchel)
         record_best(profile, "kills_delve", self.kills)
         profile["active_delve"] = None
@@ -1341,6 +1473,8 @@ class Delve:
         if self._confirm_low_hp(profile):
             return
         style = style if style in D.STYLES else best_style(profile, self.room["key"], self)
+        if style not in self.styles_used:
+            self.styles_used.append(style)        # style-purity tasks watch every swing
         p = fight_pct(profile, self.room["key"], style, self)
         was_ambush = self.ambush
         self.ambush = False
@@ -1432,6 +1566,9 @@ class Delve:
         self.kills += 1
         profile["stats"]["kills"] += 1
         log_add(profile, "kills", self.room["key"])
+        task_event(profile, "kill", style=style if style in D.STYLES else None,
+                   bounty=bounty, dragon=e["type"] == "dragon",
+                   potions_used=self.potions_used)
         if self.room.get("affix"):
             log_add(profile, "affixes", self.room["affix"])
         record_best(profile, "kill_loot", loot)
@@ -1517,6 +1654,7 @@ class Delve:
         gained, ups = add_xp(profile, 8 * e["tier"])
         self.xp_gained += gained
         profile["stats"]["sneaks"] += 1
+        task_event(profile, "sneak")
         line = f"{D.pick(D.SNEAK_LINES)}  (+{gained} XP)"
         if ups:
             line += f"\n🆙 **Level up! You are now level {level(profile)}** (+{ups} perk point)."
@@ -1533,6 +1671,7 @@ class Delve:
             gained, ups = add_xp(profile, 10 * e["tier"])
             self.xp_gained += gained
             profile["stats"]["persuades"] += 1
+            task_event(profile, "persuade")
             line = D.pick(e.get("persuaded", ["They let you pass."]))
             extra = ""
             if random.random() < 0.5:
@@ -1646,6 +1785,7 @@ class Delve:
         if profile["potions"] <= 0 or (self.hearts >= cap and not self.venom):
             return
         profile["potions"] -= 1
+        self.potions_used += 1
         self.hp_warned = False
         cured = self.venom
         self.venom = False
@@ -1707,6 +1847,7 @@ class Delve:
             elite["affix"] = aff
         chest = {"kind": "event", "key": "chest", "boss": False, "resolved": False, "locked": True}
         self.rooms[self.idx + 1:self.idx + 1] = [elite, chest]
+        self.took_deep = True
         self.say("You take the deep way down. The air thickens - something elite is guarding "
                  "a strongbox in the dark.")
         self._advance(profile)
@@ -1781,6 +1922,7 @@ class Delve:
                 self.satchel += loot
                 gained, _ = add_xp(profile, 12)
                 self.xp_gained += gained
+                task_event(profile, "chest")
                 line = (f"The lock gives with a whisper. Inside: **{loot} septims**."
                         f"  (+{gained} XP")
                 if gain:
@@ -1791,6 +1933,7 @@ class Delve:
             self._advance(profile)
             return
         if key == "chest" and choice == "open" and not r.get("locked"):
+            task_event(profile, "chest")             # looted either way, trap or no trap
             if random.random() < chest_trap_chance(profile):
                 loot = _septims(profile, 20 + random.randint(0, 40))
                 self.satchel += loot
@@ -1943,7 +2086,9 @@ class Delve:
                 "dragon": self.dragon, "phase": self.phase, "depth": self.depth,
                 "kind": self.kind, "buffs": self.buffs, "route": self.route,
                 "pacts": self.pacts, "stirred": self.stirred, "echo": self.echo,
-                "pet_used": self.pet_used, "mood": self.mood}
+                "pet_used": self.pet_used, "mood": self.mood,
+                "potions_used": self.potions_used, "styles_used": self.styles_used,
+                "took_deep": self.took_deep}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Delve":
@@ -1962,7 +2107,9 @@ class Delve:
                    dragon=d.get("dragon"), phase=d.get("phase"), depth=d.get("depth", 0),
                    kind=d.get("kind", "normal"), buffs=d.get("buffs"), route=d.get("route"),
                    pacts=d.get("pacts"), stirred=d.get("stirred", 0), echo=d.get("echo", 0),
-                   pet_used=d.get("pet_used", False), mood=d.get("mood"))
+                   pet_used=d.get("pet_used", False), mood=d.get("mood"),
+                   potions_used=d.get("potions_used", 0), styles_used=d.get("styles_used"),
+                   took_deep=d.get("took_deep", False))
 
 
 # ---------------------------------------------------------------------------
@@ -2011,6 +2158,7 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
         # features at least one - seeded, so everyone faces the same marked foes
         date, loc_key, route, mood, rooms = _daily_rooms()
         profile["daily"] = {"date": date}
+        task_event(profile, "daily")                 # braving it is what counts
         delve = Delve(profile["user_id"], profile["name"], channel_id, loc_key,
                       rooms, hearts=heart_max(profile),
                       shout_charges=voice_charges(profile), daily=True, route=route,
@@ -2350,7 +2498,8 @@ def pit_begin(profile) -> list:
     hearts = min(int(s.get("hearts_today", heart_max(profile))), heart_max(profile))
     s["bout"] = {"rank": s["rank"], "me": max(1, hearts), "foe": champ["hp"],
                  "round": 1, "ward": champ.get("quirk") in ("veteran", "master"),
-                 "staggered": False, "opening": False, "fatigue": fatigue}
+                 "staggered": False, "opening": False, "fatigue": fatigue,
+                 "me0": max(1, hearts)}              # unwounded-victory tasks compare to this
     lines = [f"🗡️ **The Pit, Windhelm.** Bout {s['rank'] + 1}: **{champ['name']}**.",
              f"-# {champ['taunt']}  ·  ({champ['quirk_desc']})"]
     if fatigue:
@@ -2472,6 +2621,7 @@ def pit_action(profile, action: str) -> tuple:
         s["rank"] += 1
         record_best(profile, "pit_rank", s["rank"])
         log_add(profile, "pit", champ["name"])
+        task_event(profile, "pit_win", unwounded=b["me"] >= int(b.get("me0", 0)))
         prize = _septims(profile, 60 + 40 * s["rank"])
         profile["septims"] += prize
         gained, _ = add_xp(profile, 15 + 10 * s["rank"])

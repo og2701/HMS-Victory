@@ -471,10 +471,11 @@ def _hub_rows(profile):
                           f"Character ({pts})" if pts else "Character", "👤", _hub_character))
     row1.add_item(_cb_btn(discord.ButtonStyle.primary, "Belethor's", "🏪", _hub_shop))
     mood_emoji = D.DAILY_MOODS[E.daily_mood()]["emoji"]
-    daily_label = (f"Daily Delve {mood_emoji}".strip() if E.daily_available(profile)
-                   else "Daily Results")
-    row1.add_item(_cb_btn(discord.ButtonStyle.success if E.daily_available(profile)
-                          else discord.ButtonStyle.secondary, daily_label, "📅", _hub_daily))
+    notice_hot = (E.daily_available(profile) or E.tasks_claimable(profile))
+    notice_label = (f"Notice Board {mood_emoji}".strip()
+                    if E.daily_available(profile) else "Notice Board")
+    row1.add_item(_cb_btn(discord.ButtonStyle.success if notice_hot
+                          else discord.ButtonStyle.secondary, notice_label, "📌", _hub_notice))
     row2 = discord.ui.ActionRow()
     pit_ready = E.level(profile) >= 5 and E.pit_available(profile)
     row2.add_item(_cb_btn(discord.ButtonStyle.success if pit_ready
@@ -1924,30 +1925,71 @@ def _daily_results_text() -> str:
     return "\n".join(lines)
 
 
-async def _hub_daily(interaction: Interaction):
+def _notice_text(profile) -> str:
+    """The Notice Board - all the shared, rotating content on one page: the daily
+    delve, the week's task list and (below) the weekly hunt."""
+    lines = ["## 📌 The Notice Board - Whiterun",
+             f"-# {E.weather_line()}", ""]
+    loc = E.daily_location()
+    if E.daily_available(profile):
+        lines.append(f"📅 **Today's shared delve:** {loc['emoji']} {loc['name']} - "
+                     f"same rooms for everyone, one attempt, "
+                     f"{E.DAILY_CLEAR_MULT:g}x clear bonus."
+                     + _daily_marked_line() + _daily_mood_line())
+    else:
+        results = E.daily_results()
+        lines.append(f"📅 **Today's shared delve:** {loc['emoji']} {loc['name']} - "
+                     f"your attempt is spent ({len(results)} on the board so far).")
+    pts, total = E.task_points(profile)
+    lines += ["", f"### 📋 The week's tasks  ·  your points: **{pts}/{total}**",
+              "-# Pinned fresh each Monday (UK). Progress counts as you play - "
+              "claim the bounties here."]
+    for _key, t, done, comp, claimed in E.task_progress(profile):
+        s, _x = D.TASK_REWARDS[t["band"]]
+        p = D.TASK_POINTS[t["band"]]
+        tick = "✅" if comp else "⬜"
+        prog = f"  ({done}/{t['n']})" if t["n"] > 1 and not comp else ""
+        tail = "  ·  claimed" if claimed else f"  ·  {s} septims"
+        lines.append(f"{tick} {t['emoji']} {t['name']}{prog}  ·  "
+                     f"{p} pt{'s' if p != 1 else ''}{tail}")
+    leaders = E.task_leaders(E.all_profiles())[:4]
+    if leaders:
+        lines.append("-# 🏁 The week's race: " + "  ·  ".join(
+            f"**{n}** {p} pts" for n, p in leaders))
+    return "\n".join(lines)
+
+
+async def _hub_notice(interaction: Interaction, notice: str = ""):
     profile = E.get_profile(interaction.user.id)
     if profile is None:
         await _show_class_pick(interaction)
         return
-    if not E.daily_available(profile):
-        await _edit_panel(interaction, _daily_results_text(), [_back_row()])
-        return
-    loc = E.daily_location()
-    text = (f"## 📅 Daily Delve - {loc['emoji']} {loc['name']}\n"
-            f"-# {E.weather_line()}{_daily_marked_line()}{_daily_mood_line()}\n\n"
-            f"{loc['desc']}\n"
-            f"One shared dungeon per day: **everyone faces the same rooms**, the dice are "
-            f"your own. One attempt, separate from your normal delves, and the clear bonus "
-            f"pays {E.DAILY_CLEAR_MULT:g}x. Results land on the daily board.")
+    text = _notice_text(profile)
+    E.save_profile(profile)      # persist the weekly tracker rollover, if one happened
+    if notice:
+        text += f"\n\n{notice}"
     row = discord.ui.ActionRow()
+    if E.daily_available(profile):
+        loc = E.daily_location()
 
-    async def _go(inter: Interaction):
-        await _launch_delve(inter, loc["key"], kind="daily")
-    row.add_item(_cb_btn(discord.ButtonStyle.success, "Set out", "📅", _go))
+        async def _go(inter: Interaction):
+            await _launch_delve(inter, loc["key"], kind="daily")
+        row.add_item(_cb_btn(discord.ButtonStyle.success, "Brave the daily", "📅", _go))
 
     async def _board(inter: Interaction):
-        await _edit_panel(inter, _daily_results_text(), [_back_row()])
-    row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Today's board", "📋", _board))
+        brow = discord.ui.ActionRow()
+        brow.add_item(_cb_btn(discord.ButtonStyle.secondary, "Notice Board", "📌", _hub_notice))
+        brow.add_item(_cb_btn(discord.ButtonStyle.secondary, "Back", "⬅️", _hub_root))
+        await _edit_panel(inter, _daily_results_text(), [brow])
+    row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Daily board", "📋", _board))
+    if E.tasks_claimable(profile):
+        async def _claim(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            res = E.claim_tasks(p)
+            E.save_profile(p)
+            await _hub_notice(inter, notice=f"-# 🎁 {res}" if res
+                              else "-# Nothing to claim yet.")
+        row.add_item(_cb_btn(discord.ButtonStyle.success, "Claim bounties", "🎁", _claim))
     await _edit_panel(interaction, text, [row, _back_row()])
 
 
