@@ -15,6 +15,7 @@ from discord.interactions import Interaction
 
 from config import CHANNELS, JSON_DATA_DIR, PERMISSIONS_BACKUP_FILE, ROLES
 from commands.moderation.join_watch import (
+    DEFAULT_CONTEXT as JW_DEFAULT_CONTEXT,
     MAX_SCANNED_MESSAGES as JW_MAX_MESSAGES,
     TIMEOUT_HOURS as JW_TIMEOUT_HOURS,
     announce_toggle as announce_join_watch_toggle,
@@ -898,15 +899,23 @@ class JoinWatchContextModal(discord.ui.Modal):
             label="Why is screening on right now?",
             style=discord.TextStyle.paragraph,
             default=get_join_watch_state()["context"],
+            placeholder="Leave empty to reset to the general default context.",
             max_length=1000,
+            required=False,
         )
         self.add_item(self.context_input)
 
     async def on_submit(self, interaction: Interaction) -> None:
-        # Setting the context arms screening; a fresh context implies an active incident.
+        # Setting the context arms screening; a fresh context implies an active
+        # incident. Clearing the box resets to the general default.
         was_armed = get_join_watch_state()["enabled"]
-        set_join_watch_state(True, self.context_input.value)
-        self.dashboard.notice = "🔎 Join-watch context updated; screening is armed."
+        new_context = (self.context_input.value or "").strip()
+        set_join_watch_state(True, new_context or JW_DEFAULT_CONTEXT)
+        self.dashboard.notice = (
+            "🔎 Join-watch context updated; screening is armed."
+            if new_context
+            else "🔎 Join-watch context reset to the general default; screening is armed."
+        )
         self.dashboard.render()
         await interaction.response.edit_message(
             view=self.dashboard,
