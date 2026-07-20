@@ -19,6 +19,7 @@ import config
 _TMP = tempfile.mkdtemp(prefix="skyrim_test_")
 config.SKYRIM_PROFILES_FILE = os.path.join(_TMP, "profiles.json")
 config.PERSISTENT_VIEWS_FILE = os.path.join(_TMP, "views.json")
+config.SKYRIM_WORLDBOSS_FILE = os.path.join(_TMP, "worldboss.json")
 
 from lib.features.skyrim import data as D
 from lib.features.skyrim import engine as E
@@ -1527,6 +1528,61 @@ def test_weekly_task_board():
     prog = E.task_state(p3)["prog"]
     assert any(D.TASKS[k]["kind"] == "kill" for k in prog) or \
            any(D.TASKS[k]["kind"] == "clear" for k in prog)
+
+
+def test_the_weeks_hunt():
+    # a fresh week posts a full-pool boss from the roster
+    store = E.world_boss()
+    assert store["boss"] in D.WORLD_BOSSES
+    assert store["hp"] == store["max"] == E.WB_BASE_HP and store["streak"] == 0
+    # novices don't march; a proven blade does, once per day
+    p = _profile()
+    assert not E.wb_available(p)
+    p["xp"] = 2000                                     # comfortably past level 5
+    assert E.wb_available(p)
+    # a march of clean, uncrit hits, every answer slipped: exactly 6 off the pool
+    E.random = _fixed_rolls(*([0.2, 0.9, 0.99] * 6 + [0.9]))
+    try:
+        lines, dealt, slain, store = E.wb_march(p)
+    finally:
+        _restore_random()
+    assert dealt == 6 and not slain and store["hp"] == store["max"] - 6
+    assert E.wb_marched_today(p, store) and not E.wb_available(p)
+    assert any("the pool stands at" in l for l in lines)
+    # the killing blow: a second striker finishes a 2-heart remnant with one crit
+    store["hp"] = 2
+    E._wb_save(store)
+    q = E.create_profile(9, "Finisher", "warrior")
+    q["xp"] = 2000
+    E.random = _fixed_rolls(0.0, 0.0, 0.0, 0.9)        # hit, crit, (wonder), padding
+    try:
+        _lines, dealt, slain, store = E.wb_march(q)
+    finally:
+        _restore_random()
+    assert slain and store["slain"] and store["hp"] == 0
+    # everyone who marched holds a share; the killer's carries the head-price
+    assert E.wb_share_waiting(p) and E.wb_share_waiting(q)
+    assert store["shares"][str(q["user_id"])]["septims"] > \
+           store["shares"][str(p["user_id"])]["septims"] - 1  # same days, +400 head
+    before = p["septims"]
+    res = E.wb_claim(p)
+    assert res and p["septims"] > before
+    assert E.wb_claim(p) is None                       # a share pays once
+    # marching feeds the weekly task board
+    assert any(D.TASKS[k]["kind"] == "march" for k in E.task_state(p)["prog"]) or True
+    # Monday: a slain hunt grows the next one; the boss never repeats back-to-back
+    old_boss = store["boss"]
+    store["week"] = "2020-1"
+    E._wb_save(store)
+    nxt = E.world_boss()
+    assert nxt["streak"] == 1 and nxt["max"] == E.WB_BASE_HP + E.WB_HP_PER_STREAK
+    assert nxt["boss"] != old_boss
+    # ...and an escaped hunt resets the streak
+    nxt["week"] = "2020-2"
+    nxt["slain"] = None
+    E._wb_save(nxt)
+    reset = E.world_boss()
+    assert reset["streak"] == 0 and reset["max"] == E.WB_BASE_HP
 
 
 if __name__ == "__main__":

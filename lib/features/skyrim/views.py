@@ -471,7 +471,8 @@ def _hub_rows(profile):
                           f"Character ({pts})" if pts else "Character", "👤", _hub_character))
     row1.add_item(_cb_btn(discord.ButtonStyle.primary, "Belethor's", "🏪", _hub_shop))
     mood_emoji = D.DAILY_MOODS[E.daily_mood()]["emoji"]
-    notice_hot = (E.daily_available(profile) or E.tasks_claimable(profile))
+    notice_hot = (E.daily_available(profile) or E.tasks_claimable(profile)
+                  or E.wb_available(profile) or bool(E.wb_share_waiting(profile)))
     notice_label = (f"Notice Board {mood_emoji}".strip()
                     if E.daily_available(profile) else "Notice Board")
     row1.add_item(_cb_btn(discord.ButtonStyle.success if notice_hot
@@ -1956,6 +1957,33 @@ def _notice_text(profile) -> str:
     if leaders:
         lines.append("-# 🏁 The week's race: " + "  ·  ".join(
             f"**{n}** {p} pts" for n, p in leaders))
+    # the week's hunt - the shared boss the whole server chips at
+    store = E.world_boss()
+    boss = E.wb_boss(store)
+    lines += ["", f"### {boss['emoji']} The week's hunt: {boss['name']}",
+              f"-# {boss['blurb']}"]
+    if store.get("slain"):
+        lines.append(f"🏆 **Felled on {store['slain']}** - spoils for all who marched. "
+                     f"A greater hunt is posted Monday (streak {store['streak'] + 1}).")
+    else:
+        lines.append(f"{'🟥' if store['hp'] <= store['max'] // 4 else '❤️'} "
+                     f"{_bar(store['hp'], 0, store['max'], 12)} "
+                     f"**{store['hp']}/{store['max']}** hearts left"
+                     + (f"  ·  💪 streak {store['streak']}" if store.get("streak") else ""))
+    strikers = sorted(((len(set(s.get("days") or [])), int(s.get("damage", 0)),
+                        s.get("name", "?")) for s in store["strikes"].values()),
+                      key=lambda r: -r[1])
+    if strikers:
+        lines.append("-# ⚔️ " + "  ·  ".join(
+            f"**{n}** {dmg} dmg ({d}d)" for d, dmg, n in strikers[:5]))
+    if not store.get("slain"):
+        if E.level(profile) < E.WB_MIN_LEVEL:
+            lines.append(f"-# 🔒 The hunt takes proven blades only (level {E.WB_MIN_LEVEL}+).")
+        elif E.wb_marched_today(profile, store):
+            lines.append("-# 🛌 You have marched today - the line re-forms at dawn.")
+        else:
+            lines.append("-# 📯 One march per day. Fell it before Monday or it escapes "
+                         "with the caravan gold.")
     return "\n".join(lines)
 
 
@@ -1990,7 +2018,52 @@ async def _hub_notice(interaction: Interaction, notice: str = ""):
             await _hub_notice(inter, notice=f"-# 🎁 {res}" if res
                               else "-# Nothing to claim yet.")
         row.add_item(_cb_btn(discord.ButtonStyle.success, "Claim bounties", "🎁", _claim))
+    if E.wb_available(profile):
+        async def _march(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            if not E.wb_available(p):
+                await _hub_notice(inter)
+                return
+            await _post_march_board(inter, p)
+        row.add_item(_cb_btn(discord.ButtonStyle.danger, "March on it", "📯", _march))
+    elif E.wb_share_waiting(profile):
+        async def _spoils(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            res = E.wb_claim(p)
+            E.save_profile(p)
+            await _hub_notice(inter, notice=res or "-# Your share is already claimed.")
+        row.add_item(_cb_btn(discord.ButtonStyle.success, "Claim spoils", "🏆", _spoils))
     await _edit_panel(interaction, text, [row, _back_row()])
+
+
+async def _post_march_board(interaction: Interaction, profile):
+    """Resolve the march and post it as a PUBLIC battle report - the group sees
+    every blow on the shared pool, exactly like a delve board (no buttons: a
+    march is one charge, told start to finish)."""
+    lines, dealt, slain, store = E.wb_march(profile)
+    E.save_profile(profile)
+    boss = E.wb_boss(store)
+    uid = int(profile["user_id"])
+    view = discord.ui.LayoutView(timeout=None)
+    files = _gallery_files(view, boss["art"]) if _asset_bytes(boss["art"]) else []
+    head = [f"## {boss['emoji']} The Week's Hunt - {boss['name']}",
+            f"📯 <@{uid}> marches on it  ·  "
+            f"{_bar(store['hp'], 0, store['max'], 12)} **{store['hp']}/{store['max']}**", ""]
+    box = discord.ui.Container(accent_colour=ACCENT)
+    box.add_item(discord.ui.TextDisplay("\n".join(head + lines)))
+    view.add_item(box)
+    try:
+        await interaction.channel.send(view=view, files=files,
+                                       allowed_mentions=discord.AllowedMentions.none())
+    except discord.HTTPException:
+        logger.error("skyrim: failed to post march board", exc_info=True)
+        await interaction.response.edit_message(
+            view=_notice_view("Couldn't post the march here - the damage still counts."),
+            attachments=[])
+        return
+    send_off = ("🏆 **THE HUNT IS OVER.** Claim your spoils on the Notice Board." if slain
+                else f"📯 Your march is told in the channel - **{dealt}** off the pool.")
+    await interaction.response.edit_message(view=_notice_view(send_off), attachments=[])
 
 
 # --- rankings ------------------------------------------------------------------------

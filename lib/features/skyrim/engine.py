@@ -3071,6 +3071,165 @@ def collect_expedition(profile) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# The Week's Hunt - a shared boss with a pooled heart total, chipped at by daily
+# MARCHES. All state lives in one shared file; everything is computed when a
+# player looks (the week rolls over lazily), nothing is ever posted on a schedule.
+# ---------------------------------------------------------------------------
+WB_BASE_HP = 50                      # the pool a fresh hunt starts at...
+WB_HP_PER_STREAK = 6                 # ...growing with each consecutive weekly kill
+WB_EXCHANGES = 6                     # blows traded per march (or until you're carried off)
+WB_MIN_LEVEL = 5
+
+
+def _wb_store() -> dict:
+    return load_json_file(config.SKYRIM_WORLDBOSS_FILE) or {}
+
+
+def _wb_save(store: dict):
+    save_json_file(config.SKYRIM_WORLDBOSS_FILE, store)
+
+
+def world_boss(date_str: str = None) -> dict:
+    """This week's hunt state, rolling the week over (and growing/shrinking the
+    next boss by the kill streak) if nobody has looked since Monday."""
+    y, w = _iso_week(date_str)
+    wk = f"{y}-{w}"
+    store = _wb_store()
+    if store.get("week") != wk:
+        streak = int(store.get("streak", 0))
+        if store.get("week"):                     # a real previous week ended
+            streak = streak + 1 if store.get("slain") else 0
+        rng = random.Random(f"skyrim-hunt-{wk}")
+        pool = sorted(D.WORLD_BOSSES)
+        if store.get("boss") in pool and len(pool) > 1:
+            pool.remove(store["boss"])            # never the same hunt twice running
+        hp = WB_BASE_HP + WB_HP_PER_STREAK * streak
+        store = {"week": wk, "boss": rng.choice(pool), "hp": hp, "max": hp,
+                 "streak": streak, "strikes": {}, "slain": None, "shares": {}}
+        _wb_save(store)
+    return store
+
+
+def wb_boss(store: dict = None) -> dict:
+    store = store or world_boss()
+    return D.WORLD_BOSSES[store["boss"]]
+
+
+def wb_marched_today(profile, store: dict = None) -> bool:
+    store = store or world_boss()
+    mine = store["strikes"].get(str(profile["user_id"])) or {}
+    return _today_str() in (mine.get("days") or [])
+
+
+def wb_available(profile, store: dict = None) -> bool:
+    store = store or world_boss()
+    return (level(profile) >= WB_MIN_LEVEL and not store.get("slain")
+            and store["hp"] > 0 and not wb_marched_today(profile, store))
+
+
+def _wb_attack_pct(profile, boss: dict) -> int:
+    """Your hit chance on the hunt - the full build counts, plus the style
+    matchup against what the boss IS (fire for the dead, and so on)."""
+    style = max(D.STYLES, key=lambda s: profile["skills"][s])
+    foe = {"type": boss.get("type", "human")}
+    p = (46 + _skill_component(profile["skills"][style], FIGHT_SKILL_SCALE)
+         + D.WEAPON_FIGHT_PER_TIER * profile["weapon_tier"]
+         + temper_fight_bonus(profile)
+         + doctrine_fight_bonus(profile, foe, style)
+         + D.STYLE_AFF[foe["type"]][style]
+         + 4 * perk_rank(profile, "honed_edge"))
+    return _clamp(p)
+
+
+def wb_march(profile) -> tuple:
+    """March on the week's boss: a short auto-resolved sortie - your blows chip
+    the SHARED pool, its blows spend your hearts (the sortie ends when either
+    runs out of patience or blood; wounds don't follow you home). Returns
+    (story_lines, damage_dealt, slain_now, store)."""
+    store = world_boss()
+    boss = wb_boss(store)
+    uid = str(profile["user_id"])
+    mine = store["strikes"].setdefault(uid, {"name": profile["name"], "days": [], "damage": 0})
+    mine["name"] = profile["name"]
+    mine["days"].append(_today_str())
+    task_event(profile, "march")
+    atk = _wb_attack_pct(profile, boss)
+    crit = CRIT_CHANCE + companion_bonus(profile, "crit")
+    guard = min(SOAK_CAP, soak_pct(profile))
+    fatk = max(5, boss["fight"] - guard)
+    hearts = heart_max(profile)
+    dealt = 0
+    lines = [boss["arrive"]]
+    for _ in range(WB_EXCHANGES):
+        if random.random() * 100 < atk:
+            d = 2 if random.random() < crit else 1
+            dealt += d
+            lines.append(f"-# Your blow lands{' - a CLEAN strike' if d == 2 else ''} "
+                         f"(**-{d}** from the pool).")
+        else:
+            lines.append(f"-# {boss['name']} turns your blow aside.")
+        if dealt >= store["hp"]:
+            break                                 # the killing blow - stop swinging
+        if random.random() * 100 < fatk:
+            loss = 2 if random.random() < boss.get("crush", 0.0) else 1
+            hearts -= loss
+            lines.append(f"-# {boss['style'].capitalize()} answers"
+                         f"{' - a CRUSHING blow' if loss == 2 else ''} "
+                         f"({'❤️' * max(0, hearts)} left).")
+            if hearts <= 0:
+                lines.append("The shield-bearers drag you clear. Your wounds mend by "
+                             "morning - the damage you dealt stands.")
+                break
+    mine["damage"] = int(mine.get("damage", 0)) + dealt
+    store["hp"] = max(0, store["hp"] - dealt)
+    slain_now = store["hp"] <= 0 and not store.get("slain")
+    if slain_now:
+        store["slain"] = _today_str()
+        lines.append(f"🏆 **{boss['slain']}**")
+        # spoils for everyone who marched, sized by the days they showed up
+        for suid, s in store["strikes"].items():
+            days = len(set(s.get("days") or []))
+            store["shares"][suid] = {"septims": 350 + 300 * days, "xp": 80 + 90 * days,
+                                     "claimed": False}
+        store["shares"][uid]["septims"] += 400    # the killing blow carries the head home
+        found = roll_wonder(profile, {"worldboss"}, WONDER_SIDE_CHANCE)
+        if found:
+            lines.append(wonder_line(found))
+    gained, _ = add_xp(profile, 20 + 6 * dealt)   # marching always teaches something
+    lines.append(f"⚔️ You dealt **{dealt}** - the pool stands at "
+                 f"**{store['hp']}/{store['max']}**.  (+{gained} XP)")
+    _wb_save(store)
+    record_best(profile, "march_damage", dealt)
+    return lines, dealt, slain_now, store
+
+
+def wb_share_waiting(profile, store: dict = None) -> dict | None:
+    store = store or world_boss()
+    share = (store.get("shares") or {}).get(str(profile["user_id"]))
+    return share if share and not share.get("claimed") else None
+
+
+def wb_claim(profile) -> str | None:
+    """Collect your share of a felled hunt. Returns the payout line, or None."""
+    store = world_boss()
+    share = wb_share_waiting(profile, store)
+    if not share:
+        return None
+    share["claimed"] = True
+    _wb_save(store)
+    septims = _septims(profile, int(share["septims"]))
+    profile["septims"] += septims
+    gained, _ = add_xp(profile, int(share["xp"]))
+    boss = wb_boss(store)
+    extra = ""
+    found = roll_wonder(profile, {"worldboss"}, WONDER_SIDE_CHANCE)
+    if found:
+        extra = "\n" + wonder_line(found)
+    return (f"{boss['emoji']} Your share of the {boss['name']}'s spoils: "
+            f"**+{septims:,} septims, +{gained} XP**.{extra}")
+
+
+# ---------------------------------------------------------------------------
 # Fallen Adventurers - a death leaves a lootable corpse for the next delver there,
 # and an obituary. Real deaths are used first; NPC corpses fill in for a small server.
 # ---------------------------------------------------------------------------

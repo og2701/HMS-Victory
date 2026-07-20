@@ -1114,6 +1114,59 @@ TASK_REWARDS = {"easy": (150, 60), "medium": (350, 140), "hard": (800, 300)}  # 
 TASK_ALL_BONUS = (800, 250)                            # sweep the board
 
 # ---------------------------------------------------------------------------
+# The Week's Hunt - one shared boss per ISO week with a pooled heart total the
+# whole server chips at. Each player may MARCH on it once per UK day (a short,
+# auto-resolved sortie with their real build); damage persists in shared state.
+# Fell it before Monday and everyone who marched shares the spoils; let it
+# escape and it takes the caravan gold with it. Consecutive kills grow the next
+# one. fight = its attack %, crush = 2-heart blow chance, type feeds STYLE_AFF.
+# ---------------------------------------------------------------------------
+WORLD_BOSSES = {
+    "marauder_king": {
+        "name": "The Marauder King", "emoji": "🪓", "type": "human", "fight": 58,
+        "crush": 0.25, "art": "hunt_marauder", "style": "a warband's worth of cleavers",
+        "blurb": "He has burned four farms and calls himself a king. The hold wants him gone.",
+        "arrive": "You find the war-camp by its smoke. He rises from a stolen throne of hay bales.",
+        "slain": "The Marauder King falls, and his warband scatters like startled crows.",
+        "escape": "The Marauder King breaks camp and vanishes into the hills with the caravan gold."},
+    "pale_lady": {
+        "name": "The Pale Lady", "emoji": "👻", "type": "undead", "fight": 54,
+        "crush": 0.2, "art": "hunt_pale_lady", "style": "grave-cold hands",
+        "blurb": "A sorrow given shape, drifting the marshes. Steel helps less than it should.",
+        "arrive": "The marsh mist parts. She is already looking at you.",
+        "slain": "The Pale Lady sighs - relief, perhaps - and unravels into the mist.",
+        "escape": "The mists close and the Pale Lady walks deeper into them, unfinished."},
+    "risen_legion": {
+        "name": "Lu'ah's Risen Legion", "emoji": "💀", "type": "undead", "fight": 56,
+        "crush": 0.22, "art": "hunt_legion", "style": "a wall of ancient blades",
+        "blurb": "A necromancer's whole army, raised rank by rank. It must be thinned like a harvest.",
+        "arrive": "They stand in parade formation, dead eyes forward. As one, they turn.",
+        "slain": "The last rank collapses into dust and old mail. The valley is quiet again.",
+        "escape": "The Legion marches on, ranks refilled by every barrow it passes."},
+    "red_hand": {
+        "name": "The Red Hand of the Reach", "emoji": "🩸", "type": "human", "fight": 60,
+        "crush": 0.25, "art": "hunt_red_hand", "style": "briarheart fury",
+        "blurb": "A Forsworn war-chief with a briar where his heart was. He does not tire. You will.",
+        "arrive": "Drums in the crags. He steps from the stone like it birthed him.",
+        "slain": "You cut the briar from his chest. The drums stop mid-beat.",
+        "escape": "The drums fade into the Reach. The Red Hand's tally grows another week."},
+    "white_terror": {
+        "name": "Grahl, the White Terror", "emoji": "❄️", "type": "monster", "fight": 56,
+        "crush": 0.35, "art": "hunt_grahl", "style": "an avalanche with opinions",
+        "blurb": "An ice troll of unreasonable size that has developed a taste for horses. And riders.",
+        "arrive": "The snowfield is littered with saddles. Then the snowfield stands up.",
+        "slain": "Grahl topples like a felled glacier. The trade road reopens by evening.",
+        "escape": "Grahl lumbers north with a full belly, already missed by no one."},
+    "otar": {
+        "name": "Otar the Mad", "emoji": "👺", "type": "undead", "fight": 62,
+        "crush": 0.3, "art": "hunt_otar", "style": "a dragon priest's spite",
+        "blurb": "A dragon priest pried half-loose from his barrow, mask screaming in a dead tongue.",
+        "arrive": "The barrow door stands open from the inside. The air tastes of copper and lightning.",
+        "slain": "Otar's mask cracks and the scream finally stops. The barrow accepts him back.",
+        "escape": "Otar sinks back into his barrow to knit his strength. He remembers you."},
+}
+
+# ---------------------------------------------------------------------------
 # Wonders - ultra-rare cosmetic trophies rolled on kills (and won in the Pit,
 # the duelling circle, the weekly hunt and under your own floorboards). Pure
 # chase: no power, no pity timer, announced to the whole channel when one hits.
