@@ -823,6 +823,10 @@ def _sheet_text(profile) -> str:
     pet = E.active_companion(profile)
     if pet:
         lines.append(f"**Companion**: {pet['emoji']} {pet['name']} - {pet['passive']}")
+    wonders = [k for k in (profile.get("wonders") or []) if k in D.WONDERS]
+    if wonders:
+        shelf = " ".join(D.WONDERS[k]["emoji"] for k in wonders)
+        lines.append(f"**Wonders**: ✨ {shelf}  ({len(wonders)}/{len(D.WONDERS)})")
     streak = E.current_streak(profile)
     pts = E.perk_points(profile)
     foot = [f"📦 collection {E.collection_pct(profile)}%"]

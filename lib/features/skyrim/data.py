@@ -1050,6 +1050,42 @@ COMPANIONS = {
 }
 
 # ---------------------------------------------------------------------------
+# Wonders - ultra-rare cosmetic trophies rolled on kills (and won in the Pit,
+# the duelling circle, the weekly hunt and under your own floorboards). Pure
+# chase: no power, no pity timer, announced to the whole channel when one hits.
+# `sources` gates WHERE each can drop, so every system carries a lottery ticket.
+# ---------------------------------------------------------------------------
+WONDERS = {
+    "golden_sweetroll": {"name": "The Golden Sweetroll", "emoji": "🍩", "sources": {"room"},
+                         "blurb": "a sweetroll cast in solid gold. Nobody is stealing this one."},
+    "ysgramor_tankard": {"name": "Ysgramor's Chipped Tankard", "emoji": "🍺", "sources": {"room"},
+                         "blurb": "five hundred companions drank from it. Now you do."},
+    "septim_misprint": {"name": "The Two-Faced Septim", "emoji": "🪙", "sources": {"room"},
+                        "blurb": "a septim mis-struck with Tiber Septim's face on BOTH sides. "
+                                 "It always lands your way."},
+    "dwemer_music_box": {"name": "A Dwemer Music Box", "emoji": "🎵", "sources": {"room"},
+                         "blurb": "still playing, four thousand years on. Nobody knows the tune's name."},
+    "priest_mask": {"name": "A Dragon Priest's Cracked Mask", "emoji": "👺", "sources": {"boss"},
+                    "blurb": "split clean down the middle. You did not ask what split it."},
+    "emerald_claw": {"name": "The Emerald Dragon Claw", "emoji": "🐾", "sources": {"boss"},
+                     "blurb": "a door key to somewhere no door remains."},
+    "white_pelt": {"name": "The White Sabre Pelt", "emoji": "🐆", "sources": {"boss"},
+                   "blurb": "hunters swear the white sabre is a myth. The myth sheds."},
+    "dragon_tear": {"name": "A Dragon's Tear", "emoji": "💧", "sources": {"dragon"},
+                    "blurb": "crystallised mid-fall. They do grieve, then."},
+    "ancient_word": {"name": "A Word Wall Fragment", "emoji": "🗿", "sources": {"dragon"},
+                     "blurb": "a fist of carved stone that hums your name in the old tongue."},
+    "bloodied_laurel": {"name": "The Bloodied Laurel", "emoji": "🏵️", "sources": {"pit"},
+                        "blurb": "thrown from the stands once a generation. The Pit's highest honour."},
+    "marauder_horn": {"name": "The Marauder's Cracked Warhorn", "emoji": "📯", "sources": {"worldboss"},
+                      "blurb": "it took a warband to earn and one good blow to crack."},
+    "hearth_idol": {"name": "A Little Hearth God", "emoji": "🪆", "sources": {"homestead"},
+                    "blurb": "carved centuries ago, found under your own floorboards. It approves of you."},
+    "rival_buckle": {"name": "A Rival's Belt Buckle", "emoji": "🥇", "sources": {"duel"},
+                     "blurb": "claimed in the circle, polished nightly, mentioned constantly."},
+}
+
+# ---------------------------------------------------------------------------
 # The Pit - Windhelm's unsanctioned arena. One bout per UK day against a ladder
 # of named champions, simulated round by round with your real build. Rank resets
 # monthly (best rank remembered); no satchel at stake, glory only.

@@ -339,7 +339,7 @@ def test_records_and_collection():
     assert E.records_of(p)["satchel"] >= 50            # the clear set a real record
     pct = E.collection_pct(p)
     assert 0 < pct < 100
-    assert len(E.collection_summary(p)) == 11
+    assert len(E.collection_summary(p)) == 12          # + Wonders
     # backfill: an old cairn best becomes a record on migrate
     q = E.create_profile(7, "Old", "warrior")
     q["soulcairn"] = {"best": 12}
@@ -1426,6 +1426,47 @@ def test_expedition_log_dispatches_and_window():
     p["expedition"]["start"] = datetime.date.today().isoformat()
     today_log = E.expedition_log(p, limit=0)
     assert len(today_log) <= 7 and all(l.startswith("Day 1") for l in today_log)
+
+
+def test_wonders_chase_drops():
+    p = _profile()
+    # a forced hit picks an UNOWNED wonder gated to the roll's sources
+    E.random = _fixed_rolls(0.0)
+    try:
+        found = E.roll_wonder(p, {"room"}, E.WONDER_ROOM_CHANCE)
+        assert found in D.WONDERS and "room" in D.WONDERS[found]["sources"]
+        assert p["wonders"] == [found]
+        # no duplicates: the pool shrinks to the remaining room-locked trophies
+        room_pool = {k for k, w in D.WONDERS.items() if "room" in w["sources"]}
+        for _ in range(len(room_pool) - 1):
+            nxt = E.roll_wonder(p, {"room"}, 1.0)
+            assert nxt in room_pool and p["wonders"].count(nxt) == 1
+        assert E.roll_wonder(p, {"room"}, 1.0) is None      # the shelf is full
+        # boss rolls chase the boss pool; dragon kills the dragon pool
+        found_boss = E.roll_wonder(p, {"room", "boss"}, 1.0)
+        assert found_boss and "boss" in D.WONDERS[found_boss]["sources"]
+    finally:
+        _restore_random()
+    # a miss banks nothing
+    E.random = _fixed_rolls(0.99)
+    try:
+        assert E.roll_wonder(p, {"dragon"}, E.WONDER_BOSS_CHANCE) is None
+    finally:
+        _restore_random()
+    # the collection log gained a Wonders category counting the shelf
+    rows = {label: (done, total) for _e, label, done, total, _m in E.collection_summary(p)}
+    assert rows["Wonders"][1] == len(D.WONDERS)
+    assert rows["Wonders"][0] == len(p["wonders"])
+    # a kill actually rolls it: force the wonder roll to hit on a fresh profile
+    p2 = E.create_profile(2, "Chaser", "warrior")
+    d = _enemy_room_delve(p2, "bandit")
+    E.random = _fixed_rolls(0.0)                            # hit, crit, ...all zeros hit
+    try:
+        d.act_attack(p2, "blade")
+    finally:
+        _restore_random()
+    assert p2["wonders"], "a kill with a lucky roll should bank a wonder"
+    assert any("A WONDER" in l for l in d.log)
 
 
 if __name__ == "__main__":

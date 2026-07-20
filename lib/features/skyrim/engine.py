@@ -297,6 +297,7 @@ def _migrate(profile: dict) -> dict:
     profile.setdefault("companion", None)        # the active friend
     profile.setdefault("rumours", {})            # legend hunts heard/slain
     profile.setdefault("pit", {"season": None, "rank": 0, "date": None, "best": 0})
+    profile.setdefault("wonders", [])            # ultra-rare trophies found (keys)
     # backfill what honesty allows: the Cairn depth record already existed
     if (profile.get("soulcairn") or {}).get("best"):
         profile["records"].setdefault("depth", int(profile["soulcairn"]["best"]))
@@ -685,6 +686,7 @@ def collection_summary(profile) -> list:
         ("🖤", "Legends slain", book.get("legends", []), list(D.RUMOURS)),
         ("🗡️", "Pit champions", book.get("pit", []), [c["name"] for c in D.PIT_CHAMPS]),
         ("🐾", "Companions", profile.get("companions") or [], list(D.COMPANIONS)),
+        ("✨", "Wonders", profile.get("wonders") or [], list(D.WONDERS)),
         ("🕳️", "Cairn depths", [s for s in cairn_steps if best_depth >= s], cairn_steps),
     ]
     out = []
@@ -700,6 +702,37 @@ def collection_pct(profile) -> int:
     done = sum(r[2] for r in rows)
     total = sum(r[3] for r in rows) or 1
     return int(100 * done / total)
+
+
+# ---------------------------------------------------------------------------
+# Wonders - the ultra-rare chase. One roll where the source allows it; a hit
+# picks an unowned trophy gated to that source. No pity timer, ever - the whole
+# point is the years-long hunt. Announced loudly wherever it lands.
+# ---------------------------------------------------------------------------
+WONDER_ROOM_CHANCE = 1 / 400         # any ordinary kill
+WONDER_BOSS_CHANCE = 1 / 150         # boss kills chase the boss-locked trophies
+WONDER_SIDE_CHANCE = 1 / 120         # pit wins, duels, marches, homestead collects
+
+
+def roll_wonder(profile, sources: set, chance: float) -> str | None:
+    """Maybe find a Wonder. `sources` is where this roll happened (a room kill is
+    also eligible for nothing else; a boss kill rolls the boss pool too, etc.).
+    Returns the found key (already banked) or None."""
+    owned = profile.setdefault("wonders", [])
+    eligible = [k for k, w in D.WONDERS.items()
+                if (w["sources"] & sources) and k not in owned]
+    if not eligible or random.random() >= chance:
+        return None
+    key = random.choice(eligible)
+    owned.append(key)
+    record_best(profile, "wonders", len(owned))
+    return key
+
+
+def wonder_line(key: str) -> str:
+    w = D.WONDERS[key]
+    return (f"✨ **A WONDER!** {w['emoji']} You find **{w['name']}** - {w['blurb']}\n"
+            f"-# one of only {len(D.WONDERS)} wonders in all Skyrim, kept forever")
 
 
 def _affix_fight_delta(profile, enemy_key: str, style: str, delve) -> float:
@@ -1442,6 +1475,16 @@ class Delve:
             line += f"\n🖤 **A legend falls.** {D.RUMOURS[rumour_key]['name'].capitalize()} - done. Forever."
         if ups:
             line += f"\n🆙 **Level up! You are now level {level(profile)}** (+{ups} perk point)."
+        # the once-in-hundreds chase: kills roll for a Wonder (bosses chase rarer ones)
+        sources = {"room"}
+        if self.room.get("boss"):
+            sources.add("boss")
+        if e["type"] == "dragon":
+            sources.add("dragon")
+        found = roll_wonder(profile, sources,
+                            WONDER_BOSS_CHANCE if self.room.get("boss") else WONDER_ROOM_CHANCE)
+        if found:
+            line += "\n" + wonder_line(found)
         self.say(line)
         self._advance(profile)
 
@@ -2435,6 +2478,9 @@ def pit_action(profile, action: str) -> tuple:
         lines.append(f"🏆 **{champ['name']} yields!** The crowd roars. You are now "
                      f"**{pit_title(s['rank'])}** (rank {s['rank']}/{len(D.PIT_CHAMPS)}).  "
                      f"(+{prize} septims, +{gained} XP)")
+        found = roll_wonder(profile, {"pit"}, WONDER_SIDE_CHANCE)
+        if found:
+            lines.append(wonder_line(found))
         if s["rank"] >= len(D.PIT_CHAMPS):
             lines.append("👑 **THE PIT HAS A NEW CHAMPION.** Your name goes on the wall "
                          "until Monday.")
