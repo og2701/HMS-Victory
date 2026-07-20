@@ -299,6 +299,10 @@ def _migrate(profile: dict) -> dict:
     profile.setdefault("pit", {"season": None, "rank": 0, "date": None, "best": 0})
     profile.setdefault("wonders", [])            # ultra-rare trophies found (keys)
     profile.setdefault("tasks", {})              # the weekly Task Board tracker
+    profile.setdefault("duel", None)             # an open ghost duel, if any
+    profile.setdefault("duel_day", {"date": None, "fought": []})
+    profile.setdefault("rivals", {})             # head-to-head ledger, uid -> {w, l}
+    profile.setdefault("ghost_log", [])          # what your ghost got up to lately
     # backfill what honesty allows: the Cairn depth record already existed
     if (profile.get("soulcairn") or {}).get("best"):
         profile["records"].setdefault("depth", int(profile["soulcairn"]["best"]))
@@ -2653,6 +2657,144 @@ def pit_action(profile, action: str) -> tuple:
         return "draw", lines
     b["round"] += 1
     return "playing", lines
+
+
+# ---------------------------------------------------------------------------
+# Ghost Duels - fight a snapshot of a rivals's build in the circle behind the
+# Pit, using the Pit's round engine. Their profile never changes mid-bout (the
+# ghost is frozen at challenge time); win or lose, both ledgers remember.
+# ---------------------------------------------------------------------------
+DUEL_GHOST_FIGHT_CAP = 80            # even a perfect ghost telegraphs a little
+DUEL_PRIZE = (150, 60)               # (septims, xp) from the house for a win
+
+
+def ghost_of(rival) -> dict:
+    """A champ-shaped snapshot of a rival's build, quirked by their Stone."""
+    g = D.GHOST_QUIRKS.get(rival.get("stone"), D.GHOST_QUIRKS["warrior"])
+    return {"name": f"{rival['name']}'s ghost", "uid": int(rival["user_id"]),
+            "fight": min(DUEL_GHOST_FIGHT_CAP, _pit_attack_pct(rival)),
+            "hp": heart_max(rival), "guard": min(SOAK_CAP, soak_pct(rival)),
+            "quirk": g["quirk"], "quirk_desc": g["desc"],
+            "level": level(rival), "style": f"a mirror of their {archetype(rival)}",
+            "taunt": random.choice(D.GHOST_TAUNTS), "art": "pit"}
+
+
+def duel_bout_active(profile) -> dict | None:
+    return (profile.get("duel") or {}).get("bout")
+
+
+def _duel_day(profile) -> dict:
+    d = profile.setdefault("duel_day", {"date": None, "fought": []})
+    if d.get("date") != _today_str():
+        d["date"] = _today_str()
+        d["fought"] = []
+    return d
+
+
+def duel_rivals(profile) -> list:
+    """Rival profiles still challengeable today (anyone else with a character)."""
+    fought = set(_duel_day(profile)["fought"])
+    return [p for uid, p in all_profiles().items()
+            if int(uid) != int(profile["user_id"]) and int(uid) not in fought]
+
+
+def duel_begin(profile, rival) -> list:
+    """Open a duel against a rival's ghost. Returns the intro lines."""
+    ghost = ghost_of(rival)
+    _duel_day(profile)["fought"].append(int(rival["user_id"]))
+    profile["duel"] = {"ghost": ghost,
+                       "bout": {"me": heart_max(profile), "me0": heart_max(profile),
+                                "foe": ghost["hp"], "round": 1, "fatigue": 0,
+                                "ward": ghost["quirk"] == "veteran",
+                                "staggered": False, "opening": False}}
+    return [f"⚔️ **The duelling circle.** You face **{ghost['name']}** "
+            f"(Lv {ghost['level']}).",
+            f"-# {ghost['taunt']}  ·  ({ghost['quirk_desc']})"]
+
+
+def duel_action(profile, action: str) -> tuple:
+    """One round of the open duel: 'strike' | 'power' | 'guard'. Returns
+    (state, lines) - the Pit's round engine drives the exchange."""
+    duel = profile.get("duel") or {}
+    b, ghost = duel.get("bout"), duel.get("ghost")
+    if not b or not ghost:
+        return "none", []
+    guarding = action == "guard"
+    lines = [f"**Round {b['round']}** - you "
+             + {"strike": "strike", "power": "wind up a power blow",
+                "guard": "set your guard and watch"}.get(action, "strike") + "."]
+    if guarding:
+        b["opening"] = True
+    if not guarding:
+        _pit_me_strike(profile, b, ghost, lines, power=(action == "power"))
+    if b["foe"] > 0 and b["me"] > 0:
+        _pit_foe_strike(profile, b, ghost, lines, guarding=guarding)
+    st = profile["stats"]
+    if b["foe"] <= 0:
+        profile["duel"] = None
+        st["duel_wins"] = int(st.get("duel_wins", 0)) + 1
+        _h2h(profile, ghost["uid"], won=True)
+        prize = _septims(profile, DUEL_PRIZE[0])
+        profile["septims"] += prize
+        gained, _ = add_xp(profile, DUEL_PRIZE[1])
+        lines.append(f"🏆 **The ghost scatters like morning mist.** The circle pays "
+                     f"its respects.  (+{prize} septims, +{gained} XP)")
+        found = roll_wonder(profile, {"duel"}, WONDER_SIDE_CHANCE)
+        if found:
+            lines.append(wonder_line(found))
+        return "won", lines
+    if b["me"] <= 0:
+        profile["duel"] = None
+        st["duel_losses"] = int(st.get("duel_losses", 0)) + 1
+        _h2h(profile, ghost["uid"], won=False)
+        lines.append(f"💤 **{ghost['name']} stands over you.** It will absolutely "
+                     f"tell them. Train and return tomorrow.")
+        return "lost", lines
+    if b["round"] >= PIT_ROUNDS:
+        profile["duel"] = None
+        lines.append("🤝 Twelve rounds and neither yields - the circle calls it. "
+                     "A rematch waits at dawn.")
+        return "draw", lines
+    b["round"] += 1
+    return "playing", lines
+
+
+def _h2h(profile, rival_uid: int, won: bool):
+    """Both ledgers remember: my head-to-head vs them, their ghost's tale for them."""
+    r = profile.setdefault("rivals", {}).setdefault(
+        str(rival_uid), {"w": 0, "l": 0})
+    r["w" if won else "l"] += 1
+    rival = get_profile(rival_uid)
+    if rival is None:
+        return
+    r2 = rival.setdefault("rivals", {}).setdefault(
+        str(profile["user_id"]), {"w": 0, "l": 0})
+    r2["l" if won else "w"] += 1                  # their ghost's result, from their side
+    log = rival.setdefault("ghost_log", [])
+    tale = (f"👻 Your ghost **fell to {profile['name']}** in the circle ({_today_str()})."
+            if won else
+            f"👻 Your ghost **beat {profile['name']}** in the circle ({_today_str()}). "
+            f"It is insufferable about it.")
+    rival["ghost_log"] = (log + [tale])[-3:]
+    save_profile(rival)
+
+
+def rivalry_lines(profile) -> list:
+    """The head-to-head ledger, for the Records panel."""
+    out = []
+    profiles = all_profiles()
+    for uid, r in (profile.get("rivals") or {}).items():
+        name = profiles.get(uid, {}).get("name", "a rival")
+        out.append(f"⚔️ vs **{name}**: {int(r.get('w', 0))}-{int(r.get('l', 0))}")
+    return out
+
+
+def save_duel_board(message_id, profile):
+    """Register a PUBLIC duel board for restart reattachment."""
+    views = load_persistent_views()
+    views[str(message_id)] = {"type": "skyrim", "duel": True,
+                              "user_id": int(profile["user_id"])}
+    save_persistent_views(views)
 
 
 def start_soulcairn(profile, channel_id) -> Delve:

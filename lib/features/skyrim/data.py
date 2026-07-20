@@ -1280,6 +1280,28 @@ PIT_TITLES = ["Pit Dog", "Scrapper", "Bloodied", "Contender", "Crowd's Favourite
               "Deathless", "Twin-Breaker", "Blood-Proof", "Stone-Breaker", "PIT CHAMPION"]
 
 # ---------------------------------------------------------------------------
+# Ghost Duels - challenge a SNAPSHOT of another player's current build in the
+# duelling circle behind the Pit. Their profile is untouched; their ghost fights
+# with their real numbers and a quirk flavoured by their Guardian Stone. Once
+# per rival per UK day. The loser's owner hears about it. That's the product.
+# ---------------------------------------------------------------------------
+GHOST_QUIRKS = {
+    "warrior": {"quirk": "shieldwall",
+                "desc": "a warrior's ghost closes its guard after taking a hit - "
+                        "your follow-up swings at -15%"},
+    "mage": {"quirk": "veteran",
+             "desc": "a mage's ghost wards your first landed blow and shrugs it off entirely"},
+    "thief": {"quirk": "riposte",
+              "desc": "a thief's ghost punishes misses with a free riposte - swing true"},
+}
+GHOST_TAUNTS = [
+    "\"I remember being better than you.\"",
+    "\"My original is asleep. I won't need them.\"",
+    "\"The circle remembers every swing I ever made. Do you?\"",
+    "\"Win or lose, I'll tell them everything.\"",
+]
+
+# ---------------------------------------------------------------------------
 # NPC Factions - a light allegiance you swear at Lv 8+. Each week your faction sets
 # a task built from a verb the endgame maths tends to abandon; complete it for favour
 # (a rank ladder + a septim/XP stipend). The rival factions' standings are NPC-

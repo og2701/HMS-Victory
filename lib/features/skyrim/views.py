@@ -907,6 +907,10 @@ async def _hub_records(interaction: Interaction):
     ]
     if st.get("launched"):
         lines.append(f"-# ...and launched into low orbit by a giant, {st['launched']} time(s).")
+    rivalry = E.rivalry_lines(profile)
+    if rivalry:
+        lines += ["", "**The rivalry ledger** (ghost duels)"]
+        lines += [f"-# {r}" for r in rivalry[:6]]
     await _edit_panel(interaction, "\n".join(lines), [_char_back_row()])
 
 
@@ -998,6 +1002,8 @@ async def _hub_pit(interaction: Interaction):
         lines.append("")
         lines.append("**This week's board:** " + "  ·  ".join(
             f"**{n}** {E.pit_title(r)} ({r})" for r, n in board))
+    for tale in (profile.get("ghost_log") or [])[-2:]:
+        lines.append(f"-# {tale}")
     rows = []
     bout = E.pit_bout_active(profile)
     if bout:
@@ -1030,6 +1036,47 @@ async def _hub_pit(interaction: Interaction):
                   "draw": "Your day in the Pit ended in a stubborn draw."}
         lines.append(f"\n-# 💤 {ending.get(s.get('last'), 'Your day in the Pit is spent.')} "
                      f"Fresh legs at dawn - the crowd expects you tomorrow.")
+    # the duelling circle: challenge a snapshot of a rival's build (1/rival/day)
+    duel = profile.get("duel") or {}
+    if duel.get("bout"):
+        drow = discord.ui.ActionRow()
+        if interaction.guild_id and duel.get("channel_id") and duel.get("message_id"):
+            url = (f"https://discord.com/channels/{interaction.guild_id}/"
+                   f"{duel['channel_id']}/{duel['message_id']}")
+            drow.add_item(discord.ui.Button(style=discord.ButtonStyle.link,
+                                            label="Return to your duel", url=url, emoji="⚔️"))
+
+        async def _redup(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            await _post_duel_board(inter, p, ["The circle re-forms - the ghost waited."])
+        drow.add_item(_cb_btn(discord.ButtonStyle.secondary, "Repost the duel", "📋", _redup))
+        rows.append(drow)
+    elif E.level(profile) >= 5:
+        rivals = E.duel_rivals(profile)
+        if rivals:
+            dsel = discord.ui.Select(placeholder="⚔️ Duel a rival's ghost (once each per day)...")
+            for r in rivals[:25]:
+                g = D.GHOST_QUIRKS.get(r.get("stone"), D.GHOST_QUIRKS["warrior"])
+                h2h = (profile.get("rivals") or {}).get(str(r["user_id"]))
+                tag = f"  ·  you {h2h['w']}-{h2h['l']}" if h2h else ""
+                dsel.add_option(label=f"{r['name']} (Lv {E.level(r)}){tag}"[:100],
+                                value=str(r["user_id"]),
+                                emoji=D.STONES[r["stone"]]["emoji"],
+                                description=g["desc"][:100])
+
+            async def _challenge(inter: Interaction):
+                p = E.get_profile(inter.user.id)
+                rival = E.get_profile(int(dsel.values[0]))
+                if (p is None or rival is None or p.get("duel")
+                        or int(dsel.values[0]) in E._duel_day(p)["fought"]):
+                    await _hub_pit(inter)
+                    return
+                intro = E.duel_begin(p, rival)
+                await _post_duel_board(inter, p, intro)
+            dsel.callback = _challenge
+            drow = discord.ui.ActionRow()
+            drow.add_item(dsel)
+            rows.append(drow)
     rows.append(_back_row())
     next_art = _pit_art(D.PIT_CHAMPS[rank]) if rank < len(D.PIT_CHAMPS) else "pit"
     await _edit_panel(interaction, "\n".join(lines), rows, art_key=next_art)
@@ -1190,6 +1237,111 @@ async def _handle_pit_click(interaction: Interaction, owner_id: int, action: str
             p, ["🛌 The day's winnings are banked - the crowd drinks to the one who "
                 "knew when to stop."], offer=False)
         await interaction.response.edit_message(view=view, attachments=files)
+
+
+# --- Ghost Duels (the circle behind the Pit) -----------------------------------------
+def _duel_board_layout(profile, last_lines, ghost=None):
+    """The PUBLIC duel board - the challenger's mention pill, the ghost's numbers,
+    round story and the same three-button rhythm as a Pit bout."""
+    uid = int(profile["user_id"])
+    duel = profile.get("duel") or {}
+    b, g = duel.get("bout"), duel.get("ghost") or ghost
+    view = discord.ui.LayoutView(timeout=None)
+    files = _gallery_files(view, "pit")
+    if b and g:
+        lines = [f"## ⚔️ The duelling circle - vs {g['name']}",
+                 f"🥊 <@{uid}> {'❤️' * max(0, b['me'])}   vs   "
+                 f"**{g['name']}** {'🩸' * max(0, b['foe'])}"
+                 f"  ·  round {b['round']}/{E.PIT_ROUNDS}",
+                 f"-# 👻 {g['quirk_desc']}", ""]
+        lines += list(last_lines)
+        if b.get("staggered"):
+            lines.append("-# 🛡️ The ghost's guard is closed - your next swing is at -15%.")
+        if b.get("opening"):
+            lines.append("-# 👁️ You see an opening - your next strike is at +10%.")
+        box = discord.ui.Container(accent_colour=ACCENT)
+        box.add_item(discord.ui.TextDisplay("\n".join(lines)))
+        view.add_item(box)
+        row = discord.ui.ActionRow()
+        for label, emoji, action in (("Strike", "⚔️", "strike"),
+                                     ("Power blow", "💥", "power"),
+                                     ("Guard", "🛡️", "guard")):
+            row.add_item(_btn(discord.ButtonStyle.danger if action != "guard"
+                              else discord.ButtonStyle.primary, label,
+                              f"skyrimduel:{uid}:{action}", _make_duel_cb(uid, action),
+                              emoji=emoji))
+        view.add_item(row)
+        return view, files
+    lines = ["## ⚔️ The duelling circle", f"🥊 <@{uid}>", ""] + list(last_lines)
+    box = discord.ui.Container(accent_colour=ACCENT)
+    box.add_item(discord.ui.TextDisplay("\n".join(lines)))
+    view.add_item(box)
+    return view, files
+
+
+def _make_duel_cb(owner_id: int, action: str):
+    async def _cb(interaction: Interaction):
+        await _handle_duel_click(interaction, owner_id, action)
+    return _cb
+
+
+async def _handle_duel_click(interaction: Interaction, owner_id: int, action: str):
+    if interaction.user.id != owner_id:
+        await interaction.response.send_message(
+            "Not your duel - challenge a ghost of your own: `/skyrim` → **The Pit**.",
+            ephemeral=True)
+        return
+    p = E.get_profile(owner_id)
+    if p is None or action not in ("strike", "power", "guard"):
+        await interaction.response.defer()
+        return
+    mid = interaction.message.id if interaction.message else None
+    duel = p.get("duel") or {}
+    if not duel.get("bout") or (mid and duel.get("message_id") not in (None, mid)):
+        await interaction.response.defer()               # a stale board
+        return
+    ghost = duel["ghost"]
+    state, story = E.duel_action(p, action)
+    E.save_profile(p)
+    if state != "playing" and mid:
+        E.delete_delve(mid)                              # the record needs no routing
+    view, files = _duel_board_layout(p, story, ghost=ghost)
+    await interaction.response.edit_message(view=view, attachments=files)
+    if mid and state == "playing":
+        try:
+            interaction.client.add_view(view, message_id=mid)
+        except Exception:
+            logger.debug("skyrim duel add_view failed", exc_info=True)
+
+
+async def _post_duel_board(interaction: Interaction, profile, intro_lines):
+    """Post the live duel as a PUBLIC channel message, then send the ephemeral off."""
+    duel = profile.get("duel") or {}
+    if not duel.get("bout"):
+        await _hub_pit(interaction)
+        return
+    view, files = _duel_board_layout(profile, intro_lines)
+    try:
+        msg = await interaction.channel.send(
+            view=view, files=files, allowed_mentions=discord.AllowedMentions.none())
+    except discord.HTTPException:
+        logger.error("skyrim: failed to post duel board", exc_info=True)
+        E.save_profile(profile)
+        await interaction.response.edit_message(
+            view=_notice_view("Couldn't post the duel here - try another channel."),
+            attachments=[])
+        return
+    duel["message_id"] = msg.id
+    duel["channel_id"] = interaction.channel_id
+    E.save_profile(profile)
+    E.save_duel_board(msg.id, profile)
+    try:
+        interaction.client.add_view(view, message_id=msg.id)
+    except Exception:
+        logger.debug("skyrim duel add_view on post failed", exc_info=True)
+    await interaction.response.edit_message(
+        view=_notice_view("⚔️ **The circle forms.** Your duel is live in the channel."),
+        attachments=[])
 
 
 # --- shop --------------------------------------------------------------------------
@@ -2233,6 +2385,18 @@ async def handle_skyrim_command(interaction: Interaction):
 def reattach_skyrim_view(client, key, value):
     """Re-register routing for an in-play delve (or a live Pit board) after a
     restart; prune anything terminal or malformed so it can't wedge future boots."""
+    if isinstance(value, dict) and value.get("duel"):
+        profile = E.get_profile(value.get("user_id"))
+        duel = (profile.get("duel") or {}) if profile else {}
+        if not duel.get("bout") or duel.get("message_id") != int(key):
+            E.delete_delve(key)
+            return
+        try:
+            view, _files = _duel_board_layout(profile, ["The circle resumes - ghosts are patient."])
+            client.add_view(view, message_id=int(key))
+        except Exception as e:
+            logger.error(f"Failed to reattach duel board {key}: {e}", exc_info=True)
+        return
     if isinstance(value, dict) and value.get("pit"):
         profile = E.get_profile(value.get("user_id"))
         bout = E.pit_bout_active(profile) if profile else None

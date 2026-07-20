@@ -1585,6 +1585,43 @@ def test_the_weeks_hunt():
     assert reset["streak"] == 0 and reset["max"] == E.WB_BASE_HP
 
 
+def test_ghost_duels():
+    p = _profile()
+    rival = E.create_profile(11, "Rival", "mage")
+    rival["xp"] = 5000
+    rival["weapon_tier"] = 3
+    E.save_profile(rival)
+    # the ghost is a frozen snapshot of the rival's real numbers, stone-quirked
+    g = E.ghost_of(rival)
+    assert g["hp"] == E.heart_max(rival) and g["quirk"] == "veteran"
+    assert g["fight"] <= E.DUEL_GHOST_FIGHT_CAP
+    assert "Rival" in g["name"]
+    # rivals list offers everyone else, once per day each
+    assert any(int(r["user_id"]) == 11 for r in E.duel_rivals(p))
+    intro = E.duel_begin(p, rival)
+    assert E.duel_bout_active(p) and any("duelling circle" in l for l in intro)
+    assert all(int(r["user_id"]) != 11 for r in E.duel_rivals(p))   # spent for today
+    # beat the ghost down: every swing lands, no crits, its answers all miss.
+    # The mage ghost WARDS the first landed blow - budget one extra swing.
+    b = E.duel_bout_active(p)
+    E.random = _fixed_rolls(*([0.2, 0.99] * (g["hp"] + 1) + [0.99]))
+    state = "playing"
+    try:
+        for _ in range(g["hp"] + 1):
+            state, lines = E.duel_action(p, "strike")
+            if state != "playing":
+                break
+    finally:
+        _restore_random()
+    assert state == "won"
+    assert p["stats"]["duel_wins"] == 1 and p["duel"] is None
+    # both ledgers remember: my h2h, their ghost's tale
+    assert p["rivals"]["11"]["w"] == 1
+    fresh_rival = E.get_profile(11)
+    assert fresh_rival["rivals"][str(p["user_id"])]["l"] == 1
+    assert any("fell to Tester" in t for t in fresh_rival["ghost_log"])
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):
