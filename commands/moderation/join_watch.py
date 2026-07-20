@@ -39,10 +39,18 @@ ACT_CONFIDENCE = 0.85
 STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
 
 DEFAULT_CONTEXT = (
+    "General screening - no specific incident right now. Watch for the usual raid "
+    "patterns from newly joined accounts: coordinated trolling, hate, bait, spam, "
+    "or targeting of members. Judge each member on their own messages and profile."
+)
+
+# Old defaults are migrated to the current one on load, so a stale stored
+# incident (e.g. a finished World Cup tie) does not keep biasing verdicts.
+_LEGACY_DEFAULT_CONTEXTS = {
     "England play Argentina in the World Cup semi-final tonight. Waves of newly "
     "joined accounts (many Argentinian) are trolling, spreading anti-England "
-    "hate and trying to bait members."
-)
+    "hate and trying to bait members.",
+}
 
 _state_cache: dict[str, Any] | None = None
 _buffers: dict[int, dict[str, Any]] = {}
@@ -54,9 +62,12 @@ def get_join_watch_state() -> dict[str, Any]:
     global _state_cache
     if _state_cache is None:
         data = load_json_file(JOIN_WATCH_FILE) or {}
+        context = str(data.get("context") or DEFAULT_CONTEXT)[:1000]
+        if context in _LEGACY_DEFAULT_CONTEXTS:
+            context = DEFAULT_CONTEXT
         _state_cache = {
             "enabled": bool(data.get("enabled", False)),
-            "context": str(data.get("context") or DEFAULT_CONTEXT)[:1000],
+            "context": context,
         }
     return dict(_state_cache)
 
@@ -306,7 +317,8 @@ CALIBRATION EXAMPLES:
    avatar: fine or unsure - cocky rival banter.
 2. A nationalistic taunt mixing a historical grievance with an insult aimed at members,
    from a days-old account: troll.
-3. "hola! big match tonight, good luck from argentina": fine - friendly rival fan.
+3. A friendly greeting from an obvious rival-country fan ("good luck tonight from
+   <country>"): fine.
 4. Image-only posts repeated across channels from a fresh account: unsure, rising to
    troll if it continues - likely image spam.
 5. A username or avatar built around a war reference or raid in-joke, posting
@@ -318,8 +330,8 @@ CALIBRATION EXAMPLES:
    usually banter - check who started it and whether the tone is mutual.
 9. An account that was polite for several messages and then posts a slur or death
    wish: troll - the earlier politeness does not offset it.
-10. Messages in Spanish that are friendly or neutral in content: fine - language
-    choice alone is never a signal.
+10. Messages in a language other than English that are friendly or neutral in
+    content: fine - language choice alone is never a signal.
 11. A polite greeting followed by "must be a good day for the anglo-saxons seeing
     their rivals humiliated": fine or unsure - smug national-group gloating with no
     slur, no threat and no targeted member is banter, NOT the escalation pattern in

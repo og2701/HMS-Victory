@@ -108,6 +108,21 @@ def test_toggle_state_persists_and_context_is_kept(monkeypatch, tmp_path):
     assert state["context"] == "custom incident context"
 
 
+def test_stale_default_incident_context_is_migrated(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    legacy = next(iter(join_watch._LEGACY_DEFAULT_CONTEXTS))
+    join_watch.set_join_watch_state(True, legacy)
+
+    # A fresh load (as after a deploy/restart) swaps the stale default for the
+    # current general one; a custom staff-written context is left alone.
+    monkeypatch.setattr(join_watch, "_state_cache", None)
+    assert join_watch.get_join_watch_state()["context"] == join_watch.DEFAULT_CONTEXT
+
+    join_watch.set_join_watch_state(True, "custom incident wording")
+    monkeypatch.setattr(join_watch, "_state_cache", None)
+    assert join_watch.get_join_watch_state()["context"] == "custom incident wording"
+
+
 def test_eligibility_rules(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path)
     assert join_watch._eligible(FakeMember()) is True
