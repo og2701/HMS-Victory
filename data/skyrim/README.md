@@ -34,7 +34,11 @@ convert a fresh drop:
 | pit_snilf, pit_rolff, pit_adelaisa, pit_uzoga, pit_bero, pit_hama, pit_ulfberth, pit_widow, pit_yrsarald, pit_bear | Pit champion portraits (bout preview + result; arena scene until dropped) |
 | pit_hjoromir, pit_sisters, pit_korst, pit_stone_guest, pit_master | Pit champions 11-15, beyond the Bear |
 | hunt_marauder, hunt_pale_lady, hunt_legion, hunt_red_hand, hunt_grahl, hunt_otar | the Week's Hunt bosses (march boards + Notice Board) |
+| hunt_greymaw, hunt_colossus, hunt_tide_mother, hunt_sky_shadow | Hunt bosses 7-10 (beast/construct/monster/dragon) |
 | homestead_1, homestead_2, homestead_3 | the Holdings estate: fresh plot/hall → growing estate → Great Hall crowned |
+| notice_board | the Notice Board panel (daily + tasks + hunt) |
+| hall_of_legends | the Hall of Legends panel (Legacy Rebirth) |
+| duel_circle | ghost-duel boards (falls back to `pit` until dropped) |
 
 The **Named Dragons of the Week** all reuse `dragon.webp` - no per-dragon art needed.
 New expansion scenes fall back to text like every other, so they can be dropped in

@@ -941,7 +941,7 @@ async def _hub_hall(interaction: Interaction, notice: str = ""):
         srow.add_item(sel)
         rows.append(srow)
     rows.append(_char_back_row())
-    await _edit_panel(interaction, text, rows)
+    await _edit_panel(interaction, text, rows, art_key="hall_of_legends")
 
 
 async def _hall_confirm(interaction: Interaction, boon_key: str):
@@ -1363,7 +1363,8 @@ def _duel_board_layout(profile, last_lines, ghost=None):
     duel = profile.get("duel") or {}
     b, g = duel.get("bout"), duel.get("ghost") or ghost
     view = discord.ui.LayoutView(timeout=None)
-    files = _gallery_files(view, "pit")
+    circle = "duel_circle" if _asset_bytes("duel_circle") is not None else "pit"
+    files = _gallery_files(view, circle)
     if b and g:
         lines = [f"## ⚔️ The duelling circle - vs {g['name']}",
                  f"🥊 <@{uid}> {'❤️' * max(0, b['me'])}   vs   "
@@ -2458,7 +2459,7 @@ async def _hub_notice(interaction: Interaction, notice: str = ""):
             E.save_profile(p)
             await _hub_notice(inter, notice=res or "-# Your share is already claimed.")
         row.add_item(_cb_btn(discord.ButtonStyle.success, "Claim spoils", "🏆", _spoils))
-    await _edit_panel(interaction, text, [row, _back_row()])
+    await _edit_panel(interaction, text, [row, _back_row()], art_key="notice_board")
 
 
 async def _post_march_board(interaction: Interaction, profile):
