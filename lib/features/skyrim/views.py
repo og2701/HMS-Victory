@@ -486,9 +486,12 @@ def _hub_rows(profile):
         and not (profile.get("faction") or {}).get("claimed")
     row2.add_item(_cb_btn(discord.ButtonStyle.success if fac_ready else discord.ButtonStyle.secondary,
                           "Factions", "🏰", _hub_factions))
-    exp_ready = E.expedition_ready(profile)
-    row2.add_item(_cb_btn(discord.ButtonStyle.success if exp_ready else discord.ButtonStyle.secondary,
-                          "Expedition", "🧭", _hub_expedition))
+    hs = E.homestead(profile)
+    hold_ready = (any(E.expedition_ready(profile, s) for s in E.expedition_slots(profile))
+                  or E.homestead_yield_days(profile) > 0
+                  or (hs.get("building") and E.homestead_hours_left(profile) <= 0))
+    row2.add_item(_cb_btn(discord.ButtonStyle.success if hold_ready
+                          else discord.ButtonStyle.secondary, "Holdings", "🏡", _hub_holdings))
     row3 = discord.ui.ActionRow()
     row3.add_item(_cb_btn(discord.ButtonStyle.secondary, "Rankings", "🏆", _hub_rankings))
     row3.add_item(_cb_btn(discord.ButtonStyle.secondary, "How it works", "📖", _hub_help))
@@ -644,6 +647,10 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
             if rc:
                 c = D.ROUTE_CONDITIONS[rc]
                 bits.append(f"{c['emoji']} {c['name']}: {c['short']}")
+            if E.homestead_built(profile, "watchtower"):
+                rc2 = E.route_condition(key, E._date_plus(1))
+                bits.append("🗼 tomorrow: " + (f"{D.ROUTE_CONDITIONS[rc2]['emoji']} "
+                            f"{D.ROUTE_CONDITIONS[rc2]['name']}" if rc2 else "a plain road"))
             r = E.stirred_rank(profile, key)
             if r:
                 bits.append(f"🔥 {E.stirred_name(r)}: -{D.STIRRED_FIGHT_PER_RANK * r}% / "
@@ -1942,36 +1949,76 @@ async def _hub_factions(interaction: Interaction, notice: str = ""):
     await _edit_panel(interaction, text, rows)
 
 
-# --- idle expeditions ---------------------------------------------------------------
-def _expedition_text(profile) -> str:
-    lines = ["## 🧭 Expeditions",
-             "-# Send your housecarl on an errand for a day or more, then collect the haul when "
-             "you next open the hub. It runs while you're away - no delves spent.", ""]
-    e = E.expedition(profile)
-    if e:
-        exp = D.EXPEDITIONS[e["key"]]
-        carl = e.get("carl", "Your housecarl")
-        if E.expedition_ready(profile):
-            lines.append(f"✅ **{carl}** is back from **{exp['name']}** - collect the haul below.")
-        else:
-            lines.append(f"⏳ **{carl}** is away on **{exp['name']}** - returns **{e['return']}** (UK).")
-        full = E.expedition_log(profile, limit=0)
-        log = full[-E.EXPEDITION_LOG_SHOW:]
-        if log:
-            lines.append("")
-            lines.append("📜 **Word from the road:**")
-            if len(full) > len(log):
-                lines.append(f"-# ...{len(full) - len(log)} earlier dispatches, lost to the wind.")
-            lines += [f"-# {entry}" for entry in log]
-    elif E.level(profile) < int(getattr(E.config, "SKYRIM_DRAGON_MIN_LEVEL", 8)):
-        lines.append("-# 🔒 You earn a housecarl to send at level 8.")
+# --- Holdings: the homestead + idle expeditions --------------------------------------
+def _holdings_text(profile) -> str:
+    hs = E.homestead(profile)
+    lines = ["## 🏡 Holdings",
+             "-# The lakeside estate your legends leave behind - built room by room over "
+             "real days, providing while you're away. Expeditions run from here too.", ""]
+    if "land" not in hs["built"]:
+        land = D.HOMESTEAD["land"]
+        lines.append(f"{land['emoji']} **{land['name']}** - {land['desc']}  "
+                     f"({land['septims']:,} septims)")
+        lines.append("-# Buy the deed and the builders take it from there.")
     else:
-        lines.append("**Send your housecarl:**")
-        for k, exp in D.EXPEDITIONS.items():
-            ing = f"  ·  {D.INGREDIENTS[exp['ingredient']]['emoji']} {D.INGREDIENTS[exp['ingredient']]['name']}" \
-                  if exp.get("ingredient") else ""
-            lines.append(f"{exp['emoji']} **{exp['name']}** ({exp['days']}d) - "
-                         f"~{exp['septims']} septims, {exp['xp']} XP{ing}. {exp['desc']}")
+        built = [D.HOMESTEAD[k] for k in D.HOMESTEAD if k in hs["built"]]
+        lines.append("**The estate:** " + "  ".join(f"{r['emoji']} {r['name']}" for r in built))
+        if hs.get("building"):
+            room = D.HOMESTEAD[hs["building"]]
+            hours = E.homestead_hours_left(profile)
+            lines.append(f"🔨 **{room['name']}** rises - ready in about "
+                         f"**{hours} hour{'s' if hours != 1 else ''}**.")
+        days = E.homestead_yield_days(profile)
+        if days:
+            lines.append(f"🎁 **{days} day{'s' if days != 1 else ''} of yields** waiting - "
+                         f"collect below.")
+        bless = E.shrine_blessing(profile)
+        if bless:
+            lines.append(f"🕯️ Standing blessing: {bless['emoji']} **{bless['name']}** - "
+                         f"{bless['desc']}.")
+        elif E.homestead_built(profile, "shrine_wing"):
+            lines.append("🕯️ The shrine stands quiet - kneel below to choose a blessing.")
+        if E.homestead_built(profile, "trophy_wing"):
+            wonders = [k for k in (profile.get("wonders") or []) if k in D.WONDERS]
+            shelf = (" ".join(D.WONDERS[k]["emoji"] for k in wonders)
+                     if wonders else "bare shelves, so far")
+            lines.append(f"🏺 The Trophy Wing displays: {shelf}")
+        buildable = E.homestead_buildable(profile)
+        if buildable and not hs.get("building"):
+            lines.append("")
+            lines.append("**The builders offer:**")
+            for k in buildable[:4]:
+                r = D.HOMESTEAD[k]
+                mats = "".join(f" + {D.INGREDIENTS[m]['emoji']}×{n}"
+                               for m, n in r["mats"].items())
+                dur = f", {r['hours']}h" if r["hours"] else ""
+                lines.append(f"-# {r['emoji']} **{r['name']}** ({r['septims']:,}{mats}{dur}) - "
+                             f"{r['desc']}")
+    # --- expeditions -----------------------------------------------------------
+    lines += ["", "### 🧭 Expeditions"]
+    can = E.level(profile) >= int(getattr(E.config, "SKYRIM_DRAGON_MIN_LEVEL", 8))
+    if not can:
+        lines.append("-# 🔒 You earn a housecarl to send at level 8.")
+    slots = E.expedition_slots(profile)
+    any_free = False
+    for slot in slots:
+        e = E.expedition(profile, slot)
+        if e:
+            exp = D.EXPEDITIONS[e["key"]]
+            carl = e.get("carl", "Your housecarl")
+            if E.expedition_ready(profile, slot):
+                lines.append(f"✅ **{carl}** is back from **{exp['name']}** - collect below.")
+            else:
+                lines.append(f"⏳ **{carl}** is away on **{exp['name']}** - returns "
+                             f"**{e['return']}** (UK).")
+            log = E.expedition_log(profile, slot=slot)[-5:]
+            lines += [f"-# {entry}" for entry in log]
+        elif can:
+            any_free = True
+    if any_free:
+        lines.append("**Errands on offer:** " + "  ·  ".join(
+            f"{exp['emoji']} {exp['name']} ({exp['days']}d, ~{exp['septims']})"
+            for exp in D.EXPEDITIONS.values()))
     ledger = profile.get("exp_log") or []
     if ledger:
         lines.append("")
@@ -1989,47 +2036,125 @@ def _expedition_text(profile) -> str:
     return "\n".join(lines)
 
 
-async def _hub_expedition(interaction: Interaction, notice: str = ""):
+def _holdings_art(profile) -> str | None:
+    hs = E.homestead(profile)
+    n = len(hs["built"])
+    if "great_hall" in hs["built"]:
+        key = "homestead_3"
+    elif n >= 3:
+        key = "homestead_2"
+    elif n >= 1:
+        key = "homestead_1"
+    else:
+        return None
+    return key if _asset_bytes(key) is not None else None
+
+
+async def _hub_holdings(interaction: Interaction, notice: str = ""):
     profile = E.get_profile(interaction.user.id)
     if profile is None:
         await _show_class_pick(interaction)
         return
-    text = _expedition_text(profile)
+    finished = E.homestead_check(profile)
+    E.save_profile(profile)
+    text = _holdings_text(profile)
+    if finished:
+        text += f"\n\n{finished}"
     if notice:
         text += f"\n\n{notice}"
     rows = []
-    e = E.expedition(profile)
-    can = E.level(profile) >= int(getattr(E.config, "SKYRIM_DRAGON_MIN_LEVEL", 8))
-    if e and E.expedition_ready(profile):
-        row = discord.ui.ActionRow()
-
-        async def _collect(inter: Interaction):
+    hs = E.homestead(profile)
+    brow = discord.ui.ActionRow()
+    if "land" not in hs["built"]:
+        async def _deed(inter: Interaction):
             p = E.get_profile(inter.user.id)
-            res = E.collect_expedition(p)
+            err = E.start_building(p, "land")
             E.save_profile(p)
-            await _hub_expedition(inter, notice=f"-# 🎁 {res}")
-        row.add_item(_cb_btn(discord.ButtonStyle.success, "Collect the haul", "🎁", _collect))
-        rows.append(row)
-    elif not e and can:
-        sel = discord.ui.Select(placeholder="Send an expedition...")
+            await _hub_holdings(inter, notice="-# 🏞️ **The deed is yours.** The lake is "
+                                              "lovely this time of year." if err is None
+                                              else f"-# {err}")
+        brow.add_item(_cb_btn(discord.ButtonStyle.primary, "Buy the deed", "🏞️", _deed))
+    if E.homestead_yield_days(profile):
+        async def _collect_home(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            res = E.collect_homestead(p)
+            E.save_profile(p)
+            await _hub_holdings(inter, notice=f"-# {res}" if res else "-# Nothing waiting.")
+        brow.add_item(_cb_btn(discord.ButtonStyle.success, "Collect yields", "🎁", _collect_home))
+    for slot in E.expedition_slots(profile):
+        if E.expedition_ready(profile, slot):
+            async def _collect_exp(inter: Interaction, s=slot):
+                p = E.get_profile(inter.user.id)
+                res = E.collect_expedition(p, s)
+                E.save_profile(p)
+                await _hub_holdings(inter, notice=f"-# 🎁 {res}")
+            label = "Collect the haul" if len(E.expedition_slots(profile)) == 1 \
+                else f"Collect haul {slot}"
+            brow.add_item(_cb_btn(discord.ButtonStyle.success, label, "🧭", _collect_exp))
+    if brow.children:
+        rows.append(brow)
+    buildable = E.homestead_buildable(profile)
+    if "land" in hs["built"] and buildable and not hs.get("building"):
+        bsel = discord.ui.Select(placeholder="🔨 Commission the builders...")
+        for k in buildable[:25]:
+            r = D.HOMESTEAD[k]
+            bsel.add_option(label=f"{r['name']} ({r['septims']:,} septims"
+                                  + (f", {r['hours']}h" if r["hours"] else "") + ")",
+                            value=k, emoji=r["emoji"], description=r["desc"][:100])
+
+        async def _build(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            err = E.start_building(p, bsel.values[0])
+            E.save_profile(p)
+            r = D.HOMESTEAD[bsel.values[0]]
+            note = (f"-# 🔨 The builders begin on **{r['name']}** - ready in {r['hours']}h."
+                    if err is None else f"-# {err}")
+            await _hub_holdings(inter, notice=note)
+        bsel.callback = _build
+        srow = discord.ui.ActionRow()
+        srow.add_item(bsel)
+        rows.append(srow)
+    can = E.level(profile) >= int(getattr(E.config, "SKYRIM_DRAGON_MIN_LEVEL", 8))
+    free_slots = [s for s in E.expedition_slots(profile) if not E.expedition(profile, s)]
+    if can and free_slots:
+        esel = discord.ui.Select(placeholder="🧭 Send an expedition...")
         for k, exp in D.EXPEDITIONS.items():
-            sel.add_option(label=f"{exp['name']} ({exp['days']}d)", value=k, emoji=exp["emoji"],
-                           description=exp["desc"][:100])
+            esel.add_option(label=f"{exp['name']} ({exp['days']}d)", value=k,
+                            emoji=exp["emoji"], description=exp["desc"][:100])
 
         async def _send(inter: Interaction):
             p = E.get_profile(inter.user.id)
-            err = E.start_expedition(p, sel.values[0])
+            err = E.start_expedition(p, esel.values[0])
             if err is None:
                 E.save_profile(p)
-                await _hub_expedition(inter, notice=f"-# 🧭 Off they go on **{D.EXPEDITIONS[sel.values[0]]['name']}**.")
+                await _hub_holdings(inter, notice=f"-# 🧭 Off they go on "
+                                                  f"**{D.EXPEDITIONS[esel.values[0]]['name']}**.")
             else:
-                await _hub_expedition(inter, notice=f"-# {err}")
-        sel.callback = _send
-        srow = discord.ui.ActionRow()
-        srow.add_item(sel)
-        rows.append(srow)
+                await _hub_holdings(inter, notice=f"-# {err}")
+        esel.callback = _send
+        erow = discord.ui.ActionRow()
+        erow.add_item(esel)
+        rows.append(erow)
+    if E.homestead_built(profile, "shrine_wing"):
+        ksel = discord.ui.Select(placeholder="🕯️ Kneel at the shrine...")
+        for k, b in D.SHRINE_BLESSINGS.items():
+            ksel.add_option(label=b["name"], value=k, emoji=b["emoji"],
+                            description=b["desc"][:100],
+                            default=hs.get("shrine") == k)
+
+        async def _kneel(inter: Interaction):
+            p = E.get_profile(inter.user.id)
+            err = E.set_shrine(p, ksel.values[0])
+            E.save_profile(p)
+            b = D.SHRINE_BLESSINGS[ksel.values[0]]
+            await _hub_holdings(inter, notice=f"-# 🕯️ {b['emoji']} **{b['name']}** settles "
+                                              f"over the estate." if err is None else f"-# {err}")
+        ksel.callback = _kneel
+        krow = discord.ui.ActionRow()
+        krow.add_item(ksel)
+        rows.append(krow)
     rows.append(_back_row())
-    await _edit_panel(interaction, text, rows)
+    await _edit_panel(interaction, text, rows, art_key=_holdings_art(profile))
 
 
 # --- the daily delve ---------------------------------------------------------------
@@ -2234,6 +2359,8 @@ async def _hub_rankings(interaction: Interaction):
             flair += " ⭐"
         if E.home_owned(p, "trophy_room"):
             flair += " 🏆"
+        if E.homestead_built(p, "great_hall"):
+            flair += " 🏰"
         if E.legendary_stars(p):
             flair += f" ✨{E.legendary_stars(p)}"
         best = E.soulcairn_best(p)

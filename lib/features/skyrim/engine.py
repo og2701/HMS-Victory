@@ -303,6 +303,9 @@ def _migrate(profile: dict) -> dict:
     profile.setdefault("duel_day", {"date": None, "fought": []})
     profile.setdefault("rivals", {})             # head-to-head ledger, uid -> {w, l}
     profile.setdefault("ghost_log", [])          # what your ghost got up to lately
+    profile.setdefault("homestead", {"built": {}, "building": None, "done_at": None,
+                                     "last_collect": None, "shrine": None})
+    profile.setdefault("expedition2", None)      # the Quarters' second housecarl errand
     # backfill what honesty allows: the Cairn depth record already existed
     if (profile.get("soulcairn") or {}).get("best"):
         profile["records"].setdefault("depth", int(profile["soulcairn"]["best"]))
@@ -466,6 +469,7 @@ def _fight_raw(profile, enemy_key: str, style: str, delve=None) -> float:
          + D.STYLE_AFF[e["type"]][style]
          + (e.get("style_gate") or {}).get(style, 0)  # a legend's innate immunity (Karstaag)
          + 4 * perk_rank(profile, "honed_edge")
+         + homestead_bonus(profile, "fight")          # the estate shrine's standing blessing
          + weather_today()["fight"])
     if delve is not None:
         if e["type"] == "dragon":
@@ -925,7 +929,8 @@ def soak_pct(profile) -> int:
     raw = (per_tier * profile["armour_tier"]
            + 6 * perk_rank(profile, "juggernaut")
            + TEMPER_SOAK_PER_GRADE * (profile.get("temper") or {}).get("armour", 0)
-           + int(doctrine_flat(profile, "soak")))
+           + int(doctrine_flat(profile, "soak"))
+           + int(homestead_bonus(profile, "soak")))
     return min(SOAK_CAP + 15, raw)          # tempering/doctrines can push past the base cap
 
 
@@ -945,6 +950,7 @@ def _skill_up(profile, which: str) -> int:
 def add_xp(profile, amount: int) -> tuple:
     """Bank XP (Quick Study + weather apply). Returns (gained, levels_gained)."""
     amount = int(round(amount * (1 + 0.10 * perk_rank(profile, "quick_study"))
+                       * (1 + homestead_bonus(profile, "xp"))
                        * weather_today()["xp"]))
     before = level(profile)
     profile["xp"] += amount
@@ -3112,27 +3118,51 @@ def _date_plus(days: int) -> str:
     return (datetime.date.fromisoformat(_today_str()) + datetime.timedelta(days=days)).isoformat()
 
 
-def expedition(profile) -> dict | None:
-    return profile.get("expedition")
+def _exp_field(slot: int = 1) -> str:
+    return "expedition" if slot == 1 else "expedition2"
 
 
-def expedition_ready(profile) -> bool:
-    e = profile.get("expedition")
+def expedition_slots(profile) -> list:
+    """The slots this character can staff: [1] until the Housecarl Quarters stand."""
+    return [1, 2] if homestead_built(profile, "quarters") else [1]
+
+
+def expedition(profile, slot: int = 1) -> dict | None:
+    return profile.get(_exp_field(slot))
+
+
+def expedition_ready(profile, slot: int = 1) -> bool:
+    e = profile.get(_exp_field(slot))
     return bool(e) and _today_str() >= e["return"]
 
 
-def start_expedition(profile, key: str) -> str | None:
+def start_expedition(profile, key: str, slot: int = None) -> str | None:
+    """Send a housecarl. With slot=None the first free slot is staffed."""
     if key not in D.EXPEDITIONS:
         return "No such expedition."
-    if profile.get("expedition"):
-        return "Your housecarl is already out on an errand."
     if level(profile) < int(getattr(config, "SKYRIM_DRAGON_MIN_LEVEL", 8)):
         return "You have no housecarl to send yet (level 8+ earns you one)."
+    slots = expedition_slots(profile)
+    if slot is None:
+        free = [s for s in slots if not profile.get(_exp_field(s))]
+        if not free:
+            return ("Both your housecarls are out." if len(slots) > 1
+                    else "Your housecarl is already out on an errand.")
+        slot = free[0]
+    elif slot not in slots:
+        return "You have no quarters for a second housecarl yet."
+    elif profile.get(_exp_field(slot)):
+        return "That housecarl is already out on an errand."
     exp = D.EXPEDITIONS[key]
     import random as _r
-    carl = D.HOUSECARLS[_r.Random(f"{profile['user_id']}-{_today_str()}").randrange(len(D.HOUSECARLS))]
-    profile["expedition"] = {"key": key, "start": _today_str(),
-                             "return": _date_plus(exp["days"]), "carl": carl}
+    taken = {e.get("carl") for s in slots
+             if (e := profile.get(_exp_field(s)))}
+    rng = _r.Random(f"{profile['user_id']}-{_today_str()}-{slot}")
+    pool = [c for c in D.HOUSECARLS if c not in taken] or list(D.HOUSECARLS)
+    carl = pool[rng.randrange(len(pool))]
+    profile[_exp_field(slot)] = {"key": key, "start": _today_str(),
+                                 "return": _date_plus(exp["days"]), "carl": carl,
+                                 "slot": slot}
     return None
 
 
@@ -3144,7 +3174,8 @@ def _expedition_schedule(profile, e, exp) -> list:
     5-7 entries per day at sorted times between 07:30 and 21:30, lines drawn from
     the errand's pool + the common pool via seeded shuffle (recycled if a long
     trip outruns the pool). Returns [(day_no, minute_of_day, line), ...]."""
-    rng = random.Random(f"skyrim-expedition-{profile['user_id']}-{e['start']}-{e['key']}")
+    slot_bit = f"-{e['slot']}" if e.get("slot", 1) != 1 else ""   # slot 1 keeps its old seed
+    rng = random.Random(f"skyrim-expedition-{profile['user_id']}-{e['start']}-{e['key']}{slot_bit}")
     pool = D.EXPEDITION_LOGS.get(e["key"], []) + D.EXPEDITION_LOGS_COMMON
     order = []
     schedule = []
@@ -3156,12 +3187,12 @@ def _expedition_schedule(profile, e, exp) -> list:
     return schedule
 
 
-def expedition_log(profile, limit: int = EXPEDITION_LOG_SHOW) -> list:
+def expedition_log(profile, limit: int = EXPEDITION_LOG_SHOW, slot: int = 1) -> list:
     """The housecarl's away-log: every dispatch whose (seeded) send-time has passed,
     newest last, trimmed to the latest `limit`. Deterministic per expedition, so the
     story stays put between opens and simply accretes through the day. Rendered on
     open, never posted."""
-    e = profile.get("expedition")
+    e = profile.get(_exp_field(slot))
     if not e:
         return []
     exp = D.EXPEDITIONS.get(e["key"])
@@ -3181,11 +3212,11 @@ def expedition_log(profile, limit: int = EXPEDITION_LOG_SHOW) -> list:
     return out[-limit:] if limit else out
 
 
-def collect_expedition(profile) -> str | None:
-    e = profile.get("expedition")
+def collect_expedition(profile, slot: int = 1) -> str | None:
+    e = profile.get(_exp_field(slot))
     if not e:
         return "No expedition to collect."
-    if not expedition_ready(profile):
+    if not expedition_ready(profile, slot):
         return f"Still out - returns {e['return']}."
     exp = D.EXPEDITIONS[e["key"]]
     septims = _septims(profile, exp["septims"])
@@ -3199,7 +3230,7 @@ def collect_expedition(profile) -> str | None:
         store[ing] = store.get(ing, 0) + 1
         parts.append(f"{D.INGREDIENTS[ing]['emoji']} {D.INGREDIENTS[ing]['name']}")
     carl = e.get("carl", "Your housecarl")
-    profile["expedition"] = None
+    profile[_exp_field(slot)] = None
     # the ledger: the last few returns, and the all-time tally
     log = profile.setdefault("exp_log", [])
     log.append({"key": e["key"], "carl": carl, "date": _today_str(),
@@ -3210,6 +3241,176 @@ def collect_expedition(profile) -> str | None:
     tot["septims"] += septims
     tot["xp"] += gained
     return f"{carl} returns from **{exp['name']}** with " + ", ".join(parts) + "."
+
+
+# ---------------------------------------------------------------------------
+# The Homestead - the lakeside estate. Builds finish after real HOURS (computed
+# on open, never scheduled); finished rooms yield daily, collected on open and
+# capped so time away is never punished. Survives Legacy rebirth by design.
+# ---------------------------------------------------------------------------
+def homestead(profile) -> dict:
+    return profile.setdefault("homestead", {"built": {}, "building": None,
+                                            "done_at": None, "last_collect": None,
+                                            "shrine": None})
+
+
+def homestead_built(profile, key: str) -> bool:
+    return key in homestead(profile)["built"]
+
+
+def _now_uk() -> datetime.datetime:
+    return datetime.datetime.now(_UK)
+
+
+def homestead_check(profile) -> str | None:
+    """Finish any due build (idempotent; call on open). Returns the notice line."""
+    hs = homestead(profile)
+    if not hs.get("building") or not hs.get("done_at"):
+        return None
+    done_at = datetime.datetime.fromisoformat(hs["done_at"])
+    if _now_uk() < done_at:
+        return None
+    key = hs["building"]
+    hs["built"][key] = _today_str()
+    hs["building"] = None
+    hs["done_at"] = None
+    room = D.HOMESTEAD[key]
+    return f"🔨 **{room['name']} stands finished.** {room['desc']}"
+
+
+def homestead_buildable(profile) -> list:
+    """Room keys whose requirements are met and which aren't built or building."""
+    hs = homestead(profile)
+    return [k for k, r in D.HOMESTEAD.items()
+            if k not in hs["built"] and k != hs.get("building")
+            and (r["requires"] is None or r["requires"] in hs["built"])]
+
+
+def start_building(profile, key: str) -> str | None:
+    """Commission a room. Returns an error line, or None on success."""
+    room = D.HOMESTEAD.get(key)
+    if room is None:
+        return "No builder in Skyrim has heard of that."
+    hs = homestead(profile)
+    if key in hs["built"]:
+        return f"{room['name']} already stands."
+    if hs.get("building"):
+        return "Your builders are already at work - one project at a time."
+    if room["requires"] and room["requires"] not in hs["built"]:
+        return f"You need {D.HOMESTEAD[room['requires']]['name']} first."
+    if profile["septims"] < room["septims"]:
+        return f"{room['name']} costs {room['septims']:,} septims - you have {profile['septims']:,}."
+    have = profile.setdefault("ingredients", {})
+    missing = [f"{n}× {D.INGREDIENTS[k]['name']}" for k, n in room["mats"].items()
+               if have.get(k, 0) < n]
+    if missing:
+        return "The builders still need " + ", ".join(missing) + "."
+    profile["septims"] -= room["septims"]
+    for k, n in room["mats"].items():
+        have[k] -= n
+        if have[k] <= 0:
+            del have[k]
+    if room["hours"] <= 0:                        # the deed changes hands on the spot
+        hs["built"][key] = _today_str()
+        return None
+    hs["building"] = key
+    hs["done_at"] = (_now_uk() + datetime.timedelta(hours=room["hours"])).isoformat()
+    return None
+
+
+def homestead_hours_left(profile) -> int:
+    hs = homestead(profile)
+    if not hs.get("done_at"):
+        return 0
+    left = datetime.datetime.fromisoformat(hs["done_at"]) - _now_uk()
+    return max(0, int(left.total_seconds() // 3600) + (1 if left.total_seconds() % 3600 else 0))
+
+
+def _yield_cap(profile) -> int:
+    return 4 if homestead_built(profile, "great_hall") else 3
+
+
+def homestead_yield_days(profile) -> int:
+    """Whole UK days of yield waiting, capped. Counts from the later of the last
+    collection and each room's completion (handled per room in collect)."""
+    hs = homestead(profile)
+    rooms = [k for k in ("garden", "brewery") if k in hs["built"]]
+    if not rooms:
+        return 0
+    days = 0
+    today = datetime.date.fromisoformat(_today_str())
+    for k in rooms:
+        since = hs.get("last_collect") or hs["built"][k]
+        d = (today - datetime.date.fromisoformat(since)).days
+        days = max(days, d)
+    return max(0, min(_yield_cap(profile), days))
+
+
+def collect_homestead(profile) -> str | None:
+    """Bank the estate's accrued yields. Returns the haul line, or None if empty."""
+    hs = homestead(profile)
+    today = datetime.date.fromisoformat(_today_str())
+    cap = _yield_cap(profile)
+    parts = []
+    for k in ("garden", "brewery"):
+        if k not in hs["built"]:
+            continue
+        since = hs.get("last_collect") or hs["built"][k]
+        days = min(cap, max(0, (today - datetime.date.fromisoformat(since)).days))
+        if days <= 0:
+            continue
+        if k == "garden":
+            store = profile.setdefault("ingredients", {})
+            got = {}
+            for _ in range(days):
+                ing = random.choice(D.HOMESTEAD_GARDEN_POOL)
+                store[ing] = store.get(ing, 0) + 1
+                got[ing] = got.get(ing, 0) + 1
+            parts.append("  ".join(f"{D.INGREDIENTS[i]['emoji']}×{n}" for i, n in got.items()))
+        else:
+            brewed = 0
+            coin = 0
+            for _ in range(days):
+                if profile["potions"] < potion_cap(profile):
+                    profile["potions"] += 1
+                    brewed += 1
+                else:
+                    coin += 40
+            if brewed:
+                parts.append(f"🧪×{brewed}")
+            if coin:
+                coin = _septims(profile, coin)
+                profile["septims"] += coin
+                parts.append(f"+{coin} septims (the still sold the overflow)")
+    if not parts:
+        return None
+    hs["last_collect"] = _today_str()
+    line = "🏡 The estate provides: " + "  ·  ".join(parts) + "."
+    found = roll_wonder(profile, {"homestead"}, WONDER_SIDE_CHANCE)
+    if found:
+        line += "\n" + wonder_line(found)
+    return line
+
+
+def shrine_blessing(profile) -> dict | None:
+    hs = homestead(profile)
+    if "shrine_wing" not in hs["built"]:
+        return None
+    return D.SHRINE_BLESSINGS.get(hs.get("shrine"))
+
+
+def homestead_bonus(profile, kind: str) -> float:
+    b = shrine_blessing(profile)
+    return float(b.get(kind, 0)) if b else 0.0
+
+
+def set_shrine(profile, key: str) -> str | None:
+    if not homestead_built(profile, "shrine_wing"):
+        return "You have no shrine to kneel at."
+    if key not in D.SHRINE_BLESSINGS:
+        return "The Nine don't offer that."
+    homestead(profile)["shrine"] = key
+    return None
 
 
 # ---------------------------------------------------------------------------

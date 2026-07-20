@@ -1622,6 +1622,64 @@ def test_ghost_duels():
     assert any("fell to Tester" in t for t in fresh_rival["ghost_log"])
 
 
+def test_homestead_builds_and_yields():
+    p = _profile()
+    p["septims"] = 50000
+    p["ingredients"] = {"blue_flower": 2, "troll_fat": 1, "void_salts": 1, "dragon_scale": 2}
+    # the deed is instant; everything else takes real hours
+    assert E.start_building(p, "garden") is not None       # needs the hall first
+    assert E.start_building(p, "land") is None
+    assert E.homestead_built(p, "land")
+    assert E.start_building(p, "hall") is None
+    hs = E.homestead(p)
+    assert hs["building"] == "hall" and E.homestead_hours_left(p) > 0
+    assert E.start_building(p, "watchtower") == \
+        "Your builders are already at work - one project at a time."
+    # time passes: the build finishes on the next open
+    hs["done_at"] = "2000-01-01T00:00:00+00:00"
+    note = E.homestead_check(p)
+    assert note and "Small Hall" in note and E.homestead_built(p, "hall")
+    assert E.homestead_check(p) is None                    # idempotent
+    # a finished garden accrues a yield per UK day, capped at 3
+    assert E.start_building(p, "garden") is None
+    hs["done_at"] = "2000-01-01T00:00:00+00:00"
+    E.homestead_check(p)
+    hs["built"]["garden"] = "2000-01-05"                   # long ago
+    assert E.homestead_yield_days(p) == 3                  # capped, never punitive
+    pouch_before = sum((p.get("ingredients") or {}).values())
+    res = E.collect_homestead(p)
+    assert res and sum(p["ingredients"].values()) == pouch_before + 3
+    assert E.homestead_yield_days(p) == 0                  # collected through today
+    assert E.collect_homestead(p) is None
+    # the shrine's standing blessing feeds the combat maths
+    hs["built"]["shrine_wing"] = "2000-01-05"
+    assert E.set_shrine(p, "warding") is None
+    assert E.homestead_bonus(p, "soak") == 2
+    base = E.soak_pct(p)
+    E.set_shrine(p, "battle")
+    assert E.soak_pct(p) == base - 2 and E.homestead_bonus(p, "fight") == 2
+    # the quarters open a second expedition slot with a different housecarl
+    p["xp"] = 3000
+    assert E.expedition_slots(p) == [1]
+    hs["built"]["quarters"] = "2000-01-05"
+    assert E.expedition_slots(p) == [1, 2]
+    assert E.start_expedition(p, "roads") is None          # fills slot 1
+    assert E.start_expedition(p, "hunt") is None           # spills into slot 2
+    assert E.start_expedition(p, "ruin") == "Both your housecarls are out."
+    e1, e2 = E.expedition(p, 1), E.expedition(p, 2)
+    assert e1["key"] == "roads" and e2["key"] == "hunt"
+    assert e1["carl"] != e2["carl"]
+    # each slot collects separately
+    e1["return"] = "2000-01-02"
+    assert E.expedition_ready(p, 1) and not E.expedition_ready(p, 2)
+    res = E.collect_expedition(p, 1)
+    assert res and E.expedition(p, 1) is None and E.expedition(p, 2) is not None
+    # the great hall stretches the yield cap to 4
+    hs["built"]["great_hall"] = "2000-01-05"
+    hs["last_collect"] = "2000-01-06"
+    assert E.homestead_yield_days(p) == 4
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

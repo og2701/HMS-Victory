@@ -1445,6 +1445,58 @@ NPC_FALLEN = ["Bjorn One-Eye", "Ingrid the Lost", "Ralof's cousin", "Sven the Ba
               "Hroki Fair-Hair", "an Imperial deserter"]
 
 # ---------------------------------------------------------------------------
+# The Homestead - a lakeside estate built room by room over REAL days. Each
+# build costs septims (+ the odd ingredient) and finishes after `hours` of real
+# time, computed when the panel opens - nothing is scheduled. Finished rooms
+# produce small daily yields collected on open (capped at 3 accrued days, 4 with
+# the Great Hall, so a weekend away is never punished). The estate SURVIVES
+# Legacy rebirth - it is what your retired legends leave behind.
+# ---------------------------------------------------------------------------
+HOMESTEAD = {
+    "land": {"name": "The Lakeview Deed", "emoji": "🏞️", "septims": 5000, "mats": {},
+             "hours": 0, "requires": None,
+             "desc": "A plot of land above Lake Ilinalta. Everything starts here."},
+    "hall": {"name": "The Small Hall", "emoji": "🏡", "septims": 4000, "mats": {},
+             "hours": 24, "requires": "land",
+             "desc": "Four walls, a roof, a hearth. The rest of the estate hangs off it."},
+    "garden": {"name": "The Garden", "emoji": "🌿", "septims": 2500,
+               "mats": {"blue_flower": 2}, "hours": 12, "requires": "hall",
+               "desc": "Raised beds of alchemy stock. Yields an ingredient a day."},
+    "brewery": {"name": "The Brewery", "emoji": "⚗️", "septims": 3500,
+                "mats": {"troll_fat": 1}, "hours": 24, "requires": "hall",
+                "desc": "A copper still and patience. Yields a health potion a day "
+                        "(coin when your belt is full)."},
+    "watchtower": {"name": "The Watchtower", "emoji": "🗼", "septims": 3000, "mats": {},
+                   "hours": 24, "requires": "hall",
+                   "desc": "Eyes on every road. The Adventure picker shows TOMORROW'S "
+                           "route conditions too."},
+    "trophy_wing": {"name": "The Trophy Wing", "emoji": "🏺", "septims": 4500, "mats": {},
+                    "hours": 24, "requires": "hall",
+                    "desc": "Somewhere worthy of your Wonders - the estate displays "
+                            "the shelf for every visitor."},
+    "shrine_wing": {"name": "The Shrine", "emoji": "🕯️", "septims": 4000,
+                    "mats": {"void_salts": 1}, "hours": 24, "requires": "hall",
+                    "desc": "A quiet alcove of the Nine. Choose one standing blessing, "
+                            "change it whenever you kneel."},
+    "quarters": {"name": "The Housecarl Quarters", "emoji": "🛏️", "septims": 6000,
+                 "mats": {}, "hours": 48, "requires": "hall",
+                 "desc": "Room for a second housecarl - and a SECOND expedition slot."},
+    "great_hall": {"name": "The Great Hall", "emoji": "🏰", "septims": 12000,
+                   "mats": {"dragon_scale": 2}, "hours": 72, "requires": "quarters",
+                   "desc": "A hall worthy of a Jarl. Yields accrue for 4 days instead "
+                           "of 3, and your name gains the 🏰 on the rankings."},
+}
+HOMESTEAD_GARDEN_POOL = ["blue_flower", "nightshade", "deathbell"]
+SHRINE_BLESSINGS = {
+    "battle": {"name": "Blessing of Battle", "emoji": "⚔️", "fight": 2,
+               "desc": "+2% attack, always"},
+    "warding": {"name": "Blessing of Warding", "emoji": "🛡️", "soak": 2,
+                "desc": "+2% armour soak, always"},
+    "learning": {"name": "Blessing of Learning", "emoji": "📚", "xp": 0.05,
+                 "desc": "+5% XP, always"},
+}
+
+# ---------------------------------------------------------------------------
 # Property - Belethor's septim sinks. Breezehome first, then furnishings.
 # Small comforts, not power spikes: effects apply to the FIRST delve of each day.
 # ---------------------------------------------------------------------------
