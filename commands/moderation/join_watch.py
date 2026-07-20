@@ -41,7 +41,9 @@ STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
 DEFAULT_CONTEXT = (
     "General screening - no specific incident right now. Watch for the usual raid "
     "patterns from newly joined accounts: coordinated trolling, hate, bait, spam, "
-    "or targeting of members. Judge each member on their own messages and profile."
+    "targeting of members, and sustained anti-British sentiment (genuine hostility "
+    "toward Britain or British members, beyond football banter and friendly "
+    "teasing). Judge each member on their own messages and profile."
 )
 
 # Old defaults are migrated to the current one on load, so a stale stored
@@ -126,9 +128,6 @@ def _snapshot(message: Any) -> dict[str, Any]:
         "content": content,
         "jump_url": getattr(message, "jump_url", ""),
         "ts": int(message.created_at.timestamp()),
-        # Live reference kept so a troll verdict can delete the evidence trail;
-        # never persisted and never sent to the model.
-        "message": message,
     }
 
 
@@ -285,6 +284,10 @@ SIGNALS OF A HOSTILE RAIDER OR TROLL:
 - A username, display name, avatar or banner that is itself hateful or references a
   raid in-joke, especially combined with borderline messages.
 - A freshly created account that goes straight for provocation.
+- Sustained anti-British sentiment: genuine hostility toward Britain or British
+  members - abuse, dehumanising language, or wishing harm on Brits as a group. This
+  is distinct from the protected teasing in the house norms above; when in doubt
+  between the two, it is banter.
 
 HOW TO JUDGE:
 - Weigh everything together: names, account age, avatar and banner imagery, and all
@@ -580,30 +583,11 @@ async def _evaluate(
 
 
 # --- enforcement + reporting ------------------------------------------------------
-async def _delete_recorded_messages(entry: dict[str, Any]) -> tuple[int, int]:
-    """Delete the flagged messages, marking each snapshot; contents stay in the report."""
-    deleted = 0
-    total = 0
-    for snapshot in entry["messages"]:
-        message = snapshot.get("message")
-        if message is None:
-            continue
-        total += 1
-        try:
-            await message.delete()
-            snapshot["deleted"] = True
-            deleted += 1
-        except discord.NotFound:
-            snapshot["deleted"] = True
-            deleted += 1
-        except (discord.Forbidden, discord.HTTPException):
-            snapshot["deleted"] = False
-    return deleted, total
-
-
 async def _action_troll(
     client: Any, member: Any, entry: dict[str, Any], verdict: dict[str, Any], confidence: float
 ) -> None:
+    """Timeout only - messages are deliberately left in place so staff can judge
+    them in context and undo cleanly if the verdict was wrong."""
     reason = " ".join(str(verdict.get("reason", "")).split())[:500]
     until = discord.utils.utcnow() + timedelta(hours=TIMEOUT_HOURS)
     try:
@@ -615,8 +599,6 @@ async def _action_troll(
         action = "timeout FAILED: missing permission or role hierarchy"
     except discord.HTTPException as exc:
         action = f"timeout FAILED: {exc.__class__.__name__}"
-    deleted, total = await _delete_recorded_messages(entry)
-    action += f" · {deleted}/{total} message(s) deleted"
     logger.info(
         "join-watch flagged member %s at %.0f%% confidence: %s", member.id, confidence * 100, action
     )
@@ -720,14 +702,7 @@ def _report_view(
 
     lines = []
     for i, m in enumerate(entry["messages"], 1):
-        if m.get("deleted"):
-            suffix = " · ✂️ deleted"
-        elif m.get("deleted") is False:
-            suffix = f" · ⚠️ could not delete · [jump]({m['jump_url']})" if m.get("jump_url") else " · ⚠️ could not delete"
-        elif m.get("jump_url"):
-            suffix = f" · [jump]({m['jump_url']})"
-        else:
-            suffix = ""
+        suffix = f" · [jump]({m['jump_url']})" if m.get("jump_url") else ""
         lines.append(
             f"{i}. **{m['channel']}** <t:{m['ts']}:R>{suffix}\n"
             f"{discord.utils.escape_markdown(m['content'])[:300]}"

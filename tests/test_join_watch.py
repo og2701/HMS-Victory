@@ -167,7 +167,7 @@ def test_only_members_who_join_while_armed_are_watched(monkeypatch, tmp_path):
     assert late.id not in join_watch._buffers
 
 
-def test_confident_troll_verdict_times_out_deletes_and_reports(monkeypatch, tmp_path):
+def test_confident_troll_verdict_times_out_and_reports(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path)
     join_watch.set_join_watch_state(True)
     member = FakeMember()
@@ -184,11 +184,12 @@ def test_confident_troll_verdict_times_out_deletes_and_reports(monkeypatch, tmp_
 
     assert len(member.timeouts) == 1
     assert "Join-watch" in member.timeouts[0][1]
-    assert trigger.deleted is True
+    # Messages are deliberately left in place; only the timeout is applied.
+    assert trigger.deleted is False
     assert len(client.police.sent) == 1
     assert client.police.sent[0]["view"] is not None
     import json as _json
-    # The card keeps the deleted message content and carries the untimeout button.
+    # The card carries the message content and the untimeout button.
     payload = _json.dumps(client.police.sent[0]["view"].to_components())
     assert "england scum etc" in payload
     assert f"joinwatch:untimeout:{member.id}" in payload
@@ -199,6 +200,7 @@ def test_confident_troll_verdict_times_out_deletes_and_reports(monkeypatch, tmp_
     assert "1/20" in log_line and "troll" in log_line and "timed out" in log_line
     assert trigger.jump_url in log_line
     assert "> england scum etc" in log_line
+    assert "deleted" not in log_line
     # 2,000 in x $0.75/M + 100 out x $4.50/M = $0.00195, rounded in the footer.
     assert "est. cost $0.0020" in log_line and "2,000 in / 100 out tokens" in log_line
     # Actioned members are never screened again.
