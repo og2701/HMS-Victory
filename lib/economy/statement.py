@@ -36,13 +36,15 @@ _CATEGORIES = [
                                "lower", "baccarat", "casino"]),
     ("Predictions", "\U0001f52e", ["prediction", "wager"]),
     ("Lottery", "\U0001f3ab", ["lottery"]),
+    # Tax must outrank Rewards: "inactivity" contains "activity", which would
+    # otherwise net tax charges into the Rewards line.
+    ("Tax", "\U0001f4c9", ["tax", "inactivity", "demurrage"]),
     ("Rewards", "\U0001f4ac", ["chat", "stage", "booster", "top chatter", "activity",
                                "message reward", "reward", "daily"]),
     ("Benefits", "\U0001f9fe", ["benefit", "dole"]),
     ("Tree", "\U0001f333", ["tree", "water"]),
     ("Hall of Fame", "\U0001f3c6", ["hall of fame", "hof"]),
     ("Ticket", "\U0001f3ab", ["ticket"]),
-    ("Tax", "\U0001f4c9", ["tax", "inactivity"]),
     ("Shop", "\U0001f6d2", ["shop", "purchase", "bought", "restock"]),
     ("Bond", "\U0001f3e6", ["bond"]),
     ("Welcome", "\U0001f44b", ["welcome"]),
@@ -113,9 +115,17 @@ def _gather(uid, start_ts, end_ts, client):
     breakdown = OrderedDict()           # label -> net
     total_in = total_out = 0
 
+    import config as _config
+    hide_tax = bool(getattr(_config, "STATEMENT_HIDE_TAX", False))
+
     for ts, amount, _bal, reason, cp in rows:
         amount = int(amount)
         label, emoji = _categorize(reason, cp)
+        if hide_tax and label == "Tax":
+            # Deliberately unnamed: the charge stays out of the itemised lines,
+            # totals and breakdown, and reconciles via the residual line, which
+            # folds it into "Rewards & other" without naming it.
+            continue
         breakdown[label] = breakdown.get(label, 0) + amount
         if amount >= 0:
             total_in += amount
