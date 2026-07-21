@@ -116,16 +116,18 @@ COUNTIES = {
 
 NATIONS = ["England", "Wales", "Scotland", "Northern Ireland"]
 
-# --- Stats (BallsDex-style) ---
-# Every county has base Clout (attack) and Grit (health); each caught instance
-# additionally rolls a +/-20% bonus on both. Bases come from the tier plus a
-# stable per-county jitter (hash of the key), so higher tiers are stronger on
-# average without hand-tuning 92 stat lines, and a county's bases never change.
+# --- Stats (BallsDex-style, exactly two) ---
+# Every county has base Banter (attack: the ability to give it out) and Bottle
+# (defence: the nerve to take it); each caught instance additionally rolls a
+# +/-20% bonus on both. Bases come from the tier plus a stable per-county
+# jitter (hash of the key), so higher tiers are stronger on average without
+# hand-tuning 92 stat lines, and a county's bases never change.
+# (DB columns predate the naming: clout_bonus = Banter, grit_bonus = Bottle.)
 TIER_BASE_STATS = {"common": 600, "uncommon": 700, "rare": 800, "legendary": 920}
 
 
 def base_stats(key: str) -> tuple:
-    """(base_clout, base_grit) for a county - deterministic across restarts."""
+    """(base_banter, base_bottle) for a county - deterministic across restarts."""
     h = hashlib.md5(key.encode()).digest()
     base = TIER_BASE_STATS[COUNTIES[key].tier]
     return base + h[0] % 181 - 90, base + h[1] % 181 - 90

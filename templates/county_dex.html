@@ -25,11 +25,11 @@
   .dot.common { background: #8a8f98; }
   .grid { display: flex; flex-wrap: wrap; gap: 10px; }
   .cell {
-    width: 104px;
+    width: 135px;
     background: #232830;
-    border-radius: 14px;
+    border-radius: 16px;
     border: 3px solid #3a4048;
-    padding: 8px 4px 6px 4px;
+    padding: 12px 5px;
     text-align: center;
     position: relative;
   }
@@ -37,19 +37,14 @@
   .cell.rare { border-color: #4f8ff7; }
   .cell.uncommon { border-color: #57b96b; }
   .cell.common { border-color: #565b63; }
-  .cell img { width: 72px; height: 72px; object-fit: contain; display: block; margin: 0 auto; }
+  .cell img { width: 100px; height: 100px; object-fit: contain; display: block; margin: 0 auto; }
   .cell.missing img { filter: brightness(0) invert(0.28); opacity: 0.75; }
   .cell.legendary.owned { background: #2e2917; }
-  .cname {
-    font-size: 12.5px; font-weight: 600; color: #d5dae2; margin-top: 5px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px;
-  }
-  .cell.missing .cname { color: #6a707b; }
   .badge {
-    position: absolute; top: -9px; right: -7px;
+    position: absolute; top: -10px; right: -8px;
     background: #f5c542; color: #1b1e24;
-    font-size: 13px; font-weight: 800;
-    border-radius: 10px; padding: 1px 7px;
+    font-size: 15px; font-weight: 800;
+    border-radius: 11px; padding: 1px 8px;
   }
   .footer { margin-top: 6px; font-size: 15px; color: #767d89; text-align: right; }
 </style>

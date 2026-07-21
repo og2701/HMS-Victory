@@ -42,11 +42,11 @@ async def _deny_if_gated(interaction: Interaction) -> bool:
     return True
 
 
-def _stat_line(county_key: str, clout_b: int, grit_b: int) -> str:
-    base_c, base_g = base_stats(county_key)
-    clout = base_c * (100 + clout_b) // 100
-    grit = base_g * (100 + grit_b) // 100
-    return f"⚔️ {clout} Clout ({clout_b:+d}%) · 🛡️ {grit} Grit ({grit_b:+d}%)"
+def _stat_line(county_key: str, banter_b: int, bottle_b: int) -> str:
+    base_ba, base_bo = base_stats(county_key)
+    banter = base_ba * (100 + banter_b) // 100
+    bottle = base_bo * (100 + bottle_b) // 100
+    return f"⚔️ {banter} Banter ({banter_b:+d}%) · 🛡️ {bottle} Bottle ({bottle_b:+d}%)"
 
 
 def _asset_file(county_key: str) -> discord.File | None:
@@ -274,10 +274,9 @@ async def _render_dex_image(display_name: str, owned: dict) -> io.BytesIO:
         uri = _thumb_data_uri(k)
         img = f'<img src="{uri}">' if uri else ""
         badge = f'<div class="badge">x{owned[k]}</div>' if has and owned[k] > 1 else ""
-        name = c.name if has else "???"
         cells.append(
             f'<div class="cell {c.tier} {"owned" if has else "missing"}">'
-            f'{badge}{img}<div class="cname">{name}</div></div>'
+            f'{badge}{img}</div>'
         )
     sections = [f'<div class="grid">{"".join(cells)}</div>']
 
@@ -342,7 +341,7 @@ def _info_embed(user_id: int, key: str):
     embed.add_field(name="Nation", value=c.nation)
     embed.add_field(name="Rarity", value=TIER_LABELS[c.tier])
     embed.add_field(name="Sell price", value=f"{config.COUNTY_SELL_PRICES[c.tier]:,} UKP")
-    embed.add_field(name="Base stats", value=f"⚔️ {base_c} Clout · 🛡️ {base_g} Grit")
+    embed.add_field(name="Base stats", value=f"⚔️ {base_c} Banter · 🛡️ {base_g} Bottle")
     embed.add_field(name="You own", value=str(E.owned_count(user_id, key)))
     embed.add_field(name="Caught server-wide", value=str(E.server_caught_count(key)))
     best = E.best_instance(user_id, key)
