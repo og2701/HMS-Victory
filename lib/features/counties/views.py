@@ -29,16 +29,21 @@ TIER_COLOURS = {
 
 
 async def _deny_if_gated(interaction: Interaction) -> bool:
-    """Testing gate: while COUNTY_ALLOWED_ROLE_IDS is set, only those roles may
-    catch or use /county-* commands. Sends the refusal itself; True = blocked."""
-    allowed = getattr(config, "COUNTY_ALLOWED_ROLE_IDS", [])
-    if not allowed:
+    """Testing gate: while either allowlist is non-empty, only listed users or
+    role-holders may catch or use /county-* commands. Sends the refusal itself;
+    True = blocked."""
+    allowed_roles = getattr(config, "COUNTY_ALLOWED_ROLE_IDS", [])
+    allowed_users = getattr(config, "COUNTY_ALLOWED_USER_IDS", [])
+    if not allowed_roles and not allowed_users:
         return False
-    from lib.core.discord_helpers import has_any_role
-    if has_any_role(interaction, allowed):
+    if interaction.user.id in allowed_users:
         return False
+    if allowed_roles:
+        from lib.core.discord_helpers import has_any_role
+        if has_any_role(interaction, allowed_roles):
+            return False
     await interaction.response.send_message(
-        "🔒 County balls are in closed testing - Deputy PMs only for now.",
+        "🔒 County balls are an unreleased feature - not open yet.",
         ephemeral=True,
     )
     return True

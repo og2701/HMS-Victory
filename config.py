@@ -302,8 +302,11 @@ COUNTY_SPAWN_WEIGHTS = {"common": 32, "uncommon": 14, "rare": 5, "epic": 3, "leg
 COUNTY_SELL_PRICES = {"common": 20, "uncommon": 60, "rare": 300, "epic": 750, "legendary": 2000}
 COUNTY_STATE_FILE = os.path.join(JSON_DATA_DIR, "county_state.json")  # spawn counter + active spawn
 COUNTY_ASSET_DIR = os.path.join("data", "counties")
-COUNTY_ALLOWED_ROLE_IDS = [960538130761527386]  # Deputy PM - testing gate on catching and all
-                                                # /county-* commands; set to [] to open to everyone
+COUNTY_ALLOWED_ROLE_IDS = []                    # roles allowed while gated (e.g. Deputy PM
+                                                # 960538130761527386); [] = no role grants access
+COUNTY_ALLOWED_USER_IDS = [404634271861571584]  # users allowed while gated (oggers). Gate is
+                                                # active while either list is non-empty; empty
+                                                # both to open the feature to everyone
 COUNTY_DEX_IMAGE_ENABLED = True    # /county-dex renders the full-roster graphic; False = text embed
 COUNTY_DEBUG_ANNOUNCE = True       # testing: after a spawn, post the answer (spoilered) in a
                                    # follow-up message - MUST be False for go-live
