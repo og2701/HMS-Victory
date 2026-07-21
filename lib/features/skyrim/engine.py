@@ -423,6 +423,8 @@ def meditate(profile) -> str | None:
     v = _voice(profile)
     v["charges"] = int(profile["words"])
     v["date"] = _today_str()
+    glog(f"🧘 **{profile['name']}** meditated - a perk point stilled, the Voice "
+         f"restored in full")
     return None
 
 
@@ -2197,6 +2199,9 @@ def abandon_active(profile):
     old = load_delve(mid)
     if old is not None and old.playing():
         profile["septims"] += old.satchel
+        if old.satchel:
+            glog(f"🚪 **{profile['name']}** abandoned a delve in "
+                 f"**{old.loc['name']}** - {old.satchel:,} septims banked on the way out")
         if old.daily:
             old.state = "left"
             record_daily_result(profile, old)
@@ -2876,6 +2881,8 @@ def duel_action(profile, action: str) -> tuple:
         profile["duel"] = None
         lines.append("🤝 Twelve rounds and neither yields - the circle calls it. "
                      "A rematch waits at dawn.")
+        glog(f"🤝 **{profile['name']}** and **{ghost['name']}** fought the circle "
+             f"to a draw")
         return "draw", lines
     b["round"] += 1
     return "playing", lines
@@ -2928,6 +2935,9 @@ def start_soulcairn(profile, channel_id) -> Delve:
               [_soulcairn_room(0, random)], hearts=heart_max(profile),
               shout_charges=voice_charges(profile), kind="soulcairn", dragon=dragon_of_the_week())
     d.say(D.LOCATIONS["soul_cairn"]["arrive"])
+    best = int(sc.get("best", 0))
+    glog(f"💀 **{profile['name']}** descended into the Soul Cairn"
+         + (f" (deepest ever: {best})" if best else ""))
     profile["stats"]["delves"] += 1
     _apply_brew_buffs(profile, d)
     _apply_streak(profile, d)
@@ -2972,6 +2982,8 @@ def buy_potion(profile) -> str | None:
         return f"A health potion is {price} septims. \"Come back with coin, friend.\""
     profile["septims"] -= price
     profile["potions"] += 1
+    glog(f"🧪 **{profile['name']}** bought a health potion "
+         f"({profile['potions']}/{potion_cap(profile)} pockets)")
     return None
 
 
@@ -3681,6 +3693,8 @@ def set_banner(profile, key: str) -> str | None:
     if key not in D.HOUSE_BANNERS:
         return "No weaver in Skyrim knows that sigil."
     homestead(profile)["banner"] = key
+    b = D.HOUSE_BANNERS[key]
+    glog(f"🚩 **{profile['name']}** raised the banner of **{b['name']}** over the estate")
     return None
 
 
@@ -3690,6 +3704,9 @@ def set_shrine(profile, key: str) -> str | None:
     if key not in D.SHRINE_BLESSINGS:
         return "The Nine don't offer that."
     homestead(profile)["shrine"] = key
+    b = D.SHRINE_BLESSINGS[key]
+    glog(f"🕯️ **{profile['name']}** knelt at the estate shrine - "
+         f"**{b['name']}** now stands")
     return None
 
 
