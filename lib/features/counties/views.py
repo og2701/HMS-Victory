@@ -13,7 +13,7 @@ from discord import Interaction
 import config
 from lib.core.file_operations import load_persistent_views, save_persistent_views
 from lib.features.counties import engine as E
-from lib.features.counties.data import COUNTIES, NATIONS, base_stats, match_county
+from lib.features.counties.data import COUNTIES, base_stats, match_county
 
 logger = logging.getLogger(__name__)
 
@@ -266,29 +266,20 @@ async def _render_dex_image(display_name: str, owned: dict) -> io.BytesIO:
     from lib.core.file_operations import read_html_template
     from lib.core.image_processing import screenshot_html
 
-    sections = []
-    for nation in NATIONS:
-        keys = [k for k, c in COUNTIES.items() if c.nation == nation]
-        keys.sort(key=lambda k: (_TIER_ORDER[COUNTIES[k].tier], COUNTIES[k].name))
-        got = sum(1 for k in keys if k in owned)
-        cells = []
-        for k in keys:
-            c = COUNTIES[k]
-            has = k in owned
-            uri = _thumb_data_uri(k)
-            img = f'<img src="{uri}">' if uri else ""
-            badge = f'<div class="badge">x{owned[k]}</div>' if has and owned[k] > 1 else ""
-            name = c.name if has else "???"
-            cells.append(
-                f'<div class="cell {c.tier} {"owned" if has else "missing"}">'
-                f'{badge}{img}<div class="cname">{name}</div></div>'
-            )
-        sections.append(
-            '<div class="nation"><div class="nation-head">'
-            f'<div class="nation-name">{nation}</div>'
-            f'<div class="nation-count">{got}/{len(keys)}</div>'
-            f'</div><div class="grid">{"".join(cells)}</div></div>'
+    keys = sorted(COUNTIES, key=lambda k: (_TIER_ORDER[COUNTIES[k].tier], COUNTIES[k].name))
+    cells = []
+    for k in keys:
+        c = COUNTIES[k]
+        has = k in owned
+        uri = _thumb_data_uri(k)
+        img = f'<img src="{uri}">' if uri else ""
+        badge = f'<div class="badge">x{owned[k]}</div>' if has and owned[k] > 1 else ""
+        name = c.name if has else "???"
+        cells.append(
+            f'<div class="cell {c.tier} {"owned" if has else "missing"}">'
+            f'{badge}{img}<div class="cname">{name}</div></div>'
         )
+    sections = [f'<div class="grid">{"".join(cells)}</div>']
 
     total = len(COUNTIES)
     caught = len(owned)
@@ -311,8 +302,8 @@ def _dex_embed(display_name: str, owned: dict) -> discord.Embed:
                     f"({caught / total:.0%})",
         colour=discord.Colour.dark_green(),
     )
-    for nation in NATIONS:
-        keys = [k for k, c in COUNTIES.items() if c.nation == nation]
+    for tier in ("legendary", "rare", "uncommon", "common"):
+        keys = [k for k, c in COUNTIES.items() if c.tier == tier]
         got = [k for k in keys if k in owned]
         names = ", ".join(
             f"{COUNTIES[k].name}" + (f" x{owned[k]}" if owned[k] > 1 else "")
@@ -320,7 +311,8 @@ def _dex_embed(display_name: str, owned: dict) -> discord.Embed:
         ) or "*none yet*"
         if len(names) > 1000:
             names = names[:997] + "..."
-        embed.add_field(name=f"{nation} - {len(got)}/{len(keys)}", value=names, inline=False)
+        embed.add_field(name=f"{TIER_LABELS[tier]} - {len(got)}/{len(keys)}",
+                        value=names, inline=False)
     return embed
 
 
