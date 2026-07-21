@@ -5,6 +5,7 @@ import logging
 import os
 import random
 import string
+from html import escape as html_escape
 
 import discord
 from discord import Interaction
@@ -216,14 +217,80 @@ def reattach_county_view(client, key, value) -> None:
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
-async def handle_county_dex_command(interaction: Interaction):
-    if await _deny_if_gated(interaction):
-        return
-    owned = E.collection(interaction.user.id)
+_TIER_ORDER = {"legendary": 0, "rare": 1, "uncommon": 2, "common": 3}
+_thumb_cache: dict = {}
+
+
+def _thumb_data_uri(county_key: str) -> str | None:
+    """Small PNG data URI of a county's art for the dex grid, cached per process."""
+    if county_key in _thumb_cache:
+        return _thumb_cache[county_key]
+    for ext in ("webp", "png"):
+        path = os.path.join(config.COUNTY_ASSET_DIR, f"{county_key}.{ext}")
+        if not os.path.exists(path):
+            continue
+        try:
+            import base64
+            from PIL import Image
+            with Image.open(path) as im:
+                im = im.convert("RGBA")
+                im.thumbnail((96, 96))
+                buf = io.BytesIO()
+                im.save(buf, format="PNG")
+            uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+        except Exception:
+            from lib.core.image_processing import encode_image_to_data_uri
+            uri = encode_image_to_data_uri(path)
+        _thumb_cache[county_key] = uri
+        return uri
+    return None
+
+
+async def _render_dex_image(display_name: str, owned: dict) -> io.BytesIO:
+    from lib.core.file_operations import read_html_template
+    from lib.core.image_processing import screenshot_html
+
+    sections = []
+    for nation in NATIONS:
+        keys = [k for k, c in COUNTIES.items() if c.nation == nation]
+        keys.sort(key=lambda k: (_TIER_ORDER[COUNTIES[k].tier], COUNTIES[k].name))
+        got = sum(1 for k in keys if k in owned)
+        cells = []
+        for k in keys:
+            c = COUNTIES[k]
+            has = k in owned
+            uri = _thumb_data_uri(k)
+            img = f'<img src="{uri}">' if uri else ""
+            badge = f'<div class="badge">x{owned[k]}</div>' if has and owned[k] > 1 else ""
+            name = c.name if has else "???"
+            cells.append(
+                f'<div class="cell {c.tier} {"owned" if has else "missing"}">'
+                f'{badge}{img}<div class="cname">{name}</div></div>'
+            )
+        sections.append(
+            '<div class="nation"><div class="nation-head">'
+            f'<div class="nation-name">{nation}</div>'
+            f'<div class="nation-count">{got}/{len(keys)}</div>'
+            f'</div><div class="grid">{"".join(cells)}</div></div>'
+        )
+
+    total = len(COUNTIES)
+    caught = len(owned)
+    html = (
+        read_html_template("templates/county_dex.html")
+        .replace("{{ TITLE }}", f"{html_escape(display_name)}'s County Dex")
+        .replace("{{ COMPLETION }}", f"{caught}/{total}")
+        .replace("{{ SUBTITLE }}", f"{caught / total:.0%} of the realm collected")
+        .replace("{{ SECTIONS }}", "".join(sections))
+    )
+    return await screenshot_html(html, size=(1100, 1200), element_selector=".container")
+
+
+def _dex_embed(display_name: str, owned: dict) -> discord.Embed:
     total = len(COUNTIES)
     caught = len(owned)
     embed = discord.Embed(
-        title=f"{interaction.user.display_name}'s County Dex",
+        title=f"{display_name}'s County Dex",
         description=f"**{caught}/{total}** counties collected "
                     f"({caught / total:.0%})",
         colour=discord.Colour.dark_green(),
@@ -238,7 +305,26 @@ async def handle_county_dex_command(interaction: Interaction):
         if len(names) > 1000:
             names = names[:997] + "..."
         embed.add_field(name=f"{nation} - {len(got)}/{len(keys)}", value=names, inline=False)
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    return embed
+
+
+async def handle_county_dex_command(interaction: Interaction):
+    if await _deny_if_gated(interaction):
+        return
+    owned = E.collection(interaction.user.id)
+    if not getattr(config, "COUNTY_DEX_IMAGE_ENABLED", True):
+        await interaction.response.send_message(
+            embed=_dex_embed(interaction.user.display_name, owned), ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True)
+    try:
+        buf = await _render_dex_image(interaction.user.display_name, owned)
+        await interaction.followup.send(
+            file=discord.File(buf, filename="county_dex.png"), ephemeral=True)
+    except Exception:
+        logger.error("County dex render failed, falling back to embed", exc_info=True)
+        await interaction.followup.send(
+            embed=_dex_embed(interaction.user.display_name, owned), ephemeral=True)
 
 
 async def handle_county_info_command(interaction: Interaction, county: str):

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: transparent; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+  .container {
+    width: 940px;
+    background: linear-gradient(160deg, #1c2027 0%, #14171c 100%);
+    border-radius: 24px;
+    padding: 36px 40px 30px 40px;
+    color: #e8eaee;
+  }
+  .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .title { font-size: 40px; font-weight: 800; }
+  .completion { font-size: 34px; font-weight: 800; color: #f5c542; }
+  .subtitle { font-size: 20px; color: #9aa1ad; margin-bottom: 18px; }
+  .legend { display: flex; gap: 22px; margin-bottom: 22px; }
+  .legend .chip { display: flex; align-items: center; gap: 8px; font-size: 17px; color: #c6cbd4; font-weight: 600; }
+  .dot { width: 16px; height: 16px; border-radius: 50%; }
+  .dot.legendary { background: #f5c542; }
+  .dot.rare { background: #4f8ff7; }
+  .dot.uncommon { background: #57b96b; }
+  .dot.common { background: #8a8f98; }
+  .nation { margin-bottom: 20px; }
+  .nation-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+  .nation-name { font-size: 26px; font-weight: 700; }
+  .nation-count { font-size: 22px; font-weight: 700; color: #9aa1ad; }
+  .grid { display: flex; flex-wrap: wrap; gap: 10px; }
+  .cell {
+    width: 104px;
+    background: #232830;
+    border-radius: 14px;
+    border: 3px solid #3a4048;
+    padding: 8px 4px 6px 4px;
+    text-align: center;
+    position: relative;
+  }
+  .cell.legendary { border-color: #f5c542; }
+  .cell.rare { border-color: #4f8ff7; }
+  .cell.uncommon { border-color: #57b96b; }
+  .cell.common { border-color: #565b63; }
+  .cell img { width: 72px; height: 72px; object-fit: contain; display: block; margin: 0 auto; }
+  .cell.missing img { filter: brightness(0) invert(0.28); opacity: 0.75; }
+  .cell.legendary.owned { background: #2e2917; }
+  .cname {
+    font-size: 12.5px; font-weight: 600; color: #d5dae2; margin-top: 5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px;
+  }
+  .cell.missing .cname { color: #6a707b; }
+  .badge {
+    position: absolute; top: -9px; right: -7px;
+    background: #f5c542; color: #1b1e24;
+    font-size: 13px; font-weight: 800;
+    border-radius: 10px; padding: 1px 7px;
+  }
+  .footer { margin-top: 6px; font-size: 15px; color: #767d89; text-align: right; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="title">{{ TITLE }}</div>
+      <div class="completion">{{ COMPLETION }}</div>
+    </div>
+    <div class="subtitle">{{ SUBTITLE }}</div>
+    <div class="legend">
+      <div class="chip"><div class="dot legendary"></div>Legendary</div>
+      <div class="chip"><div class="dot rare"></div>Rare</div>
+      <div class="chip"><div class="dot uncommon"></div>Uncommon</div>
+      <div class="chip"><div class="dot common"></div>Common</div>
+    </div>
+    {{ SECTIONS }}
+    <div class="footer">HMS Victory County Balls</div>
+  </div>
+</body>
+</html>
