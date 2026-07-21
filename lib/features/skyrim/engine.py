@@ -3716,7 +3716,10 @@ def set_shrine(profile, key: str) -> str | None:
 # player looks (the week rolls over lazily), nothing is ever posted on a schedule.
 # ---------------------------------------------------------------------------
 WB_MIN_HP = 40                       # the floor a fresh hunt never spawns below
-WB_HP_PER_ACTIVE = 25                # pool hearts per active hunter at spawn (3 actives ≈ 75)
+# A marching hunter chips ~5 hearts a day. At 26 per head a full-attendance week
+# fells it ~day 6 (99%); one hunter skipping half the week drops that to ~60% -
+# the escape is genuinely in play, and the group feels every absent blade.
+WB_HP_PER_ACTIVE = 26                # pool hearts per counted hunter at spawn
 WB_ACTIVE_DAYS = 2                   # "active" = delved within this many days of the spawn
 WB_HP_PER_STREAK = 8                 # the pool grows with each consecutive weekly kill
 WB_EXCHANGES = 6                     # blows traded per march (or until you're carried off)
@@ -3778,7 +3781,10 @@ def world_boss(date_str: str = None) -> dict:
         pool = sorted(D.WORLD_BOSSES)
         if store.get("boss") in pool and len(pool) > 1:
             pool.remove(store["boss"])            # never the same hunt twice running
-        actives = _wb_active_hunters(date_str)
+        # who actually hunts is the truer head-count than who delved lately:
+        # size against whichever is larger, so a keen week can't outgrow its boss
+        actives = max(_wb_active_hunters(date_str),
+                      int((last_week or {}).get("marchers", 0)))
         hp = max(WB_MIN_HP, WB_HP_PER_ACTIVE * actives) + WB_HP_PER_STREAK * streak
         store = {"week": wk, "boss": rng.choice(pool), "hp": hp, "max": hp,
                  "streak": streak, "actives": actives, "strikes": {},

@@ -1586,7 +1586,9 @@ def test_the_weeks_hunt():
     store["week"] = "2020-1"
     E._wb_save(store)
     nxt = E.world_boss()
-    assert nxt["streak"] == 1 and nxt["max"] == E.WB_MIN_HP + E.WB_HP_PER_STREAK
+    # the new pool is sized against last week's 2 marchers (the truer head-count)
+    sized = max(E.WB_MIN_HP, E.WB_HP_PER_ACTIVE * 2) + E.WB_HP_PER_STREAK
+    assert nxt["streak"] == 1 and nxt["max"] == sized and nxt["actives"] == 2
     # the closed week is kept for the notice board
     lw = nxt["last_week"]
     assert lw["boss"] == old_boss and lw["slain"] and lw["marchers"] == 2
