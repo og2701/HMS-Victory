@@ -753,8 +753,8 @@ def define_commands(tree, client):
         from lib.features.counties import handle_county_dex_command
         await handle_county_dex_command(interaction)
 
-    @command("county-info", "Look up a county ball - rarity, art, and how many you own")
-    async def county_info_command(interaction: Interaction, county: str):
+    @command("county-info", "Look up a county ball - rarity, art, stats and how many you own")
+    async def county_info_command(interaction: Interaction, county: str = None):
         from lib.features.counties import handle_county_info_command
         await handle_county_info_command(interaction, county)
 

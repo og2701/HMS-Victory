@@ -334,14 +334,8 @@ async def handle_county_dex_command(interaction: Interaction):
             embed=_dex_embed(interaction.user.display_name, owned))
 
 
-async def handle_county_info_command(interaction: Interaction, county: str):
-    if await _deny_if_gated(interaction):
-        return
-    key = match_county(county)
-    if not key:
-        await interaction.response.send_message(
-            f"No county matches \"{county}\".", ephemeral=True)
-        return
+def _info_embed(user_id: int, key: str):
+    """(embed, file | None) describing a county for a given viewer."""
     c = COUNTIES[key]
     base_c, base_g = base_stats(key)
     embed = discord.Embed(title=c.name, colour=TIER_COLOURS[c.tier])
@@ -349,14 +343,125 @@ async def handle_county_info_command(interaction: Interaction, county: str):
     embed.add_field(name="Rarity", value=TIER_LABELS[c.tier])
     embed.add_field(name="Sell price", value=f"{config.COUNTY_SELL_PRICES[c.tier]:,} UKP")
     embed.add_field(name="Base stats", value=f"⚔️ {base_c} Clout · 🛡️ {base_g} Grit")
-    embed.add_field(name="You own", value=str(E.owned_count(interaction.user.id, key)))
+    embed.add_field(name="You own", value=str(E.owned_count(user_id, key)))
     embed.add_field(name="Caught server-wide", value=str(E.server_caught_count(key)))
-    best = E.best_instance(interaction.user.id, key)
+    best = E.best_instance(user_id, key)
     if best:
         embed.add_field(name="Your best copy", value=_stat_line(key, *best), inline=False)
     file = _asset_file(key)
     if file:
         embed.set_image(url=f"attachment://{file.filename}")
+    return embed, file
+
+
+class CountyInfoView(discord.ui.View):
+    """Browsable county encyclopedia: A-Z dropdown pages over all 92 (or just
+    your own), Prev/Next, and an owned-only toggle. Ephemeral per-user."""
+
+    PAGE = 25
+
+    def __init__(self, user_id: int):
+        super().__init__(timeout=300)
+        self.user_id = user_id
+        self.page = 0
+        self.owned_only = False
+        self.selected: str | None = None
+        self._rebuild()
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "This browser belongs to someone else - run /county-info yourself.",
+                ephemeral=True)
+            return False
+        return True
+
+    def _keys(self):
+        keys = sorted(COUNTIES, key=lambda k: COUNTIES[k].name)
+        if self.owned_only:
+            owned = E.collection(self.user_id)
+            keys = [k for k in keys if k in owned]
+        return keys
+
+    def _rebuild(self):
+        self.clear_items()
+        keys = self._keys()
+        pages = max((len(keys) + self.PAGE - 1) // self.PAGE, 1)
+        self.page = min(self.page, pages - 1)
+        chunk = keys[self.page * self.PAGE:(self.page + 1) * self.PAGE]
+
+        if chunk:
+            options = [
+                discord.SelectOption(
+                    label=COUNTIES[k].name, value=k, default=(k == self.selected),
+                    description=f"{COUNTIES[k].nation} · {TIER_LABELS[COUNTIES[k].tier]}",
+                )
+                for k in chunk
+            ]
+            first, last = COUNTIES[chunk[0]].name, COUNTIES[chunk[-1]].name
+            select = discord.ui.Select(
+                placeholder=f"Pick a county ({first[:12]} - {last[:12]})...",
+                options=options, row=0)
+            select.callback = self._on_select
+            self.add_item(select)
+
+        prev_b = discord.ui.Button(label="◀ Prev", row=1, disabled=self.page == 0,
+                                   style=discord.ButtonStyle.secondary)
+        prev_b.callback = self._pager(-1)
+        next_b = discord.ui.Button(label="Next ▶", row=1, disabled=self.page >= pages - 1,
+                                   style=discord.ButtonStyle.secondary)
+        next_b.callback = self._pager(1)
+        toggle = discord.ui.Button(
+            label="Showing: my counties" if self.owned_only else "Showing: all 92", row=1,
+            style=discord.ButtonStyle.primary)
+        toggle.callback = self._toggle
+        self.add_item(prev_b)
+        self.add_item(next_b)
+        self.add_item(toggle)
+
+    async def _redraw(self, interaction: Interaction):
+        self._rebuild()
+        if self.selected:
+            embed, file = _info_embed(self.user_id, self.selected)
+            await interaction.response.edit_message(
+                content=None, embed=embed,
+                attachments=[file] if file else [], view=self)
+        else:
+            await interaction.response.edit_message(
+                content="📖 Pick a county to look it up.", embed=None,
+                attachments=[], view=self)
+
+    async def _on_select(self, interaction: Interaction):
+        self.selected = interaction.data["values"][0]
+        await self._redraw(interaction)
+
+    def _pager(self, step: int):
+        async def cb(interaction: Interaction):
+            self.page += step
+            await self._redraw(interaction)
+        return cb
+
+    async def _toggle(self, interaction: Interaction):
+        self.owned_only = not self.owned_only
+        self.page = 0
+        await self._redraw(interaction)
+
+
+async def handle_county_info_command(interaction: Interaction, county: str | None):
+    if await _deny_if_gated(interaction):
+        return
+    if county is None:
+        view = CountyInfoView(interaction.user.id)
+        await interaction.response.send_message(
+            "📖 Pick a county to look it up.", view=view, ephemeral=True)
+        return
+    key = match_county(county)
+    if not key:
+        await interaction.response.send_message(
+            f"No county matches \"{county}\".", ephemeral=True)
+        return
+    embed, file = _info_embed(interaction.user.id, key)
+    if file:
         await interaction.response.send_message(embed=embed, file=file, ephemeral=True)
     else:
         await interaction.response.send_message(embed=embed, ephemeral=True)
