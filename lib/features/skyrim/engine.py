@@ -2641,6 +2641,9 @@ def _pit_me_strike(profile, b, champ, lines, power=False):
     quirk = champ.get("quirk")
     eff = _pit_attack_pct(profile, champ) + (15 if quirk == "reckless" else 0)
     eff -= int(b.get("fatigue", 0))              # today's earlier bouts weigh on the arms
+    eff -= int(b.get("foe_guard", 0))            # a duelled ghost's REAL armour blunts you
+                                                 # (never set for Pit bouts - the ladder's
+                                                 # champs are tuned without it)
     if b.get("staggered"):
         eff -= 15                                # her shieldwall is still closed
     if power:
@@ -2815,6 +2818,7 @@ def duel_begin(profile, rival) -> list:
     profile["duel"] = {"ghost": ghost,
                        "bout": {"me": heart_max(profile), "me0": heart_max(profile),
                                 "foe": ghost["hp"], "round": 1, "fatigue": 0,
+                                "foe_guard": int(ghost.get("guard", 0)),
                                 "ward": ghost["quirk"] == "veteran",
                                 "staggered": False, "opening": False}}
     mult = duel_prize_mult(level(profile), ghost["level"])
