@@ -237,6 +237,10 @@ class AClient(discord.Client):
         from lib.features.message_archive import archive_message
         archive_message(message)
 
+        # County Balls: chat activity fills the spawn bar (config-gated inside).
+        from lib.features.counties import county_on_message
+        asyncio.create_task(county_on_message(self, message))
+
         if message.type == discord.MessageType.auto_moderation_action:
             target_user_id_str = None
             if message.embeds:

@@ -748,6 +748,31 @@ def define_commands(tree, client):
         from lib.features.skyrim import handle_skyrim_command
         await handle_skyrim_command(interaction)
 
+    @command("county-dex", "Your county ball collection and completion progress")
+    async def county_dex_command(interaction: Interaction):
+        from lib.features.counties import handle_county_dex_command
+        await handle_county_dex_command(interaction)
+
+    @command("county-info", "Look up a county ball - rarity, art, and how many you own")
+    async def county_info_command(interaction: Interaction, county: str):
+        from lib.features.counties import handle_county_info_command
+        await handle_county_info_command(interaction, county)
+
+    @command("county-give", "Gift one of your county balls to another member")
+    async def county_give_command(interaction: Interaction, member: discord.Member, county: str):
+        from lib.features.counties import handle_county_give_command
+        await handle_county_give_command(interaction, member, county)
+
+    @command("county-sell", "Sell county balls back to the bank for UKPence")
+    async def county_sell_command(interaction: Interaction, county: str, quantity: int = 1):
+        from lib.features.counties import handle_county_sell_command
+        await handle_county_sell_command(interaction, county, quantity)
+
+    @command("county-spawn", "Force-spawn a county ball here (owner only)", checks=[lambda i: i.user.id == USERS.OGGERS])
+    async def county_spawn_command(interaction: Interaction, county: str = None):
+        from lib.features.counties import handle_county_spawn_command
+        await handle_county_spawn_command(interaction, county)
+
     @command("poker", "Open or join the HMS Hold'em table in this channel (casino channels)")
     async def poker_command(interaction: Interaction):
         from commands.economy.poker import handle_poker_command

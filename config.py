@@ -287,6 +287,21 @@ SKYRIM_PROFILES_FILE = os.path.join(JSON_DATA_DIR, "skyrim_profiles.json")  # pe
 SKYRIM_DAILY_FILE = os.path.join(JSON_DATA_DIR, "skyrim_daily.json")  # today's shared-dungeon results board
 SKYRIM_GRAVEYARD_FILE = os.path.join(JSON_DATA_DIR, "skyrim_graveyard.json")  # fallen adventurers (corpses + obituary)
 SKYRIM_WORLDBOSS_FILE = os.path.join(JSON_DATA_DIR, "skyrim_worldboss.json")  # the week's shared hunt (pooled HP + strikes)
+
+# --- County Balls (BallsDex-style collectibles: county balls spawn in chat, first
+# correct guess catches; duplicates sell to the bank for UKPence) ---
+COUNTY_ENABLED = True
+COUNTY_SPAWN_CHANNELS = [1141037835445616640]  # bot-workshop while testing
+COUNTY_SPAWN_CATEGORY = 0          # go-live: 959544877325115424 (General category); 0 = off
+COUNTY_SPAWN_RANGE = (15, 30)      # qualifying messages per spawn; go-live: (180, 320)
+                                   # (calibrated from daily summaries: ~3.9k msgs/day in
+                                   # #general -> roughly 5 spawns quiet days, 11 typical, 20 busy)
+COUNTY_SPAWN_MIN_GAP = 60          # seconds between spawns; go-live: 600
+COUNTY_HINT_AFTER = 3              # wrong guesses before the spawn message gains a hint
+COUNTY_SPAWN_WEIGHTS = {"common": 32, "uncommon": 14, "rare": 5, "legendary": 2}
+COUNTY_SELL_PRICES = {"common": 20, "uncommon": 60, "rare": 300, "legendary": 2000}
+COUNTY_STATE_FILE = os.path.join(JSON_DATA_DIR, "county_state.json")  # spawn counter + active spawn
+COUNTY_ASSET_DIR = os.path.join("data", "counties")
 # Fletcher bot posts the same message-link summary HMS does; auto-delete its duplicate.
 FLETCHER_DEDUPE_ENABLED = True
 FLETCHER_BOT_ID = None            # set to Fletcher's user id for an exact match (optional)

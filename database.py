@@ -269,6 +269,26 @@ def init_db():
                 last_xp_time INTEGER NOT NULL DEFAULT 0
             )
         ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS county_instances (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                county TEXT NOT NULL,
+                caught_at INTEGER NOT NULL,
+                channel_id TEXT,
+                obtained TEXT NOT NULL DEFAULT 'catch'
+            )
+        ''')
+        c.execute("CREATE INDEX IF NOT EXISTS idx_county_instances_user ON county_instances(user_id, county)")
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS county_transfers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                instance_id INTEGER NOT NULL,
+                from_user TEXT NOT NULL,
+                to_user TEXT NOT NULL,
+                transferred_at INTEGER NOT NULL
+            )
+        ''')
         # Auction feature removed - drop any legacy tables left over from older databases.
         c.execute("DROP TABLE IF EXISTS auctions")
         c.execute("DROP TABLE IF EXISTS auction_history")

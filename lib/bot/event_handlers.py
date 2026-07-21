@@ -565,6 +565,12 @@ def reattach_persistent_views(client):
                 reattach_skyrim_view(client, key, value)
             except Exception as e:
                 logger.error(f"Failed to reattach skyrim delve {key}: {e}")
+        elif isinstance(value, dict) and value.get("type") == "county":
+            try:
+                from lib.features.counties import reattach_county_view
+                reattach_county_view(client, key, value)
+            except Exception as e:
+                logger.error(f"Failed to reattach county spawn {key}: {e}")
         elif isinstance(value, dict):
             view = RoleButtonView(value)
             client.add_view(view, message_id=key)
