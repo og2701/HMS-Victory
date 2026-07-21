@@ -965,6 +965,22 @@ def _hall_text(profile) -> str:
             lines.append(f"-# {ep['line']}")
     if lg.get("epitaphs"):
         lines.append("")
+    # the Hall is one building - every retired legend on the server sits here
+    others = []
+    for uid, other in E.all_profiles().items():
+        if int(uid) == int(profile["user_id"]):
+            continue
+        olg = other.get("legacy") or {}
+        for i, ep in enumerate(olg.get("epitaphs") or [], start=1):
+            others.append((other.get("name", "?"), i, ep))
+    if others:
+        lines.append("**The other seats:**")
+        for name, i, ep in others[-8:]:
+            boon = D.BOONS.get(ep.get("boon"), {})
+            lines.append(f"-# ⭐ **{name}**, Legend {i} - {ep.get('days', 0)} days, "
+                         f"level {ep.get('level', '?')}, {ep.get('dragons', 0)} dragons, "
+                         f"Alduin x{ep.get('alduin', 0)}. Took {boon.get('name', 'a boon')}.")
+        lines.append("")
     if ready:
         lines.append("🏛️ **The Hall is ready for you.** Choose the boon your legend "
                      "leaves behind - then retire. There is no undoing it.")
@@ -2450,19 +2466,20 @@ def _notice_text(profile) -> str:
     # the week's hunt - the shared boss the whole server chips at
     store = E.world_boss()
     boss = E.wb_boss(store)
-    lines += ["", f"### {boss['emoji']} The week's hunt: {boss['name']}",
+    wave = int(store.get("wave", 1))
+    kills = int(store.get("kills", 0))
+    wave_bit = f"  ·  wave {wave}" if wave > 1 else ""
+    lines += ["", f"### {boss['emoji']} The week's hunt: {boss['name']}{wave_bit}",
               f"-# {boss['blurb']}"]
-    if store.get("slain"):
-        lines.append(f"🏆 **Felled on {store['slain']}** - spoils for all who marched. "
-                     f"A greater hunt is posted Monday (streak {store['streak'] + 1}).")
-    else:
-        lines.append(f"{'🟥' if store['hp'] <= store['max'] // 4 else '❤️'} "
-                     f"{_bar(store['hp'], 0, store['max'], 12)} "
-                     f"**{store['hp']}/{store['max']}** hearts left"
-                     + (f"  ·  💪 streak {store['streak']}" if store.get("streak") else "")
-                     + (f"  ·  🏹 sized for {store['actives']} hunter"
-                        f"{'s' if store['actives'] != 1 else ''}"
-                        if store.get("actives") else ""))
+    if kills:
+        lines.append(f"🏆 **{kills} felled this week** - each fall summons a greater "
+                     f"terror. Monday resets the ladder.")
+    lines.append(f"{'🟥' if store['hp'] <= store['max'] // 4 else '❤️'} "
+                 f"{_bar(store['hp'], 0, store['max'], 12)} "
+                 f"**{store['hp']}/{store['max']}** hearts left"
+                 + (f"  ·  🏹 sized for {store['actives']} hunter"
+                    f"{'s' if store['actives'] != 1 else ''}"
+                    if store.get("actives") else ""))
     strikers = sorted(((len(set(s.get("days") or [])), int(s.get("damage", 0)),
                         s.get("name", "?")) for s in store["strikes"].values()),
                       key=lambda r: -r[1])
@@ -2472,24 +2489,28 @@ def _notice_text(profile) -> str:
     lw = store.get("last_week")
     if lw and lw.get("boss") in D.WORLD_BOSSES:
         lb = D.WORLD_BOSSES[lw["boss"]]
-        if lw.get("slain"):
-            tale = (f"felled by {lw['marchers']} hunter"
-                    f"{'s' if lw['marchers'] != 1 else ''}")
+        lk = int(lw.get("kills", 0))
+        if lk:
+            tale = (f"the hold felled **{lk}** wave{'s' if lk != 1 else ''}, the last "
+                    f"being {lb['emoji']} **{lb['name']}**"
+                    if lw.get("hp", 1) <= 0 else
+                    f"the hold felled **{lk}** wave{'s' if lk != 1 else ''}; "
+                    f"{lb['emoji']} **{lb['name']}** escaped at {lw['hp']}/{lw['max']}")
         elif lw.get("marchers"):
-            tale = f"escaped with {lw['hp']}/{lw['max']} hearts still beating"
+            tale = (f"{lb['emoji']} **{lb['name']}** escaped with {lw['hp']}/{lw['max']} "
+                    f"hearts still beating")
         else:
-            tale = "went unhunted, and knows it"
+            tale = f"{lb['emoji']} **{lb['name']}** went unhunted, and knows it"
         top = lw.get("top")
         top_bit = f" - first blade **{top['name']}** ({top['damage']} dmg)" if top else ""
-        lines.append(f"-# 🪦 Last week: {lb['emoji']} **{lb['name']}** {tale}{top_bit}.")
-    if not store.get("slain"):
-        if E.level(profile) < E.WB_MIN_LEVEL:
-            lines.append(f"-# 🔒 The hunt takes proven blades only (level {E.WB_MIN_LEVEL}+).")
-        elif E.wb_marched_today(profile, store):
-            lines.append("-# 🛌 You have marched today - the line re-forms at dawn.")
-        else:
-            lines.append("-# 📯 One march per day. Fell it before Monday or it escapes "
-                         "with the caravan gold.")
+        lines.append(f"-# 🪦 Last week: {tale}{top_bit}.")
+    if E.level(profile) < E.WB_MIN_LEVEL:
+        lines.append(f"-# 🔒 The hunt takes proven blades only (level {E.WB_MIN_LEVEL}+).")
+    elif E.wb_marched_today(profile, store):
+        lines.append("-# 🛌 You have marched today - the line re-forms at dawn.")
+    else:
+        lines.append("-# 📯 One march per day. Every fall summons a greater wave - "
+                     "how many can the hold put down by Monday?")
     return "\n".join(lines)
 
 
@@ -2546,9 +2567,9 @@ async def _post_march_board(interaction: Interaction, profile):
     """Resolve the march and post it as a PUBLIC battle report - the group sees
     every blow on the shared pool, exactly like a delve board (no buttons: a
     march is one charge, told start to finish)."""
-    lines, dealt, slain, store = E.wb_march(profile)
+    boss = E.wb_boss(E.world_boss())              # the boss being FOUGHT - a killing
+    lines, dealt, slain, store = E.wb_march(profile)   # blow summons the next wave
     E.save_profile(profile)
-    boss = E.wb_boss(store)
     uid = int(profile["user_id"])
     view = discord.ui.LayoutView(timeout=None)
     files = _gallery_files(view, boss["art"]) if _asset_bytes(boss["art"]) else []
@@ -2567,7 +2588,8 @@ async def _post_march_board(interaction: Interaction, profile):
             view=_notice_view("Couldn't post the march here - the damage still counts."),
             attachments=[])
         return
-    send_off = ("🏆 **THE HUNT IS OVER.** Claim your spoils on the Notice Board." if slain
+    send_off = (f"🏆 **THE WAVE FALLS - and a greater one rises.** Claim your spoils "
+                f"on the Notice Board." if slain
                 else f"📯 Your march is told in the channel - **{dealt}** off the pool.")
     await interaction.response.edit_message(view=_notice_view(send_off), attachments=[])
     await _flush_game_log(interaction.client)
@@ -2761,9 +2783,10 @@ HELP_PAGES = {
         "as you play; claim the bounties on the board. Sweep all 8 for a bonus, and race "
         "the others for the week's points.\n"
         "- 📯 **The Week's Hunt** - a shared boss with one pooled heart total, **sized on "
-        "Monday to how many hunters were actually abroad** that week. **March** on it once "
-        "a day (a public sortie with your real build); fell it before Monday and everyone "
-        "who marched shares the spoils. Kill streaks grow the next one, and last week's "
+        "Monday to how many hunters actually march**. **March** on it once a day (a public "
+        "sortie with your real build); when it falls, everyone who marched shares the "
+        "spoils - and a **greater wave rises in its place**, 1.2x each time. Monday resets "
+        "the ladder, so the week's race is how many the hold can put down. Last week's "
         "fate hangs on the board.\n"
         "**🏰 Factions** (L8+) - swear an allegiance; a weekly task in a neglected skill "
         "pays favour, rank and coin.\n"

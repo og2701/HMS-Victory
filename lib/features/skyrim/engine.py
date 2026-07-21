@@ -3757,12 +3757,14 @@ def set_shrine(profile, key: str) -> str | None:
 # player looks (the week rolls over lazily), nothing is ever posted on a schedule.
 # ---------------------------------------------------------------------------
 WB_MIN_HP = 40                       # the floor a fresh hunt never spawns below
-# A marching hunter chips ~5 hearts a day. At 26 per head a full-attendance week
-# fells it ~day 6 (99%); one hunter skipping half the week drops that to ~60% -
-# the escape is genuinely in play, and the group feels every absent blade.
-WB_HP_PER_ACTIVE = 26                # pool hearts per counted hunter at spawn
+# The hunt comes in WAVES: fell the boss and a greater one rises the same week,
+# 1.2x the pool each time; Monday resets the whole ladder. A marching hunter
+# chips ~5 hearts a day, so at 13 per head a full-attendance week usually fells
+# TWO (85%), any slacking usually caps the week at one, and a third has never
+# been done. The race is "how many", not "whether".
+WB_HP_PER_ACTIVE = 13                # wave-1 pool hearts per counted hunter
+WB_WAVE_GROWTH = 1.2                 # each felled wave spawns the next this much bigger
 WB_ACTIVE_DAYS = 2                   # "active" = delved within this many days of the spawn
-WB_HP_PER_STREAK = 8                 # the pool grows with each consecutive weekly kill
 WB_EXCHANGES = 6                     # blows traded per march (or until you're carried off)
 WB_MIN_LEVEL = 5
 
@@ -3801,22 +3803,36 @@ def _wb_last_week_record(store: dict) -> dict | None:
                        for s in (store.get("strikes") or {}).values()), reverse=True)
     top = {"name": strikers[0][1], "damage": strikers[0][0]} if strikers else None
     return {"week": store["week"], "boss": store.get("boss"),
-            "slain": store.get("slain"), "hp": int(store.get("hp", 0)),
+            "kills": int(store.get("kills", 0) or (1 if store.get("slain") else 0)),
+            "hp": int(store.get("hp", 0)),
             "max": int(store.get("max", 0)), "marchers": len(store.get("strikes") or {}),
             "top": top}
 
 
+def _wb_next_wave(store: dict):
+    """A felled wave summons the next: a fresh boss, WB_WAVE_GROWTH bigger, same
+    week. Strikes and shares carry across waves (they are the WEEK'S effort)."""
+    store["kills"] = int(store.get("kills", 0)) + 1
+    store["wave"] = int(store.get("wave", 1)) + 1
+    base = int(store.get("base") or store.get("max") or WB_MIN_HP)
+    hp = int(round(base * WB_WAVE_GROWTH ** (store["wave"] - 1)))
+    rng = random.Random(f"skyrim-hunt-{store.get('week')}-wave{store['wave']}")
+    pool = sorted(D.WORLD_BOSSES)
+    if store.get("boss") in pool and len(pool) > 1:
+        pool.remove(store["boss"])                # a NEW terror answers the last one's fall
+    store["boss"] = rng.choice(pool)
+    store["hp"] = store["max"] = hp
+
+
 def world_boss(date_str: str = None) -> dict:
     """This week's hunt state, rolling the week over if nobody has looked since
-    Monday. The fresh pool is sized to the ACTIVE hunters at spawn (plus the
-    kill-streak ratchet), and the closed week is kept as last_week."""
+    Monday. The wave-1 pool is sized to the ACTIVE hunters at spawn; each kill
+    summons a greater wave, and Monday resets the whole ladder. The closed week
+    is kept as last_week."""
     y, w = _iso_week(date_str)
     wk = f"{y}-{w}"
     store = _wb_store()
     if store.get("week") != wk:
-        streak = int(store.get("streak", 0))
-        if store.get("week"):                     # a real previous week ended
-            streak = streak + 1 if store.get("slain") else 0
         last_week = _wb_last_week_record(store)
         rng = random.Random(f"skyrim-hunt-{wk}")
         pool = sorted(D.WORLD_BOSSES)
@@ -3826,10 +3842,15 @@ def world_boss(date_str: str = None) -> dict:
         # size against whichever is larger, so a keen week can't outgrow its boss
         actives = max(_wb_active_hunters(date_str),
                       int((last_week or {}).get("marchers", 0)))
-        hp = max(WB_MIN_HP, WB_HP_PER_ACTIVE * actives) + WB_HP_PER_STREAK * streak
+        hp = max(WB_MIN_HP, WB_HP_PER_ACTIVE * actives)
         store = {"week": wk, "boss": rng.choice(pool), "hp": hp, "max": hp,
-                 "streak": streak, "actives": actives, "strikes": {},
-                 "slain": None, "shares": {}, "last_week": last_week}
+                 "base": hp, "wave": 1, "kills": 0, "actives": actives,
+                 "strikes": {}, "shares": {}, "last_week": last_week}
+        _wb_save(store)
+    elif store.get("hp", 1) <= 0:
+        # a wave felled under an older build (or a missed spawn): the next rises
+        # lazily on first look - reads stay idempotent, nothing is scheduled
+        _wb_next_wave(store)
         _wb_save(store)
     return store
 
@@ -3846,9 +3867,11 @@ def wb_marched_today(profile, store: dict = None) -> bool:
 
 
 def wb_available(profile, store: dict = None) -> bool:
+    """A wave is always live (a kill summons the next), so the only gates are
+    the level floor and the one-march-per-day rule."""
     store = store or world_boss()
-    return (level(profile) >= WB_MIN_LEVEL and not store.get("slain")
-            and store["hp"] > 0 and not wb_marched_today(profile, store))
+    return (level(profile) >= WB_MIN_LEVEL and store["hp"] > 0
+            and not wb_marched_today(profile, store))
 
 
 def _wb_attack_pct(profile, boss: dict) -> int:
@@ -3930,28 +3953,43 @@ def wb_march(profile) -> tuple:
                 break
     mine["damage"] = int(mine.get("damage", 0)) + dealt
     store["hp"] = max(0, store["hp"] - dealt)
-    slain_now = store["hp"] <= 0 and not store.get("slain")
+    slain_now = store["hp"] <= 0
     if slain_now:
-        store["slain"] = _today_str()
         lines.append(f"🏆 **{boss['slain']}**")
-        # spoils for everyone who marched, sized by the days they showed up
+        # spoils for everyone who marched, sized by the days they showed up and
+        # the wave felled - unclaimed shares ACCUMULATE across the week's kills
+        wave = int(store.get("wave", 1))
+        wave_mult = 1 + 0.25 * (wave - 1)
         for suid, s in store["strikes"].items():
             days = len(set(s.get("days") or []))
-            store["shares"][suid] = {"septims": 350 + 300 * days, "xp": 80 + 90 * days,
-                                     "claimed": False}
+            sh = store["shares"].get(suid)
+            if not sh or sh.get("claimed"):
+                sh = {"septims": 0, "xp": 0, "claimed": False}
+                store["shares"][suid] = sh
+            sh["septims"] += int((350 + 300 * days) * wave_mult)
+            sh["xp"] += int((80 + 90 * days) * wave_mult)
         store["shares"][uid]["septims"] += 400    # the killing blow carries the head home
         found = roll_wonder(profile, {"worldboss"}, WONDER_SIDE_CHANCE)
         if found:
             lines.append(wonder_line(found))
+        glog(f"🏆 **{profile['name']}** landed the killing blow on **{boss['name']}** "
+             f"(wave {wave}) - spoils for all who marched")
+        _wb_next_wave(store)
+        nxt = wb_boss(store)
+        lines.append(f"🌩️ **The hold barely draws breath** - {nxt['emoji']} "
+                     f"**{nxt['name']}** rises in its place, greater still "
+                     f"(wave {store['wave']}: {store['max']} hearts).")
+        lines.append(f"-# {nxt['blurb']}")
+        glog(f"🌩️ Wave {store['wave']} rises: **{nxt['name']}** "
+             f"({store['max']} hearts)")
     gained, _ = add_xp(profile, 20 + 6 * dealt)   # marching always teaches something
-    lines.append(f"⚔️ You dealt **{dealt}** - the pool stands at "
-                 f"**{store['hp']}/{store['max']}**.  (+{gained} XP)")
-    if slain_now:
-        glog(f"🏆 **{profile['name']}** landed the killing blow on **{boss['name']}** - "
-             f"THE HUNT IS OVER, spoils for all who marched")
-    else:
+    if not slain_now:
+        lines.append(f"⚔️ You dealt **{dealt}** - the pool stands at "
+                     f"**{store['hp']}/{store['max']}**.  (+{gained} XP)")
         glog(f"📯 **{profile['name']}** marched on **{boss['name']}** - dealt {dealt}, "
              f"pool at {store['hp']}/{store['max']}")
+    else:
+        lines.append(f"⚔️ You dealt **{dealt}**.  (+{gained} XP)")
     _wb_save(store)
     record_best(profile, "march_damage", dealt)
     return lines, dealt, slain_now, store

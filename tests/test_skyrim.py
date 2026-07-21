@@ -1543,12 +1543,12 @@ def _wipe_profiles():
 def test_the_weeks_hunt():
     _wipe_profiles()
     E._wb_save({})                                     # force a fresh spawn
-    # a fresh week posts a full-pool boss from the roster
+    # a fresh week posts a full-pool wave-1 boss from the roster
     store = E.world_boss()
     assert store["boss"] in D.WORLD_BOSSES
     # nobody has delved in this fresh test world, so the pool sits at the floor
-    assert store["hp"] == store["max"] == E.WB_MIN_HP and store["streak"] == 0
-    assert store["actives"] == 0
+    assert store["hp"] == store["max"] == store["base"] == E.WB_MIN_HP
+    assert store["wave"] == 1 and store["kills"] == 0 and store["actives"] == 0
     # novices don't march; a proven blade does, once per day
     p = _profile()
     assert not E.wb_available(p)
@@ -1563,17 +1563,25 @@ def test_the_weeks_hunt():
     assert dealt == 6 and not slain and store["hp"] == store["max"] - 6
     assert E.wb_marched_today(p, store) and not E.wb_available(p)
     assert any("the pool stands at" in l for l in lines)
-    # the killing blow: a second striker finishes a 2-heart remnant with one crit
+    # the killing blow: a second striker finishes a 2-heart remnant with one crit -
+    # and a GREATER wave rises in the fallen one's place, same week
     store["hp"] = 2
     E._wb_save(store)
+    wave1_boss = store["boss"]
     q = E.create_profile(9, "Finisher", "warrior")
     q["xp"] = 2000
     E.random = _fixed_rolls(0.0, 0.0, 0.0, 0.9)        # hit, crit, (wonder), padding
     try:
-        _lines, dealt, slain, store = E.wb_march(q)
+        w_lines, dealt, slain, store = E.wb_march(q)
     finally:
         _restore_random()
-    assert slain and store["slain"] and store["hp"] == 0
+    assert slain and store["kills"] == 1 and store["wave"] == 2
+    assert store["boss"] != wave1_boss                 # a NEW terror answers
+    expected = int(round(E.WB_MIN_HP * E.WB_WAVE_GROWTH))
+    assert store["hp"] == store["max"] == expected     # 1.2x the wave-1 base
+    assert any("rises in its place" in l for l in w_lines)
+    # strikes carry across waves; the fresh wave is immediately marchable tomorrow
+    assert str(p["user_id"]) in store["strikes"]
     # everyone who marched holds a share; the killer's carries the head-price
     assert E.wb_share_waiting(p) and E.wb_share_waiting(q)
     assert store["shares"][str(q["user_id"])]["septims"] > \
@@ -1582,27 +1590,30 @@ def test_the_weeks_hunt():
     res = E.wb_claim(p)
     assert res and p["septims"] > before
     assert E.wb_claim(p) is None                       # a share pays once
-    # marching feeds the weekly task board
-    assert any(D.TASKS[k]["kind"] == "march" for k in E.task_state(p)["prog"]) or True
-    # Monday: a slain hunt grows the next one; the boss never repeats back-to-back
+    # a second kill ACCUMULATES fresh shares (wave 2 pays a 1.25x premium)
+    store = E.world_boss()
+    store["hp"] = 1
+    E._wb_save(store)
+    E.random = _fixed_rolls(0.0, 0.0, 0.0, 0.9)
+    try:
+        _l, _d, slain2, store = E.wb_march(q)
+    finally:
+        _restore_random()
+    assert slain2 and store["kills"] == 2 and store["wave"] == 3
+    assert E.wb_share_waiting(p)                       # a new share after claiming
+    # Monday resets the whole ladder; the boss never repeats back-to-back
     old_boss = store["boss"]
     store["week"] = "2020-1"
     E._wb_save(store)
     nxt = E.world_boss()
     # the new pool is sized against last week's 2 marchers (the truer head-count)
-    sized = max(E.WB_MIN_HP, E.WB_HP_PER_ACTIVE * 2) + E.WB_HP_PER_STREAK
-    assert nxt["streak"] == 1 and nxt["max"] == sized and nxt["actives"] == 2
-    # the closed week is kept for the notice board
+    assert nxt["max"] == max(E.WB_MIN_HP, E.WB_HP_PER_ACTIVE * 2)
+    assert nxt["wave"] == 1 and nxt["kills"] == 0 and nxt["actives"] == 2
+    # the closed week is kept for the notice board, kills and all
     lw = nxt["last_week"]
-    assert lw["boss"] == old_boss and lw["slain"] and lw["marchers"] == 2
+    assert lw["boss"] == old_boss and lw["kills"] == 2 and lw["marchers"] == 2
     assert lw["top"]["damage"] >= 6
     assert nxt["boss"] != old_boss
-    # ...and an escaped hunt resets the streak
-    nxt["week"] = "2020-2"
-    nxt["slain"] = None
-    E._wb_save(nxt)
-    reset = E.world_boss()
-    assert reset["streak"] == 0 and reset["max"] == E.WB_MIN_HP
 
 
 def test_hunt_pool_scales_with_active_hunters():
