@@ -302,6 +302,8 @@ COUNTY_SPAWN_WEIGHTS = {"common": 32, "uncommon": 14, "rare": 5, "legendary": 2}
 COUNTY_SELL_PRICES = {"common": 20, "uncommon": 60, "rare": 300, "legendary": 2000}
 COUNTY_STATE_FILE = os.path.join(JSON_DATA_DIR, "county_state.json")  # spawn counter + active spawn
 COUNTY_ASSET_DIR = os.path.join("data", "counties")
+COUNTY_ALLOWED_ROLE_IDS = [960538130761527386]  # Deputy PM - testing gate on catching and all
+                                                # /county-* commands; set to [] to open to everyone
 # Fletcher bot posts the same message-link summary HMS does; auto-delete its duplicate.
 FLETCHER_DEDUPE_ENABLED = True
 FLETCHER_BOT_ID = None            # set to Fletcher's user id for an exact match (optional)

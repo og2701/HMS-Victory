@@ -25,6 +25,22 @@ TIER_COLOURS = {
 }
 
 
+async def _deny_if_gated(interaction: Interaction) -> bool:
+    """Testing gate: while COUNTY_ALLOWED_ROLE_IDS is set, only those roles may
+    catch or use /county-* commands. Sends the refusal itself; True = blocked."""
+    allowed = getattr(config, "COUNTY_ALLOWED_ROLE_IDS", [])
+    if not allowed:
+        return False
+    from lib.core.discord_helpers import has_any_role
+    if has_any_role(interaction, allowed):
+        return False
+    await interaction.response.send_message(
+        "🔒 County balls are in closed testing - Deputy PMs only for now.",
+        ephemeral=True,
+    )
+    return True
+
+
 def _asset_file(county_key: str) -> discord.File | None:
     """The county's art, under a random filename so it never leaks the answer."""
     for ext in ("webp", "png"):
@@ -45,6 +61,8 @@ class CountyCatchModal(discord.ui.Modal, title="Catch the county ball!"):
                                  max_length=60)
 
     async def on_submit(self, interaction: Interaction):
+        if await _deny_if_gated(interaction):
+            return
         active = E.active_spawn()
         if not active or active.get("message_id") != interaction.message.id:
             await interaction.response.send_message("Too slow - it's already been caught!",
@@ -98,6 +116,8 @@ class CountySpawnView(discord.ui.View):
     @discord.ui.button(label="Catch it!", style=discord.ButtonStyle.primary,
                        custom_id="county_catch")
     async def catch(self, interaction: Interaction, button: discord.ui.Button):
+        if await _deny_if_gated(interaction):
+            return
         active = E.active_spawn()
         if not active or active.get("message_id") != interaction.message.id:
             await interaction.response.send_message("Too slow - it's already been caught!",
@@ -197,6 +217,8 @@ def reattach_county_view(client, key, value) -> None:
 # Commands
 # ---------------------------------------------------------------------------
 async def handle_county_dex_command(interaction: Interaction):
+    if await _deny_if_gated(interaction):
+        return
     owned = E.collection(interaction.user.id)
     total = len(COUNTIES)
     caught = len(owned)
@@ -220,6 +242,8 @@ async def handle_county_dex_command(interaction: Interaction):
 
 
 async def handle_county_info_command(interaction: Interaction, county: str):
+    if await _deny_if_gated(interaction):
+        return
     key = match_county(county)
     if not key:
         await interaction.response.send_message(
@@ -242,6 +266,8 @@ async def handle_county_info_command(interaction: Interaction, county: str):
 
 async def handle_county_give_command(interaction: Interaction, member: discord.Member,
                                      county: str):
+    if await _deny_if_gated(interaction):
+        return
     key = match_county(county)
     if not key:
         await interaction.response.send_message(
@@ -262,6 +288,8 @@ async def handle_county_give_command(interaction: Interaction, member: discord.M
 
 
 async def handle_county_sell_command(interaction: Interaction, county: str, quantity: int):
+    if await _deny_if_gated(interaction):
+        return
     key = match_county(county)
     if not key:
         await interaction.response.send_message(
