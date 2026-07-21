@@ -10,7 +10,7 @@ Match the look of the best community countryball fan art (BallsDex-style): **han
 - **Eyes carry all the emotion.** Large white eyes with bold black outlines, but expressive and varied: squinting with joy, closed and content, determined with angled brows, tired, smug, awed - whatever the row's "Character" column calls for. Eyebrows welcome. **No mouth** (countryball convention: expression lives entirely in the eyes).
 - **Personality first.** Each row's "Character" column gives a mood, pose, props and easter eggs. The props should feel worn or held naturally (a hat sits with weight, a mug is nestled against the body), not floated beside a plain circle.
 - Bold clean outlines, confident linework, slight variation in line weight.
-- Fully transparent background. A soft drop shadow directly under the ball is fine. No scenery or backdrops.
+- Fully transparent background. **No drop shadow, no ground contact shading** - shadows key into ragged semi-transparent blobs. The ball and its props must be the only opaque content. No scenery or backdrops.
 - Absolutely no text, letters or numbers anywhere in the image.
 - Keep the set consistent: same rendering style, same outline language, same eye anchoring - the variety comes from expression and props, not from art style drift.
 
@@ -18,7 +18,7 @@ Match the look of the best community countryball fan art (BallsDex-style): **han
 
 - **Every asset must come from the image-generation model.** Never substitute a procedurally drawn image (PIL/matplotlib/SVG/code-rendered) for any county, under any circumstance - a missing file with a note in the audit is better than an off-style placeholder.
 - If a generation attempt is refused or fails, rephrase the prompt and retry; if it still fails after a few attempts, skip it and list it in the final report.
-- Generate on a plain white or transparent background; if keying is needed, key from white, never from green (green halos ruin the linework).
+- Generate on a plain pure-white background with no shadow, then remove the background by **flood fill from the image borders** (only the background region connected to the edge - never a global "remove all white", which would hollow out white eyes and white flag fields), followed by a ~1px defringe/erode so no white halo shows on Discord dark theme. Never use a green background: many county flags are green, and painterly edges pick up green spill.
 
 ## Technical requirements
 
