@@ -28,7 +28,7 @@ COUNTIES = {
     "buckinghamshire": County("Buckinghamshire", "England", "epic", ["bucks"]),
     "cambridgeshire": County("Cambridgeshire", "England", "uncommon", ["cambs"]),
     "cheshire": County("Cheshire", "England", "rare", []),
-    "cornwall": County("Cornwall", "England", "legendary", ["kernow"]),
+    "cornwall": County("Cornwall", "England", "rare", ["kernow"]),
     "derbyshire": County("Derbyshire", "England", "uncommon", []),
     "dorset": County("Dorset", "England", "uncommon", ["dorsetshire"]),
     "durham": County("Durham", "England", "uncommon", ["county durham"]),
