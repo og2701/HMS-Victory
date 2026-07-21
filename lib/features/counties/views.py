@@ -183,6 +183,14 @@ async def spawn_county(client, channel, county_key: str | None = None) -> bool:
     E.begin_spawn(county_key, message.id, channel.id)
     _register_spawn(message.id, county_key, channel.id)
     logger.info("County ball spawned: %s in #%s", county_key, getattr(channel, "name", "?"))
+
+    if getattr(config, "COUNTY_DEBUG_ANNOUNCE", False):
+        try:
+            await channel.send(
+                f"🐛 debug: that's **||{county.name}||** ({TIER_LABELS[county.tier]})"
+            )
+        except discord.HTTPException:
+            pass
     return True
 
 

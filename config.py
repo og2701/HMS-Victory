@@ -305,6 +305,8 @@ COUNTY_ASSET_DIR = os.path.join("data", "counties")
 COUNTY_ALLOWED_ROLE_IDS = [960538130761527386]  # Deputy PM - testing gate on catching and all
                                                 # /county-* commands; set to [] to open to everyone
 COUNTY_DEX_IMAGE_ENABLED = True    # /county-dex renders the full-roster graphic; False = text embed
+COUNTY_DEBUG_ANNOUNCE = True       # testing: after a spawn, post the answer (spoilered) in a
+                                   # follow-up message - MUST be False for go-live
 # Fletcher bot posts the same message-link summary HMS does; auto-delete its duplicate.
 FLETCHER_DEDUPE_ENABLED = True
 FLETCHER_BOT_ID = None            # set to Fletcher's user id for an exact match (optional)
