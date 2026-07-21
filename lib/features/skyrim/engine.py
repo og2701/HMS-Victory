@@ -2021,15 +2021,15 @@ class Delve:
                 self._advance(profile)
         elif key == "sweetroll" and choice == "take":
             profile["stats"]["sweetrolls"] += 1
-            if self.hearts < heart_max(profile):
+            if self.hearts < delve_heart_max(self, profile):
                 self.hearts += 1
                 self.say("You eat the sweetroll. It is, impossibly, still warm.  ❤️ +1")
             else:
                 self.say("You are at full health, but you eat the sweetroll anyway. Obviously.")
             self._advance(profile)
         elif key == "shrine" and choice == "pray":
-            if self.hearts < heart_max(profile):
-                healed = min(2, heart_max(profile) - self.hearts)
+            if self.hearts < delve_heart_max(self, profile):
+                healed = min(2, delve_heart_max(self, profile) - self.hearts)
                 self.hearts += healed
                 self.say(f"Warmth spreads from the shrine - the Nine mend what they can.  ❤️ +{healed}")
             else:

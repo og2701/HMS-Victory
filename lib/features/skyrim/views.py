@@ -97,8 +97,13 @@ def _gallery_files(view: discord.ui.LayoutView, art_key: str, fname: str = "skyr
 # Text builders
 # ---------------------------------------------------------------------------
 def _hearts_str(delve: E.Delve, profile) -> str:
-    mx = E.heart_max(profile)
-    return "❤️" * max(0, delve.hearts) + "🖤" * max(0, mx - delve.hearts)
+    """Hearts on the board. A brewed Draught of Vigor's bonus hearts render GOLD
+    (💛) above your natural maximum, so the elixir is visibly working all delve."""
+    base = E.heart_max(profile)
+    mx = E.delve_heart_max(delve, profile)
+    red = min(max(0, delve.hearts), base)
+    gold = max(0, delve.hearts - base)
+    return "❤️" * red + "💛" * gold + "🖤" * max(0, mx - red - gold)
 
 
 def _bar(value: int, lo: int = 15, hi: int = 100, width: int = 8) -> str:
