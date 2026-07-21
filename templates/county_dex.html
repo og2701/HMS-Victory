@@ -9,16 +9,16 @@
   /* Certificate frame: heavy outer rule, hairline inner rule, aged card stock. */
   .container {
     width: 1584px;
-    background: #E9E2CF;
-    border: 4px solid #2B2620;
+    background: #211E1A;
+    border: 4px solid #C9A85C;
     padding: 10px;
-    color: #2B2620;
+    color: #E5DDCA;
   }
   .plate {
-    border: 2px solid #2B2620;
-    padding: 40px 48px 30px 48px;
+    border: 1px solid #8A7440;
+    padding: 40px 48px 44px 48px;
     background:
-      radial-gradient(ellipse at center, rgba(233,226,207,0) 60%, rgba(120,104,72,0.13) 100%);
+      radial-gradient(ellipse at center, rgba(33,30,26,0) 55%, rgba(0,0,0,0.35) 100%);
   }
 
   .masthead { display: flex; justify-content: space-between; align-items: flex-start; }
@@ -27,13 +27,13 @@
     text-transform: uppercase;
   }
   .ownerline {
-    font-size: 26px; font-style: italic; color: #5C5344; margin-top: 8px;
+    font-size: 26px; font-style: italic; color: #A79B7F; margin-top: 8px;
   }
-  .ownerline em { font-style: italic; font-weight: 700; color: #2B2620; }
+  .ownerline em { font-style: italic; font-weight: 700; color: #E5DDCA; }
 
   /* The collector's stamp: sealing-wax red, set slightly askew. */
   .stamp {
-    border: 4px double #9E3B2F; color: #9E3B2F;
+    border: 4px double #C4453A; color: #C4453A;
     padding: 10px 22px 8px 22px; text-align: center;
     transform: rotate(-4deg); margin-top: 6px; margin-right: 8px;
     opacity: 0.92;
@@ -46,57 +46,54 @@
   /* Printed key, as on a map plate. */
   .keyline {
     display: flex; align-items: center; gap: 24px;
-    border-top: 1px solid #8B7D5E; border-bottom: 1px solid #8B7D5E;
+    border-top: 1px solid #8A7440; border-bottom: 1px solid #8A7440;
     margin-top: 26px; margin-bottom: 26px; padding: 10px 2px;
   }
   .keylabel {
-    font-size: 19px; text-transform: uppercase; letter-spacing: 0.22em; color: #5C5344;
+    font-size: 19px; text-transform: uppercase; letter-spacing: 0.22em; color: #A79B7F;
   }
   .chip { display: flex; align-items: center; gap: 9px; font-size: 20px; }
-  .swatch { width: 15px; height: 15px; border: 1px solid #2B2620; }
-  .swatch.legendary { background: #A8862B; }
-  .swatch.epic { background: #6E4A8E; }
-  .swatch.rare { background: #2F5A8F; }
-  .swatch.uncommon { background: #3E6B45; }
-  .swatch.common { background: #9A927F; }
+  .swatch { width: 15px; height: 15px; border: 1px solid #E5DDCA; }
+  .swatch.legendary { background: #D4A93C; }
+  .swatch.epic { background: #9B6FD0; }
+  .swatch.rare { background: #5B8FD6; }
+  .swatch.uncommon { background: #5FA76A; }
+  .swatch.common { background: #7E786C; }
 
   .grid { display: flex; flex-wrap: wrap; gap: 11px; }
 
   /* Album slots: engraved double line, square corners, tier ink on the outer rule. */
   .cell {
     width: 135px; height: 128px;
-    border: 2px solid #9A927F;
-    box-shadow: inset 0 0 0 1px rgba(43,38,32,0.28);
+    border: 2px solid #7E786C;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.5);
+    background: rgba(0,0,0,0.22);
     display: flex; align-items: center; justify-content: center;
     position: relative;
   }
-  .cell.legendary { border-color: #A8862B; }
-  .cell.epic { border-color: #6E4A8E; }
-  .cell.rare { border-color: #2F5A8F; }
-  .cell.uncommon { border-color: #3E6B45; }
-  .cell.common { border-color: #9A927F; }
-  .cell.legendary.owned { background: rgba(168,134,43,0.12); }
+  .cell.legendary { border-color: #D4A93C; }
+  .cell.epic { border-color: #9B6FD0; }
+  .cell.rare { border-color: #5B8FD6; }
+  .cell.uncommon { border-color: #5FA76A; }
+  .cell.common { border-color: #7E786C; }
+  .cell.legendary.owned { background: rgba(212,169,60,0.14); }
   .cell img { width: 102px; height: 102px; object-fit: contain; display: block; }
 
   /* An empty slot: the specimen printed as a faint ink impression, rule faded. */
-  .cell.missing img { filter: brightness(0); opacity: 0.15; }
-  .cell.missing.legendary { border-color: rgba(168,134,43,0.5); }
-  .cell.missing.epic { border-color: rgba(110,74,142,0.5); }
-  .cell.missing.rare { border-color: rgba(47,90,143,0.5); }
-  .cell.missing.uncommon { border-color: rgba(62,107,69,0.5); }
-  .cell.missing.common { border-color: rgba(154,146,127,0.55); }
+  .cell.missing img { filter: brightness(0) invert(1); opacity: 0.14; }
+  .cell.missing.legendary { border-color: rgba(212,169,60,0.45); }
+  .cell.missing.epic { border-color: rgba(155,111,208,0.45); }
+  .cell.missing.rare { border-color: rgba(91,143,214,0.45); }
+  .cell.missing.uncommon { border-color: rgba(95,167,106,0.45); }
+  .cell.missing.common { border-color: rgba(126,120,108,0.5); }
 
   /* Duplicate tally, inked over the slot corner. */
   .badge {
     position: absolute; top: -9px; right: -9px;
-    background: #E9E2CF; border: 1px solid #2B2620; color: #2B2620;
+    background: #211E1A; border: 1px solid #C9A85C; color: #E5DDCA;
     font-size: 15px; font-weight: 700; padding: 0 6px;
   }
 
-  .footer {
-    margin-top: 28px; text-align: center;
-    font-size: 18px; text-transform: uppercase; letter-spacing: 0.34em; color: #857F62;
-  }
 </style>
 </head>
 <body>
@@ -121,7 +118,6 @@
         <div class="chip"><div class="swatch common"></div>Common</div>
       </div>
       {{ SECTIONS }}
-      <div class="footer">HMS Victory · County Balls</div>
     </div>
   </div>
 </body>
