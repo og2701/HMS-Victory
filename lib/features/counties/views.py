@@ -44,11 +44,11 @@ async def _deny_if_gated(interaction: Interaction) -> bool:
     return True
 
 
-def _stat_line(county_key: str, banter_b: int, bottle_b: int) -> str:
-    base_ba, base_bo = base_stats(county_key)
-    banter = base_ba * (100 + banter_b) // 100
-    bottle = base_bo * (100 + bottle_b) // 100
-    return f"⚔️ {banter} Banter ({banter_b:+d}%) · 🛡️ {bottle} Bottle ({bottle_b:+d}%)"
+def _stat_line(county_key: str, atk_b: int, def_b: int) -> str:
+    base_a, base_d = base_stats(county_key)
+    atk = base_a * (100 + atk_b) // 100
+    dfc = base_d * (100 + def_b) // 100
+    return f"⚔️ {atk} Attack ({atk_b:+d}%) · 🛡️ {dfc} Defence ({def_b:+d}%)"
 
 
 def _asset_file(county_key: str) -> discord.File | None:
@@ -343,7 +343,7 @@ def _info_embed(user_id: int, key: str):
     embed.add_field(name="Nation", value=c.nation)
     embed.add_field(name="Rarity", value=TIER_LABELS[c.tier])
     embed.add_field(name="Sell price", value=f"{config.COUNTY_SELL_PRICES[c.tier]:,} UKP")
-    embed.add_field(name="Base stats", value=f"⚔️ {base_c} Banter · 🛡️ {base_g} Bottle")
+    embed.add_field(name="Base stats", value=f"⚔️ {base_c} Attack · 🛡️ {base_g} Defence")
     embed.add_field(name="You own", value=str(E.owned_count(user_id, key)))
     embed.add_field(name="Caught server-wide", value=str(E.server_caught_count(key)))
     best = E.best_instance(user_id, key)
