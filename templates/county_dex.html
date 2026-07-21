@@ -4,69 +4,125 @@
 <meta charset="utf-8">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: transparent; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+  body { background: transparent; font-family: Georgia, "Times New Roman", serif; }
+
+  /* Certificate frame: heavy outer rule, hairline inner rule, aged card stock. */
   .container {
-    width: 1520px;
-    background: linear-gradient(160deg, #1c2027 0%, #14171c 100%);
-    border-radius: 24px;
-    padding: 36px 40px 30px 40px;
-    color: #e8eaee;
+    width: 1584px;
+    background: #E9E2CF;
+    border: 4px solid #2B2620;
+    padding: 10px;
+    color: #2B2620;
   }
-  .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
-  .title { font-size: 52px; font-weight: 800; }
-  .completion { font-size: 44px; font-weight: 800; color: #f5c542; }
-  .subtitle { font-size: 26px; color: #9aa1ad; margin-bottom: 20px; }
-  .legend { display: flex; gap: 26px; margin-bottom: 24px; }
-  .legend .chip { display: flex; align-items: center; gap: 9px; font-size: 22px; color: #c6cbd4; font-weight: 600; }
-  .dot { width: 20px; height: 20px; border-radius: 50%; }
-  .dot.legendary { background: #f5c542; }
-  .dot.epic { background: #a55eea; }
-  .dot.rare { background: #4f8ff7; }
-  .dot.uncommon { background: #57b96b; }
-  .dot.common { background: #8a8f98; }
-  .grid { display: flex; flex-wrap: wrap; gap: 10px; }
+  .plate {
+    border: 2px solid #2B2620;
+    padding: 40px 48px 30px 48px;
+    background:
+      radial-gradient(ellipse at center, rgba(233,226,207,0) 60%, rgba(120,104,72,0.13) 100%);
+  }
+
+  .masthead { display: flex; justify-content: space-between; align-items: flex-start; }
+  .dexname {
+    font-size: 58px; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .ownerline {
+    font-size: 26px; font-style: italic; color: #5C5344; margin-top: 8px;
+  }
+  .ownerline em { font-style: italic; font-weight: 700; color: #2B2620; }
+
+  /* The collector's stamp: sealing-wax red, set slightly askew. */
+  .stamp {
+    border: 4px double #9E3B2F; color: #9E3B2F;
+    padding: 10px 22px 8px 22px; text-align: center;
+    transform: rotate(-4deg); margin-top: 6px; margin-right: 8px;
+    opacity: 0.92;
+  }
+  .stamp-count { font-size: 40px; font-weight: 700; letter-spacing: 0.08em; }
+  .stamp-word {
+    font-size: 17px; text-transform: uppercase; letter-spacing: 0.3em; margin-top: 2px;
+  }
+
+  /* Printed key, as on a map plate. */
+  .keyline {
+    display: flex; align-items: center; gap: 24px;
+    border-top: 1px solid #8B7D5E; border-bottom: 1px solid #8B7D5E;
+    margin-top: 26px; margin-bottom: 26px; padding: 10px 2px;
+  }
+  .keylabel {
+    font-size: 19px; text-transform: uppercase; letter-spacing: 0.22em; color: #5C5344;
+  }
+  .chip { display: flex; align-items: center; gap: 9px; font-size: 20px; }
+  .swatch { width: 15px; height: 15px; border: 1px solid #2B2620; }
+  .swatch.legendary { background: #A8862B; }
+  .swatch.epic { background: #6E4A8E; }
+  .swatch.rare { background: #2F5A8F; }
+  .swatch.uncommon { background: #3E6B45; }
+  .swatch.common { background: #9A927F; }
+
+  .grid { display: flex; flex-wrap: wrap; gap: 11px; }
+
+  /* Album slots: engraved double line, square corners, tier ink on the outer rule. */
   .cell {
-    width: 135px;
-    background: #232830;
-    border-radius: 16px;
-    border: 3px solid #3a4048;
-    padding: 12px 5px;
-    text-align: center;
+    width: 135px; height: 128px;
+    border: 2px solid #9A927F;
+    box-shadow: inset 0 0 0 1px rgba(43,38,32,0.28);
+    display: flex; align-items: center; justify-content: center;
     position: relative;
   }
-  .cell.legendary { border-color: #f5c542; }
-  .cell.epic { border-color: #a55eea; }
-  .cell.rare { border-color: #4f8ff7; }
-  .cell.uncommon { border-color: #57b96b; }
-  .cell.common { border-color: #565b63; }
-  .cell img { width: 100px; height: 100px; object-fit: contain; display: block; margin: 0 auto; }
-  .cell.missing img { filter: brightness(0) invert(0.28); opacity: 0.75; }
-  .cell.legendary.owned { background: #2e2917; }
+  .cell.legendary { border-color: #A8862B; }
+  .cell.epic { border-color: #6E4A8E; }
+  .cell.rare { border-color: #2F5A8F; }
+  .cell.uncommon { border-color: #3E6B45; }
+  .cell.common { border-color: #9A927F; }
+  .cell.legendary.owned { background: rgba(168,134,43,0.12); }
+  .cell img { width: 102px; height: 102px; object-fit: contain; display: block; }
+
+  /* An empty slot: the specimen printed as a faint ink impression, rule faded. */
+  .cell.missing img { filter: brightness(0); opacity: 0.15; }
+  .cell.missing.legendary { border-color: rgba(168,134,43,0.5); }
+  .cell.missing.epic { border-color: rgba(110,74,142,0.5); }
+  .cell.missing.rare { border-color: rgba(47,90,143,0.5); }
+  .cell.missing.uncommon { border-color: rgba(62,107,69,0.5); }
+  .cell.missing.common { border-color: rgba(154,146,127,0.55); }
+
+  /* Duplicate tally, inked over the slot corner. */
   .badge {
-    position: absolute; top: -10px; right: -8px;
-    background: #f5c542; color: #1b1e24;
-    font-size: 15px; font-weight: 800;
-    border-radius: 11px; padding: 1px 8px;
+    position: absolute; top: -9px; right: -9px;
+    background: #E9E2CF; border: 1px solid #2B2620; color: #2B2620;
+    font-size: 15px; font-weight: 700; padding: 0 6px;
   }
-  .footer { margin-top: 6px; font-size: 15px; color: #767d89; text-align: right; }
+
+  .footer {
+    margin-top: 28px; text-align: center;
+    font-size: 18px; text-transform: uppercase; letter-spacing: 0.34em; color: #857F62;
+  }
 </style>
 </head>
 <body>
   <div class="container">
-    <div class="header">
-      <div class="title">{{ TITLE }}</div>
-      <div class="completion">{{ COMPLETION }}</div>
+    <div class="plate">
+      <div class="masthead">
+        <div>
+          <div class="dexname">The County Dex</div>
+          <div class="ownerline">collected by <em>{{ OWNER }}</em> · a series of ninety-two · {{ PCT }} of the realm</div>
+        </div>
+        <div class="stamp">
+          <div class="stamp-count">{{ COMPLETION }}</div>
+          <div class="stamp-word">Collected</div>
+        </div>
+      </div>
+      <div class="keyline">
+        <span class="keylabel">Key to rarities</span>
+        <div class="chip"><div class="swatch legendary"></div>Legendary</div>
+        <div class="chip"><div class="swatch epic"></div>Epic</div>
+        <div class="chip"><div class="swatch rare"></div>Rare</div>
+        <div class="chip"><div class="swatch uncommon"></div>Uncommon</div>
+        <div class="chip"><div class="swatch common"></div>Common</div>
+      </div>
+      {{ SECTIONS }}
+      <div class="footer">HMS Victory · County Balls</div>
     </div>
-    <div class="subtitle">{{ SUBTITLE }}</div>
-    <div class="legend">
-      <div class="chip"><div class="dot legendary"></div>Legendary</div>
-      <div class="chip"><div class="dot epic"></div>Epic</div>
-      <div class="chip"><div class="dot rare"></div>Rare</div>
-      <div class="chip"><div class="dot uncommon"></div>Uncommon</div>
-      <div class="chip"><div class="dot common"></div>Common</div>
-    </div>
-    {{ SECTIONS }}
-    <div class="footer">HMS Victory County Balls</div>
   </div>
 </body>
 </html>

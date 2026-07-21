@@ -286,9 +286,9 @@ async def _render_dex_image(display_name: str, owned: dict) -> io.BytesIO:
     caught = len(owned)
     html = (
         read_html_template("templates/county_dex.html")
-        .replace("{{ TITLE }}", f"{html_escape(display_name)}'s County Dex")
-        .replace("{{ COMPLETION }}", f"{caught}/{total}")
-        .replace("{{ SUBTITLE }}", f"{caught / total:.0%} of the realm collected")
+        .replace("{{ OWNER }}", html_escape(display_name))
+        .replace("{{ COMPLETION }}", f"{caught} of {total}")
+        .replace("{{ PCT }}", f"{caught / total:.0%}")
         .replace("{{ SECTIONS }}", "".join(sections))
     )
     return await screenshot_html(html, size=(1700, 1200), element_selector=".container")
