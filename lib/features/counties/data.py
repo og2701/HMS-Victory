@@ -56,7 +56,7 @@ COUNTIES = {
     "westmorland": County("Westmorland", "England", "common", ["westmoreland"]),
 
     # --- Wales (13) ---
-    "glamorgan": County("Glamorgan", "Wales", "rare", ["glamorganshire", "morgannwg"]),
+    "glamorgan": County("Glamorgan", "Wales", "legendary", ["glamorganshire", "morgannwg"]),
     "carmarthenshire": County("Carmarthenshire", "Wales", "uncommon", ["carms", "sir gar"]),
     "denbighshire": County("Denbighshire", "Wales", "uncommon", []),
     "flintshire": County("Flintshire", "Wales", "uncommon", ["flints"]),
@@ -72,7 +72,7 @@ COUNTIES = {
 
     # --- Scotland (33) ---
     "lanarkshire": County("Lanarkshire", "Scotland", "rare", ["lanark"]),
-    "midlothian": County("Midlothian", "Scotland", "rare", ["edinburghshire"]),
+    "midlothian": County("Midlothian", "Scotland", "legendary", ["edinburghshire"]),
     "aberdeenshire": County("Aberdeenshire", "Scotland", "uncommon", []),
     "ayrshire": County("Ayrshire", "Scotland", "uncommon", []),
     "fife": County("Fife", "Scotland", "rare", ["fifeshire", "kingdom of fife"]),
@@ -106,7 +106,7 @@ COUNTIES = {
     "wigtownshire": County("Wigtownshire", "Scotland", "common", ["wigtown"]),
 
     # --- Northern Ireland (6) ---
-    "antrim": County("Antrim", "Northern Ireland", "rare", []),
+    "antrim": County("Antrim", "Northern Ireland", "legendary", []),
     "armagh": County("Armagh", "Northern Ireland", "uncommon", []),
     "down": County("Down", "Northern Ireland", "rare", []),
     "londonderry": County("Londonderry", "Northern Ireland", "uncommon", ["derry"]),
