@@ -31,7 +31,7 @@ The "Ball pattern" column is a starting description. Where it says **(verify)**,
 
 ## Rarity
 
-Tiers do not affect the art. Rarity follows popularity: the famous, populous places everyone wants are the rarest (London and Yorkshire are legendary), while small obscure counties are common.
+Tiers do not affect the art, and the tier column below may lag - the roster in `lib/features/counties/data.py` is authoritative. Rarity follows popularity: the famous, populous places everyone wants are the rarest, while small obscure counties are common.
 
 ## Roster
 

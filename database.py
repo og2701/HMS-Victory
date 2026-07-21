@@ -280,6 +280,12 @@ def init_db():
             )
         ''')
         c.execute("CREATE INDEX IF NOT EXISTS idx_county_instances_user ON county_instances(user_id, county)")
+        # Stats came after launch: add the per-instance bonus columns to older DBs.
+        c.execute("PRAGMA table_info(county_instances)")
+        county_cols = {row[1] for row in c.fetchall()}
+        if "clout_bonus" not in county_cols:
+            c.execute("ALTER TABLE county_instances ADD COLUMN clout_bonus INTEGER NOT NULL DEFAULT 0")
+            c.execute("ALTER TABLE county_instances ADD COLUMN grit_bonus INTEGER NOT NULL DEFAULT 0")
         c.execute('''
             CREATE TABLE IF NOT EXISTS county_transfers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

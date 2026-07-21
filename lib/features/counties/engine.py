@@ -124,8 +124,13 @@ def mark_hinted() -> None:
 # ---------------------------------------------------------------------------
 # Ownership
 # ---------------------------------------------------------------------------
-def record_catch(user_id: int, county_key: str, channel_id: int) -> tuple[bool, int]:
-    """Insert an instance for the catcher. Returns (first_of_this_county, owned_count)."""
+def record_catch(user_id: int, county_key: str, channel_id: int) -> tuple[bool, int, int, int]:
+    """Insert an instance for the catcher, rolling its stat bonuses.
+
+    Returns (first_of_this_county, owned_count, clout_bonus, grit_bonus)."""
+    r = getattr(config, "COUNTY_STAT_BONUS_RANGE", 20)
+    clout_b = random.randint(-r, r)
+    grit_b = random.randint(-r, r)
     with DatabaseManager.locked_connection() as conn:
         c = conn.cursor()
         c.execute(
@@ -134,11 +139,21 @@ def record_catch(user_id: int, county_key: str, channel_id: int) -> tuple[bool, 
         )
         owned = c.fetchone()[0]
         c.execute(
-            "INSERT INTO county_instances (user_id, county, caught_at, channel_id, obtained) "
-            "VALUES (?, ?, ?, ?, 'catch')",
-            (str(user_id), county_key, int(time.time()), str(channel_id)),
+            "INSERT INTO county_instances (user_id, county, caught_at, channel_id, obtained, "
+            "clout_bonus, grit_bonus) VALUES (?, ?, ?, ?, 'catch', ?, ?)",
+            (str(user_id), county_key, int(time.time()), str(channel_id), clout_b, grit_b),
         )
-    return owned == 0, owned + 1
+    return owned == 0, owned + 1, clout_b, grit_b
+
+
+def best_instance(user_id: int, county_key: str):
+    """(clout_bonus, grit_bonus) of the user's highest-rolled copy, or None."""
+    row = DatabaseManager.fetch_one(
+        "SELECT clout_bonus, grit_bonus FROM county_instances "
+        "WHERE user_id = ? AND county = ? ORDER BY (clout_bonus + grit_bonus) DESC LIMIT 1",
+        (str(user_id), county_key),
+    )
+    return (row[0], row[1]) if row else None
 
 
 def collection(user_id: int) -> dict:
@@ -200,8 +215,9 @@ def sell(user_id: int, county_key: str, quantity: int) -> int | None:
     with DatabaseManager.locked_connection() as conn:
         c = conn.cursor()
         c.execute(
-            "SELECT id, caught_at, channel_id, obtained FROM county_instances "
-            "WHERE user_id = ? AND county = ? ORDER BY caught_at DESC LIMIT ?",
+            "SELECT id, caught_at, channel_id, obtained, clout_bonus, grit_bonus "
+            "FROM county_instances WHERE user_id = ? AND county = ? "
+            "ORDER BY (clout_bonus + grit_bonus) ASC, caught_at DESC LIMIT ?",
             (str(user_id), county_key, quantity),
         )
         rows = c.fetchall()
@@ -217,11 +233,12 @@ def sell(user_id: int, county_key: str, quantity: int) -> int | None:
                   reason=f"Sold {quantity}x {COUNTIES[county_key].name} county ball"):
         with DatabaseManager.locked_connection() as conn:
             c = conn.cursor()
-            for _id, caught_at, channel_id, obtained in rows:
+            for _id, caught_at, channel_id, obtained, clout_b, grit_b in rows:
                 c.execute(
-                    "INSERT INTO county_instances (id, user_id, county, caught_at, channel_id, obtained) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (_id, str(user_id), county_key, caught_at, channel_id, obtained),
+                    "INSERT INTO county_instances (id, user_id, county, caught_at, channel_id, "
+                    "obtained, clout_bonus, grit_bonus) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (_id, str(user_id), county_key, caught_at, channel_id, obtained,
+                     clout_b, grit_b),
                 )
         logger.warning("County sale refunded - bank could not cover %s UKP", total)
         return None

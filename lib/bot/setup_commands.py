@@ -764,7 +764,7 @@ def define_commands(tree, client):
         await handle_county_give_command(interaction, member, county)
 
     @command("county-sell", "Sell county balls back to the bank for UKPence")
-    async def county_sell_command(interaction: Interaction, county: str, quantity: int = 1):
+    async def county_sell_command(interaction: Interaction, county: str = None, quantity: int = 1):
         from lib.features.counties import handle_county_sell_command
         await handle_county_sell_command(interaction, county, quantity)
 

@@ -7,6 +7,7 @@ brief). Keys are stable identifiers - they name the asset files and the rows in
 county_instances, so never rename one.
 """
 
+import hashlib
 from collections import namedtuple
 
 County = namedtuple("County", ["name", "nation", "tier", "aliases"])
@@ -19,15 +20,15 @@ COUNTIES = {
     "essex": County("Essex", "England", "rare", []),
     "hampshire": County("Hampshire", "England", "rare", ["hants"]),
     "kent": County("Kent", "England", "rare", []),
-    "lancashire": County("Lancashire", "England", "rare", ["lancs"]),
+    "lancashire": County("Lancashire", "England", "legendary", ["lancs"]),
     "middlesex": County("Middlesex", "England", "rare", ["middx"]),
     "surrey": County("Surrey", "England", "rare", []),
-    "bedfordshire": County("Bedfordshire", "England", "uncommon", ["beds"]),
+    "bedfordshire": County("Bedfordshire", "England", "common", ["beds"]),
     "berkshire": County("Berkshire", "England", "uncommon", ["berks"]),
     "buckinghamshire": County("Buckinghamshire", "England", "uncommon", ["bucks"]),
     "cambridgeshire": County("Cambridgeshire", "England", "uncommon", ["cambs"]),
-    "cheshire": County("Cheshire", "England", "uncommon", []),
-    "cornwall": County("Cornwall", "England", "uncommon", ["kernow"]),
+    "cheshire": County("Cheshire", "England", "rare", []),
+    "cornwall": County("Cornwall", "England", "legendary", ["kernow"]),
     "derbyshire": County("Derbyshire", "England", "uncommon", []),
     "dorset": County("Dorset", "England", "uncommon", ["dorsetshire"]),
     "durham": County("Durham", "England", "uncommon", ["county durham"]),
@@ -40,10 +41,10 @@ COUNTIES = {
     "northumberland": County("Northumberland", "England", "uncommon", []),
     "nottinghamshire": County("Nottinghamshire", "England", "uncommon", ["notts"]),
     "oxfordshire": County("Oxfordshire", "England", "uncommon", ["oxon"]),
-    "somerset": County("Somerset", "England", "uncommon", ["somersetshire"]),
+    "somerset": County("Somerset", "England", "rare", ["somersetshire"]),
     "staffordshire": County("Staffordshire", "England", "uncommon", ["staffs"]),
     "suffolk": County("Suffolk", "England", "uncommon", []),
-    "sussex": County("Sussex", "England", "uncommon", []),
+    "sussex": County("Sussex", "England", "rare", []),
     "warwickshire": County("Warwickshire", "England", "uncommon", ["warks"]),
     "wiltshire": County("Wiltshire", "England", "uncommon", ["wilts"]),
     "worcestershire": County("Worcestershire", "England", "uncommon", ["worcs"]),
@@ -74,7 +75,7 @@ COUNTIES = {
     "midlothian": County("Midlothian", "Scotland", "rare", ["edinburghshire"]),
     "aberdeenshire": County("Aberdeenshire", "Scotland", "uncommon", []),
     "ayrshire": County("Ayrshire", "Scotland", "uncommon", []),
-    "fife": County("Fife", "Scotland", "uncommon", ["fifeshire", "kingdom of fife"]),
+    "fife": County("Fife", "Scotland", "rare", ["fifeshire", "kingdom of fife"]),
     "inverness_shire": County("Inverness-shire", "Scotland", "uncommon", ["inverness"]),
     "perthshire": County("Perthshire", "Scotland", "uncommon", []),
     "renfrewshire": County("Renfrewshire", "Scotland", "uncommon", []),
@@ -94,12 +95,12 @@ COUNTIES = {
     "kirkcudbrightshire": County("Kirkcudbrightshire", "Scotland", "common", []),
     "moray": County("Moray", "Scotland", "common", ["morayshire", "elginshire"]),
     "nairnshire": County("Nairnshire", "Scotland", "common", ["nairn"]),
-    "orkney": County("Orkney", "Scotland", "common", ["orkney islands"]),
+    "orkney": County("Orkney", "Scotland", "uncommon", ["orkney islands"]),
     "peeblesshire": County("Peeblesshire", "Scotland", "common", []),
     "ross_and_cromarty": County("Ross and Cromarty", "Scotland", "common", ["ross shire", "ross"]),
     "roxburghshire": County("Roxburghshire", "Scotland", "common", []),
     "selkirkshire": County("Selkirkshire", "Scotland", "common", []),
-    "shetland": County("Shetland", "Scotland", "common", ["shetland islands", "zetland"]),
+    "shetland": County("Shetland", "Scotland", "uncommon", ["shetland islands", "zetland"]),
     "sutherland": County("Sutherland", "Scotland", "common", []),
     "west_lothian": County("West Lothian", "Scotland", "common", ["linlithgowshire"]),
     "wigtownshire": County("Wigtownshire", "Scotland", "common", ["wigtown"]),
@@ -107,13 +108,27 @@ COUNTIES = {
     # --- Northern Ireland (6) ---
     "antrim": County("Antrim", "Northern Ireland", "rare", []),
     "armagh": County("Armagh", "Northern Ireland", "uncommon", []),
-    "down": County("Down", "Northern Ireland", "uncommon", []),
+    "down": County("Down", "Northern Ireland", "rare", []),
     "londonderry": County("Londonderry", "Northern Ireland", "uncommon", ["derry"]),
     "tyrone": County("Tyrone", "Northern Ireland", "uncommon", []),
     "fermanagh": County("Fermanagh", "Northern Ireland", "common", []),
 }
 
 NATIONS = ["England", "Wales", "Scotland", "Northern Ireland"]
+
+# --- Stats (BallsDex-style) ---
+# Every county has base Clout (attack) and Grit (health); each caught instance
+# additionally rolls a +/-20% bonus on both. Bases come from the tier plus a
+# stable per-county jitter (hash of the key), so higher tiers are stronger on
+# average without hand-tuning 92 stat lines, and a county's bases never change.
+TIER_BASE_STATS = {"common": 600, "uncommon": 700, "rare": 800, "legendary": 920}
+
+
+def base_stats(key: str) -> tuple:
+    """(base_clout, base_grit) for a county - deterministic across restarts."""
+    h = hashlib.md5(key.encode()).digest()
+    base = TIER_BASE_STATS[COUNTIES[key].tier]
+    return base + h[0] % 181 - 90, base + h[1] % 181 - 90
 
 
 def normalise(text: str) -> str:

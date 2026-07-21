@@ -13,7 +13,7 @@ from discord import Interaction
 import config
 from lib.core.file_operations import load_persistent_views, save_persistent_views
 from lib.features.counties import engine as E
-from lib.features.counties.data import COUNTIES, NATIONS, match_county
+from lib.features.counties.data import COUNTIES, NATIONS, base_stats, match_county
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,13 @@ async def _deny_if_gated(interaction: Interaction) -> bool:
         ephemeral=True,
     )
     return True
+
+
+def _stat_line(county_key: str, clout_b: int, grit_b: int) -> str:
+    base_c, base_g = base_stats(county_key)
+    clout = base_c * (100 + clout_b) // 100
+    grit = base_g * (100 + grit_b) // 100
+    return f"⚔️ {clout} Clout ({clout_b:+d}%) · 🛡️ {grit} Grit ({grit_b:+d}%)"
 
 
 def _asset_file(county_key: str) -> discord.File | None:
@@ -92,13 +99,14 @@ class CountyCatchModal(discord.ui.Modal, title="Catch the county ball!"):
         # Correct, and this modal got here first: claim it.
         E.clear_active()
         county = COUNTIES[county_key]
-        first, owned = E.record_catch(interaction.user.id, county_key,
-                                      interaction.channel_id or 0)
+        first, owned, clout_b, grit_b = E.record_catch(
+            interaction.user.id, county_key, interaction.channel_id or 0)
         _unregister_spawn(interaction.message.id)
         newness = "a **new** county for their collection" if first else f"a duplicate (x{owned})"
         await interaction.response.send_message(
             f"🎉 **{interaction.user.display_name}** caught **{county.name}** "
-            f"({TIER_LABELS[county.tier]}) - {newness}!"
+            f"({TIER_LABELS[county.tier]}) - {newness}!\n"
+            f"{_stat_line(county_key, clout_b, grit_b)}"
         )
         try:
             await interaction.message.edit(
@@ -322,17 +330,16 @@ async def handle_county_dex_command(interaction: Interaction):
     owned = E.collection(interaction.user.id)
     if not getattr(config, "COUNTY_DEX_IMAGE_ENABLED", True):
         await interaction.response.send_message(
-            embed=_dex_embed(interaction.user.display_name, owned), ephemeral=True)
+            embed=_dex_embed(interaction.user.display_name, owned))
         return
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer()
     try:
         buf = await _render_dex_image(interaction.user.display_name, owned)
-        await interaction.followup.send(
-            file=discord.File(buf, filename="county_dex.png"), ephemeral=True)
+        await interaction.followup.send(file=discord.File(buf, filename="county_dex.png"))
     except Exception:
         logger.error("County dex render failed, falling back to embed", exc_info=True)
         await interaction.followup.send(
-            embed=_dex_embed(interaction.user.display_name, owned), ephemeral=True)
+            embed=_dex_embed(interaction.user.display_name, owned))
 
 
 async def handle_county_info_command(interaction: Interaction, county: str):
@@ -344,12 +351,17 @@ async def handle_county_info_command(interaction: Interaction, county: str):
             f"No county matches \"{county}\".", ephemeral=True)
         return
     c = COUNTIES[key]
+    base_c, base_g = base_stats(key)
     embed = discord.Embed(title=c.name, colour=TIER_COLOURS[c.tier])
     embed.add_field(name="Nation", value=c.nation)
     embed.add_field(name="Rarity", value=TIER_LABELS[c.tier])
     embed.add_field(name="Sell price", value=f"{config.COUNTY_SELL_PRICES[c.tier]:,} UKP")
+    embed.add_field(name="Base stats", value=f"⚔️ {base_c} Clout · 🛡️ {base_g} Grit")
     embed.add_field(name="You own", value=str(E.owned_count(interaction.user.id, key)))
     embed.add_field(name="Caught server-wide", value=str(E.server_caught_count(key)))
+    best = E.best_instance(interaction.user.id, key)
+    if best:
+        embed.add_field(name="Your best copy", value=_stat_line(key, *best), inline=False)
     file = _asset_file(key)
     if file:
         embed.set_image(url=f"attachment://{file.filename}")
@@ -381,9 +393,155 @@ async def handle_county_give_command(interaction: Interaction, member: discord.M
     )
 
 
-async def handle_county_sell_command(interaction: Interaction, county: str, quantity: int):
+class CountySellView(discord.ui.View):
+    """Interactive seller: dropdown of your counties, sort buttons, sell buttons.
+    Lowest-stat copies always sell first. Ephemeral per-user, so no persistence."""
+
+    _SORTS = [("Price", "price"), ("Dupes", "dupes"), ("A-Z", "name")]
+
+    def __init__(self, user_id: int):
+        super().__init__(timeout=300)
+        self.user_id = user_id
+        self.sort = "price"
+        self.selected: str | None = None
+        self.truncated = False
+        self._rebuild()
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "This sell menu belongs to someone else - run /county-sell yourself.",
+                ephemeral=True)
+            return False
+        return True
+
+    def _holdings(self):
+        owned = E.collection(self.user_id)
+        rows = [
+            (k, COUNTIES[k], n, config.COUNTY_SELL_PRICES[COUNTIES[k].tier])
+            for k, n in owned.items()
+        ]
+        if self.sort == "price":
+            rows.sort(key=lambda r: (-r[3], r[1].name))
+        elif self.sort == "dupes":
+            rows.sort(key=lambda r: (-r[2], r[1].name))
+        else:
+            rows.sort(key=lambda r: r[1].name)
+        return rows
+
+    def _rebuild(self):
+        self.clear_items()
+        rows = self._holdings()
+        self.truncated = len(rows) > 25
+        if self.selected not in {r[0] for r in rows}:
+            self.selected = None
+
+        if rows:
+            options = [
+                discord.SelectOption(
+                    label=c.name, value=k, default=(k == self.selected),
+                    description=f"x{n} owned · {price:,} UKP each · {TIER_LABELS[c.tier]}",
+                )
+                for k, c, n, price in rows[:25]
+            ]
+            select = discord.ui.Select(placeholder="Pick a county to sell...",
+                                       options=options, row=0)
+            select.callback = self._on_select
+            self.add_item(select)
+
+        for label, mode in self._SORTS:
+            btn = discord.ui.Button(
+                label=f"Sort: {label}", row=1,
+                style=discord.ButtonStyle.primary if self.sort == mode
+                else discord.ButtonStyle.secondary,
+            )
+            btn.callback = self._sorter(mode)
+            self.add_item(btn)
+
+        count = next((n for k, _c, n, _p in rows if k == self.selected), 0)
+        for label, mode, enabled in [
+            ("Sell one", "one", count >= 1),
+            ("Sell dupes (keep 1)", "dupes", count >= 2),
+            ("Sell ALL of it", "all", count >= 1),
+        ]:
+            btn = discord.ui.Button(label=label, row=2,
+                                    style=discord.ButtonStyle.danger,
+                                    disabled=not enabled)
+            btn.callback = self._seller(mode)
+            self.add_item(btn)
+
+    def _content(self, note: str = "") -> str:
+        rows = self._holdings()
+        total = sum(n for _k, _c, n, _p in rows)
+        value = sum(n * p for _k, _c, n, p in rows)
+        lines = [f"💷 **Sell county balls** - you hold **{total}** "
+                 f"(full buyback value {value:,} UKP)."]
+        if self.selected:
+            c = COUNTIES[self.selected]
+            n = next((n for k, _c, n, _p in rows if k == self.selected), 0)
+            lines.append(
+                f"Selected: **{c.name}** x{n} at "
+                f"{config.COUNTY_SELL_PRICES[c.tier]:,} UKP each. "
+                "Lowest-stat copies sell first.")
+        else:
+            lines.append("Pick a county from the dropdown.")
+        if self.truncated:
+            lines.append("*Showing the top 25 by current sort.*")
+        if note:
+            lines.append(note)
+        return "\n".join(lines)
+
+    async def _redraw(self, interaction: Interaction, note: str = ""):
+        self._rebuild()
+        await interaction.response.edit_message(content=self._content(note), view=self)
+
+    async def _on_select(self, interaction: Interaction):
+        self.selected = interaction.data["values"][0]
+        await self._redraw(interaction)
+
+    def _sorter(self, mode: str):
+        async def cb(interaction: Interaction):
+            self.sort = mode
+            await self._redraw(interaction)
+        return cb
+
+    def _seller(self, mode: str):
+        async def cb(interaction: Interaction):
+            key = self.selected
+            if not key:
+                await self._redraw(interaction)
+                return
+            have = E.owned_count(self.user_id, key)
+            qty = {"one": 1, "dupes": max(have - 1, 0), "all": have}[mode]
+            if qty < 1 or have < qty:
+                await self._redraw(interaction, "Nothing to sell there any more.")
+                return
+            paid = E.sell(self.user_id, key, qty)
+            if paid is None:
+                await self._redraw(
+                    interaction, "⚠️ The bank couldn't cover that sale - try again later.")
+                return
+            name = COUNTIES[key].name
+            gone = " That was your last one - it's gone from your dex!" if qty == have else ""
+            await self._redraw(
+                interaction, f"✅ Sold {qty}x **{name}** for **{paid:,} UKPence**.{gone}")
+        return cb
+
+
+async def handle_county_sell_command(interaction: Interaction, county: str | None,
+                                     quantity: int):
     if await _deny_if_gated(interaction):
         return
+
+    if county is None:
+        if not E.collection(interaction.user.id):
+            await interaction.response.send_message(
+                "You don't own any county balls yet - go catch some!", ephemeral=True)
+            return
+        view = CountySellView(interaction.user.id)
+        await interaction.response.send_message(view._content(), view=view, ephemeral=True)
+        return
+
     key = match_county(county)
     if not key:
         await interaction.response.send_message(
