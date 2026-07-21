@@ -38,7 +38,7 @@ COUNTIES = {
     "lincolnshire": County("Lincolnshire", "England", "uncommon", ["lincs"]),
     "norfolk": County("Norfolk", "England", "uncommon", []),
     "northamptonshire": County("Northamptonshire", "England", "uncommon", ["northants"]),
-    "northumberland": County("Northumberland", "England", "uncommon", []),
+    "northumberland": County("Northumberland", "England", "rare", []),
     "nottinghamshire": County("Nottinghamshire", "England", "uncommon", ["notts"]),
     "oxfordshire": County("Oxfordshire", "England", "uncommon", ["oxon"]),
     "somerset": County("Somerset", "England", "rare", ["somersetshire"]),
