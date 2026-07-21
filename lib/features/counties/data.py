@@ -17,15 +17,15 @@ COUNTIES = {
     "london": County("London", "England", "legendary", ["greater london", "city of london", "the big smoke"]),
     "yorkshire": County("Yorkshire", "England", "legendary", ["yorks", "gods own county", "god's own county"]),
     "devon": County("Devon", "England", "rare", ["devonshire"]),
-    "essex": County("Essex", "England", "rare", []),
+    "essex": County("Essex", "England", "epic", []),
     "hampshire": County("Hampshire", "England", "rare", ["hants"]),
-    "kent": County("Kent", "England", "rare", []),
+    "kent": County("Kent", "England", "epic", []),
     "lancashire": County("Lancashire", "England", "legendary", ["lancs"]),
-    "middlesex": County("Middlesex", "England", "rare", ["middx"]),
-    "surrey": County("Surrey", "England", "rare", []),
+    "middlesex": County("Middlesex", "England", "epic", ["middx"]),
+    "surrey": County("Surrey", "England", "epic", []),
     "bedfordshire": County("Bedfordshire", "England", "common", ["beds"]),
-    "berkshire": County("Berkshire", "England", "uncommon", ["berks"]),
-    "buckinghamshire": County("Buckinghamshire", "England", "uncommon", ["bucks"]),
+    "berkshire": County("Berkshire", "England", "epic", ["berks"]),
+    "buckinghamshire": County("Buckinghamshire", "England", "epic", ["bucks"]),
     "cambridgeshire": County("Cambridgeshire", "England", "uncommon", ["cambs"]),
     "cheshire": County("Cheshire", "England", "rare", []),
     "cornwall": County("Cornwall", "England", "legendary", ["kernow"]),
@@ -33,7 +33,7 @@ COUNTIES = {
     "dorset": County("Dorset", "England", "uncommon", ["dorsetshire"]),
     "durham": County("Durham", "England", "uncommon", ["county durham"]),
     "gloucestershire": County("Gloucestershire", "England", "uncommon", ["glos", "gloucs"]),
-    "hertfordshire": County("Hertfordshire", "England", "uncommon", ["herts"]),
+    "hertfordshire": County("Hertfordshire", "England", "epic", ["herts"]),
     "leicestershire": County("Leicestershire", "England", "uncommon", ["leics"]),
     "lincolnshire": County("Lincolnshire", "England", "uncommon", ["lincs"]),
     "norfolk": County("Norfolk", "England", "uncommon", []),
@@ -44,7 +44,7 @@ COUNTIES = {
     "somerset": County("Somerset", "England", "rare", ["somersetshire"]),
     "staffordshire": County("Staffordshire", "England", "uncommon", ["staffs"]),
     "suffolk": County("Suffolk", "England", "uncommon", []),
-    "sussex": County("Sussex", "England", "rare", []),
+    "sussex": County("Sussex", "England", "epic", []),
     "warwickshire": County("Warwickshire", "England", "uncommon", ["warks"]),
     "wiltshire": County("Wiltshire", "England", "uncommon", ["wilts"]),
     "worcestershire": County("Worcestershire", "England", "uncommon", ["worcs"]),
@@ -123,7 +123,7 @@ NATIONS = ["England", "Wales", "Scotland", "Northern Ireland"]
 # jitter (hash of the key), so higher tiers are stronger on average without
 # hand-tuning 92 stat lines, and a county's bases never change.
 # (DB columns predate the naming: clout_bonus = Banter, grit_bonus = Bottle.)
-TIER_BASE_STATS = {"common": 600, "uncommon": 700, "rare": 800, "legendary": 920}
+TIER_BASE_STATS = {"common": 600, "uncommon": 700, "rare": 800, "epic": 860, "legendary": 920}
 
 
 def base_stats(key: str) -> tuple:

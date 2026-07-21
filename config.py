@@ -298,8 +298,8 @@ COUNTY_SPAWN_RANGE = (15, 30)      # qualifying messages per spawn; go-live: (18
                                    # #general -> roughly 5 spawns quiet days, 11 typical, 20 busy)
 COUNTY_SPAWN_MIN_GAP = 60          # seconds between spawns; go-live: 600
 COUNTY_HINT_AFTER = 3              # wrong guesses before the spawn message gains a hint
-COUNTY_SPAWN_WEIGHTS = {"common": 32, "uncommon": 14, "rare": 5, "legendary": 2}
-COUNTY_SELL_PRICES = {"common": 20, "uncommon": 60, "rare": 300, "legendary": 2000}
+COUNTY_SPAWN_WEIGHTS = {"common": 32, "uncommon": 14, "rare": 5, "epic": 3, "legendary": 2}
+COUNTY_SELL_PRICES = {"common": 20, "uncommon": 60, "rare": 300, "epic": 750, "legendary": 2000}
 COUNTY_STATE_FILE = os.path.join(JSON_DATA_DIR, "county_state.json")  # spawn counter + active spawn
 COUNTY_ASSET_DIR = os.path.join("data", "counties")
 COUNTY_ALLOWED_ROLE_IDS = [960538130761527386]  # Deputy PM - testing gate on catching and all

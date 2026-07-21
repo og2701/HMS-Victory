@@ -20,6 +20,7 @@
   .legend .chip { display: flex; align-items: center; gap: 8px; font-size: 17px; color: #c6cbd4; font-weight: 600; }
   .dot { width: 16px; height: 16px; border-radius: 50%; }
   .dot.legendary { background: #f5c542; }
+  .dot.epic { background: #a55eea; }
   .dot.rare { background: #4f8ff7; }
   .dot.uncommon { background: #57b96b; }
   .dot.common { background: #8a8f98; }
@@ -34,6 +35,7 @@
     position: relative;
   }
   .cell.legendary { border-color: #f5c542; }
+  .cell.epic { border-color: #a55eea; }
   .cell.rare { border-color: #4f8ff7; }
   .cell.uncommon { border-color: #57b96b; }
   .cell.common { border-color: #565b63; }
@@ -58,6 +60,7 @@
     <div class="subtitle">{{ SUBTITLE }}</div>
     <div class="legend">
       <div class="chip"><div class="dot legendary"></div>Legendary</div>
+      <div class="chip"><div class="dot epic"></div>Epic</div>
       <div class="chip"><div class="dot rare"></div>Rare</div>
       <div class="chip"><div class="dot uncommon"></div>Uncommon</div>
       <div class="chip"><div class="dot common"></div>Common</div>

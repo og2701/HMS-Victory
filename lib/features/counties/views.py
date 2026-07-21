@@ -17,11 +17,13 @@ from lib.features.counties.data import COUNTIES, base_stats, match_county
 
 logger = logging.getLogger(__name__)
 
-TIER_LABELS = {"common": "Common", "uncommon": "Uncommon", "rare": "Rare", "legendary": "LEGENDARY"}
+TIER_LABELS = {"common": "Common", "uncommon": "Uncommon", "rare": "Rare",
+               "epic": "EPIC", "legendary": "LEGENDARY"}
 TIER_COLOURS = {
     "common": discord.Colour.light_grey(),
     "uncommon": discord.Colour.green(),
     "rare": discord.Colour.blue(),
+    "epic": discord.Colour.purple(),
     "legendary": discord.Colour.gold(),
 }
 
@@ -233,7 +235,7 @@ def reattach_county_view(client, key, value) -> None:
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
-_TIER_ORDER = {"legendary": 0, "rare": 1, "uncommon": 2, "common": 3}
+_TIER_ORDER = {"legendary": 0, "epic": 1, "rare": 2, "uncommon": 3, "common": 4}
 _thumb_cache: dict = {}
 
 
@@ -301,7 +303,7 @@ def _dex_embed(display_name: str, owned: dict) -> discord.Embed:
                     f"({caught / total:.0%})",
         colour=discord.Colour.dark_green(),
     )
-    for tier in ("legendary", "rare", "uncommon", "common"):
+    for tier in ("legendary", "epic", "rare", "uncommon", "common"):
         keys = [k for k, c in COUNTIES.items() if c.tier == tier]
         got = [k for k in keys if k in owned]
         names = ", ".join(
