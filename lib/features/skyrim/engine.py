@@ -295,7 +295,17 @@ def _migrate(profile: dict) -> dict:
     profile.setdefault("ingredients", {})        # banked alchemy ingredients
     profile.setdefault("materials", {})          # banked tempering materials
     profile.setdefault("recipes", ["healing"])   # known brewing recipes (start with healing)
-    profile.setdefault("nextdelve", {})          # brewed one-delve elixir queued for next delve
+    profile.setdefault("elixirs", {})            # the elixir shelf: recipe -> count
+    profile.setdefault("nextelixirs", [])        # the loadout picked for the next delve
+    # legacy single-queue elixir (pre-shelf): convert it into stock, pre-picked
+    legacy = profile.pop("nextdelve", None) or {}
+    for kind, _amount in list(legacy.items()):
+        recipe = {"heart": "vigor", "soak": "fortitude",
+                  "fight": "fury", "crit": "true_shot"}.get(kind)
+        if recipe:
+            profile["elixirs"][recipe] = int(profile["elixirs"].get(recipe, 0)) + 1
+            if recipe not in profile["nextelixirs"]:
+                profile["nextelixirs"].append(recipe)
     profile.setdefault("nextpacts", [])          # Daedric pacts sworn for the next delve
     profile.setdefault("dragon_wall", [])        # named dragons slain (bestiary)
     profile.setdefault("allegiance", None)       # chosen NPC faction key
@@ -2284,6 +2294,9 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
         bits.append(f"🔥 {stirred_name(delve.stirred)}")
     if delve.pacts:
         bits.append(f"⚖️ {len(delve.pacts)} pact{'s' if len(delve.pacts) != 1 else ''}")
+    picks = [k for k in (profile.get("nextelixirs") or []) if k in elixir_stock(profile)]
+    if picks:
+        bits.append("🧪 " + "+".join(D.RECIPES[k]["name"].split()[-1] for k in picks))
     glog(f"🗺️ **{profile['name']}** set out for **{delve.loc['name']}**"
          + (f" ({', '.join(bits)})" if bits else ""))
     w = weather_today()
@@ -2307,25 +2320,28 @@ def _apply_streak(profile, delve: Delve):
 
 
 def _apply_brew_buffs(profile, delve: Delve):
-    """Consume any brewed one-delve elixir queued at the Lab Bench (Ingredient Pouch)."""
-    nxt = profile.get("nextdelve") or {}
-    if not nxt:
+    """Drink the elixir loadout picked for this delve (Adventure picker) - each
+    chosen bottle leaves the shelf, its effects stacking across types."""
+    stock = elixir_stock(profile)
+    picks = [k for k in (profile.get("nextelixirs") or []) if k in stock]
+    profile["nextelixirs"] = []
+    if not picks:
         return
-    delve.buffs = dict(nxt)
-    profile["nextdelve"] = {}
-    if nxt.get("heart"):
-        delve.hearts += int(nxt["heart"])
+    shelf = profile["elixirs"]
+    labels = {"heart": "+{} heart", "fight": "+{}% attack",
+              "crit": "+{}% crit", "soak": "+{}% soak"}
     bits = []
-    if nxt.get("fight"):
-        bits.append(f"+{nxt['fight']}% attack")
-    if nxt.get("crit"):
-        bits.append(f"+{nxt['crit']}% crit")
-    if nxt.get("soak"):
-        bits.append(f"+{nxt['soak']}% soak")
-    if nxt.get("heart"):
-        bits.append(f"+{nxt['heart']} heart")
-    if bits:
-        delve.say("🧪 Your brewed elixir courses through you.  (" + ", ".join(bits) + " this delve)")
+    for k in picks:
+        shelf[k] -= 1
+        if shelf[k] <= 0:
+            del shelf[k]
+        kind, amount = ELIXIR_EFFECTS[k]
+        delve.buffs[kind] = delve.buffs.get(kind, 0) + amount
+        bits.append(labels[kind].format(amount))
+    if delve.buffs.get("heart"):
+        delve.hearts += int(delve.buffs["heart"])
+    delve.say(f"🧪 Your elixir{'s' if len(picks) != 1 else ''} course through you.  "
+              f"({', '.join(bits)} this delve)")
 
 
 # ---------------------------------------------------------------------------
@@ -3077,6 +3093,26 @@ def legendary_stars(profile) -> int:
 # the Alchemy Lab. Ingredients ride at risk in the satchel, so brewing rewards
 # surviving the delve, not just clearing it.
 # ---------------------------------------------------------------------------
+# One-delve elixirs are STOCKPILED: brewing adds to the shelf, and before a delve
+# you pick which to drink (a multi-select on the Adventure picker) - at most one
+# of each type per delve, effects stacking across types.
+ELIXIR_EFFECTS = {"vigor": ("heart", 1), "fortitude": ("soak", 10),
+                  "fury": ("fight", 6), "true_shot": ("crit", 6)}
+
+
+def elixir_stock(profile) -> dict:
+    """recipe key -> count on the shelf (zero-count entries pruned)."""
+    return {k: n for k, n in (profile.get("elixirs") or {}).items()
+            if k in ELIXIR_EFFECTS and n > 0}
+
+
+def select_elixirs(profile, keys: list) -> None:
+    """Choose which stocked elixirs to drink on the NEXT delve (any kind -
+    the daily counts). An empty pick clears the loadout."""
+    stock = elixir_stock(profile)
+    profile["nextelixirs"] = [k for k in keys if k in stock]
+
+
 def can_brew(profile, recipe_key: str) -> bool:
     r = D.RECIPES.get(recipe_key)
     if not r:
@@ -3110,12 +3146,12 @@ def brew(profile, recipe_key: str) -> str | None:
         log_add(profile, "brews", recipe_key)
         return None
     # otherwise a one-delve elixir, queued for the next delve (overwrites any queued)
-    effect = {"heart_delve": ("heart", 1), "soak_delve": ("soak", 10),
-              "fight_delve": ("fight", 6), "crit_delve": ("crit", 6)}.get(makes)
-    if effect:
-        profile["nextdelve"] = {effect[0]: effect[1]}
+    # a one-delve elixir joins the SHELF - pick it on the Adventure picker
+    shelf = profile.setdefault("elixirs", {})
+    shelf[recipe_key] = int(shelf.get(recipe_key, 0)) + 1
     log_add(profile, "brews", recipe_key)
-    glog(f"⚗️ **{profile['name']}** brewed **{r['name']}**")
+    glog(f"⚗️ **{profile['name']}** brewed **{r['name']}** "
+         f"(shelf: x{shelf[recipe_key]})")
     return None
 
 
@@ -3486,7 +3522,8 @@ def retire(profile, boon_key: str) -> str | None:
     profile["doctrines"] = {}
     profile["legendary"] = {}
     profile["ingredients"] = {}
-    profile["nextdelve"] = {}
+    profile["elixirs"] = {}
+    profile["nextelixirs"] = []
     profile["nextpacts"] = []
     profile["created"] = _today_str()
     record_best(profile, "legend_rank", lg["rank"])

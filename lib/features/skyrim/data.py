@@ -852,16 +852,16 @@ RECIPES = {
                   "desc": "One health potion for your belt (respects your pocket cap)."},
     "vigor":     {"name": "Draught of Vigor", "emoji": "❤️", "makes": "heart_delve",
                   "cost": {"troll_fat": 1, "blue_flower": 1},
-                  "desc": "Your NEXT delve begins with +1 max heart."},
+                  "desc": "One delve: +1 max heart. Stockpiles on your shelf."},
     "fortitude": {"name": "Elixir of Fortitude", "emoji": "🛡️", "makes": "soak_delve",
                   "cost": {"troll_fat": 1, "frost_salts": 1, "bone_meal": 1},
-                  "desc": "Your NEXT delve: +10% armour soak."},
+                  "desc": "One delve: +10% armour soak. Stockpiles on your shelf."},
     "fury":      {"name": "Philtre of Fury", "emoji": "🔥", "makes": "fight_delve",
                   "cost": {"nightshade": 1, "hagraven_claw": 1},
-                  "desc": "Your NEXT delve: +6% attack."},
+                  "desc": "One delve: +6% attack. Stockpiles on your shelf."},
     "true_shot": {"name": "Draught of True Shot", "emoji": "🎯", "makes": "crit_delve",
                   "cost": {"void_salts": 1, "deathbell": 1, "spider_egg": 1},
-                  "desc": "Your NEXT delve: +6% crit chance."},
+                  "desc": "One delve: +6% crit chance. Stockpiles on your shelf."},
 }
 
 # ---------------------------------------------------------------------------

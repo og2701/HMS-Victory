@@ -1344,8 +1344,11 @@ def test_alchemy_and_tempering():
     p["ingredients"] = {"nightshade": 1, "hagraven_claw": 1}
     assert E.can_brew(p, "fury")
     assert E.brew(p, "fury") is None
-    assert p["nextdelve"] == {"fight": 6}          # queued for the next delve
+    assert E.elixir_stock(p) == {"fury": 1}        # brews STOCKPILE on the shelf
     assert "nightshade" not in p["ingredients"]    # consumed
+    p["ingredients"] = {"nightshade": 1, "hagraven_claw": 1}
+    assert E.brew(p, "fury") is None
+    assert E.elixir_stock(p) == {"fury": 2}        # multiples stack
     # tempering spends septims + materials and raises the grade
     p["septims"] = 1000
     p["ingredients"] = {"bone_meal": 2}
@@ -1819,6 +1822,32 @@ def test_game_log_queue():
     for i in range(500):
         E.glog(f"line {i}")
     assert len(E.drain_log()) == 200
+
+
+def test_elixir_shelf_and_loadout():
+    p = _profile()
+    p["elixirs"] = {"vigor": 2, "fury": 1}
+    # the loadout: pick what to drink; unknown/unstocked picks are dropped
+    E.select_elixirs(p, ["vigor", "fury", "true_shot", "nonsense"])
+    assert p["nextelixirs"] == ["vigor", "fury"]
+    d = E.start_delve(p, 0, "embershard")
+    # both fired, stacked, and left the shelf; the loadout is spent
+    assert d.buffs.get("heart") == 1 and d.buffs.get("fight") == 6
+    assert d.hearts == E.heart_max(p) + 1
+    assert E.elixir_stock(p) == {"vigor": 1}
+    assert p["nextelixirs"] == []
+    assert any("elixirs course through you" in l for l in d.log)
+    # nothing picked = nothing drunk, shelf untouched
+    E.abandon_active(p)
+    d2 = E.start_delve(p, 0, "embershard")
+    assert d2.buffs.get("heart") is None and E.elixir_stock(p) == {"vigor": 1}
+    # a legacy single-queue profile converts to shelf + pre-picked loadout
+    q = E.create_profile(41, "Old", "warrior")
+    q["nextdelve"] = {"crit": 6}
+    E.save_profile(q)
+    q = E.get_profile(41)
+    assert "nextdelve" not in q
+    assert E.elixir_stock(q) == {"true_shot": 1} and q["nextelixirs"] == ["true_shot"]
 
 
 if __name__ == "__main__":

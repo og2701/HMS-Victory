@@ -695,6 +695,30 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
                 discord.ButtonStyle.danger if D.LOCATIONS[key].get("dragon_lair")
                 else discord.ButtonStyle.primary, loc["name"], loc["emoji"], _go))
         rows.append(row)
+        # the elixir loadout: pick which shelf bottles to drink on the next delve
+        stock = E.elixir_stock(profile)
+        if stock:
+            chosen = [k for k in (profile.get("nextelixirs") or []) if k in stock]
+            if chosen:
+                names = ", ".join(D.RECIPES[k]["name"] for k in chosen)
+                lines.append(f"\n🧪 **Drinking on the next delve:** {names}")
+            esel = discord.ui.Select(
+                placeholder=f"🧪 Elixirs for this delve ({sum(stock.values())} on the shelf)...",
+                min_values=0, max_values=len(stock))
+            for k, n in stock.items():
+                r = D.RECIPES[k]
+                esel.add_option(label=f"{r['name']} (x{n})", value=k, emoji=r["emoji"],
+                                description=r["desc"][:100], default=k in chosen)
+
+            async def _drink(inter: Interaction):
+                p = E.get_profile(inter.user.id)
+                E.select_elixirs(p, list(esel.values))
+                E.save_profile(p)
+                await _show_offers(inter, edit_hub=True)
+            esel.callback = _drink
+            erow = discord.ui.ActionRow()
+            erow.add_item(esel)
+            rows.append(erow)
         if E.level(profile) >= E.PACT_MIN_LEVEL:
             sworn = profile.get("nextpacts") or []
             if sworn:
@@ -1847,6 +1871,13 @@ def _alchemy_text(profile) -> str:
         lines.append("**Your pouch:** " + "  ·  ".join(bits))
     else:
         lines.append("**Your pouch is empty.** Elites, bounties and dragons drop the good stuff.")
+    stock = E.elixir_stock(profile)
+    if stock:
+        shelf = "  ·  ".join(f"{D.RECIPES[k]['emoji']} {D.RECIPES[k]['name']} ×{n}"
+                             for k, n in sorted(stock.items()))
+        lines.append(f"🧪 **Your elixir shelf:** {shelf}")
+        lines.append("-# Pick which to drink on the **Adventure** picker before you "
+                     "set out - one of each type per delve, effects stack.")
     lines.append("")
     if not E.home_owned(profile, "alchemy_lab"):
         lines.append("-# 🔒 You need an **Alchemy Lab** (a Breezehome upgrade in Property) to brew.")
@@ -1887,7 +1918,12 @@ async def _hub_alchemy(interaction: Interaction, notice: str = ""):
                 if err is None:
                     E.save_profile(p)
                     r = D.RECIPES[sel.values[0]]
-                    await _hub_alchemy(inter, notice=f"-# {r['emoji']} Brewed **{r['name']}**.")
+                    note = f"-# {r['emoji']} Brewed **{r['name']}**."
+                    if r["makes"] != "potion":
+                        n = E.elixir_stock(p).get(sel.values[0], 0)
+                        note += (f"  On the shelf (×{n}) - pick it on the "
+                                 f"**Adventure** picker when you want it.")
+                    await _hub_alchemy(inter, notice=note)
                 else:
                     await _hub_alchemy(inter, notice=f"-# {err}")
             sel.callback = _on_brew
