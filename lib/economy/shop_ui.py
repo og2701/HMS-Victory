@@ -472,7 +472,7 @@ class VIPCaseSpinView(View):
         for outcome in self.outcomes:
             outcome_copy = outcome.copy()
             if outcome_copy["type"] == "vip":
-                new_weight = max(1, int(outcome_copy["weight"] - (current_vips * 0.75)))
+                new_weight = max(0.5, outcome_copy["weight"] - (current_vips * 0.375))
                 outcome_copy["weight"] = new_weight
             dynamic_outcomes.append(outcome_copy)
 
