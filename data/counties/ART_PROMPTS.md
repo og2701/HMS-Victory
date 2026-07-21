@@ -78,7 +78,7 @@ Tiers do not affect the art, and the tier column below may lag - the roster in `
 | data/counties/westmorland.webp | Westmorland | common | registered flag (research; apple tree and bars) | cheerfully soggy: hiking boots, folded map, a tiny personal rain cloud drizzling on it |
 | data/counties/wiltshire.webp | Wiltshire | uncommon | Green and white horizontal stripes, great bustard bird at centre (verify) | mysterious hooded-brow stare, standing among a few miniature trilithon stones, a great bustard perched on top |
 | data/counties/worcestershire.webp | Worcestershire | uncommon | registered flag (research; black pears) | mildly apologetic eyes, a small unlabelled brown sauce bottle held out like an offering, a black pear |
-| data/counties/yorkshire.webp | Yorkshire | legendary | Sky blue, one large white rose of York | supremely content closed eyes, flat cap, steaming mug of tea, a whippet curled at its base |
+| data/counties/yorkshire.webp | Yorkshire | legendary | Sky blue, one large white rose of York | flat cap, steaming mug of tea and a whippet curled at its base; rivalry glare: suspiciously eyeing a small red Lancashire rose beside it |
 
 ### Wales (13)
 
