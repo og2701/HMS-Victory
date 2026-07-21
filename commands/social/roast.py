@@ -1,5 +1,5 @@
 import random
-from discord import Embed, Forbidden, TextChannel, Member
+from discord import AllowedMentions, Embed, Forbidden, TextChannel, Member
 from openai import AsyncOpenAI
 from datetime import datetime
 from os import getenv
@@ -94,7 +94,12 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         )
 
         summary = response.choices[0].message.content.strip()
-        await interaction.followup.send(summary)
+        header = (f"🔥 {user.mention} 🔥\n"
+                  f"-# roasted at {interaction.user.display_name}'s request\n\n")
+        await interaction.followup.send(
+            header + summary,
+            allowed_mentions=AllowedMentions(users=[user], everyone=False,
+                                             roles=False, replied_user=False))
         
         from lib.bot.event_handlers import award_badge_with_notify
         await award_badge_with_notify(interaction.client, interaction.user.id, 'roaster')
