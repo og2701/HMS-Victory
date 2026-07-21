@@ -291,7 +291,7 @@ async def _render_dex_image(display_name: str, owned: dict) -> io.BytesIO:
         .replace("{{ SUBTITLE }}", f"{caught / total:.0%} of the realm collected")
         .replace("{{ SECTIONS }}", "".join(sections))
     )
-    return await screenshot_html(html, size=(1100, 1200), element_selector=".container")
+    return await screenshot_html(html, size=(1700, 1200), element_selector=".container")
 
 
 def _dex_embed(display_name: str, owned: dict) -> discord.Embed:
