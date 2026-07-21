@@ -474,7 +474,12 @@ class CountySellView(discord.ui.View):
             lines.append(
                 f"Selected: **{c.name}** x{n} at "
                 f"{config.COUNTY_SELL_PRICES[c.tier]:,} UKP each. "
-                "Lowest-stat copies sell first.")
+                "Lowest-stat copies sell first:")
+            bonuses = E.instance_bonuses(self.user_id, self.selected)
+            for i, (cb, gb) in enumerate(bonuses[:5], start=1):
+                lines.append(f"> {i}. {_stat_line(self.selected, cb, gb)}")
+            if len(bonuses) > 5:
+                lines.append(f"> ...and {len(bonuses) - 5} better copies.")
         else:
             lines.append("Pick a county from the dropdown.")
         if self.truncated:

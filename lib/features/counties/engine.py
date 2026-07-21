@@ -146,6 +146,17 @@ def record_catch(user_id: int, county_key: str, channel_id: int) -> tuple[bool, 
     return owned == 0, owned + 1, clout_b, grit_b
 
 
+def instance_bonuses(user_id: int, county_key: str) -> list:
+    """All of the user's (clout_bonus, grit_bonus) rolls for a county,
+    worst first - the order sell() burns them in."""
+    rows = DatabaseManager.fetch_all(
+        "SELECT clout_bonus, grit_bonus FROM county_instances "
+        "WHERE user_id = ? AND county = ? ORDER BY (clout_bonus + grit_bonus) ASC",
+        (str(user_id), county_key),
+    )
+    return [(r[0], r[1]) for r in rows]
+
+
 def best_instance(user_id: int, county_key: str):
     """(clout_bonus, grit_bonus) of the user's highest-rolled copy, or None."""
     row = DatabaseManager.fetch_one(
