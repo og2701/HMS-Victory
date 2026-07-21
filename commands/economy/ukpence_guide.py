@@ -94,36 +94,4 @@ async def handle_ukpence_guide_command(interaction: discord.Interaction):
                     inline=False)
     spend.set_footer(text="HMS Victory · A closed economy - total UKP fixed at 800,000")
 
-    tax = discord.Embed(
-        title="🏛️ Taxes & demurrage",
-        colour=ACCENT,
-        description=(
-            "To keep UKP circulating, the bank claws a little back from the wealthy - normal "
-            "balances never feel it."
-        ),
-    )
-    tax.add_field(
-        name="📈 Wealth tax (on earnings)",
-        value="Passive earnings are taxed once your wealth passes **10k** (**60%** to 20k, "
-              "**85%** to 30k, **95%** above) - so the rich earn slower. Winnings from gambling, "
-              "predictions and wagers are never taxed.",
-        inline=False)
-    tax.add_field(
-        name="🏚️ Wealth demurrage (on hoards)",
-        value="**5% per week** on the part of a balance above **20k**, taken every Friday.",
-        inline=False)
-    tax.add_field(
-        name="💤 Inactivity tax",
-        value="Go dormant for **60+ days** and **20% per week** of your balance returns to the bank.",
-        inline=False)
-    tax.add_field(
-        name="🔀 No dodging by shuffling",
-        value="All three are charged on your **effective wealth** = your balance **+** what you've "
-              "sent out **−** what you've been sent (last 7 days). So parking UKP on an alt or "
-              "splitting it across accounts doesn't lower the bill, and the person you send to "
-              "isn't charged for money just passing through. Money you genuinely lose or spend "
-              "isn't taxed - only what you still hold or have shuffled out.",
-        inline=False)
-    tax.set_footer(text="/pay has no fee but is capped at 10,000/day per person. The taxes just follow where the money really sits.")
-
-    await interaction.response.send_message(embeds=[earn, spend, tax], ephemeral=True)
+    await interaction.response.send_message(embeds=[earn, spend], ephemeral=True)
