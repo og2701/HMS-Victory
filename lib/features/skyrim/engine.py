@@ -32,6 +32,25 @@ logger = logging.getLogger(__name__)
 
 _UK = pytz.timezone("Europe/London")
 
+# ---------------------------------------------------------------------------
+# The game log - a full audit trail of who is doing what. The engine QUEUES
+# compact one-liners here (staying discord-free); the views layer drains the
+# queue into the log thread after handling each interaction. Bounded, so a
+# headless run (tests, the balance sim) can never grow it without limit.
+# ---------------------------------------------------------------------------
+_GAME_LOG = []
+
+
+def glog(line: str):
+    _GAME_LOG.append(line)
+    del _GAME_LOG[:-200]
+
+
+def drain_log() -> list:
+    out = list(_GAME_LOG)
+    _GAME_LOG.clear()
+    return out
+
 ROLL_MIN, ROLL_MAX = 5, 86           # success chances are clamped into this band
 SOAK_CAP = 30                        # max % chance armour absorbs a wound
 BASE_HEARTS = 3
@@ -375,6 +394,8 @@ def create_profile(user_id, name: str, stone_key: str) -> dict:
         "created": _today_str(),
     }
     save_profile(profile)
+    glog(f"🐉 **{name}** woke up on the cart - a new Dovahkiin, blessed by "
+         f"{stone['name']}")
     return profile
 
 
@@ -593,6 +614,8 @@ def befriend_stray(profile) -> str | None:
     profile.setdefault("companions", []).append(key)
     if not profile.get("companion"):
         profile["companion"] = key               # first friend follows immediately
+    pet = D.COMPANIONS[key]
+    glog(f"🐾 **{profile['name']}** befriended **{pet['name']}** ({pet['species']})")
     return key
 
 
@@ -737,6 +760,9 @@ def roll_wonder(profile, sources: set, chance: float) -> str | None:
     key = random.choice(eligible)
     owned.append(key)
     record_best(profile, "wonders", len(owned))
+    w = D.WONDERS[key]
+    glog(f"✨ **{profile['name']}** found a WONDER: {w['emoji']} **{w['name']}** "
+         f"({len(owned)}/{len(D.WONDERS)})")
     return key
 
 
@@ -857,6 +883,10 @@ def claim_tasks(profile) -> str | None:
     st["tasks_done"] = int(st.get("tasks_done", 0)) + paid
     bits.insert(0, f"{paid} task{'s' if paid != 1 else ''} honoured: "
                    f"+{septims:,} septims, +{gained} XP")
+    pts, total = task_points(profile)
+    glog(f"🎁 **{profile['name']}** claimed {paid} task bounty{'ies' if paid != 1 else ''} "
+         f"(+{septims:,} septims; {pts}/{total} pts this week"
+         + ("; board SWEPT" if swept else "") + ")")
     return "  ·  ".join(bits)
 
 
@@ -958,6 +988,8 @@ def add_xp(profile, amount: int) -> tuple:
                        * weather_today()["xp"]))
     before = level(profile)
     profile["xp"] += amount
+    if level(profile) > before:
+        glog(f"🆙 **{profile['name']}** reached **level {level(profile)}**")
     return amount, level(profile) - before
 
 
@@ -1387,6 +1419,10 @@ class Delve:
                             f"(including a {bonus:,} haul from the final chamber) and "
                             f"**{self.xp_gained} XP**.{tail}")
         self.say(D.pick(D.CLEAR_LINES, location=self.loc["name"]))
+        pact_bit = f", pacts x{mult:g}" if mult > 1.0 else ""
+        glog(f"✅ **{profile['name']}** cleared **{self.loc['name']}**"
+             f"{' (daily)' if self.daily else ''} - {self.satchel:,} septims, "
+             f"{self.kills} kills, +{self.xp_gained} XP{pact_bit}")
 
     def _wound(self, profile, lines, knee_chance=0.0, heavy=0.0) -> str:
         """Take a hit: armour may soak it, the Adoring Fan may take it for you,
@@ -1433,6 +1469,9 @@ class Delve:
         self.result_line = (f"**You died.** The satchel - **{lost:,} septims** - stays in "
                             f"{self.loc['name']}. Your XP, gear and souls are safe.")
         self.say(D.pick(D.DEATH_LINES, location=self.loc["name"]))
+        where = (f"depth {self.depth} of the Soul Cairn" if self.kind == "soulcairn"
+                 else f"room {self.idx + 1} of **{self.loc['name']}**")
+        glog(f"💀 **{profile['name']}** died in {where} - {lost:,} septims stay behind")
 
     # --- enemy actions ------------------------------------------------------------
     def _heavy(self, e) -> float:
@@ -1619,13 +1658,20 @@ class Delve:
                 if nd_key not in wall:
                     wall.append(nd_key)
                     line += f"  🐲 **{nd['name']}** joins your Dragon Wall!"
+            slain_name = (D.DRAGON_ROSTER[nd_key]["name"]
+                          if self.room["key"] == "dragon" and nd_key else e["name"])
+            glog(f"🐉 **{profile['name']}** slew **{slain_name}** "
+                 f"(dragon #{profile['stats']['dragons']})")
         if self.room["key"] == "alduin":
             profile["alduin_slain"] = profile.get("alduin_slain", 0) + 1
+            glog(f"🌑 **{profile['name']}** UNDID THE WORLD-EATER "
+                 f"(Alduin x{profile['alduin_slain']})")
         rumour_key = D.RUMOUR_BOSS.get(self.room["key"])
         if rumour_key and (profile.get("rumours") or {}).get(rumour_key) == "heard":
             profile["rumours"][rumour_key] = "slain"
             log_add(profile, "legends", rumour_key)
             line += f"\n🖤 **A legend falls.** {D.RUMOURS[rumour_key]['name'].capitalize()} - done. Forever."
+            glog(f"🖤 **{profile['name']}** settled a LEGEND: **{e['name']}** falls, forever")
         if ups:
             line += f"\n🆙 **Level up! You are now level {level(profile)}** (+{ups} perk point)."
         # the once-in-hundreds chase: kills roll for a Wonder (bosses chase rarer ones)
@@ -1831,6 +1877,8 @@ class Delve:
             self.result_line = (f"You fled mid-fight - **{kept:,} septims** made it home, "
                                 f"the rest spilled behind you. **{self.xp_gained} XP** banked.")
             self.say(D.pick(D.FLEE_LINES))
+            glog(f"🏃 **{profile['name']}** fled **{self.loc['name']}** mid-fight - "
+                 f"kept {kept:,} septims, spilled the rest")
         else:
             self.satchel = int(self.satchel * mult)
             profile["septims"] += self.satchel
@@ -1845,9 +1893,13 @@ class Delve:
                 self.result_line = (f"You climb out of the Cairn at **depth {self.depth}** with "
                                     f"**{self.satchel:,} septims** and **{self.xp_gained} XP**. "
                                     f"Deepest ever: **{best}**.")
+                glog(f"💀 **{profile['name']}** climbed out of the Soul Cairn at "
+                     f"**depth {self.depth}** with {self.satchel:,} septims (best: {best})")
             else:
                 self.result_line = (f"You walk out with **{self.satchel:,} septims** and "
                                     f"**{self.xp_gained} XP**.")
+                glog(f"🚪 **{profile['name']}** walked out of **{self.loc['name']}** with "
+                     f"{self.satchel:,} septims after {self.kills} kills")
             self.say(D.pick(D.LEAVE_LINES))
 
     def _take_deep_fork(self, profile):
@@ -2029,6 +2081,8 @@ class Delve:
                 known = " ".join(D.SHOUT_WORDS[:profile["words"]])
                 self.say(f"A dragon's soul burns away and the word **{word}** sears into your mind."
                          f"  🗣️ Your Voice: **{known}** ({profile['words']}/3 words)")
+                glog(f"🗣️ **{profile['name']}** learned the word **{word}** - "
+                     f"their Voice is now **{known}**")
             else:
                 self.say("The wall chants, but the word slides off your mind. It needs the "
                          "strength of a **dragon's soul** to stick.")
@@ -2075,6 +2129,8 @@ class Delve:
                     self.state = "launched"
                     self.result_line = (f"Banked **{self.satchel:,} septims** and "
                                         f"**{self.xp_gained} XP**. And some airtime.")
+                    glog(f"🦣 **{profile['name']}** was launched into orbit by a giant in "
+                         f"**{self.loc['name']}** - satchel ({self.satchel:,}) landed with them")
                     self.say("The club catches you mid-hello. Skyrim physics take over.\n"
                              "You regain consciousness outside the entrance, somehow intact, "
                              "loot and all. The clouds were lovely.")
@@ -2215,6 +2271,16 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
             delve.say(f"⚖️ **Pacts sworn:** {names}  (satchel x{pact_mult(delve):g} if you bank it)")
     delve.kind = kind
     profile["stats"]["delves"] += 1
+    bits = []
+    if kind == "daily":
+        m = D.DAILY_MOODS.get(delve.mood) or {}
+        bits.append("the daily" + (f", {m['emoji']} {m['name']}" if m.get("emoji") else ""))
+    if delve.stirred:
+        bits.append(f"🔥 {stirred_name(delve.stirred)}")
+    if delve.pacts:
+        bits.append(f"⚖️ {len(delve.pacts)} pact{'s' if len(delve.pacts) != 1 else ''}")
+    glog(f"🗺️ **{profile['name']}** set out for **{delve.loc['name']}**"
+         + (f" ({', '.join(bits)})" if bits else ""))
     w = weather_today()
     if w["key"] != "clear":
         delve.say(weather_line(w))
@@ -2433,6 +2499,8 @@ def buy_rumour(profile, key: str) -> str | None:
         return f"That whisper costs {r['price']:,} septims - you have {profile['septims']:,}."
     profile["septims"] -= r["price"]
     rumours_of(profile)[key] = "heard"
+    glog(f"🗣️ **{profile['name']}** bought a rumour: **{r['name']}** - "
+         f"{D.LOCATIONS[r['loc']]['name']} is marked on their map")
     return None
 
 
@@ -2520,6 +2588,8 @@ def pit_begin(profile) -> list:
                  "round": 1, "ward": champ.get("quirk") in ("veteran", "master"),
                  "staggered": False, "opening": False, "fatigue": fatigue,
                  "me0": max(1, hearts)}              # unwounded-victory tasks compare to this
+    glog(f"🗡️ **{profile['name']}** stepped into the Pit - bout {s['rank'] + 1} vs "
+         f"**{champ['name']}**" + (f" (fighting tired, -{fatigue}%)" if fatigue else ""))
     lines = [f"🗡️ **The Pit, Windhelm.** Bout {s['rank'] + 1}: **{champ['name']}**.",
              f"-# {champ['taunt']}  ·  ({champ['quirk_desc']})"]
     if fatigue:
@@ -2648,12 +2718,16 @@ def pit_action(profile, action: str) -> tuple:
         lines.append(f"🏆 **{champ['name']} yields!** The crowd roars. You are now "
                      f"**{pit_title(s['rank'])}** (rank {s['rank']}/{len(D.PIT_CHAMPS)}).  "
                      f"(+{prize} septims, +{gained} XP)")
+        glog(f"🗡️ **{profile['name']}** felled **{champ['name']}** in the Pit - now "
+             f"**{pit_title(s['rank'])}** ({s['rank']}/{len(D.PIT_CHAMPS)})")
         found = roll_wonder(profile, {"pit"}, WONDER_SIDE_CHANCE)
         if found:
             lines.append(wonder_line(found))
         if s["rank"] >= len(D.PIT_CHAMPS):
             lines.append("👑 **THE PIT HAS A NEW CHAMPION.** Your name goes on the wall "
                          "until Monday.")
+            glog(f"👑 **{profile['name']}** is the PIT CHAMPION - the wall bears their "
+                 f"name until Monday")
         elif pit_available(profile):
             lines.append(f"-# 📣 The crowd chants for MORE - {D.PIT_CHAMPS[s['rank']]['name']} "
                          f"is warming up. Fight on at {'❤️' * int(s['hearts_today'])} and "
@@ -2664,12 +2738,15 @@ def pit_action(profile, action: str) -> tuple:
         s["last"] = "lost"
         lines.append(f"💤 {champ['name']} stands over you as the crowd counts you out. "
                      f"No rank lost - limp home, train, return tomorrow.")
+        glog(f"💤 **{profile['name']}** was counted out by **{champ['name']}** in the Pit "
+             f"(round {b['round']})")
         return "lost", lines
     if b["round"] >= PIT_ROUNDS:
         s["bout"] = None
         s["last"] = "draw"
         lines.append("🤝 Twelve rounds and no decision - the crowd calls it a draw. "
                      "Come back tomorrow.")
+        glog(f"🤝 **{profile['name']}** fought **{champ['name']}** to a twelve-round draw")
         return "draw", lines
     b["round"] += 1
     return "playing", lines
@@ -2740,6 +2817,8 @@ def duel_begin(profile, rival) -> list:
              f"~{int(round(DUEL_PRIZE[1] * mult))} XP"
              if mult > 0 else
              "the circle offers nothing for this mismatch - fight for pride alone")
+    glog(f"⚔️ **{profile['name']}** challenged **{ghost['name']}** (Lv {ghost['level']}) "
+         f"in the duelling circle")
     return [f"⚔️ **The duelling circle.** You face **{ghost['name']}** "
             f"(Lv {ghost['level']}).",
             f"-# {ghost['taunt']}  ·  ({ghost['quirk_desc']})",
@@ -2778,6 +2857,8 @@ def duel_action(profile, action: str) -> tuple:
         else:
             lines.append(f"🏆 **{ghost['name']} scatters like morning mist.** The circle "
                          f"pays nothing for a mismatch - that one was for pride.")
+        glog(f"⚔️ **{profile['name']}** beat **{ghost['name']}** in the duelling circle "
+             f"(round {b['round']})")
         found = roll_wonder(profile, {"duel"}, WONDER_SIDE_CHANCE)
         if found:
             lines.append(wonder_line(found))
@@ -2788,6 +2869,8 @@ def duel_action(profile, action: str) -> tuple:
         _h2h(profile, ghost["uid"], won=False)
         lines.append(f"💤 **{ghost['name']} stands over you.** It will absolutely "
                      f"tell them. Train and return tomorrow.")
+        glog(f"👻 **{ghost['name']}** beat **{profile['name']}** in the duelling circle "
+             f"(round {b['round']})")
         return "lost", lines
     if b["round"] >= PIT_ROUNDS:
         profile["duel"] = None
@@ -2879,6 +2962,7 @@ def buy_home(profile, key: str) -> str | None:
         return f"{item['name']} costs {item['price']:,} septims - you have {profile['septims']:,}."
     profile["septims"] -= item["price"]
     profile["home"] = sorted((profile.get("home") or []) + [key])
+    glog(f"🏠 **{profile['name']}** bought **{item['name']}** ({item['price']:,} septims)")
     return None
 def buy_potion(profile) -> str | None:
     price = shop_price(profile, D.POTION_PRICE)
@@ -2906,6 +2990,8 @@ def buy_gear(profile, slot: str) -> str | None:
         return f"{nxt['name']} costs {price:,} septims - you have {profile['septims']:,}."
     profile["septims"] -= price
     profile[f"{slot}_tier"] = tier_now + 1
+    glog(f"🛒 **{profile['name']}** bought {nxt['emoji']} **{nxt['name']}** {slot} "
+         f"({price:,} septims)")
     return None
 
 
@@ -2917,6 +3003,8 @@ def take_perk(profile, key: str) -> str | None:
     if perk_rank(profile, key) >= D.PERKS[key]["ranks"]:
         return "That perk is already at its highest rank."
     profile["perks"][key] = perk_rank(profile, key) + 1
+    glog(f"📜 **{profile['name']}** took **{D.PERKS[key]['name']}** "
+         f"(rank {perk_rank(profile, key)})")
     return None
 
 
@@ -2938,6 +3026,9 @@ def choose_doctrine(profile, skill: str, choice: str) -> str | None:
     if skill in (profile.get("doctrines") or {}):
         return "That mastery is already chosen - it is permanent."
     profile.setdefault("doctrines", {})[skill] = choice
+    doc = D.DOCTRINES[skill][choice]
+    glog(f"✨ **{profile['name']}** mastered {skill.title()} and chose the "
+         f"**{doc['name']}** doctrine")
     return None
 
 
@@ -2956,6 +3047,8 @@ def make_legendary(profile, skill: str) -> str | None:
         return "Only a mastered skill (100) can be made Legendary."
     profile["skills"][skill] = 15
     profile.setdefault("legendary", {})[skill] = int((profile.get("legendary") or {}).get(skill, 0)) + 1
+    glog(f"⭐ **{profile['name']}** made {skill.title()} LEGENDARY "
+         f"(x{legendary_stars(profile)}) - the climb begins again")
     return None
 
 
@@ -3006,6 +3099,7 @@ def brew(profile, recipe_key: str) -> str | None:
     if effect:
         profile["nextdelve"] = {effect[0]: effect[1]}
     log_add(profile, "brews", recipe_key)
+    glog(f"⚗️ **{profile['name']}** brewed **{r['name']}**")
     return None
 
 
@@ -3039,6 +3133,8 @@ def temper(profile, slot: str) -> str | None:
         if have[k] <= 0:
             del have[k]
     profile.setdefault("temper", {"weapon": 0, "armour": 0})[slot] = grade + 1
+    glog(f"🪓 **{profile['name']}** tempered their {slot} to grade {grade + 1} "
+         f"({cost['septims']:,} septims)")
     return None
 
 
@@ -3062,6 +3158,7 @@ def join_faction(profile, key: str) -> str | None:
     # reset the weekly tracker to snapshot against the new faction's stat
     profile["faction"] = {}
     faction_state(profile)
+    glog(f"🏰 **{profile['name']}** swore allegiance to **{D.FACTIONS[key]['name']}**")
     return None
 
 
@@ -3113,6 +3210,8 @@ def claim_faction(profile) -> str | None:
     reward = _septims(profile, 400 + 150 * rank_i)
     profile["septims"] += reward
     gained, _ = add_xp(profile, 120 + 40 * rank_i)
+    glog(f"🏅 **{profile['name']}** claimed the week's faction favour - now "
+         f"**{D.FACTION_RANKS[rank_i]}** of {D.FACTIONS[profile['allegiance']]['name']}")
     return f"favour +1 ({D.FACTION_RANKS[rank_i]}), +{reward} septims, +{gained} XP"
 
 
@@ -3197,6 +3296,8 @@ def start_expedition(profile, key: str, slot: int = None) -> str | None:
     profile[_exp_field(slot)] = {"key": key, "start": _today_str(),
                                  "return": _date_plus(exp["days"]), "carl": carl,
                                  "slot": slot}
+    glog(f"🧭 **{profile['name']}** sent {carl} on **{exp['name']}** "
+         f"(returns {_date_plus(exp['days'])})")
     return None
 
 
@@ -3276,6 +3377,8 @@ def collect_expedition(profile, slot: int = 1) -> str | None:
     tot["count"] += 1
     tot["septims"] += septims
     tot["xp"] += gained
+    glog(f"🧭 **{profile['name']}**'s {carl} returned from **{exp['name']}** with "
+         + ", ".join(parts))
     return f"{carl} returns from **{exp['name']}** with " + ", ".join(parts) + "."
 
 
@@ -3371,6 +3474,10 @@ def retire(profile, boon_key: str) -> str | None:
     profile["nextpacts"] = []
     profile["created"] = _today_str()
     record_best(profile, "legend_rank", lg["rank"])
+    boon = D.BOONS[boon_key]
+    glog(f"🏛️ **{profile['name']}** RETIRED to the Hall of Legends - Legend "
+         f"{lg['rank']}, taking {boon['emoji']} **{boon['name']}**. "
+         f"The climb begins again at level 1.")
     return None
 
 
@@ -3415,6 +3522,7 @@ def homestead_check(profile) -> str | None:
     hs["building"] = None
     hs["done_at"] = None
     room = D.HOMESTEAD[key]
+    glog(f"🏡 **{profile['name']}**'s **{room['name']}** stands finished")
     return f"🔨 **{room['name']} stands finished.** {room['desc']}"
 
 
@@ -3452,9 +3560,13 @@ def start_building(profile, key: str) -> str | None:
             del have[k]
     if room["hours"] <= 0:                        # the deed changes hands on the spot
         hs["built"][key] = _today_str()
+        glog(f"🏞️ **{profile['name']}** bought **{room['name']}** "
+             f"({room['septims']:,} septims)")
         return None
     hs["building"] = key
     hs["done_at"] = (_now_uk() + datetime.timedelta(hours=room["hours"])).isoformat()
+    glog(f"🔨 **{profile['name']}** commissioned **{room['name']}** "
+         f"({room['septims']:,} septims, ready in {room['hours']}h)")
     return None
 
 
@@ -3528,6 +3640,7 @@ def collect_homestead(profile) -> str | None:
         return None
     hs["last_collect"] = _today_str()
     line = "🏡 The estate provides: " + "  ·  ".join(parts) + "."
+    glog(f"🏡 **{profile['name']}** collected the estate's yields: " + ", ".join(parts))
     found = roll_wonder(profile, {"homestead"}, WONDER_SIDE_CHANCE)
     if found:
         line += "\n" + wonder_line(found)
@@ -3769,6 +3882,12 @@ def wb_march(profile) -> tuple:
     gained, _ = add_xp(profile, 20 + 6 * dealt)   # marching always teaches something
     lines.append(f"⚔️ You dealt **{dealt}** - the pool stands at "
                  f"**{store['hp']}/{store['max']}**.  (+{gained} XP)")
+    if slain_now:
+        glog(f"🏆 **{profile['name']}** landed the killing blow on **{boss['name']}** - "
+             f"THE HUNT IS OVER, spoils for all who marched")
+    else:
+        glog(f"📯 **{profile['name']}** marched on **{boss['name']}** - dealt {dealt}, "
+             f"pool at {store['hp']}/{store['max']}")
     _wb_save(store)
     record_best(profile, "march_damage", dealt)
     return lines, dealt, slain_now, store
@@ -3796,6 +3915,8 @@ def wb_claim(profile) -> str | None:
     found = roll_wonder(profile, {"worldboss"}, WONDER_SIDE_CHANCE)
     if found:
         extra = "\n" + wonder_line(found)
+    glog(f"🏆 **{profile['name']}** claimed their share of the {boss['name']}'s spoils "
+         f"(+{septims:,} septims)")
     return (f"{boss['emoji']} Your share of the {boss['name']}'s spoils: "
             f"**+{septims:,} septims, +{gained} XP**.{extra}")
 

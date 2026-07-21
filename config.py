@@ -158,6 +158,12 @@ SKYRIM_DRAGON_MIN_LEVEL = 8        # dragon lairs appear as destinations from th
 SKYRIM_ALDUIN_MIN_LEVEL = 20       # Skuldafn (the Alduin fight) needs this level...
 SKYRIM_ALDUIN_MIN_DRAGONS = 5      # ...plus all 3 shout words and this many dragons slain.
 SKYRIM_ALDUIN_DRAGONS_PER_ECHO = 3  # each Alduin kill demands this many MORE dragons before a rematch
+# The game log: every meaningful action (delves, kills of note, purchases, pit bouts,
+# duels, marches, builds, retirements...) is posted as compact one-liners to this
+# thread - a full audit trail of who is doing what. Reactive only: lines are queued
+# by the engine and flushed when the triggering interaction is handled; nothing is
+# ever posted on a schedule. Set to 0 to disable.
+SKYRIM_LOG_THREAD_ID = 1529065067553882133
                                    # One attempt per UK day, offered as a picker button only
                                    # (nothing in Skyrim ever posts on its own).
 

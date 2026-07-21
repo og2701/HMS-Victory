@@ -1797,6 +1797,28 @@ def test_legacy_rebirth():
     assert got_boon > got_plain                            # Old Soul pays
 
 
+def test_game_log_queue():
+    E.drain_log()                                      # start clean
+    # creation, delving and dying all leave audit lines
+    p = E.create_profile(31, "Watched", "warrior")
+    rooms = [{"kind": "enemy", "key": "skeever", "boss": True, "resolved": False}]
+    d = E.Delve(p["user_id"], "Watched", 0, "embershard", rooms, hearts=3, shout_charges=0)
+    E.random = _fixed_rolls(0.5, 0.99)                 # hit, no crit -> cleared
+    try:
+        d.act_attack(p, "blade")
+    finally:
+        _restore_random()
+    lines = E.drain_log()
+    joined = "\n".join(lines)
+    assert "Watched" in joined and "woke up on the cart" in joined
+    assert "cleared" in joined and "Embershard" in joined
+    assert E.drain_log() == []                         # draining empties the queue
+    # the buffer is bounded even if nothing ever drains (headless runs)
+    for i in range(500):
+        E.glog(f"line {i}")
+    assert len(E.drain_log()) == 200
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

@@ -364,6 +364,7 @@ async def _rerender_delve(interaction: Interaction, delve: E.Delve, profile):
             interaction.client.add_view(view, message_id=delve.message_id)
     except Exception:
         logger.debug("skyrim add_view failed", exc_info=True)
+    await _flush_game_log(interaction.client)
 
 
 async def _handle_delve_click(interaction: Interaction, delve: E.Delve, action: str):
@@ -454,9 +455,34 @@ def _panel_view(text: str, rows, art_key: str = None):
     return view, files
 
 
+async def _flush_game_log(client):
+    """Drain the engine's queued audit lines into the game-log thread. Strictly
+    reactive (lines only leave while a player's own interaction is handled) and
+    best-effort: logging must never break gameplay."""
+    lines = E.drain_log()
+    thread_id = int(getattr(config, "SKYRIM_LOG_THREAD_ID", 0) or 0)
+    if not lines or not thread_id or client is None:
+        return
+    try:
+        ch = client.get_channel(thread_id)
+        if ch is None:
+            ch = await client.fetch_channel(thread_id)
+        buf = ""
+        for line in lines:
+            if buf and len(buf) + len(line) + 1 > 1900:
+                await ch.send(buf, allowed_mentions=discord.AllowedMentions.none())
+                buf = ""
+            buf += ("\n" if buf else "") + line
+        if buf:
+            await ch.send(buf, allowed_mentions=discord.AllowedMentions.none())
+    except Exception:
+        logger.debug("skyrim game-log flush failed", exc_info=True)
+
+
 async def _edit_panel(interaction: Interaction, text: str, rows, art_key: str = None):
     view, files = _panel_view(text, rows, art_key)
     await interaction.response.edit_message(view=view, attachments=files)
+    await _flush_game_log(interaction.client)
 
 
 def _hub_rows(profile):
@@ -541,6 +567,7 @@ async def _show_hub_root(interaction: Interaction, profile, *, first_response=Fa
         await interaction.response.send_message(view=view, files=files, ephemeral=True)
     else:
         await interaction.response.edit_message(view=view, attachments=files)
+    await _flush_game_log(interaction.client)
 
 
 async def _hub_root(interaction: Interaction):
@@ -775,6 +802,7 @@ async def _launch_delve(interaction: Interaction, loc_key: str, kind: str = "nor
         "soulcairn": "💀 **The Soul Cairn.** Down you go. Leave with your haul before it takes you.",
     }.get(kind, f"{loc['emoji']} Off to **{loc['name']}** - good hunting, Dovahkiin.")
     await interaction.response.edit_message(view=_notice_view(send_off), attachments=[])
+    await _flush_game_log(interaction.client)
 
 
 def _notice_view(text: str):
@@ -1236,6 +1264,7 @@ async def _post_pit_board(interaction: Interaction, profile, intro_lines):
     await interaction.response.edit_message(
         view=_notice_view("🗡️ **The Pit roars.** Your bout is live in the channel - "
                           "the crowd is watching."), attachments=[])
+    await _flush_game_log(interaction.client)
 
 
 def _pit_board_layout(profile, last_lines, champ=None, offer=True):
@@ -1327,6 +1356,7 @@ async def _handle_pit_click(interaction: Interaction, owner_id: int, action: str
                 interaction.client.add_view(view, message_id=mid)
             except Exception:
                 logger.debug("skyrim pit add_view failed", exc_info=True)
+        await _flush_game_log(interaction.client)
     elif action == "fighton":
         if not (E.level(p) >= 5 and E.pit_available(p)):
             await interaction.response.send_message(
@@ -1346,6 +1376,7 @@ async def _handle_pit_click(interaction: Interaction, owner_id: int, action: str
                 interaction.client.add_view(view, message_id=mid)
             except Exception:
                 logger.debug("skyrim pit add_view failed", exc_info=True)
+        await _flush_game_log(interaction.client)
     elif action == "rest":
         if mid:
             E.delete_delve(mid)
@@ -1435,6 +1466,7 @@ async def _handle_duel_click(interaction: Interaction, owner_id: int, action: st
             interaction.client.add_view(view, message_id=mid)
         except Exception:
             logger.debug("skyrim duel add_view failed", exc_info=True)
+    await _flush_game_log(interaction.client)
 
 
 async def _post_duel_board(interaction: Interaction, profile, intro_lines):
@@ -1465,6 +1497,7 @@ async def _post_duel_board(interaction: Interaction, profile, intro_lines):
     await interaction.response.edit_message(
         view=_notice_view("⚔️ **The circle forms.** Your duel is live in the channel."),
         attachments=[])
+    await _flush_game_log(interaction.client)
 
 
 # --- shop --------------------------------------------------------------------------
@@ -2496,6 +2529,7 @@ async def _post_march_board(interaction: Interaction, profile):
     send_off = ("🏆 **THE HUNT IS OVER.** Claim your spoils on the Notice Board." if slain
                 else f"📯 Your march is told in the channel - **{dealt}** off the pool.")
     await interaction.response.edit_message(view=_notice_view(send_off), attachments=[])
+    await _flush_game_log(interaction.client)
 
 
 # --- rankings ------------------------------------------------------------------------
