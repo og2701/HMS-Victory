@@ -2463,7 +2463,9 @@ def _notice_text(profile) -> str:
     for _key, t, done, comp, claimed in E.task_progress(profile):
         s, _x = D.TASK_REWARDS[t["band"]]
         p = D.TASK_POINTS[t["band"]]
-        tick = "✅" if comp else "⬜"
+        # three states, so the green tick means "there is coin here for you" and
+        # never gets confused with work already paid out
+        tick = "🪙" if claimed else ("✅" if comp else "⬜")
         prog = f"  ({done}/{t['n']})" if t["n"] > 1 and not comp else ""
         tail = "  ·  claimed" if claimed else f"  ·  {s} septims"
         lines.append(f"{tick} {t['emoji']} {t['name']}{prog}  ·  "
