@@ -3486,18 +3486,28 @@ def has_boon(profile, key: str) -> bool:
     return key in legacy(profile).get("boons", [])
 
 
+def retire_level_needed(profile) -> int:
+    """The level floor for the next retirement - 20 for a first legend, three more
+    for each one already seated, so a rushed character can't ride one lucky Alduin
+    kill straight into the Hall."""
+    return D.LEGACY_MIN_LEVEL + D.LEGACY_LEVEL_STEP * legacy_rank(profile)
+
+
 def retire_ready(profile) -> tuple:
-    """(ready, requirement_line). Retirement N needs Alduin undone N times - and
-    since every kill hardens his Echo, each retirement is bought against a worse
-    World-Eater."""
+    """(ready, requirement_line). Retirement N needs Alduin undone N times and a
+    character actually grown into the climb - and since every kill hardens his
+    Echo, each retirement is bought against a worse World-Eater."""
     lg = legacy(profile)
     need = int(lg.get("rank", 0)) + 1
     slain = int(profile.get("alduin_slain") or 0)
     if lg.get("rank", 0) >= D.LEGACY_MAX:
         return False, f"the Hall holds {D.LEGACY_MAX} legends - yours is complete"
-    line = (f"Alduin undone **{need}** time{'s' if need != 1 else ''} "
+    lvl_need = retire_level_needed(profile)
+    lvl = level(profile)
+    line = (f"level **{lvl_need}** ({'✅' if lvl >= lvl_need else lvl}) and "
+            f"Alduin undone **{need}** time{'s' if need != 1 else ''} "
             f"({'✅' if slain >= need else slain})")
-    return slain >= need, line
+    return slain >= need and lvl >= lvl_need, line
 
 
 def boon_offer(profile) -> list:
@@ -3559,6 +3569,13 @@ def retire(profile, boon_key: str) -> str | None:
     profile["elixirs"] = {}
     profile["nextelixirs"] = []
     profile["nextpacts"] = []
+    # a guild only knows the champion who earned the rank, so allegiance and favour
+    # go with them - and a housecarl answers to a Thane, not to whoever wakes up on
+    # the cart, so any errand still out is called off rather than paying the newborn
+    profile["allegiance"] = None
+    profile["faction"] = {}
+    profile["expedition"] = None
+    profile["expedition2"] = None
     profile["created"] = _today_str()
     record_best(profile, "legend_rank", lg["rank"])
     boon = D.BOONS[boon_key]

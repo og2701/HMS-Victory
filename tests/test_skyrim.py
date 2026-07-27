@@ -1767,13 +1767,22 @@ def test_task_attainability_rule():
                 f"{key} is a one-shot task with no skill/choice gate"
 
 
+def _xp_for_level(lvl: int) -> int:
+    return sum(D.xp_needed(l) for l in range(1, lvl))
+
+
 def test_legacy_rebirth():
     p = _profile()
-    # the gate: retirement N demands Alduin undone N times
+    # the gate: retirement N demands Alduin undone N times AND a grown character
     ready, line = E.retire_ready(p)
     assert not ready and "Alduin" in line
     assert E.retire(p, "old_soul") is not None
     p["alduin_slain"] = 1
+    ready, line = E.retire_ready(p)
+    assert not ready and "level" in line          # a lucky kill at level 1 isn't enough
+    p["xp"] = _xp_for_level(D.LEGACY_MIN_LEVEL - 1)
+    assert not E.retire_ready(p)[0]
+    p["xp"] = _xp_for_level(D.LEGACY_MIN_LEVEL)
     ready, _ = E.retire_ready(p)
     assert ready
     # the offer is 3 unowned boons, stable between opens
@@ -1791,11 +1800,36 @@ def test_legacy_rebirth():
     p["souls"] = 7
     p["wonders"] = ["golden_sweetroll"]
     p["stats"]["dragons"] = 30
+    p["doctrines"] = {"blade": ["warmaster"]}
+    p["legendary"] = {"blade": 1}
+    p["ingredients"] = {"nightshade": 4}
+    p["elixirs"] = {"fury": 2}
+    p["nextelixirs"] = ["fury"]
+    p["nextpacts"] = ["boethiah"]
+    p["temper"] = {"weapon": 3, "armour": 3}
+    p["souls"] = 7
+    p["potions"] = 9
+    p["allegiance"] = "companions"
+    p["faction"] = {"favour": 6, "week": [2020, 1]}
+    p["expedition"] = {"key": "whatever", "return": "2020-01-01"}
+    p["expedition2"] = {"key": "whatever", "return": "2020-01-01"}
     E.homestead(p)["built"]["land"] = "2020-01-01"
     boon = offer[0]
     assert E.retire(p, boon) is None
     assert E.level(p) == 1 and p["septims"] == 0 and p["words"] == 0
     assert p["perks"] == {} and p["armour_tier"] == 0
+    # every scrap of character progression is gone - perk points included, since they
+    # are level minus what was spent and all three reset together
+    assert E.perk_points(p) == 0 and p["meditations"] == 0
+    assert p["doctrines"] == {} and p["legendary"] == {}
+    assert p["skills"] == {**{s: 15 for s in E.SKILLS}, **D.STONES[p["stone"]]["start"]}
+    assert p["ingredients"] == {} and p["elixirs"] == {} and p["nextelixirs"] == []
+    assert p["nextpacts"] == [] and p["souls"] == 0 and p["potions"] == 2
+    assert p["temper"]["armour"] == 0
+    assert p["temper"]["weapon"] == (3 if boon == "heirloom" else 0)
+    assert p["voice"]["charges"] == 0
+    assert p["allegiance"] is None and p["faction"] == {}   # the guild knew the champion
+    assert p["expedition"] is None and p["expedition2"] is None
     if boon == "heirloom":
         assert p["weapon_tier"] == 5                       # the blade passes down
     else:
@@ -1807,10 +1841,15 @@ def test_legacy_rebirth():
     assert lg["rank"] == 1 and lg["boons"] == [boon]
     ep = lg["epitaphs"][0]
     assert ep["dragons"] == 30 and ep["alduin"] == 1 and ep["boon"] == boon
-    # the next retirement needs a SECOND Alduin kill (at a harder Echo)
+    # the next retirement needs a SECOND Alduin kill (at a harder Echo) and a level
+    # floor three higher than the last one
+    assert E.retire_level_needed(p) == D.LEGACY_MIN_LEVEL + D.LEGACY_LEVEL_STEP
     ready, _ = E.retire_ready(p)
     assert not ready
     p["alduin_slain"] = 2
+    p["xp"] = _xp_for_level(E.retire_level_needed(p) - 1)
+    assert not E.retire_ready(p)[0]
+    p["xp"] = _xp_for_level(E.retire_level_needed(p))
     ready, _ = E.retire_ready(p)
     assert ready
     assert boon not in E.boon_offer(p)                     # boons never repeat

@@ -1647,6 +1647,10 @@ BOONS = {
                  "desc": "Expeditions return +25% septims."},
 }
 LEGACY_MAX = 5
+# A retirement also asks for a lived-in character, not just a lucky Alduin kill:
+# level 20 for the first legend, three more for each one already in the Hall.
+LEGACY_MIN_LEVEL = 20
+LEGACY_LEVEL_STEP = 3
 LEGACY_EPITAPHS = [
     "The ruins still whisper the name.",
     "Retired to the Hall with every finger accounted for.",
