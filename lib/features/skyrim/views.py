@@ -889,7 +889,8 @@ def _sheet_text(profile) -> str:
     doc = profile.get("doctrines") or {}
     if doc:
         doc_bits = [f"{D.DOCTRINES[sk][ch]['emoji']} {D.DOCTRINES[sk][ch]['name']}"
-                    for sk, ch in doc.items() if ch in D.DOCTRINES.get(sk, {})]
+                    for sk in doc for ch in E.doctrine_keys(profile, sk)
+                    if ch in D.DOCTRINES.get(sk, {})]
         star = f"  ·  ⭐x{E.legendary_stars(profile)}" if E.legendary_stars(profile) else ""
         lines.append(f"**Doctrines**: {'  ·  '.join(doc_bits)}{star}")
     pet = E.active_companion(profile)
@@ -1737,13 +1738,17 @@ def _masteries_text(profile) -> str:
     lines = ["## ✨ Masteries",
              "-# Every skill you carry to **100** unlocks a permanent **Doctrine** - pick one of "
              "two. Make a mastered skill **Legendary** to reset it to 15 for a ⭐ (the Doctrine "
-             "stays). This is how two maxed Dragonborn end up fighting differently.", ""]
+             "stays) - carry it back to 100 and the OTHER Doctrine is yours too. This is how "
+             "two maxed Dragonborn end up fighting differently.", ""]
     chosen = profile.get("doctrines") or {}
     if chosen:
         lines.append("**Your Doctrines**")
-        for sk, ch in chosen.items():
-            doc = D.DOCTRINES[sk][ch]
-            lines.append(f"{doc['emoji']} **{doc['name']}** ({_SKILL_LABELS.get(sk, sk)}) - {doc['desc']}")
+        for sk in chosen:
+            for ch in E.doctrine_keys(profile, sk):
+                doc = D.DOCTRINES.get(sk, {}).get(ch)
+                if doc:
+                    lines.append(f"{doc['emoji']} **{doc['name']}** ({_SKILL_LABELS.get(sk, sk)}) "
+                                 f"- {doc['desc']}")
         lines.append("")
     stars = E.legendary_stars(profile)
     if stars:
@@ -1753,8 +1758,9 @@ def _masteries_text(profile) -> str:
     if open_choices:
         lines.append("**Doctrines to choose** (a skill just hit 100):")
         for sk in open_choices:
-            opts = D.DOCTRINES[sk]
-            pair = "  vs  ".join(f"{d['emoji']} {d['name']}" for d in opts.values())
+            opts = E.doctrine_options_open(profile, sk)
+            pair = "  vs  ".join(f"{D.DOCTRINES[sk][c]['emoji']} {D.DOCTRINES[sk][c]['name']}"
+                                 for c in opts)
             lines.append(f"- {_SKILL_LABELS.get(sk, sk)}: {pair}")
     if not open_choices and not chosen:
         lines.append("-# No skill at 100 yet. Master one and its Doctrine unlocks here.")
@@ -1774,7 +1780,8 @@ async def _hub_masteries(interaction: Interaction, notice: str = ""):
     if open_choices:
         dsel = discord.ui.Select(placeholder="Choose a Doctrine (permanent)...")
         for sk in open_choices:
-            for ch, doc in D.DOCTRINES[sk].items():
+            for ch in E.doctrine_options_open(profile, sk):
+                doc = D.DOCTRINES[sk][ch]
                 dsel.add_option(label=f"{_SKILL_LABELS.get(sk, sk)}: {doc['name']}",
                                 value=f"{sk}:{ch}", emoji=doc["emoji"],
                                 description=doc["desc"][:100])
@@ -1797,9 +1804,11 @@ async def _hub_masteries(interaction: Interaction, notice: str = ""):
     if ready:
         lsel = discord.ui.Select(placeholder="Make a skill Legendary (reset to 15 for a ⭐)...")
         for sk in ready:
+            more = len(E.doctrine_options_open(profile, sk)) > 0
+            desc = ("Resets to 15, keeps its Doctrine - re-master it to earn the other."
+                    if more else "Resets this skill to 15. Keeps its Doctrines.")
             lsel.add_option(label=f"{_SKILL_LABELS.get(sk, sk)} → Legendary",
-                            value=sk, emoji="⭐",
-                            description="Resets this skill to 15. Keeps its Doctrine.")
+                            value=sk, emoji="⭐", description=desc)
 
         async def _on_legendary(inter: Interaction):
             p = E.get_profile(inter.user.id)

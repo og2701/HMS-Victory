@@ -289,7 +289,10 @@ def _migrate(profile: dict) -> dict:
         skills.setdefault(s, 15)
     profile.setdefault("armour_style", "heavy")
     # Expansion fields - all default empty so old profiles keep working untouched.
-    profile.setdefault("doctrines", {})          # skill -> chosen mastery (Capstone Doctrines)
+    profile.setdefault("doctrines", {})          # skill -> [chosen masteries] (Capstone Doctrines)
+    for _sk, _picks in list(profile["doctrines"].items()):
+        if isinstance(_picks, str):              # legacy one-pick-per-skill shape
+            profile["doctrines"][_sk] = [_picks]
     profile.setdefault("legendary", {})          # skill -> times made Legendary (prestige)
     profile.setdefault("temper", {"weapon": 0, "armour": 0})   # The Grindstone grades
     profile.setdefault("ingredients", {})        # banked alchemy ingredients
@@ -563,10 +566,19 @@ def temper_fight_bonus(profile) -> float:
     return TEMPER_FIGHT_PER_GRADE * (profile.get("temper") or {}).get("weapon", 0)
 
 
+def doctrine_keys(profile, skill: str) -> list:
+    """The doctrine keys chosen for one skill. Old saves stored a bare string (back
+    when a skill could only ever hold one); a list is the current shape."""
+    v = (profile.get("doctrines") or {}).get(skill)
+    if not v:
+        return []
+    return [v] if isinstance(v, str) else [c for c in v]
+
+
 def _doctrines(profile) -> list:
     """The mastery dicts a character has chosen (Capstone Doctrines)."""
-    return [D.DOCTRINES[s][c] for s, c in (profile.get("doctrines") or {}).items()
-            if c in D.DOCTRINES.get(s, {})]
+    return [D.DOCTRINES[s][c] for s in (profile.get("doctrines") or {})
+            for c in doctrine_keys(profile, s) if c in D.DOCTRINES.get(s, {})]
 
 
 def doctrine_flat(profile, key: str) -> float:
@@ -3042,12 +3054,30 @@ def take_perk(profile, key: str) -> str | None:
 
 # ---------------------------------------------------------------------------
 # Capstone Doctrines - each skill hitting 100 unlocks a permanent pick-one-of-two
-# mastery. Two maxed characters fight the same room differently.
+# mastery. Two maxed characters fight the same room differently. Carrying a skill
+# back to 100 after a Legendary reset earns the OTHER one, so the prestige climb
+# actually pays out instead of handing you a star and nothing else.
 # ---------------------------------------------------------------------------
+def legendary_count(profile, skill: str) -> int:
+    return int((profile.get("legendary") or {}).get(skill, 0))
+
+
+def doctrine_slots(profile, skill: str) -> int:
+    """How many Doctrines a skill has earned - one for the first mastery, one more
+    per Legendary reset, capped at the number the skill actually has."""
+    return min(len(D.DOCTRINES.get(skill, {})), 1 + legendary_count(profile, skill))
+
+
 def doctrine_choices_open(profile) -> list:
-    """Skills at 100 that haven't chosen a doctrine yet."""
-    return [s for s in SKILLS if profile["skills"].get(s, 0) >= 100
-            and s not in (profile.get("doctrines") or {}) and s in D.DOCTRINES]
+    """Skills at 100 sitting on an unclaimed Doctrine slot."""
+    return [s for s in SKILLS if profile["skills"].get(s, 0) >= 100 and s in D.DOCTRINES
+            and len(doctrine_keys(profile, s)) < doctrine_slots(profile, s)]
+
+
+def doctrine_options_open(profile, skill: str) -> list:
+    """Doctrine keys for one skill that are still up for grabs."""
+    taken = doctrine_keys(profile, skill)
+    return [c for c in D.DOCTRINES.get(skill, {}) if c not in taken]
 
 
 def choose_doctrine(profile, skill: str, choice: str) -> str | None:
@@ -3055,9 +3085,13 @@ def choose_doctrine(profile, skill: str, choice: str) -> str | None:
         return "No such doctrine."
     if profile["skills"].get(skill, 0) < 100:
         return "You must master that skill (100) first."
-    if skill in (profile.get("doctrines") or {}):
-        return "That mastery is already chosen - it is permanent."
-    profile.setdefault("doctrines", {})[skill] = choice
+    taken = doctrine_keys(profile, skill)
+    if choice in taken:
+        return "You already carry that mastery - it is permanent."
+    if len(taken) >= doctrine_slots(profile, skill):
+        return ("That skill's Doctrine is already chosen. Make it Legendary and carry "
+                "it back to 100 to earn the other.")
+    profile.setdefault("doctrines", {})[skill] = taken + [choice]
     doc = D.DOCTRINES[skill][choice]
     glog(f"✨ **{profile['name']}** mastered {skill.title()} and chose the "
          f"**{doc['name']}** doctrine")
@@ -3078,7 +3112,7 @@ def make_legendary(profile, skill: str) -> str | None:
     if profile["skills"].get(skill, 0) < 100:
         return "Only a mastered skill (100) can be made Legendary."
     profile["skills"][skill] = 15
-    profile.setdefault("legendary", {})[skill] = int((profile.get("legendary") or {}).get(skill, 0)) + 1
+    profile.setdefault("legendary", {})[skill] = legendary_count(profile, skill) + 1
     glog(f"⭐ **{profile['name']}** made {skill.title()} LEGENDARY "
          f"(x{legendary_stars(profile)}) - the climb begins again")
     return None

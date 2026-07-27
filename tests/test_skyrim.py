@@ -1326,7 +1326,10 @@ def test_doctrines_and_legendary():
     assert "blade" in E.doctrine_choices_open(p)
     assert E.choose_doctrine(p, "blade", "warmaster") is None
     assert E.choose_doctrine(p, "blade", "warmaster") is not None   # permanent, no re-pick
-    # warmaster adds blade attack (feeds overkill at the ceiling)
+    assert E.choose_doctrine(p, "blade", "bulwark") is not None     # the other needs a reset first
+    assert "blade" not in E.doctrine_choices_open(p)
+    # warmaster adds blade attack (feeds overkill at the ceiling); legacy saves stored
+    # the pick as a bare string, which still has to read
     q = _profile()
     q["skills"]["blade"] = 100
     base = E._fight_raw(q, "bandit", "blade")
@@ -1335,7 +1338,21 @@ def test_doctrines_and_legendary():
     # legendary resets the skill, keeps the doctrine, banks a star
     assert E.make_legendary(p, "blade") is None
     assert p["skills"]["blade"] == 15 and E.legendary_stars(p) == 1
-    assert p["doctrines"]["blade"] == "warmaster"
+    assert p["doctrines"]["blade"] == ["warmaster"]
+    assert "blade" not in E.doctrine_choices_open(p)   # not until it is back at 100
+    # carry it back to 100 and the OTHER doctrine unlocks - the prestige payout
+    p["skills"]["blade"] = 100
+    assert "blade" in E.doctrine_choices_open(p)
+    assert E.doctrine_options_open(p, "blade") == ["bulwark"]
+    soak_before = E.soak_pct(p)
+    assert E.choose_doctrine(p, "blade", "bulwark") is None
+    assert p["doctrines"]["blade"] == ["warmaster", "bulwark"]
+    assert E.soak_pct(p) > soak_before                       # both are live at once
+    assert E._fight_raw(p, "bandit", "blade") >= base + 8
+    # a third mastery of the same skill has nothing left to give
+    assert E.make_legendary(p, "blade") is None
+    p["skills"]["blade"] = 100
+    assert "blade" not in E.doctrine_choices_open(p)
 
 
 def test_alchemy_and_tempering():
