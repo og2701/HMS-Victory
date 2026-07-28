@@ -1917,6 +1917,151 @@ def test_elixir_shelf_and_loadout():
     assert E.elixir_stock(q) == {"true_shot": 1} and q["nextelixirs"] == ["true_shot"]
 
 
+def test_lockpicking_trains_on_failure_and_on_trap_spotting():
+    """Lockpicking used to level ONLY on a successful pick of a master lock - a room
+    that shows up a few percent of the time - while every other skill rode along on
+    ordinary enemy rooms. Both of the other outcomes now teach it too."""
+    # a snapped pick still teaches the mechanism
+    p = _profile()
+    rooms = [{"kind": "event", "key": "chest", "boss": False, "resolved": False, "locked": True},
+             {"kind": "enemy", "key": "skeever", "boss": False, "resolved": False}]
+    d = E.Delve(p["user_id"], "T", 0, "embershard", rooms, hearts=3, shout_charges=0)
+    before = p["skills"]["lockpicking"]
+    E.random = _fixed_rolls(0.999)                 # the pick snaps
+    try:
+        d.act_event(p, "pick")
+    finally:
+        _restore_random()
+    assert d.satchel == 0                          # still no loot
+    assert p["skills"]["lockpicking"] > before     # but the lesson lands
+
+    # spotting the needle on an ordinary chest is the same skill, so it trains it
+    q = _profile()
+    rooms = [{"kind": "event", "key": "chest", "boss": False, "resolved": False},
+             {"kind": "enemy", "key": "skeever", "boss": False, "resolved": False}]
+    d2 = E.Delve(q["user_id"], "T", 0, "embershard", rooms, hearts=3, shout_charges=0)
+    before = q["skills"]["lockpicking"]
+    E.random = _fixed_rolls(0.999)                 # no trap fires: a clean open
+    try:
+        d2.act_event(q, "open")
+    finally:
+        _restore_random()
+    assert d2.satchel > 0
+    assert q["skills"]["lockpicking"] > before
+    # and master locks are simply less rare than they were
+    assert E.LOCKED_CHEST_CHANCE >= 0.4
+
+
+def test_retirement_can_change_guardian_stone():
+    p = _profile("warrior")
+    p["xp"] = 10 ** 7
+    p["alduin_slain"] = 3
+    offer = E.boon_offer(p)
+    assert E.retire(p, offer[0], "nonsense") is not None      # unknown stones rejected
+    assert p["stone"] == "warrior"                            # ...and nothing happened
+    assert E.retire(p, offer[0], "mage") is None
+    assert p["stone"] == "mage"
+    # the newborn starts under the NEW stone's blessing, not the old one's
+    assert p["skills"] == {**{s: 15 for s in E.SKILLS}, **D.STONES["mage"]["start"]}
+    # and omitting it keeps whatever they already had
+    p["xp"] = 10 ** 7
+    p["alduin_slain"] = 9
+    assert E.retire(p, E.boon_offer(p)[0]) is None
+    assert p["stone"] == "mage"
+
+
+def test_faction_switching_keeps_favour_per_guild():
+    p = _profile()
+    p["xp"] = 10 ** 7
+    assert E.join_faction(p, "companions") is None
+    p["favours"]["companions"] = 6
+    assert E.faction_rank(p) == D.FACTION_RANKS[3]
+
+    # switching is allowed, and the old guild remembers you
+    assert E.join_faction(p, "thieves") is None
+    assert p["allegiance"] == "thieves"
+    assert E.faction_favour(p) == 0                     # a fresh ladder here
+    assert E.faction_favour(p, "companions") == 6       # but nothing was wiped
+    assert E.faction_rank(p, "companions") == D.FACTION_RANKS[3]
+    # the week's tracker resnaps against the NEW guild's stat, so progress restarts
+    assert E.faction_progress(p)[1] == 0
+    assert E.join_faction(p, "thieves") is not None     # re-swearing the same one is a no-op
+
+    # go home and the rank is waiting
+    assert E.join_faction(p, "companions") is None
+    assert E.faction_favour(p) == 6
+
+    # claiming banks favour against the guild you're actually sworn to
+    goal, _prog, _done = E.faction_progress(p)
+    p["stats"]["kills"] = p["faction"]["snap"] + goal
+    assert E.claim_faction(p) is not None
+    assert p["favours"]["companions"] == 7 and p["favours"].get("thieves", 0) == 0
+
+
+def test_legacy_favour_migrates_into_the_per_guild_ledger():
+    """Profiles written before per-guild favour kept their only favour inside the
+    weekly tracker; the migration must not silently drop a hard-earned rank."""
+    p = _profile()
+    p["allegiance"] = "college"
+    p["faction"] = {"favour": 5, "week": [2020, 1]}
+    p.pop("favours", None)
+    q = E._migrate(dict(p))
+    assert q["favours"]["college"] == 5
+    assert E.faction_favour(q) == 5
+    # and the migration is idempotent - a second pass must not double-count or reset
+    assert E._migrate(q)["favours"]["college"] == 5
+
+
+def test_skyrim_badges_earned_and_cached():
+    from lib.features.skyrim import badges as B
+    p = _profile()
+    assert B._earned(p) == set()                        # a fresh character has earned nothing
+
+    p["stats"]["delves"] = 1
+    p["stats"]["sweetrolls"] = 2
+    p["stats"]["deaths"] = 1
+    p["stats"]["launched"] = 1
+    p["stats"]["dragons"] = 10
+    p["companions"] = ["meeko"]
+    p["wonders"] = ["golden_sweetroll"]
+    p["words"] = len(D.SHOUT_WORDS)
+    p["alduin_slain"] = 1
+    p["skills"]["lockpicking"] = 100
+    p["favours"] = {"companions": 8}
+    for _ev in ("knee_trap", "nazeem", "maiq"):
+        E.log_add(p, "events", _ev)
+    p["records"] = {"pit_rank": len(D.PIT_TITLES), "streak": 14}
+    p["soulcairn"] = {"best": 20}
+    E.homestead(p)["built"]["hall"] = "2020-01-01"
+
+    got = B._earned(p)
+    for expected in ("sky_dovahkiin", "sky_arrow_knee", "sky_sweetroll", "sky_cloud_district",
+                     "sky_low_orbit", "sky_unmarked_grave", "sky_stray", "sky_maiq",
+                     "sky_locksmith", "sky_thuum", "sky_dragon_hunter", "sky_harbinger",
+                     "sky_pit_champion", "sky_into_the_dark", "sky_long_road", "sky_thane",
+                     "sky_wonder", "sky_world_eater"):
+        assert expected in got, expected
+    # the completionist tiers stay out of reach until they're actually done
+    assert "sky_master_of_all" not in got
+    assert "sky_no_stone_unturned" not in got
+    assert "sky_hall_of_legends" not in got
+
+    # a Legendary skill resets to 15, so the star has to count as mastery
+    for s in E.SKILLS:
+        p["skills"][s] = 100
+    assert "sky_master_of_all" in B._earned(p)
+    p["skills"]["blade"] = 15
+    assert "sky_master_of_all" not in B._earned(p)
+    p["legendary"] = {"blade": 1}
+    assert "sky_master_of_all" in B._earned(p)
+
+    # every id the module can hand out must be seeded, or the award silently no-ops
+    with open(os.path.join(ROOT, "database.py"), encoding="utf-8") as fh:
+        src = fh.read()
+    for badge_id in B._earned(p) | {"sky_no_stone_unturned", "sky_hall_of_legends"}:
+        assert f"('{badge_id}'," in src, badge_id
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

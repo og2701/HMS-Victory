@@ -81,7 +81,7 @@ OVERKILL_CRIT_CAP = 14               # max extra crit % from overkill (on top of
 BOUNTY_CHANCE = 0.06                 # per trash room: a named variant (+1 hp, 3x loot, 2x XP)
 DAILY_CLEAR_MULT = 1.5               # the daily delve pays a fatter clear bonus
 AMBUSH_BONUS = 20                    # attack bonus when striking from successful stealth
-LOCKED_CHEST_CHANCE = 0.25           # chance a chest room is master-locked (Lockpicking territory)
+LOCKED_CHEST_CHANCE = 0.45           # chance a chest room is master-locked (Lockpicking territory)
 MIMIC_CHANCE = 0.18                  # chance a chest room is secretly a Mimic (it bites)
 FORK_CHANCE = 0.45                   # chance a delve offers a branching Fork before the boss
 SOULCAIRN_DRAIN = 2                  # attack % the Soul Cairn steals per depth descended
@@ -312,7 +312,13 @@ def _migrate(profile: dict) -> dict:
     profile.setdefault("nextpacts", [])          # Daedric pacts sworn for the next delve
     profile.setdefault("dragon_wall", [])        # named dragons slain (bestiary)
     profile.setdefault("allegiance", None)       # chosen NPC faction key
-    profile.setdefault("faction", {})            # faction -> {rank, favour}
+    profile.setdefault("faction", {})            # this week's tracker for the sworn faction
+    # Per-guild favour, so leaving and coming back doesn't wipe a rank you earned.
+    # Pre-switching profiles kept their only favour inside the weekly tracker.
+    profile.setdefault("favours", {})            # faction key -> favour earned there
+    _legacy_fav = int((profile.get("faction") or {}).pop("favour", 0))
+    if _legacy_fav and profile.get("allegiance"):
+        profile["favours"].setdefault(profile["allegiance"], _legacy_fav)
     profile.setdefault("soulcairn", {"best": 0}) # deepest Soul Cairn descent
     profile.setdefault("expedition", None)       # an out-on-a-timer expedition, if any
     profile.setdefault("exp_log", [])            # the last few expedition returns
@@ -323,6 +329,7 @@ def _migrate(profile: dict) -> dict:
     profile.setdefault("meditations", 0)         # perk points spent stilling the Voice
     profile.setdefault("streak", {"count": 0, "date": None, "grace": None})
     profile.setdefault("records", {})            # Hall of Records personal bests
+    profile.setdefault("badges", [])             # server badges already handed out (see badges.py)
     profile.setdefault("log", {"kills": {}, "affixes": [], "events": [], "brews": [],
                                "clears": [], "pacts": [], "legends": [], "pit": []})
     profile.setdefault("companions", [])         # befriended strays (keys)
@@ -2021,7 +2028,13 @@ class Delve:
                     line += f", Lockpicking +{gain}"
                 self.say(line + ")")
             else:
-                self.say("The pick snaps deep in the mechanism. Whatever is in there stays there.")
+                # a snapped pick still teaches the mechanism - the only skill whose
+                # practice is gated behind a rare room can't afford to teach nothing
+                gain = _skill_up(profile, "lockpicking")
+                line = "The pick snaps deep in the mechanism. Whatever is in there stays there."
+                if gain:
+                    line += f"  (Lockpicking +{gain} - you felt the tumbler before it went.)"
+                self.say(line)
             self._advance(profile)
             return
         if key == "chest" and choice == "open" and not r.get("locked"):
@@ -2032,12 +2045,19 @@ class Delve:
                 if self._wound(profile, ["A needle trap! Poison burns up your arm."]) != "dead":
                     self.say(f"Trapped! You still claw {loot} septims from the bottom. Never should have come here.")
             else:
+                # spotting the needle before it fires IS lockpicking (chest_trap_chance
+                # already reads the skill) - so it should train the skill too. Without
+                # this, Lockpicking only ever grows on master locks and stalls at ~50
+                # while every other skill rides along on ordinary enemy rooms.
+                gain = _skill_up(profile, "lockpicking")
                 loot = _septims(profile, 40 + random.randint(0, 80))
                 self.satchel += loot
                 line = f"You crack the lid: **{loot} septims**."
                 if random.random() < 0.10 and profile["potions"] < potion_cap(profile):
                     profile["potions"] += 1
                     line += "  And a health potion, tucked in the corner. 🧪"
+                if gain:
+                    line += f"  (Lockpicking +{gain} - a needle trap, spotted and stripped.)"
                 self.say(line)
             if self.playing():
                 self._advance(profile)
@@ -3234,17 +3254,32 @@ def _iso_week(date_str: str = None) -> list:
 
 
 def join_faction(profile, key: str) -> str | None:
+    """Swear (or re-swear) allegiance. Switching is allowed and costs you the rest of
+    this week - the new guild snapshots your stat fresh, so whatever you'd banked
+    toward the old task is gone. Favour is NOT lost: it's kept per guild, because the
+    Companions don't forget a Harbinger just because you spent a season in the Ratway.
+    That also stops guild-hopping being a way to shop for whichever weekly task your
+    build already satisfies - each ladder only climbs while you're actually sworn."""
     if key not in D.FACTIONS:
         return "No such faction."
     if level(profile) < int(getattr(config, "SKYRIM_DRAGON_MIN_LEVEL", 8)):
         return "The great factions only take proven adventurers (level 8+)."
     if profile.get("allegiance") == key:
         return f"You already run with {D.FACTIONS[key]['name']}."
+    was = profile.get("allegiance")
     profile["allegiance"] = key
+    profile.setdefault("favours", {})
     # reset the weekly tracker to snapshot against the new faction's stat
     profile["faction"] = {}
     faction_state(profile)
-    glog(f"🏰 **{profile['name']}** swore allegiance to **{D.FACTIONS[key]['name']}**")
+    if was in D.FACTIONS:
+        back = faction_favour(profile)
+        glog(f"🏰 **{profile['name']}** left **{D.FACTIONS[was]['name']}** for "
+             f"**{D.FACTIONS[key]['name']}**"
+             + (f" - welcomed back as {faction_rank(profile)} (favour {back})"
+                if back else ""))
+    else:
+        glog(f"🏰 **{profile['name']}** swore allegiance to **{D.FACTIONS[key]['name']}**")
     return None
 
 
@@ -3272,12 +3307,17 @@ def faction_progress(profile) -> tuple:
     return (goal, max(0, prog), prog >= goal)
 
 
-def faction_favour(profile) -> int:
-    return int((profile.get("faction") or {}).get("favour", 0))
+def faction_favour(profile, key: str = None) -> int:
+    """Favour with a given guild (default: the one you're sworn to). Kept per guild
+    so switching allegiance never wipes a rank you earned."""
+    key = key or profile.get("allegiance")
+    if key not in D.FACTIONS:
+        return 0
+    return int((profile.get("favours") or {}).get(key, 0))
 
 
-def faction_rank(profile) -> str:
-    fav = faction_favour(profile)
+def faction_rank(profile, key: str = None) -> str:
+    fav = faction_favour(profile, key)
     return D.FACTION_RANKS[min(len(D.FACTION_RANKS) - 1, fav // 2)]
 
 
@@ -3291,8 +3331,10 @@ def claim_faction(profile) -> str | None:
     if f.get("claimed"):
         return "You've already claimed this week's favour. Come back next week."
     f["claimed"] = True
-    f["favour"] = faction_favour(profile) + 1
-    rank_i = min(len(D.FACTION_RANKS) - 1, f["favour"] // 2)
+    fac = profile["allegiance"]
+    favour = faction_favour(profile) + 1
+    profile.setdefault("favours", {})[fac] = favour
+    rank_i = min(len(D.FACTION_RANKS) - 1, favour // 2)
     reward = _septims(profile, 400 + 150 * rank_i)
     profile["septims"] += reward
     gained, _ = add_xp(profile, 120 + 40 * rank_i)
@@ -3520,14 +3562,20 @@ def boon_offer(profile) -> list:
     return rng.sample(pool, min(3, len(pool)))
 
 
-def retire(profile, boon_key: str) -> str | None:
+def retire(profile, boon_key: str, stone_key: str = None) -> str | None:
     """Retire the character into the Hall of Legends. Returns an error line, or
-    None on success (the profile is reborn in place)."""
+    None on success (the profile is reborn in place).
+
+    stone_key re-blesses the newborn under a different Guardian Stone - the rebirth
+    is the one moment a stone swap is free, since everything it touches (starting
+    skills, learning rate) is being reset anyway. Omit it to wake under the old one."""
     ready, line = retire_ready(profile)
     if not ready:
         return f"The Hall isn't ready for you: {line}."
     if boon_key not in boon_offer(profile):
         return "Fate never offered that boon."
+    if stone_key is not None and stone_key not in D.STONES:
+        return "No such Guardian Stone."
     lg = legacy(profile)
     # the epitaph - written before anything resets
     try:
@@ -3546,6 +3594,8 @@ def retire(profile, boon_key: str) -> str | None:
     # the rebirth: character progression resets; the account does not
     abandon_active(profile)
     keep_weapon = boon_key == "heirloom" or has_boon(profile, "heirloom")
+    if stone_key and stone_key != profile.get("stone"):
+        profile["stone"] = stone_key
     stone = D.STONES.get(profile.get("stone")) or D.STONES["warrior"]
     profile["xp"] = 0
     profile["skills"] = {s: 15 for s in SKILLS}
@@ -3574,6 +3624,7 @@ def retire(profile, boon_key: str) -> str | None:
     # the cart, so any errand still out is called off rather than paying the newborn
     profile["allegiance"] = None
     profile["faction"] = {}
+    profile["favours"] = {}
     profile["expedition"] = None
     profile["expedition2"] = None
     profile["created"] = _today_str()
@@ -3581,7 +3632,7 @@ def retire(profile, boon_key: str) -> str | None:
     boon = D.BOONS[boon_key]
     glog(f"🏛️ **{profile['name']}** RETIRED to the Hall of Legends - Legend "
          f"{lg['rank']}, taking {boon['emoji']} **{boon['name']}**. "
-         f"The climb begins again at level 1.")
+         f"The climb begins again at level 1, under {stone['emoji']} {stone['name']}.")
     return None
 
 

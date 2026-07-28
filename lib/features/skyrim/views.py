@@ -437,6 +437,8 @@ async def _handle_delve_click(interaction: Interaction, delve: E.Delve, action: 
             if delve.daily:
                 E.record_daily_result(profile, delve)
         await _rerender_delve(interaction, delve, profile)
+        # after the board is already on screen, so a DM round-trip never delays it
+        await _award_badges(interaction, profile)
     finally:
         delve.busy = False
 
@@ -458,6 +460,18 @@ def _panel_view(text: str, rows, art_key: str = None):
     for row in rows:
         view.add_item(row)
     return view, files
+
+
+async def _award_badges(interaction: Interaction, profile):
+    """Hand out any server badges this profile has just earned. Called from the two
+    funnels every route passes through - a delve click and the hub root - because
+    plenty of them (Thane, Harbinger, Master of All) are earned in the hub, not the
+    dungeon. Cheap when there's nothing new: badges.py caches what it's given out."""
+    try:
+        from lib.features.skyrim import badges
+        await badges.award_skyrim_badges(interaction.client, profile)
+    except Exception:
+        logger.debug("skyrim badge hook failed", exc_info=True)
 
 
 async def _flush_game_log(client):
@@ -573,6 +587,7 @@ async def _show_hub_root(interaction: Interaction, profile, *, first_response=Fa
     else:
         await interaction.response.edit_message(view=view, attachments=files)
     await _flush_game_log(interaction.client)
+    await _award_badges(interaction, profile)
 
 
 async def _hub_root(interaction: Interaction):
@@ -985,6 +1000,8 @@ def _hall_text(profile) -> str:
     if ready:
         lines.append("🏛️ **The Hall is ready for you.** Choose the boon your legend "
                      "leaves behind - then retire. There is no undoing it.")
+        lines.append("-# 🪨 The one who wakes on the cart is a stranger: you may take a "
+                     "**different Guardian Stone** on the way out.")
     else:
         lines.append(f"-# The next retirement asks: {req_line}. Every kill hardens his "
                      f"Echo - each legend is earned against a worse World-Eater.")
@@ -1018,25 +1035,46 @@ async def _hub_hall(interaction: Interaction, notice: str = ""):
     await _edit_panel(interaction, text, rows, art_key="hall_of_legends")
 
 
-async def _hall_confirm(interaction: Interaction, boon_key: str):
+async def _hall_confirm(interaction: Interaction, boon_key: str, stone_key: str = None):
     profile = E.get_profile(interaction.user.id)
     if profile is None or boon_key not in D.BOONS:
         await _hub_hall(interaction)
         return
     b = D.BOONS[boon_key]
+    # the newborn wakes under whichever stone they pick here - free, because the
+    # rebirth resets the starting skills and learning rate the stone governs anyway
+    if stone_key not in D.STONES:
+        stone_key = profile["stone"]
+    stone = D.STONES[stone_key]
+    swapping = stone_key != profile["stone"]
     text = ("## 🏛️ The last question\n"
             f"Retire **{profile['name']}** (level {E.level(profile)}, "
             f"{profile['stats'].get('dragons', 0)} dragons, "
             f"{profile['septims']:,} septims) and take "
             f"{b['emoji']} **{b['name']}** - {b['desc']}\n\n"
+            f"They wake again under {stone['emoji']} **{stone['name']}**"
+            + (" - a new path this time." if swapping else " - the same stone as before.")
+            + f"\n-# {stone['blurb']}\n\n"
             "⚠️ **This cannot be undone.** Level, skills, gear, gold, perks, doctrines "
             "and the Voice all reset. The collection, records, wonders, companions, "
             "career deeds and the estate stay yours forever.")
+
+    ssel = discord.ui.Select(placeholder="🪨 Wake under a different Guardian Stone...")
+    for k, s in D.STONES.items():
+        ssel.add_option(label=s["name"], value=k, emoji=s["emoji"],
+                        description=s["blurb"][:100], default=k == stone_key)
+
+    async def _restone(inter: Interaction):
+        await _hall_confirm(inter, boon_key, ssel.values[0])
+    ssel.callback = _restone
+    srow = discord.ui.ActionRow()
+    srow.add_item(ssel)
+
     row = discord.ui.ActionRow()
 
     async def _do(inter: Interaction):
         p = E.get_profile(inter.user.id)
-        err = E.retire(p, boon_key)
+        err = E.retire(p, boon_key, stone_key)
         E.save_profile(p)
         if err:
             await _hub_hall(inter, notice=f"-# {err}")
@@ -1044,10 +1082,11 @@ async def _hall_confirm(interaction: Interaction, boon_key: str):
         n = E.legacy_rank(p)
         await _hub_hall(inter, notice=f"🏛️ **Legend {n} takes their seat in the Hall.**\n"
                                       f"Hey, you. You're finally awake... again. "
-                                      f"{b['emoji']} {b['name']} rides with you this time.")
+                                      f"{b['emoji']} {b['name']} rides with you this time, "
+                                      f"under {stone['emoji']} {stone['name']}.")
     row.add_item(_cb_btn(discord.ButtonStyle.danger, "Retire them, forever", "🏛️", _do))
     row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Not yet", "⬅️", _hub_hall))
-    await _edit_panel(interaction, text, [row, _char_back_row()])
+    await _edit_panel(interaction, text, [srow, row, _char_back_row()])
 
 
 # --- the Collection Log ---------------------------------------------------------
@@ -1097,6 +1136,19 @@ async def _hub_records(interaction: Interaction):
     ]
     if st.get("launched"):
         lines.append(f"-# ...and launched into low orbit by a giant, {st['launched']} time(s).")
+    # server badges: the one place delving pays into the wider economy, so it's
+    # worth telling people what's still on the board
+    try:
+        from lib.features.skyrim import badges as B
+        got, total, missing = B.progress(profile)
+        if total:
+            lines += ["", f"**🎖️ Server badges** - {got}/{total} earned "
+                          f"(each pays UKPence the first time)"]
+            if missing:
+                lines.append("-# Still out there: " + "  ·  ".join(missing[:6])
+                             + (f"  (+{len(missing) - 6} more)" if len(missing) > 6 else ""))
+    except Exception:
+        logger.debug("skyrim badge progress line failed", exc_info=True)
     rivalry = E.rivalry_lines(profile)
     if rivalry:
         lines += ["", "**The rivalry ledger** (ghost duels)"]
@@ -2092,6 +2144,13 @@ def _factions_text(profile) -> str:
         bar = _bar(min(prog, goal), 0, goal, 10)
         state = "✅ ready to claim" if done else f"{prog}/{goal}"
         lines.append(f"-# This week: **{goal} {fac['verb']}**  {bar}  {state}")
+        # standing kept elsewhere, so leaving reads as a transfer rather than a wipe
+        elsewhere = [(k, E.faction_favour(profile, k)) for k in D.FACTIONS if k != fac_key]
+        elsewhere = [(k, v) for k, v in elsewhere if v]
+        if elsewhere:
+            held = "  ·  ".join(f"{D.FACTIONS[k]['emoji']} {E.faction_rank(profile, k)} "
+                                f"(favour {v})" for k, v in elsewhere)
+            lines.append(f"-# Standing kept elsewhere: {held}")
     elif E.level(profile) < int(getattr(E.config, "SKYRIM_DRAGON_MIN_LEVEL", 8)):
         lines.append("-# 🔒 The great factions only take proven adventurers (level 8+).")
     else:
@@ -2142,13 +2201,24 @@ async def _hub_factions(interaction: Interaction, notice: str = ""):
                                     else f"-# {res}")
             row.add_item(_cb_btn(discord.ButtonStyle.success, "Claim this week's favour", "🏅", _claim))
             rows.append(row)
-    elif can_join:
-        sel = discord.ui.Select(placeholder="Swear an allegiance...")
+    if can_join:
+        sworn = fac_key in D.FACTIONS
+        sel = discord.ui.Select(placeholder="🏰 Take your oath elsewhere..." if sworn
+                                else "Swear an allegiance...")
         for k, fac in D.FACTIONS.items():
+            if k == fac_key:
+                continue
+            held = E.faction_favour(profile, k)
+            desc = f"Weekly: {fac['goal']} {fac['verb']}"
+            if held:
+                desc += f" · {E.faction_rank(profile, k)} there already"
             sel.add_option(label=fac["name"], value=k, emoji=fac["emoji"],
-                           description=f"Weekly: {fac['goal']} {fac['verb']}"[:100])
+                           description=desc[:100])
 
         async def _join(inter: Interaction):
+            if sworn:
+                await _faction_confirm(inter, sel.values[0])
+                return
             p = E.get_profile(inter.user.id)
             err = E.join_faction(p, sel.values[0])
             if err is None:
@@ -2157,11 +2227,51 @@ async def _hub_factions(interaction: Interaction, notice: str = ""):
             else:
                 await _hub_factions(inter, notice=f"-# {err}")
         sel.callback = _join
-        srow = discord.ui.ActionRow()
-        srow.add_item(sel)
-        rows.append(srow)
+        if sel.options:                  # never ship an empty select to Discord
+            srow = discord.ui.ActionRow()
+            srow.add_item(sel)
+            rows.append(srow)
     rows.append(_back_row())
     await _edit_panel(interaction, text, rows)
+
+
+async def _faction_confirm(interaction: Interaction, key: str):
+    """Switching guilds costs the rest of this week (the new one snapshots your stat
+    fresh), so it gets a confirm rather than firing straight off the dropdown."""
+    profile = E.get_profile(interaction.user.id)
+    if profile is None or key not in D.FACTIONS:
+        await _hub_factions(interaction)
+        return
+    old_key = profile.get("allegiance")
+    old = D.FACTIONS.get(old_key)
+    new = D.FACTIONS[key]
+    goal, prog, _done = E.faction_progress(profile)
+    held = E.faction_favour(profile, key)
+    lines = ["## 🏰 A word with the guildmaster",
+             f"Leave {old['emoji']} **{old['name']}** for {new['emoji']} **{new['name']}**?"
+             if old else f"Swear to {new['emoji']} **{new['name']}**?", ""]
+    if old:
+        lines.append(f"-# Your **{E.faction_rank(profile, old_key)}** standing with "
+                     f"{old['name']} (favour {E.faction_favour(profile, old_key)}) is kept - "
+                     f"go back any time and it's waiting.")
+    if old and prog and prog < goal:
+        lines.append(f"-# ⚠️ This week's **{prog}/{goal} {old['verb']}** is lost. "
+                     f"{new['name']} counts from zero.")
+    lines.append(f"-# {new['seat']} sets you **{new['goal']} {new['verb']}** a week."
+                 + (f" You're already **{E.faction_rank(profile, key)}** there." if held else ""))
+    row = discord.ui.ActionRow()
+
+    async def _do(inter: Interaction):
+        p = E.get_profile(inter.user.id)
+        err = E.join_faction(p, key)
+        if err is None:
+            E.save_profile(p)
+            await _hub_factions(inter, notice=f"-# 🤝 You run with {new['name']} now.")
+        else:
+            await _hub_factions(inter, notice=f"-# {err}")
+    row.add_item(_cb_btn(discord.ButtonStyle.primary, "Swear the oath", "🤝", _do))
+    row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Stay put", "⬅️", _hub_factions))
+    await _edit_panel(interaction, "\n".join(lines), [row, _back_row()])
 
 
 # --- Holdings: the homestead + idle expeditions --------------------------------------
@@ -2800,7 +2910,9 @@ HELP_PAGES = {
         "the ladder, so the week's race is how many the hold can put down. Last week's "
         "fate hangs on the board.\n"
         "**🏰 Factions** (L8+) - swear an allegiance; a weekly task in a neglected skill "
-        "pays favour, rank and coin.\n"
+        "pays favour, rank and coin. You may **switch guilds** whenever you like: your "
+        "standing with each one is remembered separately, so only the current week's "
+        "progress is lost.\n"
         "**🗡️ The Pit** (L5+) - Windhelm's arena ladder, round by round, each champion "
         "with a signature trick. Fight on while you win; a loss ends your day. Resets "
         "Monday. **⚔️ Ghost Duels** live here too - fight a snapshot of a rival's build, "
@@ -2840,8 +2952,9 @@ HELP_PAGES = {
         "**🏛️ Legacy Rebirth** (Character → Hall of Legends) - beat Alduin and you may "
         "**retire**: the character resets to level 1, the ACCOUNT does not - collection, "
         "records, wonders, companions, career deeds and the estate persist, and each "
-        "retirement banks a permanent **boon** (pick one of three). Retirement N demands "
-        "Alduin beaten N times, each at a harder Echo. Five seats wait in the Hall."),
+        "retirement banks a permanent **boon** (pick one of three), and the newborn may "
+        "wake under a **different Guardian Stone** if you fancy another build. Retirement N "
+        "demands Alduin beaten N times, each at a harder Echo. Five seats wait in the Hall."),
 }
 
 
