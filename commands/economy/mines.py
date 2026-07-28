@@ -250,6 +250,15 @@ def _again_button(game: MinesGame) -> discord.ui.Button:
     return btn
 
 
+def _rebet_button(game: MinesGame) -> discord.ui.Button:
+    btn = discord.ui.Button(
+        style=discord.ButtonStyle.secondary, label="Change Bet", emoji="🪙",
+        custom_id=f"mines:{game.game_id}:rebet",
+    )
+    btn.callback = _make_rebet_cb(game)
+    return btn
+
+
 def build_mines_layout(game: MinesGame) -> discord.ui.LayoutView:
     view = discord.ui.LayoutView(timeout=None)
     box = discord.ui.Container(accent_colour=ACCENT)
@@ -260,11 +269,12 @@ def build_mines_layout(game: MinesGame) -> discord.ui.LayoutView:
         for c in range(COLS):
             row.add_item(_tile_button(game, r * COLS + c))
         view.add_item(row)
-    # Controls row: Cash Out while playing, Play Again once the board is over, plus
-    # Rules (always available to anyone).
+    # Controls row: Cash Out while playing; Play Again + Change Bet once the board is
+    # over, plus Rules (always available to anyone).
     controls = discord.ui.ActionRow()
     if game.state == "over":
         controls.add_item(_again_button(game))
+        controls.add_item(_rebet_button(game))
     else:
         cash = _cash_button(game)
         if cash is not None:
@@ -298,6 +308,57 @@ def _make_again_cb(old_game: MinesGame):
         with action_in_flight():
             await _handle_again(interaction, old_game)
     return _cb
+
+
+def _make_rebet_cb(old_game: MinesGame):
+    async def _cb(interaction: Interaction):
+        # No action_in_flight here: opening the modal moves no money, and holding the
+        # drain open while a human types would stall shutdown indefinitely. The stake
+        # is taken on submit, which takes the guard itself.
+        await _handle_rebet(interaction, old_game)
+    return _cb
+
+
+def _parse_stake(raw: str, balance: int, max_bet: int) -> int | None:
+    """Read a bet off a modal field. Accepts a plain number (commas and a UKP suffix
+    tolerated) plus the shorthands the prediction market already taught people:
+    all / max, half, and N%. Returns None if it can't be read as an amount."""
+    raw = (raw or "").strip().lower().replace(",", "").replace("ukp", "").strip()
+    if raw in ("all", "max"):
+        return min(balance, max_bet)
+    if raw == "half":
+        return min(balance // 2, max_bet)
+    if raw.endswith("%") and raw[:-1].isdigit():
+        pct = min(max(int(raw[:-1]), 1), 100)
+        return min(int(balance * pct / 100), max_bet)
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+class ChangeBetModal(discord.ui.Modal, title="Change your bet"):
+    amount = discord.ui.TextInput(label="Bet", placeholder="whole number")
+
+    def __init__(self, old_game: MinesGame, balance: int, min_bet: int, max_bet: int):
+        super().__init__()
+        self.old_game = old_game
+        self.amount.label = f"Bet ({min_bet:,} - {min(balance, max_bet):,})"
+        self.amount.placeholder = f"last bet {old_game.bet:,} · balance {balance:,} · all/half/50%"
+        self.amount.default = str(old_game.bet)
+
+    async def on_submit(self, interaction: Interaction):
+        import config
+        max_bet = getattr(config, "MINES_MAX_BET", 5_000)
+        bet = _parse_stake(self.amount.value, get_bb(interaction.user.id), max_bet)
+        if bet is None:
+            await interaction.response.send_message(
+                "Enter a whole number, or `all`, `half`, or a percentage like `50%`.",
+                ephemeral=True)
+            return
+        # The stake moves here, so this is the half that the shutdown drain must wait on.
+        with action_in_flight():
+            await _deal_replay(interaction, self.old_game, bet, stale_is_silent=False)
 
 
 async def _safe_edit_board(interaction: Interaction, view) -> bool:
@@ -400,22 +461,59 @@ async def _handle_cashout(interaction: Interaction, game: MinesGame):
 
 
 async def _handle_again(interaction: Interaction, old_game: MinesGame):
-    """Play Again: deal a fresh board on the same message at the previous stake. Only
-    the original player can replay (it re-stakes their UKPence)."""
+    """Play Again: deal a fresh board on the same message at the previous stake."""
+    await _deal_replay(interaction, old_game, old_game.bet, stale_is_silent=True)
+
+
+async def _handle_rebet(interaction: Interaction, old_game: MinesGame):
+    """Change Bet: same replay, but ask for a new stake first. Only the owner may open
+    the modal - it re-stakes their UKPence, and the board is theirs."""
     import config
     if interaction.user.id != old_game.player_id:
         await interaction.response.send_message(
             "This isn't your game - start your own with `/mines`.", ephemeral=True)
         return
-    if old_game.replayed:               # this board already moved on to a new game
-        await interaction.response.defer()
+    if old_game.replayed:
+        await interaction.response.send_message(
+            "This board has already moved on - use the new one.", ephemeral=True)
         return
     if await reject_if_maintenance(interaction):
         return
     if not getattr(config, "MINES_ENABLED", True):
         await interaction.response.send_message("The mines table is closed.", ephemeral=True)
         return
-    bet = old_game.bet
+    await interaction.response.send_modal(ChangeBetModal(
+        old_game, get_bb(old_game.player_id),
+        getattr(config, "MINES_MIN_BET", 5), getattr(config, "MINES_MAX_BET", 5_000)))
+
+
+async def _deal_replay(interaction: Interaction, old_game: MinesGame, bet: int, *,
+                       stale_is_silent: bool):
+    """Re-stake and deal a fresh board onto the same message. Shared by Play Again (at
+    the old stake) and Change Bet (at whatever they typed), so the money flow - debit,
+    single-claim, refund-if-the-board-never-lands - lives in exactly one place.
+
+    `stale_is_silent` swallows a double-click on Play Again, where a second board has
+    already been dealt and there is nothing useful to say; the modal path says so out
+    loud instead, because the player just spent time typing into it.
+    """
+    import config
+    if interaction.user.id != old_game.player_id:
+        await interaction.response.send_message(
+            "This isn't your game - start your own with `/mines`.", ephemeral=True)
+        return
+    if old_game.replayed:               # this board already moved on to a new game
+        if stale_is_silent:
+            await interaction.response.defer()
+        else:
+            await interaction.response.send_message(
+                "This board has already moved on - use the new one.", ephemeral=True)
+        return
+    if await reject_if_maintenance(interaction):
+        return
+    if not getattr(config, "MINES_ENABLED", True):
+        await interaction.response.send_message("The mines table is closed.", ephemeral=True)
+        return
     min_bet = getattr(config, "MINES_MIN_BET", 5)
     max_bet = getattr(config, "MINES_MAX_BET", 5_000)
     if bet < min_bet or bet > max_bet:
@@ -424,7 +522,7 @@ async def _handle_again(interaction: Interaction, old_game: MinesGame):
         return
     if get_bb(old_game.player_id) < bet:
         await interaction.response.send_message(
-            f"You need {bet:,} UKPence to play again.", ephemeral=True)
+            f"You need {bet:,} UKPence to play that.", ephemeral=True)
         return
     if not remove_bb(old_game.player_id, bet, reason="Mines bet"):
         await interaction.response.send_message(
@@ -445,6 +543,15 @@ async def _handle_again(interaction: Interaction, old_game: MinesGame):
         logger.error("Mines replay failed before showing the new board; refunding stake.")
         credit_from_bank(old_game.player_id, bet, "Mines stake refund (replay failed)")
         old_game.replayed = False
+        # Off a button this is invisible but harmless (the old board is still there).
+        # Off the modal the player typed a stake and would otherwise see nothing at
+        # all, so say the money came back. Best-effort: the token may be dead too.
+        try:
+            await interaction.followup.send(
+                "Couldn't deal the new board - your stake has been refunded.",
+                ephemeral=True)
+        except Exception:
+            logger.debug("Mines replay refund notice failed", exc_info=True)
         return
     try:
         save_game(new_game)

@@ -24,13 +24,19 @@ def _install_stubs():
     ui = types.ModuleType("discord.ui")
 
     class _Item:
+        # Modal subclasses pass their title as a class keyword (`class M(Modal,
+        # title="...")`), which object.__init_subclass__ would reject.
+        def __init_subclass__(cls, **kwargs):
+            super().__init_subclass__()
+
         def __init__(self, *a, **k):
             self.callback = None
+            self.value = ""
 
         def add_item(self, *a, **k):
             return self
     for name in ("Button", "ActionRow", "Container", "TextDisplay", "LayoutView",
-                 "MediaGallery", "Section", "View", "Modal"):
+                 "MediaGallery", "Section", "View", "Modal", "TextInput"):
         setattr(ui, name, type(name, (_Item,), {}))
     discord.ui = ui
     sys.modules["discord"] = discord
@@ -191,6 +197,41 @@ def test_roundtrip_serialisation():
     assert g2.revealed == g.revealed
     assert g2.bet == g.bet and g2.mines == g.mines
     assert abs(g2.multiplier() - g.multiplier()) < 1e-12
+
+
+def test_change_bet_parses_amounts_and_shorthands():
+    """The Change Bet modal is a free-text field, so the parser is the whole safety
+    net: anything it can't read must come back as None rather than a surprise stake."""
+    p = MINES._parse_stake
+    bal, cap = 1_000, 5_000
+    assert p("250", bal, cap) == 250
+    assert p("1,250", bal, cap) == 1250          # commas as typed
+    assert p("  300 UKP ", bal, cap) == 300      # units and padding
+    assert p("all", bal, cap) == 1_000
+    assert p("MAX", bal, cap) == 1_000           # case-insensitive
+    assert p("half", bal, cap) == 500
+    assert p("50%", bal, cap) == 500
+    assert p("200%", bal, cap) == 1_000          # clamped to 100% of balance
+    # the shorthands never exceed the table maximum, even on a fat balance
+    assert p("all", 999_999, cap) == cap
+    assert p("half", 999_999, cap) == cap
+    # unreadable input is rejected outright, never coerced
+    for junk in ("", "   ", "abc", "1.5", "-", "1e3", "%", "five"):
+        assert p(junk, bal, cap) is None, junk
+    # a negative or zero parses, and is then caught by the min-bet check in _deal_replay
+    assert p("-50", bal, cap) == -50
+
+
+def test_change_bet_button_only_on_a_finished_board():
+    playing = _game(bet=100, mines=3, mine_positions=[0, 1, 2])
+    assert playing.state == "playing"
+    over = _game(bet=100, mines=3, mine_positions=[0, 1, 2])
+    over.reveal(0)                               # tap a mine
+    assert over.state == "over"
+    # the control row is built from state, so the terminal board is the one that
+    # offers a re-stake - a live board must never show a bet control
+    assert MINES._cash_button(over) is None
+    assert MINES._rebet_button(over) is not None
 
 
 def _run_all():
