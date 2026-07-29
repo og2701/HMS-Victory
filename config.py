@@ -53,10 +53,6 @@ SLOTS_ENABLED = True
 SLOTS_IMAGE_ENABLED = True
 SLOTS_MIN_BET = 1
 SLOTS_MAX_BET = 10_000
-# Payout ceiling; 0 = uncapped. A crown (25x) at the max bet pays 250,000 - more than the
-# bank has ever held, so one spin could empty the reserves and force the emergency mint.
-# 50,000 still pays a life-changing jackpot without putting the currency at risk.
-SLOTS_MAX_WIN = 50_000
 
 # --- Video Poker / Jacks or Better (vs-the-house) ---
 VIDEOPOKER_ENABLED = True
@@ -88,10 +84,9 @@ MINES_MIN_BET = 5
 MINES_MAX_BET = 5_000
 MINES_DEFAULT_MINES = 3       # default bomb count when /mines is called without one
 MINES_HOUSE_EDGE = 0.02       # fraction of the stake the house keeps (EV-constant)
-MINES_MAX_WIN = 30_000        # payout ceiling; 0 = no cap. Uncapped, a deep board at the 5k
-                              # max bet has already paid 45,080 in a single game - over a
-                              # fifth of the bank's reserves. 6x the max bet still rewards a
-                              # long push without one player emptying the float.
+MINES_MAX_WIN = 0             # payout ceiling; 0 = no cap (a lucky board pays the full
+                              # multiplier - if the bank can't cover it, credit_from_bank
+                              # mints the win and logs CRITICAL; amend the supply after)
 
 # Chest Upgrade - a linear "press your luck" ladder. Open the free Wood chest (1x), then
 # choose, tier by tier, whether to risk it to upgrade; a failed upgrade shatters the chest
