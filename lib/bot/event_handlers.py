@@ -1975,7 +1975,8 @@ async def on_voice_state_update(member, before, after):
             elapsed = (discord.utils.utcnow() - start).total_seconds()
             bonus = (int(elapsed) // 60) * STAGE_UKPENCE_MULTIPLIER
             if bonus > 0:
-                if add_bb(member.id, bonus, reason=f"Stage Participation Reward ({int(elapsed)//60}m)"):
+                if add_bb(member.id, bonus, reason=f"Stage Participation Reward ({int(elapsed)//60}m)",
+                          discretionary=True):
                     await award_badge_with_notify(member._state._get_client(), member.id, 'stage_fan')
                     
                     if track_party_animal(member.id) >= 5:
@@ -2062,7 +2063,8 @@ async def on_stage_instance_delete(stage_instance):
             secs = (now_utc - start_time_utc).total_seconds()
             bonus = (int(secs) // 60) * STAGE_UKPENCE_MULTIPLIER
             if bonus > 0:
-                if add_bb(m.id, bonus, reason=f"Stage Participation Reward ({int(secs)//60}m)"):
+                if add_bb(m.id, bonus, reason=f"Stage Participation Reward ({int(secs)//60}m)",
+                          discretionary=True):
                     await award_badge_with_notify(client, m.id, 'stage_fan')
                     
                     if track_party_animal(m.id) >= 5:

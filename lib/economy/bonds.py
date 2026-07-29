@@ -499,13 +499,5 @@ def bonds_overview_embed() -> discord.Embed:
     return e
 
 
-class BondOverviewView(discord.ui.View):
-    """A 'Bond Overview' button to attach to the /bank-status embed."""
-
-    def __init__(self):
-        super().__init__(timeout=300)
-
-    @discord.ui.button(label="Bond Overview", emoji="🏦", style=discord.ButtonStyle.secondary,
-                       custom_id="bankstatus:bonds")
-    async def overview(self, interaction: Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(embed=bonds_overview_embed(), ephemeral=True)
+# The button itself now lives on BankStatusView in commands/economy/bank_commands.py,
+# alongside the Tax & Reserves panel - bonds_overview_embed() above is what it renders.

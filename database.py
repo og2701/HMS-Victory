@@ -380,6 +380,13 @@ def init_db():
         # are stored as negative entries) into total_tax_collected EXACTLY ONCE; the tax_backfill_v1
         # guard makes it impossible to double-count on any later boot. The wealth tax already in the
         # counter is preserved (we only ADD the missing pieces).
+        # Demurrage dividend: how much of the bank's balance is earmarked for chat rewards.
+        # An accounting marker only - the UKP is already counted in the bank's balance, so
+        # this never affects total supply (see lib/economy/reserve_policy.py).
+        try:
+            c.execute("ALTER TABLE bank ADD COLUMN chat_reward_pot INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         try:
             c.execute("ALTER TABLE bank ADD COLUMN tax_backfill_v1 INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:

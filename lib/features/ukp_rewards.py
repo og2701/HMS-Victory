@@ -42,9 +42,14 @@ def _next_uk_midnight_ts() -> int:
 
 
 def _pay(user_id: int, amount: int, reason: str) -> bool:
-    """Pay a player from the bank. Returns True on success."""
+    """Pay a player from the bank. Returns True on success.
+
+    Every reward in this module (HoF, tree, bump, welcome, benefits, tickets) is
+    discretionary - the server chooses to give it - so it scales down when bank reserves
+    are low. See lib/economy/reserve_policy.py.
+    """
     try:
-        return add_bb(int(user_id), int(amount), reason=reason)
+        return add_bb(int(user_id), int(amount), reason=reason, discretionary=True)
     except Exception:
         log.error("UKP reward pay failed (%s)", reason, exc_info=True)
         return False

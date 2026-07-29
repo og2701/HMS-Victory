@@ -1,7 +1,10 @@
 from database import DatabaseManager
 import json
+import logging
 import os
 from config import ECONOMY_METRICS_FILE
+
+logger = logging.getLogger(__name__)
 
 SHUTCOIN_ENABLED = True
 SHOP = {"shutcoin": 1000}
@@ -515,7 +518,8 @@ def compute_wealth_tax(balance: int, earning: int) -> int:
 
 
 def add_bb(user_id: int, amount: int, reason: str = "Unspecified",
-           from_bank: bool = True, taxable: bool = True) -> bool:
+           from_bank: bool = True, taxable: bool = True,
+           discretionary: bool = False) -> bool:
     """Credit a user with UKP.
 
     from_bank=True (default): withdraws from the server bank first - UKP is conserved.
@@ -525,9 +529,20 @@ def add_bb(user_id: int, amount: int, reason: str = "Unspecified",
                             when from_bank is also True. Tax returns to the bank.
                             Set False for refunds and exempt earning types
                             (prediction wins, wager wins).
+    discretionary=True: this is a reward the server CHOOSES to give (chat, tree, welcome,
+                        bump, HoF, stage, benefits, boosters), so it scales down when bank
+                        reserves are low. Must stay False for anything already owed - a
+                        casino win, refund, bond maturity or prediction settlement is a
+                        debt, and paying 75% of a debt is worse than any reserve problem.
+                        Deliberately a separate flag from `taxable`: the two nearly overlap
+                        today, and quietly reusing one for the other would mean the next
+                        tax-exempt reward silently escapes the throttle.
     Returns True if successful, False if the bank couldn't cover it.
     """
     if from_bank:
+        if discretionary:
+            from lib.economy.reserve_policy import scale_reward
+            amount = scale_reward(amount)
         from lib.economy.bank_manager import BankManager
         return BankManager.transfer_to_user(
             user_id, amount, description=reason, taxable=taxable,
@@ -544,15 +559,28 @@ def credit_casino_payout(user_id: int, amount: int, reason: str) -> bool:
     and ``False`` when the bank paid normally (or the amount was a no-op). A
     ``BankStorageError`` from the bank path is deliberately not caught: failed
     durable storage must abort settlement rather than enter the mint fallback.
+
+    The mint is bounded by ``config.MAX_TOTAL_SUPPLY``. Past that ceiling the win is
+    still honoured - refusing to pay a legitimate winner is not on the table - but it is
+    logged CRITICAL so the supply breach is visible rather than silent.
     """
     if amount <= 0:
         return False
     if add_bb(user_id, amount, reason=reason, taxable=False):
         return False
+
+    from lib.economy.reserve_policy import may_mint, mint_headroom
+    breached = not may_mint(amount)
+    if breached:
+        logger.critical(
+            "SUPPLY CEILING BREACHED: minting %s UKP for %s (%s) leaves only %s headroom. "
+            "Total supply is at or past MAX_TOTAL_SUPPLY - the faucets need cutting.",
+            amount, user_id, reason, mint_headroom(),
+        )
     UKPenceManager.add_amount(
         user_id,
         amount,
-        reason=f"{reason} [bank insolvent - minted]",
+        reason=f"{reason} [bank insolvent - minted{' PAST CEILING' if breached else ''}]",
     )
     return True
 

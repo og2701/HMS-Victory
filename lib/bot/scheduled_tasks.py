@@ -81,7 +81,8 @@ async def daily_summary(client):
                         
                         # Award Top Chatter rewards ONLY to top 5
                         if i < num_to_reward:
-                            if add_bb(user_id, flat_reward_amount, reason="Top chatter daily reward"):
+                            if add_bb(user_id, flat_reward_amount, reason="Top chatter daily reward",
+                                      discretionary=True):
                                 await award_badge_with_notify(client, user_id, 'top_chatter')
                                 awarded_user_info = f"User ID {user_id} (Top {i+1} chatter, {message_count} messages): +{flat_reward_amount} UKPence"
                                 awarded_users_for_log.append(awarded_user_info)
@@ -262,7 +263,8 @@ async def award_stage_bonuses(client):
         if units <= 0:
             continue                                  # not enough time for this tier yet; keep accruing
         bonus_awarded = units * STAGE_UKPENCE_MULTIPLIER
-        if add_bb(uid, bonus_awarded, reason=f"Stage Participation Reward ({units * period}m)"):
+        if add_bb(uid, bonus_awarded, reason=f"Stage Participation Reward ({units * period}m)",
+                  discretionary=True):
             from lib.bot.event_handlers import award_badge_with_notify
             await award_badge_with_notify(client, uid, 'stage_fan')
             client.stage_join_times[uid] = start_time_utc + timedelta(seconds=units * period * 60)
@@ -338,7 +340,8 @@ async def award_booster_bonus(client):
     total_reward_needed = len(booster_ids) * SERVER_BOOSTER_UKP_DAILY_BONUS
 
     for member_id in booster_ids:
-        if add_bb(member_id, SERVER_BOOSTER_UKP_DAILY_BONUS, reason="Server booster daily bonus"):
+        if add_bb(member_id, SERVER_BOOSTER_UKP_DAILY_BONUS, reason="Server booster daily bonus",
+                  discretionary=True):
             total_booster_rewards_awarded_this_cycle += SERVER_BOOSTER_UKP_DAILY_BONUS
         else:
             logger.error(f"Bank insufficient for booster reward for User {member_id}.")
@@ -561,6 +564,10 @@ def _register_client_jobs(client, scheduler):
 
     _add_process_job(scheduler, apply_wealth_demurrage, CronTrigger(day_of_week="fri", hour=0, minute=5, timezone="Europe/London"), args=[client], id="apply_wealth_demurrage_job", name="Weekly Wealth Demurrage")
 
+    # Runs last of the three so the two wealth taxes have already taken their cut - a hoarder
+    # who is also economy-dormant is charged on what's left, not on the same UKP twice.
+    _add_process_job(scheduler, apply_economy_dormant_tax, CronTrigger(day_of_week="fri", hour=0, minute=10, timezone="Europe/London"), args=[client], id="apply_economy_dormant_tax_job", name="Weekly Economy-Dormant Tax")
+
     # Lottery tick (every 2 min): while a round is open - started manually by staff via
     # /lottery-start - this posts the periodic reminders and draws a sold-out round once
     # it passes its minimum runtime. No weekly auto-draw/auto-open: the lottery is manual.
@@ -617,16 +624,20 @@ async def apply_inactivity_tax(client):
         now = int(time.time())
         limit = now - (60 * 24 * 60 * 60) # 60 days
         
-        # Find all users in ukpence who have an xp entry older than 60 days
+        # Anyone holding UKP whose last chat was over 60 days ago - INCLUDING anyone with no
+        # xp row at all. The old inner JOIN silently exempted never-chatted accounts forever
+        # (152 of them, holding ~20k), which is exactly the dormant hoard this tax exists for.
         query = """
-            SELECT u.user_id, u.balance 
+            SELECT u.user_id, u.balance
             FROM ukpence u
-            JOIN xp x ON u.user_id = x.user_id
-            WHERE x.last_xp_time > 0 
-            AND x.last_xp_time < ?
-            AND u.balance > 0
+            LEFT JOIN xp x ON u.user_id = x.user_id
+            WHERE u.balance > 0
+              AND COALESCE(x.last_xp_time, 0) < ?
         """
         dormant_users = DatabaseManager.fetch_all(query, (limit,))
+        # BOT_ID holds the bank's own float - never tax the bank into itself.
+        from config import BOT_ID
+        dormant_users = [(u, b) for u, b in (dormant_users or []) if str(u) != str(BOT_ID)]
         
         if not dormant_users:
             logger.info("[ECONOMY] No dormant users found for inactivity tax.")
@@ -757,9 +768,110 @@ async def apply_wealth_demurrage(client):
         current_date_str = datetime.now(pytz.timezone("Europe/London")).strftime("%Y-%m-%d")
         _update_daily_metric_file(current_date_str, "demurrage_total", total)
 
+        # Earmark a share of the take for chat activity rewards - hoarded money reclaimed
+        # from the richest players goes back out to the most active ones. The UKP already
+        # sits in the bank; this only moves the accounting marker, so supply is untouched.
+        from lib.economy.reserve_policy import fund_dividend_pot
+        added = fund_dividend_pot(total)
+        if added:
+            _update_daily_metric_file(current_date_str, "dividend_pot_in", added)
+
         # Demurrage runs silently in the background - no DM / notification to users.
     except Exception as e:
         logger.error(f"Error applying wealth demurrage: {e}", exc_info=True)
+
+
+async def apply_economy_dormant_tax(client):
+    """Weekly charge on people who hold UKP but never USE the economy.
+
+    The inactivity tax above keys off chat activity, so it only catches people who stopped
+    talking. This catches the other half: still chatting (so exempt from that one), under the
+    demurrage threshold (so exempt from that one too), but not having gambled, shopped, /paid,
+    bonded or entered the lottery in ECONOMY_DORMANT_DAYS. They accumulate from the faucets
+    and never return anything, which is most of why the bank drains.
+
+    Charged only on the excess above ECONOMY_DORMANT_FLOOR, exactly like demurrage: the
+    population is overwhelmingly small holders, and a flat percentage would take a fifth of
+    a casual chatter's 200 UKP in order to reach the handful of accounts that matter.
+
+    Silent - no DM, no notification, same as every other tax here.
+    """
+    try:
+        import config, time
+        if not getattr(config, "ECONOMY_DORMANT_TAX_ENABLED", True):
+            return
+        floor = int(getattr(config, "ECONOMY_DORMANT_FLOOR", 100))
+        rate = float(getattr(config, "ECONOMY_DORMANT_RATE", 0.10))
+        days = int(getattr(config, "ECONOMY_DORMANT_DAYS", 60))
+        if rate <= 0 or days <= 0:
+            return
+
+        from database import DatabaseManager
+        from config import BOT_ID
+        cut = int(time.time()) - days * 86400
+
+        # Last time each user actively SPENT or RISKED money. Passive receipts deliberately
+        # don't count - being paid a chat reward is not using the economy, it's the thing
+        # this tax exists to recycle. Each source is tried independently so a schema change
+        # in one table degrades the aim rather than skipping the run.
+        last_active = {}
+        for sql in (
+            "SELECT user_id, MAX(timestamp) FROM casino_results GROUP BY user_id",
+            "SELECT user_id, MAX(purchase_time) FROM shop_purchases GROUP BY user_id",
+            "SELECT payer_id, MAX(timestamp) FROM pay_transfers GROUP BY payer_id",
+            "SELECT user_id, MAX(opened_ts) FROM bonds GROUP BY user_id",
+            "SELECT winner_id, MAX(timestamp) FROM pvp_results GROUP BY winner_id",
+            "SELECT loser_id, MAX(timestamp) FROM pvp_results GROUP BY loser_id",
+            "SELECT winner_id, MAX(timestamp) FROM connect4_results GROUP BY winner_id",
+            "SELECT winner_id, MAX(timestamp) FROM game_transfers GROUP BY winner_id",
+            "SELECT loser_id, MAX(timestamp) FROM game_transfers GROUP BY loser_id",
+            "SELECT e.user_id, MAX(r.created_at) FROM lottery_entries e "
+            "JOIN lottery_rounds r ON r.id = e.round_id GROUP BY e.user_id",
+        ):
+            try:
+                for uid, ts in (DatabaseManager.fetch_all(sql) or []):
+                    if uid is None or ts is None:
+                        continue
+                    uid = str(uid)
+                    if int(ts) > last_active.get(uid, 0):
+                        last_active[uid] = int(ts)
+            except Exception:
+                logger.warning("[ECONOMY] Dormant-tax source unavailable, skipping it: %s",
+                               sql.split(" FROM ")[-1].split(" ")[0], exc_info=True)
+
+        holders = DatabaseManager.fetch_all(
+            "SELECT user_id, balance FROM ukpence WHERE balance > ? AND user_id != ?",
+            (floor, str(BOT_ID))) or []
+
+        plans = []
+        for uid, balance in holders:
+            uid = str(uid)
+            if last_active.get(uid, 0) >= cut:
+                continue                                  # used the economy recently
+            amount = int((int(balance) - floor) * rate)
+            if amount > 0:
+                plans.append((uid, amount))
+        if not plans:
+            logger.info("[ECONOMY] Economy-dormant tax: nobody chargeable this run.")
+            return
+
+        charged = BankManager.collect_tax_batch(
+            plans,
+            description=f"Dormant-account tax ({days}d without using the economy)",
+            bank_description="Economy-dormant tax",
+        )
+        if charged is None:
+            logger.error("[ECONOMY] Economy-dormant tax batch failed; nothing was committed.")
+            return
+        total = sum(a for _, a, _ in charged)
+        logger.info("[ECONOMY] Economy-dormant tax reclaimed %s UKP from %s users.",
+                    total, len(charged))
+        if total > 0:
+            _update_daily_metric_file(
+                datetime.now(pytz.timezone("Europe/London")).strftime("%Y-%m-%d"),
+                "economy_dormant_tax_total", total)
+    except Exception as e:
+        logger.error(f"Error applying economy-dormant tax: {e}", exc_info=True)
 
 
 async def process_economy_logs(client):

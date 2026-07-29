@@ -38,7 +38,7 @@ _CATEGORIES = [
     ("Lottery", "\U0001f3ab", ["lottery"]),
     # Tax must outrank Rewards: "inactivity" contains "activity", which would
     # otherwise net tax charges into the Rewards line.
-    ("Tax", "\U0001f4c9", ["tax", "inactivity", "demurrage"]),
+    ("Tax", "\U0001f4c9", ["tax", "inactivity", "demurrage", "dormant"]),
     ("Rewards", "\U0001f4ac", ["chat", "stage", "booster", "top chatter", "activity",
                                "message reward", "reward", "daily"]),
     ("Benefits", "\U0001f9fe", ["benefit", "dole"]),

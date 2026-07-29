@@ -53,6 +53,10 @@ SLOTS_ENABLED = True
 SLOTS_IMAGE_ENABLED = True
 SLOTS_MIN_BET = 1
 SLOTS_MAX_BET = 10_000
+# Payout ceiling; 0 = uncapped. A crown (25x) at the max bet pays 250,000 - more than the
+# bank has ever held, so one spin could empty the reserves and force the emergency mint.
+# 50,000 still pays a life-changing jackpot without putting the currency at risk.
+SLOTS_MAX_WIN = 50_000
 
 # --- Video Poker / Jacks or Better (vs-the-house) ---
 VIDEOPOKER_ENABLED = True
@@ -84,9 +88,10 @@ MINES_MIN_BET = 5
 MINES_MAX_BET = 5_000
 MINES_DEFAULT_MINES = 3       # default bomb count when /mines is called without one
 MINES_HOUSE_EDGE = 0.02       # fraction of the stake the house keeps (EV-constant)
-MINES_MAX_WIN = 0             # payout ceiling; 0 = no cap (a lucky board pays the full
-                              # multiplier - if the bank can't cover it, credit_from_bank
-                              # mints the win and logs CRITICAL; amend the supply after)
+MINES_MAX_WIN = 30_000        # payout ceiling; 0 = no cap. Uncapped, a deep board at the 5k
+                              # max bet has already paid 45,080 in a single game - over a
+                              # fifth of the bank's reserves. 6x the max bet still rewards a
+                              # long push without one player emptying the float.
 
 # Chest Upgrade - a linear "press your luck" ladder. Open the free Wood chest (1x), then
 # choose, tier by tier, whether to risk it to upgrade; a failed upgrade shatters the chest
@@ -192,12 +197,27 @@ BENEFITS_BAN_RAMP = [1, 3, 7, 14]   # benefits-fraud cooldown (days), ramps per 
 # settles where weekly demurrage == weekly income, i.e. ~ THRESHOLD + income/RATE. Only the
 # excess above the threshold is ever charged, so normal players never feel it.
 WEALTH_DEMURRAGE_ENABLED = True
-WEALTH_DEMURRAGE_THRESHOLD = 20000   # only balance above this is charged
+# 10,000 deliberately matches the point where chat and Stage rewards taper to zero, so the
+# rule reads as one line: above 10k you stop earning passively and start funding everyone
+# else. At 20k it only ever caught two accounts and reclaimed ~1.7k/week, which wasn't
+# enough to fund the dividend pot below.
+WEALTH_DEMURRAGE_THRESHOLD = 10000   # only balance above this is charged
 WEALTH_DEMURRAGE_RATE = 0.05         # fraction of the excess taken per weekly run (5%)
 INACTIVITY_TAX_RATE = 0.20           # fraction of total balance taken per weekly run (20%)
 # Taxes still apply, but user-facing statements fold them silently into the
 # "Rewards & other" residual instead of naming them (too many complaints).
 STATEMENT_HIDE_TAX = True
+
+# Economy-dormant tax: the chat-activity inactivity tax above only catches people who stopped
+# TALKING. This catches the other half - people who still chat (so they dodge that one) but
+# never gamble, shop, /pay, bond or enter the lottery, and so accumulate from the faucets
+# without ever returning anything. Charged ONLY on the excess above the floor, like demurrage,
+# because the population is overwhelmingly small holders: a flat % would take a fifth of a
+# casual chatter's 200 UKP to reach the handful of accounts that actually matter.
+ECONOMY_DORMANT_TAX_ENABLED = True
+ECONOMY_DORMANT_DAYS = 60            # no spending/risking activity for this long
+ECONOMY_DORMANT_FLOOR = 100          # balance under this is exempt entirely
+ECONOMY_DORMANT_RATE = 0.10          # fraction of the excess above the floor, per weekly run
 
 # Anti-shuffle: all three taxes are charged on "effective wealth" = balance + UKP you've sent
 # out − UKP you've been sent, over this window. Moving money onto an alt/friend (or splitting a
@@ -216,12 +236,42 @@ DAILY_PAY_CAP = 10000
 # demurrage it dodges.
 PVP_RAKE_RATE = 0.05
 
+# --- Bank reserve policy -------------------------------------------------------------
+# The bank is a float, not an infinite faucet: every passive reward is paid out of it and
+# the taxes above are what refill it. When reserves fall, DISCRETIONARY payouts (rewards
+# the server chooses to give) scale down so the tax flow can catch up. Obligations - casino
+# wins, refunds, bond maturities, anything already promised - are never scaled; you cannot
+# shrink a bet someone has already won.
+RESERVE_POLICY_ENABLED = True
+# A FLAT floor, deliberately not a % of live supply: if the mint ever fires, supply rises and
+# a percentage floor would rise with it, tightening the throttle exactly when the bank has
+# just been bailed out. 80,000 is 10% of the 800k baseline.
+RESERVE_FLOOR = 80_000
+# (reserves_at_or_below, multiplier applied to discretionary rewards). First match wins.
+RESERVE_THROTTLE_TIERS = ((80_000, 0.25), (120_000, 0.50), (160_000, 0.75))
+# Hard ceiling on total UKP in existence. The emergency mint (casino insolvency) may only
+# ever raise supply to this; past it a win cannot be honoured and is logged CRITICAL rather
+# than silently inflating the currency. 800k baseline -> at most 25% expansion, ever.
+MAX_TOTAL_SUPPLY = 1_000_000
+
+# --- Demurrage dividend ---------------------------------------------------------------
+# Reclaimed hoard money is earmarked to pay for chat activity rewards, turning a wealth tax
+# into a visible community payout. The pot is an EARMARK on the bank's existing balance, not
+# a second wallet - no UKP is created, the supply invariant is untouched, and the counter just
+# records how much of the bank is spoken for. Empty pot = no chat rewards until it refills.
+DEMURRAGE_DIVIDEND_ENABLED = True
+DEMURRAGE_DIVIDEND_PCT = 0.50     # share of each demurrage run diverted into the pot
+# Pot level considered "healthy" - at or above this, chat rewards pay at their full rate; the
+# frequency scales down linearly below it. Roughly one week of chat-reward spend.
+DEMURRAGE_DIVIDEND_FULL_POT = 2_500
+DEMURRAGE_DIVIDEND_MIN_RATE = 0.25   # floor on the scaling while the pot still has anything
+
 
 HOF_REWARD = 100                  # UKP DM'd to a message's author on Hall of Fame entry
 TICKET_REWARD = 100               # UKP a staff member can grant a ticket's opener
 DISBOARD_BOT_ID = 302050872383242240   # DISBOARD: the /bump bot
 BUMP_REWARD = 50                  # UKP for the member who bumps the server on DISBOARD (max once per ~2h, DISBOARD's own cooldown)
-WELCOME_REWARD = 20               # UKP for welcoming a new member (reply to the join message, @mention them, or post a welcome shortly after they join)
+WELCOME_REWARD = 10               # UKP for welcoming a new member (reply to the join message, @mention them, or post a welcome shortly after they join)
 WELCOME_WINDOW_MINUTES = 15       # how long after a join a welcome still pays out
 WELCOME_MAX_WELCOMERS = 5         # only the first N welcomers per newcomer are paid (stops a join wave being farmed)
 # Channels whose messages can't enter the Hall of Fame (announcements etc. always get a

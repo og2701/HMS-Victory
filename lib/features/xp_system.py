@@ -223,6 +223,12 @@ class XPSystem:
             # Award UKP on a separate 10-min cooldown with wealth-based scaling.
             # Probability tapers to 0 at 10k UKP balance: rich users earn nothing from chat.
             # 0=100%, 500=50%, 1000=33%, 2000=20%, 5000≈9%, 9999≈5%, 10000+=0%
+            #
+            # These are funded by the demurrage dividend pot: the weekly charge on hoarded
+            # balances is earmarked here, so money reclaimed from the richest players pays
+            # the most active non-wealthy ones. An empty pot means no chat rewards until
+            # the next demurrage run refills it, and a thin pot slows the rate rather than
+            # stopping it dead.
             last_ukp = self._last_ukp_award.get(user_id, 0)
             if (now - last_ukp) >= self.UKP_COOLDOWN:
                 balance = get_bb(int(user_id))
@@ -230,14 +236,25 @@ class XPSystem:
                     reward_chance = 0.0
                 else:
                     reward_chance = 1.0 / (1.0 + balance / 500.0)
+                try:
+                    from lib.economy.reserve_policy import dividend_rate, spend_dividend
+                    reward_chance *= dividend_rate()
+                except Exception:
+                    logger.error("dividend rate lookup failed; paying at the base rate",
+                                 exc_info=True)
+                    spend_dividend = None
                 if reward_chance > 0 and random.random() < reward_chance:
-                    add_bb(int(user_id), 1, reason="Chatting activity reward")
-                    try:
-                        from lib.features.income_badges import record_income_source, bump_daily_income
-                        bump_daily_income("chat_activity_total", 1)
-                        await record_income_source(self.client, int(user_id), "chat")
-                    except Exception:
-                        pass
+                    # Claim from the pot BEFORE paying, so a dry pot can't be overdrawn by
+                    # two messages landing at once.
+                    if spend_dividend is None or spend_dividend(1):
+                        add_bb(int(user_id), 1, reason="Chatting activity reward",
+                               discretionary=True)
+                        try:
+                            from lib.features.income_badges import record_income_source, bump_daily_income
+                            bump_daily_income("chat_activity_total", 1)
+                            await record_income_source(self.client, int(user_id), "chat")
+                        except Exception:
+                            pass
                 self._last_ukp_award[user_id] = now
 
             new_role_id = self.get_role_for_xp(new_xp)

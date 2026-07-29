@@ -105,6 +105,13 @@ class SlotMachine:
         self.reels = spin_reels()
         self.mult = evaluate(self.reels)
         self.win = self.mult * self.bet
+        # A crown at the 10k max bet pays 25x = 250,000, which is more UKP than the bank
+        # has ever held - it would empty the reserves and force the emergency mint on a
+        # single spin. The ceiling bounds that tail; at 0 the paytable is uncapped as before.
+        import config
+        cap = int(getattr(config, "SLOTS_MAX_WIN", 0) or 0)
+        if cap > 0 and self.win > cap:
+            self.win = cap
         self.net = self.win - self.bet
         return self.win
 
