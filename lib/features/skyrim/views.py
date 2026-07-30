@@ -594,15 +594,16 @@ def _back_row():
 
 
 def _stamina_line(profile) -> str:
-    """'3 delves ready · next in 2h 40m' - the phrasing that replaced 'left today' when
-    stamina moved from a midnight reset to a timer."""
+    """'3/5 delves ready · next in 2 hours' - replaced 'left today' when stamina moved
+    from a midnight reset to fixed regen slots. The countdown is a Discord <t:...:R>
+    stamp so it ticks down on its own instead of freezing at whatever it said when the
+    panel was drawn."""
     left = E.delves_left(profile)
     cap = E.delve_cap(profile)
     bit = f"🛌 **{left}**/{cap} delve{'s' if left != 1 else ''} ready"
-    secs = E.next_delve_in(profile)
-    if secs > 0:
-        h, m = secs // 3600, (secs % 3600) // 60
-        bit += f"  ·  next in {h}h {m:02d}m" if h else f"  ·  next in {m}m"
+    at = E.next_delve_at(profile)
+    if at:
+        bit += f"  ·  next <t:{at}:R>"
     return bit
 
 
@@ -727,11 +728,11 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
              f"💰 only the satchel is at stake  ·  ⛰️ new roads at dawn\n"]
     rows = []
     if left <= 0:
-        secs = E.next_delve_in(profile)
-        h, m = secs // 3600, (secs % 3600) // 60
-        when = f"{h}h {m:02d}m" if h else f"{m}m"
-        lines.append(f"🛌 You need to rest - the next delve returns in **{when}**, and "
+        at = E.next_delve_at(profile)
+        slots = ", ".join(f"{h:02d}:00" for h in E._slot_hours())
+        lines.append(f"🛌 You need to rest - the next delve returns <t:{at}:R>, and "
                      f"they keep stacking up to {E.delve_cap(profile)} while you're away. "
+                     f"-# Delves land at {slots} UK.\n"
                      "The 📅 **Daily Delve** in the hub is separate, if you haven't "
                      "braved it yet.")
     else:
@@ -3029,9 +3030,9 @@ HELP_PAGES = {
 
 def _help_panel(page: str):
     emoji, label, text = HELP_PAGES.get(page, HELP_PAGES["start"])
-    text += (f"\n\n-# One delve returns every "
-             f"{getattr(config, 'SKYRIM_DELVE_REGEN_HOURS', 4)}h and they stack up to "
-             f"{getattr(config, 'SKYRIM_DELVE_MAX_STORED', 5)} while you're away - no "
+    text += (f"\n\n-# A delve returns at "
+             f"{', '.join(f'{h:02d}:00' for h in E._slot_hours())} UK and they stack up "
+             f"to {getattr(config, 'SKYRIM_DELVE_MAX_STORED', 5)} while you're away - no "
              f"midnight rush. No UKPence involved anywhere - glory only.")
     sel = discord.ui.Select(placeholder="📖 More chapters...")
     for key, (em, lab, _t) in HELP_PAGES.items():

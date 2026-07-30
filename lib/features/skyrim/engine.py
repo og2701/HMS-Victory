@@ -392,9 +392,14 @@ def get_profile(user_id) -> dict | None:
     p = _profiles().get(str(user_id))
     if p is None:
         return None
-    if "stone" not in p or "weapon" in p.get("skills", {}):
+    # One-time shape upgrades must PERSIST on first touch. The stamina conversion in
+    # particular used to happen during rendering, after the caller had already saved -
+    # so it silently re-ran on every hub open and the countdown never moved.
+    if ("stone" not in p or "weapon" in p.get("skills", {})
+            or "charges" not in (p.get("stamina") or {})):
         _migrate(p)
-        save_profile(p)          # one-time upgrade persists on first touch
+        _stamina(p)
+        save_profile(p)
     return _migrate(p)           # cheap idempotent defaults for newer fields
 
 
@@ -1078,17 +1083,45 @@ def delve_cap(profile) -> int:
             + (1 if has_boon(profile, "long_stride") else 0))
 
 
-def _regen_secs() -> int:
-    return max(60, int(float(getattr(config, "SKYRIM_DELVE_REGEN_HOURS", 4)) * 3600))
+def _slot_hours() -> list:
+    """The clock times delves land at, e.g. [0, 4, 8, 12, 16, 20] for a 4h step."""
+    step = max(1, min(24, int(getattr(config, "SKYRIM_DELVE_REGEN_HOURS", 4))))
+    return list(range(0, 24, step))
+
+
+def slot_bounds(now_ts: int = None) -> tuple:
+    """(last_slot, next_slot) as unix timestamps, on the UK clock.
+
+    Pinned to fixed times rather than counting N hours from whenever you last spent.
+    That makes the whole thing stateless in a way a rolling timer isn't: the anchor is
+    a wall-clock boundary everyone shares, so re-reading a profile that never got saved
+    recomputes the identical answer instead of quietly restarting the countdown.
+    """
+    now = datetime.datetime.fromtimestamp(
+        now_ts if now_ts is not None else time.time(), _UK)
+    hours = _slot_hours()
+    h = max(x for x in hours if x <= now.hour)
+    day = now.date()
+    last = _UK.localize(datetime.datetime(day.year, day.month, day.day, h))
+    i = hours.index(h)
+    if i + 1 < len(hours):
+        nxt_day, nxt_h = day, hours[i + 1]
+    else:
+        nxt_day, nxt_h = day + datetime.timedelta(days=1), hours[0]
+    nxt = _UK.localize(datetime.datetime(nxt_day.year, nxt_day.month, nxt_day.day, nxt_h))
+    return int(last.timestamp()), int(nxt.timestamp())
 
 
 def _stamina(profile) -> dict:
-    """The regenerated stamina record, updated in place. Also converts the old
-    midnight-reset shape ({"date", "used"}) on first read, crediting whatever that
-    profile had left today so nobody loses a delve to the changeover."""
+    """The stamina record brought up to date, mutated in place.
+
+    Also converts the old midnight-reset shape ({"date", "used"}) on first read,
+    crediting whatever that profile had left today so nobody loses a delve to the
+    changeover.
+    """
     st = profile.get("stamina") or {}
-    now = int(time.time())
     cap = delve_cap(profile)
+    last_slot, _next_slot = slot_bounds()
 
     if "charges" not in st:
         per_day = (int(getattr(config, "SKYRIM_DELVES_PER_DAY", 3))
@@ -1097,20 +1130,19 @@ def _stamina(profile) -> dict:
             left = max(0, per_day - int(st.get("used", 0)))
         else:
             left = per_day
-        st = {"charges": min(cap, left), "ts": now}
+        st = {"charges": min(cap, left), "slot": last_slot}
+        profile["stamina"] = st
+        return st
 
-    period = _regen_secs()
-    elapsed = max(0, now - int(st.get("ts", now)))
-    charges = int(st.get("charges", 0))
-    if charges >= cap:
-        st["ts"] = now                      # full: the timer only starts once you spend
-    elif elapsed >= period:
-        gained = elapsed // period
-        st["charges"] = min(cap, charges + gained)
-        # advance by whole periods so the remainder keeps counting toward the next one
-        st["ts"] = int(st.get("ts", now)) + gained * period
-        if st["charges"] >= cap:
-            st["ts"] = now
+    prev = int(st.get("slot", last_slot))
+    if last_slot > prev and int(st.get("charges", 0)) < cap:
+        step = max(1, len(_slot_hours()) and 24 // len(_slot_hours())) * 3600
+        gained = max(1, (last_slot - prev) // step)      # DST can shift this by an hour
+        st["charges"] = min(cap, int(st.get("charges", 0)) + gained)
+    # Always catch the marker up, even at the cap: otherwise a player who sits full for
+    # a week would bank a week of missed slots the moment they spent one.
+    if last_slot > prev:
+        st["slot"] = last_slot
     profile["stamina"] = st
     return st
 
@@ -1119,20 +1151,24 @@ def delves_left(profile) -> int:
     return int(_stamina(profile).get("charges", 0))
 
 
-def next_delve_in(profile) -> int:
-    """Seconds until the next delve returns, or 0 when already at the cap."""
+def next_delve_at(profile) -> int:
+    """Unix timestamp of the next delve, or 0 at the cap. Rendered as a live Discord
+    <t:...:R> countdown rather than a number that goes stale the moment it's drawn."""
     st = _stamina(profile)
     if int(st.get("charges", 0)) >= delve_cap(profile):
         return 0
-    return max(0, int(st.get("ts", 0)) + _regen_secs() - int(time.time()))
+    return slot_bounds()[1]
+
+
+def next_delve_in(profile) -> int:
+    """Seconds until the next delve, or 0 at the cap."""
+    at = next_delve_at(profile)
+    return max(0, at - int(time.time())) if at else 0
 
 
 def spend_stamina(profile):
     st = _stamina(profile)
-    was_full = int(st.get("charges", 0)) >= delve_cap(profile)
     st["charges"] = max(0, int(st.get("charges", 0)) - 1)
-    if was_full:
-        st["ts"] = int(time.time())         # dropping off the cap starts the clock
     profile["stamina"] = st
 
 

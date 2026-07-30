@@ -1126,45 +1126,62 @@ def test_abandon_banks_satchel():
     assert E.load_delve(555) is None
 
 
-def test_stamina_regenerates_on_a_timer_and_banks_to_the_cap():
-    """Delves come back one per SKYRIM_DELVE_REGEN_HOURS and stack to the cap - there is
-    no midnight reset any more, so a few days away is a stockpile, not a loss."""
+def test_stamina_lands_on_fixed_clock_slots():
+    """Delves arrive at fixed UK clock times (00:00, 04:00, ...) rather than N hours after
+    you last spent, so every player's next delve is the same wall-clock moment."""
     import time as _time
     p = _profile()
     cap = E.delve_cap(p)
-    period = E._regen_secs()
-    assert E.delves_left(p) == cap                    # a fresh character starts full
-    assert E.next_delve_in(p) == 0                    # ...and the timer is idle at the cap
+    assert E.delves_left(p) == cap                     # a fresh character starts full
+    assert E.next_delve_at(p) == 0                     # nothing pending at the cap
+
+    last, nxt = E.slot_bounds()
+    # inclusive: running exactly on a boundary is legitimate, not an error
+    assert last <= int(_time.time()) <= nxt
+    # both boundaries sit exactly on a configured slot hour, in UK local time
+    import datetime as _dt
+    for ts in (last, nxt):
+        local = _dt.datetime.fromtimestamp(ts, E._UK)
+        assert local.hour in E._slot_hours() and local.minute == 0 and local.second == 0
 
     E.spend_stamina(p)
     assert E.delves_left(p) == cap - 1
-    assert 0 < E.next_delve_in(p) <= period           # dropping off the cap starts the clock
+    assert E.next_delve_at(p) == nxt                   # the shared next boundary
 
-    # nothing regenerates before a full period has passed
-    p["stamina"]["ts"] = int(_time.time()) - (period - 60)
-    assert E.delves_left(p) == cap - 1
-
-    # ...and exactly one comes back on the period
-    p["stamina"]["charges"] = 0
-    p["stamina"]["ts"] = int(_time.time()) - period
+    # a slot passing grants exactly one
+    p["stamina"] = {"charges": 0, "slot": last - 4 * 3600}
     assert E.delves_left(p) == 1
-
-    # partial progress toward the next one survives the top-up (no rounding loss)
-    p["stamina"]["charges"] = 0
-    p["stamina"]["ts"] = int(_time.time()) - int(period * 1.5)
-    assert E.delves_left(p) == 1
-    assert 0 < E.next_delve_in(p) <= period // 2 + 5
-
-    # a long absence banks up to the cap and no further
-    p["stamina"]["charges"] = 0
-    p["stamina"]["ts"] = int(_time.time()) - period * 50
+    # ...and a long absence banks to the cap, never past it
+    p["stamina"] = {"charges": 0, "slot": last - 500 * 3600}
     assert E.delves_left(p) == cap
-    assert E.next_delve_in(p) == 0
-
-    # spending never drives it negative
+    # spending never goes negative
     for _ in range(cap + 3):
         E.spend_stamina(p)
     assert E.delves_left(p) == 0
+
+
+def test_sitting_at_the_cap_does_not_bank_missed_slots():
+    """A player who stays full for a week must not suddenly hold a week of delves the
+    moment they spend one - the slot marker has to keep up even while capped."""
+    last, _nxt = E.slot_bounds()
+    p = _profile()
+    p["stamina"] = {"charges": E.delve_cap(p), "slot": last - 200 * 3600}
+    assert E.delves_left(p) == E.delve_cap(p)
+    assert p["stamina"]["slot"] == last                # marker caught up
+    E.spend_stamina(p)
+    assert E.delves_left(p) == E.delve_cap(p) - 1      # not instantly refilled
+
+
+def test_stamina_is_stable_across_a_reread_that_never_got_saved():
+    """The bug pinned slots exist to prevent: a rolling per-player timer restarted every
+    time an unsaved profile was re-read, so the countdown froze at the full period."""
+    p = _profile()
+    p["stamina"] = {"date": E._today_str(), "used": 1}
+    first = (E.delves_left(p), E.next_delve_at(p))
+    for _ in range(5):
+        q = dict(p)
+        q["stamina"] = {"date": E._today_str(), "used": 1}   # as if never persisted
+        assert (E.delves_left(q), E.next_delve_at(q)) == first
 
 
 def test_long_stride_boon_raises_the_delve_cap():
