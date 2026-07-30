@@ -153,7 +153,14 @@ PENALTY_MAX_WIN = 0           # payout ceiling; 0 = no cap (the ~2.99x top multi
 # stake. Septims are an internal currency with no UKPence bridge, so this sits entirely
 # outside the economy (no bank flows, no casino channel gate, no /casino listing).
 SKYRIM_ENABLED = True
-SKYRIM_DELVES_PER_DAY = 3          # stamina: delves per UK day (resets at midnight UK)
+# Stamina regenerates on a timer rather than resetting at midnight, so there's no
+# use-it-or-lose-it rush before the reset and a day away comes back as a stockpile
+# instead of nothing. 4h regen is 6 a day at a steady pace; the cap is what you can bank
+# by not playing. The Legacy 'Long Stride' boon adds +1 to the CAP (it used to be
+# +1/day, which no longer means anything under a regen model).
+SKYRIM_DELVE_REGEN_HOURS = 4       # one delve returns this often
+SKYRIM_DELVE_MAX_STORED = 5        # most you can have banked at once
+SKYRIM_DELVES_PER_DAY = 3          # legacy: only used to convert old midnight-reset profiles
 SKYRIM_DRAGON_MIN_LEVEL = 8        # dragon lairs appear as destinations from this level
 SKYRIM_ALDUIN_MIN_LEVEL = 20       # Skuldafn (the Alduin fight) needs this level...
 SKYRIM_ALDUIN_MIN_DRAGONS = 5      # ...plus all 3 shout words and this many dragons slain.

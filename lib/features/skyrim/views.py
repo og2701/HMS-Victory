@@ -146,9 +146,7 @@ def _delve_text(delve: E.Delve, profile) -> str:
 
     if not delve.playing():
         lines.append(delve.result_line)
-        left = E.delves_left(profile)
-        lines.append(f"-# ⚔️ {delve.kills} kills this delve  ·  🛌 {left} "
-                     f"delve{'s' if left != 1 else ''} left today")
+        lines.append(f"-# ⚔️ {delve.kills} kills this delve  ·  {_stamina_line(profile)}")
         return "\n".join(lines)
 
     r = delve.room
@@ -222,6 +220,10 @@ def build_delve_layout(delve: E.Delve, profile):
         row = discord.ui.ActionRow()
         row.add_item(_btn(discord.ButtonStyle.primary, "Delve Again", f"skyrim:{did}:again",
                           _make_cb(delve, "again"), emoji="🗺️"))
+        # Delve Again jumps straight to the location picker, so without this there was no
+        # route back to Belethor's (potions!) or anything else without retyping /skyrim.
+        row.add_item(_btn(discord.ButtonStyle.secondary, "Home", f"skyrim:{did}:home",
+                          _make_cb(delve, "home"), emoji="🏠"))
         row.add_item(_btn(discord.ButtonStyle.secondary, "Character", f"skyrim:{did}:sheet",
                           _make_cb(delve, "sheet"), emoji="👤"))
         row.add_item(_btn(discord.ButtonStyle.secondary, "Help", f"skyrim:{did}:help",
@@ -370,6 +372,7 @@ async def _rerender_delve(interaction: Interaction, delve: E.Delve, profile):
     except Exception:
         logger.debug("skyrim add_view failed", exc_info=True)
     await _flush_game_log(interaction.client)
+    await _flush_wonders(interaction)
 
 
 async def _handle_delve_click(interaction: Interaction, delve: E.Delve, action: str):
@@ -393,6 +396,15 @@ async def _handle_delve_click(interaction: Interaction, delve: E.Delve, action: 
         return
     if action == "again":
         await _open_location_picker(interaction)
+        return
+    if action == "home":
+        # A NEW ephemeral hub, never an edit: this board is a public message and the hub
+        # is private, so editing would replace the delve record with someone's own hub.
+        profile = E.get_profile(interaction.user.id)
+        if profile is None:
+            await interaction.response.send_message("Run `/skyrim` first.", ephemeral=True)
+            return
+        await _show_hub_root(interaction, profile, first_response=True)
         return
 
     profile = E.get_profile(interaction.user.id)
@@ -498,10 +510,36 @@ async def _flush_game_log(client):
         logger.debug("skyrim game-log flush failed", exc_info=True)
 
 
+async def _flush_wonders(interaction: Interaction):
+    """Announce any Wonder found while handling this interaction, publicly.
+
+    Posted to the channel the player is actually in rather than a fixed one, so it lands
+    where the delve/Pit board they were looking at is. Falls back silently when there's no
+    usable channel (a DM, a dead thread) - a missed shout must never break the game.
+    """
+    try:
+        found = E.drain_wonders()
+        if not found:
+            return
+        ch = interaction.channel
+        if ch is None or not hasattr(ch, "send"):
+            return
+        for user_id, key in found:
+            owned = None
+            p = E.get_profile(user_id)
+            if p:
+                owned = len([k for k in (p.get("wonders") or []) if k in D.WONDERS])
+            await ch.send(E.wonder_announcement(user_id, key, owned),
+                          allowed_mentions=discord.AllowedMentions(users=True))
+    except Exception:
+        logger.debug("skyrim wonder announcement failed", exc_info=True)
+
+
 async def _edit_panel(interaction: Interaction, text: str, rows, art_key: str = None):
     view, files = _panel_view(text, rows, art_key)
     await interaction.response.edit_message(view=view, attachments=files)
     await _flush_game_log(interaction.client)
+    await _flush_wonders(interaction)
 
 
 def _hub_rows(profile):
@@ -555,9 +593,21 @@ def _back_row():
     return row
 
 
+def _stamina_line(profile) -> str:
+    """'3 delves ready · next in 2h 40m' - the phrasing that replaced 'left today' when
+    stamina moved from a midnight reset to a timer."""
+    left = E.delves_left(profile)
+    cap = E.delve_cap(profile)
+    bit = f"🛌 **{left}**/{cap} delve{'s' if left != 1 else ''} ready"
+    secs = E.next_delve_in(profile)
+    if secs > 0:
+        h, m = secs // 3600, (secs % 3600) // 60
+        bit += f"  ·  next in {h}h {m:02d}m" if h else f"  ·  next in {m}m"
+    return bit
+
+
 def _hub_text(profile) -> str:
     cls = D.STONES[profile["stone"]]
-    left = E.delves_left(profile)
     into, need = D.xp_into_level(profile["xp"])
     daily_bit = ("📅 daily delve **available**" if E.daily_available(profile)
                  else "📅 daily delve done")
@@ -569,8 +619,7 @@ def _hub_text(profile) -> str:
         f"{E.archetype(profile)}  ·  💰 {profile['septims']:,} septims\n"
         f"-# XP {_bar(into, 0, need)} {into}/{need} to next level\n"
         f"-# {E.weather_line()}\n"
-        f"-# 🛌 {left}/{getattr(config, 'SKYRIM_DELVES_PER_DAY', 3)} delves left today  ·  "
-        f"{daily_bit}{streak_bit}\n\n"
+        f"-# {_stamina_line(profile)}  ·  {daily_bit}{streak_bit}\n\n"
         f"Delve the ruins of Skyrim, learn words of power, slay dragons. Levels, gear, "
         f"souls and skills are yours forever - only the **septims in your satchel** are at "
         f"stake when you die.\n"
@@ -587,6 +636,7 @@ async def _show_hub_root(interaction: Interaction, profile, *, first_response=Fa
     else:
         await interaction.response.edit_message(view=view, attachments=files)
     await _flush_game_log(interaction.client)
+    await _flush_wonders(interaction)
     await _award_badges(interaction, profile)
 
 
@@ -673,13 +723,17 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
     left = E.delves_left(profile)
     lines = ["## 🗺️ Where to, Dovahkiin?",
              f"-# {E.weather_line()}",
-             f"-# 🛌 {left} delve{'s' if left != 1 else ''} left  ·  "
+             f"-# {_stamina_line(profile)}  ·  "
              f"💰 only the satchel is at stake  ·  ⛰️ new roads at dawn\n"]
     rows = []
     if left <= 0:
-        lines.append("🛌 You need to rest - no delves left today. They reset at midnight "
-                     "(UK time). The 📅 **Daily Delve** in the hub is separate, if you "
-                     "haven't braved it yet.")
+        secs = E.next_delve_in(profile)
+        h, m = secs // 3600, (secs % 3600) // 60
+        when = f"{h}h {m:02d}m" if h else f"{m}m"
+        lines.append(f"🛌 You need to rest - the next delve returns in **{when}**, and "
+                     f"they keep stacking up to {E.delve_cap(profile)} while you're away. "
+                     "The 📅 **Daily Delve** in the hub is separate, if you haven't "
+                     "braved it yet.")
     else:
         row = discord.ui.ActionRow()
         for key in E.offer_locations(profile):
@@ -847,6 +901,7 @@ async def _launch_delve(interaction: Interaction, loc_key: str, kind: str = "nor
     }.get(kind, f"{loc['emoji']} Off to **{loc['name']}** - good hunting, Dovahkiin.")
     await interaction.response.edit_message(view=_notice_view(send_off), attachments=[])
     await _flush_game_log(interaction.client)
+    await _flush_wonders(interaction)
 
 
 def _notice_view(text: str):
@@ -1363,6 +1418,7 @@ async def _post_pit_board(interaction: Interaction, profile, intro_lines):
         view=_notice_view("🗡️ **The Pit roars.** Your bout is live in the channel - "
                           "the crowd is watching."), attachments=[])
     await _flush_game_log(interaction.client)
+    await _flush_wonders(interaction)
 
 
 def _pit_board_layout(profile, last_lines, champ=None, offer=True):
@@ -1406,8 +1462,8 @@ def _pit_board_layout(profile, last_lines, champ=None, offer=True):
     box = discord.ui.Container(accent_colour=ACCENT)
     box.add_item(discord.ui.TextDisplay("\n".join(lines)))
     view.add_item(box)
+    row = discord.ui.ActionRow()
     if offer and E.level(profile) >= 5 and E.pit_available(profile):
-        row = discord.ui.ActionRow()
         row.add_item(_btn(discord.ButtonStyle.danger,
                           f"Fight on (-{E.pit_fatigue(profile)}% tired)",
                           f"skyrimpit:{uid}:fighton", _make_pit_cb(uid, "fighton"),
@@ -1415,7 +1471,11 @@ def _pit_board_layout(profile, last_lines, champ=None, offer=True):
         row.add_item(_btn(discord.ButtonStyle.secondary, "Bank it and rest",
                           f"skyrimpit:{uid}:rest", _make_pit_cb(uid, "rest"),
                           emoji="🛌"))
-        view.add_item(row)
+    # Always offered on a finished board, run over or not - the way back to the hub
+    # without retyping /skyrim.
+    row.add_item(_btn(discord.ButtonStyle.secondary, "Home",
+                      f"skyrimpit:{uid}:home", _make_pit_cb(uid, "home"), emoji="🏠"))
+    view.add_item(row)
     return view, files
 
 
@@ -1434,6 +1494,10 @@ async def _handle_pit_click(interaction: Interaction, owner_id: int, action: str
     p = E.get_profile(owner_id)
     if p is None:
         await interaction.response.send_message("Run `/skyrim` first.", ephemeral=True)
+        return
+    if action == "home":
+        # New ephemeral hub, not an edit - the Pit board is public (see the delve board).
+        await _show_hub_root(interaction, p, first_response=True)
         return
     mid = interaction.message.id if interaction.message else None
     if action in ("strike", "power", "guard"):
@@ -1455,6 +1519,7 @@ async def _handle_pit_click(interaction: Interaction, owner_id: int, action: str
             except Exception:
                 logger.debug("skyrim pit add_view failed", exc_info=True)
         await _flush_game_log(interaction.client)
+        await _flush_wonders(interaction)
     elif action == "fighton":
         if not (E.level(p) >= 5 and E.pit_available(p)):
             await interaction.response.send_message(
@@ -1475,6 +1540,7 @@ async def _handle_pit_click(interaction: Interaction, owner_id: int, action: str
             except Exception:
                 logger.debug("skyrim pit add_view failed", exc_info=True)
         await _flush_game_log(interaction.client)
+        await _flush_wonders(interaction)
     elif action == "rest":
         if mid:
             E.delete_delve(mid)
@@ -1565,6 +1631,7 @@ async def _handle_duel_click(interaction: Interaction, owner_id: int, action: st
         except Exception:
             logger.debug("skyrim duel add_view failed", exc_info=True)
     await _flush_game_log(interaction.client)
+    await _flush_wonders(interaction)
 
 
 async def _post_duel_board(interaction: Interaction, profile, intro_lines):
@@ -1596,6 +1663,7 @@ async def _post_duel_board(interaction: Interaction, profile, intro_lines):
         view=_notice_view("⚔️ **The circle forms.** Your duel is live in the channel."),
         attachments=[])
     await _flush_game_log(interaction.client)
+    await _flush_wonders(interaction)
 
 
 # --- shop --------------------------------------------------------------------------
@@ -2714,6 +2782,7 @@ async def _post_march_board(interaction: Interaction, profile):
                 else f"📯 Your march is told in the channel - **{dealt}** off the pool.")
     await interaction.response.edit_message(view=_notice_view(send_off), attachments=[])
     await _flush_game_log(interaction.client)
+    await _flush_wonders(interaction)
 
 
 # --- rankings ------------------------------------------------------------------------
@@ -2960,8 +3029,10 @@ HELP_PAGES = {
 
 def _help_panel(page: str):
     emoji, label, text = HELP_PAGES.get(page, HELP_PAGES["start"])
-    text += (f"\n\n-# {getattr(config, 'SKYRIM_DELVES_PER_DAY', 3)} delves per day, reset "
-             f"at midnight (UK). No UKPence involved anywhere - glory only.")
+    text += (f"\n\n-# One delve returns every "
+             f"{getattr(config, 'SKYRIM_DELVE_REGEN_HOURS', 4)}h and they stack up to "
+             f"{getattr(config, 'SKYRIM_DELVE_MAX_STORED', 5)} while you're away - no "
+             f"midnight rush. No UKPence involved anywhere - glory only.")
     sel = discord.ui.Select(placeholder="📖 More chapters...")
     for key, (em, lab, _t) in HELP_PAGES.items():
         sel.add_option(label=lab, value=key, emoji=em or "📖", default=key == page)

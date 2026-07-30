@@ -1642,7 +1642,7 @@ BOONS = {
     "dragon_marked": {"name": "Dragon-Marked", "emoji": "🐲",
                       "desc": "Dragon souls burn brighter: every dragon yields 2."},
     "long_stride": {"name": "Long Stride", "emoji": "🥾",
-                    "desc": "+1 delve per day, forever."},
+                    "desc": "+1 to your delve capacity, forever."},
     "wayfarer": {"name": "Wayfarer", "emoji": "🧭",
                  "desc": "Expeditions return +25% septims."},
 }

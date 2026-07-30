@@ -1126,14 +1126,75 @@ def test_abandon_banks_satchel():
     assert E.load_delve(555) is None
 
 
-def test_stamina():
+def test_stamina_regenerates_on_a_timer_and_banks_to_the_cap():
+    """Delves come back one per SKYRIM_DELVE_REGEN_HOURS and stack to the cap - there is
+    no midnight reset any more, so a few days away is a stockpile, not a loss."""
+    import time as _time
+    p = _profile()
+    cap = E.delve_cap(p)
+    period = E._regen_secs()
+    assert E.delves_left(p) == cap                    # a fresh character starts full
+    assert E.next_delve_in(p) == 0                    # ...and the timer is idle at the cap
+
+    E.spend_stamina(p)
+    assert E.delves_left(p) == cap - 1
+    assert 0 < E.next_delve_in(p) <= period           # dropping off the cap starts the clock
+
+    # nothing regenerates before a full period has passed
+    p["stamina"]["ts"] = int(_time.time()) - (period - 60)
+    assert E.delves_left(p) == cap - 1
+
+    # ...and exactly one comes back on the period
+    p["stamina"]["charges"] = 0
+    p["stamina"]["ts"] = int(_time.time()) - period
+    assert E.delves_left(p) == 1
+
+    # partial progress toward the next one survives the top-up (no rounding loss)
+    p["stamina"]["charges"] = 0
+    p["stamina"]["ts"] = int(_time.time()) - int(period * 1.5)
+    assert E.delves_left(p) == 1
+    assert 0 < E.next_delve_in(p) <= period // 2 + 5
+
+    # a long absence banks up to the cap and no further
+    p["stamina"]["charges"] = 0
+    p["stamina"]["ts"] = int(_time.time()) - period * 50
+    assert E.delves_left(p) == cap
+    assert E.next_delve_in(p) == 0
+
+    # spending never drives it negative
+    for _ in range(cap + 3):
+        E.spend_stamina(p)
+    assert E.delves_left(p) == 0
+
+
+def test_long_stride_boon_raises_the_delve_cap():
+    p = _profile()
+    base = E.delve_cap(p)
+    E.legacy(p)["boons"].append("long_stride")
+    assert E.delve_cap(p) == base + 1
+
+
+def test_old_midnight_reset_profiles_migrate_without_losing_a_delve():
+    """Existing characters are stored as {"date", "used"}. Converting must credit what
+    they had left rather than silently resetting them to full or to zero."""
     p = _profile()
     per_day = getattr(config, "SKYRIM_DELVES_PER_DAY", 3)
-    assert E.delves_left(p) == per_day
-    E.spend_stamina(p)
+
+    # mid-day, one delve already used -> keeps the remainder
+    p["stamina"] = {"date": E._today_str(), "used": 1}
     assert E.delves_left(p) == per_day - 1
-    p["stamina"]["date"] = "2000-01-01"          # a new day resets it
-    assert E.delves_left(p) == per_day
+    assert "charges" in p["stamina"]                  # converted in place, once
+
+    # all used up today -> converts to zero, and the timer starts from now
+    q = _profile()
+    q["stamina"] = {"date": E._today_str(), "used": per_day}
+    assert E.delves_left(q) == 0
+    assert E.next_delve_in(q) > 0
+
+    # a stale date (they last played days ago) -> a full day's worth, capped
+    r = _profile()
+    r["stamina"] = {"date": "2000-01-01", "used": 99}
+    assert E.delves_left(r) == min(E.delve_cap(r), per_day)
 
 
 def test_ambush_attack_and_blown_ambush():
@@ -1856,10 +1917,11 @@ def test_legacy_rebirth():
     # boons actually bite
     q = E.create_profile(21, "Boonful", "warrior")
     base_hearts = E.heart_max(q)
-    base_delves = E.delves_left(q)
+    base_cap = E.delve_cap(q)
     E.legacy(q)["boons"] = ["blooded", "long_stride", "coin_wise", "old_soul"]
     assert E.heart_max(q) == base_hearts + 1
-    assert E.delves_left(q) == base_delves + 1
+    # Long Stride raises the CAP now that stamina regenerates rather than resetting daily
+    assert E.delve_cap(q) == base_cap + 1
     assert E.shop_price(q, 100) == 90
     q2 = E.create_profile(22, "Plain", "warrior")
     E.random = _fixed_rolls(0.5)

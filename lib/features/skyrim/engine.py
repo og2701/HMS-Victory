@@ -19,6 +19,7 @@ flee mid-fight and a third spills. That is the whole risk model.
 import datetime
 import logging
 import random
+import time
 
 import pytz
 
@@ -49,6 +50,25 @@ def glog(line: str):
 def drain_log() -> list:
     out = list(_GAME_LOG)
     _GAME_LOG.clear()
+    return out
+
+
+# Wonders drop from six unrelated places (room kills, bosses, dragons, the Pit, ghost
+# duels, the homestead, the world boss) and the find used to be one line inside a wall of
+# delve narration, which is exactly why people missed them. Same queue-and-drain shape as
+# the game log above: the engine stays discord-free, the views layer drains this after an
+# interaction and posts it publicly, so a 1-in-150 drop is an event the channel sees.
+_WONDER_QUEUE = []
+
+
+def wlog(user_id: int, key: str):
+    _WONDER_QUEUE.append((int(user_id), key))
+    del _WONDER_QUEUE[:-50]
+
+
+def drain_wonders() -> list:
+    out = list(_WONDER_QUEUE)
+    _WONDER_QUEUE.clear()
     return out
 
 ROLL_MIN, ROLL_MAX = 5, 86           # success chances are clamped into this band
@@ -409,7 +429,9 @@ def create_profile(user_id, name: str, stone_key: str) -> dict:
         "stats": {"delves": 0, "clears": 0, "deaths": 0, "kills": 0, "sneaks": 0,
                   "persuades": 0, "dragons": 0, "sweetrolls": 0, "flees": 0,
                   "launched": 0},
-        "stamina": {"date": _today_str(), "used": 0},
+        # a new Dovahkiin wakes with a full bar (see delves_left / _stamina)
+        "stamina": {"charges": int(getattr(config, "SKYRIM_DELVE_MAX_STORED", 5)),
+                    "ts": int(time.time())},
         "active_delve": None,
         "created": _today_str(),
     }
@@ -794,6 +816,7 @@ def roll_wonder(profile, sources: set, chance: float) -> str | None:
     w = D.WONDERS[key]
     glog(f"✨ **{profile['name']}** found a WONDER: {w['emoji']} **{w['name']}** "
          f"({len(owned)}/{len(D.WONDERS)})")
+    wlog(profile["user_id"], key)          # ...and the channel hears about it
     return key
 
 
@@ -801,6 +824,17 @@ def wonder_line(key: str) -> str:
     w = D.WONDERS[key]
     return (f"✨ **A WONDER!** {w['emoji']} You find **{w['name']}** - {w['blurb']}\n"
             f"-# one of only {len(D.WONDERS)} wonders in all Skyrim, kept forever")
+
+
+def wonder_announcement(user_id: int, key: str, owned: int = None) -> str:
+    """The public shout when a Wonder drops. Deliberately loud - at 1-in-150 with no pity
+    timer, most players will see a handful in their whole time playing."""
+    w = D.WONDERS[key]
+    tail = (f"  ·  shelf now {owned}/{len(D.WONDERS)}" if owned else "")
+    return (f"# ✨ A WONDER\n"
+            f"<@{user_id}> found {w['emoji']} **{w['name']}**\n"
+            f"-# {w['blurb']}\n"
+            f"-# one of only {len(D.WONDERS)} in all Skyrim, kept forever{tail}")
 
 
 # ---------------------------------------------------------------------------
@@ -1033,20 +1067,72 @@ def _septims(profile, amount: int) -> int:
 
 
 # --- stamina -----------------------------------------------------------------
-def delves_left(profile) -> int:
-    per_day = (int(getattr(config, "SKYRIM_DELVES_PER_DAY", 3))
-               + (1 if has_boon(profile, "long_stride") else 0))
+# Delves regenerate on a timer instead of resetting at midnight: no scramble to burn
+# three before the reset, and a few days away come back as a stockpile rather than
+# nothing. Stored as {"charges": n, "ts": unix} where ts is the moment the CURRENT
+# part-charge started accruing, so partial progress toward the next delve is never lost
+# to rounding - spending doesn't touch the timer, and topping up advances it by whole
+# periods only.
+def delve_cap(profile) -> int:
+    return (int(getattr(config, "SKYRIM_DELVE_MAX_STORED", 5))
+            + (1 if has_boon(profile, "long_stride") else 0))
+
+
+def _regen_secs() -> int:
+    return max(60, int(float(getattr(config, "SKYRIM_DELVE_REGEN_HOURS", 4)) * 3600))
+
+
+def _stamina(profile) -> dict:
+    """The regenerated stamina record, updated in place. Also converts the old
+    midnight-reset shape ({"date", "used"}) on first read, crediting whatever that
+    profile had left today so nobody loses a delve to the changeover."""
     st = profile.get("stamina") or {}
-    if st.get("date") != _today_str():
-        return per_day
-    return max(0, per_day - int(st.get("used", 0)))
+    now = int(time.time())
+    cap = delve_cap(profile)
+
+    if "charges" not in st:
+        per_day = (int(getattr(config, "SKYRIM_DELVES_PER_DAY", 3))
+                   + (1 if has_boon(profile, "long_stride") else 0))
+        if st.get("date") == _today_str():
+            left = max(0, per_day - int(st.get("used", 0)))
+        else:
+            left = per_day
+        st = {"charges": min(cap, left), "ts": now}
+
+    period = _regen_secs()
+    elapsed = max(0, now - int(st.get("ts", now)))
+    charges = int(st.get("charges", 0))
+    if charges >= cap:
+        st["ts"] = now                      # full: the timer only starts once you spend
+    elif elapsed >= period:
+        gained = elapsed // period
+        st["charges"] = min(cap, charges + gained)
+        # advance by whole periods so the remainder keeps counting toward the next one
+        st["ts"] = int(st.get("ts", now)) + gained * period
+        if st["charges"] >= cap:
+            st["ts"] = now
+    profile["stamina"] = st
+    return st
+
+
+def delves_left(profile) -> int:
+    return int(_stamina(profile).get("charges", 0))
+
+
+def next_delve_in(profile) -> int:
+    """Seconds until the next delve returns, or 0 when already at the cap."""
+    st = _stamina(profile)
+    if int(st.get("charges", 0)) >= delve_cap(profile):
+        return 0
+    return max(0, int(st.get("ts", 0)) + _regen_secs() - int(time.time()))
 
 
 def spend_stamina(profile):
-    st = profile.get("stamina") or {}
-    if st.get("date") != _today_str():
-        st = {"date": _today_str(), "used": 0}
-    st["used"] = int(st.get("used", 0)) + 1
+    st = _stamina(profile)
+    was_full = int(st.get("charges", 0)) >= delve_cap(profile)
+    st["charges"] = max(0, int(st.get("charges", 0)) - 1)
+    if was_full:
+        st["ts"] = int(time.time())         # dropping off the cap starts the clock
     profile["stamina"] = st
 
 
