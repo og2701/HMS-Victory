@@ -16,18 +16,62 @@ from collections import defaultdict
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from crossword_bank import BANK
 
+import itertools
+
+def _valid_layouts(n, max_len, want=200):
+    """180-degree symmetric black-square layouts where every entry is 3..max_len long and
+    every white cell is crossed by BOTH an across and a down entry. A cell reachable from
+    only one direction is unfair - there's no second way to get at it."""
+    cells = [(r, c) for r in range(n) for c in range(n)]
+    mirror = lambda p: (n - 1 - p[0], n - 1 - p[1])
+
+    def ents(black):
+        out = []
+        for r in range(n):
+            c = 0
+            while c < n:
+                if (r, c) in black: c += 1; continue
+                s0 = c
+                while c < n and (r, c) not in black: c += 1
+                if c - s0 >= 2: out.append(("across", [(r, x) for x in range(s0, c)]))
+        for c in range(n):
+            r = 0
+            while r < n:
+                if (r, c) in black: r += 1; continue
+                s0 = r
+                while r < n and (r, c) not in black: r += 1
+                if r - s0 >= 2: out.append(("down", [(x, c) for x in range(s0, r)]))
+        return out
+
+    def ok(black):
+        es = ents(black)
+        if any(not (3 <= len(cs) <= max_len) for _k, cs in es):
+            return False
+        white = {p for p in cells if p not in black}
+        if {c for k, cs in es if k == "across" for c in cs} != white: return False
+        if {c for k, cs in es if k == "down" for c in cs} != white: return False
+        start = next(iter(white)); seen = {start}; stack = [start]
+        while stack:
+            r, c = stack.pop()
+            for d in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                q = (r + d[0], c + d[1])
+                if q in white and q not in seen:
+                    seen.add(q); stack.append(q)
+        return seen == white
+
+    out = []
+    half = [p for p in cells if p < mirror(p)]
+    for k in (4, 6, 8, 10, 12):
+        for combo in itertools.combinations(half, k // 2):
+            b = frozenset(combo) | frozenset(mirror(p) for p in combo)
+            if len(b) == k and ok(b):
+                out.append(b)
+                if len(out) >= want:
+                    return out
+    return out
+
 N = 5
-PATTERNS = [
-    # Staircase corners: entry lengths run 3-4-5-4-3 both ways, so the fill leans on the
-    # 3s and 4s instead of demanding five interlocking 5-letter words. Fills in ms rather
-    # than minutes, and reads like a normal mini.
-    frozenset({(0, 0), (0, 1), (1, 0), (3, 4), (4, 3), (4, 4)}),
-    frozenset({(0, 3), (0, 4), (1, 4), (3, 0), (4, 0), (4, 1)}),
-    # Single-notch corners: 4-5-5-5-4.
-    frozenset({(0, 0), (4, 4)}),
-    frozenset({(0, 4), (4, 0)}),
-    frozenset({(0, 0), (0, 4), (4, 0), (4, 4)}),
-]
+PATTERNS = []
 
 BY_LEN = defaultdict(set)
 IDX = defaultdict(set)
@@ -36,7 +80,8 @@ for w in BANK:
     for i, ch in enumerate(w):
         IDX[(len(w), i, ch)].add(w)
 
-def entries(black):
+def entries(black, N=None):
+    N = N or globals()['N']
     nums, n = {}, 0
     for r in range(N):
         for c in range(N):
@@ -117,7 +162,7 @@ def build(seed, budget=2.0, banned=frozenset()):
     rng = random.Random(seed)
     pats = list(PATTERNS); rng.shuffle(pats)
     for pat in pats:
-        ents = entries(pat)
+        ents = entries(pat, globals()['N'])
         if not all(len(c) >= 3 for _k, _n, c in ents):
             continue
         g = fill(ents, rng, time.time() + budget, banned)
@@ -129,12 +174,23 @@ def build(seed, budget=2.0, banned=frozenset()):
     return None
 
 if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="Generate HMS Crossword puzzles.")
+    ap.add_argument("out")
+    ap.add_argument("--size", type=int, default=6, help="grid size (default 6)")
+    ap.add_argument("--count", type=int, default=25)
+    ap.add_argument("--max-len", type=int, default=6, help="longest entry the bank can fill")
+    a = ap.parse_args()
+
+    globals()["N"] = a.size
+    PATTERNS[:] = _valid_layouts(a.size, a.max_len)
+    print(f"{len(PATTERNS)} valid {a.size}x{a.size} layouts")
+    if not PATTERNS:
+        raise SystemExit("no layouts satisfy those constraints")
+
     made, sigs, seed = [], [], 0
     t0 = time.time()
-    while len(made) < 25 and seed < 20000 and time.time() - t0 < 420:
-        # Soft diversity: bias each fill away from words already used, but allow a few
-        # to repeat. A hard ban starves the search - the vocabulary that actually
-        # interlocks in a 5x5 is far smaller than the bank's 1,600 words.
+    while len(made) < a.count and seed < 40000 and time.time() - t0 < 420:
         hot = set()
         for sg in sigs[-6:]:
             hot |= sg
@@ -147,8 +203,9 @@ if __name__ == "__main__":
             continue
         sigs.append(sig)
         p["id"] = len(made) + 1
+        p["size"] = a.size
         made.append(p)
-        print(f"  {len(made):>2}/25  seed {seed-1:<5} {len(p['entries'])} clues  "
+        print(f"  {len(made):>2}/{a.count}  seed {seed-1:<5} {len(p['entries'])} clues  "
               f"{'/'.join(e['answer'] for e in p['entries'][:4])}...", flush=True)
     print(f"built {len(made)} in {time.time()-t0:.0f}s")
-    json.dump(made, open(sys.argv[1] if len(sys.argv) > 1 else "puzzles.json", "w"), indent=1)
+    json.dump(made, open(a.out, "w"), indent=1)

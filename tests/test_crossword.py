@@ -19,9 +19,20 @@ config.CROSSWORD_STATE_FILE = os.path.join(tempfile.mkdtemp(prefix="xw_"), "stat
 
 from lib.features import crossword as X
 
-N = X.N
-PUZZLES = json.load(open(os.path.join(ROOT, "data", "words", "crosswords.json"),
-                         encoding="utf-8"))
+import datetime
+
+DOC = json.load(open(os.path.join(ROOT, "data", "words", "crosswords.json"),
+                     encoding="utf-8"))
+SETS = DOC["sets"] if isinstance(DOC, dict) else [{"from": "2024-01-01", "size": 5,
+                                                   "puzzles": DOC}]
+PUZZLES = [p for s in SETS for p in s["puzzles"]]          # every shipped grid, all eras
+
+
+def _size_of(p):
+    for s in SETS:
+        if p in s["puzzles"]:
+            return int(s.get("size", 5))
+    return 5
 
 
 def _grid(p):
@@ -33,8 +44,9 @@ def _grid(p):
 
 
 def test_every_shipped_puzzle_is_structurally_sound():
-    assert len(PUZZLES) >= 25
+    assert len(PUZZLES) >= 50
     for p in PUZZLES:
+        N = _size_of(p)
         black = {tuple(b) for b in p["black"]}
         grid = {}
         for e in p["entries"]:
@@ -70,6 +82,7 @@ def test_clue_numbering_follows_crossword_convention():
     """Numbers run left-to-right, top-to-bottom, and a cell that starts both an across and
     a down entry carries ONE number shared by the two."""
     for p in PUZZLES:
+        N = _size_of(p)
         black = {tuple(b) for b in p["black"]}
         expected, n = {}, 0
         for r in range(N):
@@ -87,21 +100,27 @@ def test_clue_numbering_follows_crossword_convention():
 
 
 def test_puzzles_are_distinct_enough_to_feel_different():
-    sigs = [set(e["answer"] for e in p["entries"]) for p in PUZZLES]
-    for i, a in enumerate(sigs):
-        for j, b in enumerate(sigs):
-            if i < j:
-                assert len(a & b) <= 3, f"puzzles {i+1}/{j+1} share {len(a & b)} words"
+    """Within a set only. Two puzzles in different eras are months apart in play, so
+    sharing a few words there is invisible to anyone."""
+    for si, st in enumerate(SETS):
+        sigs = [set(e["answer"] for e in q["entries"]) for q in st["puzzles"]]
+        for i, a in enumerate(sigs):
+            for j, b in enumerate(sigs):
+                if i < j:
+                    assert len(a & b) <= 3, \
+                        f"set {si} puzzles {i+1}/{j+1} share {len(a & b)} words"
 
 
-def test_puzzle_of_the_day_is_stable_and_rotates():
-    import datetime
-    d = datetime.date(2026, 1, 1)
-    assert X._todays_puzzle(d) is X._todays_puzzle(d)                 # same day, same grid
-    seen = {id(X._todays_puzzle(d + datetime.timedelta(days=k))) for k in range(len(PUZZLES))}
-    assert len(seen) == len(PUZZLES)                                   # cycles through all
-    # and wraps back round
-    assert X._todays_puzzle(d) is X._todays_puzzle(d + datetime.timedelta(days=len(PUZZLES)))
+def test_puzzle_of_the_day_is_stable_and_rotates_within_its_set():
+    for s in SETS:
+        start = datetime.date.fromisoformat(s["from"])
+        n = len(s["puzzles"])
+        d = start + datetime.timedelta(days=3)
+        assert X._todays_puzzle(d) is X._todays_puzzle(d)              # same day, same grid
+        seen = {id(X._todays_puzzle(start + datetime.timedelta(days=k))) for k in range(n)}
+        assert len(seen) == n                                          # cycles through all
+        assert (X._todays_puzzle(start)
+                is X._todays_puzzle(start + datetime.timedelta(days=n)))   # and wraps
 
 
 def test_solving_every_clue_completes_and_pays_top_tier():
@@ -115,7 +134,7 @@ def test_solving_every_clue_completes_and_pays_top_tier():
     last = p["entries"][-1]
     status, _msg, pl = X.submit(uid, d.isoformat(), p, X._key(last), last["answer"])
     assert status == "ok" and pl["done"]
-    assert X.reward_for(pl) == config.CROSSWORD_REWARDS[0]      # no hints -> top payout
+    assert X.reward_for(pl, d) == X.rules(d)["rewards"][0]      # clean solve -> top payout
 
 
 def test_wrong_and_malformed_answers_are_rejected_without_progress():
@@ -145,16 +164,16 @@ def test_revealing_letters_costs_reward_tiers():
     import datetime
     d, uid = datetime.date(2026, 3, 6), 4244
     p = X._todays_puzzle(d)
-    tiers = config.CROSSWORD_REWARDS
+    tiers = X.rules(d)["rewards"]
     pl = X._player(d.isoformat(), uid)
-    assert X.reward_for(pl) == tiers[0]
+    assert X.reward_for(pl, d) == tiers[0]
     for i in range(1, len(tiers)):
-        msg, pl = X.reveal_letter(uid, d.isoformat(), p)
-        assert msg and X.reward_for(pl) == tiers[i]
+        msg, pl = X.reveal_letter(uid, d.isoformat(), p, d)
+        assert msg and X.reward_for(pl, d) == tiers[i]
     # the floor holds: more reveals never pay less than the last tier
     for _ in range(4):
-        _msg, pl = X.reveal_letter(uid, d.isoformat(), p)
-    assert X.reward_for(pl) == tiers[-1]
+        _msg, pl = X.reveal_letter(uid, d.isoformat(), p, d)
+    assert X.reward_for(pl, d) == tiers[-1]
 
 
 def test_hints_move_on_once_an_entry_is_fully_revealed():
@@ -220,6 +239,66 @@ def test_board_html_renders_and_hides_unsolved_answers():
                 if e["dir"] == first["dir"] and e is not first and len(e["answer"]) == 5]
     for e in unsolved:
         assert e["answer"] not in html.replace("<", " ").replace(">", " "), e["answer"]
+
+
+# --- date-gated rule changes ---------------------------------------------------------
+LEGACY = datetime.date(2026, 7, 31)          # the last day of the original 5x5 era
+HARD = datetime.date(2026, 8, 1)             # first day of the tightened 6x6 era
+
+
+def test_a_rules_change_never_alters_a_live_puzzle():
+    """The whole point of date-gating. Someone mid-solve on the old rules must keep the
+    old grid AND the old payout, however much the new set tightens things."""
+    import subprocess
+    v1 = json.loads(subprocess.check_output(
+        ["git", "show", "c3fde93:data/words/crosswords.json"], cwd=ROOT))
+    epoch = datetime.date(2024, 1, 1)
+    d = epoch
+    while d < HARD:
+        want = v1[(d - epoch).days % len(v1)]
+        got = X._todays_puzzle(d)
+        assert [e["answer"] for e in want["entries"]] == [e["answer"] for e in got["entries"]], d
+        assert X.rules(d)["rewards"][0] == 250, d
+        assert X.rules(d)["size"] == 5, d
+        d += datetime.timedelta(days=29)      # sample the era rather than all 900 days
+
+
+def test_the_new_set_is_bigger_harder_and_cheaper():
+    old, new = X.rules(LEGACY), X.rules(HARD)
+    assert new["size"] > old["size"]                          # bigger grid
+    assert len(X._todays_puzzle(HARD)["entries"]) > len(X._todays_puzzle(LEGACY)["entries"])
+    assert new["rewards"][0] < old["rewards"][0]              # pays less
+    assert new["max_hints"] and not old["max_hints"]          # hints are now finite
+    assert new["wrong_per_tier"] and not old["wrong_per_tier"]  # wrong answers now cost
+
+
+def test_wrong_answers_cost_a_tier_under_the_new_rules():
+    uid = 5001
+    p = X._todays_puzzle(HARD)
+    per = X.rules(HARD)["wrong_per_tier"]
+    tiers = X.rules(HARD)["rewards"]
+    entry = p["entries"][0]
+    key = X._key(entry)
+    assert X.reward_for(X._player(HARD.isoformat(), uid), HARD) == tiers[0]
+    for _ in range(per):
+        X.submit(uid, HARD.isoformat(), p, key, "Z" * len(entry["answer"]))
+    pl = X._player(HARD.isoformat(), uid)
+    assert pl["wrong"] == per
+    assert X.reward_for(pl, HARD) == tiers[1], "a run of wrong answers should cost a tier"
+    # ...and the legacy era is untouched by the penalty
+    assert X.penalties({"revealed": [], "wrong": 99}, LEGACY)[1] == 0
+
+
+def test_hints_are_capped_under_the_new_rules():
+    uid = 5002
+    p = X._todays_puzzle(HARD)
+    cap = X.rules(HARD)["max_hints"]
+    for i in range(cap):
+        msg, pl = X.reveal_letter(uid, HARD.isoformat(), p, HARD)
+        assert msg, f"hint {i + 1} of {cap} should be allowed"
+    msg, pl = X.reveal_letter(uid, HARD.isoformat(), p, HARD)
+    assert msg is None, "hints past the cap must be refused"
+    assert len(pl["revealed"]) == cap
 
 
 def _run_all():

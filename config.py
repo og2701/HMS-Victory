@@ -372,11 +372,12 @@ FLETCHER_BOT_NAMES = ["fletcher"]  # otherwise matched by bot name
 WORDLE_ANSWERS_FILE = os.path.join("data", "words", "answers.txt")
 WORDLE_VALID_FILE = os.path.join("data", "words", "valid.txt")
 WORDLE_REWARDS = [200, 140, 100, 70, 45, 25]  # payout by number of guesses to solve (1..6)
-# HMS Crossword: one shared 5x5 mini per UK day, answered clue by clue. Payout drops a
-# tier per letter revealed, so a clean solve always pays top whack however long it took -
-# there's no clock to race, only your own use of hints.
+# HMS Crossword: one shared mini per UK day, answered clue by clue. Grid size, payout
+# tiers and difficulty rules all live per puzzle-SET inside the file below and are gated
+# by date, so tightening them never changes a puzzle someone is midway through. The tiers
+# here are only the fallback for a set that doesn't state its own.
 CROSSWORD_PUZZLES_FILE = os.path.join("data", "words", "crosswords.json")
-CROSSWORD_REWARDS = [250, 200, 150, 100, 50]  # payout by letters revealed (0, 1, 2, 3, 4+)
+CROSSWORD_REWARDS = [250, 200, 150, 100, 50]  # fallback tiers, by penalties incurred
 # Texas Hold'em (player-vs-player; bank is escrow, no rake)
 POKER_SMALL_BLIND = 5
 POKER_BIG_BLIND = 10

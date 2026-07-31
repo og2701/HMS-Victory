@@ -1,4 +1,4 @@
-"""HMS Crossword - a daily 5x5 mini that pays UKPence.
+"""HMS Crossword - a daily mini that pays UKPence.
 
 One shared puzzle per UK day (deterministic from the date, so everyone gets the same
 grid), entered clue by clue. Discord has no way to click a cell and type into it, so the
@@ -6,9 +6,15 @@ board is a rendered image and answers go in through a picker plus a popup box: c
 clue, type the word. That sidesteps 2D input entirely and reuses the shape /wordle
 already established.
 
-Solving pays from the house bank on a sliding scale - every letter you reveal costs you a
-tier - once per person per day. The payout is DISCRETIONARY, so it scales down with the
-bank's reserves like every other reward (see lib/economy/reserve_policy.py).
+Solving pays from the house bank on a sliding scale, once per person per day. Both
+revealed letters and wrong answers cost a tier, so the money tracks how cleanly you
+solved it rather than merely whether you finished - and there's deliberately no clock,
+because a hard clue should reward thinking rather than punish it. The payout is
+DISCRETIONARY, so it scales down with the bank's reserves like every other reward (see
+lib/economy/reserve_policy.py).
+
+Puzzle sets are date-gated (see _load_sets): grid size, payouts and rules all travel with
+the set, so tightening any of them never changes a puzzle somebody is midway through.
 
 State lives in CROSSWORD_STATE_FILE keyed by the current date, so it survives restarts
 and the ephemeral being dismissed - just run /crossword again to resume today's grid.
@@ -28,24 +34,34 @@ log = logging.getLogger(__name__)
 
 _UK = pytz.timezone("Europe/London")
 _EPOCH = datetime.date(2024, 1, 1)
-N = 5
 
 
 # --- puzzles (loaded once) ------------------------------------------------------
-def _load_puzzles():
+# Sets are date-gated. Changing the grid size, the payout or the rules must never alter a
+# puzzle somebody is halfway through, so a new set takes effect from its own start date
+# and everything before it keeps playing by the rules it was published under.
+def _load_sets():
     try:
-        data = load_json_file(config.CROSSWORD_PUZZLES_FILE) or []
-        out = [p for p in data if p.get("entries") and p.get("black") is not None]
-        if not out:
+        data = load_json_file(config.CROSSWORD_PUZZLES_FILE) or {}
+        if isinstance(data, list):        # v1: a bare list of 5x5 puzzles
+            data = {"sets": [{"from": _EPOCH.isoformat(), "size": 5, "puzzles": data}]}
+        sets = []
+        for s in data.get("sets", []):
+            good = [p for p in s.get("puzzles", []) if p.get("entries") and p.get("black") is not None]
+            if good:
+                sets.append({**s, "puzzles": good,
+                             "_from": datetime.date.fromisoformat(s.get("from", _EPOCH.isoformat()))})
+        sets.sort(key=lambda s: s["_from"])
+        if not sets:
             log.error("HMS Crossword: no usable puzzles in %s", config.CROSSWORD_PUZZLES_FILE)
-        return out
+        return sets
     except Exception:
         log.error("HMS Crossword: puzzle file failed to load", exc_info=True)
         return []
 
 
-_PUZZLES = _load_puzzles()
-_READY = bool(_PUZZLES)
+_SETS = _load_sets()
+_READY = bool(_SETS)
 
 
 def _today():
@@ -56,8 +72,33 @@ def _pretty(d):
     return d.strftime("%-d %b")
 
 
+def active_set(d):
+    """The rules in force on a given day: the last set whose start date has passed."""
+    live = [s for s in _SETS if s["_from"] <= d] or _SETS[:1]
+    return live[-1]
+
+
+def rules(d) -> dict:
+    s = active_set(d)
+    return {
+        "size": int(s.get("size", 5)),
+        "rewards": s.get("rewards") or getattr(config, "CROSSWORD_REWARDS",
+                                               [250, 200, 150, 100, 50]),
+        # wrong answers cost a tier every N of them; 0 disables the penalty entirely
+        "wrong_per_tier": int(s.get("wrong_per_tier", 0)),
+        # most letters you may ever reveal; 0 means uncapped
+        "max_hints": int(s.get("max_hints", 0)),
+    }
+
+
+def grid_size(d) -> int:
+    return rules(d)["size"]
+
+
 def _todays_puzzle(d):
-    return _PUZZLES[(d - _EPOCH).days % len(_PUZZLES)]
+    s = active_set(d)
+    ps = s["puzzles"]
+    return ps[max(0, (d - s["_from"]).days) % len(ps)]
 
 
 def _key(entry) -> str:
@@ -95,11 +136,26 @@ def _is_complete(puzzle, p) -> bool:
     return len(set(p["solved"])) >= len(puzzle["entries"])
 
 
-def reward_for(p) -> int:
-    """Payout after the reveal penalty. Revealing letters is the only way to lose value,
-    so a clean solve always pays top whack however long it took."""
-    tiers = getattr(config, "CROSSWORD_REWARDS", [250, 200, 150, 100, 50])
-    return tiers[min(len(p.get("revealed", [])), len(tiers) - 1)]
+def penalties(p, d) -> tuple:
+    """(tiers_lost_to_hints, tiers_lost_to_wrong_answers) under the day's rules."""
+    r = rules(d)
+    hints = len(p.get("revealed", []))
+    per = r["wrong_per_tier"]
+    wrong = int(p.get("wrong", 0)) // per if per else 0
+    return hints, wrong
+
+
+def reward_for(p, d=None) -> int:
+    """Payout after penalties, under the rules in force on that day.
+
+    Hints and wrong answers both cost a tier, so the money tracks how cleanly you solved
+    it rather than merely whether you finished. There's deliberately no clock: taking your
+    time over a hard clue costs nothing, guessing wildly at it does.
+    """
+    d = d or _today()
+    tiers = rules(d)["rewards"]
+    hints, wrong = penalties(p, d)
+    return tiers[min(hints + wrong, len(tiers) - 1)]
 
 
 # --- play -----------------------------------------------------------------------
@@ -130,12 +186,17 @@ def submit(uid, date_str, puzzle, entry_key: str, guess: str):
     return "ok", None, p
 
 
-def reveal_letter(uid, date_str, puzzle):
+def reveal_letter(uid, date_str, puzzle, d=None):
     """Give away one letter of the shortest unsolved entry, at the cost of a reward tier.
     Returns (message, player)."""
     p = _player(date_str, uid)
     if p["done"]:
         return None, p
+    d = d or datetime.date.fromisoformat(date_str)
+    cap = rules(d)["max_hints"]
+    if cap and len(p.get("revealed", [])) >= cap:
+        return None, p                       # hints are finite now - work the rest out
+
     def given(e):
         return len([r for r in p["revealed"] if r.startswith(_key(e) + ":")])
 
@@ -184,9 +245,10 @@ def _board_html(uid, date):
     seen = _letters(puzzle, p)
     nums = _numbers(puzzle)
 
+    size = grid_size(date)
     cells = []
-    for r in range(N):
-        for c in range(N):
+    for r in range(size):
+        for c in range(size):
             if (r, c) in black:
                 cells.append("<div class='c b'></div>")
                 continue
@@ -211,12 +273,22 @@ def _board_html(uid, date):
 
     total = len(puzzle["entries"])
     got = len(set(p["solved"]))
+    r = rules(date)
+    hints, wrong_tiers = penalties(p, date)
     if p["done"]:
-        sub = f"Complete · +{reward_for(p):,} UKPence"
+        sub = f"Complete · +{reward_for(p, date):,} UKPence"
     else:
-        sub = f"{got}/{total} filled"
-        if p["revealed"]:
-            sub += f" · {len(p['revealed'])} letter(s) revealed"
+        sub = f"{got}/{total} filled · worth {reward_for(p, date):,}"
+        if r["max_hints"]:
+            sub += f" · {r['max_hints'] - hints} hint(s) left"
+        elif hints:
+            sub += f" · {hints} revealed"
+        # shown from the first wrong answer, not just once it has cost a tier - people
+        # can't ration something they can't see coming
+        if r["wrong_per_tier"] and int(p.get("wrong", 0)):
+            nxt = r["wrong_per_tier"] - (int(p["wrong"]) % r["wrong_per_tier"])
+            sub += f" · {p['wrong']} wrong ({nxt} to the next drop)"
+    px = 64 if size <= 5 else (54 if size == 6 else 46)
     return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;600;800&family=Outfit:wght@800&display=swap');
 *{{margin:0;padding:0;box-sizing:border-box}}html,body{{overflow:hidden}}::-webkit-scrollbar{{width:0;height:0}}
@@ -225,8 +297,8 @@ body{{background:#0a0e1a;display:flex;justify-content:center;padding:18px;font-f
  box-shadow:0 14px 44px rgba(0,0,0,.55);width:620px}}
 .title{{font-family:'Outfit',sans-serif;font-weight:800;color:#fff;font-size:26px;text-align:center;letter-spacing:.5px}}
 .date{{color:rgba(255,255,255,.45);font-size:14px;text-align:center;margin:2px 0 16px}}
-.grid{{display:grid;grid-template-columns:repeat({N},64px);grid-gap:4px;justify-content:center}}
-.c{{width:64px;height:64px;background:#f5f6f8;border-radius:4px;position:relative;
+.grid{{display:grid;grid-template-columns:repeat({size},{px}px);grid-gap:4px;justify-content:center}}
+.c{{width:{px}px;height:{px}px;background:#f5f6f8;border-radius:4px;position:relative;
  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:32px;color:#11141c}}
 .c.b{{background:#1c2030}}
 .c.got{{background:#6aaa64;color:#fff}}
@@ -271,10 +343,11 @@ def text_board(uid, date) -> str:
     p = _player(date.isoformat(), uid)
     black = {tuple(b) for b in puzzle["black"]}
     seen = _letters(puzzle, p)
+    size = grid_size(date)
     rows = []
-    for r in range(N):
+    for r in range(size):
         row = []
-        for c in range(N):
+        for c in range(size):
             row.append("⬛" if (r, c) in black else (seen.get((r, c), "·")))
         rows.append(" ".join(row))
     lines = [f"## 🧩 HMS Crossword - {_pretty(date)}", "```", *rows, "```"]
@@ -295,9 +368,11 @@ def share_block(uid, date) -> str:
     total = len(puzzle["entries"])
     got = len(set(p["solved"]))
     hint = f" · 💡{len(p['revealed'])}" if p["revealed"] else " · no hints"
+    if int(p.get("wrong", 0)):
+        hint += f" · ❌{p['wrong']}"
     head = "🧩 **HMS Crossword** " + _pretty(date)
     if p["done"]:
-        return f"{head}\nSolved {got}/{total}{hint} · +{reward_for(p):,} UKPence"
+        return f"{head}\nSolved {got}/{total}{hint} · +{reward_for(p, date):,} UKPence"
     return f"{head}\n{got}/{total} filled{hint}"
 
 
@@ -322,7 +397,7 @@ class AnswerModal(discord.ui.Modal, title="HMS Crossword"):
             await interaction.response.send_message(msg, ephemeral=True)
             return
         if status == "ok" and p["done"] and not p["rewarded"]:
-            reward = reward_for(p)
+            reward = reward_for(p, self.date)
             # discretionary: this is a reward the server chooses to give, so it scales
             # down when bank reserves are low
             if add_bb(self.user_id, reward, reason="HMS Crossword solve", discretionary=True):
@@ -382,7 +457,8 @@ class CrosswordView(discord.ui.View):
         if p["done"]:
             await interaction.response.defer()
             return
-        msg, _p = reveal_letter(self.user_id, self.date.isoformat(), _todays_puzzle(self.date))
+        msg, _p = reveal_letter(self.user_id, self.date.isoformat(),
+                                _todays_puzzle(self.date), self.date)
         await interaction.response.defer()
         await _refresh(interaction, self.user_id, self.date, edit=True)
         if msg:
