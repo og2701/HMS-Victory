@@ -335,6 +335,7 @@ BENEFITS_FILE = os.path.join(JSON_DATA_DIR, "benefits_claims.json")
 HOF_REWARD_CLAIMS_FILE = os.path.join(JSON_DATA_DIR, "hof_reward_claims.json")  # last UK day each user earned HoF UKP
 EARNED_SOURCES_FILE = os.path.join(JSON_DATA_DIR, "earned_sources.json")
 WORDLE_STATE_FILE = os.path.join(JSON_DATA_DIR, "wordle_state.json")
+CROSSWORD_STATE_FILE = os.path.join(JSON_DATA_DIR, "crossword_state.json")
 SKYRIM_PROFILES_FILE = os.path.join(JSON_DATA_DIR, "skyrim_profiles.json")  # persistent Dovahkiin characters
 SKYRIM_DAILY_FILE = os.path.join(JSON_DATA_DIR, "skyrim_daily.json")  # today's shared-dungeon results board
 SKYRIM_GRAVEYARD_FILE = os.path.join(JSON_DATA_DIR, "skyrim_graveyard.json")  # fallen adventurers (corpses + obituary)
@@ -371,6 +372,11 @@ FLETCHER_BOT_NAMES = ["fletcher"]  # otherwise matched by bot name
 WORDLE_ANSWERS_FILE = os.path.join("data", "words", "answers.txt")
 WORDLE_VALID_FILE = os.path.join("data", "words", "valid.txt")
 WORDLE_REWARDS = [200, 140, 100, 70, 45, 25]  # payout by number of guesses to solve (1..6)
+# HMS Crossword: one shared 5x5 mini per UK day, answered clue by clue. Payout drops a
+# tier per letter revealed, so a clean solve always pays top whack however long it took -
+# there's no clock to race, only your own use of hints.
+CROSSWORD_PUZZLES_FILE = os.path.join("data", "words", "crosswords.json")
+CROSSWORD_REWARDS = [250, 200, 150, 100, 50]  # payout by letters revealed (0, 1, 2, 3, 4+)
 # Texas Hold'em (player-vs-player; bank is escrow, no rake)
 POKER_SMALL_BLIND = 5
 POKER_BIG_BLIND = 10

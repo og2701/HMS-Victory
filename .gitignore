@@ -10,6 +10,9 @@ data/updated_iceberg.png
 data/iceberg_texts.json
 
 *.json
+# ...but the crossword puzzle set is shipped game content, not runtime state - it sits
+# alongside the Wordle word lists and the bot can't run the feature without it.
+!data/words/crosswords.json
 database.db*
 *.db
 # secret_badges.json (plaintext secret-badge config) is covered by *.json above; only the

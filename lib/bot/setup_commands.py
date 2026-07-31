@@ -743,6 +743,11 @@ def define_commands(tree, client):
         from lib.features.wordle import handle_wordle_command
         await handle_wordle_command(interaction)
 
+    @command("crossword", "Play today's HMS Crossword - fill the 5x5 mini for UKPence")
+    async def crossword_command(interaction: Interaction):
+        from lib.features.crossword import handle_crossword_command
+        await handle_crossword_command(interaction)
+
     @command("skyrim", "Adventure in Skyrim - delve ruins, level up, slay dragons")
     async def skyrim_command(interaction: Interaction):
         from lib.features.skyrim import handle_skyrim_command

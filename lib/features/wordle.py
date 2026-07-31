@@ -278,7 +278,9 @@ class WordleModal(discord.ui.Modal, title="HMS Wordle"):
             return
         if status == "ok" and p["solved"] and not p["rewarded"]:
             reward = config.WORDLE_REWARDS[len(p["guesses"]) - 1]
-            if add_bb(int(self.user_id), reward, reason="HMS Wordle solve"):
+            # discretionary: a puzzle prize is a reward the server chooses to give, so it
+            # scales with bank reserves like every other one (see reserve_policy.py)
+            if add_bb(int(self.user_id), reward, reason="HMS Wordle solve", discretionary=True):
                 _mark_rewarded(self.user_id, self.date.isoformat())
                 try:
                     from lib.features.income_badges import record_income_source
