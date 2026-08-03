@@ -3060,6 +3060,16 @@ async def handle_skyrim_command(interaction: Interaction):
         await interaction.response.send_message(
             "The roads to Skyrim are closed for now.", ephemeral=True)
         return
+
+    gaming_channel_id = getattr(config.CHANNELS, "GAMING", 1139977009389387959)
+    bot_spam_channel_id = getattr(config.CHANNELS, "BOT_SPAM", 968502541107228734)
+    if interaction.channel_id == gaming_channel_id:
+        await interaction.response.send_message(
+            f"❌ Skyrim commands cannot be run in <#{gaming_channel_id}>. Please head over to <#{bot_spam_channel_id}>!",
+            ephemeral=True
+        )
+        return
+
     profile = E.get_profile(interaction.user.id)
     if profile is None:
         await _show_class_pick(interaction, first_response=True)

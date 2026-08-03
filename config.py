@@ -510,6 +510,7 @@ class CHANNELS:
     GENERAL = 959493057076666380
     COMMONS = 959501347571531776
     BOT_SPAM = 968502541107228734
+    GAMING = 1139977009389387959
     CASINO = 1512095841517699213          # casino games + lottery board live here
     VIP_LOUNGE = 1333482774157590609      # vip lounge channel; casino commands allowed here
     BOT_WORKSHOP = 1141037835445616640    # casino commands allowed here too

@@ -2208,3 +2208,27 @@ def test_greenhouse_and_cellar_double_yields():
     # 3 capped days, doubled: 6 ingredients; the still brews toward the cap too
     assert sum(p["ingredients"].values()) == pouch_before + 6
     assert p["potions"] > 0
+
+
+def test_skyrim_gaming_channel_blocked():
+    import asyncio
+    from lib.features.skyrim import handle_skyrim_command
+
+    sent = []
+
+    class MockResponse:
+        async def send_message(self, content, ephemeral=False):
+            sent.append((content, ephemeral))
+
+    class MockInteraction:
+        def __init__(self, channel_id):
+            self.channel_id = channel_id
+            self.response = MockResponse()
+            self.user = types.SimpleNamespace(id=999)
+
+    gaming_inter = MockInteraction(1139977009389387959)
+    asyncio.run(handle_skyrim_command(gaming_inter))
+    assert len(sent) == 1
+    assert "cannot be run in <#1139977009389387959>" in sent[0][0]
+    assert sent[0][1] is True  # ephemeral
+
