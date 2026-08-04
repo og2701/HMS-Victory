@@ -7,6 +7,12 @@ line per day, and any other entries sharing a description on the same day (chat 
 drips, repeat shop buys, repeated pays to one person) collapse into one line with a count. Navigation buttons walk months: Previous (further
 back, repeatable), This month (current month-to-date), Next (forward again).
 
+Last 24h steps out of the calendar and shows a rolling day, for the much more common
+question of what just moved rather than what a month came to. It stamps lines with the
+time rather than the date, and takes its opening balance from the ledger's running
+balance rather than an end-of-day snapshot, which on a rolling window can be a full day
+stale. This month is the way back to the calendar.
+
 Defaults to the last completed month when first opened.
 """
 
@@ -25,6 +31,7 @@ log = logging.getLogger(__name__)
 _UK = pytz.timezone("Europe/London")
 _MAX_OFFSET = 12          # how many months back the nav allows (matches retention)
 _MAX_LINES = 40           # itemised lines before older entries roll into the summary
+_DAY_SECONDS = 24 * 60 * 60
 _SEP = discord.SeparatorSpacing.small
 
 # Reason -> (label, emoji). Order matters: first substring hit wins. Pay is detected by the
@@ -60,6 +67,15 @@ def _categorize(reason, counterparty_id=None):
         if any(s in r for s in subs):
             return (label, emoji)
     return ("Other", "\U0001f4b7")
+
+
+def _day_bounds():
+    """Return (start_ts, end_ts) for the rolling 24 hours ending now.
+
+    Rolling rather than 'since midnight' on purpose: the question this answers is "what
+    just happened to my money", and at 00:30 a calendar-day window would be almost empty."""
+    now = int(datetime.now(_UK).timestamp())
+    return now - _DAY_SECONDS, now
 
 
 def _month_bounds(offset):
@@ -179,11 +195,18 @@ def _live_balance_before(uid, ts):
     return int(row[0]) if row else None
 
 
-def build_statement_view(*, target_id, target_name, viewer_id, offset, client):
-    """Build the Components V2 statement card for one month (offset months back)."""
+def build_statement_view(*, target_id, target_name, viewer_id, offset, client, day=False):
+    """Build the Components V2 statement card for one period.
+
+    `day` renders the rolling last 24 hours instead of a calendar month; `offset` is
+    ignored in that mode and kept only so the nav can drop back into months."""
     uid = str(target_id)
-    start_ts, end_ts, start_dt = _month_bounds(offset)
-    period = start_dt.strftime("%B %Y")
+    if day:
+        start_ts, end_ts = _day_bounds()
+        period = "Last 24 hours"
+    else:
+        start_ts, end_ts, start_dt = _month_bounds(offset)
+        period = start_dt.strftime("%B %Y")
 
     rows, entries, total_in, total_out, breakdown = _gather(uid, start_ts, end_ts, client)
 
@@ -191,14 +214,24 @@ def build_statement_view(*, target_id, target_name, viewer_id, offset, client):
     # (whose reconstructed rows lack a running balance) still reconcile. Fall back to the
     # ledger's own balance_after when no snapshot brackets the boundary.
     snaps = _snapshots(uid)
-    snap_open = _balance_at(start_ts, snaps)
-    opening = snap_open if snap_open is not None else _live_balance_before(uid, start_ts)
-    if offset == 0:                          # current month: closing is the live balance
+    if day:
+        # A snapshot is only taken at end of day, so on a rolling window it can be up to
+        # 24h stale - which would silently dump a day of real moves into the residual.
+        # The ledger's own running balance is exact at any instant, so it leads here.
+        opening = _live_balance_before(uid, start_ts)
+        snap_open = opening if opening is not None else _balance_at(start_ts, snaps)
+        opening = snap_open
         closing = int(get_bb(uid))
         snap_close = closing
     else:
-        snap_close = _balance_at(end_ts, snaps)
-        closing = snap_close if snap_close is not None else _live_balance_before(uid, end_ts)
+        snap_open = _balance_at(start_ts, snaps)
+        opening = snap_open if snap_open is not None else _live_balance_before(uid, start_ts)
+        if offset == 0:                      # current month: closing is the live balance
+            closing = int(get_bb(uid))
+            snap_close = closing
+        else:
+            snap_close = _balance_at(end_ts, snaps)
+            closing = snap_close if snap_close is not None else _live_balance_before(uid, end_ts)
 
     # Residual: whatever the itemised entries don't explain (historical rewards/tax/benefits
     # that were never stored per-user). Only trustworthy when both boundaries are real
@@ -224,8 +257,10 @@ def build_statement_view(*, target_id, target_name, viewer_id, offset, client):
             hidden = len(entries) - _MAX_LINES
             shown = entries[-_MAX_LINES:]
         for ts, emoji, desc, amount in shown:
-            date = datetime.fromtimestamp(ts, _UK).strftime("%d %b")
-            lines.append(f"`{date}`  {emoji} {desc} · **{_sign(amount)}**")
+            # Inside a single day every line would carry the same date, so stamp the time
+            # instead - it's the first entry of each collapsed group either way.
+            stamp = datetime.fromtimestamp(ts, _UK).strftime("%H:%M" if day else "%d %b")
+            lines.append(f"`{stamp}`  {emoji} {desc} · **{_sign(amount)}**")
     if residual:
         lines.append(f"\U0001f4ac Rewards & other (net) · **{_sign(residual)}**")
     body = "\n".join(lines) if lines else "_No transactions this period._"
@@ -262,7 +297,7 @@ def build_statement_view(*, target_id, target_name, viewer_id, offset, client):
     c.add_item(discord.ui.TextDisplay(body))
     c.add_item(discord.ui.Separator(visible=True, spacing=_SEP))
     c.add_item(discord.ui.TextDisplay(summary))
-    c.add_item(_StatementNav(target_id, target_name, viewer_id, offset))
+    c.add_item(_StatementNav(target_id, target_name, viewer_id, offset, day))
     view.add_item(c)
     return view
 
@@ -281,25 +316,31 @@ def _emoji_for(label):
 
 
 class _StatementNav(discord.ui.ActionRow):
-    """Month navigation. Rebuilds the whole card for the new offset and edits in place."""
+    """Period navigation. Rebuilds the whole card for the new period and edits in place.
 
-    def __init__(self, target_id, target_name, viewer_id, offset):
+    The month buttons walk the calendar; Last 24h steps out of the calendar entirely, so
+    while it's showing, Previous/Next have nothing to step through and go quiet. This
+    month is the way back."""
+
+    def __init__(self, target_id, target_name, viewer_id, offset, day=False):
         super().__init__()
         self.target_id = int(target_id)
         self.target_name = target_name
         self.viewer_id = int(viewer_id)
         self.offset = int(offset)
-        self.previous.disabled = self.offset >= _MAX_OFFSET
-        self.this_month.disabled = self.offset == 0
-        self.next_month.disabled = self.offset == 0
+        self.day = bool(day)
+        self.previous.disabled = self.day or self.offset >= _MAX_OFFSET
+        self.this_month.disabled = not self.day and self.offset == 0
+        self.next_month.disabled = self.day or self.offset == 0
+        self.last_day.disabled = self.day
 
-    async def _go(self, interaction, new_offset):
+    async def _go(self, interaction, new_offset, day=False):
         if interaction.user.id != self.viewer_id:
             await interaction.response.send_message("That isn't for you.", ephemeral=True)
             return
         view = build_statement_view(
             target_id=self.target_id, target_name=self.target_name,
-            viewer_id=self.viewer_id, offset=new_offset, client=interaction.client)
+            viewer_id=self.viewer_id, offset=new_offset, client=interaction.client, day=day)
         await interaction.response.edit_message(view=view)
 
     @discord.ui.button(label="Previous month", emoji="◀",
@@ -315,3 +356,8 @@ class _StatementNav(discord.ui.ActionRow):
                        style=discord.ButtonStyle.secondary)
     async def next_month(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._go(interaction, max(0, self.offset - 1))
+
+    @discord.ui.button(label="Last 24h", emoji="\U0001f552",
+                       style=discord.ButtonStyle.secondary)
+    async def last_day(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._go(interaction, 0, day=True)
