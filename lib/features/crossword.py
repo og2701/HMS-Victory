@@ -734,11 +734,7 @@ async def handle_crossword_command(interaction: discord.Interaction):
         return
     date = _today()
     await interaction.response.defer(ephemeral=True, thinking=True)
-    img, _done = await render_board(interaction.user.id, date)
-    view = CrosswordView(interaction.user.id, date)
-    if img is not None:
-        await interaction.followup.send(files=[discord.File(img, "crossword.png")],
-                                        view=view, ephemeral=True)
-    else:
-        await interaction.followup.send(content=text_board(interaction.user.id, date),
-                                        view=view, ephemeral=True)
+    # Straight through _refresh, so opening the board takes exactly the same hosted-image
+    # path as every redraw after it. This used to attach the PNG directly, which is why
+    # the first render was the slow one and every answer afterwards was quick.
+    await _refresh(interaction, interaction.user.id, date, edit=False)
