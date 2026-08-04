@@ -194,6 +194,8 @@ if __name__ == "__main__":
     ap.add_argument("--size", type=int, default=6, help="grid size (default 6)")
     ap.add_argument("--count", type=int, default=25)
     ap.add_argument("--max-len", type=int, default=6, help="longest entry the bank can fill")
+    ap.add_argument("--overlap", type=int, default=3,
+                    help="most words two puzzles may share (raise it if the search dries up)")
     ap.add_argument("--budget", type=int, default=420,
                     help="seconds to spend searching (hard mode needs far longer)")
     ap.add_argument("--hard", action="store_true",
@@ -225,7 +227,7 @@ if __name__ == "__main__":
         if not p:
             continue
         sig = set(e["answer"] for e in p["entries"])
-        if any(len(sig & prev) > 3 for prev in sigs):
+        if any(len(sig & prev) > a.overlap for prev in sigs):
             continue
         sigs.append(sig)
         p["id"] = len(made) + 1
