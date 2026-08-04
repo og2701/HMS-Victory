@@ -14,7 +14,7 @@ interlocking 5x5 tractable at all.
 import random, sys, json, time
 from collections import defaultdict
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from crossword_bank import BANK
+from crossword_bank import BANK, HARD
 
 import itertools
 
@@ -61,7 +61,11 @@ def _valid_layouts(n, max_len, want=200):
 
     out = []
     half = [p for p in cells if p < mirror(p)]
-    for k in (4, 6, 8, 10, 12):
+    # Most black squares first. Fewer blacks means longer entries, which sounds harder but
+    # actually shrinks the candidate pool to the handful of long words that interlock -
+    # and in --hard mode the indirect clue bank is deepest at 3 and 4 letters anyway. The
+    # difficulty is meant to live in the clue, not in how obscure the fill has to get.
+    for k in (12, 10, 8, 6, 4):
         for combo in itertools.combinations(half, k // 2):
             b = frozenset(combo) | frozenset(mirror(p) for p in combo)
             if len(b) == k and ok(b):
@@ -72,6 +76,16 @@ def _valid_layouts(n, max_len, want=200):
 
 N = 5
 PATTERNS = []
+
+def _reindex():
+    """Rebuild the lookup indexes after the word bank is swapped (see --hard)."""
+    BY_LEN.clear()
+    IDX.clear()
+    for w in BANK:
+        BY_LEN[len(w)].add(w)
+        for i, ch in enumerate(w):
+            IDX[(len(w), i, ch)].add(w)
+
 
 BY_LEN = defaultdict(set)
 IDX = defaultdict(set)
@@ -180,8 +194,18 @@ if __name__ == "__main__":
     ap.add_argument("--size", type=int, default=6, help="grid size (default 6)")
     ap.add_argument("--count", type=int, default=25)
     ap.add_argument("--max-len", type=int, default=6, help="longest entry the bank can fill")
+    ap.add_argument("--hard", action="store_true",
+                    help="fill only from words with an indirect (cryptic-lite) clue")
     a = ap.parse_args()
 
+    if a.hard:
+        # Restricting the FILL - not just the clue lookup - is what guarantees every
+        # entry in the puzzle gets an indirect clue. Swapping clues in afterwards would
+        # leave any word without one still showing its dictionary definition.
+        BANK.clear()
+        BANK.update(HARD)
+        _reindex()
+        print(f"hard mode: {len(BANK)} words with indirect clues")
     globals()["N"] = a.size
     PATTERNS[:] = _valid_layouts(a.size, a.max_len)
     print(f"{len(PATTERNS)} valid {a.size}x{a.size} layouts")

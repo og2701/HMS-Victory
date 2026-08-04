@@ -1464,7 +1464,19 @@ def test_soulcairn_gated_and_drains():
     d.depth = 5
     base = E._fight_raw(p, "draugr", "blade")      # no delve
     drained = E._fight_raw(p, "draugr", "blade", d)
-    assert drained <= base - E.SOULCAIRN_DRAIN * 5
+    assert drained <= base - E.soulcairn_drain(5)
+    # The drain always grows with depth, but bends over rather than running away: left
+    # unbounded it pins every style to ROLL_MIN and the descent stops being a decision.
+    assert E.soulcairn_drain(200) > E.soulcairn_drain(100) > E.soulcairn_drain(50)
+    assert E.soulcairn_drain(10_000) < E.SOULCAIRN_DRAIN_MAX
+    # No depth may floor a competent build's every option - always a real swing to take.
+    for skill in E.SKILLS:
+        p["skills"][skill] = 100
+    p["weapon_tier"] = len(D.GEAR_TIERS) - 1
+    for depth in (50, 100, 500):
+        d.depth = depth
+        d.rooms[d.idx] = {"kind": "enemy", "key": "draugr", "boss": False, "resolved": False}
+        assert max(E.fight_pct(p, "draugr", s, d) for s in D.STYLES) > E.ROLL_MIN
 
 
 def test_factions_weekly_task():

@@ -104,7 +104,22 @@ AMBUSH_BONUS = 20                    # attack bonus when striking from successfu
 LOCKED_CHEST_CHANCE = 0.45           # chance a chest room is master-locked (Lockpicking territory)
 MIMIC_CHANCE = 0.18                  # chance a chest room is secretly a Mimic (it bites)
 FORK_CHANCE = 0.45                   # chance a delve offers a branching Fork before the boss
-SOULCAIRN_DRAIN = 2                  # attack % the Soul Cairn steals per depth descended
+# The Soul Cairn's bite on your attack odds. It starts at SOULCAIRN_DRAIN % per depth
+# and bends over towards SOULCAIRN_DRAIN_MAX, never reaching it. A flat "-2% per depth"
+# is unbounded, so past ~depth 40 it pins every style to ROLL_MIN and the descent stops
+# being a decision - three buttons all reading 5% against a foe needing 15 telling blows.
+# Curving it keeps depth meaningful forever (the drain never stops growing) while leaving
+# even a modest build room to swing. The two constants are chosen so the initial slope is
+# exactly the old SOULCAIRN_DRAIN: early descents feel identical to before.
+SOULCAIRN_DRAIN = 2                  # attack % per depth at the top of the descent
+SOULCAIRN_DRAIN_MAX = 80             # the asymptote the drain approaches but never hits
+# Enemy hp per depth. This is the pressure NOTHING in the progression tree answers -
+# skills, gear and doctrines all buy attack %, which the ROLL_MAX clamp bounds, while a
+# landed blow always removes exactly one heart of foe. Growing hp fast therefore walls
+# every build at the same depth no matter how good it is, so it grows slowly and the
+# drain (which gear CAN answer) does the differentiating.
+SOULCAIRN_HP_PER = 12                # +1 enemy hp every N depths
+SOULCAIRN_FONT_EVERY = 5             # a soul font restores a heart every N depths
 FALLEN_CHANCE = 0.20                 # chance a delve holds a Fallen Adventurer's corpse
 PACT_MULT_CAP = 4.0                  # max combined satchel multiplier from stacked pacts
 PACT_MIN_LEVEL = 10                  # pacts unlock once the ordinary maps start feeling easy
@@ -528,6 +543,14 @@ def _clamp(p: float) -> int:
     return int(max(ROLL_MIN, min(ROLL_MAX, round(p))))
 
 
+def soulcairn_drain(depth: int) -> float:
+    """Attack % the Soul Cairn has gnawed off by this depth - always rising, never
+    reaching SOULCAIRN_DRAIN_MAX. Its slope at the top of the descent is exactly
+    SOULCAIRN_DRAIN, so the first floors bite the same as they always did."""
+    knee = SOULCAIRN_DRAIN_MAX / SOULCAIRN_DRAIN
+    return SOULCAIRN_DRAIN_MAX * depth / (depth + knee)
+
+
 def _fight_raw(profile, enemy_key: str, style: str, delve=None) -> float:
     """The UNCLAMPED attack percentage. fight_pct clamps this for display and the
     hit roll; overkill_crit reads the surplus above the cap so earned odds past the
@@ -558,7 +581,7 @@ def _fight_raw(profile, enemy_key: str, style: str, delve=None) -> float:
         p -= D.STIRRED_FIGHT_PER_RANK * getattr(delve, "stirred", 0)   # the deep offer bites
         p -= 3 * getattr(delve, "echo", 0)          # an Echoed Skuldafn fights back harder
         if getattr(delve, "kind", None) == "soulcairn":
-            p -= SOULCAIRN_DRAIN * delve.depth      # the deep gnaws your odds
+            p -= soulcairn_drain(delve.depth)       # the deep gnaws your odds
         nd = named_dragon(delve)
         if nd:
             p += nd.get("fight", 0)              # this week's dragon is easier/harder to land
@@ -1349,7 +1372,7 @@ def _soulcairn_room(depth: int, rng) -> dict:
         aff = _eligible_affix(key, rng)
         if aff:
             room["affix"] = aff
-    room["soul_hp"] = depth // 4                 # +1 hp every 4 depths, on top of base
+    room["soul_hp"] = depth // SOULCAIRN_HP_PER  # slow, on top of base - see the constant
     return room
 
 
@@ -1530,7 +1553,18 @@ class Delve:
             sc["best"] = self.depth
         record_best(profile, "depth", self.depth)
         self.say(f"⬇️ You descend. **Depth {self.depth}.** The soul-light thins; the cold "
-                 f"gnaws {SOULCAIRN_DRAIN * self.depth}% off your every strike now.")
+                 f"gnaws {soulcairn_drain(self.depth):.0f}% off your every strike now.")
+        # A soul font: the only thing down here that gives anything back. Without it the
+        # run is capped by the hearts and potions you walked in with, so no build ever
+        # reaches the deep floors - the descent needs a renewable budget, not a wallet.
+        if self.depth % SOULCAIRN_FONT_EVERY == 0:
+            cap = delve_heart_max(self, profile)
+            if self.hearts < cap:
+                self.hearts += 1
+                self.say("💧 A soul font glimmers in the dark. You drink, and something "
+                         "that is not quite warmth returns.  ❤️ +1")
+            else:
+                self.say("💧 A soul font glimmers in the dark, but you are already whole.")
 
     def _finish_clear(self, profile):
         bonus = _septims(profile, self.loc["clear_septims"])
