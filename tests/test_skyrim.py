@@ -1495,6 +1495,19 @@ def test_soulcairn_drains_the_quiet_route_too():
         deep = E.sneak_pct(p, "draugr", d)
         assert deep < last
         last = deep
+    # Talking past a floor descends you too, so it pays the same tax. Narrower - most
+    # of what waits down there won't hear you out - but a route that dodged the drain
+    # entirely would always be the one to take.
+    d.depth = 0
+    d.rooms[d.idx] = {"kind": "enemy", "key": "necromancer", "boss": False, "resolved": False}
+    p["skills"]["speech"] = 100        # a fresh tongue floors on ROLL_MIN before depth 60
+    last = E.persuade_pct(p, "necromancer", d)
+    assert E.persuade_pct(p, "necromancer") == last
+    for depth in (10, 30, 60):
+        d.depth = depth
+        deep = E.persuade_pct(p, "necromancer", d)
+        assert deep < last
+        last = deep
 
 
 def test_soulcairn_depth_is_a_prestige_ladder():

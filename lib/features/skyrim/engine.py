@@ -1048,7 +1048,7 @@ def sneak_pct(profile, enemy_key: str, delve=None) -> int | None:
     return _clamp(p)
 
 
-def persuade_pct(profile, enemy_key: str) -> int | None:
+def persuade_pct(profile, enemy_key: str, delve=None) -> int | None:
     e = D.ENEMIES[enemy_key]
     if e.get("persuade") is None:
         return None
@@ -1056,6 +1056,12 @@ def persuade_pct(profile, enemy_key: str) -> int | None:
          + _skill_component(profile["skills"]["speech"], SPEECH_SKILL_SCALE)
          + 7 * perk_rank(profile, "persuasive")
          + doctrine_flat(profile, "persuade"))
+    # Talking a floor down descends you like killing or slipping does, so it pays the
+    # same tax. Narrower than the stealth route - only the Necromancer and The Caller
+    # will hear you out down there - but a route that dodges the drain entirely is
+    # always the one to take, however few floors it opens.
+    if delve is not None and getattr(delve, "kind", None) == "soulcairn":
+        p -= soulcairn_drain(delve.depth, profile)
     return _clamp(p)
 
 
@@ -1932,7 +1938,7 @@ class Delve:
 
     def act_persuade(self, profile) -> None:
         e = self.enemy()
-        p = persuade_pct(profile, self.room["key"])
+        p = persuade_pct(profile, self.room["key"], self)
         if p is None or self.engaged:
             return
         if random.random() * 100 < p:

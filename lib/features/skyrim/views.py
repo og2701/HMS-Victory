@@ -254,7 +254,7 @@ def build_delve_layout(delve: E.Delve, profile):
             if p_snk is not None and not delve.engaged:
                 row1.add_item(_btn(discord.ButtonStyle.primary, f"Sneak {p_snk}%",
                                    f"skyrim:{did}:snk", _make_cb(delve, "snk"), emoji="🥷"))
-            p_per = E.persuade_pct(profile, key)
+            p_per = E.persuade_pct(profile, key, delve)
             if p_per is not None and not delve.engaged:
                 row1.add_item(_btn(discord.ButtonStyle.primary, f"Persuade {p_per}%",
                                    f"skyrim:{did}:per", _make_cb(delve, "per"), emoji="💬"))
