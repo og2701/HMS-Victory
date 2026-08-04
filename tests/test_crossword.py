@@ -191,7 +191,6 @@ def test_hints_move_on_once_an_entry_is_fully_revealed():
     d, uid = datetime.date(2026, 3, 10), 4248
     p = X._todays_puzzle(d)
     shortest = min(len(e["answer"]) for e in p["entries"])
-    total_letters = sum(len(e["answer"]) for e in p["entries"])
 
     # exhaust the shortest entry, then keep going
     for _ in range(shortest):
@@ -199,14 +198,20 @@ def test_hints_move_on_once_an_entry_is_fully_revealed():
         assert msg
     msg, pl = X.reveal_letter(uid, d.isoformat(), p)
     assert msg, "hint stopped working after the shortest entry ran out"
-    assert len(pl["revealed"]) == shortest + 1
 
-    # hints only dry up when the whole grid has been given away
-    for _ in range(total_letters):
-        X.reveal_letter(uid, d.isoformat(), p)
+    # every hint puts a NEW letter on the board - never one a crossing already showed,
+    # which would charge a reward tier for nothing
+    for _ in range(60):
+        before = X._letters(p, X._player(d.isoformat(), uid))
+        msg, pl = X.reveal_letter(uid, d.isoformat(), p)
+        if msg is None:
+            break
+        after = X._letters(p, X._player(d.isoformat(), uid))
+        assert len(after) > len(before), "a hint revealed a letter that was already visible"
+    # ...and they run out only once there's nothing left to give
     msg, pl = X.reveal_letter(uid, d.isoformat(), p)
     assert msg is None
-    assert len(pl["revealed"]) == total_letters
+    assert pl["done"] or len(pl["solved"]) == len(p["entries"])
 
 
 def test_revealed_letters_show_on_the_board_before_the_entry_is_solved():

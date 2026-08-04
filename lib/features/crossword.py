@@ -233,23 +233,36 @@ def reveal_letter(uid, date_str, puzzle, d=None):
     if cap and len(p.get("revealed", [])) >= cap:
         return None, p                       # hints are finite now - work the rest out
 
-    def given(e):
-        return len([r for r in p["revealed"] if r.startswith(_key(e) + ":")])
+    seen = _letters(puzzle, p)
 
-    # Shortest unsolved entry that still has a letter left to give. Skipping the
-    # exhausted ones matters: otherwise a player who reveals a whole 3-letter word gets
-    # stuck on it forever and can never take another hint, however much of the grid is
-    # still blank.
-    unsolved = [e for e in puzzle["entries"]
-                if _key(e) not in p["solved"] and given(e) < len(e["answer"])]
+    def next_idx(e):
+        """First letter of this entry the player can't already see, or None.
+
+        Skipping letters a crossing has already filled in matters: reveal them and the
+        hint costs a whole reward tier while putting nothing new on the board.
+        """
+        k = _key(e)
+        for i, cell in enumerate(e["cells"]):
+            if tuple(cell) in seen or f"{k}:{i}" in p["revealed"]:
+                continue
+            return i
+        return None
+
+    # Shortest unsolved entry that still has something to give. Skipping the exhausted
+    # ones matters too: otherwise a player who reveals a whole 3-letter word gets stuck
+    # on it forever and can never take another hint, however much of the grid is blank.
+    unsolved = [(e, next_idx(e)) for e in puzzle["entries"] if _key(e) not in p["solved"]]
+    unsolved = [(e, i) for e, i in unsolved if i is not None]
     if not unsolved:
         return None, p
-    entry = min(unsolved, key=lambda e: (len(e["answer"]), e["num"]))
-    idx = given(entry)
+    entry, idx = min(unsolved, key=lambda t: (len(t[0]["answer"]), t[0]["num"]))
     p["revealed"] = p["revealed"] + [f"{_key(entry)}:{idx}"]
+    _cascade(puzzle, p)                  # a given letter can complete an entry outright
+    if _is_complete(puzzle, p):
+        p["done"] = True
     _save_player(date_str, uid, p)
-    return (f"💡 **{entry['num']} {entry['dir'].title()}** starts "
-            f"**{entry['answer'][:idx + 1]}**"), p
+    return (f"💡 **{entry['num']} {entry['dir'].title()}** has "
+            f"**{entry['answer'][idx]}** at position {idx + 1}"), p
 
 
 def _letters(puzzle, p) -> dict:
@@ -360,14 +373,176 @@ li b{{color:#fff}} li i{{color:rgba(255,255,255,.4);font-style:normal}}
 </div></body></html>"""
 
 
+# --- drawing the board ----------------------------------------------------------------
+# Drawn with PIL rather than the usual HTML->Chrome path, because a crossword redraws on
+# EVERY answer - a dozen-plus times a puzzle - while a rank card is rendered once. Chrome
+# renders share one global asyncio.Semaphore(1) with slots, blackjack, higher/lower, rank
+# cards and the summaries, so each redraw queued behind whatever the casino was doing and
+# the board sat on a loading spinner for seconds at a time. Straight PIL takes no lock,
+# starts no browser and fetches no webfont, so it lands in milliseconds.
+# First hit wins. Liberation is what the server has; the rest are so the board still
+# draws (and can be eyeballed) on a dev machine.
+_FONT_CANDIDATES = {
+    "bold": (
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    ),
+    "regular": (
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+    ),
+}
+_font_cache = {}
+
+
+def _font(weight: str, size: int):
+    """A cached truetype face, falling back to PIL's bitmap default if none is installed
+    (the board still draws, it just looks plainer)."""
+    key = (weight, size)
+    if key in _font_cache:
+        return _font_cache[key]
+    from PIL import ImageFont
+    face = None
+    for path in _FONT_CANDIDATES[weight]:
+        try:
+            face = ImageFont.truetype(path, size)
+            break
+        except Exception:
+            continue
+    if face is None:
+        # No truetype anywhere: the bitmap default ignores `size` and kerns badly, but a
+        # readable-ish board beats no board at all.
+        face = ImageFont.load_default()
+        log.warning("HMS Crossword: no truetype font found, falling back to the default")
+    _font_cache[key] = face
+    return face
+
+
+def _wrap(draw, text, font, width):
+    words, lines, cur = text.split(), [], ""
+    for w in words:
+        trial = f"{cur} {w}".strip()
+        if draw.textlength(trial, font=font) <= width or not cur:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def draw_board(uid, date):
+    """The board as a PNG, drawn directly. Returns a BytesIO."""
+    import io
+    from PIL import Image, ImageDraw
+
+    puzzle = _todays_puzzle(date)
+    p = _player(date.isoformat(), uid)
+    size = grid_size(date)
+    seen = _letters(puzzle, p)
+    black = {tuple(b) for b in puzzle["black"]}
+    nums = _numbers(puzzle)
+    revealed_cells = set()
+    for e in puzzle["entries"]:
+        if _key(e) in p["solved"]:
+            continue
+        for r in p["revealed"]:
+            if r.startswith(_key(e) + ":"):
+                revealed_cells.add(tuple(e["cells"][int(r.split(":")[1])]))
+    solved_cells = {tuple(c) for e in puzzle["entries"] if _key(e) in p["solved"]
+                    for c in e["cells"]}
+
+    CELL, GAP, PAD, W = 54, 4, 26, 620
+    grid_w = size * CELL + (size - 1) * GAP
+    gx, gy = (W - grid_w) // 2, 84
+
+    f_title, f_date = _font("bold", 27), _font("regular", 15)
+    f_cell, f_num = _font("bold", 30), _font("regular", 13)
+    f_head, f_clue, f_sub = _font("bold", 15), _font("regular", 14), _font("regular", 15)
+
+    # lay the clue columns out first so the card can be sized to fit them exactly
+    scratch = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    col_w = (W - 2 * PAD - 26) // 2
+    cols = []
+    for d in ("across", "down"):
+        lines = []
+        for e in puzzle["entries"]:
+            if e["dir"] != d:
+                continue
+            txt = f"{e['num']}. {e['clue']} ({len(e['answer'])})"
+            for i, ln in enumerate(_wrap(scratch, txt, f_clue, col_w - 4)):
+                lines.append((ln, _key(e) in p["solved"], i))
+        cols.append(lines)
+    clue_y = gy + size * CELL + (size - 1) * GAP + 22
+    body_h = max(len(c) for c in cols) * 21 + 26
+    H = clue_y + body_h + 46
+
+    img = Image.new("RGB", (W + 36, H + 36), "#0a0e1a")
+    dr = ImageDraw.Draw(img)
+    dr.rounded_rectangle([18, 18, W + 18, H + 18], 18, fill="#121624", outline="#CF142B", width=4)
+
+    def at(x, y):
+        return x + 18, y + 18
+
+    dr.text(at(W // 2, 30), "HMS Crossword", font=f_title, fill="#ffffff", anchor="mt")
+    dr.text(at(W // 2, 62), _pretty(date), font=f_date, fill="#6f7686", anchor="mt")
+
+    for r in range(size):
+        for c in range(size):
+            x, y = gx + c * (CELL + GAP), gy + r * (CELL + GAP)
+            box = [*at(x, y), *at(x + CELL, y + CELL)]
+            if (r, c) in black:
+                dr.rounded_rectangle(box, 4, fill="#1c2030")
+                continue
+            if (r, c) in solved_cells:
+                bg, fg, nfg = "#6aaa64", "#ffffff", "#d8ecd5"
+            elif (r, c) in revealed_cells:
+                bg, fg, nfg = "#c9b458", "#11141c", "#6b6033"
+            else:
+                bg, fg, nfg = "#f5f6f8", "#11141c", "#5a5f6b"
+            dr.rounded_rectangle(box, 4, fill=bg)
+            if (r, c) in nums:
+                dr.text(at(x + 5, y + 3), str(nums[(r, c)]), font=f_num, fill=nfg)
+            ch = seen.get((r, c))
+            if ch:
+                dr.text(at(x + CELL // 2, y + CELL // 2 + 2), ch, font=f_cell,
+                        fill=fg, anchor="mm")
+
+    for i, (head, lines) in enumerate(zip(("ACROSS", "DOWN"), cols)):
+        cx = PAD + i * (col_w + 26)
+        dr.text(at(cx, clue_y), head, font=f_head, fill="#CF142B")
+        for j, (ln, done, wrapped) in enumerate(lines):
+            dr.text(at(cx + (12 if wrapped else 0), clue_y + 24 + j * 21), ln,
+                    font=f_clue, fill="#4c515e" if done else "#d2d6de")
+
+    r = rules(date)
+    hints, wrong_tiers = penalties(p, date)
+    total, got = len(puzzle["entries"]), len(set(p["solved"]))
+    if p["done"]:
+        sub = f"Complete · +{reward_for(p, date):,} UKPence"
+    else:
+        sub = f"{got}/{total} filled · worth {reward_for(p, date):,}"
+        if r["max_hints"]:
+            sub += f" · {r['max_hints'] - hints} hint(s) left"
+        if r["wrong_per_tier"] and int(p.get("wrong", 0)):
+            sub += f" · {p['wrong']} wrong"
+    dr.text(at(W // 2, H - 34), sub, font=f_sub, fill="#8f96a5", anchor="mt")
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    buf.seek(0)
+    return buf
+
+
 async def render_board(uid, date):
-    """(PNG BytesIO or None, done flag). Rendering is best-effort - a failure falls back
-    to the text board rather than losing the player's game."""
+    """(PNG BytesIO or None, done flag). Best-effort - a failure falls back to the text
+    board rather than losing the player's game."""
     p = _player(date.isoformat(), uid)
     try:
-        from lib.core.image_processing import screenshot_html
-        img = await screenshot_html(_board_html(uid, date), size=(700, 1100), apply_trim=True)
-        return img, p["done"]
+        return draw_board(uid, date), p["done"]
     except Exception:
         log.error("HMS Crossword board render failed", exc_info=True)
         return None, p["done"]
