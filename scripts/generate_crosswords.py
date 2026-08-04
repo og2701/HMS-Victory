@@ -194,6 +194,8 @@ if __name__ == "__main__":
     ap.add_argument("--size", type=int, default=6, help="grid size (default 6)")
     ap.add_argument("--count", type=int, default=25)
     ap.add_argument("--max-len", type=int, default=6, help="longest entry the bank can fill")
+    ap.add_argument("--budget", type=int, default=420,
+                    help="seconds to spend searching (hard mode needs far longer)")
     ap.add_argument("--hard", action="store_true",
                     help="fill only from words with an indirect (cryptic-lite) clue")
     a = ap.parse_args()
@@ -214,7 +216,7 @@ if __name__ == "__main__":
 
     made, sigs, seed = [], [], 0
     t0 = time.time()
-    while len(made) < a.count and seed < 40000 and time.time() - t0 < 420:
+    while len(made) < a.count and seed < 40000 and time.time() - t0 < a.budget:
         hot = set()
         for sg in sigs[-6:]:
             hot |= sg

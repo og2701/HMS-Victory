@@ -120,6 +120,13 @@ SOULCAIRN_DRAIN_MAX = 80             # the asymptote the drain approaches but ne
 # drain (which gear CAN answer) does the differentiating.
 SOULCAIRN_HP_PER = 12                # +1 enemy hp every N depths
 SOULCAIRN_FONT_EVERY = 5             # a soul font restores a heart every N depths
+# Every legend seated in the Hall softens the Cairn's bite. Depth is the one ladder
+# that should read a character's whole history rather than its current sheet, and the
+# boons alone can't do that: retirement offers three of eight, only Blooded touches the
+# descent, so boon luck would decide the ranking. This makes prestige monotonic - a
+# reborn legend always out-descends their old self once regrown - and the boons layer
+# their own variance on top of it.
+SOULCAIRN_LEGACY_RESIST = 0.12       # fraction of the drain shrugged off per legacy rank
 FALLEN_CHANCE = 0.20                 # chance a delve holds a Fallen Adventurer's corpse
 PACT_MULT_CAP = 4.0                  # max combined satchel multiplier from stacked pacts
 PACT_MIN_LEVEL = 10                  # pacts unlock once the ordinary maps start feeling easy
@@ -543,12 +550,18 @@ def _clamp(p: float) -> int:
     return int(max(ROLL_MIN, min(ROLL_MAX, round(p))))
 
 
-def soulcairn_drain(depth: int) -> float:
-    """Attack % the Soul Cairn has gnawed off by this depth - always rising, never
-    reaching SOULCAIRN_DRAIN_MAX. Its slope at the top of the descent is exactly
-    SOULCAIRN_DRAIN, so the first floors bite the same as they always did."""
+def soulcairn_drain(depth: int, profile=None) -> float:
+    """Odds the Soul Cairn has gnawed off by this depth - always rising, never reaching
+    SOULCAIRN_DRAIN_MAX. Its slope at the top of the descent is exactly SOULCAIRN_DRAIN,
+    so the first floors bite the same as they always did. Legends in the Hall shrug part
+    of it off, which is what makes depth a prestige ladder rather than a gear check.
+
+    This bites stealth as well as attacks: the Cairn is a descent, and slipping past a
+    floor advances you exactly as far as killing what stands on it."""
     knee = SOULCAIRN_DRAIN_MAX / SOULCAIRN_DRAIN
-    return SOULCAIRN_DRAIN_MAX * depth / (depth + knee)
+    raw = SOULCAIRN_DRAIN_MAX * depth / (depth + knee)
+    resist = min(0.75, SOULCAIRN_LEGACY_RESIST * legacy_rank(profile)) if profile else 0.0
+    return raw * (1 - resist)
 
 
 def _fight_raw(profile, enemy_key: str, style: str, delve=None) -> float:
@@ -581,7 +594,7 @@ def _fight_raw(profile, enemy_key: str, style: str, delve=None) -> float:
         p -= D.STIRRED_FIGHT_PER_RANK * getattr(delve, "stirred", 0)   # the deep offer bites
         p -= 3 * getattr(delve, "echo", 0)          # an Echoed Skuldafn fights back harder
         if getattr(delve, "kind", None) == "soulcairn":
-            p -= soulcairn_drain(delve.depth)       # the deep gnaws your odds
+            p -= soulcairn_drain(delve.depth, profile)   # the deep gnaws your odds
         nd = named_dragon(delve)
         if nd:
             p += nd.get("fight", 0)              # this week's dragon is easier/harder to land
@@ -1014,7 +1027,7 @@ def best_style(profile, enemy_key: str, delve=None) -> str:
     return max(D.STYLES, key=lambda s: fight_pct(profile, enemy_key, s, delve))
 
 
-def sneak_pct(profile, enemy_key: str) -> int | None:
+def sneak_pct(profile, enemy_key: str, delve=None) -> int | None:
     e = D.ENEMIES[enemy_key]
     if e["sneak"] is None:
         return None
@@ -1026,6 +1039,12 @@ def sneak_pct(profile, enemy_key: str) -> int | None:
          + weather_today()["sneak"])
     if profile.get("armour_style") == "light" and profile["armour_tier"] >= 1:
         p += D.LIGHT_SNEAK_BONUS
+    # The Cairn drains the quiet route as hard as the loud one. Slipping past a floor
+    # descends you just the same, so leaving stealth undrained made it the only sane
+    # play: a middling thief could slip to depth 80+ untouched while a maxed warrior
+    # fought to 30, and depth stopped measuring anything at all.
+    if delve is not None and getattr(delve, "kind", None) == "soulcairn":
+        p -= soulcairn_drain(delve.depth, profile)
     return _clamp(p)
 
 
@@ -1553,7 +1572,8 @@ class Delve:
             sc["best"] = self.depth
         record_best(profile, "depth", self.depth)
         self.say(f"⬇️ You descend. **Depth {self.depth}.** The soul-light thins; the cold "
-                 f"gnaws {soulcairn_drain(self.depth):.0f}% off your every strike now.")
+                 f"gnaws {soulcairn_drain(self.depth, profile):.0f}% off every strike "
+                 f"and every quiet step now.")
         # A soul font: the only thing down here that gives anything back. Without it the
         # run is capped by the hearts and potions you walked in with, so no build ever
         # reaches the deep floors - the descent needs a renewable budget, not a wallet.
@@ -1878,7 +1898,7 @@ class Delve:
         """Slip into stealth. Success doesn't skip the room any more - it earns a
         CHOICE: ambush (attack at +AMBUSH_BONUS) or slip past quietly."""
         e = self.enemy()
-        p = sneak_pct(profile, self.room["key"])
+        p = sneak_pct(profile, self.room["key"], self)
         if p is None or self.engaged or self.spotted or self.ambush:
             return
         if random.random() * 100 < p:

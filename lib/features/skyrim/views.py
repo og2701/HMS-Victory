@@ -250,7 +250,7 @@ def build_delve_layout(delve: E.Delve, profile):
             row1.add_item(_btn(discord.ButtonStyle.primary, "Slip past",
                                f"skyrim:{did}:slp", _make_cb(delve, "slp"), emoji="🥷"))
         else:
-            p_snk = E.sneak_pct(profile, key)
+            p_snk = E.sneak_pct(profile, key, delve)
             if p_snk is not None and not delve.engaged:
                 row1.add_item(_btn(discord.ButtonStyle.primary, f"Sneak {p_snk}%",
                                    f"skyrim:{did}:snk", _make_cb(delve, "snk"), emoji="🥷"))

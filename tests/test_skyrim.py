@@ -1479,6 +1479,38 @@ def test_soulcairn_gated_and_drains():
         assert max(E.fight_pct(p, "draugr", s, d) for s in D.STYLES) > E.ROLL_MIN
 
 
+def test_soulcairn_drains_the_quiet_route_too():
+    """Slipping past a floor descends you exactly as far as killing what stands on it,
+    so stealth has to pay the same depth tax - otherwise it's the only sane play."""
+    p = _profile("thief")
+    p["alduin_slain"] = 1
+    p["xp"] = 60_000
+    d = E.start_soulcairn(p, 0)
+    d.rooms[d.idx] = {"kind": "enemy", "key": "draugr", "boss": False, "resolved": False}
+    surface = E.sneak_pct(p, "draugr", d)
+    assert E.sneak_pct(p, "draugr") == surface     # no delve, no drain
+    last = surface
+    for depth in (10, 30, 60):
+        d.depth = depth
+        deep = E.sneak_pct(p, "draugr", d)
+        assert deep < last
+        last = deep
+
+
+def test_soulcairn_depth_is_a_prestige_ladder():
+    """Legends in the Hall shrug off the Cairn's cold, so depth reads a character's
+    whole history and not just its current sheet."""
+    p = _profile()
+    plain = E.soulcairn_drain(40)
+    last = plain
+    for rank in range(1, D.LEGACY_MAX + 1):
+        p["legacy"] = {"rank": rank, "boons": [], "epitaphs": []}
+        drained = E.soulcairn_drain(40, p)
+        assert drained < last                      # each legend softens it further
+        last = drained
+    assert last > 0                                # never free, however storied
+
+
 def test_factions_weekly_task():
     p = _profile()
     p["xp"] = 3000                                 # level 8+
