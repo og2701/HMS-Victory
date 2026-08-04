@@ -20,9 +20,10 @@ ROAST_DAILY_LIMIT = 4  # per-user /roast uses per UTC day (oggers exempt)
 #                              small/hard-to-read on mobile - kept for reference only.
 #   (neither)                - the standard Discord embed (default).
 # Where generated images are parked so ephemeral messages can link them instead of
-# attaching them (see lib/core/image_host.py). Any channel the bot can post in and nobody
-# reads; 0 falls back to the bot-usage log.
-IMAGE_HOST_CHANNEL_ID = 0
+# attaching them (see lib/core/image_host.py). The 'Rendered images' thread - somewhere
+# nobody reads, since a puzzle posts a board here on every answer. 0 falls back to the
+# bot-usage log.
+IMAGE_HOST_CHANNEL_ID = 1534163732656033932
 
 PREDICTION_CV2_ENABLED = True
 PREDICTION_IMAGE_ENABLED = False
