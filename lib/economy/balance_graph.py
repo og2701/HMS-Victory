@@ -18,7 +18,6 @@ import discord
 import pytz
 
 import config
-from lib.core.image_processing import screenshot_html
 from lib.economy.economy_manager import get_bb
 
 log = logging.getLogger(__name__)
@@ -144,8 +143,12 @@ def _build_html(display_name, points):
         grid.append(f"<line x1='{ml}' y1='{gy:.1f}' x2='{ml + pw}' y2='{gy:.1f}' class='grid'/>")
         grid.append(f"<text x='{ml - 14}' y='{gy + 6:.1f}' class='ylab'>{_fmt(gv)}</text>")
 
+    # Inside a day or two every date label would read the same, so narrow windows switch
+    # to clock times - on the axis and in the subtitle both.
+    intraday = (t1 - t0) <= 2 * 86400
+
     def datelabel(ts):
-        return datetime.fromtimestamp(ts, _UK).strftime("%-d %b")
+        return datetime.fromtimestamp(ts, _UK).strftime("%H:%M" if intraday else "%-d %b")
 
     xlab = []
     for ts in (t0, (t0 + t1) // 2, t1):
@@ -164,7 +167,11 @@ def _build_html(display_name, points):
     color = "#10b981" if up else ("#ef4444" if not flat else "#3b82f6")
     arrow = "▲" if up else ("▼" if not flat else "▬")
     sign = "+" if net >= 0 else ""
-    span = f"{datelabel(t0)} to {datelabel(t1)}"
+    if intraday:      # the bare times need a day against them to mean anything
+        span = (f"{datetime.fromtimestamp(t0, _UK).strftime('%-d %b %H:%M')} to "
+                f"{datetime.fromtimestamp(t1, _UK).strftime('%H:%M')}")
+    else:
+        span = f"{datelabel(t0)} to {datelabel(t1)}"
 
     return f"""<!DOCTYPE html><html><head><meta charset='utf-8'>
 <style>
@@ -230,6 +237,9 @@ async def render_balance_graph(user_id, display_name, days=None):
     if len(points) < 2:
         return None
     html = _build_html(display_name, points)
+    # Deferred like image_host below: pulling this in at module scope drags the whole
+    # headless-browser stack into anything that only wants the point maths.
+    from lib.core.image_processing import screenshot_html
     return await screenshot_html(html, size=(1120, 780), apply_trim=True)
 
 
@@ -309,11 +319,15 @@ class BalanceGraphView(discord.ui.View):
 
 
 class BalanceGraphRangeView(discord.ui.View):
-    """Range buttons (7D / 30D / 90D / All) under a rendered balance graph. Each re-renders
-    the graph for that window and edits the message in place; the active range is highlighted.
-    Only the original viewer can press them."""
+    """Range buttons (24H / 7D / 30D / 90D / All) under a rendered balance graph. Each
+    re-renders the graph for that window and edits the message in place; the active range is
+    highlighted. Only the original viewer can press them.
 
-    RANGES = [("7D", 7), ("30D", 30), ("90D", 90), ("All", None)]
+    24H leans on the granular `balance_history` rows - the daily snapshots alone would give
+    it a single point - so it's only as detailed as that table, which is to say every real
+    balance change since granular logging came in."""
+
+    RANGES = [("24H", 1), ("7D", 7), ("30D", 30), ("90D", 90), ("All", None)]
 
     def __init__(self, target_id, target_name, viewer_id, *, selected_days=_DEFAULT_DAYS):
         super().__init__(timeout=300)
