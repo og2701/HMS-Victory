@@ -359,14 +359,9 @@ async def _board_payload(client, uid, date):
     """
     img, done = await render_board(uid, date)
     if img is not None:
-        from lib.core.image_host import host_image
-        url = await host_image(client, img, "wordle.png")
-        if url:
-            e = discord.Embed(colour=0x6aaa64)
-            e.set_image(url=url)
-            return None, e, [], done
-        img.seek(0)
-        return None, None, [discord.File(img, "wordle.png")], done
+        from lib.core.image_host import as_embed_or_file
+        embed, files = await as_embed_or_file(client, img, "wordle.png", colour=0x6AAA64)
+        return None, embed, files, done
     content, _ = _render(uid, date)
     return content, None, [], done
 

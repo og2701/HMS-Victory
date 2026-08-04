@@ -714,17 +714,10 @@ async def _refresh(interaction: discord.Interaction, uid, date, *, edit: bool):
 
     content, files, embed = text_board(uid, date), [], None
     if img is not None:
-        from lib.core.image_host import host_image
-        url = await host_image(interaction.client, img, "crossword.png")
-        if url:
-            embed = discord.Embed(colour=0xCF142B)
-            embed.set_image(url=url)
-            content = None
-        else:
-            # Hosting unavailable: a plain attachment still works, it's just the slow
-            # path Discord makes us take on ephemerals.
-            img.seek(0)
-            content, files = None, [discord.File(img, "crossword.png")]
+        from lib.core.image_host import as_embed_or_file
+        embed, files = await as_embed_or_file(
+            interaction.client, img, "crossword.png", colour=0xCF142B)
+        content = None
 
     if edit:
         await interaction.edit_original_response(

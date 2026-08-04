@@ -29,6 +29,27 @@ def _host_channel_id() -> int:
     return int(getattr(getattr(config, "CHANNELS", None), "BOT_USAGE_LOG", 0) or 0)
 
 
+async def as_embed_or_file(client, data: io.BytesIO, filename: str = "board.png",
+                           colour: int = 0x2B2D31):
+    """(embed, files) for showing a generated image on an EPHEMERAL message.
+
+    Use this anywhere an image is built on the fly and shown only to one person. An
+    attachment on an ephemeral sits on a grey placeholder for seconds; an embed pointing
+    at a CDN link arrives with the message. Returns a plain attachment as the fallback,
+    so the picture always shows even when hosting isn't available.
+
+    Public messages don't need this - the casino boards attach images directly and are
+    fine, because the problem is specific to ephemerals.
+    """
+    url = await host_image(client, data, filename)
+    if url:
+        e = discord.Embed(colour=colour)
+        e.set_image(url=url)
+        return e, []
+    data.seek(0)
+    return None, [discord.File(data, filename)]
+
+
 _logged_destination = False
 
 

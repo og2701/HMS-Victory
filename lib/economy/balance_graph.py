@@ -287,9 +287,13 @@ class BalanceGraphView(discord.ui.View):
             return
         view = BalanceGraphRangeView(self.target_id, self.target_name, self.viewer_id,
                                      selected_days=_DEFAULT_DAYS)
-        await interaction.followup.send(
-            file=discord.File(img, filename=f"balance_{_DEFAULT_DAYS}d.png"),
-            view=view, ephemeral=True)
+        # Hosted embed rather than an attachment: Discord is slow to load attachments on
+        # ephemeral messages (see lib/core/image_host.py).
+        from lib.core.image_host import as_embed_or_file
+        embed, files = await as_embed_or_file(
+            interaction.client, img, f"balance_{_DEFAULT_DAYS}d.png")
+        await interaction.followup.send(embed=embed, files=files, view=view,
+                                        ephemeral=True)
 
     @discord.ui.button(label="Statement", emoji="\U0001f9fe",
                        style=discord.ButtonStyle.secondary)
@@ -344,5 +348,7 @@ class BalanceGraphRangeView(discord.ui.View):
             return
         view = BalanceGraphRangeView(self.target_id, self.target_name, self.viewer_id,
                                      selected_days=days)
-        await interaction.edit_original_response(
-            attachments=[discord.File(img, filename=f"balance_{days or 'all'}d.png")], view=view)
+        from lib.core.image_host import as_embed_or_file
+        embed, files = await as_embed_or_file(
+            interaction.client, img, f"balance_{days or 'all'}d.png")
+        await interaction.edit_original_response(embed=embed, attachments=files, view=view)
