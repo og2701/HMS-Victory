@@ -29,12 +29,16 @@ def _host_channel_id() -> int:
     return int(getattr(getattr(config, "CHANNELS", None), "BOT_USAGE_LOG", 0) or 0)
 
 
+_logged_destination = False
+
+
 async def host_image(client, data: io.BytesIO, filename: str = "board.png") -> str | None:
     """Return a CDN URL for `data`, or None if it couldn't be hosted.
 
     Falls back to None rather than raising: the caller should then send the image as a
     plain attachment (slower, but a slow board beats no board).
     """
+    global _logged_destination
     try:
         cid = _host_channel_id()
         if not cid or client is None:
@@ -42,10 +46,23 @@ async def host_image(client, data: io.BytesIO, filename: str = "board.png") -> s
         ch = client.get_channel(cid)
         if ch is None:
             ch = await client.fetch_channel(cid)
+
+        # Say once, loudly, where these are actually going. Getting this wrong is silent
+        # otherwise - the images just turn up somewhere unexpected and nothing errors.
+        if not _logged_destination:
+            _logged_destination = True
+            parent = getattr(ch, "parent", None)
+            logger.info(
+                "[IMAGE HOST] id=%s -> %s #%s%s",
+                cid, type(ch).__name__, getattr(ch, "name", "?"),
+                f" (thread under #{getattr(parent, 'name', '?')})" if parent else
+                " (NOT a thread - this is a channel)",
+            )
+
         data.seek(0)
         msg = await ch.send(file=discord.File(data, filename))
         if msg.attachments:
             return msg.attachments[0].url
     except Exception:
-        logger.debug("image hosting failed; caller will fall back", exc_info=True)
+        logger.warning("image hosting failed; falling back to an attachment", exc_info=True)
     return None
