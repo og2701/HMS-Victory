@@ -539,8 +539,14 @@ def draw_board(uid, date):
 
 async def render_board(uid, date):
     """(PNG BytesIO or None, done flag). Best-effort - a failure falls back to the text
-    board rather than losing the player's game."""
+    board rather than losing the player's game.
+
+    Returns None while CROSSWORD_IMAGE_ENABLED is off, so the flag holds wherever this is
+    called rather than only on the path that happens to check it.
+    """
     p = _player(date.isoformat(), uid)
+    if not getattr(config, "CROSSWORD_IMAGE_ENABLED", False):
+        return None, p["done"]
     try:
         return draw_board(uid, date), p["done"]
     except Exception:
@@ -692,19 +698,30 @@ class _ShareButton(discord.ui.Button):
 
 
 async def _refresh(interaction: discord.Interaction, uid, date, *, edit: bool):
-    img, _done = await render_board(uid, date)
+    """Redraw the board in place.
+
+    Text by default, not a picture. The board is an EPHEMERAL message, and Discord
+    handles image attachments on those badly - they sit on a grey placeholder for
+    seconds regardless of connection, and re-uploading a fresh PNG on every answer makes
+    it worse. Drawing the PNG locally took that from seconds to 82ms and changed nothing
+    the player could see, because the wait was never the render: it was the attachment.
+    The native text layout arrives with the message itself, so there's nothing to wait
+    for. Same call the prediction market and blackjack already made - see
+    CROSSWORD_IMAGE_ENABLED, off by default.
+    """
     view = CrosswordView(uid, date)
+    img, _done = await render_board(uid, date)      # None unless the image flag is on
     if img is not None:
-        payload = dict(content=None, attachments=[discord.File(img, "crossword.png")], view=view)
+        content, files = None, [discord.File(img, "crossword.png")]
     else:
-        payload = dict(content=text_board(uid, date), attachments=[], view=view)
+        content, files = text_board(uid, date), []
+
     if edit:
-        await interaction.edit_original_response(**payload)
+        await interaction.edit_original_response(
+            content=content, attachments=files, view=view)
     else:
-        payload.pop("attachments", None)
-        files = [discord.File(img, "crossword.png")] if img is not None else []
-        await interaction.followup.send(ephemeral=True, files=files, view=view,
-                                        content=payload.get("content"))
+        await interaction.followup.send(
+            ephemeral=True, content=content, files=files, view=view)
 
 
 async def handle_crossword_command(interaction: discord.Interaction):

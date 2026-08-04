@@ -369,6 +369,9 @@ FLETCHER_DEDUPE_ENABLED = True
 FLETCHER_BOT_ID = None            # set to Fletcher's user id for an exact match (optional)
 FLETCHER_BOT_NAMES = ["fletcher"]  # otherwise matched by bot name
 # HMS Wordle: one shared 5-letter word per UK day, dictionary-validated guesses.
+# Off for the same reason as CROSSWORD_IMAGE_ENABLED: an ephemeral image attachment sits
+# on a placeholder for seconds, while the native text grid is there immediately.
+WORDLE_IMAGE_ENABLED = False
 WORDLE_ANSWERS_FILE = os.path.join("data", "words", "answers.txt")
 WORDLE_VALID_FILE = os.path.join("data", "words", "valid.txt")
 WORDLE_REWARDS = [200, 140, 100, 70, 45, 25]  # payout by number of guesses to solve (1..6)
@@ -376,6 +379,12 @@ WORDLE_REWARDS = [200, 140, 100, 70, 45, 25]  # payout by number of guesses to s
 # tiers and difficulty rules all live per puzzle-SET inside the file below and are gated
 # by date, so tightening them never changes a puzzle someone is midway through. The tiers
 # here are only the fallback for a set that doesn't state its own.
+# Board style. The board is an ephemeral message, and Discord is notoriously slow to load
+# image attachments on those - they sit on a grey placeholder for seconds however good
+# your connection, and a puzzle re-uploads a fresh PNG on every single answer. The native
+# text board arrives with the message itself, so there is nothing to wait for. Same
+# trade-off PREDICTION_IMAGE_ENABLED and BLACKJACK_IMAGE_ENABLED already make.
+CROSSWORD_IMAGE_ENABLED = False
 CROSSWORD_PUZZLES_FILE = os.path.join("data", "words", "crosswords.json")
 CROSSWORD_REWARDS = [250, 200, 150, 100, 50]  # fallback tiers, by penalties incurred
 # Texas Hold'em (player-vs-player; bank is escrow, no rake)

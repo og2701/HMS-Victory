@@ -249,8 +249,16 @@ body{{background:#0a0e1a;display:flex;justify-content:center;padding:18px;font-f
 
 
 async def render_board(uid, date):
-    """Render the board to a PNG BytesIO + done flag. Returns (None, done) if rendering fails."""
+    """Render the board to a PNG BytesIO + done flag. Returns (None, done) if rendering fails.
+
+    Off by default (WORDLE_IMAGE_ENABLED). The board is an EPHEMERAL message and Discord
+    is slow to load image attachments on those - a grey placeholder for seconds however
+    good your connection - so the native text grid, which arrives with the message
+    itself, is the faster board even though the picture is prettier.
+    """
     p = _player(date.isoformat(), uid)
+    if not getattr(config, "WORDLE_IMAGE_ENABLED", False):
+        return None, p["done"]
     try:
         from lib.core.image_processing import screenshot_html
         img = await screenshot_html(_board_html(uid, date), size=(560, 1000), apply_trim=True)
