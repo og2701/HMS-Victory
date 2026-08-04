@@ -19,6 +19,11 @@ ROAST_DAILY_LIMIT = 4  # per-user /roast uses per UTC day (oggers exempt)
 #                              NOTE: it's an image Discord downscales, so it renders
 #                              small/hard-to-read on mobile - kept for reference only.
 #   (neither)                - the standard Discord embed (default).
+# Where generated images are parked so ephemeral messages can link them instead of
+# attaching them (see lib/core/image_host.py). Any channel the bot can post in and nobody
+# reads; 0 falls back to the bot-usage log.
+IMAGE_HOST_CHANNEL_ID = 0
+
 PREDICTION_CV2_ENABLED = True
 PREDICTION_IMAGE_ENABLED = False
 
@@ -369,9 +374,8 @@ FLETCHER_DEDUPE_ENABLED = True
 FLETCHER_BOT_ID = None            # set to Fletcher's user id for an exact match (optional)
 FLETCHER_BOT_NAMES = ["fletcher"]  # otherwise matched by bot name
 # HMS Wordle: one shared 5-letter word per UK day, dictionary-validated guesses.
-# Off for the same reason as CROSSWORD_IMAGE_ENABLED: an ephemeral image attachment sits
-# on a placeholder for seconds, while the native text grid is there immediately.
-WORDLE_IMAGE_ENABLED = False
+# Same picture-via-CDN path as CROSSWORD_IMAGE_ENABLED.
+WORDLE_IMAGE_ENABLED = True
 WORDLE_ANSWERS_FILE = os.path.join("data", "words", "answers.txt")
 WORDLE_VALID_FILE = os.path.join("data", "words", "valid.txt")
 WORDLE_REWARDS = [200, 140, 100, 70, 45, 25]  # payout by number of guesses to solve (1..6)
@@ -379,12 +383,12 @@ WORDLE_REWARDS = [200, 140, 100, 70, 45, 25]  # payout by number of guesses to s
 # tiers and difficulty rules all live per puzzle-SET inside the file below and are gated
 # by date, so tightening them never changes a puzzle someone is midway through. The tiers
 # here are only the fallback for a set that doesn't state its own.
-# Board style. The board is an ephemeral message, and Discord is notoriously slow to load
-# image attachments on those - they sit on a grey placeholder for seconds however good
-# your connection, and a puzzle re-uploads a fresh PNG on every single answer. The native
-# text board arrives with the message itself, so there is nothing to wait for. Same
-# trade-off PREDICTION_IMAGE_ENABLED and BLACKJACK_IMAGE_ENABLED already make.
-CROSSWORD_IMAGE_ENABLED = False
+# Board style. Discord is slow to load image ATTACHMENTS on ephemeral messages, so the
+# board is posted once to IMAGE_HOST_CHANNEL_ID and shown as an embed pointing at the
+# resulting CDN URL - same picture, but it arrives with the message instead of sitting on
+# a placeholder. If hosting fails it falls back to a plain attachment, and if the render
+# itself fails, to the native text board.
+CROSSWORD_IMAGE_ENABLED = True
 CROSSWORD_PUZZLES_FILE = os.path.join("data", "words", "crosswords.json")
 CROSSWORD_REWARDS = [250, 200, 150, 100, 50]  # fallback tiers, by penalties incurred
 # Texas Hold'em (player-vs-player; bank is escrow, no rake)

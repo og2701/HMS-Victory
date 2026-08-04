@@ -296,14 +296,11 @@ class WordleModal(discord.ui.Modal, title="HMS Wordle"):
                 except Exception:
                     pass
         await interaction.response.defer()
-        img, done = await render_board(self.user_id, self.date)
+        content, embed, files, done = await _board_payload(
+            interaction.client, self.user_id, self.date)
         view = _view_for(self.user_id, self.date, done)
-        if img is not None:
-            await interaction.edit_original_response(
-                content=None, attachments=[discord.File(img, "wordle.png")], view=view)
-        else:
-            content, _ = _render(self.user_id, self.date)
-            await interaction.edit_original_response(content=content, attachments=[], view=view)
+        await interaction.edit_original_response(
+            content=content, embed=embed, attachments=files, view=view)
 
 
 class WordleView(discord.ui.View):
@@ -352,6 +349,28 @@ class WordleShareView(discord.ui.View):
         await interaction.followup.send("Shared to the channel!", ephemeral=True)
 
 
+
+async def _board_payload(client, uid, date):
+    """(content, embed, files) for the board.
+
+    Prefers an embed pointing at a hosted CDN URL: Discord loads image ATTACHMENTS on
+    ephemeral messages slowly, but an ordinary image link is fine. Falls back to a plain
+    attachment if hosting is unavailable, and to the text board if the render fails.
+    """
+    img, done = await render_board(uid, date)
+    if img is not None:
+        from lib.core.image_host import host_image
+        url = await host_image(client, img, "wordle.png")
+        if url:
+            e = discord.Embed(colour=0x6aaa64)
+            e.set_image(url=url)
+            return None, e, [], done
+        img.seek(0)
+        return None, None, [discord.File(img, "wordle.png")], done
+    content, _ = _render(uid, date)
+    return content, None, [], done
+
+
 def _view_for(user_id, date, done):
     return WordleShareView(user_id, date) if done else WordleView(user_id, date)
 
@@ -363,11 +382,8 @@ async def handle_wordle_command(interaction: discord.Interaction):
         return
     date = _today()
     await interaction.response.defer(ephemeral=True, thinking=True)
-    img, done = await render_board(interaction.user.id, date)
+    content, embed, files, done = await _board_payload(
+        interaction.client, interaction.user.id, date)
     view = _view_for(interaction.user.id, date, done)
-    if img is not None:
-        await interaction.followup.send(
-            file=discord.File(img, "wordle.png"), view=view, ephemeral=True)
-    else:
-        content, _ = _render(interaction.user.id, date)
-        await interaction.followup.send(content=content, view=view, ephemeral=True)
+    await interaction.followup.send(ephemeral=True, content=content, embed=embed,
+                                    files=files, view=view)

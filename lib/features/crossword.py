@@ -711,17 +711,27 @@ async def _refresh(interaction: discord.Interaction, uid, date, *, edit: bool):
     """
     view = CrosswordView(uid, date)
     img, _done = await render_board(uid, date)      # None unless the image flag is on
+
+    content, files, embed = text_board(uid, date), [], None
     if img is not None:
-        content, files = None, [discord.File(img, "crossword.png")]
-    else:
-        content, files = text_board(uid, date), []
+        from lib.core.image_host import host_image
+        url = await host_image(interaction.client, img, "crossword.png")
+        if url:
+            embed = discord.Embed(colour=0xCF142B)
+            embed.set_image(url=url)
+            content = None
+        else:
+            # Hosting unavailable: a plain attachment still works, it's just the slow
+            # path Discord makes us take on ephemerals.
+            img.seek(0)
+            content, files = None, [discord.File(img, "crossword.png")]
 
     if edit:
         await interaction.edit_original_response(
-            content=content, attachments=files, view=view)
+            content=content, embed=embed, attachments=files, view=view)
     else:
         await interaction.followup.send(
-            ephemeral=True, content=content, files=files, view=view)
+            ephemeral=True, content=content, embed=embed, files=files, view=view)
 
 
 async def handle_crossword_command(interaction: discord.Interaction):
