@@ -132,6 +132,35 @@ def _save_player(date_str, uid, p):
     save_json_file(config.CROSSWORD_STATE_FILE, state)
 
 
+def _cascade(puzzle, p) -> list:
+    """Mark any entry the grid has already spelled out. Returns the keys newly filled.
+
+    A crossword fills itself sideways: get every Down that crosses an Across and the
+    Across is there on the board whether you typed it or not. Without this you could be
+    staring at a completely finished grid while the game insisted you hadn't finished -
+    and worse, the last clue would be unanswerable because its letters were all showing.
+
+    Loops because one freebie can complete another.
+    """
+    gained = []
+    while True:
+        seen = _letters(puzzle, p)
+        progress = False
+        for e in puzzle["entries"]:
+            k = _key(e)
+            if k in p["solved"]:
+                continue
+            cells = [tuple(c) for c in e["cells"]]
+            if any(c not in seen for c in cells):
+                continue
+            if "".join(seen[c] for c in cells) == e["answer"]:
+                p["solved"] = sorted(set(p["solved"] + [k]))
+                gained.append(k)
+                progress = True
+        if not progress:
+            return gained
+
+
 def _is_complete(puzzle, p) -> bool:
     return len(set(p["solved"])) >= len(puzzle["entries"])
 
@@ -180,10 +209,17 @@ def submit(uid, date_str, puzzle, entry_key: str, guess: str):
         return "wrong", f"**{clean}** isn't it. Try again.", p
 
     p["solved"] = sorted(set(p["solved"] + [entry_key]))
+    free = _cascade(puzzle, p)          # crossings may have filled others in for you
     if _is_complete(puzzle, p):
         p["done"] = True
     _save_player(date_str, uid, p)
-    return "ok", None, p
+    msg = None
+    if free:
+        names = ", ".join(
+            f"{e['num']} {e['dir'].title()}"
+            for e in puzzle["entries"] if _key(e) in free)
+        msg = f"✅ The crossings filled in **{names}** too."
+    return "ok", msg, p
 
 
 def reveal_letter(uid, date_str, puzzle, d=None):
