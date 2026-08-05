@@ -12,6 +12,13 @@
 
 set -euo pipefail
 
+# Ubuntu 24.04 ships needrestart, which mid-upgrade restarts systemd-logind and takes the
+# calling user session's scope down with it - killing this script partway through step 2 if
+# it was started over SSH. Suspending it keeps the run in one piece; a reboot afterwards
+# picks up whatever wanted restarting anyway.
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_SUSPEND=1
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 
