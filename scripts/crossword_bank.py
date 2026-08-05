@@ -1148,22 +1148,41 @@ HARD = {k: v for k, v in HARD.items() if v}
 def _is_indirect(clue: str) -> bool:
     """Does this clue make you think, or just look something up?
 
-    The bar: either it says enough to paint a picture (four words or more), or it carries
-    a wordplay marker - a fill-in-the-blank, a double definition, a question. A bare
-    two-word synonym ("Counsel" -> ADVISE) is a dictionary entry, not a clue, and those
-    are exactly what made the first version too easy.
+    Judged by what KIND of clue it is, not by how long it is. The previous bar - any
+    wordplay punctuation, or four words - let a marker alone carry a clue through, and
+    the shortest things it admitted were the easiest in the bank: "We?" (SHALL),
+    "Go ..." (DUTCH), "At ..." (STAKE). A giveaway phrase with an ellipsis in it was
+    being counted as wordplay.
+
+    So, per type:
+      - Double definition (";" or " or ") is the good stuff - two readings to reconcile -
+        and needs only enough words to state both, e.g. "Safe; or fasten".
+      - Anything else - a fill-in-the-blank or a plain description - carries no second
+        reading, so it has to say enough to be worth solving.
+
+    The thresholds are not free to pick: the bar and the grid search are coupled, because
+    the bar decides what the fill can draw on. Measured against the 6x6 layouts, a bank of
+    ~1170 words builds fine and ~1074 cannot build a single grid - and the generator's only
+    symptom is finishing with nothing to show for it. Anything stricter than this wants
+    re-measuring, and HARD_ALL below exists so that can be done against the real pool.
     """
     c = (clue or "").strip()
     if not c:
         return False
-    if any(m in c for m in ("...", " or ", ";", "?", "!")):
-        return True
-    return len(c.split()) >= 4
+    words = len(c.split())
+    if ";" in c or " or " in c:
+        return words >= 3
+    return words >= 4
 
 
 # Words whose clue doesn't clear the bar are dropped from HARD rather than rewritten -
-# they simply don't get used in the indirect puzzles. There's ample vocabulary left.
-HARD = {w: c for w, c in HARD.items() if _is_indirect(c)}
+# they simply don't get used in the indirect puzzles.
+#
+# Not filtered here: the pass at the end of the file applies the same bar to everything,
+# including the re-clued entries added below, so doing it twice changed nothing. Filtering
+# only at the end also leaves HARD_ALL below able to show the full candidate pool, which is
+# what you need to retune the bar - too tight a bar starves the grid search, and the only
+# symptom is the generator quietly building zero puzzles.
 
 
 # --- widening the indirect bank -------------------------------------------------------
@@ -1263,6 +1282,10 @@ HARD.update({
  "ENSURE":"Make quite certain","ENTIRE":"The whole of it","ESCAPE":"Make a run for it",
  "EXCEED":"Go beyond the limit","EXCEPT":"All bar one","EXCESS":"Rather too much of it",
 })
+# Every candidate with an indirect clue written for it, before the bar is applied. Kept so
+# the bar can be retuned against the real pool: tighten it too far and the grid search
+# starves, and the generator reports that only by building nothing at all.
+HARD_ALL = dict(HARD)
 HARD = {w: c for w, c in HARD.items() if _is_indirect(c)}
 for _k, _v in HARD.items():
     BANK[_k] = _v
