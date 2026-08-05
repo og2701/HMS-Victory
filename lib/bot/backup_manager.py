@@ -3,6 +3,7 @@ import os
 import logging
 import io
 import json
+import re
 import shutil
 import zipfile
 import asyncio
@@ -15,6 +16,11 @@ from config import *
 
 logger = logging.getLogger(__name__)
 MAX_PART_SIZE = 8 * 1024 * 1024
+DB_BACKUP_PREFIX = "database_backup_"
+# How far back the restore will look for a database backup. The channel also carries a
+# json_backup_ every five minutes, so 100 messages reached back about eight hours - a
+# daily database backup was never once inside the window it was searched in.
+DB_RESTORE_SCAN_LIMIT = 5000
 MAX_DATABASE_BACKUP_BYTES = 512 * 1024 * 1024
 MAX_DATABASE_ARCHIVE_BYTES = 512 * 1024 * 1024
 MAX_JSON_ARCHIVE_BYTES = 64 * 1024 * 1024
@@ -297,16 +303,31 @@ def _extract_database_candidate(zip_path: Path, candidate_path: Path) -> None:
         raise DatabaseRecoveryError(f"Could not safely unpack database backup ZIP: {exc}") from exc
 
 
-async def _download_validate_and_promote_database(attachment, database_path: Path) -> None:
-    """Download into the destination directory, validate, then atomically promote."""
+async def _download_validate_and_promote_database(attachments, database_path: Path) -> None:
+    """Download into the destination directory, validate, then atomically promote.
+
+    `attachments` is the ordered list of parts for one backup - a single-file backup is
+    simply a list of one. Parts are byte ranges of a single zip, so concatenating them in
+    order rebuilds the original archive byte for byte."""
     database_path.parent.mkdir(parents=True, exist_ok=True)
     prefix = f".{database_path.name}.restore-"
 
     with tempfile.TemporaryDirectory(prefix=prefix, dir=database_path.parent) as temp_dir:
         temp_root = Path(temp_dir)
-        is_zip = attachment.filename.lower().endswith(".zip")
+        is_zip = attachments[0].filename.lower().endswith(".zip")
         download_path = temp_root / ("download.zip" if is_zip else "download.db")
-        await attachment.save(str(download_path))
+        if len(attachments) == 1:
+            await attachments[0].save(str(download_path))
+        else:
+            part_dir = temp_root / "parts"
+            part_dir.mkdir()
+            with download_path.open("wb") as joined:
+                for n, part in enumerate(attachments, start=1):
+                    part_path = part_dir / f"part{n}"
+                    await part.save(str(part_path))
+                    with part_path.open("rb") as src:
+                        shutil.copyfileobj(src, joined)
+                    part_path.unlink()
         download_limit = (
             MAX_DATABASE_ARCHIVE_BYTES if is_zip else MAX_DATABASE_BACKUP_BYTES
         )
@@ -382,23 +403,42 @@ async def restore_database_if_missing(database_path="database.db", *, client_fac
         await temp_client.login(bot_token)
         archive_channel = await temp_client.fetch_channel(CHANNELS.DATA_BACKUP)
 
-        latest_backup = None
-        async for message in archive_channel.history(limit=100):
+        # Collect every part of the newest backup. History arrives newest-first and parts
+        # are sent in ascending order, so the newest timestamp is the first one seen and
+        # its parts arrive in reverse - hence gathering by timestamp, then sorting.
+        newest_ts = None
+        parts = {}
+        scanned = 0
+        async for message in archive_channel.history(limit=DB_RESTORE_SCAN_LIMIT):
+            scanned += 1
             for attachment in message.attachments:
-                filename = attachment.filename.lower()
-                if filename.startswith("database_backup_") and filename.endswith((".db", ".zip")):
-                    latest_backup = attachment
-                    break
-            if latest_backup:
+                key = _db_backup_part(attachment.filename)
+                if not key:
+                    continue
+                ts, part = key
+                if newest_ts is None:
+                    newest_ts = ts
+                if ts == newest_ts:
+                    parts.setdefault(part, attachment)
+            # Parts of one backup are sent back-to-back, so once a run of non-matching
+            # messages follows the newest set, everything for it has been seen.
+            if newest_ts is not None and parts and 1 in parts:
                 break
 
-        if latest_backup is None:
+        if not parts:
             raise DatabaseRecoveryError(
-                "No database backup was found in the last 100 data-backup messages."
+                f"No database backup was found in the last {scanned} data-backup messages."
             )
 
-        logger.info("Found latest database backup: %s", latest_backup.filename)
-        await _download_validate_and_promote_database(latest_backup, database_path)
+        ordered = [parts[n] for n in sorted(parts)]
+        if sorted(parts) != list(range(1, len(parts) + 1)):
+            raise DatabaseRecoveryError(
+                f"Database backup {newest_ts} is missing parts: found {sorted(parts)}."
+            )
+
+        logger.info("Found latest database backup: %s (%d part%s)",
+                    ordered[0].filename, len(ordered), "" if len(ordered) == 1 else "s")
+        await _download_validate_and_promote_database(ordered, database_path)
         logger.info("Validated and atomically restored %s.", database_path)
         return True
     except DatabaseRecoveryError:
@@ -751,22 +791,34 @@ async def restore_json_if_missing(base_path=".", *, client_factory=None):
         await temp_client.login(bot_token)
         archive_channel = await temp_client.fetch_channel(CHANNELS.DATA_BACKUP)
 
-        latest = None
+        newest_ts = None
+        parts = {}
         async for message in archive_channel.history(limit=200):
             for attachment in message.attachments:
-                filename = attachment.filename.lower()
-                if filename.startswith(JSON_BACKUP_PREFIX) and filename.endswith(".zip"):
-                    latest = attachment
-                    break
-            if latest:
+                key = _backup_part(attachment.filename, JSON_BACKUP_PREFIX, (".zip",))
+                if not key:
+                    continue
+                ts, part = key
+                if newest_ts is None:
+                    newest_ts = ts
+                if ts == newest_ts:
+                    parts.setdefault(part, attachment)
+            if newest_ts is not None and 1 in parts:
                 break
 
-        if not latest:
+        if not parts:
             raise JSONRecoveryError(
                 "No JSON backup was found in the last 200 data-backup messages."
             )
+        if sorted(parts) != list(range(1, len(parts) + 1)):
+            raise JSONRecoveryError(
+                f"JSON backup {newest_ts} is missing parts: found {sorted(parts)}."
+            )
 
-        logger.info(f"Found latest JSON backup: {latest.filename}")
+        ordered = [parts[n] for n in sorted(parts)]
+        latest = ordered[0]
+        logger.info("Found latest JSON backup: %s (%d part%s)",
+                    latest.filename, len(ordered), "" if len(ordered) == 1 else "s")
         with tempfile.TemporaryDirectory(prefix=".json.restore-", dir=base_path) as temp_dir:
             temp_root = Path(temp_dir)
             zip_path = temp_root / "download.zip"
@@ -775,7 +827,16 @@ async def restore_json_if_missing(base_path=".", *, client_factory=None):
             staging_root.mkdir()
             rollback_root.mkdir()
 
-            await latest.save(str(zip_path))
+            if len(ordered) == 1:
+                await latest.save(str(zip_path))
+            else:
+                with zip_path.open("wb") as joined:
+                    for n, part in enumerate(ordered, start=1):
+                        part_path = temp_root / f"part{n}"
+                        await part.save(str(part_path))
+                        with part_path.open("rb") as src:
+                            shutil.copyfileobj(src, joined)
+                        part_path.unlink()
             if zip_path.stat().st_size > MAX_JSON_ARCHIVE_BYTES:
                 raise JSONRecoveryError(
                     "Downloaded JSON backup exceeds the supported archive size limit."
@@ -829,15 +890,70 @@ async def backup_json_data(client):
         if size == 0:
             logger.info("JSON backup archive is empty; skipping upload.")
             return
-        if size > MAX_PART_SIZE:
-            logger.warning(f"JSON backup exceeds {MAX_PART_SIZE} bytes ({size}); upload may fail.")
-
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"{JSON_BACKUP_PREFIX}{timestamp}.zip"
-        await channel.send(file=discord.File(fp=zip_buffer, filename=filename))
-        logger.info(f"JSON backup sent to Discord: {filename} ({size} bytes).")
+        # Was a warning followed by an attempt to send it anyway, which Discord answered
+        # with a 413 every five minutes. Splitting means the size stops being a cliff.
+        n_parts = await _send_archive_in_parts(channel, zip_buffer, JSON_BACKUP_PREFIX, timestamp)
+        logger.info("JSON backup sent to Discord: %s%s (%s bytes, %d part%s).",
+                    JSON_BACKUP_PREFIX, timestamp, f"{size:,}", n_parts,
+                    "" if n_parts == 1 else "s")
     except Exception as e:
-        logger.error(f"Error during JSON backup: {e}")
+        logger.critical("JSON BACKUP FAILED - no usable JSON backup was written: %s", e,
+                        exc_info=True)
+        await _report_backup_failure(client, e, kind="JSON")
+
+
+async def _report_backup_failure(client, exc, kind: str = "Database") -> None:
+    """Say it somewhere a human will see. A failing backup that only ever reaches the log
+    is indistinguishable from a working one until the day it's needed - which is exactly
+    how three weeks of database backups went missing without anyone noticing."""
+    try:
+        channel = client.get_channel(CHANNELS.LOGS)
+        if channel:
+            await channel.send(
+                f"🚨 **{kind} backup failed** - `{type(exc).__name__}: {exc}`\n"
+                f"-# No usable {kind.lower()} backup was written. Left unfixed, a restore "
+                f"falls back to whichever older backup still exists."
+            )
+    except Exception:
+        logger.exception("Could not report the %s backup failure to Discord either.", kind.lower())
+
+
+def _backup_part(filename: str, prefix: str, suffixes=(".db", ".zip")):
+    """(timestamp, part number) for a backup attachment, or None if it isn't one.
+
+    Single-file backups are part 1 of 1, so both shapes reassemble through one path."""
+    name = filename.lower()
+    if not name.startswith(prefix) or not name.endswith(suffixes):
+        return None
+    stem = name[len(prefix):].rsplit(".", 1)[0]
+    match = re.match(r"^(.*?)(?:_part(\d+))?$", stem)
+    if not match:
+        return None
+    return match.group(1), int(match.group(2) or 1)
+
+
+def _db_backup_part(filename: str):
+    return _backup_part(filename, DB_BACKUP_PREFIX)
+
+
+async def _send_archive_in_parts(channel, zip_buffer, prefix: str, timestamp: str) -> int:
+    """Upload an archive, split across messages if it won't fit in one.
+
+    Discord rejects anything over its per-server upload cap with a 413, and both backups
+    grew into that wall - the database in July, the JSON archive by August. Parts are raw
+    byte ranges of one zip, so concatenating them in order rebuilds it exactly."""
+    zip_buffer.seek(0)
+    chunks = []
+    while chunk := zip_buffer.read(MAX_PART_SIZE):
+        chunks.append(chunk)
+
+    for n, chunk in enumerate(chunks, start=1):
+        suffix = f"_part{n}" if len(chunks) > 1 else ""
+        part = io.BytesIO(chunk)
+        part.seek(0)
+        await channel.send(file=discord.File(fp=part, filename=f"{prefix}{timestamp}{suffix}.zip"))
+    return len(chunks)
 
 
 async def backup_database(client):
@@ -862,12 +978,16 @@ async def backup_database(client):
         # Store it as 'database.db' so the restore path drops it straight into place.
         # The (slow) compression runs in a worker thread so it can't block the event loop.
         zip_buffer = await asyncio.to_thread(_zip_single_file_to_buffer, snapshot_path, 'database.db')
-        filename = f"database_backup_{timestamp}.zip"
-
-        await channel.send(file=discord.File(fp=zip_buffer, filename=filename))
-        logger.info("Consistent database snapshot backed up to Discord.")
+        size = zip_buffer.getbuffer().nbytes
+        n_parts = await _send_archive_in_parts(channel, zip_buffer, DB_BACKUP_PREFIX, timestamp)
+        logger.info("Consistent database snapshot backed up to Discord (%s bytes, %d part%s).",
+                    f"{size:,}", n_parts, "" if n_parts == 1 else "s")
     except Exception as e:
-        logger.error(f"Error during database backup to Discord: {e}")
+        # Loud, because a backup that quietly stops is worse than one that never ran -
+        # it looks healthy right up until the day you need it.
+        logger.critical("DATABASE BACKUP FAILED - no usable backup was written: %s", e,
+                        exc_info=True)
+        await _report_backup_failure(client, e)
     finally:
         if os.path.exists(snapshot_path):
             try:

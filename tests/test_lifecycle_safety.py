@@ -496,7 +496,10 @@ class DatabaseRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(restored)
             self.assertTrue(client.closed)
-            self.assertEqual(channel.requested_limit, 100)
+            # Tracks the constant rather than a literal: this used to pin 100, which is
+            # about eight hours of the channel's five-minute JSON backups, so a daily
+            # database backup was never inside the window that was searched.
+            self.assertEqual(channel.requested_limit, backup_manager.DB_RESTORE_SCAN_LIMIT)
             with sqlite3.connect(destination) as connection:
                 self.assertEqual(
                     connection.execute(
