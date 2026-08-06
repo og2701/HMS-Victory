@@ -20430,6 +20430,6221 @@
      "size": 6
     }
    ]
+  },
+  {
+   "from": "2026-08-07",
+   "size": 6,
+   "rewards": [
+    120,
+    90,
+    60,
+    35,
+    15
+   ],
+   "wrong_per_tier": 3,
+   "max_hints": 4,
+   "puzzles": [
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "BEE",
+       "clue": "It buzzes; or the spelling contest",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "CLAW",
+       "clue": "On the paw; or scrape your way back",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "PEACE",
+       "clue": "No war; or hold your piece of it",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "FLASH",
+       "clue": "Sudden light; or gone in one",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "EAST",
+       "clue": "Where the sun comes up",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "EYE",
+       "clue": "You see with it; or the needle's hole",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "BLAST",
+       "clue": "A loud bang; or a right laugh",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "EACH",
+       "clue": "Every one of them",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "EWE",
+       "clue": "She of the flock",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "CEASE",
+       "clue": "Bring it to a stop",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "PLAY",
+       "clue": "Fair; or what's on at the theatre",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "FEE",
+       "clue": "What you pay; or the charge for the work",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 1,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "BAY",
+       "clue": "Where the sea comes in; or a hound's cry",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "BLUE",
+       "clue": "The colour, and the mood",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "GRANT",
+       "clue": "Give it to them; or the money for study",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "SAINT",
+       "clue": "Patience of a ...",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "KICK",
+       "clue": "Off, or the bucket",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "INK",
+       "clue": "In the pen; or sign it",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "BLANK",
+       "clue": "Draw a ...",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "AUNT",
+       "clue": "Mum's sister; agony one",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "YET",
+       "clue": "Still, or nevertheless",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "BRICK",
+       "clue": "Thick as a ...; or a good sort",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "GAIN",
+       "clue": "No pain, no ...",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "SKI",
+       "clue": "Downhill on two planks",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 2,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "MET",
+       "clue": "Encountered; or London's force",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "BEAR",
+       "clue": "It grins and it grizzles; or put up with it",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "CARRY",
+       "clue": "... on regardless",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "BASIL",
+       "clue": "The herb, or Fawlty",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "UNIT",
+       "clue": "One of many; or the flat",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "DEN",
+       "clue": "Where the fox lives, or where you hide",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "MERIT",
+       "clue": "Worth on its own",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "EARL",
+       "clue": "Between viscount and marquess",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "TRY",
+       "clue": "Give it a go, or five points",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "BASIN",
+       "clue": "Wash in it; or the river's catchment",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "CANE",
+       "clue": "Walking stick, or sugar's source",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "BUD",
+       "clue": "Before the flower; or nip it there",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 3,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       2,
+       1
+      ],
+      [
+       3,
+       4
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "SOFA",
+       "clue": "Where the evening goes",
+       "cells": [
+        [
+         0,
+         2
+        ],
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "TRIP",
+       "clue": "Stumble, or a journey",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "RATE",
+       "clue": "The going one; or tell them off",
+       "cells": [
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "AKIN",
+       "clue": "Of the same sort",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 9,
+       "dir": "across",
+       "answer": "WING",
+       "clue": "Take under your ...",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 10,
+       "dir": "across",
+       "answer": "EDGE",
+       "clue": "On the ... of your seat",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ],
+        [
+         5,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "STRING",
+       "clue": "Tie it with this; or the section with the violins",
+       "cells": [
+        [
+         0,
+         2
+        ],
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "ORANGE",
+       "clue": "The fruit; or the colour of it",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ],
+        [
+         5,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "FIT",
+       "clue": "In good shape; or the seizure",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "APE",
+       "clue": "Copy, or the one you copy",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "down",
+       "answer": "AWE",
+       "clue": "Struck by it; or what the sight inspired",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "down",
+       "answer": "KID",
+       "clue": "The child; or you're pulling my leg",
+       "cells": [
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      }
+     ],
+     "id": 4,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "WHY",
+       "clue": "The question children never stop asking",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "SHOE",
+       "clue": "If the ... fits",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "CHEST",
+       "clue": "Get it off your ...",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "SHIRT",
+       "clue": "Keep your ... on",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "PINE",
+       "clue": "Tree, or yearn",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "APE",
+       "clue": "Copy, or the one you copy",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "WHERE",
+       "clue": "The question of place",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "HOST",
+       "clue": "The one who invites",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "YET",
+       "clue": "Still, or nevertheless",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "SHINE",
+       "clue": "Take a ... to",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "CHIP",
+       "clue": "On your shoulder, or off the old block",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "SPA",
+       "clue": "Where you go to be pummelled",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 5,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       1,
+       2
+      ],
+      [
+       4,
+       3
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "COT",
+       "clue": "The baby sleeps in it; or the camp bed",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "OAR",
+       "clue": "You row with it; or stick yours in",
+       "cells": [
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "ESTATE",
+       "clue": "Grand grounds; or a car",
+       "cells": [
+        [
+         2,
+         0
+        ],
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "CLOTHE",
+       "clue": "Dress them; or dress it up in words",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ],
+        [
+         3,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 9,
+       "dir": "across",
+       "answer": "HOW",
+       "clue": "The question of method",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 10,
+       "dir": "across",
+       "answer": "OWN",
+       "clue": "Belongs to you; or admit it",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "COAT",
+       "clue": "You wear it; or the layer of paint",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "OATH",
+       "clue": "Made at the altar",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "TREE",
+       "clue": "Barking up the wrong one",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ],
+        [
+         3,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "ECHO",
+       "clue": "It comes back; or repeat what they said",
+       "cells": [
+        [
+         2,
+         0
+        ],
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "SLOW",
+       "clue": "How a snail travels",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "down",
+       "answer": "TOWN",
+       "clue": "Go to ...",
+       "cells": [
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      }
+     ],
+     "id": 6,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "ROB",
+       "clue": "Take what isn't yours",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "BONE",
+       "clue": "Dry as a ...",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "GRACE",
+       "clue": "Elegance; or what's said before the meal",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "CEASE",
+       "clue": "Bring it to a stop",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "UNIT",
+       "clue": "One of many; or the flat",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "PEN",
+       "clue": "You write with it; or where the sheep go",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "ROAST",
+       "clue": "Sunday's dinner; or a merciless mocking",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "ONCE",
+       "clue": "... upon a time",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "BEE",
+       "clue": "It buzzes; or the spelling contest",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "BRAIN",
+       "clue": "Pick someone's ...",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "GENE",
+       "clue": "It runs in the family",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "CUP",
+       "clue": "What we won in '66; or your tea's home",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 7,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       3
+      ],
+      [
+       0,
+       4
+      ],
+      [
+       0,
+       5
+      ],
+      [
+       1,
+       5
+      ],
+      [
+       2,
+       5
+      ],
+      [
+       3,
+       0
+      ],
+      [
+       4,
+       0
+      ],
+      [
+       5,
+       0
+      ],
+      [
+       5,
+       1
+      ],
+      [
+       5,
+       2
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "ACT",
+       "clue": "What you do, or what you put on",
+       "cells": [
+        [
+         0,
+         0
+        ],
+        [
+         0,
+         1
+        ],
+        [
+         0,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "CLIFF",
+       "clue": "The sheer drop; or where the story hangs",
+       "cells": [
+        [
+         1,
+         0
+        ],
+        [
+         1,
+         1
+        ],
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "EAGLE",
+       "clue": "Bird of prey; or two under par",
+       "cells": [
+        [
+         2,
+         0
+        ],
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "SHORE",
+       "clue": "Where the sea ends; or prop it up",
+       "cells": [
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ],
+        [
+         3,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 10,
+       "dir": "across",
+       "answer": "STORY",
+       "clue": "The tale; or the floor of the building",
+       "cells": [
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ],
+        [
+         4,
+         4
+        ],
+        [
+         4,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 11,
+       "dir": "across",
+       "answer": "RYE",
+       "clue": "Grain, or a whisky",
+       "cells": [
+        [
+         5,
+         3
+        ],
+        [
+         5,
+         4
+        ],
+        [
+         5,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "ACE",
+       "clue": "Top of the pack, or a serve you can't return",
+       "cells": [
+        [
+         0,
+         0
+        ],
+        [
+         1,
+         0
+        ],
+        [
+         2,
+         0
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "CLASS",
+       "clue": "In a ... of its own",
+       "cells": [
+        [
+         0,
+         1
+        ],
+        [
+         1,
+         1
+        ],
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "TIGHT",
+       "clue": "Not loose; or mean with money",
+       "cells": [
+        [
+         0,
+         2
+        ],
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "FLOOR",
+       "clue": "Wipe the ... with someone",
+       "cells": [
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ],
+        [
+         5,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "FERRY",
+       "clue": "Boat across; or carry them to and fro",
+       "cells": [
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ],
+        [
+         4,
+         4
+        ],
+        [
+         5,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 9,
+       "dir": "down",
+       "answer": "EYE",
+       "clue": "You see with it; or the needle's hole",
+       "cells": [
+        [
+         3,
+         5
+        ],
+        [
+         4,
+         5
+        ],
+        [
+         5,
+         5
+        ]
+       ]
+      }
+     ],
+     "id": 8,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "APE",
+       "clue": "Copy, or the one you copy",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "SLOW",
+       "clue": "How a snail travels",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "STORE",
+       "clue": "In ... for you",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "STONE",
+       "clue": "The rock; or fourteen pounds",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "PACE",
+       "clue": "Speed; or measure it out in steps",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "ARK",
+       "clue": "Noah's boat; or the covenant's box",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "ALONE",
+       "clue": "Leave well ...",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "PORE",
+       "clue": "Skin's opening, or study closely",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "EWE",
+       "clue": "She of the flock",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "STOCK",
+       "clue": "What's on the shelves; or the soup base",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "STAR",
+       "clue": "In the sky; or top of the bill",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "SPA",
+       "clue": "Where you go to be pummelled",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 9,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "ALE",
+       "clue": "Real, if it's any good",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "SWAN",
+       "clue": "The white bird; or drift about grandly",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "STAND",
+       "clue": "Get to your feet; or where the crowd sits",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "STORE",
+       "clue": "In ... for you",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "KIND",
+       "clue": "Good-hearted; or the sort it is",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "IRE",
+       "clue": "Anger, in fewer letters",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "AWARD",
+       "clue": "The prize; or grant it to them",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "LANE",
+       "clue": "Country road, or one of the motorway's",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "END",
+       "clue": "The finish; or the aim in view",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "STONE",
+       "clue": "The rock; or fourteen pounds",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "STIR",
+       "clue": "Give it a ..., or cause trouble",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "SKI",
+       "clue": "Downhill on two planks",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 10,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "SEA",
+       "clue": "The salt water; or all at it",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "STAR",
+       "clue": "In the sky; or top of the bill",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "CHEST",
+       "clue": "Get it off your ...",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "FLOAT",
+       "clue": "Milkman's, or on the water",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "EARL",
+       "clue": "Between viscount and marquess",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "EYE",
+       "clue": "You see with it; or the needle's hole",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "STEAL",
+       "clue": "Take it; or the bargain it was",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "EAST",
+       "clue": "Where the sun comes up",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "ART",
+       "clue": "In the gallery; or the knack of it",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "SHORE",
+       "clue": "Where the sea ends; or prop it up",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "CLAY",
+       "clue": "Potter's material, or a tennis surface",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "FEE",
+       "clue": "What you pay; or the charge for the work",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 11,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "CAR",
+       "clue": "How most of us get about",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "BLUE",
+       "clue": "The colour, and the mood",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "TREND",
+       "clue": "The way things are going",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "SHIRT",
+       "clue": "Keep your ... on",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "PICK",
+       "clue": "Choose; or the miner's tool",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "ASK",
+       "clue": "Do this and you might receive",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "CLERK",
+       "clue": "The one behind the counter",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "AUNT",
+       "clue": "Mum's sister; agony one",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "RED",
+       "clue": "Stop, or in the ...",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "BRICK",
+       "clue": "Thick as a ...; or a good sort",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "THIS",
+       "clue": "... and that",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "SPA",
+       "clue": "Where you go to be pummelled",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 12,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "SKI",
+       "clue": "Downhill on two planks",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "STIR",
+       "clue": "Give it a ..., or cause trouble",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "SPICE",
+       "clue": "Variety is the ... of life",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "STOCK",
+       "clue": "What's on the shelves; or the soup base",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "PARK",
+       "clue": "The green space; or leave the car",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "ART",
+       "clue": "In the gallery; or the knack of it",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "STICK",
+       "clue": "The branch; or the rough end of it",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "KICK",
+       "clue": "Off, or the bucket",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "IRE",
+       "clue": "Anger, in fewer letters",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "SPORT",
+       "clue": "The game; or a good one, that person",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "STAR",
+       "clue": "In the sky; or top of the bill",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "SPA",
+       "clue": "Where you go to be pummelled",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 13,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "BAG",
+       "clue": "Grab it; or what you carry it in",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "BLUE",
+       "clue": "The colour, and the mood",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "GRANT",
+       "clue": "Give it to them; or the money for study",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "BEAST",
+       "clue": "The animal; or the burden of one",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "UNIT",
+       "clue": "One of many; or the flat",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "DEN",
+       "clue": "Where the fox lives, or where you hide",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "BLAST",
+       "clue": "A loud bang; or a right laugh",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "AUNT",
+       "clue": "Mum's sister; agony one",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "GET",
+       "clue": "Obtain, or finally understand",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "BRAIN",
+       "clue": "Pick someone's ...",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "GENE",
+       "clue": "It runs in the family",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "BUD",
+       "clue": "Before the flower; or nip it there",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 14,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "DRY",
+       "clue": "No rain, or no drink",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "FREE",
+       "clue": "Costs nothing; or let them out",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "FEAST",
+       "clue": "The banquet; or what your eyes do",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "MERIT",
+       "clue": "Worth on its own",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "EARN",
+       "clue": "Work for it; or deserve it",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "TRY",
+       "clue": "Give it a go, or five points",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "DRAIN",
+       "clue": "Down the ...",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "REST",
+       "clue": "Take a break; or all the others",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "YET",
+       "clue": "Still, or nevertheless",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "FERRY",
+       "clue": "Boat across; or carry them to and fro",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "FEAR",
+       "clue": "Nothing to ... but ... itself",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "MET",
+       "clue": "Encountered; or London's force",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 15,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "ACE",
+       "clue": "Top of the pack, or a serve you can't return",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "PLAY",
+       "clue": "Fair; or what's on at the theatre",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "SHORE",
+       "clue": "Where the sea ends; or prop it up",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "ALONE",
+       "clue": "Leave well ...",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "LONG",
+       "clue": "Not short, or yearn for",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "EWE",
+       "clue": "She of the flock",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "ALONG",
+       "clue": "Come ... quietly",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "CARE",
+       "clue": "Look after; or give one, as you don't",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "EYE",
+       "clue": "You see with it; or the needle's hole",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "PHONE",
+       "clue": "Give me a ...",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "SLOW",
+       "clue": "How a snail travels",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "ALE",
+       "clue": "Real, if it's any good",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 16,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "FEE",
+       "clue": "What you pay; or the charge for the work",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "TRAY",
+       "clue": "Carry the tea on it",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "CHASE",
+       "clue": "Cut to the ...",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "SHINE",
+       "clue": "Take a ... to",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "KICK",
+       "clue": "Off, or the bucket",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "INK",
+       "clue": "In the pen; or sign it",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "FRANK",
+       "clue": "Honest; or the sausage",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "EASE",
+       "clue": "At your ...",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "EYE",
+       "clue": "You see with it; or the needle's hole",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "THICK",
+       "clue": "Through ... and thin",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "CHIN",
+       "clue": "Take it on the ...",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "SKI",
+       "clue": "Downhill on two planks",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 17,
+     "size": 6
+    },
+    {
+     "black": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       5
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       5
+      ],
+      [
+       5,
+       3
+      ],
+      [
+       5,
+       4
+      ],
+      [
+       5,
+       5
+      ]
+     ],
+     "entries": [
+      {
+       "num": 1,
+       "dir": "across",
+       "answer": "ALE",
+       "clue": "Real, if it's any good",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         0,
+         4
+        ],
+        [
+         0,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "across",
+       "answer": "BLOW",
+       "clue": "A hard knock, or what the wind does",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         1,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "across",
+       "answer": "CLOSE",
+       "clue": "A ... shave",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "across",
+       "answer": "SHINE",
+       "clue": "Take a ... to",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 7,
+       "dir": "across",
+       "answer": "PINE",
+       "clue": "Tree, or yearn",
+       "cells": [
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 8,
+       "dir": "across",
+       "answer": "AND",
+       "clue": "The word that joins",
+       "cells": [
+        [
+         5,
+         0
+        ],
+        [
+         5,
+         1
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 1,
+       "dir": "down",
+       "answer": "ALONE",
+       "clue": "Leave well ...",
+       "cells": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         3
+        ],
+        [
+         2,
+         3
+        ],
+        [
+         3,
+         3
+        ],
+        [
+         4,
+         3
+        ]
+       ]
+      },
+      {
+       "num": 2,
+       "dir": "down",
+       "answer": "LOSE",
+       "clue": "Face, or your keys",
+       "cells": [
+        [
+         0,
+         4
+        ],
+        [
+         1,
+         4
+        ],
+        [
+         2,
+         4
+        ],
+        [
+         3,
+         4
+        ]
+       ]
+      },
+      {
+       "num": 3,
+       "dir": "down",
+       "answer": "EWE",
+       "clue": "She of the flock",
+       "cells": [
+        [
+         0,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         2,
+         5
+        ]
+       ]
+      },
+      {
+       "num": 4,
+       "dir": "down",
+       "answer": "BLIND",
+       "clue": "Turn a ... eye",
+       "cells": [
+        [
+         1,
+         2
+        ],
+        [
+         2,
+         2
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         2
+        ],
+        [
+         5,
+         2
+        ]
+       ]
+      },
+      {
+       "num": 5,
+       "dir": "down",
+       "answer": "CHIN",
+       "clue": "Take it on the ...",
+       "cells": [
+        [
+         2,
+         1
+        ],
+        [
+         3,
+         1
+        ],
+        [
+         4,
+         1
+        ],
+        [
+         5,
+         1
+        ]
+       ]
+      },
+      {
+       "num": 6,
+       "dir": "down",
+       "answer": "SPA",
+       "clue": "Where you go to be pummelled",
+       "cells": [
+        [
+         3,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         5,
+         0
+        ]
+       ]
+      }
+     ],
+     "id": 18,
+     "size": 6
+    }
+   ]
   }
  ]
 }
