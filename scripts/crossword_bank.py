@@ -1157,20 +1157,26 @@ def _is_indirect(clue: str) -> bool:
     So, per type:
       - Double definition (";" or " or ") is the good stuff - two readings to reconcile -
         and needs only enough words to state both, e.g. "Safe; or fasten".
-      - Anything else - a fill-in-the-blank or a plain description - carries no second
-        reading, so it has to say enough to be worth solving.
+      - A clue with no wordplay at all has to say more, since nothing else is doing the
+        work.
 
-    The thresholds are not free to pick: the bar and the grid search are coupled, because
-    the bar decides what the fill can draw on. Measured against the 6x6 layouts, a bank of
-    ~1170 words builds fine and ~1074 cannot build a single grid - and the generator's only
-    symptom is finishing with nothing to show for it. Anything stricter than this wants
-    re-measuring, and HARD_ALL below exists so that can be done against the real pool.
+    The thresholds are measured, not chosen, and the thing to measure is how many DISTINCT
+    puzzles a bank yields - not whether one grid fills. The generator bans the last few
+    puzzles' words to keep sets varied, so a bank that fills one grid easily can still be
+    unable to fill a second, and the difference between those two numbers is a cliff:
+
+        bank 1398 (previous bar) -> 10 puzzles / 120s
+        bank 1313 (this bar)     ->  8 puzzles / 120s
+        bank 1170                ->  1 puzzle  / 120s
+
+    So this is close to the floor. Tightening further needs a deeper clue bank first, not
+    a smaller threshold - HARD_ALL below is the full candidate pool to grow.
     """
     c = (clue or "").strip()
     if not c:
         return False
     words = len(c.split())
-    if ";" in c or " or " in c:
+    if any(m in c for m in ("...", " or ", ";", "?", "!")):
         return words >= 3
     return words >= 4
 
