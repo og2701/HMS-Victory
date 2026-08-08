@@ -617,7 +617,7 @@ class AnswerModal(discord.ui.Modal, title="HMS Crossword"):
             reward = reward_for(p, self.date)
             # discretionary: this is a reward the server chooses to give, so it scales
             # down when bank reserves are low
-            if add_bb(self.user_id, reward, reason="HMS Crossword solve", discretionary=True):
+            if add_bb(self.user_id, reward, reason="HMS Crossword solve", taxable=False, discretionary=True):
                 p["rewarded"] = True
                 _save_player(self.date.isoformat(), self.user_id, p)
                 try:
