@@ -574,6 +574,56 @@ class USERS:
 
 BOT_ID = USERS.HMS_VICTORY
 
+# ---------------------------------------------------------------------------
+# Anti-alt / anti-farm / anti-laundering detection (lib/core/detection.py)
+#
+# Every threshold is here rather than in the detectors, because these are the numbers that
+# actually need tuning once real traffic hits them - and the cost of getting one wrong is
+# asymmetric. Too tight floods the review channel until nobody reads it, which is the same
+# as having no detection; too loose is quietly useless. Start conservative and tighten
+# against observed false positives.
+# ---------------------------------------------------------------------------
+DETECTION_ENABLED = True
+DETECTION_ALERT_CHANNEL = CHANNELS.BOT_WORKSHOP
+DETECTION_ALERT_PING = USERS.OGGERS
+DETECTION_ALERT_COOLDOWN = 6 * 3600                # per user per kind, in seconds
+
+# Module A - Wordle. The floor is reading time, not typing time: the grid has to be read
+# before a guess can be meaningful, and a correct first guess inside a few seconds means the
+# answer arrived from outside the game.
+WORDLE_MIN_SOLVE_SECONDS = 3.5
+WORDLE_ONE_GUESS_WINDOW_DAYS = 14
+WORDLE_ONE_GUESS_MAX = 2                           # first-try solves allowed in that window
+WORDLE_DUMMY_GUESS_SECONDS = 4.0                   # gap between a throwaway and the answer
+
+# Module B - Crossword. Twelve clues cannot be read, understood and typed inside a minute,
+# so a clean sub-minute grid is the signal; hints or wrong answers exempt it, since a real
+# solve that fast would have neither.
+CROSSWORD_MIN_SOLVE_SECONDS = 60
+CROSSWORD_SEQUENCE_MATCH_WINDOW = 30 * 60          # two solvers this close, same order
+CROSSWORD_SEQUENCE_MIN_ENTRIES = 8                 # shorter orders coincide by chance
+
+# Module C - lockstep daily activity. One pairing is coincidence; the rule is repetition
+# across separate days, so a shared household or a habit at the same hour does not qualify.
+ALT_CO_OCCURRENCE_SECONDS = 120
+ALT_CO_OCCURRENCE_MIN_DAYS = 3
+ALT_CO_OCCURRENCE_WINDOW_DAYS = 14
+
+# Module D - wager washing. Losing is normal; losing almost everything to the same person
+# repeatedly is a transfer wearing a game as a disguise.
+WASH_MIN_GAMES = 5
+WASH_LOSS_RATIO = 0.8
+WASH_WINDOW_DAYS = 14
+RECYCLE_SECONDS = 300                              # received, then moved straight back out
+RECYCLE_MIN_FRACTION = 0.7
+
+# Module E - funnelling. Each transfer can sit under the audit cap and the pattern still be
+# obvious once you count senders rather than amounts.
+FUNNEL_WINDOW_HOURS = 72
+FUNNEL_MIN_SENDERS = 3
+FUNNEL_NEW_ACCOUNT_DAYS = 30                       # what counts as low-tenure
+
+
 # --- Mute Notifications ---
 # Users DM'd whenever a member is muted (shut, bedtime, native timeout, Wick, etc.)
 MUTE_NOTIFY_USER_IDS = [USERS.OGGERS, USERS.HADIDAS]

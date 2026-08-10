@@ -22,6 +22,7 @@ and the ephemeral being dismissed - just run /crossword again to resume today's 
 
 import datetime
 import logging
+import time
 
 import discord
 import pytz
@@ -108,7 +109,11 @@ def _key(entry) -> str:
 
 # --- state ----------------------------------------------------------------------
 def _blank():
-    return {"solved": [], "revealed": [], "wrong": 0, "done": False, "rewarded": False}
+    # order/opened_at/finished_at feed the anti-cheat checks (lib/core/detection_rules.py):
+    # `order` is the sequence entries were solved in, which is close to a fingerprint - two
+    # accounts producing the same one minutes apart are reading from the same place.
+    return {"solved": [], "revealed": [], "wrong": 0, "done": False, "rewarded": False,
+            "order": [], "opened_at": None, "finished_at": None}
 
 
 def _load_state():
@@ -202,6 +207,53 @@ def reward_for(p, d=None) -> int:
 
 
 # --- play -----------------------------------------------------------------------
+def _note_opened(uid, date_str) -> None:
+    """Stamp when the grid was first opened, so a completion can be timed against it.
+
+    First open only: reopening to re-read the clues would otherwise restart the clock and
+    make the sub-minute check trivially avoidable."""
+    p = _player(date_str, uid)
+    if not p.get("opened_at"):
+        p["opened_at"] = int(time.time())
+        _save_player(date_str, uid, p)
+
+
+def _note_daily(interaction, name: str) -> None:
+    """Feed the lockstep-alt detector. Never allowed to interrupt opening a puzzle."""
+    try:
+        from lib.core import detection as D
+        D.note_daily_command(interaction.user.id, name, client=interaction.client)
+    except Exception:
+        log.debug("daily co-occurrence note failed", exc_info=True)
+
+
+def _run_solve_checks(interaction, uid: int, player: dict, puzzle: dict, reward: int) -> None:
+    """Hand the finished grid to the detectors. Wrapped whole - a detector must never cost
+    somebody a solve they earned."""
+    try:
+        from lib.core import detection as D, detection_rules as R
+
+        date_str = _today().isoformat()
+        order = list(player.get("order") or [])
+        hints = len(player.get("revealed") or [])
+        wrong = int(player.get("wrong", 0))
+
+        for kind, triggers in R.crossword_solve_findings(
+                player.get("opened_at"), player.get("finished_at"),
+                hints, wrong, order, len(puzzle["entries"])):
+            D.flag(interaction.client, kind, uid, triggers,
+                   context=f"HMS Crossword {date_str} · payout {reward:,} UKP", amount=reward)
+
+        match_id, triggers = R.crossword_sequence_findings(uid, order)
+        if match_id:
+            D.flag(interaction.client, D.CROSSWORD_SEQUENCE_COPY, [uid, match_id], triggers,
+                   context=f"HMS Crossword {date_str}", amount=reward)
+        # Recorded after the comparison, so a solve is never matched against itself.
+        D.record_event(uid, D.CROSSWORD_SEQUENCE_COPY, {"order": order, "date": date_str})
+    except Exception:
+        log.exception("crossword detection checks failed for %s", uid)
+
+
 def submit(uid, date_str, puzzle, entry_key: str, guess: str):
     """(status, message, player). status: ok | wrong | invalid | already | done."""
     entry = next((e for e in puzzle["entries"] if _key(e) == entry_key), None)
@@ -223,9 +275,13 @@ def submit(uid, date_str, puzzle, entry_key: str, guess: str):
         return "wrong", f"**{clean}** isn't it. Try again.", p
 
     p["solved"] = sorted(set(p["solved"] + [entry_key]))
+    # Only what the player actually typed goes in the order - entries the crossings filled
+    # in for them were not a choice, so including them would blur the fingerprint.
+    p.setdefault("order", []).append(entry_key)
     free = _cascade(puzzle, p)          # crossings may have filled others in for you
     if _is_complete(puzzle, p):
         p["done"] = True
+        p["finished_at"] = int(time.time())
     _save_player(date_str, uid, p)
     msg = None
     if free:
@@ -629,6 +685,7 @@ class AnswerModal(discord.ui.Modal, title="HMS Crossword"):
             return
         if status == "ok" and p["done"] and not p["rewarded"]:
             reward = reward_for(p, self.date)
+            _run_solve_checks(interaction, self.user_id, p, puzzle, reward)
             # discretionary: this is a reward the server chooses to give, so it scales
             # down when bank reserves are low
             if add_bb(self.user_id, reward, reason="HMS Crossword solve", taxable=False, discretionary=True):
@@ -782,6 +839,8 @@ async def handle_crossword_command(interaction: discord.Interaction):
             "The crossword isn't set up yet - no puzzles are loaded.", ephemeral=True)
         return
     date = _today()
+    _note_opened(interaction.user.id, date.isoformat())
+    _note_daily(interaction, "crossword")
     await interaction.response.defer(ephemeral=True, thinking=True)
     # Straight through _refresh, so opening the board takes exactly the same hosted-image
     # path as every redraw after it. This used to attach the PNG directly, which is why

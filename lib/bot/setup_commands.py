@@ -455,7 +455,7 @@ def define_commands(tree, client):
             if is_suspicious:
                 workshop_channel = interaction.client.get_channel(1141037835445616640)
                 if workshop_channel:
-                    from discord import Embed, ButtonStyle
+                    from discord import ButtonStyle
                     from discord.ui import View, button
 
                     class PayReviewView(View):

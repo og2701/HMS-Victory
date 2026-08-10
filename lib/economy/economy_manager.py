@@ -459,6 +459,17 @@ def record_game_transfer(loser_id, winner_id, amount) -> None:
             (int(time.time()), str(loser_id), str(winner_id), amount))
     except Exception:
         pass
+    # Losing on purpose is a way to move UKP without the /pay cap or its tax, so the pair's
+    # record gets checked once the row is in. Separately guarded: a detector fault must not
+    # roll back a game result that already paid out.
+    try:
+        from lib.core import detection as D, detection_rules as R
+        findings = R.wager_wash_findings(loser_id, winner_id)
+        if findings:
+            D.flag(None, D.WAGER_WASHING, [loser_id, winner_id], findings,
+                   context="PvP / wager flow", amount=amount, funder_id=loser_id)
+    except Exception:
+        pass
 
 
 def effective_wealth(user_id, balance: int = None, days: int = None) -> int:

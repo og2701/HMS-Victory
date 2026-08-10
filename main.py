@@ -151,6 +151,15 @@ class AClient(discord.Client):
         logger.info("Persistent prediction views registered in setup_hook.")
 
     async def on_ready(self):
+        # Registered before anything else can trip a detector. The money rules hang off
+        # economy_manager, which has no route to a client of its own, so without this an
+        # alert raised during startup would be dropped rather than posted.
+        try:
+            from lib.core import detection
+            detection.set_client(self)
+        except Exception:
+            logger.exception("could not register the detection client")
+
         ready_initialised = await on_ready(self, tree, self.scheduler)
         if not ready_initialised:
             return

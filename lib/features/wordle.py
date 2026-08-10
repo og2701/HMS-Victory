@@ -12,6 +12,7 @@ ephemeral being dismissed (just run /wordle again to resume today's board).
 import datetime
 import logging
 import random as _random
+import time
 
 import discord
 import pytz
@@ -86,6 +87,20 @@ def _day_players(state, date_str):
     return state.setdefault("players", {})
 
 
+def _note_opened(uid, date_str) -> None:
+    """Stamp when the board was first shown, so a solve can be measured against it.
+
+    Only the FIRST open counts - reopening the board to look again would otherwise reset the
+    clock and hand an easy way around the timing checks."""
+    state = _load_state()
+    players = _day_players(state, date_str)
+    p = players.setdefault(str(uid), {"guesses": [], "solved": False, "done": False,
+                                      "rewarded": False})
+    if not p.get("opened_at"):
+        p["opened_at"] = int(time.time())
+        save_json_file(config.WORDLE_STATE_FILE, state)
+
+
 def _player(date_str, uid):
     players = _day_players(_load_state(), date_str)
     return players.get(str(uid), {"guesses": [], "solved": False, "done": False, "rewarded": False})
@@ -106,6 +121,9 @@ def _submit_guess(uid, date_str, word, guess):
     if guess in p["guesses"]:
         return "invalid", "You've already tried that word.", None
     p["guesses"].append(guess)
+    # Stamped per guess, not only at the end: the gap BETWEEN guesses is what separates
+    # someone thinking from someone typing an answer they already had.
+    p.setdefault("guess_times", []).append(int(time.time()))
     if guess == word:
         p["solved"] = True
         p["done"] = True
@@ -287,6 +305,43 @@ async def render_board(uid, date):
 
 
 # --- UI ------------------------------------------------------------------------
+def _note_daily(interaction, name: str) -> None:
+    """Feed the lockstep-alt detector. Never allowed to interrupt opening a puzzle."""
+    try:
+        from lib.core import detection as D
+        D.note_daily_command(interaction.user.id, name, client=interaction.client)
+    except Exception:
+        log.debug("daily co-occurrence note failed", exc_info=True)
+
+
+def _run_solve_checks(interaction, uid: int, player: dict, guess_count: int, reward: int) -> None:
+    """Hand the finished game to the detectors.
+
+    Wrapped whole in a try: this runs on the path that pays the player out, and a detector
+    raising must never cost someone a solve they earned."""
+    try:
+        from lib.core import detection as D, detection_rules as R
+
+        date_str = _today().isoformat()
+        if guess_count == 1:
+            # Recorded on every first-try solve, not just suspicious ones - the rolling rule
+            # counts them over a fortnight and cannot look backwards for what wasn't kept.
+            D.record_event(uid, D.WORDLE_ONE_GUESS_STREAK, {"date": date_str})
+
+        for kind, triggers in R.wordle_solve_findings(
+                player.get("guess_times", []), player.get("opened_at"), player.get("solved")):
+            D.flag(interaction.client, kind, uid, triggers,
+                   context=f"HMS Wordle {date_str} · solved in {guess_count} · payout {reward:,} UKP",
+                   amount=reward)
+
+        rate = R.wordle_one_guess_rate(uid)
+        if rate:
+            D.flag(interaction.client, D.WORDLE_ONE_GUESS_STREAK, uid, rate,
+                   context=f"HMS Wordle {date_str}", amount=reward)
+    except Exception:
+        log.exception("wordle detection checks failed for %s", uid)
+
+
 class WordleModal(discord.ui.Modal, title="HMS Wordle"):
     guess = discord.ui.TextInput(label="Your guess", placeholder="a five-letter word",
                                  min_length=5, max_length=5)
@@ -317,6 +372,8 @@ class WordleModal(discord.ui.Modal, title="HMS Wordle"):
 
             # discretionary: a puzzle prize is a reward the server chooses to give, so it
             # scales with bank reserves like every other one (see reserve_policy.py)
+            _run_solve_checks(interaction, int(self.user_id), p, guess_count, reward)
+
             if add_bb(int(self.user_id), reward, reason="HMS Wordle solve", taxable=False, discretionary=True):
                 _mark_rewarded(self.user_id, self.date.isoformat())
                 try:
@@ -405,6 +462,8 @@ async def handle_wordle_command(interaction: discord.Interaction):
             "HMS Wordle's word list isn't loaded right now, try again later.", ephemeral=True)
         return
     date = _today()
+    _note_opened(interaction.user.id, date.isoformat())
+    _note_daily(interaction, "wordle")
     await interaction.response.defer(ephemeral=True, thinking=True)
     content, embed, files, done = await _board_payload(
         interaction.client, interaction.user.id, date)

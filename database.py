@@ -217,6 +217,26 @@ class DatabaseManager:
         _mark_balance_point_committed(src_history)
         _mark_balance_point_committed(dst_history)
 
+        # Anti-laundering, once the transfer is committed and outside the transaction: a
+        # detector must never hold a write lock, and must never be able to fail a payment
+        # that already went through. Both rules read the row just written, so this cannot
+        # run any earlier.
+        if record_pay_transfer:
+            try:
+                from lib.core import detection as D, detection_rules as R
+                recycled = R.recycle_findings(dst_id, amount, now)
+                if recycled:
+                    D.flag(None, D.RAPID_RECYCLING, dst_id, recycled,
+                           context="funds received then passed straight on",
+                           amount=amount, funder_id=src_id)
+                funnelled = R.funnel_findings(dst_id)
+                if funnelled:
+                    D.flag(None, D.FUNNEL_POOLING, dst_id, funnelled,
+                           context="multiple low-tenure senders into one account",
+                           amount=amount)
+            except Exception:
+                pass
+
         from config import BOT_ID
         if new_dst_balance >= 30000 and old_dst_balance < 30000 and str(dst_id) != str(BOT_ID):
             try:
@@ -598,6 +618,50 @@ def init_db():
                 message_id TEXT NOT NULL,
                 target     TEXT NOT NULL,
                 PRIMARY KEY (message_id, target)
+            )
+        ''')
+        # Anti-alt / anti-farm / anti-laundering detection (see lib/core/detection.py).
+        #
+        # Every observation lands here, not only the ones that tripped a rule: nearly every
+        # detector asks "how many of these within N days", which cannot be answered later
+        # from the breaches alone. meta is per-detector JSON, deliberately unstructured so a
+        # new rule does not need a migration to record what it saw.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS detection_events (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts      INTEGER NOT NULL,
+                user_id TEXT NOT NULL,
+                kind    TEXT NOT NULL,
+                meta    TEXT
+            )
+        ''')
+        # (kind, ts) leads because the cross-account rules scan a whole window for one kind
+        # across every user, which is the one query shape the per-user index cannot serve.
+        c.execute('CREATE INDEX IF NOT EXISTS idx_detection_user_kind '
+                  'ON detection_events(user_id, kind, ts)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_detection_kind_ts '
+                  'ON detection_events(kind, ts)')
+        # What has already been reported, so one determined cheat produces one alert rather
+        # than one per action - an unreadable review channel is the same as no alerts.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS detection_alerts (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts      INTEGER NOT NULL,
+                user_id TEXT NOT NULL,
+                kind    TEXT NOT NULL
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_detection_alerts '
+                  'ON detection_alerts(user_id, kind, ts)')
+        # Reviewer decisions that outlive the alert message.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS detection_flags (
+                user_id TEXT NOT NULL,
+                flag    TEXT NOT NULL,
+                ts      INTEGER NOT NULL,
+                by_id   TEXT,
+                note    TEXT,
+                PRIMARY KEY (user_id, flag)
             )
         ''')
         # One row per finished Connect 4 match (kept separate from casino_results so PvP
