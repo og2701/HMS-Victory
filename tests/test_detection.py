@@ -180,3 +180,30 @@ def test_flag_without_a_registered_client_is_dropped_not_raised(monkeypatch):
     monkeypatch.setattr(config, "DETECTION_ENABLED", True, raising=False)
     monkeypatch.setattr(D, "_client", None)
     D.flag(None, D.WAGER_WASHING, 1, {"x": 1})               # must not raise
+
+
+def test_a_restricted_account_reads_back_as_flagged(monkeypatch):
+    """The Flag button has to do more than record an opinion - /pay reads this."""
+    store = {}
+    monkeypatch.setattr(D.DatabaseManager, "execute",
+                        staticmethod(lambda q, p=(): store.update({p[0]: p[1]})
+                                     if "INSERT INTO detection_flags" in q else None))
+    monkeypatch.setattr(D.DatabaseManager, "fetch_one",
+                        staticmethod(lambda q, p=(): (1,) if store.get(p[0]) == p[1] else None))
+    assert not D.is_flagged("777")
+    D.set_flag("777", "flagged_alt", by_id="1", note="test")
+    assert D.is_flagged("777")
+
+
+def test_the_funnel_rule_is_not_run_where_ages_cannot_be_resolved():
+    """Regression guard. It used to run inside the transfer, which has no route to a guild
+    member - so every sender counted as low-tenure and anyone paid by three people tripped
+    it. It belongs at the /pay handler, which can resolve ages."""
+    import pathlib
+    db = pathlib.Path(__file__).resolve().parent.parent / "database.py"
+    assert "funnel_findings" not in db.read_text()
+
+    cmds = pathlib.Path(__file__).resolve().parent.parent / "lib/bot/setup_commands.py"
+    body = cmds.read_text()
+    assert "funnel_findings" in body and "member_ages=ages" in body
+    assert "await _check_funnel()" in body      # defined AND called

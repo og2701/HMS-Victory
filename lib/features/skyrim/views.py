@@ -3056,6 +3056,11 @@ async def _hub_help(interaction: Interaction):
 # Command entry + restart recovery
 # ---------------------------------------------------------------------------
 async def handle_skyrim_command(interaction: Interaction):
+    try:
+        from lib.core import detection as _D
+        _D.note_daily_command(interaction.user.id, "skyrim", client=interaction.client)
+    except Exception:
+        pass
     if not getattr(config, "SKYRIM_ENABLED", True):
         await interaction.response.send_message(
             "The roads to Skyrim are closed for now.", ephemeral=True)

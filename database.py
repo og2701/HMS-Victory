@@ -219,8 +219,14 @@ class DatabaseManager:
 
         # Anti-laundering, once the transfer is committed and outside the transaction: a
         # detector must never hold a write lock, and must never be able to fail a payment
-        # that already went through. Both rules read the row just written, so this cannot
-        # run any earlier.
+        # that already went through. It reads the row just written, so it cannot run any
+        # earlier.
+        #
+        # Only recycling is checked here. The funnel rule needs to know how old each sender's
+        # account is, and there is no route to a guild member from this layer - running it
+        # with ages unknown would count every sender as low-tenure and flag anyone popular
+        # enough to be paid by three people. It runs from the /pay handler instead, which
+        # has the members to hand.
         if record_pay_transfer:
             try:
                 from lib.core import detection as D, detection_rules as R
@@ -229,11 +235,6 @@ class DatabaseManager:
                     D.flag(None, D.RAPID_RECYCLING, dst_id, recycled,
                            context="funds received then passed straight on",
                            amount=amount, funder_id=src_id)
-                funnelled = R.funnel_findings(dst_id)
-                if funnelled:
-                    D.flag(None, D.FUNNEL_POOLING, dst_id, funnelled,
-                           context="multiple low-tenure senders into one account",
-                           amount=amount)
             except Exception:
                 pass
 

@@ -1,4 +1,5 @@
 import json
+import logging
 import discord
 from discord import app_commands, Interaction, Member, TextChannel, Embed
 from datetime import datetime, timedelta
@@ -435,6 +436,40 @@ def define_commands(tree, client):
         if recipient.id == interaction.user.id:
             return await interaction.response.send_message("You cannot pay yourself.", ephemeral=True)
 
+        try:
+            from lib.core import detection as _D
+            _D.note_daily_command(interaction.user.id, "pay", client=interaction.client)
+            if _D.is_flagged(interaction.user.id):
+                return await interaction.response.send_message(
+                    "Your account is under review and can't send UKPence right now. "
+                    "Speak to a member of staff.", ephemeral=True)
+        except Exception:
+            pass
+
+        # The funnel check lives here rather than in the transfer itself, because it needs
+        # each sender's account age and this is the layer that can resolve a member. Run
+        # after the payment so a detector can never block one, and only for user-to-user
+        # transfers - paying the bot is not a network.
+        async def _check_funnel():
+            try:
+                from lib.core import detection as _D, detection_rules as _R
+                from datetime import datetime as _dt
+                import pytz as _pytz
+                now_utc = _dt.now(_pytz.utc)
+                ages = {}
+                for member in (interaction.guild.members if interaction.guild else []):
+                    created = getattr(member, "created_at", None)
+                    if created:
+                        ages[str(member.id)] = (now_utc - created).days
+                found = _R.funnel_findings(recipient.id, member_ages=ages)
+                if found:
+                    _D.flag(interaction.client, _D.FUNNEL_POOLING, recipient.id, found,
+                            context="multiple low-tenure senders into one account",
+                            amount=amount)
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "funnel check failed for %s", recipient.id)
+
         # Check tenure & rapid badge farming (Alt Anti-Farm Guard)
         if recipient.id != interaction.client.user.id:
             joined_at = getattr(interaction.user, "joined_at", None)
@@ -578,6 +613,7 @@ def define_commands(tree, client):
                 record_pay_transfer=True,
             ):
                 return await interaction.response.send_message("Insufficient UKPence.", ephemeral=True)
+            await _check_funnel()
         embed = Embed(
             title="UKPence Transfer",
             description=f"{interaction.user.mention} paid **{amount:,}** UKPence to {recipient.mention}",
