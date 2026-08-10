@@ -435,6 +435,94 @@ def define_commands(tree, client):
         if recipient.id == interaction.user.id:
             return await interaction.response.send_message("You cannot pay yourself.", ephemeral=True)
 
+        # Check tenure & rapid badge farming (Alt Anti-Farm Guard)
+        if recipient.id != interaction.client.user.id:
+            joined_at = getattr(interaction.user, "joined_at", None)
+            created_at = getattr(interaction.user, "created_at", None)
+            now_utc = datetime.now(pytz.utc)
+            
+            joined_hours = (now_utc - joined_at).total_seconds() / 3600.0 if joined_at else 999.0
+            created_days = (now_utc - created_at).total_seconds() / 86400.0 if created_at else 999.0
+
+            from database import DatabaseManager
+            badge_cnt_row = DatabaseManager.fetch_one(
+                "SELECT COUNT(*) FROM user_badges WHERE user_id = ?", (str(interaction.user.id),)
+            )
+            badge_cnt = badge_cnt_row[0] if badge_cnt_row else 0
+
+            # Flag if joined server < 48 hours ago OR created < 14 days ago AND amount >= 100 or earned 3+ badges
+            is_suspicious = (joined_hours < 48.0 or created_days < 14.0) and (amount >= 100 or badge_cnt >= 3)
+            if is_suspicious:
+                workshop_channel = interaction.client.get_channel(1141037835445616640)
+                if workshop_channel:
+                    from discord import Embed, ButtonStyle
+                    from discord.ui import View, button
+
+                    class PayReviewView(View):
+                        def __init__(self, payer_id, recipient_id, transfer_amount):
+                            super().__init__(timeout=86400)
+                            self.payer_id = payer_id
+                            self.recipient_id = recipient_id
+                            self.transfer_amount = transfer_amount
+
+                        @button(label="Allow Transaction", style=ButtonStyle.success, emoji="✅")
+                        async def allow(self, inter: Interaction, btn):
+                            from lib.economy.economy_manager import add_bb, remove_bb
+                            if remove_bb(self.payer_id, self.transfer_amount, reason=f"/pay approved by {inter.user.name}"):
+                                add_bb(self.recipient_id, self.transfer_amount, reason=f"/pay received (approved)", taxable=False)
+                                await inter.response.send_message(f"✅ Approved: **{self.transfer_amount:,} UKP** sent from <@{self.payer_id}> to <@{self.recipient_id}>.")
+                                self.stop()
+                            else:
+                                await inter.response.send_message("❌ Failed: Payer no longer has sufficient funds.", ephemeral=True)
+
+                        @button(label="Block Transaction", style=ButtonStyle.danger, emoji="🛑")
+                        async def block(self, inter: Interaction, btn):
+                            await inter.response.send_message(f"🛑 Blocked transfer from <@{self.payer_id}> to <@{self.recipient_id}>.")
+                            self.stop()
+
+                        @button(label="Tax Recipient 50%", style=ButtonStyle.primary, emoji="📉")
+                        async def tax_50(self, inter: Interaction, btn):
+                            from lib.economy.economy_manager import add_bb, remove_bb
+                            net = self.transfer_amount // 2
+                            if remove_bb(self.payer_id, self.transfer_amount, reason=f"/pay 50% taxed by {inter.user.name}"):
+                                add_bb(self.recipient_id, net, reason=f"/pay received (50% tax applied)", taxable=False)
+                                await inter.response.send_message(f"📉 50% Tax Applied: <@{self.recipient_id}> received **{net:,} UKP** (payer deducted **{self.transfer_amount:,} UKP**).")
+                                self.stop()
+                            else:
+                                await inter.response.send_message("❌ Failed: Payer no longer has sufficient funds.", ephemeral=True)
+
+                        @button(label="Tax Recipient 100%", style=ButtonStyle.secondary, emoji="💸")
+                        async def tax_100(self, inter: Interaction, btn):
+                            from lib.economy.economy_manager import remove_bb
+                            if remove_bb(self.payer_id, self.transfer_amount, reason=f"/pay 100% taxed/confiscated by {inter.user.name}"):
+                                await inter.response.send_message(f"💸 100% Tax/Confiscated: **{self.transfer_amount:,} UKP** confiscated from <@{self.payer_id}> and returned to Bank.")
+                                self.stop()
+                            else:
+                                await inter.response.send_message("❌ Failed: Payer no longer has sufficient funds.", ephemeral=True)
+
+                    review_embed = Embed(
+                        title="🚨 Suspicious Alt / Farm `/pay` Held for Review",
+                        description=(
+                            f"**Payer**: {interaction.user.mention} (`{interaction.user.id}`)\n"
+                            f"• Server Joined: <t:{int(joined_at.timestamp())}:R> ({joined_hours:.1f}h ago)\n"
+                            f"• Account Age: <t:{int(created_at.timestamp())}:R> ({created_days:.1f}d old)\n"
+                            f"• Badges Earned: **{badge_cnt}**\n\n"
+                            f"**Recipient**: {recipient.mention} (`{recipient.id}`)\n"
+                            f"**Amount**: **{amount:,} UKPence**"
+                        ),
+                        color=discord.Color.red()
+                    )
+                    review_view = PayReviewView(interaction.user.id, recipient.id, amount)
+                    await workshop_channel.send(
+                        content=f"⚠️ <@404634271861571584> (ogg) - New account transfer flag for review!",
+                        embed=review_embed,
+                        view=review_view
+                    )
+                return await interaction.response.send_message(
+                    "⏳ **Transfer Pending Review**: As a new member, your transfer has been held for staff verification in `#bot-workshop`.",
+                    ephemeral=True
+                )
+
         # Daily anti-shuffle cap: at most DAILY_PAY_CAP UKP sent to OTHER MEMBERS per UK day.
         # Pays to the bank (recipient = bot) are exempt - that's money leaving circulation, not
         # shuffling - so this only governs user→user transfers.

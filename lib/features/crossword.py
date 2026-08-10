@@ -115,20 +115,34 @@ def _load_state():
     return load_json_file(config.CROSSWORD_STATE_FILE) or {}
 
 
-def _day_players(state, date_str):
-    if state.get("date") != date_str:
+def _puzzle_id(date_obj):
+    p = _todays_puzzle(date_obj)
+    # Unique signature for today's puzzle grid
+    return f"{p.get('id', 0)}-{len(p.get('entries', []))}"
+
+
+def _day_players(state, date_str, date_obj=None):
+    if date_obj is None:
+        date_obj = datetime.date.fromisoformat(date_str)
+    pid = _puzzle_id(date_obj)
+    if state.get("date") != date_str or state.get("puzzle_id") != pid:
         state["date"] = date_str
+        state["puzzle_id"] = pid
         state["players"] = {}
     return state.setdefault("players", {})
 
 
 def _player(date_str, uid):
-    return _day_players(_load_state(), date_str).get(str(uid)) or _blank()
+    d = datetime.date.fromisoformat(date_str) if isinstance(date_str, str) else date_str
+    d_str = d.isoformat()
+    return _day_players(_load_state(), d_str, d).get(str(uid)) or _blank()
 
 
 def _save_player(date_str, uid, p):
+    d = datetime.date.fromisoformat(date_str) if isinstance(date_str, str) else date_str
+    d_str = d.isoformat()
     state = _load_state()
-    _day_players(state, date_str)[str(uid)] = p
+    _day_players(state, d_str, d)[str(uid)] = p
     save_json_file(config.CROSSWORD_STATE_FILE, state)
 
 
@@ -661,12 +675,19 @@ class CrosswordView(discord.ui.View):
         unsolved = [e for e in puzzle["entries"] if _key(e) not in p["solved"]]
         if not p["done"] and unsolved:
             self.add_item(ClueSelect(user_id, date, unsolved))
+            self.add_item(_HintButton(user_id, date))
         else:
             self.add_item(_ShareButton(user_id, date))
 
-    @discord.ui.button(label="Reveal a letter", emoji="💡", style=discord.ButtonStyle.secondary,
-                       row=1)
-    async def hint(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+class _HintConfirmView(discord.ui.View):
+    def __init__(self, user_id, date):
+        super().__init__(timeout=60)
+        self.user_id = int(user_id)
+        self.date = date
+
+    @discord.ui.button(label="Yes, reveal a letter (costs 1 payout tier)", style=discord.ButtonStyle.danger, emoji="💡")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("That isn't your grid.", ephemeral=True)
             return
@@ -680,6 +701,34 @@ class CrosswordView(discord.ui.View):
         await _refresh(interaction, self.user_id, self.date, edit=True)
         if msg:
             await interaction.followup.send(msg, ephemeral=True)
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("That isn't your grid.", ephemeral=True)
+            return
+        await interaction.response.send_message("Hint cancelled.", ephemeral=True)
+
+
+class _HintButton(discord.ui.Button):
+    def __init__(self, user_id, date):
+        super().__init__(label="Reveal a letter", emoji="💡", style=discord.ButtonStyle.secondary, row=2)
+        self.user_id = int(user_id)
+        self.date = date
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("That isn't your grid.", ephemeral=True)
+            return
+        p = _player(self.date.isoformat(), self.user_id)
+        if p["done"]:
+            await interaction.response.defer()
+            return
+        view = _HintConfirmView(self.user_id, self.date)
+        await interaction.response.send_message(
+            "💡 **Are you sure you want to reveal a letter?**\n"
+            "-# Each hint costs 1 reward tier (e.g. 120 → 100 UKP).",
+            view=view, ephemeral=True)
 
 
 class _ShareButton(discord.ui.Button):

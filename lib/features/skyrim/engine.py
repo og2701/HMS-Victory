@@ -458,7 +458,7 @@ def create_profile(user_id, name: str, stone_key: str) -> dict:
                   "launched": 0},
         # a new Dovahkiin wakes with a full bar (see delves_left / _stamina)
         "stamina": {"charges": int(getattr(config, "SKYRIM_DELVE_MAX_STORED", 5)),
-                    "ts": int(time.time())},
+                    "slot": slot_bounds()[0]},
         "active_delve": None,
         "created": _today_str(),
     }
@@ -1181,6 +1181,9 @@ def _stamina(profile) -> dict:
         st = {"charges": min(cap, left), "slot": last_slot}
         profile["stamina"] = st
         return st
+
+    if "slot" not in st and "ts" in st:
+        st["slot"] = st["ts"]
 
     prev = int(st.get("slot", last_slot))
     if last_slot > prev and int(st.get("charges", 0)) < cap:

@@ -123,6 +123,24 @@ def _mark_rewarded(uid, date_str):
         save_json_file(config.WORDLE_STATE_FILE, state)
 
 
+def _get_consecutive_first_try(uid: int) -> int:
+    """Returns how many consecutive times this user has solved Wordle on attempt 1."""
+    state = _load_state()
+    history = state.setdefault("first_try_streaks", {})
+    return int(history.get(str(uid), 0))
+
+
+def _record_solve_guesses(uid: int, guess_count: int):
+    """Updates consecutive 1-guess solve counters."""
+    state = _load_state()
+    history = state.setdefault("first_try_streaks", {})
+    if guess_count == 1:
+        history[str(uid)] = int(history.get(str(uid), 0)) + 1
+    else:
+        history[str(uid)] = 0
+    save_json_file(config.WORDLE_STATE_FILE, state)
+
+
 # --- rendering -----------------------------------------------------------------
 def _rows(guesses, word):
     return ["".join(_SQUARES[s] for s in _score(g, word)) + f"  `{g.upper()}`" for g in guesses]
@@ -285,7 +303,18 @@ class WordleModal(discord.ui.Modal, title="HMS Wordle"):
             await interaction.response.send_message(err, ephemeral=True)
             return
         if status == "ok" and p["solved"] and not p["rewarded"]:
-            reward = config.WORDLE_REWARDS[len(p["guesses"]) - 1]
+            guess_count = len(p["guesses"])
+            _record_solve_guesses(int(self.user_id), guess_count)
+            consecutive_1g = _get_consecutive_first_try(int(self.user_id))
+            
+            if guess_count == 1 and consecutive_1g >= 2:
+                # 2+ consecutive 1-guess solves: 100% anti-cheat tax
+                reward = 0
+                log.warning("HMS Wordle anti-cheat tax (100%): User %s solved in 1 guess %d times in a row",
+                            self.user_id, consecutive_1g)
+            else:
+                reward = config.WORDLE_REWARDS[guess_count - 1]
+
             # discretionary: a puzzle prize is a reward the server chooses to give, so it
             # scales with bank reserves like every other one (see reserve_policy.py)
             if add_bb(int(self.user_id), reward, reason="HMS Wordle solve", taxable=False, discretionary=True):
