@@ -124,22 +124,15 @@ def _describe(reason, cp_id, amount, client):
     return (r[:1].upper() + r[1:])[:42]
 
 
-def _gather(uid, start_ts, end_ts, client, is_day=False):
-    """Fetch the period's rows and build display entries, totals, and category breakdown.
-    
-    If viewing a monthly statement, transactions from the current UK day are itemised
-    line-by-line; prior days are grouped by earning/spending category.
-    """
+def _gather(uid, start_ts, end_ts, client):
+    """Fetch the month's rows and build (sorted display entries, totals, breakdown)."""
     rows = DatabaseManager.fetch_all(
         "SELECT ts, amount, balance_after, reason, counterparty_id FROM user_transactions "
         "WHERE user_id = ? AND ts >= ? AND ts < ? ORDER BY ts ASC",
         (uid, start_ts, end_ts)) or []
 
-    today_str = datetime.now(_UK).strftime("%Y-%m-%d")
-    
     casino_by_day = OrderedDict()       # 'YYYY-MM-DD' -> [net, count, first_ts]
     by_day_desc = OrderedDict()         # ('YYYY-MM-DD', desc) -> [net, count, first_ts, emoji]
-    prior_category = OrderedDict()      # label -> [net, count, emoji]
     entries = []                        # (ts, emoji, desc, amount)
     breakdown = OrderedDict()           # label -> net
     total_in = total_out = 0
@@ -157,23 +150,14 @@ def _gather(uid, start_ts, end_ts, client, is_day=False):
             total_in += amount
         else:
             total_out += -amount
-            
-        day_str = datetime.fromtimestamp(ts, _UK).strftime("%Y-%m-%d")
-        
-        # If in rolling 24h mode OR transaction occurred today, itemise line-by-line
-        if is_day or day_str == today_str:
-            if label == "Casino":
-                agg = casino_by_day.setdefault(day_str, [0, 0, ts])
-                agg[0] += amount
-                agg[1] += 1
-            else:
-                desc = _describe(reason, cp, amount, client)
-                agg = by_day_desc.setdefault((day_str, desc), [0, 0, ts, emoji])
-                agg[0] += amount
-                agg[1] += 1
+        day = datetime.fromtimestamp(ts, _UK).strftime("%Y-%m-%d")
+        if label == "Casino":
+            agg = casino_by_day.setdefault(day, [0, 0, ts])
+            agg[0] += amount
+            agg[1] += 1
         else:
-            # Prior days: aggregate into category totals
-            agg = prior_category.setdefault(label, [0, 0, emoji])
+            desc = _describe(reason, cp, amount, client)
+            agg = by_day_desc.setdefault((day, desc), [0, 0, ts, emoji])
             agg[0] += amount
             agg[1] += 1
 
@@ -185,11 +169,6 @@ def _gather(uid, start_ts, end_ts, client, is_day=False):
         if count > 1:
             desc = f"{desc} (×{count})"
         entries.append((first_ts, emoji, desc, net))
-
-    # Add prior days' category summaries (stamped at start_ts)
-    for label, (net, count, emoji) in prior_category.items():
-        desc = f"Prior {label} ({count} txs)" if count > 1 else f"Prior {label}"
-        entries.append((start_ts, emoji, desc, net))
 
     entries.sort(key=lambda e: e[0])
     return rows, entries, total_in, total_out, breakdown
@@ -232,7 +211,7 @@ def build_statement_view(*, target_id, target_name, viewer_id, offset, client, d
         start_ts, end_ts, start_dt = _month_bounds(offset)
         period = start_dt.strftime("%B %Y")
 
-    rows, entries, total_in, total_out, breakdown = _gather(uid, start_ts, end_ts, client, is_day=day)
+    rows, entries, total_in, total_out, breakdown = _gather(uid, start_ts, end_ts, client)
 
     # Opening/closing prefer the exact end-of-day balance snapshots so backfilled months
     # (whose reconstructed rows lack a running balance) still reconcile. Fall back to the
