@@ -45,9 +45,9 @@ _CATEGORIES = [
     ("Lottery", "\U0001f3ab", ["lottery"]),
     # Tax must outrank Rewards: "inactivity" contains "activity", which would
     # otherwise net tax charges into the Rewards line.
-    ("Tax", "\U0001f4c9", ["tax", "inactivity", "demurrage", "dormant"]),
-    ("Rewards", "\U0001f4ac", ["chat", "stage", "booster", "top chatter", "activity",
-                               "message reward", "reward", "daily"]),
+    ("Tax", "📉", ["tax", "inactivity", "demurrage", "dormant"]),
+    ("Rewards", "📈", ["chat", "stage", "booster", "top chatter", "activity",
+                       "message reward", "reward", "daily"]),
     ("Benefits", "\U0001f9fe", ["benefit", "dole"]),
     ("Tree", "\U0001f333", ["tree", "water"]),
     ("Hall of Fame", "\U0001f3c6", ["hall of fame", "hof"]),
@@ -265,7 +265,7 @@ def build_statement_view(*, target_id, target_name, viewer_id, offset, client, d
             stamp = datetime.fromtimestamp(ts, _UK).strftime("%H:%M" if day else "%d %b")
             lines.append(f"`{stamp}`  {emoji} {desc} · **{_sign(amount)}**")
     if residual:
-        lines.append(f"\U0001f4ac Rewards & other (net) · **{_sign(residual)}**")
+        lines.append(f"📈 Rewards & other (net) · **{_sign(residual)}**")
     body = "\n".join(lines) if lines else "_No transactions this period._"
     if hidden:
         body = f"-# {hidden} earlier entries rolled into the totals below\n" + body
@@ -309,7 +309,7 @@ def _emoji_for(label):
     if label == "Pay":
         return "\U0001f501"
     if label == "Rewards & other":
-        return "\U0001f4ac"
+        return "📈"
     if label == "Other":
         return "\U0001f4b7"
     for lbl, emoji, _subs in _CATEGORIES:
