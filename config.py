@@ -212,9 +212,8 @@ WEALTH_DEMURRAGE_ENABLED = True
 WEALTH_DEMURRAGE_THRESHOLD = 10000   # only balance above this is charged
 WEALTH_DEMURRAGE_RATE = 0.05         # fraction of the excess taken per weekly run (5%)
 INACTIVITY_TAX_RATE = 0.20           # fraction of total balance taken per weekly run (20%)
-# Taxes still apply, but user-facing statements fold them silently into the
-# "Rewards & other" residual instead of naming them (too many complaints).
-STATEMENT_HIDE_TAX = True
+# Taxes apply, and itemised statements show net transaction amounts directly.
+STATEMENT_HIDE_TAX = False
 
 # Economy-dormant tax: the chat-activity inactivity tax above only catches people who stopped
 # TALKING. This catches the other half - people who still chat (so they dodge that one) but
