@@ -671,10 +671,10 @@ async def _handle_slip(interaction: Interaction, table, slip: BetSlip, action: s
         return
 
     import config
-    from lib.economy.reserve_policy import max_casino_bet
+    from lib.economy.reserve_policy import max_casino_net_payout
     static_max = getattr(config, "ROULETTE_MAX_BET", 10_000)
-    # Bank max exposure cap on single-win net payout
-    max_net_payout = max_casino_bet(game_max_multiplier=35.0, static_max=static_max * 35)
+    # Bank max exposure cap on single-win net payout (80% of reserves)
+    max_net_payout = max_casino_net_payout(static_max_net=static_max * 35)
 
     if action.startswith("chip:"):
         slip.chip = int(action.split(":")[1])
@@ -758,8 +758,8 @@ class NumberBetModal(discord.ui.Modal, title="Roulette - straight-up bet"):
             await interaction.response.send_message("No valid numbers (0-36).", ephemeral=True)
             return
         static_max = getattr(config, "ROULETTE_MAX_BET", 10_000)
-        from lib.economy.reserve_policy import max_casino_bet
-        max_net_payout = max_casino_bet(game_max_multiplier=35.0, static_max=static_max * 35)
+        from lib.economy.reserve_policy import max_casino_net_payout
+        max_net_payout = max_casino_net_payout(static_max_net=static_max * 35)
         
         # Simulate placing all requested numbers
         placed_count = 0

@@ -101,11 +101,26 @@ def reserve_state() -> dict:
     }
 
 
+def max_casino_net_payout(static_max_net: int = 250_000) -> int:
+    """Calculate maximum net profit allowed on a single outcome (e.g. 80% of Bank balance)."""
+    if not _cfg("DYNAMIC_MAX_BET_ENABLED", True):
+        return static_max_net
+    try:
+        reserves = bank_reserves()
+        if reserves <= 0:
+            return 500
+        pct = float(_cfg("MAX_EXPOSURE_PCT", 0.80))
+        return int(reserves * pct)
+    except Exception:
+        logger.error("max_casino_net_payout read failed", exc_info=True)
+        return static_max_net
+
+
 def max_casino_bet(game_max_multiplier: float = 3.0, static_max: int = 250_000) -> int:
     """Calculate dynamic max bet scaled to liquid Bank reserves and game risk exposure.
 
     Protects Bank reserves by limiting single-win max exposure to a percentage of Bank
-    reserves (default 20% max single payout), scaled by game max multiplier.
+    reserves (default 80% max single payout), scaled by game max multiplier.
     """
     if not _cfg("DYNAMIC_MAX_BET_ENABLED", True):
         return static_max
@@ -113,7 +128,7 @@ def max_casino_bet(game_max_multiplier: float = 3.0, static_max: int = 250_000) 
         reserves = bank_reserves()
         if reserves <= 0:
             return 100
-        pct = float(_cfg("MAX_EXPOSURE_PCT", 0.20))
+        pct = float(_cfg("MAX_EXPOSURE_PCT", 0.80))
         multiplier = max(1.0, float(game_max_multiplier))
         dynamic_cap = int((reserves * pct) / multiplier)
         floor_bet = int(_cfg("DYNAMIC_MIN_MAX_BET", 500))
