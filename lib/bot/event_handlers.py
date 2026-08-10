@@ -1586,7 +1586,7 @@ async def handle_shut_reaction(reaction, user):
     # Members and PCSOs cannot shut staff (Border Force or higher)
     if not has_role:
         is_target_staff = hasattr(message_author, "roles") and any(
-            role.id in [ROLES.DEPUTY_PM, ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE]
+            role.id in [ROLES.DEPUTY_PM, ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE, ROLES.DEPUTY_MINISTER_OF_COMMUNITY]
             for role in message_author.roles
         )
         if is_target_staff:
