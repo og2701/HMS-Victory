@@ -101,8 +101,6 @@ def tax_overview_embed() -> discord.Embed:
         value=f"{ledger['tax_collected']:,} UKPence",
         inline=False,
     )
-    e.set_footer(text="All taxes run silently - members are never DM'd, and statements "
-                      "fold them into 'Rewards & other'.")
     return e
 
 
