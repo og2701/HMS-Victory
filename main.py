@@ -212,16 +212,31 @@ class AClient(discord.Client):
         # periodic reminders to the casino channel.
 
     async def on_message(self, message):
-        if (
-            message.author.id == USERS.COUNTRYBALL_BOT
-            and "A wild countryball" in message.content
-        ):
-            channel = client.get_channel(CHANNELS.BOT_SPAM)
-            if channel:
-                await channel.send(
-                    f"<@&{ROLES.BALL_INSPECTOR}> A wild countryball appeared!"
-                )
-            return
+        if message.author.id == USERS.COUNTRYBALL_BOT:
+            # Gather all text from content, embeds, and component labels
+            full_text = message.content or ""
+            if message.embeds:
+                for e in message.embeds:
+                    if e.title:
+                        full_text += " " + e.title
+                    if e.description:
+                        full_text += " " + e.description
+                    for f in e.fields:
+                        full_text += f" {f.name} {f.value}"
+            if message.components:
+                for row in message.components:
+                    for comp in getattr(row, "children", []):
+                        if getattr(comp, "label", None):
+                            full_text += " " + comp.label
+
+            text_clean = " ".join(full_text.lower().split())
+            if "countryball" in text_clean and ("appeared" in text_clean or "spawned" in text_clean or "wild" in text_clean):
+                channel = client.get_channel(CHANNELS.BOT_SPAM)
+                if channel:
+                    await channel.send(
+                        f"<@&{ROLES.BALL_INSPECTOR}> A wild countryball appeared!"
+                    )
+                return
 
         if message.author.id == 557628352828014614 and message.embeds:
             handle_ticket_closed_message(self, message)
