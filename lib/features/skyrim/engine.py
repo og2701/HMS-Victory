@@ -3510,12 +3510,15 @@ def claim_faction(profile) -> str | None:
     goal, prog, done = faction_progress(profile)
     if profile.get("allegiance") not in D.FACTIONS:
         return "You owe no faction your allegiance yet."
+    if profile.get("faction_claimed_week") == _iso_week():
+        return "You've already claimed a faction favour this week. Come back next week."
     if not done:
         return f"The week's work isn't finished ({prog}/{goal})."
     f = faction_state(profile)
     if f.get("claimed"):
         return "You've already claimed this week's favour. Come back next week."
     f["claimed"] = True
+    profile["faction_claimed_week"] = _iso_week()
     fac = profile["allegiance"]
     favour = faction_favour(profile) + 1
     profile.setdefault("favours", {})[fac] = favour
