@@ -261,6 +261,11 @@ RESERVE_THROTTLE_TIERS = ((80_000, 0.25), (120_000, 0.50), (160_000, 0.75))
 # than silently inflating the currency. 800k baseline -> at most 25% expansion, ever.
 MAX_TOTAL_SUPPLY = 1_000_000
 
+# Dynamic Max Bet scaling: cap single-win max exposure to a % of live Bank reserves
+DYNAMIC_MAX_BET_ENABLED = True
+MAX_EXPOSURE_PCT = 0.20        # max single-win payout capped at 20% of Bank liquid balance
+DYNAMIC_MIN_MAX_BET = 500      # floor for dynamic max bet so table is always playable
+
 # --- Demurrage dividend ---------------------------------------------------------------
 # Reclaimed hoard money is earmarked to pay for chat activity rewards, turning a wealth tax
 # into a visible community payout. The pot is an EARMARK on the bank's existing balance, not

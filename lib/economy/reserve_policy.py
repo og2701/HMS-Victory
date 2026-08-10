@@ -101,6 +101,28 @@ def reserve_state() -> dict:
     }
 
 
+def max_casino_bet(game_max_multiplier: float = 3.0, static_max: int = 250_000) -> int:
+    """Calculate dynamic max bet scaled to liquid Bank reserves and game risk exposure.
+
+    Protects Bank reserves by limiting single-win max exposure to a percentage of Bank
+    reserves (default 20% max single payout), scaled by game max multiplier.
+    """
+    if not _cfg("DYNAMIC_MAX_BET_ENABLED", True):
+        return static_max
+    try:
+        reserves = bank_reserves()
+        if reserves <= 0:
+            return 100
+        pct = float(_cfg("MAX_EXPOSURE_PCT", 0.20))
+        multiplier = max(1.0, float(game_max_multiplier))
+        dynamic_cap = int((reserves * pct) / multiplier)
+        floor_bet = int(_cfg("DYNAMIC_MIN_MAX_BET", 500))
+        return max(floor_bet, min(static_max, dynamic_cap))
+    except Exception:
+        logger.error("max_casino_bet read failed; using static max", exc_info=True)
+        return static_max
+
+
 # ---------------------------------------------------------------------------
 # The mint ceiling
 # ---------------------------------------------------------------------------

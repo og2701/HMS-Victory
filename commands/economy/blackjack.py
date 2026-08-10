@@ -794,7 +794,9 @@ async def handle_blackjack_command(interaction: Interaction, amount: int):
         return
 
     min_bet = getattr(config, "BLACKJACK_MIN_BET", 5)
-    max_bet = getattr(config, "BLACKJACK_MAX_BET", 250_000)
+    static_max = getattr(config, "BLACKJACK_MAX_BET", 250_000)
+    from lib.economy.reserve_policy import max_casino_bet
+    max_bet = max_casino_bet(game_max_multiplier=2.5, static_max=static_max)
 
     if amount < min_bet:
         await interaction.response.send_message(
@@ -803,7 +805,7 @@ async def handle_blackjack_command(interaction: Interaction, amount: int):
         return
     if amount > max_bet:
         await interaction.response.send_message(
-            f"The maximum bet is {max_bet:,} UKPence.", ephemeral=True
+            f"The maximum bet is currently **{max_bet:,} UKPence** (scaled to Bank reserves).", ephemeral=True
         )
         return
 

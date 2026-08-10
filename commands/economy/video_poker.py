@@ -468,12 +468,17 @@ async def handle_videopoker_command(interaction: Interaction, amount: int):
         await interaction.response.send_message("Video Poker is currently closed.", ephemeral=True)
         return
     mn = getattr(config, "VIDEOPOKER_MIN_BET", 5)
-    mx = getattr(config, "VIDEOPOKER_MAX_BET", 10_000)
+    static_max = getattr(config, "VIDEOPOKER_MAX_BET", 10_000)
+    from lib.economy.reserve_policy import max_casino_bet
+    mx = max_casino_bet(game_max_multiplier=800.0, static_max=static_max)
+
     if amount < mn:
         await interaction.response.send_message(f"The minimum bet is {mn:,} UKPence.", ephemeral=True)
         return
     if amount > mx:
-        await interaction.response.send_message(f"The maximum bet is {mx:,} UKPence.", ephemeral=True)
+        await interaction.response.send_message(
+            f"The maximum bet is currently **{mx:,} UKPence** (scaled to Bank reserves).", ephemeral=True
+        )
         return
     if get_bb(interaction.user.id) < amount:
         await interaction.response.send_message(

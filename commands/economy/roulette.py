@@ -735,10 +735,12 @@ class NumberBetModal(discord.ui.Modal, title="Roulette - straight-up bet"):
         if not nums:
             await interaction.response.send_message("No valid numbers (0-36).", ephemeral=True)
             return
-        mx = getattr(config, "ROULETTE_MAX_BET", 10_000)
+        static_max = getattr(config, "ROULETTE_MAX_BET", 10_000)
+        from lib.economy.reserve_policy import max_casino_bet
+        mx = max_casino_bet(game_max_multiplier=36.0, static_max=static_max)
         if self.slip.total + self.slip.chip * len(nums) > mx:
             await interaction.response.send_message(
-                f"That would exceed the {mx:,} UKPence per-spin limit.", ephemeral=True)
+                f"That would exceed the current per-spin limit of **{mx:,} UKPence** (scaled to Bank reserves).", ephemeral=True)
             return
         for n in nums:
             self.slip.place(f"straight:{n}")

@@ -593,12 +593,17 @@ async def handle_slots_command(interaction: Interaction, amount: int):
         return
 
     mn = getattr(config, "SLOTS_MIN_BET", 5)
-    mx = getattr(config, "SLOTS_MAX_BET", 100_000)
+    static_max = getattr(config, "SLOTS_MAX_BET", 100_000)
+    from lib.economy.reserve_policy import max_casino_bet
+    mx = max_casino_bet(game_max_multiplier=100.0, static_max=static_max)
+
     if amount < mn:
         await interaction.response.send_message(f"The minimum bet is {mn:,} UKPence.", ephemeral=True)
         return
     if amount > mx:
-        await interaction.response.send_message(f"The maximum bet is {mx:,} UKPence.", ephemeral=True)
+        await interaction.response.send_message(
+            f"The maximum bet is currently **{mx:,} UKPence** (scaled to Bank reserves).", ephemeral=True
+        )
         return
 
     balance = get_bb(interaction.user.id)
