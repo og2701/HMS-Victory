@@ -107,6 +107,21 @@ class BetSlip:
     def total(self) -> int:
         return sum(self.bets.values())
 
+    @property
+    def max_potential_win(self) -> int:
+        """Maximum possible net profit across all 37 wheel outcomes (0-36)."""
+        if not self.bets:
+            return 0
+        total_staked = self.total
+        # Calculate net payout for each of the 37 possible landing numbers
+        max_win = 0
+        for n in range(37):
+            ret = _resolve(self.bets, n)
+            net_win = ret - total_staked
+            if net_win > max_win:
+                max_win = net_win
+        return max_win
+
     def place(self, key: str):
         self.bets[key] = self.bets.get(key, 0) + self.chip
         self.history.append((key, self.chip))
@@ -656,15 +671,22 @@ async def _handle_slip(interaction: Interaction, table, slip: BetSlip, action: s
         return
 
     import config
-    mx = getattr(config, "ROULETTE_MAX_BET", 10_000)
+    from lib.economy.reserve_policy import max_casino_bet
+    static_max = getattr(config, "ROULETTE_MAX_BET", 10_000)
+    # Bank max exposure cap on single-win net payout
+    max_net_payout = max_casino_bet(game_max_multiplier=35.0, static_max=static_max * 35)
+
     if action.startswith("chip:"):
         slip.chip = int(action.split(":")[1])
     elif action.startswith("bet:"):
-        if slip.total + slip.chip > mx:
+        key = action.split(":", 1)[1]
+        # Simulate placing the bet to check resulting max potential net payout
+        slip.place(key)
+        if slip.max_potential_win > max_net_payout:
+            slip.undo()
             await interaction.response.send_message(
-                f"That would exceed the {mx:,} UKPence per-spin limit for one player.", ephemeral=True)
+                f"That bet would exceed the Bank's maximum single-win exposure limit of **{max_net_payout:,} UKPence**.", ephemeral=True)
             return
-        slip.place(action.split(":", 1)[1])
     elif action == "undo":
         slip.undo()
     elif action == "clear":
@@ -737,13 +759,21 @@ class NumberBetModal(discord.ui.Modal, title="Roulette - straight-up bet"):
             return
         static_max = getattr(config, "ROULETTE_MAX_BET", 10_000)
         from lib.economy.reserve_policy import max_casino_bet
-        mx = max_casino_bet(game_max_multiplier=36.0, static_max=static_max)
-        if self.slip.total + self.slip.chip * len(nums) > mx:
-            await interaction.response.send_message(
-                f"That would exceed the current per-spin limit of **{mx:,} UKPence** (scaled to Bank reserves).", ephemeral=True)
-            return
+        max_net_payout = max_casino_bet(game_max_multiplier=35.0, static_max=static_max * 35)
+        
+        # Simulate placing all requested numbers
+        placed_count = 0
         for n in nums:
-            self.slip.place(f"straight:{n}")
+            slip_key = f"straight:{n}"
+            self.slip.place(slip_key)
+            placed_count += 1
+            if self.slip.max_potential_win > max_net_payout:
+                # Revert placed numbers
+                for _ in range(placed_count):
+                    self.slip.undo()
+                await interaction.response.send_message(
+                    f"Placing those chips would exceed the Bank's maximum single-win exposure limit of **{max_net_payout:,} UKPence**.", ephemeral=True)
+                return
         await interaction.response.edit_message(view=build_slip_layout(self.table, self.slip))
 
 
