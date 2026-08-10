@@ -115,6 +115,9 @@ def _describe(reason, cp_id, amount, client):
     if cp_id:
         return f"Pay {'→' if amount < 0 else '←'} {_name(client, cp_id)}"
     r = (reason or "Unspecified").strip()
+    # Strip internal tax annotation suffix like '[gross: 100, tax: -85 (85%)]'
+    if "[" in r and "gross:" in r:
+        r = r.split("[")[0].strip()
     return (r[:1].upper() + r[1:])[:42]
 
 
@@ -137,10 +140,8 @@ def _gather(uid, start_ts, end_ts, client):
     for ts, amount, _bal, reason, cp in rows:
         amount = int(amount)
         label, emoji = _categorize(reason, cp)
+        # STATEMENT_HIDE_TAX hides pure wealth tax / demurrage deductions from the list
         if hide_tax and label == "Tax":
-            # Deliberately unnamed: the charge stays out of the itemised lines,
-            # totals and breakdown, and reconciles via the residual line, which
-            # folds it into "Rewards & other" without naming it.
             continue
         breakdown[label] = breakdown.get(label, 0) + amount
         if amount >= 0:
