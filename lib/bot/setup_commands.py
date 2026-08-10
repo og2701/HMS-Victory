@@ -470,7 +470,7 @@ def define_commands(tree, client):
                 logging.getLogger(__name__).exception(
                     "funnel check failed for %s", recipient.id)
 
-        # Check tenure & rapid badge farming (Alt Anti-Farm Guard)
+        # Non-blocking Alt/Farm alert: triggers when a low-tenure user makes 2+ transfers in a day
         if recipient.id != interaction.client.user.id:
             joined_at = getattr(interaction.user, "joined_at", None)
             created_at = getattr(interaction.user, "created_at", None)
@@ -480,14 +480,18 @@ def define_commands(tree, client):
             created_days = (now_utc - created_at).total_seconds() / 86400.0 if created_at else 999.0
 
             from database import DatabaseManager
-            badge_cnt_row = DatabaseManager.fetch_one(
-                "SELECT COUNT(*) FROM user_badges WHERE user_id = ?", (str(interaction.user.id),)
-            )
-            badge_cnt = badge_cnt_row[0] if badge_cnt_row else 0
+            uk = pytz.timezone("Europe/London")
+            midnight = datetime.now(uk).replace(hour=0, minute=0, second=0, microsecond=0)
+            day_start = int(midnight.timestamp())
 
-            # Flag if joined server < 48 hours ago OR created < 14 days ago AND amount >= 100 or earned 3+ badges
-            is_suspicious = (joined_hours < 48.0 or created_days < 14.0) and (amount >= 100 or badge_cnt >= 3)
-            if is_suspicious:
+            tx_cnt_row = DatabaseManager.fetch_one(
+                "SELECT COUNT(*) FROM pay_transfers WHERE payer_id = ? AND timestamp >= ?",
+                (str(interaction.user.id), day_start)
+            )
+            tx_cnt_today = (tx_cnt_row[0] if tx_cnt_row else 0) + 1  # include this transfer
+
+            # Trigger alert on 2+ transfers today if account joined < 48 hours or created < 14 days ago
+            if (joined_hours < 48.0 or created_days < 14.0) and tx_cnt_today >= 2:
                 workshop_channel = interaction.client.get_channel(1141037835445616640)
                 if workshop_channel:
                     from discord import ButtonStyle
@@ -500,63 +504,51 @@ def define_commands(tree, client):
                             self.recipient_id = recipient_id
                             self.transfer_amount = transfer_amount
 
-                        @button(label="Allow Transaction", style=ButtonStyle.success, emoji="✅")
-                        async def allow(self, inter: Interaction, btn):
-                            from lib.economy.economy_manager import add_bb, remove_bb
-                            if remove_bb(self.payer_id, self.transfer_amount, reason=f"/pay approved by {inter.user.name}"):
-                                add_bb(self.recipient_id, self.transfer_amount, reason=f"/pay received (approved)", taxable=False)
-                                await inter.response.send_message(f"✅ Approved: **{self.transfer_amount:,} UKP** sent from <@{self.payer_id}> to <@{self.recipient_id}>.")
-                                self.stop()
-                            else:
-                                await inter.response.send_message("❌ Failed: Payer no longer has sufficient funds.", ephemeral=True)
-
-                        @button(label="Block Transaction", style=ButtonStyle.danger, emoji="🛑")
-                        async def block(self, inter: Interaction, btn):
-                            await inter.response.send_message(f"🛑 Blocked transfer from <@{self.payer_id}> to <@{self.recipient_id}>.")
+                        @button(label="Flag & Freeze User", style=ButtonStyle.danger, emoji="🛑")
+                        async def freeze(self, inter: Interaction, btn):
+                            from lib.core import detection as _D
+                            _D.flag(inter.client, "suspicious_pay_cluster", self.payer_id,
+                                    context=f"frozen by {inter.user.name} via /pay alert")
+                            await inter.response.send_message(f"🛑 User <@{self.payer_id}> has been flagged and frozen from economy transfers.")
                             self.stop()
 
                         @button(label="Tax Recipient 50%", style=ButtonStyle.primary, emoji="📉")
                         async def tax_50(self, inter: Interaction, btn):
-                            from lib.economy.economy_manager import add_bb, remove_bb
+                            from lib.economy.economy_manager import remove_bb
                             net = self.transfer_amount // 2
-                            if remove_bb(self.payer_id, self.transfer_amount, reason=f"/pay 50% taxed by {inter.user.name}"):
-                                add_bb(self.recipient_id, net, reason=f"/pay received (50% tax applied)", taxable=False)
-                                await inter.response.send_message(f"📉 50% Tax Applied: <@{self.recipient_id}> received **{net:,} UKP** (payer deducted **{self.transfer_amount:,} UKP**).")
+                            if remove_bb(self.recipient_id, net, reason=f"/pay 50% clawback by {inter.user.name}"):
+                                await inter.response.send_message(f"📉 50% Tax Clawback: Clawed back **{net:,} UKP** from <@{self.recipient_id}>.")
                                 self.stop()
                             else:
-                                await inter.response.send_message("❌ Failed: Payer no longer has sufficient funds.", ephemeral=True)
+                                await inter.response.send_message("❌ Failed: Recipient no longer has sufficient funds.", ephemeral=True)
 
                         @button(label="Tax Recipient 100%", style=ButtonStyle.secondary, emoji="💸")
                         async def tax_100(self, inter: Interaction, btn):
                             from lib.economy.economy_manager import remove_bb
-                            if remove_bb(self.payer_id, self.transfer_amount, reason=f"/pay 100% taxed/confiscated by {inter.user.name}"):
-                                await inter.response.send_message(f"💸 100% Tax/Confiscated: **{self.transfer_amount:,} UKP** confiscated from <@{self.payer_id}> and returned to Bank.")
+                            if remove_bb(self.recipient_id, self.transfer_amount, reason=f"/pay 100% clawback by {inter.user.name}"):
+                                await inter.response.send_message(f"💸 100% Tax/Clawback: Confiscated **{self.transfer_amount:,} UKP** from <@{self.recipient_id}> back to Bank.")
                                 self.stop()
                             else:
-                                await inter.response.send_message("❌ Failed: Payer no longer has sufficient funds.", ephemeral=True)
+                                await inter.response.send_message("❌ Failed: Recipient no longer has sufficient funds.", ephemeral=True)
 
                     review_embed = Embed(
-                        title="🚨 Suspicious Alt / Farm `/pay` Held for Review",
+                        title="⚠️ Suspicious Multi-Transfer Warning (`/pay` #"+str(tx_cnt_today)+")",
                         description=(
                             f"**Payer**: {interaction.user.mention} (`{interaction.user.id}`)\n"
                             f"• Server Joined: <t:{int(joined_at.timestamp())}:R> ({joined_hours:.1f}h ago)\n"
                             f"• Account Age: <t:{int(created_at.timestamp())}:R> ({created_days:.1f}d old)\n"
-                            f"• Badges Earned: **{badge_cnt}**\n\n"
+                            f"• Transfers Today: **{tx_cnt_today}**\n\n"
                             f"**Recipient**: {recipient.mention} (`{recipient.id}`)\n"
                             f"**Amount**: **{amount:,} UKPence**"
                         ),
-                        color=discord.Color.red()
+                        color=discord.Color.gold()
                     )
                     review_view = PayReviewView(interaction.user.id, recipient.id, amount)
-                    await workshop_channel.send(
-                        content=f"⚠️ <@404634271861571584> (ogg) - New account transfer flag for review!",
+                    asyncio.create_task(workshop_channel.send(
+                        content=f"⚠️ <@404634271861571584> (ogg) - Multiple transfers detected from new account!",
                         embed=review_embed,
                         view=review_view
-                    )
-                return await interaction.response.send_message(
-                    "⏳ **Transfer Pending Review**: As a new member, your transfer has been held for staff verification in `#bot-workshop`.",
-                    ephemeral=True
-                )
+                    ))
 
         # Daily anti-shuffle cap: at most DAILY_PAY_CAP UKP sent to OTHER MEMBERS per UK day.
         # Pays to the bank (recipient = bot) are exempt - that's money leaving circulation, not
