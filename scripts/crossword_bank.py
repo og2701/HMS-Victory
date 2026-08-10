@@ -2100,6 +2100,57 @@ BRITISH = {
 HARD.update({w: c for w, c in BRITISH.items() if 3 <= len(w) <= 6})
 
 
+# The last flat definitions that were still reaching shipped puzzles. Rewriting these is
+# what takes a generated set to 100% wordplay - a grid is only as hard as its easiest
+# clue, and one plain definition gives away the crossings for everything through it.
+HARDER3 = {
+ "AKIN":"Of a piece with; or related, without the blood",
+ "ALE":"Real, if it's any good; or what the pub was called before it was a bar",
+ "ALOUD":"So the room can hear; or thinking, when you say the quiet part",
+ "AND":"The word that joins; or what you say waiting for the rest of it",
+ "ARISE":"Get to your feet; or what problems do, unhelpfully",
+ "ASK":"Do this and you might receive; or the price the seller wants",
+ "BLUE":"The colour; or the mood, or the joke you shouldn't tell",
+ "CAR":"How most of us get about; or the one on the train you sit in",
+ "CEASE":"Bring it to a stop; or what the fire does, in the truce",
+ "CLERK":"The one behind the counter; or the one who runs the court",
+ "COW":"She gives the milk; or browbeat them into it",
+ "CREEK":"Up it without a paddle; or the small water it names",
+ "EACH":"Every one of them; or what the price is, per item",
+ "EARL":"Between viscount and marquess; or the tea with the bergamot",
+ "EAST":"Where the sun comes up; or the End, if you're a Londoner",
+ "EASY":"No trouble at all; or take it, and go slowly",
+ "ELM":"The tree the disease took; or the street of the nightmares",
+ "EWE":"She of the flock; or sounds like you, twice over",
+ "GENE":"It runs in the family; or the pool you swim in without meaning to",
+ "HOST":"The one who invites; or the multitude, in the old sense",
+ "HOW":"The question of method; or the greeting of the film Indian",
+ "IRE":"Anger, in three; or what you raise by trying",
+ "MERIT":"Worth standing on its own; or deserve it outright",
+ "OATH":"Sworn at the altar; or the word you swore when you stubbed it",
+ "PEA":"The princess felt it; or the soup you can't see through",
+ "PEAR":"The fruit; or the shape it all went, badly",
+ "POSE":"Hold it for the camera; or the question, formally",
+ "READER":"One with a book; or the lecturer ranked below professor",
+ "SKI":"Downhill on two planks; or the jump you'd never try",
+ "SLOW":"How the snail travels; or what the clock is running",
+ "SOFA":"Where the evening goes; or what the loose change lives down",
+ "SPA":"Where you go to be pummelled; or the town with the waters",
+ "STOVE":"Where the pot goes; or what the barrel was, staved in",
+ "TEACH":"Grandmother to suck eggs; or what experience does to you",
+ "TRAY":"Carry the tea on it; or the one marked In",
+ "TREE":"Barking up the wrong one; or the family one you drew at school",
+ "TREND":"The way things are going; or what a thing does, online",
+ "VOW":"Sworn at the altar; or promise it, solemnly",
+ "WERE":"Used to be, in the plural; or the wolf's first half",
+ "WHERE":"The question of place; or the house of it, in the song",
+ "WHY":"The question children never stop asking; or the letter it sounds like",
+ "WIDOW":"She who is left; or the line stranded at the top of the page",
+}
+
+HARD.update(HARDER3)
+
+
 # Every candidate with an indirect clue written for it, before the bar is applied. Kept so
 # the bar can be retuned against the real pool: tighten it too far and the grid search
 # starves, and the generator reports that only by building nothing at all.

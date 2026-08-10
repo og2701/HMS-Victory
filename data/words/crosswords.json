@@ -26656,8 +26656,8 @@
     35,
     15
    ],
-   "wrong_per_tier": 3,
-   "max_hints": 4,
+   "wrong_per_tier": 2,
+   "max_hints": 1,
    "puzzles": [
     {
      "black": [
@@ -26715,7 +26715,7 @@
        "num": 1,
        "dir": "across",
        "answer": "SKI",
-       "clue": "Downhill on two planks",
+       "clue": "Downhill on two planks; or the jump you'd never try",
        "cells": [
         [
          0,
@@ -26911,7 +26911,7 @@
        "num": 3,
        "dir": "down",
        "answer": "IRE",
-       "clue": "Anger, in fewer letters",
+       "clue": "Anger, in three; or what you raise by trying",
        "cells": [
         [
          0,
@@ -27051,7 +27051,7 @@
        "num": 1,
        "dir": "across",
        "answer": "PEA",
-       "clue": "Princess felt it through the mattresses",
+       "clue": "The princess felt it; or the soup you can't see through",
        "cells": [
         [
          0,
@@ -27259,7 +27259,7 @@
        "num": 3,
        "dir": "down",
        "answer": "ALE",
-       "clue": "Real, if it's any good",
+       "clue": "Real, if it's any good; or what the pub was called before it was a bar",
        "cells": [
         [
          0,
@@ -27335,7 +27335,7 @@
        "num": 7,
        "dir": "down",
        "answer": "VOW",
-       "clue": "Made at the altar",
+       "clue": "Sworn at the altar; or promise it, solemnly",
        "cells": [
         [
          3,
@@ -27555,7 +27555,7 @@
        "num": 1,
        "dir": "down",
        "answer": "AKIN",
-       "clue": "Of the same sort",
+       "clue": "Of a piece with; or related, without the blood",
        "cells": [
         [
          0,
@@ -27627,7 +27627,7 @@
        "num": 5,
        "dir": "down",
        "answer": "SOFA",
-       "clue": "Where the evening goes",
+       "clue": "Where the evening goes; or what the loose change lives down",
        "cells": [
         [
          2,
@@ -27651,7 +27651,7 @@
        "num": 6,
        "dir": "down",
        "answer": "TRAY",
-       "clue": "Carry the tea on it",
+       "clue": "Carry the tea on it; or the one marked In",
        "cells": [
         [
          2,
@@ -27747,7 +27747,7 @@
        "num": 1,
        "dir": "across",
        "answer": "ELM",
-       "clue": "Tree the disease took",
+       "clue": "The tree the disease took; or the street of the nightmares",
        "cells": [
         [
          0,
@@ -27823,7 +27823,7 @@
        "num": 9,
        "dir": "across",
        "answer": "READER",
-       "clue": "One with a book",
+       "clue": "One with a book; or the lecturer ranked below professor",
        "cells": [
         [
          3,
@@ -27879,7 +27879,7 @@
        "num": 11,
        "dir": "across",
        "answer": "WHY",
-       "clue": "The question children never stop asking",
+       "clue": "The question children never stop asking; or the letter it sounds like",
        "cells": [
         [
          5,
@@ -27975,7 +27975,7 @@
        "num": 5,
        "dir": "down",
        "answer": "WIDOW",
-       "clue": "She who is left",
+       "clue": "She who is left; or the line stranded at the top of the page",
        "cells": [
         [
          1,
@@ -28127,7 +28127,7 @@
        "num": 4,
        "dir": "across",
        "answer": "BLUE",
-       "clue": "The colour, and the mood",
+       "clue": "The colour; or the mood, or the joke you shouldn't tell",
        "cells": [
         [
          1,
@@ -28351,7 +28351,7 @@
        "num": 5,
        "dir": "down",
        "answer": "GENE",
-       "clue": "It runs in the family",
+       "clue": "It runs in the family; or the pool you swim in without meaning to",
        "cells": [
         [
          2,
@@ -28595,7 +28595,7 @@
        "num": 1,
        "dir": "down",
        "answer": "MERIT",
-       "clue": "Worth on its own",
+       "clue": "Worth standing on its own; or deserve it outright",
        "cells": [
         [
          0,
@@ -28795,7 +28795,7 @@
        "num": 1,
        "dir": "across",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          0,
@@ -28895,7 +28895,7 @@
        "num": 7,
        "dir": "across",
        "answer": "POSE",
-       "clue": "Hold it for the camera",
+       "clue": "Hold it for the camera; or the question, formally",
        "cells": [
         [
          4,
@@ -28991,7 +28991,7 @@
        "num": 3,
        "dir": "down",
        "answer": "AND",
-       "clue": "The word that joins",
+       "clue": "The word that joins; or what you say waiting for the rest of it",
        "cells": [
         [
          0,
@@ -29163,7 +29163,7 @@
        "num": 5,
        "dir": "across",
        "answer": "SLOW",
-       "clue": "How a snail travels",
+       "clue": "How the snail travels; or what the clock is running",
        "cells": [
         [
          1,
@@ -29235,7 +29235,7 @@
        "num": 9,
        "dir": "across",
        "answer": "OATH",
-       "clue": "Made at the altar",
+       "clue": "Sworn at the altar; or the word you swore when you stubbed it",
        "cells": [
         [
          4,
@@ -29259,7 +29259,7 @@
        "num": 10,
        "dir": "across",
        "answer": "TREE",
-       "clue": "Barking up the wrong one",
+       "clue": "Barking up the wrong one; or the family one you drew at school",
        "cells": [
         [
          5,
@@ -29347,7 +29347,7 @@
        "num": 3,
        "dir": "down",
        "answer": "HOW",
-       "clue": "The question of method",
+       "clue": "The question of method; or the greeting of the film Indian",
        "cells": [
         [
          0,
@@ -29555,7 +29555,7 @@
        "num": 6,
        "dir": "across",
        "answer": "CEASE",
-       "clue": "Bring it to a stop",
+       "clue": "Bring it to a stop; or what the fire does, in the truce",
        "cells": [
         [
          3,
@@ -29727,7 +29727,7 @@
        "num": 5,
        "dir": "down",
        "answer": "GENE",
-       "clue": "It runs in the family",
+       "clue": "It runs in the family; or the pool you swim in without meaning to",
        "cells": [
         [
          2,
@@ -29999,7 +29999,7 @@
        "num": 2,
        "dir": "down",
        "answer": "EAST",
-       "clue": "Where the sun comes up",
+       "clue": "Where the sun comes up; or the End, if you're a Londoner",
        "cells": [
         [
          0,
@@ -30191,7 +30191,7 @@
        "num": 4,
        "dir": "across",
        "answer": "TRAY",
-       "clue": "Carry the tea on it",
+       "clue": "Carry the tea on it; or the one marked In",
        "cells": [
         [
          1,
@@ -30439,7 +30439,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SKI",
-       "clue": "Downhill on two planks",
+       "clue": "Downhill on two planks; or the jump you'd never try",
        "cells": [
         [
          3,
@@ -30535,7 +30535,7 @@
        "num": 4,
        "dir": "across",
        "answer": "TREE",
-       "clue": "Barking up the wrong one",
+       "clue": "Barking up the wrong one; or the family one you drew at school",
        "cells": [
         [
          1,
@@ -30659,7 +30659,7 @@
        "num": 1,
        "dir": "down",
        "answer": "CREEK",
-       "clue": "Up it without a paddle",
+       "clue": "Up it without a paddle; or the small water it names",
        "cells": [
         [
          0,
@@ -30783,7 +30783,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -31103,7 +31103,7 @@
        "num": 5,
        "dir": "down",
        "answer": "BLUE",
-       "clue": "The colour, and the mood",
+       "clue": "The colour; or the mood, or the joke you shouldn't tell",
        "cells": [
         [
          2,
@@ -31575,7 +31575,7 @@
        "num": 4,
        "dir": "across",
        "answer": "BLUE",
-       "clue": "The colour, and the mood",
+       "clue": "The colour; or the mood, or the joke you shouldn't tell",
        "cells": [
         [
          1,
@@ -31823,7 +31823,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SKI",
-       "clue": "Downhill on two planks",
+       "clue": "Downhill on two planks; or the jump you'd never try",
        "cells": [
         [
          3,
@@ -31899,7 +31899,7 @@
        "num": 1,
        "dir": "across",
        "answer": "COW",
-       "clue": "It gives us the milk",
+       "clue": "She gives the milk; or browbeat them into it",
        "cells": [
         [
          0,
@@ -31999,7 +31999,7 @@
        "num": 7,
        "dir": "across",
        "answer": "EASY",
-       "clue": "No trouble at all",
+       "clue": "No trouble at all; or take it, and go slowly",
        "cells": [
         [
          4,
@@ -32115,7 +32115,7 @@
        "num": 4,
        "dir": "down",
        "answer": "CEASE",
-       "clue": "Bring it to a stop",
+       "clue": "Bring it to a stop; or what the fire does, in the truce",
        "cells": [
         [
          1,
@@ -32167,7 +32167,7 @@
        "num": 6,
        "dir": "down",
        "answer": "PEA",
-       "clue": "Princess felt it through the mattresses",
+       "clue": "The princess felt it; or the soup you can't see through",
        "cells": [
         [
          3,
@@ -32511,7 +32511,7 @@
        "num": 6,
        "dir": "down",
        "answer": "PEA",
-       "clue": "Princess felt it through the mattresses",
+       "clue": "The princess felt it; or the soup you can't see through",
        "cells": [
         [
          3,
@@ -32731,7 +32731,7 @@
        "num": 1,
        "dir": "down",
        "answer": "MERIT",
-       "clue": "Worth on its own",
+       "clue": "Worth standing on its own; or deserve it outright",
        "cells": [
         [
          0,
@@ -32759,7 +32759,7 @@
        "num": 2,
        "dir": "down",
        "answer": "EARL",
-       "clue": "Between viscount and marquess",
+       "clue": "Between viscount and marquess; or the tea with the bergamot",
        "cells": [
         [
          0,
@@ -32931,7 +32931,7 @@
        "num": 1,
        "dir": "across",
        "answer": "WHY",
-       "clue": "The question children never stop asking",
+       "clue": "The question children never stop asking; or the letter it sounds like",
        "cells": [
         [
          0,
@@ -33075,7 +33075,7 @@
        "num": 1,
        "dir": "down",
        "answer": "WHERE",
-       "clue": "The question of place",
+       "clue": "The question of place; or the house of it, in the song",
        "cells": [
         [
          0,
@@ -33103,7 +33103,7 @@
        "num": 2,
        "dir": "down",
        "answer": "HOST",
-       "clue": "The one who invites",
+       "clue": "The one who invites; or the multitude, in the old sense",
        "cells": [
         [
          0,
@@ -33199,7 +33199,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -33275,7 +33275,7 @@
        "num": 1,
        "dir": "across",
        "answer": "SKI",
-       "clue": "Downhill on two planks",
+       "clue": "Downhill on two planks; or the jump you'd never try",
        "cells": [
         [
          0,
@@ -33347,7 +33347,7 @@
        "num": 6,
        "dir": "across",
        "answer": "ALOUD",
-       "clue": "Read it so all can hear",
+       "clue": "So the room can hear; or thinking, when you say the quiet part",
        "cells": [
         [
          3,
@@ -33399,7 +33399,7 @@
        "num": 8,
        "dir": "across",
        "answer": "EWE",
-       "clue": "She of the flock",
+       "clue": "She of the flock; or sounds like you, twice over",
        "cells": [
         [
          5,
@@ -33471,7 +33471,7 @@
        "num": 3,
        "dir": "down",
        "answer": "IRE",
-       "clue": "Anger, in fewer letters",
+       "clue": "Anger, in three; or what you raise by trying",
        "cells": [
         [
          0,
@@ -33519,7 +33519,7 @@
        "num": 5,
        "dir": "down",
        "answer": "SLOW",
-       "clue": "How a snail travels",
+       "clue": "How the snail travels; or what the clock is running",
        "cells": [
         [
          2,
@@ -33619,7 +33619,7 @@
        "num": 1,
        "dir": "across",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          0,
@@ -33743,7 +33743,7 @@
        "num": 8,
        "dir": "across",
        "answer": "EWE",
-       "clue": "She of the flock",
+       "clue": "She of the flock; or sounds like you, twice over",
        "cells": [
         [
          5,
@@ -34231,7 +34231,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -34307,7 +34307,7 @@
        "num": 1,
        "dir": "across",
        "answer": "SKI",
-       "clue": "Downhill on two planks",
+       "clue": "Downhill on two planks; or the jump you'd never try",
        "cells": [
         [
          0,
@@ -34503,7 +34503,7 @@
        "num": 3,
        "dir": "down",
        "answer": "IRE",
-       "clue": "Anger, in fewer letters",
+       "clue": "Anger, in three; or what you raise by trying",
        "cells": [
         [
          0,
@@ -34575,7 +34575,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -34651,7 +34651,7 @@
        "num": 1,
        "dir": "across",
        "answer": "PEA",
-       "clue": "Princess felt it through the mattresses",
+       "clue": "The princess felt it; or the soup you can't see through",
        "cells": [
         [
          0,
@@ -34723,7 +34723,7 @@
        "num": 6,
        "dir": "across",
        "answer": "TEACH",
-       "clue": "Grandmother to suck eggs",
+       "clue": "Grandmother to suck eggs; or what experience does to you",
        "cells": [
         [
          3,
@@ -34751,7 +34751,7 @@
        "num": 7,
        "dir": "across",
        "answer": "WERE",
-       "clue": "Used to be, in the plural",
+       "clue": "Used to be, in the plural; or the wolf's first half",
        "cells": [
         [
          4,
@@ -34823,7 +34823,7 @@
        "num": 2,
        "dir": "down",
        "answer": "EACH",
-       "clue": "Every one of them",
+       "clue": "Every one of them; or what the price is, per item",
        "cells": [
         [
          0,
@@ -34847,7 +34847,7 @@
        "num": 3,
        "dir": "down",
        "answer": "ALE",
-       "clue": "Real, if it's any good",
+       "clue": "Real, if it's any good; or what the pub was called before it was a bar",
        "cells": [
         [
          0,
@@ -35167,7 +35167,7 @@
        "num": 2,
        "dir": "down",
        "answer": "EAST",
-       "clue": "Where the sun comes up",
+       "clue": "Where the sun comes up; or the End, if you're a Londoner",
        "cells": [
         [
          0,
@@ -35263,7 +35263,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -35339,7 +35339,7 @@
        "num": 1,
        "dir": "across",
        "answer": "ALE",
-       "clue": "Real, if it's any good",
+       "clue": "Real, if it's any good; or what the pub was called before it was a bar",
        "cells": [
         [
          0,
@@ -35463,7 +35463,7 @@
        "num": 8,
        "dir": "across",
        "answer": "IRE",
-       "clue": "Anger, in fewer letters",
+       "clue": "Anger, in three; or what you raise by trying",
        "cells": [
         [
          5,
@@ -35607,7 +35607,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SKI",
-       "clue": "Downhill on two planks",
+       "clue": "Downhill on two planks; or the jump you'd never try",
        "cells": [
         [
          3,
@@ -35683,7 +35683,7 @@
        "num": 1,
        "dir": "across",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          0,
@@ -35783,7 +35783,7 @@
        "num": 7,
        "dir": "across",
        "answer": "POSE",
-       "clue": "Hold it for the camera",
+       "clue": "Hold it for the camera; or the question, formally",
        "cells": [
         [
          4,
@@ -35807,7 +35807,7 @@
        "num": 8,
        "dir": "across",
        "answer": "EWE",
-       "clue": "She of the flock",
+       "clue": "She of the flock; or sounds like you, twice over",
        "cells": [
         [
          5,
@@ -35879,7 +35879,7 @@
        "num": 3,
        "dir": "down",
        "answer": "AND",
-       "clue": "The word that joins",
+       "clue": "The word that joins; or what you say waiting for the rest of it",
        "cells": [
         [
          0,
@@ -36071,7 +36071,7 @@
        "num": 5,
        "dir": "across",
        "answer": "ARISE",
-       "clue": "Get to your feet",
+       "clue": "Get to your feet; or what problems do, unhelpfully",
        "cells": [
         [
          2,
@@ -36199,7 +36199,7 @@
        "num": 2,
        "dir": "down",
        "answer": "EAST",
-       "clue": "Where the sun comes up",
+       "clue": "Where the sun comes up; or the End, if you're a Londoner",
        "cells": [
         [
          0,
@@ -36223,7 +36223,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EWE",
-       "clue": "She of the flock",
+       "clue": "She of the flock; or sounds like you, twice over",
        "cells": [
         [
          0,
@@ -36271,7 +36271,7 @@
        "num": 5,
        "dir": "down",
        "answer": "AKIN",
-       "clue": "Of the same sort",
+       "clue": "Of a piece with; or related, without the blood",
        "cells": [
         [
          2,
@@ -36295,7 +36295,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SKI",
-       "clue": "Downhill on two planks",
+       "clue": "Downhill on two planks; or the jump you'd never try",
        "cells": [
         [
          3,
@@ -36371,7 +36371,7 @@
        "num": 1,
        "dir": "across",
        "answer": "CAR",
-       "clue": "How most of us get about",
+       "clue": "How most of us get about; or the one on the train you sit in",
        "cells": [
         [
          0,
@@ -36391,7 +36391,7 @@
        "num": 4,
        "dir": "across",
        "answer": "BLUE",
-       "clue": "The colour, and the mood",
+       "clue": "The colour; or the mood, or the joke you shouldn't tell",
        "cells": [
         [
          1,
@@ -36415,7 +36415,7 @@
        "num": 5,
        "dir": "across",
        "answer": "TREND",
-       "clue": "The way things are going",
+       "clue": "The way things are going; or what a thing does, online",
        "cells": [
         [
          2,
@@ -36495,7 +36495,7 @@
        "num": 8,
        "dir": "across",
        "answer": "ASK",
-       "clue": "Do this and you might receive",
+       "clue": "Do this and you might receive; or the price the seller wants",
        "cells": [
         [
          5,
@@ -36515,7 +36515,7 @@
        "num": 1,
        "dir": "down",
        "answer": "CLERK",
-       "clue": "The one behind the counter",
+       "clue": "The one behind the counter; or the one who runs the court",
        "cells": [
         [
          0,
@@ -36639,7 +36639,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -36787,7 +36787,7 @@
        "num": 6,
        "dir": "across",
        "answer": "STOVE",
-       "clue": "Where the pot goes",
+       "clue": "Where the pot goes; or what the barrel was, staved in",
        "cells": [
         [
          3,
@@ -36911,7 +36911,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EWE",
-       "clue": "She of the flock",
+       "clue": "She of the flock; or sounds like you, twice over",
        "cells": [
         [
          0,
@@ -36983,7 +36983,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -37255,7 +37255,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EWE",
-       "clue": "She of the flock",
+       "clue": "She of the flock; or sounds like you, twice over",
        "cells": [
         [
          0,
@@ -37503,7 +37503,7 @@
        "num": 7,
        "dir": "across",
        "answer": "EAST",
-       "clue": "Where the sun comes up",
+       "clue": "Where the sun comes up; or the End, if you're a Londoner",
        "cells": [
         [
          4,
@@ -37575,7 +37575,7 @@
        "num": 2,
        "dir": "down",
        "answer": "EACH",
-       "clue": "Every one of them",
+       "clue": "Every one of them; or what the price is, per item",
        "cells": [
         [
          0,
@@ -37599,7 +37599,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EWE",
-       "clue": "She of the flock",
+       "clue": "She of the flock; or sounds like you, twice over",
        "cells": [
         [
          0,
@@ -37619,7 +37619,7 @@
        "num": 4,
        "dir": "down",
        "answer": "CEASE",
-       "clue": "Bring it to a stop",
+       "clue": "Bring it to a stop; or what the fire does, in the truce",
        "cells": [
         [
          1,
@@ -37747,7 +37747,7 @@
        "num": 1,
        "dir": "across",
        "answer": "PEA",
-       "clue": "Princess felt it through the mattresses",
+       "clue": "The princess felt it; or the soup you can't see through",
        "cells": [
         [
          0,
@@ -37767,7 +37767,7 @@
        "num": 4,
        "dir": "across",
        "answer": "PEAR",
-       "clue": "Shaped like the fruit when it goes wrong",
+       "clue": "The fruit; or the shape it all went, badly",
        "cells": [
         [
          1,
@@ -37919,7 +37919,7 @@
        "num": 2,
        "dir": "down",
        "answer": "EACH",
-       "clue": "Every one of them",
+       "clue": "Every one of them; or what the price is, per item",
        "cells": [
         [
          0,
@@ -38015,7 +38015,7 @@
        "num": 6,
        "dir": "down",
        "answer": "COW",
-       "clue": "It gives us the milk",
+       "clue": "She gives the milk; or browbeat them into it",
        "cells": [
         [
          3,
