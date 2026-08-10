@@ -379,7 +379,8 @@ class BankManager:
 
     @staticmethod
     def collect_tax_batch(charges, description: str = "Tax collection",
-                          *, bank_description: str = None):
+                          *, bank_description: str = None,
+                          record_public_log: bool = True):
         """Atomically collect a planned batch of user taxes into the bank.
 
         ``charges`` is an iterable of ``(user_id, planned_amount)`` pairs. Plans
@@ -424,6 +425,7 @@ class BankManager:
                     change = UKPenceManager._remove_amount_in_transaction(
                         cursor, user_id, actual_amount, description, now,
                         force_history=True,
+                        record_public_log=record_public_log,
                     )
                     if change is None:
                         raise sqlite3.IntegrityError(

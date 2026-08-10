@@ -659,7 +659,8 @@ async def apply_inactivity_tax(client):
         charged = BankManager.collect_tax_batch(
             plans,
             description="Inactivity tax (60+ days dormant)",
-            bank_description="Inactivity Tax (60+ days dormant)",
+            bank_description=f"Inactivity tax reclaimed from {len(plans)} users",
+            record_public_log=False,
         )
         if charged is None:
             logger.error("[ECONOMY] Inactivity tax batch failed; no charges were committed.")
@@ -753,7 +754,8 @@ async def apply_wealth_demurrage(client):
         charged = BankManager.collect_tax_batch(
             plans,
             description=label,
-            bank_description="Weekly wealth demurrage",
+            bank_description=f"Weekly wealth demurrage from {len(plans)} users",
+            record_public_log=False,
         )
         if charged is None:
             logger.error("[ECONOMY] Demurrage batch failed; no charges were committed.")
@@ -858,7 +860,8 @@ async def apply_economy_dormant_tax(client):
         charged = BankManager.collect_tax_batch(
             plans,
             description=f"Dormant-account tax ({days}d without using the economy)",
-            bank_description="Economy-dormant tax",
+            bank_description=f"Economy-dormant tax from {len(plans)} users",
+            record_public_log=False,
         )
         if charged is None:
             logger.error("[ECONOMY] Economy-dormant tax batch failed; nothing was committed.")

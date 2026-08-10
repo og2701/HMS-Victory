@@ -140,11 +140,13 @@ class UKPenceManager:
     @staticmethod
     def _record_change_in_transaction(cursor, user_id: int, old_balance, new_balance,
                                       reason: str, now: int, log_text: str,
-                                      *, force_history: bool = False):
-        cursor.execute(
-            "INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)",
-            (now, log_text),
-        )
+                                      *, force_history: bool = False,
+                                      record_public_log: bool = True):
+        if record_public_log:
+            cursor.execute(
+                "INSERT INTO economy_transactions (timestamp, log_text) VALUES (?, ?)",
+                (now, log_text),
+            )
         history_row = _record_balance_point_in_transaction(
             cursor, user_id, new_balance, now, force=force_history,
         )
@@ -178,10 +180,7 @@ class UKPenceManager:
             "INSERT OR REPLACE INTO ukpence (user_id, balance) VALUES (?, ?)",
             (str(user_id), new_balance),
         )
-        log_text = (
-            f"⚖️ <@{user_id}> balance set to `{new_balance:,}` UKP "
-            f"(was `{old_balance:,}`)|{reason}"
-        )
+        log_text = f"💵 <@{user_id}> received `{amount:,}` UKP|{reason}"
         return UKPenceManager._record_change_in_transaction(
             cursor, user_id, old_balance, new_balance, reason, now, log_text,
         )
@@ -189,7 +188,8 @@ class UKPenceManager:
     @staticmethod
     def _remove_amount_in_transaction(cursor, user_id: int, amount: int,
                                       reason: str, now: int,
-                                      *, force_history: bool = False):
+                                      *, force_history: bool = False,
+                                      record_public_log: bool = True):
         if amount < 0:
             return None
         cursor.execute("SELECT balance FROM ukpence WHERE user_id = ?", (str(user_id),))
@@ -206,6 +206,7 @@ class UKPenceManager:
         return UKPenceManager._record_change_in_transaction(
             cursor, user_id, old_balance, new_balance, reason, now, log_text,
             force_history=force_history,
+            record_public_log=record_public_log,
         )
 
     @staticmethod
