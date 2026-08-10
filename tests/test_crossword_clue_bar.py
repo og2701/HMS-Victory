@@ -55,6 +55,37 @@ def test_every_clue_in_the_bank_clears_its_own_bar():
         assert B._is_indirect(clue), f"{word} kept a clue that fails the bar: {clue!r}"
 
 
+def test_no_clue_contains_its_own_answer():
+    """The one quality failure that IS mechanically detectable.
+
+    The bar judges a clue's shape and can say nothing about whether the answer is sitting
+    in the text - "EVER | For ... and ever" cleared it comfortably while printing the word
+    it was asking for. Six were in the bank and two had shipped.
+    """
+    import re
+    for word, clue in B.HARD.items():
+        assert not re.search(rf"\b{re.escape(word.lower())}\b", clue.lower()), \
+            f"{word} gives itself away: {clue!r}"
+
+
+def test_no_shipped_puzzle_gives_its_answer_away():
+    """Same rule, against what players actually get - the bank and the shipped sets can
+    drift, because a set bakes its clues in at generation time."""
+    import json
+    import os
+    import re
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "data", "words", "crosswords.json")
+    with open(path, encoding="utf-8") as f:
+        doc = json.load(f)
+    for st in doc["sets"]:
+        for puzzle in st["puzzles"]:
+            for entry in puzzle["entries"]:
+                answer, clue = entry["answer"].lower(), entry["clue"].lower()
+                assert not re.search(rf"\b{re.escape(answer)}\b", clue), \
+                    f"set {st['from']}: {entry['answer']} gives itself away: {entry['clue']!r}"
+
+
 def _run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     passed = 0

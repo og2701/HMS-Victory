@@ -47,7 +47,7 @@
        "num": 1,
        "dir": "across",
        "answer": "DIM",
-       "clue": "Not bright",
+       "clue": "Not bright; or not clever",
        "cells": [
         [
          0,
@@ -67,7 +67,7 @@
        "num": 4,
        "dir": "across",
        "answer": "ACID",
-       "clue": "Vinegar is one",
+       "clue": "It burns; or the test of truth",
        "cells": [
         [
          1,
@@ -91,7 +91,7 @@
        "num": 6,
        "dir": "across",
        "answer": "BONUS",
-       "clue": "Extra payment",
+       "clue": "Extra pay; or the ball worth more",
        "cells": [
         [
          2,
@@ -119,7 +119,7 @@
        "num": 8,
        "dir": "across",
        "answer": "NOTE",
-       "clue": "Jotting; or a tenner",
+       "clue": "Jot it down; or the one you play",
        "cells": [
         [
          3,
@@ -143,7 +143,7 @@
        "num": 9,
        "dir": "across",
        "answer": "RYE",
-       "clue": "Bread grain",
+       "clue": "Grain, or a whisky",
        "cells": [
         [
          4,
@@ -207,7 +207,7 @@
        "num": 3,
        "dir": "down",
        "answer": "MINOR",
-       "clue": "Lesser",
+       "clue": "Lesser; or a key",
        "cells": [
         [
          0,
@@ -235,7 +235,7 @@
        "num": 5,
        "dir": "down",
        "answer": "DUTY",
-       "clue": "Obligation",
+       "clue": "What you must do; or what you pay at the border",
        "cells": [
         [
          1,
@@ -259,7 +259,7 @@
        "num": 7,
        "dir": "down",
        "answer": "SEE",
-       "clue": "Perceive",
+       "clue": "Perceive; or a bishop's patch",
        "cells": [
         [
          2,
@@ -311,7 +311,7 @@
        "num": 1,
        "dir": "across",
        "answer": "ROD",
-       "clue": "Slender bar",
+       "clue": "Fishing pole, or a rule of iron",
        "cells": [
         [
          0,
@@ -355,7 +355,7 @@
        "num": 5,
        "dir": "across",
        "answer": "VOICE",
-       "clue": "What you speak with",
+       "clue": "At the top of your ...",
        "cells": [
         [
          2,
@@ -383,7 +383,7 @@
        "num": 6,
        "dir": "across",
        "answer": "EDGE",
-       "clue": "Border",
+       "clue": "The rim; or what nerves are on",
        "cells": [
         [
          3,
@@ -455,7 +455,7 @@
        "num": 2,
        "dir": "down",
        "answer": "ONCE",
-       "clue": "One time",
+       "clue": "... upon a time",
        "cells": [
         [
          0,
@@ -479,7 +479,7 @@
        "num": 3,
        "dir": "down",
        "answer": "DUE",
-       "clue": "Owed",
+       "clue": "Owed, or expected any minute",
        "cells": [
         [
          0,
@@ -523,7 +523,7 @@
        "num": 5,
        "dir": "down",
        "answer": "VET",
-       "clue": "Animal doctor",
+       "clue": "Treats the animals; or check them over",
        "cells": [
         [
          2,
@@ -567,7 +567,7 @@
        "num": 1,
        "dir": "across",
        "answer": "BAR",
-       "clue": "Pub counter",
+       "clue": "Where the drinks are; or block the way",
        "cells": [
         [
          0,
@@ -643,7 +643,7 @@
        "num": 7,
        "dir": "across",
        "answer": "TREAT",
-       "clue": "Something nice",
+       "clue": "Something nice; or how you handle them",
        "cells": [
         [
          3,
@@ -671,7 +671,7 @@
        "num": 8,
        "dir": "across",
        "answer": "DRY",
-       "clue": "Not wet",
+       "clue": "No rain, or no drink",
        "cells": [
         [
          4,
@@ -691,7 +691,7 @@
        "num": 1,
        "dir": "down",
        "answer": "BOARD",
-       "clue": "Get on a plane",
+       "clue": "Above ...; or the ship you get on",
        "cells": [
         [
          0,
@@ -719,7 +719,7 @@
        "num": 2,
        "dir": "down",
        "answer": "ANGER",
-       "clue": "Rage",
+       "clue": "The red mist; or rouse it in them",
        "cells": [
         [
          0,
@@ -775,7 +775,7 @@
        "num": 4,
        "dir": "down",
        "answer": "MET",
-       "clue": "Encountered",
+       "clue": "Encountered; or London's force",
        "cells": [
         [
          1,
@@ -795,7 +795,7 @@
        "num": 5,
        "dir": "down",
        "answer": "YET",
-       "clue": "So far",
+       "clue": "Still, or nevertheless",
        "cells": [
         [
          1,
@@ -847,7 +847,7 @@
        "num": 1,
        "dir": "across",
        "answer": "NOD",
-       "clue": "Head's yes",
+       "clue": "Yes, with your head; or the land of it",
        "cells": [
         [
          0,
@@ -867,7 +867,7 @@
        "num": 4,
        "dir": "across",
        "answer": "HAVE",
-       "clue": "Possess",
+       "clue": "Possess it; or the opposite of the ...-nots",
        "cells": [
         [
          1,
@@ -919,7 +919,7 @@
        "num": 6,
        "dir": "across",
        "answer": "PEAR",
-       "clue": "Fruit shaped like a teardrop",
+       "clue": "The fruit; or the shape it all went, badly",
        "cells": [
         [
          3,
@@ -991,7 +991,7 @@
        "num": 2,
        "dir": "down",
        "answer": "OVER",
-       "clue": "Finished; or six balls",
+       "clue": "Finished, or six balls",
        "cells": [
         [
          0,
@@ -1015,7 +1015,7 @@
        "num": 3,
        "dir": "down",
        "answer": "DEN",
-       "clue": "Animal's lair",
+       "clue": "Where the fox lives, or where you hide",
        "cells": [
         [
          0,
@@ -1035,7 +1035,7 @@
        "num": 4,
        "dir": "down",
        "answer": "HEEL",
-       "clue": "Back of the foot",
+       "clue": "Bring to ...",
        "cells": [
         [
          1,
@@ -1059,7 +1059,7 @@
        "num": 5,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Health resort",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          2,
@@ -1111,7 +1111,7 @@
        "num": 1,
        "dir": "across",
        "answer": "RID",
-       "clue": "Free of",
+       "clue": "Get shot of; or good riddance to it",
        "cells": [
         [
          0,
@@ -1155,7 +1155,7 @@
        "num": 5,
        "dir": "across",
        "answer": "PEACE",
-       "clue": "Absence of war",
+       "clue": "No war; or what you hold, keeping quiet",
        "cells": [
         [
          2,
@@ -1183,7 +1183,7 @@
        "num": 6,
        "dir": "across",
        "answer": "EACH",
-       "clue": "Every one",
+       "clue": "Every one of them; or what the price is, per item",
        "cells": [
         [
          3,
@@ -1207,7 +1207,7 @@
        "num": 7,
        "dir": "across",
        "answer": "ART",
-       "clue": "Gallery contents",
+       "clue": "In the gallery; or the knack of it",
        "cells": [
         [
          4,
@@ -1255,7 +1255,7 @@
        "num": 2,
        "dir": "down",
        "answer": "INCH",
-       "clue": "2.54 centimetres",
+       "clue": "Give one, take a mile",
        "cells": [
         [
          0,
@@ -1299,7 +1299,7 @@
        "num": 4,
        "dir": "down",
        "answer": "DEAR",
-       "clue": "Beloved; or costly",
+       "clue": "Costly, or how the letter begins",
        "cells": [
         [
          1,
@@ -1323,7 +1323,7 @@
        "num": 5,
        "dir": "down",
        "answer": "PEA",
-       "clue": "Green pod ball",
+       "clue": "The princess felt it; or the soup you can't see through",
        "cells": [
         [
          2,
@@ -1375,7 +1375,7 @@
        "num": 1,
        "dir": "across",
        "answer": "APE",
-       "clue": "Gorilla or chimp",
+       "clue": "Copy, or the one you copy",
        "cells": [
         [
          0,
@@ -1395,7 +1395,7 @@
        "num": 4,
        "dir": "across",
        "answer": "TRAY",
-       "clue": "Serving board",
+       "clue": "Carry the tea on it; or the one marked In",
        "cells": [
         [
          1,
@@ -1491,7 +1491,7 @@
        "num": 1,
        "dir": "down",
        "answer": "ARISE",
-       "clue": "Get up",
+       "clue": "Get to your feet; or what problems do, unhelpfully",
        "cells": [
         [
          0,
@@ -1519,7 +1519,7 @@
        "num": 2,
        "dir": "down",
        "answer": "PACE",
-       "clue": "Speed of walking",
+       "clue": "Speed; or measure it out in steps",
        "cells": [
         [
          0,
@@ -1543,7 +1543,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EYE",
-       "clue": "Seer",
+       "clue": "You see with it; or the needle's hole",
        "cells": [
         [
          0,
@@ -1563,7 +1563,7 @@
        "num": 4,
        "dir": "down",
        "answer": "TWIN",
-       "clue": "One of two born together",
+       "clue": "One of two identical",
        "cells": [
         [
          1,
@@ -1587,7 +1587,7 @@
        "num": 5,
        "dir": "down",
        "answer": "TWO",
-       "clue": "A pair",
+       "clue": "It takes ... to tango",
        "cells": [
         [
          2,
@@ -1659,7 +1659,7 @@
        "num": 4,
        "dir": "across",
        "answer": "EARL",
-       "clue": "Noble below a marquess",
+       "clue": "Between viscount and marquess; or the tea with the bergamot",
        "cells": [
         [
          1,
@@ -1683,7 +1683,7 @@
        "num": 6,
        "dir": "across",
        "answer": "ARROW",
-       "clue": "Archer's ammunition",
+       "clue": "From the bow; or the one on the sign",
        "cells": [
         [
          2,
@@ -1711,7 +1711,7 @@
        "num": 8,
        "dir": "across",
        "answer": "DOSE",
-       "clue": "Amount of medicine",
+       "clue": "The spoonful; or what you gave them of it",
        "cells": [
         [
          3,
@@ -1735,7 +1735,7 @@
        "num": 9,
        "dir": "across",
        "answer": "RED",
-       "clue": "Colour of blood",
+       "clue": "Stop, or in the ...",
        "cells": [
         [
          4,
@@ -1755,7 +1755,7 @@
        "num": 1,
        "dir": "down",
        "answer": "SEA",
-       "clue": "The briny",
+       "clue": "The salt water; or all at it",
        "cells": [
         [
          0,
@@ -1775,7 +1775,7 @@
        "num": 2,
        "dir": "down",
        "answer": "HARD",
-       "clue": "Not easy",
+       "clue": "Not soft; or not easy",
        "cells": [
         [
          0,
@@ -1799,7 +1799,7 @@
        "num": 3,
        "dir": "down",
        "answer": "ERROR",
-       "clue": "Mistake",
+       "clue": "Trial and ...",
        "cells": [
         [
          0,
@@ -1827,7 +1827,7 @@
        "num": 5,
        "dir": "down",
        "answer": "LOSE",
-       "clue": "Mislay",
+       "clue": "Face, or your keys",
        "cells": [
         [
          1,
@@ -1923,7 +1923,7 @@
        "num": 4,
        "dir": "across",
        "answer": "SHOW",
-       "clue": "Display",
+       "clue": "The ... must go on",
        "cells": [
         [
          1,
@@ -1947,7 +1947,7 @@
        "num": 5,
        "dir": "across",
        "answer": "WHILE",
-       "clue": "During the time that",
+       "clue": "Worth your ...",
        "cells": [
         [
          2,
@@ -1999,7 +1999,7 @@
        "num": 7,
        "dir": "across",
        "answer": "ODD",
-       "clue": "Strange; or not even",
+       "clue": "Not even, or a bit peculiar",
        "cells": [
         [
          4,
@@ -2047,7 +2047,7 @@
        "num": 2,
        "dir": "down",
        "answer": "HOLD",
-       "clue": "Grasp",
+       "clue": "Grip; or the ship's belly",
        "cells": [
         [
          0,
@@ -2071,7 +2071,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EWE",
-       "clue": "Female sheep",
+       "clue": "She of the flock; or sounds like a letter of the alphabet",
        "cells": [
         [
          0,
@@ -2091,7 +2091,7 @@
        "num": 4,
        "dir": "down",
        "answer": "SHED",
-       "clue": "Garden hut",
+       "clue": "At the bottom of the garden; or drop it",
        "cells": [
         [
          1,
@@ -2167,7 +2167,7 @@
        "num": 1,
        "dir": "across",
        "answer": "CUP",
-       "clue": "FA trophy; or a mug",
+       "clue": "What we won in '66; or your tea's home",
        "cells": [
         [
          0,
@@ -2187,7 +2187,7 @@
        "num": 4,
        "dir": "across",
        "answer": "ROPE",
-       "clue": "Thick cord",
+       "clue": "Learn the ...s",
        "cells": [
         [
          1,
@@ -2211,7 +2211,7 @@
        "num": 5,
        "dir": "across",
        "answer": "PILOT",
-       "clue": "One who flies the plane",
+       "clue": "Flies it; or the first episode",
        "cells": [
         [
          2,
@@ -2283,7 +2283,7 @@
        "num": 1,
        "dir": "down",
        "answer": "COLON",
-       "clue": "Punctuation before a list",
+       "clue": "Two dots; or part of the gut",
        "cells": [
         [
          0,
@@ -2311,7 +2311,7 @@
        "num": 2,
        "dir": "down",
        "answer": "UPON",
-       "clue": "On top of",
+       "clue": "Once ... a time",
        "cells": [
         [
          0,
@@ -2379,7 +2379,7 @@
        "num": 5,
        "dir": "down",
        "answer": "PIT",
-       "clue": "Hole; or a mine",
+       "clue": "The deep hole; or where the miners went",
        "cells": [
         [
          2,
@@ -2431,7 +2431,7 @@
        "num": 1,
        "dir": "across",
        "answer": "DRY",
-       "clue": "Not wet",
+       "clue": "No rain, or no drink",
        "cells": [
         [
          0,
@@ -2451,7 +2451,7 @@
        "num": 4,
        "dir": "across",
        "answer": "TREE",
-       "clue": "Oak or ash",
+       "clue": "Barking up the wrong one; or the family one you drew at school",
        "cells": [
         [
          1,
@@ -2503,7 +2503,7 @@
        "num": 6,
        "dir": "across",
        "answer": "EDIT",
-       "clue": "Revise",
+       "clue": "Cut it down; or the change you made",
        "cells": [
         [
          3,
@@ -2547,7 +2547,7 @@
        "num": 1,
        "dir": "down",
        "answer": "DRAIN",
-       "clue": "Where the water goes",
+       "clue": "Down the ...",
        "cells": [
         [
          0,
@@ -2599,7 +2599,7 @@
        "num": 3,
        "dir": "down",
        "answer": "YET",
-       "clue": "So far",
+       "clue": "Still, or nevertheless",
        "cells": [
         [
          0,
@@ -2619,7 +2619,7 @@
        "num": 4,
        "dir": "down",
        "answer": "TIDE",
-       "clue": "Sea's rise and fall",
+       "clue": "In and out; or what turned in your favour",
        "cells": [
         [
          1,
@@ -2643,7 +2643,7 @@
        "num": 5,
        "dir": "down",
        "answer": "GEM",
-       "clue": "Precious stone",
+       "clue": "The jewel; or the absolute treasure",
        "cells": [
         [
          2,
@@ -2695,7 +2695,7 @@
        "num": 1,
        "dir": "across",
        "answer": "AGE",
-       "clue": "Years lived",
+       "clue": "It comes to us all; or the era it was",
        "cells": [
         [
          0,
@@ -2715,7 +2715,7 @@
        "num": 4,
        "dir": "across",
        "answer": "ROLL",
-       "clue": "Turn over; or a bread bun",
+       "clue": "It turns over; or the bread bun",
        "cells": [
         [
          1,
@@ -2791,7 +2791,7 @@
        "num": 9,
        "dir": "across",
        "answer": "WET",
-       "clue": "Soaked",
+       "clue": "Soaked; or a Tory of the soft sort",
        "cells": [
         [
          4,
@@ -2811,7 +2811,7 @@
        "num": 1,
        "dir": "down",
        "answer": "ARC",
-       "clue": "Curved line",
+       "clue": "The curve; or the light between the electrodes",
        "cells": [
         [
          0,
@@ -2831,7 +2831,7 @@
        "num": 2,
        "dir": "down",
        "answer": "GOAL",
-       "clue": "Net-buster",
+       "clue": "In the net; or what you're aiming at",
        "cells": [
         [
          0,
@@ -2855,7 +2855,7 @@
        "num": 3,
        "dir": "down",
        "answer": "ELBOW",
-       "clue": "Arm's bend",
+       "clue": "Give someone the ...",
        "cells": [
         [
          0,
@@ -2883,7 +2883,7 @@
        "num": 5,
        "dir": "down",
        "answer": "LIVE",
-       "clue": "Be alive; or broadcast now",
+       "clue": "Not recorded, or exist",
        "cells": [
         [
          1,
@@ -2907,7 +2907,7 @@
        "num": 7,
        "dir": "down",
        "answer": "NET",
-       "clue": "Goal's mesh",
+       "clue": "Catches the fish; or what's left after tax",
        "cells": [
         [
          2,
@@ -2959,7 +2959,7 @@
        "num": 1,
        "dir": "across",
        "answer": "ASK",
-       "clue": "Enquire",
+       "clue": "Do this and you might receive; or the price the seller wants",
        "cells": [
         [
          0,
@@ -2979,7 +2979,7 @@
        "num": 4,
        "dir": "across",
        "answer": "FLEE",
-       "clue": "Run away",
+       "clue": "Run for it; or what the guilty do",
        "cells": [
         [
          1,
@@ -3031,7 +3031,7 @@
        "num": 6,
        "dir": "across",
        "answer": "TEND",
-       "clue": "Look after",
+       "clue": "Look after; or be inclined to",
        "cells": [
         [
          3,
@@ -3055,7 +3055,7 @@
        "num": 7,
        "dir": "across",
        "answer": "SEE",
-       "clue": "Perceive",
+       "clue": "Perceive; or a bishop's patch",
        "cells": [
         [
          4,
@@ -3075,7 +3075,7 @@
        "num": 1,
        "dir": "down",
        "answer": "ALONE",
-       "clue": "By oneself",
+       "clue": "Leave well ...",
        "cells": [
         [
          0,
@@ -3127,7 +3127,7 @@
        "num": 3,
        "dir": "down",
        "answer": "KEY",
-       "clue": "Lock opener",
+       "clue": "Opens the lock; or the one the song's in",
        "cells": [
         [
          0,
@@ -3147,7 +3147,7 @@
        "num": 4,
        "dir": "down",
        "answer": "FREE",
-       "clue": "At no cost",
+       "clue": "Costs nothing; or let them out",
        "cells": [
         [
          1,
@@ -3223,7 +3223,7 @@
        "num": 1,
        "dir": "across",
        "answer": "CUE",
-       "clue": "Snooker stick",
+       "clue": "The signal to begin; or what you pot with",
        "cells": [
         [
          0,
@@ -3243,7 +3243,7 @@
        "num": 4,
        "dir": "across",
        "answer": "GENE",
-       "clue": "Unit of heredity",
+       "clue": "It runs in the family; or the pool you swim in without meaning to",
        "cells": [
         [
          1,
@@ -3295,7 +3295,7 @@
        "num": 6,
        "dir": "across",
        "answer": "WEST",
-       "clue": "Left on the map",
+       "clue": "Where the sun goes down; or the Country",
        "cells": [
         [
          3,
@@ -3339,7 +3339,7 @@
        "num": 1,
        "dir": "down",
        "answer": "CEASE",
-       "clue": "Stop",
+       "clue": "Bring it to a stop; or what the fire does, in the truce",
        "cells": [
         [
          0,
@@ -3367,7 +3367,7 @@
        "num": 2,
        "dir": "down",
        "answer": "UNIT",
-       "clue": "Single measure",
+       "clue": "One of many; or the flat",
        "cells": [
         [
          0,
@@ -3435,7 +3435,7 @@
        "num": 5,
        "dir": "down",
        "answer": "TWO",
-       "clue": "A pair",
+       "clue": "It takes ... to tango",
        "cells": [
         [
          2,
@@ -3487,7 +3487,7 @@
        "num": 1,
        "dir": "across",
        "answer": "AND",
-       "clue": "Plus",
+       "clue": "The word that joins; or what the ampersand stands in for",
        "cells": [
         [
          0,
@@ -3603,7 +3603,7 @@
        "num": 1,
        "dir": "down",
        "answer": "ACT",
-       "clue": "Deed; or a play's part",
+       "clue": "What you do, or what you put on",
        "cells": [
         [
          0,
@@ -3623,7 +3623,7 @@
        "num": 2,
        "dir": "down",
        "answer": "NORM",
-       "clue": "The usual",
+       "clue": "The usual state of things",
        "cells": [
         [
          0,
@@ -3647,7 +3647,7 @@
        "num": 3,
        "dir": "down",
        "answer": "DRIED",
-       "clue": "Had the moisture removed",
+       "clue": "All out of moisture",
        "cells": [
         [
          0,
@@ -3699,7 +3699,7 @@
        "num": 7,
        "dir": "down",
        "answer": "DUE",
-       "clue": "Owed",
+       "clue": "Owed, or expected any minute",
        "cells": [
         [
          2,
@@ -3751,7 +3751,7 @@
        "num": 1,
        "dir": "across",
        "answer": "OFF",
-       "clue": "Not on",
+       "clue": "Gone bad, or switched so",
        "cells": [
         [
          0,
@@ -3771,7 +3771,7 @@
        "num": 4,
        "dir": "across",
        "answer": "WOOL",
-       "clue": "Sheep's coat",
+       "clue": "Pull it over your eyes",
        "cells": [
         [
          1,
@@ -3823,7 +3823,7 @@
        "num": 8,
        "dir": "across",
        "answer": "TUNE",
-       "clue": "Melody",
+       "clue": "The melody; or set the engine right",
        "cells": [
         [
          3,
@@ -3847,7 +3847,7 @@
        "num": 9,
        "dir": "across",
        "answer": "SET",
-       "clue": "Put in place",
+       "clue": "Put it down; or the tennis one",
        "cells": [
         [
          4,
@@ -3867,7 +3867,7 @@
        "num": 1,
        "dir": "down",
        "answer": "OWL",
-       "clue": "Night hooter",
+       "clue": "It hoots; or the wise one",
        "cells": [
         [
          0,
@@ -3911,7 +3911,7 @@
        "num": 3,
        "dir": "down",
        "answer": "FOCUS",
-       "clue": "Sharpen your attention",
+       "clue": "Sharpen it; or what you bring to bear",
        "cells": [
         [
          0,
@@ -3939,7 +3939,7 @@
        "num": 5,
        "dir": "down",
        "answer": "LANE",
-       "clue": "Narrow road",
+       "clue": "Country road, or one of the motorway's",
        "cells": [
         [
          1,
@@ -4035,7 +4035,7 @@
        "num": 4,
        "dir": "across",
        "answer": "HAIR",
-       "clue": "What's on your head",
+       "clue": "On your head; or by a breadth of it",
        "cells": [
         [
          1,
@@ -4059,7 +4059,7 @@
        "num": 5,
        "dir": "across",
        "answer": "VILLA",
-       "clue": "Holiday house",
+       "clue": "Aston's club; or the holiday let",
        "cells": [
         [
          2,
@@ -4087,7 +4087,7 @@
        "num": 6,
        "dir": "across",
        "answer": "ORAL",
-       "clue": "Spoken",
+       "clue": "By word of mouth",
        "cells": [
         [
          3,
@@ -4159,7 +4159,7 @@
        "num": 2,
        "dir": "down",
        "answer": "HILL",
-       "clue": "Small rise",
+       "clue": "Over the ...",
        "cells": [
         [
          0,
@@ -4183,7 +4183,7 @@
        "num": 3,
        "dir": "down",
        "answer": "ERA",
-       "clue": "Age",
+       "clue": "The age; or the end of one",
        "cells": [
         [
          0,
@@ -4227,7 +4227,7 @@
        "num": 5,
        "dir": "down",
        "answer": "VOW",
-       "clue": "Solemn promise",
+       "clue": "Sworn at the altar; or promise it, solemnly",
        "cells": [
         [
          2,
@@ -4279,7 +4279,7 @@
        "num": 1,
        "dir": "across",
        "answer": "TAP",
-       "clue": "Water's outlet",
+       "clue": "Water comes out; or the light knock",
        "cells": [
         [
          0,
@@ -4323,7 +4323,7 @@
        "num": 5,
        "dir": "across",
        "answer": "ARENA",
-       "clue": "Sports venue",
+       "clue": "Where the fight is; or the field of politics",
        "cells": [
         [
          2,
@@ -4351,7 +4351,7 @@
        "num": 6,
        "dir": "across",
        "answer": "NEAT",
-       "clue": "Tidy",
+       "clue": "Tidy; or no mixer",
        "cells": [
         [
          3,
@@ -4375,7 +4375,7 @@
        "num": 7,
        "dir": "across",
        "answer": "YET",
-       "clue": "So far",
+       "clue": "Still, or nevertheless",
        "cells": [
         [
          4,
@@ -4395,7 +4395,7 @@
        "num": 1,
        "dir": "down",
        "answer": "TREAT",
-       "clue": "Something nice",
+       "clue": "Something nice; or how you handle them",
        "cells": [
         [
          0,
@@ -4423,7 +4423,7 @@
        "num": 2,
        "dir": "down",
        "answer": "AUNT",
-       "clue": "Parent's sister",
+       "clue": "Mum's sister; agony one",
        "cells": [
         [
          0,
@@ -4447,7 +4447,7 @@
        "num": 3,
        "dir": "down",
        "answer": "PEA",
-       "clue": "Green pod ball",
+       "clue": "The princess felt it; or the soup you can't see through",
        "cells": [
         [
          0,
@@ -4467,7 +4467,7 @@
        "num": 4,
        "dir": "down",
        "answer": "TREE",
-       "clue": "Oak or ash",
+       "clue": "Barking up the wrong one; or the family one you drew at school",
        "cells": [
         [
          1,
@@ -4543,7 +4543,7 @@
        "num": 1,
        "dir": "across",
        "answer": "LAB",
-       "clue": "Science room",
+       "clue": "Where the experiment happens",
        "cells": [
         [
          0,
@@ -4563,7 +4563,7 @@
        "num": 4,
        "dir": "across",
        "answer": "WERE",
-       "clue": "Past of are",
+       "clue": "Used to be, in the plural; or the wolf's first half",
        "cells": [
         [
          1,
@@ -4587,7 +4587,7 @@
        "num": 5,
        "dir": "across",
        "answer": "SHAME",
-       "clue": "Disgrace",
+       "clue": "What a ...",
        "cells": [
         [
          2,
@@ -4615,7 +4615,7 @@
        "num": 6,
        "dir": "across",
        "answer": "EASY",
-       "clue": "Not hard",
+       "clue": "No trouble at all; or take it, and go slowly",
        "cells": [
         [
          3,
@@ -4659,7 +4659,7 @@
        "num": 1,
        "dir": "down",
        "answer": "LEASE",
-       "clue": "Rental agreement",
+       "clue": "New ... of life",
        "cells": [
         [
          0,
@@ -4687,7 +4687,7 @@
        "num": 2,
        "dir": "down",
        "answer": "ARMY",
-       "clue": "Soldiers en masse",
+       "clue": "Soldiers en masse, or a great number",
        "cells": [
         [
          0,
@@ -4711,7 +4711,7 @@
        "num": 3,
        "dir": "down",
        "answer": "BEE",
-       "clue": "Honey maker",
+       "clue": "It buzzes; or the spelling contest",
        "cells": [
         [
          0,
@@ -4731,7 +4731,7 @@
        "num": 4,
        "dir": "down",
        "answer": "WHAT",
-       "clue": "Which thing",
+       "clue": "... on earth?",
        "cells": [
         [
          1,
@@ -4755,7 +4755,7 @@
        "num": 5,
        "dir": "down",
        "answer": "SEA",
-       "clue": "The briny",
+       "clue": "The salt water; or all at it",
        "cells": [
         [
          2,
@@ -4879,7 +4879,7 @@
        "num": 6,
        "dir": "across",
        "answer": "POLE",
-       "clue": "Long rod; or the Arctic",
+       "clue": "Long stick; or the top of the world",
        "cells": [
         [
          3,
@@ -4903,7 +4903,7 @@
        "num": 7,
        "dir": "across",
        "answer": "ADD",
-       "clue": "Sum up",
+       "clue": "What the sum wants",
        "cells": [
         [
          4,
@@ -4923,7 +4923,7 @@
        "num": 1,
        "dir": "down",
        "answer": "WORLD",
-       "clue": "The globe",
+       "clue": "On top of the ...",
        "cells": [
         [
          0,
@@ -4975,7 +4975,7 @@
        "num": 3,
        "dir": "down",
        "answer": "SKY",
-       "clue": "What's overhead",
+       "clue": "Up above; or the limit",
        "cells": [
         [
          0,
@@ -4995,7 +4995,7 @@
        "num": 4,
        "dir": "down",
        "answer": "MOOD",
-       "clue": "State of mind",
+       "clue": "How you feel; or the grammar of the verb",
        "cells": [
         [
          1,
@@ -5019,7 +5019,7 @@
        "num": 5,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Health resort",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          2,
@@ -5071,7 +5071,7 @@
        "num": 1,
        "dir": "across",
        "answer": "PAD",
-       "clue": "Cushion",
+       "clue": "Cushion it, or where you live",
        "cells": [
         [
          0,
@@ -5091,7 +5091,7 @@
        "num": 4,
        "dir": "across",
        "answer": "RARE",
-       "clue": "Uncommon",
+       "clue": "Hardly ever; or the steak barely done",
        "cells": [
         [
          1,
@@ -5115,7 +5115,7 @@
        "num": 5,
        "dir": "across",
        "answer": "LINEN",
-       "clue": "Bed sheets fabric",
+       "clue": "Wash your dirty ... in public",
        "cells": [
         [
          2,
@@ -5187,7 +5187,7 @@
        "num": 1,
        "dir": "down",
        "answer": "PANEL",
-       "clue": "Flat board; or a discussion group",
+       "clue": "Of experts; or the door's flat bit",
        "cells": [
         [
          0,
@@ -5239,7 +5239,7 @@
        "num": 3,
        "dir": "down",
        "answer": "DEN",
-       "clue": "Animal's lair",
+       "clue": "Where the fox lives, or where you hide",
        "cells": [
         [
          0,
@@ -5259,7 +5259,7 @@
        "num": 4,
        "dir": "down",
        "answer": "RIDE",
-       "clue": "Travel on",
+       "clue": "Along for the ...",
        "cells": [
         [
          1,
@@ -5283,7 +5283,7 @@
        "num": 5,
        "dir": "down",
        "answer": "LIE",
-       "clue": "Untruth",
+       "clue": "An untruth, or stretch out",
        "cells": [
         [
          2,
@@ -5335,7 +5335,7 @@
        "num": 1,
        "dir": "across",
        "answer": "APE",
-       "clue": "Gorilla or chimp",
+       "clue": "Copy, or the one you copy",
        "cells": [
         [
          0,
@@ -5355,7 +5355,7 @@
        "num": 4,
        "dir": "across",
        "answer": "GLOW",
-       "clue": "Soft light",
+       "clue": "Soft light; or the health on their cheeks",
        "cells": [
         [
          1,
@@ -5379,7 +5379,7 @@
        "num": 5,
        "dir": "across",
        "answer": "ARISE",
-       "clue": "Get up",
+       "clue": "Get to your feet; or what problems do, unhelpfully",
        "cells": [
         [
          2,
@@ -5407,7 +5407,7 @@
        "num": 6,
        "dir": "across",
        "answer": "CAVE",
-       "clue": "Underground hollow",
+       "clue": "Give in, or a hole in the hill",
        "cells": [
         [
          3,
@@ -5431,7 +5431,7 @@
        "num": 7,
        "dir": "across",
        "answer": "EYE",
-       "clue": "Seer",
+       "clue": "You see with it; or the needle's hole",
        "cells": [
         [
          4,
@@ -5451,7 +5451,7 @@
        "num": 1,
        "dir": "down",
        "answer": "ALIVE",
-       "clue": "Not dead",
+       "clue": "... and kicking",
        "cells": [
         [
          0,
@@ -5479,7 +5479,7 @@
        "num": 2,
        "dir": "down",
        "answer": "POSE",
-       "clue": "Strike an attitude",
+       "clue": "Hold it for the camera; or the question, formally",
        "cells": [
         [
          0,
@@ -5503,7 +5503,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EWE",
-       "clue": "Female sheep",
+       "clue": "She of the flock; or sounds like a letter of the alphabet",
        "cells": [
         [
          0,
@@ -5523,7 +5523,7 @@
        "num": 4,
        "dir": "down",
        "answer": "GRAY",
-       "clue": "Colourless shade",
+       "clue": "American spelling of a colour",
        "cells": [
         [
          1,
@@ -5547,7 +5547,7 @@
        "num": 5,
        "dir": "down",
        "answer": "ACE",
-       "clue": "Card above king",
+       "clue": "Top of the pack, or a serve you can't return",
        "cells": [
         [
          2,
@@ -5599,7 +5599,7 @@
        "num": 1,
        "dir": "across",
        "answer": "ELF",
-       "clue": "Pointy-eared sprite",
+       "clue": "Small helper at Christmas",
        "cells": [
         [
          0,
@@ -5619,7 +5619,7 @@
        "num": 4,
        "dir": "across",
        "answer": "GOLF",
-       "clue": "Links game",
+       "clue": "A good walk spoiled",
        "cells": [
         [
          1,
@@ -5671,7 +5671,7 @@
        "num": 8,
        "dir": "across",
        "answer": "DEAR",
-       "clue": "Beloved; or costly",
+       "clue": "Costly, or how the letter begins",
        "cells": [
         [
          3,
@@ -5695,7 +5695,7 @@
        "num": 9,
        "dir": "across",
        "answer": "TRY",
-       "clue": "Attempt; or a rugby score",
+       "clue": "Give it a go, or five points",
        "cells": [
         [
          4,
@@ -5715,7 +5715,7 @@
        "num": 1,
        "dir": "down",
        "answer": "EGG",
-       "clue": "Breakfast oval",
+       "clue": "Breakfast, or urge someone on",
        "cells": [
         [
          0,
@@ -5759,7 +5759,7 @@
        "num": 3,
        "dir": "down",
        "answer": "FLEET",
-       "clue": "Group of ships",
+       "clue": "Street; or the ships together",
        "cells": [
         [
          0,
@@ -5787,7 +5787,7 @@
        "num": 5,
        "dir": "down",
        "answer": "FEAR",
-       "clue": "Dread",
+       "clue": "Nothing to ... but ... itself",
        "cells": [
         [
          1,
@@ -5811,7 +5811,7 @@
        "num": 7,
        "dir": "down",
        "answer": "DRY",
-       "clue": "Not wet",
+       "clue": "No rain, or no drink",
        "cells": [
         [
          2,
@@ -5883,7 +5883,7 @@
        "num": 4,
        "dir": "across",
        "answer": "WAVE",
-       "clue": "Sea's swell; or greet",
+       "clue": "On the sea; or say goodbye with it",
        "cells": [
         [
          1,
@@ -5935,7 +5935,7 @@
        "num": 6,
        "dir": "across",
        "answer": "ORAL",
-       "clue": "Spoken",
+       "clue": "By word of mouth",
        "cells": [
         [
          3,
@@ -5959,7 +5959,7 @@
        "num": 7,
        "dir": "across",
        "answer": "BED",
-       "clue": "Where you sleep",
+       "clue": "You sleep in it; or where the flowers grow",
        "cells": [
         [
          4,
@@ -6127,7 +6127,7 @@
        "num": 1,
        "dir": "across",
        "answer": "ODD",
-       "clue": "Strange; or not even",
+       "clue": "Not even, or a bit peculiar",
        "cells": [
         [
          0,
@@ -6147,7 +6147,7 @@
        "num": 4,
        "dir": "across",
        "answer": "FIRM",
-       "clue": "Company; or solid",
+       "clue": "The company; or standing solid",
        "cells": [
         [
          1,
@@ -6171,7 +6171,7 @@
        "num": 6,
        "dir": "across",
        "answer": "FRAUD",
-       "clue": "Deception",
+       "clue": "The swindle; or the one who isn't what he claims",
        "cells": [
         [
          2,
@@ -6199,7 +6199,7 @@
        "num": 8,
        "dir": "across",
        "answer": "TILE",
-       "clue": "Roof or floor square",
+       "clue": "On the roof, or in Scrabble",
        "cells": [
         [
          3,
@@ -6223,7 +6223,7 @@
        "num": 9,
        "dir": "across",
        "answer": "NEW",
-       "clue": "Not old",
+       "clue": "Fresh out of the box",
        "cells": [
         [
          4,
@@ -6243,7 +6243,7 @@
        "num": 1,
        "dir": "down",
        "answer": "OFF",
-       "clue": "Not on",
+       "clue": "Gone bad, or switched so",
        "cells": [
         [
          0,
@@ -6287,7 +6287,7 @@
        "num": 3,
        "dir": "down",
        "answer": "DRAIN",
-       "clue": "Where the water goes",
+       "clue": "Down the ...",
        "cells": [
         [
          0,
@@ -6435,7 +6435,7 @@
        "num": 6,
        "dir": "across",
        "answer": "CREAM",
-       "clue": "Top of the milk",
+       "clue": "On the trifle; or the best of the crop",
        "cells": [
         [
          2,
@@ -6463,7 +6463,7 @@
        "num": 8,
        "dir": "across",
        "answer": "LATE",
-       "clue": "After time",
+       "clue": "Better ... than never",
        "cells": [
         [
          3,
@@ -6487,7 +6487,7 @@
        "num": 9,
        "dir": "across",
        "answer": "NET",
-       "clue": "Goal's mesh",
+       "clue": "Catches the fish; or what's left after tax",
        "cells": [
         [
          4,
@@ -6507,7 +6507,7 @@
        "num": 1,
        "dir": "down",
        "answer": "ARC",
-       "clue": "Curved line",
+       "clue": "The curve; or the light between the electrodes",
        "cells": [
         [
          0,
@@ -6551,7 +6551,7 @@
        "num": 3,
        "dir": "down",
        "answer": "OCEAN",
-       "clue": "Vast sea",
+       "clue": "Drop in the ...",
        "cells": [
         [
          0,
@@ -6579,7 +6579,7 @@
        "num": 5,
        "dir": "down",
        "answer": "HATE",
-       "clue": "Loathe",
+       "clue": "The opposite of love",
        "cells": [
         [
          1,
@@ -6603,7 +6603,7 @@
        "num": 7,
        "dir": "down",
        "answer": "MET",
-       "clue": "Encountered",
+       "clue": "Encountered; or London's force",
        "cells": [
         [
          2,
@@ -6694,7 +6694,7 @@
        "num": 1,
        "dir": "across",
        "answer": "ECHO",
-       "clue": "Sound bouncing back",
+       "clue": "It comes back; or repeat what they said",
        "cells": [
         [
          0,
@@ -6718,7 +6718,7 @@
        "num": 5,
        "dir": "across",
        "answer": "SLOW",
-       "clue": "Not fast",
+       "clue": "How the snail travels; or what the clock is running",
        "cells": [
         [
          1,
@@ -6742,7 +6742,7 @@
        "num": 6,
        "dir": "across",
        "answer": "TOWN",
-       "clue": "Bigger than a village",
+       "clue": "Not the country; or go to it, doing something properly",
        "cells": [
         [
          2,
@@ -6766,7 +6766,7 @@
        "num": 7,
        "dir": "across",
        "answer": "COAT",
-       "clue": "Outer garment",
+       "clue": "You wear it; or the layer of paint",
        "cells": [
         [
          3,
@@ -6790,7 +6790,7 @@
        "num": 9,
        "dir": "across",
        "answer": "OATH",
-       "clue": "Solemn promise",
+       "clue": "Sworn at the altar; or the word you swore when you stubbed it",
        "cells": [
         [
          4,
@@ -6814,7 +6814,7 @@
        "num": 10,
        "dir": "across",
        "answer": "TREE",
-       "clue": "Oak or ash",
+       "clue": "Barking up the wrong one; or the family one you drew at school",
        "cells": [
         [
          5,
@@ -6870,7 +6870,7 @@
        "num": 2,
        "dir": "down",
        "answer": "CLOTHE",
-       "clue": "Dress",
+       "clue": "Dress them; or dress it up in words",
        "cells": [
         [
          0,
@@ -6902,7 +6902,7 @@
        "num": 3,
        "dir": "down",
        "answer": "HOW",
-       "clue": "In what way",
+       "clue": "The question of method; or the way of it, as in the ... and the why",
        "cells": [
         [
          0,
@@ -6922,7 +6922,7 @@
        "num": 4,
        "dir": "down",
        "answer": "OWN",
-       "clue": "Possess",
+       "clue": "Belongs to you; or admit it",
        "cells": [
         [
          0,
@@ -6942,7 +6942,7 @@
        "num": 7,
        "dir": "down",
        "answer": "COT",
-       "clue": "Baby's bed",
+       "clue": "The baby sleeps in it; or the camp bed",
        "cells": [
         [
          3,
@@ -6962,7 +6962,7 @@
        "num": 8,
        "dir": "down",
        "answer": "OAR",
-       "clue": "Rowing blade",
+       "clue": "You row with it; or stick yours in",
        "cells": [
         [
          3,
@@ -7038,7 +7038,7 @@
        "num": 1,
        "dir": "across",
        "answer": "NUT",
-       "clue": "Bolt's partner",
+       "clue": "Cracks open; or the bolt's partner",
        "cells": [
         [
          0,
@@ -7058,7 +7058,7 @@
        "num": 4,
        "dir": "across",
        "answer": "APE",
-       "clue": "Gorilla or chimp",
+       "clue": "Copy, or the one you copy",
        "cells": [
         [
          1,
@@ -7110,7 +7110,7 @@
        "num": 9,
        "dir": "across",
        "answer": "ENTIRE",
-       "clue": "Whole",
+       "clue": "The whole of it; or the horse that wasn't gelded",
        "cells": [
         [
          3,
@@ -7142,7 +7142,7 @@
        "num": 10,
        "dir": "across",
        "answer": "SEA",
-       "clue": "The briny",
+       "clue": "The salt water; or all at it",
        "cells": [
         [
          4,
@@ -7162,7 +7162,7 @@
        "num": 11,
        "dir": "across",
        "answer": "CAR",
-       "clue": "Motor",
+       "clue": "How most of us get about; or the one on the train you sit in",
        "cells": [
         [
          5,
@@ -7206,7 +7206,7 @@
        "num": 2,
        "dir": "down",
        "answer": "UPON",
-       "clue": "On top of",
+       "clue": "Once ... a time",
        "cells": [
         [
          0,
@@ -7254,7 +7254,7 @@
        "num": 6,
        "dir": "down",
        "answer": "DISC",
-       "clue": "Round flat object",
+       "clue": "Round and flat; or the slipped one",
        "cells": [
         [
          2,
@@ -7426,7 +7426,7 @@
        "num": 5,
        "dir": "across",
        "answer": "PEACE",
-       "clue": "Absence of war",
+       "clue": "No war; or what you hold, keeping quiet",
        "cells": [
         [
          2,
@@ -7454,7 +7454,7 @@
        "num": 6,
        "dir": "across",
        "answer": "EARTH",
-       "clue": "Our planet",
+       "clue": "Down to ...",
        "cells": [
         [
          3,
@@ -7526,7 +7526,7 @@
        "num": 1,
        "dir": "down",
        "answer": "DEATH",
-       "clue": "The end",
+       "clue": "The end; or bored to it",
        "cells": [
         [
          0,
@@ -7554,7 +7554,7 @@
        "num": 2,
        "dir": "down",
        "answer": "INCH",
-       "clue": "2.54 centimetres",
+       "clue": "Give one, take a mile",
        "cells": [
         [
          0,
@@ -7578,7 +7578,7 @@
        "num": 3,
        "dir": "down",
        "answer": "DUE",
-       "clue": "Owed",
+       "clue": "Owed, or expected any minute",
        "cells": [
         [
          0,
@@ -7598,7 +7598,7 @@
        "num": 4,
        "dir": "down",
        "answer": "MERCY",
-       "clue": "Compassion shown",
+       "clue": "At the ... of",
        "cells": [
         [
          1,
@@ -7650,7 +7650,7 @@
        "num": 6,
        "dir": "down",
        "answer": "ERA",
-       "clue": "Age",
+       "clue": "The age; or the end of one",
        "cells": [
         [
          3,
@@ -7726,7 +7726,7 @@
        "num": 1,
        "dir": "across",
        "answer": "NOD",
-       "clue": "Head's yes",
+       "clue": "Yes, with your head; or the land of it",
        "cells": [
         [
          0,
@@ -7770,7 +7770,7 @@
        "num": 5,
        "dir": "across",
        "answer": "FORCE",
-       "clue": "Strength",
+       "clue": "May the ... be with you",
        "cells": [
         [
          2,
@@ -7798,7 +7798,7 @@
        "num": 6,
        "dir": "across",
        "answer": "ALIVE",
-       "clue": "Not dead",
+       "clue": "... and kicking",
        "cells": [
         [
          3,
@@ -7826,7 +7826,7 @@
        "num": 7,
        "dir": "across",
        "answer": "LANE",
-       "clue": "Narrow road",
+       "clue": "Country road, or one of the motorway's",
        "cells": [
         [
          4,
@@ -7850,7 +7850,7 @@
        "num": 8,
        "dir": "across",
        "answer": "EGG",
-       "clue": "Breakfast oval",
+       "clue": "Breakfast, or urge someone on",
        "cells": [
         [
          5,
@@ -7870,7 +7870,7 @@
        "num": 1,
        "dir": "down",
        "answer": "NERVE",
-       "clue": "Cheek; or a body signal",
+       "clue": "It carries the signal; or the cheek of them",
        "cells": [
         [
          0,
@@ -7898,7 +7898,7 @@
        "num": 2,
        "dir": "down",
        "answer": "ONCE",
-       "clue": "One time",
+       "clue": "... upon a time",
        "cells": [
         [
          0,
@@ -7970,7 +7970,7 @@
        "num": 5,
        "dir": "down",
        "answer": "FLAG",
-       "clue": "Union Jack, e.g.",
+       "clue": "Run it up the pole, or start to tire",
        "cells": [
         [
          2,
@@ -7994,7 +7994,7 @@
        "num": 6,
        "dir": "down",
        "answer": "ALE",
-       "clue": "Pint of bitter",
+       "clue": "Real, if it's any good; or what the pub was called before it was a bar",
        "cells": [
         [
          3,
@@ -8118,7 +8118,7 @@
        "num": 6,
        "dir": "across",
        "answer": "PAGE",
-       "clue": "Sheet of a book",
+       "clue": "In the book; or call for them",
        "cells": [
         [
          2,
@@ -8142,7 +8142,7 @@
        "num": 7,
        "dir": "across",
        "answer": "NEED",
-       "clue": "Require",
+       "clue": "A friend in ...",
        "cells": [
         [
          3,
@@ -8190,7 +8190,7 @@
        "num": 10,
        "dir": "across",
        "answer": "WERE",
-       "clue": "Past of are",
+       "clue": "Used to be, in the plural; or the wolf's first half",
        "cells": [
         [
          5,
@@ -8214,7 +8214,7 @@
        "num": 1,
        "dir": "down",
        "answer": "APPEAR",
-       "clue": "Come into view",
+       "clue": "Turn up; or merely seem to",
        "cells": [
         [
          0,
@@ -8246,7 +8246,7 @@
        "num": 2,
        "dir": "down",
        "answer": "CRADLE",
-       "clue": "Baby's bed",
+       "clue": "From the ... to the grave",
        "cells": [
         [
          0,
@@ -8278,7 +8278,7 @@
        "num": 3,
        "dir": "down",
        "answer": "RAG",
-       "clue": "Old cloth",
+       "clue": "Old cloth, or a tabloid",
        "cells": [
         [
          0,
@@ -8298,7 +8298,7 @@
        "num": 4,
        "dir": "down",
        "answer": "EYE",
-       "clue": "Seer",
+       "clue": "You see with it; or the needle's hole",
        "cells": [
         [
          0,
@@ -8338,7 +8338,7 @@
        "num": 8,
        "dir": "down",
        "answer": "EVE",
-       "clue": "Night before",
+       "clue": "The night before; or the first woman",
        "cells": [
         [
          3,
@@ -8414,7 +8414,7 @@
        "num": 1,
        "dir": "across",
        "answer": "SAW",
-       "clue": "Cutting tool; or observed",
+       "clue": "You cut with it; or you did see",
        "cells": [
         [
          0,
@@ -8434,7 +8434,7 @@
        "num": 4,
        "dir": "across",
        "answer": "BLUE",
-       "clue": "Colour of the sky",
+       "clue": "The colour; or the mood, or the joke you shouldn't tell",
        "cells": [
         [
          1,
@@ -8458,7 +8458,7 @@
        "num": 5,
        "dir": "across",
        "answer": "TREND",
-       "clue": "Prevailing fashion",
+       "clue": "The way things are going; or what a thing does, online",
        "cells": [
         [
          2,
@@ -8486,7 +8486,7 @@
        "num": 6,
        "dir": "across",
        "answer": "SHEET",
-       "clue": "Bed linen; or of paper",
+       "clue": "On the bed; or the paper you write on",
        "cells": [
         [
          3,
@@ -8514,7 +8514,7 @@
        "num": 7,
        "dir": "across",
        "answer": "HEAP",
-       "clue": "Pile",
+       "clue": "A pile, or an old banger",
        "cells": [
         [
          4,
@@ -8538,7 +8538,7 @@
        "num": 8,
        "dir": "across",
        "answer": "END",
-       "clue": "Finish",
+       "clue": "The finish; or the aim in view",
        "cells": [
         [
          5,
@@ -8586,7 +8586,7 @@
        "num": 2,
        "dir": "down",
        "answer": "AUNT",
-       "clue": "Parent's sister",
+       "clue": "Mum's sister; agony one",
        "cells": [
         [
          0,
@@ -8630,7 +8630,7 @@
        "num": 4,
        "dir": "down",
        "answer": "BREAD",
-       "clue": "Loaf",
+       "clue": "Best thing since sliced ...",
        "cells": [
         [
          1,
@@ -8658,7 +8658,7 @@
        "num": 5,
        "dir": "down",
        "answer": "THEN",
-       "clue": "At that time",
+       "clue": "Now and ...",
        "cells": [
         [
          2,
@@ -8758,7 +8758,7 @@
        "num": 1,
        "dir": "across",
        "answer": "PUB",
-       "clue": "The local",
+       "clue": "The local; or the crawl round them",
        "cells": [
         [
          0,
@@ -8778,7 +8778,7 @@
        "num": 4,
        "dir": "across",
        "answer": "CASE",
-       "clue": "Instance; or a suitcase",
+       "clue": "The detective's, or your luggage",
        "cells": [
         [
          1,
@@ -8830,7 +8830,7 @@
        "num": 6,
        "dir": "across",
        "answer": "SOUND",
-       "clue": "What you hear",
+       "clue": "What you hear; or in good order",
        "cells": [
         [
          3,
@@ -8954,7 +8954,7 @@
        "num": 3,
        "dir": "down",
        "answer": "BED",
-       "clue": "Where you sleep",
+       "clue": "You sleep in it; or where the flowers grow",
        "cells": [
         [
          0,
@@ -8974,7 +8974,7 @@
        "num": 4,
        "dir": "down",
        "answer": "CRUEL",
-       "clue": "Deliberately unkind",
+       "clue": "... to be kind",
        "cells": [
         [
          1,
@@ -9002,7 +9002,7 @@
        "num": 5,
        "dir": "down",
        "answer": "TOOL",
-       "clue": "Implement",
+       "clue": "Right ... for the job",
        "cells": [
         [
          2,
@@ -9026,7 +9026,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Health resort",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -9122,7 +9122,7 @@
        "num": 4,
        "dir": "across",
        "answer": "SHOW",
-       "clue": "Display",
+       "clue": "The ... must go on",
        "cells": [
         [
          1,
@@ -9226,7 +9226,7 @@
        "num": 8,
        "dir": "across",
        "answer": "YET",
-       "clue": "So far",
+       "clue": "Still, or nevertheless",
        "cells": [
         [
          5,
@@ -9298,7 +9298,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EWE",
-       "clue": "Female sheep",
+       "clue": "She of the flock; or sounds like a letter of the alphabet",
        "cells": [
         [
          0,
@@ -9346,7 +9346,7 @@
        "num": 5,
        "dir": "down",
        "answer": "SHOE",
-       "clue": "Foot's wear",
+       "clue": "If the ... fits",
        "cells": [
         [
          2,
@@ -9370,7 +9370,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SLY",
-       "clue": "Cunning",
+       "clue": "On the ... ",
        "cells": [
         [
          3,
@@ -9446,7 +9446,7 @@
        "num": 1,
        "dir": "across",
        "answer": "OFF",
-       "clue": "Not on",
+       "clue": "Gone bad, or switched so",
        "cells": [
         [
          0,
@@ -9466,7 +9466,7 @@
        "num": 4,
        "dir": "across",
        "answer": "DIE",
-       "clue": "Expire",
+       "clue": "Stop living; or the one you roll",
        "cells": [
         [
          1,
@@ -9486,7 +9486,7 @@
        "num": 5,
        "dir": "across",
        "answer": "RIDDLE",
-       "clue": "Puzzle; or full of holes",
+       "clue": "A puzzle; or shot full of holes",
        "cells": [
         [
          2,
@@ -9590,7 +9590,7 @@
        "num": 1,
        "dir": "down",
        "answer": "ODDS",
-       "clue": "Bookmaker's numbers",
+       "clue": "Against the ...",
        "cells": [
         [
          0,
@@ -9614,7 +9614,7 @@
        "num": 2,
        "dir": "down",
        "answer": "FILE",
-       "clue": "Document; or a rasp",
+       "clue": "Paperwork, or smooth it down",
        "cells": [
         [
          0,
@@ -9638,7 +9638,7 @@
        "num": 3,
        "dir": "down",
        "answer": "FEED",
-       "clue": "Give food to",
+       "clue": "Give them food; or what goes into the machine",
        "cells": [
         [
          0,
@@ -9710,7 +9710,7 @@
        "num": 7,
        "dir": "down",
        "answer": "DUST",
-       "clue": "Surface grime",
+       "clue": "Bite the ...",
        "cells": [
         [
          2,
@@ -9782,7 +9782,7 @@
        "num": 1,
        "dir": "across",
        "answer": "NET",
-       "clue": "Goal's mesh",
+       "clue": "Catches the fish; or what's left after tax",
        "cells": [
         [
          0,
@@ -9802,7 +9802,7 @@
        "num": 4,
        "dir": "across",
        "answer": "SAVE",
-       "clue": "Rescue; or put by",
+       "clue": "Rescue; or the keeper's stop",
        "cells": [
         [
          1,
@@ -9858,7 +9858,7 @@
        "num": 7,
        "dir": "across",
        "answer": "TALENT",
-       "clue": "Natural gift",
+       "clue": "The gift; or the old coin",
        "cells": [
         [
          3,
@@ -9890,7 +9890,7 @@
        "num": 8,
        "dir": "across",
        "answer": "ACID",
-       "clue": "Vinegar is one",
+       "clue": "It burns; or the test of truth",
        "cells": [
         [
          4,
@@ -9914,7 +9914,7 @@
        "num": 9,
        "dir": "across",
        "answer": "RED",
-       "clue": "Colour of blood",
+       "clue": "Stop, or in the ...",
        "cells": [
         [
          5,
@@ -9934,7 +9934,7 @@
        "num": 1,
        "dir": "down",
        "answer": "NAKED",
-       "clue": "Wearing nothing",
+       "clue": "To the ... eye",
        "cells": [
         [
          0,
@@ -9962,7 +9962,7 @@
        "num": 2,
        "dir": "down",
        "answer": "EVEN",
-       "clue": "Level; or divisible by two",
+       "clue": "Not odd, or getting your own back",
        "cells": [
         [
          0,
@@ -10038,7 +10038,7 @@
        "num": 5,
        "dir": "down",
        "answer": "STAR",
-       "clue": "Night sky twinkler",
+       "clue": "In the sky; or top of the bill",
        "cells": [
         [
          2,
@@ -10062,7 +10062,7 @@
        "num": 6,
        "dir": "down",
        "answer": "PACE",
-       "clue": "Speed of walking",
+       "clue": "Speed; or measure it out in steps",
        "cells": [
         [
          2,
@@ -10142,7 +10142,7 @@
        "num": 1,
        "dir": "across",
        "answer": "CUT",
-       "clue": "Slice",
+       "clue": "Reduce, or what the knife does",
        "cells": [
         [
          0,
@@ -10162,7 +10162,7 @@
        "num": 4,
        "dir": "across",
        "answer": "BONE",
-       "clue": "Skeleton part",
+       "clue": "Dry as one; or what you swot up on",
        "cells": [
         [
          1,
@@ -10186,7 +10186,7 @@
        "num": 5,
        "dir": "across",
        "answer": "PLAIN",
-       "clue": "Simple; or a flat expanse",
+       "clue": "Nothing fancy; or the flat land",
        "cells": [
         [
          2,
@@ -10242,7 +10242,7 @@
        "num": 7,
        "dir": "across",
        "answer": "HINT",
-       "clue": "Clue",
+       "clue": "A gentle nudge toward the answer",
        "cells": [
         [
          4,
@@ -10266,7 +10266,7 @@
        "num": 8,
        "dir": "across",
        "answer": "ODD",
-       "clue": "Strange; or not even",
+       "clue": "Not even, or a bit peculiar",
        "cells": [
         [
          5,
@@ -10286,7 +10286,7 @@
        "num": 1,
        "dir": "down",
        "answer": "COAST",
-       "clue": "Where land meets sea",
+       "clue": "The seaside; or freewheel",
        "cells": [
         [
          0,
@@ -10314,7 +10314,7 @@
        "num": 2,
        "dir": "down",
        "answer": "UNIT",
-       "clue": "Single measure",
+       "clue": "One of many; or the flat",
        "cells": [
         [
          0,
@@ -10358,7 +10358,7 @@
        "num": 4,
        "dir": "down",
        "answer": "BLIND",
-       "clue": "Unable to see",
+       "clue": "Turn a ... eye",
        "cells": [
         [
          1,
@@ -10530,7 +10530,7 @@
        "num": 6,
        "dir": "across",
        "answer": "CREAM",
-       "clue": "Top of the milk",
+       "clue": "On the trifle; or the best of the crop",
        "cells": [
         [
          2,
@@ -10558,7 +10558,7 @@
        "num": 8,
        "dir": "across",
        "answer": "LABEL",
-       "clue": "Sticker with the name",
+       "clue": "On the jar; or the one that signed the band",
        "cells": [
         [
          3,
@@ -10610,7 +10610,7 @@
        "num": 11,
        "dir": "across",
        "answer": "TUG",
-       "clue": "Sharp pull",
+       "clue": "A pull, or the little boat that hauls",
        "cells": [
         [
          5,
@@ -10630,7 +10630,7 @@
        "num": 1,
        "dir": "down",
        "answer": "ARC",
-       "clue": "Curved line",
+       "clue": "The curve; or the light between the electrodes",
        "cells": [
         [
          0,
@@ -10674,7 +10674,7 @@
        "num": 3,
        "dir": "down",
        "answer": "OCEAN",
-       "clue": "Vast sea",
+       "clue": "Drop in the ...",
        "cells": [
         [
          0,
@@ -10702,7 +10702,7 @@
        "num": 5,
        "dir": "down",
        "answer": "HABIT",
-       "clue": "Routine behaviour",
+       "clue": "Hard to break; or what the nun wears",
        "cells": [
         [
          1,
@@ -10754,7 +10754,7 @@
        "num": 9,
        "dir": "down",
        "answer": "LEG",
-       "clue": "Limb for walking",
+       "clue": "You stand on it; or one part of the journey",
        "cells": [
         [
          3,
@@ -10830,7 +10830,7 @@
        "num": 1,
        "dir": "across",
        "answer": "TAP",
-       "clue": "Water's outlet",
+       "clue": "Water comes out; or the light knock",
        "cells": [
         [
          0,
@@ -10874,7 +10874,7 @@
        "num": 5,
        "dir": "across",
        "answer": "THING",
-       "clue": "Object",
+       "clue": "The ... is ...",
        "cells": [
         [
          2,
@@ -10902,7 +10902,7 @@
        "num": 6,
        "dir": "across",
        "answer": "TREAT",
-       "clue": "Something nice",
+       "clue": "Something nice; or how you handle them",
        "cells": [
         [
          3,
@@ -10930,7 +10930,7 @@
        "num": 7,
        "dir": "across",
        "answer": "EARL",
-       "clue": "Noble below a marquess",
+       "clue": "Between viscount and marquess; or the tea with the bergamot",
        "cells": [
         [
          4,
@@ -10954,7 +10954,7 @@
        "num": 8,
        "dir": "across",
        "answer": "APE",
-       "clue": "Gorilla or chimp",
+       "clue": "Copy, or the one you copy",
        "cells": [
         [
          5,
@@ -10974,7 +10974,7 @@
        "num": 1,
        "dir": "down",
        "answer": "TRIAL",
-       "clue": "Court hearing; or a test",
+       "clue": "In court; or the run before the real thing",
        "cells": [
         [
          0,
@@ -11002,7 +11002,7 @@
        "num": 2,
        "dir": "down",
        "answer": "AUNT",
-       "clue": "Parent's sister",
+       "clue": "Mum's sister; agony one",
        "cells": [
         [
          0,
@@ -11026,7 +11026,7 @@
        "num": 3,
        "dir": "down",
        "answer": "PEG",
-       "clue": "Washing line clip",
+       "clue": "Hangs the washing; or take down a ...",
        "cells": [
         [
          0,
@@ -11046,7 +11046,7 @@
        "num": 4,
        "dir": "down",
        "answer": "THERE",
-       "clue": "In that place",
+       "clue": "Been ..., done that",
        "cells": [
         [
          1,
@@ -11074,7 +11074,7 @@
        "num": 5,
        "dir": "down",
        "answer": "TRAP",
-       "clue": "Snare",
+       "clue": "Set one, or shut it",
        "cells": [
         [
          2,
@@ -11174,7 +11174,7 @@
        "num": 1,
        "dir": "across",
        "answer": "NEW",
-       "clue": "Not old",
+       "clue": "Fresh out of the box",
        "cells": [
         [
          0,
@@ -11218,7 +11218,7 @@
        "num": 5,
        "dir": "across",
        "answer": "MERIT",
-       "clue": "Worthiness",
+       "clue": "Worth standing on its own; or deserve it outright",
        "cells": [
         [
          2,
@@ -11246,7 +11246,7 @@
        "num": 6,
        "dir": "across",
        "answer": "BOAST",
-       "clue": "Show off verbally",
+       "clue": "Blow your trumpet; or the thing you're proud of",
        "cells": [
         [
          3,
@@ -11274,7 +11274,7 @@
        "num": 7,
        "dir": "across",
        "answer": "IDLE",
-       "clue": "Doing nothing",
+       "clue": "Doing nothing; and an Eric",
        "cells": [
         [
          4,
@@ -11298,7 +11298,7 @@
        "num": 8,
        "dir": "across",
        "answer": "GEM",
-       "clue": "Precious stone",
+       "clue": "The jewel; or the absolute treasure",
        "cells": [
         [
          5,
@@ -11318,7 +11318,7 @@
        "num": 1,
        "dir": "down",
        "answer": "NURSE",
-       "clue": "Ward carer",
+       "clue": "On the ward; or hold the grudge",
        "cells": [
         [
          0,
@@ -11346,7 +11346,7 @@
        "num": 2,
        "dir": "down",
        "answer": "EDIT",
-       "clue": "Revise",
+       "clue": "Cut it down; or the change you made",
        "cells": [
         [
          0,
@@ -11370,7 +11370,7 @@
        "num": 3,
        "dir": "down",
        "answer": "WET",
-       "clue": "Soaked",
+       "clue": "Soaked; or a Tory of the soft sort",
        "cells": [
         [
          0,
@@ -11538,7 +11538,7 @@
        "num": 4,
        "dir": "across",
        "answer": "PAD",
-       "clue": "Cushion",
+       "clue": "Cushion it, or where you live",
        "cells": [
         [
          1,
@@ -11590,7 +11590,7 @@
        "num": 8,
        "dir": "across",
        "answer": "ORANGE",
-       "clue": "Fruit and colour both",
+       "clue": "The fruit; or the colour of it",
        "cells": [
         [
          3,
@@ -11642,7 +11642,7 @@
        "num": 10,
        "dir": "across",
        "answer": "END",
-       "clue": "Finish",
+       "clue": "The finish; or the aim in view",
        "cells": [
         [
          5,
@@ -11686,7 +11686,7 @@
        "num": 2,
        "dir": "down",
        "answer": "HANG",
-       "clue": "Suspend",
+       "clue": "Get the ... of it",
        "cells": [
         [
          0,
@@ -11710,7 +11710,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EDGE",
-       "clue": "Border",
+       "clue": "The rim; or what nerves are on",
        "cells": [
         [
          0,
@@ -11734,7 +11734,7 @@
        "num": 5,
        "dir": "down",
        "answer": "ROSE",
-       "clue": "Thorny bloom",
+       "clue": "The flower; or it got up",
        "cells": [
         [
          2,
@@ -11758,7 +11758,7 @@
        "num": 6,
        "dir": "down",
        "answer": "IRON",
-       "clue": "Metal; or press clothes",
+       "clue": "The metal; or press the shirt",
        "cells": [
         [
          2,
@@ -11782,7 +11782,7 @@
        "num": 7,
        "dir": "down",
        "answer": "SAND",
-       "clue": "Beach grains",
+       "clue": "Head in the ...",
        "cells": [
         [
          2,
@@ -11862,7 +11862,7 @@
        "num": 1,
        "dir": "across",
        "answer": "URN",
-       "clue": "Ashes' vessel",
+       "clue": "Holds the ashes; or the tea one",
        "cells": [
         [
          0,
@@ -11882,7 +11882,7 @@
        "num": 4,
        "dir": "across",
        "answer": "SEA",
-       "clue": "The briny",
+       "clue": "The salt water; or all at it",
        "cells": [
         [
          1,
@@ -11902,7 +11902,7 @@
        "num": 5,
        "dir": "across",
        "answer": "STREAM",
-       "clue": "Small river; or watch online",
+       "clue": "The little river; or watch it live",
        "cells": [
         [
          2,
@@ -11934,7 +11934,7 @@
        "num": 8,
        "dir": "across",
        "answer": "NEEDLE",
-       "clue": "Sewing spike; or needle a person",
+       "clue": "It threads; or goad them with it",
        "cells": [
         [
          3,
@@ -12078,7 +12078,7 @@
        "num": 5,
        "dir": "down",
        "answer": "SNAP",
-       "clue": "Break sharply; or a photo",
+       "clue": "Take a photo, or a card game",
        "cells": [
         [
          2,
@@ -12206,7 +12206,7 @@
        "num": 1,
        "dir": "across",
        "answer": "SUM",
-       "clue": "Total",
+       "clue": "The total; or the arithmetic you did",
        "cells": [
         [
          0,
@@ -12226,7 +12226,7 @@
        "num": 4,
        "dir": "across",
        "answer": "CAGE",
-       "clue": "Bird's home",
+       "clue": "Bars for the bird; or rattle theirs",
        "cells": [
         [
          1,
@@ -12250,7 +12250,7 @@
        "num": 5,
        "dir": "across",
        "answer": "FAULT",
-       "clue": "Flaw; or blame",
+       "clue": "Whose ... is it?",
        "cells": [
         [
          2,
@@ -12330,7 +12330,7 @@
        "num": 8,
        "dir": "across",
        "answer": "TRY",
-       "clue": "Attempt; or a rugby score",
+       "clue": "Give it a go, or five points",
        "cells": [
         [
          5,
@@ -12350,7 +12350,7 @@
        "num": 1,
        "dir": "down",
        "answer": "SAUCE",
-       "clue": "Gravy's cousin",
+       "clue": "Cheek; or what's on the chips",
        "cells": [
         [
          0,
@@ -12402,7 +12402,7 @@
        "num": 3,
        "dir": "down",
        "answer": "MET",
-       "clue": "Encountered",
+       "clue": "Encountered; or London's force",
        "cells": [
         [
          0,
@@ -12450,7 +12450,7 @@
        "num": 5,
        "dir": "down",
        "answer": "FAIR",
-       "clue": "Just; or a funfair",
+       "clue": "Just; or where the rides are",
        "cells": [
         [
          2,
@@ -12474,7 +12474,7 @@
        "num": 6,
        "dir": "down",
        "answer": "FAT",
-       "clue": "Not lean",
+       "clue": "Not thin; or the chance of it",
        "cells": [
         [
          3,
@@ -12550,7 +12550,7 @@
        "num": 1,
        "dir": "across",
        "answer": "BOW",
-       "clue": "Bend forward; or an archer's weapon",
+       "clue": "Bend low; or the one that fires arrows",
        "cells": [
         [
          0,
@@ -12594,7 +12594,7 @@
        "num": 5,
        "dir": "across",
        "answer": "DRIED",
-       "clue": "Had the moisture removed",
+       "clue": "All out of moisture",
        "cells": [
         [
          2,
@@ -12650,7 +12650,7 @@
        "num": 7,
        "dir": "across",
        "answer": "WEED",
-       "clue": "Garden intruder",
+       "clue": "Pull it up; or a feeble sort",
        "cells": [
         [
          4,
@@ -12674,7 +12674,7 @@
        "num": 8,
        "dir": "across",
        "answer": "OWL",
-       "clue": "Night hooter",
+       "clue": "It hoots; or the wise one",
        "cells": [
         [
          5,
@@ -12694,7 +12694,7 @@
        "num": 1,
        "dir": "down",
        "answer": "BUILD",
-       "clue": "Construct",
+       "clue": "Put it up; or the frame you're carrying",
        "cells": [
         [
          0,
@@ -12722,7 +12722,7 @@
        "num": 2,
        "dir": "down",
        "answer": "OBEY",
-       "clue": "Do as told",
+       "clue": "Do as you're told",
        "cells": [
         [
          0,
@@ -12766,7 +12766,7 @@
        "num": 4,
        "dir": "down",
        "answer": "CRUEL",
-       "clue": "Deliberately unkind",
+       "clue": "... to be kind",
        "cells": [
         [
          1,
@@ -12818,7 +12818,7 @@
        "num": 6,
        "dir": "down",
        "answer": "TWO",
-       "clue": "A pair",
+       "clue": "It takes ... to tango",
        "cells": [
         [
          3,
@@ -12886,7 +12886,7 @@
        "num": 1,
        "dir": "across",
        "answer": "AGE",
-       "clue": "Years lived",
+       "clue": "It comes to us all; or the era it was",
        "cells": [
         [
          0,
@@ -12906,7 +12906,7 @@
        "num": 4,
        "dir": "across",
        "answer": "CLIFF",
-       "clue": "Steep rock face",
+       "clue": "The sheer drop; or where the story hangs",
        "cells": [
         [
          1,
@@ -12962,7 +12962,7 @@
        "num": 8,
        "dir": "across",
        "answer": "SHORE",
-       "clue": "Coastline",
+       "clue": "Where the sea ends; or prop it up",
        "cells": [
         [
          3,
@@ -12990,7 +12990,7 @@
        "num": 10,
        "dir": "across",
        "answer": "STORY",
-       "clue": "Tale",
+       "clue": "The tale; or the floor of the building",
        "cells": [
         [
          4,
@@ -13038,7 +13038,7 @@
        "num": 1,
        "dir": "down",
        "answer": "ACE",
-       "clue": "Card above king",
+       "clue": "Top of the pack, or a serve you can't return",
        "cells": [
         [
          0,
@@ -13086,7 +13086,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EIGHT",
-       "clue": "Number after seven",
+       "clue": "Pieces of ...",
        "cells": [
         [
          0,
@@ -13114,7 +13114,7 @@
        "num": 5,
        "dir": "down",
        "answer": "FLOOD",
-       "clue": "Overflow of water",
+       "clue": "Before the ...",
        "cells": [
         [
          1,
@@ -13142,7 +13142,7 @@
        "num": 6,
        "dir": "down",
        "answer": "FERRY",
-       "clue": "Boat that crosses",
+       "clue": "Boat across; or carry them to and fro",
        "cells": [
         [
          1,
@@ -13170,7 +13170,7 @@
        "num": 9,
        "dir": "down",
        "answer": "EYE",
-       "clue": "Seer",
+       "clue": "You see with it; or the needle's hole",
        "cells": [
         [
          3,
@@ -13246,7 +13246,7 @@
        "num": 1,
        "dir": "across",
        "answer": "PEA",
-       "clue": "Green pod ball",
+       "clue": "The princess felt it; or the soup you can't see through",
        "cells": [
         [
          0,
@@ -13266,7 +13266,7 @@
        "num": 4,
        "dir": "across",
        "answer": "SEAL",
-       "clue": "Close tight; or a barking sea mammal",
+       "clue": "The animal; or close it up",
        "cells": [
         [
          1,
@@ -13290,7 +13290,7 @@
        "num": 5,
        "dir": "across",
        "answer": "CHASE",
-       "clue": "Pursue",
+       "clue": "Cut to the ...",
        "cells": [
         [
          2,
@@ -13318,7 +13318,7 @@
        "num": 6,
        "dir": "across",
        "answer": "WHERE",
-       "clue": "In what place",
+       "clue": "The question of place; or the house of it, in the song",
        "cells": [
         [
          3,
@@ -13370,7 +13370,7 @@
        "num": 8,
        "dir": "across",
        "answer": "OFF",
-       "clue": "Not on",
+       "clue": "Gone bad, or switched so",
        "cells": [
         [
          5,
@@ -13418,7 +13418,7 @@
        "num": 2,
        "dir": "down",
        "answer": "EASE",
-       "clue": "Lack of difficulty",
+       "clue": "At your ...",
        "cells": [
         [
          0,
@@ -13442,7 +13442,7 @@
        "num": 3,
        "dir": "down",
        "answer": "ALE",
-       "clue": "Pint of bitter",
+       "clue": "Real, if it's any good; or what the pub was called before it was a bar",
        "cells": [
         [
          0,
@@ -13462,7 +13462,7 @@
        "num": 4,
        "dir": "down",
        "answer": "SHELF",
-       "clue": "Where books sit",
+       "clue": "Off the ...",
        "cells": [
         [
          1,
@@ -13610,7 +13610,7 @@
        "num": 4,
        "dir": "across",
        "answer": "SAVE",
-       "clue": "Rescue; or put by",
+       "clue": "Rescue; or the keeper's stop",
        "cells": [
         [
          1,
@@ -13714,7 +13714,7 @@
        "num": 8,
        "dir": "across",
        "answer": "BED",
-       "clue": "Where you sleep",
+       "clue": "You sleep in it; or where the flowers grow",
        "cells": [
         [
          5,
@@ -13762,7 +13762,7 @@
        "num": 2,
        "dir": "down",
        "answer": "OVER",
-       "clue": "Finished; or six balls",
+       "clue": "Finished, or six balls",
        "cells": [
         [
          0,
@@ -13786,7 +13786,7 @@
        "num": 3,
        "dir": "down",
        "answer": "RED",
-       "clue": "Colour of blood",
+       "clue": "Stop, or in the ...",
        "cells": [
         [
          0,
@@ -13834,7 +13834,7 @@
        "num": 5,
        "dir": "down",
        "answer": "DOVE",
-       "clue": "Peace bird",
+       "clue": "Bird of peace; or plunged in",
        "cells": [
         [
          2,
@@ -13934,7 +13934,7 @@
        "num": 1,
        "dir": "across",
        "answer": "HOW",
-       "clue": "In what way",
+       "clue": "The question of method; or the way of it, as in the ... and the why",
        "cells": [
         [
          0,
@@ -13954,7 +13954,7 @@
        "num": 4,
        "dir": "across",
        "answer": "APE",
-       "clue": "Gorilla or chimp",
+       "clue": "Copy, or the one you copy",
        "cells": [
         [
          1,
@@ -14006,7 +14006,7 @@
        "num": 9,
        "dir": "across",
        "answer": "ENTIRE",
-       "clue": "Whole",
+       "clue": "The whole of it; or the horse that wasn't gelded",
        "cells": [
         [
          3,
@@ -14058,7 +14058,7 @@
        "num": 11,
        "dir": "across",
        "answer": "END",
-       "clue": "Finish",
+       "clue": "The finish; or the aim in view",
        "cells": [
         [
          5,
@@ -14078,7 +14078,7 @@
        "num": 1,
        "dir": "down",
        "answer": "HATE",
-       "clue": "Loathe",
+       "clue": "The opposite of love",
        "cells": [
         [
          0,
@@ -14102,7 +14102,7 @@
        "num": 2,
        "dir": "down",
        "answer": "OPEN",
-       "clue": "Not shut",
+       "clue": "Not shut; or the golf championship",
        "cells": [
         [
          0,
@@ -14150,7 +14150,7 @@
        "num": 6,
        "dir": "down",
        "answer": "NICE",
-       "clue": "Pleasant",
+       "clue": "A pleasant French city",
        "cells": [
         [
          2,
@@ -14174,7 +14174,7 @@
        "num": 7,
        "dir": "down",
        "answer": "IRON",
-       "clue": "Metal; or press clothes",
+       "clue": "The metal; or press the shirt",
        "cells": [
         [
          2,
@@ -14350,7 +14350,7 @@
        "num": 6,
        "dir": "across",
        "answer": "SAINT",
-       "clue": "Canonised one",
+       "clue": "Patience of a ...",
        "cells": [
         [
          3,
@@ -14378,7 +14378,7 @@
        "num": 7,
        "dir": "across",
        "answer": "KICK",
-       "clue": "Boot",
+       "clue": "Off, or the bucket",
        "cells": [
         [
          4,
@@ -14402,7 +14402,7 @@
        "num": 8,
        "dir": "across",
        "answer": "INK",
-       "clue": "Pen's fluid",
+       "clue": "In the pen; or sign it",
        "cells": [
         [
          5,
@@ -14422,7 +14422,7 @@
        "num": 1,
        "dir": "down",
        "answer": "DRINK",
-       "clue": "Beverage",
+       "clue": "Down it; or the sea, if you're in it",
        "cells": [
         [
          0,
@@ -14450,7 +14450,7 @@
        "num": 2,
        "dir": "down",
        "answer": "AUNT",
-       "clue": "Parent's sister",
+       "clue": "Mum's sister; agony one",
        "cells": [
         [
          0,
@@ -14474,7 +14474,7 @@
        "num": 3,
        "dir": "down",
        "answer": "YET",
-       "clue": "So far",
+       "clue": "Still, or nevertheless",
        "cells": [
         [
          0,
@@ -14546,7 +14546,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SKI",
-       "clue": "Snow runner",
+       "clue": "Downhill on two planks; or the jump you'd never try",
        "cells": [
         [
          3,
@@ -14666,7 +14666,7 @@
        "num": 5,
        "dir": "across",
        "answer": "TRAIN",
-       "clue": "Rail service",
+       "clue": "On the rails; or teach them the ropes",
        "cells": [
         [
          2,
@@ -14694,7 +14694,7 @@
        "num": 6,
        "dir": "across",
        "answer": "JOINT",
-       "clue": "Sunday roast; or a knuckle",
+       "clue": "Where bones meet; or the Sunday roast",
        "cells": [
         [
          3,
@@ -14722,7 +14722,7 @@
        "num": 7,
        "dir": "across",
        "answer": "ONTO",
-       "clue": "Upon",
+       "clue": "On the top of",
        "cells": [
         [
          4,
@@ -14746,7 +14746,7 @@
        "num": 8,
        "dir": "across",
        "answer": "BEE",
-       "clue": "Honey maker",
+       "clue": "It buzzes; or the spelling contest",
        "cells": [
         [
          5,
@@ -14794,7 +14794,7 @@
        "num": 2,
        "dir": "down",
        "answer": "UNIT",
-       "clue": "Single measure",
+       "clue": "One of many; or the flat",
        "cells": [
         [
          0,
@@ -14890,7 +14890,7 @@
        "num": 6,
        "dir": "down",
        "answer": "JOB",
-       "clue": "Employment",
+       "clue": "Your work; or a right good one",
        "cells": [
         [
          3,
@@ -14966,7 +14966,7 @@
        "num": 1,
        "dir": "across",
        "answer": "TRY",
-       "clue": "Attempt; or a rugby score",
+       "clue": "Give it a go, or five points",
        "cells": [
         [
          0,
@@ -14986,7 +14986,7 @@
        "num": 4,
        "dir": "across",
        "answer": "SHOE",
-       "clue": "Foot's wear",
+       "clue": "If the ... fits",
        "cells": [
         [
          1,
@@ -15010,7 +15010,7 @@
        "num": 5,
        "dir": "across",
        "answer": "CLASS",
-       "clue": "School group",
+       "clue": "In a ... of its own",
        "cells": [
         [
          2,
@@ -15038,7 +15038,7 @@
        "num": 6,
        "dir": "across",
        "answer": "SHINE",
-       "clue": "Gleam",
+       "clue": "Polish it up; or take a liking to them",
        "cells": [
         [
          3,
@@ -15066,7 +15066,7 @@
        "num": 7,
        "dir": "across",
        "answer": "PACK",
-       "clue": "Fill a case",
+       "clue": "Wolves' group, or fill the case",
        "cells": [
         [
          4,
@@ -15138,7 +15138,7 @@
        "num": 2,
        "dir": "down",
        "answer": "ROSE",
-       "clue": "Thorny bloom",
+       "clue": "The flower; or it got up",
        "cells": [
         [
          0,
@@ -15210,7 +15210,7 @@
        "num": 5,
        "dir": "down",
        "answer": "CHAT",
-       "clue": "Natter",
+       "clue": "A natter; or the window on the screen",
        "cells": [
         [
          2,
@@ -15234,7 +15234,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Health resort",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -15325,7 +15325,7 @@
        "num": 1,
        "dir": "across",
        "answer": "CAR",
-       "clue": "How most of us get about",
+       "clue": "How most of us get about; or the one on the train you sit in",
        "cells": [
         [
          0,
@@ -15345,7 +15345,7 @@
        "num": 4,
        "dir": "across",
        "answer": "BLUE",
-       "clue": "The colour, and the mood",
+       "clue": "The colour; or the mood, or the joke you shouldn't tell",
        "cells": [
         [
          1,
@@ -15369,7 +15369,7 @@
        "num": 5,
        "dir": "across",
        "answer": "TREND",
-       "clue": "The way things are going",
+       "clue": "The way things are going; or what a thing does, online",
        "cells": [
         [
          2,
@@ -15449,7 +15449,7 @@
        "num": 8,
        "dir": "across",
        "answer": "ASK",
-       "clue": "Do this and you might receive",
+       "clue": "Do this and you might receive; or the price the seller wants",
        "cells": [
         [
          5,
@@ -15469,7 +15469,7 @@
        "num": 1,
        "dir": "down",
        "answer": "CLERK",
-       "clue": "The one behind the counter",
+       "clue": "The one behind the counter; or the one who runs the court",
        "cells": [
         [
          0,
@@ -15593,7 +15593,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -15669,7 +15669,7 @@
        "num": 1,
        "dir": "across",
        "answer": "SKI",
-       "clue": "Downhill on two planks",
+       "clue": "Downhill on two planks; or the jump you'd never try",
        "cells": [
         [
          0,
@@ -15793,7 +15793,7 @@
        "num": 8,
        "dir": "across",
        "answer": "EYE",
-       "clue": "Keep one on it",
+       "clue": "You see with it; or the needle's hole",
        "cells": [
         [
          5,
@@ -15813,7 +15813,7 @@
        "num": 1,
        "dir": "down",
        "answer": "SHINE",
-       "clue": "Take a ... to",
+       "clue": "Polish it up; or take a liking to them",
        "cells": [
         [
          0,
@@ -15865,7 +15865,7 @@
        "num": 3,
        "dir": "down",
        "answer": "INK",
-       "clue": "What the pen spills",
+       "clue": "In the pen; or sign it",
        "cells": [
         [
          0,
@@ -15913,7 +15913,7 @@
        "num": 5,
        "dir": "down",
        "answer": "TRAY",
-       "clue": "Carry the tea on it",
+       "clue": "Carry the tea on it; or the one marked In",
        "cells": [
         [
          2,
@@ -15937,7 +15937,7 @@
        "num": 6,
        "dir": "down",
        "answer": "FEE",
-       "clue": "What you pay the professional",
+       "clue": "What you pay; or the charge for the work",
        "cells": [
         [
          3,
@@ -16113,7 +16113,7 @@
        "num": 7,
        "dir": "across",
        "answer": "AKIN",
-       "clue": "Of the same sort",
+       "clue": "Of a piece with; or related, without the blood",
        "cells": [
         [
          4,
@@ -16137,7 +16137,7 @@
        "num": 8,
        "dir": "across",
        "answer": "NET",
-       "clue": "Catch in it, or what's left after tax",
+       "clue": "Catches the fish; or what's left after tax",
        "cells": [
         [
          5,
@@ -16185,7 +16185,7 @@
        "num": 2,
        "dir": "down",
        "answer": "IRON",
-       "clue": "Press it; or the Lady",
+       "clue": "The metal; or press the shirt",
        "cells": [
         [
          0,
@@ -16281,7 +16281,7 @@
        "num": 6,
        "dir": "down",
        "answer": "CAN",
-       "clue": "Able to; or what the beans come in",
+       "clue": "Able to; or the tin it comes in",
        "cells": [
         [
          3,
@@ -16357,7 +16357,7 @@
        "num": 1,
        "dir": "across",
        "answer": "COT",
-       "clue": "Where the little one goes down",
+       "clue": "The baby sleeps in it; or the camp bed",
        "cells": [
         [
          0,
@@ -16377,7 +16377,7 @@
        "num": 4,
        "dir": "across",
        "answer": "OAR",
-       "clue": "You'd be up a creek without it",
+       "clue": "You row with it; or stick yours in",
        "cells": [
         [
          1,
@@ -16429,7 +16429,7 @@
        "num": 8,
        "dir": "across",
        "answer": "CLOTHE",
-       "clue": "Put something on them",
+       "clue": "Dress them; or dress it up in words",
        "cells": [
         [
          3,
@@ -16461,7 +16461,7 @@
        "num": 9,
        "dir": "across",
        "answer": "HOW",
-       "clue": "The question of method",
+       "clue": "The question of method; or the way of it, as in the ... and the why",
        "cells": [
         [
          4,
@@ -16481,7 +16481,7 @@
        "num": 10,
        "dir": "across",
        "answer": "OWN",
-       "clue": "Possess, or admit to",
+       "clue": "Belongs to you; or admit it",
        "cells": [
         [
          5,
@@ -16501,7 +16501,7 @@
        "num": 1,
        "dir": "down",
        "answer": "COAT",
-       "clue": "What you shrug on in November",
+       "clue": "You wear it; or the layer of paint",
        "cells": [
         [
          0,
@@ -16525,7 +16525,7 @@
        "num": 2,
        "dir": "down",
        "answer": "OATH",
-       "clue": "Made at the altar",
+       "clue": "Sworn at the altar; or the word you swore when you stubbed it",
        "cells": [
         [
          0,
@@ -16549,7 +16549,7 @@
        "num": 3,
        "dir": "down",
        "answer": "TREE",
-       "clue": "Barking up the wrong one",
+       "clue": "Barking up the wrong one; or the family one you drew at school",
        "cells": [
         [
          0,
@@ -16573,7 +16573,7 @@
        "num": 5,
        "dir": "down",
        "answer": "ECHO",
-       "clue": "What the hills give back",
+       "clue": "It comes back; or repeat what they said",
        "cells": [
         [
          2,
@@ -16597,7 +16597,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SLOW",
-       "clue": "How a snail travels",
+       "clue": "How the snail travels; or what the clock is running",
        "cells": [
         [
          2,
@@ -16621,7 +16621,7 @@
        "num": 7,
        "dir": "down",
        "answer": "TOWN",
-       "clue": "Go to ...",
+       "clue": "Not the country; or go to it, doing something properly",
        "cells": [
         [
          2,
@@ -16701,7 +16701,7 @@
        "num": 1,
        "dir": "across",
        "answer": "SKI",
-       "clue": "Downhill on two planks",
+       "clue": "Downhill on two planks; or the jump you'd never try",
        "cells": [
         [
          0,
@@ -16773,7 +16773,7 @@
        "num": 6,
        "dir": "across",
        "answer": "BLANK",
-       "clue": "Draw a ...",
+       "clue": "Nothing written; or what you draw, failing to remember",
        "cells": [
         [
          3,
@@ -16897,7 +16897,7 @@
        "num": 3,
        "dir": "down",
        "answer": "INK",
-       "clue": "What the pen spills",
+       "clue": "In the pen; or sign it",
        "cells": [
         [
          0,
@@ -16917,7 +16917,7 @@
        "num": 4,
        "dir": "down",
        "answer": "GRANT",
-       "clue": "Money given; or wish granted",
+       "clue": "Give it to them; or the money for study",
        "cells": [
         [
          1,
@@ -16945,7 +16945,7 @@
        "num": 5,
        "dir": "down",
        "answer": "BLUE",
-       "clue": "The colour, and the mood",
+       "clue": "The colour; or the mood, or the joke you shouldn't tell",
        "cells": [
         [
          2,
@@ -17189,7 +17189,7 @@
        "num": 1,
        "dir": "down",
        "answer": "MERIT",
-       "clue": "Worth on its own",
+       "clue": "Worth standing on its own; or deserve it outright",
        "cells": [
         [
          0,
@@ -17217,7 +17217,7 @@
        "num": 2,
        "dir": "down",
        "answer": "EARL",
-       "clue": "Between viscount and marquess",
+       "clue": "Between viscount and marquess; or the tea with the bergamot",
        "cells": [
         [
          0,
@@ -17313,7 +17313,7 @@
        "num": 6,
        "dir": "down",
        "answer": "BUD",
-       "clue": "Not yet a flower",
+       "clue": "Before the flower; or nip it there",
        "cells": [
         [
          3,
@@ -17389,7 +17389,7 @@
        "num": 1,
        "dir": "across",
        "answer": "WHY",
-       "clue": "The question children never stop asking",
+       "clue": "The question children never stop asking; or the letter it sounds like",
        "cells": [
         [
          0,
@@ -17533,7 +17533,7 @@
        "num": 1,
        "dir": "down",
        "answer": "WHERE",
-       "clue": "The question of place",
+       "clue": "The question of place; or the house of it, in the song",
        "cells": [
         [
          0,
@@ -17561,7 +17561,7 @@
        "num": 2,
        "dir": "down",
        "answer": "HOST",
-       "clue": "The one who invites",
+       "clue": "The one who invites; or the multitude, in the old sense",
        "cells": [
         [
          0,
@@ -17605,7 +17605,7 @@
        "num": 4,
        "dir": "down",
        "answer": "SHINE",
-       "clue": "Take a ... to",
+       "clue": "Polish it up; or take a liking to them",
        "cells": [
         [
          1,
@@ -17657,7 +17657,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -17733,7 +17733,7 @@
        "num": 1,
        "dir": "across",
        "answer": "SPY",
-       "clue": "One who watches, or spot from afar",
+       "clue": "The secret agent; or catch sight of",
        "cells": [
         [
          0,
@@ -17805,7 +17805,7 @@
        "num": 6,
        "dir": "across",
        "answer": "SHORE",
-       "clue": "Where the sea stops",
+       "clue": "Where the sea ends; or prop it up",
        "cells": [
         [
          3,
@@ -17833,7 +17833,7 @@
        "num": 7,
        "dir": "across",
        "answer": "PART",
-       "clue": "Take ... in",
+       "clue": "A piece of it; or the role you play",
        "cells": [
         [
          4,
@@ -17857,7 +17857,7 @@
        "num": 8,
        "dir": "across",
        "answer": "AND",
-       "clue": "The word that joins",
+       "clue": "The word that joins; or what the ampersand stands in for",
        "cells": [
         [
          5,
@@ -17905,7 +17905,7 @@
        "num": 2,
        "dir": "down",
        "answer": "POSE",
-       "clue": "Hold it for the camera",
+       "clue": "Hold it for the camera; or the question, formally",
        "cells": [
         [
          0,
@@ -18001,7 +18001,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -18077,7 +18077,7 @@
        "num": 1,
        "dir": "across",
        "answer": "ALE",
-       "clue": "Real, if it's any good",
+       "clue": "Real, if it's any good; or what the pub was called before it was a bar",
        "cells": [
         [
          0,
@@ -18121,7 +18121,7 @@
        "num": 5,
        "dir": "across",
        "answer": "ARISE",
-       "clue": "Get to your feet",
+       "clue": "Get to your feet; or what problems do, unhelpfully",
        "cells": [
         [
          2,
@@ -18177,7 +18177,7 @@
        "num": 7,
        "dir": "across",
        "answer": "WAVE",
-       "clue": "From the shore; or the sea's",
+       "clue": "On the sea; or say goodbye with it",
        "cells": [
         [
          4,
@@ -18201,7 +18201,7 @@
        "num": 8,
        "dir": "across",
        "answer": "EYE",
-       "clue": "Keep one on it",
+       "clue": "You see with it; or the needle's hole",
        "cells": [
         [
          5,
@@ -18273,7 +18273,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EWE",
-       "clue": "She of the flock",
+       "clue": "She of the flock; or sounds like a letter of the alphabet",
        "cells": [
         [
          0,
@@ -18345,7 +18345,7 @@
        "num": 6,
        "dir": "down",
        "answer": "AWE",
-       "clue": "Struck, and speechless with it",
+       "clue": "Struck by it; or what the sight inspired",
        "cells": [
         [
          3,
@@ -18441,7 +18441,7 @@
        "num": 4,
        "dir": "across",
        "answer": "BONE",
-       "clue": "Dry as a ...",
+       "clue": "Dry as one; or what you swot up on",
        "cells": [
         [
          1,
@@ -18617,7 +18617,7 @@
        "num": 3,
        "dir": "down",
        "answer": "PEN",
-       "clue": "Mightier than the sword",
+       "clue": "You write with it; or where the sheep go",
        "cells": [
         [
          0,
@@ -18665,7 +18665,7 @@
        "num": 5,
        "dir": "down",
        "answer": "BLUE",
-       "clue": "The colour, and the mood",
+       "clue": "The colour; or the mood, or the joke you shouldn't tell",
        "cells": [
         [
          2,
@@ -18689,7 +18689,7 @@
        "num": 6,
        "dir": "down",
        "answer": "BAR",
-       "clue": "Where you're served, or what stops you",
+       "clue": "Where the drinks are; or block the way",
        "cells": [
         [
          3,
@@ -18809,7 +18809,7 @@
        "num": 5,
        "dir": "across",
        "answer": "SHINE",
-       "clue": "Take a ... to",
+       "clue": "Polish it up; or take a liking to them",
        "cells": [
         [
          2,
@@ -18961,7 +18961,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EYE",
-       "clue": "Keep one on it",
+       "clue": "You see with it; or the needle's hole",
        "cells": [
         [
          0,
@@ -19033,7 +19033,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -19181,7 +19181,7 @@
        "num": 6,
        "dir": "across",
        "answer": "AWARD",
-       "clue": "Handed over on the night",
+       "clue": "The prize; or grant it to them",
        "cells": [
         [
          3,
@@ -19233,7 +19233,7 @@
        "num": 8,
        "dir": "across",
        "answer": "EYE",
-       "clue": "Keep one on it",
+       "clue": "You see with it; or the needle's hole",
        "cells": [
         [
          5,
@@ -19497,7 +19497,7 @@
        "num": 5,
        "dir": "across",
        "answer": "SHORE",
-       "clue": "Where the sea stops",
+       "clue": "Where the sea ends; or prop it up",
        "cells": [
         [
          2,
@@ -19625,7 +19625,7 @@
        "num": 2,
        "dir": "down",
        "answer": "PART",
-       "clue": "Take ... in",
+       "clue": "A piece of it; or the role you play",
        "cells": [
         [
          0,
@@ -19649,7 +19649,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EYE",
-       "clue": "Keep one on it",
+       "clue": "You see with it; or the needle's hole",
        "cells": [
         [
          0,
@@ -19721,7 +19721,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -19797,7 +19797,7 @@
        "num": 1,
        "dir": "across",
        "answer": "SKI",
-       "clue": "Downhill on two planks",
+       "clue": "Downhill on two planks; or the jump you'd never try",
        "cells": [
         [
          0,
@@ -19993,7 +19993,7 @@
        "num": 3,
        "dir": "down",
        "answer": "INK",
-       "clue": "What the pen spills",
+       "clue": "In the pen; or sign it",
        "cells": [
         [
          0,
@@ -20065,7 +20065,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -20213,7 +20213,7 @@
        "num": 6,
        "dir": "across",
        "answer": "SHINE",
-       "clue": "Take a ... to",
+       "clue": "Polish it up; or take a liking to them",
        "cells": [
         [
          3,
@@ -20265,7 +20265,7 @@
        "num": 8,
        "dir": "across",
        "answer": "AND",
-       "clue": "The word that joins",
+       "clue": "The word that joins; or what the ampersand stands in for",
        "cells": [
         [
          5,
@@ -20313,7 +20313,7 @@
        "num": 2,
        "dir": "down",
        "answer": "POSE",
-       "clue": "Hold it for the camera",
+       "clue": "Hold it for the camera; or the question, formally",
        "cells": [
         [
          0,
@@ -20337,7 +20337,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EWE",
-       "clue": "She of the flock",
+       "clue": "She of the flock; or sounds like a letter of the alphabet",
        "cells": [
         [
          0,
@@ -20409,7 +20409,7 @@
        "num": 6,
        "dir": "down",
        "answer": "SPA",
-       "clue": "Where you go to be pummelled",
+       "clue": "Where you go to be pummelled; or the town with the waters",
        "cells": [
         [
          3,
@@ -26759,7 +26759,7 @@
        "num": 5,
        "dir": "across",
        "answer": "PHONE",
-       "clue": "Give me a ...",
+       "clue": "Ring them; or what the mobile replaced in the hall",
        "cells": [
         [
          2,
@@ -26887,7 +26887,7 @@
        "num": 2,
        "dir": "down",
        "answer": "KING",
-       "clue": "The monarch, or the chess piece",
+       "clue": "He wears the crown; or the piece that can only step one square",
        "cells": [
         [
          0,
@@ -27203,7 +27203,7 @@
        "num": 1,
        "dir": "down",
        "answer": "PEACE",
-       "clue": "No war; or hold your piece of it",
+       "clue": "No war; or what you hold, keeping quiet",
        "cells": [
         [
          0,
@@ -27603,7 +27603,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EDGE",
-       "clue": "On the ... of your seat",
+       "clue": "The rim; or what nerves are on",
        "cells": [
         [
          0,
@@ -27899,7 +27899,7 @@
        "num": 1,
        "dir": "down",
        "answer": "EVER",
-       "clue": "For ... and ever",
+       "clue": "At any time; or for good and always",
        "cells": [
         [
          0,
@@ -28027,7 +28027,7 @@
        "num": 8,
        "dir": "down",
        "answer": "GREY",
-       "clue": "Neither black nor white; the British spelling",
+       "clue": "Neither black nor white; or the Earl with the bergamot",
        "cells": [
         [
          2,
@@ -28991,7 +28991,7 @@
        "num": 3,
        "dir": "down",
        "answer": "AND",
-       "clue": "The word that joins; or what you say waiting for the rest of it",
+       "clue": "The word that joins; or what the ampersand stands in for",
        "cells": [
         [
          0,
@@ -29187,7 +29187,7 @@
        "num": 6,
        "dir": "across",
        "answer": "TOWN",
-       "clue": "Go to ...",
+       "clue": "Not the country; or go to it, doing something properly",
        "cells": [
         [
          2,
@@ -29211,7 +29211,7 @@
        "num": 7,
        "dir": "across",
        "answer": "HEAT",
-       "clue": "The ... of the moment",
+       "clue": "Warmth; or the qualifying round",
        "cells": [
         [
          3,
@@ -29347,7 +29347,7 @@
        "num": 3,
        "dir": "down",
        "answer": "HOW",
-       "clue": "The question of method; or the greeting of the film Indian",
+       "clue": "The question of method; or the way of it, as in the ... and the why",
        "cells": [
         [
          0,
@@ -29503,7 +29503,7 @@
        "num": 4,
        "dir": "across",
        "answer": "BONE",
-       "clue": "Dry as a ...",
+       "clue": "Dry as one; or what you swot up on",
        "cells": [
         [
          1,
@@ -30243,7 +30243,7 @@
        "num": 6,
        "dir": "across",
        "answer": "SHINE",
-       "clue": "Take a ... to",
+       "clue": "Polish it up; or take a liking to them",
        "cells": [
         [
          3,
@@ -30879,7 +30879,7 @@
        "num": 4,
        "dir": "across",
        "answer": "BONE",
-       "clue": "Dry as a ...",
+       "clue": "Dry as one; or what you swot up on",
        "cells": [
         [
          1,
@@ -31699,7 +31699,7 @@
        "num": 1,
        "dir": "down",
        "answer": "BLANK",
-       "clue": "Draw a ...",
+       "clue": "Nothing written; or what you draw, failing to remember",
        "cells": [
         [
          0,
@@ -32287,7 +32287,7 @@
        "num": 5,
        "dir": "across",
        "answer": "PHONE",
-       "clue": "Give me a ...",
+       "clue": "Ring them; or what the mobile replaced in the hall",
        "cells": [
         [
          2,
@@ -33147,7 +33147,7 @@
        "num": 4,
        "dir": "down",
        "answer": "SHINE",
-       "clue": "Take a ... to",
+       "clue": "Polish it up; or take a liking to them",
        "cells": [
         [
          1,
@@ -33399,7 +33399,7 @@
        "num": 8,
        "dir": "across",
        "answer": "EWE",
-       "clue": "She of the flock; or sounds like you, twice over",
+       "clue": "She of the flock; or sounds like a letter of the alphabet",
        "cells": [
         [
          5,
@@ -33743,7 +33743,7 @@
        "num": 8,
        "dir": "across",
        "answer": "EWE",
-       "clue": "She of the flock; or sounds like you, twice over",
+       "clue": "She of the flock; or sounds like a letter of the alphabet",
        "cells": [
         [
          5,
@@ -34107,7 +34107,7 @@
        "num": 1,
        "dir": "down",
        "answer": "SHINE",
-       "clue": "Take a ... to",
+       "clue": "Polish it up; or take a liking to them",
        "cells": [
         [
          0,
@@ -35807,7 +35807,7 @@
        "num": 8,
        "dir": "across",
        "answer": "EWE",
-       "clue": "She of the flock; or sounds like you, twice over",
+       "clue": "She of the flock; or sounds like a letter of the alphabet",
        "cells": [
         [
          5,
@@ -35827,7 +35827,7 @@
        "num": 1,
        "dir": "down",
        "answer": "SHINE",
-       "clue": "Take a ... to",
+       "clue": "Polish it up; or take a liking to them",
        "cells": [
         [
          0,
@@ -35879,7 +35879,7 @@
        "num": 3,
        "dir": "down",
        "answer": "AND",
-       "clue": "The word that joins; or what you say waiting for the rest of it",
+       "clue": "The word that joins; or what the ampersand stands in for",
        "cells": [
         [
          0,
@@ -36127,7 +36127,7 @@
        "num": 7,
        "dir": "across",
        "answer": "KING",
-       "clue": "The monarch, or the chess piece",
+       "clue": "He wears the crown; or the piece that can only step one square",
        "cells": [
         [
          4,
@@ -36223,7 +36223,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EWE",
-       "clue": "She of the flock; or sounds like you, twice over",
+       "clue": "She of the flock; or sounds like a letter of the alphabet",
        "cells": [
         [
          0,
@@ -36911,7 +36911,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EWE",
-       "clue": "She of the flock; or sounds like you, twice over",
+       "clue": "She of the flock; or sounds like a letter of the alphabet",
        "cells": [
         [
          0,
@@ -37255,7 +37255,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EWE",
-       "clue": "She of the flock; or sounds like you, twice over",
+       "clue": "She of the flock; or sounds like a letter of the alphabet",
        "cells": [
         [
          0,
@@ -37447,7 +37447,7 @@
        "num": 5,
        "dir": "across",
        "answer": "PEACE",
-       "clue": "No war; or hold your piece of it",
+       "clue": "No war; or what you hold, keeping quiet",
        "cells": [
         [
          2,
@@ -37599,7 +37599,7 @@
        "num": 3,
        "dir": "down",
        "answer": "EWE",
-       "clue": "She of the flock; or sounds like you, twice over",
+       "clue": "She of the flock; or sounds like a letter of the alphabet",
        "cells": [
         [
          0,
@@ -37891,7 +37891,7 @@
        "num": 1,
        "dir": "down",
        "answer": "PEACE",
-       "clue": "No war; or hold your piece of it",
+       "clue": "No war; or what you hold, keeping quiet",
        "cells": [
         [
          0,
@@ -37991,7 +37991,7 @@
        "num": 5,
        "dir": "down",
        "answer": "BONE",
-       "clue": "Dry as a ...",
+       "clue": "Dry as one; or what you swot up on",
        "cells": [
         [
          2,

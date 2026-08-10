@@ -2151,6 +2151,61 @@ HARDER3 = {
 HARD.update(HARDER3)
 
 
+# Corrections found by reading the shipped set as a solver would, rather than by any
+# measurement - the bar checks a clue's shape and cannot tell whether its two halves
+# actually pull in different directions, or whether the phrase gives the answer away.
+FIXES = {
+ # Was "the greeting of the film Indian" - a Western-movie racial stereotype. Not a
+ # borderline call; it should not have been written.
+ "HOW":"The question of method; or the way of it, as in the ... and the why",
+
+ # Both halves said the same thing, so there was nothing to reconcile - the whole point
+ # of a double definition is two readings that pull apart.
+ "KING":"He wears the crown; or the piece that can only step one square",
+
+ # "Sounds like you, twice over" did not parse - EWE sounds like U once, and the second
+ # half pointed nowhere.
+ "EWE":"She of the flock; or sounds like a letter of the alphabet",
+
+ # "Hold your piece of it" muddled the homophone it was reaching for.
+ "PEACE":"No war; or what you hold, keeping quiet",
+
+ # "The British spelling" is a note about orthography, not a second meaning.
+ "GREY":"Neither black nor white; or the Earl with the bergamot",
+
+ # "What you say waiting for the rest of it" was filler, not a reading.
+ "AND":"The word that joins; or what the ampersand stands in for",
+
+ # A stock phrase short enough that the answer falls straight out of it - exactly the
+ # shape the bar is supposed to keep out, and it slipped through on word count.
+ "PHONE":"Ring them; or what the mobile replaced in the hall",
+
+ # Same problem: four words, but the phrase hands it over.
+ "SHINE":"Polish it up; or take a liking to them",
+ "TOWN":"Not the country; or go to it, doing something properly",
+ "EDGE":"The rim; or what nerves are on",
+ "HEAT":"Warmth; or the qualifying round",
+ "BONE":"Dry as one; or what you swot up on",
+ "BLANK":"Nothing written; or what you draw, failing to remember",
+}
+
+HARD.update(FIXES)
+
+
+# A clue must never contain its own answer. These did - "For ... and ever" prints the word
+# it is asking for - and the bar cannot catch it, because shape tells you nothing about
+# whether the answer is sitting in the text. tests/test_crossword_clue_bar.py pins it now.
+SELF_REVEALING_FIXES = {
+ "TUB":"The bath; or what the thumper stands on",
+ "COST":"What you pay; or what it set you back",
+ "EVER":"At any time; or for good and always",
+ "HAVE":"Possess it; or the opposite of the ...-nots",
+ "NECK":"Above the shoulders; or the brass to do it",
+ "NASTY":"A right piece of work; or a shock, unpleasantly",
+}
+HARD.update(SELF_REVEALING_FIXES)
+
+
 # Every candidate with an indirect clue written for it, before the bar is applied. Kept so
 # the bar can be retuned against the real pool: tighten it too far and the grid search
 # starves, and the generator reports that only by building nothing at all.
