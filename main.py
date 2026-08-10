@@ -230,12 +230,14 @@ class AClient(discord.Client):
                             full_text += " " + comp.label
 
             text_clean = " ".join(full_text.lower().split())
-            if "countryball" in text_clean and ("appeared" in text_clean or "spawned" in text_clean or "wild" in text_clean):
-                channel = client.get_channel(CHANNELS.BOT_SPAM)
-                if channel:
-                    await channel.send(
-                        f"<@&{ROLES.BALL_INSPECTOR}> A wild countryball appeared!"
-                    )
+            logger.info("Ballsdex message received in channel %s: %r", message.channel.id, text_clean[:200])
+            
+            # Check for spawn message trigger or image attachment / button spawn
+            if ("countryball" in text_clean or "catch me" in text_clean) and ("appeared" in text_clean or "spawned" in text_clean or "wild" in text_clean or message.components):
+                target_channel = message.channel
+                await target_channel.send(
+                    f"<@&{ROLES.BALL_INSPECTOR}> A wild countryball appeared!"
+                )
                 return
 
         if message.author.id == 557628352828014614 and message.embeds:
