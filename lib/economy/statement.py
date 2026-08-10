@@ -43,18 +43,15 @@ _CATEGORIES = [
                                "lower", "baccarat", "casino"]),
     ("Predictions", "\U0001f52e", ["prediction", "wager"]),
     ("Lottery", "\U0001f3ab", ["lottery"]),
-    # Tax must outrank Rewards: "inactivity" contains "activity", which would
-    # otherwise net tax charges into the Rewards line.
-    ("Tax", "📉", ["tax", "inactivity", "demurrage", "dormant"]),
-    ("Rewards", "📈", ["chat", "stage", "booster", "top chatter", "activity",
-                       "message reward", "reward", "daily"]),
+    ("Rewards", "📈", ["chat", "stage", "booster", "top chatter", "message reward", "reward", "daily", "solve", "crossword", "wordle"]),
+    ("Welcome", "📈", ["welcome"]),
+    ("Tax", "📉", ["tax", "inactivity tax", "demurrage", "dormant"]),
     ("Benefits", "\U0001f9fe", ["benefit", "dole"]),
     ("Tree", "\U0001f333", ["tree", "water"]),
     ("Hall of Fame", "\U0001f3c6", ["hall of fame", "hof"]),
     ("Ticket", "\U0001f3ab", ["ticket"]),
     ("Shop", "\U0001f6d2", ["shop", "purchase", "bought", "restock"]),
     ("Bond", "\U0001f3e6", ["bond"]),
-    ("Welcome", "\U0001f44b", ["welcome"]),
     ("Admin", "⚖️", ["balance set", "admin", "manual", "unspecified", "ukpadd", "grant"]),
 ]
 
@@ -63,6 +60,9 @@ def _categorize(reason, counterparty_id=None):
     if counterparty_id:
         return ("Pay", "\U0001f501")
     r = (reason or "").lower()
+    # Strip bracketed tax annotation suffix before categorizing
+    if "[" in r and "tax:" in r:
+        r = r.split("[")[0].strip()
     for label, emoji, subs in _CATEGORIES:
         if any(s in r for s in subs):
             return (label, emoji)
