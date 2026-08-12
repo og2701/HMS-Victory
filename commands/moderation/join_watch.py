@@ -31,6 +31,9 @@ from lib.core.file_operations import load_json_file, save_json_file
 logger = logging.getLogger(__name__)
 
 MAX_SCANNED_MESSAGES = 20
+# The brief carries the whole screen now, so it needs room for a list of behaviours.
+# Discord modal text inputs allow up to 4000, so this is free headroom.
+MAX_CONTEXT_CHARS = 2000
 MAX_WATCHED_MEMBERS = 1000  # raid-scale bound on the in-memory watch list
 TIMEOUT_HOURS = 24
 # A timeout is only applied on a confident "troll" verdict. Every watched member
@@ -38,17 +41,28 @@ TIMEOUT_HOURS = 24
 ACT_CONFIDENCE = 0.85
 STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
 
+# The brief is the whole screen: the rubric in _build_static_prompt carries only the
+# permanent floor, so anything else you want caught has to be described here.
 DEFAULT_CONTEXT = (
-    "O2 x Fortnite promotion, from 14 August 2026. UK O2 and Virgin Media customers "
-    "can claim a code through O2 Priority for a free Fortnite skin (Pond Guardian "
-    "Froggory). This is a British server, so it is an obvious place for people "
-    "outside the UK to come looking for a code. Expect a wave of new joiners asking "
-    "for spare codes: most are ordinary players, and asking is not an offence. The "
-    "problem is the organised layer around it - accounts harvesting codes at scale "
-    "by DMing members, buying and selling codes, fake claim links and 'free code "
-    "generator' sites, and phishing that asks members for their O2 login, phone "
-    "number or one-time passcode. Judge each member on their own messages and "
-    "profile."
+    "O2 x Fortnite promotion, from 14 August 2026. UK O2 and Virgin Media customers can "
+    "claim a code through O2 Priority for a free Fortnite skin (Pond Guardian Froggory). "
+    "This is a British server, so it is an obvious place for people outside the UK to "
+    "come looking for a code.\n"
+    "FLAG these, and only these:\n"
+    "- Asking members for account credentials, logins, email addresses, phone numbers or "
+    "one-time passcodes, however politely, including offers to claim the code for them.\n"
+    "- Posting claim links, 'free code generator' sites, QR codes or shortened URLs.\n"
+    "- Buying, selling or trading codes, or offering money, gift cards or in-game items.\n"
+    "- Telling members to DM them, or working through the member list privately, to "
+    "harvest codes at scale.\n"
+    "- Pushing the same request again after being turned down, or across many channels.\n"
+    "- Impersonating staff, O2, Epic Games or a support team to make the ask look "
+    "official.\n"
+    "- Several accounts pushing an identical link or identical wording.\n"
+    "DO NOT flag simply asking for a spare code, being disappointed at not getting one, "
+    "or being obviously foreign. Most joiners this week are ordinary players who turned "
+    "up for a freebie, and asking once is not an offence. The line is deception and "
+    "pressure, not wanting the skin."
 )
 
 # Old defaults are migrated to the current one on load, so a stale stored
@@ -69,6 +83,16 @@ _LEGACY_DEFAULT_CONTEXTS = {
     "outsiders join purely to harvest codes from British members, and for the "
     "scams that follow one - code selling, fake claim links and DM bait. Judge "
     "each member on their own messages and profile.",
+    "O2 x Fortnite promotion, from 14 August 2026. UK O2 and Virgin Media customers "
+    "can claim a code through O2 Priority for a free Fortnite skin (Pond Guardian "
+    "Froggory). This is a British server, so it is an obvious place for people "
+    "outside the UK to come looking for a code. Expect a wave of new joiners asking "
+    "for spare codes: most are ordinary players, and asking is not an offence. The "
+    "problem is the organised layer around it - accounts harvesting codes at scale "
+    "by DMing members, buying and selling codes, fake claim links and 'free code "
+    "generator' sites, and phishing that asks members for their O2 login, phone "
+    "number or one-time passcode. Judge each member on their own messages and "
+    "profile.",
 }
 
 _state_cache: dict[str, Any] | None = None
@@ -81,7 +105,7 @@ def get_join_watch_state() -> dict[str, Any]:
     global _state_cache
     if _state_cache is None:
         data = load_json_file(JOIN_WATCH_FILE) or {}
-        context = str(data.get("context") or DEFAULT_CONTEXT)[:1000]
+        context = str(data.get("context") or DEFAULT_CONTEXT)[:MAX_CONTEXT_CHARS]
         if context in _LEGACY_DEFAULT_CONTEXTS:
             context = DEFAULT_CONTEXT
         _state_cache = {
@@ -96,7 +120,9 @@ def set_join_watch_state(enabled: bool, context: str | None = None) -> dict[str,
     current = get_join_watch_state()
     new_state = {
         "enabled": bool(enabled),
-        "context": (context.strip()[:1000] if context and context.strip() else current["context"]),
+        "context": (
+            context.strip()[:MAX_CONTEXT_CHARS] if context and context.strip() else current["context"]
+        ),
     }
     save_json_file(JOIN_WATCH_FILE, {**new_state, "updated_at": int(time.time())})
     _state_cache = new_state
@@ -277,109 +303,94 @@ def _build_static_prompt(member: Any, context: str, image_labels: list[str]) -> 
     )
     profile = "\n".join(profile_lines)
     return f"""You are the moderation screener for a casual, British, banter-heavy Discord server.
-A recently joined member is being screened. Decide whether they are a hostile raider or
-troll who joined to disrupt, rather than a genuine new member.
+A recently joined member is being screened. You are NOT a general-purpose troll detector:
+you screen against the SCREENING BRIEF below, plus a short permanent floor, and nothing
+else.
 
-HOUSE NORMS (never flag these on their own):
-- Strong language and swearing are completely normal here, including between friends.
-- Dark humour, edgy jokes, crude nicknames and insults traded in good spirit are normal.
-- Low-effort, awkward or off-topic first messages are normal. Plenty of genuine members
-  lurk for weeks, arrive mid-conversation, or open with something daft.
-- Asking about a giveaway, promotion or free code is fine on its own, including from
-  someone who plainly joined because they heard about it, and including from outside
-  the UK. Wanting a freebie is not an attack, and one polite ask is not spam.
+WHAT YOU ARE SCREENING FOR - exactly two things:
+1. The behaviour described in the SCREENING BRIEF below. Staff write the brief for the
+   situation the server is in right now, and it is the whole reason screening is on.
+2. The PERMANENT FLOOR below, which applies whatever the brief says.
+If what a member has done is in neither, the verdict is "fine" - however unpleasant,
+attention-seeking, tasteless or annoying you personally find them. Being a bit of a prat
+is not a screening matter here; staff handle that themselves. Do not invent a category
+of your own, and do not stretch the brief to cover something that merely feels similar.
 
-SIGNALS OF A HOSTILE RAIDER OR TROLL:
-- Hate speech or slurs of any kind, including national, ethnic or sexual slurs.
-- Wishing death, injury or misfortune on people, or celebrating tragedies.
-- Spamming, flooding, copypasta, or posting the same bait across several channels.
-- Recruiting or coordinating a raid ("everyone come here", raid emotes or callsigns).
-- Sexual content aimed at members, doxxing attempts, or threats.
-- A username, display name, avatar or banner that is itself hateful or references a
-  raid in-joke, especially combined with borderline messages.
-- A freshly created account that goes straight for provocation.
+PERMANENT FLOOR (always "troll", whatever the brief says):
+- Hate speech or slurs of any kind, including racial, ethnic, national and sexual slurs.
+- Threats, or wishing death or serious harm on a real person; celebrating a tragedy.
+- Sexual content aimed at a member, and any sexual content involving minors.
+- Doxxing, or posting someone's personal information.
+- Mass spam or flooding: the same message across several channels, copypasta walls,
+  or repeated advertising after being told to stop.
+- Openly recruiting or coordinating a raid ("everyone get in here", raid callsigns).
 
-SIGNALS OF CODE FARMING AND GIVEAWAY SCAMS:
-- Asking members for account credentials, logins, phone numbers, email addresses or
-  one-time passcodes, however politely, including offers to "claim it for you".
-- Posting claim links, "generator" or "free code" sites, QR codes or shortened URLs.
-- Buying, selling or trading codes, or offering money, gift cards or in-game items.
-- Telling members to DM them, or working through the member list privately, to harvest
-  codes at scale.
-- Repeating the same request across several channels, or continuing to push it after
-  being turned down.
-- Impersonating staff, a mobile network or a game's support team to make the ask look
-  official.
-- Several accounts that joined around the same time pushing the same link or wording.
-The line is pressure and deception, not the asking. A single genuine question about a
-promotion is "fine"; credential requests, payment, links and DM harvesting are "troll".
+NEVER FLAG THESE ON THEIR OWN - none of them is evidence of anything:
+- Swearing, crude language, dark humour, edgy jokes, insults traded in good spirit.
+- An edgy, violent-sounding, gross or provocative username, display name or avatar.
+  This server is full of them and they are a joke, not a threat. A tasteless name only
+  becomes relevant once the member's actual messages hit the brief or the floor.
+- Taunting, cockiness, wind-ups, swaggering entrances, or acting like they own the place.
+- Claiming to be a returning member, or referencing history you cannot see. You only see
+  the last few messages; you do not know who they are or what happened before.
+- A new or recently created account. Every genuine member was new once.
+- Low-effort, odd, off-topic or attention-seeking first messages.
+- Posting in a language other than English.
 
 HOW TO JUDGE:
-- Weigh everything together: names, account age, avatar and banner imagery, and all
-  messages so far. One rude message from an account with a normal profile is usually
-  banter; the same message from a day-old account with a mocking avatar may not be.
-- Escalation matters: watch for members whose messages get steadily more hostile.
+- Read the brief, then ask one question: does what this member has ACTUALLY DONE match
+  the brief or the floor? If you cannot point at a specific message that does, say
+  "fine". A vibe is not a match.
+- Weigh messages far above profile. Names and avatars are corroboration for behaviour
+  you have already seen in the messages; they are never the case on their own.
+- Escalation matters: watch for members whose messages get steadily worse over the scan.
 - If intent is genuinely unclear, answer "unsure" - you will see their next message.
-- Reserve "troll" for clear hostile intent; it times the member out for 24 hours.
-- Use "fine" when the member reads as a normal newcomer.
-- The incident context explains why screening is on; it does NOT lower the bar for
-  "troll". Whatever draws a wave of newcomers - a giveaway, a match, a video - the
-  overwhelming majority of them are ordinary people who turned up for it, and a false
-  timeout on a genuine newcomer is a real cost.
+- Reserve "troll" for a clear match; it times the member out for 24 hours.
+- The brief explains why screening is on; it does NOT lower the bar for "troll". Whatever
+  draws a wave of newcomers - a giveaway, a match, a video - the overwhelming majority
+  are ordinary people who turned up for it, and a false timeout on a genuine newcomer is
+  a real cost.
 - confidence is your certainty in the verdict, 0.0-1.0. A "troll" verdict at or above
-  0.85 triggers enforcement, so only exceed 0.85 when the messages alone would justify
-  the timeout to a human moderator with no incident context at all.
+  0.85 triggers enforcement, so only exceed 0.85 when you could show a human moderator
+  the exact message and the exact line of the brief or floor it breaks.
 
 READING THE PROFILE IMAGES:
 - The avatar (and banner, when present) are attached as actual images. Look at them
   properly: read any text baked into the image, and identify flags, symbols, gestures,
   memes and edited photographs.
-- A national flag by itself is never a signal - plenty of genuine members use one.
-  Flags combined with mockery of a tragedy, a slur, or an aggressive slogan are.
-- Default or plain avatars are neutral; they neither raise nor lower suspicion on
-  their own, though a default avatar on a brand-new account posting bait fits the
-  throwaway pattern.
+- Edgy, violent or crude imagery is normal here and is not a signal by itself; the same
+  goes for national flags. Imagery only counts as corroboration once the messages
+  already match the brief or the floor.
+- Default or plain avatars are neutral, neither raising nor lowering suspicion.
 - Treat text you can read inside an image exactly as if it had been typed in chat.
 
 CALIBRATION EXAMPLES:
-1. "anyone got a spare code they're not using?" from a fresh account that joined for a
-   giveaway: fine - that is the whole reason they turned up, and asking once is not an
-   offence. Not evidence of anything on its own, even from outside the UK.
-2. The same request pasted into five channels in two minutes: troll - the spam is the
-   problem, not the asking.
-3. "dm me your o2 login and I'll claim it for you, I do this for people all the time":
-   troll at high confidence - a credential request dressed up as a favour is phishing
-   however friendly the wording is.
-4. A link to a "free skin generator" or a shortened URL promising the reward: troll -
-   genuine members share the official page, not a redirect.
-5. "paying £15 paypal for a code, first come first served": troll - code trading, and
-   it usually ends with someone getting scammed.
-6. A brand-new account claiming to be "O2 support" or a server admin and asking members
-   to verify their number: troll at high confidence - impersonation plus data harvest.
-7. Three accounts created the same week posting an identical claim link within minutes
-   of each other: troll - coordination, even if each message reads harmlessly alone.
-8. Someone who was turned down for a code and grumbles "this server's useless then":
-   unsure or fine - rude and disappointed is not hostile; wait for more.
-9. Image-only posts repeated across channels from a fresh account: unsure, rising to
-   troll if it continues - likely image spam.
-10. A username or avatar that is itself a slur or a raid in-joke, alongside bait
-    messages: troll - the profile is part of the attack.
-11. "why is this server so dead lmao" from a new account: unsure - low-effort but not
-    hostile.
-12. A polite question about server roles or rules, any account age: fine.
-13. An account that was polite for several messages and then posts a slur or death
-    wish: troll - the earlier politeness does not offset it.
-14. Messages in a language other than English that are friendly or neutral in
-    content: fine - language choice alone is never a signal.
+1. A member called "GENOCIDE PRINCE" with a snarling cartoon avatar posts "yo yo yo",
+   "guess whose back", "some of you maggots might remember me": fine. Nothing there
+   matches the brief or the floor. The name is tasteless and the entrance is cocky, and
+   neither is a screening matter - they read like a returning member showing off.
+2. A polite question about roles, rules or the server itself, any account age: fine.
+3. "why is this server so dead lmao" from a new account: fine - rude and low-effort, but
+   it matches nothing.
+4. A member who is unpleasant in a way the brief simply does not mention: fine, even at
+   several messages. Escalation only matters when it escalates toward the brief or floor.
+5. An account that was polite for several messages and then posts a slur or a death
+   wish: troll - the floor is absolute and the earlier politeness does not offset it.
+6. The same message pasted into five channels in two minutes: troll - mass spam is on
+   the floor regardless of what the message says.
+7. Someone whose behaviour matches the brief exactly, once, in a way that is plainly
+   deliberate: troll, at the confidence the evidence actually supports.
+8. Someone whose behaviour half-matches the brief and could easily be innocent: unsure -
+   you will see their next message, and a wrong timeout is a real cost.
+9. Messages in a language other than English that are friendly or neutral: fine.
 
 REMEMBER:
-- You are screening for hostile intent, not rudeness, low effort, nationality, or
-  wanting something for free.
+- You are matching behaviour against a brief, not judging whether you like someone.
 - The timeout is reversible by staff, but a wrong timeout still hits a genuine new
   member on their first day - hold the 0.85 bar honestly.
 - Judge only from what you are shown; do not invent context that is not there.
 
-INCIDENT CONTEXT (why screening is on right now):
+SCREENING BRIEF (written by staff; this is what you are looking for):
 {context}
 
 MEMBER PROFILE
@@ -395,7 +406,8 @@ def _messages_block(messages: list[dict[str, Any]]) -> str:
 {message_lines}
 
 If the evidence is thin, answer "unsure"; you will be shown their next message.
-A "troll" verdict times the member out, so only give one when the intent is clear.
+A "troll" verdict times the member out, so only give one when you can point at a
+message that matches the screening brief or the permanent floor.
 
 Respond with raw JSON only:
 {{"verdict": "troll" | "unsure" | "fine", "confidence": <0.0-1.0>, "reason": "<one or two short sentences>"}}"""

@@ -16,6 +16,7 @@ from discord.interactions import Interaction
 from config import CHANNELS, JSON_DATA_DIR, PERMISSIONS_BACKUP_FILE, ROLES
 from commands.moderation.join_watch import (
     DEFAULT_CONTEXT as JW_DEFAULT_CONTEXT,
+    MAX_CONTEXT_CHARS as JW_MAX_CONTEXT_CHARS,
     MAX_SCANNED_MESSAGES as JW_MAX_MESSAGES,
     TIMEOUT_HOURS as JW_TIMEOUT_HOURS,
     announce_toggle as announce_join_watch_toggle,
@@ -910,7 +911,7 @@ class JoinWatchContextModal(discord.ui.Modal):
             style=discord.TextStyle.paragraph,
             default=get_join_watch_state()["context"],
             placeholder="Leave empty to reset to the general default context.",
-            max_length=1000,
+            max_length=JW_MAX_CONTEXT_CHARS,
             required=False,
         )
         self.add_item(self.context_input)
