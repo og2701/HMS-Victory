@@ -320,6 +320,83 @@ class ReviewView(discord.ui.View):
 
 
 # ---------------------------------------------------------------------------
+# Review panel
+# ---------------------------------------------------------------------------
+def flagged_members() -> list:
+    """[(user_id, flag, ts, note), ...], most recently flagged first."""
+    return DatabaseManager.fetch_all(
+        "SELECT user_id, flag, ts, note FROM detection_flags ORDER BY ts DESC") or []
+
+
+def _panel_text(client, rows) -> str:
+    if not rows:
+        return "**Anti-cheat flags**\nNobody is flagged. Nothing to lift."
+    lines = ["**Anti-cheat flags**", f"-# {len(rows)} member(s) restricted from economy commands", ""]
+    for uid, flag, ts, note in rows[:25]:
+        user = client.get_user(int(uid)) if client else None
+        name = getattr(user, "display_name", None) or uid
+        why = f" · {note}" if note else ""
+        lines.append(f"🚫 **{discord.utils.escape_markdown(str(name))}** — <t:{int(ts)}:R>{why}")
+    if len(rows) > 25:
+        lines.append(f"-# …and {len(rows) - 25} more")
+    return "\n".join(lines)
+
+
+class FlagsPanel(discord.ui.View):
+    """Pick a flagged member from the list and lift it, without retyping anything.
+
+    Rebuilt from the database on every action rather than held in memory, so two reviewers
+    working at once never act on a stale list - the dropdown is the current state, not a
+    snapshot from when the panel opened.
+    """
+
+    def __init__(self, client, viewer_id):
+        super().__init__(timeout=600)
+        self.client = client
+        self.viewer_id = int(viewer_id)
+        self._rebuild()
+
+    def _rebuild(self) -> None:
+        self.clear_items()
+        rows = flagged_members()
+        if not rows:
+            return
+        options = []
+        for uid, _flag, ts, note in rows[:25]:
+            user = self.client.get_user(int(uid)) if self.client else None
+            label = str(getattr(user, "display_name", None) or uid)[:100]
+            options.append(discord.SelectOption(
+                label=label, value=str(uid), description=(note or "flagged")[:100]))
+        select = discord.ui.Select(placeholder="Choose a member to unflag…", options=options)
+        select.callback = self._on_pick
+        self.add_item(select)
+
+    async def _guard(self, interaction) -> bool:
+        if interaction.user.id != self.viewer_id:
+            await interaction.response.send_message("That isn't for you.", ephemeral=True)
+            return False
+        return True
+
+    async def _on_pick(self, interaction: discord.Interaction):
+        if not await self._guard(interaction):
+            return
+        uid = interaction.data["values"][0]
+        clear_flag(uid, "flagged_alt")
+        log.info("detection flag on %s lifted by %s", uid, interaction.user.id)
+        self._rebuild()
+        await interaction.response.edit_message(
+            content=f"✅ Lifted the flag on <@{uid}> — economy commands work again.\n\n"
+                    + _panel_text(self.client, flagged_members()),
+            view=self,
+            allowed_mentions=discord.AllowedMentions.none())
+
+
+def build_flags_panel(client, viewer_id):
+    """(content, view) for the /flags panel."""
+    return _panel_text(client, flagged_members()), FlagsPanel(client, viewer_id)
+
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 async def _post(client, kind, subjects, triggers, context, amount, funder_id) -> None:

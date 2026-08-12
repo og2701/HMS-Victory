@@ -207,3 +207,30 @@ def test_the_funnel_rule_is_not_run_where_ages_cannot_be_resolved():
     body = cmds.read_text()
     assert "funnel_findings" in body and "member_ages=ages" in body
     assert "await _check_funnel()" in body      # defined AND called
+
+
+# --- the review panel --------------------------------------------------------------
+def test_the_flags_panel_lists_who_is_flagged_and_offers_them(monkeypatch):
+    """The panel is the only route back from a Flag / Restrict, since the alert's own
+    buttons disable themselves once one is pressed."""
+    import discord
+    store = {}
+    monkeypatch.setattr(D.DatabaseManager, "execute",
+                        staticmethod(lambda q, p=(): store.setdefault(p[0], p)))
+    monkeypatch.setattr(D.DatabaseManager, "fetch_all",
+                        staticmethod(lambda q, p=(): [(u, "flagged_alt", 1_700_000_000, "kind")
+                                                     for u in store]))
+    D.set_flag("111", "flagged_alt", by_id="1", note="kind")
+    D.set_flag("222", "flagged_alt", by_id="1", note="kind")
+
+    content, view = D.build_flags_panel(None, 1)
+    assert "2 member(s)" in content
+    picks = [c for c in view.children if isinstance(c, discord.ui.Select)]
+    assert picks and {o.value for o in picks[0].options} == {"111", "222"}
+
+
+def test_the_panel_is_empty_and_harmless_when_nobody_is_flagged(monkeypatch):
+    monkeypatch.setattr(D.DatabaseManager, "fetch_all", staticmethod(lambda *a, **k: []))
+    content, view = D.build_flags_panel(None, 1)
+    assert "Nobody is flagged" in content
+    assert not view.children, "an empty panel must not offer a dropdown with no options"
