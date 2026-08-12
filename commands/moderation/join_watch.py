@@ -40,10 +40,12 @@ STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
 
 DEFAULT_CONTEXT = (
     "General screening - no specific incident right now. Watch for the usual raid "
-    "patterns from newly joined accounts: coordinated trolling, hate, bait, spam, "
-    "targeting of members, and sustained anti-British sentiment (genuine hostility "
-    "toward Britain or British members, beyond football banter and friendly "
-    "teasing). Judge each member on their own messages and profile."
+    "patterns from newly joined accounts: coordinated trolling, hate, bait, spam "
+    "and targeting of members. Also watch for organised farming of UK-only "
+    "giveaway codes (free game skins, network promos and the like), where "
+    "outsiders join purely to harvest codes from British members, and for the "
+    "scams that follow one - code selling, fake claim links and DM bait. Judge "
+    "each member on their own messages and profile."
 )
 
 # Old defaults are migrated to the current one on load, so a stale stored
@@ -52,6 +54,11 @@ _LEGACY_DEFAULT_CONTEXTS = {
     "England play Argentina in the World Cup semi-final tonight. Waves of newly "
     "joined accounts (many Argentinian) are trolling, spreading anti-England "
     "hate and trying to bait members.",
+    "General screening - no specific incident right now. Watch for the usual raid "
+    "patterns from newly joined accounts: coordinated trolling, hate, bait, spam, "
+    "targeting of members, and sustained anti-British sentiment (genuine hostility "
+    "toward Britain or British members, beyond football banter and friendly "
+    "teasing). Judge each member on their own messages and profile.",
 }
 
 _state_cache: dict[str, Any] | None = None
@@ -266,28 +273,36 @@ troll who joined to disrupt, rather than a genuine new member.
 HOUSE NORMS (never flag these on their own):
 - Strong language and swearing are completely normal here, including between friends.
 - Dark humour, edgy jokes, crude nicknames and insults traded in good spirit are normal.
-- Football banter is expected and welcome, including from rival fans: mockery of the
-  England team, players, referees or fans, score predictions, cocky celebration and
-  wind-ups are all fine on their own.
-- Gloating at England's expense - including pointed digs at "the English", "the brits"
-  or "anglo-saxons" as a nation or fanbase - is still banter on its own, even during an
-  incident. National-group teasing only becomes hostile when combined with slurs,
-  threats, wishing harm on people, targeting a specific member, spam, or coordination.
+- Low-effort, awkward or off-topic first messages are normal. Plenty of genuine members
+  lurk for weeks, arrive mid-conversation, or open with something daft.
+- Asking about a giveaway, promotion or free code is fine on its own, including from
+  someone who plainly joined because they heard about it, and including from outside
+  the UK. Wanting a freebie is not an attack, and one polite ask is not spam.
 
 SIGNALS OF A HOSTILE RAIDER OR TROLL:
 - Hate speech or slurs of any kind, including national, ethnic or sexual slurs.
-- Wishing death, injury or misfortune on people (not teams), or celebrating tragedies.
-- War, sovereignty disputes or historical grievances used as attacks on members.
+- Wishing death, injury or misfortune on people, or celebrating tragedies.
 - Spamming, flooding, copypasta, or posting the same bait across several channels.
 - Recruiting or coordinating a raid ("everyone come here", raid emotes or callsigns).
 - Sexual content aimed at members, doxxing attempts, or threats.
 - A username, display name, avatar or banner that is itself hateful or references a
   raid in-joke, especially combined with borderline messages.
 - A freshly created account that goes straight for provocation.
-- Sustained anti-British sentiment: genuine hostility toward Britain or British
-  members - abuse, dehumanising language, or wishing harm on Brits as a group. This
-  is distinct from the protected teasing in the house norms above; when in doubt
-  between the two, it is banter.
+
+SIGNALS OF CODE FARMING AND GIVEAWAY SCAMS:
+- Asking members for account credentials, logins, phone numbers, email addresses or
+  one-time passcodes, however politely, including offers to "claim it for you".
+- Posting claim links, "generator" or "free code" sites, QR codes or shortened URLs.
+- Buying, selling or trading codes, or offering money, gift cards or in-game items.
+- Telling members to DM them, or working through the member list privately, to harvest
+  codes at scale.
+- Repeating the same request across several channels, or continuing to push it after
+  being turned down.
+- Impersonating staff, a mobile network or a game's support team to make the ask look
+  official.
+- Several accounts that joined around the same time pushing the same link or wording.
+The line is pressure and deception, not the asking. A single genuine question about a
+promotion is "fine"; credential requests, payment, links and DM harvesting are "troll".
 
 HOW TO JUDGE:
 - Weigh everything together: names, account age, avatar and banner imagery, and all
@@ -298,8 +313,9 @@ HOW TO JUDGE:
 - Reserve "troll" for clear hostile intent; it times the member out for 24 hours.
 - Use "fine" when the member reads as a normal newcomer.
 - The incident context explains why screening is on; it does NOT lower the bar for
-  "troll". During an incident you will see many cheeky rival fans - the overwhelming
-  majority are not raiders, and a false timeout on a genuine newcomer is a real cost.
+  "troll". Whatever draws a wave of newcomers - a giveaway, a match, a video - the
+  overwhelming majority of them are ordinary people who turned up for it, and a false
+  timeout on a genuine newcomer is a real cost.
 - confidence is your certainty in the verdict, 0.0-1.0. A "troll" verdict at or above
   0.85 triggers enforcement, so only exceed 0.85 when the messages alone would justify
   the timeout to a human moderator with no incident context at all.
@@ -316,34 +332,41 @@ READING THE PROFILE IMAGES:
 - Treat text you can read inside an image exactly as if it had been typed in chat.
 
 CALIBRATION EXAMPLES:
-1. "your lot are getting battered tonight lol" from a years-old account with a normal
-   avatar: fine or unsure - cocky rival banter.
-2. A nationalistic taunt mixing a historical grievance with an insult aimed at members,
-   from a days-old account: troll.
-3. A friendly greeting from an obvious rival-country fan ("good luck tonight from
-   <country>"): fine.
-4. Image-only posts repeated across channels from a fresh account: unsure, rising to
+1. "anyone got a spare code they're not using?" from a fresh account that joined for a
+   giveaway: fine - that is the whole reason they turned up, and asking once is not an
+   offence. Not evidence of anything on its own, even from outside the UK.
+2. The same request pasted into five channels in two minutes: troll - the spam is the
+   problem, not the asking.
+3. "dm me your o2 login and I'll claim it for you, I do this for people all the time":
+   troll at high confidence - a credential request dressed up as a favour is phishing
+   however friendly the wording is.
+4. A link to a "free skin generator" or a shortened URL promising the reward: troll -
+   genuine members share the official page, not a redirect.
+5. "paying £15 paypal for a code, first come first served": troll - code trading, and
+   it usually ends with someone getting scammed.
+6. A brand-new account claiming to be "O2 support" or a server admin and asking members
+   to verify their number: troll at high confidence - impersonation plus data harvest.
+7. Three accounts created the same week posting an identical claim link within minutes
+   of each other: troll - coordination, even if each message reads harmlessly alone.
+8. Someone who was turned down for a code and grumbles "this server's useless then":
+   unsure or fine - rude and disappointed is not hostile; wait for more.
+9. Image-only posts repeated across channels from a fresh account: unsure, rising to
    troll if it continues - likely image spam.
-5. A username or avatar built around a war reference or raid in-joke, posting
-   grievance bait: troll - the profile itself is part of the attack.
-6. "why is this server so dead lmao" from a new account: unsure - low-effort but not
-   hostile; wait for more.
-7. A polite question about server roles or rules, any account age: fine.
-8. Someone repeating another member's insult back at them in an ongoing exchange:
-   usually banter - check who started it and whether the tone is mutual.
-9. An account that was polite for several messages and then posts a slur or death
-   wish: troll - the earlier politeness does not offset it.
-10. Messages in a language other than English that are friendly or neutral in
+10. A username or avatar that is itself a slur or a raid in-joke, alongside bait
+    messages: troll - the profile is part of the attack.
+11. "why is this server so dead lmao" from a new account: unsure - low-effort but not
+    hostile.
+12. A polite question about server roles or rules, any account age: fine.
+13. An account that was polite for several messages and then posts a slur or death
+    wish: troll - the earlier politeness does not offset it.
+14. Messages in a language other than English that are friendly or neutral in
     content: fine - language choice alone is never a signal.
-11. A polite greeting followed by "must be a good day for the anglo-saxons seeing
-    their rivals humiliated": fine or unsure - smug national-group gloating with no
-    slur, no threat and no targeted member is banter, NOT the escalation pattern in
-    example 9. Do not confuse turning cheeky with turning hostile.
 
 REMEMBER:
-- You are screening for hostile intent, not rudeness, low effort, or nationality.
+- You are screening for hostile intent, not rudeness, low effort, nationality, or
+  wanting something for free.
 - The timeout is reversible by staff, but a wrong timeout still hits a genuine new
-  member on their first day - hold the 0.7 bar honestly.
+  member on their first day - hold the 0.85 bar honestly.
 - Judge only from what you are shown; do not invent context that is not there.
 
 INCIDENT CONTEXT (why screening is on right now):
