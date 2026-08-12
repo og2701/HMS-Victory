@@ -49,10 +49,31 @@ def test_the_bank_still_fills_every_shelf_a_six_by_six_needs():
         assert by_length[n] >= 100, f"only {by_length[n]} {n}-letter words left"
 
 
-def test_every_clue_in_the_bank_clears_its_own_bar():
+def test_the_bar_governs_the_double_definitions_but_not_the_vocabulary():
+    """Two tiers, two standards, on purpose.
+
+    The bar exists to stop a bare synonym passing as a clue for an everyday word, so it
+    demands the clue say enough to be worth solving. That test is meaningless for the
+    vocabulary tier, where the difficulty is carried by the ANSWER and the clue should be
+    terse: "Frustrate a plan" is exactly right for THWART and is three words long.
+    """
     assert B.HARD, "hard bank is empty"
     for word, clue in B.HARD.items():
+        if word in B.VOCAB:
+            continue
         assert B._is_indirect(clue), f"{word} kept a clue that fails the bar: {clue!r}"
+
+
+def test_the_vocabulary_tier_is_present_and_reaches_every_shelf():
+    """This is where difficulty now lives, so a shelf going empty would quietly undo it."""
+    from collections import Counter
+    assert len(B.VOCAB) >= 300, f"vocabulary tier is only {len(B.VOCAB)} words"
+    by_length = Counter(len(w) for w in B.VOCAB)
+    for n in (3, 4, 5, 6):
+        assert by_length[n] >= 20, f"only {by_length[n]} {n}-letter harder words"
+    # Every one has to be usable in a 6x6, and reachable by the fill.
+    assert all(3 <= len(w) <= 6 for w in B.VOCAB)
+    assert all(w in B.HARD for w in B.VOCAB), "vocabulary is not reaching the fill"
 
 
 def test_no_clue_contains_its_own_answer():
@@ -66,49 +87,6 @@ def test_no_clue_contains_its_own_answer():
     for word, clue in B.HARD.items():
         assert not re.search(rf"\b{re.escape(word.lower())}\b", clue.lower()), \
             f"{word} gives itself away: {clue!r}"
-
-
-_HIDDEN_INDICATORS = (
-    "concealed in", "found in", "discovered in", "caught in", "sheltering in",
-    "on display in", "as they do in", "turning up in", "part of the", "as seen in",
-    "taking part in", "standing in", "as viewed in", "as put in", "as found in",
-    "as discovered in", "served up in", "included in", "raised in", "made in",
-    "hiding in", "lurking in", "bouncing back in", "held in the",
-)
-
-
-def test_hidden_word_clues_actually_hide_the_answer():
-    """A hidden-word clue promises the answer is sitting in the clue's letters. If it isn't,
-    the clue is not merely hard, it is unsolvable - the solver follows the indicator and finds
-    nothing there.
-
-    Scoped to the cryptic clues, because only they make that promise. The same phrases appear
-    innocently in the older double definitions - "or one part of the journey" for LEG reads as
-    a hidden indicator to a regex and is just English - so checking the whole bank reports
-    four failures that are not failures.
-
-    This is the one cryptic failure a machine can catch. Whether a double definition's halves
-    genuinely pull apart, or a charade's arithmetic works, still needs a person to read it.
-    """
-    import re
-    assert B.CRYPTIC, "cryptic clue set is missing"
-    for word, clue in B.CRYPTIC.items():
-        low = clue.lower()
-        if not any(ind in low for ind in _HIDDEN_INDICATORS):
-            continue
-        letters = re.sub(r"[^a-z]", "", low)
-        assert word.lower() in letters, \
-            f"{word} claims to be hidden but is not in the clue: {clue!r}"
-
-
-def test_the_bank_has_moved_past_double_definitions():
-    """Three rounds of tightening the bar never made the puzzle hard, because every clue was a
-    double definition - two meanings and no wordplay, the most transparent of the devices.
-    This pins that the cryptic set is present rather than silently reverted."""
-    cryptic_sample = {"ACE", "SWORD", "STAR", "SLEET", "ECHO"}
-    assert cryptic_sample <= set(B.HARD), "cryptic clues missing from the bank"
-    assert "concealed in palace" in B.HARD["ACE"]
-    assert "rearranged" in B.HARD["SWORD"]        # anagram of WORDS
 
 
 def test_no_shipped_puzzle_gives_its_answer_away():
