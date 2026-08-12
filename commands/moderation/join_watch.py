@@ -824,7 +824,9 @@ async def announce_toggle(client: Any, actor: Any, enabled: bool) -> None:
             "## 🔎 AI join-watch armed\n"
             f"{actor.mention} armed join-watch - new joiners' first "
             f"{MAX_SCANNED_MESSAGES} messages are now AI-screened.\n"
-            f"-# Context: {state['context'][:300]}"
+            # The stored context is capped at 1000 chars, so it always fits in the
+            # card whole; staff need to read the exact wording they armed with.
+            f"-# Context: {state['context']}"
         )
     else:
         text = (

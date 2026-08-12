@@ -727,6 +727,16 @@ def _quarantine_block(
     return "\n".join(lines)[:900]
 
 
+def _panel_context(state: dict[str, Any]) -> str:
+    """The panel shares one 4000-char container with the vitals, quarantine and
+    recent-joins blocks, so the context is clipped here rather than shown whole -
+    the arm announcement and the edit modal both carry the full wording."""
+    context = state["context"]
+    if len(context) <= 400:
+        return context
+    return context[:400].rstrip() + "… (open Edit context to read it all)"
+
+
 def _join_watch_block() -> str:
     state = get_join_watch_state()
     if state["enabled"]:
@@ -735,13 +745,13 @@ def _join_watch_block() -> str:
             f"-# Listening to everyone who joins from now on: their first {JW_MAX_MESSAGES} "
             f"messages are AI-screened, and a confident troll verdict gets a "
             f"{JW_TIMEOUT_HOURS}h timeout and a police station report.\n"
-            f"**Context** {state['context'][:300]}"
+            f"**Context** {_panel_context(state)}"
         )
     return (
         "### 🔎 AI join-watch · Disarmed\n"
         f"-# When armed, members who join are listened to and their first "
         f"{JW_MAX_MESSAGES} messages AI-screened for raid trolling.\n"
-        f"**Context** {state['context'][:300]}"
+        f"**Context** {_panel_context(state)}"
     )
 
 
