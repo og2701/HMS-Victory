@@ -14,7 +14,7 @@ interlocking 5x5 tractable at all.
 import random, sys, json, time
 from collections import defaultdict
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from crossword_bank import BANK, HARD
+from crossword_bank import BANK, HARD, VOCAB
 
 import itertools
 
@@ -76,6 +76,8 @@ def _valid_layouts(n, max_len, want=200):
 
 N = 5
 PATTERNS = []
+# Words the fill should reach for before anything else (see fill). Empty means no bias.
+PREFER = set()
 
 def _reindex():
     """Rebuild the lookup indexes after the word bank is swapped (see --hard)."""
@@ -154,7 +156,18 @@ def fill(ents, rng, deadline, banned=frozenset()):
         _n, cs, e = scored[0]
         rest = [x for x in remaining if x is not e]
         rng.shuffle(cs)
-        for w in cs[:25]:
+        # Try the harder vocabulary first. Without this the fill picks uniformly from
+        # whatever fits, so the tier gets used in proportion to its share of the bank and no
+        # more - measured at 13% of answers, against 17% of the words. Merely allowing the
+        # hard words in does nothing; the search has to reach for them. Shuffle first so the
+        # order within each group stays random, then stable-sort to float the preferred set.
+        cs.sort(key=lambda w: w not in PREFER)
+        # Wider window than the 25 this used before the sort existed. With the preferred
+        # words at the front, a narrow window is ALL preferred - so when none of them fit,
+        # the search backtracks instead of falling back to an ordinary word, and throughput
+        # collapsed from 35 puzzles to 9. Widening lets it try the hard words first and then
+        # settle, which is the behaviour wanted: preference, not a requirement.
+        for w in cs[:80]:
             snap = {c: grid.get(c) for c in e[2]}
             for i, cell in enumerate(e[2]):
                 grid[cell] = w[i]
@@ -209,6 +222,8 @@ if __name__ == "__main__":
         BANK.clear()
         BANK.update(HARD)
         _reindex()
+        PREFER.update(w for w in VOCAB if w in BANK)
+        print(f"preferring {len(PREFER)} harder-vocabulary words in the fill")
         print(f"hard mode: {len(BANK)} words with indirect clues")
     globals()["N"] = a.size
     PATTERNS[:] = _valid_layouts(a.size, a.max_len)
