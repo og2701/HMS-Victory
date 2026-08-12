@@ -39,13 +39,16 @@ ACT_CONFIDENCE = 0.85
 STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
 
 DEFAULT_CONTEXT = (
-    "General screening - no specific incident right now. Watch for the usual raid "
-    "patterns from newly joined accounts: coordinated trolling, hate, bait, spam "
-    "and targeting of members. Also watch for organised farming of UK-only "
-    "giveaway codes (free game skins, network promos and the like), where "
-    "outsiders join purely to harvest codes from British members, and for the "
-    "scams that follow one - code selling, fake claim links and DM bait. Judge "
-    "each member on their own messages and profile."
+    "O2 x Fortnite promotion, from 14 August 2026. UK O2 and Virgin Media customers "
+    "can claim a code through O2 Priority for a free Fortnite skin (Pond Guardian "
+    "Froggory). This is a British server, so it is an obvious place for people "
+    "outside the UK to come looking for a code. Expect a wave of new joiners asking "
+    "for spare codes: most are ordinary players, and asking is not an offence. The "
+    "problem is the organised layer around it - accounts harvesting codes at scale "
+    "by DMing members, buying and selling codes, fake claim links and 'free code "
+    "generator' sites, and phishing that asks members for their O2 login, phone "
+    "number or one-time passcode. Judge each member on their own messages and "
+    "profile."
 )
 
 # Old defaults are migrated to the current one on load, so a stale stored
@@ -59,6 +62,13 @@ _LEGACY_DEFAULT_CONTEXTS = {
     "targeting of members, and sustained anti-British sentiment (genuine hostility "
     "toward Britain or British members, beyond football banter and friendly "
     "teasing). Judge each member on their own messages and profile.",
+    "General screening - no specific incident right now. Watch for the usual raid "
+    "patterns from newly joined accounts: coordinated trolling, hate, bait, spam "
+    "and targeting of members. Also watch for organised farming of UK-only "
+    "giveaway codes (free game skins, network promos and the like), where "
+    "outsiders join purely to harvest codes from British members, and for the "
+    "scams that follow one - code selling, fake claim links and DM bait. Judge "
+    "each member on their own messages and profile.",
 }
 
 _state_cache: dict[str, Any] | None = None
