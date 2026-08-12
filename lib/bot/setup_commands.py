@@ -429,6 +429,48 @@ def define_commands(tree, client):
         for chunk in chunks[1:]:
             await interaction.followup.send(chunk, ephemeral=True)
 
+    @command("flags", "View or clear anti-cheat flags on a member (Oggers only)",
+             checks=[lambda i: i.user.id == USERS.OGGERS])
+    async def flags_command(interaction: Interaction, member: Optional[Member] = None,
+                            clear: bool = False):
+        """Undo a Flag / Restrict decision.
+
+        The review buttons disable themselves once pressed, so an alert cannot take back its
+        own verdict - which left the flag only removable by hand in the database. A flagged
+        member is blocked from /pay, so there has to be a way back that is not SSH.
+        """
+        from lib.core import detection as _D
+        from database import DatabaseManager as _DB
+
+        if member is None:
+            rows = _DB.fetch_all(
+                "SELECT user_id, flag, ts, note FROM detection_flags ORDER BY ts DESC") or []
+            if not rows:
+                return await interaction.response.send_message(
+                    "No members are flagged.", ephemeral=True)
+            lines = [f"<@{u}> - `{f}` - <t:{int(ts)}:R>" + (f" ({n})" if n else "")
+                     for u, f, ts, n in rows]
+            return await interaction.response.send_message(
+                "**Flagged members**\n" + "\n".join(lines[:25]), ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none())
+
+        if not clear:
+            state = "flagged" if _D.is_flagged(member.id) else "not flagged"
+            return await interaction.response.send_message(
+                f"{member.mention} is **{state}**. Re-run with `clear: True` to lift it.",
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+
+        if not _D.is_flagged(member.id):
+            return await interaction.response.send_message(
+                f"{member.mention} wasn't flagged - nothing to undo.", ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none())
+        _D.clear_flag(member.id, "flagged_alt")
+        logging.getLogger(__name__).info(
+            "detection flag cleared for %s by %s", member.id, interaction.user.id)
+        await interaction.response.send_message(
+            f"✅ Cleared the flag on {member.mention} - economy commands work again.",
+            allowed_mentions=discord.AllowedMentions.none())
+
     @command("pay", "Transfer UKPence to another member")
     async def pay_command(interaction: Interaction, recipient: Member, amount: int):
         if amount <= 0:
