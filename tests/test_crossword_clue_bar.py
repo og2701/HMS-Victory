@@ -68,6 +68,49 @@ def test_no_clue_contains_its_own_answer():
             f"{word} gives itself away: {clue!r}"
 
 
+_HIDDEN_INDICATORS = (
+    "concealed in", "found in", "discovered in", "caught in", "sheltering in",
+    "on display in", "as they do in", "turning up in", "part of the", "as seen in",
+    "taking part in", "standing in", "as viewed in", "as put in", "as found in",
+    "as discovered in", "served up in", "included in", "raised in", "made in",
+    "hiding in", "lurking in", "bouncing back in", "held in the",
+)
+
+
+def test_hidden_word_clues_actually_hide_the_answer():
+    """A hidden-word clue promises the answer is sitting in the clue's letters. If it isn't,
+    the clue is not merely hard, it is unsolvable - the solver follows the indicator and finds
+    nothing there.
+
+    Scoped to the cryptic clues, because only they make that promise. The same phrases appear
+    innocently in the older double definitions - "or one part of the journey" for LEG reads as
+    a hidden indicator to a regex and is just English - so checking the whole bank reports
+    four failures that are not failures.
+
+    This is the one cryptic failure a machine can catch. Whether a double definition's halves
+    genuinely pull apart, or a charade's arithmetic works, still needs a person to read it.
+    """
+    import re
+    assert B.CRYPTIC, "cryptic clue set is missing"
+    for word, clue in B.CRYPTIC.items():
+        low = clue.lower()
+        if not any(ind in low for ind in _HIDDEN_INDICATORS):
+            continue
+        letters = re.sub(r"[^a-z]", "", low)
+        assert word.lower() in letters, \
+            f"{word} claims to be hidden but is not in the clue: {clue!r}"
+
+
+def test_the_bank_has_moved_past_double_definitions():
+    """Three rounds of tightening the bar never made the puzzle hard, because every clue was a
+    double definition - two meanings and no wordplay, the most transparent of the devices.
+    This pins that the cryptic set is present rather than silently reverted."""
+    cryptic_sample = {"ACE", "SWORD", "STAR", "SLEET", "ECHO"}
+    assert cryptic_sample <= set(B.HARD), "cryptic clues missing from the bank"
+    assert "concealed in palace" in B.HARD["ACE"]
+    assert "rearranged" in B.HARD["SWORD"]        # anagram of WORDS
+
+
 def test_no_shipped_puzzle_gives_its_answer_away():
     """Same rule, against what players actually get - the bank and the shipped sets can
     drift, because a set bakes its clues in at generation time."""
