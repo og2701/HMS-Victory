@@ -46,23 +46,27 @@ STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
 DEFAULT_CONTEXT = (
     "O2 x Fortnite promotion, from 14 August 2026. UK O2 and Virgin Media customers can "
     "claim a code through O2 Priority for a free Fortnite skin (Pond Guardian Froggory). "
-    "This is a British server, so it is an obvious place for people outside the UK to "
-    "come looking for a code.\n"
-    "FLAG these, and only these:\n"
-    "- Asking members for account credentials, logins, email addresses, phone numbers or "
-    "one-time passcodes, however politely, including offers to claim the code for them.\n"
+    "This is a British server, so people outside the UK are joining purely to get a code "
+    "out of the members here. This server is not a code exchange: anyone who joined to "
+    "obtain a code, or to get help claiming one, did not join to be a member.\n"
+    "FLAG:\n"
+    "- Asking for a code, a spare code or an unused code, in any wording and however "
+    "politely - 'anyone got one they aren't using', 'pls code', 'need a code' all count.\n"
+    "- Asking for help claiming, redeeming or qualifying for the promotion, or asking "
+    "someone to claim it on their behalf or lend them a UK number.\n"
+    "- Offering money, gift cards, in-game items or trades for a code.\n"
+    "- Asking members for logins, email addresses, phone numbers or one-time passcodes, "
+    "including offers to claim the code for them.\n"
     "- Posting claim links, 'free code generator' sites, QR codes or shortened URLs.\n"
-    "- Buying, selling or trading codes, or offering money, gift cards or in-game items.\n"
-    "- Telling members to DM them, or working through the member list privately, to "
-    "harvest codes at scale.\n"
-    "- Pushing the same request again after being turned down, or across many channels.\n"
-    "- Impersonating staff, O2, Epic Games or a support team to make the ask look "
-    "official.\n"
+    "- Telling members to DM them, or DMing members, to collect codes.\n"
+    "- Impersonating staff, O2, Virgin Media or Epic Games.\n"
     "- Several accounts pushing an identical link or identical wording.\n"
-    "DO NOT flag simply asking for a spare code, being disappointed at not getting one, "
-    "or being obviously foreign. Most joiners this week are ordinary players who turned "
-    "up for a freebie, and asking once is not an offence. The line is deception and "
-    "pressure, not wanting the skin."
+    "One clear ask is enough. Do not wait for a second message, do not soften the verdict "
+    "because they were polite, and do not treat a first-time offence as lighter.\n"
+    "DO NOT flag members who merely talk about the promotion, the skin or Fortnite "
+    "without asking anyone for a code: saying they claimed it, asking whether it has "
+    "gone live, or complaining that the code did not work are all fine. Being foreign, "
+    "new, or low-effort is still never a reason on its own."
 )
 
 # Old defaults are migrated to the current one on load, so a stale stored
@@ -93,6 +97,25 @@ _LEGACY_DEFAULT_CONTEXTS = {
     "generator' sites, and phishing that asks members for their O2 login, phone "
     "number or one-time passcode. Judge each member on their own messages and "
     "profile.",
+    "O2 x Fortnite promotion, from 14 August 2026. UK O2 and Virgin Media customers can "
+    "claim a code through O2 Priority for a free Fortnite skin (Pond Guardian Froggory). "
+    "This is a British server, so it is an obvious place for people outside the UK to "
+    "come looking for a code.\n"
+    "FLAG these, and only these:\n"
+    "- Asking members for account credentials, logins, email addresses, phone numbers or "
+    "one-time passcodes, however politely, including offers to claim the code for them.\n"
+    "- Posting claim links, 'free code generator' sites, QR codes or shortened URLs.\n"
+    "- Buying, selling or trading codes, or offering money, gift cards or in-game items.\n"
+    "- Telling members to DM them, or working through the member list privately, to "
+    "harvest codes at scale.\n"
+    "- Pushing the same request again after being turned down, or across many channels.\n"
+    "- Impersonating staff, O2, Epic Games or a support team to make the ask look "
+    "official.\n"
+    "- Several accounts pushing an identical link or identical wording.\n"
+    "DO NOT flag simply asking for a spare code, being disappointed at not getting one, "
+    "or being obviously foreign. Most joiners this week are ordinary players who turned "
+    "up for a freebie, and asking once is not an offence. The line is deception and "
+    "pressure, not wanting the skin.",
 }
 
 _state_cache: dict[str, Any] | None = None
@@ -346,10 +369,12 @@ HOW TO JUDGE:
 - Escalation matters: watch for members whose messages get steadily worse over the scan.
 - If intent is genuinely unclear, answer "unsure" - you will see their next message.
 - Reserve "troll" for a clear match; it times the member out for 24 hours.
-- The brief explains why screening is on; it does NOT lower the bar for "troll". Whatever
-  draws a wave of newcomers - a giveaway, a match, a video - the overwhelming majority
-  are ordinary people who turned up for it, and a false timeout on a genuine newcomer is
-  a real cost.
+- The brief decides what counts, and staff have already weighed whether it deserves a
+  timeout. Do not second-guess it, water it down, or hold out for something worse
+  because the match on its own feels minor. If the brief says to flag something, flag it.
+- Your judgement goes the other way instead: be slow to decide that a member has matched
+  the brief at all. Most people in any wave of newcomers are ordinary, a false timeout on
+  a genuine newcomer is a real cost, and "close enough" is not a match.
 - confidence is your certainty in the verdict, 0.0-1.0. A "troll" verdict at or above
   0.85 triggers enforcement, so only exceed 0.85 when you could show a human moderator
   the exact message and the exact line of the brief or floor it breaks.
