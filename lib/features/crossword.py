@@ -20,6 +20,7 @@ State lives in CROSSWORD_STATE_FILE keyed by the current date, so it survives re
 and the ephemeral being dismissed - just run /crossword again to resume today's grid.
 """
 
+import asyncio
 import datetime
 import logging
 import time
@@ -602,7 +603,10 @@ def draw_board(uid, date):
     dr.text(at(W // 2, H - 34), sub, font=f_sub, fill="#8f96a5", anchor="mt")
 
     buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
+    # Saved as a palette PNG. A board is a couple of dozen flat colours plus antialiased
+    # text, so 256 of them is the same picture to the eye at 14KB instead of 36KB - and
+    # those bytes are the upload, which is the part the player actually sits waiting for.
+    img.convert("P", palette=Image.ADAPTIVE, colors=256).save(buf, format="PNG", optimize=True)
     buf.seek(0)
     return buf
 
@@ -618,7 +622,9 @@ async def render_board(uid, date):
     if not getattr(config, "CROSSWORD_IMAGE_ENABLED", False):
         return None, p["done"]
     try:
-        return draw_board(uid, date), p["done"]
+        # In a thread: the draw is only ~30ms, but it's 30ms in which the bot answers
+        # nobody else, and a room full of people solving redraws constantly.
+        return await asyncio.to_thread(draw_board, uid, date), p["done"]
     except Exception:
         log.error("HMS Crossword board render failed", exc_info=True)
         return None, p["done"]
@@ -696,8 +702,9 @@ class AnswerModal(discord.ui.Modal, title="HMS Crossword"):
                     await record_income_source(interaction.client, self.user_id, "crossword")
                 except Exception:
                     pass
+        board = _start_board(interaction.client, self.user_id, self.date)
         await interaction.response.defer()
-        await _refresh(interaction, self.user_id, self.date, edit=True)
+        await _refresh(interaction, self.user_id, self.date, edit=True, prepared=board)
 
 
 class ClueSelect(discord.ui.Select):
@@ -754,8 +761,9 @@ class _HintConfirmView(discord.ui.View):
             return
         msg, _p = reveal_letter(self.user_id, self.date.isoformat(),
                                 _todays_puzzle(self.date), self.date)
+        board = _start_board(interaction.client, self.user_id, self.date)
         await interaction.response.defer()
-        await _refresh(interaction, self.user_id, self.date, edit=True)
+        await _refresh(interaction, self.user_id, self.date, edit=True, prepared=board)
         if msg:
             await interaction.followup.send(msg, ephemeral=True)
 
@@ -803,27 +811,56 @@ class _ShareButton(discord.ui.Button):
             allowed_mentions=discord.AllowedMentions(users=True))
 
 
-async def _refresh(interaction: discord.Interaction, uid, date, *, edit: bool):
+async def _board_embed(client, uid, date):
+    """(embed, files) for the picture of the board, or (None, []) if there isn't one.
+
+    Never raises - a board that won't draw or won't host falls back to the text layout
+    rather than costing somebody their game.
+    """
+    try:
+        img, _done = await render_board(uid, date)   # None unless the image flag is on
+        if img is None:
+            return None, []
+        from lib.core.image_host import as_embed_or_file
+        return await as_embed_or_file(client, img, "crossword.png", colour=0xCF142B)
+    except Exception:
+        log.error("HMS Crossword board failed", exc_info=True)
+        return None, []
+
+
+def _start_board(client, uid, date):
+    """Start drawing and hosting the picture now, and hand back the task.
+
+    Call this BEFORE deferring the interaction. Discord's acknowledgement is a round-trip
+    of its own, and the render and the upload have no reason to queue behind it - started
+    here they run during it, so by the time we can edit the message the URL is usually
+    already in hand. Must be called after the player's state has been saved, since the
+    board is drawn from what's on disk.
+    """
+    if not getattr(config, "CROSSWORD_IMAGE_ENABLED", False):
+        return None
+    return asyncio.create_task(_board_embed(client, uid, date))
+
+
+async def _refresh(interaction: discord.Interaction, uid, date, *, edit: bool, prepared=None):
     """Redraw the board in place.
 
-    Text by default, not a picture. The board is an EPHEMERAL message, and Discord
-    handles image attachments on those badly - they sit on a grey placeholder for
-    seconds regardless of connection, and re-uploading a fresh PNG on every answer makes
-    it worse. Drawing the PNG locally took that from seconds to 82ms and changed nothing
-    the player could see, because the wait was never the render: it was the attachment.
-    The native text layout arrives with the message itself, so there's nothing to wait
-    for. Same call the prediction market and blackjack already made - see
-    CROSSWORD_IMAGE_ENABLED, off by default.
+    The board is an EPHEMERAL message, and Discord handles image attachments on those
+    badly - they sit on a grey placeholder for seconds however good the connection, and
+    re-uploading a fresh PNG on every answer pays that every time. So the picture goes up
+    once as a normal message in a quiet channel and the ephemeral carries an embed
+    pointing at the CDN link, which arrives with the message like any other image (see
+    lib/core/image_host.py, which also skips the upload entirely when it has already
+    hosted these exact bytes). With CROSSWORD_IMAGE_ENABLED off it's the text layout,
+    which needs no upload at all.
+
+    `prepared` is the task from _start_board, if the caller kicked one off before
+    deferring; without it the picture starts here and the deferral time is wasted.
     """
     view = CrosswordView(uid, date)
-    img, _done = await render_board(uid, date)      # None unless the image flag is on
-
-    content, files, embed = text_board(uid, date), [], None
-    if img is not None:
-        from lib.core.image_host import as_embed_or_file
-        embed, files = await as_embed_or_file(
-            interaction.client, img, "crossword.png", colour=0xCF142B)
-        content = None
+    task = prepared if prepared is not None else _start_board(interaction.client, uid, date)
+    embed, files = (await task) if task is not None else (None, [])
+    content = None if (embed is not None or files) else text_board(uid, date)
 
     if edit:
         await interaction.edit_original_response(
@@ -841,8 +878,11 @@ async def handle_crossword_command(interaction: discord.Interaction):
     date = _today()
     _note_opened(interaction.user.id, date.isoformat())
     _note_daily(interaction, "crossword")
+    # Kicked off before the deferral so the picture is being drawn and uploaded while
+    # Discord acknowledges the command, rather than starting once it has.
+    board = _start_board(interaction.client, interaction.user.id, date)
     await interaction.response.defer(ephemeral=True, thinking=True)
     # Straight through _refresh, so opening the board takes exactly the same hosted-image
     # path as every redraw after it. This used to attach the PNG directly, which is why
     # the first render was the slow one and every answer afterwards was quick.
-    await _refresh(interaction, interaction.user.id, date, edit=False)
+    await _refresh(interaction, interaction.user.id, date, edit=False, prepared=board)

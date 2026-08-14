@@ -11,14 +11,34 @@ ephemeral's embed. The player sees the picture arrive with the message.
 The hosting message is left in place on purpose. Discord's attachment URLs are signed and
 time-limited, and deleting the message can invalidate them early - so the post stays, in a
 channel nobody reads, rather than risking a board that renders as a broken image.
+
+Uploads are cached on the bytes of the picture, because the upload is the leg the player
+actually waits on and the same picture comes round constantly - see _url_cache.
 """
 
+import asyncio
+import hashlib
 import io
 import logging
+import time
 
 import discord
 
 logger = logging.getLogger(__name__)
+
+# Hosted URLs keyed by the picture's own bytes.
+#
+# The same image drawn twice is the same PNG byte for byte, and that happens far more than
+# it looks: every player's first crossword of the day is the identical empty grid, and
+# reopening a board nobody has touched redraws exactly the file we already posted. A hit
+# skips the upload entirely, so the picture is simply already there.
+#
+# Six hours because Discord's signed attachment URLs last about a day - well inside it, so
+# a cached link can't go stale on someone mid-puzzle.
+_CACHE_TTL = 6 * 3600
+_CACHE_MAX = 512
+_url_cache: dict[str, tuple[str, float]] = {}
+_in_flight: dict[str, "asyncio.Task[str | None]"] = {}
 
 
 def _host_channel_id() -> int:
@@ -56,9 +76,41 @@ _logged_destination = False
 async def host_image(client, data: io.BytesIO, filename: str = "board.png") -> str | None:
     """Return a CDN URL for `data`, or None if it couldn't be hosted.
 
+    Identical bytes are only ever uploaded once (see _url_cache), and if an upload of this
+    exact picture is already in flight the caller waits on that one rather than posting a
+    second copy - two people opening the same fresh board at the same moment is the normal
+    case, not a rare one.
+
     Falls back to None rather than raising: the caller should then send the image as a
     plain attachment (slower, but a slow board beats no board).
     """
+    raw = data.getvalue()
+    key = f"{filename}:{hashlib.sha256(raw).hexdigest()}"
+    hit = _url_cache.get(key)
+    if hit and time.time() - hit[1] < _CACHE_TTL:
+        return hit[0]
+
+    task = _in_flight.get(key)
+    if task is None:
+        task = asyncio.create_task(_upload(client, raw, filename, key))
+        _in_flight[key] = task
+    # shield so one caller giving up (a timed-out interaction, say) doesn't cancel the
+    # upload everybody else is waiting on
+    return await asyncio.shield(task)
+
+
+def _remember(key: str, url: str) -> None:
+    now = time.time()
+    _url_cache[key] = (url, now)
+    if len(_url_cache) > _CACHE_MAX:
+        for k, (_u, ts) in list(_url_cache.items()):
+            if now - ts >= _CACHE_TTL:
+                _url_cache.pop(k, None)
+    while len(_url_cache) > _CACHE_MAX:
+        _url_cache.pop(next(iter(_url_cache)), None)   # oldest first, dicts keep order
+
+
+async def _upload(client, raw: bytes, filename: str, key: str) -> str | None:
     global _logged_destination
     try:
         cid = _host_channel_id()
@@ -80,10 +132,12 @@ async def host_image(client, data: io.BytesIO, filename: str = "board.png") -> s
                 " (NOT a thread - this is a channel)",
             )
 
-        data.seek(0)
-        msg = await ch.send(file=discord.File(data, filename))
+        msg = await ch.send(file=discord.File(io.BytesIO(raw), filename))
         if msg.attachments:
+            _remember(key, msg.attachments[0].url)
             return msg.attachments[0].url
     except Exception:
         logger.warning("image hosting failed; falling back to an attachment", exc_info=True)
+    finally:
+        _in_flight.pop(key, None)
     return None
