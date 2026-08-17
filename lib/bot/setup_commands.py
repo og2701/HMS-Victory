@@ -93,6 +93,18 @@ def define_commands(tree, client):
                                 "You do not have permission to use this command.", ephemeral=True
                             )
                             return
+                # Economy restrictions are enforced here rather than per command, so a
+                # new game is covered the moment its name is added to a tier in
+                # lib/core/restrictions.py and cannot be forgotten at the call site.
+                try:
+                    from lib.core import restrictions as _R
+                    tier = _R.is_blocked(interaction.user.id, name)
+                    if tier:
+                        await interaction.response.send_message(
+                            _R.refusal_message(tier), ephemeral=True)
+                        return
+                except Exception:
+                    pass
                 sig = inspect.signature(func)
                 bound_args = sig.bind(*args, **kwargs)
                 bound_args.apply_defaults()
@@ -450,11 +462,8 @@ def define_commands(tree, client):
 
         try:
             from lib.core import detection as _D
+            # The restriction itself is enforced centrally in the command wrapper.
             _D.note_daily_command(interaction.user.id, "pay", client=interaction.client)
-            if _D.is_flagged(interaction.user.id):
-                return await interaction.response.send_message(
-                    "Your account is under review and can't send UKPence right now. "
-                    "Speak to a member of staff.", ephemeral=True)
         except Exception:
             pass
 

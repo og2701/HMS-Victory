@@ -665,6 +665,21 @@ def init_db():
                 PRIMARY KEY (user_id, flag)
             )
         ''')
+        # Every apply/lift of a restriction, so "who lifted this and when" has an answer
+        # that outlives the panel message. Append-only; detection_flags holds current
+        # state, this holds how it got there.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS restriction_log (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts      INTEGER NOT NULL,
+                user_id TEXT NOT NULL,
+                action  TEXT NOT NULL,
+                tier    TEXT,
+                by_id   TEXT,
+                note    TEXT
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_restriction_log_user ON restriction_log(user_id)')
         # One row per finished Connect 4 match (kept separate from casino_results so PvP
         # games don't pollute the house-casino stats/leaderboard). winner_id NULL on a draw.
         c.execute('''

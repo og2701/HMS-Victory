@@ -234,9 +234,8 @@ def _flow_between(a, b) -> dict:
     """
     out = {}
     try:
-        db = DatabaseManager()
         for key, payer, recipient in (("a_to_b", a, b), ("b_to_a", b, a)):
-            row = db.fetch_one(
+            row = DatabaseManager.fetch_one(
                 "SELECT COUNT(*), COALESCE(SUM(amount), 0), MIN(timestamp), MAX(timestamp) "
                 "FROM pay_transfers WHERE payer_id = ? AND recipient_id = ?",
                 (str(payer), str(recipient)),
@@ -373,8 +372,12 @@ class ReviewView(discord.ui.View):
 
     @discord.ui.button(label="Flag / Restrict", style=discord.ButtonStyle.danger, emoji="🚫")
     async def restrict(self, interaction: discord.Interaction, button: discord.ui.Button):
-        set_flag(self.subject_id, "flagged_alt", by_id=interaction.user.id, note=self.kind)
-        await self._finish(interaction, f"🚫 Flagged — <@{self.subject_id}> restricted from economy commands")
+        from lib.core import restrictions as R
+        tier = R.apply(self.subject_id, R.DEFAULT_TIER, by_id=interaction.user.id, note=self.kind)
+        await self._finish(
+            interaction,
+            f"🚫 Restricted — <@{self.subject_id}> on **{R.tier_label(tier)}**, "
+            f"blocked from {R.summary(tier)}. Change the tier in /flags.")
 
 
 # ---------------------------------------------------------------------------
@@ -387,21 +390,50 @@ def flagged_members() -> list:
 
 
 def _panel_text(client, rows) -> str:
+    """The list, with each member's tier and what it actually stops them doing.
+
+    The old panel said "restricted from economy commands" for everyone, which was wrong
+    for every tier including the only one that existed. Each line now names the tier and
+    the tier names its own blocks, so the panel cannot drift from what the gate enforces.
+    """
+    from lib.core import restrictions as R
     if not rows:
-        return "**Anti-cheat flags**\nNobody is flagged. Nothing to lift."
-    lines = ["**Anti-cheat flags**", f"-# {len(rows)} member(s) restricted from economy commands", ""]
-    for uid, flag, ts, note in rows[:25]:
+        return ("**Economy restrictions**\nNobody is restricted.\n"
+                "-# Use **Restrict a member** below to add one.")
+    lines = ["**Economy restrictions**", f"-# {len(rows)} member(s) restricted", ""]
+    for uid, tier, ts, note in rows[:25]:
         user = client.get_user(int(uid)) if client else None
         name = getattr(user, "display_name", None) or uid
         why = f" · {note}" if note else ""
-        lines.append(f"🚫 **{discord.utils.escape_markdown(str(name))}** — <t:{int(ts)}:R>{why}")
+        lines.append(
+            f"🚫 **{discord.utils.escape_markdown(str(name))}** — "
+            f"`{R.tier_label(tier)}` · <t:{int(ts)}:R>{why}\n"
+            f"-# blocked from {R.summary(tier)}"
+        )
     if len(rows) > 25:
         lines.append(f"-# …and {len(rows) - 25} more")
     return "\n".join(lines)
 
 
+def _history_text(client, uid=None) -> str:
+    from lib.core import restrictions as R
+    rows = R.history(uid, limit=15)
+    if not rows:
+        return "**Restriction log**\nNothing recorded yet."
+    head = "**Restriction log**" if uid is None else f"**Restriction log — <@{int(uid)}>**"
+    lines = [head]
+    for ts, ruid, action, tier, by_id, note in rows:
+        who = f"<@{int(by_id)}>" if by_id else "the system"
+        label = R.tier_label(tier) if tier else "—"
+        subject = "" if uid is not None else f" <@{int(ruid)}>"
+        extra = f" · {note}" if note else ""
+        icon = "🚫" if action == "applied" else "✅"
+        lines.append(f"{icon} **{action}**{subject} `{label}` by {who} · <t:{int(ts)}:R>{extra}")
+    return "\n".join(lines)
+
+
 class FlagsPanel(discord.ui.View):
-    """Pick a flagged member from the list and lift it, without retyping anything.
+    """Review, change and record economy restrictions without retyping anything.
 
     Rebuilt from the database on every action rather than held in memory, so two reviewers
     working at once never act on a stale list - the dropdown is the current state, not a
@@ -412,22 +444,63 @@ class FlagsPanel(discord.ui.View):
         super().__init__(timeout=600)
         self.client = client
         self.viewer_id = int(viewer_id)
+        self.selected = None          # member currently being worked on
         self._rebuild()
 
+    # --- construction -------------------------------------------------------------
     def _rebuild(self) -> None:
+        from lib.core import restrictions as R
         self.clear_items()
-        rows = flagged_members()
-        if not rows:
-            return
-        options = []
-        for uid, _flag, ts, note in rows[:25]:
-            user = self.client.get_user(int(uid)) if self.client else None
-            label = str(getattr(user, "display_name", None) or uid)[:100]
-            options.append(discord.SelectOption(
-                label=label, value=str(uid), description=(note or "flagged")[:100]))
-        select = discord.ui.Select(placeholder="Choose a member to unflag…", options=options)
-        select.callback = self._on_pick
-        self.add_item(select)
+        rows = R.restricted_members()
+
+        if rows:
+            options = []
+            for uid, tier, ts, note in rows[:25]:
+                user = self.client.get_user(int(uid)) if self.client else None
+                label = str(getattr(user, "display_name", None) or uid)[:100]
+                options.append(discord.SelectOption(
+                    label=label,
+                    value=str(uid),
+                    description=f"{R.tier_label(tier)} · {(note or 'flagged')}"[:100],
+                    default=(self.selected is not None and str(uid) == str(self.selected)),
+                ))
+            pick = discord.ui.Select(placeholder="Choose a restricted member…", options=options)
+            pick.callback = self._on_pick
+            self.add_item(pick)
+
+        # Adding a restriction needs a member who is by definition not in the list above,
+        # so it gets its own picker rather than sharing one.
+        add = discord.ui.UserSelect(placeholder="Restrict a member…", max_values=1)
+        add.callback = self._on_add
+        self.add_item(add)
+
+        if self.selected is not None:
+            tier_pick = discord.ui.Select(
+                placeholder="Change tier…",
+                options=[
+                    discord.SelectOption(
+                        label=meta["label"], value=key, description=meta["summary"][:100],
+                        default=(key == R.tier_of(self.selected)),
+                    )
+                    for key, meta in sorted(R.TIERS.items(), key=lambda kv: kv[1]["rank"])
+                ],
+            )
+            tier_pick.callback = self._on_tier
+            self.add_item(tier_pick)
+
+            lift = discord.ui.Button(label="Lift restriction", style=discord.ButtonStyle.success,
+                                     emoji="✅")
+            lift.callback = self._on_lift
+            self.add_item(lift)
+            detail = discord.ui.Button(label="Details", style=discord.ButtonStyle.secondary,
+                                       emoji="🔍")
+            detail.callback = self._on_details
+            self.add_item(detail)
+
+        log_btn = discord.ui.Button(label="Restriction log", style=discord.ButtonStyle.secondary,
+                                    emoji="📜")
+        log_btn.callback = self._on_log
+        self.add_item(log_btn)
 
     async def _guard(self, interaction) -> bool:
         if interaction.user.id != self.viewer_id:
@@ -435,23 +508,87 @@ class FlagsPanel(discord.ui.View):
             return False
         return True
 
+    async def _refresh(self, interaction, note: str = "") -> None:
+        from lib.core import restrictions as R
+        self._rebuild()
+        body = _panel_text(self.client, R.restricted_members())
+        await interaction.response.edit_message(
+            content=f"{note}\n\n{body}" if note else body,
+            view=self,
+            allowed_mentions=discord.AllowedMentions.none())
+
+    # --- callbacks ----------------------------------------------------------------
     async def _on_pick(self, interaction: discord.Interaction):
         if not await self._guard(interaction):
             return
+        self.selected = interaction.data["values"][0]
+        await self._refresh(interaction)
+
+    async def _on_add(self, interaction: discord.Interaction):
+        if not await self._guard(interaction):
+            return
+        from lib.core import restrictions as R
         uid = interaction.data["values"][0]
-        clear_flag(uid, "flagged_alt")
-        log.info("detection flag on %s lifted by %s", uid, interaction.user.id)
-        self._rebuild()
-        await interaction.response.edit_message(
-            content=f"✅ Lifted the flag on <@{uid}> — economy commands work again.\n\n"
-                    + _panel_text(self.client, flagged_members()),
-            view=self,
+        tier = R.apply(uid, R.DEFAULT_TIER, by_id=interaction.user.id, note="added by staff")
+        self.selected = str(uid)
+        log.info("restriction %s applied to %s by %s", tier, uid, interaction.user.id)
+        await self._refresh(
+            interaction,
+            f"🚫 <@{int(uid)}> restricted at **{R.tier_label(tier)}** — "
+            f"blocked from {R.summary(tier)}. Change the tier below if that is too light.")
+
+    async def _on_tier(self, interaction: discord.Interaction):
+        if not await self._guard(interaction):
+            return
+        from lib.core import restrictions as R
+        tier = interaction.data["values"][0]
+        R.apply(self.selected, tier, by_id=interaction.user.id, note="tier changed by staff")
+        log.info("restriction on %s set to %s by %s", self.selected, tier, interaction.user.id)
+        await self._refresh(
+            interaction,
+            f"🚫 <@{int(self.selected)}> moved to **{R.tier_label(tier)}** — "
+            f"now blocked from {R.summary(tier)}.")
+
+    async def _on_lift(self, interaction: discord.Interaction):
+        if not await self._guard(interaction):
+            return
+        from lib.core import restrictions as R
+        uid = self.selected
+        R.lift(uid, by_id=interaction.user.id, note="lifted by staff")
+        self.selected = None
+        log.info("restriction on %s lifted by %s", uid, interaction.user.id)
+        await self._refresh(interaction, f"✅ Lifted — <@{int(uid)}> can use everything again.")
+
+    async def _on_details(self, interaction: discord.Interaction):
+        if not await self._guard(interaction):
+            return
+        from lib.core import restrictions as R
+        uid = int(self.selected)
+        tier = R.tier_of(uid)
+        parts = [
+            _subject_block(self.client, uid),
+            "",
+            f"**Tier** `{R.tier_label(tier)}` · blocked from {R.summary(tier)}",
+            f"-# {R.footnote(tier)}" if R.footnote(tier) else "",
+            "",
+            _history_text(self.client, uid),
+        ]
+        await interaction.response.send_message(
+            "\n".join(x for x in parts if x != ""), ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none())
+
+    async def _on_log(self, interaction: discord.Interaction):
+        if not await self._guard(interaction):
+            return
+        await interaction.response.send_message(
+            _history_text(self.client), ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none())
 
 
 def build_flags_panel(client, viewer_id):
     """(content, view) for the /flags panel."""
-    return _panel_text(client, flagged_members()), FlagsPanel(client, viewer_id)
+    from lib.core import restrictions as R
+    return _panel_text(client, R.restricted_members()), FlagsPanel(client, viewer_id)
 
 
 # ---------------------------------------------------------------------------
