@@ -234,3 +234,55 @@ def test_the_panel_is_empty_and_harmless_when_nobody_is_flagged(monkeypatch):
     content, view = D.build_flags_panel(None, 1)
     assert "Nobody is flagged" in content
     assert not view.children, "an empty panel must not offer a dropdown with no options"
+
+
+# ---------------------------------------------------------------------------
+# Alt co-occurrence: the card must answer "did value actually move, and which way"
+# ---------------------------------------------------------------------------
+def _fake_pay_rows(pairs):
+    """fetch_one stub over pay_transfers keyed by (payer, recipient)."""
+    def fetch_one(self, query, params=()):
+        if "pay_transfers" not in query:
+            return None
+        payer, recipient = str(params[0]), str(params[1])
+        count, total = pairs.get((payer, recipient), (0, 0))
+        return (count, total, 1_700_000_000, 1_700_000_100) if count else (0, 0, None, None)
+    return fetch_one
+
+
+def test_one_way_pay_flow_names_the_direction_and_the_net(monkeypatch):
+    from lib.core import detection as D
+    # 1 pays 2 three times; nothing comes back.
+    monkeypatch.setattr(D.DatabaseManager, "fetch_one",
+                        _fake_pay_rows({("1", "2"): (3, 12_000)}))
+    block = D._flow_block(1, 2)
+    assert "<@1> → <@2>" in block
+    assert "12,000 UKP" in block
+    assert "3 transfers" in block
+    # The net is stated explicitly, pointing at who ended up with the money.
+    assert "Net: 12,000 UKP" in block and "to <@2>" in block
+
+
+def test_balanced_flow_is_reported_as_cancelling_out(monkeypatch):
+    from lib.core import detection as D
+    monkeypatch.setattr(D.DatabaseManager, "fetch_one",
+                        _fake_pay_rows({("1", "2"): (2, 5_000), ("2", "1"): (2, 5_000)}))
+    block = D._flow_block(1, 2)
+    assert "Net: nothing" in block
+
+
+def test_no_transfers_says_so_rather_than_going_quiet(monkeypatch):
+    """Absence of a money trail is evidence too, so it must be stated, not omitted."""
+    from lib.core import detection as D
+    monkeypatch.setattr(D.DatabaseManager, "fetch_one", _fake_pay_rows({}))
+    assert D._flow_block(1, 2) == "• No /pay has ever moved between these two accounts."
+
+
+def test_a_ledger_failure_never_costs_us_the_alert(monkeypatch):
+    from lib.core import detection as D
+
+    def boom(self, *a, **k):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(D.DatabaseManager, "fetch_one", boom)
+    assert D._flow_block(1, 2) == ""

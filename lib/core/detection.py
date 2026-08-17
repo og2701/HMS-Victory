@@ -225,6 +225,60 @@ def _subject_block(client, user_id) -> str:
     return "\n".join(lines)
 
 
+def _flow_between(a, b) -> dict:
+    """Every /pay between two accounts, split by direction.
+
+    Co-occurrence proves two accounts move at the same time; it says nothing about
+    whether either of them profits. For a /pay flag that is the whole question, so the
+    card answers it directly rather than leaving a reviewer to go and query the ledger.
+    """
+    out = {}
+    try:
+        db = DatabaseManager()
+        for key, payer, recipient in (("a_to_b", a, b), ("b_to_a", b, a)):
+            row = db.fetch_one(
+                "SELECT COUNT(*), COALESCE(SUM(amount), 0), MIN(timestamp), MAX(timestamp) "
+                "FROM pay_transfers WHERE payer_id = ? AND recipient_id = ?",
+                (str(payer), str(recipient)),
+            ) or (0, 0, None, None)
+            out[key] = {
+                "count": int(row[0] or 0),
+                "total": int(row[1] or 0),
+                "first": row[2],
+                "last": row[3],
+            }
+    except Exception:
+        log.exception("could not read pay flow between %s and %s", a, b)
+        return {}
+    return out
+
+
+def _flow_block(a, b) -> str:
+    """Render the two-way /pay history, or say plainly that there is none."""
+    flow = _flow_between(a, b)
+    if not flow:
+        return ""
+    ab, ba = flow.get("a_to_b", {}), flow.get("b_to_a", {})
+    if not ab.get("count") and not ba.get("count"):
+        return "• No /pay has ever moved between these two accounts."
+
+    lines = []
+    for src, dst, f in ((a, b, ab), (b, a, ba)):
+        if f.get("count"):
+            when = f" · last <t:{int(f['last'])}:R>" if f.get("last") else ""
+            lines.append(
+                f"• <@{int(src)}> → <@{int(dst)}>: **{f['total']:,} UKP** "
+                f"over {f['count']} transfer{'s' if f['count'] != 1 else ''}{when}"
+            )
+    net = ab.get("total", 0) - ba.get("total", 0)
+    if net:
+        winner, loser = (b, a) if net > 0 else (a, b)
+        lines.append(f"• **Net: {abs(net):,} UKP** from <@{int(loser)}> to <@{int(winner)}>")
+    else:
+        lines.append("• **Net: nothing** - the flow cancels out both ways")
+    return "\n".join(lines)
+
+
 def build_embed(client, kind: str, subjects, triggers: dict, context: str = "") -> discord.Embed:
     """The standard alert card: who, what tripped, and the evidence behind it."""
     subjects = [subjects] if isinstance(subjects, (int, str)) else list(subjects)
@@ -242,6 +296,10 @@ def build_embed(client, kind: str, subjects, triggers: dict, context: str = "") 
             value="\n".join(f"• {k}: **{v}**" for k, v in triggers.items())[:1024],
             inline=False,
         )
+    if len(subjects) == 2:
+        flow = _flow_block(subjects[0], subjects[1])
+        if flow:
+            embed.add_field(name="Money between them (/pay)", value=flow[:1024], inline=False)
     if context:
         embed.add_field(name="Context", value=context[:1024], inline=False)
     embed.set_footer(text=f"detection · {kind}")
@@ -424,7 +482,12 @@ def note_daily_command(user_id, command: str, client=None) -> None:
         partner, triggers = R.co_occurrence_findings(user_id)
         if partner:
             flag(client, ALT_CO_OCCURRENCE, [user_id, partner], triggers,
-                 context=f"both running dailies together (latest: /{command})")
+                 context=(
+                     f"Their daily commands keep landing together (latest: /{command}). "
+                     "This is a timing signal only - it does not on its own mean either "
+                     "account gained anything. The /pay history above is what shows "
+                     "whether value actually moved, and in which direction."
+                 ))
     except Exception:
         log.exception("co-occurrence check failed for %s", user_id)
 
