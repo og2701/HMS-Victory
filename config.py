@@ -283,9 +283,18 @@ HOF_REWARD = 100                  # UKP DM'd to a message's author on Hall of Fa
 TICKET_REWARD = 100               # UKP a staff member can grant a ticket's opener
 DISBOARD_BOT_ID = 302050872383242240   # DISBOARD: the /bump bot
 BUMP_REWARD = 50                  # UKP for the member who bumps the server on DISBOARD (max once per ~2h, DISBOARD's own cooldown)
-WELCOME_REWARD = 10               # UKP for welcoming a new member (reply to the join message, @mention them, or post a welcome shortly after they join)
-WELCOME_WINDOW_MINUTES = 15       # how long after a join a welcome still pays out
-WELCOME_MAX_WELCOMERS = 5         # only the first N welcomers per newcomer are paid (stops a join wave being farmed)
+# Welcoming pays for a reply, not for the word "welcome". Greeting a newcomer books a
+# claim; the claim only pays once that newcomer answers you. Measured over three months
+# of #general, 87.9% of welcomes were never followed by another word to that person, and
+# the biggest welcomers had the worst follow-up rates - the old rule paid the greeting,
+# so the cheapest way to earn was to type one word and move on.
+WELCOME_REWARD = 10               # UKP paid to a greeter once the newcomer replies to them
+WELCOME_WINDOW_MINUTES = 15       # how long after a join a greeting can still book a claim
+WELCOME_REPLY_WINDOW_MINUTES = 60 # how long the newcomer has to reply for the claim to pay
+WELCOME_MAX_WELCOMERS = 5         # only the first N greeters per newcomer can claim (stops a join wave being farmed)
+WELCOME_FOLLOWUP_REWARD = 15      # UKP for going back to that newcomer later - the bit that was missing
+WELCOME_FOLLOWUP_MIN_HOURS = 1    # a follow-up has to be a separate occasion, not the same conversation
+WELCOME_FOLLOWUP_WINDOW_HOURS = 48  # ...and still close enough to their join to matter
 # Channels whose messages can't enter the Hall of Fame (announcements etc. always get a
 # lot of reactions but aren't organic HoF-worthy posts). Bot/webhook and Discord
 # announcement-type channels are also excluded automatically in the HoF check.

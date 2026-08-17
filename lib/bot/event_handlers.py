@@ -1012,11 +1012,14 @@ async def on_message(client, message):
         from lib.features.ukp_rewards import (
             note_join_system_message,
             handle_welcome_reward,
-            welcome_window_open,
+            welcome_activity_possible,
         )
         if message.type == discord.MessageType.new_member:
             note_join_system_message(message)
-        elif welcome_window_open() and not message.author.bot:
+        # The gate now has to stay open long enough for a newcomer to reply and for
+        # someone to come back to them later, so it checks whether this specific message
+        # could pay anyone rather than just whether a join happened recently.
+        elif not message.author.bot and welcome_activity_possible(message):
             asyncio.create_task(handle_welcome_reward(client, message))
     except Exception:
         logger.debug("welcome reward hook failed", exc_info=True)

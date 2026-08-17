@@ -225,20 +225,37 @@ async def handle_bump_reward(client, message):
 # ---------------------------------------------------------------------------
 # Welcoming a new member
 # ---------------------------------------------------------------------------
-# When someone joins we open a short "welcome window". The first WELCOME_MAX_WELCOMERS
-# members who greet that newcomer inside the window each earn WELCOME_REWARD. A greeting
-# is any of:
-#   - replying to Discord's "Glad you're here, X" join system message,
-#   - @mentioning the newcomer,
-#   - posting a welcome-worded message in the join channel (the loose, fallback signal).
-# One payout per (welcomer -> newcomer) pair; self-welcomes and bots don't count.
+# Welcoming pays for a reply, not for the word "welcome".
+#
+# The original rule paid WELCOME_REWARD the moment someone posted a welcome-worded message
+# inside a 15-minute window. Three months of #general says that failed on its own terms:
+# 87.9% of welcomes were never followed by another word to that newcomer, and the people
+# doing it most had the worst follow-up rates - one member greeted 155 newcomers and spoke
+# again to 3% of them. Meanwhile the member who actually engaged the most newcomers said
+# "welcome" to 3% of them and so earned almost nothing. The rule paid the vocabulary and
+# ignored the behaviour.
+#
+# So a greeting now books a *claim* rather than a payout, and money moves on evidence that
+# a conversation happened:
+#
+#   1. Greet a newcomer in the join window  -> a pending claim, worth nothing yet.
+#   2. That newcomer replies to you within WELCOME_REPLY_WINDOW_MINUTES
+#                                           -> the claim pays WELCOME_REWARD.
+#   3. Go back to them at least WELCOME_FOLLOWUP_MIN_HOURS later (and inside
+#      WELCOME_FOLLOWUP_WINDOW_HOURS of their join)
+#                                           -> WELCOME_FOLLOWUP_REWARD, once per pair.
+#
+# A bare "welcome" that lands on nobody now earns nothing, and the greeting no longer has
+# to be welcome-worded at all - any first contact that gets an answer counts, because the
+# newcomer answering is the only signal here that tracks whether they stay.
 #
 # State (config.WELCOME_TRACKING_FILE), keyed by newcomer id:
-#   {"joined_at": epoch, "system_msg_id": int|None, "channel_id": int|None, "welcomers": [ids]}
+#   {"joined_at": epoch, "system_msg_id": int|None, "channel_id": int|None,
+#    "pending": {welcomer_id: greeted_at}, "paid": [ids], "followed": [ids]}
+# Records from the old scheme carry "welcomers": [ids], read as already-paid.
 #
-# An in-memory window gate (_welcome_window_until) keeps the per-message path free when no
-# one has joined recently; it resets on restart, which only means welcome windows open
-# during downtime are dropped (the bot couldn't have paid them out then anyway).
+# _tracked is an in-memory mirror of which newcomer ids are live, so the on_message hook can
+# decide in microseconds whether a message could possibly matter before touching disk.
 _WELCOME_RE = re.compile(
     r"\bwelcome\b|\bwelcom\b|\bwelc\b|\bwlcm\b|\bwlc\b|\bwilkommen\b|"
     r"glad (?:you|u)(?:'?re| are)?(?: here| with us| to)|good to have (?:you|u)|"
@@ -246,27 +263,94 @@ _WELCOME_RE = re.compile(
     re.IGNORECASE,
 )
 
-_welcome_window_until = 0.0  # epoch until which at least one welcome window is open
+_tracked: set = set()          # newcomer ids with a live record
+_tracked_loaded = False
 
 
 def _welcome_window_secs() -> int:
     return int(getattr(config, "WELCOME_WINDOW_MINUTES", 15)) * 60
 
 
-def _extend_welcome_window() -> None:
-    global _welcome_window_until
-    _welcome_window_until = max(_welcome_window_until, time.time() + _welcome_window_secs())
+def _reply_window_secs() -> int:
+    return int(getattr(config, "WELCOME_REPLY_WINDOW_MINUTES", 60)) * 60
 
 
+def _followup_window_secs() -> int:
+    return int(getattr(config, "WELCOME_FOLLOWUP_WINDOW_HOURS", 48)) * 3600
+
+
+def _record_life_secs() -> int:
+    """How long a newcomer's record is kept: the longest phase that can still pay."""
+    return max(_welcome_window_secs(), _reply_window_secs(), _followup_window_secs())
+
+
+def _refresh_tracked(store: dict) -> None:
+    global _tracked, _tracked_loaded
+    _tracked = set(store.keys())
+    _tracked_loaded = True
+
+
+def _load_store() -> dict:
+    store = _prune_welcome_store(load_json_file(config.WELCOME_TRACKING_FILE) or {})
+    _refresh_tracked(store)
+    return store
+
+
+def welcome_activity_possible(message) -> bool:
+    """Cheap gate: could this message pay anyone? Runs on every message, so no disk.
+
+    True when the author is a tracked newcomer (they might be replying to a greeter) or
+    when the message addresses one (a greeting, or a follow-up). Everything else returns
+    immediately without loading the store.
+    """
+    global _tracked_loaded
+    try:
+        if not _tracked_loaded:
+            _load_store()
+        if not _tracked:
+            return False
+        if str(getattr(message.author, "id", "")) in _tracked:
+            return True
+        for u in getattr(message, "mentions", None) or ():
+            if str(u.id) in _tracked:
+                return True
+        ref = getattr(message, "reference", None)
+        if ref is not None:
+            resolved = getattr(ref, "resolved", None)
+            if isinstance(resolved, discord.Message) and resolved.author \
+                    and str(resolved.author.id) in _tracked:
+                return True
+            if getattr(ref, "message_id", None) is not None:
+                return True     # might be the join system message; worth a disk check
+        return bool(message.content and _WELCOME_RE.search(message.content))
+    except Exception:
+        return False
+
+
+# Kept for callers that still ask the old question.
 def welcome_window_open() -> bool:
-    """Cheap in-memory gate so on_message only does work shortly after a join."""
-    return time.time() < _welcome_window_until
+    if not _tracked_loaded:
+        _load_store()
+    return bool(_tracked)
 
 
 def _prune_welcome_store(store: dict) -> dict:
-    cutoff = int(time.time()) - _welcome_window_secs()
+    cutoff = int(time.time()) - _record_life_secs()
     return {k: v for k, v in store.items()
             if isinstance(v, dict) and v.get("joined_at", 0) >= cutoff}
+
+
+def _norm(rec: dict) -> dict:
+    """Give a record the current shape, including ones written by the old scheme."""
+    rec.setdefault("joined_at", int(time.time()))
+    rec.setdefault("pending", {})
+    rec.setdefault("followed", [])
+    paid = rec.get("paid")
+    if paid is None:
+        # Old records tracked a flat "welcomers" list, all of whom had been paid.
+        rec["paid"] = list(rec.get("welcomers", []))
+    rec.pop("welcomers", None)
+    return rec
 
 
 def register_new_member_join(member) -> None:
@@ -275,16 +359,12 @@ def register_new_member_join(member) -> None:
     try:
         if getattr(member, "bot", False):
             return
-        store = _prune_welcome_store(load_json_file(config.WELCOME_TRACKING_FILE) or {})
-        prev = store.get(str(member.id)) or {}
-        store[str(member.id)] = {
-            "joined_at": int(time.time()),
-            "system_msg_id": prev.get("system_msg_id"),
-            "channel_id": prev.get("channel_id"),
-            "welcomers": prev.get("welcomers", []),
-        }
+        store = _load_store()
+        prev = _norm(store.get(str(member.id)) or {})
+        prev["joined_at"] = int(time.time())
+        store[str(member.id)] = prev
         save_json_file(config.WELCOME_TRACKING_FILE, store)
-        _extend_welcome_window()
+        _refresh_tracked(store)
     except Exception:
         log.debug("register_new_member_join failed", exc_info=True)
 
@@ -297,23 +377,21 @@ def note_join_system_message(message) -> bool:
     try:
         if message.type != discord.MessageType.new_member:
             return False
-        store = _prune_welcome_store(load_json_file(config.WELCOME_TRACKING_FILE) or {})
+        store = _load_store()
         nid = str(message.author.id)
-        rec = store.get(nid) or {"joined_at": int(time.time()), "welcomers": []}
+        rec = _norm(store.get(nid) or {})
         rec["system_msg_id"] = message.id
         rec["channel_id"] = message.channel.id
-        rec.setdefault("joined_at", int(time.time()))
-        rec.setdefault("welcomers", [])
         store[nid] = rec
         save_json_file(config.WELCOME_TRACKING_FILE, store)
-        _extend_welcome_window()
+        _refresh_tracked(store)
     except Exception:
         log.debug("note_join_system_message failed", exc_info=True)
     return True
 
 
 def _welcome_targets(message, store: dict) -> set:
-    """Which pending newcomer ids (as strings) this message welcomes."""
+    """Which pending newcomer ids (as strings) this message addresses."""
     targets = set()
 
     # Reply to the join system message (or directly to the newcomer's own message).
@@ -328,7 +406,7 @@ def _welcome_targets(message, store: dict) -> set:
         if isinstance(resolved, discord.Message) and resolved.author and str(resolved.author.id) in store:
             targets.add(str(resolved.author.id))
 
-    # @mention of a pending newcomer - mentioning a brand-new member is itself a welcome.
+    # @mention of a pending newcomer - mentioning a brand-new member is itself a greeting.
     for u in message.mentions:
         if str(u.id) in store:
             targets.add(str(u.id))
@@ -347,84 +425,149 @@ def _welcome_targets(message, store: dict) -> set:
     return targets
 
 
+def _addressed_by_newcomer(message, store: dict) -> set:
+    """Ids this newcomer is answering: an explicit reply, or anyone they @mention."""
+    out = set()
+    ref = getattr(message, "reference", None)
+    resolved = getattr(ref, "resolved", None) if ref is not None else None
+    if isinstance(resolved, discord.Message) and resolved.author:
+        out.add(str(resolved.author.id))
+    for u in getattr(message, "mentions", None) or ():
+        out.add(str(u.id))
+    return out
+
+
 async def handle_welcome_reward(client, message) -> None:
-    """Pay the first WELCOME_MAX_WELCOMERS members who welcome a newcomer in the window."""
+    """Book claims from greeters, and pay them when the newcomer answers.
+
+    Three separate things can happen on one message; each is a self-contained block so a
+    quiet failure in one cannot stop the others.
+    """
     try:
         if message.guild is None or message.author is None or getattr(message.author, "bot", False):
             return
 
-        store = _prune_welcome_store(load_json_file(config.WELCOME_TRACKING_FILE) or {})
+        store = _load_store()
         if not store:
             return
 
-        targets = _welcome_targets(message, store)
-        if not targets:
-            return
+        now = int(time.time())
+        author_id = str(message.author.id)
+        payouts = []          # (welcomer_id, amount, reason)
+        dirty = False
 
-        welcomer = message.author
-        amount = int(getattr(config, "WELCOME_REWARD", 20))
-        cap = int(getattr(config, "WELCOME_MAX_WELCOMERS", 5))
+        # --- 1. the newcomer answers someone: their claim pays ------------------------
+        if author_id in store:
+            rec = _norm(store[author_id])
+            answered = _addressed_by_newcomer(message, store)
+            for wid in list(rec["pending"]):
+                if wid not in answered:
+                    continue
+                greeted_at = rec["pending"].get(wid, 0)
+                if now - greeted_at > _reply_window_secs():
+                    continue
+                if int(wid) in rec["paid"] or wid in [str(x) for x in rec["paid"]]:
+                    rec["pending"].pop(wid, None)
+                    dirty = True
+                    continue
+                rec["pending"].pop(wid, None)
+                rec["paid"].append(int(wid))
+                payouts.append((int(wid), int(getattr(config, "WELCOME_REWARD", 10)),
+                                "A new member replied to your welcome"))
+                dirty = True
+            store[author_id] = rec
 
-        # Critical section: load -> check -> pay -> save with NO await in between, so two
-        # near-simultaneous welcome messages can't both slip past the cap or double-pay
-        # (asyncio is single-threaded; without an await this runs atomically). _pay/add_bb
-        # are synchronous; the channel send + bookkeeping happen afterwards.
-        paid_for = 0
-        for nid in targets:
-            rec = store.get(nid)
-            if rec is None or str(welcomer.id) == nid:
-                continue  # no record, or you can't welcome yourself
-            welcomers = rec.setdefault("welcomers", [])
-            if welcomer.id in welcomers or len(welcomers) >= cap:
-                continue  # already paid for this newcomer, or its pot is used up
-            if not _pay(welcomer.id, amount, "Welcomed a new member"):
-                continue
-            welcomers.append(welcomer.id)
-            paid_for += 1
-        if not paid_for:
+        # --- 2. someone addresses a newcomer ------------------------------------------
+        else:
+            targets = _welcome_targets(message, store)
+            cap = int(getattr(config, "WELCOME_MAX_WELCOMERS", 5))
+            follow_min = int(getattr(config, "WELCOME_FOLLOWUP_MIN_HOURS", 1)) * 3600
+            for nid in targets:
+                if nid == author_id:
+                    continue
+                rec = _norm(store.get(nid) or {})
+                paid = [str(x) for x in rec["paid"]]
+                followed = [str(x) for x in rec["followed"]]
+
+                # 2a. a later, separate visit back to someone who already answered you
+                if author_id in paid and author_id not in followed:
+                    since_join = now - rec.get("joined_at", now)
+                    if follow_min <= since_join <= _followup_window_secs():
+                        rec["followed"].append(int(author_id))
+                        payouts.append(
+                            (int(author_id),
+                             int(getattr(config, "WELCOME_FOLLOWUP_REWARD", 15)),
+                             "You went back to a new member later"))
+                        dirty = True
+
+                # 2b. first contact inside the join window books a claim
+                elif author_id not in paid and author_id not in rec["pending"]:
+                    if now - rec.get("joined_at", 0) > _welcome_window_secs():
+                        pass          # too late to greet, but a follow-up may still count
+                    elif len(rec["pending"]) + len(rec["paid"]) >= cap:
+                        pass          # this newcomer's pot is spoken for
+                    else:
+                        rec["pending"][author_id] = now
+                        dirty = True
+                store[nid] = rec
+
+        if not dirty:
             return
         save_json_file(config.WELCOME_TRACKING_FILE, store)
+        _refresh_tracked(store)
+        if not payouts:
+            return
 
-        # Decide (and persist) whether this is the welcomer's first-ever welcome reward while
-        # still inside the await-free section, so two near-simultaneous welcomes from the same
-        # person can't both think they're "first" and double-DM. We piggyback on the earned-
-        # sources store that record_income_source also uses ("welcome" present == earned before).
-        first_time = False
-        try:
-            src_store = load_json_file(config.EARNED_SOURCES_FILE) or {}
-            srcs = set(src_store.get(str(welcomer.id), []))
-            if "welcome" not in srcs:
-                first_time = True
-                srcs.add("welcome")
-                src_store[str(welcomer.id)] = sorted(srcs)
-                save_json_file(config.EARNED_SOURCES_FILE, src_store)
-        except Exception:
-            log.debug("welcome first-time check failed", exc_info=True)
+        paid_total = 0
+        for wid, amount, reason in payouts:
+            if _pay(wid, amount, reason):
+                paid_total += amount
 
-        # Paid silently - no channel announcement. Bookkeeping + a one-time DM heads-up.
-        total = amount * paid_for
+        if not paid_total:
+            return
         try:
             from lib.features.income_badges import record_income_source, bump_daily_income
-            bump_daily_income("welcome_total", total)
-            # Idempotent: record_income_source won't re-add "welcome", but still runs the
-            # jack_of_all_trades (5 distinct sources) check.
-            await record_income_source(client, welcomer.id, "welcome")
+            bump_daily_income("welcome_total", paid_total)
+            for wid, _amount, _reason in payouts:
+                await record_income_source(client, wid, "welcome")
         except Exception:
             log.debug("welcome reward bookkeeping failed", exc_info=True)
 
-        if first_time:
-            try:
-                await welcomer.send(
-                    f"\U0001F44B Thanks for welcoming a new member - you've earned "
-                    f"**{amount:,} UKPence**!\n\n"
-                    f"You'll get **{amount:,} UKPence** every time you welcome someone new from "
-                    "now on. It happens automatically and silently, so this is the only time "
-                    "you'll be notified about it. \U0001FA99"
-                )
-            except Exception:
-                log.debug("welcome first-time DM failed (DMs closed?)", exc_info=True)
+        for wid, amount, reason in payouts:
+            await _welcome_first_time_dm(client, wid, amount, reason)
     except Exception:
         log.error("handle_welcome_reward failed", exc_info=True)
+
+
+async def _welcome_first_time_dm(client, welcomer_id, amount: int, reason: str) -> None:
+    """One-off explanation the first time someone earns this, so the new rule is learnable.
+
+    The payout is silent from then on, so this DM is the only chance to explain why a
+    greeting on its own paid nothing.
+    """
+    try:
+        src_store = load_json_file(config.EARNED_SOURCES_FILE) or {}
+        srcs = set(src_store.get(str(welcomer_id), []))
+        if "welcome" in srcs:
+            return
+        srcs.add("welcome")
+        src_store[str(welcomer_id)] = sorted(srcs)
+        save_json_file(config.EARNED_SOURCES_FILE, src_store)
+    except Exception:
+        log.debug("welcome first-time check failed", exc_info=True)
+        return
+    try:
+        user = client.get_user(int(welcomer_id)) or await client.fetch_user(int(welcomer_id))
+        await user.send(
+            f"\U0001F44B {reason} - you've earned **{amount:,} UKPence**!\n\n"
+            "Welcoming pays when the new member actually answers you, not just for saying "
+            "hello - so asking them something is worth more than a one-word greeting. Go "
+            "back and talk to them again later and you'll earn a bit more again.\n\n"
+            "It's automatic and silent from here, so this is the only time you'll hear "
+            "about it. \U0001FA99"
+        )
+    except Exception:
+        log.debug("welcome first-time DM failed (DMs closed?)", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
