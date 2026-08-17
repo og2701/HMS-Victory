@@ -1,6 +1,7 @@
 """Join-watch behaviour: toggle persistence, eligibility, and the screening flow."""
 
 import asyncio
+import discord
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -56,6 +57,11 @@ class FakeChannel:
 
     async def send(self, *args, **kwargs):
         self.sent.append({"args": args, **kwargs})
+
+
+class _FakeResponse:
+    status = 403
+    reason = "Forbidden"
 
 
 class FakeMessage:
@@ -167,6 +173,39 @@ def test_only_members_who_join_while_armed_are_watched(monkeypatch, tmp_path):
     assert late.id not in join_watch._buffers
 
 
+def test_undeletable_trigger_still_times_out_and_says_so(monkeypatch, tmp_path):
+    """A message we cannot remove must not cost us the timeout or the report card."""
+    _fresh(monkeypatch, tmp_path)
+    join_watch.set_join_watch_state(True)
+    member = FakeMember()
+    client = FakeClient()
+
+    async def fake_evaluate(_client, _member, _messages):
+        return ({"verdict": "troll", "confidence": 0.95, "reason": "Raid spam."},
+                {"input": 10, "output": 5, "model": "gpt-5.4-mini"})
+
+    monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
+    join_watch.register_join(member)
+    trigger = FakeMessage(member, "raid link here")
+
+    async def forbidden():
+        raise discord.Forbidden(_FakeResponse(), "no perms")
+
+    trigger.delete = forbidden
+    asyncio.run(join_watch.maybe_watch_message(client, trigger))
+
+    # The timeout still lands and the card is still posted.
+    assert len(member.timeouts) == 1
+    assert len(client.police.sent) == 1
+    import json as _json
+    payload = _json.dumps(client.police.sent[0]["view"].to_components())
+    # The failure is surfaced, not swallowed, and the jump link survives so staff
+    # can go and remove it by hand.
+    assert "not deleted" in payload
+    assert "deleted by join-watch" not in payload
+    assert "raid link here" in payload
+
+
 def test_confident_troll_verdict_times_out_and_reports(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path)
     join_watch.set_join_watch_state(True)
@@ -184,20 +223,25 @@ def test_confident_troll_verdict_times_out_and_reports(monkeypatch, tmp_path):
 
     assert len(member.timeouts) == 1
     assert "Join-watch" in member.timeouts[0][1]
-    # Messages are deliberately left in place; only the timeout is applied.
-    assert trigger.deleted is False
+    # The message that tripped the verdict is removed, not just timed out for.
+    assert trigger.deleted is True
     assert len(client.police.sent) == 1
     assert client.police.sent[0]["view"] is not None
     import json as _json
-    # The card carries the message content and the untimeout button.
+    # The card carries the message content and the untimeout button. The text is
+    # snapshotted before deletion, so staff can still judge the call from the card.
     payload = _json.dumps(client.police.sent[0]["view"].to_components())
     assert "england scum etc" in payload
     assert f"joinwatch:untimeout:{member.id}" in payload
+    # The deletion is stated on the card rather than left for staff to infer.
+    assert "deleted by join-watch" in payload
+    assert "was deleted" in payload
     # Every scan is audited in the bot usage log as a card with outcome, link,
     # quote and estimated AI cost.
     assert len(client.usage_log.sent) == 1
     log_line = _json.dumps(client.usage_log.sent[0]["view"].to_components())
-    assert "1/20" in log_line and "troll" in log_line and "timed out" in log_line
+    scanned = f"1/{join_watch.MAX_SCANNED_MESSAGES}"
+    assert scanned in log_line and "troll" in log_line and "timed out" in log_line
     assert trigger.jump_url in log_line
     assert "> england scum etc" in log_line
     assert "deleted" not in log_line

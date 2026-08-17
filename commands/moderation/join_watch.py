@@ -30,7 +30,7 @@ from lib.core.file_operations import load_json_file, save_json_file
 
 logger = logging.getLogger(__name__)
 
-MAX_SCANNED_MESSAGES = 20
+MAX_SCANNED_MESSAGES = 10
 # The brief carries the whole screen now, so it needs room for a list of behaviours.
 # Discord modal text inputs allow up to 4000, so this is free headroom.
 MAX_CONTEXT_CHARS = 2000
@@ -223,7 +223,7 @@ async def maybe_watch_message(client: Any, message: Any) -> None:
                 return
             entry["messages"].append(_snapshot(message))
             verdict, usage = await _evaluate(client, member, entry["messages"])
-            await _apply_verdict(client, member, entry, verdict, usage)
+            await _apply_verdict(client, member, entry, verdict, usage, message)
     except Exception:
         logger.exception("join-watch screening failed for message %s", getattr(message, "id", "?"))
 
@@ -234,6 +234,7 @@ async def _apply_verdict(
     entry: dict[str, Any],
     verdict: dict[str, Any] | None,
     usage: dict[str, int] | None,
+    message: Any = None,
 ) -> None:
     call = str(verdict.get("verdict", "unsure")).lower() if verdict else "no verdict (model error)"
     try:
@@ -243,7 +244,7 @@ async def _apply_verdict(
     if call == "troll" and confidence >= ACT_CONFIDENCE:
         entry["done"] = True
         outcome = f"timed out for {TIMEOUT_HOURS}h and reported"
-        await _action_troll(client, member, entry, verdict or {}, confidence)
+        await _action_troll(client, member, entry, verdict or {}, confidence, message)
     elif len(entry["messages"]) >= MAX_SCANNED_MESSAGES:
         entry["done"] = True
         outcome = "scan complete - no action"
@@ -654,10 +655,21 @@ async def _evaluate(
 
 # --- enforcement + reporting ------------------------------------------------------
 async def _action_troll(
-    client: Any, member: Any, entry: dict[str, Any], verdict: dict[str, Any], confidence: float
+    client: Any,
+    member: Any,
+    entry: dict[str, Any],
+    verdict: dict[str, Any] | None,
+    confidence: float,
+    message: Any = None,
 ) -> None:
-    """Timeout only - messages are deliberately left in place so staff can judge
-    them in context and undo cleanly if the verdict was wrong."""
+    """Timeout the member and remove the message that triggered it.
+
+    Only the triggering message is deleted; everything they posted before it is left
+    in place so staff can judge the flag in context. The deleted text is snapshotted
+    into the police-station report before removal, so the audit trail survives and an
+    undo is still a one-click job on the panel.
+    """
+    verdict = verdict or {}
     reason = " ".join(str(verdict.get("reason", "")).split())[:500]
     until = discord.utils.utcnow() + timedelta(hours=TIMEOUT_HOURS)
     try:
@@ -669,10 +681,42 @@ async def _action_troll(
         action = "timeout FAILED: missing permission or role hierarchy"
     except discord.HTTPException as exc:
         action = f"timeout FAILED: {exc.__class__.__name__}"
+
+    action += " · " + await _delete_trigger(entry, message)
     logger.info(
         "join-watch flagged member %s at %.0f%% confidence: %s", member.id, confidence * 100, action
     )
     await _send_report(client, member, entry, reason, confidence, action)
+
+
+async def _delete_trigger(entry: dict[str, Any], message: Any) -> str:
+    """Delete the message that tripped the verdict, flagging it on the snapshot.
+
+    Returns a short phrase for the report footer. Failures are reported rather than
+    raised: a message that cannot be removed must not cost us the timeout or the card.
+    """
+    snapshot = entry["messages"][-1] if entry["messages"] else None
+    if message is None:
+        if snapshot is not None:
+            snapshot["delete_failed"] = "no message handle"
+        return "message NOT deleted: no handle"
+    try:
+        await message.delete()
+    except discord.NotFound:
+        if snapshot is not None:
+            snapshot["delete_failed"] = "already gone"
+        return "message already gone"
+    except discord.Forbidden:
+        if snapshot is not None:
+            snapshot["delete_failed"] = "missing Manage Messages"
+        return "message delete FAILED: missing Manage Messages"
+    except discord.HTTPException as exc:
+        if snapshot is not None:
+            snapshot["delete_failed"] = exc.__class__.__name__
+        return f"message delete FAILED: {exc.__class__.__name__}"
+    if snapshot is not None:
+        snapshot["deleted"] = True
+    return "triggering message deleted"
 
 
 class UntimeoutButton(
@@ -771,13 +815,31 @@ def _report_view(
     )
 
     lines = []
+    deleted_any = False
     for i, m in enumerate(entry["messages"], 1):
-        suffix = f" · [jump]({m['jump_url']})" if m.get("jump_url") else ""
+        if m.get("deleted"):
+            # the jump link is dead once the message is gone, so drop it and say why
+            deleted_any = True
+            tag = " · 🗑️ **deleted by join-watch**"
+        elif m.get("delete_failed"):
+            tag = (
+                f" · ⚠️ **not deleted** ({m['delete_failed']})"
+                + (f" · [jump]({m['jump_url']})" if m.get("jump_url") else "")
+            )
+        else:
+            tag = f" · [jump]({m['jump_url']})" if m.get("jump_url") else ""
         lines.append(
-            f"{i}. **{m['channel']}** <t:{m['ts']}:R>{suffix}\n"
+            f"{i}. **{m['channel']}** <t:{m['ts']}:R>{tag}\n"
             f"{discord.utils.escape_markdown(m['content'])[:300]}"
         )
     card.add_item(discord.ui.TextDisplay(("### Messages\n" + "\n".join(lines))[:1500]))
+    if deleted_any:
+        card.add_item(
+            discord.ui.TextDisplay(
+                "🗑️ **The message that triggered this was deleted.** Its text is quoted above "
+                "so you can still judge the call; removing the timeout does not restore it."
+            )
+        )
     card.add_item(discord.ui.Separator())
     card.add_item(discord.ui.ActionRow(UntimeoutButton(member.id)))
     card.add_item(
