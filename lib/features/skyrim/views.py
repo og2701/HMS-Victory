@@ -3056,11 +3056,10 @@ async def _hub_help(interaction: Interaction):
 # Command entry + restart recovery
 # ---------------------------------------------------------------------------
 async def handle_skyrim_command(interaction: Interaction):
-    try:
-        from lib.core import detection as _D
-        _D.note_daily_command(interaction.user.id, "skyrim", client=interaction.client)
-    except Exception:
-        pass
+    # Deliberately not wired into the anti-alt co-occurrence check. That detector
+    # looks for accounts farming the economy in lockstep, and Skyrim is a closed
+    # loop: septims never leave the game, and the one UKPence link (badges) pays
+    # once per badge on first award, so there is nothing here to farm daily.
     if not getattr(config, "SKYRIM_ENABLED", True):
         await interaction.response.send_message(
             "The roads to Skyrim are closed for now.", ephemeral=True)
