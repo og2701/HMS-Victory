@@ -1202,6 +1202,11 @@ async def open_anti_raid_control(interaction: Interaction) -> None:
         pass
 
 
+def _client_of(member: discord.Member) -> Any:
+    """The bot client behind a member object, without threading it through every caller."""
+    return getattr(getattr(member, "guild", None), "_state", None) and member.guild._state._get_client()
+
+
 async def handle_new_member_anti_raid(member: discord.Member) -> AntiRaidJoinOutcome:
     """Record and quarantine a join, returning a fail-closed onboarding gate."""
     try:
@@ -1209,6 +1214,13 @@ async def handle_new_member_anti_raid(member: discord.Member) -> AntiRaidJoinOut
     except Exception:
         # History is operational context, not a prerequisite for enforcement.
         logger.exception("Could not persist recent anti-raid join for %s", member.id)
+    # Silent joiners never reach join_watch, which only screens members who speak, so the
+    # batch-creation check runs off the join itself. Reporting only; it bans nothing.
+    try:
+        from commands.moderation.join_clusters import evaluate_joins
+        asyncio.create_task(evaluate_joins(_client_of(member), _load_recent_joins()))
+    except Exception:
+        logger.debug("join-cluster evaluation could not be scheduled", exc_info=True)
     if not is_anti_raid_enabled():
         return AntiRaidJoinOutcome(protection_active=False, quarantined=False)
 
