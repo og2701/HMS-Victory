@@ -596,11 +596,13 @@ def test_the_panel_gate_matches_the_command_gate():
     named = {n.strip().split(".")[-1] for n in m.group(1).split(",") if n.strip()}
     panel = {n for n in ("MINISTER", "CABINET", "BORDER_FORCE", "PCSO",
                          "DEPUTY_MINISTER_OF_COMMUNITY")
+             # PCSO is deliberately not on this list; the assertion below pins that.
              if getattr(anti_raid.ROLES, n) in anti_raid.STAFF_ROLE_IDS}
     assert named == panel, f"command allows {named}, panel allows {panel}"
 
 
-def test_the_most_present_staff_can_reach_the_control_centre():
-    """PCSO covers the three staff who are actually in the room most days."""
-    assert anti_raid.ROLES.PCSO in anti_raid.STAFF_ROLE_IDS
+def test_pcso_alone_does_not_open_the_control_centre():
+    """Deliberate: the panel arms lockdowns and releases quarantines, so it stops at
+    Deputy Minister of Community rather than extending to every PCSO."""
     assert anti_raid.ROLES.DEPUTY_MINISTER_OF_COMMUNITY in anti_raid.STAFF_ROLE_IDS
+    assert anti_raid.ROLES.PCSO not in anti_raid.STAFF_ROLE_IDS

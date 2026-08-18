@@ -41,7 +41,7 @@ ROLE_PERMISSION_BACKUP_VERSION = 2
 # Kept in step with the /anti-raid command gate in setup_commands: opening the panel and
 # being able to press anything on it have to be the same set, or the people most likely to
 # be in the room during a raid get a control centre that does nothing.
-STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE, ROLES.PCSO,
+STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE,
                   ROLES.DEPUTY_MINISTER_OF_COMMUNITY}
 
 # Two ways to be switched on. FULL is the original: quarantine every join AND strip the
