@@ -893,6 +893,34 @@ async def _refresh_report(client: Any, banned: list[str] | None = None) -> None:
         logger.debug("could not refresh the join-cluster report", exc_info=True)
 
 
+async def note_member_left(client: Any, user_id) -> None:
+    """Mark someone on the live report as gone and redraw it.
+
+    A batch quietly emptying itself is the most useful thing the card can tell you, and
+    until now it only found out when a staff member happened to press Watch and got a
+    failure back. Fires on every leave, so a batch that gives up on its own visibly
+    resolves without anybody touching it.
+    """
+    try:
+        uid = str(user_id)
+        state = _load_state()
+        if uid not in {str(u) for u in state.get("ids", [])}:
+            return
+        # A ban also raises a leave. Banned wins: it says who did it, not just that they
+        # are no longer here.
+        if uid in {str(u) for u in state.get("banned", [])}:
+            return
+        gone = set(state.get("gone", []))
+        if uid in gone:
+            return
+        gone.add(uid)
+        state["gone"] = sorted(gone)
+        _save_state(state)
+        await _refresh_report(client)
+    except Exception:
+        logger.exception("could not mark %s as having left the cluster report", user_id)
+
+
 async def evaluate_joins(client: Any, records: Iterable[dict[str, Any]],
                          now: int | None = None) -> None:
     """Detect clusters and post or edit the single live report. Never raises.

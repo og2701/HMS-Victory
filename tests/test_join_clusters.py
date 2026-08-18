@@ -524,3 +524,53 @@ def test_members_who_left_are_marked_on_the_card():
     assert "left" in payload and "🚪" in payload
     # Still actionable for whoever remains.
     assert "joincluster:ban:" in payload
+
+
+# ---------------------------------------------------------------------------
+# A batch emptying itself is the most useful thing the card can say, so it should
+# not need somebody to press a button to find out.
+# ---------------------------------------------------------------------------
+def _live_report(monkeypatch, tmp_path, state):
+    monkeypatch.setattr(JC, "CLUSTER_STATE_FILE", str(tmp_path / "clusters.json"))
+    JC._save_state(state)
+    msg = _FakeMsg(500, None)
+    channel = _FakeChannel(busy=0, existing=msg)
+
+    async def fake_channel(_client, _cid):
+        return channel
+
+    monkeypatch.setattr(JC, "_get_channel", fake_channel)
+    return msg
+
+
+def test_leaving_crosses_you_off_the_report(monkeypatch, tmp_path):
+    import asyncio, json
+    base = NOW - 200 * 86400
+    clusters = JC.find_clusters([rec(1, base), rec(2, base + 60), rec(3, base + 120)], now=NOW)
+    msg = _live_report(monkeypatch, tmp_path,
+                       {"message_id": 500, "channel_id": 2, "ids": ["1", "2", "3"],
+                        "clusters": clusters})
+    asyncio.run(JC.note_member_left(object(), 2))
+
+    assert JC._load_state()["gone"] == ["2"]
+    payload = json.dumps(msg.edits[-1]["view"].to_components(), ensure_ascii=False)
+    assert "🚪" in payload and "left" in payload
+
+
+def test_a_ban_is_not_relabelled_as_leaving(monkeypatch, tmp_path):
+    """Banning raises a leave too, and 'banned' is the more useful of the two."""
+    import asyncio
+    _live_report(monkeypatch, tmp_path,
+                 {"message_id": 500, "channel_id": 2, "ids": ["1"], "banned": ["1"],
+                  "clusters": []})
+    asyncio.run(JC.note_member_left(object(), 1))
+    assert JC._load_state().get("gone", []) == []
+
+
+def test_someone_not_on_the_report_is_ignored(monkeypatch, tmp_path):
+    import asyncio
+    msg = _live_report(monkeypatch, tmp_path,
+                       {"message_id": 500, "channel_id": 2, "ids": ["1"], "clusters": []})
+    asyncio.run(JC.note_member_left(object(), 777))
+    assert JC._load_state().get("gone", []) == []
+    assert not msg.edits, "an unrelated leave must not redraw the card"

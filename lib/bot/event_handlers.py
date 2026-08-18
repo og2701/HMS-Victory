@@ -1398,7 +1398,21 @@ async def on_member_join(member):
         logger.error(f"Error in on_member_join for {member.id}: {e}")
 
 
+def _client_for(member):
+    """The bot client behind a member, without changing this handler's signature."""
+    state = getattr(getattr(member, "guild", None), "_state", None)
+    return state._get_client() if state else None
+
+
 async def on_member_remove(member):
+    # If they are named on the live join-cluster report, cross them off it. A batch
+    # emptying itself is worth seeing, and the card used to only learn about it when a
+    # staff member pressed a button and got a failure back.
+    try:
+        from commands.moderation.join_clusters import note_member_left
+        asyncio.create_task(note_member_left(_client_for(member), member.id))
+    except Exception:
+        logger.debug("could not update the join-cluster report on leave", exc_info=True)
     try:
         current_balance = get_bb(member.id)
         if current_balance > 0:
