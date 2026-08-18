@@ -194,7 +194,16 @@ def _normalise_recent_joins(records: Iterable[Any], now: int | None = None) -> l
             record["released_by"] = str(raw["released_by"])
         clean.append(record)
     clean.sort(key=lambda row: row["joined_at"])
-    return clean[-MAX_RECENT_JOINS:]
+    # One row per member: a leave-and-rejoin used to append a second record, which read
+    # downstream as two different accounts joining together.
+    deduped: dict[str, dict[str, Any]] = {}
+    for row in clean:
+        prev = deduped.get(row["user_id"])
+        if prev is not None:
+            row["quarantined"] = row["quarantined"] or prev.get("quarantined", False)
+        deduped[row["user_id"]] = row
+    latest = sorted(deduped.values(), key=lambda row: row["joined_at"])
+    return latest[-MAX_RECENT_JOINS:]
 
 
 def _load_recent_joins(now: int | None = None) -> list[dict[str, Any]]:

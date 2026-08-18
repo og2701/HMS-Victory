@@ -57,11 +57,23 @@ def find_clusters(records: Iterable[dict[str, Any]], now: int | None = None) -> 
     join first, each: {"created_from", "created_to", "spread", "tight", "members": [record]}.
     """
     current = int(time.time() if now is None else now)
-    recent = [
-        r for r in records
-        if isinstance(r, dict)
-        and current - int(r.get("joined_at", 0) or 0) <= JOIN_WINDOW_SECONDS
-    ]
+    # One member per id, keeping their latest join. A member who leaves and rejoins writes
+    # a record each time, and counting those as separate accounts turned one person into a
+    # "cluster" with a 0s spread - the exact shape this flags as scripted. Deduping here as
+    # well as at the source keeps the detector correct whatever the store contains.
+    latest: dict[str, dict[str, Any]] = {}
+    for r in records:
+        if not isinstance(r, dict):
+            continue
+        joined = int(r.get("joined_at", 0) or 0)
+        if current - joined > JOIN_WINDOW_SECONDS:
+            continue
+        uid = str(r.get("user_id", ""))
+        if not uid:
+            continue
+        if uid not in latest or joined > int(latest[uid].get("joined_at", 0) or 0):
+            latest[uid] = r
+    recent = list(latest.values())
     if len(recent) < MIN_CLUSTER_SIZE:
         return []
 

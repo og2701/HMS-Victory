@@ -120,3 +120,32 @@ def test_staff_check_rejects_ordinary_members():
     assert JC._is_staff(U([R(next(iter(JC.STAFF_ROLE_IDS)))])) is True
     assert JC._is_staff(U([R(1)])) is False
     assert JC._is_staff(U([])) is False
+
+
+def test_one_member_rejoining_is_never_a_cluster():
+    """A leave-and-rejoin wrote a record each time, so one person read as several accounts
+    created 0s apart - which is exactly the shape flagged as scripted."""
+    base = NOW - 5 * 86400
+    same = [rec(1, base, joined_ago=600), rec(1, base, joined_ago=400),
+            rec(1, base, joined_ago=200), rec(1, base, joined_ago=60)]
+    assert JC.find_clusters(same, now=NOW) == []
+
+
+def test_duplicates_do_not_inflate_a_real_cluster():
+    base = NOW - 120 * 86400
+    records = [rec(1, base), rec(1, base, joined_ago=30), rec(1, base, joined_ago=10),
+               rec(2, base + 120), rec(3, base + 300), rec(3, base + 300, joined_ago=5)]
+    clusters = JC.find_clusters(records, now=NOW)
+    assert len(clusters) == 1
+    assert len(clusters[0]["members"]) == 3
+    # Ordered by join time, not id - that is the order the card lists them in.
+    assert sorted(JC.cluster_user_ids(clusters)) == ["1", "2", "3"]
+
+
+def test_the_latest_join_is_the_one_kept():
+    base = NOW - 100 * 86400
+    records = [rec(1, base, joined_ago=9000), rec(1, base, joined_ago=60),
+               rec(2, base + 60), rec(3, base + 120)]
+    clusters = JC.find_clusters(records, now=NOW)
+    member = next(m for m in clusters[0]["members"] if m["user_id"] == "1")
+    assert member["joined_at"] == NOW - 60
