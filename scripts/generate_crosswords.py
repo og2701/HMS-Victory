@@ -76,8 +76,8 @@ def _valid_layouts(n, max_len, want=200):
 
 N = 5
 PATTERNS = []
-# Words the fill should reach for before anything else (see fill). Empty means no bias.
-PREFER = set()
+# Harder-tier words to plant, by length (see fill). Empty means plant nothing.
+PLANT = {}
 
 def _reindex():
     """Rebuild the lookup indexes after the word bank is swapped (see --hard)."""
@@ -122,8 +122,16 @@ def entries(black, N=None):
             out.append(["down", num, cells])
     return out
 
-def fill(ents, rng, deadline, banned=frozenset()):
+def fill(ents, rng, deadline, banned=frozenset(), plant=None):
+    """plant is an (entry, word) pair written into the grid before the search starts."""
     grid, used = {}, set(banned)
+    todo = list(ents)
+    if plant:
+        e0, w0 = plant
+        for i, cell in enumerate(e0[2]):
+            grid[cell] = w0[i]
+        used.add(w0)
+        todo = [e for e in todo if e is not e0]
 
     def cands(cells):
         L = len(cells)
@@ -151,22 +159,16 @@ def fill(ents, rng, deadline, banned=frozenset()):
             cs = cands(e[2])
             if not cs:
                 return False                     # dead end, prune immediately
-            scored.append((len(cs), cs, e))
+            # Ties broken at random, not by insertion order. On an empty grid every entry of
+            # the same length has the same candidate count, so a stable sort opens every
+            # search on the same slot and the fill keeps re-finding the same handful of
+            # solutions - 2100 builds collapsed to 123 distinct grids, which is not enough
+            # pool to pick a month of puzzles out of. Starting elsewhere costs nothing.
+            scored.append(((len(cs), rng.random()), cs, e))
         scored.sort(key=lambda t: t[0])          # most constrained first
         _n, cs, e = scored[0]
         rest = [x for x in remaining if x is not e]
         rng.shuffle(cs)
-        # Try the harder vocabulary first. Without this the fill picks uniformly from
-        # whatever fits, so the tier gets used in proportion to its share of the bank and no
-        # more - measured at 13% of answers, against 17% of the words. Merely allowing the
-        # hard words in does nothing; the search has to reach for them. Shuffle first so the
-        # order within each group stays random, then stable-sort to float the preferred set.
-        cs.sort(key=lambda w: w not in PREFER)
-        # Wider window than the 25 this used before the sort existed. With the preferred
-        # words at the front, a narrow window is ALL preferred - so when none of them fit,
-        # the search backtracks instead of falling back to an ordinary word, and throughput
-        # collapsed from 35 puzzles to 9. Widening lets it try the hard words first and then
-        # settle, which is the behaviour wanted: preference, not a requirement.
         for w in cs[:80]:
             snap = {c: grid.get(c) for c in e[2]}
             for i, cell in enumerate(e[2]):
@@ -181,9 +183,34 @@ def fill(ents, rng, deadline, banned=frozenset()):
         return False
 
     try:
-        return grid if rec(list(ents)) else None
+        return grid if rec(todo) else None
     except TimeoutError:
         return None
+
+
+def _plant(ents, rng, banned):
+    """Pick a harder-tier word and a slot to write it into, before anything else is placed.
+
+    Reaching for the hard words during the search was tried and dropped - preferring a
+    324-word tier inside a 1,935-word bank sent the search into corners it could not close,
+    and throughput fell from 35 puzzles to 9. Fixing one slot up front constrains the search
+    rather than fighting it. Over the same 3,200 seeds:
+
+        no plant   3,200 filled   336 distinct   1.5 harder answers per grid, floor 0
+        plant      1,350 filled   420 distinct   2.2 harder answers per grid, floor 1
+
+    Fewer seeds get anywhere, and it is still the better deal: more distinct grids, harder
+    ones, and six times quicker per grid built, because a planted slot prunes the tree
+    before the search starts rather than after it has committed.
+    """
+    if not PLANT:
+        return None
+    slots = [e for e in ents if PLANT.get(len(e[2]))]
+    if not slots:
+        return None
+    e0 = rng.choice(slots)
+    pool = [w for w in PLANT[len(e0[2])] if w not in banned]
+    return (e0, rng.choice(pool)) if pool else None
 
 def build(seed, budget=2.0, banned=frozenset()):
     rng = random.Random(seed)
@@ -192,7 +219,7 @@ def build(seed, budget=2.0, banned=frozenset()):
         ents = entries(pat, globals()['N'])
         if not all(len(c) >= 3 for _k, _n, c in ents):
             continue
-        g = fill(ents, rng, time.time() + budget, banned)
+        g = fill(ents, rng, time.time() + budget, banned, _plant(ents, rng, banned))
         if g:
             words = [{"num": num, "dir": kind, "answer": (a := "".join(g[c] for c in cells)),
                       "clue": BANK[a], "cells": [list(c) for c in cells]}
@@ -222,8 +249,10 @@ if __name__ == "__main__":
         BANK.clear()
         BANK.update(HARD)
         _reindex()
-        PREFER.update(w for w in VOCAB if w in BANK)
-        print(f"preferring {len(PREFER)} harder-vocabulary words in the fill")
+        for w in sorted(VOCAB):
+            if w in BANK:
+                PLANT.setdefault(len(w), []).append(w)
+        print(f"planting one of {sum(len(v) for v in PLANT.values())} harder words per grid")
         print(f"hard mode: {len(BANK)} words with indirect clues")
     globals()["N"] = a.size
     PATTERNS[:] = _valid_layouts(a.size, a.max_len)
