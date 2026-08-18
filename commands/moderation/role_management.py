@@ -1,6 +1,12 @@
 from discord import Embed, utils, ButtonStyle, ui
 import asyncio
 
+from commands.moderation.anti_raid import QUARANTINE_ROLE_ID
+
+
+def _is_quarantined(member) -> bool:
+    return any(getattr(r, "id", None) == QUARANTINE_ROLE_ID for r in getattr(member, "roles", ()))
+
 
 async def updateRoleAssignments(interaction, role_name: str):
     if not interaction.user.guild_permissions.manage_guild:
@@ -15,13 +21,19 @@ async def updateRoleAssignments(interaction, role_name: str):
         await interaction.response.send_message(f"Role '{role_name}' not found.")
         return
 
-    members_without_role = [
-        member for member in guild.members if role not in member.roles
-    ]
+    # Quarantined members are being held on purpose - handing them a role in bulk is the
+    # one thing that can undo that, and the whole point of a bulk grant is that nobody
+    # reads the list first.
+    candidates = [member for member in guild.members if role not in member.roles]
+    skipped = [member for member in candidates if _is_quarantined(member)]
+    members_without_role = [member for member in candidates if member not in skipped]
     member_count = len(members_without_role)
 
     if member_count == 0:
-        await interaction.response.send_message("All members already have this role.")
+        note = "All members already have this role."
+        if skipped:
+            note += f" ({len(skipped)} quarantined member(s) skipped.)"
+        await interaction.response.send_message(note)
         return
 
     if member_count > 50:
@@ -36,6 +48,12 @@ async def updateRoleAssignments(interaction, role_name: str):
             initial_description = (
                 f"There are {member_count} members without the role {role_name}."
             )
+
+    if skipped:
+        initial_description += (
+            f"\n\n-# Skipping {len(skipped)} quarantined member(s); "
+            "release them first if they should get this role."
+        )
 
     initial_embed = Embed(
         title=f"Members without role __{role.name}__",
@@ -75,6 +93,11 @@ async def updateRoleAssignments(interaction, role_name: str):
             batch = members_without_role[i : i + batch_size]
 
             for member in batch:
+                # Re-checked here as well as when the list was built: a bulk grant can sit
+                # unpressed for a while, and somebody quarantined in the meantime must not
+                # be handed the role anyway.
+                if _is_quarantined(member):
+                    continue
                 await member.add_roles(role)
                 members_given_role.append(member)
 
@@ -83,6 +106,8 @@ async def updateRoleAssignments(interaction, role_name: str):
         final_description = (
             f"Done. Given role __{role.name}__ to {len(members_given_role)} members."
         )
+        if skipped:
+            final_description += f"\nSkipped {len(skipped)} quarantined member(s)."
 
         final_embed = Embed(
             title="Role Assignment Complete",
