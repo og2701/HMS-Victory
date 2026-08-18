@@ -507,3 +507,20 @@ def test_a_genuinely_new_batch_still_reports(monkeypatch, tmp_path):
     assert channel.sent, "the unhandled batch should still be raised"
     ids = JC._load_state()["ids"]
     assert set(ids) == {"7", "8", "9"}, "and only the accounts still worth acting on"
+
+
+def test_a_skipped_account_says_why_rather_than_going_quiet():
+    """Clicking Watch on three accounts and being told it watched one, with no reason,
+    read as a broken button when it was the correct outcome - two had already left."""
+    assert JC._skip_summary({}) == ""
+    line = JC._skip_summary({"1": "already left the server", "2": "already left the server",
+                             "3": "exempt (bot or staff)"})
+    assert "2 already left the server" in line
+    assert "1 exempt (bot or staff)" in line
+
+
+def test_members_who_left_are_marked_on_the_card():
+    payload = _payload(_one_batch(), gone=["1"])
+    assert "left" in payload and "🚪" in payload
+    # Still actionable for whoever remains.
+    assert "joincluster:ban:" in payload

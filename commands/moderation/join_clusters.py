@@ -185,11 +185,12 @@ def _dur(seconds: int) -> str:
 
 def build_cluster_view(clusters: list[dict[str, Any]], banned: list[str] | None = None,
                        quarantined: list[str] | None = None, watching: list[str] | None = None,
-                       dismissed_by: str | None = None,
+                       dismissed_by: str | None = None, gone: list[str] | None = None,
                        now: int | None = None) -> discord.ui.LayoutView:
     banned = set(banned or [])
     quarantined = set(quarantined or [])
     watching = set(watching or [])
+    gone = set(gone or [])
     current = int(time.time() if now is None else now)
     ranked = sorted(clusters, key=lambda c: (-_severity(c, current)[0], -len(c["members"])))
     live_ids = [u for u in cluster_user_ids(ranked) if u not in banned]
@@ -233,6 +234,10 @@ def build_cluster_view(clusters: list[dict[str, Any]], banned: list[str] | None 
                     f" · `{uid}`")
             if uid in banned:
                 line = f"~~{line}~~ 🔨"
+            elif uid in gone:
+                # Left on their own. Worth showing rather than hiding: it usually means
+                # the batch is resolving itself and needs nothing from you.
+                line = f"~~{line}~~ · 🚪 left"
             elif uid in quarantined:
                 line += " · 🔒"
             elif uid in watching:
@@ -392,14 +397,12 @@ class QuarantineClusterButton(discord.ui.DynamicItem[discord.ui.Button],
         if not ids:
             await interaction.followup.send("Nothing left in that batch.", ephemeral=True)
             return
-        done, failed = await quarantine_ids(interaction.guild, ids, interaction.user)
+        done, skipped = await quarantine_ids(interaction.guild, ids, interaction.user)
         state["quarantined"] = sorted(set(state.get("quarantined", [])) | set(done))
         _save_state(state)
         await _refresh_report(interaction.client)
-        note = f"🔒 Quarantined {len(done)} account(s)."
-        if failed:
-            note += f"\nFailed for {len(failed)} (missing role, or already gone)."
-        await interaction.followup.send(note, ephemeral=True)
+        await interaction.followup.send(
+            f"🔒 Quarantined {len(done)} account(s).{_skip_summary(skipped)}", ephemeral=True)
 
 
 class WatchAllButton(discord.ui.DynamicItem[discord.ui.Button],
@@ -427,14 +430,16 @@ class WatchAllButton(discord.ui.DynamicItem[discord.ui.Button],
         await interaction.response.defer(ephemeral=True, thinking=True)
         state = _load_state()
         ids = [u for u in state.get("ids", []) if u not in set(state.get("banned", []))]
-        done, failed = await watch_ids(interaction.guild, ids)
+        done, skipped = await watch_ids(interaction.guild, ids)
         state["watching"] = sorted(set(state.get("watching", [])) | set(done))
+        state["gone"] = sorted(set(state.get("gone", []))
+                               | {u for u, why in skipped.items() if "left" in why})
         _save_state(state)
         await _refresh_report(interaction.client)
-        await interaction.followup.send(
-            f"👁️ Now screening the first messages from {len(done)} account(s). "
-            "They are not restricted - if they post anything flaggable the usual "
-            "join-watch report fires.", ephemeral=True)
+        note = (f"👁️ Now screening the first messages from {len(done)} account(s). "
+                "They are not restricted - if they post anything flaggable the usual "
+                "join-watch report fires.")
+        await interaction.followup.send(note + _skip_summary(skipped), ephemeral=True)
 
 
 class DismissButton(discord.ui.DynamicItem[discord.ui.Button],
@@ -511,18 +516,29 @@ def _is_staff(user: Any) -> bool:
                for r in getattr(user, "roles", []) or [])
 
 
-async def quarantine_ids(guild: Any, ids: list[str], actor: Any) -> tuple[list[str], list[str]]:
+async def quarantine_ids(guild: Any, ids: list[str], actor: Any
+                         ) -> tuple[list[str], dict[str, str]]:
     """Give the quarantine role instead of banning. Reversible, and the right first move
-    when the evidence is a coincidence away from being innocent."""
+    when the evidence is a coincidence away from being innocent.
+
+    Returns (quarantined, {id: why not}) for the same reason as watch_ids: an account that
+    has already left is not a failure worth chasing.
+    """
     from commands.moderation.anti_raid import QUARANTINE_ROLE_ID, mark_join_quarantined
     role = guild.get_role(QUARANTINE_ROLE_ID)
     if role is None:
-        return [], list(ids)
-    done, failed = [], []
+        return [], {uid: "quarantine role is missing" for uid in ids}
+    done, skipped = [], {}
     reason = f"Batch-created account cluster · quarantined by {getattr(actor, 'id', '?')}"
     for uid in ids:
         try:
-            member = guild.get_member(int(uid)) or await guild.fetch_member(int(uid))
+            member = guild.get_member(int(uid))
+            if member is None:
+                member = await guild.fetch_member(int(uid))
+        except Exception:
+            skipped[uid] = "already left the server"
+            continue
+        try:
             await member.add_roles(role, reason=reason[:500])
             try:
                 mark_join_quarantined(int(uid))
@@ -531,22 +547,36 @@ async def quarantine_ids(guild: Any, ids: list[str], actor: Any) -> tuple[list[s
             done.append(uid)
         except Exception:
             logger.exception("join-cluster quarantine failed for %s", uid)
-            failed.append(uid)
-    return done, failed
+            skipped[uid] = "could not add the role"
+    return done, skipped
 
 
-async def watch_ids(guild: Any, ids: list[str]) -> tuple[list[str], list[str]]:
-    """Screen these accounts' first messages, without arming the watch server-wide."""
+async def watch_ids(guild: Any, ids: list[str]) -> tuple[list[str], dict[str, str]]:
+    """Screen these accounts' first messages, without arming the watch server-wide.
+
+    Returns (watched, {id: why not}). The reason matters: most of the time a watch fails
+    because the account has already left, which means the batch is resolving itself - and
+    reporting that as a bare count made a correct outcome look like a broken button.
+    """
     from commands.moderation.join_watch import watch_member
-    done, failed = [], []
+    done, skipped = [], {}
     for uid in ids:
         try:
-            member = guild.get_member(int(uid)) or await guild.fetch_member(int(uid))
-            (done if watch_member(member) else failed).append(uid)
+            member = guild.get_member(int(uid))
+            if member is None:
+                member = await guild.fetch_member(int(uid))
         except Exception:
-            logger.debug("join-cluster watch failed for %s", uid, exc_info=True)
-            failed.append(uid)
-    return done, failed
+            skipped[uid] = "already left the server"
+            continue
+        try:
+            if watch_member(member):
+                done.append(uid)
+            else:
+                skipped[uid] = "exempt (bot or staff)"
+        except Exception:
+            logger.exception("join-cluster watch failed for %s", uid)
+            skipped[uid] = "error"
+    return done, skipped
 
 
 async def ban_ids(guild: Any, ids: list[str], actor: Any) -> tuple[list[str], list[str]]:
@@ -796,6 +826,17 @@ def _appeal_closed_view(user_id: int, outcome: str, by_id: int) -> discord.ui.La
     return view
 
 
+def _skip_summary(skipped: dict[str, str]) -> str:
+    """Group the reasons so a staff member reads one line, not a list of ids."""
+    if not skipped:
+        return ""
+    counts: dict[str, int] = {}
+    for why in skipped.values():
+        counts[why] = counts.get(why, 0) + 1
+    parts = [f"{n} {why}" for why, n in sorted(counts.items(), key=lambda kv: -kv[1])]
+    return "\n-# Skipped: " + ", ".join(parts) + "."
+
+
 # --- posting / editing the live report ----------------------------------------------
 async def _get_channel(client: Any, channel_id: int) -> Any:
     channel = client.get_channel(channel_id)
@@ -846,6 +887,7 @@ async def _refresh_report(client: Any, banned: list[str] | None = None) -> None:
             quarantined=state.get("quarantined", []),
             watching=state.get("watching", []),
             dismissed_by=state.get("dismissed_by"),
+            gone=state.get("gone", []),
         ), allowed_mentions=discord.AllowedMentions.none())
     except Exception:
         logger.debug("could not refresh the join-cluster report", exc_info=True)
@@ -881,7 +923,8 @@ async def evaluate_joins(client: Any, records: Iterable[dict[str, Any]],
         banned = state.get("banned", [])
         view = build_cluster_view(clusters, banned=banned,
                                   quarantined=state.get("quarantined", []),
-                                  watching=state.get("watching", []), now=now)
+                                  watching=state.get("watching", []),
+                                  gone=state.get("gone", []), now=now)
         message_id = state.get("message_id")
         msg = None
         previous = None
