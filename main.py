@@ -90,6 +90,12 @@ class AClient(discord.Client):
                 BanClusterButton, DismissButton, MassBanButton,
                 QuarantineClusterButton, WatchAllButton,
             )
+            from lib.core.behaviour_watch import (
+                CoordBanButton, CoordDismissButton, CoordTimeoutButton,
+                TakeoverDismissButton, TakeoverTimeoutButton,
+            )
+            self.add_dynamic_items(CoordTimeoutButton, CoordBanButton, CoordDismissButton,
+                                   TakeoverTimeoutButton, TakeoverDismissButton)
             self.add_dynamic_items(MassBanButton, BanClusterButton,
                                    QuarantineClusterButton, WatchAllButton, DismissButton,
                                    # Appeal buttons live in DMs indefinitely, so they must

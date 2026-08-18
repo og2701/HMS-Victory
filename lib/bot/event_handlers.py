@@ -999,6 +999,14 @@ async def on_message(client, message):
     # Oggers' join-watch: AI screening of new joiners' first messages during raids.
     # Fire-and-forget so a Gemini round-trip never blocks the rest of on_message.
     try:
+        # Watches the message stream rather than the door: coordinated messages from
+        # several accounts, and established members behaving unlike themselves.
+        try:
+            from lib.core.behaviour_watch import observe_message
+            asyncio.create_task(observe_message(client, message))
+        except Exception:
+            logger.debug("behaviour watch hook failed", exc_info=True)
+
         from commands.moderation.join_watch import join_watch_enabled, maybe_watch_message
         if join_watch_enabled() and not message.author.bot:
             asyncio.create_task(maybe_watch_message(client, message))

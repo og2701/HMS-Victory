@@ -680,6 +680,18 @@ def init_db():
             )
         ''')
         c.execute('CREATE INDEX IF NOT EXISTS idx_restriction_log_user ON restriction_log(user_id)')
+        # Cheapest possible behavioural baseline per member: how long they have been
+        # around, how much they talk, and how often they post links. A stolen account is
+        # only visible against what that account normally does.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS member_profile (
+                user_id       TEXT PRIMARY KEY,
+                first_seen    INTEGER NOT NULL,
+                last_seen     INTEGER NOT NULL,
+                messages      INTEGER NOT NULL DEFAULT 0,
+                link_messages INTEGER NOT NULL DEFAULT 0
+            )
+        ''')
         # One row per finished Connect 4 match (kept separate from casino_results so PvP
         # games don't pollute the house-casino stats/leaderboard). winner_id NULL on a draw.
         c.execute('''
