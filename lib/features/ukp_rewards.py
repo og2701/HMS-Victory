@@ -14,6 +14,7 @@ import logging
 import random
 import re
 import time
+from string import Formatter
 from datetime import datetime, timedelta
 
 import pytz
@@ -705,103 +706,105 @@ _BENEFITS_SUCCESS = [
     "🧾 Signed, sealed, deposited. <@{uid}> gets **{amount:,} UKPence**. The taxpayer salutes you.",
 ]
 # Personal lines for the heaviest claimants, mixed in with the house pool so the regulars
-# get something written for them rather than the same fifteen jokes forever. Keyed by user
-# id and worded so nothing goes stale: the claimant is always addressed with a mention or
-# {name}, both of which follow whatever nickname they are wearing today, and every joke is
-# anchored to something in their record - what they have lost at the mines, who they keep
-# sending money to - rather than to what they happen to be called.
+# get something written for them rather than the same fifteen jokes forever.
 #
-# Drawn from the top 50 by claim count. Four of that fifty have left the server and are not
-# here. Someone falling off the list keeps their lines; they cost nothing and the ids are
-# stable even when the names are not.
+# Nothing here is fixed in place. The claimant is addressed with a mention or {name}, which
+# follow their nickname on the day, and every figure is a placeholder filled from the ledger
+# at claim time by _benefits_stats. The numbers were written in at first and were wrong by
+# the same evening - somebody up at the tables goes down, somebody who had never gambled
+# does. A line whose figures no longer resolve is dropped rather than printed, so a joke
+# stops appearing when it stops being true.
+#
+# Drawn from the top 50 by claim count. Four of that fifty have left and are not here.
+# Someone falling off the list keeps their lines; the ids are stable even when names aren't.
 _BENEFITS_PERSONAL_CHANCE = 0.5   # how often a regular gets their own line over the pool
 _BENEFITS_PERSONAL = {
  # 67 claims
  "479207279850291221": [
-  "🧾 Claim approved, again. <@{uid}> takes **{amount:,} UKPence**. The case worker stopped reading your forms months ago and just stamps them.",
-  "🧾 **{amount:,} UKPence** for <@{uid}>, who has fed a small nation's GDP into the mines. The state admires the commitment, not the strategy.",
-  "🧾 The office knows your name, your face and the sound of your footsteps. **{amount:,} UKPence**, <@{uid}>. Same time tomorrow.",
+  "🧾 Claim number **{claims}** approved. <@{uid}> takes **{amount:,} UKPence**. The case worker stopped reading your forms long ago and just stamps them.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>, who has fed **{mines_lost:,}** into the mines. The state admires the commitment, not the strategy.",
+  "🧾 The office knows your name, your face and the sound of your footsteps. **{amount:,} UKPence**, <@{uid}>. That's **{claims}** now.",
  ],
  # 40 claims
  "564147759108718664": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. Curious how the generosity arrives in big lumps and the poverty arrives daily.",
-  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence** - a fraction of what you've handed to mates, but this one's the taxpayer's, so it counts.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Curious how the generosity arrives in lumps of **{paid_out:,}** and the poverty arrives daily.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence** - a sliver of the **{paid_out:,}** you've handed to mates, but this one's the taxpayer's, so it counts.",
  ],
  # 38 claims
  "1283837687551361117": [
-  "🧾 **{amount:,} UKPence** to <@{uid}>, who has played more casino rounds than most people have had hot dinners. Perhaps a hot dinner instead.",
-  "🧾 Approved. <@{uid}> pockets **{amount:,} UKPence**. You own more badges than balance, which is a life philosophy of sorts.",
+  "🧾 **{amount:,} UKPence** to <@{uid}>, who has played **{casino_games:,}** casino rounds. That is more rounds than most people have had hot dinners.",
+  "🧾 Approved. <@{uid}> pockets **{amount:,} UKPence** and owns **{shop_items}** things from the shop, which is **{shop_spent:,}** of not learning.",
  ],
  # 37 claims
  "596789292991512619": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. You don't gamble, you shop, which the state considers the more dangerous habit.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. You don't gamble, you shop - **{shop_items}** items and **{shop_spent:,}** gone. The more dangerous habit.",
   "🧾 Claim approved. <@{uid}> receives **{amount:,} UKPence**. Straight to the shop with it, as tradition demands.",
  ],
  # 37 claims
  "276119377395449856": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. Between this and the hundred-odd bailouts from your mates, you're practically a registered charity.",
-  "🧾 Approved, with a note in the margin. <@{uid}> takes **{amount:,} UKPence**. The fraud team says hello, by the way.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Between this and **{paid_in_n}** bailouts from your mates, you're practically a registered charity.",
+  "🧾 Approved, with a note in the margin. <@{uid}> takes **{amount:,} UKPence**. The fraud team remembers you fondly.",
  ],
  # 32 claims
  "795003706717372462": [
-  "🧾 **{amount:,} UKPence** to <@{uid}>. Money moves through you at a rate the Treasury would call alarming.",
+  "🧾 **{amount:,} UKPence** to <@{uid}>. **{paid_out:,}** out, **{paid_in:,}** in - a rate of flow the Treasury would call alarming.",
   "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. See if you can keep this one in the account for a whole hour.",
  ],
  # 31 claims
  "311526098884362242": [
   "🧾 **{amount:,} UKPence** for <@{uid}>, the server's most cautious degenerate. Higher or lower? Higher, obviously.",
-  "🧾 Payment through. <@{uid}> receives **{amount:,} UKPence**, or roughly nine hundred of your usual bet.",
+  "🧾 Payment through. <@{uid}> receives **{amount:,} UKPence**, against lifetime losses of **{casino_lost:,}**. Nearly square.",
  ],
  # 25 claims
  "285860055570579457": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. It won't touch the sides. It has never touched the sides.",
-  "🧾 The state grants <@{uid}> **{amount:,} UKPence**, about 0.05% of what the roulette wheel has taken off you. Baby steps.",
-  "🧾 Approved. <@{uid}> is undefeated against actual people and comprehensively beaten by a wheel. **{amount:,} UKPence**, and our sympathies.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. That is **{pct_of_casino}%** of what the casino has taken off you. It will not touch the sides.",
+  "🧾 The state grants <@{uid}> **{amount:,} UKPence**, or **{pct_of_roulette}%** of what the roulette wheel alone has had. Baby steps.",
+  "🧾 Approved. <@{uid}> is undefeated against actual people{unbeaten} and **{casino_lost:,}** down to a machine. **{amount:,} UKPence**, and our sympathies.",
  ],
  # 25 claims
  "966101821527588885": [
   "🧾 **{amount:,} UKPence** for <@{uid}>. The dealer is already shuffling. Don't.",
-  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Twist, stick, or possibly go outside.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**, with **{blackjack_lost:,}** already left at the table. Twist, stick, or go outside.",
  ],
  # 24 claims
  "235505165321502731": [
   "🧾 **{amount:,} UKPence** to <@{uid}>. The mines are that way, as if you needed telling.",
-  "🧾 Claim through. <@{uid}> gets **{amount:,} UKPence**. Statistically this becomes three tiles and a sigh.",
+  "🧾 Claim through. <@{uid}> gets **{amount:,} UKPence**. The last **{mines_lost:,}** went the same way this will.",
  ],
  # 21 claims
  "265927604303953920": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. You've lost fourteen duels and won one, so the state is your most reliable opponent.",
-  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. The slots await their tithe.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. You've lost **{pvp_losses}** duels, so the state is your most reliable opponent.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. The slots await their tithe of **{slots_lost:,}** and counting.",
  ],
  # 18 claims
  "1398652914737741956": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>, shut up seventy-eight times and still going. The state respects persistence.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>, shut up **{shut}** times and still going. The state respects persistence.",
   "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Please don't spend it all on being told to be quiet.",
  ],
  # 16 claims
  "1453319508587450514": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. You've given away thirty thousand, so this is less a benefit than a rounding error.",
-  "🧾 The state matches your generosity with **{amount:,} UKPence**, <@{uid}>. It is not a fair match and we both know it.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. You've given away **{paid_out:,}**, so this is less a benefit than a rounding error.",
+  "🧾 The state matches your generosity with **{amount:,} UKPence**, <@{uid}>. Against **{paid_out:,}** that is not a fair match and we both know it.",
  ],
  # 15 claims
  "1457814413913489480": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. You've paid out thousands and been paid back one single UKPence. Someone owes you.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. You've paid out **{paid_out:,}** and been paid back **{paid_in:,}**. Someone owes you.",
   "🧾 Approved. <@{uid}> takes **{amount:,} UKPence**. Consider keeping this one for yourself, as a treat.",
  ],
  # 14 claims
  "812666688184909834": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. You locked a thousand in a bond and then queued at the job centre. Respect.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. You locked **{bonded:,}** in a bond and then queued at the job centre. Respect.",
   "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Straight into savings, if we know you.",
  ],
  # 13 claims
  "1022210566871322754": [
-  "🧾 **{amount:,} UKPence** to <@{uid}>. The shop has taken more off you than the casino, which is genuinely impressive.",
+  "🧾 **{amount:,} UKPence** to <@{uid}>. The shop has had **{shop_spent:,}** off you and the casino **{casino_lost:,}**. Genuinely impressive.",
   "🧾 Claim approved. <@{uid}> receives **{amount:,} UKPence**. Something in the shop is already calling.",
  ],
  # 12 claims
  "355962189175324674": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>, who is thousands up at the casino and turned up at the job centre anyway. Astonishing.",
-  "🧾 Approved, reluctantly. <@{uid}> gets **{amount:,} UKPence**. Two thousand hands played and still claiming hardship.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>, who is **{casino_up:,}** UP at the casino and turned up at the job centre anyway. Astonishing.",
+  "🧾 Approved, reluctantly. <@{uid}> gets **{amount:,} UKPence**. **{casino_games:,}** hands played and still claiming hardship.",
  ],
  # 12 claims
  "1337505182904225934": [
@@ -810,58 +813,58 @@ _BENEFITS_PERSONAL = {
  ],
  # 12 claims
  "860098855621623809": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>, forty thousand up at the tables. This is the single funniest claim we process.",
-  "🧾 Approved on a technicality. <@{uid}> gets **{amount:,} UKPence**. You gave away more than this while reading the message.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>, **{casino_up:,}** up at the tables. This is the single funniest claim we process.",
+  "🧾 Approved on a technicality. <@{uid}> gets **{amount:,} UKPence**. You've given away **{paid_out:,}**, so do try to make it last.",
  ],
  # 10 claims
  "1103015741994827828": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. Mind the mines, they've had you before.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Mind the mines, they've had **{mines_lost:,}** off you already.",
   "🧾 Claim through. <@{uid}> receives **{amount:,} UKPence**. Try the shop, it separates you from it more slowly.",
  ],
  # 9 claims
  "1525639310697562232": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. Three fraud sanctions on the record and the state is still handing you money. Extraordinary.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Sanctioned repeatedly for fraud and the state is still handing you money. Extraordinary.",
   "🧾 Approved, against everyone's advice. <@{uid}> receives **{amount:,} UKPence**. The fraud office is watching this one specifically.",
  ],
  # 8 claims
  "797901947734065162": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. Sat on thousands and claiming anyway. Frugal or shameless, we can't tell.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>, sat on **{balance:,}** and claiming anyway. Frugal or shameless, we can't tell.",
   "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Not one ruinous decision on your record. Keep it that way.",
  ],
  # 8 claims
  "335303938301624324": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>, up a grand total of two UKPence at the casino. A man who knows when to leave.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>, up a grand total of **{casino_up:,}** at the casino. A man who knows when to leave.",
   "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Your gambling career remains, technically, profitable.",
  ],
  # 7 claims
  "1113593004083654707": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. Four casino games, no wins at all. The state admires a clean sheet.",
-  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Statistically, that's your winnings for the year already beaten.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. **{casino_games}** casino games, not one win between them{no_casino_wins}. The state admires a clean sheet.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**, which comfortably beats your lifetime winnings.",
  ],
  # 7 claims
  "958093967310872617": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. Nothing in the account and fourteen hundred posted to other people. Curious accounting.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. **{balance:,}** in the account and **{paid_out:,}** posted to other people. Curious accounting.",
   "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Please keep at least some of it.",
  ],
  # 6 claims
  "352040780543557634": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>, who has thirty-two thousand in the bank. The threshold is a suggestion and you found the loophole.",
-  "🧾 Approved, teeth gritted. <@{uid}> receives **{amount:,} UKPence**. Somewhere a bond of yours earns more than this while you read it.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>, who has **{balance:,}** in the bank. The threshold is a suggestion and you found the loophole.",
+  "🧾 Approved, teeth gritted. <@{uid}> receives **{amount:,} UKPence**. Your **{bonded:,}** in bonds earns more than this while you read it.",
  ],
  # 6 claims
  "450760126765334539": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. Seven casino games, one of them five thousand down. Quality over quantity.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. **{casino_games}** casino games, one of them **{worst_loss:,}** down. Quality over quantity.",
   "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Perhaps sit this round out.",
  ],
  # 6 claims
  "640108968139554827": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>, who has made sixty-three separate payments to other people. A one-man welfare state.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>, who has made **{paid_out_n}** separate payments to other people. A one-man welfare state.",
   "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. The state is sending support, over.",
  ],
  # 5 claims
  "1519692185031676024": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>, who has never once been near the casino. A genuinely clean record. Suspicious.",
-  "🧾 Approved with a commendation. <@{uid}> gets **{amount:,} UKPence** and the only untouched gambling history in the top fifty.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>, who has never once been near the casino{never_gambled}. A genuinely clean record. Suspicious.",
+  "🧾 Approved with a commendation. <@{uid}> gets **{amount:,} UKPence** and an untouched gambling history{never_gambled}.",
  ],
  # 5 claims
  "1497606176660127956": [
@@ -870,12 +873,12 @@ _BENEFITS_PERSONAL = {
  ],
  # 5 claims
  "719962546995593287": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>, who has won thirteen thousand in one go and lost ten thousand in another. This will feel very small.",
-  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**, or about a two-hundredth of your idea of a bet.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>, who has won **{best_win:,}** in one go and lost **{worst_loss:,}** in another. This will feel very small.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**, or roughly **{pct_of_casino}%** of what's already gone.",
  ],
  # 5 claims
  "1129755209195859988": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. Two casino games, up nine hundred, never returned. The state would like to study you.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. **{casino_games}** casino games, **{casino_up:,}** up, and you stopped. The state would like to study you.",
   "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Whatever you're doing, keep doing it.",
  ],
  # 5 claims
@@ -885,23 +888,23 @@ _BENEFITS_PERSONAL = {
  ],
  # 4 claims
  "792139113587277835": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. Ten thousand tied up in bonds and here you are with a begging bowl. Bold.",
-  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Shut up twenty-eight times and still claiming, which is its own kind of resilience.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. **{bonded:,}** tied up in bonds and here you are with a begging bowl. Bold.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Shut up **{shut}** times and still claiming, which is its own kind of resilience.",
  ],
  # 4 claims
  "811136986018480128": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>, whose entire net worth was one UKPence this morning. Upward trajectory.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>, whose entire net worth was **{balance:,}** a moment ago. Upward trajectory.",
   "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. The blackjack table is not your friend, whatever it says.",
  ],
  # 4 claims
  "1457809767794872350": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. The mines have had eighteen hundred off you. This is not a rescue, it's a gesture.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. The mines have had **{mines_lost:,}** off you. This is not a rescue, it's a gesture.",
   "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Good afternoon to you too.",
  ],
  # 4 claims
  "811987329707147264": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>, quietly in profit at the casino and claiming benefits regardless. This is Sparta, apparently.",
-  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Twenty-seven games and still ahead. Don't ruin it.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>, quietly **{casino_up:,}** up at the casino and claiming benefits regardless. This is Sparta, apparently.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. **{casino_games}** games and still ahead. Don't ruin it.",
  ],
  # 3 claims
  "281162022320734218": [
@@ -910,53 +913,148 @@ _BENEFITS_PERSONAL = {
  ],
  # 3 claims
  "1486077107695255714": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. The chests have taken nearly a thousand off you and you keep opening them.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. The chests have had **{chest_lost:,}** off you and you keep opening them.",
   "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. There is nothing good in the next one either.",
  ],
  # 3 claims
  "1429772674913009725": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. First of your name, last in the queue, nothing in the account.",
-  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Ten casino games was quite enough, wasn't it.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. First of your name, last in the queue, **{balance:,}** in the account.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. **{casino_games}** casino games was quite enough, wasn't it.",
  ],
  # 3 claims
  "1086932531498201170": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. Twelve games, nothing banked, still smiling.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. **{casino_games}** games, nothing banked, still smiling.",
   "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Straight back into the blockade, no doubt.",
  ],
  # 3 claims
  "927502890065604650": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. You prefer the darts and the mines still found a way to take three thousand off you.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. You prefer the darts and the mines still found **{mines_lost:,}** to take off you.",
   "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Meal-deal money, at best.",
  ],
  # 2 claims
  "822525776095608914": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. Landed gentry with bonds to their name, queueing for a handout. Marvellous.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Landed gentry with **{bonded:,}** in bonds, queueing for a handout. Marvellous.",
   "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. The estate thanks the taxpayer.",
  ],
  # 2 claims
  "544186272864796672": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. Nearly a thousand lost at the tables and only two claims made. Restraint, of a sort.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. **{casino_lost:,}** lost at the tables and only **{claims}** claims made. Restraint, of a sort.",
   "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Sausage roll money.",
  ],
  # 2 claims
  "1356976795047690261": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>, who once won seven hundred and has been coasting on it ever since.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>, who once won **{best_win:,}** and has been coasting on it ever since.",
   "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Barely a gambler, barely a claimant, ideal citizen.",
  ],
  # 2 claims
  "1416363376589672450": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. One casino game in your entire life, down five UKPence, never went back. Wise.",
-  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. That's eight times your lifetime gambling losses.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. **{casino_games}** casino game in your entire life, **{casino_lost:,}** down, never went back. Wise.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**, comfortably more than your lifetime gambling losses of **{casino_lost:,}**.",
  ],
 }
 
 
-def _benefits_success_line(uid) -> str:
-    """Their own line if they have one and the coin lands, otherwise the house pool."""
+def _benefits_success_line(uid, amount, stats=None) -> tuple:
+    """Their own line if they have one that still holds, otherwise the house pool.
+
+    Returns (line, stats) so the caller can format it without looking anything up twice.
+    """
     personal = _BENEFITS_PERSONAL.get(str(uid))
     if personal and random.random() < _BENEFITS_PERSONAL_CHANCE:
-        return random.choice(personal)
-    return random.choice(_BENEFITS_SUCCESS)
+        if stats is None:
+            stats = _benefits_stats(uid, amount)
+        live = [l for l in personal
+                if all(stats.get(f) is not None for f in _fields(l) - _BENEFITS_ALWAYS)]
+        if live:
+            return random.choice(live), stats
+    return random.choice(_BENEFITS_SUCCESS), (stats or {})
+
+
+
+def _benefits_stats(uid, amount) -> dict:
+    """Live figures for the personal lines, read at claim time.
+
+    A field is None when the joke that needs it has stopped being true - they were up at
+    the casino and now aren't, they had never gambled and now have. _benefits_success_line
+    drops any line whose fields are not all present, so a stale joke falls back to the
+    house pool instead of printing something wrong. That is the whole point of computing
+    these rather than writing the numbers into the text, which is what they were at first
+    and which went out of date the same evening.
+    """
+    def pos(n):
+        return n if n else None
+
+    s = {}
+    try:
+        rows = DatabaseManager.fetch_all(
+            "SELECT game, COUNT(*) n, SUM(net) net, SUM(CASE WHEN net > 0 THEN 1 ELSE 0 END) w "
+            "FROM casino_results WHERE user_id = ? GROUP BY game", (str(uid),)) or []
+        games = sum(r[1] for r in rows)
+        net = sum(r[2] or 0 for r in rows)
+        wins = sum(r[3] or 0 for r in rows)
+        s["casino_games"] = pos(games)
+        s["casino_lost"] = -net if net < 0 else None
+        s["casino_up"] = net if net > 0 else None
+        s["never_gambled"] = "" if games == 0 else None
+        s["no_casino_wins"] = "" if games and not wins else None
+        for game, n, gnet, _w in rows:
+            s[f"{game}_played"] = pos(n)
+            s[f"{game}_lost"] = -(gnet or 0) if (gnet or 0) < 0 else None
+        # the payment as a share of what a given table has taken - the figure that made the
+        # original line funny, and the one most certain to drift
+        for key in ("casino", "roulette", "mines", "blackjack", "slots", "higherlower", "chest"):
+            lost = s.get("casino_lost") if key == "casino" else s.get(f"{key}_lost")
+            s[f"pct_of_{key}"] = f"{amount / lost * 100:.2f}" if lost else None
+        row = DatabaseManager.fetch_one(
+            "SELECT MIN(net), MAX(net) FROM casino_results WHERE user_id = ?", (str(uid),))
+        if row:
+            s["worst_loss"] = -row[0] if row[0] and row[0] < 0 else None
+            s["best_win"] = row[1] if row[1] and row[1] > 0 else None
+
+        row = DatabaseManager.fetch_one(
+            "SELECT COUNT(*), SUM(amount) FROM pay_transfers WHERE payer_id = ?", (str(uid),))
+        s["paid_out_n"], s["paid_out"] = (pos(row[0]), pos(row[1])) if row else (None, None)
+        row = DatabaseManager.fetch_one(
+            "SELECT COUNT(*), SUM(amount) FROM pay_transfers WHERE recipient_id = ?", (str(uid),))
+        s["paid_in_n"], s["paid_in"] = (pos(row[0]), pos(row[1])) if row else (None, None)
+
+        row = DatabaseManager.fetch_one(
+            "SELECT COUNT(*) FROM user_transactions WHERE user_id = ? AND amount > 0 "
+            "AND reason LIKE 'Benefits payment%'", (str(uid),))
+        s["claims"] = pos(row[0]) if row else None
+
+        row = DatabaseManager.fetch_one(
+            "SELECT COUNT(*), SUM(principal) FROM bonds WHERE user_id = ? AND status = 'active'",
+            (str(uid),))
+        s["bonds"], s["bonded"] = (pos(row[0]), pos(row[1])) if row else (None, None)
+
+        row = DatabaseManager.fetch_one(
+            "SELECT COUNT(*), SUM(price_paid) FROM shop_purchases WHERE user_id = ?", (str(uid),))
+        s["shop_items"], s["shop_spent"] = (pos(row[0]), pos(row[1])) if row else (None, None)
+
+        row = DatabaseManager.fetch_one("SELECT count FROM shut_counts WHERE user_id = ?", (str(uid),))
+        s["shut"] = pos(row[0]) if row else None
+
+        row = DatabaseManager.fetch_one(
+            "SELECT (SELECT COUNT(*) FROM pvp_results WHERE winner_id = ?), "
+            "       (SELECT COUNT(*) FROM pvp_results WHERE loser_id = ?)", (str(uid), str(uid)))
+        if row:
+            s["pvp_wins"], s["pvp_losses"] = pos(row[0]), pos(row[1])
+            s["unbeaten"] = "" if row[0] and not row[1] else None
+
+        s["balance"] = get_bb(uid)
+    except Exception:
+        log.debug("benefits stats lookup failed", exc_info=True)
+        return {}
+    return s
+
+
+def _fields(line: str) -> set:
+    """Placeholder names a line needs, ignoring the format spec after any colon."""
+    return {f.split("!")[0].split("[")[0] for _t, f, _s, _c in Formatter().parse(line) if f}
+
+
+_BENEFITS_ALWAYS = {"uid", "amount", "name"}
 
 
 _BENEFITS_RICH = [
@@ -1191,7 +1289,8 @@ async def handle_benefits_command(interaction):
         await _reply("🧾 The benefits office is shut right now - try later.")
         return
     name = getattr(interaction.user, "display_name", None) or getattr(interaction.user, "name", "")
-    await _reply(_benefits_success_line(uid).format(uid=uid, amount=amount, name=name))
+    line, stats = _benefits_success_line(uid, amount)
+    await _reply(line.format(uid=uid, amount=amount, name=name, **stats))
 
     from lib.features.income_badges import award_badge_safe, record_income_source, bump_daily_income
     bump_daily_income("benefits_total", amount)
