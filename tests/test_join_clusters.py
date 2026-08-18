@@ -190,3 +190,66 @@ def test_a_part_banned_report_only_offers_what_is_left():
                                             now=NOW).to_components())
     assert "joincluster:" not in done
     assert "have been banned" in done
+
+
+def _payload(clusters, **kw):
+    import json
+    # ensure_ascii=False so emoji markers are searchable as themselves.
+    return json.dumps(JC.build_cluster_view(clusters, now=NOW, **kw).to_components(),
+                      ensure_ascii=False)
+
+
+def _one_batch():
+    base = NOW - 200 * 86400
+    return JC.find_clusters([rec(1, base), rec(2, base + 60), rec(3, base + 120)], now=NOW)
+
+
+def test_banning_is_not_the_only_option():
+    """A batch a coincidence away from innocent needs a reversible response."""
+    payload = _payload(_one_batch())
+    for control in ("joincluster:ban:", "joincluster:quar:",
+                    "joincluster:watch", "joincluster:dismiss", "joincluster:massban"):
+        assert control in payload, control
+
+
+def test_the_buttons_explain_what_each_one_does():
+    payload = _payload(_one_batch())
+    assert "restricts them but leaves them here" in payload
+    assert "screens their first messages" in payload
+
+
+def test_quarantined_and_watched_members_are_marked_not_struck_through():
+    quar = _payload(_one_batch(), quarantined=["1"])
+    assert "🔒" in quar
+    watched = _payload(_one_batch(), watching=["2"])
+    assert "👁️" in watched
+    # Neither is a removal, so the row must stay actionable.
+    assert "joincluster:ban:" in quar and "joincluster:ban:" in watched
+
+
+def test_dismissing_records_who_and_removes_every_control():
+    payload = _payload(_one_batch(), dismissed_by="4321")
+    assert "not a raid" in payload.lower()
+    assert "<@4321>" in payload
+    assert "joincluster:" not in payload, "a dismissed report must not still offer actions"
+
+
+def test_each_batch_ban_sits_inline_with_its_own_batch():
+    """A Components V2 Section pins the button to the text it acts on, so there is no
+    ambiguity about which accounts 'Ban these 3' means."""
+    comps = JC.build_cluster_view(_one_batch(), now=NOW).to_components()
+
+    def sections(node):
+        if isinstance(node, dict):
+            if node.get("type") == 9:          # Section
+                yield node
+            for key in ("components", "accessory"):
+                yield from sections(node.get(key))
+        elif isinstance(node, list):
+            for item in node:
+                yield from sections(item)
+
+    found = list(sections(comps))
+    assert found, "the batch should render as a Section, not a bare TextDisplay"
+    accessory = found[0].get("accessory") or {}
+    assert accessory.get("custom_id", "").startswith("joincluster:ban:")

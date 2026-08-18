@@ -279,6 +279,29 @@ def register_join(member: Any) -> None:
     logger.info("join-watch is now listening to new joiner %s", member.id)
 
 
+def watch_member(member: Any) -> bool:
+    """Start screening a member who joined before the watch was armed.
+
+    register_join deliberately never backtracks, so a member who arrived while disarmed is
+    invisible to it forever. Staff looking at a suspected batch need the opposite: screen
+    exactly these accounts if they ever speak, without arming the watch for the whole
+    server. Returns False for anyone exempt (bots, staff).
+    """
+    if not _eligible(member):
+        return False
+    _load_buffers()
+    while len(_buffers) >= MAX_WATCHED_MEMBERS:
+        evicted = next(iter(_buffers))
+        _buffers.pop(evicted, None)
+        _locks.pop(evicted, None)
+    _buffers.setdefault(
+        member.id,
+        {"messages": [], "done": False, "registered_at": int(time.time())},
+    )
+    _save_buffers()
+    return True
+
+
 def _snapshot(message: Any) -> dict[str, Any]:
     content = " ".join((message.content or "").split())[:400]
     if not content:

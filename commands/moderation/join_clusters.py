@@ -179,14 +179,24 @@ def _dur(seconds: int) -> str:
 
 
 def build_cluster_view(clusters: list[dict[str, Any]], banned: list[str] | None = None,
+                       quarantined: list[str] | None = None, watching: list[str] | None = None,
+                       dismissed_by: str | None = None,
                        now: int | None = None) -> discord.ui.LayoutView:
     banned = set(banned or [])
+    quarantined = set(quarantined or [])
+    watching = set(watching or [])
     current = int(time.time() if now is None else now)
     ranked = sorted(clusters, key=lambda c: (-_severity(c, current)[0], -len(c["members"])))
     live_ids = [u for u in cluster_user_ids(ranked) if u not in banned]
 
     view = discord.ui.LayoutView(timeout=None)
-    card = discord.ui.Container(accent_colour=0x95A5A6 if not live_ids else 0xE67E22)
+    if dismissed_by:
+        accent = 0x2ECC71
+    elif not live_ids:
+        accent = 0x95A5A6
+    else:
+        accent = 0xE67E22
+    card = discord.ui.Container(accent_colour=accent)
 
     card.add_item(discord.ui.TextDisplay(
         "## 🛰️ These accounts were made together\n"
@@ -207,23 +217,48 @@ def build_cluster_view(clusters: list[dict[str, Any]], banned: list[str] | None 
                 f"Registered <t:{c['created_from']}:f>, {why}.")
         rows = []
         for m in members[:MAX_LISTED]:
-            gone = m["user_id"] in banned
+            uid = m["user_id"]
             name = discord.utils.escape_markdown(str(m.get("username", "?")))
-            line = f"**{name}** · joined <t:{int(m.get('joined_at', 0))}:R> · `{m['user_id']}`"
-            rows.append(f"~~{line}~~ banned" if gone else line)
+            line = f"**{name}** · joined <t:{int(m.get('joined_at', 0))}:R> · `{uid}`"
+            if uid in banned:
+                line = f"~~{line}~~ 🔨"
+            elif uid in quarantined:
+                line += " · 🔒"
+            elif uid in watching:
+                line += " · 👁️"
+            rows.append(line)
         if len(members) > MAX_LISTED:
             rows.append(f"-# …and {len(members) - MAX_LISTED} more")
-        card.add_item(discord.ui.TextDisplay((head + "\n" + "\n".join(rows))[:1800]))
-        if remaining:
-            card.add_item(discord.ui.ActionRow(
-                BanClusterButton(int(c["created_from"]), len(remaining))))
+        body = (head + "\n" + "\n".join(rows))[:1800]
+        key = int(c["created_from"])
+        if remaining and not dismissed_by:
+            # Components V2 Section: the batch's own Ban sits inline against the batch it
+            # acts on, so there is no ambiguity about which accounts a button refers to.
+            card.add_item(discord.ui.Section(
+                discord.ui.TextDisplay(body),
+                accessory=BanClusterButton(key, len(remaining)),
+            ))
+            not_yet = len([m for m in remaining if m["user_id"] not in quarantined])
+            if not_yet:
+                card.add_item(discord.ui.ActionRow(QuarantineClusterButton(key, not_yet)))
+        else:
+            card.add_item(discord.ui.TextDisplay(body))
         card.add_item(discord.ui.Separator())
 
-    if live_ids:
-        card.add_item(discord.ui.ActionRow(MassBanButton(len(live_ids))))
+    if dismissed_by:
         card.add_item(discord.ui.TextDisplay(
-            "-# Ban a single batch with the button under it, or all of them at the bottom. "
-            "Being made at the same time is evidence, not proof - people who signed up "
+            f"✅ **Marked as not a raid** by <@{dismissed_by}>. Nothing was actioned.\n"
+            "-# A new report will be posted if more accounts from these batches arrive."))
+    elif live_ids:
+        card.add_item(discord.ui.ActionRow(
+            MassBanButton(len(live_ids)),
+            WatchAllButton(len([u for u in live_ids if u not in watching])),
+            DismissButton(),
+        ))
+        card.add_item(discord.ui.TextDisplay(
+            "-# 🔨 removes them · 🔒 restricts them but leaves them here · 👁️ screens their "
+            "first messages if they ever speak · ✅ says this was nothing.\n"
+            "-# Being made at the same time is evidence, not proof - people who signed up "
             "together look identical here. Nothing happens automatically."
         ))
     else:
@@ -284,7 +319,7 @@ class BanClusterButton(discord.ui.DynamicItem[discord.ui.Button],
             discord.ui.Button(
                 label=f"Ban these {count}" if count else "Ban this batch",
                 emoji="🔨",
-                style=discord.ButtonStyle.secondary,
+                style=discord.ButtonStyle.danger,
                 custom_id=f"joincluster:ban:{self.key}",
             )
         )
@@ -312,6 +347,117 @@ class BanClusterButton(discord.ui.DynamicItem[discord.ui.Button],
             "Only the accounts in this batch. This cannot be undone from here.\n"
             f"-# {', '.join(ids[:8])}{'…' if len(ids) > 8 else ''}",
             view=_ConfirmBan(ids), ephemeral=True)
+
+
+class QuarantineClusterButton(discord.ui.DynamicItem[discord.ui.Button],
+                              template=r"joincluster:quar:(?P<key>\d+)"):
+    """Restrict a batch without removing it. Reversible, so no confirmation step."""
+
+    def __init__(self, key: int = 0, count: int = 0):
+        self.key = int(key)
+        super().__init__(
+            discord.ui.Button(
+                label=f"Quarantine {count}" if count else "Quarantine",
+                emoji="🔒",
+                style=discord.ButtonStyle.secondary,
+                custom_id=f"joincluster:quar:{self.key}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(int(match["key"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not _is_staff(interaction.user):
+            await interaction.response.send_message("Staff only.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        state = _load_state()
+        handled = set(state.get("banned", [])) | set(state.get("quarantined", []))
+        batch = next((c for c in state.get("clusters", [])
+                      if int(c.get("created_from", 0)) == self.key), None)
+        ids = [m["user_id"] for m in (batch or {}).get("members", []) if m["user_id"] not in handled]
+        if not ids:
+            await interaction.followup.send("Nothing left in that batch.", ephemeral=True)
+            return
+        done, failed = await quarantine_ids(interaction.guild, ids, interaction.user)
+        state["quarantined"] = sorted(set(state.get("quarantined", [])) | set(done))
+        _save_state(state)
+        await _refresh_report(interaction.client)
+        note = f"🔒 Quarantined {len(done)} account(s)."
+        if failed:
+            note += f"\nFailed for {len(failed)} (missing role, or already gone)."
+        await interaction.followup.send(note, ephemeral=True)
+
+
+class WatchAllButton(discord.ui.DynamicItem[discord.ui.Button],
+                     template=r"joincluster:watch"):
+    """Screen these accounts if they ever speak, without arming the whole server."""
+
+    def __init__(self, count: int = 0):
+        super().__init__(
+            discord.ui.Button(
+                label=f"Watch {count}" if count else "Watch them",
+                emoji="👁️",
+                style=discord.ButtonStyle.secondary,
+                custom_id="joincluster:watch",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls()
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not _is_staff(interaction.user):
+            await interaction.response.send_message("Staff only.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        state = _load_state()
+        ids = [u for u in state.get("ids", []) if u not in set(state.get("banned", []))]
+        done, failed = await watch_ids(interaction.guild, ids)
+        state["watching"] = sorted(set(state.get("watching", [])) | set(done))
+        _save_state(state)
+        await _refresh_report(interaction.client)
+        await interaction.followup.send(
+            f"👁️ Now screening the first messages from {len(done)} account(s). "
+            "They are not restricted - if they post anything flaggable the usual "
+            "join-watch report fires.", ephemeral=True)
+
+
+class DismissButton(discord.ui.DynamicItem[discord.ui.Button],
+                    template=r"joincluster:dismiss"):
+    """Mark the batch as looked at and innocent, so the card stops asking."""
+
+    def __init__(self):
+        super().__init__(
+            discord.ui.Button(
+                label="Not a raid",
+                emoji="✅",
+                style=discord.ButtonStyle.success,
+                custom_id="joincluster:dismiss",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls()
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not _is_staff(interaction.user):
+            await interaction.response.send_message("Staff only.", ephemeral=True)
+            return
+        state = _load_state()
+        state["dismissed_by"] = str(interaction.user.id)
+        state["dismissed_at"] = int(time.time())
+        _save_state(state)
+        await interaction.response.edit_message(
+            view=build_cluster_view(state.get("clusters", []),
+                                    banned=state.get("banned", []),
+                                    quarantined=state.get("quarantined", []),
+                                    dismissed_by=state["dismissed_by"]),
+            allowed_mentions=discord.AllowedMentions.none())
 
 
 class _ConfirmBan(discord.ui.View):
@@ -350,6 +496,44 @@ def _is_staff(user: Any) -> bool:
                for r in getattr(user, "roles", []) or [])
 
 
+async def quarantine_ids(guild: Any, ids: list[str], actor: Any) -> tuple[list[str], list[str]]:
+    """Give the quarantine role instead of banning. Reversible, and the right first move
+    when the evidence is a coincidence away from being innocent."""
+    from commands.moderation.anti_raid import QUARANTINE_ROLE_ID, mark_join_quarantined
+    role = guild.get_role(QUARANTINE_ROLE_ID)
+    if role is None:
+        return [], list(ids)
+    done, failed = [], []
+    reason = f"Batch-created account cluster · quarantined by {getattr(actor, 'id', '?')}"
+    for uid in ids:
+        try:
+            member = guild.get_member(int(uid)) or await guild.fetch_member(int(uid))
+            await member.add_roles(role, reason=reason[:500])
+            try:
+                mark_join_quarantined(int(uid))
+            except Exception:
+                logger.debug("could not mark %s quarantined in join history", uid)
+            done.append(uid)
+        except Exception:
+            logger.exception("join-cluster quarantine failed for %s", uid)
+            failed.append(uid)
+    return done, failed
+
+
+async def watch_ids(guild: Any, ids: list[str]) -> tuple[list[str], list[str]]:
+    """Screen these accounts' first messages, without arming the watch server-wide."""
+    from commands.moderation.join_watch import watch_member
+    done, failed = [], []
+    for uid in ids:
+        try:
+            member = guild.get_member(int(uid)) or await guild.fetch_member(int(uid))
+            (done if watch_member(member) else failed).append(uid)
+        except Exception:
+            logger.debug("join-cluster watch failed for %s", uid, exc_info=True)
+            failed.append(uid)
+    return done, failed
+
+
 async def ban_ids(guild: Any, ids: list[str], actor: Any) -> tuple[list[str], list[str]]:
     """Ban each id, reporting rather than raising. One failure must not stop the rest."""
     banned, failed = [], []
@@ -386,9 +570,13 @@ async def _refresh_report(client: Any, banned: list[str] | None = None) -> None:
         return
     try:
         msg = await channel.fetch_message(int(state["message_id"]))
-        await msg.edit(view=build_cluster_view(state.get("clusters", []),
-                                               banned=banned or state.get("banned", [])),
-                       allowed_mentions=discord.AllowedMentions.none())
+        await msg.edit(view=build_cluster_view(
+            state.get("clusters", []),
+            banned=banned or state.get("banned", []),
+            quarantined=state.get("quarantined", []),
+            watching=state.get("watching", []),
+            dismissed_by=state.get("dismissed_by"),
+        ), allowed_mentions=discord.AllowedMentions.none())
     except Exception:
         logger.debug("could not refresh the join-cluster report", exc_info=True)
 
@@ -403,12 +591,16 @@ async def evaluate_joins(client: Any, records: Iterable[dict[str, Any]]) -> None
         sig = _signature(clusters)
         if sig == state.get("signature") and state.get("message_id"):
             return                      # nothing new arrived; leave the card alone
+        if state.get("dismissed_by") and sig == state.get("signature"):
+            return                      # staff said this was nothing
 
         channel = await _get_channel(client, CHANNELS.POLICE_STATION)
         if channel is None:
             return
         banned = state.get("banned", [])
-        view = build_cluster_view(clusters, banned=banned)
+        view = build_cluster_view(clusters, banned=banned,
+                                  quarantined=state.get("quarantined", []),
+                                  watching=state.get("watching", []))
         message_id = state.get("message_id")
         msg = None
         if message_id:
@@ -427,6 +619,8 @@ async def evaluate_joins(client: Any, records: Iterable[dict[str, Any]]) -> None
             "ids": cluster_user_ids(clusters),
             "clusters": clusters,
             "banned": banned,
+            "quarantined": state.get("quarantined", []),
+            "watching": state.get("watching", []),
             "updated_at": int(time.time()),
         })
         logger.info("join-cluster report updated: %s accounts in %s cluster(s)",
