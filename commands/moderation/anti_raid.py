@@ -40,6 +40,15 @@ RECENT_JOIN_TTL_SECONDS = 24 * 60 * 60
 ROLE_PERMISSION_BACKUP_VERSION = 2
 STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
 
+# Two ways to be switched on. FULL is the original: quarantine every join AND strip the
+# risky permissions from every editable role. QUARANTINE_ONLY does the first half and
+# leaves existing members completely alone - the right response to a botnet walking in
+# quietly, where the threat is the new accounts and there is no reason to take embeds and
+# attachments off the people already here.
+MODE_FULL = "full"
+MODE_QUARANTINE_ONLY = "quarantine"
+VALID_MODES = (MODE_FULL, MODE_QUARANTINE_ONLY)
+
 # Permissions stripped from every editable role while a raid lockdown is active.
 # send_messages is deliberately left untouched: quarantine handles new members,
 # while established members can still communicate during an incident.
@@ -60,6 +69,7 @@ class AntiRaidTransition:
     active: bool
     changed: bool
     failures: tuple[str, ...] = ()
+    mode: str = MODE_FULL
 
     @property
     def successful(self) -> bool:
@@ -77,11 +87,13 @@ class AntiRaidJoinOutcome:
 def _anti_raid_state_payload(
     active: bool,
     failures: Iterable[str] = (),
+    mode: str = MODE_FULL,
 ) -> dict[str, Any]:
     clean_failures = [str(failure)[:500] for failure in failures if str(failure).strip()]
     return {
         "version": 1,
         "active": bool(active),
+        "mode": mode if mode in VALID_MODES else MODE_FULL,
         "degraded": bool(clean_failures),
         "failures": clean_failures[:20],
         "updated_at": int(time.time()),
@@ -105,9 +117,13 @@ def _load_anti_raid_state() -> dict[str, Any]:
             if not isinstance(raw_failures, list):
                 raise ValueError("failures is not a list")
             failures = [str(value)[:500] for value in raw_failures[:20]]
+            mode = str(payload.get("mode") or MODE_FULL)
             return {
                 "version": 1,
                 "active": payload["active"],
+                # State written before modes existed was always the full lockdown, so an
+                # in-flight deployment keeps restoring the permissions it actually backed up.
+                "mode": mode if mode in VALID_MODES else MODE_FULL,
                 "degraded": bool(payload.get("degraded", False) or failures),
                 "failures": failures,
                 "updated_at": int(payload.get("updated_at", 0) or 0),
@@ -138,11 +154,17 @@ def is_anti_raid_enabled() -> bool:
     return bool(_load_anti_raid_state()["active"])
 
 
-def set_anti_raid_status(active: bool, failures: Iterable[str] = ()) -> None:
+def anti_raid_mode() -> str:
+    """Which lockdown is running. Meaningless when protection is off."""
+    return str(_load_anti_raid_state().get("mode") or MODE_FULL)
+
+
+def set_anti_raid_status(active: bool, failures: Iterable[str] = (),
+                         mode: str = MODE_FULL) -> None:
     """Persist canonical JSON state first; retain the old marker for compatibility."""
     atomic_write_json(
         ANTI_RAID_STATE_FILE,
-        _anti_raid_state_payload(active, failures),
+        _anti_raid_state_payload(active, failures, mode),
         indent=2,
     )
     try:
@@ -457,12 +479,32 @@ async def disable_role_permissions(guild: discord.Guild) -> list[str]:
     return failures
 
 
-async def enable_anti_raid(guild: discord.Guild) -> AntiRaidTransition:
-    """Enable or retry protection without ever replacing an active-mode backup."""
+async def enable_anti_raid(guild: discord.Guild,
+                           mode: str = MODE_FULL) -> AntiRaidTransition:
+    """Enable, retry, or switch mode without ever replacing an active-mode backup.
+
+    MODE_QUARANTINE_ONLY quarantines joins and touches no role permissions at all, so it
+    takes no backup and has nothing to restore on the way out.
+    """
+    mode = mode if mode in VALID_MODES else MODE_FULL
     async with _mode_lock:
         state = _load_anti_raid_state()
-        if state["active"] and not state["degraded"]:
-            return AntiRaidTransition(active=True, changed=False)
+        current_mode = state.get("mode", MODE_FULL)
+        if state["active"] and not state["degraded"] and current_mode == mode:
+            return AntiRaidTransition(active=True, changed=False, mode=mode)
+
+        # Stepping down from the full lockdown: hand the permissions back before
+        # narrowing, or they stay stripped with nothing left recording that they were.
+        if state["active"] and current_mode == MODE_FULL and mode == MODE_QUARANTINE_ONLY:
+            try:
+                failures = await restore_role_permissions(guild)
+            except Exception as exc:
+                logger.exception("Could not restore permissions while narrowing anti-raid")
+                return AntiRaidTransition(active=True, changed=False, mode=current_mode,
+                                          failures=(f"Could not restore permissions: {exc}",))
+            set_anti_raid_status(True, failures, MODE_QUARANTINE_ONLY)
+            return AntiRaidTransition(active=True, changed=True,
+                                      mode=MODE_QUARANTINE_ONLY, failures=tuple(failures))
         quarantine_role = guild.get_role(QUARANTINE_ROLE_ID)
         if quarantine_role is None:
             failures = ("Lockdown was not enabled because the quarantine role is missing.",)
@@ -475,6 +517,7 @@ async def enable_anti_raid(guild: discord.Guild) -> AntiRaidTransition:
                 active=bool(state["active"]),
                 changed=False,
                 failures=failures,
+                mode=current_mode,
             )
         guild_member = getattr(guild, "me", None)
         if guild_member is not None:
@@ -489,6 +532,7 @@ async def enable_anti_raid(guild: discord.Guild) -> AntiRaidTransition:
                     active=bool(state["active"]),
                     changed=False,
                     failures=failures,
+                    mode=current_mode,
                 )
             if quarantine_role >= guild_member.top_role:
                 failures = ("Lockdown was not enabled because the quarantine role is above the bot.",)
@@ -501,9 +545,21 @@ async def enable_anti_raid(guild: discord.Guild) -> AntiRaidTransition:
                     active=bool(state["active"]),
                     changed=False,
                     failures=failures,
+                    mode=current_mode,
                 )
 
-        changed = not state["active"]
+        changed = not state["active"] or current_mode != mode
+        if mode == MODE_QUARANTINE_ONLY:
+            # Nothing to back up and nothing to strip: joins get quarantined by
+            # handle_new_member_anti_raid, and everyone already here is untouched.
+            try:
+                set_anti_raid_status(True, (), MODE_QUARANTINE_ONLY)
+            except Exception as exc:
+                logger.exception("Could not persist quarantine-only anti-raid state")
+                return AntiRaidTransition(active=False, changed=False, mode=mode,
+                                          failures=(f"Lockdown was not enabled: {exc}",))
+            return AntiRaidTransition(active=True, changed=changed, mode=mode)
+
         if changed:
             try:
                 backup_role_permissions(guild)
@@ -512,6 +568,7 @@ async def enable_anti_raid(guild: discord.Guild) -> AntiRaidTransition:
                 set_anti_raid_status(
                     True,
                     ("Role restriction enforcement did not finish; retry it from the control centre.",),
+                    MODE_FULL,
                 )
             except Exception as exc:
                 logger.exception("Could not initialise anti-raid lockdown")
@@ -519,6 +576,7 @@ async def enable_anti_raid(guild: discord.Guild) -> AntiRaidTransition:
                     active=False,
                     changed=False,
                     failures=(f"Lockdown was not enabled: {exc}",),
+                    mode=current_mode,
                 )
         try:
             failures = await disable_role_permissions(guild)
@@ -526,18 +584,26 @@ async def enable_anti_raid(guild: discord.Guild) -> AntiRaidTransition:
             logger.exception("Unexpected anti-raid restriction failure")
             failures = [f"Unexpected restriction failure: {exc}"]
         try:
-            set_anti_raid_status(True, failures)
+            set_anti_raid_status(True, failures, MODE_FULL)
         except Exception as exc:
             logger.exception("Could not persist final anti-raid enforcement state")
             failures = [*failures, f"Could not persist enforcement state: {exc}"]
-        return AntiRaidTransition(active=True, changed=changed, failures=tuple(failures))
+        return AntiRaidTransition(active=True, changed=changed, failures=tuple(failures),
+                                  mode=MODE_FULL)
 
 
 async def disable_anti_raid(guild: discord.Guild) -> AntiRaidTransition:
     """Restore first and only clear the active flag after a complete restore."""
     async with _mode_lock:
-        if not is_anti_raid_enabled():
+        state = _load_anti_raid_state()
+        if not state["active"]:
             return AntiRaidTransition(active=False, changed=False)
+        if state.get("mode") == MODE_QUARANTINE_ONLY:
+            # No permissions were ever taken, so there is no backup to apply. Running the
+            # restore anyway could push a stale backup from an older full lockdown over
+            # whatever the roles look like now.
+            set_anti_raid_status(False)
+            return AntiRaidTransition(active=False, changed=True, mode=MODE_QUARANTINE_ONLY)
         try:
             failures = await restore_role_permissions(guild)
         except Exception as exc:
@@ -876,6 +942,64 @@ class AntiRaidModeButton(discord.ui.Button):
             )
 
 
+class QuarantineOnlyToggleButton(discord.ui.Button):
+    """Switch between the full lockdown and quarantine-only.
+
+    Useful when the threat is arriving rather than already inside: a botnet joining
+    quietly needs its joins held, and there is no reason to take embeds and attachments
+    off the members who were here first.
+    """
+
+    def __init__(self, active: bool, mode: str):
+        self.target_mode = MODE_FULL if mode == MODE_QUARANTINE_ONLY else MODE_QUARANTINE_ONLY
+        narrowing = self.target_mode == MODE_QUARANTINE_ONLY
+        super().__init__(
+            label="Quarantine joins only" if narrowing else "Also restrict roles",
+            emoji="🔒" if narrowing else "🛡️",
+            style=discord.ButtonStyle.secondary,
+            disabled=not active,
+        )
+
+    async def callback(self, interaction: Interaction) -> None:
+        dashboard: AntiRaidControlView = self.view  # type: ignore[assignment]
+        narrowing = self.target_mode == MODE_QUARANTINE_ONLY
+        dashboard.notice = (
+            "⏳ Narrowing to quarantine-only - handing role permissions back…"
+            if narrowing else
+            "⏳ Widening to the full lockdown - backing up and restricting roles…"
+        )
+        dashboard.busy = True
+        dashboard.render()
+        await interaction.response.edit_message(
+            view=dashboard, allowed_mentions=discord.AllowedMentions.none())
+        try:
+            result = await enable_anti_raid(dashboard.guild, mode=self.target_mode)
+            if result.changed and self.target_mode == MODE_FULL:
+                await send_backup_file(dashboard.guild)
+        finally:
+            dashboard.busy = False
+        if result.failures:
+            dashboard.notice = (
+                f"⚠️ Mode is now {result.mode}; {len(result.failures)} operation(s) failed.\n"
+                f"{_failure_summary(result.failures)}")
+        elif result.changed:
+            dashboard.notice = (
+                f"✅ Quarantine-only: joins are held, existing members untouched. "
+                f"Set by {interaction.user.display_name}."
+                if narrowing else
+                f"✅ Full lockdown: joins held and role permissions restricted. "
+                f"Set by {interaction.user.display_name}.")
+        else:
+            dashboard.notice = "No change needed."
+        await _log_action(
+            dashboard.guild,
+            f"Anti-raid mode set to {result.mode} by {interaction.user} ({interaction.user.id})",
+        )
+        dashboard.render()
+        await interaction.edit_original_response(
+            view=dashboard, allowed_mentions=discord.AllowedMentions.none())
+
+
 class JoinWatchToggleButton(discord.ui.Button):
     def __init__(self, armed: bool):
         super().__init__(
@@ -1130,6 +1254,12 @@ class AntiRaidControlView(discord.ui.LayoutView):
         selected = set(self.selected_member_ids)
 
         accent, status = _panel_theme(active, degraded)
+        if active:
+            status += (
+                "\n🔒 **Quarantine only** - new joins are held; existing members untouched."
+                if mode_state.get("mode") == MODE_QUARANTINE_ONLY
+                else "\n🛡️ **Full lockdown** - joins held and role permissions restricted."
+            )
         panel = discord.ui.Container(accent_colour=accent)
 
         panel.add_item(
@@ -1167,6 +1297,8 @@ class AntiRaidControlView(discord.ui.LayoutView):
             panel.add_item(discord.ui.TextDisplay(f"📋 **Last action**\n{self.notice[:400]}"))
 
         controls: list[discord.ui.Item] = [RefreshButton()]
+        if active:
+            controls.append(QuarantineOnlyToggleButton(active, mode_state.get("mode", MODE_FULL)))
         if active and degraded:
             controls.append(RetryEnforcementButton())
         panel.add_item(discord.ui.ActionRow(*controls))

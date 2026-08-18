@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import json
 import os
 import sys
+import types
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -455,3 +456,105 @@ def test_protection_toggle_announcement_names_the_mod():
     assert "<@42>" in enabled_text and "enabled" in enabled_text
     assert "<@42>" in disabled_text and "disabled" in disabled_text
     assert "3 role operation(s) failed" in disabled_text
+
+
+# ---------------------------------------------------------------------------
+# Quarantine-only: hold the joins, leave everyone already here alone.
+# ---------------------------------------------------------------------------
+class _FakeRole:
+    """Roles compare by position, and the preflight relies on that ordering."""
+
+    def __init__(self, rid, position):
+        self.id = rid
+        self.position = position
+
+    def __ge__(self, other):
+        return self.position >= getattr(other, "position", 0)
+
+    def __lt__(self, other):
+        return self.position < getattr(other, "position", 0)
+
+
+class _ModeGuild:
+    """Tracks whether permissions were touched, which is the whole point of the mode."""
+
+    def __init__(self, bot_top=10, quarantine_pos=5):
+        self.id = 1
+        self.restricted = 0
+        self.restored = 0
+        self._role = _FakeRole(anti_raid.QUARANTINE_ROLE_ID, quarantine_pos)
+        self.me = types.SimpleNamespace(
+            guild_permissions=types.SimpleNamespace(manage_roles=True),
+            top_role=_FakeRole(0, bot_top),
+        )
+
+    def get_role(self, rid):
+        return self._role if rid == anti_raid.QUARANTINE_ROLE_ID else None
+
+
+def _mode_env(monkeypatch, tmp_path):
+    monkeypatch.setattr(anti_raid, "ANTI_RAID_STATE_FILE", str(tmp_path / "state.json"))
+    monkeypatch.setattr(anti_raid, "ANTI_RAID_FILE", str(tmp_path / "marker"))
+    guild = _ModeGuild()
+
+    async def fake_disable(g):
+        guild.restricted += 1
+        return []
+
+    async def fake_restore(g):
+        guild.restored += 1
+        return []
+
+    monkeypatch.setattr(anti_raid, "disable_role_permissions", fake_disable)
+    monkeypatch.setattr(anti_raid, "restore_role_permissions", fake_restore)
+    monkeypatch.setattr(anti_raid, "backup_role_permissions", lambda g: None)
+    return guild
+
+
+def test_quarantine_only_never_touches_role_permissions(monkeypatch, tmp_path):
+    guild = _mode_env(monkeypatch, tmp_path)
+    result = asyncio.run(anti_raid.enable_anti_raid(guild, mode=anti_raid.MODE_QUARANTINE_ONLY))
+    assert result.active and result.mode == anti_raid.MODE_QUARANTINE_ONLY
+    assert guild.restricted == 0, "existing members must be left alone"
+    assert anti_raid.anti_raid_mode() == anti_raid.MODE_QUARANTINE_ONLY
+
+
+def test_the_full_lockdown_still_restricts(monkeypatch, tmp_path):
+    guild = _mode_env(monkeypatch, tmp_path)
+    result = asyncio.run(anti_raid.enable_anti_raid(guild, mode=anti_raid.MODE_FULL))
+    assert result.active and guild.restricted == 1
+
+
+def test_disabling_quarantine_only_does_not_apply_a_stale_backup(monkeypatch, tmp_path):
+    """Nothing was taken, so nothing may be restored - a leftover backup from an older
+    full lockdown would otherwise be written over live permissions."""
+    guild = _mode_env(monkeypatch, tmp_path)
+    asyncio.run(anti_raid.enable_anti_raid(guild, mode=anti_raid.MODE_QUARANTINE_ONLY))
+    result = asyncio.run(anti_raid.disable_anti_raid(guild))
+    assert result.active is False and result.changed
+    assert guild.restored == 0
+
+
+def test_narrowing_from_full_hands_the_permissions_back(monkeypatch, tmp_path):
+    guild = _mode_env(monkeypatch, tmp_path)
+    asyncio.run(anti_raid.enable_anti_raid(guild, mode=anti_raid.MODE_FULL))
+    result = asyncio.run(anti_raid.enable_anti_raid(guild, mode=anti_raid.MODE_QUARANTINE_ONLY))
+    assert result.mode == anti_raid.MODE_QUARANTINE_ONLY
+    assert guild.restored == 1, "stepping down must restore what the full mode took"
+
+
+def test_widening_to_full_restricts_after_quarantine_only(monkeypatch, tmp_path):
+    guild = _mode_env(monkeypatch, tmp_path)
+    asyncio.run(anti_raid.enable_anti_raid(guild, mode=anti_raid.MODE_QUARANTINE_ONLY))
+    result = asyncio.run(anti_raid.enable_anti_raid(guild, mode=anti_raid.MODE_FULL))
+    assert result.mode == anti_raid.MODE_FULL and guild.restricted == 1
+
+
+def test_state_written_before_modes_existed_reads_as_the_full_lockdown(monkeypatch, tmp_path):
+    """An in-flight deployment must keep restoring the permissions it actually backed up."""
+    _mode_env(monkeypatch, tmp_path)
+    import json
+    with open(anti_raid.ANTI_RAID_STATE_FILE, "w") as fh:
+        json.dump({"version": 1, "active": True, "degraded": False,
+                   "failures": [], "updated_at": 1}, fh)
+    assert anti_raid.anti_raid_mode() == anti_raid.MODE_FULL
