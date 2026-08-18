@@ -790,17 +790,16 @@ def _vitals_block(guild: discord.Guild, records: list[dict[str, Any]]) -> tuple[
 def _quarantine_block(
     quarantined: list[discord.Member], selected: set[int]
 ) -> str:
+    """Just the count. The dropdown below already lists every name and is the thing you
+    act on, so printing them again cost half the panel and said nothing extra."""
     if not quarantined:
         return "### 👥 Quarantine · empty\n-# No members currently hold the quarantine role."
-    lines = [f"### 👥 Quarantine · {len(quarantined)} member{'s' if len(quarantined) != 1 else ''}"]
-    for member in quarantined[:10]:
-        marker = " ☑️" if member.id in selected else ""
-        lines.append(
-            f"• {discord.utils.escape_markdown(member.display_name)} · {member.mention} (`{member.id}`){marker}"
-        )
-    if len(quarantined) > 10:
-        lines.append(f"-# …and {len(quarantined) - 10} more")
-    return "\n".join(lines)[:900]
+    count = len(quarantined)
+    line = (f"### 👥 Quarantine · {count} member{'s' if count != 1 else ''}\n"
+            "-# Pick anyone below to release them.")
+    if selected:
+        line += f" · {len(selected)} selected"
+    return line
 
 
 def _panel_context(state: dict[str, Any]) -> str:
@@ -814,20 +813,27 @@ def _panel_context(state: dict[str, Any]) -> str:
 
 
 def _join_watch_block() -> str:
+    """Say what the watch is doing, not what its brief says.
+
+    The brief is a screenful of rules by design, and printing it here pushed everything
+    below it off the panel. "Edit context" shows it in full to anyone who wants it.
+    """
     state = get_join_watch_state()
+    context = " ".join(str(state.get("context") or "").split())
+    first_line = context.split(".")[0][:80] if context else "not set"
     if state["enabled"]:
         return (
             "### 🔎 AI join-watch · Armed\n"
             f"-# Listening to everyone who joins from now on: their first {JW_MAX_MESSAGES} "
             f"messages are AI-screened, and a confident troll verdict gets a "
             f"{JW_TIMEOUT_HOURS}h timeout and a police station report.\n"
-            f"**Context** {_panel_context(state)}"
+            f"-# **Brief:** {first_line}… · open **Edit context** to read or change it."
         )
     return (
         "### 🔎 AI join-watch · Disarmed\n"
         f"-# When armed, members who join are listened to and their first "
         f"{JW_MAX_MESSAGES} messages AI-screened for raid trolling.\n"
-        f"**Context** {_panel_context(state)}"
+        f"-# **Brief:** {first_line}… · open **Edit context** to read or change it."
     )
 
 
@@ -994,6 +1000,49 @@ class QuarantineOnlyToggleButton(discord.ui.Button):
         await _log_action(
             dashboard.guild,
             f"Anti-raid mode set to {result.mode} by {interaction.user} ({interaction.user.id})",
+        )
+        dashboard.render()
+        await interaction.edit_original_response(
+            view=dashboard, allowed_mentions=discord.AllowedMentions.none())
+
+
+class EnableQuarantineOnlyButton(discord.ui.Button):
+    """Start protection in quarantine-only, without passing through the full lockdown.
+
+    Enabling full and then narrowing would strip every role's permissions and hand them
+    straight back - a lot of API churn and a window where members lose embeds for no
+    reason - so this is its own entry point rather than a two-step.
+    """
+
+    def __init__(self):
+        super().__init__(
+            label="Enable quarantine only",
+            emoji="🔒",
+            style=discord.ButtonStyle.primary,
+        )
+
+    async def callback(self, interaction: Interaction) -> None:
+        dashboard: AntiRaidControlView = self.view  # type: ignore[assignment]
+        dashboard.notice = "⏳ Enabling quarantine-only protection…"
+        dashboard.busy = True
+        dashboard.render()
+        await interaction.response.edit_message(
+            view=dashboard, allowed_mentions=discord.AllowedMentions.none())
+        try:
+            result = await enable_anti_raid(dashboard.guild, mode=MODE_QUARANTINE_ONLY)
+        finally:
+            dashboard.busy = False
+        if result.failures:
+            dashboard.notice = (
+                f"⚠️ {len(result.failures)} operation(s) failed.\n"
+                f"{_failure_summary(result.failures)}")
+        else:
+            dashboard.notice = (
+                f"✅ Quarantine-only protection enabled by {interaction.user.display_name}. "
+                "New joins are held; nobody already here is affected.")
+        await _log_action(
+            dashboard.guild,
+            f"Anti-raid enabled (quarantine-only) by {interaction.user} ({interaction.user.id})",
         )
         dashboard.render()
         await interaction.edit_original_response(
@@ -1299,6 +1348,8 @@ class AntiRaidControlView(discord.ui.LayoutView):
         controls: list[discord.ui.Item] = [RefreshButton()]
         if active:
             controls.append(QuarantineOnlyToggleButton(active, mode_state.get("mode", MODE_FULL)))
+        else:
+            controls.append(EnableQuarantineOnlyButton())
         if active and degraded:
             controls.append(RetryEnforcementButton())
         panel.add_item(discord.ui.ActionRow(*controls))

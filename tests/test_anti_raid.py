@@ -558,3 +558,28 @@ def test_state_written_before_modes_existed_reads_as_the_full_lockdown(monkeypat
         json.dump({"version": 1, "active": True, "degraded": False,
                    "failures": [], "updated_at": 1}, fh)
     assert anti_raid.anti_raid_mode() == anti_raid.MODE_FULL
+
+
+def test_quarantine_only_can_be_started_without_going_through_full_lockdown(monkeypatch, tmp_path):
+    """Enabling full then narrowing would strip every role and hand it straight back."""
+    guild = _mode_env(monkeypatch, tmp_path)
+    asyncio.run(anti_raid.enable_anti_raid(guild, mode=anti_raid.MODE_QUARANTINE_ONLY))
+    assert guild.restricted == 0 and guild.restored == 0
+
+
+def test_the_panel_does_not_reprint_the_join_watch_brief():
+    """The brief is a screenful of rules; it pushed everything below it off the panel."""
+    block = anti_raid._join_watch_block()
+    assert "Edit context" in block
+    assert len(block) < 500, "the panel should summarise the brief, not carry it"
+
+
+def test_the_quarantine_block_is_a_count_not_a_roster():
+    """The dropdown below already lists every name and is what you act on."""
+    members = [types.SimpleNamespace(id=i, display_name=f"m{i}", mention=f"<@{i}>")
+               for i in range(20)]
+    block = anti_raid._quarantine_block(members, set())
+    assert "20 members" in block
+    for m in members:
+        assert m.mention not in block, "names belong in the dropdown, not the text"
+    assert anti_raid._quarantine_block([], set()).endswith("quarantine role.")
