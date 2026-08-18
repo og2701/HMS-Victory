@@ -151,49 +151,84 @@ def cluster_user_ids(clusters: list[dict[str, Any]]) -> list[str]:
 
 
 # --- rendering ---------------------------------------------------------------------
-def build_cluster_view(clusters: list[dict[str, Any]], banned: list[str] | None = None
-                       ) -> discord.ui.LayoutView:
-    banned = banned or []
-    ids = cluster_user_ids(clusters)
-    view = discord.ui.LayoutView(timeout=None)
-    card = discord.ui.Container(accent_colour=0xE67E22 if not banned else 0x95A5A6)
+# The card is read by someone deciding whether to ban strangers, so it leads with the
+# claim in plain words, ranks the batches by how mechanical they look, and gives each
+# batch its own button. One "ban all" across five batches of differing quality forced an
+# all-or-nothing call on evidence that is not all the same strength.
+def _severity(cluster: dict[str, Any], now: int) -> tuple[int, str, str]:
+    """(rank, label, why) - higher rank is more mechanical."""
+    gap = int(cluster.get("max_gap", 0))
+    age_days = max(0, (now - int(cluster["created_from"])) // 86400)
+    if gap <= TIGHT_GAP_SECONDS:
+        return (2, "LIKELY SCRIPTED",
+                f"registered {_dur(gap)} apart - a person signing up cannot do that")
+    if age_days <= 7:
+        return (1, "WORTH A LOOK",
+                f"registered {_dur(cluster['spread'])} apart and only {age_days}d old")
+    return (0, "WORTH A LOOK",
+            f"registered {_dur(cluster['spread'])} apart, {age_days}d ago")
 
-    header = (
-        "## 🛰️ Batch-created accounts joining together\n"
-        f"{len(ids)} account(s) across {len(clusters)} creation cluster(s) in the last "
-        f"{JOIN_WINDOW_SECONDS // 3600}h."
-    )
-    card.add_item(discord.ui.TextDisplay(header))
+
+def _dur(seconds: int) -> str:
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    return f"{seconds // 3600}h{(seconds % 3600) // 60:02d}m"
+
+
+def build_cluster_view(clusters: list[dict[str, Any]], banned: list[str] | None = None,
+                       now: int | None = None) -> discord.ui.LayoutView:
+    banned = set(banned or [])
+    current = int(time.time() if now is None else now)
+    ranked = sorted(clusters, key=lambda c: (-_severity(c, current)[0], -len(c["members"])))
+    live_ids = [u for u in cluster_user_ids(ranked) if u not in banned]
+
+    view = discord.ui.LayoutView(timeout=None)
+    card = discord.ui.Container(accent_colour=0x95A5A6 if not live_ids else 0xE67E22)
+
+    card.add_item(discord.ui.TextDisplay(
+        "## 🛰️ These accounts were made together\n"
+        f"**{len(ranked)} batches** of accounts were registered on Discord minutes apart "
+        f"from each other, and have now all joined here within {JOIN_WINDOW_SECONDS // 3600} "
+        "hours. That is what an account farm looks like: someone registers a stack of "
+        "accounts in one sitting, leaves them to age, then walks them in together.\n"
+        f"-# {len(live_ids)} account(s) still in the server · strongest batch first"
+    ))
     card.add_item(discord.ui.Separator())
 
-    for c in clusters:
+    for c in ranked:
         members = c["members"]
-        spread = c["spread"]
-        when = f"<t:{c['created_from']}:f>"
-        spread_txt = ("all within "
-                      + (f"{spread // 60}m" if spread >= 60 else f"{spread}s"))
-        flag = " · ⚠️ **scripted spread**" if c["tight"] else ""
-        lines = [f"**{len(members)} accounts created {when}** · {spread_txt}{flag}"]
+        rank, label, why = _severity(c, current)
+        remaining = [m for m in members if m["user_id"] not in banned]
+        mark = "🔴" if rank == 2 else "🟠"
+        head = (f"### {mark} {label} — {len(members)} accounts\n"
+                f"Registered <t:{c['created_from']}:f>, {why}.")
+        rows = []
         for m in members[:MAX_LISTED]:
-            mark = " ~~banned~~" if m["user_id"] in banned else ""
-            lines.append(
-                f"`{m['user_id']}` {discord.utils.escape_markdown(str(m.get('username','?')))}"
-                f" · joined <t:{int(m.get('joined_at', 0))}:R>{mark}"
-            )
+            gone = m["user_id"] in banned
+            name = discord.utils.escape_markdown(str(m.get("username", "?")))
+            line = f"**{name}** · joined <t:{int(m.get('joined_at', 0))}:R> · `{m['user_id']}`"
+            rows.append(f"~~{line}~~ banned" if gone else line)
         if len(members) > MAX_LISTED:
-            lines.append(f"-# …and {len(members) - MAX_LISTED} more")
-        card.add_item(discord.ui.TextDisplay("\n".join(lines)[:1800]))
+            rows.append(f"-# …and {len(members) - MAX_LISTED} more")
+        card.add_item(discord.ui.TextDisplay((head + "\n" + "\n".join(rows))[:1800]))
+        if remaining:
+            card.add_item(discord.ui.ActionRow(
+                BanClusterButton(int(c["created_from"]), len(remaining))))
         card.add_item(discord.ui.Separator())
 
-    if banned:
+    if live_ids:
+        card.add_item(discord.ui.ActionRow(MassBanButton(len(live_ids))))
         card.add_item(discord.ui.TextDisplay(
-            f"✅ **{len(banned)} account(s) banned** from this report."))
-    else:
-        card.add_item(discord.ui.ActionRow(MassBanButton(len(ids))))
-        card.add_item(discord.ui.TextDisplay(
-            "-# Creation clustering is evidence, not proof - two friends who signed up "
-            "together look the same. Nothing here is automatic; check the list before banning."
+            "-# Ban a single batch with the button under it, or all of them at the bottom. "
+            "Being made at the same time is evidence, not proof - people who signed up "
+            "together look identical here. Nothing happens automatically."
         ))
+    else:
+        card.add_item(discord.ui.TextDisplay(
+            f"✅ **All {len(banned)} account(s) on this report have been banned.**"))
     view.add_item(card)
     return view
 
@@ -236,6 +271,47 @@ class MassBanButton(discord.ui.DynamicItem[discord.ui.Button],
             view=_ConfirmBan(ids),
             ephemeral=True,
         )
+
+
+class BanClusterButton(discord.ui.DynamicItem[discord.ui.Button],
+                       template=r"joincluster:ban:(?P<key>\d+)"):
+    """Ban one batch. Same two-press rule as the ban-all; the key is the batch's
+    creation timestamp, which is stable across edits of the report."""
+
+    def __init__(self, key: int = 0, count: int = 0):
+        self.key = int(key)
+        super().__init__(
+            discord.ui.Button(
+                label=f"Ban these {count}" if count else "Ban this batch",
+                emoji="🔨",
+                style=discord.ButtonStyle.secondary,
+                custom_id=f"joincluster:ban:{self.key}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(int(match["key"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not _is_staff(interaction.user):
+            await interaction.response.send_message("Staff only.", ephemeral=True)
+            return
+        state = _load_state()
+        banned = set(state.get("banned", []))
+        batch = next((c for c in state.get("clusters", [])
+                      if int(c.get("created_from", 0)) == self.key), None)
+        ids = [m["user_id"] for m in (batch or {}).get("members", [])
+               if m["user_id"] not in banned]
+        if not ids:
+            await interaction.response.send_message(
+                "That batch has already been dealt with.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            f"### Ban this batch of {len(ids)}?\n"
+            "Only the accounts in this batch. This cannot be undone from here.\n"
+            f"-# {', '.join(ids[:8])}{'…' if len(ids) > 8 else ''}",
+            view=_ConfirmBan(ids), ephemeral=True)
 
 
 class _ConfirmBan(discord.ui.View):

@@ -149,3 +149,44 @@ def test_the_latest_join_is_the_one_kept():
     clusters = JC.find_clusters(records, now=NOW)
     member = next(m for m in clusters[0]["members"] if m["user_id"] == "1")
     assert member["joined_at"] == NOW - 60
+
+
+def test_the_card_leads_with_the_claim_and_ranks_the_worst_batch_first():
+    import json
+    base_loose = NOW - 200 * 86400
+    base_tight = NOW - 200 * 86400 - 900000
+    records = ([rec(1, base_loose), rec(2, base_loose + 600), rec(3, base_loose + 1500)]
+               + [rec(4, base_tight), rec(5, base_tight + 30), rec(6, base_tight + 60)])
+    clusters = JC.find_clusters(records, now=NOW)
+    payload = json.dumps(JC.build_cluster_view(clusters, now=NOW).to_components())
+    # Says what it means before it says what it found.
+    assert "were made together" in payload
+    assert "account farm" in payload
+    # The scripted batch is labelled and comes before the loose one.
+    assert "LIKELY SCRIPTED" in payload and "WORTH A LOOK" in payload
+    assert payload.index("LIKELY SCRIPTED") < payload.index("WORTH A LOOK")
+
+
+def test_each_batch_gets_its_own_ban_button():
+    """Five batches of differing strength must not force an all-or-nothing call."""
+    import json
+    a = NOW - 200 * 86400
+    b = NOW - 100 * 86400
+    records = [rec(1, a), rec(2, a + 60), rec(3, a + 120),
+               rec(4, b), rec(5, b + 60), rec(6, b + 120)]
+    clusters = JC.find_clusters(records, now=NOW)
+    payload = json.dumps(JC.build_cluster_view(clusters, now=NOW).to_components())
+    assert payload.count("joincluster:ban:") == 2, "one button per batch"
+    assert "joincluster:massban" in payload, "plus the ban-all"
+
+
+def test_a_part_banned_report_only_offers_what_is_left():
+    import json
+    a = NOW - 200 * 86400
+    clusters = JC.find_clusters([rec(1, a), rec(2, a + 60), rec(3, a + 120)], now=NOW)
+    payload = json.dumps(JC.build_cluster_view(clusters, banned=["1"], now=NOW).to_components())
+    assert "Ban these 2" in payload
+    done = json.dumps(JC.build_cluster_view(clusters, banned=["1", "2", "3"],
+                                            now=NOW).to_components())
+    assert "joincluster:" not in done
+    assert "have been banned" in done

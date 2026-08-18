@@ -85,8 +85,8 @@ class AClient(discord.Client):
         try:
             from commands.moderation.join_watch import UntimeoutButton
             self.add_dynamic_items(UntimeoutButton)
-            from commands.moderation.join_clusters import MassBanButton
-            self.add_dynamic_items(MassBanButton)
+            from commands.moderation.join_clusters import BanClusterButton, MassBanButton
+            self.add_dynamic_items(MassBanButton, BanClusterButton)
         except Exception as e:
             logger.warning(f"Could not register join-watch untimeout button: {e}")
         from lib.economy.prediction_system import BetButtons, build_prediction_layout
