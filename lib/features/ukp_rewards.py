@@ -408,6 +408,10 @@ def _prune_welcome_store(store: dict) -> dict:
             keep[nid] = rec
             continue
         rec = _norm(rec)
+        if not rec.get("spoke"):
+            # They joined and never posted a word. Nobody could have got a reply out of
+            # them, so this tells us nothing about the people who said hello.
+            continue
         engaged = {str(x) for x in rec.get("engaged", [])}
         banked = {str(x) for x in rec.get("banked", [])}
         touched = {str(x) for x in rec.get("paid", [])} | {str(x) for x in rec.get("pending", {})}
@@ -424,6 +428,7 @@ def _norm(rec: dict) -> dict:
     rec.setdefault("followed", [])
     rec.setdefault("engaged", [])
     rec.setdefault("banked", [])   # welcomers whose outcome has already been counted
+    rec.setdefault("spoke", False)  # did this newcomer ever post at all?
     paid = rec.get("paid")
     if paid is None:
         # Old records tracked a flat "welcomers" list, all of whom had been paid.
@@ -538,6 +543,9 @@ async def handle_welcome_reward(client, message) -> None:
         # --- 1. the newcomer answers someone -----------------------------------------
         if author_id in store:
             rec = _norm(store[author_id])
+            if not rec.get("spoke"):
+                rec["spoke"] = True
+                dirty = True
             answered = _addressed_by_newcomer(message, store)
             for wid in list(set(rec["pending"]) | {str(x) for x in rec["paid"]}):
                 if wid not in answered:

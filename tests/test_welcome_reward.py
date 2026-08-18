@@ -155,10 +155,16 @@ def test_the_hot_path_gate_ignores_unrelated_chatter(monkeypatch, tmp_path):
 # greeting stops paying up front; have a couple of real conversations and it returns.
 # ---------------------------------------------------------------------------
 def _dry_welcome(client, greeter, uid, monkeypatch):
-    """One welcome that goes nowhere, then age the record out so it is judged."""
+    """A welcome that goes nowhere with a newcomer who was demonstrably reachable.
+
+    The newcomer posts - just never back to the greeter - because a member who joins and
+    never speaks is deliberately not counted against anyone.
+    """
     newcomer = FakeUser(uid)
+    bystander = FakeUser(99999)
     W.register_new_member_join(newcomer)
     _run(client, FakeMsg(greeter, "welcome", mentions=[newcomer]))
+    _run(client, FakeMsg(newcomer, "hi all", mentions=[bystander]))
     store = W.load_json_file(config.WELCOME_TRACKING_FILE)
     store[str(uid)]["joined_at"] -= W._record_life_secs() + 60
     W.save_json_file(config.WELCOME_TRACKING_FILE, store)
@@ -242,3 +248,41 @@ def test_one_persons_streak_does_not_affect_anyone_else(monkeypatch, tmp_path):
     before = len(paid)
     _run(client, FakeMsg(normal, "welcome", mentions=[n]))
     assert len(paid) == before + 1
+
+
+def test_a_newcomer_who_never_speaks_is_nobodys_fault(monkeypatch, tmp_path):
+    """Joining and going silent says nothing about the people who said hello, so it must
+    not count towards anyone's dry streak."""
+    _fresh(monkeypatch, tmp_path)
+    greeter = FakeUser(1)
+    client = FakeClient([greeter])
+
+    for i in range(config.WELCOME_DRY_STREAK_LIMIT * 2):
+        silent = FakeUser(1000 + i)
+        W.register_new_member_join(silent)
+        _run(client, FakeMsg(greeter, "welcome", mentions=[silent]))
+        store = W.load_json_file(config.WELCOME_TRACKING_FILE)
+        store[str(1000 + i)]["joined_at"] -= W._record_life_secs() + 60
+        W.save_json_file(config.WELCOME_TRACKING_FILE, store)
+        W._load_store()
+
+    assert not W.welcome_needs_earning(1), "silent newcomers must not tighten anyone"
+
+
+def test_a_newcomer_who_talks_to_others_still_counts(monkeypatch, tmp_path):
+    """If they were reachable and the greeter never got anywhere, that does count."""
+    _fresh(monkeypatch, tmp_path)
+    greeter, other = FakeUser(1), FakeUser(2)
+    client = FakeClient([greeter, other])
+
+    for i in range(config.WELCOME_DRY_STREAK_LIMIT):
+        n = FakeUser(2000 + i)
+        W.register_new_member_join(n)
+        _run(client, FakeMsg(greeter, "welcome", mentions=[n]))
+        _run(client, FakeMsg(n, "hi everyone", mentions=[other]))   # spoke, just not back
+        store = W.load_json_file(config.WELCOME_TRACKING_FILE)
+        store[str(2000 + i)]["joined_at"] -= W._record_life_secs() + 60
+        W.save_json_file(config.WELCOME_TRACKING_FILE, store)
+        W._load_store()
+
+    assert W.welcome_needs_earning(1)
