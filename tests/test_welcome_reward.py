@@ -49,6 +49,7 @@ class FakeClient:
 def _fresh(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "WELCOME_TRACKING_FILE", str(tmp_path / "welcome.json"))
     monkeypatch.setattr(config, "EARNED_SOURCES_FILE", str(tmp_path / "earned.json"))
+    monkeypatch.setattr(config, "WELCOME_REPUTATION_FILE", str(tmp_path / "rep.json"))
     paid = []
     monkeypatch.setattr(W, "_pay", lambda uid, amt, reason: paid.append((uid, amt)) or True)
     monkeypatch.setattr(W, "_refresh_tracked", W._refresh_tracked)
@@ -60,30 +61,14 @@ def _run(client, msg):
     asyncio.run(W.handle_welcome_reward(client, msg))
 
 
-def test_a_bare_welcome_earns_nothing_until_they_answer(monkeypatch, tmp_path):
+def test_a_welcome_pays_straight_away_by_default(monkeypatch, tmp_path):
     paid = _fresh(monkeypatch, tmp_path)
     newcomer, greeter = FakeUser(2), FakeUser(1)
     W.register_new_member_join(newcomer)
     client = FakeClient([newcomer, greeter])
 
     _run(client, FakeMsg(greeter, "welcome!", mentions=[newcomer]))
-    assert paid == [], "the greeting alone must not pay"
-
-    # The newcomer replies to them: now it pays.
-    _run(client, FakeMsg(newcomer, "thanks!", mentions=[greeter]))
-    assert paid == [(1, config.WELCOME_REWARD)]
-
-
-def test_a_welcome_nobody_answers_never_pays(monkeypatch, tmp_path):
-    paid = _fresh(monkeypatch, tmp_path)
-    newcomer, greeter, other = FakeUser(2), FakeUser(1), FakeUser(3)
-    W.register_new_member_join(newcomer)
-    client = FakeClient([newcomer, greeter, other])
-
-    _run(client, FakeMsg(greeter, "welcome", mentions=[newcomer]))
-    # The newcomer talks, but to somebody else.
-    _run(client, FakeMsg(newcomer, "hi", mentions=[other]))
-    assert paid == []
+    assert paid == [(1, config.WELCOME_REWARD)], "the ordinary case pays on the greeting"
 
 
 def test_going_back_to_them_later_pays_the_follow_up(monkeypatch, tmp_path):
@@ -112,19 +97,15 @@ def test_going_back_to_them_later_pays_the_follow_up(monkeypatch, tmp_path):
     assert len(paid) == 2
 
 
-def test_the_reply_has_to_be_reasonably_prompt(monkeypatch, tmp_path):
+def test_the_greeter_cap_counts_held_and_paid_alike(monkeypatch, tmp_path):
     paid = _fresh(monkeypatch, tmp_path)
-    newcomer, greeter = FakeUser(2), FakeUser(1)
+    newcomer = FakeUser(200)
     W.register_new_member_join(newcomer)
-    client = FakeClient([newcomer, greeter])
-    _run(client, FakeMsg(greeter, "welcome", mentions=[newcomer]))
-
-    store = W.load_json_file(config.WELCOME_TRACKING_FILE)
-    store["2"]["pending"]["1"] -= config.WELCOME_REPLY_WINDOW_MINUTES * 60 + 60
-    W.save_json_file(config.WELCOME_TRACKING_FILE, store)
-
-    _run(client, FakeMsg(newcomer, "sorry, was away", mentions=[greeter]))
-    assert paid == []
+    greeters = [FakeUser(i) for i in range(1, config.WELCOME_MAX_WELCOMERS + 3)]
+    client = FakeClient([newcomer, *greeters])
+    for g in greeters:
+        _run(client, FakeMsg(g, "welcome", mentions=[newcomer]))
+    assert len(paid) == config.WELCOME_MAX_WELCOMERS
 
 
 def test_the_greeter_cap_still_holds(monkeypatch, tmp_path):
@@ -136,7 +117,7 @@ def test_the_greeter_cap_still_holds(monkeypatch, tmp_path):
     for g in greeters:
         _run(client, FakeMsg(g, "welcome", mentions=[newcomer]))
     store = W.load_json_file(config.WELCOME_TRACKING_FILE)
-    assert len(store["100"]["pending"]) == config.WELCOME_MAX_WELCOMERS
+    assert len(store["100"]["paid"]) == config.WELCOME_MAX_WELCOMERS
 
 
 def test_you_cannot_welcome_yourself(monkeypatch, tmp_path):
@@ -167,3 +148,97 @@ def test_the_hot_path_gate_ignores_unrelated_chatter(monkeypatch, tmp_path):
     assert W.welcome_activity_possible(FakeMsg(greeter, "hi", mentions=[newcomer]))
     assert W.welcome_activity_possible(FakeMsg(newcomer, "hello all"))
     assert not W.welcome_activity_possible(FakeMsg(bystander, "anyway, football"))
+
+
+# ---------------------------------------------------------------------------
+# The payout is earned back, not removed: greet without ever engaging and your
+# greeting stops paying up front; have a couple of real conversations and it returns.
+# ---------------------------------------------------------------------------
+def _dry_welcome(client, greeter, uid, monkeypatch):
+    """One welcome that goes nowhere, then age the record out so it is judged."""
+    newcomer = FakeUser(uid)
+    W.register_new_member_join(newcomer)
+    _run(client, FakeMsg(greeter, "welcome", mentions=[newcomer]))
+    store = W.load_json_file(config.WELCOME_TRACKING_FILE)
+    store[str(uid)]["joined_at"] -= W._record_life_secs() + 60
+    W.save_json_file(config.WELCOME_TRACKING_FILE, store)
+    W._load_store()          # pruning is what banks the outcome
+
+
+def test_a_run_of_dead_welcomes_makes_the_greeting_earn_its_money(monkeypatch, tmp_path):
+    paid = _fresh(monkeypatch, tmp_path)
+    greeter = FakeUser(1)
+    client = FakeClient([greeter])
+
+    for i in range(config.WELCOME_DRY_STREAK_LIMIT):
+        assert not W.welcome_needs_earning(1), "should still be paying up front"
+        _dry_welcome(client, greeter, 100 + i, monkeypatch)
+
+    assert W.welcome_needs_earning(1), "a full dry streak should tighten it"
+    before = len(paid)
+    late = FakeUser(500)
+    W.register_new_member_join(late)
+    _run(client, FakeMsg(greeter, "welcome", mentions=[late]))
+    assert len(paid) == before, "now the greeting alone pays nothing"
+
+    _run(client, FakeMsg(late, "oh hi", mentions=[greeter]))
+    assert paid[-1] == (1, config.WELCOME_REWARD), "it pays once they answer"
+
+
+def test_one_good_welcome_resets_the_streak(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    greeter = FakeUser(1)
+    client = FakeClient([greeter])
+    for i in range(config.WELCOME_DRY_STREAK_LIMIT - 1):
+        _dry_welcome(client, greeter, 200 + i, monkeypatch)
+
+    # A newcomer who actually replies breaks the run before it trips.
+    good = FakeUser(300)
+    W.register_new_member_join(good)
+    _run(client, FakeMsg(greeter, "welcome", mentions=[good]))
+    _run(client, FakeMsg(good, "hiya", mentions=[greeter]))
+    store = W.load_json_file(config.WELCOME_TRACKING_FILE)
+    store["300"]["joined_at"] -= W._record_life_secs() + 60
+    W.save_json_file(config.WELCOME_TRACKING_FILE, store)
+    W._load_store()
+
+    _dry_welcome(client, greeter, 400, monkeypatch)
+    assert not W.welcome_needs_earning(1)
+
+
+def test_engaging_again_earns_instant_payment_back(monkeypatch, tmp_path):
+    paid = _fresh(monkeypatch, tmp_path)
+    greeter = FakeUser(1)
+    client = FakeClient([greeter])
+    for i in range(config.WELCOME_DRY_STREAK_LIMIT):
+        _dry_welcome(client, greeter, 600 + i, monkeypatch)
+    assert W.welcome_needs_earning(1)
+
+    # Real conversations while tightened.
+    for i in range(config.WELCOME_REDEMPTION_ENGAGEMENTS):
+        n = FakeUser(700 + i)
+        W.register_new_member_join(n)
+        _run(client, FakeMsg(greeter, "hello there", mentions=[n]))
+        _run(client, FakeMsg(n, "hey!", mentions=[greeter]))
+
+    assert not W.welcome_needs_earning(1), "engagement should restore instant payment"
+    before = len(paid)
+    fresh = FakeUser(800)
+    W.register_new_member_join(fresh)
+    _run(client, FakeMsg(greeter, "welcome", mentions=[fresh]))
+    assert len(paid) == before + 1, "back to paying on the greeting"
+
+
+def test_one_persons_streak_does_not_affect_anyone_else(monkeypatch, tmp_path):
+    paid = _fresh(monkeypatch, tmp_path)
+    farmer, normal = FakeUser(1), FakeUser(9)
+    client = FakeClient([farmer, normal])
+    for i in range(config.WELCOME_DRY_STREAK_LIMIT):
+        _dry_welcome(client, farmer, 900 + i, monkeypatch)
+    assert W.welcome_needs_earning(1) and not W.welcome_needs_earning(9)
+
+    n = FakeUser(950)
+    W.register_new_member_join(n)
+    before = len(paid)
+    _run(client, FakeMsg(normal, "welcome", mentions=[n]))
+    assert len(paid) == before + 1

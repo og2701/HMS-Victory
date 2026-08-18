@@ -291,7 +291,16 @@ def _refresh_tracked(store: dict) -> None:
 
 
 def _load_store() -> dict:
-    store = _prune_welcome_store(load_json_file(config.WELCOME_TRACKING_FILE) or {})
+    """Load, prune, and persist if pruning dropped anything.
+
+    Persisting matters: pruning is what banks each welcomer's outcome, so a dropped record
+    left on disk would be judged again on the very next message and count its dry welcomes
+    over and over - tightening someone after one dead greeting instead of five.
+    """
+    raw = load_json_file(config.WELCOME_TRACKING_FILE) or {}
+    store = _prune_welcome_store(raw)
+    if len(store) != len(raw):
+        save_json_file(config.WELCOME_TRACKING_FILE, store)
     _refresh_tracked(store)
     return store
 
@@ -334,10 +343,78 @@ def welcome_window_open() -> bool:
     return bool(_tracked)
 
 
+# --- per-member welcome reputation ------------------------------------------------
+# One rolling list of outcomes per member: "engaged" if that newcomer ever answered them
+# or they ever went back, "dry" if the greeting was the whole relationship. Outcomes are
+# only decided when a newcomer's record is pruned, because until then a welcome can still
+# turn into a conversation.
+def _load_rep() -> dict:
+    return load_json_file(config.WELCOME_REPUTATION_FILE) or {}
+
+
+def _save_rep(rep: dict) -> None:
+    save_json_file(config.WELCOME_REPUTATION_FILE, rep)
+
+
+def welcome_needs_earning(user_id, rep: dict | None = None) -> bool:
+    """True when this member's greeting no longer pays up front.
+
+    Trips after WELCOME_DRY_STREAK_LIMIT welcomes in a row that went nowhere, and clears
+    once they have had WELCOME_REDEMPTION_ENGAGEMENTS real interactions since.
+    """
+    rep = _load_rep() if rep is None else rep
+    entry = rep.get(str(user_id)) or {}
+    return bool(entry.get("earning", False))
+
+
+def _record_outcomes(pairs: list[tuple[str, bool]]) -> None:
+    """Log (welcomer, engaged) results and move members in and out of earning mode."""
+    if not pairs:
+        return
+    limit = int(getattr(config, "WELCOME_DRY_STREAK_LIMIT", 5))
+    redeem = int(getattr(config, "WELCOME_REDEMPTION_ENGAGEMENTS", 2))
+    keep = int(getattr(config, "WELCOME_HISTORY_KEPT", 12))
+    rep = _load_rep()
+    for welcomer, engaged in pairs:
+        entry = rep.setdefault(str(welcomer), {"recent": [], "earning": False, "since": 0})
+        entry["recent"] = (entry.get("recent", []) + ["engaged" if engaged else "dry"])[-keep:]
+        if engaged:
+            entry["since"] = int(entry.get("since", 0)) + 1
+            if entry.get("earning") and entry["since"] >= redeem:
+                entry["earning"] = False
+                entry["since"] = 0
+        else:
+            recent = entry["recent"]
+            if len(recent) >= limit and all(x == "dry" for x in recent[-limit:]):
+                if not entry.get("earning"):
+                    entry["earning"] = True
+                    entry["since"] = 0
+    _save_rep(rep)
+
+
 def _prune_welcome_store(store: dict) -> dict:
+    """Drop finished newcomers, banking each welcomer's outcome on the way out.
+
+    A welcome is only judged here: while the record lives, a quiet greeting can still
+    become a conversation, and marking it dry earlier would punish someone for a newcomer
+    who simply had not replied yet.
+    """
     cutoff = int(time.time()) - _record_life_secs()
-    return {k: v for k, v in store.items()
-            if isinstance(v, dict) and v.get("joined_at", 0) >= cutoff}
+    keep, outcomes = {}, []
+    for nid, rec in store.items():
+        if not isinstance(rec, dict):
+            continue
+        if rec.get("joined_at", 0) >= cutoff:
+            keep[nid] = rec
+            continue
+        rec = _norm(rec)
+        engaged = {str(x) for x in rec.get("engaged", [])}
+        banked = {str(x) for x in rec.get("banked", [])}
+        touched = {str(x) for x in rec.get("paid", [])} | {str(x) for x in rec.get("pending", {})}
+        for wid in touched - banked:
+            outcomes.append((wid, wid in engaged))
+    _record_outcomes(outcomes)
+    return keep
 
 
 def _norm(rec: dict) -> dict:
@@ -345,6 +422,8 @@ def _norm(rec: dict) -> dict:
     rec.setdefault("joined_at", int(time.time()))
     rec.setdefault("pending", {})
     rec.setdefault("followed", [])
+    rec.setdefault("engaged", [])
+    rec.setdefault("banked", [])   # welcomers whose outcome has already been counted
     paid = rec.get("paid")
     if paid is None:
         # Old records tracked a flat "welcomers" list, all of whom had been paid.
@@ -456,25 +535,34 @@ async def handle_welcome_reward(client, message) -> None:
         payouts = []          # (welcomer_id, amount, reason)
         dirty = False
 
-        # --- 1. the newcomer answers someone: their claim pays ------------------------
+        # --- 1. the newcomer answers someone -----------------------------------------
         if author_id in store:
             rec = _norm(store[author_id])
             answered = _addressed_by_newcomer(message, store)
-            for wid in list(rec["pending"]):
+            for wid in list(set(rec["pending"]) | {str(x) for x in rec["paid"]}):
                 if wid not in answered:
                     continue
-                greeted_at = rec["pending"].get(wid, 0)
-                if now - greeted_at > _reply_window_secs():
-                    continue
-                if int(wid) in rec["paid"] or wid in [str(x) for x in rec["paid"]]:
-                    rec["pending"].pop(wid, None)
+                # Any reply is engagement, whether or not money is owed for it.
+                if wid not in [str(x) for x in rec["engaged"]]:
+                    rec["engaged"].append(int(wid))
+                    # Counted now rather than at prune time: someone earning their payout
+                    # back should not have to wait two days for the record to expire.
+                    if wid not in [str(x) for x in rec["banked"]]:
+                        rec["banked"].append(int(wid))
+                        _record_outcomes([(wid, True)])
                     dirty = True
-                    continue
+                greeted_at = rec["pending"].get(wid)
+                if greeted_at is None:
+                    continue            # they were paid up front; this just clears the mark
                 rec["pending"].pop(wid, None)
+                dirty = True
+                if now - int(greeted_at) > _reply_window_secs():
+                    continue            # too late to pay the held-back welcome
+                if wid in [str(x) for x in rec["paid"]]:
+                    continue
                 rec["paid"].append(int(wid))
                 payouts.append((int(wid), int(getattr(config, "WELCOME_REWARD", 10)),
                                 "A new member replied to your welcome"))
-                dirty = True
             store[author_id] = rec
 
         # --- 2. someone addresses a newcomer ------------------------------------------
@@ -488,26 +576,40 @@ async def handle_welcome_reward(client, message) -> None:
                 rec = _norm(store.get(nid) or {})
                 paid = [str(x) for x in rec["paid"]]
                 followed = [str(x) for x in rec["followed"]]
+                engaged = [str(x) for x in rec["engaged"]]
 
-                # 2a. a later, separate visit back to someone who already answered you
-                if author_id in paid and author_id not in followed:
+                # 2a. a later, separate visit back to someone they already greeted
+                if (author_id in paid or author_id in rec["pending"]) \
+                        and author_id not in followed:
                     since_join = now - rec.get("joined_at", now)
                     if follow_min <= since_join <= _followup_window_secs():
                         rec["followed"].append(int(author_id))
+                        if author_id not in engaged:
+                            rec["engaged"].append(int(author_id))
+                        if author_id not in [str(x) for x in rec["banked"]]:
+                            rec["banked"].append(int(author_id))
+                            _record_outcomes([(author_id, True)])
                         payouts.append(
                             (int(author_id),
                              int(getattr(config, "WELCOME_FOLLOWUP_REWARD", 15)),
                              "You went back to a new member later"))
                         dirty = True
 
-                # 2b. first contact inside the join window books a claim
+                # 2b. the greeting itself
                 elif author_id not in paid and author_id not in rec["pending"]:
                     if now - rec.get("joined_at", 0) > _welcome_window_secs():
-                        pass          # too late to greet, but a follow-up may still count
+                        pass          # too late to greet; a follow-up may still count
                     elif len(rec["pending"]) + len(rec["paid"]) >= cap:
                         pass          # this newcomer's pot is spoken for
-                    else:
+                    elif welcome_needs_earning(author_id):
+                        # Recent welcomes all went nowhere, so this one pays on a reply.
                         rec["pending"][author_id] = now
+                        dirty = True
+                    else:
+                        rec["paid"].append(int(author_id))
+                        payouts.append((int(author_id),
+                                        int(getattr(config, "WELCOME_REWARD", 10)),
+                                        "Welcomed a new member"))
                         dirty = True
                 store[nid] = rec
 
@@ -560,11 +662,13 @@ async def _welcome_first_time_dm(client, welcomer_id, amount: int, reason: str) 
         user = client.get_user(int(welcomer_id)) or await client.fetch_user(int(welcomer_id))
         await user.send(
             f"\U0001F44B {reason} - you've earned **{amount:,} UKPence**!\n\n"
-            "Welcoming pays when the new member actually answers you, not just for saying "
-            "hello - so asking them something is worth more than a one-word greeting. Go "
-            "back and talk to them again later and you'll earn a bit more again.\n\n"
-            "It's automatic and silent from here, so this is the only time you'll hear "
-            "about it. \U0001FA99"
+            "Welcoming a new member pays automatically. Go back and talk to them again "
+            "later and you'll earn a bit more again.\n\n"
+            "One thing worth knowing: if a long run of your welcomes goes nowhere - nobody "
+            "ever replies and you never go back - greetings stop paying up front and start "
+            "paying when the new member answers you instead. A couple of real conversations "
+            "puts it back to normal.\n\n"
+            "It's silent from here, so this is the only time you'll hear about it. \U0001FA99"
         )
     except Exception:
         log.debug("welcome first-time DM failed (DMs closed?)", exc_info=True)

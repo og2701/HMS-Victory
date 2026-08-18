@@ -288,13 +288,24 @@ BUMP_REWARD = 50                  # UKP for the member who bumps the server on D
 # of #general, 87.9% of welcomes were never followed by another word to that person, and
 # the biggest welcomers had the worst follow-up rates - the old rule paid the greeting,
 # so the cheapest way to earn was to type one word and move on.
-WELCOME_REWARD = 10               # UKP paid to a greeter once the newcomer replies to them
-WELCOME_WINDOW_MINUTES = 15       # how long after a join a greeting can still book a claim
-WELCOME_REPLY_WINDOW_MINUTES = 60 # how long the newcomer has to reply for the claim to pay
-WELCOME_MAX_WELCOMERS = 5         # only the first N greeters per newcomer can claim (stops a join wave being farmed)
-WELCOME_FOLLOWUP_REWARD = 15      # UKP for going back to that newcomer later - the bit that was missing
+WELCOME_REWARD = 10               # UKP for welcoming a new member - paid on the greeting
+WELCOME_WINDOW_MINUTES = 15       # how long after a join a welcome still counts
+WELCOME_MAX_WELCOMERS = 5         # only the first N welcomers per newcomer are paid
+WELCOME_FOLLOWUP_REWARD = 15      # UKP for going back to that newcomer later
 WELCOME_FOLLOWUP_MIN_HOURS = 1    # a follow-up has to be a separate occasion, not the same conversation
 WELCOME_FOLLOWUP_WINDOW_HOURS = 48  # ...and still close enough to their join to matter
+
+# Greeting pays straight away for almost everyone. Measured over three months, though,
+# 87.9% of welcomes were never followed by another word to that person, and the heaviest
+# welcomers had the worst follow-up rates - one greeted 155 newcomers and spoke again to
+# 3% of them. So the payout is earned back rather than removed: go this many welcomes in
+# a row without the newcomer ever replying or you ever going back to them, and your
+# greeting stops paying up front and starts paying when they answer instead. Get a couple
+# of real conversations and it goes back to paying immediately.
+WELCOME_DRY_STREAK_LIMIT = 5      # consecutive welcomes that went nowhere before it tightens
+WELCOME_REDEMPTION_ENGAGEMENTS = 2  # real interactions needed to get instant pay back
+WELCOME_REPLY_WINDOW_MINUTES = 60 # while tightened, how long the newcomer has to reply
+WELCOME_HISTORY_KEPT = 12         # rolling welcome outcomes remembered per member
 # Channels whose messages can't enter the Hall of Fame (announcements etc. always get a
 # lot of reactions but aren't organic HoF-worthy posts). Bot/webhook and Discord
 # announcement-type channels are also excluded automatically in the HoF check.
@@ -348,6 +359,7 @@ XP_FILE = os.path.join(JSON_DATA_DIR, "chat_leaderboard.json")
 ECONOMY_METRICS_FILE = os.path.join(JSON_DATA_DIR, "economy_metrics.json")
 TREE_WATER_FILE = os.path.join(JSON_DATA_DIR, "tree_water_rewards.json")
 BUMP_REWARD_FILE = os.path.join(JSON_DATA_DIR, "bump_rewards.json")
+WELCOME_REPUTATION_FILE = os.path.join(JSON_DATA_DIR, "welcome_reputation.json")  # per-member welcome outcomes
 WELCOME_TRACKING_FILE = os.path.join(JSON_DATA_DIR, "welcome_tracking.json")  # pending newcomers + who's already been paid for welcoming them
 GAME_PINNACLE_FILE = os.path.join(JSON_DATA_DIR, "game_pinnacles.json")  # per-user top-tier wins in the new games (for a secret cross-game badge)
 BENEFITS_FILE = os.path.join(JSON_DATA_DIR, "benefits_claims.json")
