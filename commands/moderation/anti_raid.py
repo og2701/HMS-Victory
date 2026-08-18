@@ -1311,12 +1311,17 @@ class AntiRaidControlView(discord.ui.LayoutView):
             )
         panel = discord.ui.Container(accent_colour=accent)
 
-        panel.add_item(
-            discord.ui.Section(
-                discord.ui.TextDisplay(f"## 🛡️ Anti-Raid Control Centre\n{status}"),
-                accessory=AntiRaidModeButton(active),
-            )
-        )
+        # Both ways to switch protection on sit together at the top. A Section accessory
+        # holds a single component, so the header is plain text and the two buttons share
+        # a row beneath it rather than one being stranded down with Refresh.
+        panel.add_item(discord.ui.TextDisplay(f"## 🛡️ Anti-Raid Control Centre\n{status}"))
+        mode_controls: list[discord.ui.Item] = [AntiRaidModeButton(active)]
+        if active:
+            mode_controls.append(
+                QuarantineOnlyToggleButton(active, mode_state.get("mode", MODE_FULL)))
+        else:
+            mode_controls.append(EnableQuarantineOnlyButton())
+        panel.add_item(discord.ui.ActionRow(*mode_controls))
         panel.add_item(discord.ui.Separator())
 
         vitals, warnings = _vitals_block(self.guild, records)
@@ -1346,10 +1351,6 @@ class AntiRaidControlView(discord.ui.LayoutView):
             panel.add_item(discord.ui.TextDisplay(f"📋 **Last action**\n{self.notice[:400]}"))
 
         controls: list[discord.ui.Item] = [RefreshButton()]
-        if active:
-            controls.append(QuarantineOnlyToggleButton(active, mode_state.get("mode", MODE_FULL)))
-        else:
-            controls.append(EnableQuarantineOnlyButton())
         if active and degraded:
             controls.append(RetryEnforcementButton())
         panel.add_item(discord.ui.ActionRow(*controls))
