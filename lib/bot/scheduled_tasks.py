@@ -914,15 +914,23 @@ async def process_voice_activity_log(client):
                 logger.warning("[VOICE] activity thread unreachable; dropping %s events", len(events))
                 return
 
+        def _where(event, side):
+            """Channel name, or its id when the channel was not in the cache."""
+            name = event.get(side)
+            if name:
+                return f"**{discord.utils.escape_markdown(name)}**"
+            cid = event.get(f"{side}_id")
+            return f"**<#{cid}>**" if cid else "**an unknown channel**"
+
         lines = []
         for e in events:
             when, who = f"<t:{e['at']}:T>", f"**{discord.utils.escape_markdown(e['who'])}**"
             if e["kind"] == "join":
-                lines.append(f"{when} 🟢 {who} joined **{e['to']}**")
+                lines.append(f"{when} 🟢 {who} joined {_where(e, 'to')}")
             elif e["kind"] == "leave":
-                lines.append(f"{when} 🔴 {who} left **{e['from']}**{_voice_spell(e['held'])}")
+                lines.append(f"{when} 🔴 {who} left {_where(e, 'from')}{_voice_spell(e['held'])}")
             else:
-                lines.append(f"{when} 🔁 {who} moved **{e['from']}** → **{e['to']}**")
+                lines.append(f"{when} 🔁 {who} moved {_where(e, 'from')} → {_where(e, 'to')}")
 
         # Embed descriptions cap at 4096, so a long stretch goes out as several.
         chunk, size = [], 0

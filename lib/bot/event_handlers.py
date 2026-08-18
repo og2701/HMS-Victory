@@ -1971,6 +1971,10 @@ def record_voice_activity(client, kind, member, before_channel=None, after_chann
         "id": member.id,
         "from": getattr(before_channel, "name", None),
         "to": getattr(after_channel, "name", None),
+        # ids as well as names: a channel missing from the cache resolves to None, and an
+        # id still says which one it was
+        "from_id": getattr(before_channel, "id", None),
+        "to_id": getattr(after_channel, "id", None),
         "held": held,
     })
     if len(buf) > VOICE_ACTIVITY_BUFFER_LIMIT:
@@ -2054,8 +2058,9 @@ async def on_voice_state_update(member, before, after):
             await award_badge_with_notify(client, member.id, _b)
 
     # --- Voice activity log ---
-    # Last, so a failure here can never cost someone a badge or a stage payout.
-    if not member.bot and before.channel != after.channel:
+    # Last, so a failure here can never cost someone a badge or a stage payout. Every voice
+    # channel in the guild, bots included: no filtering, on purpose.
+    if before.channel != after.channel:
         if after.channel and not before.channel:
             record_voice_activity(client, "join", member, after_channel=after.channel)
         elif before.channel and not after.channel:
