@@ -482,6 +482,9 @@ class AClient(discord.Client):
 
     async def on_message_delete(self, message):
         if message.author.bot:
+            # Bots get their own path: only logged when somebody else did it, and kept out
+            # of the deleted_messages count, which is there to measure human chat.
+            await on_bot_message_delete(self, message)
             return
         initialize_summary_data()
         update_summary_data("deleted_messages")

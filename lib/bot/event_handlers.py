@@ -1413,18 +1413,95 @@ async def on_member_ban(guild, user):
     pass
 
 
-async def on_message_delete(client, message):
-    async for entry in message.guild.audit_logs(
-        action=discord.AuditLogAction.message_delete, limit=1
-    ):
-        if (
-            entry.target.id == message.author.id
-            and entry.extra.channel.id == message.channel.id
+async def find_message_deleter(message, *, wait=1.5, window=20):
+    """Who deleted this message, or None if it went of its own accord.
+
+    Discord only writes a message_delete audit entry when someone removes SOMEONE ELSE's
+    message, so None also means the author deleted their own - which is how a bot's
+    delete_after cleanup is told apart from a mod removing its output.
+
+    The entry is written asynchronously and lands after the event, hence the wait. The
+    window matters as much: Discord folds repeat deletions of the same target in the same
+    channel into one entry with a count, so without a freshness check an hour-old entry
+    happily attributes a delete to whoever last did one there.
+    """
+    try:
+        await asyncio.sleep(wait)
+        cutoff = discord.utils.utcnow() - timedelta(seconds=window)
+        async for entry in message.guild.audit_logs(
+            action=discord.AuditLogAction.message_delete, limit=5
         ):
-            deleter = entry.user
-            break
-    else:
-        deleter = None
+            if entry.created_at < cutoff:
+                break
+            target, extra = entry.target, entry.extra
+            if (target and target.id == message.author.id
+                    and getattr(extra, "channel", None)
+                    and extra.channel.id == message.channel.id):
+                return entry.user
+    except discord.Forbidden:
+        logger.debug("No audit log access, cannot attribute the deletion")
+    except Exception:
+        logger.debug("Deleter lookup failed", exc_info=True)
+    return None
+
+
+def _summarise_deleted_bot_message(message, limit=1000):
+    """What the message actually said. Bot posts are usually embeds, so plain content alone
+    would log an empty box for most of them. Distinct from _summarise_message above, which
+    only counts the embeds rather than reading them."""
+    parts = []
+    if message.content:
+        parts.append(message.content)
+    for em in message.embeds:
+        bits = [b for b in (em.title, em.description) if b]
+        bits += [f"{f.name}: {f.value}" for f in em.fields[:3]]
+        if bits:
+            parts.append("[embed] " + " | ".join(bits))
+        elif em.image or em.thumbnail:
+            parts.append("[embed image]")
+    for att in message.attachments:
+        parts.append(f"[file] {att.filename}")
+    if not parts:
+        return "*(no text - components or an empty embed)*"
+    text = "\n".join(parts)
+    return text if len(text) <= limit else text[:limit - 1] + "\u2026"
+
+
+async def on_bot_message_delete(client, message):
+    """Log the bot's own posts being removed by somebody else.
+
+    Only somebody else: the bot deletes its own messages constantly - delete_after notices,
+    casino churn, cleanup jobs - and logging those would bury the channel in noise and tell
+    nobody anything.
+    """
+    try:
+        deleter = await find_message_deleter(message)
+        if deleter is None or deleter.id == message.author.id:
+            return
+        log_channel = client.get_channel(CHANNELS.LOGS)
+        if log_channel is None:
+            return
+        embed = discord.Embed(
+            title="Bot Message Deleted",
+            description=(
+                f"A message from {message.author.mention} ({message.author.id}) in "
+                f"{message.channel.mention} was deleted by {deleter.mention} ({deleter.id})."
+                f"\n\n>>> {_summarise_deleted_bot_message(message)}"
+            ),
+            color=discord.Color.dark_red(),
+        )
+        embed.add_field(
+            name="Channel Link",
+            value=f"[Click here](https://discord.com/channels/{message.guild.id}/{message.channel.id})",
+        )
+        embed.set_footer(text=f"Message ID {message.id}")
+        await log_channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+    except Exception:
+        logger.error("Failed to log a deleted bot message", exc_info=True)
+
+
+async def on_message_delete(client, message):
+    deleter = await find_message_deleter(message)
     log_channel = client.get_channel(CHANNELS.LOGS)
     channel_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
     if log_channel is not None:
