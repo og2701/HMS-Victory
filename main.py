@@ -86,11 +86,15 @@ class AClient(discord.Client):
             from commands.moderation.join_watch import UntimeoutButton
             self.add_dynamic_items(UntimeoutButton)
             from commands.moderation.join_clusters import (
+                AppealAcceptButton, AppealButton, AppealRejectButton,
                 BanClusterButton, DismissButton, MassBanButton,
                 QuarantineClusterButton, WatchAllButton,
             )
             self.add_dynamic_items(MassBanButton, BanClusterButton,
-                                   QuarantineClusterButton, WatchAllButton, DismissButton)
+                                   QuarantineClusterButton, WatchAllButton, DismissButton,
+                                   # Appeal buttons live in DMs indefinitely, so they must
+                                   # be re-registered on every boot or an old DM goes dead.
+                                   AppealButton, AppealAcceptButton, AppealRejectButton)
         except Exception as e:
             logger.warning(f"Could not register join-watch untimeout button: {e}")
         from lib.economy.prediction_system import BetButtons, build_prediction_layout

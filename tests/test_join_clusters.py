@@ -350,3 +350,95 @@ def test_rows_mention_the_account_so_staff_can_open_the_profile():
         assert f"`{uid}`" in payload, "the raw id stays for manual follow-up"
     # The name recorded at join survives a later rename or a leave.
     assert "user1" in payload
+
+
+# ---------------------------------------------------------------------------
+# Appeals: this ban is issued on a pattern, so the one case it cannot rule out
+# is the innocent one.
+# ---------------------------------------------------------------------------
+class _FakeMember:
+    def __init__(self, uid):
+        self.id = uid
+        self.dms = []
+
+    async def send(self, **kwargs):
+        self.dms.append(kwargs)
+
+
+class _FakeGuild:
+    def __init__(self, members=(), dm_fails=False):
+        self._members = {m.id: m for m in members}
+        self.banned = []
+        self.unbanned = []
+        self.dm_fails = dm_fails
+
+    def get_member(self, uid):
+        m = self._members.get(int(uid))
+        if m and self.dm_fails:
+            async def boom(**kwargs):
+                raise RuntimeError("DMs closed")
+            m.send = boom
+        return m
+
+    async def ban(self, obj, reason=None, delete_message_seconds=0):
+        self.banned.append(int(obj.id))
+
+    async def unban(self, obj, reason=None):
+        self.unbanned.append(int(obj.id))
+
+
+def test_the_dm_goes_out_before_the_ban_or_it_never_arrives(monkeypatch, tmp_path):
+    """Once banned we no longer share a guild, so Discord refuses the DM."""
+    import asyncio
+    monkeypatch.setattr(JC, "APPEALS_FILE", str(tmp_path / "appeals.json"))
+    member = _FakeMember(7)
+    guild = _FakeGuild([member])
+    order = []
+    real_ban = guild.ban
+
+    async def tracked_ban(obj, **kw):
+        order.append("ban")
+        await real_ban(obj, **kw)
+
+    guild.ban = tracked_ban
+    original_send = member.send
+
+    async def tracked_send(**kw):
+        order.append("dm")
+        await original_send(**kw)
+
+    member.send = tracked_send
+    banned, failed = asyncio.run(JC.ban_ids(guild, ["7"], _FakeMember(1)))
+    assert banned == ["7"] and not failed
+    assert order == ["dm", "ban"], "the notice must precede the ban"
+
+
+def test_a_closed_dm_does_not_stop_the_ban(monkeypatch, tmp_path):
+    import asyncio
+    monkeypatch.setattr(JC, "APPEALS_FILE", str(tmp_path / "appeals.json"))
+    guild = _FakeGuild([_FakeMember(8)], dm_fails=True)
+    banned, failed = asyncio.run(JC.ban_ids(guild, ["8"], _FakeMember(1)))
+    assert banned == ["8"] and guild.banned == [8]
+
+
+def test_the_dm_carries_an_appeal_button_keyed_to_the_user():
+    import json
+    payload = json.dumps(JC._ban_dm_view(4242).to_components(), ensure_ascii=False)
+    assert "joincluster:appeal:4242" in payload
+    assert "isn't you" in payload, "it must invite them to say it was wrong"
+    assert "no time limit" in payload
+
+
+def test_the_appeal_button_survives_a_restart_from_its_custom_id():
+    """No in-memory state: the id travels in the custom_id, so an old DM still works."""
+    match = JC.AppealButton.__discord_ui_compiled_template__.fullmatch(
+        "joincluster:appeal:99")
+    assert match and match["uid"] == "99"
+
+
+def test_a_second_appeal_is_refused_once_one_is_pending(monkeypatch, tmp_path):
+    monkeypatch.setattr(JC, "APPEALS_FILE", str(tmp_path / "appeals.json"))
+    JC._save_appeals({"5": {"status": "pending", "text": "please", "at": 1}})
+    assert JC._load_appeals()["5"]["status"] == "pending"
+    JC._save_appeals({"5": {"status": "rejected"}})
+    assert JC._load_appeals()["5"]["status"] == "rejected"

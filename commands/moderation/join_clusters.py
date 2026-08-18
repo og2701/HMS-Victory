@@ -34,6 +34,7 @@ from config import CHANNELS, JSON_DATA_DIR, ROLES
 logger = logging.getLogger(__name__)
 
 CLUSTER_STATE_FILE = os.path.join(JSON_DATA_DIR, "join_clusters.json")
+APPEALS_FILE = os.path.join(JSON_DATA_DIR, "join_cluster_appeals.json")
 STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
 
 # A run is chained on the gap between consecutive creations rather than measured from the
@@ -549,6 +550,16 @@ async def ban_ids(guild: Any, ids: list[str], actor: Any) -> tuple[list[str], li
     banned, failed = [], []
     reason = f"Batch-created account cluster · authorised by {getattr(actor, 'id', '?')}"
     for uid in ids:
+        # Tell them first. Once the ban lands we no longer share a guild and Discord will
+        # refuse the DM, so a notice sent afterwards silently goes nowhere. A closed DM is
+        # not a reason to skip the ban.
+        try:
+            member = guild.get_member(int(uid))
+            if member is not None:
+                await member.send(view=_ban_dm_view(int(uid)),
+                                  allowed_mentions=discord.AllowedMentions.none())
+        except Exception:
+            logger.debug("could not DM %s before banning (DMs closed?)", uid, exc_info=True)
         try:
             await guild.ban(discord.Object(id=int(uid)), reason=reason[:500],
                             delete_message_seconds=0)
@@ -557,6 +568,228 @@ async def ban_ids(guild: Any, ids: list[str], actor: Any) -> tuple[list[str], li
             logger.exception("join-cluster ban failed for %s", uid)
             failed.append(uid)
     return banned, failed
+
+
+# --- appeals -----------------------------------------------------------------------
+# Clustering is evidence, not proof, and this ban is issued on a pattern rather than on
+# anything the person did. So everyone banned by it gets told why and given a way to say
+# it was wrong - the one case the detector cannot rule out is the innocent one.
+#
+# The DM has to be sent before the ban lands: once they are banned we no longer share a
+# guild and Discord will not deliver it. The button is a dynamic item whose custom_id
+# carries the user id, so it keeps working after any number of restarts with no state
+# held in memory.
+def _load_appeals() -> dict[str, Any]:
+    try:
+        with open(APPEALS_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _save_appeals(data: dict[str, Any]) -> None:
+    try:
+        from lib.core.file_operations import atomic_write_json
+        atomic_write_json(APPEALS_FILE, data, indent=2)
+    except Exception:
+        logger.exception("could not persist ban appeals")
+
+
+def _ban_dm_view(user_id: int) -> discord.ui.LayoutView:
+    view = discord.ui.LayoutView(timeout=None)
+    card = discord.ui.Container(accent_colour=0xE74C3C)
+    card.add_item(discord.ui.TextDisplay(
+        "## You've been banned from UK Place\n"
+        "Your account was removed as part of a group of accounts that were all registered "
+        "within a few minutes of each other and joined the server together. That pattern "
+        "is how account farms work.\n\n"
+        "**If that isn't you, say so.** This was a judgement about a pattern, not about "
+        "anything you personally did, and it can be wrong - people who signed up at the "
+        "same time as friends look identical to us."))
+    card.add_item(discord.ui.Separator())
+    card.add_item(discord.ui.ActionRow(AppealButton(user_id)))
+    card.add_item(discord.ui.TextDisplay(
+        "-# There's no time limit on this. Staff will see your appeal and decide."))
+    view.add_item(card)
+    return view
+
+
+class AppealButton(discord.ui.DynamicItem[discord.ui.Button],
+                   template=r"joincluster:appeal:(?P<uid>\d+)"):
+    """Lives in a DM forever. The id is in the custom_id, so no restart can orphan it."""
+
+    def __init__(self, user_id: int = 0):
+        self.user_id = int(user_id)
+        super().__init__(
+            discord.ui.Button(
+                label="Appeal this ban",
+                emoji="📩",
+                style=discord.ButtonStyle.primary,
+                custom_id=f"joincluster:appeal:{self.user_id}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(int(match["uid"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        appeals = _load_appeals()
+        existing = appeals.get(str(self.user_id))
+        if existing and existing.get("status") == "pending":
+            await interaction.response.send_message(
+                "You've already sent an appeal - staff have it. You'll hear back here.",
+                ephemeral=True)
+            return
+        if existing and existing.get("status") == "rejected":
+            await interaction.response.send_message(
+                "Your appeal was reviewed and turned down. Sending another won't change it.",
+                ephemeral=True)
+            return
+        await interaction.response.send_modal(_AppealModal(self.user_id))
+
+
+class _AppealModal(discord.ui.Modal, title="Appeal your ban"):
+    reason = discord.ui.TextInput(
+        label="Why should this be reversed?",
+        style=discord.TextStyle.paragraph,
+        placeholder="e.g. I made my account at the same time as a friend and we joined together.",
+        max_length=900,
+        required=True,
+    )
+
+    def __init__(self, user_id: int):
+        super().__init__()
+        self.user_id = int(user_id)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        text = str(self.reason.value or "").strip()
+        appeals = _load_appeals()
+        appeals[str(self.user_id)] = {
+            "status": "pending",
+            "text": text[:900],
+            "at": int(time.time()),
+            "name": str(interaction.user),
+        }
+        _save_appeals(appeals)
+        posted = await _post_appeal(interaction.client, self.user_id, text, interaction.user)
+        await interaction.response.send_message(
+            "📩 Sent. Staff will review it and you'll get a reply here."
+            if posted else
+            "📩 Saved, but it couldn't be delivered to staff automatically - "
+            "they can still find it.",
+            ephemeral=True)
+
+
+async def _post_appeal(client: Any, user_id: int, text: str, user: Any) -> bool:
+    channel = await _get_channel(client, CHANNELS.POLICE_STATION)
+    if channel is None:
+        return False
+    view = discord.ui.LayoutView(timeout=None)
+    card = discord.ui.Container(accent_colour=0x3498DB)
+    card.add_item(discord.ui.TextDisplay(
+        f"## 📩 Ban appeal\n<@{user_id}> `{user_id}` · "
+        f"{discord.utils.escape_markdown(str(user))}\n"
+        f"Banned as part of a creation cluster.\n\n"
+        f">>> {discord.utils.escape_markdown(text)[:900]}"))
+    card.add_item(discord.ui.ActionRow(AppealAcceptButton(user_id), AppealRejectButton(user_id)))
+    view.add_item(card)
+    try:
+        await channel.send(view=view, allowed_mentions=discord.AllowedMentions.none())
+        return True
+    except Exception:
+        logger.exception("could not post ban appeal for %s", user_id)
+        return False
+
+
+async def _tell_appellant(client: Any, user_id: int, text: str) -> None:
+    try:
+        user = client.get_user(int(user_id)) or await client.fetch_user(int(user_id))
+        await user.send(text)
+    except Exception:
+        logger.debug("could not reach appellant %s", user_id, exc_info=True)
+
+
+class AppealAcceptButton(discord.ui.DynamicItem[discord.ui.Button],
+                         template=r"joincluster:appealok:(?P<uid>\d+)"):
+    def __init__(self, user_id: int = 0):
+        self.user_id = int(user_id)
+        super().__init__(discord.ui.Button(
+            label="Unban", emoji="✅", style=discord.ButtonStyle.success,
+            custom_id=f"joincluster:appealok:{self.user_id}"))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(int(match["uid"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not _is_staff(interaction.user):
+            await interaction.response.send_message("Staff only.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            await interaction.guild.unban(discord.Object(id=self.user_id),
+                                          reason=f"Appeal accepted by {interaction.user.id}")
+        except Exception:
+            logger.exception("unban failed for %s", self.user_id)
+            await interaction.followup.send("Couldn't unban them - check the audit log.",
+                                            ephemeral=True)
+            return
+        appeals = _load_appeals()
+        entry = appeals.setdefault(str(self.user_id), {})
+        entry.update({"status": "accepted", "by": str(interaction.user.id)})
+        _save_appeals(appeals)
+        state = _load_state()
+        state["banned"] = [u for u in state.get("banned", []) if str(u) != str(self.user_id)]
+        _save_state(state)
+        await _tell_appellant(
+            interaction.client, self.user_id,
+            "✅ Your appeal was accepted and your ban has been lifted. "
+            "Sorry for the trouble - you're welcome back.")
+        await interaction.message.edit(
+            view=_appeal_closed_view(self.user_id, "accepted", interaction.user.id),
+            allowed_mentions=discord.AllowedMentions.none())
+        await interaction.followup.send("✅ Unbanned and told them.", ephemeral=True)
+
+
+class AppealRejectButton(discord.ui.DynamicItem[discord.ui.Button],
+                         template=r"joincluster:appealno:(?P<uid>\d+)"):
+    def __init__(self, user_id: int = 0):
+        self.user_id = int(user_id)
+        super().__init__(discord.ui.Button(
+            label="Reject", emoji="🚫", style=discord.ButtonStyle.danger,
+            custom_id=f"joincluster:appealno:{self.user_id}"))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(int(match["uid"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not _is_staff(interaction.user):
+            await interaction.response.send_message("Staff only.", ephemeral=True)
+            return
+        appeals = _load_appeals()
+        entry = appeals.setdefault(str(self.user_id), {})
+        entry.update({"status": "rejected", "by": str(interaction.user.id)})
+        _save_appeals(appeals)
+        await _tell_appellant(
+            interaction.client, self.user_id,
+            "Your appeal was reviewed and the ban stands. You won't be able to appeal again.")
+        await interaction.response.edit_message(
+            view=_appeal_closed_view(self.user_id, "rejected", interaction.user.id),
+            allowed_mentions=discord.AllowedMentions.none())
+
+
+def _appeal_closed_view(user_id: int, outcome: str, by_id: int) -> discord.ui.LayoutView:
+    view = discord.ui.LayoutView(timeout=None)
+    icon, word = ("✅", "accepted - unbanned") if outcome == "accepted" else ("🚫", "rejected")
+    card = discord.ui.Container(accent_colour=0x2ECC71 if outcome == "accepted" else 0x95A5A6)
+    card.add_item(discord.ui.TextDisplay(
+        f"{icon} **Appeal {word}** — <@{user_id}> `{user_id}`\n"
+        f"-# Decided by <@{by_id}>. They have been told."))
+    view.add_item(card)
+    return view
 
 
 # --- posting / editing the live report ----------------------------------------------
