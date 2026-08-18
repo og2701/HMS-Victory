@@ -704,6 +704,261 @@ _BENEFITS_SUCCESS = [
     "🧾 <@{uid}>, the welfare gods smiled. **{amount:,} UKPence** is yours. Use it wisely or don't, we won't judge.",
     "🧾 Signed, sealed, deposited. <@{uid}> gets **{amount:,} UKPence**. The taxpayer salutes you.",
 ]
+# Personal lines for the heaviest claimants, mixed in with the house pool so the regulars
+# get something written for them rather than the same fifteen jokes forever. Keyed by user
+# id and worded so nothing goes stale: the claimant is always addressed with a mention or
+# {name}, both of which follow whatever nickname they are wearing today, and every joke is
+# anchored to something in their record - what they have lost at the mines, who they keep
+# sending money to - rather than to what they happen to be called.
+#
+# Drawn from the top 50 by claim count. Four of that fifty have left the server and are not
+# here. Someone falling off the list keeps their lines; they cost nothing and the ids are
+# stable even when the names are not.
+_BENEFITS_PERSONAL_CHANCE = 0.5   # how often a regular gets their own line over the pool
+_BENEFITS_PERSONAL = {
+ # 67 claims
+ "479207279850291221": [
+  "🧾 Claim approved, again. <@{uid}> takes **{amount:,} UKPence**. The case worker stopped reading your forms months ago and just stamps them.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>, who has fed a small nation's GDP into the mines. The state admires the commitment, not the strategy.",
+  "🧾 The office knows your name, your face and the sound of your footsteps. **{amount:,} UKPence**, <@{uid}>. Same time tomorrow.",
+ ],
+ # 40 claims
+ "564147759108718664": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Curious how the generosity arrives in big lumps and the poverty arrives daily.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence** - a fraction of what you've handed to mates, but this one's the taxpayer's, so it counts.",
+ ],
+ # 38 claims
+ "1283837687551361117": [
+  "🧾 **{amount:,} UKPence** to <@{uid}>, who has played more casino rounds than most people have had hot dinners. Perhaps a hot dinner instead.",
+  "🧾 Approved. <@{uid}> pockets **{amount:,} UKPence**. You own more badges than balance, which is a life philosophy of sorts.",
+ ],
+ # 37 claims
+ "596789292991512619": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. You don't gamble, you shop, which the state considers the more dangerous habit.",
+  "🧾 Claim approved. <@{uid}> receives **{amount:,} UKPence**. Straight to the shop with it, as tradition demands.",
+ ],
+ # 37 claims
+ "276119377395449856": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Between this and the hundred-odd bailouts from your mates, you're practically a registered charity.",
+  "🧾 Approved, with a note in the margin. <@{uid}> takes **{amount:,} UKPence**. The fraud team says hello, by the way.",
+ ],
+ # 32 claims
+ "795003706717372462": [
+  "🧾 **{amount:,} UKPence** to <@{uid}>. Money moves through you at a rate the Treasury would call alarming.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. See if you can keep this one in the account for a whole hour.",
+ ],
+ # 31 claims
+ "311526098884362242": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>, the server's most cautious degenerate. Higher or lower? Higher, obviously.",
+  "🧾 Payment through. <@{uid}> receives **{amount:,} UKPence**, or roughly nine hundred of your usual bet.",
+ ],
+ # 25 claims
+ "285860055570579457": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. It won't touch the sides. It has never touched the sides.",
+  "🧾 The state grants <@{uid}> **{amount:,} UKPence**, about 0.05% of what the roulette wheel has taken off you. Baby steps.",
+  "🧾 Approved. <@{uid}> is undefeated against actual people and comprehensively beaten by a wheel. **{amount:,} UKPence**, and our sympathies.",
+ ],
+ # 25 claims
+ "966101821527588885": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. The dealer is already shuffling. Don't.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Twist, stick, or possibly go outside.",
+ ],
+ # 24 claims
+ "235505165321502731": [
+  "🧾 **{amount:,} UKPence** to <@{uid}>. The mines are that way, as if you needed telling.",
+  "🧾 Claim through. <@{uid}> gets **{amount:,} UKPence**. Statistically this becomes three tiles and a sigh.",
+ ],
+ # 21 claims
+ "265927604303953920": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. You've lost fourteen duels and won one, so the state is your most reliable opponent.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. The slots await their tithe.",
+ ],
+ # 18 claims
+ "1398652914737741956": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>, shut up seventy-eight times and still going. The state respects persistence.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Please don't spend it all on being told to be quiet.",
+ ],
+ # 16 claims
+ "1453319508587450514": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. You've given away thirty thousand, so this is less a benefit than a rounding error.",
+  "🧾 The state matches your generosity with **{amount:,} UKPence**, <@{uid}>. It is not a fair match and we both know it.",
+ ],
+ # 15 claims
+ "1457814413913489480": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. You've paid out thousands and been paid back one single UKPence. Someone owes you.",
+  "🧾 Approved. <@{uid}> takes **{amount:,} UKPence**. Consider keeping this one for yourself, as a treat.",
+ ],
+ # 14 claims
+ "812666688184909834": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. You locked a thousand in a bond and then queued at the job centre. Respect.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Straight into savings, if we know you.",
+ ],
+ # 13 claims
+ "1022210566871322754": [
+  "🧾 **{amount:,} UKPence** to <@{uid}>. The shop has taken more off you than the casino, which is genuinely impressive.",
+  "🧾 Claim approved. <@{uid}> receives **{amount:,} UKPence**. Something in the shop is already calling.",
+ ],
+ # 12 claims
+ "355962189175324674": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>, who is thousands up at the casino and turned up at the job centre anyway. Astonishing.",
+  "🧾 Approved, reluctantly. <@{uid}> gets **{amount:,} UKPence**. Two thousand hands played and still claiming hardship.",
+ ],
+ # 12 claims
+ "1337505182904225934": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Pillage responsibly.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence** from the public purse. No raiding required.",
+ ],
+ # 12 claims
+ "860098855621623809": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>, forty thousand up at the tables. This is the single funniest claim we process.",
+  "🧾 Approved on a technicality. <@{uid}> gets **{amount:,} UKPence**. You gave away more than this while reading the message.",
+ ],
+ # 10 claims
+ "1103015741994827828": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Mind the mines, they've had you before.",
+  "🧾 Claim through. <@{uid}> receives **{amount:,} UKPence**. Try the shop, it separates you from it more slowly.",
+ ],
+ # 9 claims
+ "1525639310697562232": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Three fraud sanctions on the record and the state is still handing you money. Extraordinary.",
+  "🧾 Approved, against everyone's advice. <@{uid}> receives **{amount:,} UKPence**. The fraud office is watching this one specifically.",
+ ],
+ # 8 claims
+ "797901947734065162": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Sat on thousands and claiming anyway. Frugal or shameless, we can't tell.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Not one ruinous decision on your record. Keep it that way.",
+ ],
+ # 8 claims
+ "335303938301624324": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>, up a grand total of two UKPence at the casino. A man who knows when to leave.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Your gambling career remains, technically, profitable.",
+ ],
+ # 7 claims
+ "1113593004083654707": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Four casino games, no wins at all. The state admires a clean sheet.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Statistically, that's your winnings for the year already beaten.",
+ ],
+ # 7 claims
+ "958093967310872617": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Nothing in the account and fourteen hundred posted to other people. Curious accounting.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Please keep at least some of it.",
+ ],
+ # 6 claims
+ "352040780543557634": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>, who has thirty-two thousand in the bank. The threshold is a suggestion and you found the loophole.",
+  "🧾 Approved, teeth gritted. <@{uid}> receives **{amount:,} UKPence**. Somewhere a bond of yours earns more than this while you read it.",
+ ],
+ # 6 claims
+ "450760126765334539": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Seven casino games, one of them five thousand down. Quality over quantity.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Perhaps sit this round out.",
+ ],
+ # 6 claims
+ "640108968139554827": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>, who has made sixty-three separate payments to other people. A one-man welfare state.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. The state is sending support, over.",
+ ],
+ # 5 claims
+ "1519692185031676024": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>, who has never once been near the casino. A genuinely clean record. Suspicious.",
+  "🧾 Approved with a commendation. <@{uid}> gets **{amount:,} UKPence** and the only untouched gambling history in the top fifty.",
+ ],
+ # 5 claims
+ "1497606176660127956": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>, delivered on time, in full, and of the promised quality. No complaints will be accepted.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. A small, respectable sum for a small, respectable operator.",
+ ],
+ # 5 claims
+ "719962546995593287": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>, who has won thirteen thousand in one go and lost ten thousand in another. This will feel very small.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**, or about a two-hundredth of your idea of a bet.",
+ ],
+ # 5 claims
+ "1129755209195859988": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Two casino games, up nine hundred, never returned. The state would like to study you.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Whatever you're doing, keep doing it.",
+ ],
+ # 5 claims
+ "1486905808515104858": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Back to the blockade with you.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Say nothing, spend it quietly.",
+ ],
+ # 4 claims
+ "792139113587277835": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Ten thousand tied up in bonds and here you are with a begging bowl. Bold.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Shut up twenty-eight times and still claiming, which is its own kind of resilience.",
+ ],
+ # 4 claims
+ "811136986018480128": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>, whose entire net worth was one UKPence this morning. Upward trajectory.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. The blackjack table is not your friend, whatever it says.",
+ ],
+ # 4 claims
+ "1457809767794872350": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. The mines have had eighteen hundred off you. This is not a rescue, it's a gesture.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Good afternoon to you too.",
+ ],
+ # 4 claims
+ "811987329707147264": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>, quietly in profit at the casino and claiming benefits regardless. This is Sparta, apparently.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Twenty-seven games and still ahead. Don't ruin it.",
+ ],
+ # 3 claims
+ "281162022320734218": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Sideways into the mines as usual.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Small claim, small stakes, no complaints.",
+ ],
+ # 3 claims
+ "1486077107695255714": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. The chests have taken nearly a thousand off you and you keep opening them.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. There is nothing good in the next one either.",
+ ],
+ # 3 claims
+ "1429772674913009725": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. First of your name, last in the queue, nothing in the account.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Ten casino games was quite enough, wasn't it.",
+ ],
+ # 3 claims
+ "1086932531498201170": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Twelve games, nothing banked, still smiling.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Straight back into the blockade, no doubt.",
+ ],
+ # 3 claims
+ "927502890065604650": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. You prefer the darts and the mines still found a way to take three thousand off you.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Meal-deal money, at best.",
+ ],
+ # 2 claims
+ "822525776095608914": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Landed gentry with bonds to their name, queueing for a handout. Marvellous.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. The estate thanks the taxpayer.",
+ ],
+ # 2 claims
+ "544186272864796672": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. Nearly a thousand lost at the tables and only two claims made. Restraint, of a sort.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Sausage roll money.",
+ ],
+ # 2 claims
+ "1356976795047690261": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>, who once won seven hundred and has been coasting on it ever since.",
+  "🧾 Approved. <@{uid}> gets **{amount:,} UKPence**. Barely a gambler, barely a claimant, ideal citizen.",
+ ],
+ # 2 claims
+ "1416363376589672450": [
+  "🧾 **{amount:,} UKPence** for <@{uid}>. One casino game in your entire life, down five UKPence, never went back. Wise.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. That's eight times your lifetime gambling losses.",
+ ],
+}
+
+
+def _benefits_success_line(uid) -> str:
+    """Their own line if they have one and the coin lands, otherwise the house pool."""
+    personal = _BENEFITS_PERSONAL.get(str(uid))
+    if personal and random.random() < _BENEFITS_PERSONAL_CHANCE:
+        return random.choice(personal)
+    return random.choice(_BENEFITS_SUCCESS)
+
+
 _BENEFITS_RICH = [
     "💼 You've got **{bal:,} UKPence** - benefits are for those under {threshold:,}. Get back to work.",
     "💼 Claim denied: **{bal:,} UKPence** is too rich for the state's blood (cutoff is {threshold:,}).",
@@ -935,7 +1190,8 @@ async def handle_benefits_command(interaction):
     if not _pay(uid, amount, "Benefits payment"):
         await _reply("🧾 The benefits office is shut right now - try later.")
         return
-    await _reply(random.choice(_BENEFITS_SUCCESS).format(uid=uid, amount=amount))
+    name = getattr(interaction.user, "display_name", None) or getattr(interaction.user, "name", "")
+    await _reply(_benefits_success_line(uid).format(uid=uid, amount=amount, name=name))
 
     from lib.features.income_badges import award_badge_safe, record_income_source, bump_daily_income
     bump_daily_income("benefits_total", amount)
