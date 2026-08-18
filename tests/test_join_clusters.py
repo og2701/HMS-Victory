@@ -253,3 +253,91 @@ def test_each_batch_ban_sits_inline_with_its_own_batch():
     assert found, "the batch should render as a Section, not a bare TextDisplay"
     accessory = found[0].get("accessory") or {}
     assert accessory.get("custom_id", "").startswith("joincluster:ban:")
+
+
+# ---------------------------------------------------------------------------
+# A report that has scrolled away is a report nobody acts on.
+# ---------------------------------------------------------------------------
+class _FakeMsg:
+    def __init__(self, mid, channel):
+        self.id = mid
+        self.channel = channel
+        self.jump_url = f"https://discord.com/channels/1/2/{mid}"
+        self.edits = []
+
+    async def edit(self, **kwargs):
+        self.edits.append(kwargs)
+
+
+class _FakeChannel:
+    """A police station with `busy` messages posted after the last report."""
+
+    def __init__(self, busy=0, existing=None):
+        self.id = 2
+        self.busy = busy
+        self.sent = []
+        self.existing = existing
+        self._next = 1000
+
+    async def fetch_message(self, mid):
+        if self.existing is None or int(mid) != self.existing.id:
+            raise RuntimeError("not found")
+        return self.existing
+
+    def history(self, after=None, limit=None):
+        count = min(self.busy, limit or self.busy)
+
+        async def gen():
+            for i in range(count):
+                yield _FakeMsg(9000 + i, self)
+        return gen()
+
+    async def send(self, **kwargs):
+        self._next += 1
+        msg = _FakeMsg(self._next, self)
+        self.sent.append(kwargs)
+        return msg
+
+
+def test_a_quiet_channel_edits_the_report_in_place(monkeypatch, tmp_path):
+    import asyncio
+    monkeypatch.setattr(JC, "CLUSTER_STATE_FILE", str(tmp_path / "clusters.json"))
+    previous = _FakeMsg(500, None)
+    channel = _FakeChannel(busy=3, existing=previous)
+    JC._save_state({"message_id": 500, "channel_id": 2, "signature": "old", "clusters": []})
+
+    async def fake_channel(_client, _cid):
+        return channel
+
+    monkeypatch.setattr(JC, "_get_channel", fake_channel)
+    base = NOW - 200 * 86400
+    records = [rec(1, base), rec(2, base + 60), rec(3, base + 120)]
+    asyncio.run(JC.evaluate_joins(object(), records, now=NOW))
+
+    assert previous.edits, "a visible report should be updated where it is"
+    assert not channel.sent, "and must not be reposted"
+
+
+def test_a_buried_report_is_reposted_and_the_old_one_points_at_it(monkeypatch, tmp_path):
+    import asyncio, json
+    monkeypatch.setattr(JC, "CLUSTER_STATE_FILE", str(tmp_path / "clusters.json"))
+    previous = _FakeMsg(500, None)
+    channel = _FakeChannel(busy=JC.REPOST_AFTER_MESSAGES, existing=previous)
+    JC._save_state({"message_id": 500, "channel_id": 2, "signature": "old", "clusters": []})
+
+    async def fake_channel(_client, _cid):
+        return channel
+
+    monkeypatch.setattr(JC, "_get_channel", fake_channel)
+    base = NOW - 200 * 86400
+    records = [rec(1, base), rec(2, base + 60), rec(3, base + 120)]
+    asyncio.run(JC.evaluate_joins(object(), records, now=NOW))
+
+    assert channel.sent, "a buried report must be posted again at the bottom"
+    stub = json.dumps(previous.edits[-1]["view"].to_components(), ensure_ascii=False)
+    assert "Superseded" in stub
+    assert "https://discord.com/channels/" in stub
+    # The stale card must not still offer to ban anyone.
+    assert "joincluster:" not in stub
+    # State now tracks the new message.
+    assert JC._load_state()["message_id"] == channel._next

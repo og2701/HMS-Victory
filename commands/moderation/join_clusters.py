@@ -47,6 +47,10 @@ TIGHT_GAP_SECONDS = 5 * 60         # every step this close is scripted, not coin
 MIN_CLUSTER_SIZE = 3
 JOIN_WINDOW_SECONDS = 12 * 60 * 60  # only consider members who arrived in this window
 MAX_LISTED = 40                     # ids shown on the card; the rest are counted
+# Editing in place keeps one authoritative card, but a card that has scrolled away is a
+# card nobody sees. Past this many messages the report is reposted at the bottom instead,
+# and the old one is reduced to a pointer at the new one.
+REPOST_AFTER_MESSAGES = 10
 
 
 # --- detection ---------------------------------------------------------------------
@@ -560,6 +564,29 @@ async def _get_channel(client: Any, channel_id: int) -> Any:
     return channel
 
 
+async def _messages_since(channel: Any, message_id: int) -> int:
+    """How many messages have been posted after ours, counting no further than we need."""
+    try:
+        after = discord.Object(id=int(message_id))
+        return len([m async for m in channel.history(after=after,
+                                                     limit=REPOST_AFTER_MESSAGES + 1)])
+    except Exception:
+        logger.debug("could not measure police-station activity", exc_info=True)
+        return 0
+
+
+def _superseded_view(link: str) -> discord.ui.LayoutView:
+    """What an old report becomes: a pointer, with its buttons gone so a stale list
+    can never be actioned by someone scrolling past it."""
+    view = discord.ui.LayoutView(timeout=None)
+    card = discord.ui.Container(accent_colour=0x95A5A6)
+    card.add_item(discord.ui.TextDisplay(
+        f"⤴️ **Superseded** — more accounts have arrived since this.\n"
+        f"The current report is here: {link}"))
+    view.add_item(card)
+    return view
+
+
 async def _refresh_report(client: Any, banned: list[str] | None = None) -> None:
     """Re-render the stored report in place (used after a ban)."""
     state = _load_state()
@@ -581,10 +608,14 @@ async def _refresh_report(client: Any, banned: list[str] | None = None) -> None:
         logger.debug("could not refresh the join-cluster report", exc_info=True)
 
 
-async def evaluate_joins(client: Any, records: Iterable[dict[str, Any]]) -> None:
-    """Detect clusters and post or edit the single live report. Never raises."""
+async def evaluate_joins(client: Any, records: Iterable[dict[str, Any]],
+                         now: int | None = None) -> None:
+    """Detect clusters and post or edit the single live report. Never raises.
+
+    `now` is injectable so the reporting path can be tested against a fixed clock.
+    """
     try:
-        clusters = find_clusters(records)
+        clusters = find_clusters(records, now=now)
         state = _load_state()
         if not clusters:
             return
@@ -600,15 +631,30 @@ async def evaluate_joins(client: Any, records: Iterable[dict[str, Any]]) -> None
         banned = state.get("banned", [])
         view = build_cluster_view(clusters, banned=banned,
                                   quarantined=state.get("quarantined", []),
-                                  watching=state.get("watching", []))
+                                  watching=state.get("watching", []), now=now)
         message_id = state.get("message_id")
         msg = None
+        previous = None
         if message_id:
             try:
-                msg = await channel.fetch_message(int(message_id))
-                await msg.edit(view=view, allowed_mentions=discord.AllowedMentions.none())
+                previous = await channel.fetch_message(int(message_id))
             except Exception:
-                msg = None              # deleted or too old; post a fresh one
+                previous = None         # deleted, or too old to fetch
+        if previous is not None:
+            if await _messages_since(channel, previous.id) >= REPOST_AFTER_MESSAGES:
+                # Buried. Post again at the bottom and leave a pointer behind, rather than
+                # silently updating a card that has scrolled out of view.
+                msg = await channel.send(view=view,
+                                         allowed_mentions=discord.AllowedMentions.none())
+                try:
+                    await previous.edit(view=_superseded_view(msg.jump_url),
+                                        allowed_mentions=discord.AllowedMentions.none())
+                except Exception:
+                    logger.debug("could not stub the previous report", exc_info=True)
+            else:
+                await previous.edit(view=view,
+                                    allowed_mentions=discord.AllowedMentions.none())
+                msg = previous
         if msg is None:
             msg = await channel.send(view=view,
                                      allowed_mentions=discord.AllowedMentions.none())
