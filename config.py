@@ -468,6 +468,11 @@ WEEKEND_WARRIOR_COUNTS_FILE = os.path.join(JSON_DATA_DIR, "weekend_warrior_count
 # Toggle (oggers' "piggyreact"): when on, every message from PIGGY gets H-O-G reactions.
 PIGGY_REACT_FILE = os.path.join(JSON_DATA_DIR, "piggy_react.json")
 JOIN_WATCH_FILE = os.path.join(JSON_DATA_DIR, "join_watch.json")  # oggers' AI raid screening toggle + incident context
+# Who is mid-scan, so a deploy does not quietly stop screening everyone who joined
+# before it. Kept separate from the toggle file because it churns on every screened
+# message while the toggle changes about twice a week.
+JOIN_WATCH_BUFFERS_FILE = os.path.join(JSON_DATA_DIR, "join_watch_buffers.json")
+JOIN_WATCH_MAX_WATCH_HOURS = 168  # stop watching a joiner after 7d even if they never hit the message cap
 TOWN_CRIER_TRACKING_FILE = os.path.join(JSON_DATA_DIR, "town_crier_tracking.json")
 BALANCE_SNAPSHOT_DIR = "balance_snapshots"
 VC_LOCKDOWN_FILE = os.path.join(JSON_DATA_DIR, "vc_lockdown_status.txt")

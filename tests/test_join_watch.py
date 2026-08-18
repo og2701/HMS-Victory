@@ -13,9 +13,18 @@ from commands.moderation import join_watch
 
 def _fresh(monkeypatch, tmp_path):
     monkeypatch.setattr(join_watch, "JOIN_WATCH_FILE", str(tmp_path / "join_watch.json"))
+    monkeypatch.setattr(join_watch, "JOIN_WATCH_BUFFERS_FILE", str(tmp_path / "buffers.json"))
     monkeypatch.setattr(join_watch, "_state_cache", None)
+    monkeypatch.setattr(join_watch, "_buffers_loaded", False)
     join_watch._buffers.clear()
     join_watch._locks.clear()
+
+
+def _restart(monkeypatch):
+    """Simulate a redeploy: memory goes, the file stays."""
+    join_watch._buffers.clear()
+    join_watch._locks.clear()
+    monkeypatch.setattr(join_watch, "_buffers_loaded", False)
 
 
 class FakeRole:
@@ -415,3 +424,80 @@ def test_disarming_clears_scan_progress(monkeypatch, tmp_path):
     join_watch._buffers[1] = {"messages": [{"content": "x"}], "done": False}
     join_watch.set_join_watch_state(False)
     assert join_watch._buffers == {}
+
+
+# ---------------------------------------------------------------------------
+# The watch list must survive a restart, or a deploy mid-incident stops screening
+# exactly the members it was armed for.
+# ---------------------------------------------------------------------------
+def test_a_member_mid_scan_is_still_watched_after_a_restart(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    join_watch.set_join_watch_state(True)
+    member = FakeMember()
+    client = FakeClient()
+    seen = []
+
+    async def fake_evaluate(_client, _member, messages):
+        seen.append(len(messages))
+        return ({"verdict": "unsure", "confidence": 0.2, "reason": "thin"},
+                {"input": 1, "output": 1, "model": "gpt-5.4-mini"})
+
+    monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
+    join_watch.register_join(member)
+    asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, "hello")))
+    assert seen == [1]
+
+    _restart(monkeypatch)
+    assert member.id not in join_watch._buffers, "memory should be empty before the reload"
+
+    # The next message rehydrates the list and continues the scan where it left off.
+    asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, "second")))
+    assert seen == [1, 2], "the scan must resume, not restart"
+
+
+def test_a_finished_scan_is_not_restored(monkeypatch, tmp_path):
+    """Someone already actioned or scanned out must not come back on a redeploy."""
+    _fresh(monkeypatch, tmp_path)
+    join_watch.set_join_watch_state(True)
+    member = FakeMember()
+    client = FakeClient()
+
+    async def fake_evaluate(_client, _member, _messages):
+        return ({"verdict": "troll", "confidence": 0.99, "reason": "raid"},
+                {"input": 1, "output": 1, "model": "gpt-5.4-mini"})
+
+    monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
+    join_watch.register_join(member)
+    asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, "raid spam")))
+    assert join_watch._buffers[member.id]["done"] is True
+
+    _restart(monkeypatch)
+    join_watch._load_buffers()
+    assert member.id not in join_watch._buffers
+
+
+def test_a_stale_watch_expires_rather_than_persisting_forever(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    join_watch.set_join_watch_state(True)
+    member = FakeMember()
+    join_watch.register_join(member)
+
+    # Age the registration past the cut-off and reload.
+    stored = join_watch.load_json_file(join_watch.JOIN_WATCH_BUFFERS_FILE)
+    stored[str(member.id)]["registered_at"] -= (join_watch.JOIN_WATCH_MAX_WATCH_HOURS + 1) * 3600
+    join_watch.save_json_file(join_watch.JOIN_WATCH_BUFFERS_FILE, stored)
+
+    _restart(monkeypatch)
+    join_watch._load_buffers()
+    assert member.id not in join_watch._buffers
+
+
+def test_disarming_clears_the_stored_list_too(monkeypatch, tmp_path):
+    """Arming never backtracks, so a stored list must not outlive a disarm."""
+    _fresh(monkeypatch, tmp_path)
+    join_watch.set_join_watch_state(True)
+    join_watch.register_join(FakeMember())
+    assert join_watch.load_json_file(join_watch.JOIN_WATCH_BUFFERS_FILE)
+
+    join_watch.set_join_watch_state(False)
+    assert not join_watch.load_json_file(join_watch.JOIN_WATCH_BUFFERS_FILE)

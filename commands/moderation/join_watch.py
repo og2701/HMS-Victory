@@ -25,7 +25,8 @@ import aiohttp
 import discord
 
 import config
-from config import CHANNELS, JOIN_WATCH_FILE, ROLES, USERS
+from config import (CHANNELS, JOIN_WATCH_BUFFERS_FILE, JOIN_WATCH_FILE,
+                    JOIN_WATCH_MAX_WATCH_HOURS, ROLES, USERS)
 from lib.core.file_operations import load_json_file, save_json_file
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,40 @@ STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
 # The brief is the whole screen: the rubric in _build_static_prompt carries only the
 # permanent floor, so anything else you want caught has to be described here.
 DEFAULT_CONTEXT = (
+    "Two UK-only game freebies are running at once, so this British server is an obvious "
+    "place for people outside the UK to come looking for codes.\n"
+    "- O2 x Fortnite, from 14 August 2026: O2 and Virgin Media customers claim a free "
+    "Fortnite skin (Pond Guardian Froggory) through O2 Priority.\n"
+    "- McDonald's x Overwatch, from 18 August 2026, UK and Ireland only: McDonald's Side "
+    "Missions give Overwatch rewards, including Kiriko's 'Donut Break' emote. Codes come "
+    "off a real order, so expect asks for receipts and order codes as well as spare codes.\n"
+    "This server is not a code exchange: anyone who joined to obtain a code, or to get "
+    "help claiming one, did not join to be a member.\n"
+    "FLAG:\n"
+    "- Asking for a code, spare code, unused code or receipt, however politely - "
+    "'anyone got one they aren't using', 'pls code', 'need a code' all count.\n"
+    "- Asking for help claiming, redeeming or qualifying for either promotion, or asking "
+    "someone to claim it, order for them, or lend them a UK number, address or account.\n"
+    "- Offering money, gift cards, in-game items or trades for a code or a receipt.\n"
+    "- Asking members for logins, email addresses, phone numbers or one-time passcodes, "
+    "including offers to claim the code for them.\n"
+    "- Posting claim links, 'free code generator' sites, QR codes or shortened URLs.\n"
+    "- Telling members to DM them, or DMing members, to collect codes.\n"
+    "- Impersonating staff, O2, Virgin Media, McDonald's, Epic Games or Blizzard.\n"
+    "- Several accounts pushing an identical link or identical wording.\n"
+    "One clear ask is enough. Do not wait for a second message, do not soften the verdict "
+    "because they were polite, and do not treat a first-time offence as lighter.\n"
+    "DO NOT flag members who merely talk about either promotion, the skin, the emote, "
+    "Fortnite, Overwatch or McDonald's without asking anyone for a code: saying they "
+    "claimed it, asking whether it has gone live, or complaining that the code did not "
+    "work are all fine. Being foreign, new, or low-effort is still never a reason on its "
+    "own."
+)
+
+# Old defaults are migrated to the current one on load, so a stale stored
+# incident (e.g. a finished World Cup tie) does not keep biasing verdicts.
+_LEGACY_DEFAULT_CONTEXTS = {
+
     "O2 x Fortnite promotion, from 14 August 2026. UK O2 and Virgin Media customers can "
     "claim a code through O2 Priority for a free Fortnite skin (Pond Guardian Froggory). "
     "This is a British server, so people outside the UK are joining purely to get a code "
@@ -66,12 +101,7 @@ DEFAULT_CONTEXT = (
     "DO NOT flag members who merely talk about the promotion, the skin or Fortnite "
     "without asking anyone for a code: saying they claimed it, asking whether it has "
     "gone live, or complaining that the code did not work are all fine. Being foreign, "
-    "new, or low-effort is still never a reason on its own."
-)
-
-# Old defaults are migrated to the current one on load, so a stale stored
-# incident (e.g. a finished World Cup tie) does not keep biasing verdicts.
-_LEGACY_DEFAULT_CONTEXTS = {
+    "new, or low-effort is still never a reason on its own.",
     "England play Argentina in the World Cup semi-final tonight. Waves of newly "
     "joined accounts (many Argentinian) are trolling, spreading anti-England "
     "hate and trying to bait members.",
@@ -121,6 +151,64 @@ _LEGACY_DEFAULT_CONTEXTS = {
 _state_cache: dict[str, Any] | None = None
 _buffers: dict[int, dict[str, Any]] = {}
 _locks: dict[int, asyncio.Lock] = {}
+_buffers_loaded = False
+
+
+# --- watch list persistence -------------------------------------------------------
+# The watch list used to live only in memory, so any restart silently stopped screening
+# everyone who had joined but not yet finished their scan - exactly the members a deploy
+# during an incident most needs to keep watching. It is now mirrored to disk.
+#
+# Only unfinished entries are kept: a member who has been actioned or has run out the
+# scan is done forever, and writing them back would just grow the file. Entries also
+# expire after JOIN_WATCH_MAX_WATCH_HOURS so a joiner who never posts is not watched
+# indefinitely.
+def _watch_expired(entry: dict[str, Any], now: int | None = None) -> bool:
+    now = int(time.time()) if now is None else now
+    started = int(entry.get("registered_at", 0) or 0)
+    if not started:
+        return False
+    return (now - started) > int(JOIN_WATCH_MAX_WATCH_HOURS) * 3600
+
+
+def _load_buffers() -> None:
+    """Restore the watch list once, on first use after start-up."""
+    global _buffers, _buffers_loaded
+    if _buffers_loaded:
+        return
+    _buffers_loaded = True
+    try:
+        stored = load_json_file(JOIN_WATCH_BUFFERS_FILE) or {}
+        restored = 0
+        for uid, entry in stored.items():
+            if not isinstance(entry, dict) or entry.get("done"):
+                continue
+            if _watch_expired(entry):
+                continue
+            entry.setdefault("messages", [])
+            entry.setdefault("done", False)
+            entry.setdefault("registered_at", int(time.time()))
+            _buffers[int(uid)] = entry
+            restored += 1
+        if restored:
+            logger.info("join-watch restored %s member(s) still mid-scan", restored)
+    except Exception:
+        logger.exception("join-watch could not restore its watch list")
+
+
+def _save_buffers() -> None:
+    """Persist the unfinished watch list. Never raises: losing the mirror is survivable,
+    taking the screening path down with it is not."""
+    try:
+        now = int(time.time())
+        keep = {
+            str(uid): entry
+            for uid, entry in _buffers.items()
+            if not entry.get("done") and not _watch_expired(entry, now)
+        }
+        save_json_file(JOIN_WATCH_BUFFERS_FILE, keep)
+    except Exception:
+        logger.exception("join-watch could not save its watch list")
 
 
 # --- toggle state ---------------------------------------------------------------
@@ -151,6 +239,7 @@ def set_join_watch_state(enabled: bool, context: str | None = None) -> dict[str,
     _state_cache = new_state
     _buffers.clear()
     _locks.clear()
+    _save_buffers()   # arming never backtracks, so the stored list resets with it
     return dict(new_state)
 
 
@@ -177,11 +266,16 @@ def register_join(member: Any) -> None:
     """
     if not join_watch_enabled() or not _eligible(member):
         return
+    _load_buffers()
     while len(_buffers) >= MAX_WATCHED_MEMBERS:
         evicted = next(iter(_buffers))
         _buffers.pop(evicted, None)
         _locks.pop(evicted, None)
-    _buffers.setdefault(member.id, {"messages": [], "done": False})
+    _buffers.setdefault(
+        member.id,
+        {"messages": [], "done": False, "registered_at": int(time.time())},
+    )
+    _save_buffers()
     logger.info("join-watch is now listening to new joiner %s", member.id)
 
 
@@ -212,6 +306,9 @@ async def maybe_watch_message(client: Any, message: Any) -> None:
         if getattr(message, "type", discord.MessageType.default) not in _SCREENED_MESSAGE_TYPES:
             return
         member = message.author
+        # Restore the watch list on the first message after a restart, so members who
+        # joined before a deploy keep being screened instead of silently falling off.
+        _load_buffers()
         # Only members registered by register_join are watched; staff exemption is
         # re-checked in case they were given a role after joining.
         if getattr(member, "id", None) not in _buffers or not _eligible(member):
@@ -224,6 +321,8 @@ async def maybe_watch_message(client: Any, message: Any) -> None:
             entry["messages"].append(_snapshot(message))
             verdict, usage = await _evaluate(client, member, entry["messages"])
             await _apply_verdict(client, member, entry, verdict, usage, message)
+            # After the verdict, so a member marked done drops out of the saved list.
+            _save_buffers()
     except Exception:
         logger.exception("join-watch screening failed for message %s", getattr(message, "id", "?"))
 
