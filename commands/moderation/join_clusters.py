@@ -462,6 +462,10 @@ class DismissButton(discord.ui.DynamicItem[discord.ui.Button],
         state = _load_state()
         state["dismissed_by"] = str(interaction.user.id)
         state["dismissed_at"] = int(time.time())
+        # Remember which accounts were cleared, not just that a dismissal happened, or the
+        # next unrelated joiner rebuilds the same batch and asks again.
+        state["dismissed_ids"] = sorted(
+            set(state.get("dismissed_ids", [])) | set(state.get("ids", [])))
         _save_state(state)
         await interaction.response.edit_message(
             view=build_cluster_view(state.get("clusters", []),
@@ -854,15 +858,22 @@ async def evaluate_joins(client: Any, records: Iterable[dict[str, Any]],
     `now` is injectable so the reporting path can be tested against a fixed clock.
     """
     try:
-        clusters = find_clusters(records, now=now)
         state = _load_state()
+        # Accounts already dealt with are dropped before clustering rather than after.
+        # They stay in the 24h join history after being banned, so they kept forming the
+        # same clusters, and any unrelated new joiner changed the signature and reposted a
+        # report about people who were gone. Dismissed batches were re-raised the same way.
+        handled = {str(u) for u in state.get("banned", [])}
+        handled |= {str(u) for u in state.get("dismissed_ids", [])}
+        live = [r for r in records
+                if isinstance(r, dict) and str(r.get("user_id", "")) not in handled]
+
+        clusters = find_clusters(live, now=now)
         if not clusters:
             return
         sig = _signature(clusters)
         if sig == state.get("signature") and state.get("message_id"):
             return                      # nothing new arrived; leave the card alone
-        if state.get("dismissed_by") and sig == state.get("signature"):
-            return                      # staff said this was nothing
 
         channel = await _get_channel(client, CHANNELS.POLICE_STATION)
         if channel is None:

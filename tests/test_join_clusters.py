@@ -442,3 +442,68 @@ def test_a_second_appeal_is_refused_once_one_is_pending(monkeypatch, tmp_path):
     assert JC._load_appeals()["5"]["status"] == "pending"
     JC._save_appeals({"5": {"status": "rejected"}})
     assert JC._load_appeals()["5"]["status"] == "rejected"
+
+
+# ---------------------------------------------------------------------------
+# A dealt-with batch must stay dealt with. Banned accounts linger in the 24h join
+# history, so they kept re-forming clusters, and any unrelated new joiner changed
+# the signature and reposted a report about people who were already gone.
+# ---------------------------------------------------------------------------
+def _channel_and_state(monkeypatch, tmp_path, state):
+    monkeypatch.setattr(JC, "CLUSTER_STATE_FILE", str(tmp_path / "clusters.json"))
+    JC._save_state(state)
+    channel = _FakeChannel(busy=0, existing=None)
+
+    async def fake_channel(_client, _cid):
+        return channel
+
+    monkeypatch.setattr(JC, "_get_channel", fake_channel)
+    return channel
+
+
+def test_a_fully_banned_batch_is_not_reported_again(monkeypatch, tmp_path):
+    import asyncio
+    base = NOW - 200 * 86400
+    records = [rec(1, base), rec(2, base + 60), rec(3, base + 120)]
+    channel = _channel_and_state(monkeypatch, tmp_path,
+                                 {"banned": ["1", "2", "3"], "signature": "stale"})
+    asyncio.run(JC.evaluate_joins(object(), records, now=NOW))
+    assert not channel.sent, "everyone on that batch is already banned"
+
+
+def test_an_unrelated_joiner_does_not_resurrect_a_banned_batch(monkeypatch, tmp_path):
+    """The actual failure: one new arrival changed the signature and reposted the lot."""
+    import asyncio
+    base = NOW - 200 * 86400
+    records = [rec(1, base), rec(2, base + 60), rec(3, base + 120),
+               rec(99, NOW - 900 * 86400, joined_ago=30)]     # nothing to do with them
+    channel = _channel_and_state(monkeypatch, tmp_path,
+                                 {"banned": ["1", "2", "3"], "signature": "stale"})
+    asyncio.run(JC.evaluate_joins(object(), records, now=NOW))
+    assert not channel.sent
+
+
+def test_a_dismissed_batch_stays_dismissed(monkeypatch, tmp_path):
+    import asyncio
+    base = NOW - 200 * 86400
+    records = [rec(1, base), rec(2, base + 60), rec(3, base + 120)]
+    channel = _channel_and_state(
+        monkeypatch, tmp_path,
+        {"dismissed_by": "5", "dismissed_ids": ["1", "2", "3"], "signature": "stale"})
+    asyncio.run(JC.evaluate_joins(object(), records, now=NOW))
+    assert not channel.sent
+
+
+def test_a_genuinely_new_batch_still_reports(monkeypatch, tmp_path):
+    """The fix must not silence real arrivals."""
+    import asyncio
+    old = NOW - 200 * 86400
+    fresh = NOW - 150 * 86400
+    records = [rec(1, old), rec(2, old + 60), rec(3, old + 120),
+               rec(7, fresh), rec(8, fresh + 60), rec(9, fresh + 120)]
+    channel = _channel_and_state(monkeypatch, tmp_path,
+                                 {"banned": ["1", "2", "3"], "signature": "stale"})
+    asyncio.run(JC.evaluate_joins(object(), records, now=NOW))
+    assert channel.sent, "the unhandled batch should still be raised"
+    ids = JC._load_state()["ids"]
+    assert set(ids) == {"7", "8", "9"}, "and only the accounts still worth acting on"
