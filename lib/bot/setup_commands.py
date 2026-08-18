@@ -259,7 +259,7 @@ def define_commands(tree, client):
     async def end_lockdown_vcs_command(interaction: Interaction):
         await end_lockdown_vcs(interaction)
 
-    @command("anti-raid", "Open the private anti-raid control centre", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
+    @command("anti-raid", "Open the private anti-raid control centre", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE, ROLES.PCSO, ROLES.DEPUTY_MINISTER_OF_COMMUNITY])])
     async def anti_raid_control_command(interaction: Interaction):
         await open_anti_raid_control(interaction)
 

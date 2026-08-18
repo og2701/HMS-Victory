@@ -583,3 +583,24 @@ def test_the_quarantine_block_is_a_count_not_a_roster():
     for m in members:
         assert m.mention not in block, "names belong in the dropdown, not the text"
     assert anti_raid._quarantine_block([], set()).endswith("quarantine role.")
+
+
+def test_the_panel_gate_matches_the_command_gate():
+    """Opening /anti-raid and pressing anything on it must be the same set of roles, or
+    the panel opens and does nothing for whoever the mismatch excluded."""
+    import re
+    src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "lib", "bot", "setup_commands.py")).read()
+    m = re.search(r'@command\("anti-raid".*?has_any_role\(i, \[(.*?)\]\)', src, re.S)
+    assert m, "could not find the /anti-raid check"
+    named = {n.strip().split(".")[-1] for n in m.group(1).split(",") if n.strip()}
+    panel = {n for n in ("MINISTER", "CABINET", "BORDER_FORCE", "PCSO",
+                         "DEPUTY_MINISTER_OF_COMMUNITY")
+             if getattr(anti_raid.ROLES, n) in anti_raid.STAFF_ROLE_IDS}
+    assert named == panel, f"command allows {named}, panel allows {panel}"
+
+
+def test_the_most_present_staff_can_reach_the_control_centre():
+    """PCSO covers the three staff who are actually in the room most days."""
+    assert anti_raid.ROLES.PCSO in anti_raid.STAFF_ROLE_IDS
+    assert anti_raid.ROLES.DEPUTY_MINISTER_OF_COMMUNITY in anti_raid.STAFF_ROLE_IDS

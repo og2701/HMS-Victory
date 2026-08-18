@@ -38,7 +38,11 @@ BATCH_SIZE = 10
 MAX_RECENT_JOINS = 100
 RECENT_JOIN_TTL_SECONDS = 24 * 60 * 60
 ROLE_PERMISSION_BACKUP_VERSION = 2
-STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
+# Kept in step with the /anti-raid command gate in setup_commands: opening the panel and
+# being able to press anything on it have to be the same set, or the people most likely to
+# be in the room during a raid get a control centre that does nothing.
+STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE, ROLES.PCSO,
+                  ROLES.DEPUTY_MINISTER_OF_COMMUNITY}
 
 # Two ways to be switched on. FULL is the original: quarantine every join AND strip the
 # risky permissions from every editable role. QUARANTINE_ONLY does the first half and
