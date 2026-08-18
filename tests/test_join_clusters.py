@@ -341,3 +341,12 @@ def test_a_buried_report_is_reposted_and_the_old_one_points_at_it(monkeypatch, t
     assert "joincluster:" not in stub
     # State now tracks the new message.
     assert JC._load_state()["message_id"] == channel._next
+
+
+def test_rows_mention_the_account_so_staff_can_open_the_profile():
+    payload = _payload(_one_batch())
+    for uid in ("1", "2", "3"):
+        assert f"<@{uid}>" in payload, f"row for {uid} should mention them"
+        assert f"`{uid}`" in payload, "the raw id stays for manual follow-up"
+    # The name recorded at join survives a later rename or a leave.
+    assert "user1" in payload

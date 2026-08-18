@@ -222,8 +222,14 @@ def build_cluster_view(clusters: list[dict[str, Any]], banned: list[str] | None 
         rows = []
         for m in members[:MAX_LISTED]:
             uid = m["user_id"]
+            # The mention is the useful half: it renders as a clickable pill straight to
+            # the profile. The stored name stays beside it because it is what they were
+            # called when they joined, which survives both a rename and a leave - and a
+            # mention for someone who has gone renders as an unresolved id. Mentions are
+            # never allowed to ping; every send and edit passes AllowedMentions.none().
             name = discord.utils.escape_markdown(str(m.get("username", "?")))
-            line = f"**{name}** · joined <t:{int(m.get('joined_at', 0))}:R> · `{uid}`"
+            line = (f"<@{uid}> **{name}** · joined <t:{int(m.get('joined_at', 0))}:R>"
+                    f" · `{uid}`")
             if uid in banned:
                 line = f"~~{line}~~ 🔨"
             elif uid in quarantined:
