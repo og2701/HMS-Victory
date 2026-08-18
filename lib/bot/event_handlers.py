@@ -1413,34 +1413,6 @@ async def on_member_ban(guild, user):
     pass
 
 
-async def on_voice_state_update(member, before, after):
-    client = member._state._get_client()
-    if member.bot:
-        return
-
-    if not hasattr(client, "lurker_tracking"):
-        client.lurker_tracking = {} # user_id -> start_time
-
-    is_muted = after.self_mute or after.mute or after.self_deaf or after.deaf
-    was_muted = before.self_mute or before.mute or before.self_deaf or before.deaf
-    
-    # Joined or switched to muted state
-    if after.channel and is_muted:
-        if member.id not in client.lurker_tracking:
-            client.lurker_tracking[member.id] = datetime.datetime.now()
-            logger.debug(f"Started lurker tracking for {member.display_name}")
-    
-    # Left channel or unmuted
-    elif (not after.channel or not is_muted) and member.id in client.lurker_tracking:
-        start_time = client.lurker_tracking.pop(member.id)
-        duration = (datetime.datetime.now() - start_time).total_seconds()
-        
-        from lib.economy import secret_config as _sc
-        _lurk = _sc.param("a2")
-        if _lurk is not None and duration >= _lurk and (_b := _sc.bid("a2")):
-            await award_badge_with_notify(client, member.id, _b)
-        logger.debug(f"Stopped lurker tracking for {member.display_name}. Duration: {duration}s")
-
 async def on_message_delete(client, message):
     async for entry in message.guild.audit_logs(
         action=discord.AuditLogAction.message_delete, limit=1
@@ -1965,6 +1937,46 @@ async def on_reaction_remove(reaction, user):
                 logger.error(f"Failed to remove timeout or delete sticker message for user {message_author}: {e}")
 
 
+# Voice activity is buffered here and flushed to the log thread by
+# process_voice_activity_log (every 30s), rather than posted per event - a busy night in
+# VC is hundreds of state updates and a message each would bury the thread and hit the
+# rate limit. A restart loses at most one flush, which an activity log can afford.
+VOICE_ACTIVITY_BUFFER_LIMIT = 400
+
+
+def record_voice_activity(client, kind, member, before_channel=None, after_channel=None):
+    """Queue one join/leave/move for the next digest, and time the session for the leave line."""
+    buf = getattr(client, "voice_activity_log", None)
+    if buf is None:
+        buf = client.voice_activity_log = []
+    since = getattr(client, "voice_since", None)
+    if since is None:
+        since = client.voice_since = {}
+
+    now = discord.utils.utcnow()
+    held = None
+    if kind == "join":
+        since[member.id] = now
+    elif kind == "leave":
+        start = since.pop(member.id, None)
+        # No start time means the session began before the last restart, so the length is
+        # unknown rather than zero - better to print nothing than to print "after 0m".
+        if start:
+            held = int((now - start).total_seconds())
+
+    buf.append({
+        "at": int(now.timestamp()),
+        "kind": kind,
+        "who": member.display_name,
+        "id": member.id,
+        "from": getattr(before_channel, "name", None),
+        "to": getattr(after_channel, "name", None),
+        "held": held,
+    })
+    if len(buf) > VOICE_ACTIVITY_BUFFER_LIMIT:
+        del buf[:len(buf) - VOICE_ACTIVITY_BUFFER_LIMIT]
+
+
 async def on_voice_state_update(member, before, after):
     if after.channel and not before.channel and is_lockdown_active():
         if not any(role.id in VC_LOCKDOWN_WHITELIST for role in member.roles):
@@ -2022,6 +2034,35 @@ async def on_voice_state_update(member, before, after):
         if start:
             if (discord.utils.utcnow() - start).total_seconds() >= 1800:
                 await award_badge_with_notify(client, member.id, 'screensharer')
+
+    # --- Lurker badge: time spent in VC muted or deafened ---
+    # This used to sit in a second on_voice_state_update further up the module, which the
+    # later definition shadowed, so it never ran once. Bots are skipped, as they were there.
+    if not hasattr(client, "lurker_tracking"):
+        client.lurker_tracking = {}
+    is_muted = after.self_mute or after.mute or after.self_deaf or after.deaf
+    if member.bot:
+        pass
+    elif after.channel and is_muted:
+        client.lurker_tracking.setdefault(member.id, discord.utils.utcnow())
+    elif (not after.channel or not is_muted) and member.id in client.lurker_tracking:
+        start = client.lurker_tracking.pop(member.id)
+        quiet = (discord.utils.utcnow() - start).total_seconds()
+        from lib.economy import secret_config as _sc
+        _lurk = _sc.param("a2")
+        if _lurk is not None and quiet >= _lurk and (_b := _sc.bid("a2")):
+            await award_badge_with_notify(client, member.id, _b)
+
+    # --- Voice activity log ---
+    # Last, so a failure here can never cost someone a badge or a stage payout.
+    if not member.bot and before.channel != after.channel:
+        if after.channel and not before.channel:
+            record_voice_activity(client, "join", member, after_channel=after.channel)
+        elif before.channel and not after.channel:
+            record_voice_activity(client, "leave", member, before_channel=before.channel)
+        else:
+            record_voice_activity(client, "move", member,
+                                  before_channel=before.channel, after_channel=after.channel)
 
 
 async def refresh_live_stages(client):

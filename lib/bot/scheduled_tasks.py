@@ -552,6 +552,7 @@ def _register_client_jobs(client, scheduler):
     _add_process_job(scheduler, cleanup_webhook_reactions, IntervalTrigger(minutes=1), args=[client], id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
 
     _add_process_job(scheduler, process_economy_logs, IntervalTrigger(seconds=15), args=[client], id="process_economy_logs_interval", name="Process Economy Log Queue")
+    _add_process_job(scheduler, process_voice_activity_log, IntervalTrigger(seconds=30), args=[client], id="process_voice_activity_log_interval", name="Post Voice Activity Log")
     # One-shot on boot: clean up gate notices orphaned by a restart mid-delete_after
     _add_process_job(scheduler, sweep_orphaned_gate_messages, args=[client], id="sweep_gate_orphans_boot", name="Sweep Orphaned Gate Messages", next_run_time=discord.utils.utcnow() + timedelta(seconds=20))
     # Frequent tick, not a 12h interval: the 12h cycle lives in the DB (last_restock),
@@ -875,6 +876,70 @@ async def apply_economy_dormant_tax(client):
                 "economy_dormant_tax_total", total)
     except Exception as e:
         logger.error(f"Error applying economy-dormant tax: {e}", exc_info=True)
+
+
+def _voice_spell(seconds):
+    """How long they were in there, in the coarsest unit that still says something."""
+    if seconds is None:
+        return ""
+    if seconds < 60:
+        return f" after {seconds}s"
+    if seconds < 3600:
+        return f" after {seconds // 60}m"
+    hours, minutes = divmod(seconds // 60, 60)
+    return f" after {hours}h {minutes}m" if minutes else f" after {hours}h"
+
+
+async def process_voice_activity_log(client):
+    """Flush the buffered voice joins, leaves and moves into the log thread.
+
+    Batched rather than posted per event: a busy call is hundreds of state updates, and one
+    message each would bury the thread and run into the rate limit. The buffer is swapped
+    out before anything is sent, so events arriving mid-send land in the next digest instead
+    of being dropped.
+    """
+    try:
+        import discord
+        buf = getattr(client, "voice_activity_log", None)
+        if not buf:
+            return
+        events, client.voice_activity_log = buf[:], []
+
+        thread = client.get_channel(CHANNELS.VOICE_ACTIVITY_THREAD)
+        if thread is None:
+            try:
+                # Threads fall out of the cache once auto-archived; fetching revives them.
+                thread = await client.fetch_channel(CHANNELS.VOICE_ACTIVITY_THREAD)
+            except Exception:
+                logger.warning("[VOICE] activity thread unreachable; dropping %s events", len(events))
+                return
+
+        lines = []
+        for e in events:
+            when, who = f"<t:{e['at']}:T>", f"**{discord.utils.escape_markdown(e['who'])}**"
+            if e["kind"] == "join":
+                lines.append(f"{when} 🟢 {who} joined **{e['to']}**")
+            elif e["kind"] == "leave":
+                lines.append(f"{when} 🔴 {who} left **{e['from']}**{_voice_spell(e['held'])}")
+            else:
+                lines.append(f"{when} 🔁 {who} moved **{e['from']}** → **{e['to']}**")
+
+        # Embed descriptions cap at 4096, so a long stretch goes out as several.
+        chunk, size = [], 0
+        for line in lines + [None]:
+            if line is None or size + len(line) + 1 > 3900:
+                if chunk:
+                    await thread.send(embed=discord.Embed(
+                        title="🎧 Voice Activity",
+                        description="\n".join(chunk),
+                        color=0x5865F2,
+                    ))
+                chunk, size = [], 0
+            if line is not None:
+                chunk.append(line)
+                size += len(line) + 1
+    except Exception as e:
+        logger.error(f"Error posting voice activity log: {e}", exc_info=True)
 
 
 async def process_economy_logs(client):

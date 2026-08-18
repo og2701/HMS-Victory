@@ -578,6 +578,7 @@ class CHANNELS:
     DAILY_SUMMARY_THREAD = 1511784346451710113  # daily server summaries post here (weekly/monthly stay in COMMONS)
     VOTING = 959848236384919692
     VOICE_LOG_THREAD = 1493403784074760362
+    VOICE_ACTIVITY_THREAD = 1539312670761812019  # 'voice chat activity' thread under logs: 🎧 join/leave/move digests
 
 # Casino games + the lottery may only be used in these channels.
 CASINO_CHANNELS = [CHANNELS.CASINO, CHANNELS.VIP_LOUNGE, CHANNELS.BOT_SPAM, CHANNELS.BOT_WORKSHOP]
