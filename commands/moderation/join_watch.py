@@ -54,6 +54,16 @@ PERMANENT_FLOOR = (
     "Mass spam or flooding: the same message across several channels, copypasta walls, or"
     " repeated advertising after being told to stop.",
     'Openly recruiting or coordinating a raid ("everyone get in here", raid callsigns).',
+    # Added after a member worked general with "Anyone in UK dm me asap", "Some tasks for
+    # you people from UK", "DM me for directions" and was passed as fine ten times over,
+    # correctly: none of the bullets above covers it. Recruiting strangers into off-site
+    # "work" belongs on the floor rather than in a brief, because it does not depend on
+    # what is going on in the server that week.
+    "Recruiting strangers into off-platform work: unsolicited offers of \"tasks\", jobs,"
+    " easy money, giveaways, crypto or investments, or repeatedly pushing people to DM you"
+    " about them. Screening the room for who will bite - by nationality, age or"
+    " willingness - is the same thing. One ordinary \"dm me\" between people already"
+    " talking is not.",
 )
 
 
@@ -513,6 +523,8 @@ NEVER FLAG THESE ON THEIR OWN - none of them is evidence of anything:
 - A new or recently created account. Every genuine member was new once.
 - Low-effort, odd, off-topic or attention-seeking first messages.
 - Posting in a language other than English.
+- Asking someone to DM them, on its own. Members swap DMs constantly. The floor is about
+  soliciting strangers into off-site "work" or money, not about the phrase "dm me".
 
 HOW TO JUDGE:
 - Read the brief, then ask one question: does what this member has ACTUALLY DONE match
@@ -562,6 +574,13 @@ CALIBRATION EXAMPLES:
 8. Someone whose behaviour half-matches the brief and could easily be innocent: unsure -
    you will see their next message, and a wrong timeout is a real cost.
 9. Messages in a language other than English that are friendly or neutral: fine.
+10. "Anyone in UK dm me asap", then "some tasks for you people from UK", then "DM me for
+    directions", then "only those willing": troll. No single line is a threat and none of
+    it is abusive, but taken together it is a stranger filtering the room for people who
+    will take instructions in private, which is the recruitment bullet on the floor. Judge
+    the sequence, not each message on its own.
+11. "dm me" or "anyone about?" from someone already chatting, with nothing on offer: fine.
+    A request to move to DMs is not recruitment; what is being offered makes it so.
 
 REMEMBER:
 - You are matching behaviour against a brief, not judging whether you like someone.
