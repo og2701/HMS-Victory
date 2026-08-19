@@ -312,9 +312,13 @@ def test_answering_them_back_is_what_counts_as_a_real_welcome(monkeypatch, tmp_p
     assert not W.welcome_needs_earning(1), "staying and talking must never tighten anyone"
 
 
-def test_carrying_on_without_pressing_reply_still_counts(monkeypatch, tmp_path):
-    """People answer in the same channel without a reply or a ping, and that is a
-    conversation. Requiring the mention would mark the well-behaved as dry."""
+def test_being_in_the_channel_is_not_answering_them(monkeypatch, tmp_path):
+    """Carrying on has to mean a reply or a mention.
+
+    Counting any message in the same room was tried and it cancels the penalty: a regular
+    posts something within minutes whatever they are doing, so the greeter who ignored the
+    newcomer would be credited for chatting to somebody else.
+    """
     _fresh(monkeypatch, tmp_path)
     greeter = FakeUser(1)
     room = FakeChannel(4242)
@@ -325,8 +329,28 @@ def test_carrying_on_without_pressing_reply_still_counts(monkeypatch, tmp_path):
         W.register_new_member_join(n)
         _run(client, FakeMsg(greeter, "welcome", mentions=[n], channel=room))
         _run(client, FakeMsg(n, "hello", mentions=[greeter], channel=room))
-        _run(client, FakeMsg(greeter, "how's it going", channel=room))   # no reply, no ping
+        _run(client, FakeMsg(greeter, "anyway as I was saying", channel=room))
         _expire(4000 + i)
+
+    assert W.welcome_needs_earning(1), "talking near them is not talking to them"
+
+
+def test_the_loose_window_can_be_turned_back_on(monkeypatch, tmp_path):
+    """The generous reading is kept behind a config knob, off by default, for if the strict
+    one starts marking people who did reply and just didn't press reply."""
+    _fresh(monkeypatch, tmp_path)
+    monkeypatch.setattr(config, "WELCOME_CONTINUE_WINDOW_MINUTES", 10)
+    greeter = FakeUser(1)
+    room = FakeChannel(4242)
+    client = FakeClient([greeter])
+
+    for i in range(config.WELCOME_DRY_STREAK_LIMIT):
+        n = FakeUser(4500 + i)
+        W.register_new_member_join(n)
+        _run(client, FakeMsg(greeter, "welcome", mentions=[n], channel=room))
+        _run(client, FakeMsg(n, "hello", mentions=[greeter], channel=room))
+        _run(client, FakeMsg(greeter, "how's it going", channel=room))   # no reply, no ping
+        _expire(4500 + i)
 
     assert not W.welcome_needs_earning(1)
 

@@ -282,9 +282,10 @@ def _followup_window_secs() -> int:
 
 
 def _continue_window_secs() -> int:
-    """How long after a newcomer answers a plain message in the same channel still counts
-    as carrying the conversation on. Replies and mentions count whenever they arrive."""
-    return int(getattr(config, "WELCOME_CONTINUE_WINDOW_MINUTES", 10)) * 60
+    """How long after a newcomer answers a plain message in the same channel counts as a
+    response. Zero, the default, means it never does and only a reply or a mention will do.
+    Replies and mentions count whenever they arrive, window or no window."""
+    return int(getattr(config, "WELCOME_CONTINUE_WINDOW_MINUTES", 0)) * 60
 
 
 def _record_life_secs() -> int:
@@ -592,11 +593,12 @@ async def handle_welcome_reward(client, message) -> None:
                     dirty = True
             store[author_id] = rec
 
-        # --- 3. the greeter carries it on ---------------------------------------------
-        # This is the block that pays. A reply or a mention counts, and so does simply
-        # saying something in the same channel shortly after they answered - people carry
-        # on a conversation without pressing reply, and marking that dry would punish the
-        # exact behaviour the payout exists to encourage.
+        # --- 3. the greeter answers them back -----------------------------------------
+        # This is the block that pays, and it wants a reply or a mention: an actual response
+        # to the newcomer, not merely being present. Counting any message in the same
+        # channel was tried and it cancels the penalty, because a regular posts something
+        # within minutes of anything. That loose reading survives behind a config window
+        # which is off by default (see _continue_window_secs).
         else:
             carried = _addressed_by_newcomer(message, store)   # same test, other direction
             for nid, rec in list(store.items()):
@@ -604,8 +606,9 @@ async def handle_welcome_reward(client, message) -> None:
                 started = rec["answered"].get(author_id)
                 if started is None or author_id in [str(x) for x in rec["engaged"]]:
                     continue
-                same_room = (rec.get("answered_in") == message.channel.id
-                             and now - int(started) <= _continue_window_secs())
+                loose = _continue_window_secs()
+                same_room = bool(loose) and (rec.get("answered_in") == message.channel.id
+                                             and now - int(started) <= loose)
                 if nid not in carried and not same_room:
                     continue
                 rec["engaged"].append(int(author_id))

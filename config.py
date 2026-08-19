@@ -302,11 +302,17 @@ WELCOME_FOLLOWUP_WINDOW_HOURS = 48  # ...and still close enough to their join to
 # a row without the newcomer ever replying or you ever going back to them, and your
 # greeting stops paying up front and starts paying when they answer instead. Get a couple
 # of real conversations and it goes back to paying immediately.
-WELCOME_DRY_STREAK_LIMIT = 5      # consecutive welcomes that went nowhere before it tightens
+WELCOME_DRY_STREAK_LIMIT = 3      # consecutive welcomes that were answered and then dropped
+                                  # before it tightens. Lower than it was, because a dry mark
+                                  # now needs the greeter to have ignored a real reply.
 WELCOME_REDEMPTION_ENGAGEMENTS = 2  # real interactions needed to get instant pay back
 WELCOME_REPLY_WINDOW_MINUTES = 60 # while tightened, how long the greeter has to answer them back
-WELCOME_CONTINUE_WINDOW_MINUTES = 10  # after a newcomer answers, how long a message in the
-                                      # same channel still counts as carrying it on
+# Off. Counting any message in the same channel as a response was tried and it defeats the
+# point: in a busy channel a regular posts something within minutes whatever they are doing,
+# so nobody would ever be marked. Answering means replying to them or naming them. Set a
+# number of minutes here if that turns out to mark people who did reply, just not by
+# pressing reply.
+WELCOME_CONTINUE_WINDOW_MINUTES = 0
 WELCOME_HISTORY_KEPT = 12         # rolling welcome outcomes remembered per member
 # Channels whose messages can't enter the Hall of Fame (announcements etc. always get a
 # lot of reactions but aren't organic HoF-worthy posts). Bot/webhook and Discord
