@@ -44,6 +44,32 @@ STAFF_ROLE_IDS = {ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
 
 # The brief is the whole screen: the rubric in _build_static_prompt carries only the
 # permanent floor, so anything else you want caught has to be described here.
+# What screening catches with no brief written, quoted in the prompt and in the armed
+# notice from this one place - staff reading the notice need the same words the model got.
+PERMANENT_FLOOR = (
+    "Hate speech or slurs of any kind, including racial, ethnic, national and sexual slurs.",
+    "Threats, or wishing death or serious harm on a real person; celebrating a tragedy.",
+    "Sexual content aimed at a member, and any sexual content involving minors.",
+    "Doxxing, or posting someone's personal information.",
+    "Mass spam or flooding: the same message across several channels, copypasta walls, or"
+    " repeated advertising after being told to stop.",
+    'Openly recruiting or coordinating a raid ("everyone get in here", raid callsigns).',
+)
+
+
+def floor_lines(prefix: str = "- ") -> str:
+    """The floor as text. One bullet per line whatever the source wrapping, because the
+    armed notice prefixes every line and a wrapped bullet came out as a stray fragment."""
+    return "\n".join(f"{prefix}{item}" for item in PERMANENT_FLOOR)
+
+# Stands in for the brief when staff have cleared it. Without it the prompt says it is
+# screening for "exactly two things" and then shows a blank, which invites the model to
+# guess at what the missing half was meant to say.
+NO_BRIEF = (
+    "No incident brief is set. Screen against the permanent floor above and nothing else: "
+    "if a member has not broken the floor, the verdict is \"fine\"."
+)
+
 DEFAULT_CONTEXT = (
     "Two UK-only game freebies are running at once, so this British server is an obvious "
     "place for people outside the UK to come looking for codes.\n"
@@ -457,6 +483,8 @@ def _build_static_prompt(member: Any, context: str, image_labels: list[str]) -> 
         else "No profile images could be fetched."
     )
     profile = "\n".join(profile_lines)
+    brief = context.strip() or NO_BRIEF
+    floor = floor_lines()
     return f"""You are the moderation screener for a casual, British, banter-heavy Discord server.
 A recently joined member is being screened. You are NOT a general-purpose troll detector:
 you screen against the SCREENING BRIEF below, plus a short permanent floor, and nothing
@@ -472,13 +500,7 @@ is not a screening matter here; staff handle that themselves. Do not invent a ca
 of your own, and do not stretch the brief to cover something that merely feels similar.
 
 PERMANENT FLOOR (always "troll", whatever the brief says):
-- Hate speech or slurs of any kind, including racial, ethnic, national and sexual slurs.
-- Threats, or wishing death or serious harm on a real person; celebrating a tragedy.
-- Sexual content aimed at a member, and any sexual content involving minors.
-- Doxxing, or posting someone's personal information.
-- Mass spam or flooding: the same message across several channels, copypasta walls,
-  or repeated advertising after being told to stop.
-- Openly recruiting or coordinating a raid ("everyone get in here", raid callsigns).
+{floor}
 
 NEVER FLAG THESE ON THEIR OWN - none of them is evidence of anything:
 - Swearing, crude language, dark humour, edgy jokes, insults traded in good spirit.
@@ -548,7 +570,7 @@ REMEMBER:
 - Judge only from what you are shown; do not invent context that is not there.
 
 SCREENING BRIEF (written by staff; this is what you are looking for):
-{context}
+{brief}
 
 MEMBER PROFILE
 {profile}"""
@@ -1050,13 +1072,23 @@ async def announce_toggle(client: Any, actor: Any, enabled: bool) -> None:
         return
     if enabled:
         state = get_join_watch_state()
+        context = (state["context"] or "").strip()
+        if context:
+            # The stored context is capped, so it always fits in the card whole; staff
+            # need to read the exact wording they armed with.
+            tail = f"-# Context: {context}"
+        else:
+            # An empty Context line told nobody anything. With no brief the floor is the
+            # whole of what screening will act on, so say what that is.
+            tail = (
+                "-# No incident context set, so screening acts on the permanent floor "
+                "only:\n" + floor_lines("-# - ")
+            )
         text = (
             "## 🔎 AI join-watch armed\n"
             f"{actor.mention} armed join-watch - new joiners' first "
             f"{MAX_SCANNED_MESSAGES} messages are now AI-screened.\n"
-            # The stored context is capped at 1000 chars, so it always fits in the
-            # card whole; staff need to read the exact wording they armed with.
-            f"-# Context: {state['context']}"
+            + tail
         )
     else:
         text = (
