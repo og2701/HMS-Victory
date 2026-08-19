@@ -1006,21 +1006,81 @@ _BENEFITS_PERSONAL = {
 }
 
 
+# Lines for anybody at all, built from the same live figures as the personal ones. The
+# personal pool only covers the fifty heaviest claimants; everyone else was getting the
+# same seventeen house jokes forever. These fill that in without anyone having to be
+# written for: whichever figures resolve for the claimant, those lines are eligible, and
+# the rest sit out. Somebody who has never gambled and somebody thirty thousand down get
+# completely different sets out of the same list.
+# Every line in here must reference at least one figure. A line with no placeholder is
+# eligible for everybody, including the people its joke is not true of - "ahead at the
+# casino" went in without one and would have been shown to the broke. A test enforces it.
+_BENEFITS_DATA_CHANCE = 0.6       # how often to prefer a figure over a plain house line
+_BENEFITS_DATA = [
+ # what the casino has had
+ "🧾 **{amount:,} UKPence** for <@{uid}>. The casino has had **{casino_lost:,}** off you, so consider this a partial refund from the wrong institution.",
+ "🧾 Approved: **{amount:,} UKPence** to <@{uid}>. That is **{pct_of_casino}%** of what you have lost at the tables. Chin up.",
+ "🧾 <@{uid}> receives **{amount:,} UKPence**. You are **{casino_lost:,}** down overall, so the state is not the problem here.",
+ "🧾 **{amount:,} UKPence** for <@{uid}>, across **{casino_games:,}** casino games and still qualifying for hardship. Remarkable consistency.",
+ "🧾 Payment through. <@{uid}> gets **{amount:,} UKPence**. Your worst single round cost **{worst_loss:,}**, so do brace yourself.",
+ "🧾 **{amount:,} UKPence** for <@{uid}>, who has won as much as **{best_win:,}** in one go and is here anyway. Money is a river.",
+ "🧾 Approved. <@{uid}> takes **{amount:,} UKPence**. The mines alone have had **{mines_lost:,}** of your money.",
+ "🧾 **{amount:,} UKPence** for <@{uid}>. Blackjack is **{blackjack_lost:,}** up on you. The dealer sends regards.",
+ "🧾 <@{uid}> gets **{amount:,} UKPence**. The wheel has had **{roulette_lost:,}**, and the wheel does not do refunds.",
+ "🧾 **{amount:,} UKPence** for <@{uid}>. The slots have taken **{slots_lost:,}**. They will take this too.",
+ "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**, roughly **{pct_of_mines}%** of what the mines have had off you.",
+
+ # the ones who are somehow ahead
+ "🧾 **{amount:,} UKPence** for <@{uid}>, who is **{casino_up:,}** UP at the casino. The means test really is only about the wallet.",
+ "🧾 Approved, with raised eyebrows. <@{uid}> gets **{amount:,} UKPence** despite being **{casino_up:,}** in profit at the tables.",
+ "🧾 <@{uid}> receives **{amount:,} UKPence**. **{casino_up:,}** ahead at the casino and claiming benefits is a genuinely impressive combination.",
+
+ # the abstainers
+ "🧾 **{amount:,} UKPence** for <@{uid}>{never_gambled}, who has never played a single casino game. Broke through sheer bad luck. Refreshing.",
+ "🧾 Approved. <@{uid}> gets **{amount:,} UKPence** with a spotless gambling record{never_gambled}. The state does not know what to do with you.",
+ "🧾 **{amount:,} UKPence** for <@{uid}>, who has played **{casino_games}** rounds and won none of them{no_casino_wins}. That takes a kind of dedication.",
+
+ # money moving between people
+ "🧾 **{amount:,} UKPence** for <@{uid}>. You have given **{paid_out:,}** away to other members, which the state finds either noble or suspicious.",
+ "🧾 Approved. <@{uid}> receives **{amount:,} UKPence** on top of the **{paid_in:,}** your mates have already sent you. Quite the network.",
+ "🧾 <@{uid}> gets **{amount:,} UKPence**. That is **{paid_in_n}** separate people who have bailed you out, plus the government.",
+ "🧾 **{amount:,} UKPence** for <@{uid}>, who has made **{paid_out_n}** payments to other people and still turned up here.",
+
+ # what else they have got
+ "🧾 **{amount:,} UKPence** for <@{uid}>. You have **{bonded:,}** locked in bonds, so this is pocket money with extra steps.",
+ "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. The shop has had **{shop_spent:,}** off you; try to keep this away from it.",
+ "🧾 <@{uid}> gets **{amount:,} UKPence**. **{shop_items}** things bought from the shop and not one of them was dinner.",
+ "🧾 **{amount:,} UKPence** for <@{uid}>, bringing you up from **{balance:,}**. Steady on.",
+
+ # the rest of the record
+ "🧾 Claim number **{claims}** approved. **{amount:,} UKPence** for <@{uid}>. The forms recognise your handwriting.",
+ "🧾 **{amount:,} UKPence** for <@{uid}>, shut up **{shut}** times and still entitled to public money. Democracy.",
+ "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. **{pvp_losses}** duels lost - fight the state instead, it pays out.",
+ "🧾 **{amount:,} UKPence** for <@{uid}>, undefeated in duels{unbeaten} and completely skint. Glory does not pay.",
+]
+
+
 def _benefits_success_line(uid, amount, stats=None) -> tuple:
-    """Their own line if they have one that still holds, otherwise the house pool.
+    """Pick a line: their own if they have one, else one built from their figures, else the
+    house pool. Returns (line, stats) so the caller formats without looking anything up twice.
 
-    Returns (line, stats) so the caller can format it without looking anything up twice.
+    Three tiers rather than two, because the personal pool only ever covers the heaviest
+    fifty claimants and everybody else was seeing the same seventeen jokes for good.
     """
-    personal = _BENEFITS_PERSONAL.get(str(uid))
-    if personal and random.random() < _BENEFITS_PERSONAL_CHANCE:
-        if stats is None:
-            stats = _benefits_stats(uid, amount)
-        live = [l for l in personal
-                if all(stats.get(f) is not None for f in _fields(l) - _BENEFITS_ALWAYS)]
-        if live:
-            return random.choice(live), stats
-    return random.choice(_BENEFITS_SUCCESS), (stats or {})
+    if stats is None:
+        stats = _benefits_stats(uid, amount)
 
+    def live(pool):
+        return [l for l in pool
+                if all(stats.get(f) is not None for f in _fields(l) - _BENEFITS_ALWAYS)]
+
+    personal = live(_BENEFITS_PERSONAL.get(str(uid), ()))
+    if personal and random.random() < _BENEFITS_PERSONAL_CHANCE:
+        return random.choice(personal), stats
+    generic = live(_BENEFITS_DATA)
+    if generic and random.random() < _BENEFITS_DATA_CHANCE:
+        return random.choice(generic), stats
+    return random.choice(_BENEFITS_SUCCESS), stats
 
 
 def _benefits_stats(uid, amount) -> dict:
