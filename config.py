@@ -304,7 +304,9 @@ WELCOME_FOLLOWUP_WINDOW_HOURS = 48  # ...and still close enough to their join to
 # of real conversations and it goes back to paying immediately.
 WELCOME_DRY_STREAK_LIMIT = 5      # consecutive welcomes that went nowhere before it tightens
 WELCOME_REDEMPTION_ENGAGEMENTS = 2  # real interactions needed to get instant pay back
-WELCOME_REPLY_WINDOW_MINUTES = 60 # while tightened, how long the newcomer has to reply
+WELCOME_REPLY_WINDOW_MINUTES = 60 # while tightened, how long the greeter has to answer them back
+WELCOME_CONTINUE_WINDOW_MINUTES = 10  # after a newcomer answers, how long a message in the
+                                      # same channel still counts as carrying it on
 WELCOME_HISTORY_KEPT = 12         # rolling welcome outcomes remembered per member
 # Channels whose messages can't enter the Hall of Fame (announcements etc. always get a
 # lot of reactions but aren't organic HoF-worthy posts). Bot/webhook and Discord

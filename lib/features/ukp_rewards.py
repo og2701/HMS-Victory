@@ -265,6 +265,7 @@ _WELCOME_RE = re.compile(
 )
 
 _tracked: set = set()          # newcomer ids with a live record
+_awaiting: set = set()         # greeters a newcomer has answered who owe them a reply
 _tracked_loaded = False
 
 
@@ -280,14 +281,33 @@ def _followup_window_secs() -> int:
     return int(getattr(config, "WELCOME_FOLLOWUP_WINDOW_HOURS", 48)) * 3600
 
 
+def _continue_window_secs() -> int:
+    """How long after a newcomer answers a plain message in the same channel still counts
+    as carrying the conversation on. Replies and mentions count whenever they arrive."""
+    return int(getattr(config, "WELCOME_CONTINUE_WINDOW_MINUTES", 10)) * 60
+
+
 def _record_life_secs() -> int:
     """How long a newcomer's record is kept: the longest phase that can still pay."""
     return max(_welcome_window_secs(), _reply_window_secs(), _followup_window_secs())
 
 
 def _refresh_tracked(store: dict) -> None:
-    global _tracked, _tracked_loaded
+    """Cache the ids the hot path has to recognise, so on_message stays a set lookup.
+
+    Two sets: the newcomers, and the greeters a newcomer has answered who have not yet said
+    anything back. The second one exists because carrying a conversation on usually doesn't
+    involve pressing reply or typing someone's name, so without it those messages would
+    never reach handle_welcome_reward and everybody would be marked dry.
+    """
+    global _tracked, _tracked_loaded, _awaiting
     _tracked = set(store.keys())
+    _awaiting = set()
+    for rec in store.values():
+        if not isinstance(rec, dict):
+            continue
+        done = {str(x) for x in rec.get("engaged", [])}
+        _awaiting |= {str(w) for w in rec.get("answered", {})} - done
     _tracked_loaded = True
 
 
@@ -317,10 +337,12 @@ def welcome_activity_possible(message) -> bool:
     try:
         if not _tracked_loaded:
             _load_store()
-        if not _tracked:
+        if not _tracked and not _awaiting:
             return False
         if str(getattr(message.author, "id", "")) in _tracked:
             return True
+        if str(getattr(message.author, "id", "")) in _awaiting:
+            return True     # a greeter who owes a newcomer a reply
         for u in getattr(message, "mentions", None) or ():
             if str(u.id) in _tracked:
                 return True
@@ -415,8 +437,11 @@ def _prune_welcome_store(store: dict) -> dict:
             continue
         engaged = {str(x) for x in rec.get("engaged", [])}
         banked = {str(x) for x in rec.get("banked", [])}
-        touched = {str(x) for x in rec.get("paid", [])} | {str(x) for x in rec.get("pending", {})}
-        for wid in touched - banked:
+        # Only greeters this newcomer actually replied to are judged. Being ignored by a
+        # newcomer is not a mark against you - there was nothing there to carry on. The
+        # dry mark is for the greeters who were answered and said nothing back.
+        answered = {str(x) for x in rec.get("answered", {})}
+        for wid in answered - banked:
             outcomes.append((wid, wid in engaged))
     _record_outcomes(outcomes)
     return keep
@@ -427,7 +452,9 @@ def _norm(rec: dict) -> dict:
     rec.setdefault("joined_at", int(time.time()))
     rec.setdefault("pending", {})
     rec.setdefault("followed", [])
-    rec.setdefault("engaged", [])
+    rec.setdefault("engaged", [])   # welcomers who stayed and talked
+    rec.setdefault("answered", {})  # welcomer -> when this newcomer replied to them
+    rec.setdefault("answered_in", None)  # channel they replied in
     rec.setdefault("banked", [])   # welcomers whose outcome has already been counted
     rec.setdefault("spoke", False)  # did this newcomer ever post at all?
     paid = rec.get("paid")
@@ -523,9 +550,14 @@ def _addressed_by_newcomer(message, store: dict) -> set:
 
 
 async def handle_welcome_reward(client, message) -> None:
-    """Book claims from greeters, and pay them when the newcomer answers.
+    """Book claims from greeters, and pay them for the conversation, not the greeting.
 
-    Three separate things can happen on one message; each is a self-contained block so a
+    A welcome is judged on what the greeter did once the newcomer answered. Saying hello
+    and vanishing the moment somebody says hello back is the thing worth discouraging, so
+    that is what counts as dry - not a newcomer who never replied, which is no reflection
+    on whoever greeted them.
+
+    Four separate things can happen on one message; each is a self-contained block so a
     quiet failure in one cannot stop the others.
     """
     try:
@@ -551,31 +583,48 @@ async def handle_welcome_reward(client, message) -> None:
             for wid in list(set(rec["pending"]) | {str(x) for x in rec["paid"]}):
                 if wid not in answered:
                     continue
-                # Any reply is engagement, whether or not money is owed for it.
-                if wid not in [str(x) for x in rec["engaged"]]:
-                    rec["engaged"].append(int(wid))
-                    # Counted now rather than at prune time: someone earning their payout
-                    # back should not have to wait two days for the record to expire.
-                    if wid not in [str(x) for x in rec["banked"]]:
-                        rec["banked"].append(int(wid))
-                        _record_outcomes([(wid, True)])
+                # The newcomer answering does not settle anything by itself. It starts the
+                # clock: from here the greeter either keeps the conversation going, which
+                # is block 3, or they don't, and it goes down as dry.
+                if wid not in rec["answered"]:
+                    rec["answered"][wid] = now
+                    rec["answered_in"] = message.channel.id
                     dirty = True
-                greeted_at = rec["pending"].get(wid)
-                if greeted_at is None:
-                    continue            # they were paid up front; this just clears the mark
-                rec["pending"].pop(wid, None)
-                dirty = True
-                if now - int(greeted_at) > _reply_window_secs():
-                    continue            # too late to pay the held-back welcome
-                if wid in [str(x) for x in rec["paid"]]:
-                    continue
-                rec["paid"].append(int(wid))
-                payouts.append((int(wid), int(getattr(config, "WELCOME_REWARD", 10)),
-                                "A new member replied to your welcome"))
             store[author_id] = rec
 
-        # --- 2. someone addresses a newcomer ------------------------------------------
+        # --- 3. the greeter carries it on ---------------------------------------------
+        # This is the block that pays. A reply or a mention counts, and so does simply
+        # saying something in the same channel shortly after they answered - people carry
+        # on a conversation without pressing reply, and marking that dry would punish the
+        # exact behaviour the payout exists to encourage.
         else:
+            carried = _addressed_by_newcomer(message, store)   # same test, other direction
+            for nid, rec in list(store.items()):
+                rec = _norm(rec)
+                started = rec["answered"].get(author_id)
+                if started is None or author_id in [str(x) for x in rec["engaged"]]:
+                    continue
+                same_room = (rec.get("answered_in") == message.channel.id
+                             and now - int(started) <= _continue_window_secs())
+                if nid not in carried and not same_room:
+                    continue
+                rec["engaged"].append(int(author_id))
+                # Banked now rather than at prune time, so anyone earning their instant
+                # payment back is not left waiting two days for the record to expire.
+                if author_id not in [str(x) for x in rec["banked"]]:
+                    rec["banked"].append(int(author_id))
+                    _record_outcomes([(author_id, True)])
+                held = rec["pending"].pop(author_id, None)
+                if held is not None and author_id not in [str(x) for x in rec["paid"]] \
+                        and now - int(started) <= _reply_window_secs():
+                    rec["paid"].append(int(author_id))
+                    payouts.append((int(author_id), int(getattr(config, "WELCOME_REWARD", 10)),
+                                    "You stayed and talked to a new member"))
+                store[nid] = rec
+                dirty = True
+
+        # --- 2. someone addresses a newcomer ------------------------------------------
+        if author_id not in store:
             targets = _welcome_targets(message, store)
             cap = int(getattr(config, "WELCOME_MAX_WELCOMERS", 5))
             follow_min = int(getattr(config, "WELCOME_FOLLOWUP_MIN_HOURS", 1)) * 3600

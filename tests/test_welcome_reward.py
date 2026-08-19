@@ -1,4 +1,9 @@
-"""Welcoming pays for a reply, not for the word 'welcome'."""
+"""Welcoming pays for the conversation, not for the word 'welcome'.
+
+A welcome is judged on what the greeter did once the newcomer answered. Being ignored by a
+newcomer is not held against anyone - there was nothing there to carry on. Saying hello,
+getting a hello back, and disappearing is the thing that counts as dry.
+"""
 
 import asyncio
 import os
@@ -154,21 +159,35 @@ def test_the_hot_path_gate_ignores_unrelated_chatter(monkeypatch, tmp_path):
 # The payout is earned back, not removed: greet without ever engaging and your
 # greeting stops paying up front; have a couple of real conversations and it returns.
 # ---------------------------------------------------------------------------
-def _dry_welcome(client, greeter, uid, monkeypatch):
-    """A welcome that goes nowhere with a newcomer who was demonstrably reachable.
-
-    The newcomer posts - just never back to the greeter - because a member who joins and
-    never speaks is deliberately not counted against anyone.
-    """
-    newcomer = FakeUser(uid)
-    bystander = FakeUser(99999)
-    W.register_new_member_join(newcomer)
-    _run(client, FakeMsg(greeter, "welcome", mentions=[newcomer]))
-    _run(client, FakeMsg(newcomer, "hi all", mentions=[bystander]))
+def _expire(uid):
+    """Age a newcomer's record past its life and prune, which is what banks the outcome."""
     store = W.load_json_file(config.WELCOME_TRACKING_FILE)
     store[str(uid)]["joined_at"] -= W._record_life_secs() + 60
     W.save_json_file(config.WELCOME_TRACKING_FILE, store)
-    W._load_store()          # pruning is what banks the outcome
+    W._load_store()
+
+
+def _dry_welcome(client, greeter, uid, monkeypatch=None):
+    """Say hello, get a hello back, then say nothing. This is the dry case.
+
+    The newcomer has to answer the greeter for it to count - being ignored is nobody's
+    fault - and the greeter then has to let the conversation die.
+    """
+    newcomer = FakeUser(uid)
+    W.register_new_member_join(newcomer)
+    _run(client, FakeMsg(greeter, "welcome", mentions=[newcomer]))
+    _run(client, FakeMsg(newcomer, "hello", mentions=[greeter]))
+    _expire(uid)
+
+
+def _good_welcome(client, greeter, uid):
+    """Say hello, get a hello back, and answer them. This is what the payout is for."""
+    newcomer = FakeUser(uid)
+    W.register_new_member_join(newcomer)
+    _run(client, FakeMsg(greeter, "welcome", mentions=[newcomer]))
+    _run(client, FakeMsg(newcomer, "hello", mentions=[greeter]))
+    _run(client, FakeMsg(greeter, "how are you finding it?", mentions=[newcomer]))
+    _expire(uid)
 
 
 def test_a_run_of_dead_welcomes_makes_the_greeting_earn_its_money(monkeypatch, tmp_path):
@@ -188,7 +207,10 @@ def test_a_run_of_dead_welcomes_makes_the_greeting_earn_its_money(monkeypatch, t
     assert len(paid) == before, "now the greeting alone pays nothing"
 
     _run(client, FakeMsg(late, "oh hi", mentions=[greeter]))
-    assert paid[-1] == (1, config.WELCOME_REWARD), "it pays once they answer"
+    assert len(paid) == before, "the newcomer answering is not the greeter's doing"
+
+    _run(client, FakeMsg(greeter, "hey, what brings you here", mentions=[late]))
+    assert paid[-1] == (1, config.WELCOME_REWARD), "it pays once the greeter answers back"
 
 
 def test_one_good_welcome_resets_the_streak(monkeypatch, tmp_path):
@@ -199,14 +221,7 @@ def test_one_good_welcome_resets_the_streak(monkeypatch, tmp_path):
         _dry_welcome(client, greeter, 200 + i, monkeypatch)
 
     # A newcomer who actually replies breaks the run before it trips.
-    good = FakeUser(300)
-    W.register_new_member_join(good)
-    _run(client, FakeMsg(greeter, "welcome", mentions=[good]))
-    _run(client, FakeMsg(good, "hiya", mentions=[greeter]))
-    store = W.load_json_file(config.WELCOME_TRACKING_FILE)
-    store["300"]["joined_at"] -= W._record_life_secs() + 60
-    W.save_json_file(config.WELCOME_TRACKING_FILE, store)
-    W._load_store()
+    _good_welcome(client, greeter, 300)
 
     _dry_welcome(client, greeter, 400, monkeypatch)
     assert not W.welcome_needs_earning(1)
@@ -222,10 +237,7 @@ def test_engaging_again_earns_instant_payment_back(monkeypatch, tmp_path):
 
     # Real conversations while tightened.
     for i in range(config.WELCOME_REDEMPTION_ENGAGEMENTS):
-        n = FakeUser(700 + i)
-        W.register_new_member_join(n)
-        _run(client, FakeMsg(greeter, "hello there", mentions=[n]))
-        _run(client, FakeMsg(n, "hey!", mentions=[greeter]))
+        _good_welcome(client, greeter, 700 + i)
 
     assert not W.welcome_needs_earning(1), "engagement should restore instant payment"
     before = len(paid)
@@ -269,20 +281,68 @@ def test_a_newcomer_who_never_speaks_is_nobodys_fault(monkeypatch, tmp_path):
     assert not W.welcome_needs_earning(1), "silent newcomers must not tighten anyone"
 
 
-def test_a_newcomer_who_talks_to_others_still_counts(monkeypatch, tmp_path):
-    """If they were reachable and the greeter never got anywhere, that does count."""
+def test_a_newcomer_who_talks_to_everyone_but_you_is_not_your_fault(monkeypatch, tmp_path):
+    """You cannot continue a conversation you were never included in.
+
+    This used to count against the greeter, on the grounds that the newcomer was clearly
+    reachable. It reads badly in practice: whether a new arrival picks you out of a busy
+    channel is not something saying hello better would fix.
+    """
     _fresh(monkeypatch, tmp_path)
     greeter, other = FakeUser(1), FakeUser(2)
     client = FakeClient([greeter, other])
 
-    for i in range(config.WELCOME_DRY_STREAK_LIMIT):
+    for i in range(config.WELCOME_DRY_STREAK_LIMIT * 2):
         n = FakeUser(2000 + i)
         W.register_new_member_join(n)
         _run(client, FakeMsg(greeter, "welcome", mentions=[n]))
         _run(client, FakeMsg(n, "hi everyone", mentions=[other]))   # spoke, just not back
-        store = W.load_json_file(config.WELCOME_TRACKING_FILE)
-        store[str(2000 + i)]["joined_at"] -= W._record_life_secs() + 60
-        W.save_json_file(config.WELCOME_TRACKING_FILE, store)
-        W._load_store()
+        _expire(2000 + i)
 
-    assert W.welcome_needs_earning(1)
+    assert not W.welcome_needs_earning(1)
+
+
+def test_answering_them_back_is_what_counts_as_a_real_welcome(monkeypatch, tmp_path):
+    """The whole point of the change: greet, get answered, reply, and it is not dry."""
+    _fresh(monkeypatch, tmp_path)
+    greeter = FakeUser(1)
+    client = FakeClient([greeter])
+    for i in range(config.WELCOME_DRY_STREAK_LIMIT * 2):
+        _good_welcome(client, greeter, 3000 + i)
+    assert not W.welcome_needs_earning(1), "staying and talking must never tighten anyone"
+
+
+def test_carrying_on_without_pressing_reply_still_counts(monkeypatch, tmp_path):
+    """People answer in the same channel without a reply or a ping, and that is a
+    conversation. Requiring the mention would mark the well-behaved as dry."""
+    _fresh(monkeypatch, tmp_path)
+    greeter = FakeUser(1)
+    room = FakeChannel(4242)
+    client = FakeClient([greeter])
+
+    for i in range(config.WELCOME_DRY_STREAK_LIMIT):
+        n = FakeUser(4000 + i)
+        W.register_new_member_join(n)
+        _run(client, FakeMsg(greeter, "welcome", mentions=[n], channel=room))
+        _run(client, FakeMsg(n, "hello", mentions=[greeter], channel=room))
+        _run(client, FakeMsg(greeter, "how's it going", channel=room))   # no reply, no ping
+        _expire(4000 + i)
+
+    assert not W.welcome_needs_earning(1)
+
+
+def test_talking_in_a_different_channel_is_not_carrying_it_on(monkeypatch, tmp_path):
+    """The loose same-room rule must not let any old message anywhere count."""
+    _fresh(monkeypatch, tmp_path)
+    greeter = FakeUser(1)
+    client = FakeClient([greeter])
+
+    for i in range(config.WELCOME_DRY_STREAK_LIMIT):
+        n = FakeUser(5000 + i)
+        W.register_new_member_join(n)
+        _run(client, FakeMsg(greeter, "welcome", mentions=[n], channel=FakeChannel(11)))
+        _run(client, FakeMsg(n, "hello", mentions=[greeter], channel=FakeChannel(11)))
+        _run(client, FakeMsg(greeter, "unrelated chatter", channel=FakeChannel(22)))
+        _expire(5000 + i)
+
+    assert W.welcome_needs_earning(1), "chatting elsewhere is not answering them"
