@@ -64,6 +64,11 @@ PERMANENT_FLOOR = (
     " about them. Screening the room for who will bite - by nationality, age or"
     " willingness - is the same thing. One ordinary \"dm me\" between people already"
     " talking is not.",
+    "Scam bait: links to free Nitro, giveaways, gift cards, cheap goods, game currency or"
+    " login pages; \"I got hacked, click this\"; selling accounts, boosts or codes. A link"
+    " to an ordinary site, a shop, a news article or a clip is not scam bait.",
+    "Passing themselves off as staff, a moderator, an admin, Discord itself, or another"
+    " member, whether by name, avatar or claim.",
 )
 
 
@@ -581,6 +586,12 @@ CALIBRATION EXAMPLES:
     the sequence, not each message on its own.
 11. "dm me" or "anyone about?" from someone already chatting, with nothing on offer: fine.
     A request to move to DMs is not recruitment; what is being offered makes it so.
+12. "free nitro here [link]", "steam gift card giveaway, first 10 only": troll. Bait like
+    this is on the floor on its own, from the first message, with no brief needed.
+13. A member posting a shop link, a news article, a YouTube clip or their own project:
+    fine. Links are normal. What is on the other end of the pitch is what matters.
+14. "im a mod here, send me your login to verify": troll - impersonating staff, and it is
+    a scam whichever way the brief is written.
 
 REMEMBER:
 - You are matching behaviour against a brief, not judging whether you like someone.
