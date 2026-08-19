@@ -216,7 +216,11 @@ def get_join_watch_state() -> dict[str, Any]:
     global _state_cache
     if _state_cache is None:
         data = load_json_file(JOIN_WATCH_FILE) or {}
-        context = str(data.get("context") or DEFAULT_CONTEXT)[:MAX_CONTEXT_CHARS]
+        # A stored empty string is a context staff deliberately cleared, and has to survive
+        # the reload - "or DEFAULT_CONTEXT" put the paragraph straight back, which is half
+        # of why clearing the box appeared to do nothing.
+        raw = data.get("context")
+        context = (DEFAULT_CONTEXT if raw is None else str(raw))[:MAX_CONTEXT_CHARS]
         if context in _LEGACY_DEFAULT_CONTEXTS:
             context = DEFAULT_CONTEXT
         _state_cache = {
@@ -227,13 +231,18 @@ def get_join_watch_state() -> dict[str, Any]:
 
 
 def set_join_watch_state(enabled: bool, context: str | None = None) -> dict[str, Any]:
+    """Arm or disarm, optionally replacing the incident context.
+
+    None leaves the context alone, which is what the arm/disarm button wants. An empty
+    string clears it, which is what the modal wants when staff empty the box - the two
+    used to be the same thing, so there was no way to get rid of a context once set.
+    """
     global _state_cache
     current = get_join_watch_state()
     new_state = {
         "enabled": bool(enabled),
-        "context": (
-            context.strip()[:MAX_CONTEXT_CHARS] if context and context.strip() else current["context"]
-        ),
+        "context": (current["context"] if context is None
+                    else context.strip()[:MAX_CONTEXT_CHARS]),
     }
     save_json_file(JOIN_WATCH_FILE, {**new_state, "updated_at": int(time.time())})
     _state_cache = new_state

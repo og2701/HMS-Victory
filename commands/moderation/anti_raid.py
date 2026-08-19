@@ -15,7 +15,6 @@ from discord.interactions import Interaction
 
 from config import CHANNELS, JSON_DATA_DIR, PERMISSIONS_BACKUP_FILE, ROLES
 from commands.moderation.join_watch import (
-    DEFAULT_CONTEXT as JW_DEFAULT_CONTEXT,
     MAX_CONTEXT_CHARS as JW_MAX_CONTEXT_CHARS,
     MAX_SCANNED_MESSAGES as JW_MAX_MESSAGES,
     TIMEOUT_HOURS as JW_TIMEOUT_HOURS,
@@ -1096,30 +1095,30 @@ class JoinWatchContextModal(discord.ui.Modal):
             label="Why is screening on right now?",
             style=discord.TextStyle.paragraph,
             default=get_join_watch_state()["context"],
-            placeholder="Leave empty to reset to the general default context.",
+            placeholder="Leave empty to clear it and screen without an incident context.",
             max_length=JW_MAX_CONTEXT_CHARS,
             required=False,
         )
         self.add_item(self.context_input)
 
     async def on_submit(self, interaction: Interaction) -> None:
-        # Setting the context arms screening; a fresh context implies an active
-        # incident. Clearing the box resets to the general default.
+        # Editing the wording is not the same as deciding to screen people, and arming from
+        # here surprised staff who were only tidying the text. The button next to it arms.
+        # An empty box clears the context rather than reinstating the default paragraph.
         was_armed = get_join_watch_state()["enabled"]
         new_context = (self.context_input.value or "").strip()
-        set_join_watch_state(True, new_context or JW_DEFAULT_CONTEXT)
+        set_join_watch_state(was_armed, new_context)
+        armed_note = "screening is armed" if was_armed else "screening is still off"
         self.dashboard.notice = (
-            "🔎 Join-watch context updated; screening is armed."
+            f"🔎 Join-watch context updated; {armed_note}."
             if new_context
-            else "🔎 Join-watch context reset to the general default; screening is armed."
+            else f"🔎 Join-watch context cleared; {armed_note}."
         )
         self.dashboard.render()
         await interaction.response.edit_message(
             view=self.dashboard,
             allowed_mentions=discord.AllowedMentions.none(),
         )
-        if not was_armed:
-            await announce_join_watch_toggle(interaction.client, interaction.user, True)
         await _log_action(
             self.dashboard.guild,
             f"Join-watch context updated by {interaction.user} ({interaction.user.id}).",

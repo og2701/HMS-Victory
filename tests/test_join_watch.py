@@ -123,6 +123,37 @@ def test_toggle_state_persists_and_context_is_kept(monkeypatch, tmp_path):
     assert state["context"] == "custom incident context"
 
 
+def test_an_emptied_context_stays_empty(monkeypatch, tmp_path):
+    """Clearing the box has to actually clear it.
+
+    Two separate things put the paragraph back: an empty string meant "keep what you had"
+    on the way in, and "or DEFAULT_CONTEXT" put it back on the way out of the file. Staff
+    emptied the box, submitted, reopened it and found their text still there.
+    """
+    _fresh(monkeypatch, tmp_path)
+    join_watch.set_join_watch_state(True, "codes are being farmed")
+    assert join_watch.get_join_watch_state()["context"] == "codes are being farmed"
+
+    assert join_watch.set_join_watch_state(True, "")["context"] == ""
+    monkeypatch.setattr(join_watch, "_state_cache", None)
+    assert join_watch.get_join_watch_state()["context"] == "", "the reload put it back"
+
+
+def test_arming_on_its_own_leaves_the_context_alone(monkeypatch, tmp_path):
+    """The arm button passes no context, and must not wipe one that is set."""
+    _fresh(monkeypatch, tmp_path)
+    join_watch.set_join_watch_state(True, "an incident worth describing")
+    assert join_watch.set_join_watch_state(False)["context"] == "an incident worth describing"
+    assert join_watch.set_join_watch_state(True)["context"] == "an incident worth describing"
+
+
+def test_a_first_run_still_gets_the_general_context(monkeypatch, tmp_path):
+    """Never having set one is different from having cleared it."""
+    _fresh(monkeypatch, tmp_path)
+    monkeypatch.setattr(join_watch, "_state_cache", None)
+    assert join_watch.get_join_watch_state()["context"] == join_watch.DEFAULT_CONTEXT
+
+
 def test_stale_default_incident_context_is_migrated(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path)
     legacy = next(iter(join_watch._LEGACY_DEFAULT_CONTEXTS))
