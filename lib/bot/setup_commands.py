@@ -571,32 +571,26 @@ def define_commands(tree, client):
                         view=review_view
                     ))
 
-        # Daily anti-shuffle cap: at most DAILY_PAY_CAP UKP sent to OTHER MEMBERS per UK day.
-        # Pays to the bank (recipient = bot) are exempt - that's money leaving circulation, not
-        # shuffling - so this only governs user→user transfers.
+        # Daily anti-shuffle cap: at most DAILY_PAY_CAP UKP moved to OTHER MEMBERS per UK day,
+        # counting /pay and wagers lost together. Losing a game on purpose moves money the same
+        # way a payment does, so it spends the same allowance and cannot be used to carry on
+        # after the cap is reached. Pays to the bank are exempt - that's money leaving
+        # circulation, not shuffling.
         if recipient.id != interaction.client.user.id:
             import config
-            from database import DatabaseManager
+            from lib.economy.economy_manager import daily_transfer_state
             cap = int(getattr(config, "DAILY_PAY_CAP", 10000))
-            uk = pytz.timezone("Europe/London")
-            midnight = datetime.now(uk).replace(hour=0, minute=0, second=0, microsecond=0)
-            day_start = int(midnight.timestamp())
-            sent_row = DatabaseManager.fetch_one(
-                "SELECT COALESCE(SUM(amount), 0) FROM pay_transfers "
-                "WHERE payer_id = ? AND recipient_id != ? AND timestamp >= ?",
-                (str(interaction.user.id), str(interaction.client.user.id), day_start),
-            )
-            sent_today = int(sent_row[0]) if sent_row else 0
-            remaining = cap - sent_today
+            sent_today, remaining, reset = daily_transfer_state(
+                interaction.user.id, interaction.client.user.id)
             if amount > remaining:
-                reset = int((midnight + timedelta(days=1)).timestamp())
                 if remaining <= 0:
-                    msg = (f"💸 You've hit the daily limit of **{cap:,} UKPence** in transfers to "
+                    msg = (f"💸 You've hit the daily limit of **{cap:,} UKPence** moved to "
                            f"other members. It resets <t:{reset}:R>.")
                 else:
-                    msg = (f"💸 That would exceed the daily transfer limit of **{cap:,} UKPence** to "
-                           f"other members. You've sent **{sent_today:,}** today, so you can still "
+                    msg = (f"💸 That would exceed the daily limit of **{cap:,} UKPence** moved to "
+                           f"other members. You've moved **{sent_today:,}** today, so you can still "
                            f"send **{remaining:,}** more. Resets <t:{reset}:R>.")
+                msg += "\n-# Wagers you lose count towards this too."
                 return await interaction.response.send_message(msg, ephemeral=True)
 
         import time

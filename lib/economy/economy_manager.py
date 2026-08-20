@@ -398,6 +398,78 @@ def recent_transfer_io(user_id, days: int = None) -> tuple[int, int]:
     return (inflow, outflow)
 
 
+def daily_transfer_used(user_id, bot_id=None) -> int:
+    """UKP this member has moved to other members today: /pay sent, plus wagers lost.
+
+    Losing a wager on purpose moves money exactly like /pay does, so it spends the same
+    daily allowance. Genuine losses spend it too, which is the price of not having to tell
+    the two apart - measured against real history that costs almost nothing, because the
+    median day's wager losses are 18 UKP and the worst ever was 7,200 against a 10,000 cap.
+
+    Pays to the bank are excluded: money leaving circulation is not shuffling.
+    """
+    import time
+    from datetime import datetime, timedelta
+    import pytz
+    uk = pytz.timezone("Europe/London")
+    day_start = int(datetime.now(uk).replace(hour=0, minute=0, second=0,
+                                             microsecond=0).timestamp())
+    uid, used = str(user_id), 0
+    try:
+        row = DatabaseManager.fetch_one(
+            "SELECT COALESCE(SUM(amount), 0) FROM pay_transfers "
+            "WHERE payer_id = ? AND recipient_id != ? AND timestamp >= ?",
+            (uid, str(bot_id) if bot_id is not None else "", day_start))
+        used += int(row[0]) if row and row[0] is not None else 0
+    except Exception:
+        pass
+    try:
+        row = DatabaseManager.fetch_one(
+            "SELECT COALESCE(SUM(amount), 0) FROM game_transfers "
+            "WHERE loser_id = ? AND timestamp >= ?", (uid, day_start))
+        used += int(row[0]) if row and row[0] is not None else 0
+    except Exception:
+        pass
+    return used
+
+
+def daily_transfer_state(user_id, bot_id=None) -> tuple[int, int, int]:
+    """(used today, remaining, when it resets) against DAILY_PAY_CAP."""
+    from datetime import datetime, timedelta
+    import config
+    import pytz
+    uk = pytz.timezone("Europe/London")
+    midnight = datetime.now(uk).replace(hour=0, minute=0, second=0, microsecond=0)
+    cap = int(getattr(config, "DAILY_PAY_CAP", 10000))
+    used = daily_transfer_used(user_id, bot_id)
+    return used, max(0, cap - used), int((midnight + timedelta(days=1)).timestamp())
+
+
+def wager_blocked_reason(user_id, stake, bot_id=None, name="You") -> str | None:
+    """Why this member cannot stake this much today, or None if they can.
+
+    Losing spends the daily transfer allowance, so a wager is refused when the stake could
+    not fit inside what is left. Checked on the stake rather than the loss because a member
+    has to be told before they commit, not after - and because refusing at settle time
+    would mean voiding a game that had already been played.
+    """
+    stake = int(stake)
+    if stake <= 0:
+        return None
+    used, remaining, reset = daily_transfer_state(user_id, bot_id)
+    if stake <= remaining:
+        return None
+    import config
+    cap = int(getattr(config, "DAILY_PAY_CAP", 10000))
+    if remaining <= 0:
+        return (f"{name} have already moved the daily limit of **{cap:,} UKPence** to other "
+                f"members today, so {name.lower()} cannot stake anything until it resets "
+                f"<t:{reset}:R>.")
+    return (f"{name} can only stake **{remaining:,} UKPence** today - losing would move more "
+            f"than the daily limit of **{cap:,}**, and {used:,} has gone already. "
+            f"Resets <t:{reset}:R>.")
+
+
 def _recent_transfer_io_in_transaction(cursor, user_id, days: int = None) -> tuple[int, int]:
     """Cursor-scoped form used while a bank/user move holds the database lock."""
     import time

@@ -27,7 +27,7 @@ import discord
 from discord import Interaction, Member
 
 import config
-from lib.economy.economy_manager import get_bb, remove_bb
+from lib.economy.economy_manager import get_bb, remove_bb, wager_blocked_reason
 from commands.economy.casino_base import (
     credit_from_bank, settle_pvp_pot, save_state, delete_state, reject_if_maintenance,
 )
@@ -487,6 +487,13 @@ class Connect4ChallengeView(discord.ui.View):
             await interaction.response.send_message(
                 f"You no longer have {self.amount:,} UKPence.", ephemeral=True)
             return
+        # Re-checked here: the allowance can be spent between the challenge and the accept.
+        for _uid, _name in ((self.challenger.id, self.challenger.display_name),
+                            (self.opponent.id, "You")):
+            if why := wager_blocked_reason(_uid, self.amount, interaction.client.user.id,
+                                           name=_name):
+                await interaction.response.send_message(why, ephemeral=True)
+                return
         # Claim before any await/payout so two fast clicks can't both stake the pot.
         self.resolved = True
         # Pull both stakes into the bank. If the second fails, refund the first and reopen.
@@ -651,6 +658,12 @@ async def handle_connect4_command(interaction: Interaction, opponent: Member, be
         await interaction.response.send_message(
             f"You don't have {bet:,} UKPence to stake.", ephemeral=True)
         return
+    # Losing moves UKP to the other player, so it spends the same daily allowance /pay does.
+    # Refused up front rather than at settle time, which would mean voiding a played game.
+    if not vs_ai and (why := wager_blocked_reason(interaction.user.id, bet,
+                                                  interaction.client.user.id)):
+        await interaction.response.send_message(why, ephemeral=True)
+        return
     if vs_ai:
         await _start_ai_game(interaction, bet)
         return
@@ -658,6 +671,10 @@ async def handle_connect4_command(interaction: Interaction, opponent: Member, be
         await interaction.response.send_message(
             f"{opponent.display_name} doesn't have {bet:,} UKPence to match your stake.",
             ephemeral=True)
+        return
+    if why := wager_blocked_reason(opponent.id, bet, interaction.client.user.id,
+                                   name=opponent.display_name):
+        await interaction.response.send_message(why, ephemeral=True)
         return
 
     accept_min = getattr(config, "CONNECT4_ACCEPT_SECONDS", 300) // 60
