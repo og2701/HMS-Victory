@@ -30,6 +30,18 @@ def test_corrections():
         # a word that merely contains a blocked one must be left alone
         ("laboratory research", "laboratory research"),
         ("concert tickets", "concert tickets"),
+        # the families the list used to stop short of
+        ("i apologize, i recognized it", "i apologise, i recognised it"),
+        ("his behavior was marvelous", "his behaviour was marvellous"),
+        ("we traveled a liter of fiber", "we travelled a litre of fibre"),
+        ("the anesthetic maneuver", "the anaesthetic manoeuvre"),
+        ("mom canceled the vacation", "mum cancelled the holiday"),
+        ("cozy pajamas and a donut", "cosy pyjamas and a doughnut"),
+        # words that stay put: ordinary British English in another sense
+        ("the program checks the draft", "the program checks the draft"),
+        ("a gas meter on the first floor", "a gas meter on the first floor"),
+        ("i tire of this practice", "i tire of this practice"),
+        ("chips and jelly", "chips and jelly"),
     ]
     
     for input_text, expected in test_cases:
