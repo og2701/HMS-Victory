@@ -13,6 +13,17 @@ def test_corrections():
         ("why all the fuss?", "why all the fuss?"),
         ("Y'ALL ARE BRUZZ.", "YOU ALL ARE BROTHER."),
         ("i like the Centers.", "i like the Centres."),
+        ("passed me the yogurt", "passed me the yoghurt"),
+        ("two yogurts please", "two yoghurts please"),
+        ("YOGURT", "YOGHURT"),
+        ("Yogurt time", "Yoghurt time"),
+        # already spelt properly - the filter must leave it alone
+        ("passed me the yoghurt", "passed me the yoghurt"),
+        # blocked by the rule but previously uncorrectable, so the message vanished
+        ("let me analyze that rumor", "let me analyse that rumour"),
+        ("do me a favor and organize it", "do me a favour and organise it"),
+        ("i realized they organized it", "i realised they organised it"),
+        ("y\u2019all ready?", "you all ready?"),
     ]
     
     for input_text, expected in test_cases:
