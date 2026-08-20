@@ -24,6 +24,12 @@ def test_corrections():
         ("do me a favor and organize it", "do me a favour and organise it"),
         ("i realized they organized it", "i realised they organised it"),
         ("y\u2019all ready?", "you all ready?"),
+        ("that is skibidi", "that is nonsense"),
+        ("Skibibi toilet", "Nonsense toilet"),
+        ("back to Iabor", "back to Labour"),
+        # a word that merely contains a blocked one must be left alone
+        ("laboratory research", "laboratory research"),
+        ("concert tickets", "concert tickets"),
     ]
     
     for input_text, expected in test_cases:

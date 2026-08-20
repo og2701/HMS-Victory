@@ -18,9 +18,17 @@ AMERICAN_TO_BRITISH = {
     "artifact": "artefact",
     "artifacts": "artefacts",
     "bruzz": "brother",
+    # Brainrot, blocked by the rule and previously left to vanish. Same joke as bruzz:
+    # rewritten into plain English rather than the message being eaten.
+    "skibidi": "nonsense",
+    "skibibi": "nonsense",
     "catalog": "catalogue",
     "center": "centre",
     "centers": "centres",
+    # Almost certainly a fragment left over from guarding obfuscated soccer, and it only
+    # ever matches the bare token "cer". Mapped anyway so a message containing it is
+    # rewritten rather than swallowed; deleting it from the rule would be tidier.
+    "cer": "football",
     "cilantro": "coriander",
     "color": "colour",
     "colors": "colours",
@@ -43,6 +51,9 @@ AMERICAN_TO_BRITISH = {
     "humor": "humour",
     "humors": "humours",
     "labor": "labour",
+    # A capital I passing as a lowercase l - the rule blocks the lookalike, so it needs a
+    # correction like any other blocked word
+    "iabor": "labour",
     "likable": "likeable",
     "livable": "liveable",
     "lovable": "loveable",
