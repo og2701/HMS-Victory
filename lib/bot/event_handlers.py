@@ -1163,6 +1163,17 @@ async def on_message(client, message):
                         "count": 1
                     }
             
+            # A particular sticker. Which one lives in the encrypted blob rather than here,
+            # like the other secret triggers, so the open repo does not give it away - the
+            # id comes back from param() and is matched against whatever was sent.
+            if message.stickers:
+                from lib.economy import secret_config as _sc
+                _sticker = _sc.param("a9")
+                if _sticker is not None and any(
+                    str(getattr(st, "id", "")) == str(_sticker) for st in message.stickers
+                ) and (_b := _sc.bid("a9")):
+                    await award_badge_with_notify(client, message.author.id, _b)
+
             # --- New Automatic Badges ---
             
             # 1. Town Crier (First message of the day)
