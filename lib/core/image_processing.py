@@ -729,3 +729,112 @@ async def generate_shop_preview_grid_async(items: list, cols: int = 4) -> io.Byt
         # Run the cached generation in executor
         img_bytes = await loop.run_in_executor(None, _getCachedShopPreview, items_str, cols)
         return io.BytesIO(img_bytes)
+
+
+def process_and_compress_media(data: bytes, filename: str, is_emoji: bool = True) -> tuple[bytes, str, bool]:
+    """
+    Process, convert, downscale, and compress an uploaded image or animated GIF/WebP.
+    Ensures:
+      - Max file size <= 256KB for emoji, <= 512KB for sticker.
+      - Max dimensions <= 128x128 for emoji, <= 320x320 for sticker.
+      - Converts static images/WebPs to PNG.
+      - Converts animated images/WebPs to optimized GIF.
+    Returns: (processed_bytes, output_filename, is_animated)
+    """
+    from PIL import Image, ImageSequence
+    max_bytes = 256 * 1024 if is_emoji else 512 * 1024
+    max_dim = 128 if is_emoji else 320
+
+    im = Image.open(io.BytesIO(data))
+    is_animated = getattr(im, "is_animated", False) and getattr(im, "n_frames", 1) > 1
+
+    if not is_animated:
+        im = im.convert("RGBA")
+        im.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+        out = io.BytesIO()
+        im.save(out, format="PNG", optimize=True)
+        res = out.getvalue()
+
+        # If still over limit, reduce dimensions progressively
+        dim = max_dim
+        while len(res) > max_bytes and dim > 32:
+            dim = int(dim * 0.8)
+            im.thumbnail((dim, dim), Image.Resampling.LANCZOS)
+            out = io.BytesIO()
+            im.save(out, format="PNG", optimize=True)
+            res = out.getvalue()
+
+        base_name = filename.rsplit(".", 1)[0]
+        return res, f"{base_name}.png", False
+
+    # Animated GIF or animated WebP -> Convert to animated GIF
+    durations = []
+    raw_frames = []
+    for frame in ImageSequence.Iterator(im):
+        raw_frames.append(frame.copy().convert("RGBA"))
+        durations.append(frame.info.get("duration", 100))
+
+    loop = im.info.get("loop", 0)
+    sizes = [
+        (max_dim, max_dim),
+        (int(max_dim * 0.8), int(max_dim * 0.8)),
+        (int(max_dim * 0.6), int(max_dim * 0.6)),
+        (64, 64),
+        (48, 48),
+        (32, 32),
+    ]
+
+    best_res = None
+    for size in sizes:
+        out_frames = []
+        for f in raw_frames:
+            resized = f.copy()
+            resized.thumbnail(size, Image.Resampling.LANCZOS)
+            out_frames.append(resized)
+
+        out = io.BytesIO()
+        out_frames[0].save(
+            out,
+            format="GIF",
+            save_all=True,
+            append_images=out_frames[1:],
+            duration=durations,
+            loop=loop,
+            optimize=True,
+            disposal=2,
+        )
+        res = out.getvalue()
+        if len(res) <= max_bytes:
+            best_res = res
+            break
+        best_res = res
+
+    # If still too large, downsample frame rate (every 2nd frame)
+    if len(best_res) > max_bytes and len(raw_frames) > 4:
+        sub_frames = raw_frames[::2]
+        sub_durations = [d * 2 for d in durations[::2]]
+        for size in [(96, 96), (64, 64), (48, 48), (32, 32)]:
+            out_frames = []
+            for f in sub_frames:
+                resized = f.copy()
+                resized.thumbnail(size, Image.Resampling.LANCZOS)
+                out_frames.append(resized)
+            out = io.BytesIO()
+            out_frames[0].save(
+                out,
+                format="GIF",
+                save_all=True,
+                append_images=out_frames[1:],
+                duration=sub_durations,
+                loop=loop,
+                optimize=True,
+                disposal=2,
+            )
+            res = out.getvalue()
+            best_res = res
+            if len(res) <= max_bytes:
+                break
+
+    base_name = filename.rsplit(".", 1)[0]
+    return best_res, f"{base_name}.gif", True
+

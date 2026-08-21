@@ -51,8 +51,8 @@ class ShopItem(ABC):
 
     async def purchase(self, user_id: str, interaction) -> Tuple[bool, str]:
         """Handle the complete purchase process including inventory management."""
-        # Check inventory before purchase
-        if self.use_inventory:
+        # Check inventory before purchase (custom_emoji_sticker is consumed on approval)
+        if self.use_inventory and self.id != "custom_emoji_sticker":
             if not ShopInventory.consume_item(self.id, 1):
                 return False, "Item is out of stock or purchase failed."
 
@@ -61,14 +61,14 @@ class ShopItem(ABC):
             result_message = await self.execute(interaction)
 
             # Record the purchase - use get_price for accurate logging (0 for boosters)
-            if self.use_inventory:
+            if self.use_inventory and self.id != "custom_emoji_sticker":
                 actual_price = self.get_price(int(user_id), interaction.guild)
                 ShopInventory.record_purchase(user_id, self.id, 1, actual_price)
 
             return True, result_message
         except Exception as e:
             # Rollback inventory on error
-            if self.use_inventory:
+            if self.use_inventory and self.id != "custom_emoji_sticker":
                 ShopInventory.add_stock(self.id, 1)
             raise e
 

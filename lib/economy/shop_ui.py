@@ -294,13 +294,13 @@ class PurchaseConfirmationView(View):
                 pass
             return
 
-        # Charge the user
+        # Charge the user upfront for immediate delivery items; approval items are charged on approval
         deducted = True
-        if price > 0:
+        if price > 0 and self.item.id != "custom_emoji_sticker":
             deducted = remove_bb(interaction.user.id, price, reason=f"Shop purchase: {self.item.name}")
             
         if deducted:
-            if price > 0:
+            if price > 0 and self.item.id != "custom_emoji_sticker":
                 pass  # BankManager.deposit handled automatically by remove_bb(to_bank=True)
 
             # Execute item purchase logic
@@ -310,10 +310,10 @@ class PurchaseConfirmationView(View):
             except Exception as e:
                 logging.error(f"Shop execute error for {self.item.name} by {interaction.user}: {e}", exc_info=True)
                 # Refund since execute() failed
-                if price > 0:
+                if price > 0 and self.item.id != "custom_emoji_sticker":
                     add_bb(interaction.user.id, price, reason=f"Shop refund: {self.item.name} (execute error: {type(e).__name__})", taxable=False)
                 
-                error_msg = f"❌ An error occurred during purchase. Your UKPence has been refunded.\nError: {str(e)}"
+                error_msg = f"❌ An error occurred during purchase.\nError: {str(e)}"
                 if not interaction.response.is_done():
                     await interaction.response.send_message(error_msg, ephemeral=True)
                 else:
@@ -327,7 +327,7 @@ class PurchaseConfirmationView(View):
 
             if not success:
                 # Refund if backend purchase logic returned False
-                if price > 0:
+                if price > 0 and self.item.id != "custom_emoji_sticker":
                     add_bb(interaction.user.id, price, reason=f"Shop refund: {self.item.name} (out of stock)", taxable=False)
                 
                 if not interaction.response.is_done():
@@ -341,16 +341,16 @@ class PurchaseConfirmationView(View):
                     pass
                 return
 
-            # Purchase confirmed & item delivered - award purchase badges NOW (not
-            # before delivery, so a failed/refunded purchase can never leave a badge).
-            from lib.bot.event_handlers import award_badge_with_notify
-            await award_badge_with_notify(interaction.client, interaction.user.id, 'first_purchase')
-            from database import DatabaseManager
-            total_purchased_res = DatabaseManager.fetch_one(
-                "SELECT SUM(quantity) FROM shop_purchases WHERE user_id = ?", (str(interaction.user.id),)
-            )
-            if (total_purchased_res[0] or 0) >= 10:
-                await award_badge_with_notify(interaction.client, interaction.user.id, 'shopaholic')
+            # Purchase confirmed & item delivered - award purchase badges NOW (for items delivered immediately)
+            if self.item.id != "custom_emoji_sticker":
+                from lib.bot.event_handlers import award_badge_with_notify
+                await award_badge_with_notify(interaction.client, interaction.user.id, 'first_purchase')
+                from database import DatabaseManager
+                total_purchased_res = DatabaseManager.fetch_one(
+                    "SELECT SUM(quantity) FROM shop_purchases WHERE user_id = ?", (str(interaction.user.id),)
+                )
+                if (total_purchased_res[0] or 0) >= 10:
+                    await award_badge_with_notify(interaction.client, interaction.user.id, 'shopaholic')
 
             # Item was successfully granted - from here, errors are UI-only (don't refund)
             try:
@@ -1012,13 +1012,17 @@ class CustomEmojiStickerView(View):
                 return
 
         embed = discord.Embed(
-            title=f"Custom {'Emoji' if self.choice == 'emoji' else 'Sticker'} Upload",
-            description=f"Please upload your {'emoji' if self.choice == 'emoji' else 'sticker'} file and provide a name.",
+            title=f"Custom {'Emoji' if self.choice == 'emoji' else 'Sticker'} Request",
+            description=(
+                f"**Step 1:** Click the button below to choose a name for your {'emoji' if self.choice == 'emoji' else 'sticker'}.\n"
+                f"**Step 2:** The bot will then prompt you to drop your image or GIF file into chat.\n\n"
+                f"*(Note: You will only be charged 3,500 UKPence once Cabinet approves your request!)*"
+            ),
             color=0x00ff00
         )
 
         if self.choice == "emoji":
-            embed.add_field(name="Requirements", value="• File must be PNG, JPG, or GIF\n• Max 256KB\n• Recommended: 128x128px\n• Name must be 2-32 characters (alphanumeric + underscores)", inline=False)
+            embed.add_field(name="Requirements", value="• File must be PNG, JPG, GIF, or WebP\n• The bot will auto-resize and compress oversized images/GIFs!\n• Name must be 2-32 characters (alphanumeric + underscores)", inline=False)
             if static_count >= emoji_limit:
                 embed.add_field(
                     name="⚠️ Static slots full",
@@ -1038,10 +1042,10 @@ class CustomEmojiStickerView(View):
                     inline=False,
                 )
         else:
-            embed.add_field(name="Requirements", value="• File must be PNG, GIF, or Lottie JSON\n• Max 512KB for static, 512KB for animated\n• Name must be 2-30 characters\n• Description is optional", inline=False)
+            embed.add_field(name="Requirements", value="• File must be PNG, GIF, WebP, or Lottie JSON\n• Auto-resized to fit 320x320\n• Name must be 2-30 characters\n• Description is optional", inline=False)
 
         self.clear_items()
-        upload_button = Button(label=f"Upload {'Emoji' if self.choice == 'emoji' else 'Sticker'}", style=discord.ButtonStyle.primary, emoji="📁")
+        upload_button = Button(label=f"Step 1: Set {'Emoji' if self.choice == 'emoji' else 'Sticker'} Name", style=discord.ButtonStyle.primary, emoji="✏️")
         upload_button.callback = self.upload_callback
         self.add_item(upload_button)
 
@@ -1054,7 +1058,7 @@ class CustomEmojiStickerView(View):
 
         class UploadModal(discord.ui.Modal):
             def __init__(self, choice):
-                super().__init__(title=f"Upload Custom {'Emoji' if choice == 'emoji' else 'Sticker'}")
+                super().__init__(title=f"Set Custom {'Emoji' if choice == 'emoji' else 'Sticker'} Name")
                 self.choice = choice
                 self.name_input = discord.ui.TextInput(
                     label=f"{'Emoji' if choice == 'emoji' else 'Sticker'} Name",
@@ -1073,7 +1077,8 @@ class CustomEmojiStickerView(View):
 
             async def on_submit(self, modal_interaction: discord.Interaction):
                 await modal_interaction.response.send_message(
-                    f"Now please upload your {'emoji' if self.choice == 'emoji' else 'sticker'} file as an attachment in your next message. I'll process it automatically when you send it.",
+                    f"📥 **Step 2:** Now please upload your {'emoji' if self.choice == 'emoji' else 'sticker'} file (PNG, JPG, GIF, or WebP) as an attachment in your next message in this channel.\n"
+                    f"The bot will automatically resize, compress, and send it to Cabinet for approval!",
                     ephemeral=True
                 )
                 modal_interaction.client._pending_uploads = getattr(modal_interaction.client, '_pending_uploads', {})
@@ -1097,7 +1102,7 @@ class EmojiStickerApprovalView(View):
         self.filename = filename
 
     def _refund_amount(self) -> int:
-        """The price to refund - the configured custom_emoji_sticker item price."""
+        """The price for the custom_emoji_sticker item."""
         from lib.economy.shop_items import get_shop_items
         refund_amount = 3500
         for item in get_shop_items():
@@ -1109,6 +1114,7 @@ class EmojiStickerApprovalView(View):
     @discord.ui.button(label="Approve", style=discord.ButtonStyle.green, emoji="✅")
     async def approve_request(self, interaction: discord.Interaction, button: discord.ui.Button):
         from config import ROLES
+        from lib.economy.economy_manager import get_bb, remove_bb, add_bb
         import io
 
         if not any(role.id == ROLES.CABINET for role in interaction.user.roles):
@@ -1117,15 +1123,22 @@ class EmojiStickerApprovalView(View):
 
         await interaction.response.defer()
 
+        price = self._refund_amount()
+        user_balance = get_bb(self.user.id)
+        if user_balance < price:
+            await interaction.followup.send(
+                f"❌ Purchaser {self.user.mention} no longer has enough UKPence to pay for this (needs {price:,}, currently has {user_balance:,}).",
+                ephemeral=True
+            )
+            return
+
         try:
             guild = interaction.guild
             success = False
             result_message = ""
 
             if self.upload_data['type'] == 'emoji':
-                # Discord caps static and animated emoji slots separately; check
-                # the pool this file actually needs so a full pool produces a
-                # clear message (and refund) instead of a raw 400.
+                # Discord caps static and animated emoji slots separately
                 from lib.economy.shop_items import emoji_slot_usage
                 is_animated = self.file_data[:4] == b"GIF8"
                 static_count, animated_count = emoji_slot_usage(guild)
@@ -1157,39 +1170,45 @@ class EmojiStickerApprovalView(View):
                 result_message = f"✅ Custom sticker '{sticker.name}' has been approved and added to the server!"
 
             if success:
+                # Deduct payment now that creation succeeded
+                if price > 0:
+                    remove_bb(self.user.id, price, reason=f"Shop purchase: Custom {self.upload_data['type'].title()}")
+
+                from lib.economy.shop_inventory import ShopInventory
+                from lib.bot.event_handlers import award_badge_with_notify
+                from database import DatabaseManager
+                ShopInventory.record_purchase(str(self.user.id), "custom_emoji_sticker", 1, price)
+                await award_badge_with_notify(interaction.client, self.user.id, 'first_purchase')
+                total_purchased_res = DatabaseManager.fetch_one(
+                    "SELECT SUM(quantity) FROM shop_purchases WHERE user_id = ?", (str(self.user.id),)
+                )
+                if (total_purchased_res[0] or 0) >= 10:
+                    await award_badge_with_notify(interaction.client, self.user.id, 'shopaholic')
+
                 embed = discord.Embed(title="✅ Custom Emoji/Sticker - APPROVED", description=result_message, color=0x00ff00)
                 embed.add_field(name="Approved by", value=interaction.user.mention, inline=True)
                 embed.add_field(name="Purchaser", value=self.user.mention, inline=True)
                 embed.add_field(name="Type", value=self.upload_data['type'].title(), inline=True)
                 embed.add_field(name="Name", value=self.upload_data['name'], inline=True)
+                embed.add_field(name="Charged", value=f"{price:,} UKPence", inline=True)
                 if self.upload_data.get('description'):
                     embed.add_field(name="Description", value=self.upload_data['description'], inline=True)
                 for item in self.children:
                     item.disabled = True
                 await interaction.edit_original_response(embed=embed, view=self)
                 try:
-                    await self.user.send(result_message)
+                    await self.user.send(f"{result_message}\nYour wallet has been charged {price:,} UKPence.")
                 except discord.Forbidden:
                     pass
 
         except Exception as e:
-            # Creation failed (HTTP error, bad image, server emoji/sticker slots
-            # full, etc.). The purchaser was already charged at purchase time, so
-            # refund them rather than silently keeping their money, and disable the
-            # buttons so it can't be retried into a double-create.
-            from lib.economy.economy_manager import add_bb
-            refund_amount = self._refund_amount()
-            add_bb(self.user.id, refund_amount, reason="Custom emoji/sticker refund (creation failed)", taxable=False)
-            for item in self.children:
-                item.disabled = True
             fail_embed = discord.Embed(
                 title="⚠️ Custom Emoji/Sticker - FAILED",
-                description=(
-                    f"Could not create the {self.upload_data['type']}: {e}\n\n"
-                    f"{refund_amount:,} UKPence has been refunded to {self.user.mention}."
-                ),
+                description=f"Could not create the {self.upload_data['type']}: {e}\n\nNo payment was taken.",
                 color=0xff0000,
             )
+            for item in self.children:
+                item.disabled = True
             try:
                 await interaction.edit_original_response(embed=fail_embed, view=self)
             except discord.HTTPException:
@@ -1197,7 +1216,7 @@ class EmojiStickerApprovalView(View):
             try:
                 await self.user.send(
                     f"Your custom {self.upload_data['type']} '{self.upload_data['name']}' could not be "
-                    f"created ({e}). You have been refunded {refund_amount:,} UKPence."
+                    f"created ({e}). No payment was taken."
                 )
             except discord.Forbidden:
                 pass
@@ -1225,26 +1244,13 @@ class EmojiStickerApprovalView(View):
             async def on_submit(self, modal_interaction: discord.Interaction):
                 await modal_interaction.response.defer()
 
-                from lib.economy.shop_items import get_shop_items
-                from lib.economy.economy_manager import add_bb
-                from lib.economy.bank_manager import BankManager
-
-                items = get_shop_items()
-                refund_amount = 3500  
-                for item in items:
-                    if item.id == "custom_emoji_sticker":
-                        refund_amount = item.price
-                        break
-
-                add_bb(self.approval_view.user.id, refund_amount, reason="Custom role refund (denied)", taxable=False)
-
-                embed = discord.Embed(title="❌ Custom Emoji/Sticker - DENIED", description=f"Request has been denied and {refund_amount} UKPence has been refunded.", color=0xff0000)
+                embed = discord.Embed(title="❌ Custom Emoji/Sticker - DENIED", description="Request has been denied. No payment was taken.", color=0xff0000)
                 embed.add_field(name="Denied by", value=modal_interaction.user.mention, inline=True)
                 embed.add_field(name="Purchaser", value=self.approval_view.user.mention, inline=True)
                 embed.add_field(name="Type", value=self.approval_view.upload_data['type'].title(), inline=True)
                 embed.add_field(name="Name", value=self.approval_view.upload_data['name'], inline=True)
                 embed.add_field(name="Reason", value=self.reason_input.value, inline=False)
-                embed.add_field(name="Refund", value=f"{refund_amount} UKPence", inline=True)
+                embed.add_field(name="Payment", value="No charge (0 UKP)", inline=True)
 
                 for item in self.approval_view.children:
                     item.disabled = True
@@ -1255,7 +1261,7 @@ class EmojiStickerApprovalView(View):
                     user_embed = discord.Embed(title="❌ Custom Emoji/Sticker Request Denied", description=f"Your request for a custom {self.approval_view.upload_data['type']} has been denied.", color=0xff0000)
                     user_embed.add_field(name="Name", value=self.approval_view.upload_data['name'], inline=True)
                     user_embed.add_field(name="Reason", value=self.reason_input.value, inline=False)
-                    user_embed.add_field(name="Refund", value=f"You have been refunded {refund_amount} UKPence", inline=False)
+                    user_embed.add_field(name="Payment", value="No payment was taken from your wallet.", inline=False)
                     await self.approval_view.user.send(embed=user_embed)
                 except discord.Forbidden:
                     pass
