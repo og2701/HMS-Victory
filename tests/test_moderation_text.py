@@ -68,6 +68,9 @@ def test_detects_expanded_slurs():
     faggot_leet = find_blocked_moderation_match("f@gg0t")
     assert faggot_leet is not None and faggot_leet.label == "homophobic slur"
 
+    dyke_match = find_blocked_moderation_match("d y k e")
+    assert dyke_match is not None and dyke_match.label == "homophobic slur"
+
     # Transphobic slurs
     shemale_match = find_blocked_moderation_match("shem@le")
     assert shemale_match is not None and shemale_match.label == "transphobic slur"
@@ -75,7 +78,7 @@ def test_detects_expanded_slurs():
     # Verifying removed terms do not trigger automated filter
     assert find_blocked_moderation_match("retard") is None
     assert find_blocked_moderation_match("tranny") is None
-    assert find_blocked_moderation_match("dyke") is None
+
 
 
 
