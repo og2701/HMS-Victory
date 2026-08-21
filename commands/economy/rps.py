@@ -139,13 +139,22 @@ class RPSMatch(discord.ui.View):
                 f"{self.scores[self.p2_id]}  {self.p2_name}")
 
     def _round_line(self, n, h1, h2, winner):
-        """A finished round. The winning hand leads and the winner's name closes the line, so
-        you can always tell whose hand was whose - "📄 vs 🪨" on its own tells you nothing."""
-        if winner is None:
-            return f"`R{n}`  both played {EMOJI[h1]} {h1} - replayed"
-        name = self.p1_name if winner == self.p1_id else self.p2_name
-        won, lost = (h1, h2) if winner == self.p1_id else (h2, h1)
-        return f"`R{n}`  {EMOJI[won]} {won} beats {EMOJI[lost]} {lost} - **{name}**"
+        """A finished round, read left to right as a sentence.
+
+        Each name sits against its own hand and the players never swap sides, so you can see
+        who played what without working backwards from who won. Ordering the hands by result
+        instead - "📄 beats 🪨 - oggers" - makes you infer it, which is what people were
+        actually failing to do.
+        """
+        verb = ("tied with" if winner is None
+                else "beat" if winner == self.p1_id else "lost to")
+        left = f"**{self.p1_name}**" if winner == self.p1_id else self.p1_name
+        right = f"**{self.p2_name}**" if winner == self.p2_id else self.p2_name
+        # A tie doesn't consume the round, so tagging it with the number would print the same
+        # `R3` twice. Mark it as a replay instead.
+        tag, tail = (("`↻`", " - replayed") if winner is None else (f"`R{n}`", ""))
+        return (f"{tag}  {left} {EMOJI[h1]} {h1}  {verb}  "
+                f"{EMOJI[h2]} {h2} {right}{tail}")
 
     def _embed(self):
         lines = [self._score_line(),

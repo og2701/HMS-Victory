@@ -235,7 +235,10 @@ def test_the_history_says_whose_hand_was_whose(monkeypatch):
     m._start_timer = lambda: None
     _pick(m, P1, "paper"); _pick(m, P2, "rock")
     body = m._embed().description
-    assert "paper beats" in body and "Alice" in body, body
+    line = next(l for l in body.splitlines() if l.startswith("`R1`"))
+    # Each name has to sit against its own hand, in a fixed order.
+    assert line.index("Alice") < line.index("paper") < line.index("rock") < line.index("Bob"), \
+        f"you cannot tell who played what: {line!r}"
     assert "1 - 0" in body, f"the score should be readable at a glance: {body!r}"
 
 
