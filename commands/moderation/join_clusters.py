@@ -587,13 +587,9 @@ async def ban_ids(guild: Any, ids: list[str], actor: Any) -> tuple[list[str], li
         # Tell them first. Once the ban lands we no longer share a guild and Discord will
         # refuse the DM, so a notice sent afterwards silently goes nowhere. A closed DM is
         # not a reason to skip the ban.
-        try:
-            member = guild.get_member(int(uid))
-            if member is not None:
-                await member.send(view=_ban_dm_view(int(uid)),
-                                  allowed_mentions=discord.AllowedMentions.none())
-        except Exception:
-            logger.debug("could not DM %s before banning (DMs closed?)", uid, exc_info=True)
+        member = guild.get_member(int(uid))
+        if member is not None:
+            await send_ban_appeal_dm(member)
         try:
             await guild.ban(discord.Object(id=int(uid)), reason=reason[:500],
                             delete_message_seconds=0)
@@ -602,6 +598,22 @@ async def ban_ids(guild: Any, ids: list[str], actor: Any) -> tuple[list[str], li
             logger.exception("join-cluster ban failed for %s", uid)
             failed.append(uid)
     return banned, failed
+
+
+async def send_ban_appeal_dm(member: Any, body: str | None = None) -> bool:
+    """Tell someone why they are being banned and give them the appeal button.
+
+    Call this BEFORE the ban lands. Once it does we no longer share a guild and Discord
+    refuses the DM, so a notice sent afterwards goes nowhere at all. Closed DMs are not a
+    reason to hold off the ban, so this reports rather than raises.
+    """
+    try:
+        await member.send(view=_ban_dm_view(int(member.id), body),
+                          allowed_mentions=discord.AllowedMentions.none())
+        return True
+    except Exception:
+        logger.debug("could not DM %s before banning (DMs closed?)", member.id, exc_info=True)
+        return False
 
 
 # --- appeals -----------------------------------------------------------------------
@@ -630,17 +642,22 @@ def _save_appeals(data: dict[str, Any]) -> None:
         logger.exception("could not persist ban appeals")
 
 
-def _ban_dm_view(user_id: int) -> discord.ui.LayoutView:
+CLUSTER_BAN_TEXT = (
+    "## You've been banned from UK Place\n"
+    "Your account was removed as part of a group of accounts that were all registered "
+    "within a few minutes of each other and joined the server together. That pattern "
+    "is how account farms work.\n\n"
+    "**If that isn't you, say so.** This was a judgement about a pattern, not about "
+    "anything you personally did, and it can be wrong - people who signed up at the "
+    "same time as friends look identical to us.")
+
+
+def _ban_dm_view(user_id: int, body: str | None = None) -> discord.ui.LayoutView:
+    """The appeal DM. `body` says why, so other automated bans can reuse the appeal route
+    without telling the person something that is not true of their case."""
     view = discord.ui.LayoutView(timeout=None)
     card = discord.ui.Container(accent_colour=0xE74C3C)
-    card.add_item(discord.ui.TextDisplay(
-        "## You've been banned from UK Place\n"
-        "Your account was removed as part of a group of accounts that were all registered "
-        "within a few minutes of each other and joined the server together. That pattern "
-        "is how account farms work.\n\n"
-        "**If that isn't you, say so.** This was a judgement about a pattern, not about "
-        "anything you personally did, and it can be wrong - people who signed up at the "
-        "same time as friends look identical to us."))
+    card.add_item(discord.ui.TextDisplay(body or CLUSTER_BAN_TEXT))
     card.add_item(discord.ui.Separator())
     card.add_item(discord.ui.ActionRow(AppealButton(user_id)))
     card.add_item(discord.ui.TextDisplay(

@@ -22,7 +22,7 @@ it while the account is still around to act on.
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import discord
 
@@ -37,6 +37,19 @@ STATE_FILE = config.DM_SPAM_FLAG_FILE
 # flags, seed quietly and let the next sweep report genuine new ones.
 FIRST_RUN_ALERT_LIMIT = 10
 PAGE = 1000
+TIMEOUT_HOURS = 24        # matches how long Discord's own flag runs
+
+# The ban goes out on Discord's judgement rather than on anything a moderator watched
+# happen, and a hijacked account belongs to a real person who did not do it - so this ban
+# gets the same appeal route as the cluster bans, with wording that fits the actual reason.
+BAN_DM_TEXT = (
+    "## You've been banned from UK Place\n"
+    "Discord's own systems flagged your account for sending an unusual volume of direct "
+    "messages. That is almost always either a scam account or an account somebody else has "
+    "taken control of.\n\n"
+    "**If your account was hacked, say so.** Change your password and turn on two-factor "
+    "authentication first, then appeal below - we would rather have you back than leave a "
+    "hijacked account banned.")
 
 
 def _parse(stamp):
@@ -139,8 +152,168 @@ async def sweep(client, now=None):
         return new
     for uid, info in sorted(new.items(), key=lambda kv: kv[1]["until"]):
         try:
-            await channel.send(embed=_embed(uid, info, now=now))
+            await channel.send(embed=_embed(uid, info, now=now),
+                               view=action_view(uid))
         except Exception:
             logger.error(f"could not report the DM flag on {uid}", exc_info=True)
         await asyncio.sleep(1)
     return new
+
+
+# --- staff actions on the alert ---------------------------------------------------------
+# The flag lasts 24 hours, so an alert nobody can act on from where they are reading it is
+# an alert that expires unanswered. Buttons are DynamicItems keyed on the user id: no state
+# to keep, and they still work on an alert posted before the last restart.
+
+def _is_staff(user):
+    from lib.core.behaviour_watch import is_staff
+    return is_staff(user)
+
+
+async def _settle(interaction, note):
+    """Write what was done onto the alert itself and retire the buttons, so the next mod to
+    scroll past can see it has been dealt with and by whom."""
+    try:
+        embed = interaction.message.embeds[0]
+        embed.add_field(name="Handled", value=note, inline=False)
+        embed.colour = 0x95A5A6
+        await interaction.message.edit(embed=embed, view=None)
+    except Exception:
+        logger.debug("could not settle the DM flag alert", exc_info=True)
+
+
+class _DMFlagAction(discord.ui.DynamicItem[discord.ui.Button], template=r"$"):
+    """Shared plumbing for the buttons on an unusual-DM alert."""
+
+    def __init__(self, user_id, prefix, label, emoji, style):
+        self.user_id = int(user_id)
+        super().__init__(discord.ui.Button(
+            label=label, emoji=emoji, style=style,
+            custom_id=f"{prefix}:{self.user_id}"))
+
+    async def _reject_non_staff(self, interaction):
+        if _is_staff(interaction.user):
+            return False
+        await interaction.response.send_message("Staff only.", ephemeral=True)
+        return True
+
+    async def _member(self, interaction):
+        guild = interaction.guild
+        member = guild.get_member(self.user_id) if guild else None
+        if member is None and guild is not None:
+            try:
+                member = await guild.fetch_member(self.user_id)
+            except discord.HTTPException:
+                member = None
+        return member
+
+
+class DMFlagBanButton(_DMFlagAction, template=r"dmflag:ban:(?P<uid>\d+)"):
+    def __init__(self, user_id=0):
+        super().__init__(user_id, "dmflag:ban", "Ban", "🔨", discord.ButtonStyle.danger)
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(match["uid"])
+
+    async def callback(self, interaction):
+        if await self._reject_non_staff(interaction):
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        reason = f"Discord unusual DM activity flag · banned by {interaction.user}"
+        # Tell them before the ban lands. Afterwards we no longer share a guild and Discord
+        # will not deliver the DM, so the appeal route silently disappears.
+        told = False
+        member = await self._member(interaction)
+        if member is not None:
+            from commands.moderation.join_clusters import send_ban_appeal_dm
+            told = await send_ban_appeal_dm(member, BAN_DM_TEXT)
+        try:
+            # By id rather than by member: they may well have been kicked or left already,
+            # and a ban is still worth having in that case.
+            await interaction.guild.ban(discord.Object(id=self.user_id),
+                                        reason=reason[:500], delete_message_seconds=0)
+        except Exception as e:
+            await interaction.followup.send(f"Could not ban them: {e}", ephemeral=True)
+            return
+        await _settle(interaction, f"🔨 Banned by {interaction.user.mention}"
+                                   + ("" if told else " · could not DM them the appeal"))
+        await interaction.followup.send(
+            "Banned." + (" They have the appeal button." if told
+                         else " Their DMs are closed, so no appeal notice reached them."),
+            ephemeral=True)
+
+
+class DMFlagTimeoutButton(_DMFlagAction, template=r"dmflag:to:(?P<uid>\d+)"):
+    def __init__(self, user_id=0):
+        super().__init__(user_id, "dmflag:to", f"Time out {TIMEOUT_HOURS}h", "⏳",
+                         discord.ButtonStyle.primary)
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(match["uid"])
+
+    async def callback(self, interaction):
+        if await self._reject_non_staff(interaction):
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        member = await self._member(interaction)
+        if member is None:
+            await interaction.followup.send("They are not in the server any more.",
+                                            ephemeral=True)
+            return
+        until = discord.utils.utcnow() + timedelta(hours=TIMEOUT_HOURS)
+        reason = f"Discord unusual DM activity flag · timed out by {interaction.user}"
+        try:
+            await member.timeout(until, reason=reason[:500])
+        except Exception as e:
+            await interaction.followup.send(f"Could not time them out: {e}", ephemeral=True)
+            return
+        await _settle(interaction,
+                      f"⏳ Timed out {TIMEOUT_HOURS}h by {interaction.user.mention}")
+        await interaction.followup.send(f"Timed out for {TIMEOUT_HOURS}h.", ephemeral=True)
+
+
+class DMFlagAnalyseButton(_DMFlagAction, template=r"dmflag:analyse:(?P<uid>\d+)"):
+    def __init__(self, user_id=0):
+        super().__init__(user_id, "dmflag:analyse", "Analyse", "🔎",
+                         discord.ButtonStyle.secondary)
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(match["uid"])
+
+    async def callback(self, interaction):
+        member = await self._member(interaction)
+        if member is None:
+            await interaction.response.send_message(
+                "They are not in the server any more, so there is nothing to read.",
+                ephemeral=True)
+            return
+        # handle_analyse_user does its own permission check and its own defer.
+        from commands.moderation.user_analysis import handle_analyse_user
+        await handle_analyse_user(interaction, member)
+
+
+class DMFlagDismissButton(_DMFlagAction, template=r"dmflag:dismiss:(?P<uid>\d+)"):
+    def __init__(self, user_id=0):
+        super().__init__(user_id, "dmflag:dismiss", "Ignore", "✅",
+                         discord.ButtonStyle.success)
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(match["uid"])
+
+    async def callback(self, interaction):
+        if await self._reject_non_staff(interaction):
+            return
+        await interaction.response.defer()
+        await _settle(interaction, f"✅ Left alone by {interaction.user.mention}")
+
+
+def action_view(user_id):
+    view = discord.ui.View(timeout=None)
+    for button in (DMFlagBanButton(user_id), DMFlagTimeoutButton(user_id),
+                   DMFlagAnalyseButton(user_id), DMFlagDismissButton(user_id)):
+        view.add_item(button)
+    return view
