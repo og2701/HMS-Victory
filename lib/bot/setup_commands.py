@@ -927,3 +927,6 @@ def define_commands(tree, client):
     @command("medal-table", "Olympic-style leaderboard of badge holders by gold/silver/bronze count")
     async def medal_table_command(interaction: Interaction):
         await handle_medal_table_command(interaction)
+
+    from commands.moderation.verification import setup_verification_commands
+    setup_verification_commands(tree, client)

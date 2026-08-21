@@ -164,6 +164,14 @@ class AClient(discord.Client):
         except Exception as e:
             logger.warning(f"Could not register lottery board view: {e}")
 
+        # Register persistent server verification button
+        try:
+            from commands.moderation.verification import ServerVerificationView
+            self.add_view(ServerVerificationView())
+            logger.info("Registered persistent server verification view.")
+        except Exception as e:
+            logger.warning(f"Could not register server verification view: {e}")
+
         logger.info("Persistent prediction views registered in setup_hook.")
 
     async def on_ready(self):
