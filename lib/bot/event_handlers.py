@@ -166,6 +166,31 @@ async def on_member_update(before, after):
     if before.timed_out_until != after.timed_out_until and after.timed_out_until and after.timed_out_until > discord.utils.utcnow():
         asyncio.create_task(notify_mute(after._state._get_client(), after))
 
+    # Onboarding bot detection (detects selfbots selecting all contradictory roles)
+    before_roles = {r.id for r in before.roles}
+    after_roles = {r.id for r in after.roles}
+    newly_assigned_roles = after_roles - before_roles
+
+    if newly_assigned_roles and not recently_flagged_users[after.id]:
+        client = after._state._get_client()
+        mod_channel = client.get_channel(CHANNELS.POLICE_STATION)
+
+        if all_onboarding_roles.issubset(after_roles) and all_onboarding_roles.intersection(newly_assigned_roles):
+            recently_flagged_users[after.id] = True
+            if mod_channel:
+                await mod_channel.send(
+                    f"🚩 **Potential bot detected:** {after.mention} (`{after.id}`)\n"
+                    f"Assigned themselves **all onboarding roles**: British, English, Scottish, Welsh, Northern Irish, Commonwealth, and Visitor. Please monitor."
+                )
+
+        elif nationality_onboarding_roles.issubset(after_roles) and nationality_onboarding_roles.intersection(newly_assigned_roles):
+            recently_flagged_users[after.id] = True
+            if mod_channel:
+                await mod_channel.send(
+                    f"🚩 **Potential bot detected:** {after.mention} (`{after.id}`)\n"
+                    f"Assigned themselves **all nationality onboarding roles**: English, Scottish, Welsh, and Northern Irish. Please monitor."
+                )
+
 
 def _summarise_message(message) -> str:
     """Turn a discord.Message into a short preview string (content + attachment/sticker hints)."""
