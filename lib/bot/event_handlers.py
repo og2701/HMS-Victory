@@ -136,7 +136,8 @@ async def check_onboarding_selection(member, newly_assigned):
     embed.set_thumbnail(url=member.display_avatar.url)
     embed.set_footer(text="Self-selected in onboarding · no action taken")
     try:
-        await channel.send(embed=embed)
+        from lib.core.mod_actions import ONBOARDING, action_view
+        await channel.send(embed=embed, view=action_view(ONBOARDING, member.id))
     except Exception:
         # This runs detached, so an exception here would only surface as a stray
         # "task exception was never retrieved" with no clue what it was about.
