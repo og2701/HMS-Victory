@@ -170,14 +170,17 @@ def _is_staff(user):
     return is_staff(user)
 
 
-async def _settle(interaction, note):
-    """Write what was done onto the alert itself and retire the buttons, so the next mod to
-    scroll past can see it has been dealt with and by whom."""
+async def _settle(interaction, note, user_id):
+    """Write what was done onto the alert itself and grey the buttons out.
+
+    Greyed rather than removed: a report that loses its buttons reads as though it was
+    never actionable, and you can no longer see what the other options had been.
+    """
     try:
         embed = interaction.message.embeds[0]
         embed.add_field(name="Handled", value=note, inline=False)
         embed.colour = 0x95A5A6
-        await interaction.message.edit(embed=embed, view=None)
+        await interaction.message.edit(embed=embed, view=action_view(user_id, disabled=True))
     except Exception:
         logger.debug("could not settle the DM flag alert", exc_info=True)
 
@@ -237,7 +240,8 @@ class DMFlagBanButton(_DMFlagAction, template=r"dmflag:ban:(?P<uid>\d+)"):
             await interaction.followup.send(f"Could not ban them: {e}", ephemeral=True)
             return
         await _settle(interaction, f"🔨 Banned by {interaction.user.mention}"
-                                   + ("" if told else " · could not DM them the appeal"))
+                                   + ("" if told else " · could not DM them the appeal"),
+                      self.user_id)
         await interaction.followup.send(
             "Banned." + (" They have the appeal button." if told
                          else " Their DMs are closed, so no appeal notice reached them."),
@@ -270,7 +274,8 @@ class DMFlagTimeoutButton(_DMFlagAction, template=r"dmflag:to:(?P<uid>\d+)"):
             await interaction.followup.send(f"Could not time them out: {e}", ephemeral=True)
             return
         await _settle(interaction,
-                      f"⏳ Timed out {TIMEOUT_HOURS}h by {interaction.user.mention}")
+                      f"⏳ Timed out {TIMEOUT_HOURS}h by {interaction.user.mention}",
+                      self.user_id)
         await interaction.followup.send(f"Timed out for {TIMEOUT_HOURS}h.", ephemeral=True)
 
 
@@ -308,12 +313,14 @@ class DMFlagDismissButton(_DMFlagAction, template=r"dmflag:dismiss:(?P<uid>\d+)"
         if await self._reject_non_staff(interaction):
             return
         await interaction.response.defer()
-        await _settle(interaction, f"✅ Left alone by {interaction.user.mention}")
+        await _settle(interaction, f"✅ Left alone by {interaction.user.mention}",
+                      self.user_id)
 
 
-def action_view(user_id):
+def action_view(user_id, disabled=False):
     view = discord.ui.View(timeout=None)
     for button in (DMFlagBanButton(user_id), DMFlagTimeoutButton(user_id),
                    DMFlagAnalyseButton(user_id), DMFlagDismissButton(user_id)):
+        button.item.disabled = disabled
         view.add_item(button)
     return view

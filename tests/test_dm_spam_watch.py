@@ -290,13 +290,21 @@ def test_banning_goes_by_id_so_it_works_after_they_leave():
     assert "unusual DM" in i.guild.bans[0][1]
 
 
-def test_acting_writes_the_outcome_onto_the_alert_and_drops_the_buttons():
+def test_acting_greys_the_buttons_out_rather_than_removing_them():
+    """A report that loses its buttons reads as though it was never actionable, and you can
+    no longer see what the other options were."""
     i = FakeButtonInteraction(staff=True)
     _run(W.DMFlagBanButton(7).callback(i))
     edit = i.message.edits[-1]
-    assert edit["view"] is None, "the buttons stayed live after the ban"
+    view = edit["view"]
+    assert view is not None and len(view.children) == 4, "the buttons were taken away"
+    assert all(c.item.disabled for c in view.children), "the buttons are still clickable"
     handled = [f for f in edit["embed"].fields if f.name == "Handled"]
     assert handled and "<@42>" in handled[0].value, "the alert does not say who acted"
+
+
+def test_a_fresh_alert_has_live_buttons():
+    assert not any(c.item.disabled for c in W.action_view(7).children)
 
 
 def test_the_appeal_dm_goes_out_before_the_ban_not_after():
