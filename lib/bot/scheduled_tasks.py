@@ -10,6 +10,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from config import *
 from lib.features.summary import initialize_summary_data, update_summary_data, post_summary
+from lib.features.dm_spam_watch import sweep as sweep_dm_spam_flags
 from lib.economy.economy_manager import add_bb, get_bb, get_all_balances as load_ukpence_data
 from lib.economy.bank_manager import BankManager
 from lib.economy.economy_stats_html import create_economy_stats_image
@@ -553,6 +554,12 @@ def _register_client_jobs(client, scheduler):
 
     _add_process_job(scheduler, process_economy_logs, IntervalTrigger(seconds=15), args=[client], id="process_economy_logs_interval", name="Process Economy Log Queue")
     _add_process_job(scheduler, process_voice_activity_log, IntervalTrigger(seconds=30), args=[client], id="process_voice_activity_log_interval", name="Post Voice Activity Log")
+    # Discord's unusual-DM flag is not in discord.py, so this is a raw member sweep - 13
+    # requests over a 12k guild. The flag lasts 24h, so 15 minutes is far finer than it
+    # needs to be; the point is mods hearing about it while the account is still there.
+    _add_process_job(scheduler, sweep_dm_spam_flags, IntervalTrigger(minutes=15), args=[client],
+                     id="dm_spam_flag_sweep", name="Sweep Unusual DM Activity Flags",
+                     next_run_time=discord.utils.utcnow() + timedelta(seconds=90))
     # One-shot on boot: clean up gate notices orphaned by a restart mid-delete_after
     _add_process_job(scheduler, sweep_orphaned_gate_messages, args=[client], id="sweep_gate_orphans_boot", name="Sweep Orphaned Gate Messages", next_run_time=discord.utils.utcnow() + timedelta(seconds=20))
     # Frequent tick, not a 12h interval: the 12h cycle lives in the DB (last_restock),

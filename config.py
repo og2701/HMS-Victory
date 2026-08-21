@@ -368,6 +368,7 @@ ECONOMY_METRICS_FILE = os.path.join(JSON_DATA_DIR, "economy_metrics.json")
 TREE_WATER_FILE = os.path.join(JSON_DATA_DIR, "tree_water_rewards.json")
 BUMP_REWARD_FILE = os.path.join(JSON_DATA_DIR, "bump_rewards.json")
 WELCOME_REPUTATION_FILE = os.path.join(JSON_DATA_DIR, "welcome_reputation.json")  # per-member welcome outcomes
+DM_SPAM_FLAG_FILE = os.path.join(JSON_DATA_DIR, "dm_spam_flags.json")  # members carrying Discord's unusual-DM flag, so we only report each one once
 WELCOME_TRACKING_FILE = os.path.join(JSON_DATA_DIR, "welcome_tracking.json")  # pending newcomers + who's already been paid for welcoming them
 GAME_PINNACLE_FILE = os.path.join(JSON_DATA_DIR, "game_pinnacles.json")  # per-user top-tier wins in the new games (for a secret cross-game badge)
 BENEFITS_FILE = os.path.join(JSON_DATA_DIR, "benefits_claims.json")
