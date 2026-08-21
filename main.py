@@ -640,7 +640,8 @@ async def graceful_shutdown(client, sig_name):
             n += sum(1 for v in _views.values()
                      if isinstance(v, dict) and (
                          v.get("type") == "battleship"
-                         or (v.get("type") == "connect4" and not v.get("ai"))))
+                         or (v.get("type") == "connect4" and not v.get("ai"))
+                         or v.get("type") == "rps"))
         except Exception:
             pass
         return n
