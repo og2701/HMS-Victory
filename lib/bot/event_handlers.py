@@ -586,8 +586,11 @@ def reattach_persistent_views(client):
 
 
 
+import urllib.parse
+
+
 async def resolve_media_url(url: str, session: aiohttp.ClientSession) -> str:
-    """Resolve a web page URL (e.g. Tenor, Giphy) to a direct media URL if needed."""
+    """Resolve a web page URL (e.g. Tenor, Giphy, Klipy) to a direct media URL if needed."""
     try:
         parsed = urllib.parse.urlparse(url)
         if any(parsed.path.lower().endswith(ext) for ext in ['.gif', '.png', '.jpg', '.jpeg', '.webp']):
@@ -659,12 +662,46 @@ async def process_pending_emoji_sticker_uploads(client, message):
     try:
         # Download the file / link
         async with aiohttp.ClientSession() as session:
-            resolved_url = await resolve_media_url(target_url, session)
-            async with session.get(resolved_url, headers={'User-Agent': 'Mozilla/5.0'}) as response:
-                if response.status != 200:
-                    await message.reply("❌ Failed to download the file from that link. Please try uploading the image/GIF file directly.")
+            download_url = target_url
+            if not message.attachments:
+                # Give Discord a moment to resolve the link embed (e.g. Klipy, Tenor, Giphy)
+                if not message.embeds:
+                    await asyncio.sleep(1.2)
+                    try:
+                        message = await message.channel.fetch_message(message.id)
+                    except Exception:
+                        pass
+                if message.embeds:
+                    for emb in message.embeds:
+                        if emb.image and emb.image.url:
+                            download_url = emb.image.url
+                            break
+                        elif emb.video and emb.video.url:
+                            download_url = emb.video.url
+                            break
+                        elif emb.thumbnail and emb.thumbnail.url:
+                            download_url = emb.thumbnail.url
+                            break
+
+            resolved_url = await resolve_media_url(download_url, session)
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8'
+            }
+            async with session.get(resolved_url, headers=headers) as response:
+                if response.status != 200 and download_url != target_url:
+                    # Fallback to direct resolution
+                    async with session.get(await resolve_media_url(target_url, session), headers=headers) as resp2:
+                        if resp2.status == 200:
+                            file_data = await resp2.read()
+                        else:
+                            await message.reply("❌ Failed to download the file from that link. Please try saving and uploading the image/GIF file directly.")
+                            return True
+                elif response.status == 200:
+                    file_data = await response.read()
+                else:
+                    await message.reply("❌ Failed to download the file from that link. Please try saving and uploading the image/GIF file directly.")
                     return True
-                file_data = await response.read()
 
         # Auto-process & compress image/GIF (excluding Lottie json stickers)
         final_filename = original_filename or f"{user_upload['name']}.gif"
