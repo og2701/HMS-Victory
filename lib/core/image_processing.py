@@ -742,6 +742,9 @@ def process_and_compress_media(data: bytes, filename: str, is_emoji: bool = True
     Returns: (processed_bytes, output_filename, is_animated)
     """
     from PIL import Image, ImageSequence
+    max_bytes = 256 * 1024 if is_emoji else 512 * 1024
+    max_dim = 128 if is_emoji else 320
+
     # Try opening as image, or convert video to GIF via ffmpeg if video bytes
     try:
         im = Image.open(io.BytesIO(data))
