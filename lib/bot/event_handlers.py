@@ -70,6 +70,31 @@ async def _role_grant_actor(member, role_ids, wait=1.5, window=60):
     return None
 
 
+async def _report_unusual_dm_activity(member: discord.Member) -> None:
+    """Notify police station when Discord auto-flags a member for excessive DMs."""
+    channel = member._state._get_client().get_channel(CHANNELS.POLICE_STATION)
+    if channel is None:
+        return
+    embed = discord.Embed(
+        title="🚨 Discord Security Signal: Unusual DM Activity",
+        description=(
+            f"{member.mention} (`{member.id}`) was flagged by Discord's automated "
+            f"systems for sending excessive unsolicited DMs to server members in the last 24h."
+        ),
+        colour=discord.Color.red(),
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.add_field(name="Account Created", value=f"<t:{int(member.created_at.timestamp())}:R>", inline=True)
+    if member.joined_at is not None:
+        embed.add_field(name="Joined Server", value=f"<t:{int(member.joined_at.timestamp())}:R>", inline=True)
+    embed.set_thumbnail(url=member.display_avatar.url)
+    embed.set_footer(text="Discord native safety flag · review member in Police Station")
+    try:
+        await channel.send(embed=embed)
+    except Exception:
+        logger.error(f"Could not post unusual DM activity alert for {member.id}", exc_info=True)
+
+
 async def check_onboarding_selection(member, newly_assigned):
     """Flag a member whose onboarding answers contradict each other.
 
@@ -231,6 +256,12 @@ async def on_member_update(before, after):
 
     if before.timed_out_until != after.timed_out_until and after.timed_out_until and after.timed_out_until > discord.utils.utcnow():
         asyncio.create_task(notify_mute(after._state._get_client(), after))
+
+    # Detect Discord native unusual DM activity flag
+    before_dm = getattr(before, "_data", {}).get("unusual_dm_activity_until")
+    after_dm = getattr(after, "_data", {}).get("unusual_dm_activity_until")
+    if after_dm and not before_dm:
+        asyncio.create_task(_report_unusual_dm_activity(after))
 
     newly_assigned_roles = {r.id for r in after.roles} - {r.id for r in before.roles}
     if newly_assigned_roles:
