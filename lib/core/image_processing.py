@@ -742,10 +742,30 @@ def process_and_compress_media(data: bytes, filename: str, is_emoji: bool = True
     Returns: (processed_bytes, output_filename, is_animated)
     """
     from PIL import Image, ImageSequence
-    max_bytes = 256 * 1024 if is_emoji else 512 * 1024
-    max_dim = 128 if is_emoji else 320
+    # Try opening as image, or convert video to GIF via ffmpeg if video bytes
+    try:
+        im = Image.open(io.BytesIO(data))
+    except Exception:
+        import subprocess, tempfile
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as in_f:
+            in_f.write(data)
+            in_path = in_f.name
+        out_path = in_path + ".gif"
+        try:
+            vf = f"fps=12,scale='min({max_dim},iw)':-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
+            cmd = ["ffmpeg", "-y", "-i", in_path, "-t", "6", "-vf", vf, out_path]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            with open(out_path, "rb") as f:
+                gif_data = f.read()
+            im = Image.open(io.BytesIO(gif_data))
+        finally:
+            for p in [in_path, out_path]:
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
 
-    im = Image.open(io.BytesIO(data))
     is_animated = getattr(im, "is_animated", False) and getattr(im, "n_frames", 1) > 1
 
     if not is_animated:
