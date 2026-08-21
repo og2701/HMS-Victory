@@ -277,6 +277,37 @@ async def mature_due(client):
         await record_income_source(client, g["user_id"], "bond")
 
 
+def forfeit_bonds_on_leave(user_id) -> int:
+    """Forfeit all active bonds for a user when they leave the server.
+    The principal remains in the Server Bank (reclaimed) and no interest is paid.
+    Returns total principal forfeited."""
+    try:
+        with DatabaseManager.locked_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, principal FROM bonds WHERE user_id = ? AND status = 'active'",
+                (str(user_id),),
+            )
+            active = cursor.fetchall()
+            if not active:
+                return 0
+            total_principal = sum(row[1] for row in active)
+            cursor.execute(
+                "UPDATE bonds SET status = 'forfeited' WHERE user_id = ? AND status = 'active'",
+                (str(user_id),),
+            )
+            log.info(
+                "forfeited %s active bond(s) (%s UKP total) for leaving user %s",
+                len(active),
+                total_principal,
+                user_id,
+            )
+            return total_principal
+    except sqlite3.Error:
+        log.error("failed to forfeit active bonds for leaving user %s", user_id, exc_info=True)
+        return 0
+
+
 # ---------------------------------------------------------------------------
 # Panels (text only - no image render, so no interaction-expiry risk)
 # ---------------------------------------------------------------------------
@@ -493,9 +524,11 @@ def bonds_overview_embed() -> discord.Embed:
 
     m = DatabaseManager.fetch_one("SELECT COUNT(*) FROM bonds WHERE status = 'matured'")
     w = DatabaseManager.fetch_one("SELECT COUNT(*) FROM bonds WHERE status = 'withdrawn'")
-    e.add_field(name="History",
-                value=f"Matured: {(m[0] if m else 0)} · Early-withdrawn: {(w[0] if w else 0)}",
-                inline=False)
+    f_count = DatabaseManager.fetch_one("SELECT COUNT(*) FROM bonds WHERE status = 'forfeited'")
+    hist_text = f"Matured: {(m[0] if m else 0)} · Early-withdrawn: {(w[0] if w else 0)}"
+    if f_count and f_count[0] > 0:
+        hist_text += f" · Forfeited on leave: {f_count[0]}"
+    e.add_field(name="History", value=hist_text, inline=False)
     return e
 
 

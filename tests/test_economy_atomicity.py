@@ -464,6 +464,32 @@ def test_successful_bond_maturity_commits_payout_state_and_notice():
         assert _total_supply(database) == TOTAL_SUPPLY
 
 
+def test_forfeit_bonds_on_leave():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        economy, _, database = _fresh_economy(tmpdir)
+        from lib.economy import bonds
+
+        user_id = 10_014
+        assert economy.add_bb(user_id, 1_000, reason="seed", taxable=False)
+        bond, error = bonds.open_bond(user_id, 500, 7)
+        assert error is None
+        assert bond["status"] == "active"
+
+        # Member leaves -> active bond is forfeited
+        reclaimed = bonds.forfeit_bonds_on_leave(user_id)
+        assert reclaimed == 500
+
+        # Status in DB is forfeited
+        row = database.DatabaseManager.fetch_one(
+            "SELECT status FROM bonds WHERE id = ?", (bond["id"],)
+        )
+        assert row[0] == "forfeited"
+        assert bonds.get_active(user_id) is None
+
+        # Total supply is conserved (500 remains in server bank)
+        assert _total_supply(database) == TOTAL_SUPPLY
+
+
 if __name__ == "__main__":
     import traceback
 

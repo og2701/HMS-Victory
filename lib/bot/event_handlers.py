@@ -1518,6 +1518,14 @@ async def on_member_remove(member):
     except Exception as e:
         logger.error(f"Error handling UKPence extraction for leaving member {member}: {e}")
 
+    try:
+        from lib.economy.bonds import forfeit_bonds_on_leave
+        reclaimed_bonds = forfeit_bonds_on_leave(member.id)
+        if reclaimed_bonds > 0:
+            logger.info(f"Reclaimed {reclaimed_bonds} UKPence in active bonds from leaving member {member} (forfeited to server bank).")
+    except Exception as e:
+        logger.error(f"Error reclaiming active bonds for leaving member {member}: {e}")
+
 
 async def on_member_ban(guild, user):
     pass
