@@ -1077,22 +1077,30 @@ class CustomEmojiStickerView(View):
 
             async def on_submit(self, modal_interaction: discord.Interaction):
                 await modal_interaction.response.send_message(
-                    f"📥 **Step 2:** Now please upload your {'emoji' if self.choice == 'emoji' else 'sticker'} file (PNG, JPG, GIF, or WebP) as an attachment in your next message in this channel.\n"
+                    f"📥 **Step 2:** Now please upload your {'emoji' if self.choice == 'emoji' else 'sticker'} file (PNG, JPG, GIF, or WebP) or link as your next message in this channel.\n"
                     f"The bot will automatically resize, compress, and send it to Cabinet for approval!",
                     ephemeral=True
                 )
                 desc = getattr(self, 'description_input', None) and self.description_input.value
+                raw_name = self.name_input.value.strip()
+                if self.choice == 'emoji':
+                    raw_name = re.sub(r'[^a-zA-Z0-9_]', '_', raw_name)
+                    raw_name = re.sub(r'_+', '_', raw_name).strip('_')
+                    if len(raw_name) < 2:
+                        raw_name = f"emoji_{raw_name}" if raw_name else "custom_emoji"
+                    raw_name = raw_name[:32]
+
                 modal_interaction.client._pending_uploads = getattr(modal_interaction.client, '_pending_uploads', {})
                 modal_interaction.client._pending_uploads[modal_interaction.user.id] = {
                     'type': self.choice,
-                    'name': self.name_input.value,
+                    'name': raw_name,
                     'description': desc,
                     'waiting': True
                 }
                 from database import DatabaseManager
                 DatabaseManager.execute(
                     "INSERT OR REPLACE INTO pending_emoji_sticker_uploads (user_id, type, name, description) VALUES (?, ?, ?, ?)",
-                    (str(modal_interaction.user.id), self.choice, self.name_input.value, desc)
+                    (str(modal_interaction.user.id), self.choice, raw_name, desc)
                 )
 
         await interaction.response.send_modal(UploadModal(self.choice))
@@ -1157,8 +1165,15 @@ class EmojiStickerApprovalView(View):
                         f"({kind_count}/{guild.emoji_limit}). Free up a slot of that "
                         f"type, or have the buyer resubmit as {other}."
                     )
+                # Discord emoji names must match ^[a-zA-Z0-9_]{2,32}$ (no spaces)
+                clean_name = re.sub(r'[^a-zA-Z0-9_]', '_', self.upload_data['name'].strip())
+                clean_name = re.sub(r'_+', '_', clean_name).strip('_')
+                if len(clean_name) < 2:
+                    clean_name = f"emoji_{clean_name}" if clean_name else "custom_emoji"
+                clean_name = clean_name[:32]
+
                 emoji = await guild.create_custom_emoji(
-                    name=self.upload_data['name'],
+                    name=clean_name,
                     image=self.file_data,
                     reason=f"Approved by {interaction.user.name} - purchased by {self.user.name}"
                 )
