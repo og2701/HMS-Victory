@@ -65,12 +65,17 @@ def rules_text() -> str:
 
 
 class HandPicker(discord.ui.View):
-    """The ephemeral three-button hand, shown to one player only."""
+    """The ephemeral three-button hand, shown to one player only.
+
+    Tied to the round it was dealt for (`seq`): a picker left open from an earlier round has
+    live-looking buttons, and pressing one must not count towards the round in play.
+    """
 
     def __init__(self, match: "RPSMatch", user_id: int):
         super().__init__(timeout=_round_seconds())
         self.match = match
         self.user_id = user_id
+        self.seq = match.seq
         for hand in HANDS:
             self.add_item(self._button(hand))
 
@@ -79,15 +84,28 @@ class HandPicker(discord.ui.View):
                                    style=discord.ButtonStyle.secondary)
 
         async def chosen(interaction: Interaction):
-            await self.match.submit(interaction, self.user_id, hand)
             for child in self.children:
                 child.disabled = True
+            stale = self.seq != self.match.seq or self.match.game_over
+            # Answer the click FIRST. Settling touches the database and edits the public
+            # message, which can easily run past Discord's 3 second window - and an
+            # unacknowledged interaction shows the player a red "didn't respond in time"
+            # even though their pick went through.
             try:
-                await interaction.edit_original_response(
-                    content=f"You picked {EMOJI[hand]} **{hand}**. Waiting on the reveal.",
+                await interaction.response.edit_message(
+                    content=("That round has already been played - use your newest prompt."
+                             if stale else
+                             f"Locked in: {EMOJI[hand]} **{hand}**. Nobody sees it until you "
+                             "have both picked."),
                     view=self)
             except Exception:
-                pass
+                logger.debug("rps: could not close the picker", exc_info=True)
+            if stale:
+                return
+            # Keep the freshest token for this player so the next round's hand can be pushed
+            # straight to them instead of making them hunt for the public button again.
+            self.match.hooks[self.user_id] = interaction
+            await self.match.submit(interaction, self.user_id, hand, seq=self.seq)
 
         button.callback = chosen
         return button
@@ -105,6 +123,9 @@ class RPSMatch(discord.ui.View):
         self.scores = {self.p1_id: 0, self.p2_id: 0}
         self.picks = {}
         self.round = 1
+        self.seq = 0                # bumps every time a round resolves; stale pickers check it
+        self.history = []           # (round no, p1 hand, p2 hand, winner id or None)
+        self.hooks = {}             # user id -> their latest interaction, for private prompts
         self.last = None            # (p1 hand, p2 hand, winner id or None)
         self.game_over = False
         self.message = None
@@ -114,26 +135,35 @@ class RPSMatch(discord.ui.View):
 
     # --- rendering ---------------------------------------------------------
     def _score_line(self):
-        return (f"**{self.p1_name}** {self.scores[self.p1_id]} - "
-                f"{self.scores[self.p2_id]} **{self.p2_name}**")
+        return (f"## {self.p1_name}  {self.scores[self.p1_id]} - "
+                f"{self.scores[self.p2_id]}  {self.p2_name}")
+
+    def _round_line(self, n, h1, h2, winner):
+        """A finished round. The winning hand leads and the winner's name closes the line, so
+        you can always tell whose hand was whose - "📄 vs 🪨" on its own tells you nothing."""
+        if winner is None:
+            return f"`R{n}`  both played {EMOJI[h1]} {h1} - replayed"
+        name = self.p1_name if winner == self.p1_id else self.p2_name
+        won, lost = (h1, h2) if winner == self.p1_id else (h2, h1)
+        return f"`R{n}`  {EMOJI[won]} {won} beats {EMOJI[lost]} {lost} - **{name}**"
 
     def _embed(self):
-        lines = [self._score_line(), ""]
-        if self.last:
-            h1, h2, winner = self.last
-            verdict = ("a tie, replay the round" if winner is None
-                       else f"**{self.p1_name if winner == self.p1_id else self.p2_name}** takes it")
-            lines.append(f"Last round: {EMOJI[h1]} vs {EMOJI[h2]} - {verdict}")
+        lines = [self._score_line(),
+                 f"-# best of {_wins_needed() * 2 - 1} · pot **{self.stake * 2:,} UKPence**"]
+        if self.history:
+            lines.append("")
+            lines += [self._round_line(*r) for r in self.history]
         if self.game_over:
             colour, footer = 0x2ECC71, "Rock Paper Scissors · winner takes the pot"
         else:
-            waiting = [n for uid, n in ((self.p1_id, self.p1_name), (self.p2_id, self.p2_name))
-                       if uid not in self.picks]
-            lines.append(f"Round **{self.round}** - waiting on: "
-                         + ", ".join(f"**{w}**" for w in waiting))
+            ticks = "   ".join(
+                f"{'✅' if uid in self.picks else '⬜'} {name}"
+                for uid, name in ((self.p1_id, self.p1_name), (self.p2_id, self.p2_name)))
+            lines += ["", f"**Round {self.round}** - choose in private", f"picked   {ticks}",
+                      "-# Hands stay hidden until you have both picked. Lost your prompt? "
+                      "Press the button."]
             colour = 0x3498DB
-            footer = (f"⏳ {_round_seconds() // 60} min per round, or you forfeit · "
-                      f"pot {self.stake * 2:,} UKP")
+            footer = f"⏳ {_round_seconds() // 60} min per round, or you forfeit"
         embed = discord.Embed(title="\U0001FAA8 \U0001F4C4 ✂️ Rock Paper Scissors",
                               description="\n".join(lines), colour=colour)
         embed.set_footer(text=footer)
@@ -143,11 +173,34 @@ class RPSMatch(discord.ui.View):
         if self.message is None:
             return False
         try:
+            # The label is the only cue on the public message that a NEW pick is wanted.
+            self.pick.label = ("Make your pick" if not self.history
+                               else f"Make your pick · round {self.round}")
+        except Exception:
+            pass
+        try:
             await self.message.edit(embed=self._embed(), view=None if self.game_over else self)
             return True
         except Exception:
             logger.debug("rps: could not edit the match message", exc_info=True)
             return False
+
+    async def _deal_pickers(self):
+        """A round resolved and the match goes on: push a fresh private hand at each player.
+
+        Without this they have to notice the public embed changed and press the button again,
+        which is exactly what made the first version unreadable to play.
+        """
+        for uid in (self.p1_id, self.p2_id):
+            hook = self.hooks.get(uid)
+            if hook is None:
+                continue
+            try:
+                await hook.followup.send(
+                    content=f"**Round {self.round}** - choose your hand.",
+                    view=HandPicker(self, uid), ephemeral=True)
+            except Exception:
+                logger.debug("rps: could not push a fresh picker", exc_info=True)
 
     # --- the pick button ---------------------------------------------------
     @discord.ui.button(label="Make your pick", emoji="\U0001FAA8",
@@ -167,31 +220,39 @@ class RPSMatch(discord.ui.View):
             f"Round **{self.round}**. Choose your hand - your opponent won't see it until "
             "they've picked too.",
             view=HandPicker(self, interaction.user.id), ephemeral=True)
+        self.hooks[interaction.user.id] = interaction
 
     # --- the round ---------------------------------------------------------
-    async def submit(self, interaction: Interaction, user_id: int, hand: str):
+    async def submit(self, interaction: Interaction, user_id: int, hand: str, seq=None):
+        new_round = False
         async with self._lock:
             if self.game_over or user_id in self.picks:
                 return
+            if seq is not None and seq != self.seq:
+                return
             self.picks[user_id] = hand
-            both_in = len(self.picks) == 2
-            if not both_in:
+            if len(self.picks) < 2:
                 self._start_timer()
-                await self._render()
-                return
-            self._cancel_timer()
-            h1, h2 = self.picks[self.p1_id], self.picks[self.p2_id]
-            winner = None if h1 == h2 else (self.p1_id if BEATS[h1] == h2 else self.p2_id)
-            self.last = (h1, h2, winner)
-            self.picks = {}
-            if winner is not None:
-                self.scores[winner] += 1
-                self.round += 1
-            if max(self.scores.values()) >= _wins_needed():
-                await self._finish(winner=winner)
-                return
-            self._start_timer()
+            else:
+                self._cancel_timer()
+                h1, h2 = self.picks[self.p1_id], self.picks[self.p2_id]
+                winner = None if h1 == h2 else (self.p1_id if BEATS[h1] == h2 else self.p2_id)
+                self.last = (h1, h2, winner)
+                self.history.append((self.round, h1, h2, winner))
+                self.picks = {}
+                self.seq += 1
+                if winner is not None:
+                    self.scores[winner] += 1
+                if max(self.scores.values()) >= _wins_needed():
+                    await self._finish(winner=winner)
+                    return
+                if winner is not None:       # a tie replays the same round number
+                    self.round += 1
+                self._start_timer()
+                new_round = True
         await self._render()
+        if new_round:
+            await self._deal_pickers()
 
     # --- forfeit clock -----------------------------------------------------
     def _start_timer(self):
@@ -258,7 +319,8 @@ class RPSMatch(discord.ui.View):
         embed.description = f"{embed.description}\n\n{tail}"
         if self.message is not None:
             try:
-                await self.message.edit(embed=embed, view=None)
+                # Clear the "both press Make your pick" line - it is not true any more.
+                await self.message.edit(content=None, embed=embed, view=None)
             except Exception:
                 logger.debug("rps: could not render the result", exc_info=True)
         self.stop()

@@ -44,6 +44,28 @@ def _match(monkeypatch):
     return m, paid, recorded
 
 
+class FakeInteraction:
+    """Enough of an Interaction to drive a HandPicker button, logging what it was sent."""
+
+    def __init__(self, log):
+        self.log = log
+        self.response = types.SimpleNamespace(edit_message=self._ack)
+        self.followup = types.SimpleNamespace(send=self._followup)
+
+    async def _ack(self, **kwargs):
+        self.log.append(("acked", kwargs.get("content")))
+
+    async def _followup(self, **kwargs):
+        self.log.append(("followup", kwargs.get("content")))
+
+
+def _press(picker, hand, log):
+    """Press one of the ephemeral buttons for real, callback and all."""
+    index = R.HANDS.index(hand)
+    asyncio.get_event_loop().run_until_complete(
+        picker.children[index].callback(FakeInteraction(log)))
+
+
 def _pick(match, uid, hand):
     """Submit a hand the way HandPicker does, without a real interaction."""
     asyncio.get_event_loop().run_until_complete(match.submit(None, uid, hand))
@@ -170,6 +192,51 @@ def test_neither_player_picking_voids_rather_than_guessing(monkeypatch):
         f"both stakes should come back: {paid}"
     assert not [p for p in paid if p[0] == "pot"], "nobody should win a pot nobody played for"
     assert recorded[0][4] == "draw"
+
+
+def test_the_click_is_answered_before_any_slow_work(monkeypatch):
+    """Settling hits the database and edits the public message, both easily past Discord's 3
+    second window. If the click isn't acknowledged first the player gets a red "didn't respond
+    in time" even though their pick landed - which is exactly what happened in play."""
+    _fresh_loop()
+    m, _paid, _rec = _match(monkeypatch)
+    m._start_timer = lambda: None
+    log = []
+
+    async def slow_render():
+        log.append(("rendered", None))
+        return True
+
+    m._render = slow_render
+    _press(R.HandPicker(m, P1), "rock", log)
+    assert log, "the player was told nothing at all"
+    assert log[0][0] == "acked", f"the interaction was not answered first: {log}"
+    assert m.picks[P1] == "rock", "the pick did not register"
+
+
+def test_a_picker_left_over_from_an_earlier_round_cannot_submit(monkeypatch):
+    """The old ephemeral stays on screen with live-looking buttons. Pressing one must not
+    quietly count as this round's hand."""
+    _fresh_loop()
+    m, _paid, _rec = _match(monkeypatch)
+    m._start_timer = lambda: None
+    stale = R.HandPicker(m, P1)
+    _pick(m, P1, "rock"); _pick(m, P2, "scissors")      # round 1 resolves, seq moves on
+    log = []
+    _press(stale, "paper", log)
+    assert m.picks == {}, "a stale picker counted towards the live round"
+    assert log and "already been played" in (log[0][1] or ""), log
+
+
+def test_the_history_says_whose_hand_was_whose(monkeypatch):
+    """"📄 vs 🪨" tells you nothing about who played what."""
+    _fresh_loop()
+    m, _paid, _rec = _match(monkeypatch)
+    m._start_timer = lambda: None
+    _pick(m, P1, "paper"); _pick(m, P2, "rock")
+    body = m._embed().description
+    assert "paper beats" in body and "Alice" in body, body
+    assert "1 - 0" in body, f"the score should be readable at a glance: {body!r}"
 
 
 def test_the_stake_ceiling_is_lower_than_connect_fours():
