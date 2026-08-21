@@ -1081,13 +1081,19 @@ class CustomEmojiStickerView(View):
                     f"The bot will automatically resize, compress, and send it to Cabinet for approval!",
                     ephemeral=True
                 )
+                desc = getattr(self, 'description_input', None) and self.description_input.value
                 modal_interaction.client._pending_uploads = getattr(modal_interaction.client, '_pending_uploads', {})
                 modal_interaction.client._pending_uploads[modal_interaction.user.id] = {
                     'type': self.choice,
                     'name': self.name_input.value,
-                    'description': getattr(self, 'description_input', None) and self.description_input.value,
+                    'description': desc,
                     'waiting': True
                 }
+                from database import DatabaseManager
+                DatabaseManager.execute(
+                    "INSERT OR REPLACE INTO pending_emoji_sticker_uploads (user_id, type, name, description) VALUES (?, ?, ?, ?)",
+                    (str(modal_interaction.user.id), self.choice, self.name_input.value, desc)
+                )
 
         await interaction.response.send_modal(UploadModal(self.choice))
 

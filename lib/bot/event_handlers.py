@@ -591,9 +591,20 @@ async def process_pending_emoji_sticker_uploads(client, message):
     if not message.attachments:
         return False
 
-    # Check if user has pending uploads
+    # Check if user has pending uploads (memory or DB)
     pending_uploads = getattr(client, '_pending_uploads', {})
     user_upload = pending_uploads.get(message.author.id)
+
+    if not user_upload or not user_upload.get('waiting'):
+        from database import DatabaseManager
+        row = DatabaseManager.fetch_one(
+            "SELECT type, name, description FROM pending_emoji_sticker_uploads WHERE user_id = ?",
+            (str(message.author.id),)
+        )
+        if row:
+            user_upload = {'type': row[0], 'name': row[1], 'description': row[2], 'waiting': True}
+            pending_uploads[message.author.id] = user_upload
+            client._pending_uploads = pending_uploads
 
     if not user_upload or not user_upload.get('waiting'):
         return False
@@ -684,6 +695,8 @@ async def process_pending_emoji_sticker_uploads(client, message):
 
         # Mark as no longer waiting (processed)
         user_upload['waiting'] = False
+        from database import DatabaseManager
+        DatabaseManager.execute("DELETE FROM pending_emoji_sticker_uploads WHERE user_id = ?", (str(message.author.id),))
         return True
 
     except Exception as e:

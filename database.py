@@ -831,6 +831,16 @@ def init_db():
         ''')
 
         c.execute('''
+            CREATE TABLE IF NOT EXISTS pending_emoji_sticker_uploads (
+                user_id TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                created_at INTEGER DEFAULT (strftime('%s','now'))
+            )
+        ''')
+
+        c.execute('''
             CREATE TABLE IF NOT EXISTS shut_counts (
                 user_id TEXT PRIMARY KEY,
                 count INTEGER NOT NULL DEFAULT 0
