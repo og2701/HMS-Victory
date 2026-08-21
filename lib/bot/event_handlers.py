@@ -33,23 +33,89 @@ logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
 MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
 sticker_messages = {}
-recently_flagged_users = defaultdict(bool)
 
-all_onboarding_roles = {
-    ROLES.BRITISH,
-    ROLES.ENGLISH,
-    ROLES.SCOTTISH,
-    ROLES.WELSH,
-    ROLES.NORTHERN_IRISH,
-    ROLES.COMMONWEALTH,
-    ROLES.VISITOR,
-}
-nationality_onboarding_roles = {
-    ROLES.ENGLISH,
-    ROLES.SCOTTISH,
-    ROLES.WELSH,
-    ROLES.NORTHERN_IRISH,
-}
+# --- onboarding selfbot detection -------------------------------------------------------
+# The thresholds and the wording live in lib/core/detection_rules.py, with the rest of the
+# rules that decide whether something is worth a human looking at. Only the Discord half is
+# here: who actually granted the roles, and what the alert looks like.
+from lib.core.detection_rules import (
+    ONBOARDING_ROLES, onboarding_findings, claim_onboarding_flag, release_onboarding_flag,
+    since_join,
+)
+
+
+async def _role_grant_actor(member, role_ids, wait=1.5, window=60):
+    """Who handed out these roles, as far as the audit log knows.
+
+    Onboarding is attributed to the member themselves, so a different actor means a
+    moderator or another bot did it and the member picked nothing - flagging them for it
+    is just wrong. None means the log had nothing to say; treat that as self-service.
+    """
+    try:
+        await asyncio.sleep(wait)   # the entry is written after the event
+        cutoff = discord.utils.utcnow() - timedelta(seconds=window)
+        async for entry in member.guild.audit_logs(
+                action=discord.AuditLogAction.member_role_update, limit=10):
+            if entry.created_at < cutoff:
+                break
+            if not entry.target or entry.target.id != member.id:
+                continue
+            added = {getattr(r, "id", None) for r in getattr(entry.after, "roles", None) or []}
+            if added & role_ids:
+                return entry.user
+    except discord.Forbidden:
+        logger.debug("No audit log access, cannot attribute the onboarding roles")
+    except Exception:
+        logger.debug("Onboarding actor lookup failed", exc_info=True)
+    return None
+
+
+async def check_onboarding_selection(member, newly_assigned):
+    """Flag a member whose onboarding answers contradict each other.
+
+    Runs as a task rather than inline: working out who granted the roles means waiting for
+    the audit log to catch up, and on_member_update shouldn't sit on that.
+    """
+    touched = newly_assigned & set(ONBOARDING_ROLES)
+    if not touched:
+        return
+    joined = member.joined_at
+    seconds = (None if joined is None
+               else (discord.utils.utcnow() - joined).total_seconds())
+    findings = onboarding_findings({r.id for r in member.roles}, seconds)
+    if not findings:
+        return
+    if not claim_onboarding_flag(member.id):
+        return
+
+    actor = await _role_grant_actor(member, touched)
+    if actor is not None and actor.id != member.id:
+        # Hand the slot back so a genuine self-selection later still gets reported.
+        release_onboarding_flag(member.id)
+        return
+
+    channel = member._state._get_client().get_channel(CHANNELS.POLICE_STATION)
+    if channel is None:
+        logger.warning(f"Onboarding flag for {member.id} but no police station channel")
+        return
+    embed = discord.Embed(
+        title="🚩 Onboarding picks look automated",
+        description=f"{member.mention} `{member.id}`\n\n"
+                    + "\n".join(f"- {f}" for f in findings),
+        colour=0xE67E22)
+    embed.add_field(name="Picked after joining", value=since_join(seconds), inline=True)
+    embed.add_field(name="Account made",
+                    value=f"<t:{int(member.created_at.timestamp())}:R>", inline=True)
+    if joined is not None:
+        embed.add_field(name="Joined", value=f"<t:{int(joined.timestamp())}:R>", inline=True)
+    embed.set_thumbnail(url=member.display_avatar.url)
+    embed.set_footer(text="Self-selected in onboarding · no action taken")
+    try:
+        await channel.send(embed=embed)
+    except Exception:
+        # This runs detached, so an exception here would only surface as a stray
+        # "task exception was never retrieved" with no clue what it was about.
+        logger.error(f"Could not post the onboarding flag for {member.id}", exc_info=True)
 
 
 def _moderation_embed_value(value: str, limit: int = 1000) -> str:
@@ -166,30 +232,9 @@ async def on_member_update(before, after):
     if before.timed_out_until != after.timed_out_until and after.timed_out_until and after.timed_out_until > discord.utils.utcnow():
         asyncio.create_task(notify_mute(after._state._get_client(), after))
 
-    # Onboarding bot detection (detects selfbots selecting all contradictory roles)
-    before_roles = {r.id for r in before.roles}
-    after_roles = {r.id for r in after.roles}
-    newly_assigned_roles = after_roles - before_roles
-
-    if newly_assigned_roles and not recently_flagged_users[after.id]:
-        client = after._state._get_client()
-        mod_channel = client.get_channel(CHANNELS.POLICE_STATION)
-
-        if all_onboarding_roles.issubset(after_roles) and all_onboarding_roles.intersection(newly_assigned_roles):
-            recently_flagged_users[after.id] = True
-            if mod_channel:
-                await mod_channel.send(
-                    f"🚩 **Potential bot detected:** {after.mention} (`{after.id}`)\n"
-                    f"Assigned themselves **all onboarding roles**: British, English, Scottish, Welsh, Northern Irish, Commonwealth, and Visitor. Please monitor."
-                )
-
-        elif nationality_onboarding_roles.issubset(after_roles) and nationality_onboarding_roles.intersection(newly_assigned_roles):
-            recently_flagged_users[after.id] = True
-            if mod_channel:
-                await mod_channel.send(
-                    f"🚩 **Potential bot detected:** {after.mention} (`{after.id}`)\n"
-                    f"Assigned themselves **all nationality onboarding roles**: English, Scottish, Welsh, and Northern Irish. Please monitor."
-                )
+    newly_assigned_roles = {r.id for r in after.roles} - {r.id for r in before.roles}
+    if newly_assigned_roles:
+        asyncio.create_task(check_onboarding_selection(after, newly_assigned_roles))
 
 
 def _summarise_message(message) -> str:

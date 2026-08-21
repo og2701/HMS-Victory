@@ -673,6 +673,14 @@ FUNNEL_WINDOW_HOURS = 72
 FUNNEL_MIN_SENDERS = 3
 FUNNEL_NEW_ACCOUNT_DAYS = 30                       # what counts as low-tenure
 
+# Module F - onboarding. Each question has one honest answer, so a selfbot that ticks every
+# box contradicts itself. Two home nations is a real answer for anyone with mixed parents,
+# which is why it only counts when it was also instant; three is nobody's honest answer.
+ONBOARDING_NATIONALITY_FLAG_AT = 3
+ONBOARDING_STATUS_FLAG_AT = 2                      # British / Commonwealth / Visitor clash
+ONBOARDING_INSTANT_SECONDS = 5                     # onboarding is several screens to read
+ONBOARDING_FLAG_TTL_HOURS = 6                      # one alert per member per window
+
 
 # --- Mute Notifications ---
 # Users DM'd whenever a member is muted (shut, bedtime, native timeout, Wick, etc.)

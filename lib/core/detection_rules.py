@@ -264,3 +264,87 @@ def funnel_findings(recipient_id, member_ages: dict = None, now=None) -> dict | 
         "total pooled": f"{total:,} UKP",
         "senders": ", ".join(f"<@{p}>" for p, _ in fresh)[:300],
     }
+
+
+# ---------------------------------------------------------------------------
+# Module F - onboarding
+# ---------------------------------------------------------------------------
+# Onboarding is a run of either/or questions, so a selfbot that ticks every box ends up
+# holding answers that contradict each other. Speed is the second tell: it is several
+# screens, and a script is through it before a person has finished reading one.
+
+NATIONALITY_ROLES = {
+    config.ROLES.ENGLISH: "English",
+    config.ROLES.SCOTTISH: "Scottish",
+    config.ROLES.WELSH: "Welsh",
+    config.ROLES.NORTHERN_IRISH: "Northern Irish",
+}
+STATUS_ROLES = {
+    config.ROLES.BRITISH: "British",
+    config.ROLES.COMMONWEALTH: "Commonwealth",
+    config.ROLES.VISITOR: "Visitor",
+}
+ONBOARDING_ROLES = {**NATIONALITY_ROLES, **STATUS_ROLES}
+
+_onboarding_flagged = {}    # user id -> when we last alerted; pruned on read
+
+
+def onboarding_findings(role_ids, seconds_since_join=None) -> list:
+    """What is wrong with this set of onboarding answers. Empty means leave them alone.
+
+    Two home nations is an honest answer for plenty of people, so it only counts when it was
+    also instant; three is nobody's honest answer, at any speed. The old rule demanded all
+    four, which meant picking three - already impossible - sailed through.
+    """
+    findings = []
+    nations = [n for rid, n in NATIONALITY_ROLES.items() if rid in role_ids]
+    instant = (seconds_since_join is not None
+               and seconds_since_join <= _cfg("ONBOARDING_INSTANT_SECONDS", 5))
+
+    if len(nations) >= _cfg("ONBOARDING_NATIONALITY_FLAG_AT", 3):
+        findings.append(f"Holds **{len(nations)} home nations** at once - "
+                        + ", ".join(nations))
+    elif len(nations) >= 2 and instant:
+        findings.append(f"Picked **{' and '.join(nations)}** within "
+                        f"{seconds_since_join:.1f}s of joining")
+
+    status = [n for rid, n in STATUS_ROLES.items() if rid in role_ids]
+    if len(status) >= _cfg("ONBOARDING_STATUS_FLAG_AT", 2):
+        findings.append(f"Holds **{' + '.join(status)}** - these answer the same question")
+    return findings
+
+
+def claim_onboarding_flag(user_id, now=None) -> bool:
+    """One alert per member per window, claimed in the same step so a burst of role events
+    can't produce a burst of alerts.
+
+    The old version read a `defaultdict(bool)`, which inserted an entry for every member
+    whose roles changed anywhere in the server and never removed any of them.
+    """
+    ttl = _cfg("ONBOARDING_FLAG_TTL_HOURS", 6) * 3600
+    now = time.time() if now is None else now
+    for uid, when in list(_onboarding_flagged.items()):
+        if now - when > ttl:
+            del _onboarding_flagged[uid]
+    if now - _onboarding_flagged.get(user_id, 0) <= ttl:
+        return False
+    _onboarding_flagged[user_id] = now
+    return True
+
+
+def release_onboarding_flag(user_id):
+    """Hand the slot back when the alert turns out not to be warranted after all, so a
+    genuine self-selection later still gets reported."""
+    _onboarding_flagged.pop(user_id, None)
+
+
+def since_join(seconds) -> str:
+    if seconds is None:
+        return "unknown"
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    if seconds < 3600:
+        return f"{seconds / 60:.0f} min"
+    if seconds < 86400:
+        return f"{seconds / 3600:.0f} hours"
+    return f"{seconds / 86400:.0f} days"
