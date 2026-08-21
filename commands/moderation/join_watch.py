@@ -857,7 +857,7 @@ async def _action_troll(
     until = discord.utils.utcnow() + timedelta(hours=TIMEOUT_HOURS)
     try:
         await member.timeout(
-            until, reason=f"Join-watch AI raid screening ({confidence:.0%}): {reason[:300]}"
+            until, reason=f"Join-watch AI screening ({confidence:.0%}): {reason[:300]}"
         )
         action = f"timed out for {TIMEOUT_HOURS}h"
     except discord.Forbidden:
@@ -873,33 +873,29 @@ async def _action_troll(
 
 
 async def _delete_trigger(entry: dict[str, Any], message: Any) -> str:
-    """Delete the message that tripped the verdict, flagging it on the snapshot.
+    """Delete only the offending message, leaving previous context intact.
 
-    Returns a short phrase for the report footer. Failures are reported rather than
-    raised: a message that cannot be removed must not cost us the timeout or the card.
+    Updates the entry in place with deletion status so the report view knows
+    which message was removed.
     """
-    snapshot = entry["messages"][-1] if entry["messages"] else None
-    if message is None:
-        if snapshot is not None:
-            snapshot["delete_failed"] = "no message handle"
-        return "message NOT deleted: no handle"
+    trigger_record = entry["messages"][-1] if entry["messages"] else None
     try:
         await message.delete()
+        if trigger_record:
+            trigger_record["deleted"] = True
+        return "triggering message deleted"
     except discord.NotFound:
-        if snapshot is not None:
-            snapshot["delete_failed"] = "already gone"
-        return "message already gone"
+        if trigger_record:
+            trigger_record["deleted"] = True
+        return "triggering message already deleted"
     except discord.Forbidden:
-        if snapshot is not None:
-            snapshot["delete_failed"] = "missing Manage Messages"
-        return "message delete FAILED: missing Manage Messages"
+        if trigger_record:
+            trigger_record["delete_failed"] = "missing Manage Messages permission"
+        return "message delete FAILED (missing permission)"
     except discord.HTTPException as exc:
-        if snapshot is not None:
-            snapshot["delete_failed"] = exc.__class__.__name__
-        return f"message delete FAILED: {exc.__class__.__name__}"
-    if snapshot is not None:
-        snapshot["deleted"] = True
-    return "triggering message deleted"
+        if trigger_record:
+            trigger_record["delete_failed"] = exc.__class__.__name__
+        return f"message delete FAILED ({exc.__class__.__name__})"
 
 
 class UntimeoutButton(
@@ -964,10 +960,24 @@ def _report_view(
     view = discord.ui.LayoutView(timeout=None)
     card = discord.ui.Container(accent_colour=0xE74C3C)
 
+    name = getattr(member, "name", None) or "?"
+    display_name = getattr(member, "display_name", None)
+    name_str = f"**{discord.utils.escape_markdown(name)}**"
+    if display_name and display_name != name:
+        name_str += f" ({discord.utils.escape_markdown(display_name)})"
+
+    account_meta = []
+    if created:
+        account_meta.append(f"Created <t:{int(created.timestamp())}:R>")
+    if joined:
+        account_meta.append(f"Joined <t:{int(joined.timestamp())}:R>")
+    meta_str = " · ".join(account_meta)
+
+    msg_count = len(entry["messages"])
     header = (
-        "## 🚨 Join-watch: likely raid troll\n"
-        f"{member.mention} (`{member.id}`) was flagged on message "
-        f"{len(entry['messages'])} of {MAX_SCANNED_MESSAGES}."
+        "## 🚨 Join-watch: flagged new member\n"
+        f"{member.mention} (`{member.id}`) · {name_str}\n"
+        f"-# {meta_str} · Msg {msg_count}/{MAX_SCANNED_MESSAGES}"
     )
     avatar_url = getattr(getattr(member, "display_avatar", None), "url", None)
     if avatar_url:
@@ -980,54 +990,38 @@ def _report_view(
         card.add_item(discord.ui.TextDisplay(header))
     card.add_item(discord.ui.Separator())
 
-    profile_bits = [
-        f"**Username** {discord.utils.escape_markdown(getattr(member, 'name', None) or '?')}"
-    ]
-    display_name = getattr(member, "display_name", None)
-    if display_name and display_name != getattr(member, "name", None):
-        profile_bits.append(f"**Display name** {discord.utils.escape_markdown(display_name)}")
-    if created:
-        profile_bits.append(f"**Account created** <t:{int(created.timestamp())}:R>")
-    if joined:
-        profile_bits.append(f"**Joined** <t:{int(joined.timestamp())}:R>")
-    card.add_item(discord.ui.TextDisplay(" · ".join(profile_bits)))
+    clean_reason = reason.strip() if reason else "No reason given."
     card.add_item(
-        discord.ui.TextDisplay(
-            f"🤖 **AI verdict** troll · confidence {confidence:.0%}\n{reason or '(no reason given)'}"
-        )
+        discord.ui.TextDisplay(f"> ⚠️ **AI Flag ({confidence:.0%}):** {clean_reason}")
     )
 
     lines = []
-    deleted_any = False
     for i, m in enumerate(entry["messages"], 1):
+        ch = m.get("channel", "chat")
+        ts = m.get("ts", int(discord.utils.utcnow().timestamp()))
+        content = discord.utils.escape_markdown(m.get("content", "")).strip()
+        if len(content) > 250:
+            content = content[:247] + "..."
+
+        jump_url = m.get("jump_url")
+        jump = f" · [jump]({jump_url})" if jump_url else ""
         if m.get("deleted"):
-            # the jump link is dead once the message is gone, so drop it and say why
-            deleted_any = True
-            tag = " · 🗑️ **deleted by join-watch**"
+            lines.append(f"{i}. **#{ch}** <t:{ts}:R> · 🗑️ **Deleted**:\n> **\"{content}\"**")
         elif m.get("delete_failed"):
-            tag = (
-                f" · ⚠️ **not deleted** ({m['delete_failed']})"
-                + (f" · [jump]({m['jump_url']})" if m.get("jump_url") else "")
-            )
+            lines.append(f"{i}. **#{ch}** <t:{ts}:R> · ⚠️ *Delete failed*{jump}:\n> **\"{content}\"**")
         else:
-            tag = f" · [jump]({m['jump_url']})" if m.get("jump_url") else ""
-        lines.append(
-            f"{i}. **{m['channel']}** <t:{m['ts']}:R>{tag}\n"
-            f"{discord.utils.escape_markdown(m['content'])[:300]}"
-        )
-    card.add_item(discord.ui.TextDisplay(("### Messages\n" + "\n".join(lines))[:1500]))
-    if deleted_any:
-        card.add_item(
-            discord.ui.TextDisplay(
-                "🗑️ **The message that triggered this was deleted.** Its text is quoted above "
-                "so you can still judge the call; removing the timeout does not restore it."
+            lines.append(
+                f"{i}. **#{ch}** <t:{ts}:R>{jump}: `{content}`"
+                if "\n" not in content and len(content) < 80
+                else f"{i}. **#{ch}** <t:{ts}:R>{jump}:\n> {content}"
             )
-        )
+
+    card.add_item(discord.ui.TextDisplay(("### Recent Messages\n" + "\n".join(lines))[:1500]))
     card.add_item(discord.ui.Separator())
     card.add_item(discord.ui.ActionRow(UntimeoutButton(member.id)))
     card.add_item(
         discord.ui.TextDisplay(
-            f"-# Action: {action} · flagged by join-watch AI screening; review and undo if wrong"
+            f"-# Action taken: {action} · Untimeout above if false positive"
         )
     )
     view.add_item(card)
