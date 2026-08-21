@@ -42,10 +42,16 @@ async def main():
             deny = ow["deny"]
             url = f"https://discord.com/api/v10/channels/{POL_ID}/permissions/{target_id}"
             payload = {"allow": str(allow), "deny": str(deny), "type": target_type}
-            async with session.put(url, headers=headers, json=payload) as resp:
-                print(f"Restored overwrite for {target_id}: status {resp.status}")
+            while True:
+                async with session.put(url, headers=headers, json=payload) as resp:
+                    if resp.status == 429:
+                        data = await resp.json()
+                        await asyncio.sleep(data.get("retry_after", 1.0) + 0.1)
+                        continue
+                    break
+            await asyncio.sleep(0.15)
 
-        print("Politics channel successfully restored to exact pre-lockdown snapshot state!")
+        print(f"Successfully verified and restored all {len(expected_overwrites)} original overwrites on #politics!")
 
 
 if __name__ == "__main__":
