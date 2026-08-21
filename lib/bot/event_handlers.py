@@ -586,11 +586,41 @@ def reattach_persistent_views(client):
 
 
 
-async def process_pending_emoji_sticker_uploads(client, message):
-    """Process pending emoji/sticker uploads from shop purchases."""
-    if not message.attachments:
-        return False
+async def resolve_media_url(url: str, session: aiohttp.ClientSession) -> str:
+    """Resolve a web page URL (e.g. Tenor, Giphy) to a direct media URL if needed."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if any(parsed.path.lower().endswith(ext) for ext in ['.gif', '.png', '.jpg', '.jpeg', '.webp']):
+            return url
 
+        if 'tenor.com' in parsed.netloc:
+            async with session.get(url, headers={'User-Agent': 'Mozilla/5.0'}) as resp:
+                if resp.status == 200:
+                    html = await resp.text()
+                    gif_match = re.search(r'https://media\.tenor\.com/[^\"\']+\.gif', html)
+                    if gif_match:
+                        return gif_match.group(0)
+                    meta_match = re.search(r'<meta\s+property=[\"\']og:image[\"\']\s+content=[\"\']([^\"\']+)[\"\']', html)
+                    if meta_match:
+                        return meta_match.group(1)
+
+        if 'giphy.com' in parsed.netloc:
+            async with session.get(url, headers={'User-Agent': 'Mozilla/5.0'}) as resp:
+                if resp.status == 200:
+                    html = await resp.text()
+                    gif_match = re.search(r'https://media[0-9]*\.giphy\.com/media/[^\"\']+/giphy\.gif', html)
+                    if gif_match:
+                        return gif_match.group(0)
+                    meta_match = re.search(r'<meta\s+property=[\"\']og:image[\"\']\s+content=[\"\']([^\"\']+)[\"\']', html)
+                    if meta_match:
+                        return meta_match.group(1)
+    except Exception as e:
+        logger.warning(f"Failed to resolve media URL {url}: {e}")
+    return url
+
+
+async def process_pending_emoji_sticker_uploads(client, message):
+    """Process pending emoji/sticker uploads from shop purchases (supports files & links)."""
     # Check if user has pending uploads (memory or DB)
     pending_uploads = getattr(client, '_pending_uploads', {})
     user_upload = pending_uploads.get(message.author.id)
@@ -609,46 +639,45 @@ async def process_pending_emoji_sticker_uploads(client, message):
     if not user_upload or not user_upload.get('waiting'):
         return False
 
-    # Process the upload
-    attachment = message.attachments[0]  # Take the first attachment
     upload_type = user_upload['type']
+    target_url = None
+    original_filename = None
 
-    ext = os.path.splitext(attachment.filename)[1].lower()
-    valid_exts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.jfif']
-    if upload_type == 'sticker':
-        valid_exts.append('.json')
+    if message.attachments:
+        attachment = message.attachments[0]
+        target_url = attachment.url
+        original_filename = attachment.filename
+    else:
+        url_match = re.search(r'https?://[^\s<>]+', message.content)
+        if url_match:
+            target_url = url_match.group(0)
+            original_filename = f"{user_upload['name']}.gif"
 
-    is_valid = (
-        (attachment.content_type and any(attachment.content_type.startswith(p) for p in ['image/', 'application/json']))
-        or ext in valid_exts
-    )
-
-    if not is_valid:
-        await message.reply(
-            f"❌ Invalid file format for {upload_type}. Accepted formats: PNG, JPG, GIF, WebP."
-        )
-        return True
+    if not target_url:
+        return False
 
     try:
-        # Download the file
+        # Download the file / link
         async with aiohttp.ClientSession() as session:
-            async with session.get(attachment.url) as response:
+            resolved_url = await resolve_media_url(target_url, session)
+            async with session.get(resolved_url, headers={'User-Agent': 'Mozilla/5.0'}) as response:
                 if response.status != 200:
-                    await message.reply("❌ Failed to download your file. Please try again.")
+                    await message.reply("❌ Failed to download the file from that link. Please try uploading the image/GIF file directly.")
                     return True
                 file_data = await response.read()
 
         # Auto-process & compress image/GIF (excluding Lottie json stickers)
-        final_filename = attachment.filename
+        final_filename = original_filename or f"{user_upload['name']}.gif"
+        ext = os.path.splitext(final_filename)[1].lower()
         if ext != '.json':
             try:
                 from lib.core.image_processing import process_and_compress_media
                 file_data, final_filename, _ = process_and_compress_media(
-                    file_data, attachment.filename, is_emoji=(upload_type == 'emoji')
+                    file_data, final_filename, is_emoji=(upload_type == 'emoji')
                 )
             except Exception as pe:
                 logger.error("Error processing/compressing emoji media: %s", pe, exc_info=True)
-                await message.reply(f"❌ Could not process image: {pe}")
+                await message.reply(f"❌ Could not process/convert the image: {pe}. Please upload a PNG, JPG, GIF, or WebP file directly.")
                 return True
 
         # Send approval request to cabinet channel
