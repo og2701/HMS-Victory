@@ -553,6 +553,12 @@ def reattach_persistent_views(client):
                 reattach_connect4_view(client, key, value)
             except Exception as e:
                 logger.error(f"Failed to recover connect4 game {key}: {e}")
+        elif isinstance(value, dict) and value.get("type") == "rps":
+            try:
+                from commands.economy.rps import reattach_rps_view
+                reattach_rps_view(client, key, value)
+            except Exception as e:
+                logger.error(f"Failed to recover rps game {key}: {e}")
         elif isinstance(value, dict) and value.get("type") == "battleship":
             try:
                 from commands.economy.battleship import reattach_battleship_view

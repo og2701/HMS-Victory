@@ -752,6 +752,12 @@ def define_commands(tree, client):
         from commands.economy.connect4 import handle_connect4_command
         await handle_connect4_command(interaction, opponent, bet)
 
+    @command("rps", "Rock Paper Scissors for UKPence - challenge someone, winner takes the pot")
+    async def rps_command(interaction: Interaction, opponent: Member,
+                          bet: app_commands.Range[int, 1]):
+        from commands.economy.rps import handle_rps_command
+        await handle_rps_command(interaction, opponent, bet)
+
     @command("battleship", "Challenge someone to Battleship - winner takes the pot (UKPence)")
     async def battleship_command(interaction: Interaction, opponent: Member,
                                  bet: app_commands.Range[int, 1]):

@@ -34,7 +34,7 @@ _CASINO = {
     "poker", "red-dog", "roulette", "slots", "three-card-poker", "video-poker",
     "penalty",
 }
-_PVP = {"battleship", "connect4", "wager", "bets"}
+_PVP = {"battleship", "connect4", "rps", "wager", "bets"}
 _MARKET = {"shop", "bond", "lottery"}
 # Handouts straight from the bank. Someone under review for moving money around
 # should not still be drawing a daily from the treasury while it is looked at.

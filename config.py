@@ -435,6 +435,16 @@ POKER_TURN_SECONDS = 45            # auto check/fold if a player stalls
 POKER_IDLE_CLOSE_SECONDS = 180     # close a table after this long with no human action
 POKER_ESCROW_FILE = os.path.join(JSON_DATA_DIR, "poker_escrow.json")
 # Connect 4 (1v1 PvP wager; both stake the same, winner takes the whole pot, no rake)
+# --- Rock Paper Scissors (1v1 wager) ---
+RPS_ENABLED = True
+RPS_MIN_BET = 5
+# Lower than Connect 4's 5,000 on purpose: a match is over in seconds, so the same ceiling
+# would move money far faster than a board game can.
+RPS_MAX_BET = 2000
+RPS_ACCEPT_SECONDS = 300           # opponent has this long to accept the challenge
+RPS_ROUND_SECONDS = 120            # 2 min to pick each round, or you forfeit the pot
+RPS_WINS_NEEDED = 2                # best of three
+
 CONNECT4_ENABLED = True
 CONNECT4_MIN_BET = 5
 CONNECT4_MAX_BET = 5000
