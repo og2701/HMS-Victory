@@ -25,53 +25,63 @@ def test_one_nationality_is_nobody_s_business():
     assert D.onboarding_findings({SCO, BRITISH}, 900) == []
 
 
-def test_dual_heritage_picked_at_human_speed_is_left_alone():
-    """English and Scottish is a real answer. The old rule would not have caught it either,
-    but only because it demanded all four - this one has to leave it deliberately."""
+def test_dual_and_triple_nationality_are_ordinary():
+    """The whole point of the rewrite. Plenty of people are two or three of these, and a
+    rule that treats that as evidence is worse than no rule at all."""
     assert D.onboarding_findings({ENG, SCO, BRITISH}, 45) == []
+    assert D.onboarding_findings({ENG, SCO, WAL}, 600) == []
+    assert D.onboarding_findings({SCO, NIR, BRITISH}, 30) == []
 
 
-def test_dual_heritage_in_under_a_second_is_not_a_person():
-    found = D.onboarding_findings({ENG, SCO, BRITISH}, 0.4)
-    assert found, "instant contradictory picks went unflagged"
-    assert "0.4s" in found[0], found
-
-
-def test_three_home_nations_is_flagged_however_slowly_it_was_done():
-    """The hole in the old rule: it needed all four, so picking three sailed through."""
-    found = D.onboarding_findings({ENG, SCO, WAL}, 6000)
-    assert found and "3 home nations" in found[0], found
-
-
-def test_all_four_still_reads_clearly():
-    found = D.onboarding_findings({ENG, SCO, WAL, NIR}, 1.0)
-    assert found and "4 home nations" in found[0], found
+def test_taking_every_home_nation_is_not_an_answer():
+    found = D.onboarding_findings({ENG, SCO, WAL, NIR}, 6000)
+    assert found and "every home nation" in found[0], found
     assert "Northern Irish" in found[0]
 
 
-def test_status_roles_that_answer_the_same_question_are_flagged():
-    found = D.onboarding_findings({VISITOR, BRITISH}, 3000)
-    assert found and "Visitor" in found[0] and "British" in found[0], found
+def test_taking_every_status_role_is_not_an_answer():
+    found = D.onboarding_findings({BRITISH, COMMONWEALTH, VISITOR}, 6000)
+    assert found and "every status role" in found[0], found
 
 
-def test_one_status_role_is_fine():
-    assert D.onboarding_findings({VISITOR}, 1.0) == []
-    assert D.onboarding_findings({BRITISH, ENG}, 1.0) == []
+def test_two_of_the_three_status_roles_is_left_alone():
+    """British and Commonwealth together is odd, but odd is not automated."""
+    assert D.onboarding_findings({BRITISH, COMMONWEALTH}, 6000) == []
+    assert D.onboarding_findings({VISITOR, BRITISH}, 3000) == []
 
 
-def test_both_problems_are_reported_separately():
+def test_several_roles_within_a_few_seconds_is_not_a_person():
+    found = D.onboarding_findings({ENG, SCO, BRITISH}, 1.2)
+    assert found, "instant picks went unflagged"
+    assert "1.2s after joining" in found[0], found
+
+
+def test_the_ordinary_path_done_quickly_is_still_fine():
+    """One nationality plus one status is what everybody picks, and someone decisive gets
+    through it fast. If that trips the rule, every joiner trips it."""
+    assert D.onboarding_findings({ENG, BRITISH}, 0.2) == []
+    assert D.onboarding_findings({VISITOR}, 0.1) == []
+    assert D.onboarding_findings({ENG}, 0.3) == []
+
+
+def test_the_same_three_picks_taken_slowly_are_fine():
+    """Speed is the whole signal - the picks themselves are an ordinary dual-national answer."""
+    assert D.onboarding_findings({ENG, SCO, BRITISH}, 45) == []
+
+
+def test_taking_the_lot_reports_every_reason():
     found = D.onboarding_findings({ENG, SCO, WAL, NIR, BRITISH, COMMONWEALTH, VISITOR}, 0.3)
-    assert len(found) == 2, f"expected the nations and the status clash: {found}"
+    assert len(found) == 3, f"expected nations, status and speed: {found}"
 
 
-def test_roles_we_do_not_care_about_are_ignored():
+def test_roles_we_do_not_care_about_do_not_count_towards_speed():
     assert D.onboarding_findings({UNRELATED, ENG}, 0.1) == []
 
 
 def test_an_unknown_join_time_does_not_count_as_instant():
     """joined_at can be missing. Absent evidence must not stand in for the fast-pick tell."""
     assert D.onboarding_findings({ENG, SCO}, None) == []
-    assert D.onboarding_findings({ENG, SCO, WAL}, None), "the count rule still applies"
+    assert D.onboarding_findings({ENG, SCO, WAL, NIR}, None), "the all-of-them rule still applies"
 
 
 def test_a_member_is_only_alerted_on_once_per_window():

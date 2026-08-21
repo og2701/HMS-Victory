@@ -292,25 +292,29 @@ _onboarding_flagged = {}    # user id -> when we last alerted; pruned on read
 def onboarding_findings(role_ids, seconds_since_join=None) -> list:
     """What is wrong with this set of onboarding answers. Empty means leave them alone.
 
-    Two home nations is an honest answer for plenty of people, so it only counts when it was
-    also instant; three is nobody's honest answer, at any speed. The old rule demanded all
-    four, which meant picking three - already impossible - sailed through.
+    Two things only. Taking every option in a question is not an answer, and getting through
+    several screens in a couple of seconds is not reading. Counting how many nationalities
+    someone holds is deliberately not one of them - dual and triple nationality are ordinary,
+    and a rule that treats them as suspicious is worse than no rule.
     """
     findings = []
     nations = [n for rid, n in NATIONALITY_ROLES.items() if rid in role_ids]
-    instant = (seconds_since_join is not None
-               and seconds_since_join <= _cfg("ONBOARDING_INSTANT_SECONDS", 5))
-
-    if len(nations) >= _cfg("ONBOARDING_NATIONALITY_FLAG_AT", 3):
-        findings.append(f"Holds **{len(nations)} home nations** at once - "
-                        + ", ".join(nations))
-    elif len(nations) >= 2 and instant:
-        findings.append(f"Picked **{' and '.join(nations)}** within "
-                        f"{seconds_since_join:.1f}s of joining")
-
     status = [n for rid, n in STATUS_ROLES.items() if rid in role_ids]
-    if len(status) >= _cfg("ONBOARDING_STATUS_FLAG_AT", 2):
-        findings.append(f"Holds **{' + '.join(status)}** - these answer the same question")
+    picked = len(nations) + len(status)
+
+    if len(nations) == len(NATIONALITY_ROLES):
+        findings.append("Took **every home nation** - " + ", ".join(nations))
+    if len(status) == len(STATUS_ROLES):
+        findings.append("Took **every status role** - " + " + ".join(status))
+
+    # One nationality plus one status is the ordinary path, and someone decisive can do it
+    # quickly, so two is not enough to go on however fast it was. Three separate answers in
+    # a couple of seconds is a different thing.
+    instant = _cfg("ONBOARDING_INSTANT_SECONDS", 3)
+    if (picked >= _cfg("ONBOARDING_INSTANT_MIN_ROLES", 3)
+            and seconds_since_join is not None and seconds_since_join <= instant):
+        findings.append(f"Picked **{picked} roles {seconds_since_join:.1f}s after joining** - "
+                        f"onboarding is several screens")
     return findings
 
 

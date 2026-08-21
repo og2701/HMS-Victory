@@ -673,12 +673,12 @@ FUNNEL_WINDOW_HOURS = 72
 FUNNEL_MIN_SENDERS = 3
 FUNNEL_NEW_ACCOUNT_DAYS = 30                       # what counts as low-tenure
 
-# Module F - onboarding. Each question has one honest answer, so a selfbot that ticks every
-# box contradicts itself. Two home nations is a real answer for anyone with mixed parents,
-# which is why it only counts when it was also instant; three is nobody's honest answer.
-ONBOARDING_NATIONALITY_FLAG_AT = 3
-ONBOARDING_STATUS_FLAG_AT = 2                      # British / Commonwealth / Visitor clash
-ONBOARDING_INSTANT_SECONDS = 5                     # onboarding is several screens to read
+# Module F - onboarding. Two signals only: taking every option in a question, and getting
+# through it faster than the screens can be read. Counting nationalities is deliberately not
+# one - dual and triple nationality are ordinary and flagging them would be worse than
+# flagging nothing.
+ONBOARDING_INSTANT_SECONDS = 3
+ONBOARDING_INSTANT_MIN_ROLES = 3                   # one nation + one status is the normal path
 ONBOARDING_FLAG_TTL_HOURS = 6                      # one alert per member per window
 
 
