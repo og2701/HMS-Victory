@@ -218,7 +218,7 @@ AMERICAN_TO_BRITISH.update({
     "fetal": "foetal", "fetus": "foetus",
     "gynecology": "gynaecology",
     "hemoglobin": "haemoglobin", "hemorrhage": "haemorrhage",
-    "leukemia": "leukaemia",
+    "leukemia": "leukaemia", "leukemias": "leukaemias", "leukemic": "leukaemic",
     "maneuver": "manoeuvre", "maneuvers": "manoeuvres",
     "orthopedic": "orthopaedic",
     "pediatric": "paediatric", "pediatrician": "paediatrician",

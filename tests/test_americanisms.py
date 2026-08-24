@@ -35,6 +35,7 @@ def test_corrections():
         ("his behavior was marvelous", "his behaviour was marvellous"),
         ("we traveled a liter of fiber", "we travelled a litre of fibre"),
         ("the anesthetic maneuver", "the anaesthetic manoeuvre"),
+        ("diagnosed with leukemia", "diagnosed with leukaemia"),
         ("mom canceled the vacation", "mum cancelled the holiday"),
         ("cozy pajamas and a donut", "cosy pyjamas and a doughnut"),
         # words that stay put: ordinary British English in another sense
