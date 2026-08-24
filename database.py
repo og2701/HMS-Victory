@@ -438,6 +438,16 @@ def init_db():
                 log_text TEXT NOT NULL
             )
         ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS ticket_reward_claims (
+                message_id TEXT PRIMARY KEY,
+                ticket_creator_id TEXT,
+                staff_id TEXT,
+                staff_name TEXT,
+                action TEXT NOT NULL,
+                claimed_at INTEGER NOT NULL
+            )
+        ''')
 
         # One row per finished casino round (every game, every player). `staked` is the
         # total put at risk (incl. doubles/raises), `payout` the total returned, `net`

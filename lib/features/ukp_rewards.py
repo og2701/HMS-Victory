@@ -1859,10 +1859,46 @@ class TicketRewardView(discord.ui.View):
         if not _is_staff(interaction.user):
             await interaction.response.send_message("Only staff can decide this.", ephemeral=True)
             return
+
+        from database import DatabaseManager
+        import time
+
+        msg_id = str(interaction.message.id) if interaction.message else None
+
+        with DatabaseManager.locked_connection():
+            if msg_id:
+                claim = DatabaseManager.fetch_one(
+                    "SELECT staff_name, action FROM ticket_reward_claims WHERE message_id = ?",
+                    (msg_id,)
+                )
+                if claim:
+                    staff_name, action = claim
+                    for child in self.children:
+                        child.disabled = True
+                    try:
+                        await interaction.response.edit_message(view=self)
+                    except Exception:
+                        pass
+                    verb = "awarded" if action == "award" else "skipped"
+                    await interaction.followup.send(
+                        f"ℹ️ This ticket summary was already {verb} by {staff_name}.",
+                        ephemeral=True
+                    )
+                    return
+
+                DatabaseManager.execute(
+                    "INSERT INTO ticket_reward_claims (message_id, ticket_creator_id, staff_id, staff_name, action, claimed_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (msg_id, str(self.creator_id), str(interaction.user.id), interaction.user.display_name, "award", int(time.time()))
+                )
+
         ok = await grant_ticket_reward(interaction.client, self.creator_id, self.creator_name)
         for child in self.children:
             child.disabled = True
-        await interaction.response.edit_message(view=self)
+        try:
+            await interaction.response.edit_message(view=self)
+        except Exception:
+            pass
         who = self.creator_name or f"<@{self.creator_id}>"
         amount = getattr(config, "TICKET_REWARD", 100)
         msg = (f"✅ **{who}** was awarded **{amount:,} UKPence** by {interaction.user.display_name}."
@@ -1875,7 +1911,43 @@ class TicketRewardView(discord.ui.View):
         if not _is_staff(interaction.user):
             await interaction.response.send_message("Only staff can decide this.", ephemeral=True)
             return
+
+        from database import DatabaseManager
+        import time
+
+        msg_id = str(interaction.message.id) if interaction.message else None
+
+        with DatabaseManager.locked_connection():
+            if msg_id:
+                claim = DatabaseManager.fetch_one(
+                    "SELECT staff_name, action FROM ticket_reward_claims WHERE message_id = ?",
+                    (msg_id,)
+                )
+                if claim:
+                    staff_name, action = claim
+                    for child in self.children:
+                        child.disabled = True
+                    try:
+                        await interaction.response.edit_message(view=self)
+                    except Exception:
+                        pass
+                    verb = "awarded" if action == "award" else "skipped"
+                    await interaction.followup.send(
+                        f"ℹ️ This ticket summary was already {verb} by {staff_name}.",
+                        ephemeral=True
+                    )
+                    return
+
+                DatabaseManager.execute(
+                    "INSERT INTO ticket_reward_claims (message_id, ticket_creator_id, staff_id, staff_name, action, claimed_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (msg_id, str(self.creator_id), str(interaction.user.id), interaction.user.display_name, "skip", int(time.time()))
+                )
+
         for child in self.children:
             child.disabled = True
-        await interaction.response.edit_message(view=self)
+        try:
+            await interaction.response.edit_message(view=self)
+        except Exception:
+            pass
         await interaction.followup.send(f"No reward granted (skipped by {interaction.user.display_name}).")
