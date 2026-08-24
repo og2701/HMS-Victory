@@ -48,16 +48,27 @@ def test_different_messages_do_not_collide():
 # ---------------------------------------------------------------------------
 # Detector 1: several accounts saying the same thing
 # ---------------------------------------------------------------------------
-def _post(uid, text, ch=1, at=NOW):
-    return B.check_coordinated(uid, text, ch, "", f"user{uid}", now=at)
+def _post(uid, text, ch=1, at=NOW, established=False):
+    return B.check_coordinated(uid, text, ch, "", f"user{uid}", now=at,
+                               established=established)
 
 
-def test_three_accounts_posting_the_same_thing_is_a_finding():
+def _post_many(text, n=None, start=1, **kw):
+    """The same thing from n distinct accounts. Reads the threshold rather than hard-coding
+    it, so turning the sensitivity dial does not mean rewriting every test."""
+    n = B.COORD_MIN_AUTHORS if n is None else n
+    last = None
+    for uid in range(start, start + n):
+        last = _post(uid, text, **kw)
+    return last
+
+
+def test_enough_accounts_posting_the_same_thing_is_a_finding():
     msg = "free discord nitro for everyone claim it now"
-    assert _post(1, msg) is None
-    assert _post(2, msg) is None
-    finding = _post(3, msg)
-    assert finding and len(finding["authors"]) == 3
+    for uid in range(1, B.COORD_MIN_AUTHORS):
+        assert _post(uid, msg) is None, "fired below the threshold"
+    finding = _post(B.COORD_MIN_AUTHORS, msg)
+    assert finding and len(finding["authors"]) == B.COORD_MIN_AUTHORS
 
 
 def test_one_person_repeating_themselves_is_not_a_raid():
@@ -75,26 +86,64 @@ def test_common_chat_never_fires():
 
 
 def test_short_text_is_ignored_unless_it_carries_a_link():
-    for uid in (1, 2, 3):
-        assert _post(uid, "sounds good") is None
+    assert _post_many("sounds good") is None
     B.reset_windows()
-    hits = [_post(uid, "look https://scam.xyz/x") for uid in (1, 2, 3)]
-    assert hits[-1] is not None, "a short message with a link is exactly the case to catch"
+    assert _post_many("look https://scam.xyz/x") is not None, \
+        "a short message with a link is exactly the case to catch"
+
+
+def test_a_reaction_emoji_everybody_uses_is_not_a_raid():
+    """What actually tripped this in #general. A custom emoji arrives as
+    <a:name:1540334892173733599>, and stripping punctuation left a thirty-four character
+    run that read as a shared sentence."""
+    assert _post_many("<a:bouncy_yaris:1540334892173733599>") is None
+    B.reset_windows()
+    assert _post_many("<:pepe:123456789012345678>") is None
+
+
+def test_unicode_emoji_and_mentions_are_not_wording_either():
+    for text in ("😂😂😂", "<@1234567890123456> <@2345678901234567>", "🇬🇧🇬🇧", "<#999888777666555>"):
+        B.reset_windows()
+        assert _post_many(text) is None, text
+
+
+def test_the_same_line_dressed_in_different_emoji_still_matches():
+    """The other side of stripping them: decorating a scam line with a different emoji per
+    account must not split one campaign into separate findings."""
+    base = "free discord nitro for everyone claim it now"
+    for uid in range(1, B.COORD_MIN_AUTHORS):
+        assert _post(uid, f"{base} 🎉") is None
+    assert _post(B.COORD_MIN_AUTHORS, f"{base} 😀") is not None
+
+
+def test_regulars_landing_on_the_same_line_are_not_counted():
+    """A month here and two hundred messages is not something a farmed account has, so a
+    crowd of regulars saying the same thing is a meme. A regular who has actually been
+    taken over is check_takeover's problem, and that one requires tenure rather than
+    excluding it."""
+    msg = "free discord nitro for everyone claim it now"
+    assert _post_many(msg, n=B.COORD_MIN_AUTHORS + 3, established=True) is None
+
+
+def test_one_regular_among_new_accounts_does_not_hide_them():
+    msg = "free discord nitro for everyone claim it now"
+    assert _post(99, msg, established=True) is None
+    assert _post_many(msg) is not None, "the new accounts still have to be reported"
 
 
 def test_the_window_expires():
     msg = "identical wording posted a long way apart"
-    _post(1, msg, at=NOW)
-    _post(2, msg, at=NOW + 10)
-    assert _post(3, msg, at=NOW + B.COORD_WINDOW_SECONDS + 60) is None
+    for uid in range(1, B.COORD_MIN_AUTHORS):
+        _post(uid, msg, at=NOW + uid)
+    assert _post(B.COORD_MIN_AUTHORS, msg,
+                 at=NOW + B.COORD_WINDOW_SECONDS + 60) is None
 
 
 def test_it_does_not_re_report_the_same_text_immediately():
     msg = "free discord nitro for everyone claim it now"
-    for uid in (1, 2, 3):
-        last = _post(uid, msg)
-    assert last is not None
-    assert _post(4, msg) is None, "a cooldown stops one campaign spamming the channel"
+    assert _post_many(msg) is not None
+    assert _post(B.COORD_MIN_AUTHORS + 1, msg) is None, \
+        "a cooldown stops one campaign spamming the channel"
 
 
 # ---------------------------------------------------------------------------
@@ -162,13 +211,12 @@ def _json(view):
 
 def test_the_coordinated_card_explains_itself_and_offers_a_reversible_option():
     msg = "free discord nitro for everyone claim it now"
-    for uid in (1, 2, 3):
-        finding = _post(uid, msg)
+    finding = _post_many(msg)
     payload = _json(B.build_coordinated_view(finding))
     assert "how a raid starts" in payload
     assert "bw:coordto:" in payload and "bw:coordban:" in payload and "bw:coorddis:" in payload
     assert "copypasta" in payload, "identical wording has innocent explanations"
-    for uid in ("1", "2", "3"):
+    for uid in range(1, B.COORD_MIN_AUTHORS + 1):
         assert f"<@{uid}>" in payload
 
 
@@ -211,19 +259,16 @@ def test_three_people_posting_different_gifs_share_nothing():
         assert _post(uid, gif) is None
 
 
-def test_three_people_posting_the_same_scam_link_is_a_finding():
+def test_a_crowd_posting_the_same_scam_link_is_a_finding():
     """The case the media fix must not break: no words at all, but one identical URL."""
-    link = "https://free-nitro-claim.xyz/gift"
-    assert _post(1, link) is None
-    assert _post(2, link) is None
-    finding = _post(3, link)
+    finding = _post_many("https://free-nitro-claim.xyz/gift")
     assert finding and finding["match"] == "url"
 
 
 def test_the_same_link_with_tracking_junk_still_matches():
-    assert _post(1, "https://scam.xyz/a?ref=1") is None
-    assert _post(2, "https://scam.xyz/a?ref=2") is None
-    assert _post(3, "https://scam.xyz/a#x") is not None
+    for uid in range(1, B.COORD_MIN_AUTHORS):
+        assert _post(uid, f"https://scam.xyz/a?ref={uid}") is None
+    assert _post(B.COORD_MIN_AUTHORS, "https://scam.xyz/a#x") is not None
 
 
 def test_gif_spam_is_not_a_takeover():

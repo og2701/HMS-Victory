@@ -43,8 +43,8 @@ STATE_FILE = os.path.join(JSON_DATA_DIR, "behaviour_watch.json")
 
 # --- coordinated messages ----------------------------------------------------------
 COORD_WINDOW_SECONDS = 120        # how long the same text stays comparable
-COORD_MIN_AUTHORS = 3             # distinct accounts before it is a pattern
-COORD_MIN_CHARS = 15              # below this, identical text is just chat
+COORD_MIN_AUTHORS = 4             # distinct accounts before it is a pattern
+COORD_MIN_CHARS = 20              # below this, identical text is just chat
 COORD_COOLDOWN_SECONDS = 900      # do not re-report the same text repeatedly
 
 # Things a crowd genuinely says at the same moment. Without this the detector fires every
@@ -100,6 +100,26 @@ def normalise(text: str) -> str:
     return " ".join(t.split())
 
 
+_DISCORD_TOKEN_RE = re.compile(r"<[^<>\n]{1,80}>")
+_EMOJI_RE = re.compile(
+    "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U00002190-\U000021FF"
+    "\U00002B00-\U00002BFF\U0001F1E6-\U0001F1FF\uFE0F\u200D\u20E3]+")
+
+
+def substance(text: str) -> str:
+    """What is left once the things a crowd genuinely posts identically are removed.
+
+    A custom emoji arrives as <a:bouncy_yaris:1540334892173733599>. Stripping punctuation
+    turned that into a thirty-four character run, so three people posting the same reaction
+    emoji read as three people posting the same sentence - which is what tripped this in
+    #general. Mentions, channel links and unicode emoji all have the same problem: shared,
+    identical, and evidence of nothing.
+    """
+    t = _DISCORD_TOKEN_RE.sub(" ", str(text or ""))
+    t = _EMOJI_RE.sub(" ", t)
+    return normalise(t).replace(LINK_TOKEN, " ").strip()
+
+
 def _digest(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()[:16]
 
@@ -141,12 +161,13 @@ def content_key(text: str) -> tuple[str, str] | None:
     A message that is just *a* link matches nothing: three people posting three
     different GIFs have nothing in common at all.
     """
-    norm = normalise(text)
-    if not norm or norm in COORD_STOPLIST:
+    words = substance(text)
+    if words in COORD_STOPLIST:
         return None
-    words = norm.replace(LINK_TOKEN, " ").strip()
     if len(words) >= COORD_MIN_CHARS:
-        return ("text", _digest(norm))
+        # Digest the substance rather than the raw wording, so decorating the same line
+        # with a different emoji each time does not split it into separate findings.
+        return ("text", _digest(words))
     links = [u for u in urls_in(text) if not is_media(u)]
     if len(links) == 1:
         return ("url", _digest(links[0]))
@@ -257,9 +278,19 @@ def reset_windows() -> None:
 
 # --- detector 1: several accounts saying the same thing --------------------------------
 def check_coordinated(user_id, text: str, channel_id, jump_url: str = "",
-                      name: str = "", now: int | None = None) -> dict[str, Any] | None:
-    """Return a finding when COORD_MIN_AUTHORS distinct accounts post the same text."""
+                      name: str = "", now: int | None = None,
+                      established: bool = False) -> dict[str, Any] | None:
+    """Return a finding when COORD_MIN_AUTHORS distinct accounts post the same text.
+
+    Established members are not counted. A month here and two hundred messages is not
+    something a farmed account has, so several regulars landing on the same line is a meme
+    rather than a raid - which is what this kept reporting. A regular whose account has
+    actually been taken over is check_takeover's job, and that one requires tenure instead
+    of excluding it.
+    """
     current = int(time.time() if now is None else now)
+    if established:
+        return None
     key = content_key(text)
     if key is None:
         return None
@@ -651,7 +682,8 @@ async def observe_message(client: Any, message: Any) -> None:
         profile = record_message(uid, has_external_link(content))
 
         finding = check_coordinated(uid, content, message.channel.id,
-                                    getattr(message, "jump_url", ""), name)
+                                    getattr(message, "jump_url", ""), name,
+                                    established=is_established(profile))
         if finding:
             await report_coordinated(client, finding)
 
