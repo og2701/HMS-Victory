@@ -1060,114 +1060,225 @@ _BENEFITS_DATA = [
 ]
 
 
-def _benefits_success_line(uid, amount, stats=None) -> tuple:
-    """Pick a line: their own if they have one, else one built from their figures, else the
-    house pool. Returns (line, stats) so the caller formats without looking anything up twice.
+_BENEFITS_PERSONAL_RICH = {
+    "812666688184909834": [
+        "💼 <@{uid}>, you're holding **{bal:,} UKPence** with **{bonded:,}** in bonds. The state is not topping up your private pension.",
+        "💼 Claim denied, <@{uid}>. **{bal:,} UKPence** in the wallet while sitting on **{bonded:,}** in bonds. Pure capitalist behavior.",
+    ],
+    "822525776095608914": [
+        "💼 Denied, Lord <@{uid}>. **{bal:,} UKPence** plus **{bonded:,}** in the family trust fund is well over the {threshold:,} line.",
+        "💼 <@{uid}>, landed gentry with **{bal:,} UKPence** in hand. The estate can support itself today.",
+    ],
+    "352040780543557634": [
+        "💼 <@{uid}>, **{bal:,} UKPence** in hand and **{bonded:,}** earning interest. Nice try, but the loop is closed today.",
+        "💼 Denied: with **{bal:,} UKPence** in the bank, the {threshold:,} threshold says you're doing just fine.",
+    ],
+    "285860055570579457": [
+        "💼 <@{uid}>, you've got **{bal:,} UKPence** in your wallet. The roulette wheel will have to wait for honest earnings.",
+        "💼 Undefeated in duels{unbeaten} and holding **{bal:,} UKPence**. No welfare for gladiators today, <@{uid}>.",
+    ],
+    "564147759108718664": [
+        "💼 <@{uid}>, you have **{bal:,} UKPence**. Stop handing out **{paid_out:,}** to everyone else if you want the dole.",
+        "💼 The state reviewed your **{bal:,} UKPence**, <@{uid}>. Keep some for yourself and you won't need benefits.",
+    ],
+    "596789292991512619": [
+        "💼 <@{uid}> has **{bal:,} UKPence**. That's enough for **{shop_items}** more things from the shop. No welfare for you.",
+        "💼 Denied. You've spent **{shop_spent:,}** at the shop and still have **{bal:,} UKPence**. Off you pop.",
+    ],
+    "1283837687551361117": [
+        "💼 **{bal:,} UKPence** in the account, <@{uid}>. Go play round number **{casino_games}** with your own money.",
+        "💼 Denied: **{bal:,} UKPence** in hand. You don't need a handout, you need to step away from the tables.",
+    ],
+    "1398652914737741956": [
+        "💼 <@{uid}>, you're flush with **{bal:,} UKPence**. Quietly take your money and move along.",
+        "💼 Denied, <@{uid}>. **{bal:,} UKPence** is comfortably over {threshold:,}. Shhh and get back to work.",
+    ],
+    "355962189175324674": [
+        "💼 <@{uid}>, you're **{casino_up:,}** up at the tables and have **{bal:,} UKPence**. Genuinely shameless.",
+        "💼 Hardship claim rejected. You're in profit by **{casino_up:,}** and holding **{bal:,} UKPence**.",
+    ],
+    "860098855621623809": [
+        "💼 <@{uid}>, **{bal:,} UKPence** in the bank and **{casino_up:,}** casino profit. The council tax is going up because of people like you.",
+        "💼 Denied. **{bal:,} UKPence** on the books. Come back when the tables have taken it back.",
+    ],
+    "479207279850291221": [
+        "💼 <@{uid}>, you've got **{bal:,} UKPence**. That will buy plenty of picks for the mines without government assistance.",
+        "💼 Denied: **{bal:,} UKPence** on file. The case worker knows you're good for it.",
+    ],
+    "795003706717372462": [
+        "💼 <@{uid}>, you're sitting on **{bal:,} UKPence**. That should sustain your transfer velocity for a while.",
+    ],
+    "311526098884362242": [
+        "💼 <@{uid}>, with **{bal:,} UKPence** you can afford your own higher/lower guesses today.",
+    ],
+    "966101821527588885": [
+        "💼 <@{uid}>, **{bal:,} UKPence** is enough to hit or stand on your own dime. Denied.",
+    ],
+    "235505165321502731": [
+        "💼 <@{uid}>, **{bal:,} UKPence** is plenty for mining equipment. No relief payment today.",
+    ],
+    "265927604303953920": [
+        "💼 <@{uid}>, you have **{bal:,} UKPence** to your name. No dole for duelists.",
+    ],
+    "1525639310697562232": [
+        "💼 <@{uid}>, **{bal:,} UKPence** in the account. The fraud squad will not be issuing pocket money today.",
+    ],
+    "797901947734065162": [
+        "💼 <@{uid}>, **{bal:,} UKPence** banked. Your spotless frugality disqualifies you today.",
+    ],
+    "335303938301624324": [
+        "💼 <@{uid}>, holding **{bal:,} UKPence** and **{casino_up:,}** in casino profit. Denied.",
+    ],
+    "1129755209195859988": [
+        "💼 <@{uid}>, **{bal:,} UKPence** and **{casino_up:,}** up. The state does not subsidise winners.",
+    ],
+    "792139113587277835": [
+        "💼 <@{uid}>, **{bal:,} UKPence** in wallet and **{bonded:,}** in bonds. Truly shameless.",
+    ],
+    "811987329707147264": [
+        "💼 <@{uid}>, **{bal:,} UKPence** in hand and **{casino_up:,}** ahead. Sparta does not do handouts today.",
+    ],
+}
 
-    Three tiers rather than two, because the personal pool only ever covers the heaviest
-    fifty claimants and everybody else was seeing the same seventeen jokes for good.
-    """
-    if stats is None:
-        stats = _benefits_stats(uid, amount)
+_BENEFITS_DATA_RICH = [
+    "💼 You're sat on **{bal:,} UKPence** and have **{bonded:,}** locked in bonds. The DWP does not do private wealth management.",
+    "💼 **{bal:,} UKPence** in hand and **{casino_up:,}** up at the casino. You're funding the server, not claiming from it.",
+    "💼 Denied: with **{bal:,} UKPence** in the wallet and **{shop_spent:,}** already blown at the shop, you are far from destitute.",
+    "💼 You've given away **{paid_out:,}** to mates and still have **{bal:,} UKPence**. Come back when generosity actually hurts.",
+    "💼 **{bal:,} UKPence** is well over {threshold:,}. Even after dropping **{casino_lost:,}** at the tables, the state says you can afford dinner.",
+    "💼 Denied. **{bal:,} UKPence** in your account, **{pvp_wins}** duel victories to your name, and you're asking for welfare? Have some dignity.",
+    "💼 Hardship claim refused. **{bal:,} UKPence** in the bank and **{bonds}** active bonds maturing. Off you pop.",
+    "💼 **{bal:,} UKPence** in the bank. You've won **{best_win:,}** in a single game before; go win it again.",
+    "💼 Denied: with **{bal:,} UKPence** in the account and **{shop_items}** items in your inventory, you are not skint.",
+    "💼 **{bal:,} UKPence** in hand. You have received **{paid_in:,}** from friends and have no business in this queue.",
+]
 
-    def live(pool):
-        return [l for l in pool
-                if all(stats.get(f) is not None for f in _fields(l) - _BENEFITS_ALWAYS)]
+_BENEFITS_PERSONAL_ALREADY = {
+    "479207279850291221": [
+        "🧾 <@{uid}>, you've already had your dole today. That's **{claims}** claims on your file - back to the mines until <t:{ts}:R>.",
+        "🧾 The case worker already stamped your paper today, <@{uid}>. Shut the door on your way out and return <t:{ts}:R>.",
+    ],
+    "1398652914737741956": [
+        "🧾 <@{uid}>, today's payment is already through. Shhh until midnight <t:{ts}:R>.",
+        "🧾 Told to be quiet **{shut}** times and still back for double dole. The till reopens <t:{ts}:R>.",
+    ],
+    "285860055570579457": [
+        "🧾 <@{uid}>, you already claimed today's handout. Step away from the roulette table until <t:{ts}:R>.",
+        "🧾 Undefeated against people{unbeaten}, but defeated by the once-per-day rule. Come back <t:{ts}:R>, <@{uid}>.",
+    ],
+    "1283837687551361117": [
+        "🧾 <@{uid}>, one giro per calendar day. You've played **{casino_games:,}** rounds; go take a breather until <t:{ts}:R>.",
+        "🧾 Already claimed today, <@{uid}>. Put the shop catalogue down until <t:{ts}:R>.",
+    ],
+    "564147759108718664": [
+        "🧾 <@{uid}>, you already collected today's money. Don't give it all away before <t:{ts}:R>.",
+    ],
+    "795003706717372462": [
+        "🧾 Today's giro is gone, <@{uid}>. Try to keep whatever is left in the account until <t:{ts}:R>.",
+    ],
+    "311526098884362242": [
+        "🧾 <@{uid}>, you've claimed your share today. The higher/lower deck rests until <t:{ts}:R>.",
+    ],
+    "966101821527588885": [
+        "🧾 Already claimed today, <@{uid}>. Step back from the blackjack table until <t:{ts}:R>.",
+    ],
+    "235505165321502731": [
+        "🧾 <@{uid}>, today's allowance is spent. Put down the mining pick until <t:{ts}:R>.",
+    ],
+    "265927604303953920": [
+        "🧾 Today's giro has been dispatched, <@{uid}>. No more handouts until <t:{ts}:R>.",
+    ],
+    "1525639310697562232": [
+        "🧾 <@{uid}>, you've had your legal claim today. Don't make the fraud squad look at you again before <t:{ts}:R>.",
+    ],
+    "792139113587277835": [
+        "🧾 <@{uid}>, you've claimed today. Go check your **{bonded:,}** in bonds until <t:{ts}:R>.",
+    ],
+}
 
-    personal = live(_BENEFITS_PERSONAL.get(str(uid), ()))
-    if personal and random.random() < _BENEFITS_PERSONAL_CHANCE:
-        return random.choice(personal), stats
-    generic = live(_BENEFITS_DATA)
-    if generic and random.random() < _BENEFITS_DATA_CHANCE:
-        return random.choice(generic), stats
-    return random.choice(_BENEFITS_SUCCESS), stats
+_BENEFITS_DATA_ALREADY = [
+    "🧾 You're on day **{streak}** of your claiming streak. One giro per day - back at midnight <t:{ts}:R>.",
+    "🧾 Claim number **{claims}** was already filed today, <@{uid}>. Give the printing press a rest until <t:{ts}:R>.",
+    "🧾 Drained today's payout straight into the casino ({casino_lost:,} down total)? The office reopens <t:{ts}:R>.",
+    "🧾 The giro's already been cashed today. The mines have had **{mines_lost:,}** off you and they won't get more until <t:{ts}:R>.",
+    "🧾 Back again so soon? That's **{claims}** lifetime claims and today's is already done. Reopens <t:{ts}:R>.",
+    "🧾 You've had today's handout, <@{uid}>. Go admire your **{shop_items}** shop items and come back <t:{ts}:R>.",
+    "🧾 Already claimed today. Shut up **{shut}** times and still knocking on the DWP door. Return <t:{ts}:R>.",
+    "🧾 One claim every 24 hours. The state remembers your **{pvp_losses}** duel defeats, and it will remember you <t:{ts}:R>.",
+    "🧾 Already had your giro today. Go spend some of that **{paid_in:,}** your mates sent you and return <t:{ts}:R>.",
+]
 
+_BENEFITS_PERSONAL_FRAUD_WARN = {
+    "276119377395449856": [
+        "🕵️ <@{uid}>, the fraud team flagged **{out:,} UKPence** leaving your wallet. We know your tricks - one warning only.",
+    ],
+    "564147759108718664": [
+        "🕵️ <@{uid}>, gifting **{out:,} UKPence** to friends doesn't qualify you for the dole. Claim blocked; don't make us ban you.",
+    ],
+    "795003706717372462": [
+        "🕵️ <@{uid}>, that velocity of **{out:,} UKPence** out the door didn't go unnoticed. Warning issued.",
+    ],
+    "1525639310697562232": [
+        "🕵️ <@{uid}>, **{out:,} UKPence** shifted again. The fraud office has you under a microscope. Last warning.",
+    ],
+    "285860055570579457": [
+        "🕵️ <@{uid}>, moving **{out:,} UKPence** off-balance won't work on the DWP. Warning recorded.",
+    ],
+    "1398652914737741956": [
+        "🕵️ <@{uid}>, shipping **{out:,} UKPence** away before claiming is not subtle. One warning.",
+    ],
+}
 
-def _benefits_stats(uid, amount) -> dict:
-    """Live figures for the personal lines, read at claim time.
+_BENEFITS_DATA_FRAUD_WARN = [
+    "🕵️ Outbound ledger check: you sent **{out:,} UKPence** across **{paid_out_n}** transfers recently. We count that as yours. Warning logged.",
+    "🕵️ Shifting **{out:,} UKPence** to mates right before your **{claims}th** benefits claim? We see you. Claim denied; consider this your final warning.",
+    "🕵️ Nice try hiding **{out:,} UKPence**. You have **{claims}** legitimate claims on record, don't spoil it with fraud. Warning issued.",
+    "🕵️ We clocked **{out:,} UKPence** moving out. Even with **{casino_lost:,}** in casino losses, parking money is a strike. Back off.",
+]
 
-    A field is None when the joke that needs it has stopped being true - they were up at
-    the casino and now aren't, they had never gambled and now have. _benefits_success_line
-    drops any line whose fields are not all present, so a stale joke falls back to the
-    house pool instead of printing something wrong. That is the whole point of computing
-    these rather than writing the numbers into the text, which is what they were at first
-    and which went out of date the same evening.
-    """
-    def pos(n):
-        return n if n else None
+_BENEFITS_PERSONAL_FRAUD_BAN = {
+    "1525639310697562232": [
+        "🚫 <@{uid}>, repeat offender status upgraded. **{days} days** in the sin bin for benefits fraud.",
+    ],
+    "276119377395449856": [
+        "🚫 <@{uid}>, the margin note said you'd try this again. Banned for **{days} days**.",
+    ],
+    "564147759108718664": [
+        "🚫 <@{uid}>, the charity act ended in the fraud office. **{days} days** without benefits.",
+    ],
+    "285860055570579457": [
+        "🚫 <@{uid}>, caught trying to bypass the means test. Sanctioned for **{days} days**.",
+    ],
+}
 
-    s = {}
-    try:
-        rows = DatabaseManager.fetch_all(
-            "SELECT game, COUNT(*) n, SUM(net) net, SUM(CASE WHEN net > 0 THEN 1 ELSE 0 END) w "
-            "FROM casino_results WHERE user_id = ? GROUP BY game", (str(uid),)) or []
-        games = sum(r[1] for r in rows)
-        net = sum(r[2] or 0 for r in rows)
-        wins = sum(r[3] or 0 for r in rows)
-        s["casino_games"] = pos(games)
-        s["casino_lost"] = -net if net < 0 else None
-        s["casino_up"] = net if net > 0 else None
-        s["never_gambled"] = "" if games == 0 else None
-        s["no_casino_wins"] = "" if games and not wins else None
-        for game, n, gnet, _w in rows:
-            s[f"{game}_played"] = pos(n)
-            s[f"{game}_lost"] = -(gnet or 0) if (gnet or 0) < 0 else None
-        # the payment as a share of what a given table has taken - the figure that made the
-        # original line funny, and the one most certain to drift
-        for key in ("casino", "roulette", "mines", "blackjack", "slots", "higherlower", "chest"):
-            lost = s.get("casino_lost") if key == "casino" else s.get(f"{key}_lost")
-            s[f"pct_of_{key}"] = f"{amount / lost * 100:.2f}" if lost else None
-        row = DatabaseManager.fetch_one(
-            "SELECT MIN(net), MAX(net) FROM casino_results WHERE user_id = ?", (str(uid),))
-        if row:
-            s["worst_loss"] = -row[0] if row[0] and row[0] < 0 else None
-            s["best_win"] = row[1] if row[1] and row[1] > 0 else None
+_BENEFITS_DATA_FRAUD_BAN = [
+    "🚫 **Benefits fraud confirmed.** Shifted **{out:,} UKPence** to cheat the means test. Offense number **{offenses}**: banned for **{days} days**.",
+    "🚫 Caught red-handed hiding **{out:,} UKPence**. That's **{offenses}** strikes on your file. Sanctioned for **{days} days**.",
+    "🚫 The DWP fraud squad is unimpressed. After **{claims}** claims, you chose fraud. Banned for **{days} days**.",
+    "🚫 You moved **{out:,} UKPence** and tried to feign hardship. Banned for **{days} days**.",
+]
 
-        row = DatabaseManager.fetch_one(
-            "SELECT COUNT(*), SUM(amount) FROM pay_transfers WHERE payer_id = ?", (str(uid),))
-        s["paid_out_n"], s["paid_out"] = (pos(row[0]), pos(row[1])) if row else (None, None)
-        row = DatabaseManager.fetch_one(
-            "SELECT COUNT(*), SUM(amount) FROM pay_transfers WHERE recipient_id = ?", (str(uid),))
-        s["paid_in_n"], s["paid_in"] = (pos(row[0]), pos(row[1])) if row else (None, None)
+_BENEFITS_PERSONAL_BANNED = {
+    "1525639310697562232": [
+        "🚫 <@{uid}>, the VIP lounge of the fraud blacklist remains yours until <t:{ts}:R>.",
+    ],
+    "276119377395449856": [
+        "🚫 <@{uid}>, no shortcuts out of the sin bin. Come back <t:{ts}:R>.",
+    ],
+    "285860055570579457": [
+        "🚫 <@{uid}>, the sanction stands. Back to duels and debt until <t:{ts}:R>.",
+    ],
+    "564147759108718664": [
+        "🚫 <@{uid}>, you're serving your fraud suspension. Re-entry granted <t:{ts}:R>.",
+    ],
+}
 
-        row = DatabaseManager.fetch_one(
-            "SELECT COUNT(*) FROM user_transactions WHERE user_id = ? AND amount > 0 "
-            "AND reason LIKE 'Benefits payment%'", (str(uid),))
-        s["claims"] = pos(row[0]) if row else None
-
-        row = DatabaseManager.fetch_one(
-            "SELECT COUNT(*), SUM(principal) FROM bonds WHERE user_id = ? AND status = 'active'",
-            (str(uid),))
-        s["bonds"], s["bonded"] = (pos(row[0]), pos(row[1])) if row else (None, None)
-
-        row = DatabaseManager.fetch_one(
-            "SELECT COUNT(*), SUM(price_paid) FROM shop_purchases WHERE user_id = ?", (str(uid),))
-        s["shop_items"], s["shop_spent"] = (pos(row[0]), pos(row[1])) if row else (None, None)
-
-        row = DatabaseManager.fetch_one("SELECT count FROM shut_counts WHERE user_id = ?", (str(uid),))
-        s["shut"] = pos(row[0]) if row else None
-
-        row = DatabaseManager.fetch_one(
-            "SELECT (SELECT COUNT(*) FROM pvp_results WHERE winner_id = ?), "
-            "       (SELECT COUNT(*) FROM pvp_results WHERE loser_id = ?)", (str(uid), str(uid)))
-        if row:
-            s["pvp_wins"], s["pvp_losses"] = pos(row[0]), pos(row[1])
-            s["unbeaten"] = "" if row[0] and not row[1] else None
-
-        s["balance"] = get_bb(uid)
-    except Exception:
-        log.debug("benefits stats lookup failed", exc_info=True)
-        return {}
-    return s
-
-
-def _fields(line: str) -> set:
-    """Placeholder names a line needs, ignoring the format spec after any colon."""
-    return {f.split("!")[0].split("[")[0] for _t, f, _s, _c in Formatter().parse(line) if f}
-
-
-_BENEFITS_ALWAYS = {"uid", "amount", "name"}
-
+_BENEFITS_DATA_BANNED = [
+    "🚫 You are currently serving a benefits sanction (offense **{offenses}**). The doors unlock <t:{ts}:R>.",
+    "🚫 Still in the doghouse. With **{claims}** lifetime claims, you know the rules. Ban lifts <t:{ts}:R>.",
+    "🚫 DWP compliance hold in effect. Access returns <t:{ts}:R>.",
+    "🚫 Sanction remains active. You can wait until <t:{ts}:R> or pay off the fine.",
+]
 
 _BENEFITS_RICH = [
     "💼 You've got **{bal:,} UKPence** - benefits are for those under {threshold:,}. Get back to work.",
@@ -1251,6 +1362,159 @@ _BENEFITS_BANNED = [
     "🚫 The fraud office says not yet. Ban lifts <t:{ts}:R>.",
 ]
 
+_BENEFITS_POOLS = {
+    "success": (_BENEFITS_PERSONAL, _BENEFITS_DATA, _BENEFITS_SUCCESS),
+    "rich": (_BENEFITS_PERSONAL_RICH, _BENEFITS_DATA_RICH, _BENEFITS_RICH),
+    "already": (_BENEFITS_PERSONAL_ALREADY, _BENEFITS_DATA_ALREADY, _BENEFITS_ALREADY),
+    "fraud_warn": (_BENEFITS_PERSONAL_FRAUD_WARN, _BENEFITS_DATA_FRAUD_WARN, _BENEFITS_FRAUD_WARN),
+    "fraud_ban": (_BENEFITS_PERSONAL_FRAUD_BAN, _BENEFITS_DATA_FRAUD_BAN, _BENEFITS_FRAUD_BAN),
+    "banned": (_BENEFITS_PERSONAL_BANNED, _BENEFITS_DATA_BANNED, _BENEFITS_BANNED),
+}
+
+
+def _benefits_stats(uid, **context) -> dict:
+    """Live figures for benefits lines, read at claim time.
+
+    A field is None when the joke that needs it has stopped being true - they were up at
+    the casino and now aren't, they had never gambled and now have.
+    """
+    def pos(n):
+        return n if n else None
+
+    s = {
+        "uid": uid,
+        "name": context.get("name", ""),
+        "amount": context.get("amount", 0),
+        "bal": context.get("bal", 0),
+        "threshold": context.get("threshold", 0),
+        "ts": context.get("ts", 0),
+        "streak": context.get("streak", 0),
+        "days": context.get("days", 0),
+        "out": context.get("out", 0),
+        "fine": context.get("fine", 0),
+        "offenses": context.get("offenses", 0),
+    }
+    s.update(context)
+    try:
+        rows = DatabaseManager.fetch_all(
+            "SELECT game, COUNT(*) n, SUM(net) net, SUM(CASE WHEN net > 0 THEN 1 ELSE 0 END) w "
+            "FROM casino_results WHERE user_id = ? GROUP BY game", (str(uid),)) or []
+        games = sum(r[1] for r in rows)
+        net = sum(r[2] or 0 for r in rows)
+        wins = sum(r[3] or 0 for r in rows)
+        s["casino_games"] = pos(games)
+        s["casino_lost"] = -net if net < 0 else None
+        s["casino_up"] = net if net > 0 else None
+        s["never_gambled"] = "" if games == 0 else None
+        s["no_casino_wins"] = "" if games and not wins else None
+        for game, n, gnet, _w in rows:
+            s[f"{game}_played"] = pos(n)
+            s[f"{game}_lost"] = -(gnet or 0) if (gnet or 0) < 0 else None
+        # the payment as a share of what a given table has taken
+        amt = s.get("amount") or 0
+        for key in ("casino", "roulette", "mines", "blackjack", "slots", "higherlower", "chest"):
+            lost = s.get("casino_lost") if key == "casino" else s.get(f"{key}_lost")
+            s[f"pct_of_{key}"] = f"{amt / lost * 100:.2f}" if (lost and amt) else None
+        row = DatabaseManager.fetch_one(
+            "SELECT MIN(net), MAX(net) FROM casino_results WHERE user_id = ?", (str(uid),))
+        if row:
+            s["worst_loss"] = -row[0] if row[0] and row[0] < 0 else None
+            s["best_win"] = row[1] if row[1] and row[1] > 0 else None
+
+        row = DatabaseManager.fetch_one(
+            "SELECT COUNT(*), SUM(amount) FROM pay_transfers WHERE payer_id = ?", (str(uid),))
+        s["paid_out_n"], s["paid_out"] = (pos(row[0]), pos(row[1])) if row else (None, None)
+        row = DatabaseManager.fetch_one(
+            "SELECT COUNT(*), SUM(amount) FROM pay_transfers WHERE recipient_id = ?", (str(uid),))
+        s["paid_in_n"], s["paid_in"] = (pos(row[0]), pos(row[1])) if row else (None, None)
+
+        row = DatabaseManager.fetch_one(
+            "SELECT COUNT(*) FROM user_transactions WHERE user_id = ? AND amount > 0 "
+            "AND reason LIKE 'Benefits payment%'", (str(uid),))
+        s["claims"] = pos(row[0]) if row else None
+
+        row = DatabaseManager.fetch_one(
+            "SELECT COUNT(*), SUM(principal) FROM bonds WHERE user_id = ? AND status = 'active'",
+            (str(uid),))
+        s["bonds"], s["bonded"] = (pos(row[0]), pos(row[1])) if row else (None, None)
+
+        row = DatabaseManager.fetch_one(
+            "SELECT COUNT(*), SUM(price_paid) FROM shop_purchases WHERE user_id = ?", (str(uid),))
+        s["shop_items"], s["shop_spent"] = (pos(row[0]), pos(row[1])) if row else (None, None)
+
+        row = DatabaseManager.fetch_one("SELECT count FROM shut_counts WHERE user_id = ?", (str(uid),))
+        s["shut"] = pos(row[0]) if row else None
+
+        row = DatabaseManager.fetch_one(
+            "SELECT (SELECT COUNT(*) FROM pvp_results WHERE winner_id = ?), "
+            "       (SELECT COUNT(*) FROM pvp_results WHERE loser_id = ?)", (str(uid), str(uid)))
+        if row:
+            s["pvp_wins"], s["pvp_losses"] = pos(row[0]), pos(row[1])
+            s["unbeaten"] = "" if row[0] and not row[1] else None
+
+        if "bal" not in context:
+            b = get_bb(uid)
+            s["bal"] = b
+            s["balance"] = b
+        elif "balance" not in s:
+            s["balance"] = s["bal"]
+    except Exception:
+        log.debug("benefits stats lookup failed", exc_info=True)
+    return s
+
+
+def _fields(line: str) -> set:
+    """Placeholder names a line needs, ignoring the format spec after any colon."""
+    return {f.split("!")[0].split("[")[0] for _t, f, _s, _c in Formatter().parse(line) if f}
+
+
+_BENEFITS_ALWAYS = {"uid", "amount", "name", "bal", "threshold", "ts", "streak", "days", "out", "fine", "offenses", "balance"}
+
+
+def _benefits_line(category: str, uid: int | str, **context) -> str:
+    """Pick and format a line for any benefits category (success, rich, already, fraud_warn,
+    fraud_ban, banned) using the 3-tier lookup: Personal -> Data-Driven -> Generic House Pool.
+    """
+    suid = str(uid)
+    stats = _benefits_stats(uid, **context)
+    personal_dict, data_pool, house_pool = _BENEFITS_POOLS.get(
+        category, (_BENEFITS_PERSONAL, _BENEFITS_DATA, _BENEFITS_SUCCESS)
+    )
+
+    def live(pool):
+        return [l for l in pool
+                if all(stats.get(f) is not None for f in _fields(l) - _BENEFITS_ALWAYS)]
+
+    personal = live(personal_dict.get(suid, ()))
+    if personal and random.random() < _BENEFITS_PERSONAL_CHANCE:
+        template = random.choice(personal)
+    else:
+        generic = live(data_pool)
+        if generic and random.random() < _BENEFITS_DATA_CHANCE:
+            template = random.choice(generic)
+        else:
+            template = random.choice(house_pool)
+
+    return template.format(**stats)
+
+
+def _benefits_success_line(uid, amount, stats=None) -> tuple:
+    """Pick a success line and stats tuple for backward compatibility."""
+    if stats is None:
+        stats = _benefits_stats(uid, amount=amount)
+
+    def live(pool):
+        return [l for l in pool
+                if all(stats.get(f) is not None for f in _fields(l) - _BENEFITS_ALWAYS)]
+
+    personal = live(_BENEFITS_PERSONAL.get(str(uid), ()))
+    if personal and random.random() < _BENEFITS_PERSONAL_CHANCE:
+        return random.choice(personal), stats
+    generic = live(_BENEFITS_DATA)
+    if generic and random.random() < _BENEFITS_DATA_CHANCE:
+        return random.choice(generic), stats
+    return random.choice(_BENEFITS_SUCCESS), stats
+
 
 def _benefits_rec(store, uid):
     """Normalise a stored record (older versions stored just the last-claim date string)."""
@@ -1308,6 +1572,7 @@ async def handle_benefits_command(interaction):
     store = load_json_file(config.BENEFITS_FILE) or {}
     rec = _benefits_rec(store, suid)
     now = int(time.time())
+    name = getattr(interaction.user, "display_name", None) or getattr(interaction.user, "name", "")
 
     async def _reply(msg, view=None):
         if view is not None:
@@ -1325,16 +1590,17 @@ async def handle_benefits_command(interaction):
         if fine <= 0:
             fine = 400  # Fallback for legacy bans
         view = BenefitsFineView(uid, fine)
+        line = _benefits_line("banned", uid, ts=rec["banned_until"], fine=fine, offenses=rec.get("offenses", 0), name=name, bal=bal)
         await interaction.response.send_message(
-            random.choice(_BENEFITS_BANNED).format(ts=rec["banned_until"]) +
-            f"\n\n-# You can pay a fine of **{fine:,} UKPence** to lift the ban and reset your offense history.",
+            line + f"\n\n-# You can pay a fine of **{fine:,} UKPence** to lift the ban and reset your offense history.",
             view=view
         )
         return
 
     # Genuinely well-off (hid nothing) - plain denial, no penalty.
     if bal >= threshold:
-        await _reply(random.choice(_BENEFITS_RICH).format(bal=bal, threshold=threshold))
+        msg = _benefits_line("rich", uid, bal=bal, threshold=threshold, name=name)
+        await _reply(msg)
         return
 
     # Effective wealth = balance + recent /pay outflows. Parking UKP on an alt to drop
@@ -1345,7 +1611,7 @@ async def handle_benefits_command(interaction):
         if rec["offenses"] == 0 and not rec["warned"]:
             rec["warned"] = True  # one warning before any ban (protects honest givers)
             _save()
-            msg = random.choice(_BENEFITS_FRAUD_WARN).format(out=recent_out)
+            msg = _benefits_line("fraud_warn", uid, out=recent_out, bal=bal, threshold=threshold, name=name)
             clear = _benefits_clear_ts(suid, bal, threshold, getattr(config, "BENEFITS_LOOKBACK_DAYS", 1), rec.get("fine_paid_at", 0))
             if clear:
                 msg += f"\n-# If you stop sending UKP, you'll be eligible again <t:{clear}:R>."
@@ -1362,9 +1628,9 @@ async def handle_benefits_command(interaction):
         if (_b := _sc.bid("a4")):
             await award_badge_safe(interaction.client, uid, _b)
         view = BenefitsFineView(uid, fine)
+        line = _benefits_line("fraud_ban", uid, days=days, out=recent_out, offenses=rec["offenses"], fine=fine, name=name, bal=bal)
         await _reply(
-            random.choice(_BENEFITS_FRAUD_BAN).format(days=days) +
-            f"\n\n-# You can pay a fine of **{fine:,} UKPence** to lift the ban and reset your offense history.",
+            line + f"\n\n-# You can pay a fine of **{fine:,} UKPence** to lift the ban and reset your offense history.",
             view=view
         )
         return
@@ -1387,7 +1653,9 @@ async def handle_benefits_command(interaction):
     # Already claimed this UK day?
     today = _today()
     if rec["last"] == today:
-        await _reply(random.choice(_BENEFITS_ALREADY).format(ts=_next_uk_midnight_ts()))
+        ts = _next_uk_midnight_ts()
+        msg = _benefits_line("already", uid, ts=ts, streak=rec.get("streak", 0), name=name, bal=bal)
+        await _reply(msg)
         return
 
     # Eligible: pay out (and clear any standing warning - they came good).
@@ -1400,9 +1668,8 @@ async def handle_benefits_command(interaction):
     if not _pay(uid, amount, "Benefits payment"):
         await _reply("🧾 The benefits office is shut right now - try later.")
         return
-    name = getattr(interaction.user, "display_name", None) or getattr(interaction.user, "name", "")
-    line, stats = _benefits_success_line(uid, amount)
-    await _reply(line.format(uid=uid, amount=amount, name=name, **stats))
+    msg = _benefits_line("success", uid, amount=amount, name=name, streak=rec["streak"], bal=bal)
+    await _reply(msg)
 
     from lib.features.income_badges import award_badge_safe, record_income_source, bump_daily_income
     bump_daily_income("benefits_total", amount)
