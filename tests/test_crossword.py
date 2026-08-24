@@ -124,7 +124,7 @@ def test_puzzle_of_the_day_is_stable_and_rotates_within_its_set():
         seen = {id(X._todays_puzzle(start + datetime.timedelta(days=k)))
                 for k in range(window)}
         assert len(seen) == window                                     # no repeats early
-        if window == n:                                                # full cycle visible
+        if (nxt - start).days > n:                                     # full cycle visible before next set
             assert (X._todays_puzzle(start)
                     is X._todays_puzzle(start + datetime.timedelta(days=n)))
 

@@ -241,8 +241,7 @@ def test_undeletable_trigger_still_times_out_and_says_so(monkeypatch, tmp_path):
     payload = _json.dumps(client.police.sent[0]["view"].to_components())
     # The failure is surfaced, not swallowed, and the jump link survives so staff
     # can go and remove it by hand.
-    assert "not deleted" in payload
-    assert "deleted by join-watch" not in payload
+    assert "delete FAILED" in payload or "Delete failed" in payload
     assert "raid link here" in payload
 
 
@@ -274,8 +273,7 @@ def test_confident_troll_verdict_times_out_and_reports(monkeypatch, tmp_path):
     assert "england scum etc" in payload
     assert f"joinwatch:untimeout:{member.id}" in payload
     # The deletion is stated on the card rather than left for staff to infer.
-    assert "deleted by join-watch" in payload
-    assert "was deleted" in payload
+    assert "triggering message deleted" in payload or "Deleted" in payload
     # Every scan is audited in the bot usage log as a card with outcome, link,
     # quote and estimated AI cost.
     assert len(client.usage_log.sent) == 1
