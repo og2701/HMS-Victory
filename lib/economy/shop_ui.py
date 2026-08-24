@@ -16,9 +16,25 @@ from lib.economy.bank_manager import BankManager
 from database import award_badge
 from lib.core.image_processing import generate_shop_preview_grid, generate_shop_preview_grid_async
 import io
+import time
 from config import CHANNELS
 
-ACTIVE_SPINS = set()
+ACTIVE_SPINS: dict[int, float] = {}
+
+def is_user_spinning(user_id: int) -> bool:
+    now = time.monotonic()
+    t = ACTIVE_SPINS.get(user_id)
+    if t is not None:
+        if now - t < 45.0:
+            return True
+        ACTIVE_SPINS.pop(user_id, None)
+    return False
+
+def start_user_spin(user_id: int) -> None:
+    ACTIVE_SPINS[user_id] = time.monotonic()
+
+def end_user_spin(user_id: int) -> None:
+    ACTIVE_SPINS.pop(user_id, None)
 
 class ShopItemSelect(Select):
     """Dropdown menu to select a shop item."""
@@ -254,7 +270,7 @@ class PurchaseConfirmationView(View):
             return
 
         # Check if they already have an active case spin in progress
-        if self.item.id in ["vip_case", "lucky_dip"] and interaction.user.id in ACTIVE_SPINS:
+        if self.item.id in ["vip_case", "lucky_dip"] and is_user_spinning(interaction.user.id):
             await interaction.response.send_message(
                 "❌ You already have an active spin in progress! Please wait for it to finish.",
                 ephemeral=True
@@ -443,25 +459,34 @@ class VIPCaseSpinView(View):
             return
 
         if self.spinning:
-            await interaction.response.defer()
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass
             return
 
-        if interaction.user.id in ACTIVE_SPINS:
+        if is_user_spinning(interaction.user.id):
             await interaction.response.send_message("❌ You already have an active spin in progress!", ephemeral=True)
             return
 
         self.spinning = True
-        ACTIVE_SPINS.add(interaction.user.id)
-        await interaction.response.defer()
-
-        for item in self.children:
-            item.disabled = True
+        start_user_spin(interaction.user.id)
 
         try:
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass
+
+            for item in self.children:
+                item.disabled = True
+
             await self.animate_spin(interaction)
         except Exception as e:
-            ACTIVE_SPINS.discard(self.user.id)
             logging.error(f"Error during VIP spin animation: {e}", exc_info=True)
+        finally:
+            end_user_spin(self.user.id)
+            self.spinning = False
 
     async def animate_spin(self, interaction: discord.Interaction):
         """Animate the spinning case."""
@@ -573,7 +598,7 @@ class VIPCaseSpinView(View):
 
     async def process_result(self, interaction: discord.Interaction, outcome):
         """Process the winning outcome."""
-        ACTIVE_SPINS.discard(self.user.id)
+        end_user_spin(self.user.id)
         result_embed = discord.Embed(
             title=f"🎰 {self.user.display_name}'s VIP Role Case - RESULT",
             color=outcome["color"]
@@ -719,25 +744,34 @@ class LuckyDipCaseSpinView(View):
             return
 
         if self.spinning:
-            await interaction.response.defer()
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass
             return
 
-        if interaction.user.id in ACTIVE_SPINS:
+        if is_user_spinning(interaction.user.id):
             await interaction.response.send_message("❌ You already have an active spin in progress!", ephemeral=True)
             return
 
         self.spinning = True
-        ACTIVE_SPINS.add(interaction.user.id)
-        await interaction.response.defer()
-
-        for item in self.children:
-            item.disabled = True
+        start_user_spin(interaction.user.id)
 
         try:
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass
+
+            for item in self.children:
+                item.disabled = True
+
             await self.animate_spin(interaction)
         except Exception as e:
-            ACTIVE_SPINS.discard(self.user.id)
             logging.error(f"Error during Lucky Dip spin animation: {e}", exc_info=True)
+        finally:
+            end_user_spin(self.user.id)
+            self.spinning = False
 
     async def animate_spin(self, interaction: discord.Interaction):
         """Animate the spinning case."""
@@ -839,7 +873,7 @@ class LuckyDipCaseSpinView(View):
 
     async def process_result(self, interaction: discord.Interaction, outcome):
         """Process the winning outcome."""
-        ACTIVE_SPINS.discard(self.user.id)
+        end_user_spin(self.user.id)
         from config import CHANNELS
 
         result_embed = discord.Embed(
