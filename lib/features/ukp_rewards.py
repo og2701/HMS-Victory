@@ -1046,7 +1046,7 @@ _BENEFITS_DATA = [
  # what else they have got
  "🧾 **{amount:,} UKPence** for <@{uid}>. You have **{bonded:,}** locked in bonds, so this is just government-subsidised pocket money.",
  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. You've spent **{shop_spent:,}** at the shop; please try not to buy another novelty item.",
- "🧾 <@{uid}> gets **{amount:,} UKPence**. **{shop_items}** luxury items in your inventory and not a scrap of food.",
+ "🧾 <@{uid}> gets **{amount:,} UKPence**. **{shop_items}** luxury items bought from the shop and not a scrap of food.",
  "🧾 **{amount:,} UKPence** for <@{uid}>, lifting you from a staggering **{balance:,} UKPence**. Try not to go wild.",
 
  # the rest of the record
@@ -1146,7 +1146,7 @@ _BENEFITS_DATA_RICH = [
     "💼 Denied. **{bal:,} UKPence** in your account and you're queueing for the dole? Have some dignity.",
     "💼 Claim refused. **{bal:,} UKPence** liquid and **{bonds}** active bonds maturing. Do you think we don't have eyes?",
     "💼 **{bal:,} UKPence** in the bank. You've won **{best_win:,}** in a single round before; go repeat the trick.",
-    "💼 Denied: with **{bal:,} UKPence** in the wallet and **{shop_items}** items in your inventory, you are not skint, just greedy.",
+    "💼 Denied: with **{bal:,} UKPence** in the wallet and **{shop_items}** items bought from the shop, you are not skint, just greedy.",
     "💼 **{bal:,} UKPence** in hand. You received **{paid_in:,}** from friends and now want public funds too. Astonishing cheek.",
 ]
 
