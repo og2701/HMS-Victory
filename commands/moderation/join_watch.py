@@ -1018,7 +1018,12 @@ def _report_view(
 
     card.add_item(discord.ui.TextDisplay(("### Recent Messages\n" + "\n".join(lines))[:1500]))
     card.add_item(discord.ui.Separator())
-    card.add_item(discord.ui.ActionRow(UntimeoutButton(member.id)))
+    # Ban sits next to the untimeout, because those are the two calls a screener report
+    # actually invites - it read them right, or it read them wrong - and neither should
+    # mean leaving the report to go and find the member somewhere else.
+    from lib.core.mod_actions import JOIN_WATCH, ModBanButton
+    card.add_item(discord.ui.ActionRow(UntimeoutButton(member.id),
+                                       ModBanButton(JOIN_WATCH.slug, member.id)))
     card.add_item(
         discord.ui.TextDisplay(
             f"-# Action taken: {action} · Untimeout above if false positive"

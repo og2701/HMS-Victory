@@ -30,9 +30,13 @@ class FakeMessage:
     def __init__(self, embed):
         self.embeds = [embed]
         self.edits = []
+        self.replies = []
 
     async def edit(self, **kwargs):
         self.edits.append(kwargs)
+
+    async def reply(self, content=None, **kwargs):
+        self.replies.append((content, kwargs))
 
 
 class FakeResponse:
@@ -217,6 +221,23 @@ def test_the_onboarding_report_gets_the_same_row():
     assert [c.item.custom_id for c in view.children] == [
         "mod:ban:onboard:7", "mod:to:onboard:7",
         "mod:analyse:onboard:7", "mod:ignore:onboard:7"]
+
+
+def test_a_components_v2_report_is_answered_in_the_channel():
+    """Join-watch reports keep their text in the layout, so there is no embed to annotate.
+    Without this the button banned somebody and left no visible trace at all."""
+    i = FakeButtonInteraction(staff=True, member=FakeMember(7))
+    i.message.embeds = []
+    _run(M.ModBanButton("joinwatch", 7).callback(i))
+    assert i.guild.bans, "the ban did not happen"
+    assert i.message.replies, "the report says nothing about having been actioned"
+    assert "Banned by" in i.message.replies[0][0], i.message.replies
+
+
+def test_the_join_watch_notice_is_about_what_they_posted():
+    body = M.JOIN_WATCH.ban_dm.lower()
+    assert "screened" in body and "appeal" in body, M.JOIN_WATCH.ban_dm
+    assert "direct messages" not in body and "onboarding" not in body, "wrong reason"
 
 
 def _run_all():

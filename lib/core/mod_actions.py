@@ -26,6 +26,7 @@ import discord
 logger = logging.getLogger(__name__)
 
 TIMEOUT_HOURS = 24
+NO_PINGS = discord.AllowedMentions.none()
 
 
 class Kind:
@@ -57,7 +58,17 @@ ONBOARDING = Kind(
     "arrived rather than about anything you said, and it can be wrong - appeal below and a "
     "person will read it.")
 
-KINDS = {k.slug: k for k in (DM_SPAM, ONBOARDING)}
+JOIN_WATCH = Kind(
+    "joinwatch",
+    "Join-watch screening",
+    "## You've been banned from UK Place\n"
+    "Your first messages in the server were screened before anyone had met you, and they "
+    "matched what the server blocks outright - recruiting strangers for off-platform work, "
+    "scam offers, or hostility aimed at the place itself.\n\n"
+    "**If that has read you wrong, say so.** Appeal below and a person will read it "
+    "properly rather than a screener.")
+
+KINDS = {k.slug: k for k in (DM_SPAM, ONBOARDING, JOIN_WATCH)}
 _FALLBACK = Kind("unknown", "Automated moderation report", DM_SPAM.ban_dm)
 
 
@@ -76,8 +87,19 @@ async def _settle(interaction, note: str, kind: str, user_id: int) -> None:
     Greyed rather than removed: a handled report that has lost its buttons reads as though
     it was never actionable, and you can no longer see what the other options had been.
     """
+    embeds = list(getattr(interaction.message, "embeds", None) or [])
+    if not embeds:
+        # A Components V2 report keeps its text in the layout rather than an embed, so
+        # there is nothing to annotate and no way to rebuild somebody else's view from
+        # here. Say it in the channel instead, hung off the report so it reads as part
+        # of it rather than as a loose message.
+        try:
+            await interaction.message.reply(note, allowed_mentions=NO_PINGS)
+        except Exception:
+            logger.debug("could not note the outcome on the report", exc_info=True)
+        return
     try:
-        embed = interaction.message.embeds[0]
+        embed = embeds[0]
         embed.add_field(name="Handled", value=note, inline=False)
         embed.colour = 0x95A5A6
         await interaction.message.edit(embed=embed,
