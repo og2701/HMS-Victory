@@ -246,6 +246,20 @@ def test_the_join_watch_notice_is_about_what_they_posted():
     assert "direct messages" not in body and "onboarding" not in body, "wrong reason"
 
 
+def test_a_narrowed_row_stays_narrow_after_it_is_handled():
+    """A report that never offered Ban must not sprout a greyed-out Ban the moment somebody
+    presses Ignore - the row is part of how serious the finding reads."""
+    view = M.action_view(M.VOICE_RUSH, 7,
+                         only=(M.ModTimeoutButton, M.ModAnalyseButton, M.ModIgnoreButton))
+    ignore = next(c for c in view.children if isinstance(c, M.ModIgnoreButton))
+    i = FakeButtonInteraction(staff=True)
+    _run(ignore.callback(i))
+    after = i.message.edits[-1]["view"]
+    assert len(after.children) == 3, [c.item.label for c in after.children]
+    assert not any(isinstance(c, M.ModBanButton) for c in after.children)
+    assert all(c.item.disabled for c in after.children)
+
+
 def _run_all():
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]

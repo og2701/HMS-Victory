@@ -2288,8 +2288,8 @@ async def on_voice_state_update(member, before, after):
     # A batch of accounts that arrived together landing in the same call is the one voice
     # signal worth acting on. Detached, because it reads state and may post a report.
     if after.channel is not None and before.channel != after.channel:
-        from commands.moderation.join_clusters import report_voice_cluster
-        asyncio.create_task(report_voice_cluster(client, member, after.channel))
+        from commands.moderation.join_clusters import on_voice_join
+        asyncio.create_task(on_voice_join(client, member, after.channel))
 
     stage_events = getattr(client, 'stage_events', set())
     if not hasattr(client, 'stage_join_times'):

@@ -1,10 +1,12 @@
-"""A join batch turning up in the same voice call.
+"""The two voice checks: a join batch in one call, and a brand new member going straight in.
 
-The idea came from staff noticing that raiders tend to go straight to VC. On its own that
-is a bad rule - joining a Discord because your mates are already in a call is one of the
-commonest honest reasons anyone joins at all - so most of these tests are about the cases
-that must stay silent. What earns the alert is the batch, not the speed.
+They sit at different strengths on purpose. The batch rule makes a claim and carries a ban
+button, so most of its tests are the cases that must stay silent - joining a Discord because
+your mates are already in a call is one of the commonest honest reasons anyone joins at all.
+The fast-join rule only says "look at this", and its tests are mostly about it not being
+dressed up as more than that.
 """
+import datetime
 import json
 import os
 import sys
@@ -111,6 +113,45 @@ def test_a_stale_sighting_is_forgotten_rather_than_kept_forever():
         assert list(kept) == ["new:1"], kept
     finally:
         os.path.exists(path) and os.remove(path)
+
+
+# --- straight from joining into a call ---------------------------------------------------
+
+class _Member:
+    def __init__(self, seconds_ago, bot=False, uid=777):
+        self.id = uid
+        self.bot = bot
+        self.mention = f"<@{uid}>"
+        self.joined_at = (None if seconds_ago is None else
+                          datetime.datetime.now(datetime.timezone.utc)
+                          - datetime.timedelta(seconds=seconds_ago))
+        self.created_at = datetime.datetime.now(datetime.timezone.utc)
+
+
+def test_a_brand_new_member_in_a_call_is_inside_the_window():
+    assert J._fast_join_seconds(_Member(30)) < J.VOICE_RUSH_SECONDS
+
+
+def test_somebody_who_has_been_here_a_while_is_not():
+    assert J._fast_join_seconds(_Member(4 * 3600)) > J.VOICE_RUSH_SECONDS
+
+
+def test_a_missing_join_time_is_not_treated_as_instant():
+    """joined_at can be absent on an uncached member. Absent evidence is not the tell."""
+    assert J._fast_join_seconds(_Member(None)) is None
+
+
+def test_the_note_offers_no_ban_button():
+    """Joining and using voice is not a banning offence, and a button that is there gets
+    pressed. Timeout and analyse are the honest options."""
+    from lib.core.mod_actions import (
+        ModAnalyseButton, ModBanButton, ModIgnoreButton, ModTimeoutButton, VOICE_RUSH,
+        action_view,
+    )
+    view = action_view(VOICE_RUSH, 7,
+                       only=(ModTimeoutButton, ModAnalyseButton, ModIgnoreButton))
+    assert not any(isinstance(c, ModBanButton) for c in view.children)
+    assert len(view.children) == 3
 
 
 def _run_all():

@@ -68,7 +68,15 @@ JOIN_WATCH = Kind(
     "**If that has read you wrong, say so.** Appeal below and a person will read it "
     "properly rather than a screener.")
 
-KINDS = {k.slug: k for k in (DM_SPAM, ONBOARDING, JOIN_WATCH)}
+VOICE_RUSH = Kind(
+    "vcrush",
+    "Joined and went straight to voice",
+    "## You've been banned from UK Place\n"
+    "You were removed after joining and going straight into a voice channel, and staff "
+    "judged what followed to be a problem.\n\n"
+    "**If you think that is wrong, say so.** Appeal below and a person will read it.")
+
+KINDS = {k.slug: k for k in (DM_SPAM, ONBOARDING, JOIN_WATCH, VOICE_RUSH)}
 _FALLBACK = Kind("unknown", "Automated moderation report", DM_SPAM.ban_dm)
 
 
@@ -81,7 +89,7 @@ def _is_staff(user) -> bool:
     return is_staff(user)
 
 
-async def _settle(interaction, note: str, kind: str, user_id: int) -> None:
+async def _settle(interaction, note: str, kind: str, user_id: int, only=None) -> None:
     """Write what was done onto the report and grey the buttons out.
 
     Greyed rather than removed: a handled report that has lost its buttons reads as though
@@ -102,8 +110,8 @@ async def _settle(interaction, note: str, kind: str, user_id: int) -> None:
         embed = embeds[0]
         embed.add_field(name="Handled", value=note, inline=False)
         embed.colour = 0x95A5A6
-        await interaction.message.edit(embed=embed,
-                                       view=action_view(kind, user_id, disabled=True))
+        await interaction.message.edit(
+            embed=embed, view=action_view(kind, user_id, disabled=True, only=only))
     except Exception:
         logger.debug("could not settle the moderation report", exc_info=True)
 
@@ -136,7 +144,11 @@ class _MemberAction(discord.ui.DynamicItem[discord.ui.Button], template=r"$"):
         return member
 
     async def _done(self, interaction, note: str) -> None:
-        await _settle(interaction, note, self.kind, self.user_id)
+        # Grey out exactly the row that was there, not a fuller one - a report that never
+        # offered Ban must not sprout a greyed Ban the moment somebody presses Ignore.
+        present = [b for b in BUTTONS
+                   if any(isinstance(c, b) for c in (self.view.children if self.view else []))]
+        await _settle(interaction, note, self.kind, self.user_id, only=present or None)
 
 
 class ModBanButton(_MemberAction, template=r"mod:ban:(?P<kind>\w+):(?P<uid>\d+)"):
@@ -247,11 +259,16 @@ class ModIgnoreButton(_MemberAction, template=r"mod:ignore:(?P<kind>\w+):(?P<uid
 BUTTONS = (ModBanButton, ModTimeoutButton, ModAnalyseButton, ModIgnoreButton)
 
 
-def action_view(kind, user_id, disabled: bool = False) -> discord.ui.View:
-    """The action row for one member on one kind of report."""
+def action_view(kind, user_id, disabled: bool = False, only=None) -> discord.ui.View:
+    """The action row for one member on one kind of report.
+
+    `only` narrows the row. A report that could never justify a ban on its own should not
+    offer one - a button that is there gets pressed, and the row is also the description of
+    how serious the finding is.
+    """
     slug = kind.slug if isinstance(kind, Kind) else str(kind)
     view = discord.ui.View(timeout=None)
-    for cls in BUTTONS:
+    for cls in (only or BUTTONS):
         button = cls(slug, user_id)
         button.item.disabled = disabled
         view.add_item(button)

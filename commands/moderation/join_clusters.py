@@ -1152,3 +1152,73 @@ async def report_voice_cluster(client: Any, member: Any, channel: Any) -> bool:
     except Exception:
         logger.exception("join-cluster voice check failed")
         return False
+
+
+# --- voice: straight off the join screen into a call --------------------------------
+# Weaker than the batch rule above and deliberately so. Plenty of people join a Discord
+# because friends are already in a call, so this is a note for staff rather than a finding
+# against anybody - no ban button, and one per member. It exists because a raider walking
+# in and immediately taking the mic is a thing staff kept noticing, and nothing was
+# recording it.
+VOICE_RUSH_SECONDS = 5 * 60
+
+
+def _fast_join_seconds(member: Any, now: float | None = None) -> float | None:
+    joined = getattr(member, "joined_at", None)
+    if joined is None:
+        return None
+    now = discord.utils.utcnow() if now is None else now
+    return (now - joined).total_seconds()
+
+
+async def report_fast_voice_join(client: Any, member: Any, channel: Any) -> bool:
+    """Note a member who went into voice within minutes of arriving."""
+    try:
+        if getattr(member, "bot", False):
+            return False
+        seconds = _fast_join_seconds(member)
+        if seconds is None or seconds > VOICE_RUSH_SECONDS or seconds < 0:
+            return False
+
+        now = int(time.time())
+        key = f"rush:{member.id}"
+        sightings = {k: v for k, v in _load_sightings().items()
+                     if now - int(v.get("at", 0)) < VOICE_SIGHTING_TTL}
+        if key in sightings:
+            return False        # one note per member, not one per channel hop
+        sightings[key] = {"ids": [str(member.id)], "at": now}
+        _save_sightings(sightings)
+
+        report_channel = await _get_channel(client, CHANNELS.POLICE_STATION)
+        if report_channel is None:
+            return False
+
+        from lib.core.mod_actions import (
+            ModAnalyseButton, ModIgnoreButton, ModTimeoutButton, VOICE_RUSH, action_view,
+        )
+        created = getattr(member, "created_at", None)
+        bits = [f"{member.mention} `{member.id}` joined **{int(seconds)}s** ago and went "
+                f"straight into {channel.mention}."]
+        if created is not None:
+            bits.append(f"-# Account made <t:{int(created.timestamp())}:R>")
+        embed = discord.Embed(title="🎙️ Straight from joining into a call",
+                              description="\n".join(bits), colour=0x5865F2)
+        embed.set_footer(text="Common enough on its own - people join because friends are "
+                              "already in there. Noted, not accused.")
+        await report_channel.send(
+            embed=embed,
+            view=action_view(VOICE_RUSH, member.id,
+                             only=(ModTimeoutButton, ModAnalyseButton, ModIgnoreButton)),
+            allowed_mentions=discord.AllowedMentions.none())
+        return True
+    except Exception:
+        logger.exception("fast voice join check failed")
+        return False
+
+
+async def on_voice_join(client: Any, member: Any, channel: Any) -> None:
+    """Both voice checks, strongest first. The batch report already names everyone in it,
+    so there is no point also posting a note about one of them arriving quickly."""
+    if await report_voice_cluster(client, member, channel):
+        return
+    await report_fast_voice_join(client, member, channel)
