@@ -70,9 +70,6 @@ SAMPLE_STATS = {
     "shop_items": 3,
     "shop_spent": 150,
     "shut": 12,
-    "pvp_wins": 8,
-    "pvp_losses": 4,
-    "unbeaten": "",
 }
 
 ALL_POOLS = [

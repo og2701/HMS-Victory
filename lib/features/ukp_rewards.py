@@ -811,7 +811,7 @@ _BENEFITS_PERSONAL = {
  "285860055570579457": [
   "🧾 **{amount:,} UKPence** for <@{uid}>. That is **{pct_of_casino}%** of what the casino has taken off you. It will not touch the sides.",
   "🧾 The state grants <@{uid}> **{amount:,} UKPence**, or **{pct_of_roulette}%** of what the roulette wheel alone has had. Baby steps.",
-  "🧾 Approved. <@{uid}> is undefeated against actual people{unbeaten} and **{casino_lost:,}** down to a machine. **{amount:,} UKPence**, and our sympathies.",
+  "🧾 Approved. <@{uid}> is **{casino_lost:,}** down to the casino machine. **{amount:,} UKPence**, and our sympathies.",
  ],
  # 25 claims
  "966101821527588885": [
@@ -825,8 +825,8 @@ _BENEFITS_PERSONAL = {
  ],
  # 21 claims
  "265927604303953920": [
-  "🧾 **{amount:,} UKPence** for <@{uid}>. You've lost **{pvp_losses}** duels, so the state is your most reliable opponent.",
-  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. The slots await their tithe of **{slots_lost:,}** and counting.",
+  "🧾 **{amount:,} UKPence** for <@{uid}>. The slots await their tithe of **{slots_lost:,}** and counting.",
+  "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Try not to put this straight back into the machine.",
  ],
  # 18 claims
  "1398652914737741956": [
@@ -1055,8 +1055,8 @@ _BENEFITS_DATA = [
  # the rest of the record
  "🧾 Claim number **{claims}** approved. **{amount:,} UKPence** for <@{uid}>. The forms recognise your handwriting.",
  "🧾 **{amount:,} UKPence** for <@{uid}>, shut up **{shut}** times and still entitled to public money. Democracy.",
- "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. **{pvp_losses}** duels lost - fight the state instead, it pays out.",
- "🧾 **{amount:,} UKPence** for <@{uid}>, undefeated in duels{unbeaten} and completely skint. Glory does not pay.",
+ "🧾 Approved. <@{uid}> receives **{amount:,} UKPence**. Put it towards something useful.",
+ "🧾 **{amount:,} UKPence** for <@{uid}>. Every little helps when you are rebuilding from scratch.",
 ]
 
 
@@ -1075,7 +1075,7 @@ _BENEFITS_PERSONAL_RICH = {
     ],
     "285860055570579457": [
         "💼 <@{uid}>, you've got **{bal:,} UKPence** in your wallet. The roulette wheel will have to wait for honest earnings.",
-        "💼 Undefeated in duels{unbeaten} and holding **{bal:,} UKPence**. No welfare for gladiators today, <@{uid}>.",
+        "💼 **{bal:,} UKPence** in hand. The DWP says you are far too flush for welfare today, <@{uid}>.",
     ],
     "564147759108718664": [
         "💼 <@{uid}>, you have **{bal:,} UKPence**. Stop handing out **{paid_out:,}** to everyone else if you want the dole.",
@@ -1118,7 +1118,7 @@ _BENEFITS_PERSONAL_RICH = {
         "💼 <@{uid}>, **{bal:,} UKPence** is plenty for mining equipment. No relief payment today.",
     ],
     "265927604303953920": [
-        "💼 <@{uid}>, you have **{bal:,} UKPence** to your name. No dole for duelists.",
+        "💼 <@{uid}>, you have **{bal:,} UKPence** to your name. No dole for comfortable players.",
     ],
     "1525639310697562232": [
         "💼 <@{uid}>, **{bal:,} UKPence** in the account. The fraud squad will not be issuing pocket money today.",
@@ -1146,7 +1146,7 @@ _BENEFITS_DATA_RICH = [
     "💼 Denied: with **{bal:,} UKPence** in the wallet and **{shop_spent:,}** already blown at the shop, you are far from destitute.",
     "💼 You've given away **{paid_out:,}** to mates and still have **{bal:,} UKPence**. Come back when generosity actually hurts.",
     "💼 **{bal:,} UKPence** is well over {threshold:,}. Even after dropping **{casino_lost:,}** at the tables, the state says you can afford dinner.",
-    "💼 Denied. **{bal:,} UKPence** in your account, **{pvp_wins}** duel victories to your name, and you're asking for welfare? Have some dignity.",
+    "💼 Denied. **{bal:,} UKPence** in your account and you're asking for welfare? Have some dignity.",
     "💼 Hardship claim refused. **{bal:,} UKPence** in the bank and **{bonds}** active bonds maturing. Off you pop.",
     "💼 **{bal:,} UKPence** in the bank. You've won **{best_win:,}** in a single game before; go win it again.",
     "💼 Denied: with **{bal:,} UKPence** in the account and **{shop_items}** items in your inventory, you are not skint.",
@@ -1164,7 +1164,7 @@ _BENEFITS_PERSONAL_ALREADY = {
     ],
     "285860055570579457": [
         "🧾 <@{uid}>, you already claimed today's handout. Step away from the roulette table until <t:{ts}:R>.",
-        "🧾 Undefeated against people{unbeaten}, but defeated by the once-per-day rule. Come back <t:{ts}:R>, <@{uid}>.",
+        "🧾 Defeated by the once-per-day rule. Come back <t:{ts}:R>, <@{uid}>.",
     ],
     "1283837687551361117": [
         "🧾 <@{uid}>, one giro per calendar day. You've played **{casino_games:,}** rounds; go take a breather until <t:{ts}:R>.",
@@ -1204,7 +1204,7 @@ _BENEFITS_DATA_ALREADY = [
     "🧾 Back again so soon? That's **{claims}** lifetime claims and today's is already done. Reopens <t:{ts}:R>.",
     "🧾 You've had today's handout, <@{uid}>. Go admire your **{shop_items}** shop items and come back <t:{ts}:R>.",
     "🧾 Already claimed today. Shut up **{shut}** times and still knocking on the DWP door. Return <t:{ts}:R>.",
-    "🧾 One claim every 24 hours. The state remembers your **{pvp_losses}** duel defeats, and it will remember you <t:{ts}:R>.",
+    "🧾 One claim every 24 hours. The state will remember you <t:{ts}:R>.",
     "🧾 Already had your giro today. Go spend some of that **{paid_in:,}** your mates sent you and return <t:{ts}:R>.",
 ]
 
@@ -1266,7 +1266,7 @@ _BENEFITS_PERSONAL_BANNED = {
         "🚫 <@{uid}>, no shortcuts out of the sin bin. Come back <t:{ts}:R>.",
     ],
     "285860055570579457": [
-        "🚫 <@{uid}>, the sanction stands. Back to duels and debt until <t:{ts}:R>.",
+        "🚫 <@{uid}>, the sanction stands. Back to the tables and debt until <t:{ts}:R>.",
     ],
     "564147759108718664": [
         "🚫 <@{uid}>, you're serving your fraud suspension. Re-entry granted <t:{ts}:R>.",
@@ -1444,13 +1444,6 @@ def _benefits_stats(uid, **context) -> dict:
 
         row = DatabaseManager.fetch_one("SELECT count FROM shut_counts WHERE user_id = ?", (str(uid),))
         s["shut"] = pos(row[0]) if row else None
-
-        row = DatabaseManager.fetch_one(
-            "SELECT (SELECT COUNT(*) FROM pvp_results WHERE winner_id = ?), "
-            "       (SELECT COUNT(*) FROM pvp_results WHERE loser_id = ?)", (str(uid), str(uid)))
-        if row:
-            s["pvp_wins"], s["pvp_losses"] = pos(row[0]), pos(row[1])
-            s["unbeaten"] = "" if row[0] and not row[1] else None
 
         if "bal" not in context:
             b = get_bb(uid)
