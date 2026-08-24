@@ -21,7 +21,13 @@ class _Resp:
 
 
 def _run(coro):
-    return asyncio.new_event_loop().run_until_complete(coro)
+    # Closed explicitly: an abandoned loop is finalised at interpreter shutdown, which
+    # raises out of the selector and fails the whole run after every test has passed.
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 # --- the staff buttons -------------------------------------------------------------------

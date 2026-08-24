@@ -29,7 +29,7 @@ from typing import Any, Iterable
 
 import discord
 
-from config import CHANNELS, JSON_DATA_DIR, ROLES
+from config import CHANNELS, GUILD_ID, JSON_DATA_DIR, ROLES
 
 logger = logging.getLogger(__name__)
 
@@ -1011,3 +1011,144 @@ async def evaluate_joins(client: Any, records: Iterable[dict[str, Any]],
                     len(cluster_user_ids(clusters)), len(clusters))
     except Exception:
         logger.exception("join-cluster evaluation failed")
+
+
+# --- voice: a batch turning up in the same call ------------------------------------
+# Joining a Discord because your friends are already in a call is one of the commonest
+# honest reasons anyone joins at all, so arriving and going straight to voice says nothing
+# on its own and would flag a great many real people. Accounts registered minutes apart
+# that walked in together, then landed in the same call, is a different claim - that one is
+# hard to explain by coincidence, and it is the only thing this fires on.
+VOICE_SIGHTINGS_FILE = os.path.join(JSON_DATA_DIR, "cluster_voice_sightings.json")
+VOICE_MIN_TOGETHER = 2              # from one batch, in one channel, at the same time
+VOICE_SIGHTING_TTL = 6 * 60 * 60    # forget a call once it is this stale
+
+
+def _load_sightings() -> dict[str, Any]:
+    """Kept apart from the cluster state because _refresh_report rewrites that wholesale."""
+    try:
+        with open(VOICE_SIGHTINGS_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _save_sightings(data: dict[str, Any]) -> None:
+    try:
+        from lib.core.file_operations import atomic_write_json
+        atomic_write_json(VOICE_SIGHTINGS_FILE, data, indent=2)
+    except Exception:
+        logger.exception("could not persist cluster voice sightings")
+
+
+def voice_cluster_finding(user_id: Any, present_ids: Iterable[Any],
+                          state: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Which batch this member is from, and who else from it is in the call with them.
+
+    Returns None unless at least VOICE_MIN_TOGETHER of one batch are in there together.
+    Accounts already banned or already cleared as not-a-raid do not count towards it, so a
+    settled report cannot be dragged back up by one of its members rejoining a call.
+    """
+    state = _load_state() if state is None else state
+    uid = str(user_id)
+    present = {str(p) for p in present_ids}
+    settled = set(state.get("banned", [])) | set(state.get("dismissed_ids", []))
+    for cluster in state.get("clusters", []):
+        members = {m["user_id"] for m in cluster.get("members", [])}
+        if uid not in members:
+            continue
+        together = sorted((members & present) - settled)
+        if len(together) < VOICE_MIN_TOGETHER:
+            return None
+        return {"key": int(cluster["created_from"]), "cluster": cluster,
+                "together": together, "size": len(members)}
+    return None
+
+
+def _voice_view(finding: dict[str, Any], state: dict[str, Any]) -> discord.ui.View:
+    view = discord.ui.View(timeout=None)
+    live = [m["user_id"] for m in finding["cluster"].get("members", [])
+            if m["user_id"] not in set(state.get("banned", []))]
+    view.add_item(BanClusterButton(finding["key"], len(live)))
+    not_yet = [u for u in live if u not in set(state.get("quarantined", []))]
+    if not_yet:
+        view.add_item(QuarantineClusterButton(finding["key"], len(not_yet)))
+    return view
+
+
+def _voice_embed(finding: dict[str, Any], channel: Any, state: dict[str, Any]
+                 ) -> discord.Embed:
+    together, cluster = finding["together"], finding["cluster"]
+    spread = max(1, int(cluster.get("spread", 0)) // 60)
+    lines = [
+        f"**{len(together)}** accounts from the same batch are in {channel.mention} "
+        f"right now.",
+        "",
+        f"They were registered within **{spread} min** of each other and joined together "
+        f"({finding['size']} in the batch).",
+        "",
+        " ".join(f"<@{u}>" for u in together[:20]),
+    ]
+    if len(together) > 20:
+        lines.append(f"-# …and {len(together) - 20} more")
+    mid, cid = state.get("message_id"), state.get("channel_id")
+    if mid and cid:
+        lines.append("\n-# [The batch's full report]"
+                     f"(https://discord.com/channels/{GUILD_ID}/{cid}/{mid})")
+    embed = discord.Embed(title="🔊 A join batch is sitting in one call",
+                          description="\n".join(lines), colour=0xE67E22)
+    embed.set_footer(text="Arriving and going straight to voice is normal · a whole batch "
+                          "doing it in one channel is not")
+    return embed
+
+
+async def report_voice_cluster(client: Any, member: Any, channel: Any) -> bool:
+    """One report per batch per call, edited in place as more of them arrive.
+
+    Edited rather than reposted: during a wave the useful artefact is one growing list you
+    can act on, not a notification per arrival.
+    """
+    try:
+        present = [m.id for m in getattr(channel, "members", None) or []]
+        state = _load_state()
+        finding = voice_cluster_finding(member.id, present, state)
+        if not finding:
+            return False
+
+        now = int(time.time())
+        key = f"{finding['key']}:{channel.id}"
+        sightings = {k: v for k, v in _load_sightings().items()
+                     if now - int(v.get("at", 0)) < VOICE_SIGHTING_TTL}
+        seen = set(sightings.get(key, {}).get("ids", []))
+        if set(finding["together"]) <= seen:
+            return False        # nobody new since the last report on this call
+
+        report_channel = await _get_channel(client, CHANNELS.POLICE_STATION)
+        if report_channel is None:
+            return False
+        embed = _voice_embed(finding, channel, state)
+        view = _voice_view(finding, state)
+
+        message_id = sightings.get(key, {}).get("message_id")
+        msg = None
+        if message_id:
+            try:
+                msg = await report_channel.fetch_message(int(message_id))
+                await msg.edit(embed=embed, view=view,
+                               allowed_mentions=discord.AllowedMentions.none())
+            except Exception:
+                msg = None
+        if msg is None:
+            msg = await report_channel.send(
+                embed=embed, view=view, allowed_mentions=discord.AllowedMentions.none())
+
+        sightings[key] = {"ids": sorted(seen | set(finding["together"])),
+                          "message_id": msg.id, "at": now}
+        _save_sightings(sightings)
+        logger.warning("join-cluster voice: %s of batch %s in channel %s",
+                       len(finding["together"]), finding["key"], channel.id)
+        return True
+    except Exception:
+        logger.exception("join-cluster voice check failed")
+        return False
