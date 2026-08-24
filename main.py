@@ -176,6 +176,20 @@ class AClient(discord.Client):
         except Exception as e:
             logger.warning(f"Could not register server verification view: {e}")
 
+        # One-off persistent re-attachment for Shuto's pending Lucky Dip spin
+        try:
+            from lib.economy.shop_items import SHOP_ITEMS, LuckyDipCaseItem
+            from lib.economy.shop_ui import LuckyDipCaseSpinView
+            item = next((i for i in SHOP_ITEMS if isinstance(i, LuckyDipCaseItem)), None)
+            if item:
+                self.add_view(
+                    LuckyDipCaseSpinView(item.outcomes, item.price, custom_id="9fc5f0ebf88706481ecfec9cccba0917"),
+                    message_id=1541458702060757043
+                )
+                logger.info("Registered persistent view for pending Lucky Dip message 1541458702060757043.")
+        except Exception as e:
+            logger.warning(f"Could not register pending Lucky Dip view: {e}")
+
         logger.info("Persistent prediction views registered in setup_hook.")
 
     async def on_ready(self):

@@ -708,14 +708,19 @@ class VIPCaseSpinView(View):
 class LuckyDipCaseSpinView(View):
     """Interactive view for the Lucky Dip case spinning animation."""
 
-    def __init__(self, outcomes, price, user):
-        super().__init__(timeout=60)
+    def __init__(self, outcomes, price, user=None, custom_id=None):
+        super().__init__(timeout=None if custom_id else 60)
         self.outcomes = outcomes
         self.price = price
         self.user = user
         self.result = None
         self.spinning = False
         self.message = None
+
+        if custom_id:
+            spin_button = Button(label="SPIN", style=discord.ButtonStyle.primary, emoji="🎲", custom_id=custom_id)
+            spin_button.callback = self.spin_callback
+            self.add_item(spin_button)
 
     async def start_spin(self, interaction):
         """Start the spinning animation."""
@@ -727,9 +732,10 @@ class LuckyDipCaseSpinView(View):
             color=0xffff00
         )
 
-        spin_button = Button(label="SPIN", style=discord.ButtonStyle.primary, emoji="🎲")
-        spin_button.callback = self.spin_callback
-        self.add_item(spin_button)
+        if not self.children:
+            spin_button = Button(label="SPIN", style=discord.ButtonStyle.primary, emoji="🎲")
+            spin_button.callback = self.spin_callback
+            self.add_item(spin_button)
 
         if not interaction.response.is_done():
             await interaction.response.send_message(embed=embed, view=self, ephemeral=False)
@@ -739,9 +745,15 @@ class LuckyDipCaseSpinView(View):
 
     async def spin_callback(self, interaction: discord.Interaction):
         """Handle the spin button press."""
-        if interaction.user.id != self.user.id:
+        if self.user is not None and interaction.user.id != self.user.id:
             await interaction.response.send_message("❌ Only the player who purchased this case can spin it!", ephemeral=True)
             return
+
+        if self.user is None:
+            self.user = interaction.user
+
+        if self.message is None and interaction.message is not None:
+            self.message = interaction.message
 
         if self.spinning:
             try:
@@ -775,6 +787,8 @@ class LuckyDipCaseSpinView(View):
 
     async def animate_spin(self, interaction: discord.Interaction):
         """Animate the spinning case."""
+        if self.message is None and interaction.message is not None:
+            self.message = interaction.message
         # Standard weighted random selection
         total_weight = sum(outcome["weight"] for outcome in self.outcomes)
         rand = random.random() * total_weight
