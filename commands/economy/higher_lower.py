@@ -98,9 +98,9 @@ class HigherLowerGame:
         deck = _fresh_deck()
         game = cls(uuid.uuid4().hex[:12], player_id, player_name, channel_id, bet,
                    deck, deck.pop())
-        # Never open on an unplayable card (both directions disabled, e.g. an Ace:
-        # 'higher' impossible and 'lower' too certain to profit). Burn and redraw.
-        while game.mult_higher is None and game.mult_lower is None and game.deck:
+        # Never open on a one-way or unplayable card (e.g. an Ace or a 2 where one
+        # direction is disabled). An opening hand must always offer both Higher and Lower.
+        while (game.mult_higher is None or game.mult_lower is None) and game.deck:
             game.current = game.deck.pop()
             game._recompute()
         return game

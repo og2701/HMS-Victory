@@ -53,3 +53,12 @@ def test_higher_lower_all_ranks_playable():
         else:
             assert game.mult_higher is not None, f"Rank {r} missing higher"
             assert game.mult_lower is not None, f"Rank {r} missing lower"
+
+
+def test_higher_lower_new_game_never_opens_on_ace_or_two():
+    """HigherLowerGame.new must always deal an initial card with both Higher and Lower available."""
+    for _ in range(50):
+        game = HigherLowerGame.new(12345, "TestPlayer", 999, 50)
+        assert game.current[0] not in ("A", "2"), f"Opening card should not be Ace or 2, got {game.current}"
+        assert game.mult_higher is not None, "Opening card must offer Higher"
+        assert game.mult_lower is not None, "Opening card must offer Lower"
