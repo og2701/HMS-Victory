@@ -1299,6 +1299,13 @@ async def on_message(client, message):
 
     await mirror_voice_message(client, message)
 
+    # Bouncy Yaris emoji chain reaction in #general
+    try:
+        from lib.features.yaris_chain import handle_yaris_chain
+        await handle_yaris_chain(client, message)
+    except Exception:
+        logger.debug("yaris chain hook failed", exc_info=True)
+
     await client.xp_system.update_xp(message)
 
     # Per-message activity badges (night owl, morning person, holiday badges, echo,
