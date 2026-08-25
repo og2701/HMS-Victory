@@ -530,3 +530,62 @@ def test_disarming_clears_the_stored_list_too(monkeypatch, tmp_path):
 
     join_watch.set_join_watch_state(False)
     assert not join_watch.load_json_file(join_watch.JOIN_WATCH_BUFFERS_FILE)
+
+
+# --- timing in the prompt -----------------------------------------------------------
+# Susan12 was timed out at 91% for "posting the same message, Hello, in several channels
+# in a row - flooding / mass spam". The messages were spread across an afternoon, and the
+# model had no way to know: the block it was given carried no times at all.
+T0 = 1_700_000_000
+
+
+def _msgs(pairs):
+    return [{"channel": ch, "content": txt, "ts": T0 + off} for ch, txt, off in pairs]
+
+
+SPREAD = _msgs([("chill-room", "Hello", 0), ("hobbies", "Hello", 95),
+                ("food-n-drink", "Hello", 400), ("general", "Hello", 700),
+                ("summer", "Nice", 1500), ("chill-room", "Hello George", 4 * 3600)])
+FLOOD = _msgs([("general", "JOIN discord.gg/x", 0), ("chill-room", "JOIN discord.gg/x", 2),
+               ("hobbies", "JOIN discord.gg/x", 4), ("summer", "JOIN discord.gg/x", 6)])
+
+
+def test_gaps_are_written_so_a_human_could_read_them():
+    assert join_watch._elapsed(0) == "0s"
+    assert join_watch._elapsed(45) == "45s"
+    assert join_watch._elapsed(95) == "1m35s"
+    assert join_watch._elapsed(4 * 3600) == "4h00m"
+    assert join_watch._elapsed(90000) == "1d01h"
+    assert join_watch._elapsed(None) == "0s"
+
+
+def test_the_model_is_told_when_each_message_landed():
+    block = join_watch._messages_block(SPREAD)
+    assert "4h00m" in block, f"the four hour gap is missing:\n{block}"
+    assert "3h35m after the last one" in block, block
+
+
+def test_an_afternoon_of_hellos_does_not_read_like_a_burst():
+    """The exact report that was wrong. Whatever the model decides, the evidence it needs
+    has to be in front of it."""
+    block = join_watch._messages_block(SPREAD)
+    assert "1m35s" in block and "13m20s" in block, block
+    assert "0s in" in block.splitlines()[2], "the first message should anchor the clock"
+
+
+def test_a_real_burst_still_looks_like_one():
+    block = join_watch._messages_block(FLOOD)
+    assert block.count("2s after the last one") == 3, block
+
+
+def test_the_floor_tells_it_to_check_the_gaps():
+    floor = join_watch.floor_lines().lower()
+    assert "quick succession" in floor, "the flooding bullet still ignores timing"
+    assert "check the gaps" in floor
+
+
+def test_messages_without_a_timestamp_still_render():
+    """Older entries were stored before ts existed, and a KeyError here would take out the
+    whole scan rather than one line of it."""
+    block = join_watch._messages_block([{"channel": "general", "content": "hi"}])
+    assert '"hi"' in block
