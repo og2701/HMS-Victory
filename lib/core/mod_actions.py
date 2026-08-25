@@ -39,13 +39,9 @@ class Kind:
 DM_SPAM = Kind(
     "dmspam",
     "Discord unusual DM activity flag",
-    "## You've been banned from UK Place\n"
-    "Discord's own systems flagged your account for sending an unusual volume of direct "
-    "messages. That is almost always either a scam account or an account somebody else has "
-    "taken control of.\n\n"
-    "**If your account was hacked, say so.** Change your password and turn on two-factor "
-    "authentication first, then appeal below - we would rather have you back than leave a "
-    "hijacked account banned.")
+    "### You have been removed from UK Place\n"
+    "Your account was flagged by Discord for unusual DM activity.\n\n"
+    "If you believe this was an error or your account was compromised, you can submit an appeal below.")
 
 ONBOARDING = Kind(
     "onboard",
