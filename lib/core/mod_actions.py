@@ -83,14 +83,35 @@ async def _settle(interaction, note: str, kind: str, user_id: int, only=None) ->
     Greyed rather than removed: a handled report that has lost its buttons reads as though
     it was never actionable, and you can no longer see what the other options had been.
     """
-    embeds = list(getattr(interaction.message, "embeds", None) or [])
+    msg = getattr(interaction, "message", None)
+    if msg is None:
+        return
+
+    embeds = list(getattr(msg, "embeds", None) or [])
     if not embeds:
-        # A Components V2 report keeps its text in the layout rather than an embed, so
-        # there is nothing to annotate and no way to rebuild somebody else's view from
-        # here. Say it in the channel instead, hung off the report so it reads as part
-        # of it rather than as a loose message.
+        # Components V2 layout (LayoutView)
         try:
-            await interaction.message.reply(note, allowed_mentions=NO_PINGS)
+            is_layout = any(
+                getattr(c, "type", None) == discord.ComponentType.container
+                or getattr(getattr(c, "type", None), "value", None) == 17
+                for c in getattr(msg, "components", [])
+            )
+            if is_layout:
+                view = discord.ui.LayoutView.from_message(msg)
+                for item in view.walk_children():
+                    if isinstance(item, discord.ui.Button):
+                        item.disabled = True
+                    elif isinstance(item, discord.ui.Container):
+                        item.accent_colour = discord.Colour(0x95A5A6)
+                    elif isinstance(item, discord.ui.TextDisplay) and item.content and item.content.startswith("-#"):
+                        item.content += f" · {note}"
+                await msg.edit(view=view)
+                return
+        except Exception:
+            logger.debug("could not settle LayoutView report directly, replying instead", exc_info=True)
+
+        try:
+            await msg.reply(note, allowed_mentions=NO_PINGS)
         except Exception:
             logger.debug("could not note the outcome on the report", exc_info=True)
         return
@@ -98,7 +119,7 @@ async def _settle(interaction, note: str, kind: str, user_id: int, only=None) ->
         embed = embeds[0]
         embed.add_field(name="Handled", value=note, inline=False)
         embed.colour = 0x95A5A6
-        await interaction.message.edit(
+        await msg.edit(
             embed=embed, view=action_view(kind, user_id, disabled=True, only=only))
     except Exception:
         logger.debug("could not settle the moderation report", exc_info=True)

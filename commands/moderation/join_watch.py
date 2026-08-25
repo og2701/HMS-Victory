@@ -51,8 +51,10 @@ PERMANENT_FLOOR = (
     "Threats, or wishing death or serious harm on a real person; celebrating a tragedy.",
     "Sexual content aimed at a member, and any sexual content involving minors.",
     "Doxxing, or posting someone's personal information.",
-    "Mass spam or flooding: the same message across several channels, copypasta walls, or"
-    " repeated advertising after being told to stop.",
+    "Mass spam or flooding: the same message blasted across several channels in quick"
+    " succession, copypasta walls, or repeated advertising after being told to stop."
+    " Check the gaps - saying hello in a few channels while looking round the server is"
+    " not flooding, and neither is repeating yourself hours apart.",
     'Openly recruiting or coordinating a raid ("everyone get in here", raid callsigns).',
     # Added after a member worked general with "Anyone in UK dm me asap", "Some tasks for
     # you people from UK", "DM me for directions" and was passed as fine ten times over,
@@ -538,6 +540,11 @@ HOW TO JUDGE:
 - Weigh messages far above profile. Names and avatars are corroboration for behaviour
   you have already seen in the messages; they are never the case on their own.
 - Escalation matters: watch for members whose messages get steadily worse over the scan.
+- Timing is evidence, and each message is stamped with it. The same five messages are
+  flooding if they land inside a minute and are somebody working their way round the
+  channels if they are spread over an afternoon. Never call something spam, flooding or a
+  burst without reading the gaps first. A long gap also breaks up a run: two messages four
+  hours apart are two incidents, not an escalating pattern.
 - If intent is genuinely unclear, answer "unsure" - you will see their next message.
 - Reserve "troll" for a clear match; it times the member out for 24 hours.
 - The brief decides what counts, and staff have already weighed whether it deserves a
@@ -606,12 +613,33 @@ MEMBER PROFILE
 {profile}"""
 
 
+def _elapsed(seconds: Any) -> str:
+    """A gap in words. Five messages a few seconds apart is flooding; the same five over an
+    afternoon is somebody saying hello in each channel, and the model cannot tell the two
+    apart unless it is told."""
+    seconds = int(seconds or 0)
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m{seconds % 60:02d}s"
+    if seconds < 86400:
+        return f"{seconds // 3600}h{(seconds % 3600) // 60:02d}m"
+    return f"{seconds // 86400}d{(seconds % 86400) // 3600:02d}h"
+
+
 def _messages_block(messages: list[dict[str, Any]]) -> str:
     """The dynamic prompt tail; grows with each scan and is never cache-stable."""
-    message_lines = "\n".join(
-        f'{i}. [{m["channel"]}] "{m["content"]}"' for i, m in enumerate(messages, 1)
-    )
+    lines, previous = [], None
+    for i, m in enumerate(messages, 1):
+        ts = m.get("ts")
+        when = "" if ts is None else f" {_elapsed(ts - messages[0].get('ts', ts))} in"
+        gap = ("" if ts is None or previous is None
+               else f", {_elapsed(ts - previous)} after the last one")
+        lines.append(f'{i}. [{m["channel"]}]{when}{gap}: "{m["content"]}"')
+        previous = ts if ts is not None else previous
+    message_lines = "\n".join(lines)
     return f"""FIRST MESSAGES SINCE JOINING ({len(messages)} of {MAX_SCANNED_MESSAGES} scanned)
+Each line carries how long into the scan it was sent and the gap since the one before it.
 {message_lines}
 
 If the evidence is thin, answer "unsure"; you will be shown their next message.
@@ -946,6 +974,21 @@ class UntimeoutButton(
                 f"Could not remove the timeout: {exc}", ephemeral=True
             )
             return
+        msg = getattr(interaction, "message", None)
+        if msg:
+            try:
+                view = discord.ui.LayoutView.from_message(msg)
+                for item in view.walk_children():
+                    if isinstance(item, discord.ui.Button):
+                        item.disabled = True
+                    elif isinstance(item, discord.ui.Container):
+                        item.accent_colour = discord.Colour(0x95A5A6)
+                    elif isinstance(item, discord.ui.TextDisplay) and item.content and item.content.startswith("-#"):
+                        item.content += f" · 🔓 Timeout removed by {interaction.user.mention}"
+                await msg.edit(view=view)
+            except Exception:
+                logger.debug("could not disable UntimeoutButton view", exc_info=True)
+
         await interaction.response.send_message(
             f"🔓 {interaction.user.mention} removed the join-watch timeout for {member.mention}.",
             allowed_mentions=discord.AllowedMentions.none(),
