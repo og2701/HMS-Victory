@@ -11,6 +11,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from config import *
 from lib.features.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.features.dm_spam_watch import sweep as sweep_dm_spam_flags
+from lib.features.crossword import prewarm_board as prewarm_crossword_board
 from lib.economy.economy_manager import add_bb, get_bb, get_all_balances as load_ukpence_data
 from lib.economy.bank_manager import BankManager
 from lib.economy.economy_stats_html import create_economy_stats_image
@@ -557,6 +558,15 @@ def _register_client_jobs(client, scheduler):
     # Discord's unusual-DM flag is not in discord.py, so this is a raw member sweep - 13
     # requests over a 12k guild. The flag lasts 24h, so 15 minutes is far finer than it
     # needs to be; the point is mods hearing about it while the account is still there.
+    # The board's bytes are identical for everyone until somebody answers something, so
+    # hosting today's empty grid up front turns the first /crossword of the day from an
+    # upload into a cache hit. Once just after boot, and again just after the puzzle rolls.
+    _add_process_job(scheduler, prewarm_crossword_board, args=[client],
+                     id="crossword_prewarm_boot", name="Prewarm Crossword Board",
+                     next_run_time=discord.utils.utcnow() + timedelta(seconds=45))
+    _add_process_job(scheduler, prewarm_crossword_board,
+                     CronTrigger(hour=0, minute=1, timezone="Europe/London"), args=[client],
+                     id="crossword_prewarm_daily", name="Prewarm Crossword Board (daily)")
     _add_process_job(scheduler, sweep_dm_spam_flags, IntervalTrigger(minutes=15), args=[client],
                      id="dm_spam_flag_sweep", name="Sweep Unusual DM Activity Flags",
                      next_run_time=discord.utils.utcnow() + timedelta(seconds=90))

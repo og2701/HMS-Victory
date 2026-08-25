@@ -40,6 +40,21 @@ _CACHE_MAX = 512
 _url_cache: dict[str, tuple[str, float]] = {}
 _in_flight: dict[str, "asyncio.Task[str | None]"] = {}
 
+# The draw is tens of milliseconds; the upload is a REST round trip and is the leg anybody
+# actually waits on. Counted so "the board is slow" can be answered with a number instead
+# of a guess - read it with cache_stats().
+SLOW_UPLOAD_MS = 700
+_stats = {"hits": 0, "misses": 0, "upload_ms": 0.0}
+
+
+def cache_stats() -> dict:
+    """Hits, misses and total upload time since boot. A high miss rate is expected while
+    somebody is solving - every answer changes the picture - and is the thing to look at
+    before blaming the renderer."""
+    total = _stats["hits"] + _stats["misses"]
+    return {**_stats, "hit_rate": (_stats["hits"] / total) if total else 0.0,
+            "cached": len(_url_cache)}
+
 
 def _host_channel_id() -> int:
     import config
@@ -88,7 +103,9 @@ async def host_image(client, data: io.BytesIO, filename: str = "board.png") -> s
     key = f"{filename}:{hashlib.sha256(raw).hexdigest()}"
     hit = _url_cache.get(key)
     if hit and time.time() - hit[1] < _CACHE_TTL:
+        _stats["hits"] += 1
         return hit[0]
+    _stats["misses"] += 1
 
     task = _in_flight.get(key)
     if task is None:
@@ -132,7 +149,13 @@ async def _upload(client, raw: bytes, filename: str, key: str) -> str | None:
                 " (NOT a thread - this is a channel)",
             )
 
+        started = time.perf_counter()
         msg = await ch.send(file=discord.File(io.BytesIO(raw), filename))
+        took = (time.perf_counter() - started) * 1000
+        _stats["upload_ms"] += took
+        if took > SLOW_UPLOAD_MS:
+            logger.info("[IMAGE HOST] %s took %.0fms for %.1fKB", filename, took,
+                        len(raw) / 1024)
         if msg.attachments:
             _remember(key, msg.attachments[0].url)
             return msg.attachments[0].url

@@ -828,6 +828,30 @@ async def _board_embed(client, uid, date):
         return None, []
 
 
+async def prewarm_board(client) -> bool:
+    """Draw and host today's untouched grid before anybody asks for it.
+
+    An unstarted board is identical bytes for every player, so hosting it once means the
+    first person to run /crossword gets a cache hit instead of waiting on an upload. The
+    draw is tens of milliseconds; the upload is a REST round trip, and that is the leg
+    somebody actually sits watching. Player 0 has no saved state, so this draws the empty
+    grid without touching anybody's game.
+    """
+    if not getattr(config, "CROSSWORD_IMAGE_ENABLED", False):
+        return False
+    try:
+        date = _today()
+        _todays_puzzle(date)          # raises if there is no puzzle for today
+        img = await asyncio.to_thread(draw_board, 0, date)
+        from lib.core.image_host import host_image
+        url = await host_image(client, img, "crossword.png")
+        log.info("crossword board prewarmed for %s: %s", date, "ok" if url else "not hosted")
+        return bool(url)
+    except Exception:
+        log.warning("crossword prewarm failed", exc_info=True)
+        return False
+
+
 def _start_board(client, uid, date):
     """Start drawing and hosting the picture now, and hand back the task.
 
