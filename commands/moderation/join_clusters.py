@@ -737,8 +737,7 @@ async def _post_appeal(client: Any, user_id: int, text: str, user: Any) -> bool:
     card = discord.ui.Container(accent_colour=0x3498DB)
     card.add_item(discord.ui.TextDisplay(
         f"## 📩 Ban appeal\n<@{user_id}> `{user_id}` · "
-        f"{discord.utils.escape_markdown(str(user))}\n"
-        f"Banned as part of a creation cluster.\n\n"
+        f"{discord.utils.escape_markdown(str(user))}\n\n"
         f">>> {discord.utils.escape_markdown(text)[:900]}"))
     card.add_item(discord.ui.ActionRow(AppealAcceptButton(user_id), AppealRejectButton(user_id)))
     view.add_item(card)
