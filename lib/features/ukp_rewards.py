@@ -42,7 +42,7 @@ def _next_uk_midnight_ts() -> int:
     return int(nxt.timestamp())
 
 
-def _pay(user_id: int, amount: int, reason: str) -> bool:
+def _pay(user_id: int, amount: int, reason: str, taxable: bool = True) -> bool:
     """Pay a player from the bank. Returns True on success.
 
     Every reward in this module (HoF, tree, bump, welcome, benefits, tickets) is
@@ -50,7 +50,7 @@ def _pay(user_id: int, amount: int, reason: str) -> bool:
     are low. See lib/economy/reserve_policy.py.
     """
     try:
-        return add_bb(int(user_id), int(amount), reason=reason, discretionary=True)
+        return add_bb(int(user_id), int(amount), reason=reason, discretionary=True, taxable=taxable)
     except Exception:
         log.error("UKP reward pay failed (%s)", reason, exc_info=True)
         return False
@@ -1678,7 +1678,7 @@ async def grant_ticket_reward(client, creator_id, creator_name=None) -> bool:
     if not creator_id:
         return False
     amount = getattr(config, "TICKET_REWARD", 100)
-    if not _pay(creator_id, amount, "Ticket reward"):
+    if not _pay(creator_id, amount, "Ticket reward", taxable=False):
         return False
     try:
         user = client.get_user(int(creator_id)) or await client.fetch_user(int(creator_id))

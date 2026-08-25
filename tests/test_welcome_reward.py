@@ -370,3 +370,22 @@ def test_talking_in_a_different_channel_is_not_carrying_it_on(monkeypatch, tmp_p
         _expire(5000 + i)
 
     assert W.welcome_needs_earning(1), "chatting elsewhere is not answering them"
+
+
+def test_grant_ticket_reward_is_tax_exempt(monkeypatch):
+    """Support ticket reward of 100 UKP must be tax exempt."""
+    paid_calls = []
+
+    def fake_pay(user_id, amount, reason, taxable=True):
+        paid_calls.append({"user_id": user_id, "amount": amount, "reason": reason, "taxable": taxable})
+        return True
+
+    monkeypatch.setattr(W, "_pay", fake_pay)
+    client = FakeClient([FakeUser(999)])
+
+    res = asyncio.run(W.grant_ticket_reward(client, 999))
+    assert res is True
+    assert len(paid_calls) == 1
+    assert paid_calls[0]["amount"] == 100
+    assert paid_calls[0]["taxable"] is False
+    assert paid_calls[0]["reason"] == "Ticket reward"
