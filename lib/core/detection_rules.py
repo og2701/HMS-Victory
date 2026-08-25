@@ -163,6 +163,8 @@ def co_occurrence_findings(user_id, now=None) -> tuple:
 
     for partner, days in partners.items():
         if len(days) >= need_days:
+            if D.is_dismissed(user_id, D.ALT_CO_OCCURRENCE, pair_with=partner, now=now):
+                continue
             return partner, {
                 "paired within": f"{gap}s of each other",
                 "on separate days": f"{len(days)} (threshold {need_days})",

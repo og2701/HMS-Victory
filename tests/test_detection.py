@@ -290,3 +290,70 @@ def test_a_ledger_failure_never_costs_us_the_alert(monkeypatch):
 
     monkeypatch.setattr(D.DatabaseManager, "fetch_one", staticmethod(boom))
     assert D._flow_block(1, 2) == ""
+
+
+def test_dismissal_records_30_day_cooldown_and_suppresses_alerts(monkeypatch):
+    from lib.core import detection as D
+    now = 1_700_000_000
+
+    dismissals = []
+    def fake_execute(query, params=()):
+        if "detection_dismissals" in query:
+            dismissals.append(params)
+    
+    def fake_fetch_one(query, params=()):
+        if "detection_dismissals" in query:
+            uid, kind, exp = params[0], params[1], params[2]
+            for row in dismissals:
+                # row: (ts, user_id, kind, expires_at, by_id, pair_with, note)
+                if str(row[1]) == str(uid) and row[2] == kind and row[3] > exp:
+                    return (1,)
+        return None
+
+    monkeypatch.setattr(D.DatabaseManager, "execute", staticmethod(fake_execute))
+    monkeypatch.setattr(D.DatabaseManager, "fetch_one", staticmethod(fake_fetch_one))
+    monkeypatch.setattr(D.time, "time", lambda: now)
+
+    # Initially not dismissed
+    assert D.is_dismissed("100", D.ALT_CO_OCCURRENCE, pair_with="200", now=now) is False
+    assert D.already_alerted(["100", "200"], D.ALT_CO_OCCURRENCE, 3600, now=now) is False
+
+    # Record dismissal for the pair
+    D.record_dismissal(["100", "200"], D.ALT_CO_OCCURRENCE, duration_seconds=30 * 86400, by_id=404)
+    assert len(dismissals) == 2
+
+    # Within 30 days, both users are suppressed
+    assert D.is_dismissed("100", D.ALT_CO_OCCURRENCE, pair_with="200", now=now + 10 * 86400) is True
+    assert D.is_dismissed("200", D.ALT_CO_OCCURRENCE, pair_with="100", now=now + 10 * 86400) is True
+    assert D.already_alerted(["100", "200"], D.ALT_CO_OCCURRENCE, 3600, now=now + 10 * 86400) is True
+
+    # After 30 days (e.g. 31 days), dismissal expires
+    assert D.is_dismissed("100", D.ALT_CO_OCCURRENCE, pair_with="200", now=now + 31 * 86400) is False
+
+
+def test_co_occurrence_findings_ignores_dismissed_pair(monkeypatch):
+    from lib.core import detection_rules as R
+    from lib.core import detection as D
+    now = 1_700_000_000
+
+    # 3 matching days within window
+    events = [
+        (now - 3 * 86400, "100", {}),
+        (now - 3 * 86400 + 10, "200", {}),
+        (now - 2 * 86400, "100", {}),
+        (now - 2 * 86400 + 10, "200", {}),
+        (now - 1 * 86400, "100", {}),
+        (now - 1 * 86400 + 10, "200", {}),
+    ]
+
+    monkeypatch.setattr(D, "events_in_window", lambda *a, **k: list(events))
+
+    # Without dismissal, it flags
+    monkeypatch.setattr(D, "is_dismissed", lambda *a, **k: False)
+    partner, triggers = R.co_occurrence_findings("100", now=now)
+    assert partner == "200"
+
+    # With dismissal, it ignores the pair
+    monkeypatch.setattr(D, "is_dismissed", lambda *a, **k: True)
+    partner, triggers = R.co_occurrence_findings("100", now=now)
+    assert partner is None

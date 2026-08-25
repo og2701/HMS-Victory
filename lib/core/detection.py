@@ -132,27 +132,92 @@ def events_in_window(kind: str, within_seconds: int, now: int = None) -> list:
     return out
 
 
-def already_alerted(user_id, kind: str, within_seconds: int, now: int = None) -> bool:
-    """Has this user already been reported for this, recently?
+DISMISSAL_DURATION_SECONDS = 30 * 86400  # 30 days (1 month)
+
+
+def is_dismissed(user_id, kind: str, pair_with=None, now: int = None) -> bool:
+    """Has this user or pair been allowed/dismissed by staff within their 30-day window?"""
+    now = int(now if now is not None else time.time())
+    uid_str = str(user_id)
+    row = DatabaseManager.fetch_one(
+        "SELECT 1 FROM detection_dismissals WHERE user_id = ? AND kind = ? AND expires_at > ? LIMIT 1",
+        (uid_str, kind, now),
+    )
+    if row is not None:
+        return True
+    if pair_with is not None:
+        pair_str = str(pair_with)
+        row = DatabaseManager.fetch_one(
+            "SELECT 1 FROM detection_dismissals WHERE user_id = ? AND kind = ? AND expires_at > ? LIMIT 1",
+            (pair_str, kind, now),
+        )
+        if row is not None:
+            return True
+        row = DatabaseManager.fetch_one(
+            "SELECT 1 FROM detection_dismissals WHERE ((user_id = ? AND pair_with = ?) OR (user_id = ? AND pair_with = ?)) AND kind = ? AND expires_at > ? LIMIT 1",
+            (uid_str, pair_str, pair_str, uid_str, kind, now),
+        )
+        if row is not None:
+            return True
+    return False
+
+
+def record_dismissal(subjects, kind: str, duration_seconds: int = DISMISSAL_DURATION_SECONDS,
+                     by_id=None, note: str = "") -> None:
+    """Record a staff allow/dismissal for one or more subjects, suppressing alerts for duration_seconds."""
+    subject_list = [subjects] if isinstance(subjects, (int, str)) else list(subjects)
+    now = int(time.time())
+    expires_at = now + int(duration_seconds)
+    pair_with = str(subject_list[1]) if len(subject_list) > 1 else None
+
+    for uid in subject_list:
+        try:
+            other = str(subject_list[0]) if str(uid) == pair_with else pair_with
+            DatabaseManager.execute(
+                "INSERT INTO detection_dismissals (ts, user_id, kind, expires_at, by_id, pair_with, note) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (now, str(uid), kind, expires_at, str(by_id) if by_id else None, other, note),
+            )
+        except Exception:
+            log.exception("could not record dismissal for %s/%s", uid, kind)
+
+
+def already_alerted(subjects, kind: str, within_seconds: int, now: int = None) -> bool:
+    """Has this user or pair already been reported for this recently, or dismissed within 30 days?
 
     Without this a single bad actor generates one alert per action and the review channel
     becomes unreadable, which is the same as having no alerts at all."""
     now = int(now if now is not None else time.time())
-    row = DatabaseManager.fetch_one(
-        "SELECT 1 FROM detection_alerts WHERE user_id = ? AND kind = ? AND ts >= ? LIMIT 1",
-        (str(user_id), kind, now - int(within_seconds)),
-    )
-    return row is not None
+    subject_list = [subjects] if isinstance(subjects, (int, str)) else list(subjects)
 
+    # First check active dismissals (default 30-day allowance)
+    pair_with = subject_list[1] if len(subject_list) > 1 else None
+    for uid in subject_list:
+        if is_dismissed(uid, kind, pair_with=pair_with, now=now):
+            return True
 
-def _mark_alerted(user_id, kind: str, ts: int = None) -> None:
-    try:
-        DatabaseManager.execute(
-            "INSERT INTO detection_alerts (ts, user_id, kind) VALUES (?, ?, ?)",
-            (int(ts if ts is not None else time.time()), str(user_id), kind),
+    # Check rolling alert window
+    for uid in subject_list:
+        row = DatabaseManager.fetch_one(
+            "SELECT 1 FROM detection_alerts WHERE user_id = ? AND kind = ? AND ts >= ? LIMIT 1",
+            (str(uid), kind, now - int(within_seconds)),
         )
-    except Exception:
-        log.exception("could not mark alert for %s/%s", user_id, kind)
+        if row is not None:
+            return True
+    return False
+
+
+def _mark_alerted(subjects, kind: str, ts: int = None) -> None:
+    subject_list = [subjects] if isinstance(subjects, (int, str)) else list(subjects)
+    ts_val = int(ts if ts is not None else time.time())
+    for uid in subject_list:
+        try:
+            DatabaseManager.execute(
+                "INSERT INTO detection_alerts (ts, user_id, kind) VALUES (?, ?, ?)",
+                (ts_val, str(uid), kind),
+            )
+        except Exception:
+            log.exception("could not mark alert for %s/%s", uid, kind)
 
 
 # ---------------------------------------------------------------------------
@@ -316,10 +381,14 @@ class ReviewView(discord.ui.View):
     reviewer is never offered an action that cannot apply.
     """
 
-    def __init__(self, kind: str, subject_id, amount: int = 0, funder_id=None):
+    def __init__(self, kind: str, subjects, amount: int = 0, funder_id=None):
         super().__init__(timeout=None)     # reviews outlive any sensible timeout
         self.kind = kind
-        self.subject_id = int(subject_id)
+        if isinstance(subjects, (int, str)):
+            self.subject_ids = [int(subjects)]
+        else:
+            self.subject_ids = [int(s) for s in subjects]
+        self.subject_id = self.subject_ids[0]
         self.amount = max(0, int(amount))
         self.funder_id = int(funder_id) if funder_id else None
         if not self.amount:
@@ -340,8 +409,14 @@ class ReviewView(discord.ui.View):
 
     @discord.ui.button(label="Allow / Dismiss", style=discord.ButtonStyle.success, emoji="✅")
     async def dismiss(self, interaction: discord.Interaction, button: discord.ui.Button):
-        clear_flag(self.subject_id, "flagged_alt")
-        await self._finish(interaction, f"✅ Dismissed — <@{self.subject_id}> cleared")
+        record_dismissal(self.subject_ids, self.kind, by_id=interaction.user.id, note="dismissed by staff")
+        for uid in self.subject_ids:
+            clear_flag(uid, "flagged_alt")
+        if len(self.subject_ids) > 1:
+            who = " & ".join(f"<@{uid}>" for uid in self.subject_ids)
+        else:
+            who = f"<@{self.subject_id}>"
+        await self._finish(interaction, f"✅ Dismissed — {who} cleared (alerts paused for 30 days)")
 
     @discord.ui.button(label="Tax 50%", style=discord.ButtonStyle.primary, emoji="📉")
     async def tax_half(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -603,7 +678,7 @@ async def _post(client, kind, subjects, triggers, context, amount, funder_id) ->
     await channel.send(
         content=f"<@{_cfg('DETECTION_ALERT_PING', config.USERS.OGGERS)}>",
         embed=build_embed(client, kind, subject_list, triggers, context),
-        view=ReviewView(kind, subject_list[0], amount=amount, funder_id=funder_id),
+        view=ReviewView(kind, subject_list, amount=amount, funder_id=funder_id),
         allowed_mentions=discord.AllowedMentions(users=True),
     )
 
@@ -645,11 +720,10 @@ def flag(client, kind: str, subjects, triggers: dict, context: str = "",
         return
     try:
         subject_list = [subjects] if isinstance(subjects, (int, str)) else list(subjects)
-        primary = subject_list[0]
         window = cooldown if cooldown is not None else _cfg("DETECTION_ALERT_COOLDOWN", 6 * 3600)
-        if already_alerted(primary, kind, window):
+        if already_alerted(subject_list, kind, window):
             return
-        _mark_alerted(primary, kind)
+        _mark_alerted(subject_list, kind)
         asyncio.create_task(_post(client, kind, subject_list, triggers, context, amount, funder_id))
     except Exception:
         log.exception("detection flag failed for %s", kind)

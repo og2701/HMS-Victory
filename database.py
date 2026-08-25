@@ -664,6 +664,22 @@ def init_db():
         ''')
         c.execute('CREATE INDEX IF NOT EXISTS idx_detection_alerts '
                   'ON detection_alerts(user_id, kind, ts)')
+        # Dismissals/Allowances: records when staff dismisses an alert for a user/pair,
+        # pausing alerts for that detection kind until expires_at (e.g. 30 days).
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS detection_dismissals (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts         INTEGER NOT NULL,
+                user_id    TEXT NOT NULL,
+                kind       TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                by_id      TEXT,
+                pair_with  TEXT,
+                note       TEXT
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_detection_dismissals_lookup '
+                  'ON detection_dismissals(user_id, kind, expires_at)')
         # Reviewer decisions that outlive the alert message.
         c.execute('''
             CREATE TABLE IF NOT EXISTS detection_flags (
