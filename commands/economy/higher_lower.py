@@ -112,8 +112,8 @@ class HigherLowerGame:
         (no cards that way) OR so likely that a win wouldn't pay a real profit - so
         an offered guess always increases your banked value."""
         import config
-        factor = getattr(config, "HIGHERLOWER_PAYOUT_FACTOR", 0.95)
-        min_mult = getattr(config, "HIGHERLOWER_MIN_MULTIPLIER", 1.05)
+        factor = getattr(config, "HIGHERLOWER_PAYOUT_FACTOR", 0.98)
+        min_mult = getattr(config, "HIGHERLOWER_MIN_MULTIPLIER", 1.01)
         n = len(self.deck)
         if n == 0:
             self.mult_higher = self.mult_lower = None
@@ -130,7 +130,7 @@ class HigherLowerGame:
             if count <= 0:
                 return None
             m = round(factor * decisive / count, 2)
-            return m if m >= min_mult else None  # too certain to pay a profit -> not offered
+            return max(min_mult, m)
 
         self.mult_higher = mk(higher)
         self.mult_lower = mk(lower)
