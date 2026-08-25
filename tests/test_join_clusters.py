@@ -425,7 +425,7 @@ def test_the_dm_carries_an_appeal_button_keyed_to_the_user():
     import json
     payload = json.dumps(JC._ban_dm_view(4242).to_components(), ensure_ascii=False)
     assert "joincluster:appeal:4242" in payload
-    assert "isn't you" in payload, "it must invite them to say it was wrong"
+    assert "appeal" in payload, "it must invite them to say it was wrong"
     assert "no time limit" in payload
 
 

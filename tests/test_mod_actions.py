@@ -241,7 +241,7 @@ def test_a_components_v2_report_is_answered_in_the_channel():
 
 def test_the_join_watch_notice_is_about_what_they_posted():
     body = M.JOIN_WATCH.ban_dm.lower()
-    assert "screened" in body and "appeal" in body, M.JOIN_WATCH.ban_dm
+    assert "screening" in body and "appeal" in body, M.JOIN_WATCH.ban_dm
     assert "direct messages" not in body and "onboarding" not in body, "wrong reason"
 
 

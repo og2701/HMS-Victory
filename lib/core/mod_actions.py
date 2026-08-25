@@ -46,31 +46,23 @@ DM_SPAM = Kind(
 ONBOARDING = Kind(
     "onboard",
     "Automated onboarding selections",
-    "## You've been banned from UK Place\n"
-    "Your account answered the server's onboarding questions the way a script does - taking "
-    "every option in a question that only has one answer, or getting through the lot in a "
-    "couple of seconds.\n\n"
-    "**If you just clicked quickly, say so.** This was a judgement about how the answers "
-    "arrived rather than about anything you said, and it can be wrong - appeal below and a "
-    "person will read it.")
+    "### You have been removed from UK Place\n"
+    "Your account was flagged during the server onboarding process.\n\n"
+    "If you believe this was an error, you can submit an appeal below.")
 
 JOIN_WATCH = Kind(
     "joinwatch",
     "Join-watch screening",
-    "## You've been banned from UK Place\n"
-    "Your first messages in the server were screened before anyone had met you, and they "
-    "matched what the server blocks outright - recruiting strangers for off-platform work, "
-    "scam offers, or hostility aimed at the place itself.\n\n"
-    "**If that has read you wrong, say so.** Appeal below and a person will read it "
-    "properly rather than a screener.")
+    "### You have been removed from UK Place\n"
+    "Your initial messages were flagged by the server's automated screening system.\n\n"
+    "If you believe this was an error, you can submit an appeal below to be reviewed by staff.")
 
 VOICE_RUSH = Kind(
     "vcrush",
     "Joined and went straight to voice",
-    "## You've been banned from UK Place\n"
-    "You were removed after joining and going straight into a voice channel, and staff "
-    "judged what followed to be a problem.\n\n"
-    "**If you think that is wrong, say so.** Appeal below and a person will read it.")
+    "### You have been removed from UK Place\n"
+    "Your account was removed following unusual voice channel activity upon joining.\n\n"
+    "If you believe this was an error, you can submit an appeal below.")
 
 KINDS = {k.slug: k for k in (DM_SPAM, ONBOARDING, JOIN_WATCH, VOICE_RUSH)}
 _FALLBACK = Kind("unknown", "Automated moderation report", DM_SPAM.ban_dm)

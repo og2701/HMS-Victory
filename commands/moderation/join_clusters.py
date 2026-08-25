@@ -643,13 +643,9 @@ def _save_appeals(data: dict[str, Any]) -> None:
 
 
 CLUSTER_BAN_TEXT = (
-    "## You've been banned from UK Place\n"
-    "Your account was removed as part of a group of accounts that were all registered "
-    "within a few minutes of each other and joined the server together. That pattern "
-    "is how account farms work.\n\n"
-    "**If that isn't you, say so.** This was a judgement about a pattern, not about "
-    "anything you personally did, and it can be wrong - people who signed up at the "
-    "same time as friends look identical to us.")
+    "### You have been removed from UK Place\n"
+    "Your account was flagged as part of an automated join pattern detection.\n\n"
+    "If you believe this was an error, you can submit an appeal below.")
 
 
 def _ban_dm_view(user_id: int, body: str | None = None) -> discord.ui.LayoutView:
