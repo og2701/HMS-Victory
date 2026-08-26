@@ -48,7 +48,7 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🏴‍☠️": "Pirate Speak", "🤓": "Nerd Speak", "🥷": "Over the top 'roadman' speak",
     "🎩": "British 'rp'/posh talk - 'the queens english'",
     "🏰": "Shakespearean English (do not use Chaucerian Middle English)",
-    "🎭": "Theatrical soliloquy - completely rewrite the message as a speech delivered alone on a stage, thinking aloud to nobody. Keep whatever the message actually said, but bury it in overwrought introspection: address the empty air or the audience directly, agonise over the trivial as though it were fate, ask rhetorical questions nobody will answer, break off and reconsider mid-thought, and land on some grand resolution or lament. Elevated and dramatic but modern English - this is not the Shakespeare option, so no thee, thou, hath or forsooth",
+    "🎭": "Theatrical soliloquy - rewrite the message as a short aside delivered alone on a stage, thinking aloud to nobody. HARD LIMIT: one paragraph, three sentences at most, and never longer than roughly double the original message. Brevity is the joke; a long one is not funny. Address the empty air, treat something trivial as though it were fate, and land on one small grand conclusion. Dramatic but modern English - this is not the Shakespeare option, so no thee, thou, hath or forsooth. Do not use em-dashes.",
     "🦴": "Caveman talk - completely rewrite the message as primitive caveman speech: drop small grammar words (a, the, is, are, of), turn 'I/me/my' into 'me', use short broken present-tense fragments and the simplest possible words. Keep all the meaning but make it sound like a club-wielding caveman",
 }
 
