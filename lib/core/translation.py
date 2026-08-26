@@ -44,7 +44,10 @@ target_language_mappings = {
     "Over the top american yank speak": "Yank",
     "Shakespearean English (do not use Chaucerian Middle English)": "Olde English",
     # Keyed off the constants source so the footer label can't drift from the prompt.
+    # Without an entry the footer falls back to the raw instruction, which for these is a
+    # paragraph of prompt rather than a name.
     FLAG_LANGUAGE_MAPPINGS["🦴"]: "🦴 Caveman",
+    FLAG_LANGUAGE_MAPPINGS["🎭"]: "🎭 Soliloquy",
 }
 
 user_translation_timestamps = defaultdict(list)
