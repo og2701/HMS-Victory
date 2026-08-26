@@ -62,3 +62,16 @@ def test_higher_lower_new_game_never_opens_on_ace_or_two():
         assert game.current[0] not in ("A", "2"), f"Opening card should not be Ace or 2, got {game.current}"
         assert game.mult_higher is not None, "Opening card must offer Higher"
         assert game.mult_lower is not None, "Opening card must offer Lower"
+
+
+def test_higher_lower_burned_cards_tracked_and_serialized():
+    """Burned cards from opening redraws are tracked and restored on serialization."""
+    deck = ["2S", "2D", "5H", "6C"]
+    game = HigherLowerGame.new(12345, "TestPlayer", 999, 50)
+    # Simulate a game that burned cards
+    game.burned = ["2S", "2D"]
+    d = game.to_dict()
+    assert d["burned"] == ["2S", "2D"]
+    
+    restored = HigherLowerGame.from_dict(d)
+    assert restored.burned == ["2S", "2D"]

@@ -67,7 +67,7 @@ def _disp_rank(r: str) -> str:
 class HigherLowerGame:
     def __init__(self, game_id, player_id, player_name, channel_id, bet,
                  deck, current, history=None, *, cumulative=1.0, steps=0,
-                 state="player", message_id=None, created_ts=None):
+                 state="player", message_id=None, created_ts=None, burned=None):
         self.game_id = game_id
         self.player_id = int(player_id)
         self.player_name = player_name
@@ -81,6 +81,7 @@ class HigherLowerGame:
         self.state = state            # "player" | "over"
         self.message_id = message_id
         self.created_ts = created_ts or int(time.time())
+        self.burned = burned or []
         # transient
         self.settled = False
         self.replayed = False
@@ -96,13 +97,17 @@ class HigherLowerGame:
     @classmethod
     def new(cls, player_id, player_name, channel_id, bet):
         deck = _fresh_deck()
+        first_card = deck.pop()
+        burned = []
         game = cls(uuid.uuid4().hex[:12], player_id, player_name, channel_id, bet,
-                   deck, deck.pop())
+                   deck, first_card)
         # Never open on a one-way or unplayable card (e.g. an Ace or a 2 where one
         # direction is disabled). An opening hand must always offer both Higher and Lower.
         while (game.mult_higher is None or game.mult_lower is None) and game.deck:
+            burned.append(game.current)
             game.current = game.deck.pop()
             game._recompute()
+        game.burned = burned
         return game
 
     # --- odds ---
@@ -191,6 +196,7 @@ class HigherLowerGame:
             "current": self.current, "history": self.history,
             "cumulative": self.cumulative, "steps": self.steps,
             "state": self.state, "created_ts": self.created_ts,
+            "burned": self.burned,
         }
 
     @classmethod
@@ -201,6 +207,7 @@ class HigherLowerGame:
             history=d.get("history", []), cumulative=d.get("cumulative", 1.0),
             steps=d.get("steps", 0), state=d.get("state", "player"),
             message_id=d.get("message_id"), created_ts=d.get("created_ts"),
+            burned=d.get("burned", []),
         )
 
 
@@ -409,6 +416,9 @@ async def build_hl_layout(game: HigherLowerGame, client):
         container.add_item(discord.ui.TextDisplay(_native_text(game)))
         view.add_item(container)
     view.add_item(_action_row(game))
+    if game.burned:
+        burned_cards = ", ".join(f"`{_disp_rank(c[0])}`{SUIT_EMOJI.get(c[1], c[1])}" for c in game.burned)
+        view.add_item(discord.ui.TextDisplay(f"-# ℹ️ Burned on opening deal: {burned_cards} (odds reflect remaining {len(game.deck)} cards in deck)"))
     return view, files
 
 
