@@ -358,6 +358,10 @@ class AClient(discord.Client):
         if await handle_hate_speech_message(self, message):
             return
 
+        from lib.core.blocked_media import check_blocked_media
+        if await check_blocked_media(self, message):
+            return
+
         initialize_summary_data()
         update_summary_data("messages", channel_id=message.channel.id)
         update_summary_data("active_members", user_id=message.author.id)
