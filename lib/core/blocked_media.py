@@ -37,6 +37,15 @@ BLOCKED_DOG_GIF_DHASHES = [
     0x35E4C799B8E0B283,
     0x63E192B2606C82C8,
     0x2BE5DABA602482C8,
+    0xECE1C4D2B2F0E484,
+    0xA6E1CCD2B2F0E084,
+    0xDCE2E1D0B2B0E0C4,
+    0xCC62C4D0B2B060F4,
+    0xECE0C4DAB2B060FC,
+    0xE6E1C4DAB2B0E0E8,
+    0xF0E2E0D8BAB060FC,
+    0x60C8A486317878E8,
+    0xC884A496317970F8,
     # Zoomed / cropped head golden retriever
     0x21E4C799B8E0F482,
     0x27E1D8B2E0AC86C8,
@@ -187,6 +196,52 @@ def is_blocked_image_bytes(data: bytes) -> Tuple[bool, str]:
     return False, ""
 
 
+async def async_ai_vision_check(data: bytes) -> Tuple[bool, str]:
+    """AI Vision fallback for novel crops/edits using Gemini Flash Lite."""
+    if not data:
+        return False, ""
+    try:
+        import base64
+        from lib.core.gemini import gemini_generate
+
+        try:
+            im = Image.open(io.BytesIO(data))
+        except Exception:
+            frames = extract_frames_from_video_bytes(data)
+            if not frames:
+                return False, ""
+            im = frames[0]
+
+        im.seek(0)
+        out = io.BytesIO()
+        im.resize((320, 320)).convert("RGB").save(out, format="JPEG", quality=80)
+        b64 = base64.b64encode(out.getvalue()).decode()
+
+        prompt = (
+            "You are a strict Discord auto-moderation filter. "
+            "Determine if this image contains the viral meme of a golden retriever dog looking directly down into the camera "
+            "with a tilted head, sleepy/squinted/honest expression, or blinking eyes (regardless of cropping, text captions, zoom, or filters). "
+            "Reply ONLY with YES if it is this specific dog meme, or NO if it is anything else."
+        )
+        user_parts = [
+            {"text": "Is this the blacklisted golden retriever meme?"},
+            {"inline_data": {"mime_type": "image/jpeg", "data": b64}},
+        ]
+        ans, err = await gemini_generate(None, prompt, user_parts, max_output_tokens=10, temperature=0.0)
+        if ans and "YES" in ans.strip().upper():
+            # Dynamically learn this dHash
+            try:
+                new_h = compute_frame_dhash(im)
+                if new_h not in BLOCKED_DOG_GIF_DHASHES:
+                    BLOCKED_DOG_GIF_DHASHES.append(new_h)
+            except Exception:
+                pass
+            return True, "Banned dog GIF AI Vision match"
+    except Exception as e:
+        logger.debug("AI vision fallback check failed: %s", e)
+    return False, ""
+
+
 def is_blocked_url_or_text(text: str) -> bool:
     """Check text/URL against known blocked media URL identifiers."""
     if not text:
@@ -249,6 +304,9 @@ async def check_blocked_media(client: discord.Client, message: discord.Message) 
         try:
             data = await attachment.read()
             blocked, reason = is_blocked_image_bytes(data)
+            if not blocked:
+                blocked, reason = await async_ai_vision_check(data)
+
             if blocked:
                 try:
                     await message.delete()
