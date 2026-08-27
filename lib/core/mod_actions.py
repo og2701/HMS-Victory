@@ -202,7 +202,7 @@ class ModBanButton(_MemberAction, template=r"mod:ban:(?P<kind>\w+):(?P<uid>\d+)"
             f"Reason recorded: *{kind.audit}*. They will be DM'd the appeal first. This "
             "cannot be undone from here - unbanning is done in Discord.",
             view=_ConfirmBan(self.kind, self.user_id, interaction.message,
-                             _row_of(interaction.view)),
+                             _row_of(self.view)),
             ephemeral=True, allowed_mentions=NO_PINGS)
 
 

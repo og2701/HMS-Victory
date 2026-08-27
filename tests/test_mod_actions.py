@@ -30,13 +30,16 @@ def _run(coro):
         loop.close()
 
 
-def _ban(i, kind="dmspam", uid=7):
+def _ban(i, kind="dmspam", uid=7, view=None):
     """Press Ban, then press the confirmation. Ban is two presses now, so a test that only
     does the first is testing the dialog rather than the ban."""
-    _run(M.ModBanButton(kind, uid).callback(i))
+    btn = M.ModBanButton(kind, uid)
+    if view is not None:
+        btn.view = view
+    _run(btn.callback(i))
     # The row is captured when Ban is pressed and carried to the confirmation, exactly as
     # the real button does, so what gets greyed out is what the report was showing.
-    _run(M._ConfirmBan(kind, uid, i.message, M._row_of(i.view)).confirm.callback(i))
+    _run(M._ConfirmBan(kind, uid, i.message, M._row_of(btn.view)).confirm.callback(i))
 
 
 # --- the staff buttons -------------------------------------------------------------------
@@ -115,7 +118,6 @@ class FakeButtonInteraction:
         self.user = FakeUser(staff)
         self.guild = FakeGuild(member)
         self.response = FakeResponse(self.log)
-        self.view = None
         self.message = FakeMessage(embed or discord.Embed(title="report", description="x"))
         self.followup = type("F", (), {
             "send": lambda _s, content=None, **kw: _noop(self.log, content)})()
@@ -164,8 +166,8 @@ def test_acting_greys_the_buttons_out_rather_than_removing_them():
     """A report that loses its buttons reads as though it was never actionable, and you can
     no longer see what the other options were."""
     i = FakeButtonInteraction(staff=True)
-    i.view = M.action_view("dmspam", 7)
-    _ban(i)
+    view = M.action_view("dmspam", 7)
+    _ban(i, view=view)
     edit = i.message.edits[-1]
     view = edit["view"]
     assert view is not None and len(view.children) == len(M.BUTTONS), \
