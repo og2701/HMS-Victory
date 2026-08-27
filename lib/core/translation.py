@@ -48,7 +48,9 @@ target_language_mappings = {
     # paragraph of prompt rather than a name.
     FLAG_LANGUAGE_MAPPINGS["🦴"]: "🦴 Caveman",
     FLAG_LANGUAGE_MAPPINGS["🎭"]: "🎭 Soliloquy",
-    FLAG_LANGUAGE_MAPPINGS["🇪🇸"]: "🇪🇸 Castellano",
+    # The instruction asks for castellano; the footer just names the language, the
+    # same as every other flag does.
+    FLAG_LANGUAGE_MAPPINGS["🇪🇸"]: "Spanish",
 }
 
 user_translation_timestamps = defaultdict(list)
