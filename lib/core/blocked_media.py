@@ -31,6 +31,8 @@ BLOCKED_DOG_GIF_DHASHES = [
     0x0F1370D89924E4F0,  # Center square crop
     0x0A1C0F137098A4E4,  # Top 70% crop
     0x341F0F13D09C2462,  # Face region crop
+    0xF08817596171D8A4,  # Top meme caption full frame
+    0x0F71496571518461,  # Top meme caption body crop
     # Zoomed / cropped head golden retriever
     0x21E4C799B8E0F482,
     0x27E1D8B2E0AC86C8,
