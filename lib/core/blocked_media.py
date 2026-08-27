@@ -4,16 +4,60 @@ Detects banned media regardless of re-encoding, filename changes, or missing tex
 the image's difference hash (dHash) and comparing against known blacklisted fingerprints.
 """
 import io
+import json
 import logging
+import os
 import subprocess
 from typing import Tuple
 
 import discord
 from PIL import Image
 
-from config import CHANNELS
+from config import CHANNELS, JSON_DATA_DIR
 
 logger = logging.getLogger(__name__)
+
+MEDIA_FILTER_CONFIG_FILE = os.path.join(JSON_DATA_DIR, "media_filter_config.json")
+
+_DEFAULT_CONFIG = {
+    "filter_enabled": True,
+    "ai_vision_enabled": False,  # Turned OFF by default
+}
+
+
+def get_media_filter_config() -> dict:
+    """Load persistent media filter configuration."""
+    if os.path.exists(MEDIA_FILTER_CONFIG_FILE):
+        try:
+            with open(MEDIA_FILTER_CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return {
+                    "filter_enabled": data.get("filter_enabled", True),
+                    "ai_vision_enabled": data.get("ai_vision_enabled", False),
+                }
+        except Exception as e:
+            logger.debug("Failed reading media filter config: %s", e)
+    return dict(_DEFAULT_CONFIG)
+
+
+def set_media_filter_config(
+    filter_enabled: bool | None = None,
+    ai_vision_enabled: bool | None = None,
+) -> dict:
+    """Update and persist media filter configuration."""
+    cfg = get_media_filter_config()
+    if filter_enabled is not None:
+        cfg["filter_enabled"] = bool(filter_enabled)
+    if ai_vision_enabled is not None:
+        cfg["ai_vision_enabled"] = bool(ai_vision_enabled)
+    try:
+        os.makedirs(os.path.dirname(MEDIA_FILTER_CONFIG_FILE), exist_ok=True)
+        with open(MEDIA_FILTER_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception as e:
+        logger.error("Failed saving media filter config: %s", e)
+    return cfg
+
 
 # Known visual dHash fingerprints for blocked media
 # Target dog GIF (Golden retriever looking at camera / blinking slowly)
@@ -198,6 +242,8 @@ def is_blocked_image_bytes(data: bytes) -> Tuple[bool, str]:
 
 async def async_ai_vision_check(data: bytes) -> Tuple[bool, str]:
     """AI Vision fallback for novel crops/edits using Gemini Flash Lite."""
+    if not get_media_filter_config().get("ai_vision_enabled", False):
+        return False, ""
     if not data:
         return False, ""
     try:
@@ -253,6 +299,9 @@ def is_blocked_url_or_text(text: str) -> bool:
 async def check_blocked_media(client: discord.Client, message: discord.Message) -> bool:
     """Checks message content, embeds, and attachments for blocked media."""
     if message.author.bot or message.guild is None:
+        return False
+
+    if not get_media_filter_config().get("filter_enabled", True):
         return False
 
     # Check content

@@ -928,5 +928,36 @@ def define_commands(tree, client):
     async def medal_table_command(interaction: Interaction):
         await handle_medal_table_command(interaction)
 
+    @command(
+        "media-filter",
+        "View or toggle the blocked dog media filter and AI Vision fallback (Staff only)",
+        checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])],
+    )
+    async def media_filter_command(
+        interaction: Interaction,
+        ai_vision: Optional[bool] = None,
+        filter_active: Optional[bool] = None,
+    ):
+        from lib.core.blocked_media import get_media_filter_config, set_media_filter_config
+        if ai_vision is not None or filter_active is not None:
+            cfg = set_media_filter_config(filter_enabled=filter_active, ai_vision_enabled=ai_vision)
+        else:
+            cfg = get_media_filter_config()
+
+        status_filt = "🟢 **Enabled**" if cfg.get("filter_enabled", True) else "🔴 **Disabled**"
+        status_ai = "🟢 **Enabled**" if cfg.get("ai_vision_enabled", False) else "🔴 **Disabled**"
+
+        embed = discord.Embed(
+            title="🛡️ Blocked Media Filter Settings",
+            description=(
+                f"**Local dHash & Keyword Filter**: {status_filt}\n"
+                f"**Gemini AI Vision Fallback**: {status_ai}\n\n"
+                f"*To change settings, supply `ai_vision: True/False` or `filter_active: True/False`.*"
+            ),
+            color=discord.Color.blue() if cfg.get("filter_enabled", True) else discord.Color.red(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     from commands.moderation.verification import setup_verification_commands
     setup_verification_commands(tree, client)
