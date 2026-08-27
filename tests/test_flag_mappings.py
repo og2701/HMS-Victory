@@ -16,15 +16,24 @@ from lib.core.constants import FLAG_LANGUAGE_MAPPINGS as M
 
 def test_the_lookalike_flags_are_mapped():
     """🇪🇦 next to 🇪🇸 is the trap that started this."""
-    assert M.get("🇪🇦") == "Spanish", "Ceuta & Melilla still does nothing"
-    assert M.get("🇪🇸") == "Spanish"
+    assert M.get("🇪🇦"), "Ceuta & Melilla still does nothing"
+    assert M["🇪🇦"] == M["🇪🇸"], "the two Spain flags should behave the same"
     assert M.get("🇵🇷") == "Spanish"
+
+
+def test_the_spain_flags_ask_for_castellano_and_the_others_do_not():
+    """Peninsular Spanish out of the Mexican flag would be the wrong joke."""
+    assert M["🇪🇸"].startswith("Castellano") and "vosotros" in M["🇪🇸"]
+    for latam in ("🇲🇽", "🇦🇷", "🇨🇴", "🇵🇷", "🇨🇱"):
+        assert M[latam] == "Spanish", f"{latam} should not be peninsular"
 
 
 def test_the_spanish_speaking_world_is_covered():
     for flag in ("🇪🇸", "🇲🇽", "🇦🇷", "🇨🇴", "🇨🇱", "🇵🇪", "🇻🇪", "🇧🇴", "🇺🇾",
                  "🇵🇾", "🇬🇹", "🇭🇳", "🇳🇮", "🇵🇦", "🇸🇻", "🇨🇷", "🇩🇴", "🇨🇺", "🇪🇦", "🇵🇷"):
-        assert M.get(flag) == "Spanish", f"{flag} is unmapped"
+        target = M.get(flag, "")
+        assert "Spanish" in target or target.startswith("Castellano"), \
+            f"{flag} is unmapped or is not Spanish of some kind"
 
 
 def test_every_value_is_a_non_empty_instruction():
