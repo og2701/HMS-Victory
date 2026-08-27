@@ -48,6 +48,7 @@ target_language_mappings = {
     # paragraph of prompt rather than a name.
     FLAG_LANGUAGE_MAPPINGS["🦴"]: "🦴 Caveman",
     FLAG_LANGUAGE_MAPPINGS["🎭"]: "🎭 Soliloquy",
+    FLAG_LANGUAGE_MAPPINGS["🇪🇸"]: "🇪🇸 Castellano",
 }
 
 user_translation_timestamps = defaultdict(list)

@@ -30,7 +30,7 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🇨🇱": "Spanish", "🇨🇳": "Mandarin Chinese", "🇨🇴": "Spanish", "🇨🇷": "Spanish",
     "🇨🇺": "Spanish", "🇨🇿": "Czech", "🇩🇪": "German", "🇩🇰": "Danish",
     "🇩🇴": "Spanish", "🇩🇿": "Arabic", "🇪🇨": "Spanish", "🇪🇪": "Estonian",
-    "🇪🇬": "Arabic", "🇪🇸": "Spanish", "🇫🇮": "Finnish", "🇫🇷": "French",
+    "🇪🇬": "Arabic", "🇪🇸": "Castellano - Spanish as actually spoken in Spain, not neutral or Latin American Spanish. Use vosotros rather than ustedes for informal plural, peninsular vocabulary (coche, ordenador, movil, patatas, zumo, gafas, piso) and the ordinary filler of Spain (vale, tio, venga, joder, hombre, en plan, guay) where it fits naturally. Do not soften swearing", "🇫🇮": "Finnish", "🇫🇷": "French",
     "🇬🇧": "British English", "🇬🇷": "Greek", "🇭🇷": "Croatian", "🇭🇺": "Hungarian",
     "🇮🇩": "Indonesian", "🇮🇪": "British English", "🇮🇱": "Hebrew", "🇮🇳": "Hindi",
     "🇮🇶": "Arabic", "🇮🇷": "Persian", "🇮🇸": "Icelandic", "🇮🇹": "Italian",
@@ -47,7 +47,7 @@ FLAG_LANGUAGE_MAPPINGS = {
     # Flags that were missing and did nothing when reacted with. 🇪🇦 is the one that
     # prompted this: it is Ceuta & Melilla, it renders almost identically to 🇪🇸, and four
     # people reacted with it on the same message to complete silence.
-    "🇪🇦": "Spanish", "🇵🇷": "Spanish", "🇬🇹": "Spanish", "🇭🇳": "Spanish",
+    "🇪🇦": "Castellano - Spanish as actually spoken in Spain, not neutral or Latin American Spanish. Use vosotros rather than ustedes for informal plural, peninsular vocabulary (coche, ordenador, movil, patatas, zumo, gafas, piso) and the ordinary filler of Spain (vale, tio, venga, joder, hombre, en plan, guay) where it fits naturally. Do not soften swearing", "🇵🇷": "Spanish", "🇬🇹": "Spanish", "🇭🇳": "Spanish",
     "🇳🇮": "Spanish", "🇵🇦": "Spanish", "🇵🇾": "Spanish", "🇺🇾": "Spanish",
     "🇧🇴": "Spanish", "🇵🇪": "Spanish", "🇻🇪": "Spanish", "🇸🇻": "Spanish",
     "🇬🇶": "Spanish",
