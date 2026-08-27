@@ -20,6 +20,19 @@ BLOCKED_DOG_GIF_DHASHES = [
     0x120D33D8A4E0F1BC,  # Original frame 0
     0x100F33D8A4E0F1BC,  # Re-encoded frame 0
     0x120F33D8A4E4F1BC,  # Original frame 10
+    0xAC0B075088E4F0BC,  # "Live Jamie Reaction" dog variation frame 0
+]
+
+BLOCKED_MEDIA_PATTERNS = [
+    "golden-retriever-dog",
+    "dog-195",
+    "live-jamie-reaction",
+    "39f2394ae36df6e199be9eb7c9fa1012",
+    "f87f46a2c5aeaeed4c68910815f73eaf",
+    "ui8KxohqjmmiPf7gBGj",
+    "dMgAnsrp",
+    "LGLBS5P7",
+    "zi7PimsR",
 ]
 
 MAX_HAMMING_DISTANCE = 5
@@ -74,13 +87,52 @@ def is_blocked_image_bytes(data: bytes) -> Tuple[bool, str]:
     return False, ""
 
 
+def is_blocked_url_or_text(text: str) -> bool:
+    """Check text/URL against known blocked media URL identifiers."""
+    if not text:
+        return False
+    lower = text.lower()
+    return any(p.lower() in lower for p in BLOCKED_MEDIA_PATTERNS)
+
+
 async def check_blocked_media(client: discord.Client, message: discord.Message) -> bool:
-    """Checks message attachments and embeds for blocked media. Deletes and logs if detected."""
+    """Checks message content, embeds, and attachments for blocked media."""
     if message.author.bot or message.guild is None:
         return False
 
+    # Check content
+    if is_blocked_url_or_text(message.content):
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        return True
+
+    # Check embeds
+    for emb in message.embeds:
+        texts = [emb.title or "", emb.description or "", emb.url or ""]
+        if emb.video and emb.video.url:
+            texts.append(emb.video.url)
+        if emb.image and emb.image.url:
+            texts.append(emb.image.url)
+        if emb.thumbnail and emb.thumbnail.url:
+            texts.append(emb.thumbnail.url)
+        if any(is_blocked_url_or_text(t) for t in texts):
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            return True
+
     # Check attachments
     for attachment in message.attachments:
+        if is_blocked_url_or_text(attachment.filename) or is_blocked_url_or_text(attachment.url):
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            return True
+
         ext = (attachment.filename or "").rsplit(".", 1)[-1].lower()
         content_type = (attachment.content_type or "").lower()
         is_image_or_video = (
