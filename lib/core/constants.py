@@ -44,6 +44,32 @@ FLAG_LANGUAGE_MAPPINGS = {
     "🇸🇦": "Arabic", "🇸🇪": "Swedish", "🇸🇮": "Slovene", "🇸🇰": "Slovak",
     "🇸🇾": "Arabic", "🇹🇭": "Thai", "🇹🇷": "Turkish", "🇺🇦": "Ukrainian",
     "🇻🇳": "Vietnamese", "🇿🇦": "Zulu",
+    # Flags that were missing and did nothing when reacted with. 🇪🇦 is the one that
+    # prompted this: it is Ceuta & Melilla, it renders almost identically to 🇪🇸, and four
+    # people reacted with it on the same message to complete silence.
+    "🇪🇦": "Spanish", "🇵🇷": "Spanish", "🇬🇹": "Spanish", "🇭🇳": "Spanish",
+    "🇳🇮": "Spanish", "🇵🇦": "Spanish", "🇵🇾": "Spanish", "🇺🇾": "Spanish",
+    "🇧🇴": "Spanish", "🇵🇪": "Spanish", "🇻🇪": "Spanish", "🇸🇻": "Spanish",
+    "🇬🇶": "Spanish",
+    "🇲🇿": "Portuguese", "🇨🇻": "Portuguese", "🇬🇼": "Portuguese", "🇹🇱": "Portuguese",
+    "🇸🇳": "French", "🇨🇮": "French", "🇨🇲": "French", "🇨🇩": "French", "🇲🇱": "French",
+    "🇭🇹": "French", "🇱🇺": "French", "🇲🇨": "French",
+    "🇹🇳": "Arabic", "🇱🇾": "Arabic", "🇾🇪": "Arabic", "🇴🇲": "Arabic", "🇶🇦": "Arabic",
+    "🇸🇩": "Arabic", "🇲🇷": "Arabic",
+    "🇦🇼": "Dutch", "🇸🇷": "Dutch", "🇨🇼": "Dutch",
+    "🇰🇿": "Kazakh", "🇺🇿": "Uzbek", "🇬🇪": "Georgian", "🇲🇹": "Maltese", "🇨🇾": "Greek",
+    "🇳🇵": "Nepali", "🇲🇲": "Burmese", "🇱🇦": "Lao", "🇲🇳": "Mongolian", "🇧🇹": "Dzongkha",
+    "🇹🇿": "Swahili", "🇷🇼": "Kinyarwanda", "🇪🇹": "Amharic", "🇸🇴": "Somali",
+    "🇽🇰": "Albanian", "🇲🇪": "Montenegrin",
+    "🇹🇼": "Mandarin Chinese", "🇭🇰": "Cantonese", "🇲🇴": "Cantonese", "🇰🇵": "Korean",
+    "🇧🇳": "Malay", "🇬🇱": "Greenlandic", "🇫🇴": "Faroese",
+    # Commonwealth and anglophone flags - the joke of translating English to English is
+    # the point, and the alternative is the reaction doing nothing at all.
+    "🇦🇬": "British English", "🇧🇸": "British English", "🇧🇧": "British English",
+    "🇹🇹": "British English", "🇬🇾": "British English", "🇬🇭": "British English",
+    "🇳🇬": "British English", "🇺🇬": "British English", "🇿🇼": "British English",
+    "🇸🇬": "British English", "🇫🇯": "British English", "🇵🇬": "British English",
+    "🇧🇼": "British English", "🇳🇦": "British English",
     # Stylistic translations
     "🏴‍☠️": "Pirate Speak", "🤓": "Nerd Speak", "🥷": "Over the top 'roadman' speak",
     "🎩": "British 'rp'/posh talk - 'the queens english'",
