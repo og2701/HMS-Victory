@@ -5,6 +5,7 @@ the image's difference hash (dHash) and comparing against known blacklisted fing
 """
 import io
 import logging
+import subprocess
 from typing import Tuple
 
 import discord
@@ -17,10 +18,11 @@ logger = logging.getLogger(__name__)
 # Known visual dHash fingerprints for blocked media
 # Target dog GIF (Golden retriever looking at camera / blinking slowly)
 BLOCKED_DOG_GIF_DHASHES = [
-    0x120D33D8A4E0F1BC,  # Original frame 0
-    0x100F33D8A4E0F1BC,  # Re-encoded frame 0
-    0x120F33D8A4E4F1BC,  # Original frame 10
-    0xAC0B075088E4F0BC,  # "Live Jamie Reaction" dog variation frame 0
+    0x120D33D8A4E0F1BC,  # Original dog GIF frame 0
+    0x100F33D8A4E0F1BC,  # Re-encoded dog GIF frame 0
+    0x120F33D8A4E4F1BC,  # Original dog GIF frame 10
+    0xAC0B075088E4F0BC,  # "Live Jamie Reaction" dog thumbnail frame 0
+    0xAC1B075088E4F0BC,  # "Live Jamie Reaction" dog video frame 0
 ]
 
 BLOCKED_MEDIA_PATTERNS = [
@@ -56,12 +58,49 @@ def hamming_distance(h1: int, h2: int) -> int:
     return bin(h1 ^ h2).count("1")
 
 
+def extract_frame_from_video_bytes(data: bytes) -> Image.Image | None:
+    """Extract first frame from a video buffer using ffmpeg."""
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                "pipe:0",
+                "-vframes",
+                "1",
+                "-f",
+                "image2",
+                "-c:v",
+                "png",
+                "pipe:1",
+            ],
+            input=data,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=3.0,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            return Image.open(io.BytesIO(proc.stdout))
+    except Exception as e:
+        logger.debug("ffmpeg frame extraction failed: %s", e)
+    return None
+
+
 def is_blocked_image_bytes(data: bytes) -> Tuple[bool, str]:
-    """Inspect raw image/gif data using perceptual hashing."""
+    """Inspect raw image/gif/video data using perceptual hashing."""
     if not data:
         return False, ""
     try:
-        im = Image.open(io.BytesIO(data))
+        try:
+            im = Image.open(io.BytesIO(data))
+        except Exception:
+            im = extract_frame_from_video_bytes(data)
+            if im is None:
+                return False, ""
+
         # Test first frame
         im.seek(0)
         h0 = compute_frame_dhash(im)
