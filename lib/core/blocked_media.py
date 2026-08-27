@@ -33,6 +33,10 @@ BLOCKED_DOG_GIF_DHASHES = [
     0x341F0F13D09C2462,  # Face region crop
     0xF08817596171D8A4,  # Top meme caption full frame
     0x0F71496571518461,  # Top meme caption body crop
+    # Phone / iOS Screen Recording captures
+    0x35E4C799B8E0B283,
+    0x63E192B2606C82C8,
+    0x2BE5DABA602482C8,
     # Zoomed / cropped head golden retriever
     0x21E4C799B8E0F482,
     0x27E1D8B2E0AC86C8,
@@ -52,7 +56,7 @@ BLOCKED_MEDIA_PATTERNS = [
     "zi7PimsR",
 ]
 
-MAX_HAMMING_DISTANCE = 5
+MAX_HAMMING_DISTANCE = 6
 MAX_ATTACHMENT_SCAN_SIZE = 15 * 1024 * 1024  # 15 MB
 
 
@@ -110,35 +114,39 @@ def generate_multi_scale_crops(im: Image.Image) -> list[Image.Image]:
     return crops
 
 
-def extract_frame_from_video_bytes(data: bytes) -> Image.Image | None:
-    """Extract first frame from a video buffer using ffmpeg."""
-    try:
-        proc = subprocess.run(
-            [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-i",
-                "pipe:0",
-                "-vframes",
-                "1",
-                "-f",
-                "image2",
-                "-c:v",
-                "png",
-                "pipe:1",
-            ],
-            input=data,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=3.0,
-        )
-        if proc.returncode == 0 and proc.stdout:
-            return Image.open(io.BytesIO(proc.stdout))
-    except Exception as e:
-        logger.debug("ffmpeg frame extraction failed: %s", e)
-    return None
+def extract_frames_from_video_bytes(data: bytes) -> list[Image.Image]:
+    """Extract frames across multiple timestamps from a video buffer using ffmpeg."""
+    frames = []
+    for ss in ["0.2", "1.0", "1.8"]:
+        try:
+            proc = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-ss",
+                    ss,
+                    "-i",
+                    "pipe:0",
+                    "-vframes",
+                    "1",
+                    "-f",
+                    "image2",
+                    "-c:v",
+                    "png",
+                    "pipe:1",
+                ],
+                input=data,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=2.0,
+            )
+            if proc.returncode == 0 and proc.stdout:
+                frames.append(Image.open(io.BytesIO(proc.stdout)))
+        except Exception as e:
+            logger.debug("ffmpeg frame extraction failed: %s", e)
+    return frames
 
 
 def is_blocked_image_bytes(data: bytes) -> Tuple[bool, str]:
@@ -148,27 +156,25 @@ def is_blocked_image_bytes(data: bytes) -> Tuple[bool, str]:
     try:
         try:
             im = Image.open(io.BytesIO(data))
+            frames_to_test = [im]
+            n_frames = getattr(im, "n_frames", 1)
+            if n_frames > 10:
+                try:
+                    im2 = Image.open(io.BytesIO(data))
+                    im2.seek(10)
+                    frames_to_test.append(im2)
+                except Exception:
+                    pass
         except Exception:
-            im = extract_frame_from_video_bytes(data)
-            if im is None:
+            frames_to_test = extract_frames_from_video_bytes(data)
+            if not frames_to_test:
                 return False, ""
 
-        # Test frames
-        frames_to_test = [0]
-        n_frames = getattr(im, "n_frames", 1)
-        if n_frames > 10:
-            frames_to_test.append(10)
-
-        for frame_idx in frames_to_test:
-            try:
-                im.seek(frame_idx)
-            except Exception:
-                continue
-
-            trimmed = trim_borders(im)
+        for frame_idx, frame_img in enumerate(frames_to_test):
+            trimmed = trim_borders(frame_img)
             sub_crops = generate_multi_scale_crops(trimmed)
-            if trimmed.size != im.size:
-                sub_crops.extend(generate_multi_scale_crops(im))
+            if trimmed.size != frame_img.size:
+                sub_crops.extend(generate_multi_scale_crops(frame_img))
 
             for crop_img in sub_crops:
                 h = compute_frame_dhash(crop_img)
