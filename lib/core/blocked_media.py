@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # --- Feature Toggles ---
 MEDIA_FILTER_ENABLED: bool = True           # Master switch for blocked dog media moderation
-AI_VISION_FALLBACK_ENABLED: bool = False    # AI Vision fallback (False = 100% free local dHash & FFmpeg only)
+AI_VISION_FALLBACK_ENABLED: bool = True     # AI Vision fallback via Gemini (catches novel crops & edits)
 
 
 # Known visual dHash fingerprints for blocked media
