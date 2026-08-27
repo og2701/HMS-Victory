@@ -24,6 +24,7 @@ BLOCKED_DOG_GIF_DHASHES = [
     0x120F33D8A4E4F1BC,
     0xAC0B075088E4F0BC,
     0xAC1B075088E4F0BC,
+    0x73D989E4E0F194BC,  # WhatsApp / phone screenshot still JPEG
     # Zoomed / cropped head golden retriever
     0x21E4C799B8E0F482,
     0x27E1D8B2E0AC86C8,
