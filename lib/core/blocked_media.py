@@ -88,6 +88,28 @@ def trim_borders(im: Image.Image) -> Image.Image:
     return im
 
 
+def generate_multi_scale_crops(im: Image.Image) -> list[Image.Image]:
+    """Generate multi-scale sub-windows (center, quadrants, top, face) to catch arbitrary crops."""
+    w, h = im.size
+    crops = [im]
+    if w < 50 or h < 50:
+        return crops
+    # 1. Center crop
+    min_dim = min(w, h)
+    cx, cy = (w - min_dim) // 2, (h - min_dim) // 2
+    crops.append(im.crop((cx, cy, cx + min_dim, cy + min_dim)))
+    # 2. Quadrants / Halves
+    crops.append(im.crop((0, 0, w, int(h * 0.65))))  # Top 65%
+    crops.append(im.crop((0, int(h * 0.30), w, h)))  # Bottom 70% (below top captions)
+    crops.append(im.crop((0, 0, int(w * 0.65), h)))  # Left 65%
+    crops.append(im.crop((int(w * 0.35), 0, w, h)))  # Right 65%
+    # 3. Inner 80% window
+    crops.append(im.crop((int(w * 0.1), int(h * 0.1), int(w * 0.9), int(h * 0.9))))
+    # 4. Top-center face region
+    crops.append(im.crop((int(w * 0.15), 0, int(w * 0.85), int(h * 0.75))))
+    return crops
+
+
 def extract_frame_from_video_bytes(data: bytes) -> Image.Image | None:
     """Extract first frame from a video buffer using ffmpeg."""
     try:
@@ -120,7 +142,7 @@ def extract_frame_from_video_bytes(data: bytes) -> Image.Image | None:
 
 
 def is_blocked_image_bytes(data: bytes) -> Tuple[bool, str]:
-    """Inspect raw image/gif/video data using perceptual hashing."""
+    """Inspect raw image/gif/video data using multi-scale perceptual hashing."""
     if not data:
         return False, ""
     try:
@@ -131,31 +153,29 @@ def is_blocked_image_bytes(data: bytes) -> Tuple[bool, str]:
             if im is None:
                 return False, ""
 
-        # Test first frame (raw and trimmed)
-        im.seek(0)
-        candidates = [compute_frame_dhash(im)]
-        trimmed = trim_borders(im)
-        if trimmed.size != im.size:
-            candidates.append(compute_frame_dhash(trimmed))
-
-        for h in candidates:
-            for target in BLOCKED_DOG_GIF_DHASHES:
-                dist = hamming_distance(h, target)
-                if dist <= MAX_HAMMING_DISTANCE:
-                    return True, f"Banned dog GIF visual hash match (dist={dist})"
-
-        # If animated, test another frame (e.g. frame 10)
+        # Test frames
+        frames_to_test = [0]
         n_frames = getattr(im, "n_frames", 1)
         if n_frames > 10:
+            frames_to_test.append(10)
+
+        for frame_idx in frames_to_test:
             try:
-                im.seek(10)
-                h10 = compute_frame_dhash(im)
-                for target in BLOCKED_DOG_GIF_DHASHES:
-                    dist = hamming_distance(h10, target)
-                    if dist <= MAX_HAMMING_DISTANCE:
-                        return True, f"Banned dog GIF visual hash match (frame 10 dist={dist})"
+                im.seek(frame_idx)
             except Exception:
-                pass
+                continue
+
+            trimmed = trim_borders(im)
+            sub_crops = generate_multi_scale_crops(trimmed)
+            if trimmed.size != im.size:
+                sub_crops.extend(generate_multi_scale_crops(im))
+
+            for crop_img in sub_crops:
+                h = compute_frame_dhash(crop_img)
+                for target in BLOCKED_DOG_GIF_DHASHES:
+                    dist = hamming_distance(h, target)
+                    if dist <= MAX_HAMMING_DISTANCE:
+                        return True, f"Banned dog GIF visual hash match (frame {frame_idx} dist={dist})"
     except Exception as e:
         logger.debug("Could not parse image for visual hash check: %s", e)
     return False, ""
