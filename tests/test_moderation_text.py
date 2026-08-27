@@ -80,5 +80,40 @@ def test_detects_expanded_slurs():
     assert find_blocked_moderation_match("tranny") is None
 
 
+# --- words that are only slurs in some contexts ---------------------------------------
+# "or dick van dyke" earned somebody a 24 hour automated timeout for a homophobic slur.
+# On a British server the collisions are not exotic: Offa's Dyke and Devil's Dyke are
+# landmarks and Dyke Road is in Brighton.
+def test_dick_van_dyke_is_not_a_slur():
+    assert find_blocked_moderation_match("or dick van dyke") is None
+    assert find_blocked_moderation_match("Dick Van Dyke") is None
+    assert find_blocked_moderation_match("he grew a van dyke beard") is None
 
+
+def test_british_landmarks_and_streets_are_not_slurs():
+    for text in ("walked Offa's Dyke last summer", "Devils Dyke is near Brighton",
+                 "the shop on Dyke Road", "we took the dyke path"):
+        assert find_blocked_moderation_match(text) is None, text
+
+
+def test_the_slur_itself_is_still_caught():
+    for text in ("dyke", "you dyke", "dykes", "d y k e", "d.y.k.e"):
+        m = find_blocked_moderation_match(text)
+        assert m is not None and m.label == "homophobic slur", text
+
+
+def test_an_exempt_hit_does_not_hide_a_real_one():
+    """search() would stop at the exempted match and pass the message. finditer keeps
+    looking, which is the whole reason the exemption is safe to have."""
+    m = find_blocked_moderation_match("meet me on dyke road you faggot")
+    assert m is not None and m.label == "homophobic slur"
+
+
+def test_the_report_says_normalised_not_normalized():
+    """The bot's own americanisms filter corrects normalize -> normalise, so it was pulling
+    members up for writing exactly what it wrote itself."""
+    import pathlib as _p
+    src = _p.Path("lib/bot/event_handlers.py").read_text()
+    assert '"Normalised message"' in src
+    assert "Normalized message" not in src
 

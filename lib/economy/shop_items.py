@@ -1105,12 +1105,12 @@ SHOP_ITEMS: List[ShopItem] = [
     RankColorThemeItem("rank_theme_country", "Countryside Theme", "Forest greens and earthy browns of rural England", 100, "#228B22", "#8B4513", "#F0FFF0"),
 
     # --- VARIETY STYLES ---
-    RankBackgroundItem("rank_bg_lofi", "Lofi Bedroom (PixelArt)", "Cozy lofi aesthetic bedroom in pixel art style", 250, "rank_bg_lofi.png"),
+    RankBackgroundItem("rank_bg_lofi", "Lofi Bedroom (PixelArt)", "Cosy lofi aesthetic bedroom in pixel art style", 250, "rank_bg_lofi.png"),
     RankBackgroundItem("rank_bg_vaporwave", "Vaporwave Retro", "Neon pink sunset with glitch art and palm trees", 250, "rank_bg_vaporwave.png"),
     RankBackgroundItem("rank_bg_medieval", "Medieval Throne", "Grand stone throne room with flickering torches", 250, "rank_bg_medieval.png"),
     RankBackgroundItem("rank_bg_underwater", "Underwater Reef", "Deep sea coral reef with glowing jellyfish", 250, "rank_bg_underwater.png"),
 
-    RankColorThemeItem("rank_theme_lofi", "Lofi Sunset Theme", "Purple and peach colors of a cozy sunset", 100, "#9370DB", "#FFA07A", "#4B0082"),
+    RankColorThemeItem("rank_theme_lofi", "Lofi Sunset Theme", "Purple and peach colours of a cosy sunset", 100, "#9370DB", "#FFA07A", "#4B0082"),
     RankColorThemeItem("rank_theme_deepsea", "Deep Sea Theme", "Teal and navy blues of the ocean depths", 100, "#008080", "#000080", "#00FFFF"),
     RankColorThemeItem("rank_theme_enchanted", "Enchanted Theme", "Lime greens and soft pinks of a fantasy grove", 100, "#32CD32", "#006400", "#FFB6C1"),
     RankColorThemeItem("rank_theme_crimson", "Royal Crimson Theme", "Deep reds and gold for a regal look", 100, "#DC143C", "#8B0000", "#FFD700"),

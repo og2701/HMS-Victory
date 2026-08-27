@@ -180,7 +180,7 @@ async def _report_hate_speech_timeout(
         title="Automated hate-speech timeout",
         description=(
             f"{message.author.mention} (`{message.author.id}`) triggered the "
-            f"normalized moderation filter in {message.channel.mention}."
+            f"normalised moderation filter in {message.channel.mention}."
         ),
         color=discord.Color.red(),
         timestamp=discord.utils.utcnow(),
@@ -189,10 +189,19 @@ async def _report_hate_speech_timeout(
     embed.add_field(name="Timeout", value=timeout_status, inline=True)
     embed.add_field(name="Message deletion", value=delete_status, inline=True)
     embed.add_field(name="Original message", value=_moderation_embed_value(message.content), inline=False)
-    embed.add_field(name="Normalized message", value=_moderation_embed_value(match.normalized_text), inline=False)
+    embed.add_field(name="Normalised message", value=_moderation_embed_value(match.normalized_text), inline=False)
     embed.add_field(name="Message link", value=f"[Jump to message]({message.jump_url})", inline=False)
 
-    await police_channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+    # The filter matches words rather than meaning, so lifting the timeout is the likeliest
+    # thing a human wants from this report - it goes first.
+    from lib.core.mod_actions import (
+        HATE_FILTER, ModAnalyseButton, ModBanButton, ModUntimeoutButton, action_view,
+    )
+    await police_channel.send(
+        embed=embed,
+        view=action_view(HATE_FILTER, message.author.id,
+                         only=(ModUntimeoutButton, ModAnalyseButton, ModBanButton)),
+        allowed_mentions=discord.AllowedMentions.none())
 
 
 async def handle_hate_speech_message(client, message) -> bool:

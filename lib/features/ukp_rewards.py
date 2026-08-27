@@ -1060,7 +1060,7 @@ _BENEFITS_DATA = [
 _BENEFITS_PERSONAL_RICH = {
     "812666688184909834": [
         "💼 <@{uid}>, you're holding **{bal:,} UKPence** with **{bonded:,}** in bonds. The state is not topping up your private pension.",
-        "💼 Claim denied, <@{uid}>. **{bal:,} UKPence** in the wallet while sitting on **{bonded:,}** in bonds. Pure capitalist behavior.",
+        "💼 Claim denied, <@{uid}>. **{bal:,} UKPence** in the wallet while sitting on **{bonded:,}** in bonds. Pure capitalist behaviour.",
     ],
     "822525776095608914": [
         "💼 Denied, Lord <@{uid}>. **{bal:,} UKPence** plus **{bonded:,}** in the family trust fund is well over the {threshold:,} line.",

@@ -109,14 +109,37 @@ def normalize_moderation_text(text: str) -> str:
     return re.sub(r"\s+", " ", "".join(chars)).strip()
 
 
+# Some of these words are a slur in one context and ordinary British English in another,
+# and "dyke" is the live one: Offa's Dyke and Devil's Dyke are landmarks, Dyke Road is in
+# Brighton, a van dyke is a beard, and Dick Van Dyke got somebody timed out for 24 hours
+# for saying his name. A hit inside one of these phrases is not a hit.
+_EXEMPT_CONTEXTS = (
+    re.compile(r"van\s*dyc?ke"),
+    re.compile(r"(?:offa|devil|wans|grim|bar)\s*s?\s*dyke"),
+    re.compile(r"dyke\s+(?:road|street|lane|hill|house|end|bridge|path|way|farm|valley)"),
+)
+
+
+def _exempt_spans(normalised: str) -> list[tuple[int, int]]:
+    spans = []
+    for pattern in _EXEMPT_CONTEXTS:
+        spans.extend(m.span() for m in pattern.finditer(normalised))
+    return spans
+
+
 def find_blocked_moderation_match(text: str) -> Optional[ModerationMatch]:
-    normalized = normalize_moderation_text(text)
+    normalised = normalize_moderation_text(text)
+    exempt = _exempt_spans(normalised)
     for label, pattern in _BLOCKED_PATTERNS:
-        match = pattern.search(normalized)
-        if match:
+        # finditer rather than search: an exempted hit must not hide a real one later in
+        # the same message, so "dyke road, you faggot" still gets caught.
+        for match in pattern.finditer(normalised):
+            start, end = match.span()
+            if any(a <= start and end <= b for a, b in exempt):
+                continue
             return ModerationMatch(
                 label=label,
                 matched_text=match.group(0),
-                normalized_text=normalized,
+                normalized_text=normalised,
             )
     return None

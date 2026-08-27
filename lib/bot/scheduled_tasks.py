@@ -123,7 +123,7 @@ async def daily_summary(client):
     metrics_data[yesterday_str] = day_metrics
 
     atomic_write_json(ECONOMY_METRICS_FILE, metrics_data, indent=4)
-    logger.info(f"Finalized economy metrics for {yesterday_str}: ChatRewards={day_metrics.get('chat_rewards_total', 'N/A')}, TotalCircEOD={total_circulation_at_eod}")
+    logger.info(f"Finalised economy metrics for {yesterday_str}: ChatRewards={day_metrics.get('chat_rewards_total', 'N/A')}, TotalCircEOD={total_circulation_at_eod}")
 
     if not os.path.exists(BALANCE_SNAPSHOT_DIR):
         try:
