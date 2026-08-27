@@ -22,9 +22,11 @@ BLOCKED_DOG_GIF_DHASHES = [
     0x120D33D8A4E0F1BC,
     0x100F33D8A4E0F1BC,
     0x120F33D8A4E4F1BC,
+    0x1C0D1359A4F0DCFC,
     0xAC0B075088E4F0BC,
     0xAC1B075088E4F0BC,
     0x73D989E4E0F194BC,  # WhatsApp / phone screenshot still JPEG
+    0x0F0F4CC495949CD4,  # Letterboxed widescreen screenshot
     # Zoomed / cropped head golden retriever
     0x21E4C799B8E0F482,
     0x27E1D8B2E0AC86C8,
@@ -63,6 +65,21 @@ def compute_frame_dhash(frame_img: Image.Image) -> int:
 def hamming_distance(h1: int, h2: int) -> int:
     """Number of differing bits between two 64-bit hashes."""
     return bin(h1 ^ h2).count("1")
+
+
+def trim_borders(im: Image.Image) -> Image.Image:
+    """Auto-crop solid borders / letterboxing black bars."""
+    try:
+        from PIL import ImageChops
+        bg = Image.new(im.mode, im.size, im.getpixel((0, 0)))
+        diff = ImageChops.difference(im, bg)
+        diff = ImageChops.add(diff, diff, 2.0, -100)
+        bbox = diff.getbbox()
+        if bbox:
+            return im.crop(bbox)
+    except Exception:
+        pass
+    return im
 
 
 def extract_frame_from_video_bytes(data: bytes) -> Image.Image | None:
@@ -108,13 +125,18 @@ def is_blocked_image_bytes(data: bytes) -> Tuple[bool, str]:
             if im is None:
                 return False, ""
 
-        # Test first frame
+        # Test first frame (raw and trimmed)
         im.seek(0)
-        h0 = compute_frame_dhash(im)
-        for target in BLOCKED_DOG_GIF_DHASHES:
-            dist = hamming_distance(h0, target)
-            if dist <= MAX_HAMMING_DISTANCE:
-                return True, f"Banned dog GIF visual hash match (dist={dist})"
+        candidates = [compute_frame_dhash(im)]
+        trimmed = trim_borders(im)
+        if trimmed.size != im.size:
+            candidates.append(compute_frame_dhash(trimmed))
+
+        for h in candidates:
+            for target in BLOCKED_DOG_GIF_DHASHES:
+                dist = hamming_distance(h, target)
+                if dist <= MAX_HAMMING_DISTANCE:
+                    return True, f"Banned dog GIF visual hash match (dist={dist})"
 
         # If animated, test another frame (e.g. frame 10)
         n_frames = getattr(im, "n_frames", 1)
