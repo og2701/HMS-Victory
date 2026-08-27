@@ -18,11 +18,17 @@ logger = logging.getLogger(__name__)
 # Known visual dHash fingerprints for blocked media
 # Target dog GIF (Golden retriever looking at camera / blinking slowly)
 BLOCKED_DOG_GIF_DHASHES = [
-    0x120D33D8A4E0F1BC,  # Original dog GIF frame 0
-    0x100F33D8A4E0F1BC,  # Re-encoded dog GIF frame 0
-    0x120F33D8A4E4F1BC,  # Original dog GIF frame 10
-    0xAC0B075088E4F0BC,  # "Live Jamie Reaction" dog thumbnail frame 0
-    0xAC1B075088E4F0BC,  # "Live Jamie Reaction" dog video frame 0
+    # Full frame / wide golden retriever
+    0x120D33D8A4E0F1BC,
+    0x100F33D8A4E0F1BC,
+    0x120F33D8A4E4F1BC,
+    0xAC0B075088E4F0BC,
+    0xAC1B075088E4F0BC,
+    # Zoomed / cropped head golden retriever
+    0x21E4C799B8E0F482,
+    0x27E1D8B2E0AC86C8,
+    0x63C8B6F06084C8D8,
+    0x23E0C69BB86086C0,
 ]
 
 BLOCKED_MEDIA_PATTERNS = [
