@@ -120,9 +120,22 @@ async def sweep(client, now=None):
 
     state = load_json_file(STATE_FILE) or {}
     first_run = not state
-    # Re-flagged with a later expiry counts as new; the same stamp does not.
-    new = {uid: info for uid, info in live.items()
-           if state.get(uid, {}).get("until") != info["until"]}
+    # An account flagged anew (or re-flagged in a later incident after expiration) counts
+    # as new; minor sliding-window bumps during the same active 24h incident do not.
+    new = {}
+    for uid, info in live.items():
+        prev = state.get(uid)
+        if not prev:
+            new[uid] = info
+        else:
+            prev_until = _parse(prev.get("until"))
+            curr_until = _parse(info.get("until"))
+            if prev_until is not None and curr_until is not None:
+                # If expiry moved by more than 12 hours, treat as a separate incident
+                if (curr_until - prev_until).total_seconds() > 12 * 3600:
+                    new[uid] = info
+            elif prev.get("until") != info.get("until"):
+                new[uid] = info
     save_json_file(STATE_FILE, live)
 
     took = time.monotonic() - started

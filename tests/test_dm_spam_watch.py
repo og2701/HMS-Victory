@@ -110,6 +110,26 @@ def test_a_new_flag_is_reported_once_and_not_again():
         os.path.exists(path) and os.remove(path)
 
 
+def test_sliding_window_extension_is_not_reported_twice():
+    """If a spammer continues DMing and Discord extends until by a few minutes,
+    it should not post a duplicate report during the same active session."""
+    path = _temp_state()
+    try:
+        first = (NOW + timedelta(hours=24)).isoformat()
+        c = FakeClient([[member(7, first, name="scammer")]])
+        new1 = _run(W.sweep(c, now=NOW))
+        assert list(new1) == ["7"] and len(c.channel.sent) == 1
+
+        # 15 min later, Discord nudged until by 15 min because user sent another DM
+        bumped = (NOW + timedelta(hours=24, minutes=15)).isoformat()
+        c2 = FakeClient([[member(7, bumped, name="scammer")]])
+        new2 = _run(W.sweep(c2, now=NOW + timedelta(minutes=15)))
+        assert new2 == {}, "sliding window bump caused a duplicate report"
+        assert c2.channel.sent == []
+    finally:
+        os.path.exists(path) and os.remove(path)
+
+
 def test_being_caught_a_second_time_is_reported_again():
     """State keyed on the expiry, not just the id: an account flagged again next month is
     news, and would otherwise be remembered as old."""
