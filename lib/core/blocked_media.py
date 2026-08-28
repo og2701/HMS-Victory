@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # --- Feature Toggles & Target Scope ---
 MEDIA_FILTER_ENABLED: bool = True           # Master switch for blocked dog media moderation
-AI_VISION_FALLBACK_ENABLED: bool = True     # AI Vision fallback via Gemini (active for targeted users)
+AI_VISION_FALLBACK_ENABLED: bool = False    # AI Vision fallback via Gemini (OFF: 100% local dHash only)
 TARGET_USER_IDS: set[int] = {285860055570579457}  # Enforced exclusively on Shuto (285860055570579457)
 
 
