@@ -2242,8 +2242,11 @@ def test_holding_wings_bonuses_and_banner():
     assert E.homestead_bonus(p, "xp") == 0.05
     hs["built"]["observatory"] = "2000-01-02"
     assert E.homestead_bonus(p, "sneak") == 3
-    # the war room buys an extra exchange on the hunt march
+    # the war room grants a second daily march on the world boss hunt
     assert "war_room" in D.HOMESTEAD and D.HOMESTEAD["war_room"]["requires"] == "armoury"
+    assert E.wb_max_marches(p) == 1
+    hs["built"]["war_room"] = "2000-01-02"
+    assert E.wb_max_marches(p) == 2
     # banners are cosmetic, gated on the hall, and shown once chosen
     assert E.set_banner(p, "wolf") is None
     assert E.house_banner(p)["emoji"] == "🐺"

@@ -4150,15 +4150,28 @@ def wb_boss(store: dict = None) -> dict:
     return D.WORLD_BOSSES[store["boss"]]
 
 
-def wb_marched_today(profile, store: dict = None) -> bool:
+def wb_max_marches(profile) -> int:
+    """Maximum marches allowed per UK day (1 base, 2 with The War Room)."""
+    return 2 if homestead_built(profile, "war_room") else 1
+
+
+def wb_marches_today(profile, store: dict = None) -> int:
+    """Number of times the player has marched on the World Boss today."""
     store = store or world_boss()
     mine = store["strikes"].get(str(profile["user_id"])) or {}
-    return _today_str() in (mine.get("days") or [])
+    days = mine.get("days") or []
+    today = _today_str()
+    return sum(1 for d in days if d == today)
+
+
+def wb_marched_today(profile, store: dict = None) -> bool:
+    """True if the player has exhausted their available marches for today."""
+    return wb_marches_today(profile, store) >= wb_max_marches(profile)
 
 
 def wb_available(profile, store: dict = None) -> bool:
     """A wave is always live (a kill summons the next), so the only gates are
-    the level floor and the one-march-per-day rule."""
+    the level floor and the daily march allowance."""
     store = store or world_boss()
     return (level(profile) >= WB_MIN_LEVEL and store["hp"] > 0
             and not wb_marched_today(profile, store))
@@ -4197,7 +4210,7 @@ def wb_march(profile) -> tuple:
     hearts = heart_max(profile)
     dealt = 0
     lines = [boss["arrive"]]
-    exchanges = WB_EXCHANGES + (1 if homestead_built(profile, "war_room") else 0)
+    exchanges = WB_EXCHANGES
     # every boss fights in its own voice (hit/miss/answer pools drawn from data's
     # own rng, so the exchange dice stay untouched); the beats mark the pool's
     # story-turns once per hunt-crossing

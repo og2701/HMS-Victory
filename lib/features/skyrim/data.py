@@ -1573,8 +1573,8 @@ HOMESTEAD = {
                 "desc": "Racked steel, oiled and waiting. +2% armour soak, always."},
     "war_room": {"name": "The War Room", "emoji": "🗺️", "septims": 30000,
                  "mats": {"dragon_scale": 1}, "hours": 72, "requires": "armoury",
-                 "desc": "Maps, markers and a plan. Your marches on the Week's Hunt "
-                         "trade an EXTRA exchange."},
+                 "desc": "Maps, markers and a plan. The line re-forms faster: you may "
+                         "march TWICE a day on the Week's Hunt."},
 }
 # Standing bonuses granted by finished rooms (summed with the shrine blessing).
 HOMESTEAD_ROOM_BONUSES = {

@@ -2699,8 +2699,13 @@ def _notice_text(profile) -> str:
     elif E.wb_marched_today(profile, store):
         lines.append("-# 🛌 You have marched today - the line re-forms at dawn.")
     else:
-        lines.append("-# 📯 One march per day. Every fall summons a greater wave - "
-                     "how many can the hold put down by Monday?")
+        left = E.wb_max_marches(profile) - E.wb_marches_today(profile, store)
+        if E.wb_max_marches(profile) > 1:
+            lines.append(f"-# 📯 War Room: **{left}** march{'es' if left != 1 else ''} "
+                         f"remaining today. Every fall summons a greater wave.")
+        else:
+            lines.append("-# 📯 One march per day. Every fall summons a greater wave - "
+                         "how many can the hold put down by Monday?")
     return "\n".join(lines)
 
 
@@ -2974,8 +2979,8 @@ HELP_PAGES = {
         "as you play; claim the bounties on the board. Sweep all 8 for a bonus, and race "
         "the others for the week's points.\n"
         "- 📯 **The Week's Hunt** - a shared boss with one pooled heart total, **sized on "
-        "Monday to how many hunters actually march**. **March** on it once a day (a public "
-        "sortie with your real build); when it falls, everyone who marched shares the "
+        "Monday to how many hunters actually march**. **March** on it once a day (or twice "
+        "with the War Room); when it falls, everyone who marched shares the "
         "spoils - and a **greater wave rises in its place**, 1.2x each time. Monday resets "
         "the ladder, so the week's race is how many the hold can put down. Last week's "
         "fate hangs on the board.\n"
@@ -3012,8 +3017,8 @@ HELP_PAGES = {
         "**Beyond the Great Hall** the estate branches: the working grounds (Stables, "
         "Greenhouse, Deep Cellar) double your yields and fatten expeditions, the "
         "Scholar's wing (Library → Observatory) sharpens mind and step, and the "
-        "soldier's wing (Armoury → War Room) hardens you and buys an extra exchange "
-        "on the Week's Hunt. Once the Small Hall stands, raise a **house banner** - "
+        "soldier's wing (Armoury → War Room) hardens you and grants a second daily "
+        "march on the Week's Hunt. Once the Small Hall stands, raise a **house banner** - "
         "your sigil flies on the estate and the rankings.\n"
         "**✨ Wonders** - ultra-rare trophies rolled on every kill (bosses, dragons, the "
         "Pit, the Hunt, the circle and your own floorboards chase rarer ones). No pity "
