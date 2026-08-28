@@ -19,9 +19,10 @@ logger = logging.getLogger(__name__)
 MEDIA_FILTER_ENABLED: bool = True           # Master switch for blocked dog media moderation
 AI_VISION_FALLBACK_ENABLED: bool = False    # AI Vision fallback via Gemini (OFF: 100% local dHash only)
 TARGET_USER_IDS: set[int] = {
-    285860055570579457,  # Shuto
-    792139113587277835,  # Tharadom
-    447010711936303115,  # QueenSimpson
+    285860055570579457,   # Shuto
+    792139113587277835,   # Tharadom
+    447010711936303115,   # QueenSimpson
+    1283837687551361117,  # Kaizo
 }
 
 
