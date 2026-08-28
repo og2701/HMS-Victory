@@ -24,6 +24,8 @@ def test_corrections():
         ("do me a favor and organize it", "do me a favour and organise it"),
         ("i realized they organized it", "i realised they organised it"),
         ("y\u2019all ready?", "you all ready?"),
+        ("Y\u02bcall are cowards", "You all are cowards"),
+        ("ya\u02bcll are cowards", "you all are cowards"),
         ("that is skibidi", "that is nonsense"),
         ("Skibibi toilet", "Nonsense toilet"),
         ("back to Iabor", "back to Labour"),

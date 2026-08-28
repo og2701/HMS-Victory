@@ -83,8 +83,15 @@ AMERICAN_TO_BRITISH = {
     "ya'll": "you all",
     "yall": "you all",
     "y'all": "you all",
-    # The rule blocks the curly apostrophe too, which is what phones type
+    # Unicode apostrophe variants (curly \u2019, modifier \u02bc, left-quote \u2018, grave, etc.)
     "y\u2019all": "you all",
+    "y\u02bcall": "you all",
+    "y\u2018all": "you all",
+    "y`all": "you all",
+    "ya\u2019ll": "you all",
+    "ya\u02bcll": "you all",
+    "ya\u2018ll": "you all",
+    "ya`ll": "you all",
     "yogurt": "yoghurt",
     "yogurts": "yoghurts",
     "zucchini": "courgette",
