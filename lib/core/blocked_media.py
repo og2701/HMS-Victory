@@ -52,6 +52,8 @@ BLOCKED_DOG_GIF_DHASHES = [
     0xF0E2E0D8BAB060FC,
     0x60C8A486317878E8,
     0xC884A496317970F8,
+    # Discord Sticker variation
+    0x6BE08CB6B2F0E084,  # "sigh" Discord Sticker
     # Zoomed / cropped head golden retriever
     0x21E4C799B8E0F482,
     0x27E1D8B2E0AC86C8,
@@ -69,6 +71,7 @@ BLOCKED_MEDIA_PATTERNS = [
     "dMgAnsrp",
     "LGLBS5P7",
     "zi7PimsR",
+    "1542886924174360719",
 ]
 
 MAX_HAMMING_DISTANCE = 6
@@ -293,6 +296,36 @@ async def check_blocked_media(client: discord.Client, message: discord.Message) 
             except Exception:
                 pass
             return True
+
+    # Check stickers
+    sticker_items = getattr(message, "stickers", []) or getattr(message, "sticker_items", [])
+    for sticker in sticker_items:
+        s_id = str(getattr(sticker, "id", ""))
+        s_name = str(getattr(sticker, "name", ""))
+        s_url = getattr(sticker, "url", f"https://media.discordapp.net/stickers/{s_id}.png") if s_id else ""
+        if s_id in BLOCKED_MEDIA_PATTERNS or is_blocked_url_or_text(s_name) or is_blocked_url_or_text(s_url):
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            return True
+
+        if s_url:
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(s_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                        if resp.status == 200:
+                            s_data = await resp.read()
+                            blocked, reason = is_blocked_image_bytes(s_data)
+                            if blocked:
+                                try:
+                                    await message.delete()
+                                except Exception:
+                                    pass
+                                return True
+            except Exception as se:
+                logger.debug("Failed checking sticker: %s", se)
 
     # Check attachments
     for attachment in message.attachments:
