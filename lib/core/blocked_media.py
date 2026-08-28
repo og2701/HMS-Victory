@@ -15,9 +15,10 @@ from config import CHANNELS
 
 logger = logging.getLogger(__name__)
 
-# --- Feature Toggles ---
-MEDIA_FILTER_ENABLED: bool = False          # Master switch for blocked dog media moderation (OFF)
-AI_VISION_FALLBACK_ENABLED: bool = False    # AI Vision fallback via Gemini (OFF: 100% local dHash only)
+# --- Feature Toggles & Target Scope ---
+MEDIA_FILTER_ENABLED: bool = True           # Master switch for blocked dog media moderation
+AI_VISION_FALLBACK_ENABLED: bool = True     # AI Vision fallback via Gemini (active for targeted users)
+TARGET_USER_IDS: set[int] = {285860055570579457}  # Enforced exclusively on Shuto (285860055570579457)
 
 
 # Known visual dHash fingerprints for blocked media
@@ -263,6 +264,10 @@ async def check_blocked_media(client: discord.Client, message: discord.Message) 
         return False
 
     if not MEDIA_FILTER_ENABLED:
+        return False
+
+    # Only enforce against targeted users (e.g. Shuto)
+    if TARGET_USER_IDS and message.author.id not in TARGET_USER_IDS:
         return False
 
     # Check content
