@@ -21,6 +21,7 @@ AI_VISION_FALLBACK_ENABLED: bool = False    # AI Vision fallback via Gemini (OFF
 TARGET_USER_IDS: set[int] = {
     285860055570579457,  # Shuto
     792139113587277835,  # Tharadom
+    447010711936303115,  # QueenSimpson
 }
 
 
