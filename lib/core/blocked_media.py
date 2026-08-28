@@ -56,8 +56,9 @@ BLOCKED_DOG_GIF_DHASHES = [
     0xF0E2E0D8BAB060FC,
     0x60C8A486317878E8,
     0xC884A496317970F8,
-    # Discord Sticker variation
+    # Discord Sticker variations
     0x6BE08CB6B2F0E084,  # "sigh" Discord Sticker
+    0x74EAD7B331F1E4F8,  # "sighflipped" Discord Sticker
     # Zoomed / cropped head golden retriever
     0x21E4C799B8E0F482,
     0x27E1D8B2E0AC86C8,
@@ -75,7 +76,9 @@ BLOCKED_MEDIA_PATTERNS = [
     "dMgAnsrp",
     "LGLBS5P7",
     "zi7PimsR",
-    "1542886924174360719",
+    "1542886924174360719",  # sigh sticker
+    "1542918746887159819",  # sighflipped sticker
+    "sighflipped",
 ]
 
 MAX_HAMMING_DISTANCE = 6
