@@ -16,7 +16,7 @@ from config import CHANNELS
 logger = logging.getLogger(__name__)
 
 # --- Feature Toggles ---
-MEDIA_FILTER_ENABLED: bool = True           # Master switch for blocked dog media moderation
+MEDIA_FILTER_ENABLED: bool = False          # Master switch for blocked dog media moderation (OFF)
 AI_VISION_FALLBACK_ENABLED: bool = False    # AI Vision fallback via Gemini (OFF: 100% local dHash only)
 
 
