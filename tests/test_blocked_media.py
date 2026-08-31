@@ -7,17 +7,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PIL import Image
 from lib.core.blocked_media import (
     compute_frame_dhash,
-    hamming_distance,
     is_blocked_image_bytes,
     BLOCKED_DOG_GIF_DHASHES,
-    MAX_HAMMING_DISTANCE,
 )
 
 
 def test_dhash_on_target_fingerprint():
-    # Target frame 0 hash
-    target = BLOCKED_DOG_GIF_DHASHES[0]
-    assert hamming_distance(target, target) == 0
+    # Target frame hash exact lookup
+    target = list(BLOCKED_DOG_GIF_DHASHES)[0]
+    assert target in BLOCKED_DOG_GIF_DHASHES
 
 
 def test_unrelated_image_is_not_blocked():

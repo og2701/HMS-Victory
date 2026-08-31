@@ -26,10 +26,9 @@ TARGET_USER_IDS: set[int] = {
 }
 
 
-# Known visual dHash fingerprints for blocked media
-# Target dog GIF (Golden retriever looking at camera / blinking slowly)
-BLOCKED_DOG_GIF_DHASHES = [
-    # Full frame / wide golden retriever
+# Known visual dHash fingerprints for blocked media (exact matches only)
+BLOCKED_DOG_GIF_DHASHES: set[int] = {
+    # Full frame / wide golden retriever variations
     0x120D33D8A4E0F1BC,
     0x100F33D8A4E0F1BC,
     0x120F33D8A4E4F1BC,
@@ -39,11 +38,7 @@ BLOCKED_DOG_GIF_DHASHES = [
     0x73D989E4E0F194BC,  # WhatsApp / phone screenshot still JPEG
     0x0F0F4CC495949CD4,  # Letterboxed widescreen screenshot
     0x74EAD6B233F1F0F8,  # Cropped square screenshot
-    0x0F1370D89924E4F0,  # Center square crop
-    0x0A1C0F137098A4E4,  # Top 70% crop
-    0x341F0F13D09C2462,  # Face region crop
     0xF08817596171D8A4,  # Top meme caption full frame
-    0x0F71496571518461,  # Top meme caption body crop
     # Phone / iOS Screen Recording captures
     0x35E4C799B8E0B283,
     0x63E192B2606C82C8,
@@ -60,12 +55,7 @@ BLOCKED_DOG_GIF_DHASHES = [
     # Discord Sticker variations
     0x6BE08CB6B2F0E084,  # "sigh" Discord Sticker
     0x74EAD7B331F1E4F8,  # "sighflipped" Discord Sticker
-    # Zoomed / cropped head golden retriever
-    0x21E4C799B8E0F482,
-    0x27E1D8B2E0AC86C8,
-    0x63C8B6F06084C8D8,
-    0x23E0C69BB86086C0,
-]
+}
 
 BLOCKED_MEDIA_PATTERNS = [
     "golden-retriever-dog",
@@ -82,7 +72,6 @@ BLOCKED_MEDIA_PATTERNS = [
     "sighflipped",
 ]
 
-MAX_HAMMING_DISTANCE = 6
 MAX_ATTACHMENT_SCAN_SIZE = 15 * 1024 * 1024  # 15 MB
 
 
@@ -96,48 +85,6 @@ def compute_frame_dhash(frame_img: Image.Image) -> int:
         for col in range(8):
             diff.append(raw[row_offset + col] > raw[row_offset + col + 1])
     return int("".join("1" if b else "0" for b in diff), 2)
-
-
-def hamming_distance(h1: int, h2: int) -> int:
-    """Number of differing bits between two 64-bit hashes."""
-    return bin(h1 ^ h2).count("1")
-
-
-def trim_borders(im: Image.Image) -> Image.Image:
-    """Auto-crop solid borders / letterboxing black bars."""
-    try:
-        from PIL import ImageChops
-        bg = Image.new(im.mode, im.size, im.getpixel((0, 0)))
-        diff = ImageChops.difference(im, bg)
-        diff = ImageChops.add(diff, diff, 2.0, -100)
-        bbox = diff.getbbox()
-        if bbox:
-            return im.crop(bbox)
-    except Exception:
-        pass
-    return im
-
-
-def generate_multi_scale_crops(im: Image.Image) -> list[Image.Image]:
-    """Generate multi-scale sub-windows (center, quadrants, top, face) to catch arbitrary crops."""
-    w, h = im.size
-    crops = [im]
-    if w < 50 or h < 50:
-        return crops
-    # 1. Center crop
-    min_dim = min(w, h)
-    cx, cy = (w - min_dim) // 2, (h - min_dim) // 2
-    crops.append(im.crop((cx, cy, cx + min_dim, cy + min_dim)))
-    # 2. Quadrants / Halves
-    crops.append(im.crop((0, 0, w, int(h * 0.65))))  # Top 65%
-    crops.append(im.crop((0, int(h * 0.30), w, h)))  # Bottom 70% (below top captions)
-    crops.append(im.crop((0, 0, int(w * 0.65), h)))  # Left 65%
-    crops.append(im.crop((int(w * 0.35), 0, w, h)))  # Right 65%
-    # 3. Inner 80% window
-    crops.append(im.crop((int(w * 0.1), int(h * 0.1), int(w * 0.9), int(h * 0.9))))
-    # 4. Top-center face region
-    crops.append(im.crop((int(w * 0.15), 0, int(w * 0.85), int(h * 0.75))))
-    return crops
 
 
 def extract_frames_from_video_bytes(data: bytes) -> list[Image.Image]:
@@ -176,18 +123,19 @@ def extract_frames_from_video_bytes(data: bytes) -> list[Image.Image]:
 
 
 def is_blocked_image_bytes(data: bytes) -> Tuple[bool, str]:
-    """Inspect raw image/gif/video data using multi-scale perceptual hashing."""
+    """Inspect raw image/gif/video data using exact perceptual hash matching."""
     if not data:
         return False, ""
     try:
+        frames_to_test = []
         try:
             im = Image.open(io.BytesIO(data))
-            frames_to_test = [im]
+            frames_to_test.append(im)
             n_frames = getattr(im, "n_frames", 1)
-            if n_frames > 10:
+            if n_frames > 5:
                 try:
                     im2 = Image.open(io.BytesIO(data))
-                    im2.seek(10)
+                    im2.seek(min(10, n_frames - 1))
                     frames_to_test.append(im2)
                 except Exception:
                     pass
@@ -197,17 +145,9 @@ def is_blocked_image_bytes(data: bytes) -> Tuple[bool, str]:
                 return False, ""
 
         for frame_idx, frame_img in enumerate(frames_to_test):
-            trimmed = trim_borders(frame_img)
-            sub_crops = generate_multi_scale_crops(trimmed)
-            if trimmed.size != frame_img.size:
-                sub_crops.extend(generate_multi_scale_crops(frame_img))
-
-            for crop_img in sub_crops:
-                h = compute_frame_dhash(crop_img)
-                for target in BLOCKED_DOG_GIF_DHASHES:
-                    dist = hamming_distance(h, target)
-                    if dist <= MAX_HAMMING_DISTANCE:
-                        return True, f"Banned dog GIF visual hash match (frame {frame_idx} dist={dist})"
+            h = compute_frame_dhash(frame_img)
+            if h in BLOCKED_DOG_GIF_DHASHES:
+                return True, f"Banned dog GIF exact visual hash match ({hex(h)})"
     except Exception as e:
         logger.debug("Could not parse image for visual hash check: %s", e)
     return False, ""
