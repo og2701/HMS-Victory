@@ -230,6 +230,43 @@ def test_pictures_can_be_switched_off():
         config.GLASS_IMAGE_ENABLED = old
 
 
+# --- the bank has to be able to see the money -----------------------------------------
+def test_every_money_reason_says_glass_bridge():
+    """BankManager routes a stake or payout to a game by matching the reason string. A
+    reason that does not say "Glass Bridge" still moves the UKP but lands in the bank
+    unattributed, so /bank-status and the casino totals silently under-count it - which is
+    exactly what happened for the first few crossings."""
+    import ast
+    import pathlib as _p
+    src = _p.Path("commands/economy/glass_bridge.py").read_text()
+    tree = ast.parse(src)
+    reasons = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+        if fn not in ("remove_bb", "credit_from_bank"):
+            continue
+        for kw in node.keywords:
+            if kw.arg == "reason" and isinstance(kw.value, ast.Constant):
+                reasons.append(kw.value.value)
+        for arg in node.args[2:]:
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                reasons.append(arg.value)
+    assert reasons, "found no stake or payout calls to check"
+    for r in reasons:
+        assert "Glass Bridge" in r, f"the bank cannot attribute {r!r}"
+
+
+def test_the_bank_routes_the_reason_to_the_glass_columns():
+    from lib.economy.bank_manager import BankManager
+    amounts = BankManager._game_amounts(500, "Glass Bridge bet")
+    assert sum(amounts) == 500, "the stake was not attributed to exactly one game"
+    assert amounts[-1] == 500, "it did not land in the glass column"
+    # and nothing else claims it
+    assert BankManager._game_amounts(500, "Chest bet")[-1] == 0
+
+
 def _run_all():
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]

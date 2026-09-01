@@ -370,6 +370,8 @@ def init_db():
                 total_blockade_out INTEGER NOT NULL DEFAULT 0,
                 total_darts_in INTEGER NOT NULL DEFAULT 0,
                 total_darts_out INTEGER NOT NULL DEFAULT 0,
+                total_glass_in INTEGER NOT NULL DEFAULT 0,
+                total_glass_out INTEGER NOT NULL DEFAULT 0,
                 last_updated INTEGER NOT NULL DEFAULT 0
             )
         ''')
@@ -390,7 +392,8 @@ def init_db():
                      "total_penalty_in", "total_penalty_out",
                      "total_chest_in", "total_chest_out",
                      "total_blockade_in", "total_blockade_out",
-                     "total_darts_in", "total_darts_out"):
+                     "total_darts_in", "total_darts_out",
+                     "total_glass_in", "total_glass_out"):
             try:
                 c.execute(f"ALTER TABLE bank ADD COLUMN {_col} INTEGER NOT NULL DEFAULT 0")
             except sqlite3.OperationalError:
