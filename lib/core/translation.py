@@ -138,7 +138,7 @@ async def translate_and_send(
 
     try:
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5.4",
             messages=[
                 {
                     "role": "system",
