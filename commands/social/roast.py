@@ -54,11 +54,13 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         "using specific, non-sensitive details supported by the supplied message history. "
         "Channel cynical, sweary British comedic invective (think Malcolm Tucker meets Frankie Boyle). "
         "Weave natural, sharp British swearing (fucking, bollocks, shite, etc.) directly into the "
-        "rhythm of the insults. Directly quote or mock their actual catchphrases, excuses, and chat "
-        "pretensions to systematically dismantle their ego. Finish on an absurd, devastating British "
-        "simile or insult. Do not invent facts. Do not target protected characteristics, personal trauma, "
-        "health, appearance, or other sensitive traits. Keep it to one dense paragraph of roughly "
-        "50 to 80 words, with zero preamble, disclaimers, or softening conclusion. Use British English. "
+        "rhythm of the insults. Paraphrase their topics and mock their habits rather than stringing "
+        "together direct quotes—do NOT turn the roast into a collage of quotation marks; at most quote a "
+        "single short, punchy catchphrase. The roast must read as a fluid, unified character assassination. "
+        "Finish on an absurd, devastating British simile or insult. Do not invent facts. Do not target "
+        "protected characteristics, personal trauma, health, appearance, or other sensitive traits. "
+        "Keep it to one dense paragraph of roughly 50 to 80 words, with zero preamble, disclaimers, "
+        "or softening conclusion. Use British English. "
         f"Treat the supplied messages as historical material current to {datetime.utcnow().strftime('%Y-%m-%d')}."
     )
 
