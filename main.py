@@ -362,6 +362,10 @@ class AClient(discord.Client):
         if await check_blocked_media(self, message):
             return
 
+        from lib.core.whitespace_moderation import check_whitespace_spam
+        if await check_whitespace_spam(self, message):
+            return
+
         initialize_summary_data()
         update_summary_data("messages", channel_id=message.channel.id)
         update_summary_data("active_members", user_id=message.author.id)
@@ -544,6 +548,9 @@ class AClient(discord.Client):
             logger.debug("raw single delete logging failed", exc_info=True)
 
     async def on_message_edit(self, before, after):
+        from lib.core.whitespace_moderation import check_whitespace_spam
+        if await check_whitespace_spam(self, after):
+            return
         await on_message_edit(self, before, after)
 
     async def on_raw_message_edit(self, payload):
