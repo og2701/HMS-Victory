@@ -79,7 +79,14 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         summary = response.choices[0].message.content.strip()
         header = (f"🔥 {user.mention} 🔥\n"
                   f"-# roasted at {interaction.user.display_name}'s request\n\n")
-        await interaction.followup.send(
+        
+        # Delete the deferred placeholder so the roast lands as a brand new message at the bottom of chat
+        try:
+            await interaction.delete_original_response()
+        except Exception:
+            pass
+
+        await channel.send(
             header + summary,
             allowed_mentions=AllowedMentions(users=[user], everyone=False,
                                              roles=False, replied_user=False))
