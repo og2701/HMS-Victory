@@ -142,18 +142,17 @@ def test_the_board_never_shows_which_side_is_safe():
     assert "left" not in body.lower() or "Panel" in body
 
 
-def test_cash_out_is_not_offered_before_anything_is_banked():
-    fresh = G.build_glass_layout(_game())
-    labels = [getattr(c, "label", "") for row in fresh.children
-              for c in getattr(row, "children", [])]
-    assert not any("Cash Out" in (l or "") for l in labels), labels
+def _labels(game):
+    view, _files = G.build_glass_layout(game)
+    return [getattr(c, "label", "") for row in view.children
+            for c in getattr(row, "children", [])]
 
+
+def test_cash_out_is_not_offered_before_anything_is_banked():
+    assert not any("Cash Out" in (l or "") for l in _labels(_game()))
     g = _game(bridge=[G.LEFT] * 8)
     g.take_step(G.LEFT)
-    after = G.build_glass_layout(g)
-    labels = [getattr(c, "label", "") for row in after.children
-              for c in getattr(row, "children", [])]
-    assert any("Cash Out" in (l or "") for l in labels), labels
+    assert any("Cash Out" in (l or "") for l in _labels(g))
 
 
 def test_the_walkway_shows_progress_and_the_panel_that_went():
@@ -167,10 +166,68 @@ def test_the_walkway_shows_progress_and_the_panel_that_went():
 def test_a_finished_board_offers_play_again_and_no_way_to_step():
     g = _game(bridge=[G.LEFT] * 8)
     g.take_step(G.RIGHT)
-    labels = [getattr(c, "label", "") for row in G.build_glass_layout(g).children
-              for c in getattr(row, "children", [])]
+    labels = _labels(g)
     assert "Play Again" in labels
     assert not any("Panel" in (l or "") for l in labels), labels
+
+
+# --- the picture ----------------------------------------------------------------------
+def _png(game):
+    try:
+        return G.draw_board(game).getvalue()
+    except ModuleNotFoundError:
+        return None            # no Pillow on this machine
+
+
+def test_the_board_draws_in_every_state():
+    """A board that will not draw costs somebody their crossing, so all four states have to
+    survive the renderer, including the one where nothing has happened yet."""
+    states = []
+    fresh = _game(bridge=[G.LEFT] * 8)
+    states.append(("fresh", fresh))
+    mid = _game(bridge=[G.LEFT] * 8)
+    _walk(mid, [G.LEFT] * 3)
+    states.append(("mid", mid))
+    fell = _game(bridge=[G.LEFT] * 8)
+    fell.take_step(G.RIGHT)
+    states.append(("fell", fell))
+    done = _game(bridge=[G.LEFT] * 8)
+    _walk(done, [G.LEFT] * 8)
+    states.append(("across", done))
+    for name, g in states:
+        data = _png(g)
+        if data is None:
+            print("      (skipped: no Pillow)")
+            return
+        assert data[:8] == b"\x89PNG\r\n\x1a\n", f"{name} did not render a PNG"
+        assert len(data) < 60_000, f"{name} is {len(data)} bytes - the upload is the slow leg"
+
+
+def test_a_render_failure_falls_back_to_text_rather_than_raising(monkeypatch=None):
+    """The picture is a nicety; the crossing is the game."""
+    g = _game()
+    real = G.draw_board
+    G.draw_board = lambda _g: (_ for _ in ()).throw(RuntimeError("no fonts"))
+    try:
+        files, fname = G.board_file(g)
+        assert files == [] and fname is None
+        view, files = G.build_glass_layout(g)
+        assert files == []
+        assert "🪟" in G._status_text(g, walkway=True)
+    finally:
+        G.draw_board = real
+
+
+def test_pictures_can_be_switched_off():
+    import config
+    old = getattr(config, "GLASS_IMAGE_ENABLED", True)
+    config.GLASS_IMAGE_ENABLED = False
+    try:
+        assert G.board_file(_game()) == ([], None)
+        # with no picture the text panel has to carry the walkway itself
+        assert "🟦" in G._status_text(_game(), walkway=True)
+    finally:
+        config.GLASS_IMAGE_ENABLED = old
 
 
 def _run_all():

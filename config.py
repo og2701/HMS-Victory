@@ -149,6 +149,7 @@ CRASH_GROWTH = 1.15          # multiplier ×= this each Sail On (~2x in 5 pushes
 # that is 1.92x rising to 184.68x across, and the edge is the same wherever you stop, so
 # there is no exploitable place to get off.
 GLASS_ENABLED = True
+GLASS_IMAGE_ENABLED = True   # PIL-drawn board; off falls back to the text walkway
 GLASS_MIN_BET = 5
 GLASS_MAX_BET = 500          # 184x top multiplier makes this the deepest bank exposure
 GLASS_STEPS = 8              # pairs of panels between you and the far side

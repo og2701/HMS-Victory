@@ -23,6 +23,7 @@ the board. Rolling per step would be indistinguishable to the player but means t
 is not a fixed thing they are crossing, and a resumed game after a restart could silently
 be a different bridge.
 """
+import io
 import logging
 import random
 import uuid
@@ -157,6 +158,181 @@ def save_game(game: GlassBridgeGame):
 
 
 # ---------------------------------------------------------------------------
+# The board picture
+# ---------------------------------------------------------------------------
+# Drawn with PIL rather than the HTML->Chrome path the felt-table games use. A crossing
+# redraws on every panel - up to eight times a game, and again on Play Again - while a
+# blackjack table redraws a handful of times. Chrome renders share one global
+# Semaphore(1) with slots, rank cards and the summaries, so each redraw would queue
+# behind whatever else the casino was doing. Straight PIL takes no lock and starts no
+# browser (the crossword board went the same way, for the same reason).
+_FONT_CANDIDATES = {
+    "bold": (
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    ),
+    "regular": (
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+    ),
+}
+_font_cache = {}
+
+_INK = "#e8edf7"
+_DIM = "#7b879c"
+
+
+def _font(weight: str, size: int):
+    """A cached truetype face, falling back to PIL's bitmap default if none is installed -
+    the board still draws, it just looks plainer."""
+    key = (weight, size)
+    if key in _font_cache:
+        return _font_cache[key]
+    from PIL import ImageFont
+    face = None
+    for path in _FONT_CANDIDATES[weight]:
+        try:
+            face = ImageFont.truetype(path, size)
+            break
+        except Exception:
+            continue
+    if face is None:
+        face = ImageFont.load_default()
+    _font_cache[key] = face
+    return face
+
+
+def _pane(dr, box, fill, edge, *, cracked=False, glow=None):
+    """One glass panel: a rounded pane with a highlight streak, optionally shattered."""
+    x0, y0, x1, y1 = box
+    if glow:
+        dr.rounded_rectangle([x0 - 3, y0 - 3, x1 + 3, y1 + 3], 10, outline=glow, width=3)
+    dr.rounded_rectangle(box, 8, fill=fill, outline=edge, width=2)
+    # a diagonal highlight, so the panes read as glass rather than as tiles
+    dr.line([(x0 + 8, y1 - 10), (x1 - 14, y0 + 8)], fill=edge, width=2)
+    if cracked:
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        for dx, dy in ((-1, -0.7), (1, -0.6), (-0.9, 0.8), (1, 0.9), (0.2, -1), (-0.2, 1)):
+            dr.line([(cx, cy), (cx + dx * (x1 - x0) / 2, cy + dy * (y1 - y0) / 2)],
+                    fill="#ff5b5b", width=2)
+        dr.ellipse([cx - 4, cy - 4, cx + 4, cy + 4], fill="#ff5b5b")
+
+
+def draw_board(game: "GlassBridgeGame"):
+    """The crossing as a PNG. Left panels on the top row, right on the bottom, one column
+    per pair, the far side on the right."""
+    from PIL import Image, ImageDraw
+
+    steps = _steps()
+    CW, GAP, PAD = 74, 10, 44            # column width, gap, left/right padding
+    LANE = 22                            # room the L / R lane labels sit in
+    TITLE_Y, SUB_Y = 14, 46              # header baselines, above where the panels start
+    PH, MID = 62, 26                     # panel height, gap between the two rows
+    W = PAD * 2 + steps * CW + (steps - 1) * GAP + 96
+    HEAD, FOOT = 84, 54
+    H = HEAD + PH * 2 + MID + FOOT + PAD
+
+    img = Image.new("RGB", (W, H), "#080c16")
+    dr = ImageDraw.Draw(img)
+    f_head, f_sub = _font("bold", 26), _font("regular", 15)
+    f_mult, f_num = _font("bold", 15), _font("regular", 13)
+
+    # header
+    if game.state == "over" and game.outcome == "lose":
+        title, colour = "The glass went", "#ff5b5b"
+    elif game.across():
+        title, colour = "Across!", "#3ddc84"
+    elif game.state == "over":
+        title, colour = "Cashed out", "#3ddc84"
+    else:
+        title, colour = f"Panel {game.step + 1} of {steps}", "#7fb2ff"
+    dr.text((PAD - LANE, TITLE_Y), "THE GLASS BRIDGE", font=f_head, fill=_INK)
+    dr.text((PAD - LANE, SUB_Y), title, font=f_sub, fill=colour)
+
+    # After a fall the held figure is gone, and showing it reads as though they still
+    # have it - the sting is that they were holding it a moment ago.
+    if game.state == "over" and game.outcome == "lose":
+        right = f"lost {game.bet:,} UKP"
+    elif game.state == "over":
+        right = f"banked {game.payout:,} UKP  ({game.multiplier():.2f}x)"
+    elif game.step:
+        right = f"{game.current_payout():,} UKP  ({game.multiplier():.2f}x)"
+    else:
+        right = "nothing banked yet"
+    dr.text((W - PAD + LANE, SUB_Y), right, font=f_sub, fill=_DIM, anchor="ra")
+    dr.text((W - PAD + LANE, TITLE_Y + 4), f"{game.bet:,} staked", font=f_sub,
+            fill=_DIM, anchor="ra")
+
+    top_y = HEAD
+    bot_y = HEAD + PH + MID
+    dr.text((PAD - 14, top_y + PH / 2), "L", font=f_mult, fill=_DIM, anchor="rm")
+    dr.text((PAD - 14, bot_y + PH / 2), "R", font=f_mult, fill=_DIM, anchor="rm")
+
+    for i in range(steps):
+        x0 = PAD + i * (CW + GAP)
+        x1 = x0 + CW
+        top, bot = (x0, top_y, x1, top_y + PH), (x0, bot_y, x1, bot_y + PH)
+        safe_top = game.safe_side(i) == LEFT
+        crossed = i < game.step
+        fatal = (game.state == "over" and game.outcome == "lose" and i == game.step)
+
+        if crossed:
+            # Only the panel they actually stood on is revealed; the other stays unknown,
+            # because which one it was is not something they ever found out.
+            stood_top = safe_top
+            _pane(dr, top if stood_top else bot, "#14432c", "#3ddc84")
+            _pane(dr, bot if stood_top else top, "#121a2b", "#243352")
+        elif fatal:
+            broke_top = game.fell_on == LEFT
+            _pane(dr, top if broke_top else bot, "#3a1420", "#ff5b5b", cracked=True)
+            _pane(dr, bot if broke_top else top, "#14432c", "#3ddc84")
+        elif i == game.step and game.state == "playing":
+            _pane(dr, top, "#16233d", "#7fb2ff", glow="#2f4a7a")
+            _pane(dr, bot, "#16233d", "#7fb2ff", glow="#2f4a7a")
+        else:
+            _pane(dr, top, "#101725", "#1e2b45")
+            _pane(dr, bot, "#101725", "#1e2b45")
+
+        # the rung's multiplier, under the pair
+        m = multiplier_for(i + 1)
+        lit = crossed or (i == game.step and game.state == "playing")
+        dr.text(((x0 + x1) / 2, bot_y + PH + 12), f"{m:.2f}x", font=f_num,
+                fill=(_INK if lit else _DIM), anchor="ma")
+
+    # the far side
+    fx = PAD + steps * (CW + GAP) + 8
+    done = game.across()
+    dr.rounded_rectangle([fx, top_y, fx + 70, bot_y + PH], 10,
+                         fill="#14432c" if done else "#101725",
+                         outline="#3ddc84" if done else "#1e2b45", width=2)
+    dr.text((fx + 35, (top_y + bot_y + PH) / 2), "SAFE", font=f_mult,
+            fill=_INK if done else _DIM, anchor="mm")
+
+    buf = io.BytesIO()
+    # Palette PNG: a couple of dozen flat colours, so 256 of them is the same picture at a
+    # fraction of the bytes - and the bytes are the upload, which is the part anybody waits
+    # on (measured at 700ms to 1.6s on this box).
+    img.convert("P", palette=Image.ADAPTIVE, colors=64).save(buf, format="PNG", optimize=False)
+    buf.seek(0)
+    return buf
+
+
+def board_file(game: "GlassBridgeGame"):
+    """(files, filename) for the board, or ([], None) if pictures are off or the draw fails.
+    Never raises - a board that will not draw falls back to the text layout rather than
+    costing somebody their crossing."""
+    if not getattr(config, "GLASS_IMAGE_ENABLED", True):
+        return [], None
+    try:
+        return [discord.File(draw_board(game), filename="glassbridge.png")], "glassbridge.png"
+    except Exception:
+        logger.error("Glass Bridge board render failed", exc_info=True)
+        return [], None
+
+
+# ---------------------------------------------------------------------------
 # Rendering (Components V2: a walkway strip, a status panel, and the controls)
 # ---------------------------------------------------------------------------
 def _walkway(game: GlassBridgeGame) -> str:
@@ -176,14 +352,14 @@ def _walkway(game: GlassBridgeGame) -> str:
     return "🧍 " + " ".join(cells) + " 🏁"
 
 
-def _status_text(game: GlassBridgeGame) -> str:
+def _status_text(game: GlassBridgeGame, walkway: bool = True) -> str:
     total = _steps()
     if game.state == "over" and game.outcome == "lose":
         should = "left" if game.safe_side(game.step) == LEFT else "right"
         got_to = (f"You had crossed **{game.step}** of {total}"
                   if game.step else "You did not make it off the first pair")
         return (f"## 💥 The Glass Bridge - the glass went\n"
-                f"{_walkway(game)}\n\n"
+                f"{_walkway(game) + chr(10) + chr(10) if walkway else ''}"
                 f"Panel **{game.step + 1}** was tempered on the **{should}**. "
                 f"{got_to} and lost **{game.bet:,} UKPence**.\n"
                 f"-# You were holding **{game.payout_for(game.step):,}** before that step.")
@@ -191,7 +367,7 @@ def _status_text(game: GlassBridgeGame) -> str:
         crossed = ("You crossed the whole bridge" if game.across()
                    else f"You stopped on panel **{game.step}** of {total}")
         return (f"## 🪟 The Glass Bridge - {'Across!' if game.across() else 'Cashed Out'}\n"
-                f"{_walkway(game)}\n\n"
+                f"{_walkway(game) + chr(10) + chr(10) if walkway else ''}"
                 f"{crossed} and banked **{game.payout:,} UKPence** "
                 f"({game.multiplier():.2f}×).")
 
@@ -200,7 +376,7 @@ def _status_text(game: GlassBridgeGame) -> str:
             f"({game.multiplier():.2f}×)." if game.step else
             "Nothing banked yet - the first panel is where it starts.")
     return (f"## 🪟 The Glass Bridge\n"
-            f"{_walkway(game)}\n\n"
+            f"{_walkway(game) + chr(10) + chr(10) if walkway else ''}"
             f"**Panel {nxt} of {total}.** One side is tempered, the other is fragile.\n"
             f"{held}\n"
             f"Cross it and you are holding **{game.payout_for(nxt):,}** "
@@ -249,9 +425,16 @@ def _again_button(game: GlassBridgeGame) -> discord.ui.Button:
 
 
 def build_glass_layout(game: GlassBridgeGame):
+    """Return (view, files). Files must be re-sent on every edit (attachments=files) or
+    the board loses its picture the first time somebody steps."""
     view = discord.ui.LayoutView(timeout=None)
+    files, fname = board_file(game)
+    if fname:
+        gallery = discord.ui.MediaGallery()
+        gallery.add_item(media=f"attachment://{fname}")
+        view.add_item(gallery)
     box = discord.ui.Container(accent_colour=ACCENT)
-    box.add_item(discord.ui.TextDisplay(_status_text(game)))
+    box.add_item(discord.ui.TextDisplay(_status_text(game, walkway=not fname)))
     view.add_item(box)
     controls = discord.ui.ActionRow()
     if game.state == "over":
@@ -265,7 +448,7 @@ def build_glass_layout(game: GlassBridgeGame):
             controls.add_item(_cash_button(game))
     controls.add_item(_rules_button(game))
     view.add_item(controls)
-    return view
+    return view, files
 
 
 # ---------------------------------------------------------------------------
@@ -292,15 +475,15 @@ def _make_again_cb(old_game: GlassBridgeGame):
     return _cb
 
 
-async def _safe_edit_board(interaction: Interaction, view) -> bool:
+async def _safe_edit_board(interaction: Interaction, view, files=None) -> bool:
     """Refresh the board, surviving a dead interaction token (mirrors chest/mines)."""
     try:
-        await interaction.response.edit_message(view=view)
+        await interaction.response.edit_message(view=view, attachments=files or [])
         return True
     except (discord.NotFound, discord.InteractionResponded):
         try:
             if interaction.message is not None:
-                await interaction.message.edit(view=view)
+                await interaction.message.edit(view=view, attachments=files or [])
                 return True
         except discord.HTTPException:
             logger.debug("Glass Bridge fallback edit failed", exc_info=True)
@@ -310,8 +493,8 @@ async def _safe_edit_board(interaction: Interaction, view) -> bool:
 
 
 async def _rerender(interaction: Interaction, game: GlassBridgeGame):
-    view = build_glass_layout(game)
-    await _safe_edit_board(interaction, view)
+    view, files = build_glass_layout(game)
+    await _safe_edit_board(interaction, view, files)
     if game.message_id is not None:
         try:
             interaction.client.add_view(view, message_id=game.message_id)
@@ -408,8 +591,8 @@ async def _handle_again(interaction: Interaction, old_game: GlassBridgeGame):
     new_game = GlassBridgeGame.new(old_game.player_id, old_game.player_name,
                                    old_game.channel_id, bet)
     new_game.message_id = old_game.message_id
-    view = build_glass_layout(new_game)
-    if not await _safe_edit_board(interaction, view):
+    view, files = build_glass_layout(new_game)
+    if not await _safe_edit_board(interaction, view, files):
         logger.error("Glass Bridge replay failed before showing the board; refunding.")
         credit_from_bank(old_game.player_id, bet, "Glass Bridge stake refund (replay failed)")
         old_game.replayed = False
@@ -484,8 +667,8 @@ async def handle_glass_command(interaction: Interaction, amount: int):
     try:
         await interaction.response.defer(thinking=True)
         game = GlassBridgeGame.new(interaction.user.id, name, interaction.channel_id, amount)
-        view = build_glass_layout(game)
-        msg = await interaction.followup.send(view=view)
+        view, files = build_glass_layout(game)
+        msg = await interaction.followup.send(view=view, files=files)
     except Exception:
         logger.error("Glass Bridge deal failed; refunding stake.", exc_info=True)
         credit_from_bank(interaction.user.id, amount, "Glass Bridge stake refund (deal failed)")
@@ -522,7 +705,7 @@ def reattach_glass_view(client, key, value):
         return
     try:
         game.message_id = int(key)
-        view = build_glass_layout(game)
+        view, _files = build_glass_layout(game)   # the message keeps the image it has
         client.add_view(view, message_id=int(key))
     except Exception as e:
         logger.error(f"Failed to reattach glass view {key}: {e}", exc_info=True)
