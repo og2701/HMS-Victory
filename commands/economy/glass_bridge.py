@@ -421,16 +421,15 @@ def build_glass_layout(game: GlassBridgeGame):
     view = discord.ui.LayoutView(timeout=None)
     files, fname = board_file(game)
     if fname:
-        # No Container around it: the board draws its own frame, and an accent-railed box
-        # on top just reads as a redundant embed.
+        # The picture sits outside the Container - it draws its own frame and an accent rail
+        # around it reads as a redundant embed - but the text still wants the box, or it
+        # floats loose under the board with nothing holding it together.
         gallery = discord.ui.MediaGallery()
         gallery.add_item(media=f"attachment://{fname}")
         view.add_item(gallery)
-        view.add_item(discord.ui.TextDisplay(_status_text(game, walkway=False)))
-    else:
-        box = discord.ui.Container(accent_colour=ACCENT)
-        box.add_item(discord.ui.TextDisplay(_status_text(game, walkway=True)))
-        view.add_item(box)
+    box = discord.ui.Container(accent_colour=ACCENT)
+    box.add_item(discord.ui.TextDisplay(_status_text(game, walkway=not fname)))
+    view.add_item(box)
     controls = discord.ui.ActionRow()
     if game.state == "over":
         controls.add_item(_again_button(game))
