@@ -208,111 +208,102 @@ def _pane(dr, box, fill, edge, *, cracked=False, glow=None):
     """One glass panel: a rounded pane with a highlight streak, optionally shattered."""
     x0, y0, x1, y1 = box
     if glow:
-        dr.rounded_rectangle([x0 - 3, y0 - 3, x1 + 3, y1 + 3], 10, outline=glow, width=3)
-    dr.rounded_rectangle(box, 8, fill=fill, outline=edge, width=2)
-    # a diagonal highlight, so the panes read as glass rather than as tiles
-    dr.line([(x0 + 8, y1 - 10), (x1 - 14, y0 + 8)], fill=edge, width=2)
+        for i, w in ((10, 2), (5, 3)):
+            dr.rounded_rectangle([x0 - i, y0 - i, x1 + i, y1 + i], 20, outline=glow, width=w)
+    dr.rounded_rectangle(box, 16, fill=fill, outline=edge, width=4)
+    # a diagonal streak, so the panes read as glass rather than as tiles
+    dr.line([(x0 + 22, y1 - 26), (x1 - 34, y0 + 22)], fill=edge, width=4)
     if cracked:
         cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-        for dx, dy in ((-1, -0.7), (1, -0.6), (-0.9, 0.8), (1, 0.9), (0.2, -1), (-0.2, 1)):
-            dr.line([(cx, cy), (cx + dx * (x1 - x0) / 2, cy + dy * (y1 - y0) / 2)],
-                    fill="#ff5b5b", width=2)
-        dr.ellipse([cx - 4, cy - 4, cx + 4, cy + 4], fill="#ff5b5b")
+        # 0.40 rather than 0.5: at half the pane the lines run past the rounded corners and
+        # the break looks like it happened to the board rather than to the panel.
+        rx, ry = (x1 - x0) * 0.40, (y1 - y0) * 0.40
+        for dx, dy in ((-1, -.7), (1, -.6), (-.9, .8), (1, .9), (.15, -1), (-.2, 1), (-1, .1)):
+            dr.line([(cx, cy), (cx + dx * rx, cy + dy * ry)], fill="#ff5b5b", width=4)
+        dr.ellipse([cx - 9, cy - 9, cx + 9, cy + 9], fill="#ff5b5b")
 
 
 def draw_board(game: "GlassBridgeGame"):
-    """The crossing as a PNG. Left panels on the top row, right on the bottom, one column
-    per pair, the far side on the right."""
+    """The crossing as a tall PNG: two columns of panes, one row per pair, the first panel
+    at the bottom and the far side at the top.
+
+    Portrait and oversized on purpose. Discord downscales a wide image hard on mobile, and
+    this is a board somebody reads mid-decision - so it carries the multipliers and nothing
+    else. Everything a number could tell them is in the message text underneath.
+    """
     from PIL import Image, ImageDraw
 
     steps = _steps()
-    CW, GAP, PAD = 74, 10, 44            # column width, gap, left/right padding
-    LANE = 22                            # room the L / R lane labels sit in
-    TITLE_Y, SUB_Y = 14, 46              # header baselines, above where the panels start
-    PH, MID = 62, 26                     # panel height, gap between the two rows
-    W = PAD * 2 + steps * CW + (steps - 1) * GAP + 96
-    HEAD, FOOT = 84, 54
-    H = HEAD + PH * 2 + MID + FOOT + PAD
+    W, PAD = 820, 40
+    GUTTER, COLGAP = 208, 22             # room for the multiplier, gap between the pair
+    RH, RGAP = 104, 14                   # row height and the gap between rows
+    FINISH, FGAP = 74, 26
 
-    img = Image.new("RGB", (W, H), "#080c16")
+    grid_h = steps * RH + (steps - 1) * RGAP
+    H = PAD * 2 + FINISH + FGAP + grid_h
+    pane_w = (W - PAD * 2 - GUTTER - COLGAP) // 2
+    lx = PAD + GUTTER
+    rx = lx + pane_w + COLGAP
+
+    img = Image.new("RGB", (W, H), "#070b14")
     dr = ImageDraw.Draw(img)
-    f_head, f_sub = _font("bold", 26), _font("regular", 15)
-    f_mult, f_num = _font("bold", 15), _font("regular", 13)
+    f_mult, f_done = _font("bold", 42), _font("bold", 34)
 
-    # header
-    if game.state == "over" and game.outcome == "lose":
-        title, colour = "The glass went", "#ff5b5b"
-    elif game.across():
-        title, colour = "Across!", "#3ddc84"
-    elif game.state == "over":
-        title, colour = "Cashed out", "#3ddc84"
-    else:
-        title, colour = f"Panel {game.step + 1} of {steps}", "#7fb2ff"
-    dr.text((PAD - LANE, TITLE_Y), "THE GLASS BRIDGE", font=f_head, fill=_INK)
-    dr.text((PAD - LANE, SUB_Y), title, font=f_sub, fill=colour)
-
-    # After a fall the held figure is gone, and showing it reads as though they still
-    # have it - the sting is that they were holding it a moment ago.
-    if game.state == "over" and game.outcome == "lose":
-        right = f"lost {game.bet:,} UKP"
-    elif game.state == "over":
-        right = f"banked {game.payout:,} UKP  ({game.multiplier():.2f}x)"
-    elif game.step:
-        right = f"{game.current_payout():,} UKP  ({game.multiplier():.2f}x)"
-    else:
-        right = "nothing banked yet"
-    dr.text((W - PAD + LANE, SUB_Y), right, font=f_sub, fill=_DIM, anchor="ra")
-    dr.text((W - PAD + LANE, TITLE_Y + 4), f"{game.bet:,} staked", font=f_sub,
-            fill=_DIM, anchor="ra")
-
-    top_y = HEAD
-    bot_y = HEAD + PH + MID
-    dr.text((PAD - 14, top_y + PH / 2), "L", font=f_mult, fill=_DIM, anchor="rm")
-    dr.text((PAD - 14, bot_y + PH / 2), "R", font=f_mult, fill=_DIM, anchor="rm")
+    # the far side, a checked band rather than a caption
+    done = game.across()
+    fy = PAD
+    edge = "#3ddc84" if done else "#1e2b45"
+    dr.rounded_rectangle([lx, fy, rx + pane_w, fy + FINISH], 16,
+                         fill="#14432c" if done else "#0d1424", outline=edge, width=4)
+    sq, inset = FINISH // 3, 8
+    band_r, band_b = rx + pane_w - inset, fy + FINISH - inset
+    for i in range((band_r - lx - inset) // sq + 1):
+        for j in range(3):
+            if (i + j) % 2:
+                x = lx + inset + i * sq
+                y = fy + inset + j * sq
+                if x >= band_r or y >= band_b:
+                    continue
+                dr.rectangle([x, y, min(x + sq, band_r), min(y + sq, band_b)], fill=edge)
 
     for i in range(steps):
-        x0 = PAD + i * (CW + GAP)
-        x1 = x0 + CW
-        top, bot = (x0, top_y, x1, top_y + PH), (x0, bot_y, x1, bot_y + PH)
-        safe_top = game.safe_side(i) == LEFT
+        # bottom-up: the first panel is nearest, the far side is at the top
+        y0 = PAD + FINISH + FGAP + (steps - 1 - i) * (RH + RGAP)
+        y1 = y0 + RH
+        left, right = (lx, y0, lx + pane_w, y1), (rx, y0, rx + pane_w, y1)
+        safe_left = game.safe_side(i) == LEFT
         crossed = i < game.step
         fatal = (game.state == "over" and game.outcome == "lose" and i == game.step)
+        live = i == game.step and game.state == "playing"
 
         if crossed:
-            # Only the panel they actually stood on is revealed; the other stays unknown,
-            # because which one it was is not something they ever found out.
-            stood_top = safe_top
-            _pane(dr, top if stood_top else bot, "#14432c", "#3ddc84")
-            _pane(dr, bot if stood_top else top, "#121a2b", "#243352")
+            # Only the pane actually stood on is revealed - which of the pair the other one
+            # was is the one thing the player never found out.
+            _pane(dr, left if safe_left else right, "#14432c", "#3ddc84")
+            _pane(dr, right if safe_left else left, "#0f1626", "#1e2b45")
         elif fatal:
-            broke_top = game.fell_on == LEFT
-            _pane(dr, top if broke_top else bot, "#3a1420", "#ff5b5b", cracked=True)
-            _pane(dr, bot if broke_top else top, "#14432c", "#3ddc84")
-        elif i == game.step and game.state == "playing":
-            _pane(dr, top, "#16233d", "#7fb2ff", glow="#2f4a7a")
-            _pane(dr, bot, "#16233d", "#7fb2ff", glow="#2f4a7a")
+            broke_left = game.fell_on == LEFT
+            _pane(dr, left if broke_left else right, "#3a1420", "#ff5b5b", cracked=True)
+            _pane(dr, right if broke_left else left, "#14432c", "#3ddc84")
+        elif live:
+            _pane(dr, left, "#16233d", "#7fb2ff", glow="#24395f")
+            _pane(dr, right, "#16233d", "#7fb2ff", glow="#24395f")
         else:
-            _pane(dr, top, "#101725", "#1e2b45")
-            _pane(dr, bot, "#101725", "#1e2b45")
+            _pane(dr, left, "#0f1626", "#1e2b45")
+            _pane(dr, right, "#0f1626", "#1e2b45")
 
-        # the rung's multiplier, under the pair
-        m = multiplier_for(i + 1)
-        lit = crossed or (i == game.step and game.state == "playing")
-        dr.text(((x0 + x1) / 2, bot_y + PH + 12), f"{m:.2f}x", font=f_num,
-                fill=(_INK if lit else _DIM), anchor="ma")
+        lit = ("#e8edf7" if crossed else "#7fb2ff" if live
+               else "#ff5b5b" if fatal else "#4a5670")
+        dr.text((PAD + GUTTER - 34, (y0 + y1) / 2), f"{multiplier_for(i + 1):.2f}x",
+                font=f_mult, fill=lit, anchor="rm")
 
-    # the far side
-    fx = PAD + steps * (CW + GAP) + 8
-    done = game.across()
-    dr.rounded_rectangle([fx, top_y, fx + 70, bot_y + PH], 10,
-                         fill="#14432c" if done else "#101725",
-                         outline="#3ddc84" if done else "#1e2b45", width=2)
-    dr.text((fx + 35, (top_y + bot_y + PH) / 2), "SAFE", font=f_mult,
-            fill=_INK if done else _DIM, anchor="mm")
+    if done:
+        dr.text((PAD + GUTTER - 34, fy + FINISH / 2), "ACROSS", font=f_done,
+                fill="#3ddc84", anchor="rm")
 
     buf = io.BytesIO()
-    # Palette PNG: a couple of dozen flat colours, so 256 of them is the same picture at a
-    # fraction of the bytes - and the bytes are the upload, which is the part anybody waits
+    # Palette PNG: a couple of dozen flat colours, so 64 of them is the same picture at a
+    # fraction of the bytes - and the bytes are the upload, which is the leg anybody waits
     # on (measured at 700ms to 1.6s on this box).
     img.convert("P", palette=Image.ADAPTIVE, colors=64).save(buf, format="PNG", optimize=False)
     buf.seek(0)
@@ -430,12 +421,16 @@ def build_glass_layout(game: GlassBridgeGame):
     view = discord.ui.LayoutView(timeout=None)
     files, fname = board_file(game)
     if fname:
+        # No Container around it: the board draws its own frame, and an accent-railed box
+        # on top just reads as a redundant embed.
         gallery = discord.ui.MediaGallery()
         gallery.add_item(media=f"attachment://{fname}")
         view.add_item(gallery)
-    box = discord.ui.Container(accent_colour=ACCENT)
-    box.add_item(discord.ui.TextDisplay(_status_text(game, walkway=not fname)))
-    view.add_item(box)
+        view.add_item(discord.ui.TextDisplay(_status_text(game, walkway=False)))
+    else:
+        box = discord.ui.Container(accent_colour=ACCENT)
+        box.add_item(discord.ui.TextDisplay(_status_text(game, walkway=True)))
+        view.add_item(box)
     controls = discord.ui.ActionRow()
     if game.state == "over":
         controls.add_item(_again_button(game))
