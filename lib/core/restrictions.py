@@ -30,7 +30,8 @@ log = logging.getLogger(__name__)
 # --- what each area is, in command names as registered on the tree ------------------
 _PAY = {"pay"}
 _CASINO = {
-    "blackjack", "blockade", "casino", "chest", "darts", "higher-lower", "mines",
+    "blackjack", "blockade", "casino", "chest", "darts", "glassbridge",
+    "higher-lower", "mines",
     "poker", "red-dog", "roulette", "slots", "three-card-poker", "video-poker",
     "penalty",
 }

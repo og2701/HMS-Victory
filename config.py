@@ -141,6 +141,20 @@ CRASH_HOUSE_EDGE = 0.03      # baked into the bust distribution (edge is identic
 CRASH_MAX_MULT = 25.0        # auto-bank + bust ceiling (caps the climb and bank exposure)
 CRASH_GROWTH = 1.15          # multiplier ×= this each Sail On (~2x in 5 pushes, 25x ceiling in ~23)
 
+# --- The Glass Bridge (vs-the-house coin-flip ladder) ----------------------------
+# Eight pairs of glass panels; one of each pair holds, the other drops you. Every panel
+# crossed nearly doubles the payout and Cash Out banks it. The multiplier is derived, not
+# tabulated: a step is a straight 50/50 so the fair payout doubles, and the house takes a
+# flat GLASS_HOUSE_EDGE off each doubling - multiplier(n) = (2 * (1 - edge)) ** n. At 4%
+# that is 1.92x rising to 184.68x across, and the edge is the same wherever you stop, so
+# there is no exploitable place to get off.
+GLASS_ENABLED = True
+GLASS_MIN_BET = 5
+GLASS_MAX_BET = 500          # 184x top multiplier makes this the deepest bank exposure
+GLASS_STEPS = 8              # pairs of panels between you and the far side
+GLASS_HOUSE_EDGE = 0.04      # taken off every doubling; identical at every cash-out point
+GLASS_MAX_WIN = 50_000       # only bites on a large stake actually crossing the whole thing
+
 # Penalty Shootout (commands/economy/penalty.py)
 PENALTY_ENABLED = True
 PENALTY_MIN_BET = 5

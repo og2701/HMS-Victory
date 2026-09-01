@@ -634,6 +634,12 @@ def reattach_persistent_views(client):
                 reattach_mines_view(client, key, value)
             except Exception as e:
                 logger.error(f"Failed to reattach mines view {key}: {e}")
+        elif isinstance(value, dict) and value.get("type") == "glass":
+            try:
+                from commands.economy.glass_bridge import reattach_glass_view
+                reattach_glass_view(client, key, value)
+            except Exception as e:
+                logger.error(f"Failed to reattach glass view {key}: {e}", exc_info=True)
         elif isinstance(value, dict) and value.get("type") == "chest":
             try:
                 from commands.economy.chest import reattach_chest_view

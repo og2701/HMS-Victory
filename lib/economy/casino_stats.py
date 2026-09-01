@@ -29,6 +29,7 @@ GAME_LABELS = {
     "mines": "Mines",
     "penalty": "Penalty Shootout",
     "chest": "Chest Upgrade",
+    "glass": "The Glass Bridge",
     "blockade": "Blockade Run",
     "darts": "Darts",
 }

@@ -32,10 +32,15 @@ def _run(coro):
 
 def _ban(i, kind="dmspam", uid=7, view=None):
     """Press Ban, then press the confirmation. Ban is two presses now, so a test that only
-    does the first is testing the dialog rather than the ban."""
+    does the first is testing the dialog rather than the ban.
+
+    Pass `view` to press the button as part of a real row. Item.view is read-only and is
+    set by add_item, so the button has to be taken back out of the view rather than having
+    a view attached to it.
+    """
     btn = M.ModBanButton(kind, uid)
     if view is not None:
-        btn.view = view
+        btn = next(c for c in view.children if isinstance(c, M.ModBanButton))
     _run(btn.callback(i))
     # The row is captured when Ban is pressed and carried to the confirmation, exactly as
     # the real button does, so what gets greyed out is what the report was showing.

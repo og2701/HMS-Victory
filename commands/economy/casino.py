@@ -20,6 +20,7 @@ from commands.economy.three_card_poker import handle_tcp_command
 from commands.economy.roulette import handle_roulette_command
 from commands.economy.mines import handle_mines_command
 from commands.economy.chest import handle_chest_command
+from commands.economy.glass_bridge import handle_glass_command
 from commands.economy.blockade import handle_blockade_command
 from commands.economy.darts import handle_darts_command
 from commands.economy.penalty import handle_penalty_command
@@ -57,6 +58,9 @@ GAMES = [
     {"key": "chest", "label": "Chest Upgrade", "emoji": "🧰",
      "handler": handle_chest_command,
      "desc": "Risk it to level up the chest - cash out before it shatters."},
+    {"key": "glass", "label": "The Glass Bridge", "emoji": "🪟",
+     "handler": handle_glass_command,
+     "desc": "One panel holds, one shatters - cash out before your luck does."},
     {"key": "blockade", "label": "Blockade Run", "emoji": "🚢",
      "handler": handle_blockade_command,
      "desc": "Run the blockade - bank the climbing multiplier before they sink you."},
