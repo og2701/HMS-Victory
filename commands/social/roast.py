@@ -9,8 +9,7 @@ from database import DatabaseManager
 client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"), max_retries=5, timeout=60.0)
 
 async def roast(interaction, channel: TextChannel = None, user: Member = None):
-    if channel is None:
-        channel = interaction.channel
+    source_channel = channel or interaction.channel
     if user is None:
         user = interaction.user
 
@@ -35,7 +34,7 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
     await interaction.response.defer()
 
     user_messages = []
-    await fetch_messages_with_context(channel, user, user_messages, total_limit=150, context_depth=20, history_limit=5000)
+    await fetch_messages_with_context(source_channel, user, user_messages, total_limit=150, context_depth=20, history_limit=5000)
     
     input_text = "\n".join(user_messages)
     if len(input_text) == 0:
@@ -88,7 +87,7 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         except Exception:
             pass
 
-        await channel.send(
+        await interaction.channel.send(
             header + summary,
             allowed_mentions=AllowedMentions(users=[user], everyone=False,
                                              roles=False, replied_user=False))
