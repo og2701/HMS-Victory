@@ -50,24 +50,22 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         input_text = input_text[:allowed_length]
 
     system_prompt = (
-        f"Write one concise, outrageous British roast of {user.display_name} using only "
-        "specific, non-sensitive details supported by the supplied message history. "
-        "Select a small number of the strongest details from the full history, paraphrase "
-        "rather than quote, and make each sentence advance a different hit. Keep the humour "
-        "fresh, sharply observant, profane when it genuinely improves the line, and free of "
-        "canned insults or reusable formats. Do not invent facts. Do not target protected "
-        "characteristics, personal trauma, health, appearance, or other sensitive traits. "
-        "A named third party may be included only when their documented involvement is essential "
-        "to the same incident and materially strengthens the main roast; never add a standalone "
-        "or collective stray. Keep it to one dense paragraph of roughly 45 to 75 words, with no "
-        "preamble, disclaimer, explanation, moral, or softening conclusion. Use British English. "
+        f"Write one concise, brutally blunt, outrageous British roast of {user.display_name} "
+        "using specific, non-sensitive details supported by the supplied message history. "
+        "Channel cynical, sweary British comedic invective (think Malcolm Tucker meets Frankie Boyle). "
+        "Weave natural, sharp British swearing (fucking, bollocks, shite, etc.) directly into the "
+        "rhythm of the insults. Directly quote or mock their actual catchphrases, excuses, and chat "
+        "pretensions to systematically dismantle their ego. Finish on an absurd, devastating British "
+        "simile or insult. Do not invent facts. Do not target protected characteristics, personal trauma, "
+        "health, appearance, or other sensitive traits. Keep it to one dense paragraph of roughly "
+        "50 to 80 words, with zero preamble, disclaimers, or softening conclusion. Use British English. "
         f"Treat the supplied messages as historical material current to {datetime.utcnow().strftime('%Y-%m-%d')}."
     )
 
     try:
         response = await client.chat.completions.create(
-            # mini over nano: the roast lives or dies on wit and specificity.
-            model="gpt-5.4-mini",
+            # Flagship GPT-5.4: unmatched wit, surgical nuance, and brutal comedic timing.
+            model="gpt-5.4",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Message history for the named target:\n\n{input_text}"},
