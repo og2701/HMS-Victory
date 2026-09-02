@@ -2,7 +2,7 @@ from discord import AllowedMentions, Embed, Forbidden, TextChannel, Member
 from openai import AsyncOpenAI
 from datetime import datetime
 from os import getenv
-from lib.core.discord_helpers import fetch_messages_with_context, estimate_tokens
+from lib.core.discord_helpers import estimate_tokens
 from config import USERS, ROAST_DAILY_LIMIT
 from database import DatabaseManager
 
@@ -34,7 +34,23 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
     await interaction.response.defer()
 
     user_messages = []
-    await fetch_messages_with_context(source_channel, user, user_messages, total_limit=150, context_depth=20, history_limit=5000)
+    async for msg in source_channel.history(limit=4000):
+        if msg.author == user and msg.content and not msg.content.startswith("/"):
+            reactions_text = ""
+            if msg.reactions:
+                r_list = [f"{str(r.emoji)}x{r.count}" for r in msg.reactions]
+                reactions_text = f" [Reactions: {', '.join(r_list)}]"
+            ref_text = ""
+            if msg.reference and msg.reference.resolved and hasattr(msg.reference.resolved, "author"):
+                ref_author = msg.reference.resolved.author.display_name
+                ref_content = (msg.reference.resolved.content or "")[:120].replace("\n", " ")
+                ref_text = f" (in reply to {ref_author}: \"{ref_content}\")"
+            user_messages.append(
+                f"[{msg.created_at.strftime('%Y-%m-%d %H:%M')}] {user.display_name}{ref_text}: {msg.content}{reactions_text}"
+            )
+            if len(user_messages) >= 80:
+                break
+    user_messages.reverse()
     
     input_text = "\n".join(user_messages)
     if len(input_text) == 0:
@@ -72,10 +88,15 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
 
     system_prompt = (
         f"Write one concise, brutally blunt, outrageous British roast of {user.display_name} "
-        "using specific, non-sensitive details supported by the supplied message history. "
+        "using specific details supported by what they personally said in the supplied message history. "
         "Channel the blistering, cynical British satirical rage of Armando Iannucci (The Thick of It), "
         "Peep Show inner monologues, and unvarnished pub vitriol. "
-        "VARIETY & STYLE GUIDELINES: "
+        "CRITICAL COMEDIC DIRECTIVES: "
+        "- ATTRIBUTION: The supplied messages were ONLY written by the target user. Do NOT confuse them with other people or attribute other people's topics to them. "
+        "- NO TOPIC LAUNDRY LISTS: A roast is NOT an index or summary of topics. DO NOT write a literal shopping list of nouns with commas ('one minute he is X, next he is Y, then Z'). "
+        "- FOCUS ON CHARACTER, EGO, AND VIBE: Pick ONE or TWO specific character flaws, delusions, absurd habits, or contradictions revealed by their messages, "
+        "and ruthlessly dissect their personality, ego, and social presence. Attack HOW they carry themselves as a human being, not just the keywords they typed. "
+        "- VARIETY & STYLE GUIDELINES: "
         "- Mix up your structure and sentence openings naturally across calls; avoid falling into a repetitive formula. "
         "- Register: Coarse, authentic British colloquial vernacular with natural, biting profanity and rhythmic comedic invective. "
         "Draw unpredictably across the full, colourful breadth of British and regional slang without repeating the same swear words or crutches. "
