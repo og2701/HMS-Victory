@@ -16,7 +16,7 @@ from config import CHANNELS
 logger = logging.getLogger(__name__)
 
 # --- Feature Toggles & Target Scope ---
-MEDIA_FILTER_ENABLED: bool = True           # Master switch for blocked dog media moderation
+MEDIA_FILTER_ENABLED: bool = False          # Master switch for blocked dog media moderation
 AI_VISION_FALLBACK_ENABLED: bool = False    # AI Vision fallback via Gemini (OFF: 100% local dHash only)
 TARGET_USER_IDS: set[int] = {
     285860055570579457,   # Shuto
@@ -61,12 +61,6 @@ BLOCKED_MEDIA_PATTERNS = [
     "golden-retriever-dog",
     "dog-195",
     "live-jamie-reaction",
-    "39f2394ae36df6e199be9eb7c9fa1012",
-    "f87f46a2c5aeaeed4c68910815f73eaf",
-    "ui8KxohqjmmiPf7gBGj",
-    "dMgAnsrp",
-    "LGLBS5P7",
-    "zi7PimsR",
     "1542886924174360719",  # sigh sticker
     "1542918746887159819",  # sighflipped sticker
     "sighflipped",
