@@ -48,15 +48,40 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         allowed_length = max_allowed_tokens * 4
         input_text = input_text[:allowed_length]
 
+    # Ensure recent_roasts table exists
+    DatabaseManager.execute(
+        "CREATE TABLE IF NOT EXISTS recent_roasts ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "target_name TEXT, "
+        "roast_text TEXT, "
+        "created_at REAL)"
+    )
+
+    recent_rows = DatabaseManager.fetch_all(
+        "SELECT target_name, roast_text FROM recent_roasts ORDER BY id DESC LIMIT 4"
+    )
+    recent_context = ""
+    if recent_rows:
+        recent_list = "\n".join(f"- {r[0]}: \"{r[1]}\"" for r in reversed(recent_rows))
+        recent_context = (
+            "\n\nRECENTLY DELIVERED ROASTS (STRICT ANTI-REPETITION MANDATE):\n"
+            f"{recent_list}\n"
+            "CRITICAL: Do NOT reuse ANY of the specific insult nouns, metaphors, gadgets, similes, "
+            "or syntactic structures from the roasts above! Every single roast must have completely unique imagery."
+        )
+
     system_prompt = (
         f"Write one concise, brutally blunt, outrageous British roast of {user.display_name} "
         "using specific, non-sensitive details supported by the supplied message history. "
         "Channel the blistering, cynical British satirical rage of Armando Iannucci (The Thick of It), "
         "Peep Show inner monologues, and unvarnished pub vitriol. "
-        "CRITICAL VARIETY RULES - NO STOCK CRUTCHES: "
-        f"- DO NOT start with '{user.display_name} chats like a...', '{user.display_name} is the sort of...', or '[verb] like a...'. "
+        "CRITICAL VARIETY & ANTI-TEMPLATE RULES: "
+        f"- STRICTLY BANNED OPENERS: DO NOT use '{user.display_name} lurches...', '{user.display_name} chats like...', or '[verb] through chat...'. "
+        "- STRICTLY BANNED STRUCTURE: Do NOT use the lazy 'one minute X, next minute Y' list formula or 'malfunctioning [item]' metaphors. "
+        "- BANNED RECURRING CRUTCHES: NEVER use 'sat-nav', 'satnav', 'traffic cone', or 'air fryer'. "
         "- Anti-cliché rule: DO NOT lean on generic stock insult nouns (NEVER use 'gobshite', 'pillock', 'clown', 'weapon', or 'melt'). "
         "Instead, invent fresh, absurd, cutting descriptions of character, habits, and behaviour. "
+        "- Mix up your syntactic entry point: open with a direct accusation, a sharp observational punchline, or tackle their most absurd recent obsession head-on. "
         "- Register: Coarse, authentic British colloquial vernacular with natural, biting profanity and rhythmic insults. "
         "Draw unpredictably across the full, colourful breadth of British and regional slang without repeating the same swear words "
         "or relying on generic Americanisms. Embed the contempt directly into the absurdity and accuracy of the observations. "
@@ -65,6 +90,7 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         "Do not target protected characteristics, personal trauma, health, appearance, or other sensitive traits. "
         "Keep it to one dense paragraph of roughly 50 to 80 words, with zero preamble or softening conclusion. Use British English. "
         f"Treat the supplied messages as historical material current to {datetime.utcnow().strftime('%Y-%m-%d')}."
+        f"{recent_context}"
     )
 
     try:
@@ -96,6 +122,18 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
             allowed_mentions=AllowedMentions(users=[user], everyone=False,
                                              roles=False, replied_user=False))
         
+        # Save to recent_roasts ring buffer to prevent repetitive vocabulary across calls
+        try:
+            DatabaseManager.execute(
+                "INSERT INTO recent_roasts (target_name, roast_text, created_at) VALUES (?, ?, ?)",
+                (user.display_name, summary, datetime.utcnow().timestamp())
+            )
+            DatabaseManager.execute(
+                "DELETE FROM recent_roasts WHERE id NOT IN (SELECT id FROM recent_roasts ORDER BY id DESC LIMIT 20)"
+            )
+        except Exception:
+            pass
+
         from lib.bot.event_handlers import award_badge_with_notify
         await award_badge_with_notify(interaction.client, interaction.user.id, 'roaster')
         await award_badge_with_notify(interaction.client, user.id, 'roast_victim')

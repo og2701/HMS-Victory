@@ -901,6 +901,16 @@ def init_db():
             )
         ''')
 
+        # Recent roasts history to prevent LLM vocabulary / structural repetition.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS recent_roasts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_name TEXT,
+                roast_text TEXT,
+                created_at REAL
+            )
+        ''')
+
         c.execute('''
             CREATE TABLE IF NOT EXISTS scheduled_predictions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
