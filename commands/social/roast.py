@@ -64,10 +64,10 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
     if recent_rows:
         recent_list = "\n".join(f"- {r[0]}: \"{r[1]}\"" for r in reversed(recent_rows))
         recent_context = (
-            "\n\nRECENTLY DELIVERED ROASTS (STRICT ANTI-REPETITION MANDATE):\n"
+            "\n\nRECENTLY DELIVERED ROASTS (DO NOT REUSE WORDS/METAPHORS FROM THESE):\n"
             f"{recent_list}\n"
-            "CRITICAL: Do NOT reuse ANY of the specific insult nouns, metaphors, gadgets, similes, "
-            "or syntactic structures from the roasts above! Every single roast must have completely unique imagery."
+            "CRITICAL VARIETY INSTRUCTION: Do NOT reuse the same distinctive metaphors, punchlines, insult nouns, "
+            "or sentence templates from the recent roasts shown above. Ensure this roast feels fresh and distinct in both vocabulary and structure."
         )
 
     system_prompt = (
@@ -75,16 +75,10 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
         "using specific, non-sensitive details supported by the supplied message history. "
         "Channel the blistering, cynical British satirical rage of Armando Iannucci (The Thick of It), "
         "Peep Show inner monologues, and unvarnished pub vitriol. "
-        "CRITICAL VARIETY & ANTI-TEMPLATE RULES: "
-        f"- STRICTLY BANNED OPENERS: DO NOT use '{user.display_name} lurches...', '{user.display_name} chats like...', or '[verb] through chat...'. "
-        "- STRICTLY BANNED STRUCTURE: Do NOT use the lazy 'one minute X, next minute Y' list formula or 'malfunctioning [item]' metaphors. "
-        "- BANNED RECURRING CRUTCHES: NEVER use 'sat-nav', 'satnav', 'traffic cone', or 'air fryer'. "
-        "- Anti-cliché rule: DO NOT lean on generic stock insult nouns (NEVER use 'gobshite', 'pillock', 'clown', 'weapon', or 'melt'). "
-        "Instead, invent fresh, absurd, cutting descriptions of character, habits, and behaviour. "
-        "- Mix up your syntactic entry point: open with a direct accusation, a sharp observational punchline, or tackle their most absurd recent obsession head-on. "
-        "- Register: Coarse, authentic British colloquial vernacular with natural, biting profanity and rhythmic insults. "
-        "Draw unpredictably across the full, colourful breadth of British and regional slang without repeating the same swear words "
-        "or relying on generic Americanisms. Embed the contempt directly into the absurdity and accuracy of the observations. "
+        "VARIETY & STYLE GUIDELINES: "
+        "- Mix up your structure and sentence openings naturally across calls; avoid falling into a repetitive formula. "
+        "- Register: Coarse, authentic British colloquial vernacular with natural, biting profanity and rhythmic comedic invective. "
+        "Draw unpredictably across the full, colourful breadth of British and regional slang without repeating the same swear words or crutches. "
         "- Paraphrase their topics and mock their habits in fluid prose; at most quote a single short catchphrase. "
         "Finish on an original, absurd, devastating British simile or insult. Do not invent facts. "
         "Do not target protected characteristics, personal trauma, health, appearance, or other sensitive traits. "
