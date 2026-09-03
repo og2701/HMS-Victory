@@ -704,6 +704,13 @@ MUTE_NOTIFY_USER_IDS = [USERS.OGGERS, USERS.HADIDAS]
 # --- Automated Moderation ---
 HATE_SPEECH_TIMEOUT_MINUTES = 24 * 60
 
+# --- Voice note transcription ---
+# A voice note gets a reply with one button; pressing it puts the words underneath. Once
+# per note, anyone can press it. gpt-4o-mini-transcribe was accurate on real notes from
+# the server where the larger model dropped a clause, and it is the cheaper of the two.
+VOICE_NOTE_TRANSCRIBE_ENABLED = True
+VOICE_NOTE_TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"
+
 # --- Voice Channel Lockdown ---
 VC_LOCKDOWN_WHITELIST = [
     ROLES.ROYAL_DUKE, ROLES.ARCHDUKE, ROLES.GRAND_DUKE, ROLES.LORD_HIGH_STEWARD,

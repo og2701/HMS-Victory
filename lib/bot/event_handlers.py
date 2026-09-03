@@ -1313,6 +1313,10 @@ async def on_message(client, message):
         logger.info("XP system initialised")
 
     await mirror_voice_message(client, message)
+    # A voice note is a gap for anyone who cannot play it - the reply carries a button
+    # that puts the words underneath on request.
+    from lib.features.voice_notes import offer_transcription
+    await offer_transcription(client, message)
 
     # Bouncy Yaris emoji chain reaction in #general
     try:

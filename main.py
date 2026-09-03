@@ -100,6 +100,10 @@ class AClient(discord.Client):
             # detector - the report kind rides in the custom_id.
             from lib.core.mod_actions import BUTTONS as MOD_ACTION_BUTTONS
             self.add_dynamic_items(*MOD_ACTION_BUTTONS)
+            # "Transcribe this voice note" - the id is in the custom_id, so a button posted
+            # before the last restart still works.
+            from lib.features.voice_notes import TranscribeButton
+            self.add_dynamic_items(TranscribeButton)
             self.add_dynamic_items(MassBanButton, BanClusterButton,
                                    QuarantineClusterButton, WatchAllButton, DismissButton,
                                    # Appeal buttons live in DMs indefinitely, so they must
