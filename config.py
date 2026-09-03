@@ -710,6 +710,10 @@ HATE_SPEECH_TIMEOUT_MINUTES = 24 * 60
 # the server where the larger model dropped a clause, and it is the cheaper of the two.
 VOICE_NOTE_TRANSCRIBE_ENABLED = True
 VOICE_NOTE_TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"
+# A downloaded-and-resent note arrives as a plain .ogg with no voice flag, so any small
+# audio file gets the button too. The cap keeps a shared song out: a two-minute note is
+# ~700KB, a track is several MB.
+VOICE_NOTE_MAX_BYTES = 2 * 1024 * 1024
 
 # --- Voice Channel Lockdown ---
 VC_LOCKDOWN_WHITELIST = [

@@ -39,19 +39,36 @@ def _model() -> str:
     return str(getattr(config, "VOICE_NOTE_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe"))
 
 
-def is_voice_note(message) -> bool:
-    """A Discord voice message: the flag is set and there is an audio attachment."""
-    if not getattr(getattr(message, "flags", None), "voice", False):
-        return False
-    return any(getattr(a, "duration", None) or (a.content_type or "").startswith("audio/")
-               for a in (getattr(message, "attachments", None) or []))
+def _max_bytes() -> int:
+    return int(getattr(config, "VOICE_NOTE_MAX_BYTES", 2 * 1024 * 1024))
+
+
+def _is_audio(a) -> bool:
+    ctype = (getattr(a, "content_type", None) or "").lower()
+    name = (getattr(a, "filename", None) or "").lower()
+    return ctype.startswith("audio/") or name.endswith((".ogg", ".mp3", ".m4a", ".wav", ".opus"))
 
 
 def voice_attachment(message):
+    """The audio clip on a message, if it is the size of a voice note.
+
+    A native Discord voice message carries flags.voice and a duration, but people also
+    download a note and re-send it, and that arrives as a plain "voice-message (1).ogg"
+    with no flag at all. Both should get the button. The size cap is what keeps a shared
+    song out: a two-minute note is around 700KB, a track is several MB.
+    """
     for a in getattr(message, "attachments", None) or []:
-        if getattr(a, "duration", None) or (a.content_type or "").startswith("audio/"):
+        if not _is_audio(a):
+            continue
+        size = getattr(a, "size", None) or 0
+        if getattr(a, "duration", None) or size <= _max_bytes():
             return a
     return None
+
+
+def is_voice_note(message) -> bool:
+    """Native voice message, or a small audio file that is one re-uploaded."""
+    return voice_attachment(message) is not None
 
 
 async def transcribe(data: bytes, filename: str) -> str:

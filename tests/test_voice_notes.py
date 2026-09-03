@@ -21,8 +21,10 @@ VN_ID, CH_ID = 555, 777
 
 
 class Att:
-    def __init__(self, duration=4.2, content_type="audio/ogg", data=b"OggS...", name="voice-message.ogg"):
+    def __init__(self, duration=4.2, content_type="audio/ogg", data=b"OggS...",
+                 name="voice-message.ogg", size=16_410):
         self.duration, self.content_type, self.filename = duration, content_type, name
+        self.size = size
         self._data = data
 
     async def read(self):
@@ -99,9 +101,29 @@ def test_a_voice_note_gets_the_button():
 
 
 def test_an_ordinary_message_gets_nothing():
-    assert _run(V.offer_transcription(None, Msg(voice=False))) is False
-    m = Msg(voice=True, attachments=[])
-    assert _run(V.offer_transcription(None, m)) is False
+    photo = Att(duration=None, content_type="image/png", name="cat.png", size=300_000)
+    assert _run(V.offer_transcription(None, Msg(voice=False, attachments=[photo]))) is False
+    assert _run(V.offer_transcription(None, Msg(voice=True, attachments=[]))) is False
+
+
+def test_a_downloaded_and_resent_note_gets_the_button_too():
+    """What actually happened: "voice-message (1).ogg", 16KB, no voice flag. Discord does
+    not mark a re-uploaded note as a voice message, but it is one."""
+    reup = Att(duration=None, content_type="audio/ogg", name="voice-message (1).ogg", size=16_410)
+    m = Msg(voice=False, attachments=[reup])
+    assert _run(V.offer_transcription(None, m)) is True, "a re-sent note got no button"
+
+
+def test_a_shared_song_does_not_get_the_button():
+    """The size cap is the only thing between this and transcribing everybody's music."""
+    track = Att(duration=None, content_type="audio/mpeg", name="banger.mp3", size=6_000_000)
+    assert _run(V.offer_transcription(None, Msg(voice=False, attachments=[track]))) is False
+
+
+def test_a_native_note_is_not_subject_to_the_size_cap():
+    """A flagged voice message carries a duration; Discord already bounded it."""
+    long = Att(duration=300.0, content_type="audio/ogg", size=5_000_000)
+    assert _run(V.offer_transcription(None, Msg(voice=True, attachments=[long]))) is True
 
 
 def test_the_bots_own_mirror_copies_get_nothing():
