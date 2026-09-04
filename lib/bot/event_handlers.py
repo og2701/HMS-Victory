@@ -2182,8 +2182,8 @@ async def on_reaction_add(reaction, user):
             await handle_flag_reaction(reaction, reaction.message, user)
         if ":bedtime:" in str(reaction.emoji):
             await handle_bedtime_reaction(reaction, user)
-        elif getattr(reaction.emoji, "id", None) == OGGERSGLARE_EMOJI_ID:
-            await handle_oggersglare_reaction(reaction, user)
+        # elif getattr(reaction.emoji, "id", None) == OGGERSGLARE_EMOJI_ID:
+        #     await handle_oggersglare_reaction(reaction, user)
         elif ":Shut:" in str(reaction.emoji):
             await handle_shut_reaction(reaction, user)
             
@@ -2217,25 +2217,25 @@ async def on_reaction_remove(reaction, user):
                 logger.error(f"Failed to remove bedtime timeout for user {message_author}: {e}")
         return
 
-    if getattr(reaction.emoji, "id", None) == OGGERSGLARE_EMOJI_ID:
-        has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
-        if has_role:
-            message_author = reaction.message.author
-            try:
-                sticker_message_info = sticker_messages.get(reaction.message.id)
-                if not sticker_message_info:
-                    return
-                sticker_message_id, initiating_mod_id = sticker_message_info
-                if initiating_mod_id != user.id:
-                    return
-                reason = f"Oggersglare timeout removed by {user.name}#{user.discriminator}."
-                await message_author.timeout(None, reason=reason)
-                sticker_message = await reaction.message.channel.fetch_message(sticker_message_id)
-                await sticker_message.delete()
-                del sticker_messages[reaction.message.id]
-            except Exception as e:
-                logger.error(f"Failed to remove oggersglare timeout/sticker for {message_author}: {e}")
-        return
+    # if getattr(reaction.emoji, "id", None) == OGGERSGLARE_EMOJI_ID:
+    #     has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
+    #     if has_role:
+    #         message_author = reaction.message.author
+    #         try:
+    #             sticker_message_info = sticker_messages.get(reaction.message.id)
+    #             if not sticker_message_info:
+    #                 return
+    #             sticker_message_id, initiating_mod_id = sticker_message_info
+    #             if initiating_mod_id != user.id:
+    #                 return
+    #             reason = f"Oggersglare timeout removed by {user.name}#{user.discriminator}."
+    #             await message_author.timeout(None, reason=reason)
+    #             sticker_message = await reaction.message.channel.fetch_message(sticker_message_id)
+    #             await sticker_message.delete()
+    #             del sticker_messages[reaction.message.id]
+    #         except Exception as e:
+    #             logger.error(f"Failed to remove oggersglare timeout/sticker for {message_author}: {e}")
+    #     return
 
     if ":Shut:" in emoji_str:
         has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
