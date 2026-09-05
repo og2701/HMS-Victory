@@ -625,8 +625,8 @@ def test_voice_is_persistent():
     # spend the whole Voice in one delve...
     d = _enemy_room_delve(p, "troll", extra_rooms=3)
     assert d.shout_charges == 3
-    d.act_shout(p, 2)                                  # FUS RO flattens the troll
-    d.act_shout(p, 1)                                  # FUS staggers the next
+    d.act_shout(p, 2)                                  # FUS RO deals two damage
+    d.act_shout(p, 1)                                  # FUS spends the final charge
     assert d.shout_charges == 0 and E.voice_charges(p) == 0
     # ...and the next delve starts empty: no free refill at the door
     d2 = E.Delve.start(p, 0, "embershard")
@@ -1746,6 +1746,8 @@ def test_the_weeks_hunt():
     store = E.world_boss()
     store["hp"] = 1
     E._wb_save(store)
+    # The finisher has earned the War Room's second daily march.
+    q["homestead"]["built"]["war_room"] = "2026-09-01"
     E.random = _fixed_rolls(0.0, 0.0, 0.0, 0.9)
     try:
         _l, _d, slain2, store = E.wb_march(q)
@@ -2111,6 +2113,8 @@ def test_faction_switching_keeps_favour_per_guild():
     p["xp"] = 10 ** 7
     assert E.join_faction(p, "companions") is None
     p["favours"]["companions"] = 6
+    # This established member has also completed the three promotion missions.
+    p["promotions"]["companions"]["claimed"] = [1, 2, 3]
     assert E.faction_rank(p) == D.FACTION_RANKS[3]
 
     # switching is allowed, and the old guild remembers you
@@ -2291,4 +2295,3 @@ def test_skyrim_gaming_channel_blocked():
     assert len(sent) == 1
     assert "cannot be run in <#1139977009389387959>" in sent[0][0]
     assert sent[0][1] is True  # ephemeral
-

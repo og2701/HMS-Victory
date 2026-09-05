@@ -568,6 +568,10 @@ MAX_THREAD_USERS = 990
 
 def reattach_persistent_views(client):
     from commands.moderation.announcement_command import RoleButtonView
+    # Finish an adventure launch committed just before a restart, before taking
+    # the board snapshot. Profile-side journals contain its complete saved board.
+    from lib.features.skyrim.sessions import recover_all as recover_skyrim_launches
+    recover_skyrim_launches()
     persistent_views = load_persistent_views()
     for key, value in persistent_views.items():
         if key.startswith("archive_") and isinstance(value, dict) and "move_timestamp" in value and "msg_id" in value:

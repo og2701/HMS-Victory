@@ -16,6 +16,7 @@ back); only the septims in the delve satchel are at stake - die and they are los
 flee mid-fight and a third spills. That is the whole risk model.
 """
 
+import copy
 import datetime
 import logging
 import random
@@ -28,6 +29,8 @@ from lib.core.file_operations import (
     load_json_file, save_json_file, load_persistent_views, save_persistent_views,
 )
 from lib.features.skyrim import data as D
+from lib.features.skyrim import progression as P
+from lib.features.skyrim import combat as C
 
 logger = logging.getLogger(__name__)
 
@@ -414,15 +417,19 @@ def get_profile(user_id) -> dict | None:
     p = _profiles().get(str(user_id))
     if p is None:
         return None
-    # One-time shape upgrades must PERSIST on first touch. The stamina conversion in
-    # particular used to happen during rendering, after the caller had already saved -
-    # so it silently re-ran on every hub open and the countdown never moved.
-    if ("stone" not in p or "weapon" in p.get("skills", {})
-            or "charges" not in (p.get("stamina") or {})):
-        _migrate(p)
-        _stamina(p)
+    if p.get("_launch_commit"):
+        from lib.features.skyrim.sessions import recover_profile
+        p = recover_profile(p)
+    before = copy.deepcopy(p)
+    _migrate(p)
+    _stamina(p)
+    P.ensure_promotions(p)
+    # Earned bounties settle on the first return, even if the player never opens
+    # the Notice Board. Credit and week change persist in one atomic profile save.
+    task_state(p)
+    if p != before:
         save_profile(p)
-    return _migrate(p)           # cheap idempotent defaults for newer fields
+    return p
 
 
 def save_profile(profile: dict):
@@ -591,6 +598,7 @@ def _fight_raw(profile, enemy_key: str, style: str, delve=None) -> float:
             p += AMBUSH_BONUS
         p += _affix_fight_delta(profile, enemy_key, style, delve)
         p += (delve.buffs or {}).get("fight", 0)   # a brewed Philtre of Fury
+        p += C.attack_bonus(delve.room)
         p -= D.STIRRED_FIGHT_PER_RANK * getattr(delve, "stirred", 0)   # the deep offer bites
         p -= 3 * getattr(delve, "echo", 0)          # an Echoed Skuldafn fights back harder
         if getattr(delve, "kind", None) == "soulcairn":
@@ -900,6 +908,7 @@ def task_state(profile) -> dict:
     ts = profile.setdefault("tasks", {})
     wk = f"{_iso_week()[0]}-{_iso_week()[1]}"
     if ts.get("week") != wk:
+        P.settle_task_rollover(profile, wk)
         ts.clear()
         ts.update({"week": wk, "prog": {}, "claimed": [], "bonus": False})
     return ts
@@ -928,6 +937,7 @@ def _task_matches(t: dict, kind: str, ctx: dict) -> bool:
 
 def task_event(profile, kind: str, **ctx):
     """Count a play event against this week's matching tasks (progress caps at n)."""
+    P.promotion_event(profile, kind, **ctx)
     ts = task_state(profile)
     for key in weekly_tasks():
         t = D.TASKS.get(key)
@@ -1024,7 +1034,36 @@ def _affix_fight_delta(profile, enemy_key: str, style: str, delve) -> float:
 
 
 def best_style(profile, enemy_key: str, delve=None) -> str:
-    return max(D.STYLES, key=lambda s: fight_pct(profile, enemy_key, s, delve))
+    """Prefer expected damage, including overkill and the exposed-flank counter."""
+    intent = combat_intent(delve)["key"] if delve and delve.playing() and delve.enemy() else None
+    return max(D.STYLES, key=lambda s: (
+        fight_pct(profile, enemy_key, s, delve)
+        * (1 + crit_chance(profile, enemy_key, s, delve) + C.damage_bonus(intent, s)),
+        fight_pct(profile, enemy_key, s, delve)))
+
+
+def combat_intent(delve) -> dict:
+    """Read-only, compact next-turn guidance; rendering never rolls or changes it."""
+    if not delve or not delve.playing() or not delve.enemy():
+        return {"key": "none", "label": "", "hint": "", "counter": None,
+                "max_wound": 0, "guard_available": False, "guard_hint": ""}
+    e = delve.enemy()
+    result = C.intent(delve.room, e, delve.grounded)
+    result["max_wound"] = 2 if result["key"] == "charge" or delve._heavy(e) > 0 else 1
+    guard_wound = 2 if "dagon" in delve.pacts else 1
+    result["guard_hint"] = (
+        "Stops this charge safely; next attack +10%, with no reply on a hit."
+        if result["key"] == "charge" else
+        f"50% chance of a blow (up to {guard_wound} HP); next attack +10%, with no reply on a hit.")
+    return result
+
+
+def story_choices(delve) -> list | None:
+    return C.story_choices(delve.room) if delve and delve.playing() else None
+
+
+def story_text(delve) -> str | None:
+    return C.story_text(delve.room) if delve and delve.playing() else None
 
 
 def sneak_pct(profile, enemy_key: str, delve=None) -> int | None:
@@ -1351,7 +1390,8 @@ def build_rooms(loc_key: str, rng=None, affix_level: int = 0, route: str = None,
     # (Legend lairs and Skuldafn are set-pieces - no side paths, no corpses.)
     if not loc.get("rumour") and not loc.get("alduin") \
             and len(rooms) >= 2 and rng.random() < FORK_CHANCE:
-        rooms.append({"kind": "event", "key": "fork", "boss": False, "resolved": False})
+        rooms.append({"kind": "event", "key": "fork", "boss": False, "resolved": False,
+                      "story": rng.choice(sorted(C.STORIES)), "route_seed": rng.random()})
     if loc.get("word_wall"):
         rooms.append({"kind": "event", "key": "wordwall", "boss": False, "resolved": False})
     rooms.append({"kind": "enemy", "key": loc["boss"], "boss": True, "resolved": False})
@@ -1412,6 +1452,7 @@ def _room_hp(room: dict) -> int:
     if room.get("affix"):
         hp += D.AFFIXES.get(room["affix"], {}).get("hp", 0)
     hp += int(room.get("soul_hp", 0))            # Soul Cairn depth scaling
+    hp += int((room.get("story_effect") or {}).get("hp", 0))
     return hp
 
 
@@ -1429,7 +1470,8 @@ class Delve:
                  ambush=False, hp_warned=False, venom=False, ingredients=None,
                  dragon=None, phase=None, depth=0, kind="normal", buffs=None,
                  route=None, pacts=None, stirred=0, echo=0, pet_used=False, mood=None,
-                 potions_used=0, styles_used=None, took_deep=False):
+                 potions_used=0, styles_used=None, took_deep=False, summary=None,
+                 history=None):
         import uuid
         self.delve_id = delve_id or uuid.uuid4().hex[:12]
         self.daily = bool(daily)                  # the shared once-a-day dungeon
@@ -1452,6 +1494,8 @@ class Delve:
         self.potions_used = int(potions_used)     # drinks this delve (dry-clear tasks)
         self.styles_used = list(styles_used or [])  # attack styles swung (style-purity tasks)
         self.took_deep = bool(took_deep)          # braved the deep way at a Fork
+        self.summary = copy.deepcopy(summary or {})
+        self.history = list(history if history is not None else (log or []))[-C.HISTORY_LIMIT:]
         self.player_id = int(player_id)
         self.player_name = player_name
         self.channel_id = channel_id
@@ -1499,6 +1543,7 @@ class Delve:
                 build_rooms(loc_key, affix_level=level(profile), route=route),
                 hearts=heart_max(profile), shout_charges=voice_charges(profile),
                 dragon=dragon_of_the_week(), route=route)
+        d.capture_summary(profile)
         d.say(loc["arrive"])
         # locations answer strength by band: Hard/DRAGON stay dangerous at any power
         d.stirred = stirred_rank(profile, loc_key)
@@ -1530,6 +1575,47 @@ class Delve:
     def say(self, line: str):
         self.log.append(line)
         self.log = self.log[-3:]
+        self.history.append(line)
+        self.history = self.history[-C.HISTORY_LIMIT:]
+
+    def capture_summary(self, profile):
+        """Freeze a small starting sheet once; safe on old resumed boards too."""
+        if "start" not in self.summary:
+            self.summary["start"] = {
+                "skills": dict(profile["skills"]), "level": level(profile),
+                "stats": dict(profile.get("stats") or {}),
+                "tasks": copy.deepcopy(profile.get("tasks") or {}),
+                "septims": int(profile.get("septims", 0)),
+                "ingredients": dict(profile.get("ingredients") or {}),
+                "potions": int(profile.get("potions", 0)),
+                "souls": int(profile.get("souls", 0)), "words": int(profile.get("words", 0)),
+                "weapon_tier": int(profile.get("weapon_tier", 0)),
+                "armour_tier": int(profile.get("armour_tier", 0)),
+            }
+
+    def _complete_summary(self, profile, banked_gold=0, lost_gold=0, lost_ingredients=None):
+        self.capture_summary(profile)
+        start = self.summary["start"]
+        self.summary.update({
+            "outcome": self.state, "banked_gold": int(banked_gold), "lost_gold": int(lost_gold),
+            "lost_ingredients": dict(lost_ingredients or {}),
+            "end_level": level(profile), "xp": self.xp_gained, "kills": self.kills,
+            "potions_used": self.potions_used,
+            "skill_gains": {k: v - start["skills"].get(k, v) for k, v in profile["skills"].items()
+                            if v > start["skills"].get(k, v)},
+            "stats_gains": {k: v - start["stats"].get(k, 0)
+                            for k, v in (profile.get("stats") or {}).items()
+                            if isinstance(v, int) and v > start["stats"].get(k, 0)},
+        })
+        self.summary.setdefault("banked_ingredients", {})
+        before_tasks = start["tasks"]
+        after_tasks = profile.get("tasks") or {}
+        before_progress = (before_tasks.get("prog") or {}) if before_tasks.get("week") == after_tasks.get("week") else {}
+        self.summary["task_gains"] = {k: v - before_progress.get(k, 0)
+                                      for k, v in (after_tasks.get("prog") or {}).items()
+                                      if v > before_progress.get(k, 0)}
+        if self.kind == "tutorial" and self.state == "cleared":
+            profile["tutorial_completed"] = True
 
     def next_hint(self) -> str | None:
         """Whisper what waits in the NEXT room (enemies only) so shouts and the right
@@ -1549,6 +1635,7 @@ class Delve:
     # --- room flow --------------------------------------------------------------
     def _advance(self, profile):
         """Step to the next room, or finish the delve if the boss room is done."""
+        self.room["resolved"] = True
         self.engaged = self.spotted = self.grounded = False
         self.ambush = self.hp_warned = False
         self.phase = None
@@ -1561,6 +1648,13 @@ class Delve:
         self.idx += 1
         r = self.room
         self.enemy_hp = self._hp_for(r)
+        effect = r.get("story_effect") or {}
+        if effect and not effect.get("arrived"):
+            effect["arrived"] = True
+            self.enemy_hp = max(1, self.enemy_hp - int(effect.get("damage", 0)))
+            if effect.get("opening"):
+                r.setdefault("combat", {})["opening"] = True
+            self.say("📜 " + effect["note"])
         if self.venom:                       # a Venomous wound bleeds into this room
             self.venom = False
             self.say("🟢 The lingering venom flares as you press on - it sears before it fades.")
@@ -1631,6 +1725,7 @@ class Delve:
         record_best(profile, "kills_delve", self.kills)
         profile["active_delve"] = None
         self.state = "cleared"
+        self._complete_summary(profile, banked_gold=self.satchel)
         self.result_line = (f"Cleared! Banked **{self.satchel:,} septims** "
                             f"(including a {bonus:,} haul from the final chamber) and "
                             f"**{self.xp_gained} XP**.{tail}")
@@ -1654,6 +1749,11 @@ class Delve:
             self.say("The Adoring Fan hurls himself into the blow with a delighted shriek. "
                      "He'll... he'll be fine. Probably.  (wound absorbed)")
             return "soaked"
+        effect = self.room.get("story_effect") or {}
+        if effect.get("guard") and not effect.get("guard_used"):
+            effect["guard_used"] = True
+            self.say("🗝️ The scout you freed catches the blow. The favour is repaid.")
+            return "soaked"
         pet = active_companion(profile)
         if pet and pet.get("guard") and not self.pet_used:
             self.pet_used = True
@@ -1676,10 +1776,14 @@ class Delve:
         return "wounded"
 
     def _die(self, profile):
+        if not self.playing():
+            return
+        self.capture_summary(profile)
         profile["stats"]["deaths"] += 1
         profile["active_delve"] = None
         self.state = "dead"
         lost = self.satchel
+        self._complete_summary(profile, lost_gold=lost, lost_ingredients=self.ingredients)
         if self.kind not in ("soulcairn",) and lost > 0:
             record_fallen(profile, self)          # leave a corpse for the next delver here
         self.result_line = (f"**You died.** The satchel - **{lost:,} septims** - stays in "
@@ -1706,14 +1810,15 @@ class Delve:
             base += nd.get("crush", 0.0)
         return base + weather_today()["heavy"]
 
-    def _confirm_low_hp(self, profile) -> bool:
-        """One heart + potions in the belt = warn once before a risky swing, so
-        newer players learn what the 🧪 button is for. Returns True if the click
-        was consumed by the warning."""
-        if self.hearts == 1 and profile["potions"] > 0 and not self.hp_warned:
+    def _confirm_low_hp(self, profile, danger=None) -> bool:
+        """Warn once when a possible wound is lethal and usable healing exists."""
+        danger = combat_intent(self)["max_wound"] if danger is None else danger
+        if (self.hearts <= danger and self.hearts < delve_heart_max(self, profile)
+                and profile["potions"] > 0 and "namira" not in self.pacts and not self.hp_warned):
             self.hp_warned = True
-            self.say("⚠️ **One heart left - and you're carrying a potion!** 🧪 heals you "
-                     "first. If you truly want to fight on one heart, press the attack again.")
+            prefix = "One heart left. " if self.hearts == 1 else ""
+            self.say(f"⚠️ {prefix}A wound can cost **{danger} HP**; you have **{self.hearts}**. "
+                     "Drink a potion, or press Attack again to take the risk.")
             return True
         return False
 
@@ -1739,6 +1844,9 @@ class Delve:
         return True
 
     def act_attack(self, profile, style: str = None) -> None:
+        if not self.playing() or self.room["kind"] != "enemy":
+            return
+        self.capture_summary(profile)
         e = self.enemy()
         if self._confirm_low_hp(profile):
             return
@@ -1746,38 +1854,89 @@ class Delve:
         if style not in self.styles_used:
             self.styles_used.append(style)        # style-purity tasks watch every swing
         p = fight_pct(profile, self.room["key"], style, self)
+        crit_pct = crit_chance(profile, self.room["key"], style, self)
+        intent = combat_intent(self)["key"]
+        opening = bool((self.room.get("combat") or {}).get("opening"))
         was_ambush = self.ambush
         self.ambush = False
         if random.random() * 100 < p:
+            gain = C.practice(profile, self.room, style, True, D.STONES)
             # a landed hit may be soaked by an elite ward before it does anything
             if self._ward_absorbs(style):
                 self.engaged = True
+                C.advance(self.room)
                 return
-            crit = random.random() < crit_chance(profile, self.room["key"], style, self)
-            self.enemy_hp -= 2 if crit else 1
+            # Both probabilities were frozen before consuming ambush/opening or practising.
+            crit = random.random() < crit_pct
+            damage = (2 if crit else 1) + C.damage_bonus(intent, style)
+            previous_hp = self.enemy_hp
+            self.enemy_hp -= damage
             if self.enemy_hp > 0:
                 # a big foe takes the hit and keeps coming - the fight is on
                 self.engaged = True
                 lines = D.STAGGER_DRAGON_LINES if e["type"] == "dragon" else D.STAGGER_LINES
                 line = (D.pick(D.CRIT_LINES) + "  " if crit else "") + D.pick(lines)
-                self.say(line + f"  ({'🩸' * self.enemy_hp} to go)")
-                self._alduin_reflight_check()
+                self.say(line + f"  ({self.enemy_hp} HP left)")
+                if intent == "regenerate" and style != "destruction":
+                    healed = min(1, max(0, self._hp_for(self.room) - self.enemy_hp))
+                    self.enemy_hp += healed
+                    if healed:
+                        self.say("🧌 Its wound closes: +1 HP. Fire would stop that heal.")
+                elif intent == "regenerate":
+                    self.say("🔥 Fire stops the troll's healing.")
+                if intent == "exposed" and style == "marksman":
+                    self.say("🏹 The exposed flank takes 1 extra damage.")
+                self._alduin_reflight_check(previous_hp)
                 # ...and it ANSWERS: a wounded boss doesn't wait for you to miss.
                 # An answer is a quick lash, never a crushing windup - frequent
                 # pressure, not coin-flip swing.
                 retaliate = e.get("retaliate", RETALIATE_BY_TIER.get(e["tier"], 0.0))
+                if intent == "channel":
+                    retaliate = 0.0 if style == "blade" else 1.0
+                    if style == "blade":
+                        self.say("⚔️ Your blade interrupts the spell.")
+                if opening:
+                    retaliate = 0.0  # the guarded counter gives a clean follow-up
+                C.advance(self.room)
                 if retaliate and random.random() < retaliate:
                     self.say(f"{e['emoji']} The **{e['name']}** answers!")
                     if self._wound(profile, e["wound"], heavy=0.0) == "dead":
                         return
             else:
-                self._kill(profile, e, style, crit=crit, ambush=was_ambush)
+                self._kill(profile, e, style, crit=crit, ambush=was_ambush, practice_gain=gain)
         else:
+            C.practice(profile, self.room, style, False, D.STONES)
             self.engaged = True
             if was_ambush:
                 self.say("Your strike goes wide - the ambush is blown!")
+            C.advance(self.room)
             self._wound(profile, e["wound"], knee_chance=0.10 if e["type"] == "human" else 0.0,
-                        heavy=self._heavy(e))
+                        heavy=1.0 if intent == "charge" else self._heavy(e))
+
+    def act_guard(self, profile) -> None:
+        """One guarded exchange per foe: stop a charge or risk a glancing blow."""
+        if not self.playing() or self.room["kind"] != "enemy":
+            return
+        self.capture_summary(profile)
+        state = self.room.setdefault("combat", {})
+        if state.get("guard_used"):
+            self.say("Your guarded opening is spent. Commit to an attack or withdraw.")
+            return
+        intent = combat_intent(self)["key"]
+        if intent != "charge" and self._confirm_low_hp(profile, 2 if "dagon" in self.pacts else 1):
+            return
+        self.engaged = True
+        self.ambush = False
+        state["guard_used"] = True
+        C.advance(self.room)
+        state["opening"] = True
+        if intent == "charge":
+            self.say("🛡️ The charge breaks on your guard. Next attack +10%; a hit draws no reply.")
+        else:
+            self.say("🛡️ You hold your guard. Next attack +10%; a hit draws no reply.")
+            if random.random() < 0.5:
+                self._wound(profile, ["A glancing blow gets around your guard."],
+                            heavy=1.0 if "dagon" in self.pacts else 0.0)
 
     def _drop_ingredient(self, profile, e, aff) -> str | None:
         """A kill may drop an alchemy ingredient into the at-risk pouch. Elites and
@@ -1805,13 +1964,16 @@ class Delve:
         banks (leave/flee/clear/launch). Death is the only thing that loses them."""
         if not self.ingredients:
             return
+        self.capture_summary(profile)
         store = profile.setdefault("ingredients", {})
+        banked = self.summary.setdefault("banked_ingredients", {})
         for k, n in self.ingredients.items():
             store[k] = store.get(k, 0) + n
+            banked[k] = banked.get(k, 0) + n
         self.ingredients = {}
 
-    def _kill(self, profile, e, style, crit=False, ambush=False):
-        gain = _skill_up(profile, style)
+    def _kill(self, profile, e, style, crit=False, ambush=False, practice_gain=0):
+        gain = practice_gain  # physical contributions train; Shout never trains a random weapon
         tier = e["tier"]
         bounty = bool(self.room.get("bounty"))
         aff = self.affix()
@@ -1906,27 +2068,35 @@ class Delve:
     def act_sneak(self, profile) -> None:
         """Slip into stealth. Success doesn't skip the room any more - it earns a
         CHOICE: ambush (attack at +AMBUSH_BONUS) or slip past quietly."""
+        if not self.playing() or self.room["kind"] != "enemy":
+            return
+        self.capture_summary(profile)
         e = self.enemy()
         p = sneak_pct(profile, self.room["key"], self)
         if p is None or self.engaged or self.spotted or self.ambush:
             return
+        if self._confirm_low_hp(profile):
+            return
         if random.random() * 100 < p:
-            gain = _skill_up(profile, "sneak")
+            gain = C.practice(profile, self.room, "sneak", True, D.STONES)
             self.ambush = True
             line = D.pick(D.AMBUSH_READY_LINES)
             if gain:
                 line += f"  (Sneak +{gain})"
             self.say(line)
         else:
+            C.practice(profile, self.room, "sneak", False, D.STONES)
             self.spotted = True
             self.engaged = True
             self.say(D.pick(D.SPOTTED_LINES))
+            C.advance(self.room)
             self._wound(profile, e["wound"], heavy=self._heavy(e))
 
     def act_slip(self, profile) -> None:
         """From ambush position: take the quiet exit instead of the knife."""
-        if not self.ambush:
+        if not self.playing() or self.room["kind"] != "enemy" or not self.ambush:
             return
+        self.capture_summary(profile)
         e = self.enemy()
         self.ambush = False
         gained, ups = add_xp(profile, 8 * e["tier"])
@@ -1940,12 +2110,17 @@ class Delve:
         self._advance(profile)
 
     def act_persuade(self, profile) -> None:
+        if not self.playing() or self.room["kind"] != "enemy":
+            return
+        self.capture_summary(profile)
         e = self.enemy()
         p = persuade_pct(profile, self.room["key"], self)
         if p is None or self.engaged:
             return
+        if self._confirm_low_hp(profile):
+            return
         if random.random() * 100 < p:
-            gain = _skill_up(profile, "speech")
+            gain = C.practice(profile, self.room, "speech", True, D.STONES)
             gained, ups = add_xp(profile, 10 * e["tier"])
             self.xp_gained += gained
             profile["stats"]["persuades"] += 1
@@ -1965,11 +2140,13 @@ class Delve:
             self.say(line)
             self._advance(profile)
         else:
+            C.practice(profile, self.room, "speech", False, D.STONES)
             self.engaged = True
             self.say("Your silver tongue turns to lead - steel comes out instead.")
+            C.advance(self.room)
             self._wound(profile, e["wound"], heavy=self._heavy(e))
 
-    def _alduin_reflight_check(self):
+    def _alduin_reflight_check(self, previous_hp=None):
         """After ANY damage to a reflight-capable dragon, it takes wing again at
         set hp thresholds - the fight is a war over shout charges. Alduin does it
         thrice; Voslaarum, grieving, once. Shared by weapon hits and DAH."""
@@ -1978,7 +2155,9 @@ class Delve:
             return
         thresholds = (D.ALDUIN_REFLIGHT_HP if self.room["key"] == "alduin"
                       else tuple(e.get("reflight") or ()))
-        if self.enemy_hp in thresholds:
+        crossed = (any(self.enemy_hp <= h < previous_hp for h in thresholds)
+                   if previous_hp is not None else self.enemy_hp in thresholds)
+        if crossed:
             self.grounded = False
             if self.room["key"] == "alduin":
                 self.say("**Alduin takes wing again**, laughing in the old tongue. Bring him down!")
@@ -1993,8 +2172,11 @@ class Delve:
         """The Words of Power loadout. Spend 1, 2 or 3 charges from your pool for a
         different effect - a rationing puzzle, not a spam button:
           FUS (1)         - stagger: ground a dragon, or chip one telling blow.
-          FUS RO (2)      - the old room-flatten (loot + move on); grounds+chips a dragon.
+          FUS RO (2)      - 2 damage to non-dragons; grounds+chips a dragon.
           FUS RO DAH (3)  - the true Thu'um: 2 damage to ANYTHING (dragons included)."""
+        if not self.playing() or self.room["kind"] != "enemy":
+            return
+        self.capture_summary(profile)
         words = profile.get("words", 0)
         if words <= 0 or self.shout_charges <= 0:
             return
@@ -2017,45 +2199,54 @@ class Delve:
         if cost >= 3:                                    # FUS RO DAH - true damage
             if is_dragon:
                 self.grounded = True
+            previous_hp = self.enemy_hp
             self.enemy_hp -= 2
             self.say(f"**\"{shout}!\"** The whole Thu'um lands like a god's own fist.")
             if self.enemy_hp <= 0:
-                self._kill(profile, e, best_style(profile, self.room["key"], self))
+                self._kill(profile, e, None)
             else:
                 self.engaged = True
-                self.say(f"  ({'🩸' * self.enemy_hp} to go)")
-                self._alduin_reflight_check()
+                self.say(f"  ({self.enemy_hp} HP left)")
+                self._alduin_reflight_check(previous_hp)
+                C.advance(self.room)
             return
 
         if is_dragon:                                    # FUS / FUS RO on a dragon: ground it
             self.grounded = True
             self.say(D.pick(D.SHOUT_DRAGON_LINES, shout=shout))
             if cost == 2:                                # RO also chips a blow off it
+                previous_hp = self.enemy_hp
                 self.enemy_hp = max(1, self.enemy_hp - 1)
-                self.say(f"The Voice cracks scale from bone.  ({'🩸' * self.enemy_hp} to go)")
-                self._alduin_reflight_check()
+                self.say(f"The Voice cracks scale from bone.  ({self.enemy_hp} HP left)")
+                self._alduin_reflight_check(previous_hp)
+            C.advance(self.room)
             return
 
         if cost == 1:                                    # FUS on a non-dragon: a stagger
             self.enemy_hp -= 1
             if self.enemy_hp <= 0:
-                self._kill(profile, e, best_style(profile, self.room["key"], self))
+                self._kill(profile, e, None)
             else:
                 self.engaged = True
                 self.say(f"**\"{shout}!\"** The {e['name']} is hurled back, reeling.  "
-                         f"({'🩸' * self.enemy_hp} to go)")
+                         f"({self.enemy_hp} HP left)")
+                C.advance(self.room)
             return
 
-        # FUS RO on a non-dragon - the thorough room-flatten (loot + move on)
-        self.say(D.pick(D.SHOUT_CLEAR_LINES, shout=shout, enemy=e["name"]))
-        loot = _septims(profile, e["tier"] * 12 + random.randint(0, 8))
-        self.satchel += loot
-        gained, _ = add_xp(profile, 6 * e["tier"])
-        self.xp_gained += gained
-        self.say(f"You pick through the wreckage.  (+{gained} XP, +{loot} septims)")
-        self._advance(profile)
+        # Two words can finish ordinary foes, but cannot erase a healthy legend.
+        self.enemy_hp -= 2
+        if self.enemy_hp <= 0:
+            self.say(D.pick(D.SHOUT_CLEAR_LINES, shout=shout, enemy=e["name"]))
+            self._kill(profile, e, None)
+        else:
+            self.engaged = True
+            self.say(f'**"{shout}!"** The {e["name"]} reels: 2 damage. ({self.enemy_hp} HP left)')
+            C.advance(self.room)
 
     def act_potion(self, profile) -> None:
+        if not self.playing():
+            return
+        self.capture_summary(profile)
         if "namira" in self.pacts:
             self.say("🐀 **Namira's Fast holds.** The bottle stays corked.")
             return
@@ -2067,9 +2258,10 @@ class Delve:
         self.hp_warned = False
         cured = self.venom
         self.venom = False
-        if self.hearts < cap:
+        healed = self.hearts < cap
+        if healed:
             self.hearts += 1
-        line = "You drink a health potion. The wound knits before your eyes.  ❤️ +1"
+        line = "You drink a health potion." + ("  ❤️ +1" if healed else "")
         if cured:
             line += "  🟢 The venom neutralises."
         self.say(line)
@@ -2082,6 +2274,7 @@ class Delve:
         if "clavicus" in self.pacts:
             self.say("😈 **The Bargain holds.** There is no way out but through - or under.")
             return
+        self.capture_summary(profile)
         profile["active_delve"] = None
         self._bank_ingredients(profile)          # the pouch comes home either way
         mult = pact_mult(self)
@@ -2090,6 +2283,8 @@ class Delve:
             profile["septims"] += kept
             profile["stats"]["flees"] += 1
             self.state = "fled"
+            self._complete_summary(profile, banked_gold=kept,
+                                   lost_gold=int(self.satchel * mult) - kept)
             self.result_line = (f"You fled mid-fight - **{kept:,} septims** made it home, "
                                 f"the rest spilled behind you. **{self.xp_gained} XP** banked.")
             self.say(D.pick(D.FLEE_LINES))
@@ -2104,6 +2299,7 @@ class Delve:
                 for k in self.pacts:
                     log_add(profile, "pacts", k)   # walked out alive under the pact
             self.state = "left"
+            self._complete_summary(profile, banked_gold=self.satchel)
             if self.kind == "soulcairn":
                 best = int((profile.get("soulcairn") or {}).get("best", 0))
                 self.result_line = (f"You climb out of the Cairn at **depth {self.depth}** with "
@@ -2122,11 +2318,14 @@ class Delve:
         """The deep way: an extra elite (guaranteed affix) guarding a locked strongbox,
         inserted right before the boss. Richer, riskier - an honest choice."""
         loc = self.loc
+        # Branch contents are frozen by the original map seed, even if a daily is
+        # played hours apart. Old boards derive a stable fallback from their route.
+        rng = random.Random(self.room.get("route_seed", f"{self.location}:{self.idx}:deep"))
         pool = list(loc["pool"].keys())
         weights = list(loc["pool"].values())
-        ekey = random.choices(pool, weights=weights, k=1)[0]
+        ekey = rng.choices(pool, weights=weights, k=1)[0]
         elite = {"kind": "enemy", "key": ekey, "boss": False, "resolved": False}
-        aff = _eligible_affix(ekey, random)
+        aff = _eligible_affix(ekey, rng)
         if aff:
             elite["affix"] = aff
         chest = {"kind": "event", "key": "chest", "boss": False, "resolved": False, "locked": True}
@@ -2135,6 +2334,34 @@ class Delve:
         self.say("You take the deep way down. The air thickens - something elite is guarding "
                  "a strongbox in the dark.")
         self._advance(profile)
+
+    def _resolve_story(self, profile, choice):
+        story = C.story(self.room)
+        if not story or choice not in {c[2] for c in story["choices"]}:
+            return False
+        if choice == "deep":
+            self.summary.setdefault("stories", []).append({
+                "story": self.room["story"], "choice": choice,
+                "outcome": "You searched the vault: an extra elite and a locked chest."})
+            self._take_deep_fork(profile)
+            return True
+        targets = [r for r in self.rooms[self.idx + 1:] if r["kind"] == "enemy"]
+        target = next((r for r in targets if r.get("boss")), targets[0] if targets else None)
+        if choice == "safe" or target is None:
+            line = "You pass quietly. The guardian's chamber stays undisturbed."
+        elif choice == "story_help":
+            target["story_effect"] = dict(story["help"])
+            line = story["help_line"]
+        else:
+            coin = int(story["greed"])
+            self.satchel += coin
+            target["story_effect"] = {"hp": 1, "note": "Your theft alerted the guardian: +1 HP."}
+            line = story["greed_line"]
+        self.summary.setdefault("stories", []).append({"story": self.room["story"],
+                                                        "choice": choice, "outcome": line})
+        self.say("📜 " + line)
+        self._advance(profile)
+        return True
 
     # --- event actions --------------------------------------------------------------
     def _spring_knee_trap(self, profile):
@@ -2147,6 +2374,9 @@ class Delve:
 
     def act_event(self, profile, choice: str) -> None:
         """Resolve an event-room button. choice: open|skip|take|pray|approach|talk|retreat|continue."""
+        if not self.playing():
+            return
+        self.capture_summary(profile)
         r = self.room
         if r["kind"] != "event":
             return
@@ -2186,6 +2416,9 @@ class Delve:
             self.say(D.pick(D.ENEMIES["mimic"]["intro"]))
             return
         if key == "fork":
+            if C.story(r):
+                self._resolve_story(profile, choice)
+                return
             if choice == "deep":
                 self._take_deep_fork(profile)
             else:
@@ -2356,6 +2589,7 @@ class Delve:
                     profile["stats"]["launched"] += 1
                     profile["active_delve"] = None
                     self.state = "launched"
+                    self._complete_summary(profile, banked_gold=self.satchel)
                     self.result_line = (f"Banked **{self.satchel:,} septims** and "
                                         f"**{self.xp_gained} XP**. And some airtime.")
                     glog(f"🦣 **{profile['name']}** was launched into orbit by a giant in "
@@ -2389,7 +2623,8 @@ class Delve:
                 "pacts": self.pacts, "stirred": self.stirred, "echo": self.echo,
                 "pet_used": self.pet_used, "mood": self.mood,
                 "potions_used": self.potions_used, "styles_used": self.styles_used,
-                "took_deep": self.took_deep}
+                "took_deep": self.took_deep, "summary": copy.deepcopy(self.summary),
+                "history": list(self.history)}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Delve":
@@ -2410,30 +2645,29 @@ class Delve:
                    pacts=d.get("pacts"), stirred=d.get("stirred", 0), echo=d.get("echo", 0),
                    pet_used=d.get("pet_used", False), mood=d.get("mood"),
                    potions_used=d.get("potions_used", 0), styles_used=d.get("styles_used"),
-                   took_deep=d.get("took_deep", False))
+                   took_deep=d.get("took_deep", False), summary=d.get("summary"),
+                   history=d.get("history"))
 
 
 # ---------------------------------------------------------------------------
 # Starting / abandoning delves
 # ---------------------------------------------------------------------------
 def abandon_active(profile):
-    """Close a previous still-open delve safely: bank its satchel (an implicit
-    Leave - never punitive) and drop its persisted state so the old buttons die.
-    An abandoned daily still counts as that day's attempt and is recorded as left."""
+    """Settle an old adventure with exactly the same rules as its Leave action.
+
+    User-facing replacements use sessions.prepare/commit to stage this outcome
+    until the new public board exists. A no-exit pact cannot be abandoned.
+    """
     mid = profile.get("active_delve")
     if not mid:
         return
     old = load_delve(mid)
     if old is not None and old.playing():
-        profile["septims"] += old.satchel
-        if old.satchel:
-            glog(f"🚪 **{profile['name']}** abandoned a delve in "
-                 f"**{old.loc['name']}** - {old.satchel:,} septims banked on the way out")
+        if "clavicus" in old.pacts:
+            raise ValueError("The Bargain seals the exit. Finish your current pact first.")
+        old.act_leave(profile)
         if old.daily:
-            old.state = "left"
             record_daily_result(profile, old)
-        logger.info("skyrim: auto-banked %s septims from %s's abandoned delve",
-                    old.satchel, profile["user_id"])
     delete_delve(mid)
     profile["active_delve"] = None
 
@@ -2455,13 +2689,38 @@ def _first_delve_of_day_comforts(profile, delve: Delve):
         delve.say(f"🧪 The Quartermaster's habit dies hard - your belt is filled.  (+{got})")
 
 
+def tutorial_available(profile) -> bool:
+    return (not profile.get("tutorial_started")
+            and int((profile.get("stats") or {}).get("delves", 0)) == 0)
+
+
 def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
     """Begin a delve. kind: 'normal' (spends stamina) | 'daily' (the shared seeded
     dungeon, once per day, no stamina) | 'alduin' (Skuldafn, once per day, no stamina).
     Callers must have checked availability; this marks the attempt."""
     faction_state(profile)  # ensure weekly faction challenge snapshots before delve progress starts
     abandon_active(profile)
-    if kind == "daily":
+    start_profile = copy.deepcopy(profile)
+    if kind == "tutorial":
+        if not tutorial_available(profile):
+            raise ValueError("Your first adventure is already underway or finished.")
+        profile["tutorial_started"] = True
+        rooms = [
+            {"kind": "enemy", "key": "skeever", "boss": False, "resolved": False,
+             "lesson": "A potion restores 1 HP. Your attack's percentage is its chance to hit."},
+            {"kind": "enemy", "key": "bandit", "boss": False, "resolved": False,
+             "lesson": "Sneak first to set up an ambush, or slip past for XP."},
+            {"kind": "event", "key": "chest", "boss": False, "resolved": False,
+             "lesson": "Gold and ingredients stay at risk until you leave or finish."},
+            {"kind": "enemy", "key": "bandit_chief", "boss": True, "resolved": False,
+             "combat": {"intent": "charge"},
+             "lesson": "Guard stops a heavy strike. You can also leave and bank your haul."},
+        ]
+        delve = Delve(profile["user_id"], profile["name"], channel_id, "embershard", rooms,
+                      hearts=max(1, heart_max(profile) - 1),
+                      shout_charges=voice_charges(profile), kind="tutorial")
+        delve.say("Your first adventure: four rooms, one step at a time.")
+    elif kind == "daily":
         # the shared layout rolls elites like a seasoned delver's map and always
         # features at least one - seeded, so everyone faces the same marked foes
         date, loc_key, route, mood, rooms = _daily_rooms()
@@ -2502,6 +2761,7 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
             names = ", ".join(f"{D.PACTS[k]['emoji']} {D.PACTS[k]['name']}" for k in pacts)
             delve.say(f"⚖️ **Pacts sworn:** {names}  (satchel x{pact_mult(delve):g} if you bank it)")
     delve.kind = kind
+    delve.capture_summary(start_profile)
     profile["stats"]["delves"] += 1
     bits = []
     if kind == "daily":
@@ -2630,22 +2890,23 @@ def _daily_store() -> dict:
     return load_json_file(config.SKYRIM_DAILY_FILE) or {}
 
 
-def record_daily_result(profile, delve: Delve):
+def record_daily_result(profile, delve: Delve, attempt_date: str = None):
     """Write this attempt onto today's shared board (best-effort, last write wins)."""
     try:
         store = _daily_store()
-        today = _today_str()
-        day = store.get(today) or {}
+        date = attempt_date or (profile.get("daily") or {}).get("date") or _today_str()
+        datetime.date.fromisoformat(date)  # reject malformed persisted dates
+        day = store.get(date) or {}
         day[str(profile["user_id"])] = {
             "name": profile["name"], "stone": profile["stone"], "state": delve.state,
             "satchel": delve.satchel, "kills": delve.kills,
             "rooms": delve.idx + (1 if delve.state == "cleared" else 0),
             "total_rooms": len(delve.rooms), "xp": delve.xp_gained,
         }
-        # keep only today + yesterday; the board is ephemeral history
-        keep = sorted(store.keys())[-1:]
-        store = {k: v for k, v in store.items() if k in keep}
-        store[today] = day
+        # Keep the two newest attempt days; replacing/recovering an old board
+        # never inserts yesterday's dungeon into today's shared leaderboard.
+        store[date] = day
+        store = {k: store[k] for k in sorted(store)[-2:]}
         save_json_file(config.SKYRIM_DAILY_FILE, store)
     except Exception:
         logger.error("skyrim: failed to record daily result", exc_info=True)
@@ -2796,8 +3057,10 @@ def _pit_attack_pct(profile, champ=None) -> int:
     """Your arena hit chance - the full build counts: skills, weapon tier,
     tempering, Honed Edge, and your attack Doctrines (the Bear is a beast -
     Hunters know what to do with beasts)."""
-    style = max(D.STYLES, key=lambda s: profile["skills"][s])
     foe = {"type": (champ or {}).get("kind", "human")}
+    style = max(D.STYLES, key=lambda s: (
+        _skill_component(profile["skills"][s], FIGHT_SKILL_SCALE)
+        + doctrine_fight_bonus(profile, foe, s)))
     p = (44 + _skill_component(profile["skills"][style], FIGHT_SKILL_SCALE)
          + D.WEAPON_FIGHT_PER_TIER * profile["weapon_tier"]
          + temper_fight_bonus(profile)
@@ -3166,12 +3429,14 @@ def save_duel_board(message_id, profile):
 def start_soulcairn(profile, channel_id) -> Delve:
     """Begin the day's descent. Callers must have checked availability."""
     abandon_active(profile)
+    start_profile = copy.deepcopy(profile)
     sc = profile.setdefault("soulcairn", {"best": 0})
     sc["date"] = _today_str()
     d = Delve(profile["user_id"], profile["name"], channel_id, "soul_cairn",
               [_soulcairn_room(0, random)], hearts=heart_max(profile),
               shout_charges=voice_charges(profile), kind="soulcairn", dragon=dragon_of_the_week())
     d.say(D.LOCATIONS["soul_cairn"]["arrive"])
+    d.capture_summary(start_profile)
     best = int(sc.get("best", 0))
     glog(f"💀 **{profile['name']}** descended into the Soul Cairn"
          + (f" (deepest ever: {best})" if best else ""))
@@ -3451,6 +3716,7 @@ def join_faction(profile, key: str) -> str | None:
         return "The great factions only take proven adventurers (level 8+)."
     if profile.get("allegiance") == key:
         return f"You already run with {D.FACTIONS[key]['name']}."
+    P.ensure_promotions(profile)
     was = profile.get("allegiance")
     profile["allegiance"] = key
     profile.setdefault("favours", {})
@@ -3502,11 +3768,11 @@ def faction_favour(profile, key: str = None) -> int:
 
 
 def faction_rank(profile, key: str = None) -> str:
-    fav = faction_favour(profile, key)
-    return D.FACTION_RANKS[min(len(D.FACTION_RANKS) - 1, fav // 2)]
+    return P.faction_rank(profile, key)
 
 
 def claim_faction(profile) -> str | None:
+    P.ensure_promotions(profile)
     goal, prog, done = faction_progress(profile)
     if profile.get("allegiance") not in D.FACTIONS:
         return "You owe no faction your allegiance yet."
@@ -3522,7 +3788,7 @@ def claim_faction(profile) -> str | None:
     fac = profile["allegiance"]
     favour = faction_favour(profile) + 1
     profile.setdefault("favours", {})[fac] = favour
-    rank_i = min(len(D.FACTION_RANKS) - 1, favour // 2)
+    rank_i = P.faction_rank_index(profile)
     reward = _septims(profile, 400 + 150 * rank_i)
     profile["septims"] += reward
     gained, _ = add_xp(profile, 120 + 40 * rank_i)
@@ -3728,6 +3994,8 @@ def retire_ready(profile) -> tuple:
     character actually grown into the climb - and since every kill hardens his
     Echo, each retirement is bought against a worse World-Eater."""
     lg = legacy(profile)
+    if profile.get("active_delve") or pit_bout_active(profile) or duel_bout_active(profile):
+        return False, "finish your adventure or bout before retiring"
     need = int(lg.get("rank", 0)) + 1
     slain = int(profile.get("alduin_slain") or 0)
     if lg.get("rank", 0) >= D.LEGACY_MAX:
@@ -3764,6 +4032,7 @@ def retire(profile, boon_key: str, stone_key: str = None) -> str | None:
         return "Fate never offered that boon."
     if stone_key is not None and stone_key not in D.STONES:
         return "No such Guardian Stone."
+    inherited = P.prepare_inheritance(profile)
     lg = legacy(profile)
     # the epitaph - written before anything resets
     try:
@@ -3801,7 +4070,7 @@ def retire(profile, boon_key: str, stone_key: str = None) -> str | None:
     if not keep_weapon:
         profile["weapon_tier"] = 0
         temper["weapon"] = 0
-    profile["doctrines"] = {}
+    P.apply_inheritance(profile, inherited)
     profile["legendary"] = {}
     profile["ingredients"] = {}
     profile["elixirs"] = {}
@@ -3813,6 +4082,8 @@ def retire(profile, boon_key: str, stone_key: str = None) -> str | None:
     profile["allegiance"] = None
     profile["faction"] = {}
     profile["favours"] = {}
+    profile["promotions"] = {}
+    P.ensure_promotions(profile)
     profile["expedition"] = None
     profile["expedition2"] = None
     profile["created"] = _today_str()
@@ -4123,6 +4394,7 @@ def world_boss(date_str: str = None) -> dict:
     wk = f"{y}-{w}"
     store = _wb_store()
     if store.get("week") != wk:
+        old_store = store
         last_week = _wb_last_week_record(store)
         rng = random.Random(f"skyrim-hunt-{wk}")
         pool = sorted(D.WORLD_BOSSES)
@@ -4136,11 +4408,14 @@ def world_boss(date_str: str = None) -> dict:
         store = {"week": wk, "boss": rng.choice(pool), "hp": hp, "max": hp,
                  "base": hp, "wave": 1, "kills": 0, "actives": actives,
                  "strikes": {}, "shares": {}, "last_week": last_week}
+        P.preserve_hunt_mailbox(old_store, store)
         _wb_save(store)
     elif store.get("hp", 1) <= 0:
         # a wave felled under an older build (or a missed spawn): the next rises
         # lazily on first look - reads stay idempotent, nothing is scheduled
         _wb_next_wave(store)
+        _wb_save(store)
+    if P.capture_hunt_rewards(store):
         _wb_save(store)
     return store
 
@@ -4180,8 +4455,10 @@ def wb_available(profile, store: dict = None) -> bool:
 def _wb_attack_pct(profile, boss: dict) -> int:
     """Your hit chance on the hunt - the full build counts, plus the style
     matchup against what the boss IS (fire for the dead, and so on)."""
-    style = max(D.STYLES, key=lambda s: profile["skills"][s])
     foe = {"type": boss.get("type", "human")}
+    style = max(D.STYLES, key=lambda s: (
+        _skill_component(profile["skills"][s], FIGHT_SKILL_SCALE)
+        + doctrine_fight_bonus(profile, foe, s) + D.STYLE_AFF[foe["type"]][s]))
     p = (46 + _skill_component(profile["skills"][style], FIGHT_SKILL_SCALE)
          + D.WEAPON_FIGHT_PER_TIER * profile["weapon_tier"]
          + temper_fight_bonus(profile)
@@ -4191,25 +4468,32 @@ def _wb_attack_pct(profile, boss: dict) -> int:
     return _clamp(p)
 
 
-def wb_march(profile) -> tuple:
+def wb_march(profile, role: str = "attack") -> tuple:
     """March on the week's boss: a short auto-resolved sortie - your blows chip
     the SHARED pool, its blows spend your hearts (the sortie ends when either
     runs out of patience or blood; wounds don't follow you home). Returns
     (story_lines, damage_dealt, slain_now, store)."""
+    if role not in P.HUNT_ROLES:
+        raise ValueError("Choose attack, expose or protect.")
     store = world_boss()
+    if not wb_available(profile, store):
+        raise ValueError("No march is available right now.")
+    support = P.consume_hunt_support(store, profile, role)
     boss = wb_boss(store)
     uid = str(profile["user_id"])
     mine = store["strikes"].setdefault(uid, {"name": profile["name"], "days": [], "damage": 0})
     mine["name"] = profile["name"]
     mine["days"].append(_today_str())
     task_event(profile, "march")
-    atk = _wb_attack_pct(profile, boss)
+    # Ally help extends the ordinary cap, so a veteran still receives all 12
+    # points. Role costs apply after the base cap and cannot disappear in excess.
+    atk = max(ROLL_MIN, min(ROLL_MAX + 12, _wb_attack_pct(profile, boss) + support["attack_bonus"]))
     crit = CRIT_CHANCE + companion_bonus(profile, "crit")
-    guard = min(SOAK_CAP, soak_pct(profile))
+    guard = min(SOAK_CAP, soak_pct(profile)) + support["guard_bonus"]
     fatk = max(5, boss["fight"] - guard)
     hearts = heart_max(profile)
     dealt = 0
-    lines = [boss["arrive"]]
+    lines = [boss["arrive"], *support["lines"]]
     exchanges = WB_EXCHANGES
     # every boss fights in its own voice (hit/miss/answer pools drawn from data's
     # own rng, so the exchange dice stay untouched); the beats mark the pool's
@@ -4277,6 +4561,7 @@ def wb_march(profile) -> tuple:
             lines.append(wonder_line(found))
         glog(f"🏆 **{profile['name']}** landed the killing blow on **{boss['name']}** "
              f"(wave {wave}) - spoils for all who marched")
+        P.capture_hunt_rewards(store)
         _wb_next_wave(store)
         nxt = wb_boss(store)
         lines.append(f"🌩️ **The hold barely draws breath** - {nxt['emoji']} "
@@ -4293,37 +4578,33 @@ def wb_march(profile) -> tuple:
              f"pool at {store['hp']}/{store['max']}")
     else:
         lines.append(f"⚔️ You dealt **{dealt}**.  (+{gained} XP)")
+    help_line = P.finish_hunt_support(store, profile, role)
+    if help_line:
+        lines.append(help_line)
     _wb_save(store)
     record_best(profile, "march_damage", dealt)
     return lines, dealt, slain_now, store
 
 
 def wb_share_waiting(profile, store: dict = None) -> dict | None:
-    store = store or world_boss()
-    share = (store.get("shares") or {}).get(str(profile["user_id"]))
-    return share if share and not share.get("claimed") else None
+    return P.hunt_rewards_waiting(profile, store if store is not None else world_boss())
 
 
 def wb_claim(profile) -> str | None:
     """Collect your share of a felled hunt. Returns the payout line, or None."""
     store = world_boss()
-    share = wb_share_waiting(profile, store)
-    if not share:
+    line = P.claim_hunt_rewards(profile, store)
+    if not line:
         return None
-    share["claimed"] = True
-    _wb_save(store)
-    septims = _septims(profile, int(share["septims"]))
-    profile["septims"] += septims
-    gained, _ = add_xp(profile, int(share["xp"]))
-    boss = wb_boss(store)
-    extra = ""
     found = roll_wonder(profile, {"worldboss"}, WONDER_SIDE_CHANCE)
     if found:
-        extra = "\n" + wonder_line(found)
-    glog(f"🏆 **{profile['name']}** claimed their share of the {boss['name']}'s spoils "
-         f"(+{septims:,} septims)")
-    return (f"{boss['emoji']} Your share of the {boss['name']}'s spoils: "
-            f"**+{septims:,} septims, +{gained} XP**.{extra}")
+        line += "\n" + wonder_line(found)
+    # Balance and delivered receipt IDs share one atomic profile write. The
+    # shared claimed flag is advisory, so either file can be retried safely.
+    save_profile(profile)
+    _wb_save(store)
+    glog(f"🏆 **{profile['name']}** claimed their saved hunt rewards")
+    return line
 
 
 # ---------------------------------------------------------------------------

@@ -179,7 +179,7 @@ SKYRIM_ENABLED = True
 # by not playing. The Legacy 'Long Stride' boon adds +1 to the CAP (it used to be
 # +1/day, which no longer means anything under a regen model).
 SKYRIM_DELVE_REGEN_HOURS = 4       # one delve returns this often
-SKYRIM_DELVE_MAX_STORED = 5        # most you can have banked at once
+SKYRIM_DELVE_MAX_STORED = 12       # two days of refills; play on your own schedule
 SKYRIM_DELVES_PER_DAY = 3          # legacy: only used to convert old midnight-reset profiles
 SKYRIM_DRAGON_MIN_LEVEL = 8        # dragon lairs appear as destinations from this level
 SKYRIM_ALDUIN_MIN_LEVEL = 20       # Skuldafn (the Alduin fight) needs this level...

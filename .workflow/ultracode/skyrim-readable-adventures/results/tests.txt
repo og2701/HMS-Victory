@@ -1,0 +1,79 @@
+test_abandon_obeys_flee_and_clavicus_rules (isolated_test_skyrim_integration.AdventureIntegrationTests.test_abandon_obeys_flee_and_clavicus_rules) ... ok
+test_faction_missions_receive_actual_game_events (isolated_test_skyrim_integration.AdventureIntegrationTests.test_faction_missions_receive_actual_game_events) ... ok
+test_hunt_auto_style_uses_the_boss_matchup (isolated_test_skyrim_integration.AdventureIntegrationTests.test_hunt_auto_style_uses_the_boss_matchup) ... ok
+test_hunt_roles_reach_next_ally_and_cannot_repeat (isolated_test_skyrim_integration.AdventureIntegrationTests.test_hunt_roles_reach_next_ally_and_cannot_repeat) ... ok
+test_hunt_rollover_retains_claimable_reward_through_engine (isolated_test_skyrim_integration.AdventureIntegrationTests.test_hunt_rollover_retains_claimable_reward_through_engine) ... ok
+test_hunt_support_still_helps_at_the_normal_hit_cap (isolated_test_skyrim_integration.AdventureIntegrationTests.test_hunt_support_still_helps_at_the_normal_hit_cap) ... ok
+test_replaced_daily_keeps_original_day (isolated_test_skyrim_integration.AdventureIntegrationTests.test_replaced_daily_keeps_original_day) ... ok
+test_retirement_keeps_selected_ability_and_receipts (isolated_test_skyrim_integration.AdventureIntegrationTests.test_retirement_keeps_selected_ability_and_receipts) ... ok
+test_tutorial_is_free_contextual_and_once_only (isolated_test_skyrim_integration.AdventureIntegrationTests.test_tutorial_is_free_contextual_and_once_only) ... ok
+test_weekly_task_reward_persists_on_read_once (isolated_test_skyrim_integration.AdventureIntegrationTests.test_weekly_task_reward_persists_on_read_once) ... ok
+test_completed_tasks_settle_once_and_partial_tasks_do_not (isolated_test_skyrim_progression.ProgressionTests.test_completed_tasks_settle_once_and_partial_tasks_do_not) ... ok
+test_current_or_malformed_task_week_is_not_settled (isolated_test_skyrim_progression.ProgressionTests.test_current_or_malformed_task_week_is_not_settled) ... ok
+test_existing_faction_ranks_are_grandfathered (isolated_test_skyrim_progression.ProgressionTests.test_existing_faction_ranks_are_grandfathered) ... ok
+test_expose_and_protect_can_combine_but_not_stack (isolated_test_skyrim_progression.ProgressionTests.test_expose_and_protect_can_combine_but_not_stack) ... ok
+test_final_promotion_cosmetic_and_reward_once (isolated_test_skyrim_progression.ProgressionTests.test_final_promotion_cosmetic_and_reward_once) ... ok
+test_forged_or_stale_inheritance_selection_is_ignored (isolated_test_skyrim_progression.ProgressionTests.test_forged_or_stale_inheritance_selection_is_ignored) ... ok
+test_hunt_crash_orderings_do_not_lose_or_duplicate_rewards (isolated_test_skyrim_progression.ProgressionTests.test_hunt_crash_orderings_do_not_lose_or_duplicate_rewards) ... ok
+test_hunt_rollover_carries_rewards_and_claims_once (isolated_test_skyrim_progression.ProgressionTests.test_hunt_rollover_carries_rewards_and_claims_once) ... ok
+test_inheritance_preserves_exactly_one_learned_doctrine (isolated_test_skyrim_progression.ProgressionTests.test_inheritance_preserves_exactly_one_learned_doctrine) ... ok
+test_legacy_claimed_hunt_share_does_not_pay_again (isolated_test_skyrim_progression.ProgressionTests.test_legacy_claimed_hunt_share_does_not_pay_again) ... ok
+test_multiple_waves_pay_only_new_increments (isolated_test_skyrim_progression.ProgressionTests.test_multiple_waves_pay_only_new_increments) ... ok
+test_next_goal_is_one_short_routable_objective (isolated_test_skyrim_progression.ProgressionTests.test_next_goal_is_one_short_routable_objective) ... ok
+test_promotions_require_trial_and_favour_and_reward_once (isolated_test_skyrim_progression.ProgressionTests.test_promotions_require_trial_and_favour_and_reward_once) ... ok
+test_support_is_one_ally_use_bounded_and_attributed (isolated_test_skyrim_progression.ProgressionTests.test_support_is_one_ally_use_bounded_and_attributed) ... ok
+test_sweep_and_saved_profile_retry (isolated_test_skyrim_progression.ProgressionTests.test_sweep_and_saved_profile_retry) ... ok
+test_all_private_panels_fit_components_for_new_and_advanced_players (isolated_test_skyrim_readability.ReadabilityTests.test_all_private_panels_fit_components_for_new_and_advanced_players) ... ok
+test_claim_spoils_is_available_alongside_marching (isolated_test_skyrim_readability.ReadabilityTests.test_claim_spoils_is_available_alongside_marching) ... ok
+test_conflicting_commit_removes_uncommitted_public_board (isolated_test_skyrim_readability.ReadabilityTests.test_conflicting_commit_removes_uncommitted_public_board) ... skyrim: staged launch could not commit
+Traceback (most recent call last):
+  File "/Users/ogme01/Documents/Projects/HMS-Victory/lib/features/skyrim/views.py", line 1136, in _launch_delve
+    pending.commit(msg.id)
+  File "/Users/ogme01/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/unittest/mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ogme01/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/unittest/mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ogme01/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/unittest/mock.py", line 1198, in _execute_mock_call
+    raise effect
+ValueError: changed
+ok
+test_exhausted_public_adventure_picker_has_a_way_home (isolated_test_skyrim_readability.ReadabilityTests.test_exhausted_public_adventure_picker_has_a_way_home) ... ok
+test_faction_promotion_is_visible_and_claimable (isolated_test_skyrim_readability.ReadabilityTests.test_faction_promotion_is_visible_and_claimable) ... ok
+test_failed_post_leaves_pending_session_uncommitted (isolated_test_skyrim_readability.ReadabilityTests.test_failed_post_leaves_pending_session_uncommitted) ... skyrim: failed to post delve board
+Traceback (most recent call last):
+  File "/Users/ogme01/Documents/Projects/HMS-Victory/lib/features/skyrim/views.py", line 1127, in _launch_delve
+    msg = await interaction.channel.send(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ogme01/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/unittest/mock.py", line 2291, in _execute_mock_call
+    raise effect
+discord.errors.HTTPException: 500 failed (error code: 0): failed
+ok
+test_flee_button_previews_real_bank_amount (isolated_test_skyrim_readability.ReadabilityTests.test_flee_button_previews_real_bank_amount) ... ok
+test_hub_and_first_adventure_offer_are_short_and_actionable (isolated_test_skyrim_readability.ReadabilityTests.test_hub_and_first_adventure_offer_are_short_and_actionable) ... ok
+test_hunt_role_picker_has_three_distinct_actions (isolated_test_skyrim_readability.ReadabilityTests.test_hunt_role_picker_has_three_distinct_actions) ... ok
+test_inspect_and_back_preserve_actions_and_all_detail_pages (isolated_test_skyrim_readability.ReadabilityTests.test_inspect_and_back_preserve_actions_and_all_detail_pages) ... ok
+test_lethal_risk_is_visible_without_usable_potions (isolated_test_skyrim_readability.ReadabilityTests.test_lethal_risk_is_visible_without_usable_potions) ... ok
+test_live_board_is_compact_persistent_and_heals_vigor (isolated_test_skyrim_readability.ReadabilityTests.test_live_board_is_compact_persistent_and_heals_vigor) ... ok
+test_pact_event_does_not_offer_an_illegal_exit (isolated_test_skyrim_readability.ReadabilityTests.test_pact_event_does_not_offer_an_illegal_exit) ... ok
+test_pit_and_duel_boards_keep_navigation_and_numeric_health (isolated_test_skyrim_readability.ReadabilityTests.test_pit_and_duel_boards_keep_navigation_and_numeric_health) ... ok
+test_public_next_goal_opens_the_target_in_a_private_reply (isolated_test_skyrim_readability.ReadabilityTests.test_public_next_goal_opens_the_target_in_a_private_reply) ... ok
+test_retirement_requires_explicit_ability_choice_when_available (isolated_test_skyrim_readability.ReadabilityTests.test_retirement_requires_explicit_ability_choice_when_available) ... ok
+test_slain_hunt_report_does_not_mislabel_next_boss_health (isolated_test_skyrim_readability.ReadabilityTests.test_slain_hunt_report_does_not_mislabel_next_boss_health) ... ok
+test_story_inspect_matches_the_live_choice (isolated_test_skyrim_readability.ReadabilityTests.test_story_inspect_matches_the_live_choice) ... ok
+test_terminal_summary_shows_losses_skills_and_next_goal (isolated_test_skyrim_readability.ReadabilityTests.test_terminal_summary_shows_losses_skills_and_next_goal) ... ok
+test_board_only_action_rejects_stale_clean_exit (isolated_test_skyrim_sessions.SessionTests.test_board_only_action_rejects_stale_clean_exit) ... ok
+test_commit_uses_flee_rules_and_banks_ingredients_once (isolated_test_skyrim_sessions.SessionTests.test_commit_uses_flee_rules_and_banks_ingredients_once) ... ok
+test_concurrent_character_change_rejects_stale_commit (isolated_test_skyrim_sessions.SessionTests.test_concurrent_character_change_rejects_stale_commit) ... ok
+test_failed_post_changes_no_profile_or_existing_run (isolated_test_skyrim_sessions.SessionTests.test_failed_post_changes_no_profile_or_existing_run) ... ok
+test_failed_post_preserves_selected_supplies_and_daily_attempt (isolated_test_skyrim_sessions.SessionTests.test_failed_post_preserves_selected_supplies_and_daily_attempt) ... ok
+test_no_exit_pact_cannot_be_bypassed_by_replacement (isolated_test_skyrim_sessions.SessionTests.test_no_exit_pact_cannot_be_bypassed_by_replacement) ... ok
+test_per_player_launch_lock_serialises_double_clicks (isolated_test_skyrim_sessions.SessionTests.test_per_player_launch_lock_serialises_double_clicks) ... ok
+test_profile_commit_recovers_after_board_file_failure (isolated_test_skyrim_sessions.SessionTests.test_profile_commit_recovers_after_board_file_failure) ... ok
+
+----------------------------------------------------------------------
+Ran 52 tests in 0.190s
+
+OK
+Skyrim: 106 plain checks passed; 0 failed; 52 unittest checks; 0 unittest failures/errors.

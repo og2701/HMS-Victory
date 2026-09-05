@@ -1,0 +1,11 @@
+{
+  "seeded_tutorial_runs": 300,
+  "outcomes": {
+    "cleared": 199,
+    "dead": 101
+  },
+  "max_actions": 12,
+  "reload_after_every_action": true,
+  "terminated_without_errors": true,
+  "scope": "State/flow smoke check; not a player balance study."
+}

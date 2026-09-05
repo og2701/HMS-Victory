@@ -1,0 +1,2395 @@
+[
+  {
+    "name": "New player hub",
+    "art": "hub",
+    "components": [
+      {
+        "type": 12,
+        "items": [
+          {
+            "media": {
+              "url": "attachment://skyrim.webp"
+            },
+            "spoiler": false
+          }
+        ]
+      },
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## 🐉 Skyrim\n⚔️ **Dovahkiin** - Level 1 Adventurer\n💰 0 · ✨ 0/75 XP\n🛌 **12**/12 delves ready\n📅 daily delve **available**\n\n🎯 **Next:** Learn the road in a free first adventure.\n\n-# Your skills and gear stay yours. Gold and ingredients in the satchel are at risk."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 3,
+            "disabled": false,
+            "label": "First adventure",
+            "custom_id": "6d9aeaf728cbfae28d96572dd62a8fd2",
+            "emoji": {
+              "id": null,
+              "name": "🗺️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Character",
+            "custom_id": "8b3eebb65ac514aba10eff1c8a57ac87",
+            "emoji": {
+              "id": null,
+              "name": "👤"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Belethor's",
+            "custom_id": "d2883cb8c32202b7e550f335426bd997",
+            "emoji": {
+              "id": null,
+              "name": "🏪"
+            }
+          },
+          {
+            "type": 2,
+            "style": 3,
+            "disabled": false,
+            "label": "Notice Board ☠️",
+            "custom_id": "3984ab10e1d37d12e5205f2898bdf177",
+            "emoji": {
+              "id": null,
+              "name": "📌"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "The Pit",
+            "custom_id": "d8c20a95fb6e9f5adc1c6204cdf0155c",
+            "emoji": {
+              "id": null,
+              "name": "🗡️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Factions",
+            "custom_id": "ad9591dbc93a031aa94463c3f71a983b",
+            "emoji": {
+              "id": null,
+              "name": "🏰"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Holdings",
+            "custom_id": "fef7a7066a5173192e635709698854d3",
+            "emoji": {
+              "id": null,
+              "name": "🏡"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Rankings",
+            "custom_id": "02636f4264a4e9660fac209143cd1edc",
+            "emoji": {
+              "id": null,
+              "name": "🏆"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Help",
+            "custom_id": "baea8e8d4387edd216f191702c8c1c71",
+            "emoji": {
+              "id": null,
+              "name": "📖"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Experienced hub",
+    "art": "hub",
+    "components": [
+      {
+        "type": 12,
+        "items": [
+          {
+            "media": {
+              "url": "attachment://skyrim.webp"
+            },
+            "spoiler": false
+          }
+        ]
+      },
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## 🐉 Skyrim\n🔮 **Dovahkiin** - Level 24 Mercenary\n💰 25,000 · ✨ 0/2928 XP\n🛌 **12**/12 delves ready\n📅 daily delve **available**\n\n🎯 **Next:** Spend a perk point on your next advantage.\n\n-# Your skills and gear stay yours. Gold and ingredients in the satchel are at risk."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 3,
+            "disabled": false,
+            "label": "Adventure",
+            "custom_id": "ab3e59f3560e98bdca12ff5fdda6658b",
+            "emoji": {
+              "id": null,
+              "name": "🗺️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Character (23)",
+            "custom_id": "b8067c43048e424cea4c502b46ca90bb",
+            "emoji": {
+              "id": null,
+              "name": "👤"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Belethor's",
+            "custom_id": "71057c8dc5fdd0d37d634acaf2c36cfa",
+            "emoji": {
+              "id": null,
+              "name": "🏪"
+            }
+          },
+          {
+            "type": 2,
+            "style": 3,
+            "disabled": false,
+            "label": "Notice Board ☠️",
+            "custom_id": "c371934d676cc32f65d3b9458db31481",
+            "emoji": {
+              "id": null,
+              "name": "📌"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 3,
+            "disabled": false,
+            "label": "The Pit",
+            "custom_id": "6de95e629ee7506aae1ce43a05fe5c5d",
+            "emoji": {
+              "id": null,
+              "name": "🗡️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Factions",
+            "custom_id": "2741be792dd05f5d1c3ec83e92724709",
+            "emoji": {
+              "id": null,
+              "name": "🏰"
+            }
+          },
+          {
+            "type": 2,
+            "style": 3,
+            "disabled": false,
+            "label": "Holdings",
+            "custom_id": "a7e2772d111d7b4de9d3f1308a50fd22",
+            "emoji": {
+              "id": null,
+              "name": "🏡"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Rankings",
+            "custom_id": "664ca6d536f4e13ffa73b9fe85e0c264",
+            "emoji": {
+              "id": null,
+              "name": "🏆"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Help",
+            "custom_id": "098636a5cde7f0884700885ddc958a3f",
+            "emoji": {
+              "id": null,
+              "name": "📖"
+            }
+          },
+          {
+            "type": 2,
+            "style": 3,
+            "disabled": false,
+            "label": "Next goal",
+            "custom_id": "57a2f6451a84146864c4f6f2b75ddc4f",
+            "emoji": {
+              "id": null,
+              "name": "🎯"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Character",
+    "art": null,
+    "components": [
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## 👤 Dovahkiin\nLevel 24 Mercenary\n❤️ 3 · 🧪 2/2 · 💰 25,000\n\n⚔️ 😈 Daedric sword\n🛡️ 😈 Daedric heavy armour\n🗣️ 0/3 Voice · 6 souls\n\n**Strongest skills**\nOne-Handed: **100**\nMarksman: **100**\nDestruction: **100**\n\n23 perk points · 6 mastery choices\n-# Inspect for every skill, modifier and trophy."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Masteries (6)",
+            "custom_id": "c92f263e4d6df934447c59ad4dec3d81",
+            "emoji": {
+              "id": null,
+              "name": "✨"
+            }
+          },
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Perks (23)",
+            "custom_id": "a989e5d2b4d4d4d083565c11eee74faf",
+            "emoji": {
+              "id": null,
+              "name": "📜"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Collection 0%",
+            "custom_id": "b51c863c8d201cffbcb6e6cd954d28a9",
+            "emoji": {
+              "id": null,
+              "name": "📦"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Records",
+            "custom_id": "dcd12afe5e02574701d10e8b587b8d1c",
+            "emoji": {
+              "id": null,
+              "name": "🎖️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Companion",
+            "custom_id": "0ea394d230e2a404ce5257badfff8d39",
+            "emoji": {
+              "id": null,
+              "name": "🐾"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Back",
+            "custom_id": "e4287fdef5f01c631e976408fdfddc39",
+            "emoji": {
+              "id": null,
+              "name": "⬅️"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Inspect",
+            "custom_id": "88e006a92337b57ba03239e035b7d1ef",
+            "emoji": {
+              "id": null,
+              "name": "🔎"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Shop",
+    "art": null,
+    "components": [
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## 🏪 Belethor's General Goods\n-# \"Everything's for sale, my friend! Everything! If I had a sister, I'd sell her in a second.\"\n\n💰 Your septims: **25,000**\n🧪 **Health potion** - 40 septims  (2/2 pockets)\n⚔️ Upgrade to **🐲 Dragonbone** - 25,000 septims  (needs 25 dragons slain)\n🛡️ Upgrade to **🐲 Dragonbone** - 20,000 septims  (needs 25 dragons slain)\n👕 Armour style: **heavy** - full protection, worn loud.\n\n-# Weapons add +4% to all attack styles per tier; heavy armour soaks 5%/tier, light 3%/tier. Switching to light is free."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Buy potion",
+            "custom_id": "aefedb6fd90b1d11b368db3b11316067",
+            "emoji": {
+              "id": null,
+              "name": "🧪"
+            }
+          },
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Upgrade weapon",
+            "custom_id": "5ee654002af77b30dfcbdd6d8443543e",
+            "emoji": {
+              "id": null,
+              "name": "⚔️"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Upgrade armour",
+            "custom_id": "3e0097e5c9210866504db033d5db0740",
+            "emoji": {
+              "id": null,
+              "name": "🛡️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Go light",
+            "custom_id": "9433c5887108a381d0d01a1dfd4426e5",
+            "emoji": {
+              "id": null,
+              "name": "👕"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Property",
+            "custom_id": "29537bcc4e358f3a8499a2f2ef092a41",
+            "emoji": {
+              "id": null,
+              "name": "🏠"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Grindstone",
+            "custom_id": "0b9ea27c621c60f652e55cbdf2386ed6",
+            "emoji": {
+              "id": null,
+              "name": "🪓"
+            }
+          },
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Lab Bench",
+            "custom_id": "30e946fd243f7bd96517fab01f8dff23",
+            "emoji": {
+              "id": null,
+              "name": "⚗️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Rumours",
+            "custom_id": "1ad4a5364bc265b3f2ffc2f5fe4c56e6",
+            "emoji": {
+              "id": null,
+              "name": "🗣️"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Back",
+            "custom_id": "3d6fe5f63b54322d3a23063325848420",
+            "emoji": {
+              "id": null,
+              "name": "⬅️"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Holdings",
+    "art": "homestead_3",
+    "components": [
+      {
+        "type": 12,
+        "items": [
+          {
+            "media": {
+              "url": "attachment://skyrim.webp"
+            },
+            "spoiler": false
+          }
+        ]
+      },
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## 🏡 Holdings\n💰 25,000 septims\n🏠 16 improvements built\n🔨 0 improvements available\n🎁 4 days of supplies ready\n\n**Expeditions**\n🧭 A housecarl is ready\n🧭 A housecarl is ready\n\n-# Inspect for room benefits, costs and the expedition ledger."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 3,
+            "disabled": false,
+            "label": "Collect yields",
+            "custom_id": "5e38e7729d3bea61b909afe7ffab1133",
+            "emoji": {
+              "id": null,
+              "name": "🎁"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 3,
+            "custom_id": "ffa1cd84c182bf5418ead1bf0f6db36d",
+            "min_values": 1,
+            "max_values": 1,
+            "disabled": false,
+            "required": true,
+            "placeholder": "🧭 Send an expedition...",
+            "options": [
+              {
+                "label": "Patrol the roads (1d)",
+                "value": "roads",
+                "default": false,
+                "description": "A day guarding the trade road. Steady, safe coin.",
+                "emoji": {
+                  "id": null,
+                  "name": "🛡️"
+                }
+              },
+              {
+                "label": "Hunt the Reach (2d)",
+                "value": "hunt",
+                "default": false,
+                "description": "Two days hunting game and trolls in the hills.",
+                "emoji": {
+                  "id": null,
+                  "name": "🏹"
+                }
+              },
+              {
+                "label": "Chart a far ruin (3d)",
+                "value": "ruin",
+                "default": false,
+                "description": "Three days mapping a distant barrow. Real spoils.",
+                "emoji": {
+                  "id": null,
+                  "name": "🗺️"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 3,
+            "custom_id": "250915bfdbf0d5b6b142d7aee54f71a3",
+            "min_values": 1,
+            "max_values": 1,
+            "disabled": false,
+            "required": true,
+            "placeholder": "🚩 Raise a house banner...",
+            "options": [
+              {
+                "label": "The Wolf",
+                "value": "wolf",
+                "default": false,
+                "description": "swift, loyal, seldom alone",
+                "emoji": {
+                  "id": null,
+                  "name": "🐺"
+                }
+              },
+              {
+                "label": "The Bear",
+                "value": "bear",
+                "default": false,
+                "description": "strength that can wait",
+                "emoji": {
+                  "id": null,
+                  "name": "🐻"
+                }
+              },
+              {
+                "label": "The Dragon",
+                "value": "dragon",
+                "default": false,
+                "description": "born of the old fire",
+                "emoji": {
+                  "id": null,
+                  "name": "🐉"
+                }
+              },
+              {
+                "label": "The Hawk",
+                "value": "hawk",
+                "default": false,
+                "description": "far-seeing, quick to stoop",
+                "emoji": {
+                  "id": null,
+                  "name": "🦅"
+                }
+              },
+              {
+                "label": "The Moons",
+                "value": "moons",
+                "default": false,
+                "description": "patient as the tide",
+                "emoji": {
+                  "id": null,
+                  "name": "🌙"
+                }
+              },
+              {
+                "label": "The Crossed Blades",
+                "value": "blades",
+                "default": false,
+                "description": "settled the old way",
+                "emoji": {
+                  "id": null,
+                  "name": "⚔️"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 3,
+            "custom_id": "599e4d3d772a0b4cff94f87dc3d4e148",
+            "min_values": 1,
+            "max_values": 1,
+            "disabled": false,
+            "required": true,
+            "placeholder": "🕯️ Kneel at the shrine...",
+            "options": [
+              {
+                "label": "Blessing of Battle",
+                "value": "battle",
+                "default": false,
+                "description": "+2% attack, always",
+                "emoji": {
+                  "id": null,
+                  "name": "⚔️"
+                }
+              },
+              {
+                "label": "Blessing of Warding",
+                "value": "warding",
+                "default": false,
+                "description": "+2% armour soak, always",
+                "emoji": {
+                  "id": null,
+                  "name": "🛡️"
+                }
+              },
+              {
+                "label": "Blessing of Learning",
+                "value": "learning",
+                "default": false,
+                "description": "+5% XP, always",
+                "emoji": {
+                  "id": null,
+                  "name": "📚"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Back",
+            "custom_id": "51d222e7bcc9b45aa5bff34fecde1a05",
+            "emoji": {
+              "id": null,
+              "name": "⬅️"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Inspect",
+            "custom_id": "b9f545ab8ed482870699ebbfd43aedd7",
+            "emoji": {
+              "id": null,
+              "name": "🔎"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Notice Board",
+    "art": "notice_board",
+    "components": [
+      {
+        "type": 12,
+        "items": [
+          {
+            "media": {
+              "url": "attachment://skyrim.webp"
+            },
+            "spoiler": false
+          }
+        ]
+      },
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## 📌 Notice Board\n📅 Fellglow Keep · ready to explore\n📋 Tasks: 0/17 points\n• Slay 20 foes: 0/20\n• Fell 12 foes with Fire: 0/12\n\n👺 **Otar the Mad**\n❤️ 40/40 · wave 1\nChoose attack, expose or protect when you march.\n\n-# Inspect for all tasks, hunters and previous results."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 3,
+            "disabled": false,
+            "label": "Brave the daily",
+            "custom_id": "406ecfbf1d89caa684dd184016aa593d",
+            "emoji": {
+              "id": null,
+              "name": "📅"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Daily board",
+            "custom_id": "581691899c6c509219d042aaf32c36e9",
+            "emoji": {
+              "id": null,
+              "name": "📋"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "March on it",
+            "custom_id": "7a9ed202f72552c05db0037705bf23c5",
+            "emoji": {
+              "id": null,
+              "name": "📯"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Back",
+            "custom_id": "52c3f8a2d51addede3f45c962083943f",
+            "emoji": {
+              "id": null,
+              "name": "⬅️"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Inspect",
+            "custom_id": "35297755d75a87a2698237bb3757cd26",
+            "emoji": {
+              "id": null,
+              "name": "🔎"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Factions",
+    "art": null,
+    "components": [
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## 🏰 Factions of Skyrim\n\n🎯 **Promotion: Defeat 10 foes**\n0/10 · needs 2 favour\n\n-# Swear to a faction and each week they set you a task in a skill the endgame tends to forget. Finish it for favour, rank and coin.\n\n🛡️ **The Companions** - you are **Initiate** (favour 0)\n-# This week: **40 killing blows**  ▱▱▱▱▱▱▱▱▱▱  0/40\n\n**Word around the halls:**\n-# 🔮 **Faralda** turned 2 would-be applicants away with a single raised eyebrow.\n-# 🗝️ **Delvin Mallory** fenced 5 'lost' heirlooms back to their original owners. Twice each.\n-# 🔮 **Sergius Turrianus** sweet-talked 7 jarls into funding 'essential enchantment research'.\n-# 🔮 **Tolfdir** negotiated 7 new manuscripts out of a very suspicious courier."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 3,
+            "custom_id": "16c06cc19ff49b55e7120a361e611ed0",
+            "min_values": 1,
+            "max_values": 1,
+            "disabled": false,
+            "required": true,
+            "placeholder": "🏰 Take your oath elsewhere...",
+            "options": [
+              {
+                "label": "The Thieves Guild",
+                "value": "thieves",
+                "default": false,
+                "description": "Weekly: 14 clean sneaks",
+                "emoji": {
+                  "id": null,
+                  "name": "🗝️"
+                }
+              },
+              {
+                "label": "College of Winterhold",
+                "value": "college",
+                "default": false,
+                "description": "Weekly: 12 parleys won",
+                "emoji": {
+                  "id": null,
+                  "name": "🔮"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Back",
+            "custom_id": "48d4dbb747a7dc67d7e5fe41c80d87d0",
+            "emoji": {
+              "id": null,
+              "name": "⬅️"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Masteries",
+    "art": null,
+    "components": [
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## ✨ Masteries\n-# Every skill you carry to **100** unlocks a permanent **Doctrine** - pick one of two. Make a mastered skill **Legendary** to reset it to 15 for a ⭐ (the Doctrine stays) - carry it back to 100 and the OTHER Doctrine is yours too. This is how two maxed Dragonborn end up fighting differently.\n\n**Doctrines to choose** (a skill just hit 100):\n- One-Handed: ⚔️ Warmaster  vs  🛡️ Bulwark\n- Marksman: 🎯 Deadeye  vs  🐺 Hunter\n- Destruction: 🔥 Incinerate  vs  💥 Impact\n- Sneak: 👤 Ghost  vs  🌘 Nightstalker\n- Speech: 💬 Silver Tongue  vs  💰 Haggler\n- Lockpicking: 🔓 Locksmith  vs  🧪 Survivor"
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 3,
+            "custom_id": "0aeaf4b5047dc952efd45255c833e41f",
+            "min_values": 1,
+            "max_values": 1,
+            "disabled": false,
+            "required": true,
+            "placeholder": "Choose a Doctrine (permanent)...",
+            "options": [
+              {
+                "label": "One-Handed: Warmaster",
+                "value": "blade:warmaster",
+                "default": false,
+                "description": "+8% attack with the Blade.",
+                "emoji": {
+                  "id": null,
+                  "name": "⚔️"
+                }
+              },
+              {
+                "label": "One-Handed: Bulwark",
+                "value": "blade:bulwark",
+                "default": false,
+                "description": "+8% chance your armour soaks a wound.",
+                "emoji": {
+                  "id": null,
+                  "name": "🛡️"
+                }
+              },
+              {
+                "label": "Marksman: Deadeye",
+                "value": "marksman:deadeye",
+                "default": false,
+                "description": "+8% crit chance with the Bow.",
+                "emoji": {
+                  "id": null,
+                  "name": "🎯"
+                }
+              },
+              {
+                "label": "Marksman: Hunter",
+                "value": "marksman:hunter",
+                "default": false,
+                "description": "+10% attack against beasts.",
+                "emoji": {
+                  "id": null,
+                  "name": "🐺"
+                }
+              },
+              {
+                "label": "Destruction: Incinerate",
+                "value": "destruction:incinerate",
+                "default": false,
+                "description": "+12% Fire attack against undead & monsters.",
+                "emoji": {
+                  "id": null,
+                  "name": "🔥"
+                }
+              },
+              {
+                "label": "Destruction: Impact",
+                "value": "destruction:impact",
+                "default": false,
+                "description": "+6% crit chance with Fire.",
+                "emoji": {
+                  "id": null,
+                  "name": "💥"
+                }
+              },
+              {
+                "label": "Sneak: Ghost",
+                "value": "sneak:ghost",
+                "default": false,
+                "description": "+10% Sneak.",
+                "emoji": {
+                  "id": null,
+                  "name": "👤"
+                }
+              },
+              {
+                "label": "Sneak: Nightstalker",
+                "value": "sneak:nightstalker",
+                "default": false,
+                "description": "+10% crit chance on every attack - a killer's timing.",
+                "emoji": {
+                  "id": null,
+                  "name": "🌘"
+                }
+              },
+              {
+                "label": "Speech: Silver Tongue",
+                "value": "speech:silver_tongue",
+                "default": false,
+                "description": "+10% Persuade.",
+                "emoji": {
+                  "id": null,
+                  "name": "💬"
+                }
+              },
+              {
+                "label": "Speech: Haggler",
+                "value": "speech:haggler",
+                "default": false,
+                "description": "+25% septims from every source.",
+                "emoji": {
+                  "id": null,
+                  "name": "💰"
+                }
+              },
+              {
+                "label": "Lockpicking: Locksmith",
+                "value": "lockpicking:locksmith",
+                "default": false,
+                "description": "+15% septims - you find the caches others miss.",
+                "emoji": {
+                  "id": null,
+                  "name": "🔓"
+                }
+              },
+              {
+                "label": "Lockpicking: Survivor",
+                "value": "lockpicking:survivor",
+                "default": false,
+                "description": "+1 potion pocket.",
+                "emoji": {
+                  "id": null,
+                  "name": "🧪"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 3,
+            "custom_id": "cfb21edc54d54695b2623c316d23c1f0",
+            "min_values": 1,
+            "max_values": 1,
+            "disabled": false,
+            "required": true,
+            "placeholder": "Make a skill Legendary (reset to 15 for a ⭐)...",
+            "options": [
+              {
+                "label": "One-Handed → Legendary",
+                "value": "blade",
+                "default": false,
+                "description": "Resets to 15, keeps its Doctrine - re-master it to earn the other.",
+                "emoji": {
+                  "id": null,
+                  "name": "⭐"
+                }
+              },
+              {
+                "label": "Marksman → Legendary",
+                "value": "marksman",
+                "default": false,
+                "description": "Resets to 15, keeps its Doctrine - re-master it to earn the other.",
+                "emoji": {
+                  "id": null,
+                  "name": "⭐"
+                }
+              },
+              {
+                "label": "Destruction → Legendary",
+                "value": "destruction",
+                "default": false,
+                "description": "Resets to 15, keeps its Doctrine - re-master it to earn the other.",
+                "emoji": {
+                  "id": null,
+                  "name": "⭐"
+                }
+              },
+              {
+                "label": "Sneak → Legendary",
+                "value": "sneak",
+                "default": false,
+                "description": "Resets to 15, keeps its Doctrine - re-master it to earn the other.",
+                "emoji": {
+                  "id": null,
+                  "name": "⭐"
+                }
+              },
+              {
+                "label": "Speech → Legendary",
+                "value": "speech",
+                "default": false,
+                "description": "Resets to 15, keeps its Doctrine - re-master it to earn the other.",
+                "emoji": {
+                  "id": null,
+                  "name": "⭐"
+                }
+              },
+              {
+                "label": "Lockpicking → Legendary",
+                "value": "lockpicking",
+                "default": false,
+                "description": "Resets to 15, keeps its Doctrine - re-master it to earn the other.",
+                "emoji": {
+                  "id": null,
+                  "name": "⭐"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Back",
+            "custom_id": "4a49ee981e319ee7476e5b92557f11c3",
+            "emoji": {
+              "id": null,
+              "name": "⬅️"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Adventure picker",
+    "art": null,
+    "components": [
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## 🗺️ Choose a road\n🛌 **12**/12 delves ready\n\n🏕️ **Halted Stream Camp**\nEasy · 5 rooms\n\n⚰️ **Hillgrund's Tomb**\nMedium · 6 rooms\n\n🌀 **Labyrinthian**\nHard · 7 rooms\n\n🐉 **Ancient's Ascent**\nDRAGON · 4 rooms\n\n🌑 Alduin's path is open\n\n-# Inspect for route conditions, drops and difficulty modifiers."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Halted Stream Camp",
+            "custom_id": "fd7260198d823ff0c4fd608860b41525",
+            "emoji": {
+              "id": null,
+              "name": "🏕️"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Hillgrund's Tomb",
+            "custom_id": "fd4a44c1657694e837579f58f2922cf1",
+            "emoji": {
+              "id": null,
+              "name": "⚰️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Labyrinthian",
+            "custom_id": "75caddeee8018e5433ddedc8c47f07de",
+            "emoji": {
+              "id": null,
+              "name": "🌀"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "Ancient's Ascent",
+            "custom_id": "fa073fbd5c4ba599c0e8dff6c756c18e",
+            "emoji": {
+              "id": null,
+              "name": "🐉"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Pacts",
+            "custom_id": "eae25e9c3323b38c4acff0b8334400d0",
+            "emoji": {
+              "id": null,
+              "name": "⚖️"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "Face Alduin",
+            "custom_id": "e6c8389f8d18365458591537cedc5d34",
+            "emoji": {
+              "id": null,
+              "name": "🌑"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Back",
+            "custom_id": "f635cb44d7e88167b20a4b5bc5c208b4",
+            "emoji": {
+              "id": null,
+              "name": "⬅️"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Inspect",
+            "custom_id": "dc32499384f1932245500be8ba6dc1ed",
+            "emoji": {
+              "id": null,
+              "name": "🔎"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Hall",
+    "art": "hall_of_legends",
+    "components": [
+      {
+        "type": 12,
+        "items": [
+          {
+            "media": {
+              "url": "attachment://skyrim.webp"
+            },
+            "spoiler": false
+          }
+        ]
+      },
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## 🏛️ The Hall of Legends\n-# Retire a champion and begin again. Level, skills, gear, gold, perks and the Voice reset to a fresh start; your collection, records, wonders, companions and the estate persist - and each legend banks a permanent boon.\n\n-# The next retirement asks: level **20** (✅) and Alduin undone **1** time (0). Every kill hardens his Echo - each legend is earned against a worse World-Eater."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Character",
+            "custom_id": "17351f695171fd06f7ebffc27114039e",
+            "emoji": {
+              "id": null,
+              "name": "👤"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Back",
+            "custom_id": "a525520c2e28f10f4fd79297ef9f6657",
+            "emoji": {
+              "id": null,
+              "name": "⬅️"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Combat: heavy strike",
+    "art": "bandit_chief",
+    "components": [
+      {
+        "type": 12,
+        "items": [
+          {
+            "media": {
+              "url": "attachment://skyrim.webp"
+            },
+            "spoiler": false
+          }
+        ]
+      },
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## ⛏️ Embershard Mine · 1/1\n<@88002>\n❤️ 2/3  ·  🧪 2  ·  🗣️ 3  ·  💰 0\n\n**⚔️ Bandit Chief** · 2 HP\n**Winding up** — Guard stops the charge; a missed attack can cost 2 HP.\n⚠️ A wound can cost 2 HP; you have 2."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "Blade 84%",
+            "custom_id": "skyrim:df27c91d75bb:atk:blade",
+            "emoji": {
+              "id": null,
+              "name": "⚔️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "Bow 82%",
+            "custom_id": "skyrim:df27c91d75bb:atk:marksman",
+            "emoji": {
+              "id": null,
+              "name": "🏹"
+            }
+          },
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "Fire 78%",
+            "custom_id": "skyrim:df27c91d75bb:atk:destruction",
+            "emoji": {
+              "id": null,
+              "name": "🔥"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Sneak 74%",
+            "custom_id": "skyrim:df27c91d75bb:snk",
+            "emoji": {
+              "id": null,
+              "name": "🥷"
+            }
+          },
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Talk 67%",
+            "custom_id": "skyrim:df27c91d75bb:per",
+            "emoji": {
+              "id": null,
+              "name": "💬"
+            }
+          },
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Guard",
+            "custom_id": "skyrim:df27c91d75bb:guard",
+            "emoji": {
+              "id": null,
+              "name": "🛡️"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 3,
+            "custom_id": "skyrim:df27c91d75bb:shtsel",
+            "min_values": 1,
+            "max_values": 1,
+            "disabled": false,
+            "required": true,
+            "placeholder": "🗣️ Shout - 3 charge(s) in the Voice",
+            "options": [
+              {
+                "label": "FUS",
+                "value": "1",
+                "default": false,
+                "description": "Ground a dragon, or stagger a foe (1 charge)",
+                "emoji": {
+                  "id": null,
+                  "name": "🗣️"
+                }
+              },
+              {
+                "label": "FUS RO",
+                "value": "2",
+                "default": false,
+                "description": "2 damage; dragons are grounded and lose 1 HP (2 charges)",
+                "emoji": {
+                  "id": null,
+                  "name": "🗣️"
+                }
+              },
+              {
+                "label": "FUS RO DAH",
+                "value": "3",
+                "default": false,
+                "description": "The full Thu'um: 2 damage to anything (3 charges)",
+                "emoji": {
+                  "id": null,
+                  "name": "🗣️"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 3,
+            "disabled": false,
+            "label": "Heal +1",
+            "custom_id": "skyrim:df27c91d75bb:pot",
+            "emoji": {
+              "id": null,
+              "name": "🧪"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Bank 0",
+            "custom_id": "skyrim:df27c91d75bb:lve",
+            "emoji": {
+              "id": null,
+              "name": "🚪"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Home",
+            "custom_id": "skyrim:df27c91d75bb:home",
+            "emoji": {
+              "id": null,
+              "name": "🏠"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Inspect",
+            "custom_id": "skyrim:df27c91d75bb:inspect",
+            "emoji": {
+              "id": null,
+              "name": "🔎"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Combat: regeneration",
+    "art": "troll",
+    "components": [
+      {
+        "type": 12,
+        "items": [
+          {
+            "media": {
+              "url": "attachment://skyrim.webp"
+            },
+            "spoiler": false
+          }
+        ]
+      },
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## ⛏️ Embershard Mine · 1/1\n<@88002>\n❤️ 3/3  ·  🧪 2  ·  🗣️ 3  ·  💰 0\n\n**🧌 Troll** · 3 HP\n**Mending wounds** — Fire stops its heal; other surviving hits heal back 1 HP."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "Blade 77%",
+            "custom_id": "skyrim:9fb118273ed6:atk:blade",
+            "emoji": {
+              "id": null,
+              "name": "⚔️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "Bow 75%",
+            "custom_id": "skyrim:9fb118273ed6:atk:marksman",
+            "emoji": {
+              "id": null,
+              "name": "🏹"
+            }
+          },
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "Fire 82%",
+            "custom_id": "skyrim:9fb118273ed6:atk:destruction",
+            "emoji": {
+              "id": null,
+              "name": "🔥"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Sneak 64%",
+            "custom_id": "skyrim:9fb118273ed6:snk",
+            "emoji": {
+              "id": null,
+              "name": "🥷"
+            }
+          },
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Guard",
+            "custom_id": "skyrim:9fb118273ed6:guard",
+            "emoji": {
+              "id": null,
+              "name": "🛡️"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 3,
+            "custom_id": "skyrim:9fb118273ed6:shtsel",
+            "min_values": 1,
+            "max_values": 1,
+            "disabled": false,
+            "required": true,
+            "placeholder": "🗣️ Shout - 3 charge(s) in the Voice",
+            "options": [
+              {
+                "label": "FUS",
+                "value": "1",
+                "default": false,
+                "description": "Ground a dragon, or stagger a foe (1 charge)",
+                "emoji": {
+                  "id": null,
+                  "name": "🗣️"
+                }
+              },
+              {
+                "label": "FUS RO",
+                "value": "2",
+                "default": false,
+                "description": "2 damage; dragons are grounded and lose 1 HP (2 charges)",
+                "emoji": {
+                  "id": null,
+                  "name": "🗣️"
+                }
+              },
+              {
+                "label": "FUS RO DAH",
+                "value": "3",
+                "default": false,
+                "description": "The full Thu'um: 2 damage to anything (3 charges)",
+                "emoji": {
+                  "id": null,
+                  "name": "🗣️"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Bank 0",
+            "custom_id": "skyrim:9fb118273ed6:lve",
+            "emoji": {
+              "id": null,
+              "name": "🚪"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Home",
+            "custom_id": "skyrim:9fb118273ed6:home",
+            "emoji": {
+              "id": null,
+              "name": "🏠"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Inspect",
+            "custom_id": "skyrim:9fb118273ed6:inspect",
+            "emoji": {
+              "id": null,
+              "name": "🔎"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Combat: airborne dragon",
+    "art": "dragon_air",
+    "components": [
+      {
+        "type": 12,
+        "items": [
+          {
+            "media": {
+              "url": "attachment://skyrim.webp"
+            },
+            "spoiler": false
+          }
+        ]
+      },
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## ⛏️ Embershard Mine · 1/1\n<@88002>\n❤️ 3/3  ·  🧪 2  ·  🗣️ 3  ·  💰 0\n\n**🐉 Dragon** · 3 HP\n**Taking flight** — Bow reaches it; Shout brings it down."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "Blade 44%",
+            "custom_id": "skyrim:ecc763c9d864:atk:blade",
+            "emoji": {
+              "id": null,
+              "name": "⚔️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "Bow 70%",
+            "custom_id": "skyrim:ecc763c9d864:atk:marksman",
+            "emoji": {
+              "id": null,
+              "name": "🏹"
+            }
+          },
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "Fire 53%",
+            "custom_id": "skyrim:ecc763c9d864:atk:destruction",
+            "emoji": {
+              "id": null,
+              "name": "🔥"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Guard",
+            "custom_id": "skyrim:ecc763c9d864:guard",
+            "emoji": {
+              "id": null,
+              "name": "🛡️"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 3,
+            "custom_id": "skyrim:ecc763c9d864:shtsel",
+            "min_values": 1,
+            "max_values": 1,
+            "disabled": false,
+            "required": true,
+            "placeholder": "🗣️ Shout - 3 charge(s) in the Voice",
+            "options": [
+              {
+                "label": "FUS",
+                "value": "1",
+                "default": false,
+                "description": "Ground a dragon, or stagger a foe (1 charge)",
+                "emoji": {
+                  "id": null,
+                  "name": "🗣️"
+                }
+              },
+              {
+                "label": "FUS RO",
+                "value": "2",
+                "default": false,
+                "description": "2 damage; dragons are grounded and lose 1 HP (2 charges)",
+                "emoji": {
+                  "id": null,
+                  "name": "🗣️"
+                }
+              },
+              {
+                "label": "FUS RO DAH",
+                "value": "3",
+                "default": false,
+                "description": "The full Thu'um: 2 damage to anything (3 charges)",
+                "emoji": {
+                  "id": null,
+                  "name": "🗣️"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Bank 0",
+            "custom_id": "skyrim:ecc763c9d864:lve",
+            "emoji": {
+              "id": null,
+              "name": "🚪"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Home",
+            "custom_id": "skyrim:ecc763c9d864:home",
+            "emoji": {
+              "id": null,
+              "name": "🏠"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Inspect",
+            "custom_id": "skyrim:ecc763c9d864:inspect",
+            "emoji": {
+              "id": null,
+              "name": "🔎"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "First adventure",
+    "art": "skeever",
+    "components": [
+      {
+        "type": 12,
+        "items": [
+          {
+            "media": {
+              "url": "attachment://skyrim.webp"
+            },
+            "spoiler": false
+          }
+        ]
+      },
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## ⛏️ Embershard Mine · 1/4\n<@88001>\n❤️ 2/3  ·  🧪 2  ·  💰 0\n\n🪙 Merchant's Day - Caravans lost a lot of cargo lately. Finders keepers.\n\n**🐀 Skeever** · 1 HP\n**Pressing attack** — Guard risks a hit (50%) for +10% on your next attack.\n\n💡 A potion restores 1 HP. Your attack's percentage is its chance to hit."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "Blade 72%",
+            "custom_id": "skyrim:6760ed8cdfcc:atk:blade",
+            "emoji": {
+              "id": null,
+              "name": "⚔️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "Bow 70%",
+            "custom_id": "skyrim:6760ed8cdfcc:atk:marksman",
+            "emoji": {
+              "id": null,
+              "name": "🏹"
+            }
+          },
+          {
+            "type": 2,
+            "style": 4,
+            "disabled": false,
+            "label": "Fire 66%",
+            "custom_id": "skyrim:6760ed8cdfcc:atk:destruction",
+            "emoji": {
+              "id": null,
+              "name": "🔥"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Sneak 52%",
+            "custom_id": "skyrim:6760ed8cdfcc:snk",
+            "emoji": {
+              "id": null,
+              "name": "🥷"
+            }
+          },
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Guard",
+            "custom_id": "skyrim:6760ed8cdfcc:guard",
+            "emoji": {
+              "id": null,
+              "name": "🛡️"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 3,
+            "disabled": false,
+            "label": "Heal +1",
+            "custom_id": "skyrim:6760ed8cdfcc:pot",
+            "emoji": {
+              "id": null,
+              "name": "🧪"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Bank 0",
+            "custom_id": "skyrim:6760ed8cdfcc:lve",
+            "emoji": {
+              "id": null,
+              "name": "🚪"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Home",
+            "custom_id": "skyrim:6760ed8cdfcc:home",
+            "emoji": {
+              "id": null,
+              "name": "🏠"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Inspect",
+            "custom_id": "skyrim:6760ed8cdfcc:inspect",
+            "emoji": {
+              "id": null,
+              "name": "🔎"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Connected choice",
+    "art": "fork",
+    "components": [
+      {
+        "type": 12,
+        "items": [
+          {
+            "media": {
+              "url": "attachment://skyrim.webp"
+            },
+            "spoiler": false
+          }
+        ]
+      },
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## ⛏️ Embershard Mine · 1/2\n<@88002>\n❤️ 3/3  ·  🧪 2  ·  🗣️ 3  ·  💰 0\n\nA captive scout guards the captain's ransom. Free them to block one blow in the final fight. Take it: extra coin, but the final foe gains 1 HP."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Free scout",
+            "custom_id": "skyrim:c75b462adf17:evt:story_help",
+            "emoji": {
+              "id": null,
+              "name": "🗝️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Take ransom",
+            "custom_id": "skyrim:c75b462adf17:evt:story_greed",
+            "emoji": {
+              "id": null,
+              "name": "💰"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Pass quietly",
+            "custom_id": "skyrim:c75b462adf17:evt:safe",
+            "emoji": {
+              "id": null,
+              "name": "🚶"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Bank 0",
+            "custom_id": "skyrim:c75b462adf17:lve",
+            "emoji": {
+              "id": null,
+              "name": "🚪"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Home",
+            "custom_id": "skyrim:c75b462adf17:home",
+            "emoji": {
+              "id": null,
+              "name": "🏠"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Inspect",
+            "custom_id": "skyrim:c75b462adf17:inspect",
+            "emoji": {
+              "id": null,
+              "name": "🔎"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Run debrief",
+    "art": "victory",
+    "components": [
+      {
+        "type": 12,
+        "items": [
+          {
+            "media": {
+              "url": "attachment://skyrim.webp"
+            },
+            "spoiler": false
+          }
+        ]
+      },
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## ⛏️ Dungeon cleared\n<@88002> · Embershard Mine\n💰 **280 banked**\n🌿 2 ingredients banked\n✨ 120 XP · 5 kills\n📈 One-Handed +2\n📋 Progress on 1 task\n\n**Next:** Spend a perk point on your next advantage.\n-# 🛌 **12**/12 delves ready"
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Adventure",
+            "custom_id": "skyrim:c75b462adf17:again",
+            "emoji": {
+              "id": null,
+              "name": "🗺️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 3,
+            "disabled": false,
+            "label": "Next goal",
+            "custom_id": "skyrim:c75b462adf17:goal",
+            "emoji": {
+              "id": null,
+              "name": "🎯"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Home",
+            "custom_id": "skyrim:c75b462adf17:home",
+            "emoji": {
+              "id": null,
+              "name": "🏠"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Inspect",
+            "custom_id": "skyrim:c75b462adf17:inspect",
+            "emoji": {
+              "id": null,
+              "name": "🔎"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Death debrief",
+    "art": "death",
+    "components": [
+      {
+        "type": 12,
+        "items": [
+          {
+            "media": {
+              "url": "attachment://skyrim.webp"
+            },
+            "spoiler": false
+          }
+        ]
+      },
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## ⛏️ You fell\n<@88002> · Embershard Mine\n💰 **0 banked** · 280 lost\n🌿 0 ingredients banked · 2 lost\n✨ 120 XP · 5 kills\n📈 One-Handed +2\n📋 Progress on 1 task\n\n**Next:** Spend a perk point on your next advantage.\n-# 🛌 **12**/12 delves ready"
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Adventure",
+            "custom_id": "skyrim:c75b462adf17:again",
+            "emoji": {
+              "id": null,
+              "name": "🗺️"
+            }
+          },
+          {
+            "type": 2,
+            "style": 3,
+            "disabled": false,
+            "label": "Next goal",
+            "custom_id": "skyrim:c75b462adf17:goal",
+            "emoji": {
+              "id": null,
+              "name": "🎯"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Home",
+            "custom_id": "skyrim:c75b462adf17:home",
+            "emoji": {
+              "id": null,
+              "name": "🏠"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Inspect",
+            "custom_id": "skyrim:c75b462adf17:inspect",
+            "emoji": {
+              "id": null,
+              "name": "🔎"
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

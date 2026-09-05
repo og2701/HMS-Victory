@@ -1,0 +1,285 @@
+{
+  "schema_version": 2,
+  "run_id": "skyrim-readable-adventures-20260905",
+  "revision": 4,
+  "title": "Readable Skyrim adventures",
+  "slug": "skyrim-readable-adventures",
+  "goal": "Implement all agreed Skyrim improvements with compact mobile and desktop Discord UI",
+  "repo_root": "/Users/ogme01/Documents/Projects/HMS-Victory",
+  "baseline": {
+    "kind": "git",
+    "revision": "94f752ed611eb6ffe8e77bda121e3d3cb2ed0198",
+    "dirty_paths": []
+  },
+  "created_at": "2026-09-05T16:50:01.265Z",
+  "updated_at": "2026-09-05T17:41:33.678Z",
+  "heartbeat_at": "2026-09-05T17:41:33.678Z",
+  "status": "complete",
+  "phase": "complete",
+  "mode": "delegated",
+  "risk": {
+    "level": "medium",
+    "reasons": [
+      "Gameplay persistence and reward changes"
+    ]
+  },
+  "approval": {
+    "required": false,
+    "granted": null,
+    "scope": "Local implementation and verification",
+    "notes": "No deploy or external writes"
+  },
+  "delegation": {
+    "native_agent_available": true,
+    "native_agent_used": true,
+    "host": "Codex",
+    "capacity": 4,
+    "notes": "Nonoverlapping file ownership"
+  },
+  "resume": {
+    "attempt": 0,
+    "last_recovered_at": null,
+    "last_resumed_at": null
+  },
+  "packets": [
+    {
+      "id": "combat",
+      "title": "combat",
+      "status": "complete",
+      "owner": "agent",
+      "agent_handle": "/root/combat",
+      "agent_handles": [
+        "/root/combat"
+      ],
+      "dependencies": [],
+      "write_scope": [
+        "lib/features/skyrim/engine.py",
+        "lib/features/skyrim/combat.py",
+        "tests/test_skyrim_combat.py"
+      ],
+      "acceptance_criteria": [
+        "Implement corresponding criteria from run.md with isolated regression tests"
+      ],
+      "result_path": "results/combat.md",
+      "attempt": 1,
+      "started_at": "2026-09-05T16:59:06.314Z",
+      "completed_at": "2026-09-05T17:36:38.632Z",
+      "result_sha256": "2714f45fe134f9b45ae4230fd0860c9fbd4354f76a749e10df92fb252ce45e09",
+      "result_size": 4875
+    },
+    {
+      "id": "progression",
+      "title": "progression",
+      "status": "complete",
+      "owner": "agent",
+      "agent_handle": "/root/progression",
+      "agent_handles": [
+        "/root/progression"
+      ],
+      "dependencies": [],
+      "write_scope": [
+        "lib/features/skyrim/progression.py",
+        "tests/test_skyrim_progression.py"
+      ],
+      "acceptance_criteria": [
+        "Implement corresponding criteria from run.md with isolated regression tests"
+      ],
+      "result_path": "results/progression.md",
+      "attempt": 1,
+      "started_at": "2026-09-05T16:59:06.314Z",
+      "completed_at": "2026-09-05T17:36:38.632Z",
+      "result_sha256": "6367aa14f609d9e80528f808796fb8a1335c30e25982ba93ec7d7fed5a06e8d6",
+      "result_size": 9066
+    },
+    {
+      "id": "presentation",
+      "title": "presentation",
+      "status": "complete",
+      "owner": "agent",
+      "agent_handle": "/root/experience",
+      "agent_handles": [
+        "/root/experience"
+      ],
+      "dependencies": [],
+      "write_scope": [
+        "lib/features/skyrim/views.py",
+        "lib/features/skyrim/presentation.py",
+        "tests/test_skyrim_readability.py"
+      ],
+      "acceptance_criteria": [
+        "Implement corresponding criteria from run.md with isolated regression tests"
+      ],
+      "result_path": "results/presentation.md",
+      "attempt": 1,
+      "started_at": "2026-09-05T16:59:06.314Z",
+      "completed_at": "2026-09-05T17:36:38.632Z",
+      "result_sha256": "fbbcf2910d9643e30a0b9eb6d06427cfc33887af0c5302e33e8e5e5d2e820343",
+      "result_size": 2600
+    },
+    {
+      "id": "final-review",
+      "title": "Fresh integration review",
+      "owner": "agent",
+      "agent_handle": "/root/final_review",
+      "agent_handles": [
+        "/root/final_review"
+      ],
+      "status": "complete",
+      "dependencies": [
+        "combat",
+        "progression",
+        "presentation"
+      ],
+      "write_scope": [],
+      "acceptance_criteria": [
+        "Review integrated requirements and failure handling"
+      ],
+      "result_path": "results/final-review.md",
+      "attempt": 1,
+      "started_at": "2026-09-05T17:36:38.632Z",
+      "completed_at": "2026-09-05T17:40:25.957Z",
+      "result_sha256": "e62ade3446d43063d85aaf669199775cfc17b2f903fcffa159d62abadeefb72d",
+      "result_size": 1008
+    }
+  ],
+  "agents": [
+    {
+      "id": "/root/combat",
+      "task_name": "/root/combat",
+      "label": "combat",
+      "role": "implementer",
+      "status": "complete",
+      "packet": "combat",
+      "stage": "complete",
+      "last_seen_at": "2026-09-05T17:40:25.957Z"
+    },
+    {
+      "id": "/root/progression",
+      "task_name": "/root/progression",
+      "label": "progression",
+      "role": "implementer",
+      "status": "complete",
+      "packet": "progression",
+      "stage": "complete",
+      "last_seen_at": "2026-09-05T17:40:25.957Z"
+    },
+    {
+      "id": "/root/experience",
+      "task_name": "/root/experience",
+      "label": "presentation",
+      "role": "implementer",
+      "status": "complete",
+      "packet": "presentation",
+      "stage": "complete",
+      "last_seen_at": "2026-09-05T17:40:25.957Z"
+    },
+    {
+      "id": "/root/final_review",
+      "task_name": "/root/final_review",
+      "label": "Fresh final reviewer",
+      "role": "reviewer",
+      "status": "complete",
+      "packet": "final-review",
+      "stage": "complete",
+      "last_seen_at": "2026-09-05T17:40:25.957Z"
+    }
+  ],
+  "blockers": [],
+  "verification": {
+    "status": "passed",
+    "required_after": "2026-09-05T16:50:01.265Z",
+    "checks": [
+      {
+        "name": "Skyrim isolated suite",
+        "command": "PYTHONDONTWRITEBYTECODE=1 /Users/ogme01/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 scripts/test_skyrim_isolated.py",
+        "cwd": "/Users/ogme01/Documents/Projects/HMS-Victory",
+        "claim": "158 checks passed; zero failures",
+        "required": true,
+        "status": "passed",
+        "run_at": "2026-09-05T17:40:25.957Z",
+        "exit_code": 0,
+        "observed_result": "158 checks passed; zero failures",
+        "evidence": "158 checks passed; zero failures",
+        "evidence_path": "results/tests.txt",
+        "evidence_sha256": "4310d2250ee760e1b879f8f39cdbbe376c76dca45c0bef8cf3bc4e0f69852fcb",
+        "evidence_size": 10074
+      },
+      {
+        "name": "Mobile and desktop layouts",
+        "command": "manual:export scripts/preview_skyrim.py; inspect all samples through selector at 360 and 780px; inspect 10 core screens in a 360px viewport; read row/button scrollWidth vs clientWidth",
+        "cwd": "/Users/ogme01/Documents/Projects/HMS-Victory",
+        "claim": "17 screens at both card widths; ten narrower phone checks; no overflow or clipped buttons",
+        "required": true,
+        "status": "passed",
+        "run_at": "2026-09-05T17:40:25.957Z",
+        "exit_code": null,
+        "observed_result": "17 screens at both card widths; ten narrower phone checks; no overflow or clipped buttons",
+        "evidence": "17 screens at both card widths; ten narrower phone checks; no overflow or clipped buttons",
+        "evidence_path": "results/visual-review.json",
+        "evidence_sha256": "66c88a53ac14ac35f452d3d0e472f9d61d35fcc780c0ce4926125fc7701b1838",
+        "evidence_size": 700
+      },
+      {
+        "name": "Fresh independent review",
+        "command": "manual:review integrated diff against run.md; reproduce and resolve concrete findings; inspect final production changes",
+        "cwd": "/Users/ogme01/Documents/Projects/HMS-Victory",
+        "claim": "No remaining concrete findings",
+        "required": true,
+        "status": "passed",
+        "run_at": "2026-09-05T17:40:25.957Z",
+        "exit_code": null,
+        "observed_result": "No remaining concrete findings",
+        "evidence": "No remaining concrete findings",
+        "evidence_path": "results/final-review.md",
+        "evidence_sha256": "e62ade3446d43063d85aaf669199775cfc17b2f903fcffa159d62abadeefb72d",
+        "evidence_size": 1008
+      },
+      {
+        "name": "Python syntax",
+        "command": "manual:ast.parse all 10 changed production and helper Python files",
+        "cwd": "/Users/ogme01/Documents/Projects/HMS-Victory",
+        "claim": "10 files parse successfully",
+        "required": true,
+        "status": "passed",
+        "run_at": "2026-09-05T17:40:25.957Z",
+        "exit_code": null,
+        "observed_result": "10 files parse successfully",
+        "evidence": "10 files parse successfully"
+      },
+      {
+        "name": "Patch whitespace",
+        "command": "git diff --check",
+        "cwd": "/Users/ogme01/Documents/Projects/HMS-Victory",
+        "claim": "No whitespace errors",
+        "required": true,
+        "status": "passed",
+        "run_at": "2026-09-05T17:40:25.957Z",
+        "exit_code": 0,
+        "observed_result": "No whitespace errors",
+        "evidence": "No whitespace errors"
+      }
+    ]
+  },
+  "events": [
+    {
+      "at": "2026-09-05T17:36:38.632Z",
+      "actor": "parent",
+      "type": "integration",
+      "message": "Accepted and inspected all three handoffs. Full suite 156 checks green; six reproduced review findings fixed. Fresh reviewer active; lethal-risk hint subsequently fixed and two targeted UI regressions green."
+    },
+    {
+      "at": "2026-09-05T17:40:25.957Z",
+      "actor": "parent",
+      "type": "verification",
+      "message": "Fresh final proof recorded; report written. Required packets complete, all checks passed, no blockers."
+    },
+    {
+      "at": "2026-09-05T17:41:33.678Z",
+      "time": "17:41:33",
+      "actor": "parent",
+      "agent": "parent",
+      "type": "status",
+      "message": "Run is complete."
+    }
+  ]
+}

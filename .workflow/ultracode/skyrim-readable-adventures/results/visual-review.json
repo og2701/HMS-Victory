@@ -1,0 +1,25 @@
+{
+  "reviewed_at": "2026-09-05T17:40:25.957262+00:00",
+  "method": "CUA browser inspection of actual discord.py component payloads rendered in a labelled local HTML approximation",
+  "samples": 17,
+  "card_widths": [
+    360,
+    780
+  ],
+  "additional_phone_check": {
+    "viewport": 360,
+    "card": 340,
+    "samples": 10
+  },
+  "overflow_rows": 0,
+  "clipped_buttons": 0,
+  "final_changed_combat_card_rechecked_at_340": true,
+  "screenshots_reviewed": [
+    "new player hub",
+    "combat with charge and lethal warning",
+    "connected choice",
+    "run debrief",
+    "death debrief"
+  ],
+  "limits": "No actual Discord mobile or desktop client tested. Scenery is scaled by the approximation."
+}
