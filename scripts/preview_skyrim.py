@@ -90,12 +90,14 @@ async def samples():
         d=E.start_delve(p,1,"embershard",kind="tutorial")
         view,_=V.build_delve_layout(d,p)
         add("First adventure",view,V._scene_art(d))
-        d=E.Delve(old["user_id"],old["name"],1,"embershard",
-                  [{"kind":"event","key":"fork","story":"captive","boss":False,"resolved":False},
-                   {"kind":"enemy","key":"bandit_chief","boss":True,"resolved":False}],
-                  hearts=3,shout_charges=3)
-        view,_=V.build_delve_layout(d,old)
-        add("Connected choice",view,"fork")
+        for story, name in (("captive", "Captive scout"), ("brazier", "Hanging brazier"),
+                            ("runes", "Ancient runes")):
+            d=E.Delve(old["user_id"],old["name"],1,"embershard",
+                      [{"kind":"event","key":"fork","story":story,"boss":False,"resolved":False},
+                       {"kind":"enemy","key":"bandit_chief","boss":True,"resolved":False}],
+                      hearts=3,shout_charges=3)
+            view,_=V.build_delve_layout(d,old)
+            add(f"Connected choice: {name}",view,V._scene_art(d))
         q=copy.deepcopy(old)
         d.summary={"start":{"level":23},"banked_gold":280,"lost_gold":0,
                    "banked_ingredients":{"troll_fat":2},"skill_gains":{"blade":2},
@@ -112,7 +114,7 @@ async def samples():
 
 HTML = r'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Skyrim layout review</title><style>
-*{box-sizing:border-box}body{margin:0;background:#191a1e;color:#e1e2e6;font:15px/1.45 Arial, sans-serif}header{position:sticky;top:0;background:#17181ceF;padding:14px 20px;z-index:4;border-bottom:1px solid #42434a}header p{margin:4px 0 10px;font-size:12px;color:#afb2bb}select,header button{background:#343640;color:#eee;border:1px solid #545761;border-radius:5px;padding:7px 10px;margin:2px}main{padding:25px 10px}#surface{width:360px;max-width:100%;margin:auto;background:#313338;padding:12px;transition:width .2s}.author{font-size:14px;font-weight:700;color:#c4a980;margin-bottom:10px}.bot{font:10px Arial;background:#5865f2;color:white;padding:2px 4px;margin-left:5px;border-radius:3px}.gallery img{width:100%;max-height:210px;object-fit:cover;border-radius:7px;margin-bottom:7px}.box{border-left:3px solid #5a7d9a;background:#2b2d31;padding:12px;border-radius:7px;margin-bottom:8px;overflow-wrap:anywhere}.text{white-space:pre-wrap}h3{font-size:18px;line-height:1.25;margin:0 0 7px}small{font-size:12px;color:#b4b8c0}.row{display:flex;gap:7px;margin:7px 0}.row button{font:13px/1.2 Arial;min-height:34px;border:0;border-radius:4px;background:#4e5058;color:white;padding:7px 10px;white-space:nowrap;min-width:0;flex:0 1 auto}.row button.primary{background:#5865f2}.row button.success{background:#248046}.row button.danger{background:#b7393d}.row button:disabled{opacity:.45}.row select{width:100%;margin:0;background:#232428;font:13px Arial;padding:10px;color:#ddd;border:1px solid #50525d;border-radius:4px}#metrics{max-width:900px;margin:15px auto;color:#c4c7d0;font:12px/1.5 monospace}a{color:#80baff}#surface.desktop{width:780px}.rule{height:1px;background:#464851;margin:8px 0}
+*{box-sizing:border-box}body{margin:0;background:#191a1e;color:#e1e2e6;font:15px/1.45 Arial, sans-serif}header{position:sticky;top:0;background:#17181ceF;padding:14px 20px;z-index:4;border-bottom:1px solid #42434a}header p{margin:4px 0 10px;font-size:12px;color:#afb2bb}select,header button{background:#343640;color:#eee;border:1px solid #545761;border-radius:5px;padding:7px 10px;margin:2px}main{padding:25px 10px}#surface{width:360px;max-width:100%;margin:auto;background:#313338;padding:12px;transition:width .2s}.author{font-size:14px;font-weight:700;color:#c4a980;margin-bottom:10px}.bot{font:10px Arial;background:#5865f2;color:white;padding:2px 4px;margin-left:5px;border-radius:3px}.gallery img{display:block;width:100%;max-width:512px;height:auto;border-radius:7px;margin-bottom:7px}.box{border-left:3px solid #5a7d9a;background:#2b2d31;padding:12px;border-radius:7px;margin-bottom:8px;overflow-wrap:anywhere}.text{white-space:pre-wrap}h3{font-size:18px;line-height:1.25;margin:0 0 7px}small{font-size:12px;color:#b4b8c0}.row{display:flex;gap:7px;margin:7px 0}.row button{font:13px/1.2 Arial;min-height:34px;border:0;border-radius:4px;background:#4e5058;color:white;padding:7px 10px;white-space:nowrap;min-width:0;flex:0 1 auto}.row button.primary{background:#5865f2}.row button.success{background:#248046}.row button.danger{background:#b7393d}.row button:disabled{opacity:.45}.row select{width:100%;margin:0;background:#232428;font:13px Arial;padding:10px;color:#ddd;border:1px solid #50525d;border-radius:4px}#metrics{max-width:900px;margin:15px auto;color:#c4c7d0;font:12px/1.5 monospace}a{color:#80baff}#surface.desktop{width:780px}.rule{height:1px;background:#464851;margin:8px 0}
 </style></head><body><header><strong>Skyrim · Layout review</strong><p>Actual game component payloads, approximate Discord styling. Local fixtures; no live messages or player data.</p><select id="sample"></select><button id="mobile">Mobile · 360px</button><button id="desktop">Desktop · 780px</button></header><main><div id="surface"><div class="author">HMS Victory <span class="bot">APP</span></div><div id="board"></div></div><div id="metrics"></div></main><script>
 const samples=__DATA__;const sel=document.querySelector('#sample');samples.forEach((s,i)=>sel.add(new Option(s.name,i)));
 const escape=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');

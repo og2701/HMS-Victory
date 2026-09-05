@@ -21,6 +21,9 @@ convert a fresh drop:
 | bandit_chief, deathlord, the_caller, centurion, dragon | bosses |
 | chest, sweetroll, shrine, satchel, maiq, knee_trap, giant, wordwall | events |
 | fork | the branching Fork event (safe way vs deep way) |
+| story_captive | a captive scout beside the captain's ransom |
+| story_brazier | the hanging brazier trap above the chamber |
+| story_runes | glowing ancient runes beside a guarded offering |
 | fallen | a Fallen Adventurer's corpse (loot it or lay them to rest) |
 | mimic | a Mimic chest mid-bite (an enemy; variant of `chest`) |
 | soul_cairn | the endless Soul Cairn descent (post-Alduin endgame) |
@@ -42,8 +45,10 @@ convert a fresh drop:
 | duel_victory, duel_defeat | settled duels: the ghost scattered / the player counted out (fall back to `duel_circle`) |
 
 The **Named Dragons of the Week** all reuse `dragon.webp` - no per-dragon art needed.
-New expansion scenes fall back to text like every other, so they can be dropped in
-whenever. Only `fork`, `fallen`, `mimic`, `soul_cairn` are new to generate.
+Connected story choices select their own scene from the room's existing story key.
+Legacy Fork rooms and missing story images fall back to `fork.webp`; no saved
+progress is changed. See [story art prompts](story-art-prompts.md) for the three
+generated scenes and their generation settings.
 
 **Dragon fight states (optional):** the delve view swaps the dragon picture by state -
 `<art>_air` while it's airborne, `<art>_grounded` once the Voice slams it down - and

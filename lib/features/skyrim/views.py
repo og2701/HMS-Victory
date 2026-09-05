@@ -8,7 +8,7 @@ Two surfaces:
     owner-clicked, rebuilt on every action, persisted by message id and resumed
     across restarts (reattach_skyrim_view), exactly like the casino boards.
 
-Art: data/skyrim/<key>.png transparent panels shown in a MediaGallery above the
+Art: data/skyrim/<key>.webp landscape scenes shown in a MediaGallery above the
 text. Every scene falls back cleanly to text if its file is missing, so the game
 is fully playable before/without the art drop.
 """
@@ -33,6 +33,11 @@ logger = logging.getLogger(__name__)
 ACCENT = discord.Colour(0x5A7D9A)        # cold Nordic steel-blue
 _ASSET_DIR = os.path.join("data", "skyrim")
 _ASSET_PX = 512
+_STORY_ART = {
+    "captive": "story_captive",
+    "brazier": "story_brazier",
+    "runes": "story_runes",
+}
 _asset_cache = {}
 
 
@@ -83,6 +88,10 @@ def _scene_art(delve: E.Delve) -> str:
             if _asset_bytes(variant) is not None:
                 return variant
         return e["art"]
+    if r["key"] == "fork":
+        variant = _STORY_ART.get(r.get("story"))
+        if variant and _asset_bytes(variant) is not None:
+            return variant
     return D.EVENTS[r["key"]]["art"]
 
 

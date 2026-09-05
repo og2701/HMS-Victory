@@ -33,7 +33,7 @@
             "style": 3,
             "disabled": false,
             "label": "First adventure",
-            "custom_id": "6d9aeaf728cbfae28d96572dd62a8fd2",
+            "custom_id": "a027920462c59d7cdaa81888a5b41ac9",
             "emoji": {
               "id": null,
               "name": "🗺️"
@@ -44,7 +44,7 @@
             "style": 1,
             "disabled": false,
             "label": "Character",
-            "custom_id": "8b3eebb65ac514aba10eff1c8a57ac87",
+            "custom_id": "39bc12aedb6d5f084d063f8f10ec0c24",
             "emoji": {
               "id": null,
               "name": "👤"
@@ -60,7 +60,7 @@
             "style": 1,
             "disabled": false,
             "label": "Belethor's",
-            "custom_id": "d2883cb8c32202b7e550f335426bd997",
+            "custom_id": "3f47270c80c831db1fc11be1726e358a",
             "emoji": {
               "id": null,
               "name": "🏪"
@@ -71,7 +71,7 @@
             "style": 3,
             "disabled": false,
             "label": "Notice Board ☠️",
-            "custom_id": "3984ab10e1d37d12e5205f2898bdf177",
+            "custom_id": "f64ddc18da1ccfa6b8d42707ce5b8589",
             "emoji": {
               "id": null,
               "name": "📌"
@@ -87,7 +87,7 @@
             "style": 2,
             "disabled": false,
             "label": "The Pit",
-            "custom_id": "d8c20a95fb6e9f5adc1c6204cdf0155c",
+            "custom_id": "448896f72922b571b6ae2730cff6509b",
             "emoji": {
               "id": null,
               "name": "🗡️"
@@ -98,7 +98,7 @@
             "style": 2,
             "disabled": false,
             "label": "Factions",
-            "custom_id": "ad9591dbc93a031aa94463c3f71a983b",
+            "custom_id": "8e8d13f00eabacdcd61e29b1323e102f",
             "emoji": {
               "id": null,
               "name": "🏰"
@@ -109,7 +109,7 @@
             "style": 2,
             "disabled": false,
             "label": "Holdings",
-            "custom_id": "fef7a7066a5173192e635709698854d3",
+            "custom_id": "e42847da872ab0d5a1b9ff58b019e8dd",
             "emoji": {
               "id": null,
               "name": "🏡"
@@ -125,7 +125,7 @@
             "style": 2,
             "disabled": false,
             "label": "Rankings",
-            "custom_id": "02636f4264a4e9660fac209143cd1edc",
+            "custom_id": "7b5b4ce82a6948dcbf986d7accd2a1ac",
             "emoji": {
               "id": null,
               "name": "🏆"
@@ -136,7 +136,7 @@
             "style": 2,
             "disabled": false,
             "label": "Help",
-            "custom_id": "baea8e8d4387edd216f191702c8c1c71",
+            "custom_id": "2b706000f8592c5ae88cb755000b530a",
             "emoji": {
               "id": null,
               "name": "📖"
@@ -180,7 +180,7 @@
             "style": 3,
             "disabled": false,
             "label": "Adventure",
-            "custom_id": "ab3e59f3560e98bdca12ff5fdda6658b",
+            "custom_id": "e66d295e25f6a584355171db64d9780e",
             "emoji": {
               "id": null,
               "name": "🗺️"
@@ -191,7 +191,7 @@
             "style": 1,
             "disabled": false,
             "label": "Character (23)",
-            "custom_id": "b8067c43048e424cea4c502b46ca90bb",
+            "custom_id": "8e1702f4dc17eb9e588d1aeeeab6f396",
             "emoji": {
               "id": null,
               "name": "👤"
@@ -207,7 +207,7 @@
             "style": 1,
             "disabled": false,
             "label": "Belethor's",
-            "custom_id": "71057c8dc5fdd0d37d634acaf2c36cfa",
+            "custom_id": "8750daa1e4a2d72c49e08888e4e93b2f",
             "emoji": {
               "id": null,
               "name": "🏪"
@@ -218,7 +218,7 @@
             "style": 3,
             "disabled": false,
             "label": "Notice Board ☠️",
-            "custom_id": "c371934d676cc32f65d3b9458db31481",
+            "custom_id": "47a435c8bd19a95b40ff9fc539943554",
             "emoji": {
               "id": null,
               "name": "📌"
@@ -234,7 +234,7 @@
             "style": 3,
             "disabled": false,
             "label": "The Pit",
-            "custom_id": "6de95e629ee7506aae1ce43a05fe5c5d",
+            "custom_id": "a216f1f6ba2f361984ac1f128d05779a",
             "emoji": {
               "id": null,
               "name": "🗡️"
@@ -245,7 +245,7 @@
             "style": 2,
             "disabled": false,
             "label": "Factions",
-            "custom_id": "2741be792dd05f5d1c3ec83e92724709",
+            "custom_id": "5dcb84321c66074e585ac0e743370fe8",
             "emoji": {
               "id": null,
               "name": "🏰"
@@ -256,7 +256,7 @@
             "style": 3,
             "disabled": false,
             "label": "Holdings",
-            "custom_id": "a7e2772d111d7b4de9d3f1308a50fd22",
+            "custom_id": "541050129cc5c2292116cea3626b887f",
             "emoji": {
               "id": null,
               "name": "🏡"
@@ -272,7 +272,7 @@
             "style": 2,
             "disabled": false,
             "label": "Rankings",
-            "custom_id": "664ca6d536f4e13ffa73b9fe85e0c264",
+            "custom_id": "53cbb978181ec6c1c9525c27486819b6",
             "emoji": {
               "id": null,
               "name": "🏆"
@@ -283,7 +283,7 @@
             "style": 2,
             "disabled": false,
             "label": "Help",
-            "custom_id": "098636a5cde7f0884700885ddc958a3f",
+            "custom_id": "4c975438e766404e046f725a814f2cd8",
             "emoji": {
               "id": null,
               "name": "📖"
@@ -294,7 +294,7 @@
             "style": 3,
             "disabled": false,
             "label": "Next goal",
-            "custom_id": "57a2f6451a84146864c4f6f2b75ddc4f",
+            "custom_id": "0627b2524b838d060c9f1d6e5ff9c51b",
             "emoji": {
               "id": null,
               "name": "🎯"
@@ -327,7 +327,7 @@
             "style": 1,
             "disabled": false,
             "label": "Masteries (6)",
-            "custom_id": "c92f263e4d6df934447c59ad4dec3d81",
+            "custom_id": "a795af8335c352f43bb3e0909286f969",
             "emoji": {
               "id": null,
               "name": "✨"
@@ -338,7 +338,7 @@
             "style": 1,
             "disabled": false,
             "label": "Perks (23)",
-            "custom_id": "a989e5d2b4d4d4d083565c11eee74faf",
+            "custom_id": "e8d0d76b63f6044536b50055fa4e4e1a",
             "emoji": {
               "id": null,
               "name": "📜"
@@ -354,7 +354,7 @@
             "style": 2,
             "disabled": false,
             "label": "Collection 0%",
-            "custom_id": "b51c863c8d201cffbcb6e6cd954d28a9",
+            "custom_id": "319a5879b17046ad02abb36396babe44",
             "emoji": {
               "id": null,
               "name": "📦"
@@ -365,7 +365,7 @@
             "style": 2,
             "disabled": false,
             "label": "Records",
-            "custom_id": "dcd12afe5e02574701d10e8b587b8d1c",
+            "custom_id": "23077723559311706253beaf70822612",
             "emoji": {
               "id": null,
               "name": "🎖️"
@@ -376,7 +376,7 @@
             "style": 2,
             "disabled": false,
             "label": "Companion",
-            "custom_id": "0ea394d230e2a404ce5257badfff8d39",
+            "custom_id": "9860ae6d53911111178bfb2c0268d97d",
             "emoji": {
               "id": null,
               "name": "🐾"
@@ -392,7 +392,7 @@
             "style": 2,
             "disabled": false,
             "label": "Back",
-            "custom_id": "e4287fdef5f01c631e976408fdfddc39",
+            "custom_id": "414999e46227436a579b97b591f32c4e",
             "emoji": {
               "id": null,
               "name": "⬅️"
@@ -408,7 +408,7 @@
             "style": 2,
             "disabled": false,
             "label": "Inspect",
-            "custom_id": "88e006a92337b57ba03239e035b7d1ef",
+            "custom_id": "7f7eab654457cfa930241c404f37ddf6",
             "emoji": {
               "id": null,
               "name": "🔎"
@@ -441,7 +441,7 @@
             "style": 1,
             "disabled": false,
             "label": "Buy potion",
-            "custom_id": "aefedb6fd90b1d11b368db3b11316067",
+            "custom_id": "c4a1516a95e6ef9c18e38e5bec91439c",
             "emoji": {
               "id": null,
               "name": "🧪"
@@ -452,7 +452,7 @@
             "style": 1,
             "disabled": false,
             "label": "Upgrade weapon",
-            "custom_id": "5ee654002af77b30dfcbdd6d8443543e",
+            "custom_id": "51014d5f4747c41e82042753dcc8b215",
             "emoji": {
               "id": null,
               "name": "⚔️"
@@ -468,7 +468,7 @@
             "style": 1,
             "disabled": false,
             "label": "Upgrade armour",
-            "custom_id": "3e0097e5c9210866504db033d5db0740",
+            "custom_id": "3819dedd1185cf637b7d8e64005caf1d",
             "emoji": {
               "id": null,
               "name": "🛡️"
@@ -479,7 +479,7 @@
             "style": 2,
             "disabled": false,
             "label": "Go light",
-            "custom_id": "9433c5887108a381d0d01a1dfd4426e5",
+            "custom_id": "3563931d65ee8ce250d7414c392c29fb",
             "emoji": {
               "id": null,
               "name": "👕"
@@ -490,7 +490,7 @@
             "style": 2,
             "disabled": false,
             "label": "Property",
-            "custom_id": "29537bcc4e358f3a8499a2f2ef092a41",
+            "custom_id": "9df3556db3f78111c5231b4c0bf7a0a0",
             "emoji": {
               "id": null,
               "name": "🏠"
@@ -506,7 +506,7 @@
             "style": 1,
             "disabled": false,
             "label": "Grindstone",
-            "custom_id": "0b9ea27c621c60f652e55cbdf2386ed6",
+            "custom_id": "d4570f6e5471960fec9572544a3a0f21",
             "emoji": {
               "id": null,
               "name": "🪓"
@@ -517,7 +517,7 @@
             "style": 1,
             "disabled": false,
             "label": "Lab Bench",
-            "custom_id": "30e946fd243f7bd96517fab01f8dff23",
+            "custom_id": "d125b3576b097039c9cf75128e831e53",
             "emoji": {
               "id": null,
               "name": "⚗️"
@@ -528,7 +528,7 @@
             "style": 2,
             "disabled": false,
             "label": "Rumours",
-            "custom_id": "1ad4a5364bc265b3f2ffc2f5fe4c56e6",
+            "custom_id": "465cf4aba1823532cd20bfe3cfd12150",
             "emoji": {
               "id": null,
               "name": "🗣️"
@@ -544,7 +544,7 @@
             "style": 2,
             "disabled": false,
             "label": "Back",
-            "custom_id": "3d6fe5f63b54322d3a23063325848420",
+            "custom_id": "3249a3f388ab890c5919ffcbb51459a7",
             "emoji": {
               "id": null,
               "name": "⬅️"
@@ -588,7 +588,7 @@
             "style": 3,
             "disabled": false,
             "label": "Collect yields",
-            "custom_id": "5e38e7729d3bea61b909afe7ffab1133",
+            "custom_id": "900056ca601cd0930fe12b13f4cc3c79",
             "emoji": {
               "id": null,
               "name": "🎁"
@@ -601,7 +601,7 @@
         "components": [
           {
             "type": 3,
-            "custom_id": "ffa1cd84c182bf5418ead1bf0f6db36d",
+            "custom_id": "58cce04659f707761835e8e28052b756",
             "min_values": 1,
             "max_values": 1,
             "disabled": false,
@@ -647,7 +647,7 @@
         "components": [
           {
             "type": 3,
-            "custom_id": "250915bfdbf0d5b6b142d7aee54f71a3",
+            "custom_id": "6611c6a379e5a568dd4832382cc50508",
             "min_values": 1,
             "max_values": 1,
             "disabled": false,
@@ -723,7 +723,7 @@
         "components": [
           {
             "type": 3,
-            "custom_id": "599e4d3d772a0b4cff94f87dc3d4e148",
+            "custom_id": "6807adf5c680f989b3918d256d2f5899",
             "min_values": 1,
             "max_values": 1,
             "disabled": false,
@@ -772,7 +772,7 @@
             "style": 2,
             "disabled": false,
             "label": "Back",
-            "custom_id": "51d222e7bcc9b45aa5bff34fecde1a05",
+            "custom_id": "142024e4f1efe9a634c69a277fc12d42",
             "emoji": {
               "id": null,
               "name": "⬅️"
@@ -788,7 +788,7 @@
             "style": 2,
             "disabled": false,
             "label": "Inspect",
-            "custom_id": "b9f545ab8ed482870699ebbfd43aedd7",
+            "custom_id": "1ddd4880515e39dcf34356f8f5d4d340",
             "emoji": {
               "id": null,
               "name": "🔎"
@@ -832,7 +832,7 @@
             "style": 3,
             "disabled": false,
             "label": "Brave the daily",
-            "custom_id": "406ecfbf1d89caa684dd184016aa593d",
+            "custom_id": "e17d9f54b6d2357702cb0df397b1cbce",
             "emoji": {
               "id": null,
               "name": "📅"
@@ -843,7 +843,7 @@
             "style": 2,
             "disabled": false,
             "label": "Daily board",
-            "custom_id": "581691899c6c509219d042aaf32c36e9",
+            "custom_id": "063d3bb6599e4decf915b9681e1ea277",
             "emoji": {
               "id": null,
               "name": "📋"
@@ -859,7 +859,7 @@
             "style": 4,
             "disabled": false,
             "label": "March on it",
-            "custom_id": "7a9ed202f72552c05db0037705bf23c5",
+            "custom_id": "68a54b511a1b77eafeb4b6c37e6758e9",
             "emoji": {
               "id": null,
               "name": "📯"
@@ -875,7 +875,7 @@
             "style": 2,
             "disabled": false,
             "label": "Back",
-            "custom_id": "52c3f8a2d51addede3f45c962083943f",
+            "custom_id": "2942cef962344334c2e1597b26239181",
             "emoji": {
               "id": null,
               "name": "⬅️"
@@ -891,7 +891,7 @@
             "style": 2,
             "disabled": false,
             "label": "Inspect",
-            "custom_id": "35297755d75a87a2698237bb3757cd26",
+            "custom_id": "c3032062dd5a34f0c5c81c0161506390",
             "emoji": {
               "id": null,
               "name": "🔎"
@@ -921,7 +921,7 @@
         "components": [
           {
             "type": 3,
-            "custom_id": "16c06cc19ff49b55e7120a361e611ed0",
+            "custom_id": "56211863b9468ce947df9a2004524095",
             "min_values": 1,
             "max_values": 1,
             "disabled": false,
@@ -960,7 +960,7 @@
             "style": 2,
             "disabled": false,
             "label": "Back",
-            "custom_id": "48d4dbb747a7dc67d7e5fe41c80d87d0",
+            "custom_id": "8a1fc809addb649b502727de2c3824c2",
             "emoji": {
               "id": null,
               "name": "⬅️"
@@ -990,7 +990,7 @@
         "components": [
           {
             "type": 3,
-            "custom_id": "0aeaf4b5047dc952efd45255c833e41f",
+            "custom_id": "995bf9f29652373dff38632d078eaa83",
             "min_values": 1,
             "max_values": 1,
             "disabled": false,
@@ -1126,7 +1126,7 @@
         "components": [
           {
             "type": 3,
-            "custom_id": "cfb21edc54d54695b2623c316d23c1f0",
+            "custom_id": "ecf2abfc866e1160a36ea1c69d2903ff",
             "min_values": 1,
             "max_values": 1,
             "disabled": false,
@@ -1205,7 +1205,7 @@
             "style": 2,
             "disabled": false,
             "label": "Back",
-            "custom_id": "4a49ee981e319ee7476e5b92557f11c3",
+            "custom_id": "61be54f26c55272ef768cae19276bc6d",
             "emoji": {
               "id": null,
               "name": "⬅️"
@@ -1238,7 +1238,7 @@
             "style": 1,
             "disabled": false,
             "label": "Halted Stream Camp",
-            "custom_id": "fd7260198d823ff0c4fd608860b41525",
+            "custom_id": "6562a41e19fdc4243babe6828e92a78b",
             "emoji": {
               "id": null,
               "name": "🏕️"
@@ -1254,7 +1254,7 @@
             "style": 1,
             "disabled": false,
             "label": "Hillgrund's Tomb",
-            "custom_id": "fd4a44c1657694e837579f58f2922cf1",
+            "custom_id": "320e34f5b106d4b2d7a4693777253247",
             "emoji": {
               "id": null,
               "name": "⚰️"
@@ -1265,7 +1265,7 @@
             "style": 1,
             "disabled": false,
             "label": "Labyrinthian",
-            "custom_id": "75caddeee8018e5433ddedc8c47f07de",
+            "custom_id": "4f9d1b49c00ddd38e22776fe4f073157",
             "emoji": {
               "id": null,
               "name": "🌀"
@@ -1281,7 +1281,7 @@
             "style": 4,
             "disabled": false,
             "label": "Ancient's Ascent",
-            "custom_id": "fa073fbd5c4ba599c0e8dff6c756c18e",
+            "custom_id": "937b279c5bb9a3f003d3898e6fbbf043",
             "emoji": {
               "id": null,
               "name": "🐉"
@@ -1297,7 +1297,7 @@
             "style": 2,
             "disabled": false,
             "label": "Pacts",
-            "custom_id": "eae25e9c3323b38c4acff0b8334400d0",
+            "custom_id": "fae109bb772630016fa6a89174eed679",
             "emoji": {
               "id": null,
               "name": "⚖️"
@@ -1313,7 +1313,7 @@
             "style": 4,
             "disabled": false,
             "label": "Face Alduin",
-            "custom_id": "e6c8389f8d18365458591537cedc5d34",
+            "custom_id": "f3e2194e0f3a9375ac109661edf6ce82",
             "emoji": {
               "id": null,
               "name": "🌑"
@@ -1329,7 +1329,7 @@
             "style": 2,
             "disabled": false,
             "label": "Back",
-            "custom_id": "f635cb44d7e88167b20a4b5bc5c208b4",
+            "custom_id": "b1bd6861c7393227f086056c2feb2326",
             "emoji": {
               "id": null,
               "name": "⬅️"
@@ -1345,7 +1345,7 @@
             "style": 2,
             "disabled": false,
             "label": "Inspect",
-            "custom_id": "dc32499384f1932245500be8ba6dc1ed",
+            "custom_id": "31a4e36bf004a90b2a8132360ff38c51",
             "emoji": {
               "id": null,
               "name": "🔎"
@@ -1389,7 +1389,7 @@
             "style": 2,
             "disabled": false,
             "label": "Character",
-            "custom_id": "17351f695171fd06f7ebffc27114039e",
+            "custom_id": "d9c13dec3c37ec6b096101a55673976c",
             "emoji": {
               "id": null,
               "name": "👤"
@@ -1400,7 +1400,7 @@
             "style": 2,
             "disabled": false,
             "label": "Back",
-            "custom_id": "a525520c2e28f10f4fd79297ef9f6657",
+            "custom_id": "ace7011ccc1baf3c031abce4a7054cfe",
             "emoji": {
               "id": null,
               "name": "⬅️"
@@ -1444,7 +1444,7 @@
             "style": 4,
             "disabled": false,
             "label": "Blade 84%",
-            "custom_id": "skyrim:df27c91d75bb:atk:blade",
+            "custom_id": "skyrim:d71485ec8110:atk:blade",
             "emoji": {
               "id": null,
               "name": "⚔️"
@@ -1455,7 +1455,7 @@
             "style": 4,
             "disabled": false,
             "label": "Bow 82%",
-            "custom_id": "skyrim:df27c91d75bb:atk:marksman",
+            "custom_id": "skyrim:d71485ec8110:atk:marksman",
             "emoji": {
               "id": null,
               "name": "🏹"
@@ -1466,7 +1466,7 @@
             "style": 4,
             "disabled": false,
             "label": "Fire 78%",
-            "custom_id": "skyrim:df27c91d75bb:atk:destruction",
+            "custom_id": "skyrim:d71485ec8110:atk:destruction",
             "emoji": {
               "id": null,
               "name": "🔥"
@@ -1482,7 +1482,7 @@
             "style": 1,
             "disabled": false,
             "label": "Sneak 74%",
-            "custom_id": "skyrim:df27c91d75bb:snk",
+            "custom_id": "skyrim:d71485ec8110:snk",
             "emoji": {
               "id": null,
               "name": "🥷"
@@ -1493,7 +1493,7 @@
             "style": 1,
             "disabled": false,
             "label": "Talk 67%",
-            "custom_id": "skyrim:df27c91d75bb:per",
+            "custom_id": "skyrim:d71485ec8110:per",
             "emoji": {
               "id": null,
               "name": "💬"
@@ -1504,7 +1504,7 @@
             "style": 1,
             "disabled": false,
             "label": "Guard",
-            "custom_id": "skyrim:df27c91d75bb:guard",
+            "custom_id": "skyrim:d71485ec8110:guard",
             "emoji": {
               "id": null,
               "name": "🛡️"
@@ -1517,7 +1517,7 @@
         "components": [
           {
             "type": 3,
-            "custom_id": "skyrim:df27c91d75bb:shtsel",
+            "custom_id": "skyrim:d71485ec8110:shtsel",
             "min_values": 1,
             "max_values": 1,
             "disabled": false,
@@ -1566,7 +1566,7 @@
             "style": 3,
             "disabled": false,
             "label": "Heal +1",
-            "custom_id": "skyrim:df27c91d75bb:pot",
+            "custom_id": "skyrim:d71485ec8110:pot",
             "emoji": {
               "id": null,
               "name": "🧪"
@@ -1577,7 +1577,7 @@
             "style": 2,
             "disabled": false,
             "label": "Bank 0",
-            "custom_id": "skyrim:df27c91d75bb:lve",
+            "custom_id": "skyrim:d71485ec8110:lve",
             "emoji": {
               "id": null,
               "name": "🚪"
@@ -1593,7 +1593,7 @@
             "style": 2,
             "disabled": false,
             "label": "Home",
-            "custom_id": "skyrim:df27c91d75bb:home",
+            "custom_id": "skyrim:d71485ec8110:home",
             "emoji": {
               "id": null,
               "name": "🏠"
@@ -1604,7 +1604,7 @@
             "style": 2,
             "disabled": false,
             "label": "Inspect",
-            "custom_id": "skyrim:df27c91d75bb:inspect",
+            "custom_id": "skyrim:d71485ec8110:inspect",
             "emoji": {
               "id": null,
               "name": "🔎"
@@ -1648,7 +1648,7 @@
             "style": 4,
             "disabled": false,
             "label": "Blade 77%",
-            "custom_id": "skyrim:9fb118273ed6:atk:blade",
+            "custom_id": "skyrim:e2ffd685e5f0:atk:blade",
             "emoji": {
               "id": null,
               "name": "⚔️"
@@ -1659,7 +1659,7 @@
             "style": 4,
             "disabled": false,
             "label": "Bow 75%",
-            "custom_id": "skyrim:9fb118273ed6:atk:marksman",
+            "custom_id": "skyrim:e2ffd685e5f0:atk:marksman",
             "emoji": {
               "id": null,
               "name": "🏹"
@@ -1670,7 +1670,7 @@
             "style": 4,
             "disabled": false,
             "label": "Fire 82%",
-            "custom_id": "skyrim:9fb118273ed6:atk:destruction",
+            "custom_id": "skyrim:e2ffd685e5f0:atk:destruction",
             "emoji": {
               "id": null,
               "name": "🔥"
@@ -1686,7 +1686,7 @@
             "style": 1,
             "disabled": false,
             "label": "Sneak 64%",
-            "custom_id": "skyrim:9fb118273ed6:snk",
+            "custom_id": "skyrim:e2ffd685e5f0:snk",
             "emoji": {
               "id": null,
               "name": "🥷"
@@ -1697,7 +1697,7 @@
             "style": 1,
             "disabled": false,
             "label": "Guard",
-            "custom_id": "skyrim:9fb118273ed6:guard",
+            "custom_id": "skyrim:e2ffd685e5f0:guard",
             "emoji": {
               "id": null,
               "name": "🛡️"
@@ -1710,7 +1710,7 @@
         "components": [
           {
             "type": 3,
-            "custom_id": "skyrim:9fb118273ed6:shtsel",
+            "custom_id": "skyrim:e2ffd685e5f0:shtsel",
             "min_values": 1,
             "max_values": 1,
             "disabled": false,
@@ -1759,7 +1759,7 @@
             "style": 2,
             "disabled": false,
             "label": "Bank 0",
-            "custom_id": "skyrim:9fb118273ed6:lve",
+            "custom_id": "skyrim:e2ffd685e5f0:lve",
             "emoji": {
               "id": null,
               "name": "🚪"
@@ -1775,7 +1775,7 @@
             "style": 2,
             "disabled": false,
             "label": "Home",
-            "custom_id": "skyrim:9fb118273ed6:home",
+            "custom_id": "skyrim:e2ffd685e5f0:home",
             "emoji": {
               "id": null,
               "name": "🏠"
@@ -1786,7 +1786,7 @@
             "style": 2,
             "disabled": false,
             "label": "Inspect",
-            "custom_id": "skyrim:9fb118273ed6:inspect",
+            "custom_id": "skyrim:e2ffd685e5f0:inspect",
             "emoji": {
               "id": null,
               "name": "🔎"
@@ -1830,7 +1830,7 @@
             "style": 4,
             "disabled": false,
             "label": "Blade 44%",
-            "custom_id": "skyrim:ecc763c9d864:atk:blade",
+            "custom_id": "skyrim:8ea5e5e30ba3:atk:blade",
             "emoji": {
               "id": null,
               "name": "⚔️"
@@ -1841,7 +1841,7 @@
             "style": 4,
             "disabled": false,
             "label": "Bow 70%",
-            "custom_id": "skyrim:ecc763c9d864:atk:marksman",
+            "custom_id": "skyrim:8ea5e5e30ba3:atk:marksman",
             "emoji": {
               "id": null,
               "name": "🏹"
@@ -1852,7 +1852,7 @@
             "style": 4,
             "disabled": false,
             "label": "Fire 53%",
-            "custom_id": "skyrim:ecc763c9d864:atk:destruction",
+            "custom_id": "skyrim:8ea5e5e30ba3:atk:destruction",
             "emoji": {
               "id": null,
               "name": "🔥"
@@ -1868,7 +1868,7 @@
             "style": 1,
             "disabled": false,
             "label": "Guard",
-            "custom_id": "skyrim:ecc763c9d864:guard",
+            "custom_id": "skyrim:8ea5e5e30ba3:guard",
             "emoji": {
               "id": null,
               "name": "🛡️"
@@ -1881,7 +1881,7 @@
         "components": [
           {
             "type": 3,
-            "custom_id": "skyrim:ecc763c9d864:shtsel",
+            "custom_id": "skyrim:8ea5e5e30ba3:shtsel",
             "min_values": 1,
             "max_values": 1,
             "disabled": false,
@@ -1930,7 +1930,7 @@
             "style": 2,
             "disabled": false,
             "label": "Bank 0",
-            "custom_id": "skyrim:ecc763c9d864:lve",
+            "custom_id": "skyrim:8ea5e5e30ba3:lve",
             "emoji": {
               "id": null,
               "name": "🚪"
@@ -1946,7 +1946,7 @@
             "style": 2,
             "disabled": false,
             "label": "Home",
-            "custom_id": "skyrim:ecc763c9d864:home",
+            "custom_id": "skyrim:8ea5e5e30ba3:home",
             "emoji": {
               "id": null,
               "name": "🏠"
@@ -1957,7 +1957,7 @@
             "style": 2,
             "disabled": false,
             "label": "Inspect",
-            "custom_id": "skyrim:ecc763c9d864:inspect",
+            "custom_id": "skyrim:8ea5e5e30ba3:inspect",
             "emoji": {
               "id": null,
               "name": "🔎"
@@ -2001,7 +2001,7 @@
             "style": 4,
             "disabled": false,
             "label": "Blade 72%",
-            "custom_id": "skyrim:6760ed8cdfcc:atk:blade",
+            "custom_id": "skyrim:96256c7455d7:atk:blade",
             "emoji": {
               "id": null,
               "name": "⚔️"
@@ -2012,7 +2012,7 @@
             "style": 4,
             "disabled": false,
             "label": "Bow 70%",
-            "custom_id": "skyrim:6760ed8cdfcc:atk:marksman",
+            "custom_id": "skyrim:96256c7455d7:atk:marksman",
             "emoji": {
               "id": null,
               "name": "🏹"
@@ -2023,7 +2023,7 @@
             "style": 4,
             "disabled": false,
             "label": "Fire 66%",
-            "custom_id": "skyrim:6760ed8cdfcc:atk:destruction",
+            "custom_id": "skyrim:96256c7455d7:atk:destruction",
             "emoji": {
               "id": null,
               "name": "🔥"
@@ -2039,7 +2039,7 @@
             "style": 1,
             "disabled": false,
             "label": "Sneak 52%",
-            "custom_id": "skyrim:6760ed8cdfcc:snk",
+            "custom_id": "skyrim:96256c7455d7:snk",
             "emoji": {
               "id": null,
               "name": "🥷"
@@ -2050,7 +2050,7 @@
             "style": 1,
             "disabled": false,
             "label": "Guard",
-            "custom_id": "skyrim:6760ed8cdfcc:guard",
+            "custom_id": "skyrim:96256c7455d7:guard",
             "emoji": {
               "id": null,
               "name": "🛡️"
@@ -2066,7 +2066,7 @@
             "style": 3,
             "disabled": false,
             "label": "Heal +1",
-            "custom_id": "skyrim:6760ed8cdfcc:pot",
+            "custom_id": "skyrim:96256c7455d7:pot",
             "emoji": {
               "id": null,
               "name": "🧪"
@@ -2077,7 +2077,7 @@
             "style": 2,
             "disabled": false,
             "label": "Bank 0",
-            "custom_id": "skyrim:6760ed8cdfcc:lve",
+            "custom_id": "skyrim:96256c7455d7:lve",
             "emoji": {
               "id": null,
               "name": "🚪"
@@ -2093,7 +2093,7 @@
             "style": 2,
             "disabled": false,
             "label": "Home",
-            "custom_id": "skyrim:6760ed8cdfcc:home",
+            "custom_id": "skyrim:96256c7455d7:home",
             "emoji": {
               "id": null,
               "name": "🏠"
@@ -2104,7 +2104,7 @@
             "style": 2,
             "disabled": false,
             "label": "Inspect",
-            "custom_id": "skyrim:6760ed8cdfcc:inspect",
+            "custom_id": "skyrim:96256c7455d7:inspect",
             "emoji": {
               "id": null,
               "name": "🔎"
@@ -2115,8 +2115,8 @@
     ]
   },
   {
-    "name": "Connected choice",
-    "art": "fork",
+    "name": "Connected choice: Captive scout",
+    "art": "story_captive",
     "components": [
       {
         "type": 12,
@@ -2148,7 +2148,7 @@
             "style": 1,
             "disabled": false,
             "label": "Free scout",
-            "custom_id": "skyrim:c75b462adf17:evt:story_help",
+            "custom_id": "skyrim:1dbe4073dbcf:evt:story_help",
             "emoji": {
               "id": null,
               "name": "🗝️"
@@ -2159,7 +2159,7 @@
             "style": 1,
             "disabled": false,
             "label": "Take ransom",
-            "custom_id": "skyrim:c75b462adf17:evt:story_greed",
+            "custom_id": "skyrim:1dbe4073dbcf:evt:story_greed",
             "emoji": {
               "id": null,
               "name": "💰"
@@ -2175,7 +2175,7 @@
             "style": 1,
             "disabled": false,
             "label": "Pass quietly",
-            "custom_id": "skyrim:c75b462adf17:evt:safe",
+            "custom_id": "skyrim:1dbe4073dbcf:evt:safe",
             "emoji": {
               "id": null,
               "name": "🚶"
@@ -2191,7 +2191,7 @@
             "style": 2,
             "disabled": false,
             "label": "Bank 0",
-            "custom_id": "skyrim:c75b462adf17:lve",
+            "custom_id": "skyrim:1dbe4073dbcf:lve",
             "emoji": {
               "id": null,
               "name": "🚪"
@@ -2207,7 +2207,7 @@
             "style": 2,
             "disabled": false,
             "label": "Home",
-            "custom_id": "skyrim:c75b462adf17:home",
+            "custom_id": "skyrim:1dbe4073dbcf:home",
             "emoji": {
               "id": null,
               "name": "🏠"
@@ -2218,7 +2218,235 @@
             "style": 2,
             "disabled": false,
             "label": "Inspect",
-            "custom_id": "skyrim:c75b462adf17:inspect",
+            "custom_id": "skyrim:1dbe4073dbcf:inspect",
+            "emoji": {
+              "id": null,
+              "name": "🔎"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Connected choice: Hanging brazier",
+    "art": "story_brazier",
+    "components": [
+      {
+        "type": 12,
+        "items": [
+          {
+            "media": {
+              "url": "attachment://skyrim.webp"
+            },
+            "spoiler": false
+          }
+        ]
+      },
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## ⛏️ Embershard Mine · 1/2\n<@88002>\n❤️ 3/3  ·  🧪 2  ·  🗣️ 3  ·  💰 0\n\nRig the hanging brazier: the final foe starts with 1 less HP (minimum 1). A vault lies below. Vault: one extra elite and a locked chest."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Rig brazier",
+            "custom_id": "skyrim:ed55a0ee0a36:evt:story_help",
+            "emoji": {
+              "id": null,
+              "name": "🔥"
+            }
+          },
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Search vault",
+            "custom_id": "skyrim:ed55a0ee0a36:evt:deep",
+            "emoji": {
+              "id": null,
+              "name": "💎"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Pass quietly",
+            "custom_id": "skyrim:ed55a0ee0a36:evt:safe",
+            "emoji": {
+              "id": null,
+              "name": "🚶"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Bank 0",
+            "custom_id": "skyrim:ed55a0ee0a36:lve",
+            "emoji": {
+              "id": null,
+              "name": "🚪"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Home",
+            "custom_id": "skyrim:ed55a0ee0a36:home",
+            "emoji": {
+              "id": null,
+              "name": "🏠"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Inspect",
+            "custom_id": "skyrim:ed55a0ee0a36:inspect",
+            "emoji": {
+              "id": null,
+              "name": "🔎"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Connected choice: Ancient runes",
+    "art": "story_runes",
+    "components": [
+      {
+        "type": 12,
+        "items": [
+          {
+            "media": {
+              "url": "attachment://skyrim.webp"
+            },
+            "spoiler": false
+          }
+        ]
+      },
+      {
+        "type": 17,
+        "accent_color": 5930394,
+        "spoiler": false,
+        "components": [
+          {
+            "type": 10,
+            "content": "## ⛏️ Embershard Mine · 1/2\n<@88002>\n❤️ 3/3  ·  🧪 2  ·  🗣️ 3  ·  💰 0\n\nThe runes reveal the guardian's stance: study them for +10% on your first attack. Take it: extra coin, but the final foe gains 1 HP."
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Read the runes",
+            "custom_id": "skyrim:83165e9e7005:evt:story_help",
+            "emoji": {
+              "id": null,
+              "name": "📜"
+            }
+          },
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Take offering",
+            "custom_id": "skyrim:83165e9e7005:evt:story_greed",
+            "emoji": {
+              "id": null,
+              "name": "💰"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 1,
+            "disabled": false,
+            "label": "Pass quietly",
+            "custom_id": "skyrim:83165e9e7005:evt:safe",
+            "emoji": {
+              "id": null,
+              "name": "🚶"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Bank 0",
+            "custom_id": "skyrim:83165e9e7005:lve",
+            "emoji": {
+              "id": null,
+              "name": "🚪"
+            }
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "components": [
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Home",
+            "custom_id": "skyrim:83165e9e7005:home",
+            "emoji": {
+              "id": null,
+              "name": "🏠"
+            }
+          },
+          {
+            "type": 2,
+            "style": 2,
+            "disabled": false,
+            "label": "Inspect",
+            "custom_id": "skyrim:83165e9e7005:inspect",
             "emoji": {
               "id": null,
               "name": "🔎"
@@ -2262,7 +2490,7 @@
             "style": 1,
             "disabled": false,
             "label": "Adventure",
-            "custom_id": "skyrim:c75b462adf17:again",
+            "custom_id": "skyrim:83165e9e7005:again",
             "emoji": {
               "id": null,
               "name": "🗺️"
@@ -2273,7 +2501,7 @@
             "style": 3,
             "disabled": false,
             "label": "Next goal",
-            "custom_id": "skyrim:c75b462adf17:goal",
+            "custom_id": "skyrim:83165e9e7005:goal",
             "emoji": {
               "id": null,
               "name": "🎯"
@@ -2289,7 +2517,7 @@
             "style": 2,
             "disabled": false,
             "label": "Home",
-            "custom_id": "skyrim:c75b462adf17:home",
+            "custom_id": "skyrim:83165e9e7005:home",
             "emoji": {
               "id": null,
               "name": "🏠"
@@ -2300,7 +2528,7 @@
             "style": 2,
             "disabled": false,
             "label": "Inspect",
-            "custom_id": "skyrim:c75b462adf17:inspect",
+            "custom_id": "skyrim:83165e9e7005:inspect",
             "emoji": {
               "id": null,
               "name": "🔎"
@@ -2344,7 +2572,7 @@
             "style": 1,
             "disabled": false,
             "label": "Adventure",
-            "custom_id": "skyrim:c75b462adf17:again",
+            "custom_id": "skyrim:83165e9e7005:again",
             "emoji": {
               "id": null,
               "name": "🗺️"
@@ -2355,7 +2583,7 @@
             "style": 3,
             "disabled": false,
             "label": "Next goal",
-            "custom_id": "skyrim:c75b462adf17:goal",
+            "custom_id": "skyrim:83165e9e7005:goal",
             "emoji": {
               "id": null,
               "name": "🎯"
@@ -2371,7 +2599,7 @@
             "style": 2,
             "disabled": false,
             "label": "Home",
-            "custom_id": "skyrim:c75b462adf17:home",
+            "custom_id": "skyrim:83165e9e7005:home",
             "emoji": {
               "id": null,
               "name": "🏠"
@@ -2382,7 +2610,7 @@
             "style": 2,
             "disabled": false,
             "label": "Inspect",
-            "custom_id": "skyrim:c75b462adf17:inspect",
+            "custom_id": "skyrim:83165e9e7005:inspect",
             "emoji": {
               "id": null,
               "name": "🔎"
