@@ -23,12 +23,16 @@ def _is_playable_media(att: discord.Attachment) -> bool:
 
 
 async def collect_media_files(message: discord.Message, size_limit: int) -> list[discord.File]:
-    """Download video/gif attachments from `message` and return them as discord.File
-    objects so they can be re-uploaded inline in the HOF post."""
+    """Download video/gif attachments from `message` (including forwarded snapshots) and return
+    them as discord.File objects so they can be re-uploaded inline in the HOF post."""
     files: list[discord.File] = []
-    if not message.attachments:
+    attachments = list(message.attachments or [])
+    if hasattr(message, "message_snapshots"):
+        for snap in message.message_snapshots:
+            attachments.extend(getattr(snap, "attachments", []) or [])
+    if not attachments:
         return files
-    for att in message.attachments:
+    for att in attachments:
         if not _is_playable_media(att):
             continue
         if att.size and att.size > size_limit:
@@ -53,12 +57,19 @@ def collect_link_media_urls(message: discord.Message, size_limit: int) -> list[s
     urls: list[str] = []
     seen: set[str] = set()
 
-    for embed in message.embeds:
+    embeds = list(message.embeds or [])
+    attachments = list(message.attachments or [])
+    if hasattr(message, "message_snapshots"):
+        for snap in message.message_snapshots:
+            embeds.extend(getattr(snap, "embeds", []) or [])
+            attachments.extend(getattr(snap, "attachments", []) or [])
+
+    for embed in embeds:
         if embed.url and embed.url not in seen and (embed.type in ("video", "gifv") or embed.video):
             seen.add(embed.url)
             urls.append(embed.url)
 
-    for att in message.attachments:
+    for att in attachments:
         if not _is_playable_media(att):
             continue
         if att.size and att.size > size_limit and att.url not in seen:
@@ -85,7 +96,13 @@ async def send_hof_post(client, thread, message: discord.Message):
 
     # A message with no real text (just a video/gif, uploaded or linked) has
     # nothing meaningful to render in the quote card - post the media directly.
-    if not message.content.strip() and (media_files or link_urls):
+    has_text_or_embed = bool(message.content.strip()) or bool(message.embeds)
+    if not has_text_or_embed and getattr(message, "message_snapshots", None):
+        for snap in message.message_snapshots:
+            if getattr(snap, "content", "").strip() or getattr(snap, "embeds", None):
+                has_text_or_embed = True
+                break
+    if not has_text_or_embed and (media_files or link_urls):
         await thread.send(
             content=f"{announcement}\n[Jump to message]({message.jump_url}){link_block}",
             files=media_files,
@@ -196,7 +213,8 @@ async def handle_hof_context_menu(interaction: discord.Interaction, message: dis
         await interaction.response.send_message("Bot messages can't be added to the Hall of Fame.", ephemeral=True)
         return
 
-    if not message.content and not message.attachments and not message.embeds:
+    has_snapshots = bool(getattr(message, "message_snapshots", None))
+    if not message.content and not message.attachments and not message.embeds and not has_snapshots:
         await interaction.response.send_message("This message has nothing to add.", ephemeral=True)
         return
 
