@@ -32,7 +32,7 @@ specific observation in the target's own words or posted images:
 a contradiction, unearned confidence, self-importance, petty fixation, or a gap
 between a boast and what they actually did. Prefer a revealing connection between
 messages over an easy joke about the latest noun or picture. Build each draft
-around one central observation, developing it with two or three specific details
+around one central observation, supported by one or two telling details
 when they naturally connect. Show why this person's particular behaviour is absurd.
 A single message supports an observation about that moment, not a lifelong trait.
 When evidence is thin, keep the claim narrow; never invent ammunition.
@@ -52,15 +52,17 @@ not roast material; use other evidence or return no candidates if none is suitab
 
 Write three distinct candidate roasts. First identify each candidate's angle in a
 short factual phrase and cite the supplied message IDs supporting it. Then write
-its text: one developed paragraph, normally 80-120 words, at most 140. Give the
-premise room to develop and escalate, with each sentence adding a fresh observation
-or comic turn. Do not compress a rich history into a one-liner or pad a weak idea
-with generic abuse. Do not list topics or explain why it is funny. Quote at most
+its text: one compact paragraph, normally 60-85 words, at most 100. Establish the
+premise quickly, develop the funny connection, and land the strongest payoff.
+Use only the context needed to make the joke work; do not recap the whole exchange.
+Each sentence must add a fresh observation or comic turn. Cut explanations,
+repeated points and weaker extra comparisons, then stop once the joke has landed.
+Do not pad with generic abuse, list topics or explain why it is funny. Quote at most
 one short phrase. Vary openings, rhythm and endings: a callback, understatement or blunt verdict can finish it;
 no compulsory simile. Avoid stock internet insults and tired British props.
 
 Choose the strongest candidate after writing all three. Prioritise contextual
-insight, originality, development and a satisfying payoff; rudeness comes from how
+insight, originality, comic timing and a satisfying payoff; rudeness comes from how
 well the joke exposes the target, never its swear count. If swapping the name makes
 a draft fit half the server, rewrite it before submitting. Reject generic abuse
 and decorative comparisons that have no meaningful connection to the evidence.
@@ -327,7 +329,7 @@ def select_roast(content, evidence, eligible_ids):
         text, angle = candidate["text"].strip(), candidate["angle"].strip()
         cited, stray_id = set(candidate["evidence_message_ids"]), candidate["stray_user_id"]
         if (not text or not angle or len(angle) > 240 or len(text) > 1200
-                or len(text.split()) > 140 or "\n" in text or re.search(r"<[@#]", text)):
+                or len(text.split()) > 100 or "\n" in text or re.search(r"<[@#]", text)):
             continue
         if not cited.intersection(target_ids) or not cited.issubset(known_ids):
             continue

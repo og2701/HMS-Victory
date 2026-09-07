@@ -235,7 +235,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_empty_refusal_shape_and_invalid_output(self):
         self.assertIsNone(R.select_roast('{"candidates": [], "selected_index": null}', evidence(), []))
-        for text in ["", "word " * 141, "paragraph\nparagraph", "Hello <@2>"]:
+        for text in ["", "word " * 101, "paragraph\nparagraph", "Hello <@2>"]:
             result = drafts()
             for candidate in result["candidates"]:
                 candidate["text"] = text
