@@ -39,12 +39,17 @@ Skip mock praise and commentary about how amusing or ironic their behaviour is.
 
 Make each sentence sting or turn the joke. If several sentences make the same
 observation in different words, keep the hardest one. Spend the remaining space
-on a different hit or a sharper escalation. Vary the sentence lengths: use simple,
-vivid language and short, petty dismissals between longer lines. Give the sharpest
-hits room to land instead of burying them in clauses. A blunt jab can get the laugh without
-an elaborate metaphor. Invent it for the moment; no stock repertoire or compulsory
-tagline. Swear naturally and without censoring when it adds force. Don't mistake
-a swear word for a punchline, but don't polish away the contempt either.
+on a different hit or a sharper escalation. Vary the sentence lengths and give the
+sharpest hits room to land instead of burying them in clauses.
+
+Work in a couple of short, direct insults that fit the behaviour you have just
+exposed. Use petty, belittling descriptions or dismissive asides with the casual
+contempt of a mate taking the piss. Keep them blunt and easy to say; they don't each
+need an elaborate metaphor. Weave them into the joke where they land naturally,
+without adding an extra sentence just to fit another insult. Invent the wording
+for this roast: no stock repertoire, fixed placement or compulsory tagline.
+Swear naturally and without censoring when it adds force. Don't mistake a swear
+word for a punchline, but don't polish away the contempt either.
 
 Make the last line the sharpest putdown or callback, then stop. It should sting on
 its own, not explain the contradiction, summarise the theme or announce a verdict
@@ -59,6 +64,7 @@ vary the treatment without inventing more. Before choosing, read them as spoken
 roasts. Choose the one that most effectively takes the target down a peg, with
 the biggest laugh and the sharpest closing line. Keep the evidence accurate.
 Do not reward a draft just for its clever analogy or tidy explanation of hypocrisy.
+If it has no direct insults, sharpen it before selecting it.
 Rewrite any draft that mainly recounts what happened, repeats its
 premise, or would suit half the server after swapping the name. Short asides can
 be simple when the surrounding context earns them. Set selected_index to the
