@@ -200,9 +200,9 @@ class SelectionTests(unittest.TestCase):
         result = drafts(selected=2)
         self.assertEqual(R.select_roast(json.dumps(result), evidence(), []), result["candidates"][2])
         result["candidates"][2]["evidence_message_ids"] = ["11"]
-        with self.assertRaises(ValueError):
-            R.select_roast(json.dumps(result), evidence(), [])
-        result["candidates"][2]["evidence_message_ids"] = ["10", "999"]
+        self.assertEqual(R.select_roast(json.dumps(result), evidence(), []), result["candidates"][0])
+        for candidate in result["candidates"]:
+            candidate["evidence_message_ids"] = ["10", "999"]
         with self.assertRaises(ValueError):
             R.select_roast(json.dumps(result), evidence(), [])
 
@@ -211,11 +211,9 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(R.eligible_strays(evidence(), guild), ["2"])
         result = drafts(stray=True)
         self.assertEqual(R.select_roast(json.dumps(result), evidence(), ["2"])["stray_user_id"], "2")
-        with self.assertRaises(ValueError):
-            R.select_roast(json.dumps(result), evidence(), [])
+        self.assertIsNone(R.select_roast(json.dumps(result), evidence(), [])["stray_user_id"])
         result["candidates"][0]["evidence_message_ids"] = ["10"]
-        with self.assertRaises(ValueError):
-            R.select_roast(json.dumps(result), evidence(), ["2"])
+        self.assertIsNone(R.select_roast(json.dumps(result), evidence(), ["2"])["stray_user_id"])
 
     def test_any_candidate_can_use_stray_and_no_candidate_has_to(self):
         result = drafts()
@@ -228,19 +226,39 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(R.eligible_strays(evidence(), types.SimpleNamespace(get_member=lambda _: None)), [])
         unrelated = evidence()
         unrelated["other_member_replies"][0]["target_message_id"] = "99"
-        with self.assertRaises(ValueError):
-            R.select_roast(json.dumps(drafts(stray=True)), unrelated, ["2"])
+        self.assertIsNone(R.select_roast(json.dumps(drafts(stray=True)), unrelated, ["2"])["stray_user_id"])
+
+    def test_invalid_unselected_draft_does_not_block_valid_winner(self):
+        result = drafts()
+        result["candidates"][2]["evidence_message_ids"] = ["999"]
+        self.assertEqual(R.select_roast(json.dumps(result), evidence(), []), result["candidates"][0])
 
     def test_empty_refusal_shape_and_invalid_output(self):
         self.assertIsNone(R.select_roast('{"candidates": [], "selected_index": null}', evidence(), []))
-        for text in ["", "word " * 66, "paragraph\nparagraph", "Hello <@2>"]:
+        for text in ["", "word " * 141, "paragraph\nparagraph", "Hello <@2>"]:
             result = drafts()
-            result["candidates"][0]["text"] = text
+            for candidate in result["candidates"]:
+                candidate["text"] = text
             with self.subTest(text=text), self.assertRaises(ValueError):
                 R.select_roast(json.dumps(result), evidence(), [])
         for result in ["not json", '{"candidates": [], "selected_index": 0}']:
             with self.assertRaises(ValueError):
                 R.select_roast(result, evidence(), [])
+
+    def test_developed_roast_is_not_rejected_by_old_short_length_limit(self):
+        result = drafts()
+        text = (
+            "You announced yourself as the chess authority, lost the match, then "
+            "explained that everyone else was taking it too seriously. Fascinating "
+            "how the competition became meaningless at precisely the moment you "
+            "stopped winning it. By your next message, the board was faulty and "
+            "the clock had an agenda. You've spent more effort appealing the result "
+            "than you spent protecting your queen. Next time, submit the excuses "
+            "before the match; at least then you'll have prepared an opening."
+        )
+        self.assertGreater(len(text.split()), 65)
+        result["candidates"][0]["text"] = text
+        self.assertEqual(R.select_roast(json.dumps(result), evidence(), [])["text"], text)
 
 
 class MemoryTests(unittest.TestCase):

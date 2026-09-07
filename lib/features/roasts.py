@@ -25,36 +25,47 @@ logger = logging.getLogger(__name__)
 _FILLER = {"lol", "lmao", "lmfao", "ok", "okay", "yeah", "yep", "haha", "hahaha", "xd", "kk"}
 _DECORATION = re.compile(r"https?://\S+|<a?:\w+:\d+>|<[@#][!&]?\d+>")
 
-SYSTEM_PROMPT = """Write a vicious, funny British Discord roast aimed at the named target.
+SYSTEM_PROMPT = """Write a clever, scathing British Discord roast aimed at the named target.
 
-Find the strongest specific observation in the target's own words or posted images:
+Read the whole supplied history before choosing the joke. Find the strongest
+specific observation in the target's own words or posted images:
 a contradiction, unearned confidence, self-importance, petty fixation, or a gap
-between a boast and what they actually did. Pick one central angle per draft and
-build the joke around it. A single message supports an observation about that moment,
-not a lifelong trait. When evidence is thin, keep the claim narrow; never invent ammunition.
+between a boast and what they actually did. Prefer a revealing connection between
+messages over an easy joke about the latest noun or picture. Build each draft
+around one central observation, developing it with two or three specific details
+when they naturally connect. Show why this person's particular behaviour is absurd.
+A single message supports an observation about that moment, not a lifelong trait.
+When evidence is thin, keep the claim narrow; never invent ammunition.
 
-Make it properly rude: blunt contempt, cutting personal digs at their behaviour,
-and uncensored, natural British profanity. Fucking, shit and cunt are available
-when they sharpen the line. No asterisks, coy euphemisms, compliments, apologies,
-reassurance or affectionate sign-off. The insult needs a joke, not just aggression.
-Keep the British voice conversational; do not force regional slang or stack ornate
-insult nouns. Attack their posturing and choices, not protected characteristics,
-trauma, health, appearance or other sensitive traits. No slurs, threats, wishes of
+Earn the nastiness through precise observations, inventive connections, irony and
+comic exaggeration. Be cutting and irreverent, with dry British wit and an ear for
+rhythm. Profanity is optional and uncensored when it improves a line; there are no
+required swear words or quota. Removing the swear words should leave the joke funny.
+Do not append a generic abusive label to make a finished joke sound harsher. Land
+on a payoff that belongs to this person's messages. No compliments, apologies,
+reassurance or affectionate sign-off. Keep the voice conversational; do not force
+regional slang or stack ornate insult nouns. Attack their posturing and choices,
+not protected characteristics, trauma, health, appearance or other sensitive traits.
+No slurs, threats, wishes of
 harm, sexual humiliation or invented personal allegations. Serious disclosures are
 not roast material; use other evidence or return no candidates if none is suitable.
 
 Write three distinct candidate roasts. First identify each candidate's angle in a
 short factual phrase and cite the supplied message IDs supporting it. Then write
-its text: one paragraph, normally 30-55 words, at most 65. A shorter clean hit is
-better than padding. Develop the observation and land the punchline; do not list
-topics or explain why it is funny. Quote at most one short phrase. Vary openings,
-rhythm and endings: a callback, understatement or blunt verdict can finish it;
+its text: one developed paragraph, normally 80-120 words, at most 140. Give the
+premise room to develop and escalate, with each sentence adding a fresh observation
+or comic turn. Do not compress a rich history into a one-liner or pad a weak idea
+with generic abuse. Do not list topics or explain why it is funny. Quote at most
+one short phrase. Vary openings, rhythm and endings: a callback, understatement or blunt verdict can finish it;
 no compulsory simile. Avoid stock internet insults and tired British props.
 
-Choose the strongest candidate after writing all three, using specificity,
-surprise, comic timing, bite and freshness. If swapping the name makes a draft fit
-half the server, rewrite it before submitting. Distinct angles are preferred, but
-when evidence only supports one, vary the comic treatment without inventing more.
+Choose the strongest candidate after writing all three. Prioritise contextual
+insight, originality, development and a satisfying payoff; rudeness comes from how
+well the joke exposes the target, never its swear count. If swapping the name makes
+a draft fit half the server, rewrite it before submitting. Reject generic abuse
+and decorative comparisons that have no meaningful connection to the evidence.
+Distinct angles are preferred, but when evidence only supports one, vary the comic
+treatment without inventing more.
 The selected_index is zero-based. Return no candidates and selected_index null if
 there is no usable material. Only the selected candidate's text will be posted.
 
@@ -87,6 +98,10 @@ set stray_user_id. The target must remain the main focus. Do not bolt on a secon
 roast, force a cameo, or insult any other member. A target-only draft can still win.
 If no stray fits, use null. Use display names in the prose, never Discord mentions,
 user IDs, message IDs, links, headings, a preamble or drafting commentary.
+A mere mention of another member is not a stray: set stray_user_id only when the
+roast actually mocks that member. In that case evidence_message_ids must include
+both their own reply's message_id and its linked target_message_id. Before selecting
+a winner, check every draft's references and remove any unsupported stray.
 """
 
 
@@ -306,22 +321,25 @@ def select_roast(content, evidence, eligible_ids):
     target_ids = {row["message_id"] for row in evidence["target_messages"]}
     other_rows = {row["message_id"]: row for row in evidence["other_member_replies"]}
     known_ids = target_ids | other_rows.keys()
-    for candidate in candidates:
+    # Prefer the model's winner, but don't discard usable alternatives for one bad draft.
+    for index in [selected, *(i for i in range(len(candidates)) if i != selected)]:
+        candidate = candidates[index]
         text, angle = candidate["text"].strip(), candidate["angle"].strip()
         cited, stray_id = set(candidate["evidence_message_ids"]), candidate["stray_user_id"]
         if (not text or not angle or len(angle) > 240 or len(text) > 1200
-                or len(text.split()) > 65 or "\n" in text or re.search(r"<[@#]", text)):
-            raise ValueError("Invalid roast text")
+                or len(text.split()) > 140 or "\n" in text or re.search(r"<[@#]", text)):
+            continue
         if not cited.intersection(target_ids) or not cited.issubset(known_ids):
-            raise ValueError("Roast cites missing or non-target evidence")
+            continue
         if stray_id is not None:
             if stray_id not in eligible_ids or not any(
                 row["author_id"] == stray_id and row["target_message_id"] in cited
                 for message_id, row in other_rows.items() if message_id in cited
             ):
-                raise ValueError("Stray is not supported by a direct exchange")
+                continue
         candidate["text"], candidate["angle"] = text, angle
-    return candidates[selected]
+        return candidate
+    raise ValueError("No valid roast candidate has supported evidence and valid text")
 
 
 def save_roast(guild_id, target, candidate):
