@@ -34,4 +34,5 @@ jobs:
           tests/test_americanisms.py
           tests/test_roast_prompt.py
           tests/test_roasts.py
+          tests/test_glazes.py
           -v

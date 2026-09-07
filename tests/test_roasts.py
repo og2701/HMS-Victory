@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import database
+from lib.features import member_context as C
 from lib.features import roasts as R
 
 NOW = datetime(2026, 9, 7, tzinfo=timezone.utc)
@@ -100,7 +101,7 @@ class EvidenceTests(unittest.IsolatedAsyncioTestCase):
             message(4, "I won"), message(5, "https://example.com"), message(6, "/roast"),
             message(7, "ancient boast", created_at=NOW - timedelta(days=31)),
         ])
-        result, images = await R.collect_evidence(channel, TARGET, now=NOW)
+        result, images = await C.collect_evidence(channel, TARGET, now=NOW)
         self.assertEqual([row["message_id"] for row in result["target_messages"]], ["4", "1"])
         self.assertEqual(result["target_messages"][-1]["occurrences"], 2)
         self.assertEqual(images, [])
@@ -114,13 +115,13 @@ class EvidenceTests(unittest.IsolatedAsyncioTestCase):
             message(2, "I never lose", reply=20, resolved=parent),
             message(3, "unrelated chat", author=OTHER),
         ])
-        result, _ = await R.collect_evidence(channel, TARGET, now=NOW)
+        result, _ = await C.collect_evidence(channel, TARGET, now=NOW)
         self.assertEqual(len(result["target_messages"]), 1)
         self.assertEqual({row["message_id"] for row in result["other_member_replies"]}, {"1", "20"})
         self.assertTrue(all(row["author_id"] == "2" for row in result["other_member_replies"]))
         self.assertTrue(all(row["target_message_id"] == "2" for row in result["other_member_replies"]))
         channel = Channel([message(2, reply=20), parent])
-        result, _ = await R.collect_evidence(channel, TARGET, now=NOW)
+        result, _ = await C.collect_evidence(channel, TARGET, now=NOW)
         self.assertEqual(result["other_member_replies"][0]["message_id"], "20")
 
     async def test_no_private_old_or_bot_reply_material(self):
@@ -130,13 +131,13 @@ class EvidenceTests(unittest.IsolatedAsyncioTestCase):
             message(22, author=types.SimpleNamespace(id=9, display_name="Bot", bot=True)),
         ]
         channel = Channel([message(n, f"Claim {n}", reply=p.id, resolved=p) for n, p in enumerate(parents, 1)])
-        result, _ = await R.collect_evidence(channel, TARGET, now=NOW)
+        result, _ = await C.collect_evidence(channel, TARGET, now=NOW)
         self.assertEqual(result["other_member_replies"], [])
 
     async def test_image_only_posts_are_labelled_and_capped_to_four(self):
         attachments = [attachment(n) for n in range(6)]
         channel = Channel([message(n + 1, "", attachments=[a]) for n, a in enumerate(attachments)])
-        result, images = await R.collect_evidence(channel, TARGET, now=NOW)
+        result, images = await C.collect_evidence(channel, TARGET, now=NOW)
         self.assertEqual(len(images), 4)
         self.assertEqual(len(result["target_messages"]), 4)
         self.assertEqual([i["message_id"] for i in images], ["1", "2", "3", "4"])
@@ -150,7 +151,7 @@ class EvidenceTests(unittest.IsolatedAsyncioTestCase):
     async def test_images_do_not_expand_target_history(self):
         older = attachment()
         channel = Channel([message(n, f"claim number {n}") for n in range(1, 81)] + [message(81, "", attachments=[older])])
-        result, images = await R.collect_evidence(channel, TARGET, now=NOW)
+        result, images = await C.collect_evidence(channel, TARGET, now=NOW)
         self.assertEqual(len(result["target_messages"]), 80)
         self.assertEqual(channel.yielded, 80)
         self.assertEqual(images, [])
@@ -159,7 +160,7 @@ class EvidenceTests(unittest.IsolatedAsyncioTestCase):
     async def test_attachment_without_mime_type_is_checked_from_real_image_bytes(self):
         picture = attachment(content_type=None)
         channel = Channel([message(1, "", attachments=[picture])])
-        result, images = await R.collect_evidence(channel, TARGET, now=NOW)
+        result, images = await C.collect_evidence(channel, TARGET, now=NOW)
         self.assertEqual(len(images), 1)
         self.assertEqual(result["target_messages"][0]["image_labels"], ["image_1"])
 
@@ -167,14 +168,14 @@ class EvidenceTests(unittest.IsolatedAsyncioTestCase):
         broken = attachment(data=b"not an image")
         missing = attachment()
         missing.read.side_effect = RuntimeError("expired")
-        huge = attachment(size=R.IMAGE_BYTE_LIMIT + 1)
+        huge = attachment(size=C.IMAGE_BYTE_LIMIT + 1)
         video = attachment(content_type="video/mp4")
         channel = Channel([
             message(1, "My undefeated record", attachments=[broken]),
             message(2, "", attachments=[missing]), message(3, "", attachments=[huge, video]),
         ])
-        with self.assertLogs(R.logger, level="WARNING"):
-            result, images = await R.collect_evidence(channel, TARGET, now=NOW)
+        with self.assertLogs(C.logger, level="WARNING"):
+            result, images = await C.collect_evidence(channel, TARGET, now=NOW)
         self.assertEqual([r["message_id"] for r in result["target_messages"]], ["1"])
         self.assertEqual(images, [])
         huge.read.assert_not_awaited()
@@ -188,7 +189,7 @@ class EvidenceTests(unittest.IsolatedAsyncioTestCase):
                 out = BytesIO()
                 original.save(out, format=fmt, save_all=fmt == "GIF",
                               **({"append_images": [Image.new("RGB", size, "red")]} if fmt == "GIF" else {}))
-                encoded = R._encode_image(out.getvalue())
+                encoded = C._encode_image(out.getvalue())
                 with Image.open(BytesIO(base64.b64decode(encoded.split(",", 1)[1]))) as result:
                     self.assertLessEqual(max(result.size), 1600)
                     self.assertEqual(result.format, "JPEG")

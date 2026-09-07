@@ -917,6 +917,19 @@ def init_db():
                 c.execute(f"ALTER TABLE recent_roasts ADD COLUMN {column} TEXT")
         c.execute("CREATE INDEX IF NOT EXISTS idx_roasts_guild ON recent_roasts(guild_id, id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_roasts_target ON recent_roasts(guild_id, target_id, id)")
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS recent_glazes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                target_name TEXT NOT NULL,
+                angle TEXT NOT NULL,
+                glaze_text TEXT NOT NULL,
+                created_at REAL NOT NULL
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_glazes_guild ON recent_glazes(guild_id, id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_glazes_target ON recent_glazes(guild_id, target_id, id)")
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS scheduled_predictions (

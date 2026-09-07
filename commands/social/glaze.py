@@ -1,75 +1,76 @@
-import random
-from discord import TextChannel, Member
-from openai import AsyncOpenAI
-from datetime import datetime
+import logging
 from os import getenv
-from lib.core.discord_helpers import fetch_messages_with_context, estimate_tokens
+
+from discord import AllowedMentions, Member, TextChannel
+from openai import AsyncOpenAI
+
 from config import USERS
+from lib.features import glazes
 
-client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"))
 
-thinking_messages = [
-    "Formulating a compliment...",
-    "Finding the right words to praise you...",
-    "Preparing the ultimate glaze...",
-    "Brewing a cup of positivity...",
-    "Polishing the brass..."
-]
+client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"), max_retries=5, timeout=60.0)
+logger = logging.getLogger(__name__)
+
 
 async def glaze(interaction, channel: TextChannel = None, user: Member = None):
-    if channel is None:
-        channel = interaction.channel
-    if user is None:
-        user = interaction.user
-
     if interaction.user.id != USERS.OGGERS:
         await interaction.response.send_message("Only OGGERS can use this command for now.", ephemeral=True)
         return
 
-    thinking_text = random.choice(thinking_messages)
-    await interaction.response.defer()
-    await interaction.followup.send(thinking_text, ephemeral=False)
-
-    user_messages = []
-    # Moderate context for a good personalized glaze
-    await fetch_messages_with_context(channel, user, user_messages, total_limit=60, context_depth=2)
-    
-    input_text = "\n".join(user_messages)
-    if len(input_text) == 0:
-        await interaction.followup.send(f"{user.display_name} hasn't said anything recently to glaze!")
-        return
-    
-    estimated_tokens = estimate_tokens(input_text)
-    max_allowed_tokens = 120000
-
-    if estimated_tokens > max_allowed_tokens:
-        allowed_length = max_allowed_tokens * 4
-        input_text = input_text[:allowed_length]
-
-    system_prompt = (
-        f"You are a kind, overly posh, and overwhelmingly positive British flatterer. "
-        f"Your task is to heavily praise and compliment the target, {user.display_name}, based on their recent chat messages. "
-        f"**CRITICAL:** You MUST heavily reference and specifically praise the exact content of their chat messages provided to you. Pull apart the things they've said, twisting their words to make them look like an absolute genius and hero. Avoid generic praise; centre the compliment around *what they actually talked about*. "
-        f"Keep your response concise-no more than 3 sentences. Make them sound like an absolute legend. "
-        f"The messages are from the past as of {datetime.utcnow().strftime('%Y-%m-%d')}. "
-        f"Use **British English spellings and idioms**. "
-        f"Return **only** the compliment paragraph."
-    )
-
+    source_channel = channel or interaction.channel
+    user = user or interaction.user
     try:
-        response = await client.chat.completions.create(
-            model="gpt-5.4-nano",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Here are the recent chat messages from {user.display_name}. Read them, find specific things they said, and provide a legendary, overly posh British compliment directly based on those topics:\n\n{input_text}"},
-            ],
-            # GPT-5 family: max_tokens is rejected (use max_completion_tokens) and
-            # only the default temperature is supported.
-            max_completion_tokens=250,
-        )
+        await interaction.response.defer(ephemeral=True)
+        evidence, images = await glazes.collect_evidence(source_channel, user)
+        if not evidence["target_messages"]:
+            await interaction.followup.send(
+                f"{user.display_name} hasn't posted enough to glaze in this channel lately!",
+                ephemeral=True, allowed_mentions=AllowedMentions.none(),
+            )
+            return
 
-        summary = response.choices[0].message.content.strip()
-        await interaction.followup.send(summary)
-    except Exception as e:
-        print(e)
-        await interaction.followup.send("An error occurred while trying to glaze.")
+        memory = glazes.load_memory(interaction.guild_id, user.id)
+        response = await client.chat.completions.create(
+            model="gpt-5.4",
+            messages=[
+                {"role": "system", "content": glazes.SYSTEM_PROMPT},
+                {"role": "user", "content": glazes.model_content(evidence, images, memory)},
+            ],
+            response_format=glazes.response_format(),
+            max_completion_tokens=4096,
+        )
+        choice = response.choices[0]
+        if choice.finish_reason != "stop" or choice.message.refusal or not choice.message.content:
+            raise ValueError("Glaze generation was refused, empty or incomplete")
+        candidate = glazes.select_glaze(choice.message.content, evidence)
+        if candidate is None:
+            await interaction.followup.send(
+                "There's not enough usable material for a decent glaze yet. Try another channel.",
+                ephemeral=True,
+            )
+            return
+
+        header = (f"✨ {user.mention} ✨\n"
+                  f"-# glazed at {interaction.user.display_name}'s request\n\n")
+        await interaction.channel.send(
+            header + candidate["text"],
+            allowed_mentions=AllowedMentions(users=[user], everyone=False, roles=False, replied_user=False),
+        )
+    except Exception:
+        logger.exception("Error in glaze command")
+        error = "Couldn't deliver the glaze. Try again in a moment."
+        if interaction.response.is_done():
+            await interaction.followup.send(error, ephemeral=True)
+        else:
+            await interaction.response.send_message(error, ephemeral=True)
+        return
+
+    # Failures after delivery must never report that the successfully posted glaze failed.
+    try:
+        await interaction.delete_original_response()
+    except Exception:
+        logger.debug("Could not clear glaze interaction", exc_info=True)
+    try:
+        glazes.save_glaze(interaction.guild_id, user, candidate)
+    except Exception:
+        logger.exception("Could not save glaze memory")
