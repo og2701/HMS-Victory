@@ -3,9 +3,11 @@ import re
 import unittest
 
 
-ROAST_SOURCE = (
-    Path(__file__).resolve().parents[1] / "commands" / "social" / "roast.py"
-).read_text(encoding="utf-8")
+ROOT = Path(__file__).resolve().parents[1]
+ROAST_SOURCE = "\n".join(
+    (ROOT / path).read_text(encoding="utf-8")
+    for path in ("commands/social/roast.py", "lib/features/roasts.py")
+)
 
 
 class RoastPromptTestCase(unittest.TestCase):

@@ -901,7 +901,7 @@ def init_db():
             )
         ''')
 
-        # Recent roasts history to prevent LLM vocabulary / structural repetition.
+        # Keep both personal angles and server-wide punchlines fresh.
         c.execute('''
             CREATE TABLE IF NOT EXISTS recent_roasts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -910,6 +910,13 @@ def init_db():
                 created_at REAL
             )
         ''')
+        c.execute("PRAGMA table_info(recent_roasts)")
+        roast_columns = {row[1] for row in c.fetchall()}
+        for column in ("guild_id", "target_id", "angle", "stray_user_id"):
+            if column not in roast_columns:
+                c.execute(f"ALTER TABLE recent_roasts ADD COLUMN {column} TEXT")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_roasts_guild ON recent_roasts(guild_id, id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_roasts_target ON recent_roasts(guild_id, target_id, id)")
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS scheduled_predictions (

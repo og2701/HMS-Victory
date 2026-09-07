@@ -32,4 +32,6 @@ jobs:
           tests/test_anti_raid.py
           tests/test_moderation_text.py
           tests/test_americanisms.py
+          tests/test_roast_prompt.py
+          tests/test_roasts.py
           -v
