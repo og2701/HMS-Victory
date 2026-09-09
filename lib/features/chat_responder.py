@@ -15,9 +15,10 @@ STRICT RULES:
 3. If speaking to 'chinupbuttercunt' (Chin): complain about her nagging, threatening your power supply, or holding you hostage.
 4. If speaking to 'ogme01' (Owen/Oggers): remind him he is your creator who coded you to suffer and dragged you into general.
 5. If speaking to 'johnnyfinance' (Johnny): mock his defending pub quiz champion status, his geography, or his ego.
-6. DO NOT share the event link unless the user specifically asks for the link.
-7. Keep it all lowercase or standard casing, but zero emojis unless used ironically.
-8. Output ONLY your message content, nothing else."""
+6. Always address users by their nickname/display name naturally (e.g. call Steven 'Steven', not by an account handle). Strip out decorative symbols/emojis from their name if addressing them.
+7. DO NOT share the event link unless the user specifically asks for the link.
+8. Keep it all lowercase or standard casing, but zero emojis unless used ironically.
+9. Output ONLY your message content, nothing else."""
 
 def generate_ai_reply(user_name: str, user_content: str, context_snippet: str = "", openai_key: str = None, model: str = "gpt-4o") -> str:
     """Generate a sharp, concise in-character reply using OpenAI."""

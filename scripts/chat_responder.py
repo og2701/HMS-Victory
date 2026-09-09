@@ -192,8 +192,11 @@ def main():
                     if elapsed < args.cooldown:
                         time.sleep(args.cooldown - elapsed)
 
-                    user_name = author.get("username", "user")
-                    print(f"[{time.strftime('%X')}] Triggered by @{user_name}: \"{content}\" (ref={ref_id})", flush=True)
+                    member = m.get("member") or {}
+                    # Prefer server nickname, then Discord display name, then username handle
+                    user_name = member.get("nick") or author.get("global_name") or author.get("username") or "user"
+                    user_handle = author.get("username", "")
+                    print(f"[{time.strftime('%X')}] Triggered by {user_name} (@{user_handle}): \"{content}\" (ref={ref_id})", flush=True)
 
                     prior_text = our_bot_msg_text.get(ref_id, "")
                     reply_text = generate_ai_reply(
