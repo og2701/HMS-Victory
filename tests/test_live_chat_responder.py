@@ -3,6 +3,7 @@ import types
 import unittest
 from unittest.mock import MagicMock, patch
 import time
+import asyncio
 
 # Install stubs if discord is not installed in local environment
 if "discord" not in sys.modules:
@@ -755,8 +756,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
     async def test_handle_chat_message_troll_mode_targets_bot(self, mock_generate_ai):
         mock_generate_ai.return_value = ("Shut up you glorified calculator.", 40, 10)
 
-        claude_bot_id = 1457814413913489480
-        live_chat_manager.set_target_user(claude_bot_id)
+        dummy_target_id = 998877665544332211
+        live_chat_manager.set_target_user(dummy_target_id)
 
         client = MagicMock()
         client.user.id = 999999999
@@ -764,8 +765,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         # Target bot message
         bot_message = MagicMock()
         bot_message.id = 888111
-        bot_message.author.id = claude_bot_id
-        bot_message.author.name = "Claude AI"
+        bot_message.author.id = dummy_target_id
+        bot_message.author.name = "TestBot"
         bot_message.author.bot = True
         bot_message.content = "We respect all people and open them"
         bot_message.channel.id = 12345
@@ -811,9 +812,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
     @patch("lib.features.chat_responder.save_chatbot_config")
     @patch("lib.features.chat_responder.load_chatbot_config")
     def test_chatbot_config_persistence(self, mock_load, mock_save):
-        mock_load.return_value = {"target_user_id": 1457814413913489480}
+        mock_load.return_value = {"target_user_id": 998877665544332211}
         mgr = LiveChatManager()
-        self.assertEqual(mgr.target_user_id, 1457814413913489480)
+        self.assertEqual(mgr.target_user_id, 998877665544332211)
 
         # Setting target user should persist to disk
         mgr.set_target_user(987654321)
@@ -824,6 +825,35 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         mgr.set_target_user(None)
         self.assertIsNone(mgr.target_user_id)
         mock_save.assert_called_with({"target_user_id": None})
+
+    @patch("lib.features.chat_responder.load_chatbot_config")
+    @patch("os.path.getmtime")
+    @patch("os.path.exists")
+    async def test_config_watcher_loop_detects_change(self, mock_exists, mock_getmtime, mock_load):
+        mock_exists.return_value = True
+        mock_getmtime.side_effect = [100.0, 105.0]
+        mock_load.side_effect = [{"target_user_id": None}, {"target_user_id": 777888999}]
+
+        mgr = LiveChatManager()
+        self.assertIsNone(mgr.target_user_id)
+        update_called = asyncio.Event()
+
+        async def fake_update():
+            update_called.set()
+
+        mgr.update_dashboard = fake_update
+
+        task = asyncio.create_task(mgr._config_watcher_loop())
+        try:
+            await asyncio.wait_for(update_called.wait(), timeout=2.5)
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        self.assertEqual(mgr.target_user_id, 777888999)
 
 
 if __name__ == "__main__":

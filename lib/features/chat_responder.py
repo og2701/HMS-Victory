@@ -572,6 +572,7 @@ class LiveChatManager:
         self.conversation_history: deque = deque(maxlen=10)
         self.stop_task: Optional[asyncio.Task] = None
         self.live_update_task: Optional[asyncio.Task] = None
+        self.config_watcher_task: Optional[asyncio.Task] = None
 
         # Dashboard tracking
         self.client: Optional[discord.Client] = None
@@ -721,6 +722,60 @@ class LiveChatManager:
             pass
         except Exception as e:
             logger.error("Error in live dashboard update loop: %s", e, exc_info=True)
+
+    def start_config_watcher(self):
+        """Start a background loop that monitors CHATBOT_CONFIG_FILE for external updates (e.g. from scripts)."""
+        if self.config_watcher_task and not self.config_watcher_task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            self.config_watcher_task = loop.create_task(self._config_watcher_loop())
+            logger.info("LiveChatManager config file watcher started.")
+        except RuntimeError:
+            pass
+
+    async def _config_watcher_loop(self):
+        """Continuously monitor CHATBOT_CONFIG_FILE and immediately refresh dashboard and memory when changed."""
+        last_mtime = 0.0
+        if os.path.exists(CHATBOT_CONFIG_FILE):
+            try:
+                last_mtime = os.path.getmtime(CHATBOT_CONFIG_FILE)
+            except OSError:
+                pass
+
+        while True:
+            try:
+                await asyncio.sleep(1.0)
+                if not os.path.exists(CHATBOT_CONFIG_FILE):
+                    continue
+                try:
+                    mtime = os.path.getmtime(CHATBOT_CONFIG_FILE)
+                except OSError:
+                    continue
+
+                if mtime != last_mtime:
+                    last_mtime = mtime
+                    cfg = load_chatbot_config()
+                    raw_target = cfg.get("target_user_id")
+                    new_target = None
+                    if raw_target is not None:
+                        try:
+                            new_target = int(raw_target)
+                        except (ValueError, TypeError):
+                            new_target = None
+
+                    if new_target != self.target_user_id:
+                        logger.info(
+                            "External config update detected: target_user_id %s -> %s. Refreshing Discord dashboard...",
+                            self.target_user_id,
+                            new_target,
+                        )
+                        self.set_target_user(new_target, persist=False)
+                        await self.update_dashboard()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug("Error in LiveChatManager config watcher loop: %s", e)
 
     async def update_dashboard(self):
         """Push latest status, countdown, and live cost to the Discord dashboard message via Components V2."""
@@ -1869,6 +1924,7 @@ async def ensure_chatbot_dashboard_message(client: discord.Client):
             logger.info("Posted initial chatbot dashboard message (%s) with Components V2 in thread %s", dashboard_msg.id, thread_id)
 
         live_chat_manager.set_dashboard(client, dashboard_msg)
+        live_chat_manager.start_config_watcher()
 
     except Exception as e:
         logger.error("Failed to ensure chatbot dashboard message in thread %s: %s", thread_id, e, exc_info=True)

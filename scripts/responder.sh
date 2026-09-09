@@ -66,6 +66,16 @@ case "$1" in
         fi
         ;;
 
+    target)
+        shift
+        "${PYTHON_BIN}" "${PROJECT_DIR}/scripts/set_troll_target.py" "$@"
+        ;;
+
+    clear-target)
+        shift
+        "${PYTHON_BIN}" "${PROJECT_DIR}/scripts/set_troll_target.py" clear "$@"
+        ;;
+
     run)
         shift
         exec "${PYTHON_BIN}" "${PROJECT_DIR}/scripts/chat_responder.py" "$@"
@@ -75,15 +85,17 @@ case "$1" in
         echo "=============================================================================="
         echo " HMS Victory Live Chat Responder Management"
         echo "=============================================================================="
-        echo "Usage: $0 {run|start|stop|status|logs|help} [options]"
+        echo "Usage: $0 {target|clear-target|run|start|stop|status|logs|help} [options]"
         echo ""
         echo "Commands:"
-        echo "  run      Run in foreground (interactive menu for channel, duration & topic)"
-        echo "  start    Launch in background as a daemon"
-        echo "  stop     Stop the background daemon immediately"
-        echo "  status   Check if the responder is currently running"
-        echo "  logs     Tail the live logs in real time (Ctrl+C to exit logs)"
-        echo "  help     Display this guide"
+        echo "  target <id|@user>   Set troll/defence target (updates Discord control panel)"
+        echo "  clear-target        Disable troll/defence mode (updates Discord control panel)"
+        echo "  run                 Run in foreground (interactive menu for channel, duration & topic)"
+        echo "  start               Launch in background as a daemon"
+        echo "  stop                Stop the background daemon immediately"
+        echo "  status              Check if the responder is currently running"
+        echo "  logs                Tail the live logs in real time (Ctrl+C to exit logs)"
+        echo "  help                Display this guide"
         echo ""
         echo "Options (pass to 'run' or 'start'):"
         echo "  --channel <name|id>   Target: general, vip, commons, politics, or channel ID"
