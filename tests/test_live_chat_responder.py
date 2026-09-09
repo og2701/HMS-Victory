@@ -10,6 +10,7 @@ if "discord" not in sys.modules:
     discord.ButtonStyle = types.SimpleNamespace(secondary=0, success=1, danger=2, primary=3, link=4)
     discord.ChannelType = types.SimpleNamespace(text=0)
     discord.TextStyle = types.SimpleNamespace(paragraph=2)
+    discord.EventStatus = types.SimpleNamespace(scheduled=1, active=2)
 
     class MockEmbed:
         def __init__(self, **kwargs):
@@ -340,12 +341,27 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
 
         message.channel.history = async_history
 
+        # Scheduled events
+        mock_event = MagicMock()
+        mock_event.name = "Pub Quiz"
+        mock_event.status = 1  # scheduled
+        mock_event.url = "https://discord.com/events/123/456"
+        mock_event.creator.display_name = "Chin"
+        guild_mock = MagicMock()
+        guild_mock.id = 123
+        async def async_fetch_events():
+            return [mock_event]
+        guild_mock.fetch_scheduled_events = async_fetch_events
+        message.guild = guild_mock
+
         context = await gather_one_off_context(client, message)
         self.assertIn("DIRECT REPLY TARGET", context)
         self.assertIn("Steven (@steven_smith)", context)
         self.assertIn("Beans on toast is overrated", context)
         self.assertIn("MENTIONED USERS IN PROMPT: Johnny (@john_doe)", context)
         self.assertIn("RECENT CHAT IN #general", context)
+        self.assertIn("ACTIVE / UPCOMING SERVER EVENTS", context)
+        self.assertIn("https://discord.com/events/123/456", context)
 
     @patch("lib.features.chat_responder.handle_one_off_owner_mention")
     async def test_handle_chat_message_oggers_direct_tag_asleep(self, mock_handle_one_off):

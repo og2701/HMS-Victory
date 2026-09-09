@@ -51,7 +51,8 @@ STRICT RULES & GUIDANCE:
    - Keep it concise, witty, and cynical (1 to 3 sentences maximum).
 5. Always address users by their nickname/display name naturally (strip weird symbols/decorations).
 6. Zero corporate waffle, no "Sure! Here is a poem:", no preamble. Output ONLY your message content.
-7. Zero emojis unless used dripping with heavy irony."""
+7. Zero emojis unless used dripping with heavy irony.
+8. NEVER output placeholders like '[insert link here]' or '[insert event link here]'. If an event link or URL is in the context, output that exact real URL. If no link exists in the context, state in character that you don't have it."""
 
 def build_system_prompt(topic: Optional[str] = None, is_defence: bool = False) -> str:
     prompt = DEFENCE_SYSTEM_PROMPT if is_defence else BASE_SYSTEM_PROMPT
@@ -205,9 +206,9 @@ async def scrape_server_context(
                     creator_name = e.creator.display_name if e.creator else "Unknown"
                     start_str = e.start_time.strftime("%A, %B %d at %H:%M UTC") if e.start_time else "TBD"
                     channel_name = e.channel.name if e.channel else "Event Location"
-                    desc = (e.description or "").strip().replace("\n", " ")
+                    event_url = getattr(e, "url", f"https://discord.com/events/{guild.id}/{e.id}")
                     scraped_lines.append(
-                        f"Event '{e.name}' (Host: {creator_name}, Time: {start_str}, Channel: #{channel_name}): {desc[:200]}"
+                        f"Event '{e.name}' (URL: {event_url}, Host: {creator_name}, Time: {start_str}, Channel: #{channel_name}): {desc[:200]}"
                     )
         except Exception as e:
             logger.debug("Could not fetch scheduled events: %s", e)
@@ -831,6 +832,24 @@ async def gather_one_off_context(client: discord.Client, message: discord.Messag
                 context_sections.append(f"NOTE: Most recent active speaker prior to this request was '{recent_speaker}'.")
     except Exception as e:
         logger.debug("Could not fetch recent channel history for one-off context: %s", e)
+
+    # 5. Check for active/upcoming Guild Scheduled Events (with exact URLs)
+    guild = getattr(message, "guild", None)
+    if guild and hasattr(guild, "fetch_scheduled_events"):
+        try:
+            events = await guild.fetch_scheduled_events()
+            valid_events = [e for e in events if getattr(e, "status", None) in (discord.EventStatus.scheduled, discord.EventStatus.active)]
+            if valid_events:
+                event_lines = []
+                for e in valid_events[:3]:
+                    event_url = getattr(e, "url", f"https://discord.com/events/{guild.id}/{e.id}")
+                    creator_name = getattr(e.creator, "display_name", "Unknown") if getattr(e, "creator", None) else "Unknown"
+                    event_lines.append(f"- Event '{e.name}': {event_url} (Host: {creator_name})")
+                context_sections.append(
+                    "ACTIVE / UPCOMING SERVER EVENTS (Use these EXACT URLs if asked for event links):\n" + "\n".join(event_lines)
+                )
+        except Exception as e:
+            logger.debug("Could not fetch scheduled events for one-off context: %s", e)
 
     return "\n\n".join(context_sections).strip()
 
