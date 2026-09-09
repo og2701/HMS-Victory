@@ -430,18 +430,43 @@ def is_message_for_bot(client: discord.Client, message: discord.Message) -> bool
 
 
 async def extract_image_urls(message: discord.Message, client: Optional[discord.Client] = None) -> List[str]:
-    """Extract image attachment URLs from a message, and if none, from its referenced reply."""
-    urls = []
-    # 1. Check direct attachments on this message
-    for att in getattr(message, "attachments", []):
-        ctype = getattr(att, "content_type", "") or ""
-        fname = (getattr(att, "filename", "") or "").lower()
-        if ctype.startswith("image/") or fname.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
-            url = getattr(att, "url", None)
-            if url:
-                urls.append(url)
+    """Extract image attachment URLs from a message (attachments, embeds, links), and if none, from its referenced reply."""
+    urls: List[str] = []
 
-    # 2. Check referenced message if no direct image attachments
+    def _collect_from_msg(msg: discord.Message):
+        # 1. Direct attachments
+        attachments = getattr(msg, "attachments", None)
+        if isinstance(attachments, list):
+            for att in attachments:
+                ctype = getattr(att, "content_type", "") or ""
+                fname = (getattr(att, "filename", "") or "").lower()
+                if ctype.startswith("image/") or fname.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+                    url = getattr(att, "url", None)
+                    if url and url not in urls:
+                        urls.append(url)
+
+        # 2. Embeds
+        embeds = getattr(msg, "embeds", None)
+        if isinstance(embeds, list):
+            for emb in embeds:
+                img = getattr(emb, "image", None)
+                thumb = getattr(emb, "thumbnail", None)
+                if img and getattr(img, "url", None) and img.url not in urls:
+                    urls.append(img.url)
+                elif thumb and getattr(thumb, "url", None) and thumb.url not in urls:
+                    urls.append(thumb.url)
+
+        # 3. Direct image links in content
+        raw_content = getattr(msg, "content", None)
+        if isinstance(raw_content, str) and raw_content:
+            for link in re.findall(r"https?://\S+\.(?:png|jpe?g|webp|gif)(?:\?\S*)?", raw_content, re.IGNORECASE):
+                if link not in urls:
+                    urls.append(link)
+
+    # 1. Check direct message
+    _collect_from_msg(message)
+
+    # 2. Check referenced message if no direct images found
     if not urls and getattr(message, "reference", None):
         ref = message.reference
         ref_msg = getattr(ref, "cached_message", None)
@@ -454,13 +479,7 @@ async def extract_image_urls(message: discord.Message, client: Optional[discord.
             except Exception:
                 ref_msg = None
         if ref_msg:
-            for att in getattr(ref_msg, "attachments", []):
-                ctype = getattr(att, "content_type", "") or ""
-                fname = (getattr(att, "filename", "") or "").lower()
-                if ctype.startswith("image/") or fname.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
-                    url = getattr(att, "url", None)
-                    if url:
-                        urls.append(url)
+            _collect_from_msg(ref_msg)
 
     return urls[:3]
 
