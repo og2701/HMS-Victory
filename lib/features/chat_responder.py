@@ -969,7 +969,7 @@ class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
     )
     topic_input = discord.ui.TextInput(
         label="Starting Context / Hint (Optional)",
-        placeholder="e.g. Chin pub quiz, a Discord message link, or leave blank to auto-scrape",
+        placeholder="e.g. Chin pub quiz, a Discord message link, or leave blank for natural chat",
         style=discord.TextStyle.paragraph,
         max_length=400,
         required=False,
@@ -1002,27 +1002,29 @@ class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
         target_uid = parse_user_id(self.target_user_input.value)
         raw_topic = self.topic_input.value.strip() if self.topic_input.value else ""
 
-        final_topic = raw_topic
+        final_topic = None
         f_prompt_tokens = 0
         f_comp_tokens = 0
-        try:
-            scraped_data = await scrape_server_context(
-                client=interaction.client,
-                guild=interaction.guild,
-                target_channel_id=cid,
-                user_input=raw_topic,
-            )
-            if scraped_data or raw_topic:
-                formulated, f_prompt_tokens, f_comp_tokens = await asyncio.to_thread(
-                    formulate_starting_context,
+        if raw_topic:
+            final_topic = raw_topic
+            try:
+                scraped_data = await scrape_server_context(
+                    client=interaction.client,
+                    guild=interaction.guild,
+                    target_channel_id=cid,
                     user_input=raw_topic,
-                    scraped_data=scraped_data,
-                    return_usage=True,
                 )
-                if formulated:
-                    final_topic = formulated
-        except Exception as e:
-            logger.warning("Failed to scrape/formulate starting topic: %s", e, exc_info=True)
+                if scraped_data:
+                    formulated, f_prompt_tokens, f_comp_tokens = await asyncio.to_thread(
+                        formulate_starting_context,
+                        user_input=raw_topic,
+                        scraped_data=scraped_data,
+                        return_usage=True,
+                    )
+                    if formulated:
+                        final_topic = formulated
+            except Exception as e:
+                logger.warning("Failed to scrape/formulate starting topic: %s", e, exc_info=True)
 
         if interaction.message:
             live_chat_manager.set_dashboard(interaction.client, interaction.message)
