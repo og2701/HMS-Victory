@@ -71,22 +71,41 @@ case "$1" in
         exec "${PYTHON_BIN}" "${PROJECT_DIR}/scripts/chat_responder.py" "$@"
         ;;
 
-    *)
-        echo "Usage: $0 {start|stop|status|logs|run} [optional args for script]"
+    help|--help|-h)
+        echo "=============================================================================="
+        echo " HMS Victory Live Chat Responder Management"
+        echo "=============================================================================="
+        echo "Usage: $0 {run|start|stop|status|logs|help} [options]"
         echo ""
-        echo "Options supported by chat_responder.py:"
-        echo "  --channel <general|vip|commons|politics|<id>>  (default: general)"
-        echo "  --duration <15m|30m|1h|2h>                     (default: none / unlimited)"
-        echo "  --topic \"starting context or grievance\"       (default: none / natural chat)"
-        echo "  --model <gpt-4o|gpt-4o-mini>                   (default: gpt-4o)"
+        echo "Commands:"
+        echo "  run      Run in foreground (interactive menu for channel, duration & topic)"
+        echo "  start    Launch in background as a daemon"
+        echo "  stop     Stop the background daemon immediately"
+        echo "  status   Check if the responder is currently running"
+        echo "  logs     Tail the live logs in real time (Ctrl+C to exit logs)"
+        echo "  help     Display this guide"
+        echo ""
+        echo "Options (pass to 'run' or 'start'):"
+        echo "  --channel <name|id>   Target: general, vip, commons, politics, or channel ID"
+        echo "  --duration <time>     Auto-stop timer: 15m, 30m, 1h, 2h (default: unlimited)"
+        echo "  --topic <text>        Optional starting premise/grievance to kick off chat"
+        echo "  --model <model>       OpenAI model: gpt-4o (default), gpt-4o-mini"
+        echo "  --cooldown <sec>      Min seconds between replies (default: 3.0)"
         echo ""
         echo "Examples:"
-        echo "  $0 run                                          # Interactive mode (prompts for channel, timer, topic)"
-        echo "  $0 run --channel vip --duration 30m             # Foreground mode with direct flags"
-        echo "  $0 start --duration 30m                         # Background in #general for 30 mins"
-        echo "  $0 start --topic \"pub quiz promo\" --duration 1h # Background with a starting topic"
-        echo "  $0 stop                                         # Manually stop background responder"
-        echo "  $0 logs                                         # Tail live logs"
+        echo "  $0 run                                            # Interactive wizard"
+        echo "  $0 run --channel vip --duration 30m               # Foreground in VIP for 30m"
+        echo "  $0 start --duration 45m                           # Background in General for 45m"
+        echo "  $0 start --topic \"pub quiz promo\" --duration 1h   # Background with starting topic"
+        echo "  $0 stop                                           # Manually kill background process"
+        echo "  $0 logs                                           # Follow live chat responses"
+        echo "=============================================================================="
+        exit 0
+        ;;
+
+    *)
+        echo "Unknown command: '$1'"
+        echo "Run '$0 help' to see usage instructions and options."
         exit 1
         ;;
 esac
