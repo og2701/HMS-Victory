@@ -6,7 +6,7 @@ CLI runner to activate real-time, in-character conversational replies in Discord
 Can be run interactively or via scripts/responder.sh.
 
 Usage:
-    python3 scripts/chat_responder.py [--channel general|vip|<id>] [--duration 30m] [--model gpt-4o]
+    python3 scripts/chat_responder.py [--channel general|vip|<id>] [--duration 30m] [--topic "text"] [--model gpt-4o]
 """
 
 import sys
@@ -16,6 +16,7 @@ import argparse
 import signal
 import urllib.request
 import json
+from collections import deque
 from pathlib import Path
 
 # Add project root to sys.path
@@ -98,6 +99,11 @@ def parse_args():
         help="Auto-stop time limit (e.g. 15m, 30m, 1h, 2h). Default: none",
     )
     parser.add_argument(
+        "--topic",
+        default=None,
+        help="Optional starting topic or context to kick off the session",
+    )
+    parser.add_argument(
         "--model",
         default="gpt-4o",
         help="OpenAI model name (default: gpt-4o)",
@@ -133,12 +139,12 @@ def resolve_channel_id(channel_arg: str) -> tuple[int, str]:
         sys.exit(f"Unknown channel argument: '{channel_arg}'. Use 'general', 'vip', 'commons', 'politics', or a numeric channel ID.")
 
 
-def prompt_channel_and_duration_if_interactive(channel_arg, duration_arg):
-    # Only prompt if running interactively in terminal with stdin attached
+def prompt_options_if_interactive(channel_arg, duration_arg, topic_arg):
     is_interactive = sys.stdin.isatty()
 
     selected_channel = channel_arg
     selected_duration = duration_arg
+    selected_topic = topic_arg
 
     if selected_channel is None and is_interactive:
         print("\nChoose target Discord channel:")
@@ -168,7 +174,16 @@ def prompt_channel_and_duration_if_interactive(channel_arg, duration_arg):
             print("\nAborted.")
             sys.exit(0)
 
-    return selected_channel or "general", selected_duration
+    if selected_topic is None and is_interactive:
+        try:
+            top_input = input("Starting topic/context (optional, press Enter to skip): ").strip()
+            if top_input:
+                selected_topic = top_input
+        except (KeyboardInterrupt, EOFError):
+            print("\nAborted.")
+            sys.exit(0)
+
+    return selected_channel or "general", selected_duration, selected_topic
 
 
 def get_recent_messages(channel_id: int, limit: int = 15):
@@ -221,12 +236,15 @@ def main():
     if not OPENAI_KEY:
         sys.exit("Error: OPENAI_TOKEN is missing from environment / .env")
 
-    ch_input, dur_input = prompt_channel_and_duration_if_interactive(args.channel, args.duration)
+    ch_input, dur_input, active_topic = prompt_options_if_interactive(args.channel, args.duration, args.topic)
     channel_id, channel_name = resolve_channel_id(ch_input)
     duration_seconds = parse_duration(dur_input)
 
     start_time = time.time()
     end_time = start_time + duration_seconds if duration_seconds > 0 else None
+
+    # Rolling multi-turn conversation memory (last 10 turns)
+    conversation_history = deque(maxlen=10)
 
     running = True
 
@@ -241,6 +259,7 @@ def main():
     print(f"==================================================", flush=True)
     print(f" HMS Victory Live Chat Responder Active", flush=True)
     print(f" Target Channel:    #{channel_name} ({channel_id})", flush=True)
+    print(f" Starting Topic:    {active_topic or 'None (Natural conversation)'}", flush=True)
     print(f" Model:             {args.model}", flush=True)
     print(f" Cooldown:          {args.cooldown}s", flush=True)
     print(f" Time Limit:        {format_duration(duration_seconds)}", flush=True)
@@ -252,21 +271,18 @@ def main():
     initial_msgs = get_recent_messages(channel_id, limit=30)
     seen_ids = {m["id"] for m in initial_msgs}
     our_bot_msg_ids = {m["id"] for m in initial_msgs if m.get("author", {}).get("id") == str(BOT_ID)}
-    our_bot_msg_text = {m["id"]: m.get("content", "") for m in initial_msgs if m.get("author", {}).get("id") == str(BOT_ID)}
 
     print(f"Initialized with {len(seen_ids)} messages. Tracking {len(our_bot_msg_ids)} bot messages.", flush=True)
 
     last_reply_time = 0.0
 
     while running:
-        # Check auto-stop timeout
         if end_time and time.time() >= end_time:
             print(f"\n[TIME LIMIT REACHED] Auto-stopping responder after {format_duration(duration_seconds)}.", flush=True)
             break
 
         try:
             msgs = get_recent_messages(channel_id, limit=10)
-            # Process in chronological order (oldest first)
             for m in sorted(msgs, key=lambda x: int(x["id"])):
                 mid = m["id"]
                 if mid in seen_ids:
@@ -277,7 +293,6 @@ def main():
                 if author.get("bot"):
                     if author.get("id") == str(BOT_ID):
                         our_bot_msg_ids.add(mid)
-                        our_bot_msg_text[mid] = m.get("content", "")
                     continue
 
                 content = m.get("content", "")
@@ -292,23 +307,21 @@ def main():
                 )
 
                 if is_reply_to_us or is_mentioned or name_called:
-                    # Enforce cooldown
                     now = time.time()
                     elapsed = now - last_reply_time
                     if elapsed < args.cooldown:
                         time.sleep(args.cooldown - elapsed)
 
                     member = m.get("member") or {}
-                    # Prefer server nickname, then Discord display name, then username handle
                     user_name = member.get("nick") or author.get("global_name") or author.get("username") or "user"
                     user_handle = author.get("username", "")
                     print(f"[{time.strftime('%X')}] Triggered by {user_name} (@{user_handle}): \"{content}\" (ref={ref_id})", flush=True)
 
-                    prior_text = our_bot_msg_text.get(ref_id, "")
                     reply_text = generate_ai_reply(
                         user_name=user_name,
                         user_content=content,
-                        context_snippet=prior_text,
+                        history=list(conversation_history),
+                        topic=active_topic,
                         openai_key=OPENAI_KEY,
                         model=args.model,
                     )
@@ -317,8 +330,12 @@ def main():
                     if sent_id:
                         last_reply_time = time.time()
                         our_bot_msg_ids.add(sent_id)
-                        our_bot_msg_text[sent_id] = reply_text
                         seen_ids.add(sent_id)
+
+                        # Update rolling multi-turn memory
+                        conversation_history.append({"role": "user", "speaker": user_name, "content": content})
+                        conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": reply_text})
+
                         print(f"[{time.strftime('%X')}] Replied: \"{reply_text}\"", flush=True)
 
         except Exception as e:
