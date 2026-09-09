@@ -949,11 +949,11 @@ async def handle_chat_message(client: discord.Client, message: discord.Message) 
 
 class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
     channel_input = discord.ui.TextInput(
-        label="Target Channel",
-        placeholder="general, vip, commons, politics, or channel ID",
+        label="Target Channel (or select on card)",
+        placeholder="Leave blank to use channel selected on card",
         default="general",
         max_length=60,
-        required=True,
+        required=False,
     )
     duration_input = discord.ui.TextInput(
         label="Auto-Stop Timer (Optional)",
@@ -990,7 +990,14 @@ class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
         # Defer immediately to allow time for scraping & AI context formulation
         await interaction.response.defer(ephemeral=True)
 
-        cid, cname = resolve_channel_input(self.channel_input.value)
+        channel_val = self.channel_input.value.strip() if self.channel_input.value else ""
+        if channel_val:
+            cid, cname = resolve_channel_input(channel_val)
+        elif live_chat_manager.target_channel_id:
+            cid, cname = live_chat_manager.target_channel_id, live_chat_manager.target_channel_name
+        else:
+            cid, cname = resolve_channel_input("general")
+
         dur = parse_duration_str(self.duration_input.value)
         target_uid = parse_user_id(self.target_user_input.value)
         raw_topic = self.topic_input.value.strip() if self.topic_input.value else ""
