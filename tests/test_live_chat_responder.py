@@ -86,10 +86,17 @@ from lib.features.chat_responder import (
     resolve_channel_input,
     ChatbotWakeModal,
     ChatbotDashboardView,
+    ONE_OFF_SYSTEM_PROMPT,
+    gather_one_off_context,
+    generate_one_off_reply,
+    handle_one_off_owner_mention,
+    handle_chat_message,
+    live_chat_manager,
 )
+from config import USERS
 
 
-class TestLiveChatResponder(unittest.TestCase):
+class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
     def test_calculate_cost_gpt4o(self):
         # 1,000 prompt tokens = $0.0025, 1,000 completion tokens = $0.0100
         cost = calculate_cost("gpt-4o", 1000, 1000)
@@ -220,6 +227,154 @@ class TestLiveChatResponder(unittest.TestCase):
         children = list(container.children)
         self.assertGreater(len(children), 5)
 
+    def test_one_off_system_prompt(self):
+        self.assertIn("HMS Victory", ONE_OFF_SYSTEM_PROMPT)
+        self.assertIn("Oggers", ONE_OFF_SYSTEM_PROMPT)
+        self.assertIn("cynical", ONE_OFF_SYSTEM_PROMPT.lower())
+        self.assertIn("poem", ONE_OFF_SYSTEM_PROMPT.lower())
+
+    @patch("urllib.request.urlopen")
+    def test_generate_one_off_reply_payload(self, mock_urlopen):
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"choices":[{"message":{"content":"A witty poem about Johnny."}}],"usage":{"prompt_tokens":120,"completion_tokens":45}}'
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        content, p_tok, c_tok = generate_one_off_reply(
+            prompt="write a poem about this user",
+            context="RECENT CHAT IN #general:\nJohnny: I hate tea",
+            openai_key="test-key",
+        )
+        self.assertEqual(content, "A witty poem about Johnny.")
+        self.assertEqual(p_tok, 120)
+        self.assertEqual(c_tok, 45)
+
+        # Verify request payload
+        call_args, _ = mock_urlopen.call_args
+        req = call_args[0]
+        import json
+        payload = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(payload["max_tokens"], 350)
+        self.assertEqual(payload["model"], "gpt-4o")
+        self.assertEqual(payload["messages"][0]["role"], "system")
+        self.assertIn("Johnny: I hate tea", payload["messages"][1]["content"])
+        self.assertIn("write a poem about this user", payload["messages"][1]["content"])
+
+    async def test_gather_one_off_context_reply_and_mentions(self):
+        client = MagicMock()
+        client.user.id = 999999999
+
+        # Target user mentioned
+        target_user = MagicMock()
+        target_user.id = 12345
+        target_user.name = "john_doe"
+        target_user.nick = "Johnny"
+
+        # Referenced message
+        ref_author = MagicMock()
+        ref_author.id = 54321
+        ref_author.name = "steven_smith"
+        ref_author.nick = "Steven"
+
+        ref_message = MagicMock()
+        ref_message.author = ref_author
+        ref_message.content = "Beans on toast is overrated"
+        ref_message.attachments = []
+
+        ref = MagicMock()
+        ref.message_id = 888888
+        ref.cached_message = ref_message
+
+        message = MagicMock()
+        message.reference = ref
+        message.mentions = [target_user, client.user]
+        message.content = "write a poem about this user"
+        message.channel.name = "general"
+
+        # Channel history
+        hist_msg = MagicMock()
+        hist_msg.id = 777777
+        hist_msg.author = ref_author
+        hist_msg.content = "Beans on toast is overrated"
+        hist_msg.attachments = []
+
+        async def async_history(*a, **k):
+            yield hist_msg
+
+        message.channel.history = async_history
+
+        context = await gather_one_off_context(client, message)
+        self.assertIn("DIRECT REPLY TARGET", context)
+        self.assertIn("Steven (@steven_smith)", context)
+        self.assertIn("Beans on toast is overrated", context)
+        self.assertIn("MENTIONED USERS IN PROMPT: Johnny (@john_doe)", context)
+        self.assertIn("RECENT CHAT IN #general", context)
+
+    @patch("lib.features.chat_responder.handle_one_off_owner_mention")
+    async def test_handle_chat_message_oggers_direct_tag_asleep(self, mock_handle_one_off):
+        mock_handle_one_off.return_value = True
+        client = MagicMock()
+        client.user.id = 999999999
+
+        message = MagicMock()
+        message.author.bot = False
+        message.author.id = USERS.OGGERS
+        message.mentions = [client.user]
+        message.content = f"<@{client.user.id}> write a poem about this user"
+
+        live_chat_manager.active = False
+        res = await handle_chat_message(client, message)
+        self.assertTrue(res)
+        mock_handle_one_off.assert_called_once_with(client, message)
+
+    @patch("lib.features.chat_responder.handle_one_off_owner_mention")
+    async def test_handle_chat_message_other_user_asleep(self, mock_handle_one_off):
+        client = MagicMock()
+        client.user.id = 999999999
+
+        message = MagicMock()
+        message.author.bot = False
+        message.author.id = 11223344  # Not Oggers
+        message.mentions = [client.user]
+        message.content = f"<@{client.user.id}> write a poem"
+
+        live_chat_manager.active = False
+        res = await handle_chat_message(client, message)
+        self.assertFalse(res)
+        mock_handle_one_off.assert_not_called()
+
+    @patch("lib.features.chat_responder.generate_one_off_reply")
+    @patch("lib.features.chat_responder.gather_one_off_context")
+    async def test_handle_one_off_owner_mention_execution(self, mock_gather, mock_generate):
+        mock_gather.return_value = "Recent chat context"
+        mock_generate.return_value = ("Shall I compare thee to a soggy chip?", 100, 50)
+
+        client = MagicMock()
+        client.user.id = 999999999
+
+        typing_mock = MagicMock()
+        typing_mock.__aenter__ = MagicMock(side_effect=lambda: asyncio.sleep(0))
+        typing_mock.__aexit__ = MagicMock(side_effect=lambda *a: asyncio.sleep(0))
+
+        message = MagicMock()
+        message.id = 1234567891011
+        message.channel.typing.return_value = typing_mock
+        message.author.id = USERS.OGGERS
+        message.author.nick = "Oggers"
+        message.content = f"<@{client.user.id}> write a poem about this user"
+
+        reply_mock = MagicMock()
+        async def async_reply(*a, **k):
+            return MagicMock()
+        message.reply = async_reply
+
+        res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_gather.assert_called_once_with(client, message)
+        mock_generate.assert_called_once()
+        self.assertEqual(mock_generate.call_args[1]["prompt"], "write a poem about this user")
+
 
 if __name__ == "__main__":
     unittest.main()
+

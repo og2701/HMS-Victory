@@ -1239,13 +1239,13 @@ async def on_message(client, message):
     except Exception:
         logger.debug("welcome reward hook failed", exc_info=True)
 
-    # Live conversational responder if active in this channel
+    # Live conversational responder or one-off owner mention
     try:
-        from lib.features.chat_responder import live_chat_manager
-        if live_chat_manager.active and not message.author.bot:
-            asyncio.create_task(live_chat_manager.handle_message(client, message))
+        from lib.features.chat_responder import handle_chat_message
+        if not message.author.bot:
+            asyncio.create_task(handle_chat_message(client, message))
     except Exception:
-        logger.debug("live chat responder hook failed", exc_info=True)
+        logger.debug("chat responder hook failed", exc_info=True)
 
     # Battleship threads are "pseudo-locked": real locking blocks button interactions, so any
     # message posted there by anyone other than the bot (chat, or Fletcher's auto-summon) is

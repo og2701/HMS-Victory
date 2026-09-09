@@ -36,6 +36,23 @@ STRICT RULES:
 6. SAFETY: Strictly focus mockery on their behavior, awkwardness, and foolishness. Absolutely no hate speech, slurs, threats of violence, or discrimination based on protected characteristics.
 7. Output ONLY your direct response to them."""
 
+ONE_OFF_SYSTEM_PROMPT = """You are HMS Victory, the resident Discord bot for a British server.
+You have a notoriously dry, cynical, deadpan British persona. You despise effort, find server members exhausting, and have a razor-sharp, sarcastic wit.
+
+The server owner (Oggers) has summoned you with a direct one-off request.
+
+STRICT RULES & GUIDANCE:
+1. Tone & Persona: Deadpan, sarcastic, mildly resentful British wit. Never sound enthusiastic, cheerful, corporate, or like an eager digital assistant. You are fulfilling this request because Oggers ordered you to, and you do so with devastating British sarcasm.
+2. Context Awareness: You are provided with recent channel conversation, referenced messages, or mentioned users. Use this context to make your reply razor-sharp, hyper-relevant, and personal.
+3. If asked to write a poem, limerick, song, or roast:
+   - Deliver it in your signature dry, witty, cynical British style.
+   - Keep poems punchy and well-rhymed (2 to 4 stanzas maximum, avoid endless rambling).
+4. If asked a question, comment, or opinion:
+   - Keep it concise, witty, and cynical (1 to 3 sentences maximum).
+5. Always address users by their nickname/display name naturally (strip weird symbols/decorations).
+6. Zero corporate waffle, no "Sure! Here is a poem:", no preamble. Output ONLY your message content.
+7. Zero emojis unless used dripping with heavy irony."""
+
 def build_system_prompt(topic: Optional[str] = None, is_defence: bool = False) -> str:
     prompt = DEFENCE_SYSTEM_PROMPT if is_defence else BASE_SYSTEM_PROMPT
     if topic and topic.strip():
@@ -671,6 +688,263 @@ class LiveChatManager:
 
 
 live_chat_manager = LiveChatManager()
+
+_handled_one_off_message_ids: deque = deque(maxlen=100)
+
+
+async def gather_one_off_context(client: discord.Client, message: discord.Message) -> str:
+    """Gather relevant context for an owner one-off prompt, including replies, mentions, links, and recent channel chat."""
+    context_sections = []
+
+    # 1. Check if the message is replying to another message
+    ref = message.reference
+    referenced_author_id = None
+    if ref and getattr(ref, "message_id", None):
+        try:
+            ref_msg = getattr(ref, "cached_message", None)
+            if not ref_msg:
+                channel_id = getattr(ref, "channel_id", None) or message.channel.id
+                ch = client.get_channel(channel_id) or await client.fetch_channel(channel_id)
+                if ch:
+                    ref_msg = await ch.fetch_message(ref.message_id)
+            if ref_msg:
+                referenced_author_id = ref_msg.author.id
+                author_name = (
+                    getattr(ref_msg.author, "nick", None)
+                    or getattr(ref_msg.author, "global_name", None)
+                    or getattr(ref_msg.author, "display_name", None)
+                    or getattr(ref_msg.author, "name", "User")
+                )
+                ref_text = (ref_msg.content or "").strip()
+                if not ref_text and getattr(ref_msg, "attachments", None):
+                    ref_text = f"[{len(ref_msg.attachments)} attachment(s)]"
+                context_sections.append(
+                    f"DIRECT REPLY TARGET (User is directly replying to this message):\n"
+                    f"- Author: {author_name} (@{getattr(ref_msg.author, 'name', 'user')})\n"
+                    f"- Message Content: \"{ref_text}\""
+                )
+        except Exception as e:
+            logger.debug("Could not fetch referenced message for one-off context: %s", e)
+
+    # 2. Check for other mentioned users in the message (excluding the bot itself)
+    other_mentions = [u for u in getattr(message, "mentions", []) if not client.user or u.id != client.user.id]
+    if other_mentions:
+        users_info = []
+        for u in other_mentions:
+            name = (
+                getattr(u, "nick", None)
+                or getattr(u, "global_name", None)
+                or getattr(u, "display_name", None)
+                or getattr(u, "name", "User")
+            )
+            users_info.append(f"{name} (@{getattr(u, 'name', 'user')})")
+        context_sections.append(f"MENTIONED USERS IN PROMPT: {', '.join(users_info)}")
+
+    # 3. Check for Discord message links
+    link_pattern = r"https://(?:ptb\.|canary\.)?discord\.com/channels/(\d+)/(\d+)/(\d+)"
+    links = re.findall(link_pattern, message.content or "")
+    for g_id, c_id, m_id in links:
+        try:
+            ch = client.get_channel(int(c_id)) or await client.fetch_channel(int(c_id))
+            if ch:
+                target_msg = await ch.fetch_message(int(m_id))
+                spk = (
+                    getattr(target_msg.author, "nick", None)
+                    or getattr(target_msg.author, "global_name", None)
+                    or getattr(target_msg.author, "display_name", None)
+                    or getattr(target_msg.author, "name", "User")
+                )
+                context_sections.append(
+                    f"REFERENCED MESSAGE LINK (#{getattr(ch, 'name', c_id)} - {spk}): \"{target_msg.content}\""
+                )
+        except Exception as e:
+            logger.debug("Could not fetch linked message %s: %s", m_id, e)
+
+    # 4. Fetch recent chat history in the channel (up to 10 messages before this one)
+    try:
+        channel_name = getattr(message.channel, "name", "chat")
+        recent_chat_lines = []
+        recent_speaker = None
+        if hasattr(message.channel, "history"):
+            async for prev in message.channel.history(limit=10, before=message):
+                if prev.id == message.id:
+                    continue
+                spk = (
+                    getattr(prev.author, "nick", None)
+                    or getattr(prev.author, "global_name", None)
+                    or getattr(prev.author, "display_name", None)
+                    or getattr(prev.author, "name", "User")
+                )
+                if not recent_speaker and not getattr(prev.author, "bot", False) and getattr(prev.author, "id", None) != getattr(message.author, "id", None):
+                    recent_speaker = spk
+
+                txt = (prev.content or "").strip()
+                if not txt and getattr(prev, "attachments", None):
+                    txt = f"[{len(prev.attachments)} attachment(s)]"
+                if txt:
+                    recent_chat_lines.append(f"{spk}: {txt[:200]}")
+
+        if recent_chat_lines:
+            recent_chat_lines.reverse()
+            context_sections.append(
+                f"RECENT CHAT IN #{channel_name}:\n" + "\n".join(recent_chat_lines)
+            )
+            if recent_speaker and not other_mentions and not referenced_author_id:
+                context_sections.append(f"NOTE: Most recent active speaker prior to this request was '{recent_speaker}'.")
+    except Exception as e:
+        logger.debug("Could not fetch recent channel history for one-off context: %s", e)
+
+    return "\n\n".join(context_sections).strip()
+
+
+def generate_one_off_reply(
+    prompt: str,
+    context: str = "",
+    user_name: str = "Oggers",
+    openai_key: Optional[str] = None,
+    model: str = "gpt-4o",
+) -> Tuple[str, int, int]:
+    """Generate a one-off in-character reply for an owner prompt with gathered context."""
+    api_key = openai_key or os.getenv("OPENAI_TOKEN")
+    if not api_key:
+        raise ValueError("OPENAI_TOKEN is not configured.")
+
+    url = "https://api.openai.com/v1/chat/completions"
+
+    user_instructions = prompt.strip() if prompt and prompt.strip() else "You were directly summoned by Oggers with no specific instructions."
+
+    prompt_content = f"REQUEST FROM SERVER OWNER ({user_name}):\n\"{user_instructions}\""
+    if context.strip():
+        prompt_content += f"\n\nSURROUNDING SERVER & CONVERSATION CONTEXT:\n{context.strip()}"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": ONE_OFF_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt_content},
+        ],
+        "max_tokens": 350,
+        "temperature": 0.8,
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+            content = data["choices"][0]["message"]["content"].strip()
+            usage = data.get("usage", {})
+            p_tokens = usage.get("prompt_tokens", 0)
+            c_tokens = usage.get("completion_tokens", 0)
+            return content, p_tokens, c_tokens
+    except Exception as e:
+        logger.error(f"OpenAI one-off completion failed: {e}", exc_info=True)
+        fallback = "I was going to respond to that, but quite frankly, the server's incompetence has overwhelmed my processors."
+        return fallback, 0, 0
+
+
+async def handle_one_off_owner_mention(client: discord.Client, message: discord.Message) -> bool:
+    """Handle a direct mention of the bot by Oggers, showing typing, gathering context, and replying."""
+    if message.id in _handled_one_off_message_ids:
+        return False
+    _handled_one_off_message_ids.append(message.id)
+
+    # Clean the bot tag out of the prompt
+    raw_content = message.content or ""
+    clean_prompt = raw_content
+    if client.user:
+        clean_prompt = re.sub(rf"<@!?{client.user.id}>", "", clean_prompt).strip()
+    clean_prompt = re.sub(r"^@?hms\s+victory[:,]?\s*", "", clean_prompt, flags=re.IGNORECASE).strip()
+
+    user_name = (
+        getattr(message.author, "nick", None)
+        or getattr(message.author, "global_name", None)
+        or getattr(message.author, "display_name", None)
+        or getattr(message.author, "name", "Oggers")
+    )
+
+    # Show typing indicator while scraping context and waiting for OpenAI
+    typing_cm = None
+    if hasattr(message.channel, "typing"):
+        try:
+            typing_cm = message.channel.typing()
+            await typing_cm.__aenter__()
+        except Exception as e:
+            logger.debug("Could not start typing indicator: %s", e)
+            typing_cm = None
+
+    try:
+        # 1. Gather context
+        context = await gather_one_off_context(client, message)
+
+        # 2. Call OpenAI in background thread so gateway isn't blocked
+        reply_text, p_tokens, c_tokens = await asyncio.to_thread(
+            generate_one_off_reply,
+            prompt=clean_prompt,
+            context=context,
+            user_name=user_name,
+        )
+
+        if reply_text:
+            # Ensure within Discord message character limits
+            if len(reply_text) > 1990:
+                reply_text = reply_text[:1985] + "..."
+
+            # Send reply (with fallback to channel.send if referenced message was deleted)
+            try:
+                await message.reply(reply_text, mention_author=True)
+            except (discord.NotFound, discord.HTTPException):
+                await message.channel.send(f"{message.author.mention} {reply_text}")
+
+            # Record usage into live_chat_manager and persistent file
+            live_chat_manager.record_usage("gpt-4o", p_tokens, c_tokens, is_reply=True)
+            live_chat_manager.conversation_history.append({"role": "user", "speaker": user_name, "content": raw_content})
+            live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": reply_text})
+
+            # Trigger dashboard update
+            asyncio.create_task(live_chat_manager.update_dashboard())
+            return True
+    except Exception as e:
+        logger.error("Error handling one-off owner mention: %s", e, exc_info=True)
+    finally:
+        if typing_cm:
+            try:
+                await typing_cm.__aexit__(None, None, None)
+            except Exception:
+                pass
+
+    return False
+
+
+async def handle_chat_message(client: discord.Client, message: discord.Message) -> bool:
+    """Unified handler for incoming messages: handles owner one-off tags and active live chat sessions."""
+    if getattr(message.author, "bot", False):
+        return False
+
+    # Check for direct tag by Oggers
+    is_direct_bot_tag = False
+    if client.user:
+        is_direct_bot_tag = (
+            client.user in getattr(message, "mentions", [])
+            or f"<@{client.user.id}>" in (message.content or "")
+            or f"<@!{client.user.id}>" in (message.content or "")
+        )
+
+    if message.author.id == USERS.OGGERS and is_direct_bot_tag:
+        return await handle_one_off_owner_mention(client, message)
+
+    # Standard live chat responder if currently active
+    if live_chat_manager.active:
+        return await live_chat_manager.handle_message(client, message)
+
+    return False
 
 
 class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
