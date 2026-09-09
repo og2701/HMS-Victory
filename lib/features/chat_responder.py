@@ -512,7 +512,7 @@ class LiveChatManager:
             view = ChatbotDashboardView()
             if self.dashboard_message:
                 try:
-                    await self.dashboard_message.edit(content=None, embed=None, embeds=[], view=view)
+                    await self.dashboard_message.edit(content=None, embed=None, view=view)
                     return
                 except discord.NotFound:
                     self.dashboard_message = None
@@ -524,7 +524,7 @@ class LiveChatManager:
                 if ch:
                     try:
                         self.dashboard_message = await ch.fetch_message(self.dashboard_message_id)
-                        await self.dashboard_message.edit(content=None, embed=None, embeds=[], view=view)
+                        await self.dashboard_message.edit(content=None, embed=None, view=view)
                     except discord.HTTPException as e:
                         logger.warning("Could not edit message to Components V2, recreating: %s", e)
                         try:
@@ -761,7 +761,7 @@ class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
         view = ChatbotDashboardView()
         try:
             if interaction.message:
-                await interaction.message.edit(content=None, embed=None, embeds=[], view=view)
+                await interaction.message.edit(content=None, embed=None, view=view)
         except Exception:
             pass
 
@@ -832,7 +832,7 @@ class ChatbotChannelSelect(discord.ui.ChannelSelect):
             live_chat_manager.set_dashboard(interaction.client, interaction.message)
 
         view = ChatbotDashboardView()
-        await interaction.response.edit_message(content=None, embed=None, embeds=[], view=view)
+        await interaction.response.edit_message(content=None, embed=None, view=view)
 
         if live_chat_manager.active:
             await interaction.followup.send(f"🎯 Switched live chat target to <#{cid}>!", ephemeral=True)
@@ -877,7 +877,7 @@ class ChatbotSleepButton(discord.ui.Button):
             live_chat_manager.set_dashboard(interaction.client, interaction.message)
         live_chat_manager.stop()
         view = ChatbotDashboardView()
-        await interaction.response.edit_message(content=None, embed=None, embeds=[], view=view)
+        await interaction.response.edit_message(content=None, embed=None, view=view)
 
 
 class ChatbotRefreshButton(discord.ui.Button):
@@ -896,7 +896,7 @@ class ChatbotRefreshButton(discord.ui.Button):
         if interaction.message:
             live_chat_manager.set_dashboard(interaction.client, interaction.message)
         view = ChatbotDashboardView()
-        await interaction.response.edit_message(content=None, embed=None, embeds=[], view=view)
+        await interaction.response.edit_message(content=None, embed=None, view=view)
 
 
 class ChatbotTargetButton(discord.ui.Button):
@@ -1038,7 +1038,7 @@ async def ensure_chatbot_dashboard_message(client: discord.Client):
 
         if dashboard_msg:
             try:
-                await dashboard_msg.edit(content=None, embed=None, embeds=[], view=view)
+                await dashboard_msg.edit(content=None, embed=None, view=view)
                 logger.info("Updated existing chatbot dashboard message (%s) to Components V2 in thread %s", dashboard_msg.id, thread_id)
             except discord.HTTPException as e:
                 logger.warning("Failed to edit existing dashboard message to Components V2 (%s): %s. Recreating...", dashboard_msg.id, e)
