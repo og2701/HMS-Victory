@@ -74,13 +74,17 @@ case "$1" in
     *)
         echo "Usage: $0 {start|stop|status|logs|run} [optional args for script]"
         echo ""
+        echo "Options supported by chat_responder.py:"
+        echo "  --channel <general|vip|commons|politics|<id>>  (default: general)"
+        echo "  --duration <15m|30m|1h|2h>                     (default: none / unlimited)"
+        echo "  --model <gpt-4o|gpt-4o-mini>                   (default: gpt-4o)"
+        echo ""
         echo "Examples:"
-        echo "  $0 start                 # Start background daemon in #general"
-        echo "  $0 start --channel vip   # Start background daemon in #vip-lounge"
-        echo "  $0 stop                  # Stop background daemon"
-        echo "  $0 status                # Check status"
-        echo "  $0 logs                  # Follow live logs"
-        echo "  $0 run                   # Run interactively in foreground (Ctrl+C to stop)"
+        echo "  $0 run                                          # Interactive mode (picks channel & timer)"
+        echo "  $0 start --duration 30m                         # Background in #general for 30 mins"
+        echo "  $0 start --channel vip --duration 1h            # Background in #vip-lounge for 1 hour"
+        echo "  $0 stop                                         # Manually stop background responder"
+        echo "  $0 logs                                         # Tail live logs"
         exit 1
         ;;
 esac

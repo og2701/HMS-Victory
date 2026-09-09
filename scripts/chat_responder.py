@@ -6,7 +6,7 @@ CLI runner to activate real-time, in-character conversational replies in Discord
 Can be run interactively or via scripts/responder.sh.
 
 Usage:
-    python3 scripts/chat_responder.py [--channel general|vip|<id>] [--model gpt-4o]
+    python3 scripts/chat_responder.py [--channel general|vip|<id>] [--duration 30m] [--model gpt-4o]
 """
 
 import sys
@@ -41,12 +41,61 @@ def load_env_file(env_path: Path):
 
 load_env_file(PROJECT_ROOT / ".env")
 
+BOT_TOKEN = os.getenv("DISCORD_TOKEN")
+OPENAI_KEY = os.getenv("OPENAI_TOKEN")
+
+CHANNEL_PRESETS = {
+    "1": ("general", "General Chat", CHANNELS.GENERAL),
+    "2": ("vip", "VIP Lounge", CHANNELS.VIP_LOUNGE),
+    "3": ("commons", "House of Commons", CHANNELS.COMMONS),
+    "4": ("politics", "Politics", CHANNELS.POLITICS),
+}
+
+def parse_duration(val: str) -> float:
+    """Parse a human duration string (e.g. '30m', '1h', '45s', '1800') into seconds."""
+    if not val:
+        return 0.0
+    val = val.strip().lower()
+    try:
+        if val.endswith("s"):
+            return float(val[:-1])
+        elif val.endswith("m"):
+            return float(val[:-1]) * 60
+        elif val.endswith("h"):
+            return float(val[:-1]) * 3600
+        elif val.endswith("d"):
+            return float(val[:-1]) * 86400
+        return float(val)
+    except ValueError:
+        print(f"[WARN] Invalid duration format '{val}'. No time limit will be applied.", file=sys.stderr)
+        return 0.0
+
+def format_duration(seconds: float) -> str:
+    """Format seconds into human-readable string."""
+    if seconds <= 0:
+        return "Unlimited (manual stop)"
+    minutes = seconds / 60
+    hours = minutes / 60
+    if hours >= 1:
+        return f"{hours:.1f} hour(s)" if hours % 1 != 0 else f"{int(hours)} hour(s)"
+    if minutes >= 1:
+        return f"{minutes:.1f} minute(s)" if minutes % 1 != 0 else f"{int(minutes)} minute(s)"
+    return f"{int(seconds)} second(s)"
+
 def parse_args():
     parser = argparse.ArgumentParser(description="HMS Victory Live Chat Responder")
     parser.add_argument(
         "--channel",
-        default="general",
-        help="Target channel: 'general', 'vip', or a Discord channel ID (default: general)",
+        default=None,
+        help="Target channel: 'general', 'vip', 'commons', 'politics', or a Discord channel ID",
+    )
+    parser.add_argument(
+        "--duration",
+        "--time-limit",
+        "--timeout",
+        dest="duration",
+        default=None,
+        help="Auto-stop time limit (e.g. 15m, 30m, 1h, 2h). Default: none",
     )
     parser.add_argument(
         "--model",
@@ -62,20 +111,64 @@ def parse_args():
     return parser.parse_args()
 
 
-BOT_TOKEN = os.getenv("DISCORD_TOKEN")
-OPENAI_KEY = os.getenv("OPENAI_TOKEN")
+def resolve_channel_id(channel_arg: str) -> tuple[int, str]:
+    if not channel_arg:
+        return CHANNELS.GENERAL, "General Chat"
 
-
-def resolve_channel_id(channel_arg: str) -> int:
     ch = channel_arg.lower().strip()
     if ch in ("general", "gen"):
-        return CHANNELS.GENERAL
+        return CHANNELS.GENERAL, "General Chat"
     if ch in ("vip", "viplounge", "vip-lounge"):
-        return CHANNELS.VIP_LOUNGE
+        return CHANNELS.VIP_LOUNGE, "VIP Lounge"
+    if ch in ("commons", "house-of-commons"):
+        return CHANNELS.COMMONS, "House of Commons"
+    if ch in ("politics", "pol"):
+        return CHANNELS.POLITICS, "Politics"
+    if ch in ("bot-spam", "botspam"):
+        return CHANNELS.BOT_SPAM, "Bot Spam"
     try:
-        return int(ch)
+        cid = int(ch)
+        return cid, f"Channel ID {cid}"
     except ValueError:
-        sys.exit(f"Unknown channel argument: {channel_arg}. Use 'general', 'vip', or a channel ID.")
+        sys.exit(f"Unknown channel argument: '{channel_arg}'. Use 'general', 'vip', 'commons', 'politics', or a numeric channel ID.")
+
+
+def prompt_channel_and_duration_if_interactive(channel_arg, duration_arg):
+    # Only prompt if running interactively in terminal with stdin attached
+    is_interactive = sys.stdin.isatty()
+
+    selected_channel = channel_arg
+    selected_duration = duration_arg
+
+    if selected_channel is None and is_interactive:
+        print("\nChoose target Discord channel:")
+        for key, (_, name, cid) in CHANNEL_PRESETS.items():
+            print(f"  {key}) #{name} ({cid})")
+        print("  5) Custom Channel ID")
+        try:
+            choice = input("Select channel [1 for #general]: ").strip()
+            if choice in CHANNEL_PRESETS:
+                selected_channel = CHANNEL_PRESETS[choice][0]
+            elif choice == "5":
+                selected_channel = input("Enter Discord Channel ID: ").strip()
+            elif not choice:
+                selected_channel = "general"
+            else:
+                selected_channel = choice
+        except (KeyboardInterrupt, EOFError):
+            print("\nAborted.")
+            sys.exit(0)
+
+    if selected_duration is None and is_interactive:
+        try:
+            dur_input = input("Auto-stop time limit (e.g. 15m, 30m, 1h, or press Enter for no limit): ").strip()
+            if dur_input:
+                selected_duration = dur_input
+        except (KeyboardInterrupt, EOFError):
+            print("\nAborted.")
+            sys.exit(0)
+
+    return selected_channel or "general", selected_duration
 
 
 def get_recent_messages(channel_id: int, limit: int = 15):
@@ -128,7 +221,12 @@ def main():
     if not OPENAI_KEY:
         sys.exit("Error: OPENAI_TOKEN is missing from environment / .env")
 
-    channel_id = resolve_channel_id(args.channel)
+    ch_input, dur_input = prompt_channel_and_duration_if_interactive(args.channel, args.duration)
+    channel_id, channel_name = resolve_channel_id(ch_input)
+    duration_seconds = parse_duration(dur_input)
+
+    start_time = time.time()
+    end_time = start_time + duration_seconds if duration_seconds > 0 else None
 
     running = True
 
@@ -142,10 +240,13 @@ def main():
 
     print(f"==================================================", flush=True)
     print(f" HMS Victory Live Chat Responder Active", flush=True)
-    print(f" Target Channel ID: {channel_id}", flush=True)
+    print(f" Target Channel:    #{channel_name} ({channel_id})", flush=True)
     print(f" Model:             {args.model}", flush=True)
     print(f" Cooldown:          {args.cooldown}s", flush=True)
-    print(f" Press Ctrl+C to stop.", flush=True)
+    print(f" Time Limit:        {format_duration(duration_seconds)}", flush=True)
+    if end_time:
+        print(f" Auto-Stop At:      {time.strftime('%X', time.localtime(end_time))}", flush=True)
+    print(f" Press Ctrl+C to stop anytime.", flush=True)
     print(f"==================================================", flush=True)
 
     initial_msgs = get_recent_messages(channel_id, limit=30)
@@ -158,6 +259,11 @@ def main():
     last_reply_time = 0.0
 
     while running:
+        # Check auto-stop timeout
+        if end_time and time.time() >= end_time:
+            print(f"\n[TIME LIMIT REACHED] Auto-stopping responder after {format_duration(duration_seconds)}.", flush=True)
+            break
+
         try:
             msgs = get_recent_messages(channel_id, limit=10)
             # Process in chronological order (oldest first)
