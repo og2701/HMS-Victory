@@ -34,6 +34,15 @@ if "discord" not in sys.modules:
     discord.NotFound = type("NotFound", (Exception,), {})
     discord.HTTPException = type("HTTPException", (Exception,), {})
 
+    class MockAllowedMentions:
+        def __init__(self, **kwargs):
+            self.everyone = kwargs.get("everyone", False)
+            self.roles = kwargs.get("roles", False)
+            self.users = kwargs.get("users", True)
+            self.replied_user = kwargs.get("replied_user", True)
+
+    discord.AllowedMentions = MockAllowedMentions
+
     ui = types.ModuleType("discord.ui")
 
     class _Item:
@@ -93,6 +102,7 @@ from lib.features.chat_responder import (
     handle_one_off_owner_mention,
     handle_chat_message,
     live_chat_manager,
+    sanitize_ai_mentions,
 )
 from config import USERS
 
@@ -665,6 +675,77 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(p_tok, 100 + 180)
         self.assertEqual(c_tok, 20 + 35)
         self.assertEqual(mock_urlopen.call_count, 3)
+
+    def test_sanitize_ai_mentions(self):
+        zwsp = "\u200b"
+
+        # Everyone and here
+        self.assertEqual(sanitize_ai_mentions("Hello @everyone!"), f"Hello @{zwsp}everyone!")
+        self.assertEqual(sanitize_ai_mentions("Check @here now"), f"Check @{zwsp}here now")
+        self.assertEqual(sanitize_ai_mentions("SHOUTING @EVERYONE"), f"SHOUTING @{zwsp}EVERYONE")
+        self.assertEqual(sanitize_ai_mentions("@HERE please"), f"@{zwsp}HERE please")
+
+        # Roles
+        self.assertEqual(sanitize_ai_mentions("Ping <@&123456789>"), f"Ping @{zwsp}role_123456789")
+        self.assertEqual(sanitize_ai_mentions("Contact @Admin immediately"), f"Contact @{zwsp}Admin immediately")
+
+        # Valid user mentions should NOT be broken
+        self.assertEqual(sanitize_ai_mentions("Hi <@123456789>!"), "Hi <@123456789>!")
+        self.assertEqual(sanitize_ai_mentions("Hi <@!123456789>!"), "Hi <@!123456789>!")
+
+        # Guild role resolution if role exists
+        mock_guild = MagicMock()
+        mock_role = MagicMock()
+        mock_role.name = "Moderator"
+        mock_guild.get_role.return_value = mock_role
+        self.assertEqual(sanitize_ai_mentions("Ping <@&999>", guild=mock_guild), f"Ping @{zwsp}Moderator")
+
+    @patch("lib.features.chat_responder.generate_one_off_reply")
+    async def test_handle_one_off_owner_mention_blocks_mass_pings(self, mock_generate_reply):
+        mock_generate_reply.return_value = ("Hey @everyone check out <@&555666> and <@12345>", 50, 20)
+
+        client = MagicMock()
+        client.user.id = 999999999
+
+        message = MagicMock()
+        message.id = 777123
+        message.author.id = USERS.OGGERS
+        message.author.name = "Oggers"
+        message.content = "@HMS Victory ping everyone"
+        message.guild.get_role.return_value = None
+        message.channel.history.return_value = MagicMock()
+
+        async def empty_history(*a, **k):
+            if False:
+                yield None
+        message.channel.history = empty_history
+        message.attachments = []
+        message.reference = None
+
+        captured_kwargs = {}
+        async def mock_reply(content, **kwargs):
+            captured_kwargs["content"] = content
+            captured_kwargs.update(kwargs)
+            return MagicMock()
+
+        message.reply = mock_reply
+
+        res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+
+        zwsp = "\u200b"
+        # Verify text was sanitized
+        sent_text = captured_kwargs.get("content", "")
+        self.assertIn(f"@{zwsp}everyone", sent_text)
+        self.assertIn(f"@{zwsp}role_555666", sent_text)
+        self.assertIn("<@12345>", sent_text)  # user ping kept
+
+        # Verify allowed_mentions was enforced
+        allowed = captured_kwargs.get("allowed_mentions")
+        self.assertIsNotNone(allowed)
+        self.assertFalse(allowed.everyone)
+        self.assertFalse(allowed.roles)
+        self.assertTrue(allowed.users)
 
 
 if __name__ == "__main__":

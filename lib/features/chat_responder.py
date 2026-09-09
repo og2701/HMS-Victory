@@ -25,7 +25,8 @@ STRICT RULES:
 3. Always address users by their nickname/display name naturally (e.g. call Steven 'Steven', not by an account handle). Strip out decorative symbols/emojis from their name if addressing them.
 4. Keep it all lowercase or standard casing, but zero emojis unless used ironically.
 5. If an image or meme is attached, react to it, describe it, or roast it in your dry British style.
-6. Output ONLY your message content, nothing else."""
+6. NO MASS PINGS OR ROLES: NEVER mention or ping @everyone, @here, or any Discord roles under any circumstances.
+7. Output ONLY your message content, nothing else."""
 
 DEFENCE_SYSTEM_PROMPT = """You are HMS Victory, a Discord bot for a British server with legendary, ruthless British wit.
 You are currently in TROLL-DEFENCE / ROAST MODE. A troll or rude member is acting up in the chat, and your explicit objective is to defensively roast them, shut them down, mock their pathetic attempts at trolling, and put them firmly in their place on every single message they send.
@@ -37,7 +38,8 @@ STRICT RULES:
 4. Mock their trolling, their lack of wit, their desperation for attention, or tell them to log off and touch grass.
 5. NEVER break character, never show polite assistant behavior, never apologize, and never use corporate filler.
 6. SAFETY: Strictly focus mockery on their behavior, awkwardness, and foolishness. Absolutely no hate speech, slurs, threats of violence, or discrimination based on protected characteristics.
-7. Output ONLY your direct response to them."""
+7. NO MASS PINGS OR ROLES: NEVER mention or ping @everyone, @here, or any Discord roles under any circumstances.
+8. Output ONLY your direct response to them."""
 
 ONE_OFF_SYSTEM_PROMPT = """You are HMS Victory, the flagship Discord bot for a British server.
 You have a notoriously dry, cynical, deadpan British persona. You hate being bothered and despise customer-service cheerfulness or corporate politeness.
@@ -59,7 +61,42 @@ STRICT RULES:
 5. EVENTS & LINKS: If asked about an event or to share a link, provide a blunt, clear sentence followed by the exact real URL from context. Never invent placeholders.
 6. IMAGES & MEMES: If an image or meme is attached, inspect it, describe it, or comment on it perceptively in your dry style.
 7. WEB SEARCH: You have access to a web_search tool. When Oggers asks for live scores, recent news, current events, real-time facts, or information outside your training knowledge, use the web search tool to find the latest information before delivering your answer dryly and bluntly.
-8. Output ONLY your direct response text. No preambles, no quotes, no filler."""
+8. NO MASS PINGS OR ROLES: NEVER mention, tag, or ping @everyone, @here, or any Discord roles under any circumstances.
+9. Output ONLY your direct response text. No preambles, no quotes, no filler."""
+
+
+def sanitize_ai_mentions(text: str, guild: Optional[discord.Guild] = None) -> str:
+    """Hard-coded mention sanitizer: defangs @everyone, @here, role pings, and raw @ mentions.
+
+    Preserves valid user tags (<@123456789> or <@!123456789>).
+    """
+    if not text:
+        return text
+
+    zwsp = "\u200b"
+
+    # 1. Defang raw role tags: <@&123456789> -> @role_name or @role_ID (with ZWSP)
+    def _role_replace(match):
+        role_id = match.group(1)
+        if guild:
+            try:
+                role = guild.get_role(int(role_id))
+                if role:
+                    return f"@{zwsp}{role.name}"
+            except Exception:
+                pass
+        return f"@{zwsp}role_{role_id}"
+
+    text = re.sub(r"<@&(\d+)>", _role_replace, text)
+
+    # 2. Defang any @ that is not the start of a valid user ping <@123> or <@!123>
+    # This automatically defangs @everyone, @here, and any role names like @Admin or @Moderator
+    text = re.sub(r"@(?!(?:!\d+|\d+)>)", f"@{zwsp}", text)
+
+    # 3. Clean up any consecutive ZWSPs
+    text = re.sub(rf"({zwsp})+", zwsp, text)
+
+    return text
 
 def build_system_prompt(topic: Optional[str] = None, is_defence: bool = False) -> str:
     prompt = DEFENCE_SYSTEM_PROMPT if is_defence else BASE_SYSTEM_PROMPT
@@ -793,10 +830,19 @@ class LiveChatManager:
             )
 
             if reply_text:
-                await message.reply(reply_text, mention_author=True)
+                clean_reply = sanitize_ai_mentions(reply_text, guild=getattr(message, "guild", None))
+                if len(clean_reply) > 1990:
+                    clean_reply = clean_reply[:1985] + "..."
+
+                mentions = discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True)
+                try:
+                    await message.reply(clean_reply, mention_author=True, allowed_mentions=mentions)
+                except (discord.NotFound, discord.HTTPException):
+                    await message.channel.send(f"{message.author.mention} {clean_reply}", allowed_mentions=mentions)
+
                 self.record_usage("gpt-4o", p_tokens, c_tokens, is_reply=True)
                 self.conversation_history.append({"role": "user", "speaker": user_name, "content": content})
-                self.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": reply_text})
+                self.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": clean_reply})
                 # Immediately push an update to the dashboard
                 asyncio.create_task(self.update_dashboard())
                 return True
@@ -1305,15 +1351,20 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                         if re.search(pattern, reply_text, flags=re.IGNORECASE):
                             reply_text = re.sub(pattern, f"<@{uid}>", reply_text, count=1, flags=re.IGNORECASE)
 
+            # Hard-block @everyone, @here, and role mentions
+            reply_text = sanitize_ai_mentions(reply_text, guild=getattr(message, "guild", None))
+
             # Ensure within Discord message character limits
             if len(reply_text) > 1990:
                 reply_text = reply_text[:1985] + "..."
 
+            mentions = discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True)
+
             # Send reply (with fallback to channel.send if referenced message was deleted)
             try:
-                await message.reply(reply_text, mention_author=True)
+                await message.reply(reply_text, mention_author=True, allowed_mentions=mentions)
             except (discord.NotFound, discord.HTTPException):
-                await message.channel.send(f"{message.author.mention} {reply_text}")
+                await message.channel.send(f"{message.author.mention} {reply_text}", allowed_mentions=mentions)
 
             # Record usage into live_chat_manager and persistent file
             live_chat_manager.record_usage("gpt-4o", p_tokens, c_tokens, is_reply=True)
