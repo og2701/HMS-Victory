@@ -567,6 +567,7 @@ class LiveChatManager:
                 self.target_user_id = int(raw_target)
             except (ValueError, TypeError):
                 self.target_user_id = None
+        self.owner_mentions_paused: bool = bool(config_data.get("owner_mentions_paused", False))
         self.cooldown: float = 3.0
         self.last_reply_time: float = 0.0
         self.conversation_history: deque = deque(maxlen=10)
@@ -639,6 +640,14 @@ class LiveChatManager:
             cfg["target_user_id"] = self.target_user_id
             save_chatbot_config(cfg)
         logger.info("LiveChatManager target user set to: %s", target_user_id)
+
+    def set_owner_mentions_paused(self, paused: bool, persist: bool = True):
+        self.owner_mentions_paused = paused
+        if persist:
+            cfg = load_chatbot_config()
+            cfg["owner_mentions_paused"] = self.owner_mentions_paused
+            save_chatbot_config(cfg)
+        logger.info("LiveChatManager owner_mentions_paused set to: %s", paused)
 
     def start(
         self,
@@ -764,13 +773,26 @@ class LiveChatManager:
                         except (ValueError, TypeError):
                             new_target = None
 
-                    if new_target != self.target_user_id:
+                    target_changed = (new_target != self.target_user_id)
+                    if target_changed:
                         logger.info(
                             "External config update detected: target_user_id %s -> %s. Refreshing Discord dashboard...",
                             self.target_user_id,
                             new_target,
                         )
                         self.set_target_user(new_target, persist=False)
+
+                    raw_paused = bool(cfg.get("owner_mentions_paused", False))
+                    paused_changed = (raw_paused != self.owner_mentions_paused)
+                    if paused_changed:
+                        logger.info(
+                            "External config update detected: owner_mentions_paused %s -> %s. Refreshing Discord dashboard...",
+                            self.owner_mentions_paused,
+                            raw_paused,
+                        )
+                        self.set_owner_mentions_paused(raw_paused, persist=False)
+
+                    if target_changed or paused_changed:
                         await self.update_dashboard()
             except asyncio.CancelledError:
                 break
@@ -1630,8 +1652,11 @@ async def handle_chat_message(client: discord.Client, message: discord.Message) 
     meant_for_bot = is_message_for_bot(client, message)
 
     # 2. If message is from Oggers and meant for the bot:
-    # Always respond to Oggers as a one-off anywhere on the server!
+    # Always respond to Oggers as a one-off anywhere on the server UNLESS paused!
     if message.author.id == USERS.OGGERS and meant_for_bot:
+        if live_chat_manager.owner_mentions_paused:
+            logger.info("Direct mention from Oggers ignored because direct mentions are paused.")
+            return False
         return await handle_one_off_owner_mention(client, message)
 
     # 3. Standard live chat responder if currently active
@@ -1853,7 +1878,7 @@ class ChatbotSleepButton(discord.ui.Button):
             return
         if interaction.message:
             live_chat_manager.set_dashboard(interaction.client, interaction.message)
-        live_chat_manager.stop()
+        live_chat_manager.stop(clear_target=True)
         view = ChatbotDashboardView()
         await interaction.response.edit_message(content=None, embed=None, view=view)
 
@@ -1880,7 +1905,7 @@ class ChatbotRefreshButton(discord.ui.Button):
 class ChatbotTargetButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
-            label="🎯 Troll/Defence Target",
+            label="🎯 Target",
             style=discord.ButtonStyle.secondary,
             custom_id="vic_live_set_target",
         )
@@ -1890,6 +1915,31 @@ class ChatbotTargetButton(discord.ui.Button):
             await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
             return
         await interaction.response.send_modal(ChatbotTargetModal())
+
+
+class ChatbotDirectPauseButton(discord.ui.Button):
+    def __init__(self):
+        is_paused = live_chat_manager.owner_mentions_paused
+        label = "Resume Direct" if is_paused else "Pause Direct"
+        emoji = "▶️" if is_paused else "⏸️"
+        style = discord.ButtonStyle.success if is_paused else discord.ButtonStyle.secondary
+        super().__init__(
+            label=label,
+            style=style,
+            emoji=emoji,
+            custom_id="vic_live_toggle_direct",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != USERS.OGGERS:
+            await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
+            return
+        if interaction.message:
+            live_chat_manager.set_dashboard(interaction.client, interaction.message)
+        new_paused = not live_chat_manager.owner_mentions_paused
+        live_chat_manager.set_owner_mentions_paused(new_paused)
+        view = ChatbotDashboardView()
+        await interaction.response.edit_message(content=None, embed=None, view=view)
 
 
 class ChatbotDashboardView(discord.ui.LayoutView):
@@ -1947,11 +1997,14 @@ class ChatbotDashboardView(discord.ui.LayoutView):
             timer_str = "None"
             sub_line = "-# 💤 Responder is currently sleeping"
 
+        direct_str = "⏸️ **Paused** *(ignoring owner tags)*" if live_chat_manager.owner_mentions_paused else "✅ **Active** *(responding to owner tags)*"
+
         card.add_item(
             discord.ui.TextDisplay(
                 f"{status_line}\n"
                 f"📍 **Target Channel:** {ch_str}\n"
                 f"⏱️ **Auto-Stop Timer:** {timer_str}\n"
+                f"🏷️ **Direct Mentions:** {direct_str}\n"
                 f"{sub_line}"
             )
         )
@@ -1990,8 +2043,9 @@ class ChatbotDashboardView(discord.ui.LayoutView):
             discord.ui.ActionRow(
                 ChatbotWakeButton(),
                 ChatbotSleepButton(),
-                ChatbotRefreshButton(),
+                ChatbotDirectPauseButton(),
                 ChatbotTargetButton(),
+                ChatbotRefreshButton(),
             )
         )
 

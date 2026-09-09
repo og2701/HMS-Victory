@@ -51,9 +51,14 @@ if "discord" not in sys.modules:
             super().__init_subclass__()
 
         def __init__(self, *a, **k):
-            self.callback = None
+            if not hasattr(type(self), "callback"):
+                self.callback = None
             self.value = ""
             self.default = k.get("default", "")
+            self.label = k.get("label", "")
+            self.emoji = k.get("emoji", "")
+            self.custom_id = k.get("custom_id", "")
+            self.style = k.get("style", None)
             self.children = list(a)
             self.content = a[0] if a and isinstance(a[0], str) else ""
 
@@ -97,6 +102,7 @@ from lib.features.chat_responder import (
     resolve_channel_input,
     ChatbotWakeModal,
     ChatbotDashboardView,
+    ChatbotDirectPauseButton,
     ONE_OFF_SYSTEM_PROMPT,
     gather_one_off_context,
     generate_one_off_reply,
@@ -114,6 +120,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         live_chat_manager.last_reply_time = 0
         live_chat_manager.stop(clear_target=True)
+        live_chat_manager.owner_mentions_paused = False
         _handled_one_off_message_ids.clear()
 
     def test_calculate_cost_gpt4o(self):
@@ -923,6 +930,89 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         # Bot's own ID mention MUST be removed
         self.assertNotIn("<@1171842947440967770>", sent_content)
         self.assertTrue(sent_content.startswith("Oi Kaizo, behave."))
+
+    @patch("lib.features.chat_responder.save_chatbot_config")
+    @patch("lib.features.chat_responder.load_chatbot_config")
+    def test_live_chat_manager_owner_mentions_paused_persistence(self, mock_load, mock_save):
+        mock_load.return_value = {"owner_mentions_paused": False}
+        mgr = LiveChatManager()
+        self.assertFalse(mgr.owner_mentions_paused)
+
+        # Pause direct mentions
+        mgr.set_owner_mentions_paused(True)
+        self.assertTrue(mgr.owner_mentions_paused)
+        mock_save.assert_called_with({"owner_mentions_paused": True})
+
+        # Resume direct mentions
+        mgr.set_owner_mentions_paused(False)
+        self.assertFalse(mgr.owner_mentions_paused)
+        mock_save.assert_called_with({"owner_mentions_paused": False})
+
+    @patch("lib.features.chat_responder.handle_one_off_owner_mention")
+    async def test_handle_chat_message_oggers_ignored_when_paused(self, mock_handle_one_off):
+        client = MagicMock()
+        client.user.id = 999999999
+
+        message = MagicMock()
+        message.author.bot = False
+        message.author.id = USERS.OGGERS
+        message.mentions = [client.user]
+        message.content = f"<@{client.user.id}> vic, are you awake?"
+
+        # 1. When paused: ignored!
+        live_chat_manager.owner_mentions_paused = True
+        res = await handle_chat_message(client, message)
+        self.assertFalse(res)
+        mock_handle_one_off.assert_not_called()
+
+        # 2. When active (not paused): responded!
+        live_chat_manager.owner_mentions_paused = False
+        res = await handle_chat_message(client, message)
+        self.assertTrue(res)
+        mock_handle_one_off.assert_called_once_with(client, message)
+
+    async def test_chatbot_direct_pause_button_ui_and_callback(self):
+        # 1. When active, button offers to Pause
+        live_chat_manager.owner_mentions_paused = False
+        btn = ChatbotDirectPauseButton()
+        self.assertEqual(btn.label, "Pause Direct")
+        self.assertEqual(btn.emoji, "⏸️")
+        self.assertEqual(btn.custom_id, "vic_live_toggle_direct")
+
+        # 2. When paused, button offers to Resume
+        live_chat_manager.owner_mentions_paused = True
+        btn_paused = ChatbotDirectPauseButton()
+        self.assertEqual(btn_paused.label, "Resume Direct")
+        self.assertEqual(btn_paused.emoji, "▶️")
+
+        # 3. Callback rejected for non-Oggers
+        interaction_non_owner = MagicMock()
+        interaction_non_owner.user.id = 12345678
+        interaction_non_owner.response.send_message = AsyncMock()
+        await btn.callback(interaction_non_owner)
+        interaction_non_owner.response.send_message.assert_called_once()
+        self.assertIn("Only Oggers", interaction_non_owner.response.send_message.call_args[0][0])
+
+        # 4. Callback accepted for Oggers, toggles state and updates message
+        live_chat_manager.owner_mentions_paused = False
+        interaction_owner = MagicMock()
+        interaction_owner.user.id = USERS.OGGERS
+        interaction_owner.message = MagicMock()
+        interaction_owner.response.edit_message = AsyncMock()
+
+        with patch("lib.features.chat_responder.save_chatbot_config"):
+            await btn.callback(interaction_owner)
+
+        self.assertTrue(live_chat_manager.owner_mentions_paused)
+        interaction_owner.response.edit_message.assert_called_once()
+
+    def test_chatbot_dashboard_view_includes_pause_button(self):
+        view = ChatbotDashboardView()
+        found_pause_btn = any(
+            getattr(child, "custom_id", None) == "vic_live_toggle_direct"
+            for child in view.children[0].walk_children()
+        )
+        self.assertTrue(found_pause_btn, "ChatbotDirectPauseButton must be present in dashboard view action row")
 
 
 if __name__ == "__main__":
