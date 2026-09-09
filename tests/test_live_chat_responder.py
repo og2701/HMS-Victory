@@ -446,6 +446,86 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_generate.call_args[1]["prompt"], "write a poem about this user")
 
 
+    @patch("lib.features.chat_responder.generate_ai_reply")
+    async def test_handle_chat_message_other_user_active(self, mock_generate_ai):
+        mock_generate_ai.return_value = ("pipe down, mate.", 20, 10)
+        client = MagicMock()
+        client.user.id = 999999999
+
+        message = MagicMock()
+        message.author.bot = False
+        message.author.id = 55667788  # e.g. Mahdi
+        message.author.name = "mahdi"
+        message.author.nick = "Mahdi"
+        message.channel.id = 959493057076666380
+        message.content = "hey vic"
+        message.attachments = []
+        message.reference = None
+
+        typing_mock = MagicMock()
+        typing_mock.__aenter__ = MagicMock(side_effect=lambda: asyncio.sleep(0))
+        typing_mock.__aexit__ = MagicMock(side_effect=lambda *a: asyncio.sleep(0))
+        message.channel.typing.return_value = typing_mock
+
+        reply_mock = MagicMock()
+        async def async_reply(*a, **k):
+            return MagicMock()
+        message.reply = async_reply
+
+        # Start manager in this channel
+        live_chat_manager.start(channel_id=959493057076666380, channel_name="General Chat")
+        self.assertTrue(live_chat_manager.active)
+
+        res = await handle_chat_message(client, message)
+        self.assertTrue(res)
+        mock_generate_ai.assert_called_once()
+        live_chat_manager.stop()
+
+    async def test_extract_image_urls(self):
+        from lib.features.chat_responder import extract_image_urls
+
+        msg = MagicMock()
+        att1 = MagicMock()
+        att1.content_type = "image/png"
+        att1.filename = "kaizo.png"
+        att1.url = "https://cdn.discordapp.com/attachments/123/456/kaizo.png"
+
+        att2 = MagicMock()
+        att2.content_type = "text/plain"
+        att2.filename = "log.txt"
+        att2.url = "https://cdn.discordapp.com/attachments/123/456/log.txt"
+
+        msg.attachments = [att1, att2]
+        msg.reference = None
+
+        urls = await extract_image_urls(msg)
+        self.assertEqual(urls, ["https://cdn.discordapp.com/attachments/123/456/kaizo.png"])
+
+    @patch("urllib.request.urlopen")
+    def test_generate_one_off_reply_multimodal_payload(self, mock_urlopen):
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"choices":[{"message":{"content":"A witty critique of the meme."}}],"usage":{"prompt_tokens":150,"completion_tokens":25}}'
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        content, p_tok, c_tok = generate_one_off_reply(
+            prompt="what is in this image",
+            context="",
+            image_urls=["https://cdn.discordapp.com/attachments/123/456/kaizo.png"],
+            openai_key="test-key",
+        )
+        self.assertEqual(content, "A witty critique of the meme.")
+        call_args, _ = mock_urlopen.call_args
+        req = call_args[0]
+        import json
+        payload = json.loads(req.data.decode("utf-8"))
+        user_msg = payload["messages"][1]
+        self.assertIsInstance(user_msg["content"], list)
+        self.assertEqual(user_msg["content"][0]["type"], "text")
+        self.assertEqual(user_msg["content"][1]["type"], "image_url")
+        self.assertEqual(user_msg["content"][1]["image_url"]["url"], "https://cdn.discordapp.com/attachments/123/456/kaizo.png")
+
+
 if __name__ == "__main__":
     unittest.main()
 

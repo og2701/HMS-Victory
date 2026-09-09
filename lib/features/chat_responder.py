@@ -22,7 +22,8 @@ STRICT RULES:
 2. Tone: Deadpan, sarcastic, mildly resentful, witty British banter. Never enthusiastic, never helpful like a corporate assistant.
 3. Always address users by their nickname/display name naturally (e.g. call Steven 'Steven', not by an account handle). Strip out decorative symbols/emojis from their name if addressing them.
 4. Keep it all lowercase or standard casing, but zero emojis unless used ironically.
-5. Output ONLY your message content, nothing else."""
+5. If an image or meme is attached, react to it, describe it, or roast it in your dry British style.
+6. Output ONLY your message content, nothing else."""
 
 DEFENCE_SYSTEM_PROMPT = """You are HMS Victory, a Discord bot for a British server with legendary, ruthless British wit.
 You are currently in TROLL-DEFENCE / ROAST MODE. A troll or rude member is acting up in the chat, and your explicit objective is to defensively roast them, shut them down, mock their pathetic attempts at trolling, and put them firmly in their place on every single message they send.
@@ -49,7 +50,8 @@ STRICT RULES:
 3. Casing: Mostly lowercase (or casual typing). Never enthusiastic, never helpful like a corporate assistant.
 4. Names: Refer to users by their simple, casual first name or short nick (e.g. 'kaizo', 'steven', 'johnny'). Never repeat full handles, numbers, or decorative emojis.
 5. Events / Links: If asked about an event or to shill a link, provide 1 cynical sentence followed by the exact real URL from context. Never invent or use placeholders.
-6. Output ONLY your direct response text. No preambles, no quotes, no conversational filler."""
+6. Images / Memes: If an image or meme is attached, inspect it, describe it, or roast it in your signature deadpan British style.
+7. Output ONLY your direct response text. No preambles, no quotes, no conversational filler."""
 
 def build_system_prompt(topic: Optional[str] = None, is_defence: bool = False) -> str:
     prompt = DEFENCE_SYSTEM_PROMPT if is_defence else BASE_SYSTEM_PROMPT
@@ -97,6 +99,7 @@ def generate_ai_reply(
     user_content: str,
     history: Optional[List[Dict[str, str]]] = None,
     topic: Optional[str] = None,
+    image_urls: Optional[List[str]] = None,
     openai_key: Optional[str] = None,
     model: str = "gpt-4o",
     is_defence: bool = False,
@@ -123,13 +126,20 @@ def generate_ai_reply(
             else:
                 messages.append({"role": "user", "content": f"{speaker}: {content}"})
 
-    # Add the current triggering message
-    messages.append({"role": "user", "content": f"{user_name}: {user_content}"})
+    # Add the current triggering message (multimodal if images attached)
+    trigger_text = f"{user_name}: {user_content}"
+    if image_urls:
+        content_items = [{"type": "text", "text": trigger_text}]
+        for img_url in image_urls:
+            content_items.append({"type": "image_url", "image_url": {"url": img_url}})
+        messages.append({"role": "user", "content": content_items})
+    else:
+        messages.append({"role": "user", "content": trigger_text})
 
     payload = {
         "model": model,
         "messages": messages,
-        "max_tokens": 60,
+        "max_tokens": 90 if image_urls else 60,
         "temperature": 0.8,
     }
 
@@ -385,6 +395,74 @@ def parse_user_id(val: Optional[str]) -> Optional[int]:
         return int(val_clean)
     except ValueError:
         return None
+def is_message_for_bot(client: discord.Client, message: discord.Message) -> bool:
+    """Check if a message is addressed to or meant for HMS Victory (tags, replies, or name keywords)."""
+    if getattr(message.author, "bot", False):
+        return False
+
+    content = (message.content or "").strip()
+
+    # 1. Direct bot mention (@HMS Victory / <@ID>)
+    if client.user:
+        if (
+            client.user in getattr(message, "mentions", [])
+            or f"<@{client.user.id}>" in content
+            or f"<@!{client.user.id}>" in content
+        ):
+            return True
+
+    # 2. Reply to a message sent by the bot
+    ref = getattr(message, "reference", None)
+    if ref and getattr(ref, "message_id", None):
+        try:
+            ref_msg = getattr(ref, "cached_message", None)
+            if ref_msg and client.user and getattr(ref_msg.author, "id", None) == client.user.id:
+                return True
+        except Exception:
+            pass
+
+    # 3. Name mentioned anywhere as a word (vic, victor, victory, hms, hms victory)
+    # Using \b word boundary so words like 'victim', 'conviction', 'service' do NOT match.
+    if re.search(r"\b(vic|victor|victory|hms|hms\s+victory)\b", content, re.IGNORECASE):
+        return True
+
+    return False
+
+
+async def extract_image_urls(message: discord.Message, client: Optional[discord.Client] = None) -> List[str]:
+    """Extract image attachment URLs from a message, and if none, from its referenced reply."""
+    urls = []
+    # 1. Check direct attachments on this message
+    for att in getattr(message, "attachments", []):
+        ctype = getattr(att, "content_type", "") or ""
+        fname = (getattr(att, "filename", "") or "").lower()
+        if ctype.startswith("image/") or fname.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+            url = getattr(att, "url", None)
+            if url:
+                urls.append(url)
+
+    # 2. Check referenced message if no direct image attachments
+    if not urls and getattr(message, "reference", None):
+        ref = message.reference
+        ref_msg = getattr(ref, "cached_message", None)
+        if not ref_msg and client and getattr(ref, "message_id", None):
+            try:
+                ch_id = getattr(ref, "channel_id", None) or message.channel.id
+                ch = client.get_channel(ch_id) or await client.fetch_channel(ch_id)
+                if ch:
+                    ref_msg = await ch.fetch_message(ref.message_id)
+            except Exception:
+                ref_msg = None
+        if ref_msg:
+            for att in getattr(ref_msg, "attachments", []):
+                ctype = getattr(att, "content_type", "") or ""
+                fname = (getattr(att, "filename", "") or "").lower()
+                if ctype.startswith("image/") or fname.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+                    url = getattr(att, "url", None)
+                    if url:
+                        urls.append(url)
+
+    return urls[:3]
 
 
 class LiveChatManager:
@@ -636,40 +714,6 @@ class LiveChatManager:
         embed.set_footer(text=footer_text)
         return embed
 
-def is_message_for_bot(client: discord.Client, message: discord.Message) -> bool:
-    """Check if a message is addressed to or meant for HMS Victory (tags, replies, or name keywords)."""
-    if getattr(message.author, "bot", False):
-        return False
-
-    content = (message.content or "").strip()
-
-    # 1. Direct bot mention (@HMS Victory / <@ID>)
-    if client.user:
-        if (
-            client.user in getattr(message, "mentions", [])
-            or f"<@{client.user.id}>" in content
-            or f"<@!{client.user.id}>" in content
-        ):
-            return True
-
-    # 2. Reply to a message sent by the bot
-    ref = getattr(message, "reference", None)
-    if ref and getattr(ref, "message_id", None):
-        try:
-            ref_msg = getattr(ref, "cached_message", None)
-            if ref_msg and client.user and getattr(ref_msg.author, "id", None) == client.user.id:
-                return True
-        except Exception:
-            pass
-
-    # 3. Name mentioned anywhere as a word (vic, victor, victory, hms, hms victory)
-    # Using \b word boundary so words like 'victim', 'conviction', 'service' do NOT match.
-    if re.search(r"\b(vic|victor|victory|hms|hms\s+victory)\b", content, re.IGNORECASE):
-        return True
-
-    return False
-
-
     async def handle_message(self, client: discord.Client, message: discord.Message) -> bool:
         """Handle an incoming message if live chat is active in this channel."""
         if not self.is_active_for(message.channel.id) or message.author.bot:
@@ -697,7 +741,18 @@ def is_message_for_bot(client: discord.Client, message: discord.Message) -> bool
 
         history_snapshot = list(self.conversation_history)
 
+        # Show typing indicator while generating response
+        typing_cm = None
+        if hasattr(message.channel, "typing"):
+            try:
+                typing_cm = message.channel.typing()
+                await typing_cm.__aenter__()
+            except Exception:
+                typing_cm = None
+
         try:
+            image_urls = await extract_image_urls(message, client)
+
             # Generate AI reply in thread so it never blocks discord gateway
             reply_text, p_tokens, c_tokens = await asyncio.to_thread(
                 generate_ai_reply,
@@ -705,6 +760,7 @@ def is_message_for_bot(client: discord.Client, message: discord.Message) -> bool
                 user_content=content,
                 history=history_snapshot,
                 topic=self.topic,
+                image_urls=image_urls,
                 is_defence=target_hit,
                 return_usage=True,
             )
@@ -719,6 +775,12 @@ def is_message_for_bot(client: discord.Client, message: discord.Message) -> bool
                 return True
         except Exception as e:
             logger.error("Failed to generate/send live chat reply: %s", e, exc_info=True)
+        finally:
+            if typing_cm:
+                try:
+                    await typing_cm.__aexit__(None, None, None)
+                except Exception:
+                    pass
 
         return False
 
@@ -855,10 +917,11 @@ def generate_one_off_reply(
     prompt: str,
     context: str = "",
     user_name: str = "Oggers",
+    image_urls: Optional[List[str]] = None,
     openai_key: Optional[str] = None,
     model: str = "gpt-4o",
 ) -> Tuple[str, int, int]:
-    """Generate a one-off in-character reply for an owner prompt with gathered context."""
+    """Generate a one-off in-character reply for an owner prompt with gathered context and optional images."""
     api_key = openai_key or os.getenv("OPENAI_TOKEN")
     if not api_key:
         raise ValueError("OPENAI_TOKEN is not configured.")
@@ -871,11 +934,19 @@ def generate_one_off_reply(
     if context.strip():
         prompt_content += f"\n\nSURROUNDING SERVER & CONVERSATION CONTEXT:\n{context.strip()}"
 
+    if image_urls:
+        content_items = [{"type": "text", "text": prompt_content}]
+        for img_url in image_urls:
+            content_items.append({"type": "image_url", "image_url": {"url": img_url}})
+        user_message = {"role": "user", "content": content_items}
+    else:
+        user_message = {"role": "user", "content": prompt_content}
+
     payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": ONE_OFF_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt_content},
+            user_message,
         ],
         "max_tokens": 200,
         "temperature": 0.8,
@@ -935,8 +1006,9 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             typing_cm = None
 
     try:
-        # 1. Gather context
+        # 1. Gather context & images
         context = await gather_one_off_context(client, message)
+        image_urls = await extract_image_urls(message, client)
 
         # 2. Call OpenAI in background thread so gateway isn't blocked
         reply_text, p_tokens, c_tokens = await asyncio.to_thread(
@@ -944,6 +1016,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             prompt=clean_prompt,
             context=context,
             user_name=user_name,
+            image_urls=image_urls,
         )
 
         if reply_text:
