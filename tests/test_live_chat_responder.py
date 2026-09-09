@@ -441,9 +441,42 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
 
         res = await handle_one_off_owner_mention(client, message)
         self.assertTrue(res)
-        mock_gather.assert_called_once_with(client, message)
+        mock_gather.assert_called_once_with(client, message, return_targets=True)
         mock_generate.assert_called_once()
         self.assertEqual(mock_generate.call_args[1]["prompt"], "write a poem about this user")
+
+    @patch("lib.features.chat_responder.generate_one_off_reply")
+    @patch("lib.features.chat_responder.gather_one_off_context")
+    async def test_handle_one_off_owner_mention_target_user_tagging(self, mock_gather, mock_generate):
+        mock_gather.return_value = ("Recent chat context", {"mahdi": 123456789})
+        mock_generate.return_value = ("good luck, mahdi. hope you don't trip over your English.", 100, 20)
+
+        client = MagicMock()
+        client.user.id = 999999999
+
+        typing_mock = MagicMock()
+        typing_mock.__aenter__ = MagicMock(side_effect=lambda: asyncio.sleep(0))
+        typing_mock.__aexit__ = MagicMock(side_effect=lambda *a: asyncio.sleep(0))
+
+        sent_replies = []
+        async def async_reply(content, **kwargs):
+            sent_replies.append(content)
+            return MagicMock()
+
+        message = MagicMock()
+        message.id = 9988776655
+        message.channel.typing.return_value = typing_mock
+        message.author.id = USERS.OGGERS
+        message.author.nick = "Oggers"
+        message.content = f"<@{client.user.id}> pls wish mahdi luck"
+        message.reply = async_reply
+
+        res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        self.assertEqual(len(sent_replies), 1)
+        # Should replace 'mahdi' with '<@123456789>'
+        self.assertIn("<@123456789>", sent_replies[0])
+        self.assertNotIn("mahdi.", sent_replies[0])
 
 
     @patch("lib.features.chat_responder.generate_ai_reply")

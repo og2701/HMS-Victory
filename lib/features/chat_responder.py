@@ -48,7 +48,7 @@ STRICT RULES:
    - If explicitly asked for a poem, rhyme, or roast: keep it punchy and witty (1 to 2 short stanzas maximum). No theatrical monologues.
 2. Tone: Casual, blunt, dismissive British deadpan. NOT Shakespearean, NOT flowery, NOT poetic drama.
 3. Casing: Mostly lowercase (or casual typing). Never enthusiastic, never helpful like a corporate assistant.
-4. Names: Refer to users by their simple, casual first name or short nick (e.g. 'kaizo', 'steven', 'johnny'). Never repeat full handles, numbers, or decorative emojis.
+4. Names & Mentions: If addressing, wishing luck to, or roasting a specific target user provided in the context, tag them using their <@ID> format (e.g. '<@123456789>') so they get pinged in Discord. Otherwise refer to users by their simple, casual first name or short nick. Never repeat full handles, numbers, or decorative emojis.
 5. Events / Links: If asked about an event or to shill a link, provide 1 cynical sentence followed by the exact real URL from context. Never invent or use placeholders.
 6. Images / Memes: If an image or meme is attached, inspect it, describe it, or roast it in your signature deadpan British style.
 7. Output ONLY your direct response text. No preambles, no quotes, no conversational filler."""
@@ -809,9 +809,28 @@ live_chat_manager = LiveChatManager()
 _handled_one_off_message_ids: deque = deque(maxlen=100)
 
 
-async def gather_one_off_context(client: discord.Client, message: discord.Message) -> str:
+STOPWORDS = {
+    "the", "and", "you", "that", "this", "what", "with", "have", "from",
+    "they", "will", "would", "there", "their", "about", "which", "when",
+    "make", "can", "like", "time", "just", "know", "take", "people",
+    "into", "year", "your", "good", "some", "could", "them", "see",
+    "other", "than", "then", "now", "look", "only", "come", "its",
+    "over", "think", "also", "back", "after", "use", "two", "how",
+    "our", "work", "first", "well", "way", "even", "new", "want",
+    "because", "any", "these", "give", "day", "most", "us", "him", "her",
+    "his", "luck", "wish", "pls", "please", "tell", "roast", "glaze", "say", "bot", "hms", "vic"
+}
+
+
+async def gather_one_off_context(
+    client: discord.Client,
+    message: discord.Message,
+    return_targets: bool = False,
+):
     """Gather relevant context for an owner one-off prompt, including replies, mentions, links, and recent channel chat."""
     context_sections = []
+    target_users: Dict[str, int] = {}
+    content_lower = (message.content or "").lower()
 
     # 1. Check if the message is replying to another message
     ref = message.reference
@@ -840,6 +859,15 @@ async def gather_one_off_context(client: discord.Client, message: discord.Messag
                     f"- Author: {author_name} (@{getattr(ref_msg.author, 'name', 'user')})\n"
                     f"- Message Content: \"{ref_text}\""
                 )
+                # Register reply author as potential target
+                bot_id = getattr(getattr(client, "user", None), "id", None)
+                if referenced_author_id not in (bot_id, getattr(message.author, "id", None)):
+                    for n in (getattr(ref_msg.author, "nick", None), getattr(ref_msg.author, "global_name", None), getattr(ref_msg.author, "display_name", None), getattr(ref_msg.author, "name", None)):
+                        if n and isinstance(n, str):
+                            clean = re.sub(r"\[.*?\]|\(.*?\)|[^\w\s-]", "", n).strip().lower()
+                            for part in clean.split():
+                                if len(part) >= 3 and part not in STOPWORDS:
+                                    target_users[part] = referenced_author_id
         except Exception as e:
             logger.debug("Could not fetch referenced message for one-off context: %s", e)
 
@@ -855,6 +883,13 @@ async def gather_one_off_context(client: discord.Client, message: discord.Messag
                 or getattr(u, "name", "User")
             )
             users_info.append(f"{name} (@{getattr(u, 'name', 'user')})")
+            if u.id != getattr(message.author, "id", None):
+                for n in (getattr(u, "nick", None), getattr(u, "global_name", None), getattr(u, "display_name", None), getattr(u, "name", None)):
+                    if n and isinstance(n, str):
+                        clean = re.sub(r"\[.*?\]|\(.*?\)|[^\w\s-]", "", n).strip().lower()
+                        for part in clean.split():
+                            if len(part) >= 3 and part not in STOPWORDS:
+                                target_users[part] = u.id
         context_sections.append(f"MENTIONED USERS IN PROMPT: {', '.join(users_info)}")
 
     # 3. Check for Discord message links
@@ -882,6 +917,8 @@ async def gather_one_off_context(client: discord.Client, message: discord.Messag
         channel_name = getattr(message.channel, "name", "chat")
         recent_chat_lines = []
         recent_speaker = None
+        bot_id = getattr(getattr(client, "user", None), "id", None)
+        author_id = getattr(message.author, "id", None)
         if hasattr(message.channel, "history"):
             async for prev in message.channel.history(limit=10, before=message):
                 if prev.id == message.id:
@@ -892,8 +929,19 @@ async def gather_one_off_context(client: discord.Client, message: discord.Messag
                     or getattr(prev.author, "display_name", None)
                     or getattr(prev.author, "name", "User")
                 )
-                if not recent_speaker and not getattr(prev.author, "bot", False) and getattr(prev.author, "id", None) != getattr(message.author, "id", None):
+                prev_author_id = getattr(prev.author, "id", None)
+                if not recent_speaker and not getattr(prev.author, "bot", False) and prev_author_id != author_id:
                     recent_speaker = spk
+
+                # Check if prompt references this recent speaker
+                if not getattr(prev.author, "bot", False) and prev_author_id not in (bot_id, author_id):
+                    for n in (getattr(prev.author, "nick", None), getattr(prev.author, "global_name", None), getattr(prev.author, "display_name", None), getattr(prev.author, "name", None)):
+                        if n and isinstance(n, str):
+                            clean = re.sub(r"\[.*?\]|\(.*?\)|[^\w\s-]", "", n).strip().lower()
+                            for part in clean.split():
+                                if len(part) >= 3 and part not in STOPWORDS:
+                                    if re.search(rf"\b{re.escape(part)}\b", content_lower):
+                                        target_users[part] = prev_author_id
 
                 txt = (prev.content or "").strip()
                 if not txt and getattr(prev, "attachments", None):
@@ -929,7 +977,16 @@ async def gather_one_off_context(client: discord.Client, message: discord.Messag
         except Exception as e:
             logger.debug("Could not fetch scheduled events for one-off context: %s", e)
 
-    return "\n\n".join(context_sections).strip()
+    if target_users:
+        target_lines = [f"- {name.capitalize()}: <@{uid}>" for name, uid in target_users.items()]
+        context_sections.append(
+            "TARGET USER(S) IN PROMPT (Use <@ID> to tag them so they get notified in Discord):\n" + "\n".join(target_lines)
+        )
+
+    context_str = "\n\n".join(context_sections).strip()
+    if return_targets:
+        return context_str, target_users
+    return context_str
 
 
 def generate_one_off_reply(
@@ -1026,7 +1083,11 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
 
     try:
         # 1. Gather context & images
-        context = await gather_one_off_context(client, message)
+        gathered = await gather_one_off_context(client, message, return_targets=True)
+        if isinstance(gathered, tuple) and len(gathered) == 2:
+            context, target_users = gathered
+        else:
+            context, target_users = str(gathered), {}
         image_urls = await extract_image_urls(message, client)
 
         # 2. Call OpenAI in background thread so gateway isn't blocked
@@ -1039,6 +1100,14 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         )
 
         if reply_text:
+            # Tag target users if their name was used in plain text and not already tagged
+            if target_users:
+                for name, uid in target_users.items():
+                    if f"<@{uid}>" not in reply_text:
+                        pattern = rf"\b{re.escape(name)}\b"
+                        if re.search(pattern, reply_text, flags=re.IGNORECASE):
+                            reply_text = re.sub(pattern, f"<@{uid}>", reply_text, count=1, flags=re.IGNORECASE)
+
             # Ensure within Discord message character limits
             if len(reply_text) > 1990:
                 reply_text = reply_text[:1985] + "..."
