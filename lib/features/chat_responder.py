@@ -33,6 +33,20 @@ STARTING TOPIC / CONTEXT:
 NOTE: Use this topic as an initial grievance, backdrop, or when relevant, but DO NOT stick to it obsessively or shoehorn it into every message. Follow the conversation naturally and respond to what the other person is actually saying."""
     return prompt
 
+def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """Calculate USD cost based on token counts and model pricing."""
+    m = (model or "").lower()
+    if "mini" in m:
+        # gpt-4o-mini: $0.15 / 1M prompt, $0.60 / 1M completion
+        input_cost = (prompt_tokens / 1_000_000) * 0.15
+        output_cost = (completion_tokens / 1_000_000) * 0.60
+    else:
+        # gpt-4o default: $2.50 / 1M prompt, $10.00 / 1M completion
+        input_cost = (prompt_tokens / 1_000_000) * 2.50
+        output_cost = (completion_tokens / 1_000_000) * 10.00
+    return input_cost + output_cost
+
+
 def generate_ai_reply(
     user_name: str,
     user_content: str,
@@ -40,7 +54,8 @@ def generate_ai_reply(
     topic: Optional[str] = None,
     openai_key: Optional[str] = None,
     model: str = "gpt-4o",
-) -> str:
+    return_usage: bool = False,
+):
     """Generate a sharp, concise in-character reply using rolling conversation history and an optional topic."""
     api_key = openai_key or os.getenv("OPENAI_TOKEN")
     if not api_key:
@@ -84,10 +99,19 @@ def generate_ai_reply(
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
-            return data["choices"][0]["message"]["content"].strip()
+            content = data["choices"][0]["message"]["content"].strip()
+            usage = data.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            if return_usage:
+                return content, prompt_tokens, completion_tokens
+            return content
     except Exception as e:
         logger.error(f"OpenAI completion failed: {e}", exc_info=True)
-        return "I'd reply, but my will to live just suffered a fatal exception."
+        fallback = "I'd reply, but my will to live just suffered a fatal exception."
+        if return_usage:
+            return fallback, 0, 0
+        return fallback
 
 
 async def scrape_server_context(
@@ -169,13 +193,18 @@ def formulate_starting_context(
     scraped_data: str,
     openai_key: Optional[str] = None,
     model: str = "gpt-4o-mini",
-) -> str:
+    return_usage: bool = False,
+):
     """Synthesize raw server context and user input into a tailored starting prompt for HMS Victory."""
     api_key = openai_key or os.getenv("OPENAI_TOKEN")
     if not api_key:
+        if return_usage:
+            return user_input or "", 0, 0
         return user_input or ""
 
     if not user_input.strip() and not scraped_data.strip():
+        if return_usage:
+            return "", 0, 0
         return ""
 
     url = "https://api.openai.com/v1/chat/completions"
@@ -220,9 +249,17 @@ STYLE CONSTRAINTS:
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
-            return data["choices"][0]["message"]["content"].strip().strip('"')
+            content = data["choices"][0]["message"]["content"].strip().strip('"')
+            usage = data.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            if return_usage:
+                return content, prompt_tokens, completion_tokens
+            return content
     except Exception as e:
         logger.error("Failed to formulate starting context: %s", e, exc_info=True)
+        if return_usage:
+            return user_input, 0, 0
         return user_input
 
 
@@ -280,8 +317,48 @@ class LiveChatManager:
         self.last_reply_time: float = 0.0
         self.conversation_history: deque = deque(maxlen=10)
         self.stop_task: Optional[asyncio.Task] = None
+        self.live_update_task: Optional[asyncio.Task] = None
 
-    def start(self, channel_id: int, channel_name: str = "", duration_seconds: float = 0.0, topic: Optional[str] = None):
+        # Dashboard tracking
+        self.client: Optional[discord.Client] = None
+        self.dashboard_message: Optional[discord.Message] = None
+        self.dashboard_channel_id: Optional[int] = None
+        self.dashboard_message_id: Optional[int] = None
+
+        # Cost & usage metrics
+        self.session_cost_usd: float = 0.0
+        self.session_prompt_tokens: int = 0
+        self.session_completion_tokens: int = 0
+        self.total_tokens: int = 0
+        self.session_replies_count: int = 0
+
+    def set_dashboard(self, client: discord.Client, message: discord.Message):
+        self.client = client
+        self.dashboard_message = message
+        self.dashboard_channel_id = message.channel.id
+        self.dashboard_message_id = message.id
+
+    def record_usage(self, model: str, prompt_tokens: int, completion_tokens: int, is_reply: bool = False):
+        cost = calculate_cost(model, prompt_tokens, completion_tokens)
+        self.session_cost_usd += cost
+        self.session_prompt_tokens += prompt_tokens
+        self.session_completion_tokens += completion_tokens
+        self.total_tokens += (prompt_tokens + completion_tokens)
+        if is_reply:
+            self.session_replies_count += 1
+        logger.info(
+            "LiveChatManager usage recorded: +$%.5f (%d prompt, %d comp). Session total: $%.4f (%d tokens, %d replies)",
+            cost, prompt_tokens, completion_tokens, self.session_cost_usd, self.total_tokens, self.session_replies_count,
+        )
+
+    def start(
+        self,
+        channel_id: int,
+        channel_name: str = "",
+        duration_seconds: float = 0.0,
+        topic: Optional[str] = None,
+        client: Optional[discord.Client] = None,
+    ):
         self.stop()
         self.active = True
         self.target_channel_id = channel_id
@@ -293,16 +370,34 @@ class LiveChatManager:
         self.conversation_history.clear()
         self.last_reply_time = 0.0
 
+        # Reset session metrics for new run
+        self.session_cost_usd = 0.0
+        self.session_prompt_tokens = 0
+        self.session_completion_tokens = 0
+        self.total_tokens = 0
+        self.session_replies_count = 0
+
+        if client:
+            self.client = client
+
         if self.duration_seconds > 0:
             self.stop_task = asyncio.create_task(self._auto_stop_timer(self.duration_seconds))
 
-        logger.info("LiveChatManager started in channel %s (duration=%ss, topic=%r)", channel_id, duration_seconds, self.topic)
+        self.live_update_task = asyncio.create_task(self._live_dashboard_loop())
+
+        logger.info(
+            "LiveChatManager started in channel %s (duration=%ss, topic=%r)",
+            channel_id, duration_seconds, self.topic
+        )
 
     def stop(self):
         self.active = False
         if self.stop_task and not self.stop_task.done():
             self.stop_task.cancel()
             self.stop_task = None
+        if self.live_update_task and not self.live_update_task.done():
+            self.live_update_task.cancel()
+            self.live_update_task = None
         logger.info("LiveChatManager stopped.")
 
     async def _auto_stop_timer(self, delay: float):
@@ -311,14 +406,54 @@ class LiveChatManager:
             if self.active:
                 logger.info("LiveChatManager duration expired. Automatically shutting down.")
                 self.stop()
+                await self.update_dashboard()
         except asyncio.CancelledError:
             pass
+
+    async def _live_dashboard_loop(self):
+        """Periodically refresh the dashboard embed in Discord every 5 seconds while active."""
+        try:
+            while self.active:
+                await asyncio.sleep(5)
+                if not self.active:
+                    break
+                await self.update_dashboard()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error("Error in live dashboard update loop: %s", e, exc_info=True)
+
+    async def update_dashboard(self):
+        """Push latest status, countdown, and live cost to the Discord dashboard message."""
+        if not self.client:
+            return
+        try:
+            embed = self.get_status_embed()
+            view = ChatbotDashboardView()
+            if self.dashboard_message:
+                try:
+                    await self.dashboard_message.edit(embed=embed, view=view)
+                    return
+                except discord.NotFound:
+                    self.dashboard_message = None
+                except discord.HTTPException as e:
+                    logger.debug("HTTP exception updating cached dashboard message: %s", e)
+
+            if self.dashboard_channel_id and self.dashboard_message_id:
+                ch = self.client.get_channel(self.dashboard_channel_id) or await self.client.fetch_channel(self.dashboard_channel_id)
+                if ch:
+                    self.dashboard_message = await ch.fetch_message(self.dashboard_message_id)
+                    await self.dashboard_message.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.debug("update_dashboard encountered error: %s", e)
 
     def is_active_for(self, channel_id: int) -> bool:
         if not self.active:
             return False
         if self.end_time and time.time() >= self.end_time:
             self.stop()
+            if self.client:
+                asyncio.create_task(self.update_dashboard())
             return False
         return self.target_channel_id == channel_id
 
@@ -332,16 +467,22 @@ class LiveChatManager:
                 remaining = max(0, int(self.end_time - time.time()))
                 mins = remaining // 60
                 secs = remaining % 60
-                time_val = f"<t:{int(self.end_time)}:t> ({mins}m {secs}s remaining)"
+                time_val = f"<t:{int(self.end_time)}:t> ({mins}m {secs:02d}s left)"
             else:
                 time_val = "Unlimited (manual stop)"
             topic_val = f"_{self.topic}_" if self.topic else "None (Natural conversation)"
+            cost_title = "💰 Live Cost"
+            footer_text = "Persistent Controller • Oggers Only • Live updating every 5s"
         else:
             color = 0xE74C3C  # Red
             status_text = "🔴 **Offline / Asleep**"
             channel_val = "None"
             time_val = "N/A"
             topic_val = "None"
+            cost_title = "💰 Last Session Cost"
+            footer_text = "Persistent Controller • Oggers Only"
+
+        cost_val = f"**${self.session_cost_usd:.4f}**\n`{self.total_tokens:,}` tokens • `{self.session_replies_count}` replies"
 
         embed = discord.Embed(
             title="🤖 HMS Victory Chatbot Dashboard",
@@ -351,8 +492,9 @@ class LiveChatManager:
         embed.add_field(name="Status", value=status_text, inline=True)
         embed.add_field(name="Target Channel", value=channel_val, inline=True)
         embed.add_field(name="Auto-Stop Timer", value=time_val, inline=True)
+        embed.add_field(name=cost_title, value=cost_val, inline=True)
         embed.add_field(name="Starting Topic", value=topic_val, inline=False)
-        embed.set_footer(text="Persistent Controller • Oggers Only")
+        embed.set_footer(text=footer_text)
         return embed
 
     async def handle_message(self, client: discord.Client, message: discord.Message) -> bool:
@@ -401,18 +543,22 @@ class LiveChatManager:
 
         try:
             # Generate AI reply in thread so it never blocks discord gateway
-            reply_text = await asyncio.to_thread(
+            reply_text, p_tokens, c_tokens = await asyncio.to_thread(
                 generate_ai_reply,
                 user_name=user_name,
                 user_content=content,
                 history=history_snapshot,
                 topic=self.topic,
+                return_usage=True,
             )
 
             if reply_text:
                 await message.reply(reply_text, mention_author=True)
+                self.record_usage("gpt-4o", p_tokens, c_tokens, is_reply=True)
                 self.conversation_history.append({"role": "user", "speaker": user_name, "content": content})
                 self.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": reply_text})
+                # Immediately push an update to the dashboard
+                asyncio.create_task(self.update_dashboard())
                 return True
         except Exception as e:
             logger.error("Failed to generate/send live chat reply: %s", e, exc_info=True)
@@ -458,6 +604,8 @@ class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
         raw_topic = self.topic_input.value.strip() if self.topic_input.value else ""
 
         final_topic = raw_topic
+        f_prompt_tokens = 0
+        f_comp_tokens = 0
         try:
             scraped_data = await scrape_server_context(
                 client=interaction.client,
@@ -466,22 +614,30 @@ class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
                 user_input=raw_topic,
             )
             if scraped_data or raw_topic:
-                formulated = await asyncio.to_thread(
+                formulated, f_prompt_tokens, f_comp_tokens = await asyncio.to_thread(
                     formulate_starting_context,
                     user_input=raw_topic,
                     scraped_data=scraped_data,
+                    return_usage=True,
                 )
                 if formulated:
                     final_topic = formulated
         except Exception as e:
             logger.warning("Failed to scrape/formulate starting topic: %s", e, exc_info=True)
 
+        if interaction.message:
+            live_chat_manager.set_dashboard(interaction.client, interaction.message)
+
         live_chat_manager.start(
             channel_id=cid,
             channel_name=cname,
             duration_seconds=dur,
             topic=final_topic,
+            client=interaction.client,
         )
+
+        if f_prompt_tokens or f_comp_tokens:
+            live_chat_manager.record_usage("gpt-4o-mini", f_prompt_tokens, f_comp_tokens, is_reply=False)
 
         embed = live_chat_manager.get_status_embed()
         view = ChatbotDashboardView()
@@ -513,12 +669,16 @@ class ChatbotDashboardView(discord.ui.View):
 
     @discord.ui.button(label="Put to Sleep", style=discord.ButtonStyle.danger, emoji="🔴", custom_id="vic_live_sleep")
     async def sleep_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.message:
+            live_chat_manager.set_dashboard(interaction.client, interaction.message)
         live_chat_manager.stop()
         embed = live_chat_manager.get_status_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="vic_live_refresh")
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.message:
+            live_chat_manager.set_dashboard(interaction.client, interaction.message)
         embed = live_chat_manager.get_status_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
@@ -547,6 +707,8 @@ async def ensure_chatbot_dashboard_message(client: discord.Client):
         else:
             dashboard_msg = await thread.send(embed=embed, view=view)
             logger.info("Posted initial chatbot dashboard message (%s) in thread %s", dashboard_msg.id, thread_id)
+
+        live_chat_manager.set_dashboard(client, dashboard_msg)
 
     except Exception as e:
         logger.error("Failed to ensure chatbot dashboard message in thread %s: %s", thread_id, e, exc_info=True)
