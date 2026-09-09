@@ -1238,6 +1238,14 @@ async def on_message(client, message):
     except Exception:
         logger.debug("welcome reward hook failed", exc_info=True)
 
+    # Live conversational responder if active in this channel
+    try:
+        from lib.features.chat_responder import live_chat_manager
+        if live_chat_manager.active and not message.author.bot:
+            asyncio.create_task(live_chat_manager.handle_message(client, message))
+    except Exception:
+        logger.debug("live chat responder hook failed", exc_info=True)
+
     # Battleship threads are "pseudo-locked": real locking blocks button interactions, so any
     # message posted there by anyone other than the bot (chat, or Fletcher's auto-summon) is
     # deleted to keep the board + ephemerals clean.
@@ -1301,6 +1309,22 @@ async def on_message(client, message):
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
         _set_piggy_react(client, not _piggy_react_enabled(client))
+        return
+
+    # Oggers summons the live chatbot controller dashboard in #bot-workshop
+    if (
+        message.author.id == USERS.OGGERS
+        and message.channel.id == CHANNELS.BOT_WORKSHOP
+        and message.content.lower().strip() == "chatbot"
+    ):
+        try:
+            await message.delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+        from lib.features.chat_responder import live_chat_manager, ChatbotDashboardView
+        embed = live_chat_manager.get_status_embed()
+        view = ChatbotDashboardView()
+        await message.channel.send(embed=embed, view=view)
         return
 
     # When enabled, spell H-O-G on every message PIGGY sends (order matters).

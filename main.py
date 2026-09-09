@@ -194,6 +194,14 @@ class AClient(discord.Client):
         except Exception as e:
             logger.warning(f"Could not register pending Lucky Dip view: {e}")
 
+        # Persistent view for Vic Live Chatbot Dashboard in #bot-workshop
+        try:
+            from lib.features.chat_responder import ChatbotDashboardView
+            self.add_view(ChatbotDashboardView())
+            logger.info("Registered persistent view for ChatbotDashboardView.")
+        except Exception as e:
+            logger.warning(f"Could not register ChatbotDashboardView: {e}")
+
         logger.info("Persistent prediction views registered in setup_hook.")
 
     async def on_ready(self):
