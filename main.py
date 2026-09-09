@@ -234,7 +234,6 @@ class AClient(discord.Client):
             return
         self._prediction_backfill_done = True
         # Proactively update existing predictions to show the new button
-        import asyncio
         from lib.economy.prediction_system import _edit_prediction_message
         for p in list(self.predictions.values()):
             if not p.locked:
