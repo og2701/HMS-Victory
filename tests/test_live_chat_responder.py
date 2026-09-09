@@ -108,6 +108,10 @@ from config import USERS
 
 
 class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        live_chat_manager.last_reply_time = 0
+        live_chat_manager.stop(clear_target=True)
+
     def test_calculate_cost_gpt4o(self):
         # 1,000 prompt tokens = $0.0025, 1,000 completion tokens = $0.0100
         cost = calculate_cost("gpt-4o", 1000, 1000)
@@ -746,6 +750,63 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(allowed.everyone)
         self.assertFalse(allowed.roles)
         self.assertTrue(allowed.users)
+
+    @patch("lib.features.chat_responder.generate_ai_reply")
+    async def test_handle_chat_message_troll_mode_targets_bot(self, mock_generate_ai):
+        mock_generate_ai.return_value = ("Shut up you glorified calculator.", 40, 10)
+
+        claude_bot_id = 1457814413913489480
+        live_chat_manager.set_target_user(claude_bot_id)
+
+        client = MagicMock()
+        client.user.id = 999999999
+
+        # Target bot message
+        bot_message = MagicMock()
+        bot_message.id = 888111
+        bot_message.author.id = claude_bot_id
+        bot_message.author.name = "Claude AI"
+        bot_message.author.bot = True
+        bot_message.content = "We respect all people and open them"
+        bot_message.channel.id = 12345
+        bot_message.guild = None
+        bot_message.attachments = []
+        bot_message.reference = None
+
+        typing_mock = MagicMock()
+        typing_mock.__aenter__ = MagicMock(side_effect=lambda *a: asyncio.sleep(0))
+        typing_mock.__aexit__ = MagicMock(side_effect=lambda *a: asyncio.sleep(0))
+        bot_message.channel.typing.return_value = typing_mock
+
+        reply_mock = MagicMock()
+        async def async_reply(*a, **k):
+            return MagicMock()
+        bot_message.reply = async_reply
+
+        # Handle message should trigger even though author.bot is True
+        res = await handle_chat_message(client, bot_message)
+        self.assertTrue(res)
+        mock_generate_ai.assert_called_once()
+        _, call_kwargs = mock_generate_ai.call_args
+        self.assertTrue(call_kwargs.get("is_defence"))
+
+        # Message from a different bot should NOT trigger
+        diff_bot_msg = MagicMock()
+        diff_bot_msg.author.id = 123999
+        diff_bot_msg.author.bot = True
+        diff_bot_msg.channel.id = 12345
+        res_diff = await handle_chat_message(client, diff_bot_msg)
+        self.assertFalse(res_diff)
+
+        # Message from Vic himself should NEVER trigger (prevent infinite loop)
+        vic_msg = MagicMock()
+        vic_msg.author.id = client.user.id
+        vic_msg.author.bot = True
+        vic_msg.channel.id = 12345
+        res_vic = await handle_chat_message(client, vic_msg)
+        self.assertFalse(res_vic)
+
+        live_chat_manager.set_target_user(None)
 
 
 if __name__ == "__main__":

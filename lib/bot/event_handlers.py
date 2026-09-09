@@ -1239,10 +1239,11 @@ async def on_message(client, message):
     except Exception:
         logger.debug("welcome reward hook failed", exc_info=True)
 
-    # Live conversational responder or one-off owner mention
+    # Live conversational responder, troll/defence mode, or one-off owner mention
     try:
-        from lib.features.chat_responder import handle_chat_message
-        if not message.author.bot:
+        from lib.features.chat_responder import handle_chat_message, live_chat_manager
+        is_target = bool(live_chat_manager.target_user_id and message.author.id == live_chat_manager.target_user_id)
+        if message.author.id != getattr(getattr(client, "user", None), "id", None) and (not message.author.bot or is_target):
             asyncio.create_task(handle_chat_message(client, message))
     except Exception:
         logger.debug("chat responder hook failed", exc_info=True)

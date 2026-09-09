@@ -653,8 +653,13 @@ class LiveChatManager:
             channel_id, duration_seconds, self.topic, self.target_user_id,
         )
 
-    def stop(self):
+    def stop(self, clear_target: bool = True):
         self.active = False
+        self.target_channel_id = None
+        self.target_channel_name = ""
+        self.end_time = None
+        if clear_target:
+            self.target_user_id = None
         if self.stop_task and not self.stop_task.done():
             self.stop_task.cancel()
             self.stop_task = None
@@ -779,14 +784,36 @@ class LiveChatManager:
         return embed
 
     async def handle_message(self, client: discord.Client, message: discord.Message) -> bool:
-        """Handle an incoming message if live chat is active in this channel."""
-        if not self.is_active_for(message.channel.id) or message.author.bot:
+        """Handle an incoming message if live chat is active or target user was hit."""
+        # Never reply to ourselves
+        if client.user and message.author.id == client.user.id:
+            return False
+        if message.author.id == BOT_ID:
             return False
 
-        content = message.content or ""
         target_hit = bool(self.target_user_id and message.author.id == self.target_user_id)
-        if not (target_hit or is_message_for_bot(client, message)):
-            return False
+
+        if target_hit:
+            # If target_channel_id is set, restrict retaliation to that channel;
+            # otherwise retaliate anywhere on the server where the target speaks!
+            if self.target_channel_id and message.channel.id != self.target_channel_id:
+                return False
+        else:
+            # For non-targets, live chat must be active in this channel, and bots are ignored
+            if not self.is_active_for(message.channel.id) or message.author.bot:
+                return False
+            if not is_message_for_bot(client, message):
+                return False
+
+        content = message.content or ""
+        if not content and getattr(message, "embeds", None):
+            embed_texts = []
+            for e in message.embeds:
+                if getattr(e, "title", None):
+                    embed_texts.append(e.title)
+                if getattr(e, "description", None):
+                    embed_texts.append(e.description)
+            content = " ".join(embed_texts).strip()
 
         # Enforce rate limit / cooldown
         now = time.time()
@@ -1387,18 +1414,31 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
 
 
 async def handle_chat_message(client: discord.Client, message: discord.Message) -> bool:
-    """Unified handler for incoming messages: handles owner one-off tags and active live chat sessions."""
+    """Unified handler for incoming messages: handles troll/defence targets, owner tags, and live chat sessions."""
+    # Never reply to ourselves
+    if client.user and message.author.id == client.user.id:
+        return False
+    if message.author.id == BOT_ID:
+        return False
+
+    target_hit = bool(live_chat_manager.target_user_id and message.author.id == live_chat_manager.target_user_id)
+
+    # 1. Troll / Defence Target Hit (works even if target is another bot like Claude AI):
+    if target_hit:
+        return await live_chat_manager.handle_message(client, message)
+
+    # For all other messages, ignore bots
     if getattr(message.author, "bot", False):
         return False
 
     meant_for_bot = is_message_for_bot(client, message)
 
-    # 1. If message is from Oggers and meant for the bot:
+    # 2. If message is from Oggers and meant for the bot:
     # Always respond to Oggers as a one-off anywhere on the server!
     if message.author.id == USERS.OGGERS and meant_for_bot:
         return await handle_one_off_owner_mention(client, message)
 
-    # 2. Standard live chat responder if currently active
+    # 3. Standard live chat responder if currently active
     if live_chat_manager.active:
         return await live_chat_manager.handle_message(client, message)
 
@@ -1537,7 +1577,8 @@ class ChatbotTargetModal(discord.ui.Modal, title="Set Troll/Defence Target"):
                 await interaction.response.send_message("❌ Invalid user ID or mention format.", ephemeral=True)
                 return
             live_chat_manager.set_target_user(uid)
-            msg = f"🎯 **Troll/Defence mode ACTIVE on <@{uid}>!** Vic will now retaliate to every message they send."
+            ch_info = f"in <#{live_chat_manager.target_channel_id}>" if live_chat_manager.target_channel_id else "across all server channels"
+            msg = f"🎯 **Troll/Defence mode ACTIVE on <@{uid}>!** Vic will now retaliate to every message they send {ch_info}."
 
         if interaction.message:
             live_chat_manager.set_dashboard(interaction.client, interaction.message)
@@ -1669,7 +1710,7 @@ class ChatbotDashboardView(discord.ui.LayoutView):
         return True
 
     def build_ui(self):
-        accent = 0x2ECC71 if live_chat_manager.active else 0xE74C3C
+        accent = 0x2ECC71 if live_chat_manager.active else (0xE67E22 if live_chat_manager.target_user_id else 0xE74C3C)
         card = discord.ui.Container(accent_colour=accent)
 
         # Header
@@ -1693,6 +1734,14 @@ class ChatbotDashboardView(discord.ui.LayoutView):
             else:
                 timer_str = "Unlimited *(manual stop)*"
             sub_line = "-# ⚡ Live updating every 5s"
+        elif live_chat_manager.target_user_id:
+            status_line = "🎯 **Status:** **Troll Hunter ACTIVE**"
+            if live_chat_manager.target_channel_id:
+                ch_str = f"<#{live_chat_manager.target_channel_id}> (`{live_chat_manager.target_channel_name}`)"
+            else:
+                ch_str = "All Server Channels *(Everywhere target speaks)*"
+            timer_str = "None *(Continuous until cleared)*"
+            sub_line = f"-# 🚨 Actively hunting & roasting <@{live_chat_manager.target_user_id}>"
         else:
             status_line = "🔴 **Status:** **Offline / Asleep**"
             if live_chat_manager.target_channel_id:
