@@ -117,6 +117,8 @@ _EXEMPT_CONTEXTS = (
     re.compile(r"van\s*dyc?ke"),
     re.compile(r"(?:offa|devil|wans|grim|bar)\s*s?\s*dyke"),
     re.compile(r"dyke\s+(?:road|street|lane|hill|house|end|bridge|path|way|farm|valley)"),
+    re.compile(r"maine\s*coons?"),
+    re.compile(r"coon\s*hounds?"),
 )
 
 

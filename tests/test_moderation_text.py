@@ -90,6 +90,14 @@ def test_dick_van_dyke_is_not_a_slur():
     assert find_blocked_moderation_match("he grew a van dyke beard") is None
 
 
+def test_maine_coon_and_coonhound_are_not_slurs():
+    assert find_blocked_moderation_match("maine coon") is None
+    assert find_blocked_moderation_match("Maine Coons") is None
+    assert find_blocked_moderation_match("the owner for this cat has three other maine coons i love them all") is None
+    assert find_blocked_moderation_match("black and tan coonhound") is None
+    assert find_blocked_moderation_match("coon hounds are cute") is None
+
+
 def test_british_landmarks_and_streets_are_not_slurs():
     for text in ("walked Offa's Dyke last summer", "Devils Dyke is near Brighton",
                  "the shop on Dyke Road", "we took the dyke path"):
