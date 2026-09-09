@@ -43,8 +43,23 @@ if "discord" not in sys.modules:
             self.callback = None
             self.value = ""
             self.default = k.get("default", "")
+            self.children = list(a)
+            self.content = a[0] if a and isinstance(a[0], str) else ""
 
-    for name in ("View", "Modal", "TextInput", "ChannelSelect", "Select", "Button"):
+        def add_item(self, item):
+            self.children.append(item)
+            return self
+
+        def walk_children(self):
+            for c in self.children:
+                yield c
+                if hasattr(c, "walk_children"):
+                    yield from c.walk_children()
+
+    for name in (
+        "View", "LayoutView", "Container", "TextDisplay", "Separator", "ActionRow",
+        "Modal", "TextInput", "ChannelSelect", "Select", "Button"
+    ):
         setattr(ui, name, type(name, (_Item,), {}))
 
     def _select(*a, **k):
@@ -196,6 +211,14 @@ class TestLiveChatResponder(unittest.TestCase):
         modal = ChatbotWakeModal(default_channel="vip-lounge", default_target_user="111222333")
         self.assertEqual(modal.channel_input.default, "vip-lounge")
         self.assertEqual(modal.target_user_input.default, "111222333")
+
+    def test_chatbot_dashboard_view_components_v2(self):
+        view = ChatbotDashboardView()
+        self.assertGreater(len(view.children), 0)
+        container = view.children[0]
+        # Should have text displays, separators, and action rows
+        children = list(container.children)
+        self.assertGreater(len(children), 5)
 
 
 if __name__ == "__main__":

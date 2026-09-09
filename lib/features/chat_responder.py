@@ -505,15 +505,14 @@ class LiveChatManager:
             logger.error("Error in live dashboard update loop: %s", e, exc_info=True)
 
     async def update_dashboard(self):
-        """Push latest status, countdown, and live cost to the Discord dashboard message."""
+        """Push latest status, countdown, and live cost to the Discord dashboard message via Components V2."""
         if not self.client:
             return
         try:
-            embed = self.get_status_embed()
             view = ChatbotDashboardView()
             if self.dashboard_message:
                 try:
-                    await self.dashboard_message.edit(embed=embed, view=view)
+                    await self.dashboard_message.edit(content=None, embed=None, embeds=[], view=view)
                     return
                 except discord.NotFound:
                     self.dashboard_message = None
@@ -523,8 +522,16 @@ class LiveChatManager:
             if self.dashboard_channel_id and self.dashboard_message_id:
                 ch = self.client.get_channel(self.dashboard_channel_id) or await self.client.fetch_channel(self.dashboard_channel_id)
                 if ch:
-                    self.dashboard_message = await ch.fetch_message(self.dashboard_message_id)
-                    await self.dashboard_message.edit(embed=embed, view=view)
+                    try:
+                        self.dashboard_message = await ch.fetch_message(self.dashboard_message_id)
+                        await self.dashboard_message.edit(content=None, embed=None, embeds=[], view=view)
+                    except discord.HTTPException as e:
+                        logger.warning("Could not edit message to Components V2, recreating: %s", e)
+                        try:
+                            await self.dashboard_message.delete()
+                        except Exception:
+                            pass
+                        self.dashboard_message = await ch.send(view=view)
         except Exception as e:
             logger.debug("update_dashboard encountered error: %s", e)
 
@@ -751,11 +758,10 @@ class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
         if f_prompt_tokens or f_comp_tokens:
             live_chat_manager.record_usage("gpt-4o-mini", f_prompt_tokens, f_comp_tokens, is_reply=False)
 
-        embed = live_chat_manager.get_status_embed()
         view = ChatbotDashboardView()
         try:
             if interaction.message:
-                await interaction.message.edit(embed=embed, view=view)
+                await interaction.message.edit(content=None, embed=None, embeds=[], view=view)
         except Exception:
             pass
 
@@ -798,29 +804,24 @@ class ChatbotTargetModal(discord.ui.Modal, title="Set Troll/Defence Target"):
         await interaction.response.send_message(msg, ephemeral=True)
 
 
-class ChatbotDashboardView(discord.ui.View):
+class ChatbotChannelSelect(discord.ui.ChannelSelect):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(
+            channel_types=[discord.ChannelType.text],
+            placeholder="🔍 Choose target channel (searchable)...",
+            custom_id="vic_live_channel_select",
+        )
 
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+    async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != USERS.OGGERS:
             await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
-            return False
-        return True
+            return
 
-    @discord.ui.select(
-        cls=discord.ui.ChannelSelect,
-        channel_types=[discord.ChannelType.text],
-        placeholder="🔍 Choose target channel (searchable)...",
-        custom_id="vic_live_channel_select",
-        row=0,
-    )
-    async def select_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
-        if not select.values:
+        if not self.values:
             await interaction.response.send_message("No channel selected.", ephemeral=True)
             return
 
-        selected_channel = select.values[0]
+        selected_channel = self.values[0]
         cid = getattr(selected_channel, "id", None) or int(str(selected_channel))
         cname = getattr(selected_channel, "name", f"Channel {cid}")
 
@@ -830,44 +831,192 @@ class ChatbotDashboardView(discord.ui.View):
         if interaction.message:
             live_chat_manager.set_dashboard(interaction.client, interaction.message)
 
-        embed = live_chat_manager.get_status_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        view = ChatbotDashboardView()
+        await interaction.response.edit_message(content=None, embed=None, embeds=[], view=view)
 
         if live_chat_manager.active:
             await interaction.followup.send(f"🎯 Switched live chat target to <#{cid}>!", ephemeral=True)
         else:
             await interaction.followup.send(f"🎯 Target channel set to <#{cid}>. Click **Wake Up Vic** to launch!", ephemeral=True)
 
-    @discord.ui.button(label="Wake Up Vic", style=discord.ButtonStyle.success, emoji="🟢", custom_id="vic_live_wake_up", row=1)
-    async def wake_up_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+class ChatbotWakeButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="Wake Up Vic",
+            style=discord.ButtonStyle.success,
+            emoji="🟢",
+            custom_id="vic_live_wake_up",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != USERS.OGGERS:
+            await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
+            return
         default_channel = "general"
         if live_chat_manager.target_channel_id:
             default_channel = live_chat_manager.target_channel_name or str(live_chat_manager.target_channel_id)
         default_target = str(live_chat_manager.target_user_id) if live_chat_manager.target_user_id else ""
         await interaction.response.send_modal(ChatbotWakeModal(default_channel=default_channel, default_target_user=default_target))
 
-    @discord.ui.button(label="Put to Sleep", style=discord.ButtonStyle.danger, emoji="🔴", custom_id="vic_live_sleep", row=1)
-    async def sleep_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+class ChatbotSleepButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="Put to Sleep",
+            style=discord.ButtonStyle.danger,
+            emoji="🔴",
+            custom_id="vic_live_sleep",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != USERS.OGGERS:
+            await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
+            return
         if interaction.message:
             live_chat_manager.set_dashboard(interaction.client, interaction.message)
         live_chat_manager.stop()
-        embed = live_chat_manager.get_status_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        view = ChatbotDashboardView()
+        await interaction.response.edit_message(content=None, embed=None, embeds=[], view=view)
 
-    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="vic_live_refresh", row=1)
-    async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+class ChatbotRefreshButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="Refresh",
+            style=discord.ButtonStyle.secondary,
+            emoji="🔄",
+            custom_id="vic_live_refresh",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != USERS.OGGERS:
+            await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
+            return
         if interaction.message:
             live_chat_manager.set_dashboard(interaction.client, interaction.message)
-        embed = live_chat_manager.get_status_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        view = ChatbotDashboardView()
+        await interaction.response.edit_message(content=None, embed=None, embeds=[], view=view)
 
-    @discord.ui.button(label="🎯 Troll/Defence Target", style=discord.ButtonStyle.secondary, custom_id="vic_live_set_target", row=1)
-    async def set_target_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+class ChatbotTargetButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="🎯 Troll/Defence Target",
+            style=discord.ButtonStyle.secondary,
+            custom_id="vic_live_set_target",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != USERS.OGGERS:
+            await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
+            return
         await interaction.response.send_modal(ChatbotTargetModal())
 
 
+class ChatbotDashboardView(discord.ui.LayoutView):
+    """Components V2 persistent dashboard controller view."""
+
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.build_ui()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != USERS.OGGERS:
+            await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
+            return False
+        return True
+
+    def build_ui(self):
+        accent = 0x2ECC71 if live_chat_manager.active else 0xE74C3C
+        card = discord.ui.Container(accent_colour=accent)
+
+        # Header
+        card.add_item(
+            discord.ui.TextDisplay(
+                "## 🤖 HMS Victory — Live Chatbot Controller\n"
+                "Real-time control centre for Vic's live conversational responder across server channels."
+            )
+        )
+        card.add_item(discord.ui.Separator(visible=True))
+
+        # Status & Target Channel
+        if live_chat_manager.active:
+            status_line = "🟢 **Status:** **Active & Responding**"
+            ch_str = f"<#{live_chat_manager.target_channel_id}> (`{live_chat_manager.target_channel_name}`)"
+            if live_chat_manager.end_time:
+                remaining = max(0, int(live_chat_manager.end_time - time.time()))
+                mins = remaining // 60
+                secs = remaining % 60
+                timer_str = f"<t:{int(live_chat_manager.end_time)}:t> ({mins}m {secs:02d}s remaining)"
+            else:
+                timer_str = "Unlimited *(manual stop)*"
+            sub_line = "-# ⚡ Live updating every 5s"
+        else:
+            status_line = "🔴 **Status:** **Offline / Asleep**"
+            if live_chat_manager.target_channel_id:
+                ch_str = f"<#{live_chat_manager.target_channel_id}> (`{live_chat_manager.target_channel_name}`)"
+            else:
+                ch_str = "*None (Select from dropdown below)*"
+            timer_str = "None"
+            sub_line = "-# 💤 Responder is currently sleeping"
+
+        card.add_item(
+            discord.ui.TextDisplay(
+                f"{status_line}\n"
+                f"📍 **Target Channel:** {ch_str}\n"
+                f"⏱️ **Auto-Stop Timer:** {timer_str}\n"
+                f"{sub_line}"
+            )
+        )
+        card.add_item(discord.ui.Separator(visible=True))
+
+        # Metrics
+        cost_title = "Live Session Cost" if live_chat_manager.active else "Last Session Cost"
+        metrics_text = (
+            "### 📊 Usage & Cost Metrics\n"
+            f"- **💰 {cost_title}:** **`${live_chat_manager.session_cost_usd:.4f}`** · `{live_chat_manager.total_tokens:,}` tokens · `{live_chat_manager.session_replies_count}` replies\n"
+            f"- **📈 Total Cost (All-Time):** **`${live_chat_manager.all_time_cost_usd:.4f}`** · `{live_chat_manager.all_time_tokens:,}` tokens · `{live_chat_manager.all_time_replies_count}` replies"
+        )
+        card.add_item(discord.ui.TextDisplay(metrics_text))
+        card.add_item(discord.ui.Separator(visible=True))
+
+        # Troll/Defence Target & Context
+        if live_chat_manager.target_user_id:
+            target_str = f"🎯 <@{live_chat_manager.target_user_id}> (`{live_chat_manager.target_user_id}`)\n> 🚨 **Defence Mode ACTIVE:** Retaliating and roasting every message they send."
+        else:
+            target_str = "None *(Standard Mode — replies only when mentioned or called)*"
+
+        topic_str = f"_{live_chat_manager.topic}_" if live_chat_manager.topic else "None *(Natural conversation / auto-scraped)*"
+
+        config_text = (
+            f"🛡️ **Troll / Defence Target:** {target_str}\n\n"
+            f"💬 **Starting Context / Hint:** {topic_str}"
+        )
+        card.add_item(discord.ui.TextDisplay(config_text))
+        card.add_item(discord.ui.Separator(visible=True))
+
+        # Channel Select dropdown
+        card.add_item(discord.ui.ActionRow(ChatbotChannelSelect()))
+
+        # Action buttons
+        card.add_item(
+            discord.ui.ActionRow(
+                ChatbotWakeButton(),
+                ChatbotSleepButton(),
+                ChatbotRefreshButton(),
+                ChatbotTargetButton(),
+            )
+        )
+
+        # Footer
+        card.add_item(discord.ui.TextDisplay("-# HMS Victory • Persistent Controller • Oggers Only • Components V2"))
+
+        self.add_item(card)
+
+
 async def ensure_chatbot_dashboard_message(client: discord.Client):
-    """Ensure the persistent dashboard embed is posted in the dedicated thread and kept updated."""
+    """Ensure the persistent dashboard CV2 layout is posted in the dedicated thread and kept updated."""
     thread_id = getattr(CHANNELS, "CHATBOT_CONTROLLER_THREAD", 1547254995320184833)
     try:
         thread = client.get_channel(thread_id) or await client.fetch_channel(thread_id)
@@ -875,21 +1024,33 @@ async def ensure_chatbot_dashboard_message(client: discord.Client):
             logger.warning("Could not find chatbot controller thread %s", thread_id)
             return
 
-        embed = live_chat_manager.get_status_embed()
         view = ChatbotDashboardView()
 
         dashboard_msg = None
         async for m in thread.history(limit=25):
-            if m.author.id == client.user.id and m.embeds and "HMS Victory Chatbot Dashboard" in (m.embeds[0].title or ""):
-                dashboard_msg = m
-                break
+            if m.author.id == client.user.id:
+                # Detect old embed message or new components v2 card
+                if (m.embeds and "HMS Victory Chatbot Dashboard" in (m.embeds[0].title or "")) or (
+                    m.components and any(getattr(c, "type", None) and getattr(c.type, "value", None) in (17, 10, 1) for c in m.components)
+                ):
+                    dashboard_msg = m
+                    break
 
         if dashboard_msg:
-            await dashboard_msg.edit(embed=embed, view=view)
-            logger.info("Updated existing chatbot dashboard message (%s) in thread %s", dashboard_msg.id, thread_id)
+            try:
+                await dashboard_msg.edit(content=None, embed=None, embeds=[], view=view)
+                logger.info("Updated existing chatbot dashboard message (%s) to Components V2 in thread %s", dashboard_msg.id, thread_id)
+            except discord.HTTPException as e:
+                logger.warning("Failed to edit existing dashboard message to Components V2 (%s): %s. Recreating...", dashboard_msg.id, e)
+                try:
+                    await dashboard_msg.delete()
+                except Exception:
+                    pass
+                dashboard_msg = await thread.send(view=view)
+                logger.info("Recreated chatbot dashboard message with Components V2 (%s) in thread %s", dashboard_msg.id, thread_id)
         else:
-            dashboard_msg = await thread.send(embed=embed, view=view)
-            logger.info("Posted initial chatbot dashboard message (%s) in thread %s", dashboard_msg.id, thread_id)
+            dashboard_msg = await thread.send(view=view)
+            logger.info("Posted initial chatbot dashboard message (%s) with Components V2 in thread %s", dashboard_msg.id, thread_id)
 
         live_chat_manager.set_dashboard(client, dashboard_msg)
 
