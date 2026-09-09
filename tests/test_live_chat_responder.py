@@ -558,6 +558,114 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(user_msg["content"][1]["type"], "image_url")
         self.assertEqual(user_msg["content"][1]["image_url"]["url"], "https://cdn.discordapp.com/attachments/123/456/kaizo.png")
 
+    @patch("urllib.request.urlopen")
+    def test_perform_web_search_html(self, mock_urlopen):
+        from lib.features.chat_responder import perform_web_search
+
+        html_body = b"""
+        <html>
+            <a class="result__a" href="https://example.com/1">Premier League Table 2026</a>
+            <a class="result__snippet" href="https://example.com/1">Arsenal are top of the table after 28 games.</a>
+            <a class="result__a" href="https://example.com/2">BBC Football News</a>
+            <a class="result__snippet" href="https://example.com/2">All the latest scores and match reports.</a>
+        </html>
+        """
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = html_body
+        mock_resp.__enter__.return_value = mock_resp
+        mock_urlopen.return_value = mock_resp
+
+        res = perform_web_search("premier league table")
+        self.assertIn("Premier League Table 2026", res)
+        self.assertIn("Arsenal are top of the table", res)
+        self.assertIn("BBC Football News", res)
+
+    @patch("urllib.request.urlopen")
+    def test_perform_web_search_fallback_to_api(self, mock_urlopen):
+        from lib.features.chat_responder import perform_web_search
+
+        # 1st call (HTML) fails, 2nd call (API) succeeds
+        html_resp = MagicMock()
+        html_resp.read.return_value = b"<html>No results found</html>"
+        html_resp.__enter__.return_value = html_resp
+
+        api_resp = MagicMock()
+        api_resp.read.return_value = b'{"Heading": "Arsenal F.C.", "AbstractText": "A football club in North London."}'
+        api_resp.__enter__.return_value = api_resp
+
+        mock_urlopen.side_effect = [html_resp, api_resp]
+
+        res = perform_web_search("arsenal fc")
+        self.assertIn("Arsenal F.C.: A football club in North London.", res)
+
+    @patch("urllib.request.urlopen")
+    def test_generate_one_off_reply_with_web_search_tool(self, mock_urlopen):
+        from lib.features.chat_responder import perform_web_search
+        import json
+
+        # Step 1: Model decides to call web_search
+        step1_json = json.dumps({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{
+                        "id": "call_123",
+                        "type": "function",
+                        "function": {
+                            "name": "web_search",
+                            "arguments": "{\"query\": \"latest premier league scores\"}"
+                        }
+                    }]
+                }
+            }],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 20}
+        }).encode("utf-8")
+
+        # Step 2: DuckDuckGo HTML search
+        ddg_html = b"""
+        <html>
+            <a class="result__a">Chelsea 2-1 Fulham</a>
+            <a class="result__snippet">Chelsea secured a 2-1 victory over Fulham at Stamford Bridge.</a>
+        </html>
+        """
+
+        # Step 3: Follow-up model completion with final answer
+        step2_json = json.dumps({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "Chelsea beat Fulham 2-1 at Stamford Bridge earlier today."
+                }
+            }],
+            "usage": {"prompt_tokens": 180, "completion_tokens": 35}
+        }).encode("utf-8")
+
+        resp1 = MagicMock()
+        resp1.read.return_value = step1_json
+        resp1.__enter__.return_value = resp1
+
+        resp_ddg = MagicMock()
+        resp_ddg.read.return_value = ddg_html
+        resp_ddg.__enter__.return_value = resp_ddg
+
+        resp2 = MagicMock()
+        resp2.read.return_value = step2_json
+        resp2.__enter__.return_value = resp2
+
+        mock_urlopen.side_effect = [resp1, resp_ddg, resp2]
+
+        content, p_tok, c_tok = generate_one_off_reply(
+            prompt="what were the scores today?",
+            openai_key="test-key",
+            enable_search=True,
+        )
+
+        self.assertEqual(content, "Chelsea beat Fulham 2-1 at Stamford Bridge earlier today.")
+        self.assertEqual(p_tok, 100 + 180)
+        self.assertEqual(c_tok, 20 + 35)
+        self.assertEqual(mock_urlopen.call_count, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

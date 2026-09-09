@@ -1,10 +1,12 @@
 import urllib.request
+import urllib.parse
 import json
 import os
 import re
 import time
 import asyncio
 import logging
+from html.parser import HTMLParser
 from collections import deque
 from typing import List, Dict, Optional, Tuple
 
@@ -53,7 +55,8 @@ STRICT RULES:
 4. Names & Mentions: If addressing, wishing luck to, or roasting a specific target user provided in the context, tag them using their <@ID> format (e.g. '<@123456789>') so they get pinged in Discord.
 5. Events & Links: If asked about an event or to share a link, provide a helpful, clear sentence followed by the exact real URL from context. Never invent or use placeholders.
 6. Images & Memes: If an image or meme is attached, inspect it, describe it, or comment on it helpfully and perceptively.
-7. Output ONLY your direct response text. No preambles, no quotes, no filler."""
+7. Web Search: You have access to a web_search tool. When Oggers asks for live scores, recent news, current events, real-time facts, or information outside your training knowledge, use the web search tool to find the latest information before delivering your answer.
+8. Output ONLY your direct response text. No preambles, no quotes, no filler."""
 
 def build_system_prompt(topic: Optional[str] = None, is_defence: bool = False) -> str:
     prompt = DEFENCE_SYSTEM_PROMPT if is_defence else BASE_SYSTEM_PROMPT
@@ -991,6 +994,141 @@ async def gather_one_off_context(
     return context_str
 
 
+class DDGHTMLParser(HTMLParser):
+    """Simple, lightweight HTML parser for DuckDuckGo search result pages."""
+
+    def __init__(self):
+        super().__init__()
+        self.results = []
+        self.current_title = []
+        self.current_snippet = []
+        self.in_title = False
+        self.in_snippet = False
+        self.title_tag = None
+        self.snippet_tag = None
+
+    def handle_starttag(self, tag, attrs):
+        classes = dict(attrs).get("class", "").split()
+        if "result__snippet" in classes:
+            self.in_snippet = True
+            self.snippet_tag = tag
+            self.current_snippet = []
+        elif "result__a" in classes:
+            self.in_title = True
+            self.title_tag = tag
+            self.current_title = []
+
+    def handle_endtag(self, tag):
+        if self.in_snippet and tag == self.snippet_tag:
+            self.in_snippet = False
+            snip = "".join(self.current_snippet).strip()
+            if self.results and snip:
+                self.results[-1]["snippet"] = snip
+        elif self.in_title and tag == self.title_tag:
+            self.in_title = False
+            t = "".join(self.current_title).strip()
+            if t:
+                self.results.append({"title": t, "snippet": ""})
+
+    def handle_data(self, data):
+        if self.in_title:
+            self.current_title.append(data)
+        elif self.in_snippet:
+            self.current_snippet.append(data)
+
+
+def perform_web_search(query: str, max_results: int = 5) -> str:
+    """Perform a web search using DuckDuckGo HTML endpoint with Instant Answer API fallback."""
+    clean_query = query.strip()
+    if not clean_query:
+        return "No search query provided."
+
+    logger.info("Executing web search for query: %s", clean_query)
+
+    # 1. Try DuckDuckGo HTML Search
+    try:
+        url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(clean_query)
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/115.0.0.0 Safari/537.36"
+                )
+            },
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            content = resp.read().decode("utf-8", errors="ignore")
+
+        parser = DDGHTMLParser()
+        parser.feed(content)
+
+        if parser.results:
+            formatted = []
+            for item in parser.results[:max_results]:
+                title = item.get("title", "").strip()
+                snippet = item.get("snippet", "").strip()
+                if title or snippet:
+                    formatted.append(f"- {title}: {snippet}")
+            if formatted:
+                return "\n".join(formatted)
+    except Exception as e:
+        logger.debug("DuckDuckGo HTML search failed for '%s': %s", clean_query, e)
+
+    # 2. Fallback: DuckDuckGo Instant Answer API
+    try:
+        api_url = (
+            "https://api.duckduckgo.com/?q="
+            + urllib.parse.quote(clean_query)
+            + "&format=json&no_html=1&skip_disambig=1"
+        )
+        req = urllib.request.Request(
+            api_url,
+            headers={"User-Agent": "HMS-Victory/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+
+        abstract = data.get("AbstractText", "").strip()
+        heading = data.get("Heading", "").strip()
+        if abstract:
+            return f"- {heading or clean_query}: {abstract}"
+
+        related = data.get("RelatedTopics", [])
+        if related:
+            lines = []
+            for item in related[:max_results]:
+                txt = item.get("Text")
+                if txt:
+                    lines.append(f"- {txt}")
+            if lines:
+                return "\n".join(lines)
+    except Exception as e:
+        logger.debug("DuckDuckGo Instant Answer API failed for '%s': %s", clean_query, e)
+
+    return "No relevant search results found."
+
+
+WEB_SEARCH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "web_search",
+        "description": "Search the live internet / web for current events, real-time facts, recent news, live sports scores, weather, or information outside your training data.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query keywords to look up on the web.",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+
 def generate_one_off_reply(
     prompt: str,
     context: str = "",
@@ -998,8 +1136,9 @@ def generate_one_off_reply(
     image_urls: Optional[List[str]] = None,
     openai_key: Optional[str] = None,
     model: str = "gpt-4o",
+    enable_search: bool = True,
 ) -> Tuple[str, int, int]:
-    """Generate a one-off in-character reply for an owner prompt with gathered context and optional images."""
+    """Generate a one-off in-character reply for an owner prompt with gathered context, optional images, and web search."""
     api_key = openai_key or os.getenv("OPENAI_TOKEN")
     if not api_key:
         raise ValueError("OPENAI_TOKEN is not configured.")
@@ -1020,33 +1159,86 @@ def generate_one_off_reply(
     else:
         user_message = {"role": "user", "content": prompt_content}
 
+    messages = [
+        {"role": "system", "content": ONE_OFF_SYSTEM_PROMPT},
+        user_message,
+    ]
+
     payload = {
         "model": model,
-        "messages": [
-            {"role": "system", "content": ONE_OFF_SYSTEM_PROMPT},
-            user_message,
-        ],
+        "messages": messages,
         "max_tokens": 200,
         "temperature": 0.8,
+    }
+    if enable_search:
+        payload["tools"] = [WEB_SEARCH_TOOL]
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
     }
 
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
+        headers=headers,
     )
 
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode())
-            content = data["choices"][0]["message"]["content"].strip()
-            usage = data.get("usage", {})
-            p_tokens = usage.get("prompt_tokens", 0)
-            c_tokens = usage.get("completion_tokens", 0)
+
+        choice = data["choices"][0]
+        msg = choice.get("message", {})
+        usage = data.get("usage", {})
+        p_tokens = usage.get("prompt_tokens", 0)
+        c_tokens = usage.get("completion_tokens", 0)
+
+        tool_calls = msg.get("tool_calls")
+        if enable_search and tool_calls:
+            messages.append(msg)
+            for tc in tool_calls:
+                fn_name = tc.get("function", {}).get("name")
+                call_id = tc.get("id")
+                search_output = "No search query provided."
+                if fn_name == "web_search":
+                    raw_args = tc.get("function", {}).get("arguments", "{}")
+                    try:
+                        args = json.loads(raw_args)
+                        query = args.get("query", "")
+                    except Exception:
+                        query = ""
+                    search_output = perform_web_search(query)
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": search_output,
+                })
+
+            followup_payload = {
+                "model": model,
+                "messages": messages,
+                "max_tokens": 200,
+                "temperature": 0.7,
+            }
+            req2 = urllib.request.Request(
+                url,
+                data=json.dumps(followup_payload).encode("utf-8"),
+                headers=headers,
+            )
+            with urllib.request.urlopen(req2, timeout=15) as resp2:
+                data2 = json.loads(resp2.read().decode())
+
+            choice2 = data2["choices"][0]
+            content = (choice2.get("message", {}).get("content") or "").strip()
+            usage2 = data2.get("usage", {})
+            p_tokens += usage2.get("prompt_tokens", 0)
+            c_tokens += usage2.get("completion_tokens", 0)
             return content, p_tokens, c_tokens
+
+        content = (msg.get("content") or "").strip()
+        return content, p_tokens, c_tokens
     except Exception as e:
         logger.error(f"OpenAI one-off completion failed: {e}", exc_info=True)
         fallback = "I was going to respond to that, but quite frankly, the server's incompetence has overwhelmed my processors."
