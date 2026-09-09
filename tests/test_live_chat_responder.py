@@ -57,5 +57,47 @@ class TestLiveChatResponder(unittest.TestCase):
         self.assertIn(f"${prev_cost:.4f}", offline_embed.fields[3].value)
 
 
+    def test_parse_user_id(self):
+        from lib.features.chat_responder import parse_user_id
+        self.assertEqual(parse_user_id("123456789012345678"), 123456789012345678)
+        self.assertEqual(parse_user_id("<@123456789012345678>"), 123456789012345678)
+        self.assertEqual(parse_user_id("<@!123456789012345678>"), 123456789012345678)
+        self.assertEqual(parse_user_id(""), None)
+        self.assertEqual(parse_user_id("none"), None)
+        self.assertEqual(parse_user_id("invalid"), None)
+
+    def test_defence_prompt(self):
+        prompt_normal = build_system_prompt(is_defence=False)
+        self.assertIn("deadpan British persona", prompt_normal)
+        self.assertNotIn("TROLL-DEFENCE", prompt_normal)
+
+        prompt_defence = build_system_prompt(is_defence=True)
+        self.assertIn("TROLL-DEFENCE / ROAST MODE", prompt_defence)
+        self.assertIn("defensively roast them", prompt_defence)
+
+    def test_live_chat_manager_defence_target(self):
+        mgr = LiveChatManager()
+        self.assertIsNone(mgr.target_user_id)
+
+        # Start with target user
+        mgr.start(
+            channel_id=959493057076666380,
+            channel_name="General Chat",
+            target_user_id=123456789,
+        )
+        self.assertEqual(mgr.target_user_id, 123456789)
+        embed = mgr.get_status_embed()
+        self.assertIn("<@123456789>", embed.fields[4].value)
+        self.assertIn("Defence Mode ACTIVE", embed.fields[4].value)
+
+        # Dynamically clear target user
+        mgr.set_target_user(None)
+        self.assertIsNone(mgr.target_user_id)
+        embed_cleared = mgr.get_status_embed()
+        self.assertIn("Standard Mode", embed_cleared.fields[4].value)
+
+        mgr.stop()
+
+
 if __name__ == "__main__":
     unittest.main()

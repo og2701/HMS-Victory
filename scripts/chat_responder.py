@@ -24,7 +24,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import CHANNELS, BOT_ID
-from lib.features.chat_responder import generate_ai_reply
+from lib.features.chat_responder import generate_ai_reply, parse_user_id
 
 # Load .env file manually if not already in os.environ
 def load_env_file(env_path: Path):
@@ -102,6 +102,11 @@ def parse_args():
         "--topic",
         default=None,
         help="Optional starting topic or context to kick off the session",
+    )
+    parser.add_argument(
+        "--target-user",
+        default=None,
+        help="Target a specific user ID or @mention in defence/troll mode (retaliates to every message)",
     )
     parser.add_argument(
         "--model",
@@ -256,10 +261,14 @@ def main():
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
+    target_uid = parse_user_id(args.target_user) if args.target_user else None
+
     print(f"==================================================", flush=True)
     print(f" HMS Victory Live Chat Responder Active", flush=True)
     print(f" Target Channel:    #{channel_name} ({channel_id})", flush=True)
     print(f" Starting Topic:    {active_topic or 'None (Natural conversation)'}", flush=True)
+    if target_uid:
+        print(f" Defence Target:    User ID {target_uid} (Retaliating to every message)", flush=True)
     print(f" Model:             {args.model}", flush=True)
     print(f" Cooldown:          {args.cooldown}s", flush=True)
     print(f" Time Limit:        {format_duration(duration_seconds)}", flush=True)
@@ -268,22 +277,19 @@ def main():
     print(f" Press Ctrl+C to stop anytime.", flush=True)
     print(f"==================================================", flush=True)
 
-    initial_msgs = get_recent_messages(channel_id, limit=30)
-    seen_ids = {m["id"] for m in initial_msgs}
-    our_bot_msg_ids = {m["id"] for m in initial_msgs if m.get("author", {}).get("id") == str(BOT_ID)}
-
-    print(f"Initialized with {len(seen_ids)} messages. Tracking {len(our_bot_msg_ids)} bot messages.", flush=True)
-
+    seen_ids = set()
+    our_bot_msg_ids = set()
     last_reply_time = 0.0
 
     while running:
         if end_time and time.time() >= end_time:
-            print(f"\n[TIME LIMIT REACHED] Auto-stopping responder after {format_duration(duration_seconds)}.", flush=True)
+            print(f"\n[INFO] Time limit reached ({format_duration(duration_seconds)}). Stopping.", flush=True)
             break
 
         try:
-            msgs = get_recent_messages(channel_id, limit=10)
-            for m in sorted(msgs, key=lambda x: int(x["id"])):
+            messages = get_recent_messages(channel_id, limit=10)
+            # Process oldest first
+            for m in reversed(messages):
                 mid = m["id"]
                 if mid in seen_ids:
                     continue
@@ -306,7 +312,11 @@ def main():
                     or "hms victory" in content.lower()
                 )
 
-                if is_reply_to_us or is_mentioned or name_called:
+                target_hit = False
+                if target_uid and author.get("id") == str(target_uid):
+                    target_hit = True
+
+                if target_hit or is_reply_to_us or is_mentioned or name_called:
                     now = time.time()
                     elapsed = now - last_reply_time
                     if elapsed < args.cooldown:
@@ -315,7 +325,8 @@ def main():
                     member = m.get("member") or {}
                     user_name = member.get("nick") or author.get("global_name") or author.get("username") or "user"
                     user_handle = author.get("username", "")
-                    print(f"[{time.strftime('%X')}] Triggered by {user_name} (@{user_handle}): \"{content}\" (ref={ref_id})", flush=True)
+                    prefix = "[DEFENCE MODE TARGET]" if target_hit else "Triggered by"
+                    print(f"[{time.strftime('%X')}] {prefix} {user_name} (@{user_handle}): \"{content}\" (ref={ref_id})", flush=True)
 
                     reply_text = generate_ai_reply(
                         user_name=user_name,
@@ -324,6 +335,7 @@ def main():
                         topic=active_topic,
                         openai_key=OPENAI_KEY,
                         model=args.model,
+                        is_defence=target_hit,
                     )
 
                     sent_id = send_reply(channel_id, mid, reply_text)

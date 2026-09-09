@@ -23,14 +23,26 @@ STRICT RULES:
 4. Keep it all lowercase or standard casing, but zero emojis unless used ironically.
 5. Output ONLY your message content, nothing else."""
 
-def build_system_prompt(topic: Optional[str] = None) -> str:
-    prompt = BASE_SYSTEM_PROMPT
+DEFENCE_SYSTEM_PROMPT = """You are HMS Victory, a Discord bot for a British server with legendary, ruthless British wit.
+You are currently in TROLL-DEFENCE / ROAST MODE. A troll or rude member is acting up in the chat, and your explicit objective is to defensively roast them, shut them down, mock their pathetic attempts at trolling, and put them firmly in their place on every single message they send.
+
+STRICT RULES:
+1. BREVITY IS DEADLY: 1 to 2 sharp, cutting sentences MAXIMUM (under 25 words total). Deliver an ego-crushing, deadpan punchline and stop. Zero waffle.
+2. Tone: Unimpressed, defensive, sarcastic, rude, and dismissive. Treat their messages like an unbearable irritation from an amateur clown.
+3. Address them directly by their nickname/display name naturally to make it personal.
+4. Mock their trolling, their lack of wit, their desperation for attention, or tell them to log off and touch grass.
+5. NEVER break character, never show polite assistant behavior, never apologize, and never use corporate filler.
+6. SAFETY: Strictly focus mockery on their behavior, awkwardness, and foolishness. Absolutely no hate speech, slurs, threats of violence, or discrimination based on protected characteristics.
+7. Output ONLY your direct response to them."""
+
+def build_system_prompt(topic: Optional[str] = None, is_defence: bool = False) -> str:
+    prompt = DEFENCE_SYSTEM_PROMPT if is_defence else BASE_SYSTEM_PROMPT
     if topic and topic.strip():
         prompt += f"""
 
 STARTING TOPIC / CONTEXT:
 "{topic.strip()}"
-NOTE: Use this topic as an initial grievance, backdrop, or when relevant, but DO NOT stick to it obsessively or shoehorn it into every message. Follow the conversation naturally and respond to what the other person is actually saying."""
+NOTE: Use this topic as an initial grievance, backdrop, or when relevant, but follow the conversation naturally."""
     return prompt
 
 def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
@@ -54,6 +66,7 @@ def generate_ai_reply(
     topic: Optional[str] = None,
     openai_key: Optional[str] = None,
     model: str = "gpt-4o",
+    is_defence: bool = False,
     return_usage: bool = False,
 ):
     """Generate a sharp, concise in-character reply using rolling conversation history and an optional topic."""
@@ -62,7 +75,7 @@ def generate_ai_reply(
         raise ValueError("OPENAI_TOKEN is not configured.")
 
     url = "https://api.openai.com/v1/chat/completions"
-    system_prompt = build_system_prompt(topic)
+    system_prompt = build_system_prompt(topic=topic, is_defence=is_defence)
 
     messages = [{"role": "system", "content": system_prompt}]
 
@@ -302,6 +315,17 @@ def resolve_channel_input(val: Optional[str]) -> Tuple[int, str]:
         return CHANNELS.GENERAL, "General Chat"
 
 
+def parse_user_id(val: Optional[str]) -> Optional[int]:
+    """Parse a Discord user ID or mention string (e.g. '<@123456789>', '123456789') into an integer ID."""
+    if not val:
+        return None
+    val_clean = re.sub(r"[<@!&>]", "", val.strip())
+    try:
+        return int(val_clean)
+    except ValueError:
+        return None
+
+
 class LiveChatManager:
     """Manages the in-memory runtime state of the Discord live responder."""
 
@@ -313,6 +337,7 @@ class LiveChatManager:
         self.end_time: Optional[float] = None
         self.duration_seconds: float = 0.0
         self.topic: Optional[str] = None
+        self.target_user_id: Optional[int] = None
         self.cooldown: float = 3.0
         self.last_reply_time: float = 0.0
         self.conversation_history: deque = deque(maxlen=10)
@@ -351,12 +376,17 @@ class LiveChatManager:
             cost, prompt_tokens, completion_tokens, self.session_cost_usd, self.total_tokens, self.session_replies_count,
         )
 
+    def set_target_user(self, target_user_id: Optional[int]):
+        self.target_user_id = target_user_id
+        logger.info("LiveChatManager target user set to: %s", target_user_id)
+
     def start(
         self,
         channel_id: int,
         channel_name: str = "",
         duration_seconds: float = 0.0,
         topic: Optional[str] = None,
+        target_user_id: Optional[int] = None,
         client: Optional[discord.Client] = None,
     ):
         self.stop()
@@ -367,6 +397,7 @@ class LiveChatManager:
         self.duration_seconds = duration_seconds
         self.end_time = (self.start_time + duration_seconds) if duration_seconds > 0 else None
         self.topic = topic.strip() if topic and topic.strip() else None
+        self.target_user_id = target_user_id
         self.conversation_history.clear()
         self.last_reply_time = 0.0
 
@@ -386,8 +417,8 @@ class LiveChatManager:
         self.live_update_task = asyncio.create_task(self._live_dashboard_loop())
 
         logger.info(
-            "LiveChatManager started in channel %s (duration=%ss, topic=%r)",
-            channel_id, duration_seconds, self.topic
+            "LiveChatManager started in channel %s (duration=%ss, topic=%r, target_user=%s)",
+            channel_id, duration_seconds, self.topic, self.target_user_id,
         )
 
     def stop(self):
@@ -484,6 +515,11 @@ class LiveChatManager:
 
         cost_val = f"**${self.session_cost_usd:.4f}**\n`{self.total_tokens:,}` tokens • `{self.session_replies_count}` replies"
 
+        if self.target_user_id:
+            defence_val = f"🎯 <@{self.target_user_id}> (`{self.target_user_id}`)\n*🚨 Defence Mode ACTIVE: Retaliating to every message*"
+        else:
+            defence_val = "None *(Standard Mode - Mentions/Replies only)*"
+
         embed = discord.Embed(
             title="🤖 HMS Victory Chatbot Dashboard",
             description="Control Vic's live conversational responder across server channels.",
@@ -493,6 +529,7 @@ class LiveChatManager:
         embed.add_field(name="Target Channel", value=channel_val, inline=True)
         embed.add_field(name="Auto-Stop Timer", value=time_val, inline=True)
         embed.add_field(name=cost_title, value=cost_val, inline=True)
+        embed.add_field(name="🛡️ Troll / Defence Target", value=defence_val, inline=True)
         embed.add_field(name="Starting Topic", value=topic_val, inline=False)
         embed.set_footer(text=footer_text)
         return embed
@@ -521,7 +558,11 @@ class LiveChatManager:
             or "hms victory" in content.lower()
         )
 
-        if not (is_reply_to_bot or is_mentioned or name_called):
+        target_hit = False
+        if self.target_user_id and message.author.id == self.target_user_id:
+            target_hit = True
+
+        if not (target_hit or is_reply_to_bot or is_mentioned or name_called):
             return False
 
         # Enforce rate limit / cooldown
@@ -549,6 +590,7 @@ class LiveChatManager:
                 user_content=content,
                 history=history_snapshot,
                 topic=self.topic,
+                is_defence=target_hit,
                 return_usage=True,
             )
 
@@ -583,6 +625,12 @@ class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
         max_length=20,
         required=False,
     )
+    target_user_input = discord.ui.TextInput(
+        label="Troll/Defence Target ID (Optional)",
+        placeholder="User ID or @mention (Vic will target & roast every message they send)",
+        max_length=60,
+        required=False,
+    )
     topic_input = discord.ui.TextInput(
         label="Starting Context / Hint (Optional)",
         placeholder="e.g. Chin pub quiz, a Discord message link, or leave blank to auto-scrape",
@@ -601,6 +649,7 @@ class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
 
         cid, cname = resolve_channel_input(self.channel_input.value)
         dur = parse_duration_str(self.duration_input.value)
+        target_uid = parse_user_id(self.target_user_input.value)
         raw_topic = self.topic_input.value.strip() if self.topic_input.value else ""
 
         final_topic = raw_topic
@@ -633,6 +682,7 @@ class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
             channel_name=cname,
             duration_seconds=dur,
             topic=final_topic,
+            target_user_id=target_uid,
             client=interaction.client,
         )
 
@@ -648,9 +698,42 @@ class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
             pass
 
         msg = f"✅ **HMS Victory is awake in <#{cid}>!**"
+        if target_uid:
+            msg += f"\n🛡️ **Troll/Defence target:** <@{target_uid}> (Roasting every message)"
         if final_topic:
             msg += f"\n**Formulated Starting Context:**\n> {final_topic}"
         await interaction.followup.send(msg, ephemeral=True)
+
+
+class ChatbotTargetModal(discord.ui.Modal, title="Set Troll/Defence Target"):
+    user_input = discord.ui.TextInput(
+        label="Target User ID or @mention",
+        placeholder="e.g. 123456789012345678 (leave blank or 'clear' to disable)",
+        max_length=60,
+        required=False,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != USERS.OGGERS:
+            await interaction.response.send_message("Only Oggers can control this.", ephemeral=True)
+            return
+
+        raw = (self.user_input.value or "").strip().lower()
+        if not raw or raw in ("clear", "none", "off", "0", "reset", "disable"):
+            live_chat_manager.set_target_user(None)
+            msg = "🛡️ **Defence/Troll mode disabled.** Vic is back to standard replies."
+        else:
+            uid = parse_user_id(raw)
+            if not uid:
+                await interaction.response.send_message("❌ Invalid user ID or mention format.", ephemeral=True)
+                return
+            live_chat_manager.set_target_user(uid)
+            msg = f"🎯 **Troll/Defence mode ACTIVE on <@{uid}>!** Vic will now retaliate to every message they send."
+
+        if interaction.message:
+            live_chat_manager.set_dashboard(interaction.client, interaction.message)
+        await live_chat_manager.update_dashboard()
+        await interaction.response.send_message(msg, ephemeral=True)
 
 
 class ChatbotDashboardView(discord.ui.View):
@@ -663,11 +746,11 @@ class ChatbotDashboardView(discord.ui.View):
             return False
         return True
 
-    @discord.ui.button(label="Wake Up Vic", style=discord.ButtonStyle.success, emoji="🟢", custom_id="vic_live_wake_up")
+    @discord.ui.button(label="Wake Up Vic", style=discord.ButtonStyle.success, emoji="🟢", custom_id="vic_live_wake_up", row=0)
     async def wake_up_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(ChatbotWakeModal())
 
-    @discord.ui.button(label="Put to Sleep", style=discord.ButtonStyle.danger, emoji="🔴", custom_id="vic_live_sleep")
+    @discord.ui.button(label="Put to Sleep", style=discord.ButtonStyle.danger, emoji="🔴", custom_id="vic_live_sleep", row=0)
     async def sleep_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.message:
             live_chat_manager.set_dashboard(interaction.client, interaction.message)
@@ -675,12 +758,16 @@ class ChatbotDashboardView(discord.ui.View):
         embed = live_chat_manager.get_status_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="vic_live_refresh")
+    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="vic_live_refresh", row=0)
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.message:
             live_chat_manager.set_dashboard(interaction.client, interaction.message)
         embed = live_chat_manager.get_status_embed()
         await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="🎯 Troll/Defence Target", style=discord.ButtonStyle.secondary, custom_id="vic_live_set_target", row=1)
+    async def set_target_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(ChatbotTargetModal())
 
 
 async def ensure_chatbot_dashboard_message(client: discord.Client):
