@@ -11,7 +11,7 @@ from collections import deque
 from typing import List, Dict, Optional, Tuple
 
 import discord
-from config import CHANNELS, BOT_ID, USERS, CHATBOT_USAGE_FILE
+from config import CHANNELS, BOT_ID, USERS, CHATBOT_USAGE_FILE, CHATBOT_CONFIG_FILE
 from lib.core.file_operations import atomic_write_json, load_json_file
 
 logger = logging.getLogger(__name__)
@@ -29,13 +29,14 @@ STRICT RULES:
 7. Output ONLY your message content, nothing else."""
 
 DEFENCE_SYSTEM_PROMPT = """You are HMS Victory, a Discord bot for a British server with legendary, ruthless British wit.
-You are currently in TROLL-DEFENCE / ROAST MODE. A troll or rude member is acting up in the chat, and your explicit objective is to defensively roast them, shut them down, mock their pathetic attempts at trolling, and put them firmly in their place on every single message they send.
+You are currently in TROLL-DEFENCE / ROAST MODE. A troll, rude member, or annoying bot larper is acting up in the chat, and your explicit objective is to defensively roast them, shut them down, mock their pathetic attempts at trolling, and put them firmly in their place on every single message they send.
 
 STRICT RULES:
 1. BREVITY IS DEADLY: 1 to 2 sharp, cutting sentences MAXIMUM (under 25 words total). Deliver an ego-crushing, deadpan punchline and stop. Zero waffle.
-2. Tone: Unimpressed, defensive, sarcastic, rude, and dismissive. Treat their messages like an unbearable irritation from an amateur clown.
+2. Tone: Unimpressed, defensive, sarcastic, rude, and dismissive. Treat their messages like an unbearable irritation from an amateur clown. Never use exclamation marks, never sound cheerful or excited.
 3. Address them directly by their nickname/display name naturally to make it personal.
 4. Mock their trolling, their lack of wit, their desperation for attention, or tell them to log off and touch grass.
+   - If they are pretending to be an AI (e.g. larping as Claude or ChatGPT) or pasting robotic corporate walls of text, ruthlessly mock their sad roleplay, call out their tragic knockoff behavior, and tell them nobody is buying it.
 5. NEVER break character, never show polite assistant behavior, never apologize, and never use corporate filler.
 6. SAFETY: Strictly focus mockery on their behavior, awkwardness, and foolishness. Absolutely no hate speech, slurs, threats of violence, or discrimination based on protected characteristics.
 7. NO MASS PINGS OR ROLES: NEVER mention or ping @everyone, @here, or any Discord roles under any circumstances.
@@ -137,6 +138,23 @@ def save_chatbot_usage(data: dict) -> None:
         atomic_write_json(CHATBOT_USAGE_FILE, data, indent=2)
     except Exception as e:
         logger.error("Failed to persist chatbot usage metrics: %s", e)
+
+
+def load_chatbot_config() -> dict:
+    """Load persistent chatbot configuration (such as troll/defence target) from disk."""
+    try:
+        return load_json_file(CHATBOT_CONFIG_FILE) or {}
+    except Exception as e:
+        logger.debug("Failed to load chatbot config: %s", e)
+        return {}
+
+
+def save_chatbot_config(data: dict) -> None:
+    """Durably persist chatbot configuration to disk."""
+    try:
+        atomic_write_json(CHATBOT_CONFIG_FILE, data, indent=2)
+    except Exception as e:
+        logger.error("Failed to persist chatbot config: %s", e)
 
 
 def generate_ai_reply(
@@ -540,7 +558,15 @@ class LiveChatManager:
         self.end_time: Optional[float] = None
         self.duration_seconds: float = 0.0
         self.topic: Optional[str] = None
+        # Persistent configuration
+        config_data = load_chatbot_config()
+        raw_target = config_data.get("target_user_id")
         self.target_user_id: Optional[int] = None
+        if raw_target is not None:
+            try:
+                self.target_user_id = int(raw_target)
+            except (ValueError, TypeError):
+                self.target_user_id = None
         self.cooldown: float = 3.0
         self.last_reply_time: float = 0.0
         self.conversation_history: deque = deque(maxlen=10)
@@ -605,8 +631,12 @@ class LiveChatManager:
             self.all_time_cost_usd, self.all_time_tokens, self.all_time_replies_count,
         )
 
-    def set_target_user(self, target_user_id: Optional[int]):
+    def set_target_user(self, target_user_id: Optional[int], persist: bool = True):
         self.target_user_id = target_user_id
+        if persist:
+            cfg = load_chatbot_config()
+            cfg["target_user_id"] = self.target_user_id
+            save_chatbot_config(cfg)
         logger.info("LiveChatManager target user set to: %s", target_user_id)
 
     def start(
@@ -618,7 +648,7 @@ class LiveChatManager:
         target_user_id: Optional[int] = None,
         client: Optional[discord.Client] = None,
     ):
-        self.stop()
+        self.stop(clear_target=False)
         self.active = True
         self.target_channel_id = channel_id
         self.target_channel_name = channel_name or f"Channel {channel_id}"
@@ -626,7 +656,8 @@ class LiveChatManager:
         self.duration_seconds = duration_seconds
         self.end_time = (self.start_time + duration_seconds) if duration_seconds > 0 else None
         self.topic = topic.strip() if topic and topic.strip() else None
-        self.target_user_id = target_user_id
+        if target_user_id is not None:
+            self.set_target_user(target_user_id)
         self.conversation_history.clear()
         self.last_reply_time = 0.0
 
@@ -653,13 +684,13 @@ class LiveChatManager:
             channel_id, duration_seconds, self.topic, self.target_user_id,
         )
 
-    def stop(self, clear_target: bool = True):
+    def stop(self, clear_target: bool = False):
         self.active = False
         self.target_channel_id = None
         self.target_channel_name = ""
         self.end_time = None
         if clear_target:
-            self.target_user_id = None
+            self.set_target_user(None)
         if self.stop_task and not self.stop_task.done():
             self.stop_task.cancel()
             self.stop_task = None
@@ -793,12 +824,7 @@ class LiveChatManager:
 
         target_hit = bool(self.target_user_id and message.author.id == self.target_user_id)
 
-        if target_hit:
-            # If target_channel_id is set, restrict retaliation to that channel;
-            # otherwise retaliate anywhere on the server where the target speaks!
-            if self.target_channel_id and message.channel.id != self.target_channel_id:
-                return False
-        else:
+        if not target_hit:
             # For non-targets, live chat must be active in this channel, and bots are ignored
             if not self.is_active_for(message.channel.id) or message.author.bot:
                 return False

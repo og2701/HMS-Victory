@@ -808,6 +808,23 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
 
         live_chat_manager.set_target_user(None)
 
+    @patch("lib.features.chat_responder.save_chatbot_config")
+    @patch("lib.features.chat_responder.load_chatbot_config")
+    def test_chatbot_config_persistence(self, mock_load, mock_save):
+        mock_load.return_value = {"target_user_id": 1457814413913489480}
+        mgr = LiveChatManager()
+        self.assertEqual(mgr.target_user_id, 1457814413913489480)
+
+        # Setting target user should persist to disk
+        mgr.set_target_user(987654321)
+        self.assertEqual(mgr.target_user_id, 987654321)
+        mock_save.assert_called_with({"target_user_id": 987654321})
+
+        # Disabling target user should also persist None
+        mgr.set_target_user(None)
+        self.assertIsNone(mgr.target_user_id)
+        mock_save.assert_called_with({"target_user_id": None})
+
 
 if __name__ == "__main__":
     unittest.main()
