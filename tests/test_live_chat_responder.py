@@ -292,7 +292,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         req = call_args[0]
         import json
         payload = json.loads(req.data.decode("utf-8"))
-        self.assertEqual(payload["max_tokens"], 350)
+        self.assertEqual(payload["max_tokens"], 80)
         self.assertEqual(payload["model"], "gpt-4o")
         self.assertEqual(payload["messages"][0]["role"], "system")
         self.assertIn("Johnny: I hate tea", payload["messages"][1]["content"])
