@@ -519,6 +519,7 @@ JOIN_WATCH_FILE = os.path.join(JSON_DATA_DIR, "join_watch.json")  # oggers' AI r
 JOIN_WATCH_BUFFERS_FILE = os.path.join(JSON_DATA_DIR, "join_watch_buffers.json")
 JOIN_WATCH_MAX_WATCH_HOURS = 168  # stop watching a joiner after 7d even if they never hit the message cap
 TOWN_CRIER_TRACKING_FILE = os.path.join(JSON_DATA_DIR, "town_crier_tracking.json")
+CHATBOT_USAGE_FILE = os.path.join(JSON_DATA_DIR, "chatbot_usage.json")
 BALANCE_SNAPSHOT_DIR = "balance_snapshots"
 VC_LOCKDOWN_FILE = os.path.join(JSON_DATA_DIR, "vc_lockdown_status.txt")
 OVERNIGHT_MUTE_FILE = os.path.join(JSON_DATA_DIR, "overnight_mute.txt")

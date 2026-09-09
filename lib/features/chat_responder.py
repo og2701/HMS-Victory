@@ -9,7 +9,8 @@ from collections import deque
 from typing import List, Dict, Optional, Tuple
 
 import discord
-from config import CHANNELS, BOT_ID, USERS
+from config import CHANNELS, BOT_ID, USERS, CHATBOT_USAGE_FILE
+from lib.core.file_operations import atomic_write_json, load_json_file
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,23 @@ def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> fl
         input_cost = (prompt_tokens / 1_000_000) * 2.50
         output_cost = (completion_tokens / 1_000_000) * 10.00
     return input_cost + output_cost
+
+
+def load_chatbot_usage() -> dict:
+    """Load persistent all-time chatbot usage metrics from disk."""
+    try:
+        return load_json_file(CHATBOT_USAGE_FILE) or {}
+    except Exception as e:
+        logger.debug("Failed to load chatbot usage metrics: %s", e)
+        return {}
+
+
+def save_chatbot_usage(data: dict) -> None:
+    """Durably persist chatbot usage metrics to disk."""
+    try:
+        atomic_write_json(CHATBOT_USAGE_FILE, data, indent=2)
+    except Exception as e:
+        logger.error("Failed to persist chatbot usage metrics: %s", e)
 
 
 def generate_ai_reply(
@@ -298,18 +316,21 @@ def resolve_channel_input(val: Optional[str]) -> Tuple[int, str]:
     if not val:
         return CHANNELS.GENERAL, "General Chat"
     ch = val.strip().lower()
-    if ch in ("general", "gen"):
+    ch_clean = re.sub(r"[<#>]", "", ch).strip()
+    if ch in ("general", "gen") or ch_clean in ("general", "gen"):
         return CHANNELS.GENERAL, "General Chat"
-    if ch in ("vip", "vip-lounge", "viplounge"):
+    if ch in ("vip", "vip-lounge", "viplounge") or ch_clean in ("vip", "vip-lounge", "viplounge"):
         return CHANNELS.VIP_LOUNGE, "VIP Lounge"
-    if ch in ("commons", "house-of-commons"):
+    if ch in ("commons", "house-of-commons") or ch_clean in ("commons", "house-of-commons"):
         return CHANNELS.COMMONS, "House of Commons"
-    if ch in ("politics", "pol"):
+    if ch in ("politics", "pol") or ch_clean in ("politics", "pol"):
         return CHANNELS.POLITICS, "Politics"
-    if ch in ("bot-spam", "botspam"):
+    if ch in ("bot-spam", "botspam") or ch_clean in ("bot-spam", "botspam"):
         return CHANNELS.BOT_SPAM, "Bot Spam"
     try:
-        cid = int(ch)
+        cid = int(ch_clean)
+        if live_chat_manager.target_channel_id == cid and live_chat_manager.target_channel_name:
+            return cid, live_chat_manager.target_channel_name
         return cid, f"Channel {cid}"
     except ValueError:
         return CHANNELS.GENERAL, "General Chat"
@@ -350,12 +371,20 @@ class LiveChatManager:
         self.dashboard_channel_id: Optional[int] = None
         self.dashboard_message_id: Optional[int] = None
 
-        # Cost & usage metrics
+        # Cost & usage metrics (current session)
         self.session_cost_usd: float = 0.0
         self.session_prompt_tokens: int = 0
         self.session_completion_tokens: int = 0
         self.total_tokens: int = 0
         self.session_replies_count: int = 0
+
+        # Persistent all-time usage metrics
+        saved = load_chatbot_usage()
+        self.all_time_cost_usd: float = float(saved.get("total_cost_usd", 0.0))
+        self.all_time_prompt_tokens: int = int(saved.get("total_prompt_tokens", 0))
+        self.all_time_completion_tokens: int = int(saved.get("total_completion_tokens", 0))
+        self.all_time_tokens: int = int(saved.get("total_tokens", 0))
+        self.all_time_replies_count: int = int(saved.get("total_replies_count", 0))
 
     def set_dashboard(self, client: discord.Client, message: discord.Message):
         self.client = client
@@ -371,9 +400,27 @@ class LiveChatManager:
         self.total_tokens += (prompt_tokens + completion_tokens)
         if is_reply:
             self.session_replies_count += 1
+
+        # Accumulate all-time metrics and persist
+        self.all_time_cost_usd += cost
+        self.all_time_prompt_tokens += prompt_tokens
+        self.all_time_completion_tokens += completion_tokens
+        self.all_time_tokens += (prompt_tokens + completion_tokens)
+        if is_reply:
+            self.all_time_replies_count += 1
+
+        save_chatbot_usage({
+            "total_cost_usd": round(self.all_time_cost_usd, 6),
+            "total_prompt_tokens": self.all_time_prompt_tokens,
+            "total_completion_tokens": self.all_time_completion_tokens,
+            "total_tokens": self.all_time_tokens,
+            "total_replies_count": self.all_time_replies_count,
+        })
+
         logger.info(
-            "LiveChatManager usage recorded: +$%.5f (%d prompt, %d comp). Session total: $%.4f (%d tokens, %d replies)",
+            "LiveChatManager usage recorded: +$%.5f (%d prompt, %d comp). Session total: $%.4f (%d tokens, %d replies). All-time: $%.4f (%d tokens, %d replies)",
             cost, prompt_tokens, completion_tokens, self.session_cost_usd, self.total_tokens, self.session_replies_count,
+            self.all_time_cost_usd, self.all_time_tokens, self.all_time_replies_count,
         )
 
     def set_target_user(self, target_user_id: Optional[int]):
@@ -411,10 +458,13 @@ class LiveChatManager:
         if client:
             self.client = client
 
-        if self.duration_seconds > 0:
-            self.stop_task = asyncio.create_task(self._auto_stop_timer(self.duration_seconds))
-
-        self.live_update_task = asyncio.create_task(self._live_dashboard_loop())
+        try:
+            loop = asyncio.get_running_loop()
+            if self.duration_seconds > 0:
+                self.stop_task = loop.create_task(self._auto_stop_timer(self.duration_seconds))
+            self.live_update_task = loop.create_task(self._live_dashboard_loop())
+        except RuntimeError:
+            pass
 
         logger.info(
             "LiveChatManager started in channel %s (duration=%ss, topic=%r, target_user=%s)",
@@ -502,18 +552,22 @@ class LiveChatManager:
             else:
                 time_val = "Unlimited (manual stop)"
             topic_val = f"_{self.topic}_" if self.topic else "None (Natural conversation)"
-            cost_title = "💰 Live Cost"
+            cost_title = "💰 Session Cost (Live)"
             footer_text = "Persistent Controller • Oggers Only • Live updating every 5s"
         else:
             color = 0xE74C3C  # Red
             status_text = "🔴 **Offline / Asleep**"
-            channel_val = "None"
+            if self.target_channel_id:
+                channel_val = f"<#{self.target_channel_id}> ({self.target_channel_name})"
+            else:
+                channel_val = "None (Select below)"
             time_val = "N/A"
             topic_val = "None"
             cost_title = "💰 Last Session Cost"
             footer_text = "Persistent Controller • Oggers Only"
 
-        cost_val = f"**${self.session_cost_usd:.4f}**\n`{self.total_tokens:,}` tokens • `{self.session_replies_count}` replies"
+        session_cost_val = f"**${self.session_cost_usd:.4f}**\n`{self.total_tokens:,}` tokens • `{self.session_replies_count}` replies"
+        all_time_cost_val = f"**${self.all_time_cost_usd:.4f}**\n`{self.all_time_tokens:,}` tokens • `{self.all_time_replies_count}` replies"
 
         if self.target_user_id:
             defence_val = f"🎯 <@{self.target_user_id}> (`{self.target_user_id}`)\n*🚨 Defence Mode ACTIVE: Retaliating to every message*"
@@ -528,7 +582,8 @@ class LiveChatManager:
         embed.add_field(name="Status", value=status_text, inline=True)
         embed.add_field(name="Target Channel", value=channel_val, inline=True)
         embed.add_field(name="Auto-Stop Timer", value=time_val, inline=True)
-        embed.add_field(name=cost_title, value=cost_val, inline=True)
+        embed.add_field(name=cost_title, value=session_cost_val, inline=True)
+        embed.add_field(name="📈 Total Cost (All-Time)", value=all_time_cost_val, inline=True)
         embed.add_field(name="🛡️ Troll / Defence Target", value=defence_val, inline=True)
         embed.add_field(name="Starting Topic", value=topic_val, inline=False)
         embed.set_footer(text=footer_text)
@@ -639,6 +694,13 @@ class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
         required=False,
     )
 
+    def __init__(self, default_channel: Optional[str] = None, default_target_user: Optional[str] = None):
+        super().__init__()
+        if default_channel:
+            self.channel_input.default = default_channel
+        if default_target_user is not None:
+            self.target_user_input.default = default_target_user
+
     async def on_submit(self, interaction: discord.Interaction):
         if interaction.user.id != USERS.OGGERS:
             await interaction.response.send_message("Only Oggers can control this.", ephemeral=True)
@@ -746,11 +808,45 @@ class ChatbotDashboardView(discord.ui.View):
             return False
         return True
 
-    @discord.ui.button(label="Wake Up Vic", style=discord.ButtonStyle.success, emoji="🟢", custom_id="vic_live_wake_up", row=0)
-    async def wake_up_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(ChatbotWakeModal())
+    @discord.ui.select(
+        cls=discord.ui.ChannelSelect,
+        channel_types=[discord.ChannelType.text],
+        placeholder="🔍 Choose target channel (searchable)...",
+        custom_id="vic_live_channel_select",
+        row=0,
+    )
+    async def select_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+        if not select.values:
+            await interaction.response.send_message("No channel selected.", ephemeral=True)
+            return
 
-    @discord.ui.button(label="Put to Sleep", style=discord.ButtonStyle.danger, emoji="🔴", custom_id="vic_live_sleep", row=0)
+        selected_channel = select.values[0]
+        cid = getattr(selected_channel, "id", None) or int(str(selected_channel))
+        cname = getattr(selected_channel, "name", f"Channel {cid}")
+
+        live_chat_manager.target_channel_id = cid
+        live_chat_manager.target_channel_name = cname
+
+        if interaction.message:
+            live_chat_manager.set_dashboard(interaction.client, interaction.message)
+
+        embed = live_chat_manager.get_status_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+        if live_chat_manager.active:
+            await interaction.followup.send(f"🎯 Switched live chat target to <#{cid}>!", ephemeral=True)
+        else:
+            await interaction.followup.send(f"🎯 Target channel set to <#{cid}>. Click **Wake Up Vic** to launch!", ephemeral=True)
+
+    @discord.ui.button(label="Wake Up Vic", style=discord.ButtonStyle.success, emoji="🟢", custom_id="vic_live_wake_up", row=1)
+    async def wake_up_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        default_channel = "general"
+        if live_chat_manager.target_channel_id:
+            default_channel = live_chat_manager.target_channel_name or str(live_chat_manager.target_channel_id)
+        default_target = str(live_chat_manager.target_user_id) if live_chat_manager.target_user_id else ""
+        await interaction.response.send_modal(ChatbotWakeModal(default_channel=default_channel, default_target_user=default_target))
+
+    @discord.ui.button(label="Put to Sleep", style=discord.ButtonStyle.danger, emoji="🔴", custom_id="vic_live_sleep", row=1)
     async def sleep_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.message:
             live_chat_manager.set_dashboard(interaction.client, interaction.message)
@@ -758,7 +854,7 @@ class ChatbotDashboardView(discord.ui.View):
         embed = live_chat_manager.get_status_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="vic_live_refresh", row=0)
+    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="vic_live_refresh", row=1)
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.message:
             live_chat_manager.set_dashboard(interaction.client, interaction.message)
