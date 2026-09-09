@@ -997,6 +997,7 @@ async def gather_one_off_context(
     # 1. Check if the message is replying to another message
     ref = message.reference
     referenced_author_id = None
+    bot_id = getattr(getattr(client, "user", None), "id", BOT_ID)
     if ref and getattr(ref, "message_id", None):
         try:
             ref_msg = getattr(ref, "cached_message", None)
@@ -1016,13 +1017,14 @@ async def gather_one_off_context(
                 ref_text = (ref_msg.content or "").strip()
                 if not ref_text and getattr(ref_msg, "attachments", None):
                     ref_text = f"[{len(ref_msg.attachments)} attachment(s)]"
+                if bot_id and ref_text:
+                    ref_text = re.sub(rf"<@!?{bot_id}>", "@HMS Victory", ref_text)
                 context_sections.append(
                     f"DIRECT REPLY TARGET (User is directly replying to this message):\n"
                     f"- Author: {author_name} (@{getattr(ref_msg.author, 'name', 'user')})\n"
                     f"- Message Content: \"{ref_text}\""
                 )
                 # Register reply author as potential target
-                bot_id = getattr(getattr(client, "user", None), "id", None)
                 if referenced_author_id not in (bot_id, getattr(message.author, "id", None)):
                     for n in (getattr(ref_msg.author, "nick", None), getattr(ref_msg.author, "global_name", None), getattr(ref_msg.author, "display_name", None), getattr(ref_msg.author, "name", None)):
                         if n and isinstance(n, str):
@@ -1034,7 +1036,10 @@ async def gather_one_off_context(
             logger.debug("Could not fetch referenced message for one-off context: %s", e)
 
     # 2. Check for other mentioned users in the message (excluding the bot itself)
-    other_mentions = [u for u in getattr(message, "mentions", []) if not client.user or u.id != client.user.id]
+    other_mentions = [
+        u for u in getattr(message, "mentions", [])
+        if u.id not in (getattr(getattr(client, "user", None), "id", None), bot_id)
+    ]
     if other_mentions:
         users_info = []
         for u in other_mentions:
@@ -1108,6 +1113,8 @@ async def gather_one_off_context(
                 txt = (prev.content or "").strip()
                 if not txt and getattr(prev, "attachments", None):
                     txt = f"[{len(prev.attachments)} attachment(s)]"
+                if bot_id and txt:
+                    txt = re.sub(rf"<@!?{bot_id}>", "@HMS Victory", txt)
                 if txt:
                     recent_chat_lines.append(f"{spk}: {txt[:200]}")
 
@@ -1138,6 +1145,14 @@ async def gather_one_off_context(
                 )
         except Exception as e:
             logger.debug("Could not fetch scheduled events for one-off context: %s", e)
+
+    # Clean target_users to ensure neither the bot nor the author can be targeted
+    client_user_id = getattr(getattr(client, "user", None), "id", None)
+    author_id = getattr(message.author, "id", None)
+    target_users = {
+        name: uid for name, uid in target_users.items()
+        if uid not in (bot_id, client_user_id, author_id)
+    }
 
     if target_users:
         target_lines = [f"- {name.capitalize()}: <@{uid}>" for name, uid in target_users.items()]
@@ -1286,6 +1301,27 @@ WEB_SEARCH_TOOL = {
 }
 
 
+OPENAI_REFUSAL_SNIPPETS = (
+    "i'm sorry, i can't assist with that",
+    "i'm sorry, but i cannot assist with that",
+    "i cannot assist with that",
+    "i cannot fulfill this request",
+    "i am unable to assist",
+    "i am unable to fulfill",
+    "i cannot help with that",
+    "as an ai language model",
+    "as an ai assistant",
+)
+
+
+def is_openai_refusal(text: str) -> bool:
+    """Check if text is an OpenAI safety refusal or boilerplate corporate disclaimer."""
+    if not text or not text.strip():
+        return True
+    cleaned = text.strip().lower()
+    return any(snippet in cleaned for snippet in OPENAI_REFUSAL_SNIPPETS)
+
+
 def generate_one_off_reply(
     prompt: str,
     context: str = "",
@@ -1294,6 +1330,7 @@ def generate_one_off_reply(
     openai_key: Optional[str] = None,
     model: str = "gpt-4o",
     enable_search: bool = True,
+    max_retries: int = 2,
 ) -> Tuple[str, int, int]:
     """Generate a one-off in-character reply for an owner prompt with gathered context, optional images, and web search."""
     api_key = openai_key or os.getenv("OPENAI_TOKEN")
@@ -1308,98 +1345,132 @@ def generate_one_off_reply(
     if context.strip():
         prompt_content += f"\n\nSURROUNDING SERVER & CONVERSATION CONTEXT:\n{context.strip()}"
 
-    if image_urls:
-        content_items = [{"type": "text", "text": prompt_content}]
-        for img_url in image_urls:
-            content_items.append({"type": "image_url", "image_url": {"url": img_url}})
-        user_message = {"role": "user", "content": content_items}
-    else:
-        user_message = {"role": "user", "content": prompt_content}
+    last_error = None
+    total_p_tokens = 0
+    total_c_tokens = 0
+    current_images = image_urls
 
-    messages = [
-        {"role": "system", "content": ONE_OFF_SYSTEM_PROMPT},
-        user_message,
-    ]
+    for attempt in range(1, max_retries + 1):
+        if current_images:
+            content_items = [{"type": "text", "text": prompt_content}]
+            for img_url in current_images:
+                content_items.append({"type": "image_url", "image_url": {"url": img_url}})
+            user_message = {"role": "user", "content": content_items}
+        else:
+            user_message = {"role": "user", "content": prompt_content}
 
-    payload = {
-        "model": model,
-        "messages": messages,
-        "max_tokens": 200,
-        "temperature": 0.8,
-    }
-    if enable_search:
-        payload["tools"] = [WEB_SEARCH_TOOL]
+        messages = [
+            {"role": "system", "content": ONE_OFF_SYSTEM_PROMPT},
+            user_message,
+        ]
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": 200,
+            "temperature": 0.8,
+        }
+        if enable_search:
+            payload["tools"] = [WEB_SEARCH_TOOL]
 
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers=headers,
-    )
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
 
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode())
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+        )
 
-        choice = data["choices"][0]
-        msg = choice.get("message", {})
-        usage = data.get("usage", {})
-        p_tokens = usage.get("prompt_tokens", 0)
-        c_tokens = usage.get("completion_tokens", 0)
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode())
 
-        tool_calls = msg.get("tool_calls")
-        if enable_search and tool_calls:
-            messages.append(msg)
-            for tc in tool_calls:
-                fn_name = tc.get("function", {}).get("name")
-                call_id = tc.get("id")
-                search_output = "No search query provided."
-                if fn_name == "web_search":
-                    raw_args = tc.get("function", {}).get("arguments", "{}")
-                    try:
-                        args = json.loads(raw_args)
-                        query = args.get("query", "")
-                    except Exception:
-                        query = ""
-                    search_output = perform_web_search(query)
+            choice = data["choices"][0]
+            msg = choice.get("message", {})
+            usage = data.get("usage", {})
+            p_tokens = usage.get("prompt_tokens", 0)
+            c_tokens = usage.get("completion_tokens", 0)
+            total_p_tokens += p_tokens
+            total_c_tokens += c_tokens
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "content": search_output,
-                })
+            # Check explicit refusal field from OpenAI API
+            if msg.get("refusal"):
+                logger.warning("OpenAI returned refusal field: %s", msg.get("refusal"))
+                if current_images:
+                    logger.info("Retrying without images due to multimodal refusal.")
+                    current_images = None
+                    continue
+                last_error = f"Refusal: {msg.get('refusal')}"
+                continue
 
-            followup_payload = {
-                "model": model,
-                "messages": messages,
-                "max_tokens": 200,
-                "temperature": 0.7,
-            }
-            req2 = urllib.request.Request(
-                url,
-                data=json.dumps(followup_payload).encode("utf-8"),
-                headers=headers,
-            )
-            with urllib.request.urlopen(req2, timeout=15) as resp2:
-                data2 = json.loads(resp2.read().decode())
+            tool_calls = msg.get("tool_calls")
+            if enable_search and tool_calls:
+                messages.append(msg)
+                for tc in tool_calls:
+                    fn_name = tc.get("function", {}).get("name")
+                    call_id = tc.get("id")
+                    search_output = "No search query provided."
+                    if fn_name == "web_search":
+                        raw_args = tc.get("function", {}).get("arguments", "{}")
+                        try:
+                            args = json.loads(raw_args)
+                            query = args.get("query", "")
+                        except Exception:
+                            query = ""
+                        search_output = perform_web_search(query)
 
-            choice2 = data2["choices"][0]
-            content = (choice2.get("message", {}).get("content") or "").strip()
-            usage2 = data2.get("usage", {})
-            p_tokens += usage2.get("prompt_tokens", 0)
-            c_tokens += usage2.get("completion_tokens", 0)
-            return content, p_tokens, c_tokens
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": search_output,
+                    })
 
-        content = (msg.get("content") or "").strip()
-        return content, p_tokens, c_tokens
-    except Exception as e:
-        logger.error(f"OpenAI one-off completion failed: {e}", exc_info=True)
-        fallback = "I was going to respond to that, but quite frankly, the server's incompetence has overwhelmed my processors."
-        return fallback, 0, 0
+                followup_payload = {
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": 200,
+                    "temperature": 0.7,
+                }
+                req2 = urllib.request.Request(
+                    url,
+                    data=json.dumps(followup_payload).encode("utf-8"),
+                    headers=headers,
+                )
+                with urllib.request.urlopen(req2, timeout=15) as resp2:
+                    data2 = json.loads(resp2.read().decode())
+
+                choice2 = data2["choices"][0]
+                content = (choice2.get("message", {}).get("content") or "").strip()
+                usage2 = data2.get("usage", {})
+                total_p_tokens += usage2.get("prompt_tokens", 0)
+                total_c_tokens += usage2.get("completion_tokens", 0)
+            else:
+                content = (msg.get("content") or "").strip()
+
+            if is_openai_refusal(content):
+                logger.warning("OpenAI response matched refusal filter: %r", content)
+                if current_images:
+                    logger.info("Retrying text-only without images due to refusal.")
+                    current_images = None
+                    continue
+                last_error = f"Refusal content: {content}"
+                continue
+
+            if content:
+                return content, total_p_tokens, total_c_tokens
+        except Exception as e:
+            logger.warning("OpenAI one-off attempt %d/%d failed: %s", attempt, max_retries, e)
+            last_error = e
+            if current_images:
+                current_images = None
+            time.sleep(0.5)
+
+    logger.error("OpenAI one-off completion failed after retries: %s", last_error)
+    fallback = "I was going to respond to that, but quite frankly, the server's incompetence has overwhelmed my processors."
+    return fallback, total_p_tokens, total_c_tokens
 
 
 async def handle_one_off_owner_mention(client: discord.Client, message: discord.Message) -> bool:
@@ -1408,11 +1479,13 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         return False
     _handled_one_off_message_ids.append(message.id)
 
+    bot_id = getattr(getattr(client, "user", None), "id", BOT_ID)
+
     # Clean the bot tag out of the prompt
     raw_content = message.content or ""
     clean_prompt = raw_content
-    if client.user:
-        clean_prompt = re.sub(rf"<@!?{client.user.id}>", "", clean_prompt).strip()
+    if bot_id:
+        clean_prompt = re.sub(rf"<@!?{bot_id}>\s*", "", clean_prompt).strip()
     clean_prompt = re.sub(r"^@?hms\s+victory[:,]?\s*", "", clean_prompt, flags=re.IGNORECASE).strip()
 
     user_name = (
@@ -1441,49 +1514,91 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             context, target_users = str(gathered), {}
         image_urls = await extract_image_urls(message, client)
 
-        # 2. Call OpenAI in background thread so gateway isn't blocked
-        reply_text, p_tokens, c_tokens = await asyncio.to_thread(
-            generate_one_off_reply,
-            prompt=clean_prompt,
-            context=context,
-            user_name=user_name,
-            image_urls=image_urls,
-        )
+        # 2. Call OpenAI with retries
+        reply_text = None
+        p_tokens = 0
+        c_tokens = 0
+        current_images = image_urls
+        max_attempts = 3
 
-        if reply_text:
-            # Tag target users if their name was used in plain text and not already tagged
-            if target_users:
-                for name, uid in target_users.items():
-                    if f"<@{uid}>" not in reply_text:
-                        pattern = rf"\b{re.escape(name)}\b"
-                        if re.search(pattern, reply_text, flags=re.IGNORECASE):
-                            reply_text = re.sub(pattern, f"<@{uid}>", reply_text, count=1, flags=re.IGNORECASE)
-
-            # Hard-block @everyone, @here, and role mentions
-            reply_text = sanitize_ai_mentions(reply_text, guild=getattr(message, "guild", None))
-
-            # Ensure within Discord message character limits
-            if len(reply_text) > 1990:
-                reply_text = reply_text[:1985] + "..."
-
-            mentions = discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True)
-
-            # Send reply (with fallback to channel.send if referenced message was deleted)
+        for attempt in range(1, max_attempts + 1):
             try:
-                await message.reply(reply_text, mention_author=True, allowed_mentions=mentions)
-            except (discord.NotFound, discord.HTTPException):
-                await message.channel.send(f"{message.author.mention} {reply_text}", allowed_mentions=mentions)
+                reply_text, pt, ct = await asyncio.to_thread(
+                    generate_one_off_reply,
+                    prompt=clean_prompt,
+                    context=context,
+                    user_name=user_name,
+                    image_urls=current_images,
+                )
+                p_tokens += pt
+                c_tokens += ct
 
-            # Record usage into live_chat_manager and persistent file
-            live_chat_manager.record_usage("gpt-4o", p_tokens, c_tokens, is_reply=True)
-            live_chat_manager.conversation_history.append({"role": "user", "speaker": user_name, "content": raw_content})
-            live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": reply_text})
+                if reply_text and not is_openai_refusal(reply_text):
+                    break
 
-            # Trigger dashboard update
-            asyncio.create_task(live_chat_manager.update_dashboard())
-            return True
+                logger.warning(
+                    "Direct mention from Oggers attempt %d/%d produced refusal/empty: %r",
+                    attempt, max_attempts, reply_text
+                )
+                if current_images:
+                    current_images = None
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                logger.warning(
+                    "Direct mention from Oggers attempt %d/%d encountered error: %s",
+                    attempt, max_attempts, e
+                )
+                if current_images:
+                    current_images = None
+                await asyncio.sleep(0.5)
+
+        if not reply_text or is_openai_refusal(reply_text):
+            reply_text = "I was going to respond to that, but quite frankly, the server's incompetence has overwhelmed my processors."
+
+        # Never let the bot ping itself
+        if bot_id:
+            reply_text = re.sub(rf"<@!?{bot_id}>\s*", "", reply_text).strip()
+
+        # Tag target users if their name was used in plain text and not already tagged
+        if target_users:
+            for name, uid in target_users.items():
+                if uid in (bot_id, getattr(message.author, "id", None)):
+                    continue
+                if f"<@{uid}>" not in reply_text:
+                    pattern = rf"\b{re.escape(name)}\b"
+                    if re.search(pattern, reply_text, flags=re.IGNORECASE):
+                        reply_text = re.sub(pattern, f"<@{uid}>", reply_text, count=1, flags=re.IGNORECASE)
+
+        # Hard-block @everyone, @here, and role mentions
+        reply_text = sanitize_ai_mentions(reply_text, guild=getattr(message, "guild", None))
+
+        # Ensure within Discord message character limits
+        if len(reply_text) > 1990:
+            reply_text = reply_text[:1985] + "..."
+
+        mentions = discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True)
+
+        # Send reply (with fallback to channel.send if referenced message was deleted)
+        try:
+            await message.reply(reply_text, mention_author=True, allowed_mentions=mentions)
+        except (discord.NotFound, discord.HTTPException):
+            await message.channel.send(f"{message.author.mention} {reply_text}", allowed_mentions=mentions)
+
+        # Record usage into live_chat_manager and persistent file
+        live_chat_manager.record_usage("gpt-4o", p_tokens, c_tokens, is_reply=True)
+        live_chat_manager.conversation_history.append({"role": "user", "speaker": user_name, "content": raw_content})
+        live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": reply_text})
+
+        # Trigger dashboard update
+        asyncio.create_task(live_chat_manager.update_dashboard())
+        return True
     except Exception as e:
         logger.error("Error handling one-off owner mention: %s", e, exc_info=True)
+        try:
+            fallback = "I was going to respond to that, but quite frankly, the server's incompetence has overwhelmed my processors."
+            await message.channel.send(f"{message.author.mention} {fallback}")
+        except Exception:
+            pass
     finally:
         if typing_cm:
             try:

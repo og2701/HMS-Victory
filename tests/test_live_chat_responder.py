@@ -1,7 +1,7 @@
 import sys
 import types
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 import time
 import asyncio
 
@@ -104,6 +104,8 @@ from lib.features.chat_responder import (
     handle_chat_message,
     live_chat_manager,
     sanitize_ai_mentions,
+    is_openai_refusal,
+    _handled_one_off_message_ids,
 )
 from config import USERS
 
@@ -112,6 +114,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         live_chat_manager.last_reply_time = 0
         live_chat_manager.stop(clear_target=True)
+        _handled_one_off_message_ids.clear()
 
     def test_calculate_cost_gpt4o(self):
         # 1,000 prompt tokens = $0.0025, 1,000 completion tokens = $0.0100
@@ -854,6 +857,72 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
                 pass
 
         self.assertEqual(mgr.target_user_id, 777888999)
+
+    def test_is_openai_refusal(self):
+        self.assertTrue(is_openai_refusal("I'm sorry, I can't assist with that."))
+        self.assertTrue(is_openai_refusal("I cannot assist with that."))
+        self.assertTrue(is_openai_refusal("As an AI language model, I cannot..."))
+        self.assertTrue(is_openai_refusal(""))
+        self.assertTrue(is_openai_refusal("   "))
+        self.assertFalse(is_openai_refusal("Kaizo, you absolute donut."))
+
+    @patch("lib.features.chat_responder.generate_one_off_reply")
+    @patch("lib.features.chat_responder.gather_one_off_context")
+    async def test_handle_one_off_owner_mention_retries_on_refusal(self, mock_gather, mock_generate):
+        mock_gather.return_value = ("context", {"kaizo": 1283837687551361117})
+        # First call returns refusal, second call succeeds with witty response
+        mock_generate.side_effect = [
+            ("I'm sorry, I can't assist with that.", 100, 10),
+            ("Kaizo, your code is as steady as a jelly tower.", 120, 25),
+        ]
+
+        client = MagicMock()
+        client.user = MagicMock()
+        client.user.id = 1171842947440967770
+        message = MagicMock()
+        message.id = 998877665511
+        message.author = MagicMock()
+        message.author.id = USERS.OGGERS
+        message.author.name = "ogme01"
+        message.author.nick = "Oggers"
+        message.content = "<@1171842947440967770> teach kaizo a lesson"
+        message.channel = MagicMock()
+        message.channel.send = AsyncMock()
+        message.reply = AsyncMock()
+
+        res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        self.assertEqual(mock_generate.call_count, 2)
+        message.reply.assert_called_once()
+        sent_content = message.reply.call_args[0][0]
+        self.assertIn("jelly tower", sent_content)
+        self.assertIn("<@1283837687551361117>", sent_content)
+
+    @patch("lib.features.chat_responder.generate_one_off_reply")
+    @patch("lib.features.chat_responder.gather_one_off_context")
+    async def test_handle_one_off_owner_mention_strips_bot_ping(self, mock_gather, mock_generate):
+        mock_gather.return_value = ("context", {})
+        # Model inadvertently tags bot itself:
+        mock_generate.return_value = ("<@1171842947440967770> Oi Kaizo, behave.", 100, 20)
+
+        client = MagicMock()
+        client.user = MagicMock()
+        client.user.id = 1171842947440967770
+        message = MagicMock()
+        message.id = 8877665544
+        message.author = MagicMock()
+        message.author.id = USERS.OGGERS
+        message.author.name = "ogme01"
+        message.content = "<@1171842947440967770> teach kaizo a lesson"
+        message.channel = MagicMock()
+        message.reply = AsyncMock()
+
+        res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        sent_content = message.reply.call_args[0][0]
+        # Bot's own ID mention MUST be removed
+        self.assertNotIn("<@1171842947440967770>", sent_content)
+        self.assertTrue(sent_content.startswith("Oi Kaizo, behave."))
 
 
 if __name__ == "__main__":
