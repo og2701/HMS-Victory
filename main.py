@@ -205,6 +205,13 @@ class AClient(discord.Client):
         logger.info("Persistent prediction views registered in setup_hook.")
 
     async def on_ready(self):
+        # Ensure chatbot controller dashboard is active in its dedicated thread
+        try:
+            from lib.features.chat_responder import ensure_chatbot_dashboard_message
+            asyncio.create_task(ensure_chatbot_dashboard_message(self))
+        except Exception:
+            logger.exception("could not ensure chatbot controller dashboard message")
+
         # Registered before anything else can trip a detector. The money rules hang off
         # economy_manager, which has no route to a client of its own, so without this an
         # alert raised during startup would be dropped rather than posted.
@@ -218,12 +225,6 @@ class AClient(discord.Client):
         if not ready_initialised:
             return
 
-        # Ensure chatbot controller dashboard is active in its dedicated thread
-        try:
-            from lib.features.chat_responder import ensure_chatbot_dashboard_message
-            asyncio.create_task(ensure_chatbot_dashboard_message(self))
-        except Exception:
-            logger.exception("could not ensure chatbot controller dashboard message")
         # The two loops below are a one-off cosmetic backfill of buttons onto
         # already-posted prediction / scheduled-pred messages. on_ready fires on
         # every gateway reconnect, so gate it to run once per process (mirrors the

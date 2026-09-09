@@ -1138,6 +1138,7 @@ async def _run_ready_initialisation(client, tree, scheduler):
     from lib.bot.backup_manager import backup_database, backup_json_data
     await backup_database(client)
     await backup_json_data(client)
+    return True
 
 
 async def mirror_voice_message(client, message):
