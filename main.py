@@ -217,6 +217,13 @@ class AClient(discord.Client):
         ready_initialised = await on_ready(self, tree, self.scheduler)
         if not ready_initialised:
             return
+
+        # Ensure chatbot controller dashboard is active in its dedicated thread
+        try:
+            from lib.features.chat_responder import ensure_chatbot_dashboard_message
+            asyncio.create_task(ensure_chatbot_dashboard_message(self))
+        except Exception:
+            logger.exception("could not ensure chatbot controller dashboard message")
         # The two loops below are a one-off cosmetic backfill of buttons onto
         # already-posted prediction / scheduled-pred messages. on_ready fires on
         # every gateway reconnect, so gate it to run once per process (mirrors the

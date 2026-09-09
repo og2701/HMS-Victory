@@ -1311,22 +1311,6 @@ async def on_message(client, message):
         _set_piggy_react(client, not _piggy_react_enabled(client))
         return
 
-    # Oggers summons the live chatbot controller dashboard in #bot-workshop
-    if (
-        message.author.id == USERS.OGGERS
-        and message.channel.id == CHANNELS.BOT_WORKSHOP
-        and message.content.lower().strip() == "chatbot"
-    ):
-        try:
-            await message.delete()
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-            pass
-        from lib.features.chat_responder import live_chat_manager, ChatbotDashboardView
-        embed = live_chat_manager.get_status_embed()
-        view = ChatbotDashboardView()
-        await message.channel.send(embed=embed, view=view)
-        return
-
     # When enabled, spell H-O-G on every message PIGGY sends (order matters).
     if _piggy_react_enabled(client) and message.author.id == USERS.PIGGY:
         for emoji in _PIGGY_REACT_EMOJIS:

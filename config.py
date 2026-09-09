@@ -612,6 +612,7 @@ class CHANNELS:
     VOTING = 959848236384919692
     VOICE_LOG_THREAD = 1493403784074760362
     VOICE_ACTIVITY_THREAD = 1539312670761812019  # 'voice chat activity' thread under logs: 🎧 join/leave/move digests
+    CHATBOT_CONTROLLER_THREAD = 1547254995320184833  # 'chat bot controller' thread under bot-workshop
 
 # Casino games + the lottery may only be used in these channels.
 CASINO_CHANNELS = [CHANNELS.CASINO, CHANNELS.VIP_LOUNGE, CHANNELS.BOT_SPAM, CHANNELS.BOT_WORKSHOP]

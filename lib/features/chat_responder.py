@@ -352,7 +352,7 @@ class LiveChatManager:
         embed.add_field(name="Target Channel", value=channel_val, inline=True)
         embed.add_field(name="Auto-Stop Timer", value=time_val, inline=True)
         embed.add_field(name="Starting Topic", value=topic_val, inline=False)
-        embed.set_footer(text="Triggered with 'chatbot' in #bot-workshop • Oggers Only")
+        embed.set_footer(text="Persistent Controller • Oggers Only")
         return embed
 
     async def handle_message(self, client: discord.Client, message: discord.Message) -> bool:
@@ -521,3 +521,32 @@ class ChatbotDashboardView(discord.ui.View):
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = live_chat_manager.get_status_embed()
         await interaction.response.edit_message(embed=embed, view=self)
+
+
+async def ensure_chatbot_dashboard_message(client: discord.Client):
+    """Ensure the persistent dashboard embed is posted in the dedicated thread and kept updated."""
+    thread_id = getattr(CHANNELS, "CHATBOT_CONTROLLER_THREAD", 1547254995320184833)
+    try:
+        thread = client.get_channel(thread_id) or await client.fetch_channel(thread_id)
+        if not thread:
+            logger.warning("Could not find chatbot controller thread %s", thread_id)
+            return
+
+        embed = live_chat_manager.get_status_embed()
+        view = ChatbotDashboardView()
+
+        dashboard_msg = None
+        async for m in thread.history(limit=25):
+            if m.author.id == client.user.id and m.embeds and "HMS Victory Chatbot Dashboard" in (m.embeds[0].title or ""):
+                dashboard_msg = m
+                break
+
+        if dashboard_msg:
+            await dashboard_msg.edit(embed=embed, view=view)
+            logger.info("Updated existing chatbot dashboard message (%s) in thread %s", dashboard_msg.id, thread_id)
+        else:
+            dashboard_msg = await thread.send(embed=embed, view=view)
+            logger.info("Posted initial chatbot dashboard message (%s) in thread %s", dashboard_msg.id, thread_id)
+
+    except Exception as e:
+        logger.error("Failed to ensure chatbot dashboard message in thread %s: %s", thread_id, e, exc_info=True)
