@@ -1,6 +1,7 @@
 import urllib.request
 import json
 import os
+import re
 import time
 import asyncio
 import logging
@@ -87,6 +88,142 @@ def generate_ai_reply(
     except Exception as e:
         logger.error(f"OpenAI completion failed: {e}", exc_info=True)
         return "I'd reply, but my will to live just suffered a fatal exception."
+
+
+async def scrape_server_context(
+    client: discord.Client,
+    guild: Optional[discord.Guild],
+    target_channel_id: int,
+    user_input: str,
+) -> str:
+    """Scrape relevant server context based on user input, links, and scheduled events."""
+    scraped_lines = []
+
+    # 1. Check for Discord message links in user_input
+    link_pattern = r"https://(?:ptb\.|canary\.)?discord\.com/channels/(\d+)/(\d+)/(\d+)"
+    links = re.findall(link_pattern, user_input)
+    for g_id, c_id, m_id in links:
+        try:
+            channel = client.get_channel(int(c_id)) or await client.fetch_channel(int(c_id))
+            target_msg = await channel.fetch_message(int(m_id))
+            scraped_lines.append(f"--- Referenced Discord Message from #{getattr(channel, 'name', c_id)} ---")
+
+            surrounding = []
+            async for msg in channel.history(around=target_msg, limit=5):
+                surrounding.append(msg)
+
+            for msg in sorted(surrounding, key=lambda x: x.created_at):
+                speaker = (
+                    getattr(msg.author, "nick", None)
+                    or getattr(msg.author, "global_name", None)
+                    or msg.author.name
+                )
+                scraped_lines.append(f"{speaker}: {msg.content}")
+        except Exception as e:
+            logger.debug("Could not fetch linked message %s: %s", m_id, e)
+
+    # 2. Check for active/upcoming Guild Scheduled Events
+    if guild:
+        try:
+            events = await guild.fetch_scheduled_events()
+            valid_events = [e for e in events if e.status in (discord.EventStatus.scheduled, discord.EventStatus.active)]
+            if valid_events:
+                scraped_lines.append("--- Upcoming Server Events ---")
+                for e in valid_events[:3]:
+                    creator_name = e.creator.display_name if e.creator else "Unknown"
+                    start_str = e.start_time.strftime("%A, %B %d at %H:%M UTC") if e.start_time else "TBD"
+                    channel_name = e.channel.name if e.channel else "Event Location"
+                    desc = (e.description or "").strip().replace("\n", " ")
+                    scraped_lines.append(
+                        f"Event '{e.name}' (Host: {creator_name}, Time: {start_str}, Channel: #{channel_name}): {desc[:200]}"
+                    )
+        except Exception as e:
+            logger.debug("Could not fetch scheduled events: %s", e)
+
+    # 3. If user_input was blank or referenced recent chat, fetch recent messages in target channel
+    raw_lower = user_input.strip().lower()
+    if not raw_lower or any(w in raw_lower for w in ("recent", "chat", "general", "drama")):
+        try:
+            target_ch = client.get_channel(target_channel_id) or await client.fetch_channel(target_channel_id)
+            if isinstance(target_ch, (discord.TextChannel, discord.Thread)):
+                scraped_lines.append(f"--- Recent Messages in #{target_ch.name} ---")
+                recent_msgs = []
+                async for msg in target_ch.history(limit=8):
+                    if not msg.author.bot:
+                        recent_msgs.append(msg)
+                for msg in reversed(recent_msgs):
+                    speaker = (
+                        getattr(msg.author, "nick", None)
+                        or getattr(msg.author, "global_name", None)
+                        or msg.author.name
+                    )
+                    scraped_lines.append(f"{speaker}: {msg.content[:150]}")
+        except Exception as e:
+            logger.debug("Could not fetch recent target channel messages: %s", e)
+
+    return "\n".join(scraped_lines).strip()
+
+
+def formulate_starting_context(
+    user_input: str,
+    scraped_data: str,
+    openai_key: Optional[str] = None,
+    model: str = "gpt-4o-mini",
+) -> str:
+    """Synthesize raw server context and user input into a tailored starting prompt for HMS Victory."""
+    api_key = openai_key or os.getenv("OPENAI_TOKEN")
+    if not api_key:
+        return user_input or ""
+
+    if not user_input.strip() and not scraped_data.strip():
+        return ""
+
+    url = "https://api.openai.com/v1/chat/completions"
+    sys_prompt = """You are an expert prompt engineer configuring background context for HMS Victory, a cynical, deadpan, dry British Discord bot.
+You will be provided with:
+1. Owner's input/guidance (may be rough keywords, notes, or empty).
+2. Scraped server data (upcoming Discord events, referenced message logs, or recent chat).
+
+YOUR TASK:
+Synthesize this into a concise starting context / background knowledge (2 to 3 sentences maximum, under 60 words).
+Focus on:
+- What specific event, topic, or recent server occurrence is relevant.
+- Who is involved (key names/hosts, e.g. Chin, Johnny, etc.).
+- HMS Victory's cynical attitude toward it (he finds it exhausting, was forced into it by Chin/Oggers, or resents being asked).
+
+STYLE CONSTRAINTS:
+- Do NOT instruct him to repeat the topic endlessly.
+- Keep the tone dry, sharp, and British.
+- Output ONLY the synthesized context text, no preamble or quotes."""
+
+    prompt_content = f"Owner's input: \"{user_input}\"\n\nScraped Server Context:\n{scraped_data}"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": prompt_content},
+        ],
+        "max_tokens": 120,
+        "temperature": 0.7,
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            return data["choices"][0]["message"]["content"].strip().strip('"')
+    except Exception as e:
+        logger.error("Failed to formulate starting context: %s", e, exc_info=True)
+        return user_input
 
 
 def parse_duration_str(val: Optional[str]) -> float:
@@ -190,7 +327,7 @@ class LiveChatManager:
             color = 0x2ECC71  # Green
             status_text = "🟢 **Active & Responding**"
             channel_val = f"<#{self.target_channel_id}> ({self.target_channel_name})"
-            
+
             if self.end_time:
                 remaining = max(0, int(self.end_time - time.time()))
                 mins = remaining // 60
@@ -301,10 +438,10 @@ class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
         required=False,
     )
     topic_input = discord.ui.TextInput(
-        label="Starting Topic / Grievance (Optional)",
-        placeholder="e.g. Chin forcing me to promote pub quiz",
+        label="Starting Context / Hint (Optional)",
+        placeholder="e.g. Chin pub quiz, a Discord message link, or leave blank to auto-scrape",
         style=discord.TextStyle.paragraph,
-        max_length=300,
+        max_length=400,
         required=False,
     )
 
@@ -313,26 +450,51 @@ class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
             await interaction.response.send_message("Only Oggers can control this.", ephemeral=True)
             return
 
+        # Defer immediately to allow time for scraping & AI context formulation
+        await interaction.response.defer(ephemeral=True)
+
         cid, cname = resolve_channel_input(self.channel_input.value)
         dur = parse_duration_str(self.duration_input.value)
-        top = self.topic_input.value.strip() if self.topic_input.value else None
+        raw_topic = self.topic_input.value.strip() if self.topic_input.value else ""
+
+        final_topic = raw_topic
+        try:
+            scraped_data = await scrape_server_context(
+                client=interaction.client,
+                guild=interaction.guild,
+                target_channel_id=cid,
+                user_input=raw_topic,
+            )
+            if scraped_data or raw_topic:
+                formulated = await asyncio.to_thread(
+                    formulate_starting_context,
+                    user_input=raw_topic,
+                    scraped_data=scraped_data,
+                )
+                if formulated:
+                    final_topic = formulated
+        except Exception as e:
+            logger.warning("Failed to scrape/formulate starting topic: %s", e, exc_info=True)
 
         live_chat_manager.start(
             channel_id=cid,
             channel_name=cname,
             duration_seconds=dur,
-            topic=top,
+            topic=final_topic,
         )
 
         embed = live_chat_manager.get_status_embed()
         view = ChatbotDashboardView()
         try:
-            await interaction.response.edit_message(embed=embed, view=view)
+            if interaction.message:
+                await interaction.message.edit(embed=embed, view=view)
         except Exception:
-            await interaction.response.send_message(
-                f"✅ **HMS Victory is awake!** Active in <#{cid}>.",
-                ephemeral=True,
-            )
+            pass
+
+        msg = f"✅ **HMS Victory is awake in <#{cid}>!**"
+        if final_topic:
+            msg += f"\n**Formulated Starting Context:**\n> {final_topic}"
+        await interaction.followup.send(msg, ephemeral=True)
 
 
 class ChatbotDashboardView(discord.ui.View):
