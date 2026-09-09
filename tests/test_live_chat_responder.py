@@ -173,6 +173,43 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         cid, cname = resolve_channel_input("959508821951275069")
         self.assertEqual(cid, 959508821951275069)
 
+        # Robust normalization tests
+        cid, cname = resolve_channel_input("VIP Lounge")
+        self.assertEqual(cname, "VIP Lounge")
+
+        cid, cname = resolve_channel_input("💎 | vip-lounge")
+        self.assertEqual(cname, "VIP Lounge")
+
+        cid, cname = resolve_channel_input("vip-lounge")
+        self.assertEqual(cname, "VIP Lounge")
+
+        cid, cname = resolve_channel_input("House of Commons")
+        self.assertEqual(cname, "House of Commons")
+
+    def test_is_message_for_bot(self):
+        from lib.features.chat_responder import is_message_for_bot
+
+        client = MagicMock()
+        client.user.id = 999999999
+
+        # Direct name checks (vic, victor, victory, hms)
+        for phrase in ("hi vic", "hi Vic", "hey victor", "tell them victory", "what do you think hms", "hms victory"):
+            msg = MagicMock()
+            msg.author.bot = False
+            msg.mentions = []
+            msg.reference = None
+            msg.content = phrase
+            self.assertTrue(is_message_for_bot(client, msg), f"Failed for phrase: {phrase}")
+
+        # False positives should NOT trigger
+        for false_phrase in ("victim of circumstance", "the conviction was overturned", "military service"):
+            msg = MagicMock()
+            msg.author.bot = False
+            msg.mentions = []
+            msg.reference = None
+            msg.content = false_phrase
+            self.assertFalse(is_message_for_bot(client, msg), f"Should not trigger for: {false_phrase}")
+
     def test_parse_user_id(self):
         from lib.features.chat_responder import parse_user_id
         self.assertEqual(parse_user_id("123456789012345678"), 123456789012345678)
@@ -321,6 +358,24 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         message.author.id = USERS.OGGERS
         message.mentions = [client.user]
         message.content = f"<@{client.user.id}> write a poem about this user"
+
+        live_chat_manager.active = False
+        res = await handle_chat_message(client, message)
+        self.assertTrue(res)
+        mock_handle_one_off.assert_called_once_with(client, message)
+
+    @patch("lib.features.chat_responder.handle_one_off_owner_mention")
+    async def test_handle_chat_message_oggers_hi_vic_asleep(self, mock_handle_one_off):
+        mock_handle_one_off.return_value = True
+        client = MagicMock()
+        client.user.id = 999999999
+
+        message = MagicMock()
+        message.author.bot = False
+        message.author.id = USERS.OGGERS
+        message.mentions = []
+        message.reference = None
+        message.content = "hi vic"
 
         live_chat_manager.active = False
         res = await handle_chat_message(client, message)

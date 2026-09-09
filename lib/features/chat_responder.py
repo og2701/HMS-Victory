@@ -331,26 +331,51 @@ def parse_duration_str(val: Optional[str]) -> float:
 
 def resolve_channel_input(val: Optional[str]) -> Tuple[int, str]:
     if not val:
+        if live_chat_manager.target_channel_id:
+            return live_chat_manager.target_channel_id, live_chat_manager.target_channel_name
         return CHANNELS.GENERAL, "General Chat"
+
     ch = val.strip().lower()
     ch_clean = re.sub(r"[<#>]", "", ch).strip()
-    if ch in ("general", "gen") or ch_clean in ("general", "gen"):
+    norm = re.sub(r"[^a-z0-9]", "", ch)
+
+    if norm in ("general", "gen", "generalchat"):
         return CHANNELS.GENERAL, "General Chat"
-    if ch in ("vip", "vip-lounge", "viplounge") or ch_clean in ("vip", "vip-lounge", "viplounge"):
+    if norm in ("vip", "viplounge", "viploungechat"):
         return CHANNELS.VIP_LOUNGE, "VIP Lounge"
-    if ch in ("commons", "house-of-commons") or ch_clean in ("commons", "house-of-commons"):
+    if norm in ("commons", "houseofcommons"):
         return CHANNELS.COMMONS, "House of Commons"
-    if ch in ("politics", "pol") or ch_clean in ("politics", "pol"):
+    if norm in ("politics", "pol"):
         return CHANNELS.POLITICS, "Politics"
-    if ch in ("bot-spam", "botspam") or ch_clean in ("bot-spam", "botspam"):
+    if norm in ("botspam", "botspamchat"):
         return CHANNELS.BOT_SPAM, "Bot Spam"
+
+    # Match against current live_chat_manager target channel name
+    if live_chat_manager.target_channel_name:
+        current_norm = re.sub(r"[^a-z0-9]", "", live_chat_manager.target_channel_name.lower())
+        if norm == current_norm and live_chat_manager.target_channel_id:
+            return live_chat_manager.target_channel_id, live_chat_manager.target_channel_name
+
     try:
         cid = int(ch_clean)
         if live_chat_manager.target_channel_id == cid and live_chat_manager.target_channel_name:
             return cid, live_chat_manager.target_channel_name
         return cid, f"Channel {cid}"
     except ValueError:
-        return CHANNELS.GENERAL, "General Chat"
+        pass
+
+    if live_chat_manager.client:
+        try:
+            for c in live_chat_manager.client.get_all_channels():
+                c_norm = re.sub(r"[^a-z0-9]", "", getattr(c, "name", "").lower())
+                if norm == c_norm:
+                    return c.id, getattr(c, "name", f"Channel {c.id}")
+        except Exception:
+            pass
+
+    if live_chat_manager.target_channel_id:
+        return live_chat_manager.target_channel_id, live_chat_manager.target_channel_name
+    return CHANNELS.GENERAL, "General Chat"
 
 
 def parse_user_id(val: Optional[str]) -> Optional[int]:
@@ -613,35 +638,48 @@ class LiveChatManager:
         embed.set_footer(text=footer_text)
         return embed
 
+def is_message_for_bot(client: discord.Client, message: discord.Message) -> bool:
+    """Check if a message is addressed to or meant for HMS Victory (tags, replies, or name keywords)."""
+    if getattr(message.author, "bot", False):
+        return False
+
+    content = (message.content or "").strip()
+
+    # 1. Direct bot mention (@HMS Victory / <@ID>)
+    if client.user:
+        if (
+            client.user in getattr(message, "mentions", [])
+            or f"<@{client.user.id}>" in content
+            or f"<@!{client.user.id}>" in content
+        ):
+            return True
+
+    # 2. Reply to a message sent by the bot
+    ref = getattr(message, "reference", None)
+    if ref and getattr(ref, "message_id", None):
+        try:
+            ref_msg = getattr(ref, "cached_message", None)
+            if ref_msg and client.user and getattr(ref_msg.author, "id", None) == client.user.id:
+                return True
+        except Exception:
+            pass
+
+    # 3. Name mentioned anywhere as a word (vic, victor, victory, hms, hms victory)
+    # Using \b word boundary so words like 'victim', 'conviction', 'service' do NOT match.
+    if re.search(r"\b(vic|victor|victory|hms|hms\s+victory)\b", content, re.IGNORECASE):
+        return True
+
+    return False
+
+
     async def handle_message(self, client: discord.Client, message: discord.Message) -> bool:
         """Handle an incoming message if live chat is active in this channel."""
         if not self.is_active_for(message.channel.id) or message.author.bot:
             return False
 
         content = message.content or ""
-        ref = message.reference
-        is_reply_to_bot = False
-
-        if ref and ref.message_id:
-            try:
-                ref_msg = ref.cached_message or await message.channel.fetch_message(ref.message_id)
-                if ref_msg and ref_msg.author.id == client.user.id:
-                    is_reply_to_bot = True
-            except Exception:
-                pass
-
-        is_mentioned = client.user in message.mentions if client.user else False
-        name_called = (
-            content.lower().strip().startswith("vic ")
-            or content.lower().strip() == "vic"
-            or "hms victory" in content.lower()
-        )
-
-        target_hit = False
-        if self.target_user_id and message.author.id == self.target_user_id:
-            target_hit = True
-
-        if not (target_hit or is_reply_to_bot or is_mentioned or name_called):
+        target_hit = bool(self.target_user_id and message.author.id == self.target_user_id)
+        if not (target_hit or is_message_for_bot(client, message)):
             return False
 
         # Enforce rate limit / cooldown
@@ -928,19 +966,14 @@ async def handle_chat_message(client: discord.Client, message: discord.Message) 
     if getattr(message.author, "bot", False):
         return False
 
-    # Check for direct tag by Oggers
-    is_direct_bot_tag = False
-    if client.user:
-        is_direct_bot_tag = (
-            client.user in getattr(message, "mentions", [])
-            or f"<@{client.user.id}>" in (message.content or "")
-            or f"<@!{client.user.id}>" in (message.content or "")
-        )
+    meant_for_bot = is_message_for_bot(client, message)
 
-    if message.author.id == USERS.OGGERS and is_direct_bot_tag:
+    # 1. If message is from Oggers and meant for the bot:
+    # Always respond to Oggers as a one-off anywhere on the server!
+    if message.author.id == USERS.OGGERS and meant_for_bot:
         return await handle_one_off_owner_mention(client, message)
 
-    # Standard live chat responder if currently active
+    # 2. Standard live chat responder if currently active
     if live_chat_manager.active:
         return await live_chat_manager.handle_message(client, message)
 
