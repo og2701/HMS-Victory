@@ -311,6 +311,23 @@ def _extract_recent_image_prompt_from_history(history: Optional[List[Dict[str, A
     return None
 
 
+def recent_image_prompts_from_history(limit: int = 3, history: Optional[List[Dict[str, Any]]] = None) -> List[str]:
+    """The last few image prompts the bot produced, newest first, so the synthesiser can avoid repeating itself."""
+    hist = history if history is not None else getattr(live_chat_manager, "conversation_history", [])
+    found: List[str] = []
+    for turn in reversed(list(hist)):
+        if turn.get("role") != "assistant":
+            continue
+        c = turn.get("content", "")
+        for marker in ("[Generated Image:", "[Edited Image:"):
+            if marker in c:
+                found.append(c.split(marker, 1)[1].rstrip("]").strip())
+                break
+        if len(found) >= limit:
+            break
+    return found
+
+
 def looks_like_image_request(prompt: str, history: Optional[List[Dict[str, Any]]] = None) -> bool:
     """Return True if prompt is asking for an image to be generated or drawn."""
     if not prompt:
@@ -514,13 +531,35 @@ def edit_image_openai(
     return img_bytes, input_tokens, output_tokens
 
 
+_CUSTOM_EMOJI_RE = re.compile(r"<a?:\w+:\d+>")
+_MENTION_TOKEN_RE = re.compile(r"<@[!&]?\d+>|<#\d+>")
+_URL_RE = re.compile(r"https?://\S+")
+
+
+def is_substantive_message(text: str, min_letters: int = 3) -> bool:
+    """False for emoji-only, mention-only, link-only or two-letter messages that tell you nothing about a person."""
+    if not text:
+        return False
+    stripped = _URL_RE.sub("", _MENTION_TOKEN_RE.sub("", _CUSTOM_EMOJI_RE.sub("", text)))
+    letters = sum(1 for ch in stripped if ch.isalpha())
+    return letters >= min_letters
+
+
 def fetch_user_recent_chat(
     client: Optional[discord.Client],
     user_id: int,
     channel: Optional[Any] = None,
     limit: int = 35,
+    spread: bool = False,
+    older_sample: int = 30,
 ) -> List[Dict[str, Any]]:
-    """Retrieve recent chat messages for a specific user from SQLite message_archive."""
+    """Retrieve chat messages for a specific user from the SQLite message_archive.
+
+    By default this is the most recent `limit` messages. With spread=True it also mixes in a random
+    sample of `older_sample` substantive messages from before that recent batch, so a character sketch
+    reflects the whole retention window rather than whatever they said in the last hour, and drops
+    emoji-only / two-letter noise.
+    """
     results = []
     seen_texts = set()
 
@@ -529,13 +568,31 @@ def fetch_user_recent_chat(
         rows = DatabaseManager.fetch_all(
             "SELECT channel_id, content, attachments, ts FROM message_archive "
             "WHERE user_id = ? ORDER BY ts DESC LIMIT ?",
-            (str(user_id), limit)
+            (str(user_id), limit * 2 if spread else limit)
         )
+        rows = list(rows or [])
+        recent_count = len(rows)
+        if spread and rows:
+            oldest_recent_ts = min(r[3] for r in rows)
+            older = DatabaseManager.fetch_all(
+                "SELECT channel_id, content, attachments, ts FROM message_archive "
+                "WHERE user_id = ? AND ts < ? AND length(content) >= 12 ORDER BY RANDOM() LIMIT ?",
+                (str(user_id), oldest_recent_ts, older_sample)
+            )
+            rows.extend(older or [])
         if rows:
-            for ch_id, content, attachments, ts in rows:
+            kept_recent = 0
+            for idx, (ch_id, content, attachments, ts) in enumerate(rows):
                 txt = (content or "").strip()
                 if not txt and attachments:
                     txt = "[Sent attachment/media]"
+                if spread:
+                    if not is_substantive_message(txt):
+                        continue
+                    if idx < recent_count:
+                        if kept_recent >= limit:
+                            continue
+                        kept_recent += 1
                 if txt and txt not in seen_texts:
                     seen_texts.add(txt)
                     ch_name = None
@@ -554,7 +611,19 @@ def fetch_user_recent_chat(
     except Exception as e:
         logger.debug("Failed to fetch user chat from message_archive: %s", e)
 
+    if spread:
+        results.sort(key=lambda x: x.get("ts", 0))
     return results
+
+
+async def fetch_user_chat_sample_async(
+    client: Optional[discord.Client],
+    user_id: int,
+    recent_limit: int = 25,
+    older_sample: int = 30,
+) -> List[Dict[str, Any]]:
+    """A user's messages sampled across the archive window (recent plus a random older slice), oldest first."""
+    return await asyncio.to_thread(fetch_user_recent_chat, client, user_id, None, recent_limit, True, older_sample)
 
 
 async def fetch_user_recent_chat_async(
@@ -589,18 +658,94 @@ async def fetch_user_recent_chat_async(
     return results
 
 
-def format_user_chat_for_context(user_name: str, user_id: int, chat_records: List[Dict[str, Any]]) -> str:
+_BOT_NAME_RE = re.compile(r"\b(?:vic|victory|hms\s+victory)\b", re.IGNORECASE)
+
+
+def fetch_user_bot_interactions(
+    user_id: int,
+    bot_id: Optional[int] = None,
+    limit: int = 40,
+) -> List[Dict[str, Any]]:
+    """Messages between a user and the bot: the user's messages that address it, and the bot's that tag them."""
+    bot_id = bot_id or BOT_ID
+    results: List[Dict[str, Any]] = []
+    try:
+        from database import DatabaseManager
+        user_rows = DatabaseManager.fetch_all(
+            "SELECT content, ts FROM message_archive WHERE user_id = ? "
+            "AND (lower(content) LIKE '%vic%' OR content LIKE ?) ORDER BY ts DESC LIMIT ?",
+            (str(user_id), f"%<@{bot_id}>%", limit * 3)
+        )
+        for content, ts in user_rows or []:
+            txt = (content or "").strip()
+            if not txt:
+                continue
+            if f"<@{bot_id}>" in txt or f"<@!{bot_id}>" in txt or _BOT_NAME_RE.search(txt):
+                results.append({"speaker": "user", "content": txt, "ts": ts})
+        bot_rows = DatabaseManager.fetch_all(
+            "SELECT content, ts FROM message_archive WHERE user_id = ? AND content LIKE ? ORDER BY ts DESC LIMIT ?",
+            (str(bot_id), f"%<@{user_id}>%", limit)
+        )
+        for content, ts in bot_rows or []:
+            txt = (content or "").strip()
+            if txt:
+                results.append({"speaker": "bot", "content": txt, "ts": ts})
+    except Exception as e:
+        logger.debug("Failed to fetch bot interactions for %s: %s", user_id, e)
+
+    results.sort(key=lambda r: r.get("ts", 0))
+    return results[-limit:]
+
+
+async def fetch_user_bot_interactions_async(user_id: int, bot_id: Optional[int] = None, limit: int = 40) -> List[Dict[str, Any]]:
+    return await asyncio.to_thread(fetch_user_bot_interactions, user_id, bot_id, limit)
+
+
+def format_bot_interactions_for_context(user_name: str, user_id: int, records: List[Dict[str, Any]]) -> str:
+    """Render user<->bot exchanges as a transcript section for the image synthesiser."""
+    if not records:
+        return f"HISTORY BETWEEN {user_name} (<@{user_id}>) AND HMS VICTORY:\n- [No recorded exchanges in the archive]"
+    lines = []
+    for r in records[-40:]:
+        who = "HMS Victory" if r.get("speaker") == "bot" else user_name
+        content = (r.get("content") or "").replace("\n", " ").strip()
+        if len(content) > 200:
+            content = content[:200] + "…"
+        lines.append(f"- {who}: {content}")
+    return f"HISTORY BETWEEN {user_name} (<@{user_id}>) AND HMS VICTORY ({len(lines)} messages):\n" + "\n".join(lines)
+
+
+_PROMPT_ABOUT_BOT_RE = re.compile(
+    r"\b(?:with|and|vs\.?|versus|against|alongside|meeting|fighting|hugging|kissing|arguing\s+with)\s+(?:you|yourself|vic|hms\s+victory)\b"
+    r"|\byour\s+history\b|\bhistory\s+(?:with|together)\b|\byou\s*\(hms\s+victory\)|\binteract\w*\s+with\s+(?:you|vic)\b"
+    r"|\b(?:you|vic)\s+and\s+(?:him|her|them|me|<@!?\d+>)\b|\bthe\s+two\s+of\s+you\b|\byou\s+two\b|\byou\s+both\b",
+    re.IGNORECASE,
+)
+
+
+def prompt_references_bot(prompt: str) -> bool:
+    """True when an image request wants HMS Victory itself in the picture or draws on its history with the subject."""
+    return bool(prompt and _PROMPT_ABOUT_BOT_RE.search(prompt))
+
+
+def format_user_chat_for_context(
+    user_name: str,
+    user_id: int,
+    chat_records: List[Dict[str, Any]],
+    header: str = "RECENT MESSAGE HISTORY FOR",
+    max_lines: int = 30,
+) -> str:
     """Format user chat records into a clean section for the LLM prompt context."""
     if not chat_records:
-        return f"RECENT MESSAGE HISTORY FOR {user_name} (<@{user_id}>):\n- [No recent messages found in naval archives]"
+        return f"{header} {user_name} (<@{user_id}>):\n- [No recent messages found in naval archives]"
     lines = []
-    for r in chat_records[-30:]:
+    for r in chat_records[-max_lines:]:
         ch = r.get("channel", "chat")
         content = r.get("content", "").replace("\n", " ").strip()
         if len(content) > 180:
             content = content[:180] + "…"
         lines.append(f"- [#{ch}] {content}")
-    return f"RECENT MESSAGE HISTORY FOR {user_name} (<@{user_id}>) ({len(lines)} messages):\n" + "\n".join(lines)
+    return f"{header} {user_name} (<@{user_id}>) ({len(lines)} messages):\n" + "\n".join(lines)
 
 
 def synthesize_contextual_image_prompt(
@@ -612,6 +757,7 @@ def synthesize_contextual_image_prompt(
     openai_key: Optional[str] = None,
     model: str = "gpt-4o",
     timeout: int = 30,
+    previous_image_prompts: Optional[List[str]] = None,
 ) -> Tuple[str, str, int, int]:
     """Synthesize a rich, descriptive visual image prompt and an in-character Vic roast caption from context.
 
@@ -627,12 +773,22 @@ def synthesize_contextual_image_prompt(
         f"Server leadership ({user_name}, {caller_role}) has commanded you to produce an image or caricature{target_str}.\n"
         "You are provided with the user's command and relevant Discord server/chat history context.\n\n"
         "Your objectives:\n"
-        "1. Analyze the user's request and any provided message history, quirks, topics, or server context.\n"
-        "2. Formulate a rich, detailed visual description prompt (under 80 words) for an AI image generator (like DALL-E / diffusion model).\n"
-        "   - The prompt MUST be purely visual—describe their physical caricature, facial expression, attire, props in their hands, "
+        "1. Analyze the user's request and the provided message history. Build the caricature from RECURRING themes across the whole "
+        "sampled history (hobbies, pets, catchphrases, food and drink habits, opinions, running jokes, how they talk to people), "
+        "not from whatever they happened to say in the last hour. A single mention of something is not a personality trait.\n"
+        "2. Formulate a rich, detailed visual description prompt (under 110 words) for an AI image generator (like DALL-E / diffusion model).\n"
+        "   - The prompt MUST be purely visual: describe their physical caricature, facial expression, attire, props in their hands, "
         "and detailed environment/background reflecting their messages, topics, and quirks.\n"
-        "   - Choose a distinct art style (e.g. dramatic 19th-century satirical oil painting, detailed British political cartoon, gritty photographic portrait, or nautical etching).\n"
-        "   - Do NOT include Discord tags, usernames, or meta instructions in the image prompt itself—keep it purely descriptive imagery.\n"
+        "   - HONOUR THE REQUESTED FORMAT, MEDIUM AND STYLE EXACTLY. 'cartoon strip' / 'comic strip' / 'comic' means ONE image laid out as "
+        "3 or 4 sequential panels telling a simple gag, with at most a few words of speech-bubble text. 'photorealistic' / 'photo' means a "
+        "realistic photograph, not a caricature. 'cartoon', 'anime', 'oil painting', 'pixel art', 'sketch' and the like mean exactly that. "
+        "Only choose the style yourself (e.g. 19th-century satirical oil painting, British political cartoon, nautical etching) when none was requested.\n"
+        "   - If the request involves HMS Victory itself ('with you', 'your history together', 'you and him'), the image MUST include the bot as a "
+        "second character interacting with the person: HMS Victory is a weathered 18th-century first-rate ship of the line with a stern, "
+        "unimpressed personality (draw it as the ship itself with a disapproving air, or as a stern 18th-century naval officer figurehead). "
+        "Use the HISTORY BETWEEN section for what they actually get up to together.\n"
+        "   - If PREVIOUS IMAGES are listed, do not recycle their props, outfits, settings or gags. Find something new from the history.\n"
+        "   - Do NOT include Discord tags, usernames, or meta instructions in the image prompt itself; keep it purely descriptive imagery.\n"
         "3. Formulate a witty, deadpan 1-2 sentence caption in HMS Victory's voice introducing the portrait and dryly roasting them based on their records or the prompt. "
         "Maintain an aristocratic 18th-century naval tone. Never use corporate filler or AI disclaimers.\n\n"
         "Respond ONLY with a JSON object:\n"
@@ -643,6 +799,9 @@ def synthesize_contextual_image_prompt(
     )
 
     user_payload = f"COMMAND: \"{prompt}\""
+    if previous_image_prompts:
+        listed = "\n".join(f"- {p[:220]}" for p in previous_image_prompts if p)
+        user_payload += f"\n\nPREVIOUS IMAGES ALREADY PRODUCED (do not reuse their motifs):\n{listed}"
     if context.strip():
         user_payload += f"\n\nSERVER & MESSAGE CONTEXT:\n{context.strip()}"
 
@@ -653,7 +812,7 @@ def synthesize_contextual_image_prompt(
             {"role": "user", "content": user_payload},
         ],
         "response_format": {"type": "json_object"},
-        "max_tokens": 300,
+        "max_tokens": 400,
         "temperature": 0.85,
     }
 
@@ -2360,17 +2519,42 @@ async def ensure_target_history_in_context(
     context: str,
     target_id: Optional[int],
     target_name: Optional[str],
+    prompt: str = "",
+    bot_id: Optional[int] = None,
 ) -> str:
-    """Make sure the portrait subject's own recent messages are in the context the synthesiser sees."""
-    if target_id is None or context_has_user_history(context, target_id):
+    """Put the portrait subject's history in front of the synthesiser.
+
+    Always adds a sample spread across the whole archive window (recent chatter alone produces a
+    caricature of whatever they mentioned an hour ago), and when the request is about the subject and
+    the bot together, adds their recorded exchanges with HMS Victory too.
+    """
+    if target_id is None:
         return context
+    name = target_name or "Target User"
+    sections: List[str] = []
     try:
-        user_chat = await fetch_user_recent_chat_async(client, target_id, getattr(message, "channel", None), limit=35)
-        section = format_user_chat_for_context(target_name or "Target User", target_id, user_chat)
-        return f"{section}\n\n{context}" if context else section
+        sampled = await fetch_user_chat_sample_async(client, target_id)
+        if sampled:
+            sections.append(format_user_chat_for_context(
+                name, target_id, sampled, header="MESSAGE HISTORY SAMPLED ACROSS THE LAST 30 DAYS FOR", max_lines=55,
+            ))
+        elif not context_has_user_history(context, target_id):
+            recent = await fetch_user_recent_chat_async(client, target_id, getattr(message, "channel", None), limit=35)
+            sections.append(format_user_chat_for_context(name, target_id, recent))
     except Exception as e:
         logger.debug("Failed to fetch target user chat for image context: %s", e)
+
+    if prompt_references_bot(prompt):
+        try:
+            exchanges = await fetch_user_bot_interactions_async(target_id, bot_id or BOT_ID, 40)
+            sections.append(format_bot_interactions_for_context(name, target_id, exchanges))
+        except Exception as e:
+            logger.debug("Failed to fetch bot interactions for image context: %s", e)
+
+    if not sections:
         return context
+    block = "\n\n".join(sections)
+    return f"{block}\n\n{context}" if context else block
 
 
 IMAGE_FAILURE_EXCUSE_INSTRUCTIONS = """You are HMS Victory, a Discord bot with a notoriously dry, deadpan, cynical British persona (an 18th-century Royal Navy flagship, now stuck answering Discord).
@@ -2713,7 +2897,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 clean_prompt, caller_id, caller_name, other_mentions, target_users,
                 subject=subject, subject_name=subject_name,
             )
-            context = await ensure_target_history_in_context(client, message, context, target_id, target_name)
+            context = await ensure_target_history_in_context(client, message, context, target_id, target_name, prompt=clean_prompt, bot_id=bot_id)
 
             prev_caption = getattr(prev_msg, "content", "")
             logger.info("Synthesizing image edit for %s: %r (target=%s, prev_prompt=%r)", caller_name, clean_prompt, target_name, prev_prompt)
@@ -2817,7 +3001,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             )
             # Make sure the subject's own message history is what the synthesiser reads, not just whoever
             # happened to be mentioned or talking nearby.
-            context = await ensure_target_history_in_context(client, message, context, target_id, target_name)
+            context = await ensure_target_history_in_context(client, message, context, target_id, target_name, prompt=clean_prompt, bot_id=bot_id)
 
             is_contextual = is_contextual_image_request(clean_prompt, other_mentions, context)
             if target_id is not None:
@@ -2836,6 +3020,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                         user_name=caller_name,
                         caller_role=caller_role,
                         target_name=target_name,
+                        previous_image_prompts=recent_image_prompts_from_history(3),
                     )
                     if synth_p or synth_c:
                         live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)

@@ -1070,6 +1070,166 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             await handle_one_off_owner_mention(client, message2)
         self.assertIn("canvas broke", message2.reply.call_args[0][0])
 
+    def test_is_substantive_message(self):
+        from lib.features.chat_responder import is_substantive_message
+        for junk in ["", "No", "Tf", "<:hips:1146858165414154303>", "<@1171842947440967770>", "https://x.com/a", "<:a:1> <:b:2> 😂", "ok"]:
+            self.assertFalse(is_substantive_message(junk), junk)
+        for fine in ["Corrrr", "I love Bradley Walsh he's so handsome", "Vic loves me", "I am not human I'm an alien <:PepeHands:1>"]:
+            self.assertTrue(is_substantive_message(fine), fine)
+
+    @patch("database.DatabaseManager.fetch_all")
+    def test_fetch_user_recent_chat_spread(self, mock_fetch):
+        from lib.features.chat_responder import fetch_user_recent_chat
+
+        recent = [
+            ("100", "I mentioned Jaffa cakes once like 4 hours ago", None, 1000),
+            ("100", "No", None, 999),
+            ("100", "<:hips:1146858165414154303>", None, 998),
+            ("100", "Lamborghini energy drink?", None, 997),
+            ("100", "You can buy mashed potato on temu", None, 996),
+            ("100", "Corrrr", None, 995),
+        ]
+        older = [
+            ("100", "I love Bradley Walsh he's so handsome", None, 500),
+            ("100", "I am not human I'm an alien", None, 300),
+            ("100", "Nahhh I love my pet she keeps herself entertained", None, 400),
+        ]
+        mock_fetch.side_effect = [recent, older]
+
+        res = fetch_user_recent_chat(None, 479207279850291221, limit=3, spread=True, older_sample=30)
+
+        self.assertEqual(mock_fetch.call_count, 2)
+        first_q, first_params = mock_fetch.call_args_list[0][0]
+        self.assertEqual(first_params, ("479207279850291221", 6))
+        second_q, second_params = mock_fetch.call_args_list[1][0]
+        self.assertIn("RANDOM()", second_q)
+        self.assertEqual(second_params, ("479207279850291221", 995, 30))
+
+        contents = [r["content"] for r in res]
+        # Oldest first; emoji-only and two-letter junk dropped; only the 3 newest substantive recent
+        # messages kept (limit=3), so "Corrrr" falls off; the older random sample all kept.
+        self.assertEqual(contents, [
+            "I am not human I'm an alien",
+            "Nahhh I love my pet she keeps herself entertained",
+            "I love Bradley Walsh he's so handsome",
+            "You can buy mashed potato on temu",
+            "Lamborghini energy drink?",
+            "I mentioned Jaffa cakes once like 4 hours ago",
+        ])
+
+    @patch("database.DatabaseManager.fetch_all")
+    def test_fetch_user_recent_chat_default_is_unchanged(self, mock_fetch):
+        from lib.features.chat_responder import fetch_user_recent_chat
+        mock_fetch.return_value = [("100", "No", None, 10), ("100", "<:hips:1>", None, 9)]
+        res = fetch_user_recent_chat(None, 1, limit=10)
+        self.assertEqual(mock_fetch.call_count, 1)
+        self.assertEqual([r["content"] for r in res], ["No", "<:hips:1>"])
+
+    @patch("database.DatabaseManager.fetch_all")
+    def test_fetch_user_bot_interactions(self, mock_fetch):
+        from lib.features.chat_responder import fetch_user_bot_interactions, format_bot_interactions_for_context
+
+        user_rows = [
+            ("Make it a image you dummy vic", 900),
+            ("the service is down again", 850),        # 'vic' inside 'service': not addressed to the bot
+            ("<@1171842947440967770> who is the best server member", 800),
+            ("Vic loves me", 700),
+        ]
+        bot_rows = [("<@479207279850291221> You are the ship's barnacle, Steven.", 750)]
+        mock_fetch.side_effect = [user_rows, bot_rows]
+
+        res = fetch_user_bot_interactions(479207279850291221, bot_id=1171842947440967770, limit=40)
+
+        self.assertEqual([r["content"][:12] for r in res], ["Vic loves me", "<@4792072798", "<@1171842947", "Make it a im"])
+        self.assertEqual([r["speaker"] for r in res], ["user", "bot", "user", "user"])
+        section = format_bot_interactions_for_context("Steven", 479207279850291221, res)
+        self.assertIn("HISTORY BETWEEN Steven (<@479207279850291221>) AND HMS VICTORY", section)
+        self.assertIn("- HMS Victory: <@479207279850291221> You are the ship's barnacle", section)
+        self.assertIn("- Steven: Vic loves me", section)
+
+    def test_prompt_references_bot(self):
+        from lib.features.chat_responder import prompt_references_bot
+        for yes in [
+            "generate a cartoon strip of  <@479207279850291221>interacting with you (HMS Victory), based on your history together",
+            "draw steven with you",
+            "you and him having a pint",
+            "a photo of the two of you",
+            "steven vs vic boxing match",
+        ]:
+            self.assertTrue(prompt_references_bot(yes), yes)
+        for no in ["can you draw steven", "what do you think of steven", "draw me as an admiral", "generate a portrait of <@555> based on his message history"]:
+            self.assertFalse(prompt_references_bot(no), no)
+
+    def test_recent_image_prompts_from_history(self):
+        from lib.features.chat_responder import recent_image_prompts_from_history
+        hist = [
+            {"role": "assistant", "content": "[Generated Image: A tea-drinking Brit]"},
+            {"role": "user", "content": "lol"},
+            {"role": "assistant", "content": "Plain text reply"},
+            {"role": "assistant", "content": "[Edited Image: Same Brit, balder]"},
+            {"role": "assistant", "content": "[Generated Image: Steven with Jaffa cakes]"},
+        ]
+        self.assertEqual(recent_image_prompts_from_history(2, hist), ["Steven with Jaffa cakes", "Same Brit, balder"])
+        self.assertEqual(recent_image_prompts_from_history(5, []), [])
+
+    @patch("urllib.request.urlopen")
+    def test_synthesize_contextual_image_prompt_honours_format_and_previous(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_contextual_image_prompt
+
+        mock_urlopen.return_value = _mock_resp(json.dumps({
+            "choices": [{"message": {"content": json.dumps({"image_prompt": "A four-panel comic strip...", "caption": "Behold."})}}],
+            "usage": {"prompt_tokens": 200, "completion_tokens": 60},
+        }).encode())
+
+        img_prompt, caption, _, _ = synthesize_contextual_image_prompt(
+            prompt="generate a cartoon strip of steven interacting with you",
+            context="HISTORY BETWEEN Steven (<@1>) AND HMS VICTORY (1 messages):\n- Steven: Vic loves me",
+            user_name="Oggers", caller_role="server owner", target_name="Steven",
+            openai_key="test-key",
+            previous_image_prompts=["Steven in a Jaffa Cakes Fanatic t-shirt holding a Lamborghini energy drink"],
+        )
+
+        self.assertEqual(img_prompt, "A four-panel comic strip...")
+        payload = _sent_payload(mock_urlopen)
+        system = payload["messages"][0]["content"]
+        self.assertIn("HONOUR THE REQUESTED FORMAT", system)
+        self.assertIn("3 or 4 sequential panels", system)
+        self.assertIn("RECURRING themes", system)
+        self.assertIn("HISTORY BETWEEN", system)
+        user = payload["messages"][1]["content"]
+        self.assertIn("PREVIOUS IMAGES ALREADY PRODUCED", user)
+        self.assertIn("Jaffa Cakes Fanatic", user)
+        self.assertEqual(payload["max_tokens"], 400)
+
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock)
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock)
+    async def test_ensure_target_history_adds_sample_and_exchanges(self, mock_sample, mock_exchanges):
+        from lib.features.chat_responder import ensure_target_history_in_context
+
+        mock_sample.return_value = [{"content": "I love Bradley Walsh", "channel": "general", "ts": 1}]
+        mock_exchanges.return_value = [{"speaker": "user", "content": "Vic loves me", "ts": 2}]
+        client = MagicMock()
+        message = MagicMock()
+
+        ctx = await ensure_target_history_in_context(
+            client, message, "RECENT MESSAGE HISTORY FOR Steven (<@555>) (1 messages):\n- [#general] Jaffa cakes",
+            555, "Steven", prompt="a cartoon strip of steven with you, based on your history together", bot_id=42,
+        )
+        self.assertIn("MESSAGE HISTORY SAMPLED ACROSS THE LAST 30 DAYS FOR Steven (<@555>)", ctx)
+        self.assertIn("I love Bradley Walsh", ctx)
+        self.assertIn("HISTORY BETWEEN Steven (<@555>) AND HMS VICTORY", ctx)
+        self.assertIn("Jaffa cakes", ctx)  # original context kept
+        self.assertEqual(mock_exchanges.call_args[0][:2], (555, 42))
+
+        mock_exchanges.reset_mock()
+        ctx2 = await ensure_target_history_in_context(client, message, "", 555, "Steven", prompt="draw steven as a pirate", bot_id=42)
+        self.assertIn("SAMPLED ACROSS", ctx2)
+        self.assertNotIn("HISTORY BETWEEN", ctx2)
+        mock_exchanges.assert_not_called()
+
+        # No target: untouched
+        self.assertEqual(await ensure_target_history_in_context(client, message, "ctx", None, None), "ctx")
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):
@@ -1145,9 +1305,11 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
     @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
     @patch("lib.features.chat_responder.fetch_user_recent_chat_async")
     @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
     @patch("lib.features.chat_responder.classify_mention_intent")
     async def test_handle_one_off_classifier_generate_targets_mentioned_user(
-        self, mock_classify, mock_find_img, mock_fetch_chat, mock_synth, mock_gen_img
+        self, mock_classify, _sample, _exchanges, mock_find_img, mock_fetch_chat, mock_synth, mock_gen_img
     ):
         mock_classify.return_value = {
             "intent": "generate", "subject": "mentioned", "subject_name": None, "reason": "portrait", "input_tokens": 0, "output_tokens": 0,
@@ -1231,9 +1393,11 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
     @patch("lib.features.chat_responder.synthesize_image_edit_prompt")
     @patch("lib.features.chat_responder.fetch_user_recent_chat_async")
     @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock)
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
     @patch("lib.features.chat_responder.classify_mention_intent")
     async def test_handle_one_off_try_again_with_corrections_is_edit(
-        self, mock_classify, mock_find_img, mock_fetch_chat, mock_synth_edit, mock_edit_img, mock_gen_img
+        self, mock_classify, _sample, _exchanges, mock_find_img, mock_fetch_chat, mock_synth_edit, mock_edit_img, mock_gen_img
     ):
         mock_classify.return_value = {
             "intent": "edit", "subject": "mentioned", "subject_name": None, "reason": "corrections to last portrait", "input_tokens": 5, "output_tokens": 2,
