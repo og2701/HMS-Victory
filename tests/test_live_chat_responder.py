@@ -1388,6 +1388,47 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("SERVER OVERVIEW: ukplace, 10 members.", context)
         mock_overview.assert_called_once()
 
+    def test_appearance_directives(self):
+        from lib.features.chat_responder import appearance_directives
+        a1 = appearance_directives(479207279850291221)
+        a2 = appearance_directives(479207279850291221)
+        b = appearance_directives(404634271861571584)
+        self.assertEqual(a1, a2)                      # same person, same base look every time
+        self.assertNotEqual(a1, b)                    # different people differ
+        self.assertIn("Physical base", a1)
+        self.assertIn("Art style if none was requested", a1)
+        self.assertIn("infer gender", a1)
+        group = appearance_directives(1, include_physical=False)
+        self.assertNotIn("Physical base", group)
+        self.assertIn("Art style", group)
+
+    @patch("urllib.request.urlopen")
+    def test_synthesize_image_prompt_gets_variety_directives(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_contextual_image_prompt, appearance_directives
+
+        def chat(body):
+            return _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}}], "usage": {}}).encode())
+        mock_urlopen.side_effect = [chat({"image_prompt": "x"}), chat({"caption": "y"})]
+        synthesize_contextual_image_prompt(
+            prompt="what does he look like", context="", user_name="Oggers", caller_role="server owner",
+            target_name="Lanca", target_id=555, openai_key="test-key",
+        )
+        user = _sent_payload(mock_urlopen, 0)["messages"][1]["content"]
+        self.assertIn("VARIETY DIRECTIVES: " + appearance_directives(555), user)
+        system = _sent_payload(mock_urlopen, 0)["messages"][0]["content"]
+        self.assertIn("Never the stock cartoon lead", system)
+        self.assertIn("at most two short labels", system)
+
+        # group: style directives only, no physical base
+        mock_urlopen.side_effect = [chat({"image_prompt": "x"}), chat({"caption": "y"})]
+        synthesize_contextual_image_prompt(
+            prompt="draw the members", context="", user_name="Oggers", caller_role="server owner",
+            target_name="the ukplace regulars", is_group=True, openai_key="test-key",
+        )
+        user = _sent_payload(mock_urlopen, 2)["messages"][1]["content"]
+        self.assertIn("VARIETY DIRECTIVES: Art style", user)
+        self.assertNotIn("Physical base", user)
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):

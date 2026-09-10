@@ -7,6 +7,8 @@ import re
 import io
 import base64
 import time
+import random
+import hashlib
 import socket
 import asyncio
 import logging
@@ -750,6 +752,55 @@ def format_user_chat_for_context(
     return f"{header} {user_name} (<@{user_id}>) ({len(lines)} messages):\n" + "\n".join(lines)
 
 
+APPEARANCE_POOLS: Dict[str, List[str]] = {
+    "age": ["early twenties", "late twenties", "mid thirties", "early forties", "late forties", "fifties"],
+    "build": ["wiry", "stocky", "lanky", "average build", "heavyset", "short and compact", "tall and broad-shouldered", "round-shouldered"],
+    "hair": [
+        "close-cropped dark hair", "buzz cut", "receding hairline", "completely bald", "shaggy mousy hair", "tight curls",
+        "slicked-back hair", "long hair tied back", "a mullet", "a mop of ginger hair", "sandy blond hair", "grey-flecked hair",
+        "a severe side parting", "a messy undercut",
+    ],
+    "face": [
+        "clean-shaven", "three-day stubble", "a full beard", "a goatee", "a moustache", "thick-rimmed glasses", "wire-framed glasses",
+        "a big nose and heavy brows", "a long chin", "round cheeks", "a gap-toothed grin", "deep-set eyes",
+    ],
+    "expression": ["deadpan", "smug", "exasperated", "mid-rant", "a suspicious squint", "utterly unbothered", "sheepish", "scheming", "wearily patient"],
+    "style": [
+        "loose ink-and-watercolour caricature", "bold linocut print with two colours", "1970s British comic strip (Viz-like) style",
+        "flat vector illustration with thick outlines", "chunky claymation-style 3D", "scratchy pencil sketch with a single spot colour",
+        "Victorian satirical engraving", "1950s advertising poster style", "gouache storybook illustration", "gritty photorealistic portrait",
+        "pixel art", "woodcut with hand lettering", "chalk pastel on brown paper", "Saturday-morning cartoon cel style",
+    ],
+    "composition": [
+        "full-body, wide shot", "waist-up, slightly low angle", "close-up head and shoulders", "seen from behind, glancing back",
+        "tiny figure in a large scene", "sitting, slouched", "caught mid-action", "leaning into frame from one side",
+    ],
+    "palette": [
+        "muted earth tones", "cold blues and greys", "washed-out pastels", "high-contrast black, white and one red", "warm sepia",
+        "acid brights", "a limited three-colour palette", "overcast British daylight",
+    ],
+}
+
+
+def appearance_directives(seed: Optional[int] = None, include_physical: bool = True) -> str:
+    """Deterministic look-and-style directives for a subject so different people come out different.
+
+    Seeded by the subject's user id: the same person keeps the same base look across images, while two
+    people never share the image model's default 'handsome dark-haired cartoon lad'. Their own history
+    always overrides these (someone who says they're bald is bald).
+    """
+    rng = random.Random(seed if seed is not None else random.randrange(1 << 30))
+    pick = lambda key: rng.choice(APPEARANCE_POOLS[key])
+    parts: List[str] = []
+    if include_physical:
+        parts.append(
+            f"Physical base (use unless their messages or name contradict it; infer gender from their messages and name, never assume): "
+            f"{pick('age')}, {pick('build')}, {pick('hair')}, {pick('face')}, default expression {pick('expression')}."
+        )
+    parts.append(f"Art style if none was requested: {pick('style')}. Composition: {pick('composition')}. Palette: {pick('palette')}.")
+    return " ".join(parts)
+
+
 IMAGE_PROMPT_WRITER_INSTRUCTIONS = """You write prompts for an AI image generator (DALL-E / diffusion). You are given a request and a Discord user's message history. Your only job is to turn what that history reveals about the person into one purely visual image prompt.
 
 RULES:
@@ -761,6 +812,8 @@ RULES:
 6. If PREVIOUS IMAGES are listed, every prop, food, drink, outfit, slogan, setting and gag in them is BANNED, even if the history mentions them again. Use different material; there is always more.
 7. GROUP PICTURES: if a SERVER MEMBER ROSTER is provided, the people in it are the ONLY people in the image. Give each one a distinct, recognisable caricature drawn from their own listed messages, once each, all in one scene. Never invent extra people, usernames, handles or names. Text in the image is limited to the roster members' names as small labels, or no text at all; never fabricate chat messages, channel lists or UI.
 8. In any image, never render made-up usernames, handles, screen names or chat text. If you need labels, use only real names given in the payload.
+9. LOOKS: a caricature exaggerates real, specific, unflattering features. Never the stock cartoon lead (young, conventionally attractive, tousled dark hair, wide grin, holding props up to camera). Follow the VARIETY DIRECTIVES for the base look, style, composition and palette unless the request or their own messages say otherwise. Infer gender and age from their messages and name; never assume male.
+10. Keep visible text minimal: at most two short labels in the whole image. No walls of signs, menus, lists, sticky notes, posters with slogans or speech bubbles unless a comic strip was requested.
 
 Respond ONLY with a JSON object: {"image_prompt": "..."}"""
 
@@ -810,6 +863,8 @@ def synthesize_image_prompt_from_context(
     openai_key: Optional[str] = None,
     model: str = "gpt-4o",
     timeout: int = 30,
+    subject_seed: Optional[int] = None,
+    is_group: bool = False,
 ) -> Tuple[str, int, int]:
     """Write the image generator prompt from the request and the subject's history alone. No persona involved.
 
@@ -825,6 +880,8 @@ def synthesize_image_prompt_from_context(
         if include_bot else
         "\nHMS VICTORY IS IN THE PICTURE: no (no ship, sailors or naval officers in any form)"
     )
+    # Group pictures get their looks from the roster; single subjects get a seeded, person-specific base look.
+    user_payload += "\nVARIETY DIRECTIVES: " + appearance_directives(subject_seed, include_physical=not is_group)
     if previous_image_prompts:
         listed = "\n".join(f"- {p[:220]}" for p in previous_image_prompts if p)
         user_payload += f"\n\nPREVIOUS IMAGES ALREADY PRODUCED (their props, foods, outfits, settings and gags are BANNED this time):\n{listed}"
@@ -885,6 +942,8 @@ def synthesize_contextual_image_prompt(
     timeout: int = 30,
     previous_image_prompts: Optional[List[str]] = None,
     include_bot: Optional[bool] = None,
+    target_id: Optional[int] = None,
+    is_group: bool = False,
 ) -> Tuple[str, str, int, int]:
     """Produce (image_prompt, caption, prompt_tokens, completion_tokens) for a contextual portrait.
 
@@ -895,9 +954,15 @@ def synthesize_contextual_image_prompt(
     if include_bot is None:
         include_bot = prompt_references_bot(prompt)
 
+    if target_id is not None:
+        seed: Optional[int] = int(target_id)
+    elif target_name:
+        seed = int(hashlib.sha1(target_name.lower().encode("utf-8")).hexdigest()[:8], 16)
+    else:
+        seed = None
     img_prompt, p_tokens, c_tokens = synthesize_image_prompt_from_context(
         prompt, context, include_bot=include_bot, previous_image_prompts=previous_image_prompts,
-        openai_key=openai_key, model=model, timeout=timeout,
+        openai_key=openai_key, model=model, timeout=timeout, subject_seed=seed, is_group=is_group,
     )
     if not img_prompt:
         img_prompt = extract_image_prompt(prompt)
@@ -3287,6 +3352,8 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                         caller_role=caller_role,
                         target_name=target_name,
                         previous_image_prompts=recent_image_prompts_from_history(3),
+                        target_id=target_id,
+                        is_group=is_group,
                     )
                     if synth_p or synth_c:
                         live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)
