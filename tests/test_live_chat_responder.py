@@ -1414,10 +1414,21 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             target_name="Lanca", target_id=555, openai_key="test-key",
         )
         user = _sent_payload(mock_urlopen, 0)["messages"][1]["content"]
-        self.assertIn("VARIETY DIRECTIVES: " + appearance_directives(555), user)
+        self.assertIn(appearance_directives(555), user)
         system = _sent_payload(mock_urlopen, 0)["messages"][0]["content"]
         self.assertIn("Never the stock cartoon lead", system)
         self.assertIn("at most two short labels", system)
+        self.assertIn("LOOKS COME FROM THE MESSAGES FIRST", system)
+        self.assertIn('"character_sheet"', system)
+        self.assertIn("fallback ONLY for character-sheet fields with no evidence", user)
+
+        # A response carrying the sheet still yields the image prompt
+        mock_urlopen.side_effect = [chat({"character_sheet": {"gender": "male (name)", "style": "gig poster"}, "image_prompt": "a screen-printed gig poster of..."}), chat({"caption": "y"})]
+        img, _, _, _ = synthesize_contextual_image_prompt(
+            prompt="what does he look like", context="", user_name="Oggers", caller_role="server owner",
+            target_name="Kaiz", target_id=556, openai_key="test-key",
+        )
+        self.assertEqual(img, "a screen-printed gig poster of...")
 
         # group: style directives only, no physical base
         mock_urlopen.side_effect = [chat({"image_prompt": "x"}), chat({"caption": "y"})]
@@ -1425,8 +1436,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             prompt="draw the members", context="", user_name="Oggers", caller_role="server owner",
             target_name="the ukplace regulars", is_group=True, openai_key="test-key",
         )
-        user = _sent_payload(mock_urlopen, 2)["messages"][1]["content"]
-        self.assertIn("VARIETY DIRECTIVES: Art style", user)
+        user = _sent_payload(mock_urlopen, 4)["messages"][1]["content"]
+        self.assertIn("VARIETY DIRECTIVES (fallback ONLY for character-sheet fields with no evidence in the messages): Art style", user)
         self.assertNotIn("Physical base", user)
 
     def test_classify_mention_intent_without_key_returns_none(self):
