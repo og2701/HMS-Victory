@@ -646,10 +646,11 @@ class USERS:
     HMS_VICTORY = 1171842947440967770
     PIGGY = 447010711936303115
     ROSHY = 772553171616006166
+    JOHNNY = 797207976548499518
 
 BOT_ID = USERS.HMS_VICTORY
 
-DIRECT_MENTION_ALLOWED_USERS = [USERS.OGGERS, USERS.ROSHY, USERS.HADIDAS]
+DIRECT_MENTION_ALLOWED_USERS = [USERS.OGGERS, USERS.ROSHY, USERS.HADIDAS, USERS.JOHNNY]
 
 # ---------------------------------------------------------------------------
 # Anti-alt / anti-farm / anti-laundering detection (lib/core/detection.py)

@@ -54,12 +54,15 @@ STRICT RULES:
 def get_caller_identity(user_id: Optional[int], user_name: Optional[str] = None) -> Tuple[str, str]:
     """Return (display_name, role_description) for authorized direct-mention callers."""
     roshy_id = getattr(USERS, "ROSHY", 772553171616006166)
+    johnny_id = getattr(USERS, "JOHNNY", 797207976548499518)
     if user_id == USERS.OGGERS:
         return (user_name or "Oggers", "server owner")
     if user_id == roshy_id:
         return (user_name or "Roshy", "server owner")
     if user_id == USERS.HADIDAS:
         return (user_name or "Hadidas", "deputy prime minister")
+    if user_id == johnny_id:
+        return (user_name or "Johnny", "server leadership")
     return (user_name or "Server Leadership", "server leadership")
 
 
