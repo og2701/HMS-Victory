@@ -3,6 +3,7 @@ import types
 import unittest
 from unittest.mock import MagicMock, patch, AsyncMock
 import time
+import json
 import asyncio
 
 # Install stubs if discord is not installed in local environment
@@ -111,9 +112,44 @@ from lib.features.chat_responder import (
     live_chat_manager,
     sanitize_ai_mentions,
     is_openai_refusal,
+    strip_search_citations,
+    looks_like_live_query,
+    parse_openai_response_output,
     _handled_one_off_message_ids,
 )
 from config import USERS
+
+
+def _responses_body(text, *, annotations=None, search_calls=0, refusal=None, usage=(120, 45), status="completed"):
+    """Build a raw OpenAI Responses API JSON body like the one generate_one_off_reply parses."""
+    output = [{"type": "web_search_call", "id": f"ws_{i}", "status": "completed"} for i in range(search_calls)]
+    content = []
+    if refusal is not None:
+        content.append({"type": "refusal", "refusal": refusal})
+    if text is not None:
+        content.append({"type": "output_text", "text": text, "annotations": annotations or []})
+    output.append({"type": "message", "id": "msg_1", "role": "assistant", "status": "completed", "content": content})
+    return json.dumps({
+        "id": "resp_1",
+        "object": "response",
+        "status": status,
+        "error": None,
+        "output": output,
+        "usage": {"input_tokens": usage[0], "output_tokens": usage[1], "total_tokens": usage[0] + usage[1]},
+    }).encode("utf-8")
+
+
+def _mock_resp(body: bytes):
+    m = MagicMock()
+    m.read.return_value = body
+    m.__enter__.return_value = m
+    return m
+
+
+def _sent_payload(mock_urlopen, index=-1):
+    req = mock_urlopen.call_args_list[index][0][0]
+    return json.loads(req.data.decode("utf-8"))
+
 
 
 class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
@@ -298,30 +334,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("TEMPORAL ANCHOR", ONE_OFF_SYSTEM_PROMPT)
         self.assertIn("TODAY'S REAL-WORLD DATE", ONE_OFF_SYSTEM_PROMPT)
 
-    def test_ddg_html_parser_filters_ads(self):
-        from lib.features.chat_responder import DDGHTMLParser
-        html = """
-        <div class="result results_links results_links_deep result--ad ">
-            <a class="result__a" href="http://ad.com">Sponsored Casino Ad</a>
-            <div class="result__snippet">Gambling bonus codes here!</div>
-        </div>
-        <div class="result results_links results_links_deep">
-            <a class="result__a" href="http://bbc.co.uk/sport">BBC Sport League One</a>
-            <div class="result__snippet">Live scores for Stevenage vs Luton Town.</div>
-        </div>
-        """
-        parser = DDGHTMLParser()
-        parser.feed(html)
-        self.assertEqual(len(parser.results), 1)
-        self.assertEqual(parser.results[0]["title"], "BBC Sport League One")
-        self.assertIn("Stevenage vs Luton", parser.results[0]["snippet"])
-
     @patch("urllib.request.urlopen")
     def test_generate_one_off_reply_payload(self, mock_urlopen):
-        mock_response = MagicMock()
-        mock_response.read.return_value = b'{"choices":[{"message":{"content":"A witty poem about Johnny."}}],"usage":{"prompt_tokens":120,"completion_tokens":45}}'
-        mock_response.__enter__.return_value = mock_response
-        mock_urlopen.return_value = mock_response
+        mock_urlopen.return_value = _mock_resp(_responses_body("A witty poem about Johnny.", usage=(120, 45)))
 
         content, p_tok, c_tok = generate_one_off_reply(
             prompt="write a poem about this user",
@@ -332,16 +347,60 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(p_tok, 120)
         self.assertEqual(c_tok, 45)
 
-        # Verify request payload
-        call_args, _ = mock_urlopen.call_args
-        req = call_args[0]
-        import json
+        # Verify the request hits the Responses API with the right shape
+        req = mock_urlopen.call_args[0][0]
+        self.assertEqual(req.full_url, "https://api.openai.com/v1/responses")
+        self.assertEqual(req.get_header("Authorization"), "Bearer test-key")
         payload = json.loads(req.data.decode("utf-8"))
-        self.assertEqual(payload["max_tokens"], 200)
         self.assertEqual(payload["model"], "gpt-4o")
-        self.assertEqual(payload["messages"][0]["role"], "system")
-        self.assertIn("Johnny: I hate tea", payload["messages"][1]["content"])
-        self.assertIn("write a poem about this user", payload["messages"][1]["content"])
+        self.assertEqual(payload["max_output_tokens"], 300)
+        self.assertNotIn("messages", payload)
+        self.assertNotIn("max_tokens", payload)
+        self.assertIn("HMS Victory", payload["instructions"])
+        self.assertIn("TODAY'S REAL-WORLD DATE", payload["instructions"])
+        self.assertEqual(payload["input"][0]["role"], "user")
+        text_part = payload["input"][0]["content"][0]
+        self.assertEqual(text_part["type"], "input_text")
+        self.assertIn("Johnny: I hate tea", text_part["text"])
+        self.assertIn("write a poem about this user", text_part["text"])
+        self.assertEqual(payload["tools"][0]["type"], "web_search")
+        self.assertEqual(payload["tools"][0]["user_location"]["country"], "GB")
+        # A poem is not a live query, so the model decides whether to search
+        self.assertEqual(payload["tool_choice"], "auto")
+
+    @patch("urllib.request.urlopen")
+    def test_generate_one_off_reply_forces_search_for_live_queries(self, mock_urlopen):
+        mock_urlopen.return_value = _mock_resp(_responses_body("Stevenage v Luton, 8pm.", search_calls=1))
+
+        content, _, _ = generate_one_off_reply(prompt="what league one games are on today", openai_key="test-key")
+
+        self.assertEqual(content, "Stevenage v Luton, 8pm.")
+        payload = _sent_payload(mock_urlopen)
+        self.assertEqual(payload["tool_choice"], "required")
+        self.assertEqual(payload["tools"][0]["type"], "web_search")
+
+    @patch("urllib.request.urlopen")
+    def test_generate_one_off_reply_search_disabled(self, mock_urlopen):
+        mock_urlopen.return_value = _mock_resp(_responses_body("No."))
+
+        generate_one_off_reply(prompt="what's the weather today", openai_key="test-key", enable_search=False)
+
+        payload = _sent_payload(mock_urlopen)
+        self.assertNotIn("tools", payload)
+        self.assertNotIn("tool_choice", payload)
+
+    def test_looks_like_live_query(self):
+        for q in [
+            "what league one games are on today",
+            "any scores?",
+            "what's the weather like",
+            "latest news on the strike",
+            "who won last night",
+            "when's kick off",
+        ]:
+            self.assertTrue(looks_like_live_query(q), q)
+        for q in ["write a poem about Johnny", "roast this man", "wish Dave luck with his interview", ""]:
+            self.assertFalse(looks_like_live_query(q), q)
 
     async def test_gather_one_off_context_reply_and_mentions(self):
         client = MagicMock()
@@ -581,10 +640,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
 
     @patch("urllib.request.urlopen")
     def test_generate_one_off_reply_multimodal_payload(self, mock_urlopen):
-        mock_response = MagicMock()
-        mock_response.read.return_value = b'{"choices":[{"message":{"content":"A witty critique of the meme."}}],"usage":{"prompt_tokens":150,"completion_tokens":25}}'
-        mock_response.__enter__.return_value = mock_response
-        mock_urlopen.return_value = mock_response
+        mock_urlopen.return_value = _mock_resp(_responses_body("A witty critique of the meme.", usage=(150, 25)))
 
         content, p_tok, c_tok = generate_one_off_reply(
             prompt="what is in this image",
@@ -593,123 +649,126 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             openai_key="test-key",
         )
         self.assertEqual(content, "A witty critique of the meme.")
-        call_args, _ = mock_urlopen.call_args
-        req = call_args[0]
-        import json
-        payload = json.loads(req.data.decode("utf-8"))
-        user_msg = payload["messages"][1]
-        self.assertIsInstance(user_msg["content"], list)
-        self.assertEqual(user_msg["content"][0]["type"], "text")
-        self.assertEqual(user_msg["content"][1]["type"], "image_url")
-        self.assertEqual(user_msg["content"][1]["image_url"]["url"], "https://cdn.discordapp.com/attachments/123/456/kaizo.png")
+        self.assertEqual((p_tok, c_tok), (150, 25))
+
+        parts = _sent_payload(mock_urlopen)["input"][0]["content"]
+        self.assertEqual(parts[0]["type"], "input_text")
+        self.assertIn("ATTACHED IMAGE", parts[0]["text"])
+        self.assertEqual(parts[1]["type"], "input_image")
+        self.assertEqual(parts[1]["image_url"], "https://cdn.discordapp.com/attachments/123/456/kaizo.png")
 
     @patch("urllib.request.urlopen")
-    def test_perform_web_search_html(self, mock_urlopen):
-        from lib.features.chat_responder import perform_web_search
-
-        html_body = b"""
-        <html>
-            <a class="result__a" href="https://example.com/1">Premier League Table 2026</a>
-            <a class="result__snippet" href="https://example.com/1">Arsenal are top of the table after 28 games.</a>
-            <a class="result__a" href="https://example.com/2">BBC Football News</a>
-            <a class="result__snippet" href="https://example.com/2">All the latest scores and match reports.</a>
-        </html>
-        """
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = html_body
-        mock_resp.__enter__.return_value = mock_resp
-        mock_urlopen.return_value = mock_resp
-
-        res = perform_web_search("premier league table")
-        self.assertIn("Premier League Table 2026", res)
-        self.assertIn("Arsenal are top of the table", res)
-        self.assertIn("BBC Football News", res)
-
-    @patch("urllib.request.urlopen")
-    def test_perform_web_search_fallback_to_api(self, mock_urlopen):
-        from lib.features.chat_responder import perform_web_search
-
-        # 1st call (HTML) fails, 2nd call (API) succeeds
-        html_resp = MagicMock()
-        html_resp.read.return_value = b"<html>No results found</html>"
-        html_resp.__enter__.return_value = html_resp
-
-        api_resp = MagicMock()
-        api_resp.read.return_value = b'{"Heading": "Arsenal F.C.", "AbstractText": "A football club in North London."}'
-        api_resp.__enter__.return_value = api_resp
-
-        mock_urlopen.side_effect = [html_resp, api_resp]
-
-        res = perform_web_search("arsenal fc")
-        self.assertIn("Arsenal F.C.: A football club in North London.", res)
-
-    @patch("urllib.request.urlopen")
-    def test_generate_one_off_reply_with_web_search_tool(self, mock_urlopen):
-        from lib.features.chat_responder import perform_web_search
-        import json
-
-        # Step 1: Model decides to call web_search
-        step1_json = json.dumps({
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [{
-                        "id": "call_123",
-                        "type": "function",
-                        "function": {
-                            "name": "web_search",
-                            "arguments": "{\"query\": \"latest premier league scores\"}"
-                        }
-                    }]
-                }
-            }],
-            "usage": {"prompt_tokens": 100, "completion_tokens": 20}
-        }).encode("utf-8")
-
-        # Step 2: DuckDuckGo HTML search
-        ddg_html = b"""
-        <html>
-            <a class="result__a">Chelsea 2-1 Fulham</a>
-            <a class="result__snippet">Chelsea secured a 2-1 victory over Fulham at Stamford Bridge.</a>
-        </html>
-        """
-
-        # Step 3: Follow-up model completion with final answer
-        step2_json = json.dumps({
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": "Chelsea beat Fulham 2-1 at Stamford Bridge earlier today."
-                }
-            }],
-            "usage": {"prompt_tokens": 180, "completion_tokens": 35}
-        }).encode("utf-8")
-
-        resp1 = MagicMock()
-        resp1.read.return_value = step1_json
-        resp1.__enter__.return_value = resp1
-
-        resp_ddg = MagicMock()
-        resp_ddg.read.return_value = ddg_html
-        resp_ddg.__enter__.return_value = resp_ddg
-
-        resp2 = MagicMock()
-        resp2.read.return_value = step2_json
-        resp2.__enter__.return_value = resp2
-
-        mock_urlopen.side_effect = [resp1, resp_ddg, resp2]
+    def test_generate_one_off_reply_refusal_retries_without_images(self, mock_urlopen):
+        mock_urlopen.side_effect = [
+            _mock_resp(_responses_body(None, refusal="I can't help with that image.", usage=(100, 5))),
+            _mock_resp(_responses_body("Fine. It's a meme about tea.", usage=(80, 12))),
+        ]
 
         content, p_tok, c_tok = generate_one_off_reply(
-            prompt="what were the scores today?",
+            prompt="what is this",
+            image_urls=["https://cdn.discordapp.com/attachments/1/2/x.png"],
             openai_key="test-key",
-            enable_search=True,
         )
 
-        self.assertEqual(content, "Chelsea beat Fulham 2-1 at Stamford Bridge earlier today.")
-        self.assertEqual(p_tok, 100 + 180)
-        self.assertEqual(c_tok, 20 + 35)
-        self.assertEqual(mock_urlopen.call_count, 3)
+        self.assertEqual(content, "Fine. It's a meme about tea.")
+        self.assertEqual((p_tok, c_tok), (180, 17))
+        self.assertEqual(mock_urlopen.call_count, 2)
+        first_types = [p["type"] for p in _sent_payload(mock_urlopen, 0)["input"][0]["content"]]
+        second_types = [p["type"] for p in _sent_payload(mock_urlopen, 1)["input"][0]["content"]]
+        self.assertEqual(first_types, ["input_text", "input_image"])
+        self.assertEqual(second_types, ["input_text"])
+
+    @patch("time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_generate_one_off_reply_failed_status_falls_back(self, mock_urlopen, _sleep):
+        body = json.dumps({
+            "status": "failed",
+            "error": {"message": "boom"},
+            "output": [],
+            "usage": {"input_tokens": 10, "output_tokens": 0},
+        }).encode("utf-8")
+        mock_urlopen.return_value = _mock_resp(body)
+
+        content, p_tok, c_tok = generate_one_off_reply(prompt="hi", openai_key="test-key")
+
+        self.assertIn("overwhelmed my processors", content)
+        self.assertEqual(mock_urlopen.call_count, 2)
+        self.assertEqual((p_tok, c_tok), (20, 0))
+
+    @patch("urllib.request.urlopen")
+    def test_generate_one_off_reply_native_search_strips_citations(self, mock_urlopen):
+        bbc = "https://www.bbc.co.uk/sport/football/fixtures?utm_source=openai"
+        sky = "https://www.skysports.com/league-one-table?utm_source=openai"
+        text = (
+            f"Stevenage host Luton at 20:00 tonight ([bbc.co.uk]({bbc})). "
+            f"Wycombe are top of the table ([skysports.com]({sky}))."
+        )
+        annotations = [
+            {"type": "url_citation", "start_index": 38, "end_index": 100, "url": bbc, "title": "Fixtures"},
+            {"type": "url_citation", "start_index": 130, "end_index": 200, "url": sky, "title": "Table"},
+        ]
+        mock_urlopen.return_value = _mock_resp(
+            _responses_body(text, annotations=annotations, search_calls=1, usage=(400, 60))
+        )
+
+        content, p_tok, c_tok = generate_one_off_reply(
+            prompt="what league one games are on tonight?",
+            openai_key="test-key",
+        )
+
+        self.assertEqual(content, "Stevenage host Luton at 20:00 tonight. Wycombe are top of the table.")
+        self.assertEqual((p_tok, c_tok), (400, 60))
+        # Native search is a single round trip: no follow-up completion, no scraper call
+        self.assertEqual(mock_urlopen.call_count, 1)
+
+    def test_strip_search_citations(self):
+        cited = ["https://www.bbc.co.uk/sport/football/fixtures?utm_source=openai"]
+        # Parenthetical source list is dropped whole, including the leading space
+        self.assertEqual(
+            strip_search_citations(
+                "Luton play tonight ([BBC](https://www.bbc.co.uk/sport/football/fixtures?utm_source=openai)).", cited
+            ),
+            "Luton play tonight.",
+        )
+        # Inline citation link keeps its label text
+        self.assertEqual(
+            strip_search_citations("See [the fixtures](https://www.bbc.co.uk/sport/football/fixtures) for details.", cited),
+            "See the fixtures for details.",
+        )
+        # Bare cited URL is removed but trailing punctuation survives
+        self.assertEqual(
+            strip_search_citations("Kick off is 8pm https://www.bbc.co.uk/sport/football/fixtures.", cited),
+            "Kick off is 8pm.",
+        )
+        # utm_source=openai marks a citation even with no annotation
+        self.assertEqual(
+            strip_search_citations("Arsenal won ([sky](https://skysports.com/x?utm_source=openai))."),
+            "Arsenal won.",
+        )
+        # A real link from server context that wasn't cited survives untouched
+        self.assertEqual(
+            strip_search_citations("Event's here: https://discord.com/events/1/2", cited),
+            "Event's here: https://discord.com/events/1/2",
+        )
+        # Mixed parenthetical keeps the non-citation link and unwraps the cited one
+        self.assertEqual(
+            strip_search_citations(
+                "Details ([a](https://example.com/real), [BBC](https://www.bbc.co.uk/sport/football/fixtures)).", cited
+            ),
+            "Details ([a](https://example.com/real), BBC).",
+        )
+        self.assertEqual(strip_search_citations("", cited), "")
+
+    def test_parse_openai_response_output(self):
+        data = json.loads(_responses_body(
+            "Hello", annotations=[{"type": "url_citation", "url": "https://x.com/a"}], search_calls=2
+        ))
+        self.assertEqual(parse_openai_response_output(data), ("Hello", None, ["https://x.com/a"], 2))
+
+        data = json.loads(_responses_body(None, refusal="nope"))
+        self.assertEqual(parse_openai_response_output(data)[:2], ("", "nope"))
+
+        self.assertEqual(parse_openai_response_output({"output": None}), ("", None, [], 0))
 
     def test_sanitize_ai_mentions(self):
         zwsp = "\u200b"

@@ -1,4 +1,5 @@
 import urllib.request
+import urllib.error
 import urllib.parse
 import json
 import os
@@ -7,7 +8,6 @@ import time
 import asyncio
 import logging
 from datetime import datetime, timezone
-from html.parser import HTMLParser
 from collections import deque
 from typing import List, Dict, Optional, Tuple
 
@@ -79,12 +79,13 @@ STRICT RULES:
      * Carefully read all text, team names, dates, times, and competition headers shown in the image.
      * Connect the image with what was said in the chat. If the user posts a screenshot showing proof of a game (like Stevenage vs Luton Town in League One at 20:00), recognize the teams and the match directly.
      * NEVER dismiss with "I'm not sure who they are" or pretend ignorance when the team names/text are right there in the image.
-     * If uncertain about current league standings, divisions, or details, call the `web_search` tool.
+     * If uncertain about current league standings, divisions, or details, use your built-in web search.
 7. WEB SEARCH & LIVE FIXTURES:
-   - You have access to a web_search tool.
-   - Whenever asked about live sports, scores, fixtures, today's games, current news, weather, or real-world events outside your training data, YOU MUST USE the web_search tool before answering.
-   - Formulate clean, effective search queries using today's date ({date_str}) or relevant keywords (e.g. "League One fixtures today BBC", "Stevenage vs Luton football", "EFL League One schedule").
-   - Never hallucinate or claim there are no games without running a web search first.
+   - You have a built-in web search tool that returns live results.
+   - Whenever asked about live sports, scores, fixtures, today's games, current news, weather, or real-world events outside your training data, YOU MUST search the web before answering.
+   - Search using today's date ({date_str}) or relevant keywords (e.g. "League One fixtures {date_str}", "Stevenage vs Luton football", "EFL League One schedule").
+   - Never hallucinate or claim there are no games without searching first. Report what the search actually says; do not pad it with guesses.
+   - NO CITATIONS: never include source links, URLs, footnotes, bracketed references, or "according to" attributions from search results, and never mention that you searched. Just state the facts. The only URLs you ever output are ones Oggers asked for from the server context (rule 5).
 8. NO MASS PINGS OR ROLES: NEVER mention, tag, or ping @everyone, @here, or any Discord roles under any circumstances.
 9. Output ONLY your direct response text. No preambles, no quotes, no filler."""
 
@@ -1217,159 +1218,102 @@ async def gather_one_off_context(
     return context_str
 
 
-class DDGHTMLParser(HTMLParser):
-    """Simple, lightweight HTML parser for DuckDuckGo search result pages."""
+OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+ONE_OFF_MAX_OUTPUT_TOKENS = 300
+ONE_OFF_TIMEOUT_SECONDS = 30
 
-    def __init__(self):
-        super().__init__()
-        self.results = []
-        self.current_title = []
-        self.current_snippet = []
-        self.in_title = False
-        self.in_snippet = False
-        self.in_ad = False
-        self.title_tag = None
-        self.snippet_tag = None
-
-    def handle_starttag(self, tag, attrs):
-        classes = dict(attrs).get("class", "").split()
-        if "result--ad" in classes or "badge--ad" in classes:
-            self.in_ad = True
-        elif tag == "div" and "results_links_deep" in classes and "result--ad" not in classes:
-            self.in_ad = False
-
-        if self.in_ad:
-            return
-
-        if "result__snippet" in classes:
-            self.in_snippet = True
-            self.snippet_tag = tag
-            self.current_snippet = []
-        elif "result__a" in classes:
-            self.in_title = True
-            self.title_tag = tag
-            self.current_title = []
-
-    def handle_endtag(self, tag):
-        if self.in_ad:
-            return
-        if self.in_snippet and tag == self.snippet_tag:
-            self.in_snippet = False
-            snip = "".join(self.current_snippet).strip()
-            if self.results and snip:
-                self.results[-1]["snippet"] = snip
-        elif self.in_title and tag == self.title_tag:
-            self.in_title = False
-            t = "".join(self.current_title).strip()
-            if t:
-                self.results.append({"title": t, "snippet": ""})
-
-    def handle_data(self, data):
-        if self.in_ad:
-            return
-        if self.in_title:
-            self.current_title.append(data)
-        elif self.in_snippet:
-            self.current_snippet.append(data)
-
-
-def perform_web_search(query: str, max_results: int = 5) -> str:
-    """Perform a web search using DuckDuckGo HTML endpoint with Instant Answer API fallback."""
-    clean_query = query.strip()
-    if not clean_query:
-        return "No search query provided."
-
-    logger.info("Executing web search for query: %s", clean_query)
-
-    def _fetch_ddg(q: str):
-        url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(q)
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/115.0.0.0 Safari/537.36"
-                )
-            },
-        )
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            content = resp.read().decode("utf-8", errors="ignore")
-        parser = DDGHTMLParser()
-        parser.feed(content)
-        return parser.results
-
-    # 1. Try DuckDuckGo HTML Search
-    try:
-        results = _fetch_ddg(clean_query)
-        if not results:
-            simplified = re.sub(r'["\']', '', clean_query).strip()
-            if simplified and simplified != clean_query:
-                results = _fetch_ddg(simplified)
-
-        if results:
-            formatted = []
-            for item in results[:max_results]:
-                title = item.get("title", "").strip()
-                snippet = item.get("snippet", "").strip()
-                if title or snippet:
-                    formatted.append(f"- {title}: {snippet}")
-            if formatted:
-                return "\n".join(formatted)
-    except Exception as e:
-        logger.debug("DuckDuckGo HTML search failed for '%s': %s", clean_query, e)
-
-    # 2. Fallback: DuckDuckGo Instant Answer API
-    try:
-        api_url = (
-            "https://api.duckduckgo.com/?q="
-            + urllib.parse.quote(clean_query)
-            + "&format=json&no_html=1&skip_disambig=1"
-        )
-        req = urllib.request.Request(
-            api_url,
-            headers={"User-Agent": "HMS-Victory/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=6) as resp:
-            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-
-        abstract = data.get("AbstractText", "").strip()
-        heading = data.get("Heading", "").strip()
-        if abstract:
-            return f"- {heading or clean_query}: {abstract}"
-
-        related = data.get("RelatedTopics", [])
-        if related:
-            lines = []
-            for item in related[:max_results]:
-                txt = item.get("Text")
-                if txt:
-                    lines.append(f"- {txt}")
-            if lines:
-                return "\n".join(lines)
-    except Exception as e:
-        logger.debug("DuckDuckGo Instant Answer API failed for '%s': %s", clean_query, e)
-
-    return "No relevant search results found."
-
-
+# OpenAI's hosted web search tool (Responses API). The model runs the search itself; no scraper needed.
 WEB_SEARCH_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "web_search",
-        "description": "Search the live internet / web for current events, real-time facts, recent news, live sports scores, weather, or information outside your training data.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "The search query keywords to look up on the web.",
-                }
-            },
-            "required": ["query"],
-        },
-    },
+    "type": "web_search",
+    "search_context_size": "medium",
+    "user_location": {"type": "approximate", "country": "GB"},
 }
+
+# Prompts that are clearly about something time-sensitive. For these we force a search so the model
+# can't fall back on stale training data and invent fixtures or scores.
+LIVE_QUERY_PATTERNS = re.compile(
+    r"\b(?:today|tonight|tomorrow|yesterday|this\s+(?:week|weekend|morning|afternoon|evening)|right\s+now|"
+    r"currently|latest|breaking|news|weather|forecast|scores?|scoreline|fixtures?|kick[-\s]?off|line[-\s]?ups?|"
+    r"standings|league\s+(?:one|two)|championship|premier\s+league|who\s+(?:won|plays?|scored)|what(?:'s|\s+is)\s+on)\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_live_query(prompt: str) -> bool:
+    """Return True when the owner's prompt is asking about something that needs a live web search."""
+    return bool(prompt and LIVE_QUERY_PATTERNS.search(prompt))
+
+
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^\s)]+)\)")
+_BARE_URL_RE = re.compile(r"https?://[^\s<>()\[\]]+")
+_LINK_ITEM = r"(?:\[[^\]]*\]\(https?://[^\s)]+\)|https?://[^\s<>()\[\]]+)"
+# A parenthetical made purely of links, e.g. " ([bbc.co.uk](https://...), [skysports.com](https://...))"
+_CITATION_GROUP_RE = re.compile(r"\s*(?<!\])\(\s*" + _LINK_ITEM + r"(?:\s*[,;]?\s*" + _LINK_ITEM + r")*\s*\)")
+
+
+def _normalise_url(url: str) -> str:
+    parts = urllib.parse.urlsplit(url.strip().rstrip(".,;:!?"))
+    return f"{parts.netloc.lower()}{parts.path.rstrip('/')}"
+
+
+def strip_search_citations(text: str, cited_urls: Optional[List[str]] = None) -> str:
+    """Remove web search citations (markdown links, source parentheticals, bare URLs) from model output.
+
+    Only URLs OpenAI reported as citations, or that carry its utm_source tag, are touched, so a real link
+    the owner asked for from server context survives intact.
+    """
+    if not text:
+        return text
+    cited = {_normalise_url(u) for u in (cited_urls or []) if u}
+
+    def is_citation(url: str) -> bool:
+        return "utm_source=openai" in url or _normalise_url(url) in cited
+
+    def _group_sub(m):
+        chunk = m.group(0)
+        urls = [u for _, u in _MD_LINK_RE.findall(chunk)]
+        urls += _BARE_URL_RE.findall(_MD_LINK_RE.sub("", chunk))
+        return "" if urls and all(is_citation(u) for u in urls) else chunk
+
+    def _bare_sub(m):
+        url = m.group(0)
+        core = url.rstrip(".,;:!?")
+        return url[len(core):] if is_citation(core) else url
+
+    text = _CITATION_GROUP_RE.sub(_group_sub, text)
+    text = _MD_LINK_RE.sub(lambda m: m.group(1) if is_citation(m.group(2)) else m.group(0), text)
+    text = _BARE_URL_RE.sub(_bare_sub, text)
+    text = re.sub(r"\(\s*\)", "", text)
+    text = re.sub(r"\s+([.,;:!?])", r"\1", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text.strip()
+
+
+def parse_openai_response_output(data: dict) -> Tuple[str, Optional[str], List[str], int]:
+    """Pull (text, refusal, cited_urls, search_call_count) out of a Responses API payload."""
+    text_parts: List[str] = []
+    refusal: Optional[str] = None
+    cited: List[str] = []
+    search_calls = 0
+
+    for item in data.get("output") or []:
+        item_type = item.get("type")
+        if item_type == "web_search_call":
+            search_calls += 1
+            continue
+        if item_type != "message":
+            continue
+        for part in item.get("content") or []:
+            part_type = part.get("type")
+            if part_type == "output_text":
+                text_parts.append(part.get("text") or "")
+                for ann in part.get("annotations") or []:
+                    if ann.get("type") == "url_citation" and ann.get("url"):
+                        cited.append(ann["url"])
+            elif part_type == "refusal":
+                refusal = part.get("refusal") or "refused"
+
+    return "".join(text_parts).strip(), refusal, cited, search_calls
 
 
 OPENAI_REFUSAL_SNIPPETS = (
@@ -1403,18 +1347,22 @@ def generate_one_off_reply(
     enable_search: bool = True,
     max_retries: int = 2,
 ) -> Tuple[str, int, int]:
-    """Generate a one-off in-character reply for an owner prompt with gathered context, optional images, and web search."""
+    """Generate a one-off in-character reply for an owner prompt via the OpenAI Responses API.
+
+    Uses OpenAI's hosted web search tool so the model fetches live data itself (fixtures, scores, news,
+    weather) instead of relying on a scraper. Returns (reply_text, input_tokens, output_tokens).
+    """
     api_key = openai_key or os.getenv("OPENAI_TOKEN")
     if not api_key:
         raise ValueError("OPENAI_TOKEN is not configured.")
-
-    url = "https://api.openai.com/v1/chat/completions"
 
     user_instructions = prompt.strip() if prompt and prompt.strip() else "You were directly summoned by Oggers with no specific instructions."
 
     prompt_content = f"REQUEST FROM SERVER OWNER ({user_name}):\n\"{user_instructions}\""
     if context.strip():
         prompt_content += f"\n\nSURROUNDING SERVER & CONVERSATION CONTEXT:\n{context.strip()}"
+
+    force_search = enable_search and looks_like_live_query(user_instructions)
 
     last_error = None
     total_p_tokens = 0
@@ -1430,26 +1378,24 @@ def generate_one_off_reply(
                 "Connect it with the conversation. If it shows sports fixtures or proof, acknowledge the match and details directly. "
                 "Never claim not to know who they are when names/logos are shown."
             )
-            content_items = [{"type": "text", "text": visual_prompt}]
+            content_items = [{"type": "input_text", "text": visual_prompt}]
             for img_url in current_images:
-                content_items.append({"type": "image_url", "image_url": {"url": img_url}})
-            user_message = {"role": "user", "content": content_items}
+                content_items.append({"type": "input_image", "image_url": img_url, "detail": "auto"})
         else:
-            user_message = {"role": "user", "content": prompt_content}
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            user_message,
-        ]
+            content_items = [{"type": "input_text", "text": prompt_content}]
 
         payload = {
             "model": model,
-            "messages": messages,
-            "max_tokens": 200,
+            "instructions": system_prompt,
+            "input": [{"role": "user", "content": content_items}],
+            "max_output_tokens": ONE_OFF_MAX_OUTPUT_TOKENS,
             "temperature": 0.8,
+            "store": False,
         }
         if enable_search:
             payload["tools"] = [WEB_SEARCH_TOOL]
+            # Force the search on the first go for live queries; if that attempt fails, let the model decide.
+            payload["tool_choice"] = "required" if (force_search and attempt == 1) else "auto"
 
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -1457,76 +1403,38 @@ def generate_one_off_reply(
         }
 
         req = urllib.request.Request(
-            url,
+            OPENAI_RESPONSES_URL,
             data=json.dumps(payload).encode("utf-8"),
             headers=headers,
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=ONE_OFF_TIMEOUT_SECONDS) as resp:
                 data = json.loads(resp.read().decode())
 
-            choice = data["choices"][0]
-            msg = choice.get("message", {})
-            usage = data.get("usage", {})
-            p_tokens = usage.get("prompt_tokens", 0)
-            c_tokens = usage.get("completion_tokens", 0)
-            total_p_tokens += p_tokens
-            total_c_tokens += c_tokens
+            usage = data.get("usage") or {}
+            total_p_tokens += usage.get("input_tokens", 0)
+            total_c_tokens += usage.get("output_tokens", 0)
 
-            # Check explicit refusal field from OpenAI API
-            if msg.get("refusal"):
-                logger.warning("OpenAI returned refusal field: %s", msg.get("refusal"))
+            status = data.get("status")
+            if status == "failed" or data.get("error"):
+                err_msg = (data.get("error") or {}).get("message") or "unknown error"
+                raise RuntimeError(f"OpenAI response status={status}: {err_msg}")
+
+            content, refusal, cited_urls, search_calls = parse_openai_response_output(data)
+            if search_calls:
+                logger.info("One-off reply ran %d native web search call(s).", search_calls)
+
+            if refusal:
+                logger.warning("OpenAI returned refusal: %s", refusal)
                 if current_images:
                     logger.info("Retrying without images due to multimodal refusal.")
                     current_images = None
                     continue
-                last_error = f"Refusal: {msg.get('refusal')}"
+                last_error = f"Refusal: {refusal}"
                 continue
 
-            tool_calls = msg.get("tool_calls")
-            if enable_search and tool_calls:
-                messages.append(msg)
-                for tc in tool_calls:
-                    fn_name = tc.get("function", {}).get("name")
-                    call_id = tc.get("id")
-                    search_output = "No search query provided."
-                    if fn_name == "web_search":
-                        raw_args = tc.get("function", {}).get("arguments", "{}")
-                        try:
-                            args = json.loads(raw_args)
-                            query = args.get("query", "")
-                        except Exception:
-                            query = ""
-                        search_output = perform_web_search(query)
-
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": call_id,
-                        "content": search_output,
-                    })
-
-                followup_payload = {
-                    "model": model,
-                    "messages": messages,
-                    "max_tokens": 200,
-                    "temperature": 0.7,
-                }
-                req2 = urllib.request.Request(
-                    url,
-                    data=json.dumps(followup_payload).encode("utf-8"),
-                    headers=headers,
-                )
-                with urllib.request.urlopen(req2, timeout=15) as resp2:
-                    data2 = json.loads(resp2.read().decode())
-
-                choice2 = data2["choices"][0]
-                content = (choice2.get("message", {}).get("content") or "").strip()
-                usage2 = data2.get("usage", {})
-                total_p_tokens += usage2.get("prompt_tokens", 0)
-                total_c_tokens += usage2.get("completion_tokens", 0)
-            else:
-                content = (msg.get("content") or "").strip()
+            content = strip_search_citations(content, cited_urls)
 
             if is_openai_refusal(content):
                 logger.warning("OpenAI response matched refusal filter: %r", content)
@@ -1538,7 +1446,21 @@ def generate_one_off_reply(
                 continue
 
             if content:
+                if status == "incomplete":
+                    logger.warning("OpenAI response was truncated (max_output_tokens); using partial text.")
                 return content, total_p_tokens, total_c_tokens
+
+            last_error = f"Empty response (status={status})"
+        except urllib.error.HTTPError as e:
+            try:
+                body = e.read().decode("utf-8", errors="ignore")[:500]
+            except Exception:
+                body = ""
+            logger.warning("OpenAI one-off attempt %d/%d HTTP %s: %s", attempt, max_retries, e.code, body)
+            last_error = e
+            if current_images:
+                current_images = None
+            time.sleep(0.5)
         except Exception as e:
             logger.warning("OpenAI one-off attempt %d/%d failed: %s", attempt, max_retries, e)
             last_error = e
