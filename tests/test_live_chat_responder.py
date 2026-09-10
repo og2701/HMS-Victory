@@ -1441,6 +1441,103 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("VARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): Art style", user)
         self.assertNotIn("Physical base", user)
 
+    @patch("urllib.request.urlopen")
+    def test_classify_mention_intent_sees_recent_exchanges_and_correction_rule(self, mock_urlopen):
+        from lib.features.chat_responder import classify_mention_intent, recent_one_off_exchanges
+
+        hist = [
+            {"role": "user", "speaker": "oggers", "content": "based on <@1> message history, what do you think they look like. do it as a cartoon"},
+            {"role": "assistant", "speaker": "HMS Victory", "content": "[Generated Image: A gouache cartoon of a young woman cuddling a tabby cat]"},
+        ]
+        transcript = recent_one_off_exchanges(4, hist)
+        self.assertEqual(transcript.splitlines()[0][:8], "oggers: ")
+        self.assertIn("HMS Victory: [Generated Image: A gouache cartoon", transcript)
+
+        body = json.dumps({"intent": "edit", "subject": "named", "subject_name": "Pengrin", "reason": "correction"})
+        mock_urlopen.return_value = _mock_resp(_responses_body(body))
+        res = classify_mention_intent("the cat is black", caller_name="Oggers", has_recent_bot_image=True,
+                                      recent_bot_image_prompt="A gouache cartoon...", recent_history=transcript, openai_key="test-key")
+        self.assertEqual(res["intent"], "edit")
+        payload = _sent_payload(mock_urlopen)
+        self.assertIn("RECENT CHAT:\noggers: based on", payload["input"][0]["content"][0]["text"])
+        self.assertIn('"the cat is black", "the green one"', payload["instructions"])
+
+    def test_own_attachment_image_urls(self):
+        from lib.features.chat_responder import own_attachment_image_urls
+        def att(fn, ct, url):
+            a = MagicMock(); a.filename = fn; a.content_type = ct; a.url = url; return a
+        msg = MagicMock()
+        msg.attachments = [att("cat.png", "image/png", "https://cdn/cat.png"), att("notes.txt", "text/plain", "https://cdn/notes.txt"), att("x.JPG", "", "https://cdn/x.JPG")]
+        self.assertEqual(own_attachment_image_urls(msg), ["https://cdn/cat.png", "https://cdn/x.JPG"])
+        msg.attachments = []
+        self.assertEqual(own_attachment_image_urls(msg), [])
+
+    @patch("urllib.request.urlopen")
+    def test_synthesize_image_prompt_with_reference_images(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_contextual_image_prompt
+
+        def chat(body):
+            return _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}}], "usage": {}}).encode())
+        mock_urlopen.side_effect = [chat({"image_prompt": "a black cat with a white bib..."}), chat({"caption": "y"})]
+
+        synthesize_contextual_image_prompt(
+            prompt="regenerate your previous cartoon of <@1> using this cat as reference", context="", user_name="Oggers",
+            caller_role="server owner", target_name="Pengrin", target_id=1, openai_key="test-key",
+            reference_image_urls=["https://cdn.discordapp.com/attachments/1/2/cat.png"],
+        )
+        image_call = _sent_payload(mock_urlopen, 0)
+        content = image_call["messages"][1]["content"]
+        self.assertIsInstance(content, list)
+        self.assertEqual(content[0]["type"], "text")
+        self.assertIn("REFERENCE IMAGES ATTACHED BY THE REQUESTER: 1", content[0]["text"])
+        self.assertEqual(content[1], {"type": "image_url", "image_url": {"url": "https://cdn.discordapp.com/attachments/1/2/cat.png"}})
+        self.assertIn("REFERENCE IMAGES", image_call["messages"][0]["content"])
+        # caption call stays text-only
+        self.assertIsInstance(_sent_payload(mock_urlopen, 1)["messages"][1]["content"], str)
+
+    @patch("urllib.request.urlopen")
+    def test_synthesize_image_edit_prompt_with_reference_images(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_image_edit_prompt
+        mock_urlopen.return_value = _mock_resp(json.dumps({
+            "choices": [{"message": {"content": json.dumps({"edit_type": "edit", "image_prompt": "make the cat black with a white bib", "caption": "Done."})}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        }).encode())
+        synthesize_image_edit_prompt("the cat is black", prev_prompt="A cartoon with a tabby cat", openai_key="test-key",
+                                     reference_image_urls=["https://cdn/cat.png"])
+        content = _sent_payload(mock_urlopen)["messages"][1]["content"]
+        self.assertIsInstance(content, list)
+        self.assertEqual(content[1]["image_url"]["url"], "https://cdn/cat.png")
+        self.assertIn("REFERENCE IMAGES ATTACHED", content[0]["text"])
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_passes_reference_attachment_to_synth(
+        self, mock_classify, mock_find_img, mock_fetch_chat, _sample, _exchanges, mock_synth, mock_gen_img
+    ):
+        mock_classify.return_value = {"intent": "generate", "subject": "mentioned", "subject_name": None, "reason": "", "input_tokens": 0, "output_tokens": 0}
+        mock_synth.return_value = ("a black cat", "<@1> There.", 10, 5)
+        mock_gen_img.return_value = (b"img", 20, 200)
+
+        client = MagicMock(); client.user.id = 999999999
+        pengrin = MagicMock(); pengrin.id = 5; pengrin.nick = "Pengrin"; pengrin.global_name = None; pengrin.display_name = "Pengrin"; pengrin.name = "pengrin"
+        message = self._leader_message(client, f"<@{client.user.id}> regenerate your previous cartoon of <@5> using this cat as reference", mentions=[pengrin])
+        att = MagicMock(); att.filename = "cat.png"; att.content_type = "image/png"; att.url = "https://cdn/cat.png"
+        message.attachments = [att]
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        self.assertEqual(mock_synth.call_args[1]["reference_image_urls"], ["https://cdn/cat.png"])
+        self.assertTrue(mock_classify.call_args[1]["has_attached_image"])
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):

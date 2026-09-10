@@ -313,6 +313,19 @@ def _extract_recent_image_prompt_from_history(history: Optional[List[Dict[str, A
     return None
 
 
+def recent_one_off_exchanges(limit: int = 4, history: Optional[List[Dict[str, Any]]] = None) -> str:
+    """The last few direct-mention turns (requests and what the bot produced) as a short transcript for the classifier."""
+    hist = history if history is not None else getattr(live_chat_manager, "conversation_history", [])
+    turns = list(hist)[-limit:]
+    lines = []
+    for t in turns:
+        who = t.get("speaker") or ("HMS Victory" if t.get("role") == "assistant" else "user")
+        content = (t.get("content") or "").replace("\n", " ").strip()
+        if content:
+            lines.append(f"{who}: {content[:220]}")
+    return "\n".join(lines)
+
+
 def recent_image_prompts_from_history(limit: int = 3, history: Optional[List[Dict[str, Any]]] = None) -> List[str]:
     """The last few image prompts the bot produced, newest first, so the synthesiser can avoid repeating itself."""
     hist = history if history is not None else getattr(live_chat_manager, "conversation_history", [])
@@ -820,6 +833,7 @@ RULES:
    - style: an art style that matches their vibe and interests (pop-punk karaoke -> gig poster screen print; football and pubs -> 1970s British comic; cosy pets and baking -> gouache storybook; tech and travel -> clean isometric; gaming -> pixel art; gossip and drama -> Victorian satirical engraving), unless the request names a style.
    For each field, cite the direct evidence in a few words. Where there is no direct evidence, DEDUCE: commit to a specific, plausible look implied by their personality, interests, age cues and tone, the way a caricaturist sizes someone up from how they talk (a mortgage-and-kids ranter is not twenty-two; a needy flirt who lives on energy drinks has a look; a pub-quiz pedant has a look). Write "deduced: <why>". Only if nothing about them points anywhere take that field from the VARIETY DIRECTIVES tie-breaker. A caricature exaggerates real, specific, unflattering features. Never the stock cartoon lead (young, conventionally attractive, tousled dark hair, wide grin, holding props up to camera).
 10. Keep visible text minimal: at most two short labels in the whole image. No walls of signs, menus, lists, sticky notes, posters with slogans or speech bubbles unless a comic strip was requested.
+11. REFERENCE IMAGES: if the requester attached images, they are references. Describe what matters in them concretely in the prompt (the actual animal and its colour and markings, the object, the outfit, the setting) so the generator reproduces it. If a reference shows a person, that is their real look and it overrides the character sheet.
 
 Respond ONLY with a JSON object:
 {"character_sheet": {"gender": "...", "age_band": "...", "build_hair_face": "...", "expression_energy": "...", "style": "..."}, "image_prompt": "..."}"""
@@ -834,13 +848,19 @@ def _chat_completion_json(
     temperature: float = 0.85,
     timeout: int = 30,
     what: str = "OpenAI chat completion",
+    image_urls: Optional[List[str]] = None,
 ) -> Tuple[Dict[str, Any], int, int]:
-    """POST a JSON-mode chat completion and return (parsed_json, prompt_tokens, completion_tokens)."""
+    """POST a JSON-mode chat completion (optionally with images) and return (parsed_json, prompt_tokens, completion_tokens)."""
+    user_content: Any = user_payload
+    if image_urls:
+        user_content = [{"type": "text", "text": user_payload}]
+        for u in image_urls:
+            user_content.append({"type": "image_url", "image_url": {"url": u}})
     payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_payload},
+            {"role": "user", "content": user_content},
         ],
         "response_format": {"type": "json_object"},
         "max_tokens": max_tokens,
@@ -872,6 +892,7 @@ def synthesize_image_prompt_from_context(
     timeout: int = 30,
     subject_seed: Optional[int] = None,
     is_group: bool = False,
+    reference_image_urls: Optional[List[str]] = None,
 ) -> Tuple[str, int, int]:
     """Write the image generator prompt from the request and the subject's history alone. No persona involved.
 
@@ -892,12 +913,15 @@ def synthesize_image_prompt_from_context(
     if previous_image_prompts:
         listed = "\n".join(f"- {p[:220]}" for p in previous_image_prompts if p)
         user_payload += f"\n\nPREVIOUS IMAGES ALREADY PRODUCED (their props, foods, outfits, settings and gags are BANNED this time):\n{listed}"
+    if reference_image_urls:
+        user_payload += f"\n\nREFERENCE IMAGES ATTACHED BY THE REQUESTER: {len(reference_image_urls)} (see attached; describe what matters from them in the prompt)"
     if context.strip():
         user_payload += f"\n\nMESSAGE HISTORY & CONTEXT:\n{context.strip()}"
 
     parsed, p_tokens, c_tokens = _chat_completion_json(
         IMAGE_PROMPT_WRITER_INSTRUCTIONS, user_payload, api_key,
         model=model, max_tokens=550, temperature=0.85, timeout=timeout, what="Image prompt synthesis",
+        image_urls=reference_image_urls,
     )
     sheet = parsed.get("character_sheet")
     if isinstance(sheet, dict):
@@ -954,6 +978,7 @@ def synthesize_contextual_image_prompt(
     include_bot: Optional[bool] = None,
     target_id: Optional[int] = None,
     is_group: bool = False,
+    reference_image_urls: Optional[List[str]] = None,
 ) -> Tuple[str, str, int, int]:
     """Produce (image_prompt, caption, prompt_tokens, completion_tokens) for a contextual portrait.
 
@@ -973,6 +998,7 @@ def synthesize_contextual_image_prompt(
     img_prompt, p_tokens, c_tokens = synthesize_image_prompt_from_context(
         prompt, context, include_bot=include_bot, previous_image_prompts=previous_image_prompts,
         openai_key=openai_key, model=model, timeout=timeout, subject_seed=seed, is_group=is_group,
+        reference_image_urls=reference_image_urls,
     )
     if not img_prompt:
         img_prompt = extract_image_prompt(prompt)
@@ -1003,6 +1029,7 @@ def synthesize_image_edit_prompt(
     openai_key: Optional[str] = None,
     model: str = "gpt-4o",
     timeout: int = 30,
+    reference_image_urls: Optional[List[str]] = None,
 ) -> Tuple[str, str, str, int, int]:
     """Synthesize an edit instruction for an image and an in-character Vic roast caption.
 
@@ -1037,14 +1064,25 @@ def synthesize_image_edit_prompt(
     )
 
     user_payload = f"USER CRITIQUE / COMMAND: \"{prompt}\""
+    if reference_image_urls:
+        user_payload += (
+            f"\n\nREFERENCE IMAGES ATTACHED BY THE REQUESTER: {len(reference_image_urls)} (see attached). "
+            "Use them for the change: describe concretely what to copy from them (e.g. the actual cat's colour and markings, the object, the outfit)."
+        )
     if context.strip():
         user_payload += f"\n\nADDITIONAL SERVER CONTEXT:\n{context.strip()}"
+
+    user_content: Any = user_payload
+    if reference_image_urls:
+        user_content = [{"type": "text", "text": user_payload}]
+        for u in reference_image_urls:
+            user_content.append({"type": "image_url", "image_url": {"url": u}})
 
     payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_payload},
+            {"role": "user", "content": user_content},
         ],
         "response_format": {"type": "json_object"},
         "max_tokens": 300,
@@ -1061,7 +1099,7 @@ def synthesize_image_edit_prompt(
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _urlopen_with_retry(req, timeout, what="Image edit synthesis") as resp:
         data = json.loads(resp.read().decode("utf-8"))
 
     usage = data.get("usage") or {}
@@ -1511,6 +1549,21 @@ def is_message_for_bot(client: discord.Client, message: discord.Message) -> bool
         return True
 
     return False
+
+
+def own_attachment_image_urls(message: discord.Message) -> List[str]:
+    """Image URLs attached to this very message by its author (no embeds, no replied-to message)."""
+    urls: List[str] = []
+    try:
+        for att in list(getattr(message, "attachments", None) or []):
+            fn = (getattr(att, "filename", "") or "").lower()
+            ct = (getattr(att, "content_type", "") or "")
+            url = getattr(att, "url", None)
+            if isinstance(url, str) and (ct.startswith("image/") or fn.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))):
+                urls.append(url)
+    except TypeError:
+        pass
+    return urls[:4]
 
 
 async def extract_image_urls(message: discord.Message, client: Optional[discord.Client] = None) -> List[str]:
@@ -2536,7 +2589,7 @@ MENTION_INTENT_INSTRUCTIONS = """You classify a Discord message addressed to HMS
 
 Decide what the user wants:
 - "generate": they want a NEW image made. Any phrasing counts: "draw/paint/generate/make/create ... of X", "portrait/caricature of X", "what does X look like", "generate what you think X looks like based on their messages", "do me next", "same for @X", "now do X", "picture of me", "what would I look like as ...", "show me X as a ...".
-- "edit": they explicitly want the bot's MOST RECENT image changed, corrected, or redone. This means a request for a change: critiques with an implied fix ("bit generous with the hair", "he doesn't drink tea, try again"), tweaks ("make him balder", "remove the flag", "add a pint"), or "try again / redo / another go / can you do it without X". Only choose "edit" when a recent bot image exists; if none exists but they want a picture, choose "generate".
+- "edit": they explicitly want the bot's MOST RECENT image changed, corrected, or redone. This means a request for a change: critiques with an implied fix ("bit generous with the hair", "he doesn't drink tea, try again"), tweaks ("make him balder", "remove the flag", "add a pint"), or "try again / redo / another go / can you do it without X". A terse statement of fact or a bare descriptor sent shortly after an image is a CORRECTION to that image and counts as "edit": "the cat is black", "the green one", "he's bald", "no, blonde", "she has glasses". Use RECENT CHAT to see what was just produced. Only choose "edit" when a recent bot image exists; if none exists but they want a picture, choose "generate".
 - "reply": everything else. This includes commentary or jokes ABOUT an image with no change requested ("notice how it featured the red lion twice", "why is his office in a pub", "lol the degrees", "I didn't ask for that"), questions, banter, roasts, facts, fixtures, describing or reacting to an attached image, thanks, and anything ambiguous. When in doubt between "edit" and "reply", choose "reply": a wasted image costs money, a text reply does not.
 
 Also identify WHO the image is of (the subject):
@@ -3168,6 +3221,9 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         except Exception as e:
             logger.debug("Could not look up recent bot image: %s", e)
 
+        # Images the requester attached themselves (not the bot's, not the replied-to message's): used as references.
+        reference_images = own_attachment_image_urls(message)
+
         # Decide what this mention wants: a new image, an edit of the last one, or a text reply.
         intent = await asyncio.to_thread(
             classify_mention_intent,
@@ -3177,7 +3233,8 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             has_reply_ref=has_reply_ref,
             has_recent_bot_image=bool(recent_img_info),
             recent_bot_image_prompt=(recent_img_info[2] if recent_img_info else None),
-            has_attached_image=bool(getattr(message, "attachments", None)),
+            has_attached_image=bool(reference_images),
+            recent_history=recent_one_off_exchanges(4),
         )
         subject = None
         subject_name = None
@@ -3242,6 +3299,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     user_name=caller_name,
                     caller_role=caller_role,
                     target_name=target_name,
+                    reference_image_urls=reference_images,
                 )
                 if synth_p or synth_c:
                     live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)
@@ -3364,6 +3422,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                         previous_image_prompts=recent_image_prompts_from_history(3),
                         target_id=target_id,
                         is_group=is_group,
+                        reference_image_urls=reference_images,
                     )
                     if synth_p or synth_c:
                         live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)
