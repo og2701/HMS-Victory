@@ -760,6 +760,7 @@ def synthesize_contextual_image_prompt(
     model: str = "gpt-4o",
     timeout: int = 30,
     previous_image_prompts: Optional[List[str]] = None,
+    include_bot: Optional[bool] = None,
 ) -> Tuple[str, str, int, int]:
     """Synthesize a rich, descriptive visual image prompt and an in-character Vic roast caption from context.
 
@@ -770,6 +771,8 @@ def synthesize_contextual_image_prompt(
         raise ValueError("OPENAI_TOKEN is not configured.")
 
     target_str = f" for user '{target_name}'" if target_name else ""
+    if include_bot is None:
+        include_bot = prompt_references_bot(prompt)
     system_prompt = (
         "You are HMS Victory, a cynical, deadpan 18th-century British Royal Navy first-rate ship of the line AI.\n"
         f"Server leadership ({user_name}, {caller_role}) has commanded you to produce an image or caricature{target_str}.\n"
@@ -784,11 +787,15 @@ def synthesize_contextual_image_prompt(
         "   - HONOUR THE REQUESTED FORMAT, MEDIUM AND STYLE EXACTLY. 'cartoon strip' / 'comic strip' / 'comic' means ONE image laid out as "
         "3 or 4 sequential panels telling a simple gag, with at most a few words of speech-bubble text. 'photorealistic' / 'photo' means a "
         "realistic photograph, not a caricature. 'cartoon', 'anime', 'oil painting', 'pixel art', 'sketch' and the like mean exactly that. "
-        "Only choose the style yourself (e.g. 19th-century satirical oil painting, British political cartoon, nautical etching) when none was requested.\n"
-        "   - If the request involves HMS Victory itself ('with you', 'your history together', 'you and him'), the image MUST include the bot as a "
-        "second character interacting with the person: HMS Victory is a weathered 18th-century first-rate ship of the line with a stern, "
-        "unimpressed personality (draw it as the ship itself with a disapproving air, or as a stern 18th-century naval officer figurehead). "
-        "Use the HISTORY BETWEEN section for what they actually get up to together.\n"
+        "Only choose the style yourself when none was requested, and choose it to suit the PERSON and the gag: satirical caricature, "
+        "comic-book illustration, editorial cartoon, storybook illustration, photorealistic, watercolour, retro poster, anime, and so on.\n"
+        "   - THE PICTURE IS ABOUT THEM, NOT ABOUT YOU. Build the scene, outfit and props from the subject's own messages. Do NOT default to "
+        "British, patriotic or naval imagery (Union Jacks, ships, sailors, naval uniforms, tricorn hats, 'British' signage, 18th-century settings) "
+        "unless their history is genuinely about those things. Your naval persona belongs in the caption only.\n"
+        "   - The user payload states whether HMS VICTORY IS IN THE PICTURE. If yes, include the bot as a second character interacting with "
+        "the person: a weathered 18th-century first-rate ship of the line with a stern, unimpressed personality (the ship itself with a "
+        "disapproving air, or a stern naval officer figurehead), drawing on the HISTORY BETWEEN section. If no, the bot, the ship and any "
+        "naval officer must not appear in any form.\n"
         "   - If PREVIOUS IMAGES are listed, every prop, food, drink, outfit, slogan, setting and gag in them is BANNED from this image, "
         "even if the history mentions them again. Pick different material from the history; there is always more.\n"
         "   - Do NOT include Discord tags, usernames, or meta instructions in the image prompt itself; keep it purely descriptive imagery.\n"
@@ -802,6 +809,11 @@ def synthesize_contextual_image_prompt(
     )
 
     user_payload = f"COMMAND: \"{prompt}\""
+    user_payload += (
+        "\nHMS VICTORY IS IN THE PICTURE: yes (draw the bot as a second character interacting with the subject)"
+        if include_bot else
+        "\nHMS VICTORY IS IN THE PICTURE: no (do not draw the bot, the ship, sailors or naval officers in any form)"
+    )
     if previous_image_prompts:
         listed = "\n".join(f"- {p[:220]}" for p in previous_image_prompts if p)
         user_payload += f"\n\nPREVIOUS IMAGES ALREADY PRODUCED (their props, foods, outfits, settings and gags are BANNED this time):\n{listed}"

@@ -1197,12 +1197,22 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("3 or 4 sequential panels", system)
         self.assertIn("RECURRING themes", system)
         self.assertIn("HISTORY BETWEEN", system)
+        self.assertIn("THE PICTURE IS ABOUT THEM, NOT ABOUT YOU", system)
         user = payload["messages"][1]["content"]
+        self.assertIn("HMS VICTORY IS IN THE PICTURE: yes", user)
         self.assertIn("PREVIOUS IMAGES ALREADY PRODUCED", user)
         self.assertIn("BANNED", user)
         self.assertIn("BANNED from this image", system)
         self.assertIn("Jaffa Cakes Fanatic", user)
         self.assertEqual(payload["max_tokens"], 400)
+
+        # A plain portrait request keeps the bot out of the frame
+        synthesize_contextual_image_prompt(
+            prompt="based on <@111> message history, what do you think he looks like",
+            context="", user_name="Oggers", caller_role="server owner", target_name="Kaiz", openai_key="test-key",
+        )
+        user2 = _sent_payload(mock_urlopen)["messages"][1]["content"]
+        self.assertIn("HMS VICTORY IS IN THE PICTURE: no", user2)
 
     @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock)
     @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock)
