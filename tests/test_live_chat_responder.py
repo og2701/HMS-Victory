@@ -1393,6 +1393,11 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(looks_like_image_request(p4))
         self.assertFalse(is_contextual_image_request(p4, other_mentions=[]))
 
+        p5 = "do the same for @Johnny"
+        history_with_image = [{"role": "assistant", "content": "[Generated Image: caricature of top chap]"}]
+        self.assertTrue(looks_like_image_request(p5, history=history_with_image))
+        self.assertTrue(is_contextual_image_request(p5))
+
     @patch("database.DatabaseManager.fetch_all")
     def test_fetch_user_recent_chat(self, mock_fetch):
         from lib.features.chat_responder import fetch_user_recent_chat, format_user_chat_for_context

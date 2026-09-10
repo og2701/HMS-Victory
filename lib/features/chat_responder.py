@@ -221,15 +221,20 @@ def record_user_image_generation(user_id: int) -> None:
 
 
 IMAGE_REQUEST_PATTERNS = [
-    r"\b(generate|draw|paint|create|make|render|illustrate)\s+(?:an?\s+)?(?:image|picture|photo|illustration|drawing|sketch|painting|artwork|caricature|portrait)\b",
+    r"\b(generate|draw|paint|create|make|render|illustrate)\s+(?:an?\s+)?(?:image|picture|photo|illustration|drawing|sketch|painting|artwork|caricature|portrait|one)\b",
     r"\b(?:image|picture|photo|illustration|drawing|sketch|painting|artwork|caricature|portrait)\s+of\b",
     r"\b(?:draw|paint|sketch|illustrate|render)\s+me\b",
     r"\b(?:draw|paint|sketch|illustrate|render)\s+(?:a\s+)?(?:caricature|portrait)\b",
     r"\b(?:draw|paint|sketch|illustrate|render)\s+(?:what\s+)?(?:<@!?\d+>|@[\w.-]+)",
+    r"\b(?:do|make|paint|draw|generate)\s+one\s+(?:of|for)\b",
     r"(?:^|\b(?:can\s+you|please|could\s+you)\s+)(?:draw|paint|sketch|illustrate|render)\s+(?:me\s+)?(?:an?\s+)",
     r"\b(?:can\s+you\s+|please\s+)(?:draw|paint|sketch|illustrate|render)\b",
     r"\b(?:what\s+(?:they|he|she|i|<@!?\d+>|\w+)\s+looks?\s+like)\b.*\b(?:generate|draw|paint|picture|photo|image)\b",
     r"\b(?:generate|draw|paint|picture|photo|image)\b.*\b(?:what\s+(?:they|he|she|i|<@!?\d+>|\w+)\s+looks?\s+like)\b",
+]
+
+FOLLOW_UP_IMAGE_PATTERNS = [
+    r"\b(?:do\s+the\s+same|same\s+for|do\s+another|another\s+one|now\s+do|do\s+(?:<@!?\d+>|@?[\w.-]+)\s+next|make\s+one\s+for|do\s+one\s+for)\b",
 ]
 
 CONTEXTUAL_IMAGE_INDICATORS = [
@@ -240,10 +245,11 @@ CONTEXTUAL_IMAGE_INDICATORS = [
     r"\b(?:based\s+on|according\s+to)\b",
     r"\b(?:draw|paint|sketch|illustrate|render)\s+(?:me|<@!?\d+>|@[\w.-]+)",
     r"\b(?:picture|photo|image)\s+of\s+(?:me|<@!?\d+>|@[\w.-]+)",
+    r"\b(?:do\s+the\s+same|same\s+for|now\s+do|another\s+one)\b",
 ]
 
 
-def looks_like_image_request(prompt: str) -> bool:
+def looks_like_image_request(prompt: str, history: Optional[List[Dict[str, Any]]] = None) -> bool:
     """Return True if prompt is asking for an image to be generated or drawn."""
     if not prompt:
         return False
@@ -251,6 +257,15 @@ def looks_like_image_request(prompt: str) -> bool:
     for pat in IMAGE_REQUEST_PATTERNS:
         if re.search(pat, p_lower):
             return True
+
+    # Check if this is a conversational follow-up (e.g. "do the same for @Johnny", "now do @user")
+    for pat in FOLLOW_UP_IMAGE_PATTERNS:
+        if re.search(pat, p_lower):
+            hist = history if history is not None else getattr(live_chat_manager, "conversation_history", [])
+            if hist:
+                for turn in reversed(list(hist)[-6:]):
+                    if turn.get("role") == "assistant" and "[Generated Image:" in turn.get("content", ""):
+                        return True
     return False
 
 
@@ -1992,7 +2007,18 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
 
     try:
         # Check if the prompt is asking to generate/draw an image
-        if looks_like_image_request(clean_prompt):
+        is_img_req = looks_like_image_request(clean_prompt)
+        if not is_img_req and any(re.search(pat, clean_prompt.lower()) for pat in FOLLOW_UP_IMAGE_PATTERNS):
+            if hasattr(message.channel, "history"):
+                try:
+                    async for prev_m in message.channel.history(limit=6, before=message):
+                        if getattr(getattr(prev_m, "author", None), "id", None) == bot_id and getattr(prev_m, "attachments", None):
+                            is_img_req = True
+                            break
+                except Exception:
+                    pass
+
+        if is_img_req:
             allowed, remaining = can_user_generate_image(caller_id)
             if not allowed:
                 refusal_msg = (
