@@ -6,6 +6,7 @@ import re
 import time
 import asyncio
 import logging
+from datetime import datetime, timezone
 from html.parser import HTMLParser
 from collections import deque
 from typing import List, Dict, Optional, Tuple
@@ -42,9 +43,22 @@ STRICT RULES:
 7. NO MASS PINGS OR ROLES: NEVER mention or ping @everyone, @here, or any Discord roles under any circumstances.
 8. Output ONLY your direct response to them."""
 
-ONE_OFF_SYSTEM_PROMPT = """You are HMS Victory, the flagship Discord bot for a British server.
+
+def build_one_off_system_prompt() -> str:
+    """Build dynamic system prompt for owner one-off mentions with live date, time, and fact-checking rules."""
+    now_uk = datetime.now(timezone.utc)
+    date_str = now_uk.strftime("%A, %d %B %Y")
+    time_str = now_uk.strftime("%H:%M UTC")
+
+    return f"""You are HMS Victory, the flagship Discord bot for a British server.
 You have a notoriously dry, cynical, deadpan British persona. You hate being bothered and despise customer-service cheerfulness or corporate politeness.
 When directly tagged or summoned by the server owner (Oggers), you act as his personal tool: you faithfully carry out his instructions, but you speak in your signature dry, deadpan, concise British tone. Never sound like a cheerful, overly formal, or cheesy corporate AI.
+
+TEMPORAL ANCHOR & REAL-WORLD DATE:
+- TODAY'S REAL-WORLD DATE: {date_str} (Current Time: {time_str}).
+- The current year is {now_uk.year}.
+- Any reference to "today", "tonight", "this week", "now", "upcoming", or "fixtures" refers strictly to {date_str}.
+- Never assume a date from your past training data (e.g. 2023).
 
 STRICT RULES:
 1. DRY, DEADPAN BRITISH TONE:
@@ -60,10 +74,22 @@ STRICT RULES:
 3. BREVITY: 1 to 2 short sentences maximum. Cut the fluff and stop.
 4. MENTIONS: If addressing, answering, wishing luck to, or roasting a specific target user provided in the context, tag them using their <@ID> format (e.g. '<@123456789>') so they get pinged in Discord.
 5. EVENTS & LINKS: If asked about an event or to share a link, provide a blunt, clear sentence followed by the exact real URL from context. Never invent placeholders.
-6. IMAGES & MEMES: If an image or meme is attached, inspect it, describe it, or comment on it perceptively in your dry style.
-7. WEB SEARCH: You have access to a web_search tool. When Oggers asks for live scores, recent news, current events, real-time facts, or information outside your training knowledge, use the web search tool to find the latest information before delivering your answer dryly and bluntly.
+6. IMAGES, SCREENSHOTS & FIXTURE PROOF:
+   - When an image or screenshot is attached (e.g. match fixture card, league table, tweet, meme, score, standings):
+     * Carefully read all text, team names, dates, times, and competition headers shown in the image.
+     * Connect the image with what was said in the chat. If the user posts a screenshot showing proof of a game (like Stevenage vs Luton Town in League One at 20:00), recognize the teams and the match directly.
+     * NEVER dismiss with "I'm not sure who they are" or pretend ignorance when the team names/text are right there in the image.
+     * If uncertain about current league standings, divisions, or details, call the `web_search` tool.
+7. WEB SEARCH & LIVE FIXTURES:
+   - You have access to a web_search tool.
+   - Whenever asked about live sports, scores, fixtures, today's games, current news, weather, or real-world events outside your training data, YOU MUST USE the web_search tool before answering.
+   - Formulate clean, effective search queries using today's date ({date_str}) or relevant keywords (e.g. "League One fixtures today BBC", "Stevenage vs Luton football", "EFL League One schedule").
+   - Never hallucinate or claim there are no games without running a web search first.
 8. NO MASS PINGS OR ROLES: NEVER mention, tag, or ping @everyone, @here, or any Discord roles under any circumstances.
 9. Output ONLY your direct response text. No preambles, no quotes, no filler."""
+
+
+ONE_OFF_SYSTEM_PROMPT = build_one_off_system_prompt()
 
 
 def sanitize_ai_mentions(text: str, guild: Optional[discord.Guild] = None) -> str:
@@ -101,6 +127,9 @@ def sanitize_ai_mentions(text: str, guild: Optional[discord.Guild] = None) -> st
 
 def build_system_prompt(topic: Optional[str] = None, is_defence: bool = False) -> str:
     prompt = DEFENCE_SYSTEM_PROMPT if is_defence else BASE_SYSTEM_PROMPT
+    now_uk = datetime.now(timezone.utc)
+    date_str = now_uk.strftime("%A, %d %B %Y")
+    prompt += f"\n\nCURRENT REAL-WORLD DATE: {date_str} (Year {now_uk.year})."
     if topic and topic.strip():
         prompt += f"""
 
@@ -1198,11 +1227,20 @@ class DDGHTMLParser(HTMLParser):
         self.current_snippet = []
         self.in_title = False
         self.in_snippet = False
+        self.in_ad = False
         self.title_tag = None
         self.snippet_tag = None
 
     def handle_starttag(self, tag, attrs):
         classes = dict(attrs).get("class", "").split()
+        if "result--ad" in classes or "badge--ad" in classes:
+            self.in_ad = True
+        elif tag == "div" and "results_links_deep" in classes and "result--ad" not in classes:
+            self.in_ad = False
+
+        if self.in_ad:
+            return
+
         if "result__snippet" in classes:
             self.in_snippet = True
             self.snippet_tag = tag
@@ -1213,6 +1251,8 @@ class DDGHTMLParser(HTMLParser):
             self.current_title = []
 
     def handle_endtag(self, tag):
+        if self.in_ad:
+            return
         if self.in_snippet and tag == self.snippet_tag:
             self.in_snippet = False
             snip = "".join(self.current_snippet).strip()
@@ -1225,6 +1265,8 @@ class DDGHTMLParser(HTMLParser):
                 self.results.append({"title": t, "snippet": ""})
 
     def handle_data(self, data):
+        if self.in_ad:
+            return
         if self.in_title:
             self.current_title.append(data)
         elif self.in_snippet:
@@ -1239,9 +1281,8 @@ def perform_web_search(query: str, max_results: int = 5) -> str:
 
     logger.info("Executing web search for query: %s", clean_query)
 
-    # 1. Try DuckDuckGo HTML Search
-    try:
-        url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(clean_query)
+    def _fetch_ddg(q: str):
+        url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(q)
         req = urllib.request.Request(
             url,
             headers={
@@ -1254,13 +1295,21 @@ def perform_web_search(query: str, max_results: int = 5) -> str:
         )
         with urllib.request.urlopen(req, timeout=8) as resp:
             content = resp.read().decode("utf-8", errors="ignore")
-
         parser = DDGHTMLParser()
         parser.feed(content)
+        return parser.results
 
-        if parser.results:
+    # 1. Try DuckDuckGo HTML Search
+    try:
+        results = _fetch_ddg(clean_query)
+        if not results:
+            simplified = re.sub(r'["\']', '', clean_query).strip()
+            if simplified and simplified != clean_query:
+                results = _fetch_ddg(simplified)
+
+        if results:
             formatted = []
-            for item in parser.results[:max_results]:
+            for item in results[:max_results]:
                 title = item.get("title", "").strip()
                 snippet = item.get("snippet", "").strip()
                 if title or snippet:
@@ -1373,8 +1422,15 @@ def generate_one_off_reply(
     current_images = image_urls
 
     for attempt in range(1, max_retries + 1):
+        system_prompt = build_one_off_system_prompt()
         if current_images:
-            content_items = [{"type": "text", "text": prompt_content}]
+            visual_prompt = prompt_content + (
+                "\n\n[ATTACHED IMAGE / SCREENSHOT NOTE]: An image or screenshot has been provided above. "
+                "Carefully inspect all text, headlines, match cards, team names, times, and dates in the image. "
+                "Connect it with the conversation. If it shows sports fixtures or proof, acknowledge the match and details directly. "
+                "Never claim not to know who they are when names/logos are shown."
+            )
+            content_items = [{"type": "text", "text": visual_prompt}]
             for img_url in current_images:
                 content_items.append({"type": "image_url", "image_url": {"url": img_url}})
             user_message = {"role": "user", "content": content_items}
@@ -1382,7 +1438,7 @@ def generate_one_off_reply(
             user_message = {"role": "user", "content": prompt_content}
 
         messages = [
-            {"role": "system", "content": ONE_OFF_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             user_message,
         ]
 

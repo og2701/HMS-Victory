@@ -295,6 +295,26 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Oggers", ONE_OFF_SYSTEM_PROMPT)
         self.assertIn("cynical", ONE_OFF_SYSTEM_PROMPT.lower())
         self.assertIn("poem", ONE_OFF_SYSTEM_PROMPT.lower())
+        self.assertIn("TEMPORAL ANCHOR", ONE_OFF_SYSTEM_PROMPT)
+        self.assertIn("TODAY'S REAL-WORLD DATE", ONE_OFF_SYSTEM_PROMPT)
+
+    def test_ddg_html_parser_filters_ads(self):
+        from lib.features.chat_responder import DDGHTMLParser
+        html = """
+        <div class="result results_links results_links_deep result--ad ">
+            <a class="result__a" href="http://ad.com">Sponsored Casino Ad</a>
+            <div class="result__snippet">Gambling bonus codes here!</div>
+        </div>
+        <div class="result results_links results_links_deep">
+            <a class="result__a" href="http://bbc.co.uk/sport">BBC Sport League One</a>
+            <div class="result__snippet">Live scores for Stevenage vs Luton Town.</div>
+        </div>
+        """
+        parser = DDGHTMLParser()
+        parser.feed(html)
+        self.assertEqual(len(parser.results), 1)
+        self.assertEqual(parser.results[0]["title"], "BBC Sport League One")
+        self.assertIn("Stevenage vs Luton", parser.results[0]["snippet"])
 
     @patch("urllib.request.urlopen")
     def test_generate_one_off_reply_payload(self, mock_urlopen):
