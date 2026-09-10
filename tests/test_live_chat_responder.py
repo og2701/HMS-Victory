@@ -172,6 +172,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         live_chat_manager.stop(clear_target=True)
         live_chat_manager.owner_mentions_paused = False
         _handled_one_off_message_ids.clear()
+        live_chat_manager.conversation_history.clear()
 
     def test_calculate_cost_gpt4o(self):
         # 1,000 prompt tokens = $0.0025, 1,000 completion tokens = $0.0100
@@ -886,6 +887,277 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(content, "I can't believe you've asked me that. It's a grey smudge, mate.")
         self.assertEqual(mock_urlopen.call_count, 1)
+
+    # ---- Intent classifier & target resolution ----
+
+    @patch("urllib.request.urlopen")
+    def test_classify_mention_intent_parses_json(self, mock_urlopen):
+        from lib.features.chat_responder import classify_mention_intent
+
+        body = json.dumps({"intent": "generate", "subject": "mentioned", "subject_name": None, "reason": "portrait of a tagged user"})
+        mock_urlopen.return_value = _mock_resp(_responses_body(body, usage=(210, 30)))
+
+        res = classify_mention_intent(
+            "generate what you think @Steven looks like based on his message history, focus on what i reckon",
+            mentioned_names=["Steven <3"],
+            caller_name="Oggers",
+            has_recent_bot_image=True,
+            recent_bot_image_prompt="A tea-drinking Brit in a pub",
+            openai_key="test-key",
+        )
+
+        self.assertEqual(res["intent"], "generate")
+        self.assertEqual(res["subject"], "mentioned")
+        self.assertIsNone(res["subject_name"])
+        self.assertEqual((res["input_tokens"], res["output_tokens"]), (210, 30))
+
+        payload = _sent_payload(mock_urlopen)
+        self.assertEqual(payload["model"], "gpt-4o-mini")
+        self.assertEqual(payload["text"]["format"]["type"], "json_schema")
+        self.assertTrue(payload["text"]["format"]["strict"])
+        self.assertNotIn("tools", payload)
+        sent_text = payload["input"][0]["content"][0]["text"]
+        self.assertIn("MENTIONED USERS: Steven <3", sent_text)
+        self.assertIn("BOT POSTED AN IMAGE RECENTLY: yes", sent_text)
+        self.assertIn("A tea-drinking Brit in a pub", sent_text)
+        self.assertIn("focus on what i reckon", sent_text)
+
+    def test_classify_mention_intent_without_key_returns_none(self):
+        from lib.features.chat_responder import classify_mention_intent
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertIsNone(classify_mention_intent("draw me", openai_key=None))
+
+    @patch("urllib.request.urlopen")
+    def test_classify_mention_intent_bad_output_returns_none(self, mock_urlopen):
+        from lib.features.chat_responder import classify_mention_intent
+
+        mock_urlopen.return_value = _mock_resp(_responses_body("not json at all"))
+        self.assertIsNone(classify_mention_intent("draw me", openai_key="test-key"))
+
+        mock_urlopen.return_value = _mock_resp(_responses_body(json.dumps({"intent": "dance", "subject": "none", "subject_name": None, "reason": ""})))
+        self.assertIsNone(classify_mention_intent("draw me", openai_key="test-key"))
+
+        mock_urlopen.side_effect = OSError("down")
+        self.assertIsNone(classify_mention_intent("draw me", openai_key="test-key"))
+
+    def test_resolve_image_target(self):
+        from lib.features.chat_responder import resolve_image_target
+
+        steven = MagicMock()
+        steven.id = 555
+        steven.nick = "Steven <3"
+        steven.global_name = None
+        steven.display_name = "Steven <3"
+        steven.name = "steven_x"
+        mentions = [steven]
+        target_users = {"steven": 555, "johnny": 777}
+
+        # Classifier subject wins
+        self.assertEqual(resolve_image_target("what do i look like", 1, "Oggers", [], {}, subject="caller"), ("Oggers", 1))
+        self.assertEqual(resolve_image_target("generate @Steven i reckon", 1, "Oggers", mentions, target_users, subject="mentioned"), ("Steven <3", 555))
+        self.assertEqual(resolve_image_target("do johnny next", 1, "Oggers", [], target_users, subject="named", subject_name="Johnny"), ("Johnny", 777))
+        self.assertEqual(resolve_image_target("do steven", 1, "Oggers", mentions, {}, subject="named", subject_name="steven"), ("Steven <3", 555))
+        self.assertEqual(resolve_image_target("do dave", 1, "Oggers", [], {}, subject="named", subject_name="Dave"), ("Dave", None))
+        self.assertEqual(resolve_image_target("draw a cat for me", 1, "Oggers", [], {}, subject="none"), (None, None))
+
+        # Fallback without the classifier: an explicit mention beats a stray "i"
+        self.assertEqual(resolve_image_target("generate what you think @Steven looks like, i reckon", 1, "Oggers", mentions, target_users), ("Steven <3", 555))
+        self.assertEqual(resolve_image_target("what do i look like", 1, "Oggers", [], {}), ("Oggers", 1))
+        self.assertEqual(resolve_image_target("draw a cat", 1, "Oggers", [], {}), (None, None))
+
+    def test_context_has_user_history(self):
+        from lib.features.chat_responder import context_has_user_history, format_user_chat_for_context
+
+        ctx = format_user_chat_for_context("Steven <3", 555, [{"content": "jaffa cakes", "channel": "general", "ts": 1}])
+        self.assertTrue(context_has_user_history(ctx, 555))
+        # A mere ping of the user elsewhere in context is not their history
+        self.assertFalse(context_has_user_history("Chin: oi <@555> you about?", 555))
+        self.assertFalse(context_has_user_history(ctx, 556))
+
+    # ---- Handler decisions driven by the classifier ----
+
+    def _leader_message(self, client, content, author_id=USERS.OGGERS, mentions=None, reference=None):
+        message = MagicMock()
+        message.id = 90000000 + abs(hash(content)) % 1000000
+        message.author.id = author_id
+        message.author.name = "ogme01"
+        message.author.nick = None
+        message.author.global_name = None
+        message.author.display_name = None
+        message.author.bot = False
+        message.content = content
+        message.mentions = [client.user] + (mentions or [])
+        message.attachments = []
+        message.reference = reference
+        message.channel.history = MagicMock()
+        message.reply = AsyncMock()
+        return message
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async")
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_classifier_generate_targets_mentioned_user(
+        self, mock_classify, mock_find_img, mock_fetch_chat, mock_synth, mock_gen_img
+    ):
+        mock_classify.return_value = {
+            "intent": "generate", "subject": "mentioned", "subject_name": None, "reason": "portrait", "input_tokens": 0, "output_tokens": 0,
+        }
+        mock_fetch_chat.return_value = [{"content": "Jaffa cakes are a biscuit", "channel": "general", "ts": 1700000000}]
+        mock_synth.return_value = ("A cheeky chap clutching Jaffa cakes", "<@1> Behold Steven.", 150, 40)
+        mock_gen_img.return_value = (b"img", 20, 200)
+
+        client = MagicMock()
+        client.user.id = 999999999
+        steven = MagicMock()
+        steven.id = 555
+        steven.nick = "Steven <3"
+        steven.global_name = None
+        steven.display_name = "Steven <3"
+        steven.name = "steven_x"
+
+        # The stray "i" here used to make the caller the target.
+        message = self._leader_message(
+            client,
+            f"<@{client.user.id}> generate what you think <@{steven.id}> looks like based on his message history, focus on what i think is funny",
+            mentions=[steven],
+        )
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        mock_classify.assert_called_once()
+        self.assertEqual(mock_classify.call_args[1]["mentioned_names"], ["Steven <3"])
+        self.assertEqual(mock_synth.call_args[1]["target_name"], "Steven <3")
+        self.assertIn("Jaffa cakes are a biscuit", mock_synth.call_args[1]["context"])
+        fetched_ids = [c[0][1] for c in mock_fetch_chat.call_args_list]
+        self.assertIn(555, fetched_ids)
+        self.assertNotIn(USERS.OGGERS, fetched_ids)
+        mock_gen_img.assert_called_once_with("A cheeky chap clutching Jaffa cakes")
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.edit_image_openai")
+    @patch("lib.features.chat_responder.generate_one_off_reply")
+    @patch("lib.features.chat_responder.gather_one_off_context")
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_commentary_on_image_is_text_reply(
+        self, mock_classify, mock_find_img, mock_gather, mock_generate, mock_edit_img, mock_gen_img
+    ):
+        """Replying to a bot image with a remark must not burn an image generation."""
+        mock_classify.return_value = {
+            "intent": "reply", "subject": "none", "subject_name": None, "reason": "commentary", "input_tokens": 0, "output_tokens": 0,
+        }
+        prev_att = MagicMock()
+        prev_att.read = AsyncMock(return_value=b"orig")
+        mock_find_img.return_value = (MagicMock(content="Here's Oggers"), prev_att, "A tea-drinking Brit")
+        mock_gather.return_value = ("RECENT CHAT", {})
+        mock_generate.return_value = ("Twice is a motif. Three times would be a problem.", 100, 20)
+
+        client = MagicMock()
+        client.user.id = 999999999
+        ref = MagicMock()
+        ref.message_id = 4242
+        message = self._leader_message(
+            client, f"<@{client.user.id}> Notice how it featured the red lion twice", author_id=USERS.HADIDAS, reference=ref,
+        )
+        message.guild = None
+
+        with patch("lib.features.chat_responder.extract_image_urls", new_callable=AsyncMock, return_value=[]), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        mock_edit_img.assert_not_called()
+        mock_gen_img.assert_not_called()
+        mock_generate.assert_called_once()
+        self.assertIn("Twice is a motif", message.reply.call_args[0][0])
+        self.assertNotIn("file", message.reply.call_args[1])
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.edit_image_openai")
+    @patch("lib.features.chat_responder.synthesize_image_edit_prompt")
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async")
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_try_again_with_corrections_is_edit(
+        self, mock_classify, mock_find_img, mock_fetch_chat, mock_synth_edit, mock_edit_img, mock_gen_img
+    ):
+        mock_classify.return_value = {
+            "intent": "edit", "subject": "mentioned", "subject_name": None, "reason": "corrections to last portrait", "input_tokens": 5, "output_tokens": 2,
+        }
+        prev_att = MagicMock()
+        prev_att.read = AsyncMock(return_value=b"orig")
+        mock_find_img.return_value = (MagicMock(content="Here's Oggers"), prev_att, "A tea-drinking Brit with a flag")
+        mock_fetch_chat.return_value = [{"content": "off to Lisbon again", "channel": "general", "ts": 1700000000}]
+        mock_synth_edit.return_value = ("new", "A globe-trotting pub crawler with a passport and a pint", "<@1> Revised. No tea.", 100, 30)
+        mock_gen_img.return_value = (b"img", 20, 200)
+
+        client = MagicMock()
+        client.user.id = 999999999
+        oggers = MagicMock()
+        oggers.id = USERS.OGGERS
+        oggers.nick = "oggers"
+        oggers.global_name = None
+        oggers.display_name = "oggers"
+        oggers.name = "ogme01"
+
+        message = self._leader_message(
+            client,
+            f"<@{client.user.id}> can you try again <@{USERS.OGGERS}> doesn't drink tea, he does a lot of international travel, enjoys a good pub crawl",
+            author_id=USERS.HADIDAS,
+            mentions=[oggers],
+        )
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.record_usage") as mock_usage, \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        mock_synth_edit.assert_called_once()
+        self.assertEqual(mock_synth_edit.call_args[1]["target_name"], "oggers")
+        self.assertEqual(mock_synth_edit.call_args[1]["prev_prompt"], "A tea-drinking Brit with a flag")
+        self.assertIn("off to Lisbon again", mock_synth_edit.call_args[1]["context"])
+        # synth said "new", so it regenerates rather than edits the old pixels
+        mock_edit_img.assert_not_called()
+        mock_gen_img.assert_called_once_with("A globe-trotting pub crawler with a passport and a pint")
+        self.assertIn("file", message.reply.call_args[1])
+        self.assertIn("Revised. No tea.", message.reply.call_args[0][0])
+        self.assertTrue(any(c[0][0] == "gpt-4o-mini" for c in mock_usage.call_args_list))
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_edit_without_recent_image_generates(
+        self, mock_classify, mock_find_img, mock_fetch_chat, mock_synth, mock_gen_img
+    ):
+        mock_classify.return_value = {
+            "intent": "edit", "subject": "caller", "subject_name": None, "reason": "wants a redo", "input_tokens": 0, "output_tokens": 0,
+        }
+        mock_synth.return_value = ("A portrait of Oggers", "<@1> Fine.", 10, 5)
+        mock_gen_img.return_value = (b"img", 20, 200)
+
+        client = MagicMock()
+        client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> try again but make me look less like a tea advert")
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        mock_gen_img.assert_called_once_with("A portrait of Oggers")
+        self.assertEqual(mock_synth.call_args[1]["target_name"], "ogme01")
+        self.assertEqual(mock_fetch_chat.call_args[0][1], USERS.OGGERS)
 
     def test_strip_search_citations(self):
         cited = ["https://www.bbc.co.uk/sport/football/fixtures?utm_source=openai"]
