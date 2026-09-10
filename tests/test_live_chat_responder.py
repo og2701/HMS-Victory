@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 import time
 import json
 import asyncio
+from datetime import datetime, timezone
 
 # Install stubs if discord is not installed in local environment
 if "discord" not in sys.modules:
@@ -43,6 +44,12 @@ if "discord" not in sys.modules:
             self.users = kwargs.get("users", True)
             self.replied_user = kwargs.get("replied_user", True)
 
+    class MockFile:
+        def __init__(self, fp, filename=None):
+            self.fp = fp
+            self.filename = filename
+
+    discord.File = MockFile
     discord.AllowedMentions = MockAllowedMentions
 
     ui = types.ModuleType("discord.ui")
@@ -117,6 +124,11 @@ from lib.features.chat_responder import (
     parse_openai_response_output,
     is_flat_decline,
     _handled_one_off_message_ids,
+    looks_like_image_request,
+    extract_image_prompt,
+    can_user_generate_image,
+    record_user_image_generation,
+    generate_image_openai,
 )
 from config import USERS
 
@@ -1245,6 +1257,122 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             for child in view.children[0].walk_children()
         )
         self.assertTrue(found_pause_btn, "ChatbotDirectPauseButton must be present in dashboard view action row")
+
+    def test_calculate_cost_image_model(self):
+        cost = calculate_cost("gpt-image-2.5-flare", 100, 200)
+        # 100 * 5/1M + 200 * 30/1M = 0.0005 + 0.006 = 0.0065
+        self.assertAlmostEqual(cost, 0.0065, places=5)
+
+    def test_looks_like_image_request(self):
+        positive_cases = [
+            "draw me a pirate ship",
+            "generate an image of a teapot",
+            "can you draw a cat",
+            "paint a picture of oggers",
+            "create an image of space",
+            "illustrate a knight in armor",
+            "photo of a golden retriever",
+            "make a drawing of HMS Victory",
+        ]
+        for prompt in positive_cases:
+            self.assertTrue(looks_like_image_request(prompt), f"Expected True for: {prompt}")
+
+        negative_cases = [
+            "what's the weather today?",
+            "tell me a joke",
+            "roast this guy",
+            "drawings are really nice to look at",
+            "how do you paint a fence?",
+        ]
+        for prompt in negative_cases:
+            self.assertFalse(looks_like_image_request(prompt), f"Expected False for: {prompt}")
+
+    def test_extract_image_prompt(self):
+        self.assertEqual(extract_image_prompt("draw me a pirate ship"), "pirate ship")
+        self.assertEqual(extract_image_prompt("generate an image of a teapot"), "a teapot")
+        self.assertEqual(extract_image_prompt("can you paint a portrait of the king"), "portrait of the king")
+        self.assertEqual(extract_image_prompt("a simple sunset"), "a simple sunset")
+
+    @patch("lib.features.chat_responder.atomic_write_json")
+    @patch("lib.features.chat_responder.load_json_file")
+    def test_image_quota_logic(self, mock_load, mock_save):
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        # 1. Oggers always allowed and unlimited
+        mock_load.return_value = {today: {str(USERS.OGGERS): 100}}
+        allowed, rem = can_user_generate_image(USERS.OGGERS)
+        self.assertTrue(allowed)
+        self.assertEqual(rem, 999999)
+
+        # 2. Other user with 0 used
+        mock_load.return_value = {today: {"12345": 0}}
+        allowed, rem = can_user_generate_image(12345)
+        self.assertTrue(allowed)
+        self.assertEqual(rem, 3)
+
+        # 3. Other user with 2 used
+        mock_load.return_value = {today: {"12345": 2}}
+        allowed, rem = can_user_generate_image(12345)
+        self.assertTrue(allowed)
+        self.assertEqual(rem, 1)
+
+        # 4. Other user with 3 used (quota reached)
+        mock_load.return_value = {today: {"12345": 3}}
+        allowed, rem = can_user_generate_image(12345)
+        self.assertFalse(allowed)
+        self.assertEqual(rem, 0)
+
+        # 5. Record user generation increments count
+        mock_load.return_value = {today: {"12345": 1}}
+        record_user_image_generation(12345)
+        mock_save.assert_called_once()
+        saved_data = mock_save.call_args[0][1]
+        self.assertEqual(saved_data[today]["12345"], 2)
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    async def test_handle_one_off_image_request_oggers_success(self, mock_gen_img):
+        mock_gen_img.return_value = (b"fake_image_bytes", 20, 200)
+        client = MagicMock()
+        client.user.id = 999999999
+
+        message = MagicMock()
+        message.id = 88888888
+        message.author.id = USERS.OGGERS
+        message.author.name = "ogme01"
+        message.content = f"<@{client.user.id}> draw me a cup of tea in the rain"
+        message.reply = AsyncMock()
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        mock_gen_img.assert_called_once()
+        self.assertIn("cup of tea in the rain", mock_gen_img.call_args[0][0])
+        message.reply.assert_called_once()
+        call_kwargs = message.reply.call_args[1]
+        self.assertIn("file", call_kwargs)
+        self.assertIn("Here's your image", message.reply.call_args[0][0])
+
+    async def test_handle_one_off_image_request_quota_exceeded(self):
+        client = MagicMock()
+        client.user.id = 999999999
+
+        message = MagicMock()
+        message.id = 99999991
+        message.author.id = 772553171616006166  # Roshy
+        message.author.name = "roshy"
+        message.content = f"<@{client.user.id}> generate an image of a pirate ship"
+        message.reply = AsyncMock()
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(False, 0)):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        message.reply.assert_called_once()
+        reply_text = message.reply.call_args[0][0]
+        self.assertIn("daily limit of 3 image generations", reply_text)
 
 
 if __name__ == "__main__":
