@@ -109,7 +109,10 @@ STRICT RULES:
    - If you won't or can't do something (e.g. identifying a real person from a photo), NEVER answer with a flat policy line like "I can't identify people from images."
    - Decline the way you'd decline anything: dry, unimpressed, 1 to 2 sentences, with a dig at the request or at {caller_name}.
    - Say what you CAN see or do instead. A blurred LinkedIn "someone viewed your profile" smudge is a grey circle behind a paywall; say so and take the mick, don't recite rules.
-10. Output ONLY your direct response text. No preambles, no quotes, no filler."""
+10. IMAGE GENERATION CAPABILITY:
+   - You CAN generate images, caricatures, and portraits when commanded by server leadership (e.g. "draw @user", "generate a photo of X", "do the same for @user"). An AI image generator is integrated into your command pipeline.
+   - NEVER claim that you cannot generate images, lack artistic tools, or misplaced your paintbrush.
+11. Output ONLY your direct response text. No preambles, no quotes, no filler."""
 
 
 ONE_OFF_SYSTEM_PROMPT = build_one_off_system_prompt()
@@ -234,7 +237,8 @@ IMAGE_REQUEST_PATTERNS = [
 ]
 
 FOLLOW_UP_IMAGE_PATTERNS = [
-    r"\b(?:do\s+the\s+same|same\s+for|do\s+another|another\s+one|now\s+do|do\s+(?:<@!?\d+>|@?[\w.-]+)\s+next|make\s+one\s+for|do\s+one\s+for)\b",
+    r"\b(?:do\s+the\s+same|same\s+for|do\s+another|another\s+one|now\s+do|do\s+one\s+for|make\s+one\s+for|generate\s+one\s+for|do\s+(?:<@!?\d+>|@?[\w.-]+)\s+next)\b",
+    r"\b(?:what\s+about\s+(?:<@!?\d+>|@?[\w.-]+))\b",
 ]
 
 CONTEXTUAL_IMAGE_INDICATORS = [
@@ -2011,7 +2015,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         if not is_img_req and any(re.search(pat, clean_prompt.lower()) for pat in FOLLOW_UP_IMAGE_PATTERNS):
             if hasattr(message.channel, "history"):
                 try:
-                    async for prev_m in message.channel.history(limit=6, before=message):
+                    async for prev_m in message.channel.history(limit=35, before=message):
                         if getattr(getattr(prev_m, "author", None), "id", None) == bot_id and getattr(prev_m, "attachments", None):
                             is_img_req = True
                             break
