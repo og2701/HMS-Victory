@@ -43,6 +43,11 @@ def intent(room, enemy, grounded=False):
         hint = "Your guard earned +10% on the next attack. " + hint
     if state.get("guard_used") and key == "charge":
         hint = "Guard is spent; a missed attack can cost 2 HP. Strike, Shout or heal."
+    if room.get("hall_warden"):
+        ward = (room.get("hall_ward") or {}).get("style")
+        weapon = {"blade": "Blade", "marksman": "Bow", "destruction": "Fire"}.get(ward)
+        hint = ((f"Ward resists {weapon}; land another weapon. " if ward else
+                 "Its ward remembers each landed weapon. ") + hint)
     return {"key": key, "label": label, "hint": hint, "counter": counter,
             "guard_available": not bool(state.get("guard_used"))}
 

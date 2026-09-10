@@ -252,18 +252,20 @@ class ReadabilityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_retirement_requires_explicit_ability_choice_when_available(self):
         p = self.profile
+        p.update(xp=sum(D.xp_needed(l) for l in range(1, 20)), alduin_slain=1)
+        boon = E.boon_offer(p)[0]
         choice = next(iter(D.DOCTRINES["blade"]))
         p["doctrines"] = {"blade": choice}
         E.save_profile(p)
         inter = self.interaction()
-        await V._hall_confirm(inter, next(iter(D.BOONS)))
+        await V._hall_confirm(inter, boon)
         view = inter.response.edit_message.call_args.kwargs["view"]
         self.assertTrue(button(view, "Confirm retirement").disabled)
         self.assertIn("cannot be undone", content(view))
         self.assertIsNone(V.P.inherit(p, "blade", choice))
         E.save_profile(p)
         inter = self.interaction()
-        await V._hall_confirm(inter, next(iter(D.BOONS)))
+        await V._hall_confirm(inter, boon)
         chosen = inter.response.edit_message.call_args.kwargs["view"]
         self.assertFalse(button(chosen, "Confirm retirement").disabled)
         self.assert_readable(chosen, 1400)

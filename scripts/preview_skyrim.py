@@ -109,6 +109,46 @@ async def samples():
                                        banked_ingredients={},lost_ingredients={"troll_fat":2})
         view,_=V.build_delve_layout(d,q)
         add("Death debrief",view,"death")
+        endgame = copy.deepcopy(old)
+        endgame.update(xp=sum(D.xp_needed(l) for l in range(1, 32)), alduin_slain=38,
+                       allegiance=None, legacy={"rank":5, "boons":list(D.BOONS)[:5],
+                       "epitaphs":[{"alduin":5,"dragons":5}] * 5})
+        E.H.ensure(endgame)
+        E.save_profile(endgame)
+        for name, fn in (("Endgame Hall", V._hub_hall), ("Endgame offers", V._open_location_picker)):
+            inter = Capture(endgame['user_id'])
+            await fn(inter)
+            add(name, inter.last, "hall_of_legends" if fn == V._hub_hall else None)
+        inter = Capture(endgame['user_id'])
+        await V._hall_confirm(inter, None)
+        add("Repeat retirement confirmation", inter.last)
+        for key, idx, name in (("rune_warden",5,"Rune Warden ward"),
+                              ("lost_caravan",4,"Lost Caravan scout"),
+                              ("sealed_vault",4,"Sealed Vault choice")):
+            d=E.Delve(endgame['user_id'],endgame['name'],1,key,E.H.rooms(key),
+                      idx=idx, hearts=3,shout_charges=3)
+            E.H.prepare(endgame,d)
+            if key == 'rune_warden':
+                E.H.ward_hit(d,'blade')
+            view,_=V.build_delve_layout(d,endgame)
+            add(name,view,V._scene_art(d))
+            if key == 'sealed_vault':
+                d.room['hall_event']='jammed'
+                view,_=V.build_delve_layout(d,endgame)
+                add("Vault setback",view,V._scene_art(d))
+        for faction, spec in D.FACTION_STORIES.items():
+            endgame['allegiance'] = faction
+            endgame['promotions'][faction] = {'grandfathered':4}
+            key=spec['roads'][0]
+            d=E.Delve(endgame['user_id'],endgame['name'],1,key,E.H.rooms(key),
+                      idx=1,hearts=3,shout_charges=3)
+            E.H.prepare(endgame,d)
+            view,_=V.build_delve_layout(d,endgame)
+            add(f"Faction story: {spec['name']}",view,V._scene_art(d))
+        E.save_profile(endgame)
+        inter=Capture(endgame['user_id'])
+        await V._hub_factions(inter)
+        add("Faction story objective",inter.last)
     return out
 
 

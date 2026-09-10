@@ -78,6 +78,12 @@ def _scene_art(delve: E.Delve) -> str:
     if delve.state in ("left", "fled", "abandoned"):
         return "leave"
     r = delve.room
+    if r.get("hall_warden"):
+        return "hall_rune_warden"
+    if r.get("hall_event") in ("vault", "jammed", "ledger"):
+        return "hall_sealed_vault"
+    if delve.location == "lost_caravan" and r.get("story") == "captive":
+        return "hall_lost_caravan"
     if r["kind"] == "enemy":
         e = D.ENEMIES[r["key"]]
         # Dragons change picture with the fight: airborne (wheeling, breathing) vs
@@ -218,6 +224,14 @@ def _debrief_text(delve, profile):
     else:
         lines.append(T.outcome([delve.result_line], 230))
     lines.append(f"✨ {delve.xp_gained} XP · {delve.kills} kills")
+    boons = summary.get("hall_boons") or []
+    deeds = summary.get("hall_deeds") or []
+    if boons:
+        lines.append("🏛️ **Boon unlocked:** " + ", ".join(D.HALL_BOONS[k]['name'] for k in boons))
+    elif deeds:
+        lines.append(f"🏛️ {len(deeds)} new Hall deed{'s' if len(deeds) != 1 else ''}")
+    if summary.get("story_result"):
+        lines.append("📜 " + summary["story_result"])
     gains = summary.get("skill_gains") or {}
     if gains:
         bits = [f"{D.STYLES.get(k, {}).get('name', k.title())} +{v}"
@@ -252,6 +266,13 @@ def _debrief_text(delve, profile):
 def _debrief_details(delve):
     summary = getattr(delve, "summary", None) or {}
     lines = ["## Adventure ledger"]
+    for key in summary.get("hall_deeds", []):
+        lines.append("🏛️ " + D.HALL_DEEDS[key])
+    for key in summary.get("hall_boons", []):
+        boon = D.HALL_BOONS[key]
+        lines.append(f"{boon['emoji']} **{boon['name']}** · {boon['desc']}")
+    if summary.get("story_result"):
+        lines.append("📜 " + summary["story_result"])
     for field, label in (("banked_ingredients", "Ingredients banked"), ("lost_ingredients", "Ingredients lost")):
         values = summary.get(field) or {}
         if values:
@@ -276,7 +297,8 @@ def _delve_text(delve: E.Delve, profile) -> str:
     if room["kind"] == "enemy":
         enemy = D.ENEMIES[room["key"]]
         named = E.named_dragon(delve)
-        lines.append(f"**{enemy['emoji']} {named['name'] if named else enemy['name']}** · {delve.enemy_hp} HP")
+        name = "Rune Warden" if room.get("hall_warden") else named['name'] if named else enemy['name']
+        lines.append(f"**{enemy['emoji']} {name}** · {delve.enemy_hp} HP")
         intent = E.combat_intent(delve)
         if intent:
             lines.append(f"**{intent['label']}** — {intent['hint']}")
@@ -335,7 +357,7 @@ def build_delve_layout(delve: E.Delve, profile):
     box = discord.ui.Container(accent_colour=ACCENT)
     box.add_item(discord.ui.TextDisplay(_delve_text(delve, profile)))
     view.add_item(box)
-    did = delve.delve_id
+    did = _control_id(delve)
     rows = []
     if delve.playing():
         room = delve.room
@@ -418,6 +440,10 @@ _SHOUT_EFFECTS = {
 }
 
 
+def _control_id(delve):
+    return delve.delve_id if delve.legacy_controls else f"{delve.delve_id}:{delve.revision}"
+
+
 def _shout_control(delve: E.Delve, profile, e):
     words = profile.get("words", 0)
     if words <= 0 or delve.shout_charges <= 0:
@@ -428,7 +454,7 @@ def _shout_control(delve: E.Delve, profile, e):
     if not costs:
         return None
     row = discord.ui.ActionRow()
-    did = delve.delve_id
+    did = _control_id(delve)
     if costs == [1]:
         row.add_item(_btn(discord.ButtonStyle.success, f"FUS  ({delve.shout_charges})",
                           f"skyrim:{did}:sht:1", _make_cb(delve, "sht:1"), emoji="🗣️"))
@@ -439,8 +465,9 @@ def _shout_control(delve: E.Delve, profile, e):
         name, desc = _SHOUT_EFFECTS[c]
         select.add_option(label=name, value=str(c), description=desc, emoji="🗣️")
 
+    revision = delve.revision
     async def _on_shout(inter: Interaction):
-        await _handle_delve_click(inter, delve, f"sht:{select.values[0]}")
+        await _handle_delve_click(inter, delve, f"sht:{select.values[0]}", expected_revision=revision)
     select.callback = _on_shout
     row.add_item(select)
     return row
@@ -468,9 +495,22 @@ _EVENT_CHOICES = {
 # Delve interaction routing
 # ---------------------------------------------------------------------------
 def _make_cb(delve: E.Delve, action: str):
+    revision = delve.revision
     async def _cb(interaction: Interaction):
-        await _handle_delve_click(interaction, delve, action)
+        await _handle_delve_click(interaction, delve, action, expected_revision=revision)
     return _cb
+
+
+_REGISTERED_DELVE_VIEWS = {}
+
+
+def _register_delve_view(client, message_id, view):
+    recent = _REGISTERED_DELVE_VIEWS.setdefault(int(message_id), [])
+    if view not in recent:
+        recent.append(view)
+    while len(recent) > 2:
+        recent.pop(0).stop()
+    client.add_view(view, message_id=int(message_id))
 
 
 async def _rerender_delve(interaction: Interaction, delve: E.Delve, profile):
@@ -485,14 +525,14 @@ async def _rerender_delve(interaction: Interaction, delve: E.Delve, profile):
             logger.debug("skyrim delve fallback edit failed", exc_info=True)
     try:
         if delve.message_id:
-            interaction.client.add_view(view, message_id=delve.message_id)
+            _register_delve_view(interaction.client, delve.message_id, view)
     except Exception:
         logger.debug("skyrim add_view failed", exc_info=True)
     await _flush_game_log(interaction.client)
     await _flush_wonders(interaction)
 
 
-async def _handle_delve_click(interaction: Interaction, delve: E.Delve, action: str):
+async def _handle_delve_click(interaction: Interaction, delve: E.Delve, action: str, *, expected_revision=None):
     if interaction.user.id != delve.player_id:
         await interaction.response.send_message(
             "This is not your adventure - run `/skyrim` to begin your own.", ephemeral=True)
@@ -567,38 +607,23 @@ async def _handle_delve_click(interaction: Interaction, delve: E.Delve, action: 
 
     delve.busy = True
     try:
-        if action == "atk":                       # legacy pre-styles button: best tool
-            delve.act_attack(profile)
-        elif action.startswith("atk:"):
-            delve.act_attack(profile, action.split(":", 1)[1])
-        elif action == "slp":
-            delve.act_slip(profile)
-        elif action == "snk":
-            delve.act_sneak(profile)
-        elif action == "per":
-            delve.act_persuade(profile)
-        elif action == "sht" or action.startswith("sht:"):
-            cost = int(action.split(":", 1)[1]) if ":" in action else None
-            delve.act_shout(profile, cost)
-        elif action == "pot":
-            delve.act_potion(profile)
-        elif action == "guard":
-            delve.act_guard(profile)
-        elif action == "lve":
-            delve.act_leave(profile)
-        elif action.startswith("evt:"):
-            delve.act_event(profile, action.split(":", 1)[1])
-        else:
-            await interaction.response.defer()
+        try:
+            pending = sessions.prepare_action(profile, delve, action, expected_revision)
+            pending.commit()
+        except ValueError as exc:
+            latest = E.load_delve(delve.message_id)
+            if latest:
+                await _rerender_delve(interaction, latest, E.get_profile(interaction.user.id))
+            else:
+                await interaction.response.send_message(str(exc), ephemeral=True)
             return
-
-        E.save_profile(profile)
-        if delve.playing():
-            E.save_delve(delve)
-        else:
-            E.delete_delve(delve.message_id)
-            if delve.daily:
-                E.record_daily_result(profile, delve)
+        except OSError:
+            logger.exception("Skyrim action could not commit")
+            await interaction.response.send_message("That turn could not be saved. Your progress is safe; try again.", ephemeral=True)
+            return
+        profile = pending.profile
+        delve.__dict__.update(pending.delve.__dict__)
+        delve.busy = True
         await _rerender_delve(interaction, delve, profile)
         # after the board is already on screen, so a DM round-trip never delays it
         await _award_badges(interaction, profile)
@@ -992,8 +1017,10 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
     else:
         row = discord.ui.ActionRow()
         for key in E.offer_locations(profile):
-            loc = D.LOCATIONS[key]
+            loc = E.location_data(key)
             concise.append(f"\n{loc['emoji']} **{loc['name']}**\n{loc['difficulty']} · {loc['rooms']} rooms")
+            if loc.get("hall_adventure"):
+                concise.append(loc["desc"])
             # the location line stays clean; every modifier lives on a small chip line
             lines.append(f"{loc['emoji']} **{loc['name']}** - {loc['desc']}")
             bits = [loc["difficulty"], f"{loc['rooms']} rooms"]
@@ -1017,7 +1044,7 @@ async def _show_offers(interaction: Interaction, edit_hub: bool = False):
             async def _go(inter: Interaction, k=key):
                 await _launch_delve(inter, k)
             row.add_item(_cb_btn(
-                discord.ButtonStyle.danger if D.LOCATIONS[key].get("dragon_lair")
+                discord.ButtonStyle.danger if loc.get("dragon_lair")
                 else discord.ButtonStyle.primary, loc["name"], loc["emoji"], _go))
         rows.append(row)
         # the elixir loadout: pick which shelf bottles to drink on the next delve
@@ -1159,7 +1186,7 @@ async def _launch_delve(interaction: Interaction, loc_key: str, kind: str = "nor
                 attachments=[])
             return
         try:
-            interaction.client.add_view(view, message_id=msg.id)
+            _register_delve_view(interaction.client, msg.id, view)
         except Exception:
             logger.debug("skyrim add_view on launch failed", exc_info=True)
     jump = _delve_jump_url(interaction, delve)
@@ -1300,20 +1327,40 @@ def _hall_text(profile) -> str:
     lines = ["## 🏛️ The Hall of Legends",
              "-# Retire a champion and begin again. Level, skills, gear, gold, perks and "
              "the Voice reset to a fresh start; your collection, records, wonders, "
-             "companions and the estate persist - and each legend banks a permanent boon.",
+             "companions and the estate persist. The first five legends choose a boon; "
+             "later lives add a new seat, with three more boons earned through Hall deeds.",
              ""]
-    if lg.get("boons"):
+    hall = E.H.ensure(profile)
+    if lg.get("boons") or hall["boons"]:
         lines.append("**Your boons** (forever):")
-        for b in lg["boons"]:
-            boon = D.BOONS.get(b)
+        for b in lg.get("boons", []) + hall["boons"]:
+            boon = D.BOONS.get(b) or D.HALL_BOONS.get(b)
             if boon:
                 lines.append(f"-# {boon['emoji']} **{boon['name']}** - {boon['desc']}")
+        lines.append("")
+    lines.append("**Hall deeds** · Skyrim records, earned automatically")
+    if E.legacy_rank(profile) < D.LEGACY_MAX:
+        lines.append("-# Deeds can be earned now; their boons awaken at Legend 5.")
+    for chapter in D.HALL_CHAPTERS:
+        boon = D.HALL_BOONS[chapter["boon"]]
+        lines.append(f"**{chapter['name']}** → {boon['emoji']} {boon['name']}")
+        for key in chapter["deeds"]:
+            lines.append(f"-# {'✅' if key in hall['deeds'] else '▫️'} {D.HALL_DEEDS[key]}")
+    lines.append("")
+    for key, saved in hall['stories'].items():
+        if key not in D.FACTION_STORIES:
+            continue
+        spec = D.FACTION_STORIES[key]
+        ending = spec['title'] if saved.get('complete') else 'first chapter remembered'
+        lines.append(f"📜 **{spec['name']}** · {ending}")
+    if hall['stories']:
         lines.append("")
     for i, ep in enumerate(lg.get("epitaphs") or [], start=1):
         boon = D.BOONS.get(ep.get("boon"), {})
         lines.append(f"⭐ **Legend {i} - {ep.get('name', '?')}**: {ep.get('days', 0)} days, "
                      f"level {ep.get('level', '?')}, {ep.get('dragons', 0)} dragons, "
-                     f"Alduin x{ep.get('alduin', 0)}. Took {boon.get('name', 'a boon')}.")
+                     f"Alduin x{ep.get('alduin', 0)}."
+                     + (f" Took {boon['name']}." if boon else ""))
         if ep.get("line"):
             lines.append(f"-# {ep['line']}")
     if lg.get("epitaphs"):
@@ -1332,16 +1379,35 @@ def _hall_text(profile) -> str:
             boon = D.BOONS.get(ep.get("boon"), {})
             lines.append(f"-# ⭐ **{name}**, Legend {i} - {ep.get('days', 0)} days, "
                          f"level {ep.get('level', '?')}, {ep.get('dragons', 0)} dragons, "
-                         f"Alduin x{ep.get('alduin', 0)}. Took {boon.get('name', 'a boon')}.")
+                         f"Alduin x{ep.get('alduin', 0)}."
+                         + (f" Took {boon['name']}." if boon else ""))
         lines.append("")
     if ready:
-        lines.append("🏛️ **The Hall is ready for you.** Choose the boon your legend "
-                     "leaves behind - then retire. There is no undoing it.")
+        lines.append("🏛️ **The Hall is ready for you.** " +
+                     ("Choose a boon, then retire." if E.boon_offer(profile) else "Retire again to begin another life.")
+                     + " There is no undoing it.")
         lines.append("-# 🪨 The one who wakes on the cart is a stranger: you may take a "
                      "**different Guardian Stone** on the way out.")
     else:
-        lines.append(f"-# The next retirement asks: {req_line}. Every kill hardens his "
-                     f"Echo - each legend is earned against a worse World-Eater.")
+        lines.append(f"-# The next retirement asks: {req_line}.")
+    return "\n".join(lines)
+
+
+def _hall_summary(profile):
+    hall = E.H.ensure(profile)
+    ready, requirement = E.retire_ready(profile)
+    lines = [f"## 🏛️ Hall of Legends · {E.legacy_rank(profile)} seats",
+             "Retire and begin a fresh life. Your boons and account records stay yours.",
+             f"**Next retirement:** {'ready' if ready else requirement}."]
+    if E.legacy_rank(profile) >= D.LEGACY_MAX:
+        lines.append(f"**Hall deeds:** {len(hall['deeds'])}/{len(D.HALL_DEEDS)} · "
+                     f"{len(hall['boons'])}/{len(D.HALL_BOONS)} extra boons")
+        missing = E.H.next_deed(profile)
+        if missing:
+            lines.append(f"🎯 {D.HALL_DEEDS[missing]}.")
+    else:
+        lines.append("The first five retirements each grant a chosen boon.")
+    lines.append("-# Inspect for deeds, boon effects and every legend's story.")
     return "\n".join(lines)
 
 
@@ -1355,7 +1421,7 @@ async def _hub_hall(interaction: Interaction, notice: str = ""):
         text += f"\n\n{notice}"
     rows = []
     ready, _line = E.retire_ready(profile)
-    if ready:
+    if ready and E.boon_offer(profile):
         sel = discord.ui.Select(placeholder="🏛️ Choose your legend's boon...")
         for k in E.boon_offer(profile):
             b = D.BOONS[k]
@@ -1368,16 +1434,26 @@ async def _hub_hall(interaction: Interaction, notice: str = ""):
         srow = discord.ui.ActionRow()
         srow.add_item(sel)
         rows.append(srow)
+    elif ready:
+        async def _again(inter):
+            await _hall_confirm(inter, None)
+        row = discord.ui.ActionRow()
+        row.add_item(_cb_btn(discord.ButtonStyle.success, "Retire again", "🏛️", _again))
+        rows.append(row)
     rows.append(_char_back_row())
-    await _edit_panel(interaction, text, rows, art_key="hall_of_legends")
+    summary = _hall_summary(profile) + (f"\n\n{notice}" if notice else "")
+    await _edit_panel(interaction, text, rows, art_key="hall_of_legends", summary=summary)
 
 
-async def _hall_confirm(interaction: Interaction, boon_key: str, stone_key: str = None):
+async def _hall_confirm(interaction: Interaction, boon_key: str | None, stone_key: str = None, *, expected_rank=None):
     profile = E.get_profile(interaction.user.id)
-    if profile is None or boon_key not in D.BOONS:
+    if (profile is None or not E.retire_ready(profile)[0]
+            or (expected_rank is not None and E.legacy_rank(profile) != expected_rank)
+            or (boon_key not in E.boon_offer(profile) if E.legacy_rank(profile) < D.LEGACY_MAX else boon_key is not None)):
         await _hub_hall(interaction)
         return
-    b = D.BOONS[boon_key]
+    b = D.BOONS.get(boon_key)
+    expected_rank = E.legacy_rank(profile)
     # the newborn wakes under whichever stone they pick here - free, because the
     # rebirth resets the starting skills and learning rate the stone governs anyway
     if stone_key not in D.STONES:
@@ -1387,8 +1463,10 @@ async def _hall_confirm(interaction: Interaction, boon_key: str, stone_key: str 
     text = ("## 🏛️ The last question\n"
             f"Retire **{profile['name']}** (level {E.level(profile)}, "
             f"{profile['stats'].get('dragons', 0)} dragons, "
-            f"{profile['septims']:,} septims) and take "
-            f"{b['emoji']} **{b['name']}** - {b['desc']}\n\n"
+            f"{profile['septims']:,} septims)"
+            + (f" and take {b['emoji']} **{b['name']}** - {b['desc']}" if b
+               else f" and record Legend {expected_rank + 1} in the Hall.")
+            + "\n\n"
             f"They wake again under {stone['emoji']} **{stone['name']}**"
             + (" - a new path this time." if swapping else " - the same stone as before.")
             + f"\n-# {stone['blurb']}\n\n"
@@ -1410,13 +1488,16 @@ async def _hall_confirm(interaction: Interaction, boon_key: str, stone_key: str 
 
         async def _inherit(inter):
             p = E.get_profile(inter.user.id)
+            if not p or E.legacy_rank(p) != expected_rank:
+                await _hub_hall(inter)
+                return
             skill, choice = ability.values[0].split(":", 1)
             error = P.inherit(p, skill, choice)
             if error:
                 await _hub_hall(inter, notice=error)
                 return
             E.save_profile(p)
-            await _hall_confirm(inter, boon_key, stone_key)
+            await _hall_confirm(inter, boon_key, stone_key, expected_rank=expected_rank)
         ability.callback = _inherit
         ability_row = discord.ui.ActionRow()
         ability_row.add_item(ability)
@@ -1428,7 +1509,7 @@ async def _hall_confirm(interaction: Interaction, boon_key: str, stone_key: str 
                         description=s["blurb"][:100], default=k == stone_key)
 
     async def _restone(inter: Interaction):
-        await _hall_confirm(inter, boon_key, ssel.values[0])
+        await _hall_confirm(inter, boon_key, ssel.values[0], expected_rank=expected_rank)
     ssel.callback = _restone
     srow = discord.ui.ActionRow()
     srow.add_item(ssel)
@@ -1437,16 +1518,16 @@ async def _hall_confirm(interaction: Interaction, boon_key: str, stone_key: str 
 
     async def _do(inter: Interaction):
         p = E.get_profile(inter.user.id)
-        err = E.retire(p, boon_key, stone_key)
-        E.save_profile(p)
+        err = E.retire(p, boon_key, stone_key, expected_rank=expected_rank) if p else "Run /skyrim first."
         if err:
             await _hub_hall(inter, notice=f"-# {err}")
             return
+        E.save_profile(p)
         n = E.legacy_rank(p)
         await _hub_hall(inter, notice=f"🏛️ **Legend {n} takes their seat in the Hall.**\n"
                                       f"Hey, you. You're finally awake... again. "
-                                      f"{b['emoji']} {b['name']} rides with you this time, "
-                                      f"under {stone['emoji']} {stone['name']}.")
+                                      + (f"{b['emoji']} {b['name']} rides with you this time, " if b else "Your boons travel with you, ")
+                                      + f"under {stone['emoji']} {stone['name']}.")
     row.add_item(_cb_btn(discord.ButtonStyle.danger, "Retire them, forever", "🏛️", _do,
                          disabled=bool(inheritance and chosen is None)))
     row.add_item(_cb_btn(discord.ButtonStyle.secondary, "Not yet", "⬅️", _hub_hall))
@@ -2554,6 +2635,16 @@ def _factions_text(profile) -> str:
         bar = _bar(min(prog, goal), 0, goal, 10)
         state = "✅ ready to claim" if done else f"{prog}/{goal}"
         lines.append(f"-# This week: **{goal} {fac['verb']}**  {bar}  {state}")
+        story = E.H.story_state(profile)
+        saved = E.H.ensure(profile)["stories"].get(fac_key, {})
+        if story:
+            road = D.HALL_ADVENTURES[story['road']]['name']
+            lines.append(f"📜 **{story['name']}** · chapter {story['stage'] + 1}/2\n"
+                         f"-# Adventure → {road}. Clear it to bring the story home.")
+        elif saved.get("complete"):
+            lines.append(f"-# 📜 {D.FACTION_STORIES[fac_key]['name']} complete · {D.FACTION_STORIES[fac_key]['title']}")
+        else:
+            lines.append("-# A connected story opens at your highest faction rank, level 20 and an Alduin victory.")
         # standing kept elsewhere, so leaving reads as a transfer rather than a wipe
         elsewhere = [(k, E.faction_favour(profile, k)) for k in D.FACTIONS if k != fac_key]
         elsewhere = [(k, v) for k, v in elsewhere if v]
@@ -2659,7 +2750,25 @@ async def _hub_factions(interaction: Interaction, notice: str = ""):
             srow.add_item(sel)
             rows.append(srow)
     rows.append(_back_row())
-    await _edit_panel(interaction, text, rows)
+    story = E.H.story_state(profile)
+    completed = E.H.ensure(profile)["stories"].get(fac_key, {}).get("complete")
+    summary = None
+    if story or completed:
+        goal, prog, done = E.faction_progress(profile)
+        fac = D.FACTIONS[fac_key]
+        spec = D.FACTION_STORIES[fac_key]
+        summary = (f"## {fac['emoji']} {fac['name']}\n{E.faction_rank(profile)} · {E.faction_favour(profile)} favour\n\n"
+                   f"📜 **{spec['name']}**\n")
+        if story:
+            road = D.HALL_ADVENTURES[story['road']]['name']
+            summary += f"Chapter {story['stage'] + 1}/2 · Adventure → **{road}**.\nClear it to bring the story home."
+        else:
+            summary += f"Complete · {spec['title']}"
+        summary += f"\n\nThis week: {prog}/{goal} {fac['verb']}" + (" · ready to claim" if done else "")
+        if notice:
+            summary += f"\n\n{notice}"
+        summary += "\n-# Inspect for faction records and news."
+    await _edit_panel(interaction, text, rows, summary=summary)
 
 
 async def _faction_confirm(interaction: Interaction, key: str):
@@ -3567,7 +3676,13 @@ def reattach_skyrim_view(client, key, value):
         return
     try:
         delve.message_id = int(key)
+        # A committed turn may have crashed before Discord received the new
+        # controls. Route that one previous board to the stale-turn refresh too.
+        if delve.previous_board:
+            previous = E.Delve.from_dict(delve.previous_board)
+            previous_view, _files = build_delve_layout(previous, profile)
+            _register_delve_view(client, int(key), previous_view)
         view, _files = build_delve_layout(delve, profile)
-        client.add_view(view, message_id=int(key))
+        _register_delve_view(client, int(key), view)
     except Exception as e:
         logger.error(f"Failed to reattach skyrim view {key}: {e}", exc_info=True)

@@ -1,4 +1,4 @@
-"""Stage a new adventure before Discord sends it, then commit it durably.
+"""Stage launches and turns, then commit profiles and their boards durably.
 
 Preparation is synchronous and has no storage writes. A profile-side journal
 commits the reward/attempt change and the new board together; recovery finishes
@@ -39,11 +39,13 @@ async def launch_lock(user_id):
 def _validate(profile, loc_key, kind):
     from lib.features.skyrim import engine as E
     if kind == "normal":
-        loc = D.LOCATIONS.get(loc_key)
+        loc = E.location_data(loc_key) if loc_key in D.LOCATIONS or loc_key in D.HALL_ADVENTURES else None
         if not loc or loc.get("alduin") or loc.get("soulcairn"):
             raise ValueError("That road isn't available.")
         if E.level(profile) < int(loc.get("min_level", 1)):
             raise ValueError("Gain a few levels before taking that road.")
+        if loc_key in D.HALL_ADVENTURES and not E.H.unlocked(profile):
+            raise ValueError("Defeat Alduin and reach level 20 before following that road.")
         if loc.get("dragon_lair"):
             import config
             if E.level(profile) < config.SKYRIM_DRAGON_MIN_LEVEL:
@@ -95,20 +97,20 @@ def _materialise(profile):
 
 def recover_profile(profile):
     """Called before gameplay reads; a failed recovery must not enable stale play."""
-    return _materialise(profile)
+    return _materialise_action(_materialise(profile))
 
 
 def recover_all():
     """Run before startup registers persistent boards."""
     from lib.features.skyrim import engine as E
     for profile in E._profiles().values():
-        if profile.get("_launch_commit"):
+        if profile.get("_launch_commit") or profile.get("_action_commit"):
             try:
-                _materialise(profile)
+                recover_profile(profile)
             except (OSError, KeyError, TypeError, ValueError):
                 # A broken game record must not prevent unrelated bot features
                 # from starting. Reading this character retries before play.
-                logger.exception("Could not recover Skyrim launch for %s", profile.get("user_id"))
+                logger.exception("Could not recover Skyrim session for %s", profile.get("user_id"))
 
 
 @dataclass
@@ -184,6 +186,106 @@ def prepare(profile, channel_id, loc_key, kind="normal"):
         delve = (E.start_soulcairn(staged, channel_id) if kind == "soulcairn"
                  else E.start_delve(staged, channel_id, loc_key, kind=kind))
         return PendingLaunch(staged, delve, baseline, source_board, old,
+                             list(E._GAME_LOG), list(E._WONDER_QUEUE))
+    finally:
+        E._GAME_LOG[:] = logs_before
+        E._WONDER_QUEUE[:] = wonders_before
+
+
+def _materialise_action(profile):
+    from lib.features.skyrim import engine as E
+    journal = profile.get("_action_commit")
+    if not journal:
+        return profile
+    board = journal["board"]
+    mid = str(board["message_id"])
+    views = E.load_persistent_views()
+    if board["state"] == "playing":
+        views[mid] = board
+    else:
+        views.pop(mid, None)
+    E.save_persistent_views(views)
+    delve = E.Delve.from_dict(board)
+    if delve.endgame.get("fallen_pending"):
+        E.record_fallen(profile, delve, strict=True)
+    if delve.daily and not delve.playing():
+        E.record_daily_result(profile, delve, attempt_date=journal.get("daily_date"), strict=True)
+    profile.pop("_action_commit", None)
+    E.save_profile(profile)
+    return profile
+
+
+@dataclass
+class PendingAction:
+    profile: dict
+    delve: object
+    baseline: dict
+    source_board: dict
+    logs: list = field(default_factory=list)
+    wonders: list = field(default_factory=list)
+    committed: bool = False
+
+    def commit(self):
+        from lib.features.skyrim import engine as E
+        if self.committed:
+            return
+        current = E.get_profile(self.profile["user_id"])
+        stored = E.load_persistent_views().get(str(self.delve.message_id))
+        if current != self.baseline or stored != self.source_board:
+            raise ValueError("Your adventure changed. Open its latest board and try again.")
+        self.profile["_action_commit"] = {
+            "board": self.delve.to_dict(),
+            "daily_date": (self.baseline.get("daily") or {}).get("date"),
+        }
+        E.save_profile(self.profile)
+        self.committed = True
+        try:
+            _materialise_action(self.profile)
+        except OSError:
+            logger.exception("Skyrim action committed; board recovery pending")
+        for line in self.logs:
+            E.glog(line)
+        for uid, key in self.wonders:
+            E.wlog(uid, key)
+
+
+def prepare_action(profile, board, action, expected_revision=None):
+    """Resolve on copies; failed writes leave live objects and rewards untouched."""
+    from lib.features.skyrim import engine as E
+    if not profile or profile.get("active_delve") != board.message_id:
+        raise ValueError("That adventure has ended.")
+    source = E.load_persistent_views().get(str(board.message_id))
+    revision = board.revision if expected_revision is None else expected_revision
+    if not source or source.get("revision", 0) != revision or source.get("delve_id") != board.delve_id:
+        raise ValueError("That choice belongs to an earlier turn. Use the latest board.")
+    staged = deepcopy(profile)
+    delve = E.Delve.from_dict(deepcopy(source))
+    if not delve.playing():
+        raise ValueError("That adventure has ended.")
+    delve._defer_fallen = True
+    logs_before, wonders_before = list(E._GAME_LOG), list(E._WONDER_QUEUE)
+    E._GAME_LOG.clear()
+    E._WONDER_QUEUE.clear()
+    try:
+        methods = {"atk": delve.act_attack, "slp": delve.act_slip,
+                   "snk": delve.act_sneak, "per": delve.act_persuade,
+                   "sht": delve.act_shout, "pot": delve.act_potion,
+                   "guard": delve.act_guard, "lve": delve.act_leave}
+        if action in methods:
+            methods[action](staged)
+        elif action.startswith("atk:") and action.split(":", 1)[1] in D.STYLES:
+            delve.act_attack(staged, action.split(":", 1)[1])
+        elif action.startswith("sht:") and action.split(":", 1)[1] in ("1", "2", "3"):
+            delve.act_shout(staged, int(action.split(":", 1)[1]))
+        elif action.startswith("evt:"):
+            delve.act_event(staged, action.split(":", 1)[1])
+        else:
+            raise ValueError("That action is no longer available.")
+        delve.revision += 1
+        delve.previous_board = deepcopy(source)
+        delve.previous_board.pop("previous_board", None)
+        delve.legacy_controls = False
+        return PendingAction(staged, delve, deepcopy(profile), deepcopy(source),
                              list(E._GAME_LOG), list(E._WONDER_QUEUE))
     finally:
         E._GAME_LOG[:] = logs_before

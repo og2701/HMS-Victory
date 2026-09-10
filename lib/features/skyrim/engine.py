@@ -31,6 +31,7 @@ from lib.core.file_operations import (
 from lib.features.skyrim import data as D
 from lib.features.skyrim import progression as P
 from lib.features.skyrim import combat as C
+from lib.features.skyrim import endgame as H
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +179,8 @@ def dragon_of_the_week(date_str: str = None) -> str:
 def route_condition(loc_key: str, date_str: str = None) -> str | None:
     """The location's route condition for the day (or None for a plain road) -
     deterministic per UK date + location, shared by everyone, like the weather."""
+    if loc_key in D.HALL_ADVENTURES:
+        return None
     rng = random.Random(f"skyrim-route-{date_str or _today_str()}-{loc_key}")
     keys = [None] + list(D.ROUTE_CONDITIONS)
     weights = [D.ROUTE_NONE_WEIGHT] + [D.ROUTE_CONDITIONS[k]["weight"] for k in D.ROUTE_CONDITIONS]
@@ -204,7 +207,7 @@ def ingredient_sources() -> dict:
 def location_drops(loc_key: str, cap: int = 3) -> str:
     """A compact emoji hint of what a location's foes drop, for the picker line.
     The boss's drop leads (a lair's headline is the 🐲 scale, not the trash herbs)."""
-    loc = D.LOCATIONS.get(loc_key) or {}
+    loc = H.location(loc_key) or D.LOCATIONS.get(loc_key) or {}
     seen, out = set(), []
     for ekey in [loc.get("boss")] + list(loc.get("pool", {})):
         e = D.ENEMIES.get(ekey) or {}
@@ -410,6 +413,9 @@ def _migrate(profile: dict) -> dict:
         book["events"].append("sweetroll")
     if int(st.get("launched", 0)) and "giant" not in book["events"]:
         book["events"].append("giant")
+    if legacy_rank(profile) >= D.LEGACY_MAX:
+        H.life_baseline(profile)
+    H.settle(profile)
     return profile
 
 
@@ -417,7 +423,7 @@ def get_profile(user_id) -> dict | None:
     p = _profiles().get(str(user_id))
     if p is None:
         return None
-    if p.get("_launch_commit"):
+    if p.get("_launch_commit") or p.get("_action_commit"):
         from lib.features.skyrim.sessions import recover_profile
         p = recover_profile(p)
     before = copy.deepcopy(p)
@@ -567,7 +573,7 @@ def soulcairn_drain(depth: int, profile=None) -> float:
     floor advances you exactly as far as killing what stands on it."""
     knee = SOULCAIRN_DRAIN_MAX / SOULCAIRN_DRAIN
     raw = SOULCAIRN_DRAIN_MAX * depth / (depth + knee)
-    resist = min(0.75, SOULCAIRN_LEGACY_RESIST * legacy_rank(profile)) if profile else 0.0
+    resist = SOULCAIRN_LEGACY_RESIST * min(D.LEGACY_MAX, legacy_rank(profile)) if profile else 0.0
     return raw * (1 - resist)
 
 
@@ -1059,11 +1065,11 @@ def combat_intent(delve) -> dict:
 
 
 def story_choices(delve) -> list | None:
-    return C.story_choices(delve.room) if delve and delve.playing() else None
+    return (H.choices(delve) or C.story_choices(delve.room)) if delve and delve.playing() else None
 
 
 def story_text(delve) -> str | None:
-    return C.story_text(delve.room) if delve and delve.playing() else None
+    return (H.text(delve) or C.story_text(delve.room)) if delve and delve.playing() else None
 
 
 def sneak_pct(profile, enemy_key: str, delve=None) -> int | None:
@@ -1334,6 +1340,11 @@ def _roll_affix(enemy_key: str, char_level: int, rng) -> str | None:
     return _eligible_affix(enemy_key, rng)
 
 
+def location_data(key):
+    """Variants reuse existing art/enemies without expanding the base collection."""
+    return H.location(key) or D.LOCATIONS[key]
+
+
 def build_rooms(loc_key: str, rng=None, affix_level: int = 0, route: str = None,
                 extra_rooms: int = 0) -> list:
     """Room list for a fresh delve: shuffled trash + events, optional word wall,
@@ -1341,6 +1352,8 @@ def build_rooms(loc_key: str, rng=None, affix_level: int = 0, route: str = None,
     variants, + affix on rare elite variants). Pass a seeded rng for the shared
     daily layout; affix_level gates elite modifiers (0 = none, e.g. the daily);
     route applies the day's route condition (extra room, forced spawns...)."""
+    if loc_key in D.HALL_ADVENTURES:
+        return H.rooms(loc_key)
     rng = rng or random
     loc = D.LOCATIONS[loc_key]
     cond = D.ROUTE_CONDITIONS.get(route) or {}
@@ -1422,6 +1435,9 @@ def offer_locations(profile, date_str: str = None) -> list:
                    if v.get("dragon_lair") and lvl >= dragon_min and lvl >= v["min_level"])
     if lairs:
         picks.append(rng.choice(lairs))
+    featured = H.featured(profile, date_str or _today_str())
+    if featured and len(picks) >= 3:
+        picks[2] = featured
     return picks
 
 
@@ -1448,7 +1464,7 @@ def _room_hp(room: dict) -> int:
     """Hits the room's enemy can take: base hp, +1 for a bounty, + any affix hp."""
     if room["kind"] != "enemy":
         return 1
-    hp = D.ENEMIES[room["key"]].get("hp", 1) + (1 if room.get("bounty") else 0)
+    hp = room.get("hall_hp", D.ENEMIES[room["key"]].get("hp", 1)) + (1 if room.get("bounty") else 0)
     if room.get("affix"):
         hp += D.AFFIXES.get(room["affix"], {}).get("hp", 0)
     hp += int(room.get("soul_hp", 0))            # Soul Cairn depth scaling
@@ -1471,9 +1487,13 @@ class Delve:
                  dragon=None, phase=None, depth=0, kind="normal", buffs=None,
                  route=None, pacts=None, stirred=0, echo=0, pet_used=False, mood=None,
                  potions_used=0, styles_used=None, took_deep=False, summary=None,
-                 history=None):
+                 history=None, endgame=None, revision=0, legacy_controls=False, previous_board=None):
         import uuid
         self.delve_id = delve_id or uuid.uuid4().hex[:12]
+        self.endgame = copy.deepcopy(endgame or {})
+        self.revision = int(revision)
+        self.legacy_controls = bool(legacy_controls)
+        self.previous_board = copy.deepcopy(previous_board)
         self.daily = bool(daily)                  # the shared once-a-day dungeon
         self.kind = kind                          # normal | daily | alduin | soulcairn | expedition
         self.fan = bool(fan)                      # the Adoring Fan absorbs one wound
@@ -1537,7 +1557,7 @@ class Delve:
     # --- construction ---------------------------------------------------------
     @classmethod
     def start(cls, profile, channel_id, loc_key):
-        loc = D.LOCATIONS[loc_key]
+        loc = location_data(loc_key)
         route = None if (loc.get("alduin") or loc.get("rumour")) else route_condition(loc_key)
         d = cls(profile["user_id"], profile["name"], channel_id, loc_key,
                 build_rooms(loc_key, affix_level=level(profile), route=route),
@@ -1566,7 +1586,7 @@ class Delve:
 
     @property
     def loc(self) -> dict:
-        return D.LOCATIONS[self.location]
+        return location_data(self.location)
 
     def enemy(self) -> dict | None:
         r = self.room
@@ -1648,13 +1668,14 @@ class Delve:
         self.idx += 1
         r = self.room
         self.enemy_hp = self._hp_for(r)
-        effect = r.get("story_effect") or {}
-        if effect and not effect.get("arrived"):
-            effect["arrived"] = True
-            self.enemy_hp = max(1, self.enemy_hp - int(effect.get("damage", 0)))
-            if effect.get("opening"):
-                r.setdefault("combat", {})["opening"] = True
-            self.say("📜 " + effect["note"])
+        for field in ("story_effect", "faction_effect"):
+            effect = r.get(field) or {}
+            if effect and not effect.get("arrived"):
+                effect["arrived"] = True
+                self.enemy_hp = max(1, self.enemy_hp - int(effect.get("damage", 0)))
+                if effect.get("opening"):
+                    r.setdefault("combat", {})["opening"] = True
+                self.say("📜 " + effect["note"])
         if self.venom:                       # a Venomous wound bleeds into this room
             self.venom = False
             self.say("🟢 The lingering venom flares as you press on - it sears before it fades.")
@@ -1690,7 +1711,7 @@ class Delve:
                 self.say("💧 A soul font glimmers in the dark, but you are already whole.")
 
     def _finish_clear(self, profile):
-        bonus = _septims(profile, self.loc["clear_septims"])
+        bonus = _septims(profile, max(0, self.loc["clear_septims"] - (40 if self.endgame.get("waited") else 0)))
         if self.daily:
             bonus = int(bonus * DAILY_CLEAR_MULT
                         * D.DAILY_MOODS.get(self.mood, {}).get("clear_mult", 1.0))
@@ -1717,7 +1738,8 @@ class Delve:
         profile["septims"] += self.satchel
         self._bank_ingredients(profile)
         profile["stats"]["clears"] += 1
-        log_add(profile, "clears", self.location)
+        if self.location not in D.HALL_ADVENTURES:
+            log_add(profile, "clears", self.location)
         task_event(profile, "clear", diff=self.loc["difficulty"],
                    potions_used=self.potions_used, styles=self.styles_used,
                    stirred=self.stirred, deep=self.took_deep)
@@ -1730,6 +1752,7 @@ class Delve:
                             f"(including a {bonus:,} haul from the final chamber) and "
                             f"**{self.xp_gained} XP**.{tail}")
         self.say(D.pick(D.CLEAR_LINES, location=self.loc["name"]))
+        H.finish(profile, self)
         pact_bit = f", pacts x{mult:g}" if mult > 1.0 else ""
         glog(f"✅ **{profile['name']}** cleared **{self.loc['name']}**"
              f"{' (daily)' if self.daily else ''} - {self.satchel:,} septims, "
@@ -1749,11 +1772,12 @@ class Delve:
             self.say("The Adoring Fan hurls himself into the blow with a delighted shriek. "
                      "He'll... he'll be fine. Probably.  (wound absorbed)")
             return "soaked"
-        effect = self.room.get("story_effect") or {}
-        if effect.get("guard") and not effect.get("guard_used"):
-            effect["guard_used"] = True
-            self.say("🗝️ The scout you freed catches the blow. The favour is repaid.")
-            return "soaked"
+        for field in ("story_effect", "faction_effect"):
+            effect = self.room.get(field) or {}
+            if effect.get("guard") and not effect.get("guard_used"):
+                effect["guard_used"] = True
+                self.say("🗝️ Your ally catches the blow. The favour is repaid.")
+                return "soaked"
         pet = active_companion(profile)
         if pet and pet.get("guard") and not self.pet_used:
             self.pet_used = True
@@ -1785,7 +1809,10 @@ class Delve:
         lost = self.satchel
         self._complete_summary(profile, lost_gold=lost, lost_ingredients=self.ingredients)
         if self.kind not in ("soulcairn",) and lost > 0:
-            record_fallen(profile, self)          # leave a corpse for the next delver here
+            if getattr(self, "_defer_fallen", False):
+                self.endgame["fallen_pending"] = True
+            else:
+                record_fallen(profile, self)
         self.result_line = (f"**You died.** The satchel - **{lost:,} septims** - stays in "
                             f"{self.loc['name']}. Your XP, gear and souls are safe.")
         self.say(D.pick(D.DEATH_LINES, location=self.loc["name"]))
@@ -1832,6 +1859,8 @@ class Delve:
     def _ward_absorbs(self, style: str) -> bool:
         """A Warded elite turns the first landed blow aside unless it's the style
         that shatters the ward (Fire). Returns True if the hit was wasted."""
+        if H.ward_hit(self, style):
+            return True
         aff = self.affix()
         if not aff or not aff.get("ward_break") or self.room.get("ward_broken"):
             return False
@@ -1928,6 +1957,7 @@ class Delve:
         self.engaged = True
         self.ambush = False
         state["guard_used"] = True
+        H.guard(self, intent)
         C.advance(self.room)
         state["opening"] = True
         if intent == "charge":
@@ -1973,6 +2003,10 @@ class Delve:
         self.ingredients = {}
 
     def _kill(self, profile, e, style, crit=False, ambush=False, practice_gain=0):
+        if self.room.get("hall_warden"):
+            self.endgame["warden_killed"] = True
+        if self.endgame.get("variant") == "sealed_vault" and self.room.get("boss"):
+            self.endgame["ledger"] = True
         gain = practice_gain  # physical contributions train; Shout never trains a random weapon
         tier = e["tier"]
         bounty = bool(self.room.get("bounty"))
@@ -2077,7 +2111,7 @@ class Delve:
             return
         if self._confirm_low_hp(profile):
             return
-        if random.random() * 100 < p:
+        if H.check(profile, self, "sneak", p, random):
             gain = C.practice(profile, self.room, "sneak", True, D.STONES)
             self.ambush = True
             line = D.pick(D.AMBUSH_READY_LINES)
@@ -2119,7 +2153,7 @@ class Delve:
             return
         if self._confirm_low_hp(profile):
             return
-        if random.random() * 100 < p:
+        if H.check(profile, self, "speech", p, random):
             gain = C.practice(profile, self.room, "speech", True, D.STONES)
             gained, ups = add_xp(profile, 10 * e["tier"])
             self.xp_gained += gained
@@ -2381,6 +2415,9 @@ class Delve:
         if r["kind"] != "event":
             return
         key = r["key"]
+        if r.get("hall_event"):
+            H.event(profile, self, choice, random)
+            return
         log_add(profile, "events", key)          # the Collection Log remembers encounters
         if key == "knee_trap" and choice == "continue":
             self._advance(profile)
@@ -2433,7 +2470,7 @@ class Delve:
         if key == "chest" and choice == "pick":
             # a master-locked strongbox: one careful attempt, double the loot
             p = lockpick_pct(profile)
-            if random.random() * 100 < p:
+            if H.check(profile, self, "lockpicking", p, random):
                 gain = _skill_up(profile, "lockpicking")
                 loot = _septims(profile, 2 * (40 + random.randint(0, 80)))
                 self.satchel += loot
@@ -2607,6 +2644,8 @@ class Delve:
     # --- serialisation ---------------------------------------------------------------
     def to_dict(self) -> dict:
         return {"type": "skyrim", "delve_id": self.delve_id,
+                "endgame": copy.deepcopy(self.endgame), "revision": self.revision,
+                "legacy_controls": self.legacy_controls, "previous_board": copy.deepcopy(self.previous_board),
                 "player_id": self.player_id, "player_name": self.player_name,
                 "channel_id": self.channel_id, "location": self.location, "rooms": self.rooms,
                 "idx": self.idx, "hearts": self.hearts, "satchel": self.satchel,
@@ -2646,7 +2685,9 @@ class Delve:
                    pet_used=d.get("pet_used", False), mood=d.get("mood"),
                    potions_used=d.get("potions_used", 0), styles_used=d.get("styles_used"),
                    took_deep=d.get("took_deep", False), summary=d.get("summary"),
-                   history=d.get("history"))
+                   history=d.get("history"), endgame=d.get("endgame"), revision=d.get("revision", 0),
+                   legacy_controls=d.get("legacy_controls", "revision" not in d),
+                   previous_board=d.get("previous_board"))
 
 
 # ---------------------------------------------------------------------------
@@ -2699,6 +2740,8 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
     dungeon, once per day, no stamina) | 'alduin' (Skuldafn, once per day, no stamina).
     Callers must have checked availability; this marks the attempt."""
     faction_state(profile)  # ensure weekly faction challenge snapshots before delve progress starts
+    if legacy_rank(profile) >= D.LEGACY_MAX:
+        H.life_baseline(profile)
     abandon_active(profile)
     start_profile = copy.deepcopy(profile)
     if kind == "tutorial":
@@ -2761,6 +2804,7 @@ def start_delve(profile, channel_id, loc_key, kind: str = "normal") -> Delve:
             names = ", ".join(f"{D.PACTS[k]['emoji']} {D.PACTS[k]['name']}" for k in pacts)
             delve.say(f"⚖️ **Pacts sworn:** {names}  (satchel x{pact_mult(delve):g} if you bank it)")
     delve.kind = kind
+    H.prepare(profile, delve)
     delve.capture_summary(start_profile)
     profile["stats"]["delves"] += 1
     bits = []
@@ -2890,7 +2934,7 @@ def _daily_store() -> dict:
     return load_json_file(config.SKYRIM_DAILY_FILE) or {}
 
 
-def record_daily_result(profile, delve: Delve, attempt_date: str = None):
+def record_daily_result(profile, delve: Delve, attempt_date: str = None, *, strict=False):
     """Write this attempt onto today's shared board (best-effort, last write wins)."""
     try:
         store = _daily_store()
@@ -2910,6 +2954,8 @@ def record_daily_result(profile, delve: Delve, attempt_date: str = None):
         save_json_file(config.SKYRIM_DAILY_FILE, store)
     except Exception:
         logger.error("skyrim: failed to record daily result", exc_info=True)
+        if strict:
+            raise
 
 
 def daily_results() -> dict:
@@ -2932,17 +2978,20 @@ def alduin_ready(profile) -> tuple:
     whether today's attempt is spent. Every past kill raises the dragon price -
     the World-Eater does not grant rematches cheaply."""
     need_lvl = int(getattr(config, "SKYRIM_ALDUIN_MIN_LEVEL", 20))
+    repeat = legacy_rank(profile) >= D.LEGACY_MAX
+    slain, dragons = (H.life_counts(profile) if repeat else
+                      (int(profile.get("alduin_slain") or 0), profile["stats"]["dragons"]))
     need_drag = (int(getattr(config, "SKYRIM_ALDUIN_MIN_DRAGONS", 5))
                  + int(getattr(config, "SKYRIM_ALDUIN_DRAGONS_PER_ECHO", 3))
-                 * int(profile.get("alduin_slain") or 0))
+                 * (min(slain, D.LEGACY_REPEAT_DRAGON_ECHO_CAP) if repeat else slain))
     lvl_ok = level(profile) >= need_lvl
     words_ok = profile["words"] >= len(D.SHOUT_WORDS)
-    drag_ok = profile["stats"]["dragons"] >= need_drag
+    drag_ok = dragons >= need_drag
     words_str = "✅" if words_ok else f"{profile['words']}/3"
-    drags_str = "✅" if drag_ok else str(profile["stats"]["dragons"])
+    drags_str = "✅" if drag_ok else str(dragons)
     line = (f"level {need_lvl}+ ({'✅' if lvl_ok else level(profile)}) · "
             f"FUS RO DAH ({words_str}) · "
-            f"{need_drag} dragons slain ({drags_str})")
+            f"{need_drag} dragons slain{' this life' if repeat else ''} ({drags_str})")
     return (lvl_ok and words_ok and drag_ok), line
 
 
@@ -3436,6 +3485,7 @@ def start_soulcairn(profile, channel_id) -> Delve:
               [_soulcairn_room(0, random)], hearts=heart_max(profile),
               shout_charges=voice_charges(profile), kind="soulcairn", dragon=dragon_of_the_week())
     d.say(D.LOCATIONS["soul_cairn"]["arrive"])
+    H.prepare(profile, d)
     d.capture_summary(start_profile)
     best = int(sc.get("best", 0))
     glog(f"💀 **{profile['name']}** descended into the Soul Cairn"
@@ -3967,8 +4017,8 @@ def collect_expedition(profile, slot: int = 1) -> str | None:
 # ---------------------------------------------------------------------------
 # Legacy Rebirth - the Hall of Legends. The character resets; the ACCOUNT keeps
 # growing: collection, records, wonders, companions, rumours, the homestead and
-# the career stats all persist, plus one permanent boon per retirement. The gate
-# rides Alduin's Echoes - retirement N demands the World-Eater undone N times.
+# the career stats all persist. The first five retirements each choose a boon;
+# later retirements require a fresh Alduin victory and leave power bounded.
 # ---------------------------------------------------------------------------
 def legacy(profile) -> dict:
     return profile.setdefault("legacy", {"rank": 0, "boons": [], "epitaphs": []})
@@ -3983,27 +4033,26 @@ def has_boon(profile, key: str) -> bool:
 
 
 def retire_level_needed(profile) -> int:
-    """The level floor for the next retirement - 20 for a first legend, three more
-    for each one already seated, so a rushed character can't ride one lucky Alduin
-    kill straight into the Hall."""
+    """First five floors rise from 20 to 32; repeat lives keep the 32 floor."""
+    if legacy_rank(profile) >= D.LEGACY_MAX:
+        return D.LEGACY_REPEAT_LEVEL
     return D.LEGACY_MIN_LEVEL + D.LEGACY_LEVEL_STEP * legacy_rank(profile)
 
 
 def retire_ready(profile) -> tuple:
-    """(ready, requirement_line). Retirement N needs Alduin undone N times and a
-    character actually grown into the climb - and since every kill hardens his
-    Echo, each retirement is bought against a worse World-Eater."""
+    """First five seats use lifetime wins; later seats need a win in this life."""
     lg = legacy(profile)
     if profile.get("active_delve") or pit_bout_active(profile) or duel_bout_active(profile):
         return False, "finish your adventure or bout before retiring"
     need = int(lg.get("rank", 0)) + 1
     slain = int(profile.get("alduin_slain") or 0)
-    if lg.get("rank", 0) >= D.LEGACY_MAX:
-        return False, f"the Hall holds {D.LEGACY_MAX} legends - yours is complete"
+    repeat = lg.get("rank", 0) >= D.LEGACY_MAX
+    if repeat:
+        need, slain = 1, H.life_counts(profile)[0]
     lvl_need = retire_level_needed(profile)
     lvl = level(profile)
     line = (f"level **{lvl_need}** ({'✅' if lvl >= lvl_need else lvl}) and "
-            f"Alduin undone **{need}** time{'s' if need != 1 else ''} "
+            f"Alduin undone **{need}** time{'s' if need != 1 else ''}{' this life' if repeat else ''} "
             f"({'✅' if slain >= need else slain})")
     return slain >= need and lvl >= lvl_need, line
 
@@ -4012,23 +4061,28 @@ def boon_offer(profile) -> list:
     """The three boons fate offers THIS retirement - seeded per character and
     rank, so reopening the Hall never rerolls them."""
     lg = legacy(profile)
+    if legacy_rank(profile) >= D.LEGACY_MAX:
+        return []
     owned = set(lg.get("boons", []))
     pool = sorted(k for k in D.BOONS if k not in owned)
     rng = random.Random(f"skyrim-legacy-{profile['user_id']}-{lg.get('rank', 0)}")
     return rng.sample(pool, min(3, len(pool)))
 
 
-def retire(profile, boon_key: str, stone_key: str = None) -> str | None:
+def retire(profile, boon_key: str = None, stone_key: str = None, *, expected_rank=None) -> str | None:
     """Retire the character into the Hall of Legends. Returns an error line, or
     None on success (the profile is reborn in place).
 
     stone_key re-blesses the newborn under a different Guardian Stone - the rebirth
     is the one moment a stone swap is free, since everything it touches (starting
     skills, learning rate) is being reset anyway. Omit it to wake under the old one."""
+    if expected_rank is not None and legacy_rank(profile) != expected_rank:
+        return "That retirement has already passed. Open the Hall again."
     ready, line = retire_ready(profile)
     if not ready:
         return f"The Hall isn't ready for you: {line}."
-    if boon_key not in boon_offer(profile):
+    repeat = legacy_rank(profile) >= D.LEGACY_MAX
+    if (repeat and boon_key is not None) or (not repeat and boon_key not in boon_offer(profile)):
         return "Fate never offered that boon."
     if stone_key is not None and stone_key not in D.STONES:
         return "No such Guardian Stone."
@@ -4046,7 +4100,8 @@ def retire(profile, boon_key: str, stone_key: str = None) -> str | None:
         "alduin": int(profile.get("alduin_slain") or 0), "date": _today_str(),
         "boon": boon_key,
         "line": random.choice(D.LEGACY_EPITAPHS)})
-    lg["boons"].append(boon_key)
+    if boon_key is not None:
+        lg["boons"].append(boon_key)
     lg["rank"] = int(lg.get("rank", 0)) + 1
     # the rebirth: character progression resets; the account does not
     abandon_active(profile)
@@ -4087,10 +4142,13 @@ def retire(profile, boon_key: str, stone_key: str = None) -> str | None:
     profile["expedition"] = None
     profile["expedition2"] = None
     profile["created"] = _today_str()
+    H.begin_life(profile)
+    H.settle(profile)
     record_best(profile, "legend_rank", lg["rank"])
-    boon = D.BOONS[boon_key]
+    boon = D.BOONS.get(boon_key)
+    reward = f", taking {boon['emoji']} **{boon['name']}**" if boon else ", carrying their earned boons onward"
     glog(f"🏛️ **{profile['name']}** RETIRED to the Hall of Legends - Legend "
-         f"{lg['rank']}, taking {boon['emoji']} **{boon['name']}**. "
+         f"{lg['rank']}{reward}. "
          f"The climb begins again at level 1, under {stone['emoji']} {stone['name']}.")
     return None
 
@@ -4615,17 +4673,21 @@ def _graveyard() -> list:
     return load_json_file(config.SKYRIM_GRAVEYARD_FILE) or []
 
 
-def record_fallen(profile, delve):
-    """Add a death to the shared graveyard (kept short). Best-effort."""
+def record_fallen(profile, delve, *, strict=False):
+    """Add a death once; journals use strict mode so failed writes stay pending."""
     try:
         grave = _graveyard()
+        if any(row.get("delve_id") == delve.delve_id for row in grave):
+            return
         grave.append({"name": profile.get("name", "an adventurer"), "loc": delve.location,
                       "room": delve.idx + 1, "satchel": int(delve.satchel), "date": _today_str(),
-                      "user_id": profile.get("user_id")})
+                      "user_id": profile.get("user_id"), "delve_id": delve.delve_id})
         grave = grave[-40:]                       # ephemeral history
         save_json_file(config.SKYRIM_GRAVEYARD_FILE, grave)
     except Exception:
         logger.error("skyrim: failed to record fallen adventurer", exc_info=True)
+        if strict:
+            raise
 
 
 def latest_obituary() -> str | None:
@@ -4633,7 +4695,7 @@ def latest_obituary() -> str | None:
     if not grave:
         return None
     g = grave[-1]
-    loc = D.LOCATIONS.get(g["loc"], {}).get("name", "the wilds")
+    loc = (H.location(g["loc"]) or D.LOCATIONS.get(g["loc"], {})).get("name", "the wilds")
     return f"⚰️ RIP **{g['name']}** - fell in {loc}, room {g['room']}, {g['satchel']:,} septims lost."
 
 

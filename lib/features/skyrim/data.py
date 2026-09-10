@@ -1646,7 +1646,72 @@ BOONS = {
     "wayfarer": {"name": "Wayfarer", "emoji": "🧭",
                  "desc": "Expeditions return +25% septims."},
 }
-LEGACY_MAX = 5
+LEGACY_MAX = 5  # Original boon/badge threshold; retirement itself is now uncapped.
+LEGACY_REPEAT_LEVEL = 32
+LEGACY_REPEAT_DRAGON_ECHO_CAP = 4
+
+# Hall deeds are Skyrim-only records, never server badges or UKPence rewards.
+HALL_BOONS = {
+    "steady_hands": {"name": "Steady Hands", "emoji": "🗝️",
+                     "desc": "Reroll your first failed lockpick once per adventure."},
+    "silver_tongue": {"name": "Silver Tongue", "emoji": "💬",
+                      "desc": "Reroll your first failed persuasion once per adventure."},
+    "quiet_step": {"name": "Quiet Step", "emoji": "🥷",
+                   "desc": "Reroll your first failed sneak once per adventure."},
+}
+HALL_DEEDS = {
+    "warden_clear": "Defeat the Rune Warden",
+    "caravan_rescue": "Bring the captive scout home",
+    "vault_quiet": "Recover the ledger without an alarm",
+    "warden_styles": "Defeat the Warden using all three weapons",
+    "caravan_guard": "Rescue the scout and Guard the captain's charge",
+    "vault_parley": "Recover the ledger through negotiation",
+    "reborn": "Retire beyond the fifth legend",
+    "cairn_20": "Reach Soul Cairn depth 20",
+    "faction_story": "Finish a faction's connected story",
+}
+HALL_CHAPTERS = (
+    {"key": "new_roads", "name": "New Roads", "boon": "steady_hands",
+     "deeds": ("warden_clear", "caravan_rescue", "vault_quiet")},
+    {"key": "practised_hands", "name": "Practised Hands", "boon": "silver_tongue",
+     "deeds": ("warden_styles", "caravan_guard", "vault_parley")},
+    {"key": "another_life", "name": "Another Life", "boon": "quiet_step",
+     "deeds": ("reborn", "cairn_20", "faction_story")},
+)
+HALL_ADVENTURES = {
+    "rune_warden": {"name": "Rune Warden", "emoji": "📜", "base": "bleak_falls",
+                    "rule": "Its ward remembers your last landed weapon. Change styles.",
+                    "deeds": ("warden_clear", "warden_styles")},
+    "lost_caravan": {"name": "Lost Caravan", "emoji": "🛤️", "base": "embershard",
+                     "rule": "Free the scout for help against the caravan raiders.",
+                     "deeds": ("caravan_rescue", "caravan_guard")},
+    "sealed_vault": {"name": "Sealed Vault", "emoji": "🗝️", "base": "embershard",
+                     "rule": "Pick a lock, negotiate or fight. A setback need not raise the alarm.",
+                     "deeds": ("vault_quiet", "vault_parley")},
+}
+FACTION_STORIES = {
+    "college": {"name": "The Broken Seal", "title": "Keeper of the Seal",
+                "roads": ("rune_warden", "sealed_vault"),
+                "opening": "The College needs this seal. Study its wards or break it open?",
+                "choices": (("Study it", "careful"), ("Break it", "bold")),
+                "preview": "Next chapter: study to block a blow; break it for 1 less boss HP, but raise the alarm.",
+                "careful": "Your notes reveal a safe opening in the vault: one blow is blocked.",
+                "bold": "The broken seal weakens the vault captain: 1 less HP, but the alarm is raised."},
+    "companions": {"name": "The Raider's Trail", "title": "Shield of the Road",
+                   "roads": ("lost_caravan", "rune_warden"),
+                   "opening": "The raiders lead into a barrow. Escort the travellers or pursue their chief?",
+                   "choices": (("Escort them", "careful"), ("Pursue", "bold")),
+                   "preview": "Next chapter: escort to block a blow; pursue for 1 less boss HP, but face a charge.",
+                   "careful": "The travellers send a shield-bearer: one blow is blocked in the barrow.",
+                   "bold": "You catch the Warden unprepared: 1 less HP, but its first attack is a charge."},
+    "thieves": {"name": "The Missing Names", "title": "Keeper of Names",
+                "roads": ("sealed_vault", "lost_caravan"),
+                "opening": "The ledger names an informant. Warn them or use their name as bait?",
+                "choices": (("Warn them", "careful"), ("Set a trap", "bold")),
+                "preview": "Next chapter: warn to block a blow; the trap trades that cover for 1 less boss HP.",
+                "careful": "The informant covers your escape: one blow is blocked against the raiders.",
+                "bold": "Your trap wounds the captain: 1 less HP, but their first attack is a charge."},
+}
 # A retirement also asks for a lived-in character, not just a lucky Alduin kill:
 # level 20 for the first legend, three more for each one already in the Hall.
 LEGACY_MIN_LEVEL = 20

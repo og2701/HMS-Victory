@@ -361,6 +361,9 @@ def next_goal(profile):
         return {"text": f"Claim your {current['rank']} promotion.", "action": "factions"}
     if E.retire_ready(profile)[0]:
         return {"text": "Choose an inherited ability and enter the Hall.", "action": "hall"}
+    hall_goal = E.H.goal(profile)
+    if hall_goal:
+        return {"text": hall_goal, "action": "adventure"}
     tier = min(int(profile.get("weapon_tier", 0)) + 1, len(D.GEAR_TIERS) - 1)
     gear = D.GEAR_TIERS[tier]
     if tier > profile.get("weapon_tier", 0) and profile.get("septims", 0) >= E.shop_price(profile, gear["price"]) \

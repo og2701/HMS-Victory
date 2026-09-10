@@ -14,6 +14,7 @@ data/iceberg_texts.json
 # alongside the Wordle word lists and the bot can't run the feature without it.
 !data/words/crosswords.json
 database.db*
+remote_database.db*
 *.db
 # secret_badges.json (plaintext secret-badge config) is covered by *.json above; only the
 # encrypted secret_badges.json.enc is committed.
