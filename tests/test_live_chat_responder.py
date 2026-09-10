@@ -951,6 +951,125 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(classify_mention_intent("draw me", openai_key="test-key"))
         self.assertEqual(mock_urlopen.call_count, 1)
 
+    @patch("time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_generate_image_openai_retries_on_5xx(self, mock_urlopen, _sleep):
+        from lib.features.chat_responder import generate_image_openai
+        import urllib.error, base64
+
+        ok = _mock_resp(json.dumps({"data": [{"b64_json": base64.b64encode(b"png-bytes").decode()}], "usage": {"input_tokens": 12, "output_tokens": 300}}).encode())
+        mock_urlopen.side_effect = [
+            urllib.error.HTTPError("https://api.openai.com/v1/images/generations", 500, "Internal Server Error", {}, io.BytesIO(b"oops")),
+            urllib.error.HTTPError("https://api.openai.com/v1/images/generations", 502, "Bad Gateway", {}, io.BytesIO(b"")),
+            ok,
+        ]
+
+        img, p_tok, c_tok = generate_image_openai("a cat", openai_key="test-key")
+
+        self.assertEqual(img, b"png-bytes")
+        self.assertEqual((p_tok, c_tok), (12, 300))
+        self.assertEqual(mock_urlopen.call_count, 3)
+
+    @patch("time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_generate_image_openai_no_retry_on_4xx_or_timeout(self, mock_urlopen, _sleep):
+        from lib.features.chat_responder import generate_image_openai
+        import urllib.error, socket
+
+        mock_urlopen.side_effect = urllib.error.HTTPError("https://api.openai.com/v1/images/generations", 400, "Bad Request", {}, io.BytesIO(b'{"error":{"message":"safety"}}'))
+        with self.assertRaises(urllib.error.HTTPError):
+            generate_image_openai("a cat", openai_key="test-key")
+        self.assertEqual(mock_urlopen.call_count, 1)
+
+        mock_urlopen.reset_mock()
+        mock_urlopen.side_effect = urllib.error.URLError(socket.timeout("timed out"))
+        with self.assertRaises(urllib.error.URLError):
+            generate_image_openai("a cat", openai_key="test-key")
+        self.assertEqual(mock_urlopen.call_count, 1)
+
+    @patch("time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_generate_image_openai_gives_up_after_three_5xx(self, mock_urlopen, _sleep):
+        from lib.features.chat_responder import generate_image_openai
+        import urllib.error
+
+        mock_urlopen.side_effect = urllib.error.HTTPError("https://api.openai.com/v1/images/generations", 503, "Unavailable", {}, io.BytesIO(b""))
+        with self.assertRaises(urllib.error.HTTPError):
+            generate_image_openai("a cat", openai_key="test-key")
+        self.assertEqual(mock_urlopen.call_count, 3)
+
+    def test_classify_image_failure(self):
+        from lib.features.chat_responder import classify_image_failure
+        import urllib.error, socket
+
+        self.assertEqual(classify_image_failure(urllib.error.HTTPError("u", 500, "x", {}, io.BytesIO(b""))), "outage")
+        self.assertEqual(classify_image_failure(urllib.error.HTTPError("u", 429, "x", {}, io.BytesIO(b""))), "outage")
+        self.assertEqual(classify_image_failure(urllib.error.HTTPError("u", 400, "x", {}, io.BytesIO(b'{"error":{"code":"moderation_blocked"}}'))), "rejected")
+        self.assertEqual(classify_image_failure(urllib.error.HTTPError("u", 400, "x", {}, io.BytesIO(b'{"error":{"message":"invalid size"}}'))), "unknown")
+        self.assertEqual(classify_image_failure(urllib.error.URLError(socket.timeout("t"))), "outage")
+        self.assertEqual(classify_image_failure(RuntimeError("no image data")), "unknown")
+
+    @patch("urllib.request.urlopen")
+    def test_generate_image_failure_excuse(self, mock_urlopen):
+        from lib.features.chat_responder import generate_image_failure_excuse
+
+        mock_urlopen.return_value = _mock_resp(_responses_body("The ship's painter has downed tools over Steven's face. Try again after his tea break.", usage=(90, 25)))
+
+        text, p_tok, c_tok = generate_image_failure_excuse(
+            "generate what you think @Steven looks like", "Oggers", "server owner", target_name="Steven <3", failure_reason="outage", openai_key="test-key",
+        )
+
+        self.assertIn("ship's painter", text)
+        self.assertEqual((p_tok, c_tok), (90, 25))
+        payload = _sent_payload(mock_urlopen)
+        self.assertNotIn("tools", payload)
+        sent = payload["input"][0]["content"][0]["text"]
+        self.assertIn("FAILURE REASON: outage", sent)
+        self.assertIn("SUBJECT OF THE IMAGE: Steven <3", sent)
+        self.assertIn("NEVER mention APIs", payload["instructions"])
+
+    @patch("lib.features.chat_responder.generate_image_failure_excuse")
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_image_failure_gets_witty_excuse(
+        self, mock_classify, mock_find_img, mock_fetch_chat, mock_synth, mock_gen_img, mock_excuse
+    ):
+        import urllib.error
+        mock_classify.return_value = {"intent": "generate", "subject": "caller", "subject_name": None, "reason": "", "input_tokens": 0, "output_tokens": 0}
+        mock_synth.return_value = ("A portrait of Oggers", "<@1> Behold.", 10, 5)
+        mock_gen_img.side_effect = urllib.error.HTTPError("u", 503, "Unavailable", {}, io.BytesIO(b""))
+        mock_excuse.return_value = ("The Admiralty has requisitioned my paints. Ask again after they've finished squabbling.", 80, 20)
+
+        client = MagicMock()
+        client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> draw me as an admiral")
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation") as mock_record, \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        mock_record.assert_not_called()
+        self.assertEqual(mock_excuse.call_args[1]["failure_reason"], "outage")
+        self.assertEqual(mock_excuse.call_args[1]["target_name"], "ogme01")
+        reply = message.reply.call_args[0][0]
+        self.assertTrue(reply.startswith(f"<@{USERS.OGGERS}> "))
+        self.assertIn("requisitioned my paints", reply)
+        self.assertNotIn("file", message.reply.call_args[1])
+
+        # If the excuse call itself dies, the canned line still goes out
+        mock_excuse.side_effect = RuntimeError("down")
+        message2 = self._leader_message(client, f"<@{client.user.id}> draw me as a pirate")
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            await handle_one_off_owner_mention(client, message2)
+        self.assertIn("canvas broke", message2.reply.call_args[0][0])
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):

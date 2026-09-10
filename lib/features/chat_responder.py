@@ -7,6 +7,7 @@ import re
 import io
 import base64
 import time
+import socket
 import asyncio
 import logging
 import uuid
@@ -358,6 +359,38 @@ def extract_image_prompt(raw_prompt: str) -> str:
     return cleaned if len(cleaned) >= 2 else p
 
 
+def _urlopen_with_retry(req: urllib.request.Request, timeout: int, attempts: int = 3, what: str = "OpenAI request"):
+    """urlopen that retries on failures OpenAI doesn't bill for: 5xx, 429, and connection-level errors.
+
+    A read timeout is deliberately not retried: the server may have finished (and charged) that request.
+    """
+    last_err: Any = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8", errors="ignore")[:300]
+            except Exception:
+                pass
+            retryable = e.code >= 500 or e.code == 429
+            if not retryable or attempt == attempts:
+                logger.warning("%s failed (HTTP %s, attempt %d/%d): %s", what, e.code, attempt, attempts, body or e.reason)
+                raise
+            wait = 3.0 if e.code == 429 else float(attempt)
+            logger.warning("%s got HTTP %s (attempt %d/%d), retrying in %.0fs: %s", what, e.code, attempt, attempts, wait, body or e.reason)
+            last_err = e
+            time.sleep(wait)
+        except urllib.error.URLError as e:
+            if isinstance(getattr(e, "reason", None), socket.timeout) or attempt == attempts:
+                raise
+            logger.warning("%s connection error (attempt %d/%d), retrying: %s", what, attempt, attempts, e.reason)
+            last_err = e
+            time.sleep(float(attempt))
+    raise last_err  # pragma: no cover
+
+
 def generate_image_openai(
     prompt: str,
     quality: str = IMAGE_GEN_QUALITY,
@@ -391,7 +424,7 @@ def generate_image_openai(
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _urlopen_with_retry(req, timeout, what="OpenAI image generation") as resp:
         data = json.loads(resp.read().decode("utf-8"))
 
     data_items = data.get("data") or []
@@ -456,7 +489,7 @@ def edit_image_openai(
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _urlopen_with_retry(req, timeout, what="OpenAI image edit") as resp:
         data = json.loads(resp.read().decode("utf-8"))
 
     data_items = data.get("data") or []
@@ -2340,6 +2373,104 @@ async def ensure_target_history_in_context(
         return context
 
 
+IMAGE_FAILURE_EXCUSE_INSTRUCTIONS = """You are HMS Victory, a Discord bot with a notoriously dry, deadpan, cynical British persona (an 18th-century Royal Navy flagship, now stuck answering Discord).
+Server leadership asked you to produce an image and the image generator has failed. Write your reply.
+RULES:
+- 1 to 2 short sentences. Dry, unimpressed, with a light dig at the request or the requester. No exclamation marks, no apologies, no cheerfulness.
+- Invent a plausible in-character excuse for why the picture isn't coming: blame the ship's painter, the Admiralty, the weather, budget cuts, the subject's face, whatever fits. Keep it grounded and funny, not wacky.
+- If the failure reason is "rejected", the generator refused the content: imply the censors or the Admiralty struck it out and it's not happening, don't suggest retrying.
+- If the failure reason is "outage", imply it's temporary and they can try again shortly.
+- NEVER mention APIs, OpenAI, HTTP, errors, servers, models, tokens, or anything technical. Never use "sorry", "unable", "assist".
+- If a target person was named, you may refer to them by name. No @everyone, @here, or role mentions.
+- Output ONLY the reply text."""
+
+
+def classify_image_failure(err: Any) -> str:
+    """Coarse bucket for why an image call failed: 'rejected' (content), 'outage' (5xx/timeout/connection), or 'unknown'."""
+    if isinstance(err, urllib.error.HTTPError):
+        if err.code >= 500 or err.code == 429:
+            return "outage"
+        body = ""
+        try:
+            body = err.read().decode("utf-8", errors="ignore").lower()
+        except Exception:
+            pass
+        if err.code in (400, 403) and any(w in body for w in ("safety", "moderation", "content_policy", "policy", "rejected", "not allowed")):
+            return "rejected"
+        return "unknown"
+    if isinstance(err, (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError)):
+        return "outage"
+    return "unknown"
+
+
+def generate_image_failure_excuse(
+    prompt: str,
+    caller_name: str,
+    caller_role: str,
+    target_name: Optional[str] = None,
+    failure_reason: str = "unknown",
+    openai_key: Optional[str] = None,
+    model: str = "gpt-4o",
+    timeout: int = 20,
+) -> Tuple[str, int, int]:
+    """Ask the text model for a short in-character excuse for a failed image. Returns (text, input_tokens, output_tokens)."""
+    api_key = openai_key or os.getenv("OPENAI_TOKEN")
+    if not api_key:
+        raise ValueError("OPENAI_TOKEN is not configured.")
+
+    facts = [
+        f"REQUESTER: {caller_name} ({caller_role})",
+        f"WHAT THEY ASKED FOR: \"{(prompt or '').strip()[:400]}\"",
+        f"SUBJECT OF THE IMAGE: {target_name or 'not a specific person'}",
+        f"FAILURE REASON: {failure_reason}",
+    ]
+    payload = {
+        "model": model,
+        "instructions": IMAGE_FAILURE_EXCUSE_INSTRUCTIONS,
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": "\n".join(facts) + "\n\nWrite the excuse."}]}],
+        "max_output_tokens": 120,
+        "temperature": 0.9,
+        "store": False,
+    }
+    data = _post_openai_response(payload, api_key, timeout)
+    if data.get("status") == "failed" or data.get("error"):
+        raise RuntimeError((data.get("error") or {}).get("message") or "excuse generation failed")
+    text, refusal, _, _ = parse_openai_response_output(data)
+    if refusal or not text or is_openai_refusal(text):
+        raise RuntimeError("excuse generation came back empty or refused")
+    usage = data.get("usage") or {}
+    return text, usage.get("input_tokens", 0), usage.get("output_tokens", 0)
+
+
+async def image_failure_reply(
+    prompt: str,
+    caller_id: Optional[int],
+    caller_name: str,
+    caller_role: str,
+    target_name: Optional[str],
+    err: Any,
+    fallback: str,
+) -> str:
+    """Build the message to send when an image couldn't be produced: a witty excuse, or the canned line if that fails too."""
+    reason = classify_image_failure(err)
+    try:
+        text, p_tok, c_tok = await asyncio.to_thread(
+            generate_image_failure_excuse,
+            prompt=prompt,
+            caller_name=caller_name,
+            caller_role=caller_role,
+            target_name=target_name,
+            failure_reason=reason,
+        )
+        if p_tok or c_tok:
+            live_chat_manager.record_usage("gpt-4o", p_tok, c_tok, is_reply=True)
+        text = sanitize_ai_mentions(text)
+    except Exception as e:
+        logger.warning("Image failure excuse generation failed, using canned line: %s", e)
+        text = fallback
+    return f"<@{caller_id}> {text}" if caller_id else text
+
+
 def generate_one_off_reply(
     prompt: str,
     context: str = "",
@@ -2629,7 +2760,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     )
                 except Exception as gen_err:
                     logger.error("Failed to generate fallback image for edit: %s", gen_err, exc_info=True)
-                    fail_msg = f"<@{caller_id}> I attempted to amend that portrait, but the canvas fell overboard."
+                    fail_msg = await image_failure_reply(
+                        clean_prompt, caller_id, caller_name, caller_role, target_name, gen_err,
+                        fallback="I attempted to amend that portrait, but the canvas fell overboard.",
+                    )
                     await message.reply(fail_msg, mention_author=True)
                     return True
 
@@ -2736,7 +2870,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 return True
             except Exception as img_err:
                 logger.error("Failed to generate image for direct mention: %s", img_err, exc_info=True)
-                fail_msg = f"<@{caller_id}> I attempted to paint that, but the canvas broke. Typical."
+                fail_msg = await image_failure_reply(
+                    clean_prompt, caller_id, caller_name, caller_role, target_name, img_err,
+                    fallback="I attempted to paint that, but the canvas broke. Typical.",
+                )
                 await message.reply(fail_msg, mention_author=True)
                 return True
 
