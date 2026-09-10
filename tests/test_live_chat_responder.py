@@ -1374,6 +1374,129 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         reply_text = message.reply.call_args[0][0]
         self.assertIn("daily limit of 3 image generations", reply_text)
 
+    def test_dynamic_image_request_patterns(self):
+        from lib.features.chat_responder import looks_like_image_request, is_contextual_image_request
+
+        p1 = "go through @Top chap's message history and generate a photo of what you think they look like"
+        self.assertTrue(looks_like_image_request(p1))
+        self.assertTrue(is_contextual_image_request(p1))
+
+        p2 = "draw @Top chap"
+        self.assertTrue(looks_like_image_request(p2))
+        self.assertTrue(is_contextual_image_request(p2))
+
+        p3 = "paint a portrait of me based on my messages"
+        self.assertTrue(looks_like_image_request(p3))
+        self.assertTrue(is_contextual_image_request(p3))
+
+        p4 = "draw a pirate ship in the fog"
+        self.assertTrue(looks_like_image_request(p4))
+        self.assertFalse(is_contextual_image_request(p4, other_mentions=[]))
+
+    @patch("database.DatabaseManager.fetch_all")
+    def test_fetch_user_recent_chat(self, mock_fetch):
+        from lib.features.chat_responder import fetch_user_recent_chat, format_user_chat_for_context
+
+        mock_fetch.return_value = [
+            ("123", "Portsmouth played brilliantly today", None, 1700000000),
+            ("123", "Proper cup of tea that is", None, 1700000100),
+        ]
+        client = MagicMock()
+        ch_mock = MagicMock()
+        ch_mock.name = "football-chat"
+        client.get_channel.return_value = ch_mock
+
+        res = fetch_user_recent_chat(client, 999888, limit=10)
+        self.assertEqual(len(res), 2)
+        self.assertEqual(res[0]["content"], "Portsmouth played brilliantly today")
+        self.assertEqual(res[0]["channel"], "football-chat")
+
+        formatted = format_user_chat_for_context("Top chap", 999888, res)
+        self.assertIn("Top chap", formatted)
+        self.assertIn("Portsmouth played brilliantly", formatted)
+
+    @patch("urllib.request.urlopen")
+    def test_synthesize_contextual_image_prompt(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_contextual_image_prompt
+
+        fake_resp = {
+            "choices": [{
+                "message": {
+                    "content": json.dumps({
+                        "image_prompt": "A comical oil painting of a British football fan in flat cap holding tea",
+                        "caption": "Here is Top chap in all their glory. Do try to contain your admiration."
+                    })
+                }
+            }],
+            "usage": {"prompt_tokens": 120, "completion_tokens": 45}
+        }
+        mock_urlopen.return_value = _mock_resp(json.dumps(fake_resp).encode("utf-8"))
+
+        prompt, caption, p_tok, c_tok = synthesize_contextual_image_prompt(
+            prompt="generate a photo of what they look like",
+            context="RECENT MESSAGE HISTORY FOR Top chap:\n- Portsmouth FC",
+            user_name="Oggers",
+            caller_role="Owner",
+            target_name="Top chap",
+            openai_key="test-key"
+        )
+        self.assertEqual(prompt, "A comical oil painting of a British football fan in flat cap holding tea")
+        self.assertEqual(caption, "Here is Top chap in all their glory. Do try to contain your admiration.")
+        self.assertEqual((p_tok, c_tok), (120, 45))
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async")
+    async def test_handle_one_off_contextual_image_request_full_flow(self, mock_fetch_chat, mock_synth, mock_gen_img):
+        from lib.features.chat_responder import handle_one_off_owner_mention
+
+        mock_fetch_chat.return_value = [
+            {"content": "Up the Pompey!", "channel": "general", "ts": 1700000000}
+        ]
+        mock_synth.return_value = (
+            "A satirical caricature of a Portsmouth FC fan in a muddy scarf",
+            "<@404634271861571584> I inspected Top chap's records. Here is the tragic result.",
+            150, 40
+        )
+        mock_gen_img.return_value = (b"fake_image_bytes", 20, 200)
+
+        client = MagicMock()
+        client.user.id = 999999999
+
+        target_user = MagicMock()
+        target_user.id = 11223344
+        target_user.name = "topchap"
+        target_user.nick = "Top chap"
+        target_user.display_name = "Top chap"
+
+        message = MagicMock()
+        message.id = 77777777
+        message.author.id = USERS.OGGERS
+        message.author.name = "ogme01"
+        message.content = f"<@{client.user.id}> go through <@{target_user.id}>'s message history and generate a photo of what you think they look like"
+        message.mentions = [client.user, target_user]
+        message.reference = None
+        message.channel.history = MagicMock()
+        message.reply = AsyncMock()
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        mock_synth.assert_called_once()
+        synth_call = mock_synth.call_args
+        self.assertIn("Top chap", synth_call[1]["target_name"])
+
+        mock_gen_img.assert_called_once()
+        self.assertEqual(mock_gen_img.call_args[0][0], "A satirical caricature of a Portsmouth FC fan in a muddy scarf")
+
+        message.reply.assert_called_once()
+        reply_caption = message.reply.call_args[0][0]
+        self.assertIn("Top chap's records", reply_caption)
+        self.assertIn("file", message.reply.call_args[1])
+
 
 if __name__ == "__main__":
     unittest.main()

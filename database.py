@@ -961,6 +961,7 @@ def init_db():
             )
         ''')
         c.execute('CREATE INDEX IF NOT EXISTS idx_message_archive_ts ON message_archive (ts)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_message_archive_user ON message_archive (user_id)')
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS archived_channels (

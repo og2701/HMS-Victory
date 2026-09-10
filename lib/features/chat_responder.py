@@ -11,7 +11,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from collections import deque
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 
 import discord
 from config import (
@@ -221,11 +221,25 @@ def record_user_image_generation(user_id: int) -> None:
 
 
 IMAGE_REQUEST_PATTERNS = [
-    r"\b(generate|draw|paint|create|make|render|illustrate)\s+(?:an?\s+)?(?:image|picture|photo|illustration|drawing|sketch|painting|artwork)\b",
-    r"\b(?:image|picture|photo|illustration|drawing|sketch|painting|artwork)\s+of\b",
+    r"\b(generate|draw|paint|create|make|render|illustrate)\s+(?:an?\s+)?(?:image|picture|photo|illustration|drawing|sketch|painting|artwork|caricature|portrait)\b",
+    r"\b(?:image|picture|photo|illustration|drawing|sketch|painting|artwork|caricature|portrait)\s+of\b",
     r"\b(?:draw|paint|sketch|illustrate|render)\s+me\b",
+    r"\b(?:draw|paint|sketch|illustrate|render)\s+(?:a\s+)?(?:caricature|portrait)\b",
+    r"\b(?:draw|paint|sketch|illustrate|render)\s+(?:what\s+)?(?:<@!?\d+>|@[\w.-]+)",
     r"(?:^|\b(?:can\s+you|please|could\s+you)\s+)(?:draw|paint|sketch|illustrate|render)\s+(?:me\s+)?(?:an?\s+)",
     r"\b(?:can\s+you\s+|please\s+)(?:draw|paint|sketch|illustrate|render)\b",
+    r"\b(?:what\s+(?:they|he|she|i|<@!?\d+>|\w+)\s+looks?\s+like)\b.*\b(?:generate|draw|paint|picture|photo|image)\b",
+    r"\b(?:generate|draw|paint|picture|photo|image)\b.*\b(?:what\s+(?:they|he|she|i|<@!?\d+>|\w+)\s+looks?\s+like)\b",
+]
+
+CONTEXTUAL_IMAGE_INDICATORS = [
+    r"\b(?:messages?|chat|history|logs?)\b",
+    r"\bwhat\s+(?:they|he|she|i|<@!?\d+>|\w+)\s+looks?\s+like\b",
+    r"\b(?:looks?\s+like)\b",
+    r"\b(?:caricature|portrait)\b",
+    r"\b(?:based\s+on|according\s+to)\b",
+    r"\b(?:draw|paint|sketch|illustrate|render)\s+(?:me|<@!?\d+>|@[\w.-]+)",
+    r"\b(?:picture|photo|image)\s+of\s+(?:me|<@!?\d+>|@[\w.-]+)",
 ]
 
 
@@ -235,6 +249,21 @@ def looks_like_image_request(prompt: str) -> bool:
         return False
     p_lower = prompt.lower().strip()
     for pat in IMAGE_REQUEST_PATTERNS:
+        if re.search(pat, p_lower):
+            return True
+    return False
+
+
+def is_contextual_image_request(
+    prompt: str,
+    other_mentions: Optional[List[Any]] = None,
+    context: str = "",
+) -> bool:
+    """Return True if an image request relies on chat history, user context, or a visual caricature of someone."""
+    if other_mentions and len(other_mentions) > 0:
+        return True
+    p_lower = (prompt or "").lower()
+    for pat in CONTEXTUAL_IMAGE_INDICATORS:
         if re.search(pat, p_lower):
             return True
     return False
@@ -308,6 +337,181 @@ def generate_image_openai(
     input_tokens = usage.get("input_tokens", 20)
     output_tokens = usage.get("output_tokens", 200)
     return img_bytes, input_tokens, output_tokens
+
+
+def fetch_user_recent_chat(
+    client: Optional[discord.Client],
+    user_id: int,
+    channel: Optional[Any] = None,
+    limit: int = 35,
+) -> List[Dict[str, Any]]:
+    """Retrieve recent chat messages for a specific user from SQLite message_archive."""
+    results = []
+    seen_texts = set()
+
+    try:
+        from database import DatabaseManager
+        rows = DatabaseManager.fetch_all(
+            "SELECT channel_id, content, attachments, ts FROM message_archive "
+            "WHERE user_id = ? ORDER BY ts DESC LIMIT ?",
+            (str(user_id), limit)
+        )
+        if rows:
+            for ch_id, content, attachments, ts in rows:
+                txt = (content or "").strip()
+                if not txt and attachments:
+                    txt = "[Sent attachment/media]"
+                if txt and txt not in seen_texts:
+                    seen_texts.add(txt)
+                    ch_name = None
+                    if client:
+                        try:
+                            ch = client.get_channel(int(ch_id))
+                            if ch and hasattr(ch, "name"):
+                                ch_name = ch.name
+                        except Exception:
+                            pass
+                    results.append({
+                        "content": txt,
+                        "channel": ch_name or f"channel-{ch_id}",
+                        "ts": ts,
+                    })
+    except Exception as e:
+        logger.debug("Failed to fetch user chat from message_archive: %s", e)
+
+    return results
+
+
+async def fetch_user_recent_chat_async(
+    client: Optional[discord.Client],
+    user_id: int,
+    channel: Optional[Any] = None,
+    limit: int = 35,
+) -> List[Dict[str, Any]]:
+    """Asynchronously retrieve recent chat messages, augmenting with channel history if needed."""
+    results = await asyncio.to_thread(fetch_user_recent_chat, client, user_id, channel, limit)
+    if len(results) < 10 and channel and hasattr(channel, "history"):
+        try:
+            seen_texts = {r["content"] for r in results}
+            async for m in channel.history(limit=100):
+                if getattr(getattr(m, "author", None), "id", None) == user_id:
+                    txt = (m.content or "").strip()
+                    if not txt and getattr(m, "attachments", None):
+                        txt = "[Sent attachment/media]"
+                    if txt and txt not in seen_texts:
+                        seen_texts.add(txt)
+                        results.append({
+                            "content": txt,
+                            "channel": getattr(channel, "name", "chat"),
+                            "ts": int(m.created_at.timestamp()) if hasattr(m, "created_at") else int(time.time()),
+                        })
+                        if len(results) >= limit:
+                            break
+        except Exception as e:
+            logger.debug("Could not fetch channel history for user %s: %s", user_id, e)
+
+    results.sort(key=lambda x: x.get("ts", 0))
+    return results
+
+
+def format_user_chat_for_context(user_name: str, user_id: int, chat_records: List[Dict[str, Any]]) -> str:
+    """Format user chat records into a clean section for the LLM prompt context."""
+    if not chat_records:
+        return f"RECENT MESSAGE HISTORY FOR {user_name} (<@{user_id}>):\n- [No recent messages found in naval archives]"
+    lines = []
+    for r in chat_records[-30:]:
+        ch = r.get("channel", "chat")
+        content = r.get("content", "").replace("\n", " ").strip()
+        if len(content) > 180:
+            content = content[:180] + "…"
+        lines.append(f"- [#{ch}] {content}")
+    return f"RECENT MESSAGE HISTORY FOR {user_name} (<@{user_id}>) ({len(lines)} messages):\n" + "\n".join(lines)
+
+
+def synthesize_contextual_image_prompt(
+    prompt: str,
+    context: str,
+    user_name: str,
+    caller_role: str,
+    target_name: Optional[str] = None,
+    openai_key: Optional[str] = None,
+    model: str = "gpt-4o",
+    timeout: int = 30,
+) -> Tuple[str, str, int, int]:
+    """Synthesize a rich, descriptive visual image prompt and an in-character Vic roast caption from context.
+
+    Returns (image_prompt, caption, prompt_tokens, completion_tokens).
+    """
+    api_key = openai_key or os.getenv("OPENAI_TOKEN")
+    if not api_key:
+        raise ValueError("OPENAI_TOKEN is not configured.")
+
+    target_str = f" for user '{target_name}'" if target_name else ""
+    system_prompt = (
+        "You are HMS Victory, a cynical, deadpan 18th-century British Royal Navy first-rate ship of the line AI.\n"
+        f"Server leadership ({user_name}, {caller_role}) has commanded you to produce an image or caricature{target_str}.\n"
+        "You are provided with the user's command and relevant Discord server/chat history context.\n\n"
+        "Your objectives:\n"
+        "1. Analyze the user's request and any provided message history, quirks, topics, or server context.\n"
+        "2. Formulate a rich, detailed visual description prompt (under 80 words) for an AI image generator (like DALL-E / diffusion model).\n"
+        "   - The prompt MUST be purely visual—describe their physical caricature, facial expression, attire, props in their hands, "
+        "and detailed environment/background reflecting their messages, topics, and quirks.\n"
+        "   - Choose a distinct art style (e.g. dramatic 19th-century satirical oil painting, detailed British political cartoon, gritty photographic portrait, or nautical etching).\n"
+        "   - Do NOT include Discord tags, usernames, or meta instructions in the image prompt itself—keep it purely descriptive imagery.\n"
+        "3. Formulate a witty, deadpan 1-2 sentence caption in HMS Victory's voice introducing the portrait and dryly roasting them based on their records or the prompt. "
+        "Maintain an aristocratic 18th-century naval tone. Never use corporate filler or AI disclaimers.\n\n"
+        "Respond ONLY with a JSON object:\n"
+        "{\n"
+        '  "image_prompt": "...",\n'
+        '  "caption": "..."\n'
+        "}"
+    )
+
+    user_payload = f"COMMAND: \"{prompt}\""
+    if context.strip():
+        user_payload += f"\n\nSERVER & MESSAGE CONTEXT:\n{context.strip()}"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_payload},
+        ],
+        "response_format": {"type": "json_object"},
+        "max_tokens": 300,
+        "temperature": 0.85,
+    }
+
+    url = "https://api.openai.com/v1/chat/completions"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    usage = data.get("usage") or {}
+    p_tokens = usage.get("prompt_tokens", 0)
+    c_tokens = usage.get("completion_tokens", 0)
+
+    try:
+        content = data["choices"][0]["message"]["content"]
+        parsed = json.loads(content)
+        img_prompt = (parsed.get("image_prompt") or "").strip()
+        caption = (parsed.get("caption") or "").strip()
+        if not img_prompt:
+            img_prompt = extract_image_prompt(prompt)
+        if not caption:
+            caption = "Here is your image. Try not to strain your eyes."
+        return img_prompt, caption, p_tokens, c_tokens
+    except Exception as e:
+        logger.warning("Failed to parse synthesized image prompt JSON: %s", e)
+        return extract_image_prompt(prompt), "Here is your image. Try not to strain your eyes.", p_tokens, c_tokens
 
 
 def load_chatbot_usage() -> dict:
@@ -1248,6 +1452,8 @@ async def gather_one_off_context(
                             for part in clean.split():
                                 if len(part) >= 3 and part not in STOPWORDS:
                                     target_users[part] = referenced_author_id
+                    ref_chat = await fetch_user_recent_chat_async(client, referenced_author_id, getattr(message, "channel", None), limit=30)
+                    context_sections.append(format_user_chat_for_context(author_name, referenced_author_id, ref_chat))
         except Exception as e:
             logger.debug("Could not fetch referenced message for one-off context: %s", e)
 
@@ -1273,7 +1479,29 @@ async def gather_one_off_context(
                         for part in clean.split():
                             if len(part) >= 3 and part not in STOPWORDS:
                                 target_users[part] = u.id
+            u_chat = await fetch_user_recent_chat_async(client, u.id, getattr(message, "channel", None), limit=35)
+            context_sections.append(format_user_chat_for_context(name, u.id, u_chat))
         context_sections.append(f"MENTIONED USERS IN PROMPT: {', '.join(users_info)}")
+
+    # Check if author is asking about themselves ("draw me", "my message history", "what do i look like", etc.)
+    self_history_patterns = [
+        r"\b(?:draw|paint|sketch|illustrate|render)\s+me\b",
+        r"\b(?:picture|photo|portrait|caricature|image)\s+of\s+me\b",
+        r"\bwhat\s+(?:do\s+)?i\s+look\s+like\b",
+        r"\bmy\s+(?:message|chat)\s+history\b",
+        r"\bwhat\s+(?:have\s+)?i\s+(?:been\s+)?(?:saying|said)\b",
+    ]
+    if any(re.search(pat, content_lower) for pat in self_history_patterns):
+        author_id = getattr(message.author, "id", None)
+        author_name = (
+            getattr(message.author, "nick", None)
+            or getattr(message.author, "global_name", None)
+            or getattr(message.author, "display_name", None)
+            or getattr(message.author, "name", "Author")
+        )
+        if author_id and author_id != bot_id:
+            author_chat = await fetch_user_recent_chat_async(client, author_id, getattr(message, "channel", None), limit=35)
+            context_sections.append(format_user_chat_for_context(f"Caller ({author_name})", author_id, author_chat))
 
     # 3. Check for Discord message links
     link_pattern = r"https://(?:ptb\.|canary\.)?discord\.com/channels/(\d+)/(\d+)/(\d+)"
@@ -1375,6 +1603,14 @@ async def gather_one_off_context(
         context_sections.append(
             "TARGET USER(S) IN PROMPT (Use <@ID> to tag them so they get notified in Discord):\n" + "\n".join(target_lines)
         )
+        scraped_uids = {u.id for u in other_mentions}
+        if referenced_author_id:
+            scraped_uids.add(referenced_author_id)
+        for name_key, uid in list(target_users.items()):
+            if uid not in scraped_uids:
+                scraped_uids.add(uid)
+                u_chat = await fetch_user_recent_chat_async(client, uid, getattr(message, "channel", None), limit=30)
+                context_sections.append(format_user_chat_for_context(name_key.capitalize(), uid, u_chat))
 
     context_str = "\n\n".join(context_sections).strip()
     if return_targets:
@@ -1766,8 +2002,56 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 await message.reply(refusal_msg, mention_author=True)
                 return True
 
-            image_prompt = extract_image_prompt(clean_prompt)
-            logger.info("Direct mention image generation request from %s (%s): %r (core prompt: %r)", caller_name, caller_id, clean_prompt, image_prompt)
+            # 1. Gather context & targets so we have message history, mentions, and channel chat
+            gathered = await gather_one_off_context(client, message, return_targets=True)
+            if isinstance(gathered, tuple) and len(gathered) == 2:
+                context, target_users = gathered
+            else:
+                context, target_users = str(gathered), {}
+
+            other_mentions = [
+                u for u in getattr(message, "mentions", [])
+                if u.id not in (bot_id, getattr(getattr(client, "user", None), "id", None))
+            ]
+
+            target_name = None
+            if other_mentions:
+                target_name = (
+                    getattr(other_mentions[0], "nick", None)
+                    or getattr(other_mentions[0], "global_name", None)
+                    or getattr(other_mentions[0], "display_name", None)
+                    or getattr(other_mentions[0], "name", "the user")
+                )
+            elif target_users:
+                target_name = list(target_users.keys())[0].capitalize()
+
+            is_contextual = is_contextual_image_request(clean_prompt, other_mentions, context)
+
+            if is_contextual:
+                logger.info(
+                    "Synthesizing contextual image prompt for %s (target=%s, prompt=%r)...",
+                    caller_name, target_name, clean_prompt,
+                )
+                try:
+                    image_prompt, caption, synth_p, synth_c = await asyncio.to_thread(
+                        synthesize_contextual_image_prompt,
+                        prompt=clean_prompt,
+                        context=context,
+                        user_name=caller_name,
+                        caller_role=caller_role,
+                        target_name=target_name,
+                    )
+                    if synth_p or synth_c:
+                        live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)
+                except Exception as synth_err:
+                    logger.warning("Contextual image synthesis failed, falling back: %s", synth_err)
+                    image_prompt = extract_image_prompt(clean_prompt)
+                    caption = f"<@{caller_id}> Here's your image. Try not to strain your eyes."
+            else:
+                image_prompt = extract_image_prompt(clean_prompt)
+                caption = f"<@{caller_id}> Here's your image. Try not to strain your eyes."
+
+            logger.info("Direct mention image generation request from %s (%s): %r (image prompt: %r)", caller_name, caller_id, clean_prompt, image_prompt)
 
             try:
                 img_bytes, p_tokens, c_tokens = await asyncio.to_thread(
@@ -1777,10 +2061,9 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 record_user_image_generation(caller_id)
                 live_chat_manager.record_usage(IMAGE_GEN_MODEL, p_tokens, c_tokens, is_reply=True)
 
-                caption = f"<@{caller_id}> Here's your image. Try not to strain your eyes."
                 if caller_id != USERS.OGGERS:
                     new_remaining = max(0, remaining - 1)
-                    caption += f" *({new_remaining} generation{'s' if new_remaining != 1 else ''} left today)*"
+                    caption += f"\n-# *({new_remaining} image generation{'s' if new_remaining != 1 else ''} left today)*"
 
                 file = discord.File(io.BytesIO(img_bytes), filename="vic_creation.png")
                 await message.reply(caption, file=file, mention_author=True)
