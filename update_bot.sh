@@ -35,8 +35,16 @@ sudo systemctl start hms-victory
 sleep 2
 
 echo "======================================"
-echo " Update complete! Showing live logs..."
-echo " (Press Ctrl+C to exit logs)"
+echo " Update complete!"
 echo "======================================"
 
-journalctl -f -u hms-victory.service
+# If running interactively in a terminal, follow live logs.
+# Otherwise (automated deployment / non-interactive SSH), print status and exit cleanly.
+if [ -t 0 ] && [ -t 1 ]; then
+    echo " Showing live logs (Press Ctrl+C to exit)..."
+    journalctl -f -u hms-victory.service
+else
+    echo " Bot service status:"
+    sudo systemctl is-active hms-victory
+    journalctl -n 20 --no-pager -u hms-victory.service
+fi
