@@ -1420,7 +1420,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("at most two short labels", system)
         self.assertIn("LOOKS COME FROM THE MESSAGES FIRST", system)
         self.assertIn('"character_sheet"', system)
-        self.assertIn("fallback ONLY for character-sheet fields with no evidence", user)
+        self.assertIn("tie-breaker ONLY", user)
+        self.assertIn("DEDUCE: commit to a specific, plausible look", system)
 
         # A response carrying the sheet still yields the image prompt
         mock_urlopen.side_effect = [chat({"character_sheet": {"gender": "male (name)", "style": "gig poster"}, "image_prompt": "a screen-printed gig poster of..."}), chat({"caption": "y"})]
@@ -1437,7 +1438,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             target_name="the ukplace regulars", is_group=True, openai_key="test-key",
         )
         user = _sent_payload(mock_urlopen, 4)["messages"][1]["content"]
-        self.assertIn("VARIETY DIRECTIVES (fallback ONLY for character-sheet fields with no evidence in the messages): Art style", user)
+        self.assertIn("VARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): Art style", user)
         self.assertNotIn("Physical base", user)
 
     def test_classify_mention_intent_without_key_returns_none(self):

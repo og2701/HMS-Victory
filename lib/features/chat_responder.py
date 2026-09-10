@@ -818,7 +818,7 @@ RULES:
    - build_hair_face: ONLY from things they've said or joked about themselves (bald, ginger, beard, glasses, gym, height, "my belly").
    - expression_energy: from how they talk (ranting, deadpan, needy, cocky, anxious, cheerful, argumentative).
    - style: an art style that matches their vibe and interests (pop-punk karaoke -> gig poster screen print; football and pubs -> 1970s British comic; cosy pets and baking -> gouache storybook; tech and travel -> clean isometric; gaming -> pixel art; gossip and drama -> Victorian satirical engraving), unless the request names a style.
-   For each field, cite the evidence in a few words, or write "no evidence" and take that field from the VARIETY DIRECTIVES fallback. A caricature exaggerates real, specific, unflattering features. Never the stock cartoon lead (young, conventionally attractive, tousled dark hair, wide grin, holding props up to camera).
+   For each field, cite the direct evidence in a few words. Where there is no direct evidence, DEDUCE: commit to a specific, plausible look implied by their personality, interests, age cues and tone, the way a caricaturist sizes someone up from how they talk (a mortgage-and-kids ranter is not twenty-two; a needy flirt who lives on energy drinks has a look; a pub-quiz pedant has a look). Write "deduced: <why>". Only if nothing about them points anywhere take that field from the VARIETY DIRECTIVES tie-breaker. A caricature exaggerates real, specific, unflattering features. Never the stock cartoon lead (young, conventionally attractive, tousled dark hair, wide grin, holding props up to camera).
 10. Keep visible text minimal: at most two short labels in the whole image. No walls of signs, menus, lists, sticky notes, posters with slogans or speech bubbles unless a comic strip was requested.
 
 Respond ONLY with a JSON object:
@@ -888,7 +888,7 @@ def synthesize_image_prompt_from_context(
         "\nHMS VICTORY IS IN THE PICTURE: no (no ship, sailors or naval officers in any form)"
     )
     # Group pictures get their looks from the roster; single subjects get a seeded, person-specific base look.
-    user_payload += "\nVARIETY DIRECTIVES (fallback ONLY for character-sheet fields with no evidence in the messages): " + appearance_directives(subject_seed, include_physical=not is_group)
+    user_payload += "\nVARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): " + appearance_directives(subject_seed, include_physical=not is_group)
     if previous_image_prompts:
         listed = "\n".join(f"- {p[:220]}" for p in previous_image_prompts if p)
         user_payload += f"\n\nPREVIOUS IMAGES ALREADY PRODUCED (their props, foods, outfits, settings and gags are BANNED this time):\n{listed}"
