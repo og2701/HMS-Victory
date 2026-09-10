@@ -524,6 +524,7 @@ CHATBOT_CONFIG_FILE = os.path.join(JSON_DATA_DIR, "chatbot_config.json")
 IMAGE_GEN_USAGE_FILE = os.path.join(JSON_DATA_DIR, "image_gen_usage.json")
 IMAGE_GEN_DAILY_LIMIT = 3
 IMAGE_GEN_MODEL = "gpt-image-2.5-flare"
+MESSAGE_ARCHIVE_RETENTION_DAYS = 30
 IMAGE_GEN_QUALITY = "low"
 IMAGE_GEN_SIZE = "1024x1024"
 BALANCE_SNAPSHOT_DIR = "balance_snapshots"

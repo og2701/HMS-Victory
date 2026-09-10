@@ -19,14 +19,13 @@ from datetime import datetime
 import discord
 import pytz
 
-from config import CHANNELS
+from config import CHANNELS, MESSAGE_ARCHIVE_RETENTION_DAYS
 from database import DatabaseManager
 
 log = logging.getLogger(__name__)
 
-# Discord's ban delete-window maxes out at 7 days, so 10 days of archive covers every
-# possible ban purge with margin while keeping the retained-content footprint small.
-RETENTION_DAYS = 10
+# Retain 30 days of message archive for moderation recoveries and LLM context.
+RETENTION_DAYS = MESSAGE_ARCHIVE_RETENTION_DAYS
 _UK = pytz.timezone("Europe/London")
 
 

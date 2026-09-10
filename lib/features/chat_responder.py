@@ -2103,6 +2103,215 @@ def rephrase_decline_in_character(
     return text, p_tokens, c_tokens
 
 
+MENTION_INTENT_MODEL = "gpt-4o-mini"
+
+MENTION_INTENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "intent": {"type": "string", "enum": ["generate", "edit", "reply"]},
+        "subject": {"type": "string", "enum": ["caller", "mentioned", "named", "none"]},
+        "subject_name": {"type": ["string", "null"]},
+        "reason": {"type": "string"},
+    },
+    "required": ["intent", "subject", "subject_name", "reason"],
+    "additionalProperties": False,
+}
+
+MENTION_INTENT_INSTRUCTIONS = """You classify a Discord message addressed to HMS Victory, a bot that can chat AND generate or edit images (portraits, caricatures, drawings, photos) with an AI image generator.
+
+Decide what the user wants:
+- "generate": they want a NEW image made. Any phrasing counts: "draw/paint/generate/make/create ... of X", "portrait/caricature of X", "what does X look like", "generate what you think X looks like based on their messages", "do me next", "same for @X", "now do X", "picture of me", "what would I look like as ...", "show me X as a ...".
+- "edit": they explicitly want the bot's MOST RECENT image changed, corrected, or redone. This means a request for a change: critiques with an implied fix ("bit generous with the hair", "he doesn't drink tea, try again"), tweaks ("make him balder", "remove the flag", "add a pint"), or "try again / redo / another go / can you do it without X". Only choose "edit" when a recent bot image exists; if none exists but they want a picture, choose "generate".
+- "reply": everything else. This includes commentary or jokes ABOUT an image with no change requested ("notice how it featured the red lion twice", "why is his office in a pub", "lol the degrees", "I didn't ask for that"), questions, banter, roasts, facts, fixtures, describing or reacting to an attached image, thanks, and anything ambiguous. When in doubt between "edit" and "reply", choose "reply": a wasted image costs money, a text reply does not.
+
+Also identify WHO the image is of (the subject):
+- "caller": the person sending the message (me, myself, I, my message history).
+- "mentioned": a user they @mentioned in the message. An explicit @mention beats a stray "I" or "me" elsewhere in the sentence.
+- "named": someone referred to by name or pronoun without an @mention (e.g. "steven", or "him" when the recent bot image was of a specific person).
+- "none": not a person (a cat, a landscape, a meme) or not an image request.
+If subject is "named", put the name in subject_name; otherwise subject_name is null.
+
+Be decisive. Casual, misspelled, or lowercase phrasing is normal here."""
+
+
+def classify_mention_intent(
+    prompt: str,
+    *,
+    mentioned_names: Optional[List[str]] = None,
+    caller_name: str = "the caller",
+    has_reply_ref: bool = False,
+    has_recent_bot_image: bool = False,
+    recent_bot_image_prompt: Optional[str] = None,
+    has_attached_image: bool = False,
+    recent_history: str = "",
+    openai_key: Optional[str] = None,
+    model: str = MENTION_INTENT_MODEL,
+    timeout: int = 15,
+) -> Optional[Dict[str, Any]]:
+    """Ask a small model whether a direct mention wants a new image, an edit of the last one, or a text reply.
+
+    Returns a dict with intent, subject, subject_name, reason, input_tokens and output_tokens, or None when
+    the call fails or no key is configured, in which case callers fall back to keyword matching.
+    """
+    api_key = openai_key or os.getenv("OPENAI_TOKEN")
+    if not api_key or not (prompt or "").strip():
+        return None
+
+    facts = [
+        f"CALLER: {caller_name}",
+        f"MENTIONED USERS: {', '.join(mentioned_names) if mentioned_names else 'none'}",
+        f"MESSAGE IS A DISCORD REPLY TO A BOT MESSAGE: {'yes' if has_reply_ref else 'no'}",
+        f"BOT POSTED AN IMAGE RECENTLY: {'yes' if has_recent_bot_image else 'no'}",
+    ]
+    if has_recent_bot_image and recent_bot_image_prompt:
+        facts.append(f"MOST RECENT BOT IMAGE WAS: {recent_bot_image_prompt[:300]}")
+    facts.append(f"USER ATTACHED AN IMAGE: {'yes' if has_attached_image else 'no'}")
+    if recent_history and recent_history.strip():
+        facts.append(f"RECENT CHAT:\n{recent_history.strip()[:1500]}")
+    user_text = "\n".join(facts) + f"\n\nMESSAGE TO CLASSIFY:\n\"{prompt.strip()}\""
+
+    payload = {
+        "model": model,
+        "instructions": MENTION_INTENT_INSTRUCTIONS,
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
+        "max_output_tokens": 150,
+        "temperature": 0,
+        "store": False,
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "mention_intent",
+                "schema": MENTION_INTENT_SCHEMA,
+                "strict": True,
+            }
+        },
+    }
+    try:
+        data = _post_openai_response(payload, api_key, timeout)
+    except Exception as e:
+        logger.warning("Mention intent classification failed: %s", e)
+        return None
+
+    if data.get("status") == "failed" or data.get("error"):
+        logger.warning("Mention intent classification error: %s", (data.get("error") or {}).get("message"))
+        return None
+
+    text, refusal, _, _ = parse_openai_response_output(data)
+    if refusal or not text:
+        return None
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        logger.warning("Mention intent classification returned non-JSON: %r", text[:200])
+        return None
+
+    intent = parsed.get("intent")
+    subject = parsed.get("subject")
+    if intent not in ("generate", "edit", "reply"):
+        return None
+    if subject not in ("caller", "mentioned", "named", "none"):
+        subject = "none"
+
+    usage = data.get("usage") or {}
+    return {
+        "intent": intent,
+        "subject": subject,
+        "subject_name": parsed.get("subject_name") or None,
+        "reason": parsed.get("reason") or "",
+        "input_tokens": usage.get("input_tokens", 0),
+        "output_tokens": usage.get("output_tokens", 0),
+    }
+
+
+def _member_display_name(user: Any, default: str = "the user") -> str:
+    """Best human-readable name for a Discord user/member object."""
+    return (
+        getattr(user, "nick", None)
+        or getattr(user, "global_name", None)
+        or getattr(user, "display_name", None)
+        or getattr(user, "name", None)
+        or default
+    )
+
+
+def resolve_image_target(
+    prompt: str,
+    caller_id: Optional[int],
+    caller_name: str,
+    other_mentions: List[Any],
+    target_users: Dict[str, int],
+    subject: Optional[str] = None,
+    subject_name: Optional[str] = None,
+) -> Tuple[Optional[str], Optional[int]]:
+    """Work out whose portrait is being asked for. Returns (target_name, target_id), either may be None.
+
+    Uses the classifier's subject when available. Without it, an explicit @mention beats a stray "me"/"I".
+    """
+    if subject == "caller" and caller_id is not None:
+        return caller_name, caller_id
+
+    if subject == "mentioned" and other_mentions:
+        return _member_display_name(other_mentions[0]), other_mentions[0].id
+
+    if subject == "named" and subject_name:
+        key = subject_name.strip().lower()
+        for u in other_mentions:
+            names = [
+                n.lower() for n in (
+                    getattr(u, "nick", None), getattr(u, "global_name", None),
+                    getattr(u, "display_name", None), getattr(u, "name", None),
+                ) if isinstance(n, str)
+            ]
+            if any(key == n or key in n or n in key for n in names):
+                return _member_display_name(u), u.id
+        for name, uid in target_users.items():
+            if key == name or key in name or name in key:
+                return name.capitalize(), uid
+        if caller_name and (key == caller_name.lower() or key in caller_name.lower()):
+            return caller_name, caller_id
+        # Named someone we can't resolve: still hand the name to the synthesiser, just no history to pull.
+        return subject_name.strip(), None
+
+    if subject == "none":
+        return None, None
+
+    # Fallback (classifier unavailable or undecided): explicit mentions beat pronouns.
+    if other_mentions:
+        return _member_display_name(other_mentions[0]), other_mentions[0].id
+    if caller_id is not None and re.search(r"\b(?:me|myself|i|my)\b", (prompt or "").lower()):
+        return caller_name, caller_id
+    if target_users:
+        name = list(target_users.keys())[0]
+        return name.capitalize(), target_users[name]
+    return None, None
+
+
+def context_has_user_history(context: str, user_id: Optional[int]) -> bool:
+    """True if the gathered context already carries a message-history section for this user."""
+    if not context or user_id is None:
+        return False
+    return bool(re.search(rf"MESSAGE HISTORY FOR [^\n]*\(<@{user_id}>\)", context))
+
+
+async def ensure_target_history_in_context(
+    client: discord.Client,
+    message: discord.Message,
+    context: str,
+    target_id: Optional[int],
+    target_name: Optional[str],
+) -> str:
+    """Make sure the portrait subject's own recent messages are in the context the synthesiser sees."""
+    if target_id is None or context_has_user_history(context, target_id):
+        return context
+    try:
+        user_chat = await fetch_user_recent_chat_async(client, target_id, getattr(message, "channel", None), limit=35)
+        section = format_user_chat_for_context(target_name or "Target User", target_id, user_chat)
+        return f"{section}\n\n{context}" if context else section
+    except Exception as e:
+        logger.debug("Failed to fetch target user chat for image context: %s", e)
+        return context
+
+
 def generate_one_off_reply(
     prompt: str,
     context: str = "",
@@ -2271,16 +2480,54 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             typing_cm = None
 
     try:
-        # Check if the prompt is asking to generate/draw an image or edit an existing one
-        is_fresh_img_req = looks_like_image_request(clean_prompt)
-        is_edit_req = looks_like_image_edit_request(clean_prompt)
+        other_mentions = [
+            u for u in getattr(message, "mentions", [])
+            if u.id not in (bot_id, getattr(getattr(client, "user", None), "id", None))
+        ]
         ref = getattr(message, "reference", None)
         has_reply_ref = bool(ref and getattr(ref, "message_id", None))
 
+        # Look up the bot's most recent image up front: the edit branch needs it, and the intent
+        # classifier needs to know whether "try again" can refer to anything.
         recent_img_info = None
-        if not (is_fresh_img_req and not is_edit_req):
-            if is_edit_req or has_reply_ref:
-                recent_img_info = await find_recent_image_attachment(message, bot_id=bot_id)
+        try:
+            recent_img_info = await find_recent_image_attachment(message, bot_id=bot_id)
+        except Exception as e:
+            logger.debug("Could not look up recent bot image: %s", e)
+
+        # Decide what this mention wants: a new image, an edit of the last one, or a text reply.
+        intent = await asyncio.to_thread(
+            classify_mention_intent,
+            clean_prompt,
+            mentioned_names=[_member_display_name(u) for u in other_mentions],
+            caller_name=caller_name,
+            has_reply_ref=has_reply_ref,
+            has_recent_bot_image=bool(recent_img_info),
+            recent_bot_image_prompt=(recent_img_info[2] if recent_img_info else None),
+            has_attached_image=bool(getattr(message, "attachments", None)),
+        )
+        subject = None
+        subject_name = None
+        if intent:
+            if intent.get("input_tokens") or intent.get("output_tokens"):
+                live_chat_manager.record_usage(MENTION_INTENT_MODEL, intent["input_tokens"], intent["output_tokens"], is_reply=True)
+            is_fresh_img_req = intent["intent"] == "generate"
+            is_edit_req = intent["intent"] == "edit"
+            subject = intent.get("subject")
+            subject_name = intent.get("subject_name")
+            logger.info(
+                "Mention intent for %s: %s (subject=%s/%s): %s",
+                caller_name, intent["intent"], subject, subject_name, intent.get("reason"),
+            )
+            if is_edit_req and not recent_img_info:
+                # Nothing to edit, but they clearly want a picture.
+                is_edit_req = False
+                is_fresh_img_req = True
+        else:
+            # Classifier unavailable: fall back to keyword matching.
+            is_fresh_img_req = looks_like_image_request(clean_prompt)
+            is_edit_req = looks_like_image_edit_request(clean_prompt)
+            if not (is_fresh_img_req and not is_edit_req):
                 if recent_img_info and not is_edit_req and has_reply_ref:
                     is_edit_req = not any(
                         clean_prompt.lower().startswith(w) for w in ["thanks", "thank you", "haha", "lol", "lmao", "good", "great", "nice", "love it"]
@@ -2303,21 +2550,11 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             else:
                 context, target_users = str(gathered), {}
 
-            other_mentions = [
-                u for u in getattr(message, "mentions", [])
-                if u.id not in (bot_id, getattr(getattr(client, "user", None), "id", None))
-            ]
-
-            target_name = None
-            if other_mentions:
-                target_name = (
-                    getattr(other_mentions[0], "nick", None)
-                    or getattr(other_mentions[0], "global_name", None)
-                    or getattr(other_mentions[0], "display_name", None)
-                    or getattr(other_mentions[0], "name", "the user")
-                )
-            elif target_users:
-                target_name = list(target_users.keys())[0].capitalize()
+            target_name, target_id = resolve_image_target(
+                clean_prompt, caller_id, caller_name, other_mentions, target_users,
+                subject=subject, subject_name=subject_name,
+            )
+            context = await ensure_target_history_in_context(client, message, context, target_id, target_name)
 
             prev_caption = getattr(prev_msg, "content", "")
             logger.info("Synthesizing image edit for %s: %r (target=%s, prev_prompt=%r)", caller_name, clean_prompt, target_name, prev_prompt)
@@ -2385,7 +2622,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
 
         # Check if the prompt is asking to generate/draw an image
         is_img_req = is_fresh_img_req
-        if not is_img_req and any(re.search(pat, clean_prompt.lower()) for pat in FOLLOW_UP_IMAGE_PATTERNS):
+        if not is_img_req and intent is None and any(re.search(pat, clean_prompt.lower()) for pat in FOLLOW_UP_IMAGE_PATTERNS):
             if hasattr(message.channel, "history"):
                 try:
                     async for prev_m in message.channel.history(limit=35, before=message):
@@ -2412,36 +2649,13 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             else:
                 context, target_users = str(gathered), {}
 
-            other_mentions = [
-                u for u in getattr(message, "mentions", [])
-                if u.id not in (bot_id, getattr(getattr(client, "user", None), "id", None))
-            ]
-
-            target_name = None
-            target_id = None
-            if re.search(r"\b(?:me|myself|i|my)\b", clean_prompt.lower()):
-                target_name = caller_name
-                target_id = caller_id
-            elif other_mentions:
-                target_name = (
-                    getattr(other_mentions[0], "nick", None)
-                    or getattr(other_mentions[0], "global_name", None)
-                    or getattr(other_mentions[0], "display_name", None)
-                    or getattr(other_mentions[0], "name", "the user")
-                )
-                target_id = other_mentions[0].id
-            elif target_users:
-                target_name = list(target_users.keys())[0].capitalize()
-
-            # Ensure the targeted user's message history is in context if asking based on history/caricature
-            if target_id and f"<@{target_id}>" not in context:
-                try:
-                    user_chat = await fetch_user_recent_chat_async(client, target_id, getattr(message, "channel", None), limit=35)
-                    if user_chat:
-                        user_chat_str = format_user_chat_for_context(target_name or "Target User", target_id, user_chat)
-                        context = f"{user_chat_str}\n\n{context}" if context else user_chat_str
-                except Exception as e:
-                    logger.debug("Failed to fetch target user chat for image context: %s", e)
+            target_name, target_id = resolve_image_target(
+                clean_prompt, caller_id, caller_name, other_mentions, target_users,
+                subject=subject, subject_name=subject_name,
+            )
+            # Make sure the subject's own message history is what the synthesiser reads, not just whoever
+            # happened to be mentioned or talking nearby.
+            context = await ensure_target_history_in_context(client, message, context, target_id, target_name)
 
             is_contextual = is_contextual_image_request(clean_prompt, other_mentions, context)
             if target_id is not None:
