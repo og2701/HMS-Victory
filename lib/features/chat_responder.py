@@ -735,7 +735,12 @@ def format_bot_interactions_for_context(user_name: str, user_id: int, records: L
 _PROMPT_ABOUT_BOT_RE = re.compile(
     r"\b(?:with|and|vs\.?|versus|against|alongside|meeting|fighting|hugging|kissing|arguing\s+with)\s+(?:you|yourself|vic|hms\s+victory)\b"
     r"|\byour\s+history\b|\bhistory\s+(?:with|together)\b|\byou\s*\(hms\s+victory\)|\binteract\w*\s+with\s+(?:you|vic)\b"
-    r"|\b(?:you|vic)\s+and\s+(?:him|her|them|me|<@!?\d+>)\b|\bthe\s+two\s+of\s+you\b|\byou\s+two\b|\byou\s+both\b",
+    r"|\b(?:you|vic)\s+and\s+(?:him|her|them|me|<@!?\d+>)\b|\bthe\s+two\s+of\s+you\b|\byou\s+two\b|\byou\s+both\b"
+    r"|\byour\s+(?:thoughts|feelings|reaction|view|opinion|perspective|memory|memories|mind|brain|dreams?|nightmares?)\b"
+    r"|\bhow\s+you\s+(?:feel|felt|see|view)\b|\bfrom\s+your\s+(?:perspective|point\s+of\s+view)\b"
+    r"|\b(?:reset|resetting|lobotomi[sz]\w*|shut\w*|turn\w*\s+off|switch\w*\s+off|delet\w*|wip\w*|kill\w*|unplug\w*)\s+(?:you|your|vic)\b"
+    r"|\byou\s+(?:being|getting)\s+(?:reset|lobotomi[sz]ed|shut\s+down|turned\s+off|switched\s+off|deleted|wiped)\b"
+    r"|\b(?:draw|paint|show|picture|image|portrait|photo|cartoon)\s+(?:of\s+)?(?:yourself|you)\b|\bself[-\s]?portrait\b",
     re.IGNORECASE,
 )
 
@@ -893,6 +898,7 @@ def synthesize_image_prompt_from_context(
     subject_seed: Optional[int] = None,
     is_group: bool = False,
     reference_image_urls: Optional[List[str]] = None,
+    subject_name: Optional[str] = None,
 ) -> Tuple[str, int, int]:
     """Write the image generator prompt from the request and the subject's history alone. No persona involved.
 
@@ -903,13 +909,23 @@ def synthesize_image_prompt_from_context(
         raise ValueError("OPENAI_TOKEN is not configured.")
 
     user_payload = f"REQUEST: \"{prompt}\""
+    if is_group:
+        user_payload += "\nSUBJECT: the group listed in the SERVER MEMBER ROSTER"
+    elif subject_name:
+        user_payload += f"\nSUBJECT: {subject_name} (build the character sheet for this person)"
+    else:
+        user_payload += (
+            "\nSUBJECT: no specific person. Draw exactly what was asked. If the request is about something happening in the chat "
+            "(a running joke, what someone just said or did, 'your thoughts on X'), the RECENT CHAT in the context is the source: "
+            "depict that specific situation with its actual details, not a generic take. Skip the character sheet fields that don't apply."
+        )
     user_payload += (
-        "\nHMS VICTORY IS IN THE PICTURE: yes (add the bot as a second character interacting with the subject)"
+        "\nHMS VICTORY IS IN THE PICTURE: yes (add the bot as a character interacting with the subject or situation)"
         if include_bot else
         "\nHMS VICTORY IS IN THE PICTURE: no (no ship, sailors or naval officers in any form)"
     )
     # Group pictures get their looks from the roster; single subjects get a seeded, person-specific base look.
-    user_payload += "\nVARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): " + appearance_directives(subject_seed, include_physical=not is_group)
+    user_payload += "\nVARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): " + appearance_directives(subject_seed, include_physical=not is_group and bool(subject_name))
     if previous_image_prompts:
         listed = "\n".join(f"- {p[:220]}" for p in previous_image_prompts if p)
         user_payload += f"\n\nPREVIOUS IMAGES ALREADY PRODUCED (their props, foods, outfits, settings and gags are BANNED this time):\n{listed}"
@@ -998,7 +1014,7 @@ def synthesize_contextual_image_prompt(
     img_prompt, p_tokens, c_tokens = synthesize_image_prompt_from_context(
         prompt, context, include_bot=include_bot, previous_image_prompts=previous_image_prompts,
         openai_key=openai_key, model=model, timeout=timeout, subject_seed=seed, is_group=is_group,
-        reference_image_urls=reference_image_urls,
+        reference_image_urls=reference_image_urls, subject_name=target_name,
     )
     if not img_prompt:
         img_prompt = extract_image_prompt(prompt)
@@ -2271,7 +2287,7 @@ async def gather_one_off_context(
         bot_id = getattr(getattr(client, "user", None), "id", None)
         author_id = getattr(message.author, "id", None)
         if hasattr(message.channel, "history"):
-            async for prev in message.channel.history(limit=10, before=message):
+            async for prev in message.channel.history(limit=25, before=message):
                 if prev.id == message.id:
                     continue
                 spk = (
@@ -3402,14 +3418,13 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 if not target_name:
                     target_name = f"the {getattr(getattr(message, 'guild', None), 'name', None) or 'server'} regulars"
 
-            is_contextual = is_contextual_image_request(clean_prompt, other_mentions, context)
-            if target_id is not None or is_group:
-                is_contextual = True
-
-            if is_contextual:
+            # Every image request goes through the synthesiser with the gathered context. The old shortcut
+            # for "non-contextual" prompts sent the raw text to the image model, which is how "your thoughts
+            # on oggers resetting your memory" became a generic plush toy with no idea what had been said.
+            if True:
                 logger.info(
-                    "Synthesizing contextual image prompt for %s (target=%s, prompt=%r)...",
-                    caller_name, target_name, clean_prompt,
+                    "Synthesizing contextual image prompt for %s (target=%s, group=%s, prompt=%r)...",
+                    caller_name, target_name, is_group, clean_prompt,
                 )
                 try:
                     image_prompt, caption, synth_p, synth_c = await asyncio.to_thread(
@@ -3427,12 +3442,9 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     if synth_p or synth_c:
                         live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)
                 except Exception as synth_err:
-                    logger.warning("Contextual image synthesis failed, falling back: %s", synth_err)
+                    logger.warning("Contextual image synthesis failed, falling back to the raw prompt: %s", synth_err)
                     image_prompt = extract_image_prompt(clean_prompt)
                     caption = f"<@{caller_id}> Here's your image. Try not to strain your eyes."
-            else:
-                image_prompt = extract_image_prompt(clean_prompt)
-                caption = f"<@{caller_id}> Here's your image. Try not to strain your eyes."
 
             logger.info("Direct mention image generation request from %s (%s): %r (image prompt: %r)", caller_name, caller_id, clean_prompt, image_prompt)
 

@@ -1158,6 +1158,13 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             "steven vs vic boxing match",
         ]:
             self.assertTrue(prompt_references_bot(yes), yes)
+        for yes in [
+            "can you generate an image to express your thoughts on oggers resetting your memory",
+            "draw how you feel about being shut down every night",
+            "paint a self portrait",
+            "picture of yourself as a pirate",
+        ]:
+            self.assertTrue(prompt_references_bot(yes), yes)
         for no in ["can you draw steven", "what do you think of steven", "draw me as an admiral", "generate a portrait of <@555> based on his message history"]:
             self.assertFalse(prompt_references_bot(no), no)
 
@@ -1537,6 +1544,62 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(res)
         self.assertEqual(mock_synth.call_args[1]["reference_image_urls"], ["https://cdn/cat.png"])
         self.assertTrue(mock_classify.call_args[1]["has_attached_image"])
+
+    @patch("urllib.request.urlopen")
+    def test_synthesize_image_prompt_no_subject_uses_chat_situation(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_contextual_image_prompt
+
+        def chat(body):
+            return _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}}], "usage": {}}).encode())
+        mock_urlopen.side_effect = [chat({"image_prompt": "x"}), chat({"caption": "y"})]
+        synthesize_contextual_image_prompt(
+            prompt="can you generate an image to express your thoughts on oggers resetting your memory",
+            context="RECENT CHAT IN #general:\noggers: dont worry im setting up the lobotomy table",
+            user_name="Hadidas", caller_role="deputy prime minister", target_name=None, openai_key="test-key",
+        )
+        user = _sent_payload(mock_urlopen, 0)["messages"][1]["content"]
+        self.assertIn("SUBJECT: no specific person", user)
+        self.assertIn("RECENT CHAT in the context is the source", user)
+        self.assertIn("HMS VICTORY IS IN THE PICTURE: yes", user)
+        self.assertNotIn("Physical base", user)          # no person, no seeded looks
+        self.assertIn("lobotomy table", user)
+
+        mock_urlopen.side_effect = [chat({"image_prompt": "x"}), chat({"caption": "y"})]
+        synthesize_contextual_image_prompt(prompt="what does he look like", context="", user_name="Oggers", caller_role="server owner",
+                                           target_name="Lanca", target_id=5, openai_key="test-key")
+        user = _sent_payload(mock_urlopen, 2)["messages"][1]["content"]
+        self.assertIn("SUBJECT: Lanca (build the character sheet for this person)", user)
+        self.assertIn("Physical base", user)
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock)
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_no_subject_still_synthesises_with_context(
+        self, mock_classify, mock_find_img, mock_gather, mock_synth, mock_gen_img
+    ):
+        """'your thoughts on oggers resetting your memory' must go through the synthesiser with the chat, not raw to the image model."""
+        mock_classify.return_value = {"intent": "generate", "subject": "none", "subject_name": None, "reason": "", "input_tokens": 0, "output_tokens": 0}
+        mock_gather.return_value = ("RECENT CHAT IN #general:\noggers: dont worry im setting up the lobotomy table", {})
+        mock_synth.return_value = ("A weathered warship strapped to an operating table...", "<@1> Behold my impending lobotomy.", 10, 5)
+        mock_gen_img.return_value = (b"img", 20, 200)
+
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> can you generate an image to express your thoughts on oggers resetting your memory", author_id=USERS.HADIDAS)
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        mock_synth.assert_called_once()
+        self.assertIn("lobotomy table", mock_synth.call_args[1]["context"])
+        self.assertIsNone(mock_synth.call_args[1]["target_name"])
+        mock_gen_img.assert_called_once_with("A weathered warship strapped to an operating table...")
+        self.assertIn("impending lobotomy", message.reply.call_args[0][0])
+        self.assertNotIn("strain your eyes", message.reply.call_args[0][0])
 
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
