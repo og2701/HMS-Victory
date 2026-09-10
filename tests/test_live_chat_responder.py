@@ -1635,6 +1635,66 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("revised his hairline", caption)
         self.assertIn("file", message.reply.call_args[1])
 
+    def test_looks_like_image_request_expanded_followups(self):
+        from lib.features.chat_responder import looks_like_image_request
+
+        self.assertTrue(looks_like_image_request("do me xx"))
+        self.assertTrue(looks_like_image_request("do me x"))
+        self.assertTrue(looks_like_image_request("do me next"))
+        self.assertTrue(looks_like_image_request("me next"))
+        self.assertTrue(looks_like_image_request("now me"))
+        self.assertTrue(looks_like_image_request("my turn"))
+        self.assertTrue(looks_like_image_request("what do i look based on my message history"))
+        self.assertTrue(looks_like_image_request("what do i look like based on my message history"))
+        self.assertTrue(looks_like_image_request("what would i look like"))
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async")
+    async def test_handle_one_off_do_me_flow(self, mock_fetch_chat, mock_synth, mock_gen_img):
+        from lib.features.chat_responder import handle_one_off_owner_mention
+
+        mock_fetch_chat.return_value = [
+            {"content": "I love London and tea.", "channel": "general", "ts": 1700000000}
+        ]
+        mock_synth.return_value = (
+            "A satirical caricature of Oggers as a 19th-century naval captain",
+            "<@404634271861571584> Here is your caricature, Oggers.",
+            130, 40
+        )
+        mock_gen_img.return_value = (b"fake_oggers_image", 20, 200)
+
+        client = MagicMock()
+        client.user.id = 999999999
+
+        message = MagicMock()
+        message.id = 99999991
+        message.author.id = USERS.OGGERS
+        message.author.name = "ogme01"
+        message.author.nick = "Oggers"
+        message.author.display_name = "Oggers"
+        message.author.global_name = "Oggers"
+        message.content = f"<@{client.user.id}> do me xx"
+        message.mentions = [client.user]
+        message.reference = None
+        message.channel.history = MagicMock()
+        message.reply = AsyncMock()
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        mock_synth.assert_called_once()
+        synth_call = mock_synth.call_args
+        self.assertIn("Oggers", synth_call[1]["target_name"])
+
+        mock_gen_img.assert_called_once()
+        message.reply.assert_called_once()
+        self.assertIn("Oggers", message.reply.call_args[0][0])
+        self.assertIn("file", message.reply.call_args[1])
+
 
 if __name__ == "__main__":
     unittest.main()

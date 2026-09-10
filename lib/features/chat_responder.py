@@ -233,13 +233,21 @@ IMAGE_REQUEST_PATTERNS = [
     r"\b(?:do|make|paint|draw|generate)\s+one\s+(?:of|for)\b",
     r"(?:^|\b(?:can\s+you|please|could\s+you)\s+)(?:draw|paint|sketch|illustrate|render)\s+(?:me\s+)?(?:an?\s+)",
     r"\b(?:can\s+you\s+|please\s+)(?:draw|paint|sketch|illustrate|render)\b",
-    r"\b(?:what\s+(?:they|he|she|i|<@!?\d+>|\w+)\s+looks?\s+like)\b.*\b(?:generate|draw|paint|picture|photo|image)\b",
-    r"\b(?:generate|draw|paint|picture|photo|image)\b.*\b(?:what\s+(?:they|he|she|i|<@!?\d+>|\w+)\s+looks?\s+like)\b",
+    r"\b(?:what\s+(?:they|he|she|i|<@!?\d+>|we|\w+)\s+looks?\b(?:\s+like)?)",
+    r"\b(?:what\s+would\s+(?:they|he|she|i|<@!?\d+>|\w+)\s+look\b(?:\s+like)?)",
+    r"\b(?:what\s+(?:do\s+i|does\s+\w+)\s+look\b)",
+    r"\b(?:what\s+i\s+look\b)",
+    r"\b(?:do|make|draw|paint)\s+(?:me|myself)(?:\s+(?:next|too|as\s+well|xx*))?\b",
+    r"\b(?:me\s+next|my\s+turn|now\s+me)\b",
 ]
 
 FOLLOW_UP_IMAGE_PATTERNS = [
-    r"\b(?:do\s+the\s+same|same\s+for|do\s+another|another\s+one|now\s+do|do\s+one\s+for|make\s+one\s+for|generate\s+one\s+for|do\s+(?:<@!?\d+>|@?[\w.-]+)\s+next)\b",
-    r"\b(?:what\s+about\s+(?:<@!?\d+>|@?[\w.-]+))\b",
+    r"\b(?:do|make|paint|draw)\s+(?:me|myself)(?:\s+(?:next|too|as\s+well|xx*))?\b",
+    r"\b(?:me\s+next|my\s+turn|now\s+me)\b",
+    r"\b(?:do\s+the\s+same|same\s+for|do\s+another|another\s+one|now\s+do|do\s+one\s+for|make\s+one\s+for|generate\s+one\s+for)\b",
+    r"\b(?:do\s+(?:me|<@!?\d+>|@?[\w.-]+)(?:\s+next)?)\b",
+    r"\b(?:what\s+about\s+(?:me|<@!?\d+>|@?[\w.-]+))\b",
+    r"\b(?:can\s+you\s+do\s+(?:me|<@!?\d+>|@?[\w.-]+))\b",
 ]
 
 IMAGE_EDIT_PATTERNS = [
@@ -260,13 +268,14 @@ IMAGE_EDIT_PATTERNS = [
 
 CONTEXTUAL_IMAGE_INDICATORS = [
     r"\b(?:messages?|chat|history|logs?)\b",
-    r"\bwhat\s+(?:they|he|she|i|<@!?\d+>|\w+)\s+looks?\s+like\b",
+    r"\bwhat\s+(?:they|he|she|i|<@!?\d+>|\w+)\s+looks?\b",
     r"\b(?:looks?\s+like)\b",
     r"\b(?:caricature|portrait)\b",
     r"\b(?:based\s+on|according\s+to)\b",
     r"\b(?:draw|paint|sketch|illustrate|render)\s+(?:me|<@!?\d+>|@[\w.-]+)",
     r"\b(?:picture|photo|image)\s+of\s+(?:me|<@!?\d+>|@[\w.-]+)",
-    r"\b(?:do\s+the\s+same|same\s+for|now\s+do|another\s+one)\b",
+    r"\b(?:do\s+the\s+same|same\s+for|now\s+do|another\s+one|do\s+me)\b",
+    r"\b(?:me\s+next|my\s+turn|now\s+me)\b",
 ]
 
 
@@ -2262,19 +2271,20 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             typing_cm = None
 
     try:
-        # Check if the prompt is an edit or critique of a recent image
-        recent_img_info = None
+        # Check if the prompt is asking to generate/draw an image or edit an existing one
+        is_fresh_img_req = looks_like_image_request(clean_prompt)
         is_edit_req = looks_like_image_edit_request(clean_prompt)
         ref = getattr(message, "reference", None)
         has_reply_ref = bool(ref and getattr(ref, "message_id", None))
 
-        if is_edit_req or has_reply_ref:
-            recent_img_info = await find_recent_image_attachment(message, bot_id=bot_id)
-            if recent_img_info and not is_edit_req and has_reply_ref:
-                # If replying directly to a bot image, check if text has any alteration intent or critique
-                is_edit_req = looks_like_image_edit_request(clean_prompt) or not any(
-                    clean_prompt.lower().startswith(w) for w in ["thanks", "thank you", "haha", "lol", "lmao", "good", "great", "nice", "love it"]
-                )
+        recent_img_info = None
+        if not (is_fresh_img_req and not is_edit_req):
+            if is_edit_req or has_reply_ref:
+                recent_img_info = await find_recent_image_attachment(message, bot_id=bot_id)
+                if recent_img_info and not is_edit_req and has_reply_ref:
+                    is_edit_req = not any(
+                        clean_prompt.lower().startswith(w) for w in ["thanks", "thank you", "haha", "lol", "lmao", "good", "great", "nice", "love it"]
+                    )
 
         if recent_img_info and is_edit_req:
             allowed, remaining = can_user_generate_image(caller_id)
@@ -2374,7 +2384,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             return True
 
         # Check if the prompt is asking to generate/draw an image
-        is_img_req = looks_like_image_request(clean_prompt)
+        is_img_req = is_fresh_img_req
         if not is_img_req and any(re.search(pat, clean_prompt.lower()) for pat in FOLLOW_UP_IMAGE_PATTERNS):
             if hasattr(message.channel, "history"):
                 try:
@@ -2408,17 +2418,34 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             ]
 
             target_name = None
-            if other_mentions:
+            target_id = None
+            if re.search(r"\b(?:me|myself|i|my)\b", clean_prompt.lower()):
+                target_name = caller_name
+                target_id = caller_id
+            elif other_mentions:
                 target_name = (
                     getattr(other_mentions[0], "nick", None)
                     or getattr(other_mentions[0], "global_name", None)
                     or getattr(other_mentions[0], "display_name", None)
                     or getattr(other_mentions[0], "name", "the user")
                 )
+                target_id = other_mentions[0].id
             elif target_users:
                 target_name = list(target_users.keys())[0].capitalize()
 
+            # Ensure the targeted user's message history is in context if asking based on history/caricature
+            if target_id and f"<@{target_id}>" not in context:
+                try:
+                    user_chat = await fetch_user_recent_chat_async(client, target_id, getattr(message, "channel", None), limit=35)
+                    if user_chat:
+                        user_chat_str = format_user_chat_for_context(target_name or "Target User", target_id, user_chat)
+                        context = f"{user_chat_str}\n\n{context}" if context else user_chat_str
+                except Exception as e:
+                    logger.debug("Failed to fetch target user chat for image context: %s", e)
+
             is_contextual = is_contextual_image_request(clean_prompt, other_mentions, context)
+            if target_id is not None:
+                is_contextual = True
 
             if is_contextual:
                 logger.info(
