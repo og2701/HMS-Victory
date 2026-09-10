@@ -485,7 +485,53 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         mock_handle_one_off.assert_called_once_with(client, message)
 
     @patch("lib.features.chat_responder.handle_one_off_owner_mention")
-    async def test_handle_chat_message_oggers_hi_vic_asleep(self, mock_handle_one_off):
+    async def test_handle_chat_message_oggers_name_drop_asleep_ignored(self, mock_handle_one_off):
+        """Owner messages that merely say the bot's name (no @mention) must not summon it."""
+        mock_handle_one_off.return_value = True
+        client = MagicMock()
+        client.user.id = 999999999
+
+        for content in ["hi vic", "if you dont want to do it yourself i can get vic to dm her x", "hms victory is broken"]:
+            message = MagicMock()
+            message.author.bot = False
+            message.author.id = USERS.OGGERS
+            message.mentions = []
+            message.reference = None
+            message.content = content
+
+            live_chat_manager.active = False
+            res = await handle_chat_message(client, message)
+            self.assertFalse(res, content)
+        mock_handle_one_off.assert_not_called()
+
+    @patch("lib.features.chat_responder.handle_one_off_owner_mention")
+    async def test_handle_chat_message_oggers_reply_to_bot_asleep_ignored(self, mock_handle_one_off):
+        """A reply to one of the bot's messages without a ping is not an @mention either."""
+        mock_handle_one_off.return_value = True
+        client = MagicMock()
+        client.user.id = 999999999
+
+        bot_msg = MagicMock()
+        bot_msg.author.id = client.user.id
+        ref = MagicMock()
+        ref.message_id = 4242
+        ref.cached_message = bot_msg
+
+        message = MagicMock()
+        message.author.bot = False
+        message.author.id = USERS.OGGERS
+        message.mentions = []
+        message.reference = ref
+        message.content = "lol"
+
+        live_chat_manager.active = False
+        res = await handle_chat_message(client, message)
+        self.assertFalse(res)
+        mock_handle_one_off.assert_not_called()
+
+    @patch("lib.features.chat_responder.handle_one_off_owner_mention")
+    async def test_handle_chat_message_oggers_raw_tag_without_mentions_list(self, mock_handle_one_off):
+        """A raw <@ID> in the text counts even if the mentions list is empty."""
         mock_handle_one_off.return_value = True
         client = MagicMock()
         client.user.id = 999999999
@@ -495,7 +541,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         message.author.id = USERS.OGGERS
         message.mentions = []
         message.reference = None
-        message.content = "hi vic"
+        message.content = f"<@!{client.user.id}> dm her"
 
         live_chat_manager.active = False
         res = await handle_chat_message(client, message)

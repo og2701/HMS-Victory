@@ -488,6 +488,18 @@ def parse_user_id(val: Optional[str]) -> Optional[int]:
         return int(val_clean)
     except ValueError:
         return None
+def is_bot_explicitly_mentioned(client: discord.Client, message: discord.Message) -> bool:
+    """True only when the message actually @mentions HMS Victory (<@ID> / <@!ID>), not a reply or a name-drop."""
+    if not client.user:
+        return False
+    content = (message.content or "").strip()
+    return (
+        client.user in getattr(message, "mentions", [])
+        or f"<@{client.user.id}>" in content
+        or f"<@!{client.user.id}>" in content
+    )
+
+
 def is_message_for_bot(client: discord.Client, message: discord.Message) -> bool:
     """Check if a message is addressed to or meant for HMS Victory (tags, replies, or name keywords)."""
     if getattr(message.author, "bot", False):
@@ -496,13 +508,8 @@ def is_message_for_bot(client: discord.Client, message: discord.Message) -> bool
     content = (message.content or "").strip()
 
     # 1. Direct bot mention (@HMS Victory / <@ID>)
-    if client.user:
-        if (
-            client.user in getattr(message, "mentions", [])
-            or f"<@{client.user.id}>" in content
-            or f"<@!{client.user.id}>" in content
-        ):
-            return True
+    if is_bot_explicitly_mentioned(client, message):
+        return True
 
     # 2. Reply to a message sent by the bot
     ref = getattr(message, "reference", None)
@@ -1627,11 +1634,11 @@ async def handle_chat_message(client: discord.Client, message: discord.Message) 
     if getattr(message.author, "bot", False):
         return False
 
-    meant_for_bot = is_message_for_bot(client, message)
-
-    # 2. If message is from Oggers and meant for the bot:
+    # 2. If message is from Oggers and explicitly @mentions the bot:
     # Always respond to Oggers as a one-off anywhere on the server UNLESS paused!
-    if message.author.id == USERS.OGGERS and meant_for_bot:
+    # Only a real @mention counts here. Name-drops like "I'll get vic to dm her" or replies to the
+    # bot's messages must not summon it; those looser matches are only used by the live chat mode.
+    if message.author.id == USERS.OGGERS and is_bot_explicitly_mentioned(client, message):
         if live_chat_manager.owner_mentions_paused:
             logger.info("Direct mention from Oggers ignored because direct mentions are paused.")
             return False
