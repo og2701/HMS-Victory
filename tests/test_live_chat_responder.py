@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch, AsyncMock
 import time
 import json
+import io
 import asyncio
 from datetime import datetime, timezone
 
@@ -922,6 +923,34 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("A tea-drinking Brit in a pub", sent_text)
         self.assertIn("focus on what i reckon", sent_text)
 
+    @patch("time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_classify_mention_intent_retries_once_on_5xx(self, mock_urlopen, _sleep):
+        from lib.features.chat_responder import classify_mention_intent
+        import urllib.error
+
+        body = json.dumps({"intent": "generate", "subject": "mentioned", "subject_name": None, "reason": "ok"})
+        mock_urlopen.side_effect = [
+            urllib.error.HTTPError("https://api.openai.com/v1/responses", 500, "Internal Server Error", {}, io.BytesIO(b'{"error":{"message":"boom"}}')),
+            _mock_resp(_responses_body(body)),
+        ]
+
+        res = classify_mention_intent("generate what you think @Steven looks like", openai_key="test-key")
+
+        self.assertEqual(res["intent"], "generate")
+        self.assertEqual(mock_urlopen.call_count, 2)
+
+    @patch("time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_classify_mention_intent_no_retry_on_4xx(self, mock_urlopen, _sleep):
+        from lib.features.chat_responder import classify_mention_intent
+        import urllib.error
+
+        mock_urlopen.side_effect = urllib.error.HTTPError("https://api.openai.com/v1/responses", 400, "Bad Request", {}, io.BytesIO(b'{"error":{"message":"bad schema"}}'))
+
+        self.assertIsNone(classify_mention_intent("draw me", openai_key="test-key"))
+        self.assertEqual(mock_urlopen.call_count, 1)
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):
@@ -1546,6 +1575,10 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             "illustrate a knight in armor",
             "photo of a golden retriever",
             "make a drawing of HMS Victory",
+            "generate what you think <@555> looks like based on his message history, focusing on his relationship with you",
+            "what you reckon steven looks like",
+            "can you try again, he doesn't drink tea, feel free to reference his message history for his portrait",
+            "generate a satirical portrait of oggers",
         ]
         for prompt in positive_cases:
             self.assertTrue(looks_like_image_request(prompt), f"Expected True for: {prompt}")

@@ -242,6 +242,10 @@ IMAGE_REQUEST_PATTERNS = [
     r"\b(?:what\s+i\s+look\b)",
     r"\b(?:do|make|draw|paint)\s+(?:me|myself)(?:\s+(?:next|too|as\s+well|xx*))?\b",
     r"\b(?:me\s+next|my\s+turn|now\s+me)\b",
+    r"\b(?:generate|draw|paint|create|make|render|illustrate|show)\s+(?:me\s+|us\s+)?what\s+(?:you\s+)?(?:think|reckon|imagine|believe)\b",
+    r"\bwhat\s+(?:you\s+)?(?:think|reckon|imagine)\s+(?:\S+\s+){0,4}?looks?\s+like\b",
+    r"\b(?:generate|draw|paint|create|make|render)\s+(?:an?\s+)?(?:\w+\s+){0,3}?(?:portrait|caricature|picture|image|photo|drawing)\b",
+    r"\b(?:his|her|their|my|your)\s+(?:portrait|caricature)\b",
 ]
 
 FOLLOW_UP_IMAGE_PATTERNS = [
@@ -2189,10 +2193,31 @@ def classify_mention_intent(
             }
         },
     }
-    try:
-        data = _post_openai_response(payload, api_key, timeout)
-    except Exception as e:
-        logger.warning("Mention intent classification failed: %s", e)
+    data = None
+    last_err: Any = None
+    for attempt in range(2):
+        try:
+            data = _post_openai_response(payload, api_key, timeout)
+            break
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8", errors="ignore")[:300]
+            except Exception:
+                pass
+            last_err = f"HTTP {e.code}: {body or e.reason}"
+            # A 4xx is our payload's fault and won't improve on retry; a 5xx is usually a blip.
+            if e.code < 500 or attempt == 1:
+                break
+            time.sleep(0.75)
+        except Exception as e:
+            last_err = e
+            if attempt == 1:
+                break
+            time.sleep(0.75)
+
+    if data is None:
+        logger.warning("Mention intent classification failed: %s", last_err)
         return None
 
     if data.get("status") == "failed" or data.get("error"):
