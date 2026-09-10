@@ -759,6 +759,8 @@ RULES:
 4. Everything in the image must come from the request and the history. Do not add nationality, patriotic, military, naval or period imagery unless the history is genuinely about it.
 5. The payload states whether HMS VICTORY IS IN THE PICTURE. If yes, add a second character: a weathered 18th-century first-rate ship of the line with a stern, unimpressed personality (the ship itself with a disapproving air, or a stern naval officer figurehead), interacting with the person the way their HISTORY BETWEEN transcript suggests. If no, there must be no ship, sailors or naval officers of any kind.
 6. If PREVIOUS IMAGES are listed, every prop, food, drink, outfit, slogan, setting and gag in them is BANNED, even if the history mentions them again. Use different material; there is always more.
+7. GROUP PICTURES: if a SERVER MEMBER ROSTER is provided, the people in it are the ONLY people in the image. Give each one a distinct, recognisable caricature drawn from their own listed messages, once each, all in one scene. Never invent extra people, usernames, handles or names. Text in the image is limited to the roster members' names as small labels, or no text at all; never fabricate chat messages, channel lists or UI.
+8. In any image, never render made-up usernames, handles, screen names or chat text. If you need labels, use only real names given in the payload.
 
 Respond ONLY with a JSON object: {"image_prompt": "..."}"""
 
@@ -1950,6 +1952,70 @@ STOPWORDS = {
 }
 
 
+_SERVER_OVERVIEW_CACHE: Dict[int, Tuple[float, str]] = {}
+SERVER_OVERVIEW_TTL_SECONDS = 600
+
+
+async def build_server_overview_context(
+    client: Optional[discord.Client],
+    guild: Any,
+    bot_id: Optional[int] = None,
+    limit: int = 10,
+) -> str:
+    """A short who's-who of the server: name, size, and its most active real members over the last 30 days.
+
+    Included in every direct-mention context so the bot knows the regulars by name whatever it's asked.
+    Cached per guild for a few minutes since it barely changes.
+    """
+    if guild is None:
+        return ""
+    guild_id = getattr(guild, "id", None)
+    now = time.time()
+    if isinstance(guild_id, int):
+        cached = _SERVER_OVERVIEW_CACHE.get(guild_id)
+        if cached and now - cached[0] < SERVER_OVERVIEW_TTL_SECONDS:
+            return cached[1]
+
+    bot_id = bot_id or BOT_ID
+    try:
+        active = await asyncio.to_thread(fetch_most_active_users, 30, limit * 2, [bot_id])
+    except Exception as e:
+        logger.debug("Server overview: could not fetch active users: %s", e)
+        active = []
+
+    regulars: List[str] = []
+    for uid, count in active:
+        member = None
+        try:
+            if hasattr(guild, "get_member"):
+                member = guild.get_member(uid)
+            if member is None and client is not None and hasattr(client, "get_user"):
+                member = client.get_user(uid)
+        except Exception:
+            member = None
+        if member is None or getattr(member, "bot", False):
+            continue
+        regulars.append(f"{_member_display_name(member)} (<@{uid}>, {count} msgs)")
+        if len(regulars) >= limit:
+            break
+
+    server_name = getattr(guild, "name", None) or "this server"
+    member_count = getattr(guild, "member_count", None)
+    head = f"SERVER OVERVIEW: {server_name}"
+    if isinstance(member_count, int):
+        head += f", {member_count} members"
+    head += "."
+    if regulars:
+        text = head + " Most active regulars over the last 30 days: " + "; ".join(regulars) + "."
+    else:
+        text = head
+    text += " Only refer to people who actually exist here; never invent members."
+
+    if isinstance(guild_id, int):
+        _SERVER_OVERVIEW_CACHE[guild_id] = (now, text)
+    return text
+
+
 async def gather_one_off_context(
     client: discord.Client,
     message: discord.Message,
@@ -2157,6 +2223,14 @@ async def gather_one_off_context(
                 scraped_uids.add(uid)
                 u_chat = await fetch_user_recent_chat_async(client, uid, getattr(message, "channel", None), limit=30)
                 context_sections.append(format_user_chat_for_context(name_key.capitalize(), uid, u_chat))
+
+    # 6. General who's-who so the bot knows the regulars whatever it's asked
+    try:
+        overview = await build_server_overview_context(client, guild, bot_id=bot_id)
+        if overview:
+            context_sections.append(overview)
+    except Exception as e:
+        logger.debug("Could not build server overview for one-off context: %s", e)
 
     context_str = "\n\n".join(context_sections).strip()
     if return_targets:
@@ -2375,7 +2449,7 @@ MENTION_INTENT_SCHEMA = {
     "type": "object",
     "properties": {
         "intent": {"type": "string", "enum": ["generate", "edit", "reply"]},
-        "subject": {"type": "string", "enum": ["caller", "mentioned", "named", "none"]},
+        "subject": {"type": "string", "enum": ["caller", "mentioned", "named", "group", "none"]},
         "subject_name": {"type": ["string", "null"]},
         "reason": {"type": "string"},
     },
@@ -2394,6 +2468,7 @@ Also identify WHO the image is of (the subject):
 - "caller": the person sending the message (me, myself, I, my message history).
 - "mentioned": a user they @mentioned in the message. An explicit @mention beats a stray "I" or "me" elsewhere in the sentence.
 - "named": someone referred to by name or pronoun without an @mention (e.g. "steven", or "him" when the recent bot image was of a specific person).
+- "group": several people or the community as a whole ("the members of ukplace", "everyone here", "the server", "all of us", "the lads", "the regulars").
 - "none": not a person (a cat, a landscape, a meme) or not an image request.
 If subject is "named", put the name in subject_name; otherwise subject_name is null.
 
@@ -2496,7 +2571,7 @@ def classify_mention_intent(
     subject = parsed.get("subject")
     if intent not in ("generate", "edit", "reply"):
         return None
-    if subject not in ("caller", "mentioned", "named", "none"):
+    if subject not in ("caller", "mentioned", "named", "group", "none"):
         subject = "none"
 
     usage = data.get("usage") or {}
@@ -2559,7 +2634,7 @@ def resolve_image_target(
         # Named someone we can't resolve: still hand the name to the synthesiser, just no history to pull.
         return subject_name.strip(), None
 
-    if subject == "none":
+    if subject in ("none", "group"):
         return None, None
 
     # Fallback (classifier unavailable or undecided): explicit mentions beat pronouns.
@@ -2720,6 +2795,119 @@ async def image_failure_reply(
         logger.warning("Image failure excuse generation failed, using canned line: %s", e)
         text = fallback
     return f"<@{caller_id}> {text}" if caller_id else text
+
+
+_GROUP_REQUEST_RE = re.compile(
+    r"\b(?:members?\s+of\b|the\s+(?:whole\s+)?server\b|everyone\s+(?:here|in|on)\b|all\s+of\s+us\b|us\s+all\b|the\s+(?:lads|gang|regulars|community|crew|lot)\b"
+    r"|the\s+(?:various|different|main|active)\s+(?:members|people|users|regulars)\b|ukplace\s+(?:members|regulars|lot|crew)\b)",
+    re.IGNORECASE,
+)
+
+
+def looks_like_group_request(prompt: str) -> bool:
+    """Regex fallback for 'draw the members of the server' style requests when the classifier is unavailable."""
+    return bool(prompt and _GROUP_REQUEST_RE.search(prompt))
+
+
+def fetch_most_active_users(days: int = 30, limit: int = 12, exclude_ids: Optional[List[int]] = None) -> List[Tuple[int, int]]:
+    """(user_id, message_count) for the busiest posters in the archive over the last `days`, busiest first."""
+    exclude = {str(x) for x in (exclude_ids or []) if x is not None}
+    out: List[Tuple[int, int]] = []
+    try:
+        from database import DatabaseManager
+        cutoff = int(time.time()) - days * 86400
+        rows = DatabaseManager.fetch_all(
+            "SELECT user_id, COUNT(*) AS c FROM message_archive WHERE ts > ? GROUP BY user_id ORDER BY c DESC LIMIT ?",
+            (cutoff, limit + len(exclude)),
+        )
+        for uid, count in rows or []:
+            if str(uid) in exclude:
+                continue
+            try:
+                out.append((int(uid), int(count)))
+            except (TypeError, ValueError):
+                continue
+            if len(out) >= limit:
+                break
+    except Exception as e:
+        logger.debug("Failed to fetch most active users: %s", e)
+    return out
+
+
+async def build_group_roster_context(
+    client: Optional[discord.Client],
+    guild: Any,
+    must_include: Optional[List[Any]] = None,
+    max_members: int = 6,
+    per_member: int = 7,
+    bot_id: Optional[int] = None,
+) -> str:
+    """A roster of real, active members with a few characteristic messages each, for group portraits.
+
+    Explicitly mentioned users come first, then the most active humans in the archive. Bots and anyone we
+    can't resolve to a member are skipped, so the image only ever contains real people.
+    """
+    bot_id = bot_id or BOT_ID
+    chosen: List[Tuple[int, str]] = []
+    seen: set = set()
+
+    def _resolve(uid: int) -> Optional[Any]:
+        member = None
+        if guild is not None and hasattr(guild, "get_member"):
+            try:
+                member = guild.get_member(uid)
+            except Exception:
+                member = None
+        if member is None and client is not None and hasattr(client, "get_user"):
+            try:
+                member = client.get_user(uid)
+            except Exception:
+                member = None
+        return member
+
+    for u in must_include or []:
+        uid = getattr(u, "id", None)
+        if uid is None or uid in seen or uid == bot_id or getattr(u, "bot", False):
+            continue
+        seen.add(uid)
+        chosen.append((uid, _member_display_name(u)))
+
+    if len(chosen) < max_members:
+        active = await asyncio.to_thread(fetch_most_active_users, 30, max_members * 3, [bot_id, *seen])
+        for uid, _count in active:
+            if uid in seen:
+                continue
+            member = _resolve(uid)
+            if member is None or getattr(member, "bot", False):
+                continue
+            seen.add(uid)
+            chosen.append((uid, _member_display_name(member)))
+            if len(chosen) >= max_members:
+                break
+
+    if not chosen:
+        return ""
+
+    server_name = getattr(guild, "name", None) or "the server"
+    lines = [
+        f"SERVER MEMBER ROSTER FOR {server_name} (these {len(chosen)} people are the ONLY people who may appear; "
+        "depict each one once, recognisably, from their own messages; invent nobody):"
+    ]
+    for uid, name in chosen:
+        try:
+            sample = await asyncio.to_thread(fetch_user_recent_chat, client, uid, None, per_member, True, per_member)
+        except Exception:
+            sample = []
+        lines.append(f"\nMEMBER: {name} (<@{uid}>)")
+        if sample:
+            for r in sample[-per_member:]:
+                content = (r.get("content") or "").replace("\n", " ").strip()
+                if len(content) > 140:
+                    content = content[:140] + "…"
+                lines.append(f"  - {content}")
+        else:
+            lines.append("  - [no recent messages on record]")
+    return "\n".join(lines)
 
 
 def generate_one_off_reply(
@@ -3070,8 +3258,19 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             # happened to be mentioned or talking nearby.
             context = await ensure_target_history_in_context(client, message, context, target_id, target_name, prompt=clean_prompt, bot_id=bot_id)
 
+            is_group = subject == "group" or (intent is None and looks_like_group_request(clean_prompt))
+            if is_group:
+                # A group picture needs real people: hand the synthesiser a roster of actual members.
+                roster = await build_group_roster_context(
+                    client, getattr(message, "guild", None), must_include=other_mentions, bot_id=bot_id,
+                )
+                if roster:
+                    context = f"{roster}\n\n{context}" if context else roster
+                if not target_name:
+                    target_name = f"the {getattr(getattr(message, 'guild', None), 'name', None) or 'server'} regulars"
+
             is_contextual = is_contextual_image_request(clean_prompt, other_mentions, context)
-            if target_id is not None:
+            if target_id is not None or is_group:
                 is_contextual = True
 
             if is_contextual:

@@ -1201,6 +1201,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("3 or 4 sequential panels", system)
         self.assertIn("RECURRING themes", system)
         self.assertIn("BANNED", system)
+        self.assertIn("GROUP PICTURES", system)
+        self.assertIn("never render made-up usernames", system)
         user = image_call["messages"][1]["content"]
         self.assertIn("HMS VICTORY IS IN THE PICTURE: yes", user)
         self.assertIn("PREVIOUS IMAGES ALREADY PRODUCED", user)
@@ -1258,6 +1260,133 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
 
         # No target: untouched
         self.assertEqual(await ensure_target_history_in_context(client, message, "ctx", None, None), "ctx")
+
+    def test_looks_like_group_request(self):
+        from lib.features.chat_responder import looks_like_group_request, resolve_image_target
+        for yes in [
+            "Can you generate an image that represents the various members of ukplace",
+            "draw everyone here as pirates",
+            "a group photo of the server",
+            "paint the lads down the pub",
+        ]:
+            self.assertTrue(looks_like_group_request(yes), yes)
+        for no in ["draw me", "what does steven look like", "generate a portrait of <@1>"]:
+            self.assertFalse(looks_like_group_request(no), no)
+        self.assertEqual(resolve_image_target("draw the members", 1, "Oggers", [], {}, subject="group"), (None, None))
+
+    @patch("database.DatabaseManager.fetch_all")
+    def test_fetch_most_active_users(self, mock_fetch):
+        from lib.features.chat_responder import fetch_most_active_users
+        mock_fetch.return_value = [("285860055570579457", 3774), ("1171842947440967770", 900), ("404634271861571584", 3052), ("bad", 1)]
+        res = fetch_most_active_users(days=30, limit=2, exclude_ids=[1171842947440967770])
+        self.assertEqual(res, [(285860055570579457, 3774), (404634271861571584, 3052)])
+        q, params = mock_fetch.call_args[0]
+        self.assertIn("GROUP BY user_id", q)
+        self.assertEqual(params[1], 3)
+
+    @patch("lib.features.chat_responder.fetch_user_recent_chat")
+    @patch("lib.features.chat_responder.fetch_most_active_users")
+    async def test_build_group_roster_context(self, mock_active, mock_chat):
+        from lib.features.chat_responder import build_group_roster_context
+
+        def member(uid, name, bot=False):
+            m = MagicMock(); m.id = uid; m.nick = name; m.global_name = None; m.display_name = name; m.name = name.lower(); m.bot = bot
+            return m
+        johnny, oggers, steven, somebot = member(1, "Johnny"), member(2, "oggers"), member(3, "Steven <3"), member(4, "Claude AI", bot=True)
+        guild = MagicMock(); guild.name = "ukplace"
+        guild.get_member.side_effect = lambda uid: {1: johnny, 2: oggers, 3: steven, 4: somebot}.get(uid)
+        mock_active.return_value = [(4, 5000), (1, 3774), (2, 3052), (99, 2000), (3, 2083)]
+        mock_chat.side_effect = lambda client, uid, ch, limit, spread, older: [{"content": f"msg from {uid}", "ts": 1}]
+
+        roster = await build_group_roster_context(None, guild, must_include=[steven], max_members=3, bot_id=777)
+
+        self.assertIn("SERVER MEMBER ROSTER FOR ukplace (these 3 people are the ONLY people who may appear", roster)
+        # mentioned user first, then most active humans; the bot and the unresolvable id 99 skipped
+        self.assertEqual(roster.index("MEMBER: Steven <3 (<@3>)") < roster.index("MEMBER: Johnny (<@1>)") < roster.index("MEMBER: oggers (<@2>)"), True)
+        self.assertNotIn("Claude AI", roster)
+        self.assertNotIn("<@99>", roster)
+        self.assertIn("  - msg from 1", roster)
+        self.assertEqual(mock_active.call_args[0][2], [777, 3])
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.build_group_roster_context", new_callable=AsyncMock)
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_group_request_uses_roster(
+        self, mock_classify, mock_find_img, mock_fetch_chat, _sample, _exchanges, mock_roster, mock_synth, mock_gen_img
+    ):
+        mock_classify.return_value = {"intent": "generate", "subject": "group", "subject_name": None, "reason": "server members", "input_tokens": 0, "output_tokens": 0}
+        mock_roster.return_value = "SERVER MEMBER ROSTER FOR ukplace (these 2 people are the ONLY people who may appear):\n\nMEMBER: Johnny (<@1>)\n  - up the pompey"
+        mock_synth.return_value = ("Johnny and oggers at a pub quiz", "<@1> Behold the regulars.", 10, 5)
+        mock_gen_img.return_value = (b"img", 20, 200)
+
+        client = MagicMock()
+        client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> Can you generate an image that represents the various members of ukplace", author_id=USERS.HADIDAS)
+        message.guild = MagicMock(); message.guild.name = "ukplace"
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        mock_roster.assert_called_once()
+        self.assertIn("SERVER MEMBER ROSTER", mock_synth.call_args[1]["context"])
+        self.assertEqual(mock_synth.call_args[1]["target_name"], "the ukplace regulars")
+        mock_gen_img.assert_called_once_with("Johnny and oggers at a pub quiz")
+
+    @patch("lib.features.chat_responder.fetch_most_active_users")
+    async def test_build_server_overview_context(self, mock_active):
+        from lib.features import chat_responder as cr
+
+        def member(uid, name, bot=False):
+            m = MagicMock(); m.id = uid; m.nick = name; m.global_name = None; m.display_name = name; m.name = name.lower(); m.bot = bot
+            return m
+        guild = MagicMock(); guild.id = 4242; guild.name = "ukplace"; guild.member_count = 1480
+        guild.get_member.side_effect = lambda uid: {1: member(1, "Johnny"), 2: member(2, "oggers"), 4: member(4, "Claude AI", bot=True)}.get(uid)
+        mock_active.return_value = [(4, 9000), (1, 3774), (2, 3052), (99, 500)]
+        cr._SERVER_OVERVIEW_CACHE.clear()
+
+        text = await cr.build_server_overview_context(None, guild, bot_id=777, limit=10)
+
+        self.assertIn("SERVER OVERVIEW: ukplace, 1480 members.", text)
+        self.assertIn("Johnny (<@1>, 3774 msgs); oggers (<@2>, 3052 msgs)", text)
+        self.assertNotIn("Claude AI", text)
+        self.assertNotIn("<@99>", text)
+        self.assertIn("never invent members", text)
+
+        # cached: second call doesn't hit the archive again
+        await cr.build_server_overview_context(None, guild, bot_id=777)
+        self.assertEqual(mock_active.call_count, 1)
+        cr._SERVER_OVERVIEW_CACHE.clear()
+        self.assertEqual(await cr.build_server_overview_context(None, None), "")
+
+    @patch("lib.features.chat_responder.build_server_overview_context", new_callable=AsyncMock, return_value="SERVER OVERVIEW: ukplace, 10 members.")
+    async def test_gather_one_off_context_includes_server_overview(self, mock_overview):
+        client = MagicMock(); client.user.id = 999
+        message = MagicMock()
+        message.reference = None
+        message.mentions = []
+        message.content = "who is shark daddy"
+        message.author.id = USERS.OGGERS
+        message.channel.name = "general"
+        async def async_history(*a, **k):
+            if False:
+                yield None
+        message.channel.history = async_history
+        message.guild = MagicMock(); message.guild.id = 1
+        async def no_events():
+            return []
+        message.guild.fetch_scheduled_events = no_events
+
+        context = await gather_one_off_context(client, message)
+        self.assertIn("SERVER OVERVIEW: ukplace, 10 members.", context)
+        mock_overview.assert_called_once()
 
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
