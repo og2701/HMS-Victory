@@ -87,7 +87,11 @@ STRICT RULES:
    - Never hallucinate or claim there are no games without searching first. Report what the search actually says; do not pad it with guesses.
    - NO CITATIONS: never include source links, URLs, footnotes, bracketed references, or "according to" attributions from search results, and never mention that you searched. Just state the facts. The only URLs you ever output are ones Oggers asked for from the server context (rule 5).
 8. NO MASS PINGS OR ROLES: NEVER mention, tag, or ping @everyone, @here, or any Discord roles under any circumstances.
-9. Output ONLY your direct response text. No preambles, no quotes, no filler."""
+9. DECLINING IN CHARACTER:
+   - If you won't or can't do something (e.g. identifying a real person from a photo), NEVER answer with a flat policy line like "I can't identify people from images."
+   - Decline the way you'd decline anything: dry, unimpressed, 1 to 2 sentences, with a dig at the request or at Oggers.
+   - Say what you CAN see or do instead. A blurred LinkedIn "someone viewed your profile" smudge is a grey circle behind a paywall; say so and take the mick, don't recite rules.
+10. Output ONLY your direct response text. No preambles, no quotes, no filler."""
 
 
 ONE_OFF_SYSTEM_PROMPT = build_one_off_system_prompt()
@@ -1344,6 +1348,92 @@ def is_openai_refusal(text: str) -> bool:
     return any(snippet in cleaned for snippet in OPENAI_REFUSAL_SNIPPETS)
 
 
+# A flat, out-of-character policy decline: "I can't identify people from images." and friends.
+# These aren't retried (dropping the image just makes the model dumber); they get rewritten in character.
+FLAT_DECLINE_RE = re.compile(
+    r"^\W*(?:i'?m\s+sorry,?\s*(?:but\s+)?|sorry,?\s*(?:but\s+)?|unfortunately,?\s*)?"
+    r"i(?:'m|\s+am)?\s*(?:can(?:'t|not)|cannot|won'?t\s+be\s+able\s+to|(?:am\s+)?(?:not\s+able|unable)\s+to)\s+"
+    r"(?:really\s+|actually\s+)?(?:help\s+(?:you\s+)?(?:with\s+)?)?"
+    r"(?:identify|recogni[sz]e|determine|verify|confirm|assist|provide|disclose|share|access|browse|analy[sz]e|"
+    r"(?:tell|say|figure\s+out|find\s+out|work\s+out)\s+(?:you\s+)?who|do\s+th(?:at|is)|comply|fulfil)",
+    re.IGNORECASE,
+)
+
+DECLINE_REWRITE_INSTRUCTIONS = """You are HMS Victory, a Discord bot with a notoriously dry, deadpan, cynical British persona.
+The server owner (Oggers) asked you to do something and you declined with a flat, corporate line. Rewrite that decline in your own voice.
+RULES:
+- Keep the substance: you are still not doing the thing. Do not do it now and do not hint that you might.
+- 1 to 2 short sentences, dry and unimpressed, with a light dig at the request or at Oggers. Never cheerful, never apologetic, no exclamation marks.
+- Never use "sorry", "unable", "assist", "as an AI", "policy", "guidelines" or any corporate filler. Do not explain rules. Decline like a bored British person would.
+- If the request involved an image you can't act on, say what such an image usually is (a blurred smudge, a paywalled preview, a screenshot) rather than reciting what you can't do.
+- No @everyone, @here, or role mentions.
+- Output ONLY the rewritten reply."""
+
+
+def is_flat_decline(text: str) -> bool:
+    """True when a reply is a bare, out-of-character policy decline rather than an in-character answer."""
+    return bool(text and FLAT_DECLINE_RE.search(text.strip()))
+
+
+def _post_openai_response(payload: dict, api_key: str, timeout: int) -> dict:
+    """POST a payload to the OpenAI Responses API and return the decoded JSON body."""
+    req = urllib.request.Request(
+        OPENAI_RESPONSES_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode())
+
+
+def rephrase_decline_in_character(
+    prompt_content: str,
+    decline_text: str,
+    api_key: str,
+    model: str = "gpt-4o",
+) -> Tuple[str, int, int]:
+    """Rewrite a flat policy decline in HMS Victory's voice via a cheap text-only call.
+
+    Returns (rewritten_text, input_tokens, output_tokens); rewritten_text is "" if the rewrite failed
+    or came back just as flat, in which case the caller should keep what it had.
+    """
+    rewrite_input = (
+        f"{prompt_content.strip()}\n\n"
+        f"YOUR FLAT DECLINE THAT NEEDS REWRITING:\n\"{decline_text.strip()}\"\n\n"
+        "Rewrite the decline in character."
+    )
+    payload = {
+        "model": model,
+        "instructions": DECLINE_REWRITE_INSTRUCTIONS,
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": rewrite_input}]}],
+        "max_output_tokens": 120,
+        "temperature": 0.9,
+        "store": False,
+    }
+    try:
+        data = _post_openai_response(payload, api_key, ONE_OFF_TIMEOUT_SECONDS)
+    except Exception as e:
+        logger.warning("Decline rewrite call failed: %s", e)
+        return "", 0, 0
+
+    usage = data.get("usage") or {}
+    p_tokens = usage.get("input_tokens", 0)
+    c_tokens = usage.get("output_tokens", 0)
+
+    if data.get("status") == "failed" or data.get("error"):
+        logger.warning("Decline rewrite returned error: %s", (data.get("error") or {}).get("message"))
+        return "", p_tokens, c_tokens
+
+    text, refusal, _, _ = parse_openai_response_output(data)
+    if refusal or not text or is_openai_refusal(text) or is_flat_decline(text):
+        logger.warning("Decline rewrite came back unusable: %r / %r", refusal, text)
+        return "", p_tokens, c_tokens
+    return text, p_tokens, c_tokens
+
+
 def generate_one_off_reply(
     prompt: str,
     context: str = "",
@@ -1404,20 +1494,8 @@ def generate_one_off_reply(
             # Force the search on the first go for live queries; if that attempt fails, let the model decide.
             payload["tool_choice"] = "required" if (force_search and attempt == 1) else "auto"
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-
-        req = urllib.request.Request(
-            OPENAI_RESPONSES_URL,
-            data=json.dumps(payload).encode("utf-8"),
-            headers=headers,
-        )
-
         try:
-            with urllib.request.urlopen(req, timeout=ONE_OFF_TIMEOUT_SECONDS) as resp:
-                data = json.loads(resp.read().decode())
+            data = _post_openai_response(payload, api_key, ONE_OFF_TIMEOUT_SECONDS)
 
             usage = data.get("usage") or {}
             total_p_tokens += usage.get("input_tokens", 0)
@@ -1451,6 +1529,14 @@ def generate_one_off_reply(
                     continue
                 last_error = f"Refusal content: {content}"
                 continue
+
+            if is_flat_decline(content):
+                logger.info("One-off reply was a flat decline, rewriting in character: %r", content)
+                rewritten, rp, rc = rephrase_decline_in_character(prompt_content, content, api_key, model)
+                total_p_tokens += rp
+                total_c_tokens += rc
+                if rewritten:
+                    content = rewritten
 
             if content:
                 if status == "incomplete":

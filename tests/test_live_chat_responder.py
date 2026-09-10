@@ -115,6 +115,7 @@ from lib.features.chat_responder import (
     strip_search_citations,
     looks_like_live_query,
     parse_openai_response_output,
+    is_flat_decline,
     _handled_one_off_message_ids,
 )
 from config import USERS
@@ -333,6 +334,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("poem", ONE_OFF_SYSTEM_PROMPT.lower())
         self.assertIn("TEMPORAL ANCHOR", ONE_OFF_SYSTEM_PROMPT)
         self.assertIn("TODAY'S REAL-WORLD DATE", ONE_OFF_SYSTEM_PROMPT)
+        self.assertIn("DECLINING IN CHARACTER", ONE_OFF_SYSTEM_PROMPT)
 
     @patch("urllib.request.urlopen")
     def test_generate_one_off_reply_payload(self, mock_urlopen):
@@ -765,6 +767,75 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(content, "Stevenage host Luton at 20:00 tonight. Wycombe are top of the table.")
         self.assertEqual((p_tok, c_tok), (400, 60))
         # Native search is a single round trip: no follow-up completion, no scraper call
+        self.assertEqual(mock_urlopen.call_count, 1)
+
+    def test_is_flat_decline(self):
+        for flat in [
+            "I can't identify people from images.",
+            "I'm sorry, but I cannot identify who this is.",
+            "I'm unable to determine who that is.",
+            "Sorry, I can't help with identifying individuals in photos.",
+            "I can't assist with that request.",
+            "Unfortunately I'm not able to verify who this person is.",
+        ]:
+            self.assertTrue(is_flat_decline(flat), flat)
+        for fine in [
+            "I can't believe you've asked me that. It's a grey smudge behind LinkedIn's paywall, mate.",
+            "Chin, you absolute donut.",
+            "Stevenage host Luton at 20:00 tonight.",
+            "",
+            "   ",
+        ]:
+            self.assertFalse(is_flat_decline(fine), fine)
+
+    @patch("urllib.request.urlopen")
+    def test_generate_one_off_reply_rewrites_flat_decline(self, mock_urlopen):
+        mock_urlopen.side_effect = [
+            _mock_resp(_responses_body("I can't identify people from images.", usage=(300, 10))),
+            _mock_resp(_responses_body("It's a grey smudge behind LinkedIn's paywall, mate. Even I can't unblur a premium upsell.", usage=(120, 25))),
+        ]
+
+        content, p_tok, c_tok = generate_one_off_reply(
+            prompt="find out who this is",
+            context="RECENT CHAT IN #general:\nroshyrowe: Someone viewed my profile. A great mystery",
+            image_urls=["https://cdn.discordapp.com/attachments/1/2/blur.png"],
+            openai_key="test-key",
+        )
+
+        self.assertEqual(content, "It's a grey smudge behind LinkedIn's paywall, mate. Even I can't unblur a premium upsell.")
+        self.assertEqual((p_tok, c_tok), (420, 35))
+        self.assertEqual(mock_urlopen.call_count, 2)
+
+        rewrite = _sent_payload(mock_urlopen, 1)
+        self.assertNotIn("tools", rewrite)
+        self.assertIn("declined", rewrite["instructions"])
+        parts = rewrite["input"][0]["content"]
+        self.assertEqual([p["type"] for p in parts], ["input_text"])
+        self.assertIn("I can't identify people from images.", parts[0]["text"])
+        self.assertIn("find out who this is", parts[0]["text"])
+        self.assertIn("roshyrowe", parts[0]["text"])
+
+    @patch("time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_generate_one_off_reply_keeps_decline_when_rewrite_fails(self, mock_urlopen, _sleep):
+        mock_urlopen.side_effect = [
+            _mock_resp(_responses_body("I can't identify people from images.", usage=(300, 10))),
+            OSError("network down"),
+        ]
+
+        content, p_tok, c_tok = generate_one_off_reply(prompt="find out who this is", openai_key="test-key")
+
+        self.assertEqual(content, "I can't identify people from images.")
+        self.assertEqual((p_tok, c_tok), (300, 10))
+        self.assertEqual(mock_urlopen.call_count, 2)
+
+    @patch("urllib.request.urlopen")
+    def test_generate_one_off_reply_in_character_reply_not_rewritten(self, mock_urlopen):
+        mock_urlopen.return_value = _mock_resp(_responses_body("I can't believe you've asked me that. It's a grey smudge, mate."))
+
+        content, _, _ = generate_one_off_reply(prompt="find out who this is", openai_key="test-key")
+
+        self.assertEqual(content, "I can't believe you've asked me that. It's a grey smudge, mate.")
         self.assertEqual(mock_urlopen.call_count, 1)
 
     def test_strip_search_citations(self):
