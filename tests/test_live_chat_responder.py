@@ -1174,15 +1174,14 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(recent_image_prompts_from_history(5, []), [])
 
     @patch("urllib.request.urlopen")
-    def test_synthesize_contextual_image_prompt_honours_format_and_previous(self, mock_urlopen):
+    def test_synthesize_contextual_image_prompt_splits_image_and_caption(self, mock_urlopen):
         from lib.features.chat_responder import synthesize_contextual_image_prompt
 
-        mock_urlopen.return_value = _mock_resp(json.dumps({
-            "choices": [{"message": {"content": json.dumps({"image_prompt": "A four-panel comic strip...", "caption": "Behold."})}}],
-            "usage": {"prompt_tokens": 200, "completion_tokens": 60},
-        }).encode())
+        def chat(body):
+            return _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}}], "usage": {"prompt_tokens": 100, "completion_tokens": 30}}).encode())
+        mock_urlopen.side_effect = [chat({"image_prompt": "A four-panel comic strip..."}), chat({"caption": "Behold."})]
 
-        img_prompt, caption, _, _ = synthesize_contextual_image_prompt(
+        img_prompt, caption, p_tok, c_tok = synthesize_contextual_image_prompt(
             prompt="generate a cartoon strip of steven interacting with you",
             context="HISTORY BETWEEN Steven (<@1>) AND HMS VICTORY (1 messages):\n- Steven: Vic loves me",
             user_name="Oggers", caller_role="server owner", target_name="Steven",
@@ -1190,29 +1189,46 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             previous_image_prompts=["Steven in a Jaffa Cakes Fanatic t-shirt holding a Lamborghini energy drink"],
         )
 
-        self.assertEqual(img_prompt, "A four-panel comic strip...")
-        payload = _sent_payload(mock_urlopen)
-        system = payload["messages"][0]["content"]
+        self.assertEqual((img_prompt, caption), ("A four-panel comic strip...", "Behold."))
+        self.assertEqual((p_tok, c_tok), (200, 60))
+
+        # Call 1: image prompt, no persona anywhere in it
+        image_call = _sent_payload(mock_urlopen, 0)
+        system = image_call["messages"][0]["content"]
+        self.assertNotIn("HMS Victory,", system)
+        self.assertNotIn("You are HMS Victory", system)
         self.assertIn("HONOUR THE REQUESTED FORMAT", system)
         self.assertIn("3 or 4 sequential panels", system)
         self.assertIn("RECURRING themes", system)
-        self.assertIn("HISTORY BETWEEN", system)
-        self.assertIn("THE PICTURE IS ABOUT THEM, NOT ABOUT YOU", system)
-        user = payload["messages"][1]["content"]
+        self.assertIn("BANNED", system)
+        user = image_call["messages"][1]["content"]
         self.assertIn("HMS VICTORY IS IN THE PICTURE: yes", user)
         self.assertIn("PREVIOUS IMAGES ALREADY PRODUCED", user)
-        self.assertIn("BANNED", user)
-        self.assertIn("BANNED from this image", system)
         self.assertIn("Jaffa Cakes Fanatic", user)
-        self.assertEqual(payload["max_tokens"], 400)
+        self.assertIn("Vic loves me", user)
 
-        # A plain portrait request keeps the bot out of the frame
-        synthesize_contextual_image_prompt(
+        # Call 2: caption, persona on, given the finished image prompt
+        caption_call = _sent_payload(mock_urlopen, 1)
+        self.assertIn("You are HMS Victory", caption_call["messages"][0]["content"])
+        self.assertIn("THE IMAGE SHOWS: A four-panel comic strip...", caption_call["messages"][1]["content"])
+
+    @patch("urllib.request.urlopen")
+    def test_synthesize_contextual_image_prompt_plain_request_keeps_bot_out(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_contextual_image_prompt
+
+        def chat(body):
+            return _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}}], "usage": {}}).encode())
+        mock_urlopen.side_effect = [chat({"image_prompt": "A man with a coffee"}), OSError("caption service down")]
+
+        img_prompt, caption, _, _ = synthesize_contextual_image_prompt(
             prompt="based on <@111> message history, what do you think he looks like",
             context="", user_name="Oggers", caller_role="server owner", target_name="Kaiz", openai_key="test-key",
         )
-        user2 = _sent_payload(mock_urlopen)["messages"][1]["content"]
-        self.assertIn("HMS VICTORY IS IN THE PICTURE: no", user2)
+
+        self.assertEqual(img_prompt, "A man with a coffee")
+        self.assertIn("HMS VICTORY IS IN THE PICTURE: no", _sent_payload(mock_urlopen, 0)["messages"][1]["content"])
+        # caption call died: canned caption, image prompt still returned
+        self.assertEqual(caption, "Here is your image. Try not to strain your eyes.")
 
     @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock)
     @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock)
@@ -2049,7 +2065,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(prompt, "A comical oil painting of a British football fan in flat cap holding tea")
         self.assertEqual(caption, "Here is Top chap in all their glory. Do try to contain your admiration.")
-        self.assertEqual((p_tok, c_tok), (120, 45))
+        # image prompt call + caption call
+        self.assertEqual(mock_urlopen.call_count, 2)
+        self.assertEqual((p_tok, c_tok), (240, 90))
 
     @patch("lib.features.chat_responder.generate_image_openai")
     @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")

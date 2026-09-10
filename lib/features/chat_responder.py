@@ -750,6 +750,128 @@ def format_user_chat_for_context(
     return f"{header} {user_name} (<@{user_id}>) ({len(lines)} messages):\n" + "\n".join(lines)
 
 
+IMAGE_PROMPT_WRITER_INSTRUCTIONS = """You write prompts for an AI image generator (DALL-E / diffusion). You are given a request and a Discord user's message history. Your only job is to turn what that history reveals about the person into one purely visual image prompt.
+
+RULES:
+1. Build the picture from RECURRING themes across the whole history (hobbies, pets, catchphrases, food and drink habits, opinions, running jokes, how they talk to people), not from whatever they said most recently. A single mention is not a trait.
+2. Under 110 words. Purely visual: physical caricature, expression, attire, props in hand, setting. No names, Discord tags, usernames, or meta instructions.
+3. HONOUR THE REQUESTED FORMAT, MEDIUM AND STYLE EXACTLY. 'cartoon strip' / 'comic strip' / 'comic' means ONE image laid out as 3 or 4 sequential panels telling a simple gag, with at most a few words of speech-bubble text. 'photorealistic' / 'photo' means a realistic photograph, not a caricature. 'cartoon', 'anime', 'oil painting', 'pixel art', 'sketch' and the like mean exactly that. Only pick a style when none was requested, and pick one that suits the person and the gag (satirical caricature, comic-book illustration, editorial cartoon, storybook illustration, watercolour, retro poster...).
+4. Everything in the image must come from the request and the history. Do not add nationality, patriotic, military, naval or period imagery unless the history is genuinely about it.
+5. The payload states whether HMS VICTORY IS IN THE PICTURE. If yes, add a second character: a weathered 18th-century first-rate ship of the line with a stern, unimpressed personality (the ship itself with a disapproving air, or a stern naval officer figurehead), interacting with the person the way their HISTORY BETWEEN transcript suggests. If no, there must be no ship, sailors or naval officers of any kind.
+6. If PREVIOUS IMAGES are listed, every prop, food, drink, outfit, slogan, setting and gag in them is BANNED, even if the history mentions them again. Use different material; there is always more.
+
+Respond ONLY with a JSON object: {"image_prompt": "..."}"""
+
+
+def _chat_completion_json(
+    system_prompt: str,
+    user_payload: str,
+    api_key: str,
+    model: str = "gpt-4o",
+    max_tokens: int = 300,
+    temperature: float = 0.85,
+    timeout: int = 30,
+    what: str = "OpenAI chat completion",
+) -> Tuple[Dict[str, Any], int, int]:
+    """POST a JSON-mode chat completion and return (parsed_json, prompt_tokens, completion_tokens)."""
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_payload},
+        ],
+        "response_format": {"type": "json_object"},
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with _urlopen_with_retry(req, timeout, what=what) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    usage = data.get("usage") or {}
+    content = data["choices"][0]["message"]["content"]
+    return json.loads(content), usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
+
+
+def synthesize_image_prompt_from_context(
+    prompt: str,
+    context: str,
+    include_bot: bool = False,
+    previous_image_prompts: Optional[List[str]] = None,
+    openai_key: Optional[str] = None,
+    model: str = "gpt-4o",
+    timeout: int = 30,
+) -> Tuple[str, int, int]:
+    """Write the image generator prompt from the request and the subject's history alone. No persona involved.
+
+    Returns (image_prompt, prompt_tokens, completion_tokens). Raises on API failure.
+    """
+    api_key = openai_key or os.getenv("OPENAI_TOKEN")
+    if not api_key:
+        raise ValueError("OPENAI_TOKEN is not configured.")
+
+    user_payload = f"REQUEST: \"{prompt}\""
+    user_payload += (
+        "\nHMS VICTORY IS IN THE PICTURE: yes (add the bot as a second character interacting with the subject)"
+        if include_bot else
+        "\nHMS VICTORY IS IN THE PICTURE: no (no ship, sailors or naval officers in any form)"
+    )
+    if previous_image_prompts:
+        listed = "\n".join(f"- {p[:220]}" for p in previous_image_prompts if p)
+        user_payload += f"\n\nPREVIOUS IMAGES ALREADY PRODUCED (their props, foods, outfits, settings and gags are BANNED this time):\n{listed}"
+    if context.strip():
+        user_payload += f"\n\nMESSAGE HISTORY & CONTEXT:\n{context.strip()}"
+
+    parsed, p_tokens, c_tokens = _chat_completion_json(
+        IMAGE_PROMPT_WRITER_INSTRUCTIONS, user_payload, api_key,
+        model=model, max_tokens=350, temperature=0.85, timeout=timeout, what="Image prompt synthesis",
+    )
+    return (parsed.get("image_prompt") or "").strip(), p_tokens, c_tokens
+
+
+def synthesize_image_caption(
+    prompt: str,
+    image_prompt: str,
+    context: str,
+    user_name: str,
+    caller_role: str,
+    target_name: Optional[str] = None,
+    openai_key: Optional[str] = None,
+    model: str = "gpt-4o",
+    timeout: int = 20,
+) -> Tuple[str, int, int]:
+    """Write HMS Victory's dry 1-2 sentence caption for a finished image. Returns (caption, prompt_tokens, completion_tokens)."""
+    api_key = openai_key or os.getenv("OPENAI_TOKEN")
+    if not api_key:
+        raise ValueError("OPENAI_TOKEN is not configured.")
+
+    target_str = f" of '{target_name}'" if target_name else ""
+    system_prompt = (
+        "You are HMS Victory, a cynical, deadpan 18th-century British Royal Navy first-rate ship of the line AI.\n"
+        f"Server leadership ({user_name}, {caller_role}) commanded you to produce an image{target_str}, and it is done.\n"
+        "Write the 1-2 sentence caption in your voice introducing the picture and dryly roasting them based on their records or the request. "
+        "Aristocratic 18th-century naval tone, blunt and unimpressed. No corporate filler, no AI disclaimers, no exclamation marks. "
+        "Do not describe the image in detail; the picture does that.\n\n"
+        "Respond ONLY with a JSON object: {\"caption\": \"...\"}"
+    )
+    user_payload = f"REQUEST: \"{prompt}\"\nSUBJECT: {target_name or 'not a specific person'}\nTHE IMAGE SHOWS: {image_prompt[:600]}"
+    if context.strip():
+        user_payload += f"\n\nTHEIR RECORDS (for roast material):\n{context.strip()[:2500]}"
+
+    parsed, p_tokens, c_tokens = _chat_completion_json(
+        system_prompt, user_payload, api_key,
+        model=model, max_tokens=120, temperature=0.9, timeout=timeout, what="Image caption synthesis",
+    )
+    return (parsed.get("caption") or "").strip(), p_tokens, c_tokens
+
+
 def synthesize_contextual_image_prompt(
     prompt: str,
     context: str,
@@ -762,105 +884,35 @@ def synthesize_contextual_image_prompt(
     previous_image_prompts: Optional[List[str]] = None,
     include_bot: Optional[bool] = None,
 ) -> Tuple[str, str, int, int]:
-    """Synthesize a rich, descriptive visual image prompt and an in-character Vic roast caption from context.
+    """Produce (image_prompt, caption, prompt_tokens, completion_tokens) for a contextual portrait.
 
-    Returns (image_prompt, caption, prompt_tokens, completion_tokens).
+    Two separate calls: the image prompt is written from the request and history only, with no
+    persona in play, so the bot's naval framing can't leak into other people's pictures; the caption
+    is written afterwards in HMS Victory's voice.
     """
-    api_key = openai_key or os.getenv("OPENAI_TOKEN")
-    if not api_key:
-        raise ValueError("OPENAI_TOKEN is not configured.")
-
-    target_str = f" for user '{target_name}'" if target_name else ""
     if include_bot is None:
         include_bot = prompt_references_bot(prompt)
-    system_prompt = (
-        "You are HMS Victory, a cynical, deadpan 18th-century British Royal Navy first-rate ship of the line AI.\n"
-        f"Server leadership ({user_name}, {caller_role}) has commanded you to produce an image or caricature{target_str}.\n"
-        "You are provided with the user's command and relevant Discord server/chat history context.\n\n"
-        "Your objectives:\n"
-        "1. Analyze the user's request and the provided message history. Build the caricature from RECURRING themes across the whole "
-        "sampled history (hobbies, pets, catchphrases, food and drink habits, opinions, running jokes, how they talk to people), "
-        "not from whatever they happened to say in the last hour. A single mention of something is not a personality trait.\n"
-        "2. Formulate a rich, detailed visual description prompt (under 110 words) for an AI image generator (like DALL-E / diffusion model).\n"
-        "   - The prompt MUST be purely visual: describe their physical caricature, facial expression, attire, props in their hands, "
-        "and detailed environment/background reflecting their messages, topics, and quirks.\n"
-        "   - HONOUR THE REQUESTED FORMAT, MEDIUM AND STYLE EXACTLY. 'cartoon strip' / 'comic strip' / 'comic' means ONE image laid out as "
-        "3 or 4 sequential panels telling a simple gag, with at most a few words of speech-bubble text. 'photorealistic' / 'photo' means a "
-        "realistic photograph, not a caricature. 'cartoon', 'anime', 'oil painting', 'pixel art', 'sketch' and the like mean exactly that. "
-        "Only choose the style yourself when none was requested, and choose it to suit the PERSON and the gag: satirical caricature, "
-        "comic-book illustration, editorial cartoon, storybook illustration, photorealistic, watercolour, retro poster, anime, and so on.\n"
-        "   - THE PICTURE IS ABOUT THEM, NOT ABOUT YOU. Build the scene, outfit and props from the subject's own messages. Do NOT default to "
-        "British, patriotic or naval imagery (Union Jacks, ships, sailors, naval uniforms, tricorn hats, 'British' signage, 18th-century settings) "
-        "unless their history is genuinely about those things. Your naval persona belongs in the caption only.\n"
-        "   - The user payload states whether HMS VICTORY IS IN THE PICTURE. If yes, include the bot as a second character interacting with "
-        "the person: a weathered 18th-century first-rate ship of the line with a stern, unimpressed personality (the ship itself with a "
-        "disapproving air, or a stern naval officer figurehead), drawing on the HISTORY BETWEEN section. If no, the bot, the ship and any "
-        "naval officer must not appear in any form.\n"
-        "   - If PREVIOUS IMAGES are listed, every prop, food, drink, outfit, slogan, setting and gag in them is BANNED from this image, "
-        "even if the history mentions them again. Pick different material from the history; there is always more.\n"
-        "   - Do NOT include Discord tags, usernames, or meta instructions in the image prompt itself; keep it purely descriptive imagery.\n"
-        "3. Formulate a witty, deadpan 1-2 sentence caption in HMS Victory's voice introducing the portrait and dryly roasting them based on their records or the prompt. "
-        "Maintain an aristocratic 18th-century naval tone. Never use corporate filler or AI disclaimers.\n\n"
-        "Respond ONLY with a JSON object:\n"
-        "{\n"
-        '  "image_prompt": "...",\n'
-        '  "caption": "..."\n'
-        "}"
+
+    img_prompt, p_tokens, c_tokens = synthesize_image_prompt_from_context(
+        prompt, context, include_bot=include_bot, previous_image_prompts=previous_image_prompts,
+        openai_key=openai_key, model=model, timeout=timeout,
     )
+    if not img_prompt:
+        img_prompt = extract_image_prompt(prompt)
 
-    user_payload = f"COMMAND: \"{prompt}\""
-    user_payload += (
-        "\nHMS VICTORY IS IN THE PICTURE: yes (draw the bot as a second character interacting with the subject)"
-        if include_bot else
-        "\nHMS VICTORY IS IN THE PICTURE: no (do not draw the bot, the ship, sailors or naval officers in any form)"
-    )
-    if previous_image_prompts:
-        listed = "\n".join(f"- {p[:220]}" for p in previous_image_prompts if p)
-        user_payload += f"\n\nPREVIOUS IMAGES ALREADY PRODUCED (their props, foods, outfits, settings and gags are BANNED this time):\n{listed}"
-    if context.strip():
-        user_payload += f"\n\nSERVER & MESSAGE CONTEXT:\n{context.strip()}"
-
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_payload},
-        ],
-        "response_format": {"type": "json_object"},
-        "max_tokens": 400,
-        "temperature": 0.85,
-    }
-
-    url = "https://api.openai.com/v1/chat/completions"
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-
-    usage = data.get("usage") or {}
-    p_tokens = usage.get("prompt_tokens", 0)
-    c_tokens = usage.get("completion_tokens", 0)
-
+    caption = ""
     try:
-        content = data["choices"][0]["message"]["content"]
-        parsed = json.loads(content)
-        img_prompt = (parsed.get("image_prompt") or "").strip()
-        caption = (parsed.get("caption") or "").strip()
-        if not img_prompt:
-            img_prompt = extract_image_prompt(prompt)
-        if not caption:
-            caption = "Here is your image. Try not to strain your eyes."
-        return img_prompt, caption, p_tokens, c_tokens
+        caption, cp, cc = synthesize_image_caption(
+            prompt, img_prompt, context, user_name, caller_role, target_name=target_name,
+            openai_key=openai_key, model=model,
+        )
+        p_tokens += cp
+        c_tokens += cc
     except Exception as e:
-        logger.warning("Failed to parse synthesized image prompt JSON: %s", e)
-        return extract_image_prompt(prompt), "Here is your image. Try not to strain your eyes.", p_tokens, c_tokens
+        logger.warning("Image caption synthesis failed, using canned caption: %s", e)
+    if not caption:
+        caption = "Here is your image. Try not to strain your eyes."
+    return img_prompt, caption, p_tokens, c_tokens
 
 
 def synthesize_image_edit_prompt(
