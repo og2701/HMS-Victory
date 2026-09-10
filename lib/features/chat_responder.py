@@ -3359,8 +3359,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             live_chat_manager.record_usage(IMAGE_GEN_MODEL, p_tokens, c_tokens, is_reply=True)
 
             if caller_id != USERS.OGGERS:
-                new_remaining = max(0, remaining - 1)
-                caption += f"\n-# *({new_remaining} image generation{'s' if new_remaining != 1 else ''} left today)*"
+                logger.info("Image quota for %s (%s): %d left today", caller_name, caller_id, max(0, remaining - 1))
 
             file = discord.File(io.BytesIO(img_bytes), filename="vic_creation.png")
             await message.reply(caption, file=file, mention_author=True)
@@ -3457,8 +3456,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 live_chat_manager.record_usage(IMAGE_GEN_MODEL, p_tokens, c_tokens, is_reply=True)
 
                 if caller_id != USERS.OGGERS:
-                    new_remaining = max(0, remaining - 1)
-                    caption += f"\n-# *({new_remaining} image generation{'s' if new_remaining != 1 else ''} left today)*"
+                    logger.info("Image quota for %s (%s): %d left today", caller_name, caller_id, max(0, remaining - 1))
 
                 file = discord.File(io.BytesIO(img_bytes), filename="vic_creation.png")
                 await message.reply(caption, file=file, mention_author=True)
