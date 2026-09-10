@@ -31,6 +31,7 @@ if "discord" not in sys.modules:
     discord.Embed = MockEmbed
     discord.Client = type("Client", (), {})
     discord.Message = type("Message", (), {})
+    discord.Attachment = type("Attachment", (), {})
     discord.Guild = type("Guild", (), {})
     discord.TextChannel = type("TextChannel", (), {})
     discord.Interaction = type("Interaction", (), {})
@@ -1500,6 +1501,138 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         message.reply.assert_called_once()
         reply_caption = message.reply.call_args[0][0]
         self.assertIn("Top chap's records", reply_caption)
+        self.assertIn("file", message.reply.call_args[1])
+
+    def test_looks_like_image_edit_request(self):
+        from lib.features.chat_responder import looks_like_image_edit_request
+
+        self.assertTrue(looks_like_image_edit_request("bit generous with the hair there"))
+        self.assertTrue(looks_like_image_edit_request("give that hair to piggy"))
+        self.assertTrue(looks_like_image_edit_request("make him balder"))
+        self.assertTrue(looks_like_image_edit_request("remove the Amazon boxes"))
+        self.assertTrue(looks_like_image_edit_request("put a pint of Guinness in his hand"))
+        self.assertTrue(looks_like_image_edit_request("less hair please"))
+        self.assertTrue(looks_like_image_edit_request("change the background to a tavern"))
+        self.assertTrue(looks_like_image_edit_request("turn him into a goblin"))
+
+        self.assertFalse(looks_like_image_edit_request("that is hilarious"))
+        self.assertFalse(looks_like_image_edit_request("hello vic how are you"))
+        self.assertFalse(looks_like_image_edit_request("who won the football match?"))
+
+    @patch("urllib.request.urlopen")
+    def test_edit_image_openai_success(self, mock_urlopen):
+        import base64
+        from lib.features.chat_responder import edit_image_openai
+
+        fake_resp_body = {
+            "created": 1700000000,
+            "data": [{"b64_json": base64.b64encode(b"edited_png_data").decode("utf-8")}],
+            "usage": {"input_tokens": 40, "output_tokens": 180}
+        }
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(fake_resp_body).encode("utf-8")
+        mock_resp.__enter__.return_value = mock_resp
+        mock_urlopen.return_value = mock_resp
+
+        img_bytes, p_tok, c_tok = edit_image_openai(
+            image_bytes=b"original_png_data",
+            prompt="Make him balder",
+            openai_key="test-key"
+        )
+        self.assertEqual(img_bytes, b"edited_png_data")
+        self.assertEqual((p_tok, c_tok), (40, 180))
+
+        req = mock_urlopen.call_args[0][0]
+        self.assertEqual(req.get_method(), "POST")
+        self.assertIn("multipart/form-data", req.get_header("Content-type"))
+        self.assertIn(b"gpt-image-2.5-flare", req.data)
+        self.assertIn(b"original_png_data", req.data)
+
+    @patch("urllib.request.urlopen")
+    def test_synthesize_image_edit_prompt(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_image_edit_prompt
+
+        fake_resp_body = {
+            "choices": [{
+                "message": {
+                    "content": json.dumps({
+                        "edit_type": "edit",
+                        "image_prompt": "Remove the hair on his crown, making him noticeably balder with receding wisps",
+                        "caption": "A haircut conducted with naval efficiency. Try not to blind anyone with the reflection."
+                    })
+                }
+            }],
+            "usage": {"prompt_tokens": 110, "completion_tokens": 35}
+        }
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(fake_resp_body).encode("utf-8")
+        mock_resp.__enter__.return_value = mock_resp
+        mock_urlopen.return_value = mock_resp
+
+        edit_type, img_prompt, caption, p_tok, c_tok = synthesize_image_edit_prompt(
+            prompt="bit generous with the hair there",
+            prev_prompt="A caricature of Johnny with thick wavy hair and Amazon boxes",
+            user_name="Oggers",
+            caller_role="Owner",
+            target_name="Johnny",
+            openai_key="test-key"
+        )
+        self.assertEqual(edit_type, "edit")
+        self.assertIn("balder", img_prompt)
+        self.assertIn("haircut", caption)
+        self.assertEqual((p_tok, c_tok), (110, 35))
+
+    @patch("lib.features.chat_responder.edit_image_openai")
+    @patch("lib.features.chat_responder.synthesize_image_edit_prompt")
+    @patch("lib.features.chat_responder.find_recent_image_attachment")
+    async def test_handle_one_off_image_edit_flow(self, mock_find_img, mock_synth_edit, mock_edit_img):
+        from lib.features.chat_responder import handle_one_off_owner_mention
+
+        mock_att = MagicMock()
+        mock_att.filename = "vic_creation.png"
+        mock_att.read = AsyncMock(return_value=b"original_img_bytes")
+
+        prev_msg = MagicMock()
+        prev_msg.content = "Here is Johnny's caricature."
+        mock_find_img.return_value = (prev_msg, mock_att, "A caricature of Johnny with thick hair")
+
+        mock_synth_edit.return_value = (
+            "edit",
+            "Make him noticeably balder with thinning hair",
+            "<@404634271861571584> I have revised his hairline downward.",
+            100, 30
+        )
+        mock_edit_img.return_value = (b"edited_img_bytes", 35, 190)
+
+        client = MagicMock()
+        client.user.id = 999999999
+
+        message = MagicMock()
+        message.id = 88888888
+        message.author.id = USERS.OGGERS
+        message.author.name = "ogme01"
+        message.content = f"<@{client.user.id}> bit generous with the hair there"
+        message.mentions = [client.user]
+        message.reference = MagicMock()
+        message.reference.message_id = 77777777
+        message.channel.history = MagicMock()
+        message.reply = AsyncMock()
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        mock_find_img.assert_called_once()
+        mock_synth_edit.assert_called_once()
+        mock_edit_img.assert_called_once()
+        self.assertEqual(mock_edit_img.call_args[0][0], b"original_img_bytes")
+        self.assertEqual(mock_edit_img.call_args[0][1], "Make him noticeably balder with thinning hair")
+
+        message.reply.assert_called_once()
+        caption = message.reply.call_args[0][0]
+        self.assertIn("revised his hairline", caption)
         self.assertIn("file", message.reply.call_args[1])
 
 

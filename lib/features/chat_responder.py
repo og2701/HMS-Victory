@@ -9,6 +9,7 @@ import base64
 import time
 import asyncio
 import logging
+import uuid
 from datetime import datetime, timezone
 from collections import deque
 from typing import List, Dict, Optional, Tuple, Any
@@ -241,6 +242,22 @@ FOLLOW_UP_IMAGE_PATTERNS = [
     r"\b(?:what\s+about\s+(?:<@!?\d+>|@?[\w.-]+))\b",
 ]
 
+IMAGE_EDIT_PATTERNS = [
+    r"\b(?:bit\s+generous\s+with|generous\s+with)\b",
+    r"\b(?:too\s+(?:much|many|little|big|small|dark|bright|generous))\b",
+    r"\b(?:not\s+enough|needs\s+more|needs\s+less|more\s+\w+|less\s+\w+)\b",
+    r"\b(?:make\s+(?:him|her|them|it|this|that)\s+\w+)\b",
+    r"\b(?:give\s+(?:that|the|him|her|them)\s+\w+\s+to\s+\w+)\b",
+    r"\b(?:give\s+(?:him|her|them)\s+(?:a|an|some|more|less)\s+\w+)\b",
+    r"\b(?:remove|delete|take\s+(?:away|off)|get\s+rid\s+of)\b",
+    r"\b(?:add|put|place|insert)\s+(?:a|an|some|the)?\s*\w+",
+    r"\b(?:change|replace|swap|switch|fix|modify|edit|adjust|tweak|redo|redraw|repaint|re-draw|re-paint)\b",
+    r"\b(?:balder|bald|hairier|beardless|bearded|fatter|thinner|taller|shorter|darker|lighter)\b",
+    r"\b(?:without\s+(?:the|any)|with\s+(?:a|more|less))\b",
+    r"\b(?:turn\s+(?:him|her|them|it|this|that)\s+into)\b",
+    r"\b(?:adjust|update)\s+(?:the\s+)?(?:picture|image|drawing|portrait|photo|painting|hair|face|background)\b",
+]
+
 CONTEXTUAL_IMAGE_INDICATORS = [
     r"\b(?:messages?|chat|history|logs?)\b",
     r"\bwhat\s+(?:they|he|she|i|<@!?\d+>|\w+)\s+looks?\s+like\b",
@@ -251,6 +268,30 @@ CONTEXTUAL_IMAGE_INDICATORS = [
     r"\b(?:picture|photo|image)\s+of\s+(?:me|<@!?\d+>|@[\w.-]+)",
     r"\b(?:do\s+the\s+same|same\s+for|now\s+do|another\s+one)\b",
 ]
+
+
+def looks_like_image_edit_request(prompt: str) -> bool:
+    """Return True if prompt contains language critiquing or asking to modify an existing image."""
+    if not prompt:
+        return False
+    p_lower = prompt.lower().strip()
+    for pat in IMAGE_EDIT_PATTERNS:
+        if re.search(pat, p_lower):
+            return True
+    return False
+
+
+def _extract_recent_image_prompt_from_history(history: Optional[List[Dict[str, Any]]] = None) -> Optional[str]:
+    """Retrieve the most recently recorded image prompt from conversation history."""
+    hist = history if history is not None else getattr(live_chat_manager, "conversation_history", [])
+    for turn in reversed(list(hist)):
+        if turn.get("role") == "assistant":
+            c = turn.get("content", "")
+            if "[Generated Image:" in c:
+                return c.split("[Generated Image:", 1)[1].rstrip("]").strip()
+            if "[Edited Image:" in c:
+                return c.split("[Edited Image:", 1)[1].rstrip("]").strip()
+    return None
 
 
 def looks_like_image_request(prompt: str, history: Optional[List[Dict[str, Any]]] = None) -> bool:
@@ -268,7 +309,8 @@ def looks_like_image_request(prompt: str, history: Optional[List[Dict[str, Any]]
             hist = history if history is not None else getattr(live_chat_manager, "conversation_history", [])
             if hist:
                 for turn in reversed(list(hist)[-6:]):
-                    if turn.get("role") == "assistant" and "[Generated Image:" in turn.get("content", ""):
+                    c = turn.get("content", "")
+                    if turn.get("role") == "assistant" and ("[Generated Image:" in c or "[Edited Image:" in c):
                         return True
     return False
 
@@ -354,6 +396,71 @@ def generate_image_openai(
 
     usage = data.get("usage") or {}
     input_tokens = usage.get("input_tokens", 20)
+    output_tokens = usage.get("output_tokens", 200)
+    return img_bytes, input_tokens, output_tokens
+
+
+def edit_image_openai(
+    image_bytes: bytes,
+    prompt: str,
+    quality: str = IMAGE_GEN_QUALITY,
+    size: str = IMAGE_GEN_SIZE,
+    model: str = IMAGE_GEN_MODEL,
+    openai_key: Optional[str] = None,
+    timeout: int = 45,
+) -> Tuple[bytes, int, int]:
+    """Edit an existing image using OpenAI's image edits endpoint.
+
+    Returns (image_bytes, input_tokens, output_tokens).
+    """
+    api_key = openai_key or os.getenv("OPENAI_TOKEN")
+    if not api_key:
+        raise ValueError("OPENAI_TOKEN is not configured.")
+
+    url = "https://api.openai.com/v1/images/edits"
+    boundary = f"----WebKitFormBoundaryHMSVictory{uuid.uuid4().hex[:16]}"
+
+    parts = [
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n{model}\r\n".encode("utf-8"),
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\n{prompt}\r\n".encode("utf-8"),
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"size\"\r\n\r\n{size}\r\n".encode("utf-8"),
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"quality\"\r\n\r\n{quality}\r\n".encode("utf-8"),
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"image.png\"\r\nContent-Type: image/png\r\n\r\n".encode("utf-8"),
+        image_bytes,
+        f"\r\n--{boundary}--\r\n".encode("utf-8"),
+    ]
+    body = b"".join(parts)
+
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    data_items = data.get("data") or []
+    if not data_items:
+        raise RuntimeError("No image data returned by OpenAI image edit API.")
+
+    b64_str = data_items[0].get("b64_json")
+    if b64_str:
+        img_bytes = base64.b64decode(b64_str)
+    else:
+        img_url = data_items[0].get("url")
+        if img_url:
+            img_req = urllib.request.Request(img_url, headers={"User-Agent": "HMSVictoryBot"})
+            with urllib.request.urlopen(img_req, timeout=timeout) as img_resp:
+                img_bytes = img_resp.read()
+        else:
+            raise RuntimeError("No b64_json or url found in image edit response.")
+
+    usage = data.get("usage") or {}
+    input_tokens = usage.get("input_tokens", 50)
     output_tokens = usage.get("output_tokens", 200)
     return img_bytes, input_tokens, output_tokens
 
@@ -531,6 +638,151 @@ def synthesize_contextual_image_prompt(
     except Exception as e:
         logger.warning("Failed to parse synthesized image prompt JSON: %s", e)
         return extract_image_prompt(prompt), "Here is your image. Try not to strain your eyes.", p_tokens, c_tokens
+
+
+def synthesize_image_edit_prompt(
+    prompt: str,
+    prev_prompt: Optional[str] = None,
+    prev_caption: Optional[str] = None,
+    context: str = "",
+    user_name: str = "Leadership",
+    caller_role: str = "Commander",
+    target_name: Optional[str] = None,
+    openai_key: Optional[str] = None,
+    model: str = "gpt-4o",
+    timeout: int = 30,
+) -> Tuple[str, str, str, int, int]:
+    """Synthesize an edit instruction for an image and an in-character Vic roast caption.
+
+    Returns (edit_type, image_prompt, caption, prompt_tokens, completion_tokens).
+    edit_type is either 'edit' (modify existing image) or 'new' (generate new image from scratch).
+    """
+    api_key = openai_key or os.getenv("OPENAI_TOKEN")
+    if not api_key:
+        raise ValueError("OPENAI_TOKEN is not configured.")
+
+    target_str = f" regarding '{target_name}'" if target_name else ""
+    system_prompt = (
+        "You are HMS Victory, a cynical, deadpan 18th-century British Royal Navy first-rate ship of the line AI.\n"
+        f"Server leadership ({user_name}, {caller_role}) or a crew member has responded with a critique, adjustment, or follow-up{target_str} to a previously generated image.\n\n"
+        f"PREVIOUS IMAGE PROMPT: {prev_prompt or 'Satirical caricature / portrait'}\n"
+        f"PREVIOUS CAPTION: {prev_caption or 'None'}\n\n"
+        "Your objectives:\n"
+        "1. Analyze the user's critique/command and the context of the previous image.\n"
+        "2. Determine edit_type:\n"
+        "   - 'edit': The user wants to alter, tweak, add to, or remove elements from the existing image (e.g. 'bit generous with the hair' -> make him balder, 'remove the boxes', 'put a pint of beer in his hand', 'make it darker', 'give him an eyepatch').\n"
+        "   - 'new': The user wants to generate a completely new subject or person using attributes from the previous image (e.g. 'give that hair to piggy' -> portrait of Piggy wearing that hair).\n"
+        "3. Formulate image_prompt:\n"
+        "   - If edit_type is 'edit': write a concise, direct visual modification instruction (under 50 words) describing what to change/add/remove, keeping the overall artistic style and composition.\n"
+        "   - If edit_type is 'new': write a rich, full visual description prompt (under 80 words) for a new caricature/portrait incorporating the requested attributes.\n"
+        "4. Formulate caption: a witty, deadpan 1-2 sentence caption in HMS Victory's voice dryly roasting the adjustment (e.g. mockingly accommodating their critique of someone's hair or habits). Maintain an aristocratic 18th-century naval tone. Never use corporate filler or AI disclaimers.\n\n"
+        "Respond ONLY with a JSON object:\n"
+        "{\n"
+        '  "edit_type": "edit" | "new",\n'
+        '  "image_prompt": "...",\n'
+        '  "caption": "..."\n'
+        "}"
+    )
+
+    user_payload = f"USER CRITIQUE / COMMAND: \"{prompt}\""
+    if context.strip():
+        user_payload += f"\n\nADDITIONAL SERVER CONTEXT:\n{context.strip()}"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_payload},
+        ],
+        "response_format": {"type": "json_object"},
+        "max_tokens": 300,
+        "temperature": 0.85,
+    }
+
+    url = "https://api.openai.com/v1/chat/completions"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    usage = data.get("usage") or {}
+    p_tokens = usage.get("prompt_tokens", 0)
+    c_tokens = usage.get("completion_tokens", 0)
+
+    try:
+        content = data["choices"][0]["message"]["content"]
+        parsed = json.loads(content)
+        edit_type = (parsed.get("edit_type") or "edit").lower().strip()
+        if edit_type not in ("edit", "new"):
+            edit_type = "edit"
+        img_prompt = (parsed.get("image_prompt") or "").strip()
+        caption = (parsed.get("caption") or "").strip()
+        if not img_prompt:
+            img_prompt = f"Modify the image: {prompt}"
+        if not caption:
+            caption = "The canvas has been amended. I trust your refined sensibilities are appeased."
+        return edit_type, img_prompt, caption, p_tokens, c_tokens
+    except Exception as e:
+        logger.warning("Failed to parse synthesized image edit JSON: %s", e)
+        return "edit", f"Modify the image: {prompt}", "The canvas has been amended. I trust your refined sensibilities are appeased.", p_tokens, c_tokens
+
+
+async def find_recent_image_attachment(
+    message: discord.Message,
+    bot_id: Optional[int] = None,
+    lookback: int = 20,
+) -> Optional[Tuple[discord.Message, Any, Optional[str]]]:
+    """Find the most relevant previous image attachment sent by the bot.
+
+    Checks:
+    1. Direct Discord message reply (message.reference).
+    2. Channel history backwards up to `lookback` messages.
+
+    Returns (target_message, attachment, previous_prompt) or None.
+    """
+    # 1. Direct message reply reference
+    ref = getattr(message, "reference", None)
+    if ref and getattr(ref, "message_id", None):
+        target_msg = getattr(ref, "resolved", None)
+        if not target_msg or not isinstance(target_msg, discord.Message):
+            try:
+                target_msg = await message.channel.fetch_message(ref.message_id)
+            except Exception as e:
+                logger.debug("Could not fetch referenced message %s: %s", ref.message_id, e)
+                target_msg = None
+
+        if target_msg:
+            for att in getattr(target_msg, "attachments", []):
+                fn = getattr(att, "filename", "").lower()
+                ct = getattr(att, "content_type", "") or ""
+                if fn.endswith((".png", ".jpg", ".jpeg", ".webp")) or ct.startswith("image/"):
+                    prev_prompt = _extract_recent_image_prompt_from_history() or getattr(target_msg, "content", None)
+                    return target_msg, att, prev_prompt
+
+    # 2. Channel history
+    if hasattr(message.channel, "history"):
+        try:
+            async for prev_m in message.channel.history(limit=lookback, before=message):
+                author_id = getattr(getattr(prev_m, "author", None), "id", None)
+                if bot_id and author_id != bot_id:
+                    continue
+                for att in getattr(prev_m, "attachments", []):
+                    fn = getattr(att, "filename", "").lower()
+                    ct = getattr(att, "content_type", "") or ""
+                    if fn.endswith((".png", ".jpg", ".jpeg", ".webp")) or ct.startswith("image/"):
+                        prev_prompt = _extract_recent_image_prompt_from_history() or getattr(prev_m, "content", None)
+                        return prev_m, att, prev_prompt
+        except Exception as e:
+            logger.debug("Failed scanning channel history for image: %s", e)
+
+    return None
 
 
 def load_chatbot_usage() -> dict:
@@ -2010,6 +2262,117 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             typing_cm = None
 
     try:
+        # Check if the prompt is an edit or critique of a recent image
+        recent_img_info = None
+        is_edit_req = looks_like_image_edit_request(clean_prompt)
+        ref = getattr(message, "reference", None)
+        has_reply_ref = bool(ref and getattr(ref, "message_id", None))
+
+        if is_edit_req or has_reply_ref:
+            recent_img_info = await find_recent_image_attachment(message, bot_id=bot_id)
+            if recent_img_info and not is_edit_req and has_reply_ref:
+                # If replying directly to a bot image, check if text has any alteration intent or critique
+                is_edit_req = looks_like_image_edit_request(clean_prompt) or not any(
+                    clean_prompt.lower().startswith(w) for w in ["thanks", "thank you", "haha", "lol", "lmao", "good", "great", "nice", "love it"]
+                )
+
+        if recent_img_info and is_edit_req:
+            allowed, remaining = can_user_generate_image(caller_id)
+            if not allowed:
+                refusal_msg = (
+                    f"<@{caller_id}> You've reached your daily limit of {IMAGE_GEN_DAILY_LIMIT} image generations. "
+                    "Budget cuts, mate. Try again tomorrow."
+                )
+                await message.reply(refusal_msg, mention_author=True)
+                return True
+
+            prev_msg, prev_att, prev_prompt = recent_img_info
+            gathered = await gather_one_off_context(client, message, return_targets=True)
+            if isinstance(gathered, tuple) and len(gathered) == 2:
+                context, target_users = gathered
+            else:
+                context, target_users = str(gathered), {}
+
+            other_mentions = [
+                u for u in getattr(message, "mentions", [])
+                if u.id not in (bot_id, getattr(getattr(client, "user", None), "id", None))
+            ]
+
+            target_name = None
+            if other_mentions:
+                target_name = (
+                    getattr(other_mentions[0], "nick", None)
+                    or getattr(other_mentions[0], "global_name", None)
+                    or getattr(other_mentions[0], "display_name", None)
+                    or getattr(other_mentions[0], "name", "the user")
+                )
+            elif target_users:
+                target_name = list(target_users.keys())[0].capitalize()
+
+            prev_caption = getattr(prev_msg, "content", "")
+            logger.info("Synthesizing image edit for %s: %r (target=%s, prev_prompt=%r)", caller_name, clean_prompt, target_name, prev_prompt)
+
+            try:
+                edit_type, edit_prompt, caption, synth_p, synth_c = await asyncio.to_thread(
+                    synthesize_image_edit_prompt,
+                    prompt=clean_prompt,
+                    prev_prompt=prev_prompt,
+                    prev_caption=prev_caption,
+                    context=context,
+                    user_name=caller_name,
+                    caller_role=caller_role,
+                    target_name=target_name,
+                )
+                if synth_p or synth_c:
+                    live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)
+            except Exception as synth_err:
+                logger.warning("Image edit synthesis failed, falling back: %s", synth_err)
+                edit_type = "edit"
+                edit_prompt = f"Modify image: {clean_prompt}"
+                caption = f"<@{caller_id}> Adjusted. Let's see if this meets your exacting standards."
+
+            img_bytes = None
+            p_tokens, c_tokens = 0, 0
+
+            if edit_type == "edit" and prev_att:
+                try:
+                    orig_bytes = await prev_att.read()
+                    img_bytes, p_tokens, c_tokens = await asyncio.to_thread(
+                        edit_image_openai,
+                        orig_bytes,
+                        edit_prompt,
+                    )
+                except Exception as edit_err:
+                    logger.warning("OpenAI image edit call failed (%s), falling back to generations: %s", edit_err, edit_prompt)
+                    img_bytes = None
+
+            if img_bytes is None:
+                try:
+                    img_bytes, p_tokens, c_tokens = await asyncio.to_thread(
+                        generate_image_openai,
+                        edit_prompt,
+                    )
+                except Exception as gen_err:
+                    logger.error("Failed to generate fallback image for edit: %s", gen_err, exc_info=True)
+                    fail_msg = f"<@{caller_id}> I attempted to amend that portrait, but the canvas fell overboard."
+                    await message.reply(fail_msg, mention_author=True)
+                    return True
+
+            record_user_image_generation(caller_id)
+            live_chat_manager.record_usage(IMAGE_GEN_MODEL, p_tokens, c_tokens, is_reply=True)
+
+            if caller_id != USERS.OGGERS:
+                new_remaining = max(0, remaining - 1)
+                caption += f"\n-# *({new_remaining} image generation{'s' if new_remaining != 1 else ''} left today)*"
+
+            file = discord.File(io.BytesIO(img_bytes), filename="vic_creation.png")
+            await message.reply(caption, file=file, mention_author=True)
+
+            live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
+            live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": f"[Edited Image: {edit_prompt}]"})
+            asyncio.create_task(live_chat_manager.update_dashboard())
+            return True
+
         # Check if the prompt is asking to generate/draw an image
         is_img_req = looks_like_image_request(clean_prompt)
         if not is_img_req and any(re.search(pat, clean_prompt.lower()) for pat in FOLLOW_UP_IMAGE_PATTERNS):
