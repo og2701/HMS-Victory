@@ -680,6 +680,8 @@ def fetch_user_bot_interactions(
             txt = (content or "").strip()
             if not txt:
                 continue
+            if not is_substantive_message(txt):
+                continue  # a bare ping tells us nothing about the relationship
             if f"<@{bot_id}>" in txt or f"<@!{bot_id}>" in txt or _BOT_NAME_RE.search(txt):
                 results.append({"speaker": "user", "content": txt, "ts": ts})
         bot_rows = DatabaseManager.fetch_all(
@@ -787,7 +789,8 @@ def synthesize_contextual_image_prompt(
         "second character interacting with the person: HMS Victory is a weathered 18th-century first-rate ship of the line with a stern, "
         "unimpressed personality (draw it as the ship itself with a disapproving air, or as a stern 18th-century naval officer figurehead). "
         "Use the HISTORY BETWEEN section for what they actually get up to together.\n"
-        "   - If PREVIOUS IMAGES are listed, do not recycle their props, outfits, settings or gags. Find something new from the history.\n"
+        "   - If PREVIOUS IMAGES are listed, every prop, food, drink, outfit, slogan, setting and gag in them is BANNED from this image, "
+        "even if the history mentions them again. Pick different material from the history; there is always more.\n"
         "   - Do NOT include Discord tags, usernames, or meta instructions in the image prompt itself; keep it purely descriptive imagery.\n"
         "3. Formulate a witty, deadpan 1-2 sentence caption in HMS Victory's voice introducing the portrait and dryly roasting them based on their records or the prompt. "
         "Maintain an aristocratic 18th-century naval tone. Never use corporate filler or AI disclaimers.\n\n"
@@ -801,7 +804,7 @@ def synthesize_contextual_image_prompt(
     user_payload = f"COMMAND: \"{prompt}\""
     if previous_image_prompts:
         listed = "\n".join(f"- {p[:220]}" for p in previous_image_prompts if p)
-        user_payload += f"\n\nPREVIOUS IMAGES ALREADY PRODUCED (do not reuse their motifs):\n{listed}"
+        user_payload += f"\n\nPREVIOUS IMAGES ALREADY PRODUCED (their props, foods, outfits, settings and gags are BANNED this time):\n{listed}"
     if context.strip():
         user_payload += f"\n\nSERVER & MESSAGE CONTEXT:\n{context.strip()}"
 

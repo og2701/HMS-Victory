@@ -1133,6 +1133,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             ("Make it a image you dummy vic", 900),
             ("the service is down again", 850),        # 'vic' inside 'service': not addressed to the bot
             ("<@1171842947440967770> who is the best server member", 800),
+            ("<@1171842947440967770>", 780),               # bare ping: dropped
             ("Vic loves me", 700),
         ]
         bot_rows = [("<@479207279850291221> You are the ship's barnacle, Steven.", 750)]
@@ -1198,6 +1199,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("HISTORY BETWEEN", system)
         user = payload["messages"][1]["content"]
         self.assertIn("PREVIOUS IMAGES ALREADY PRODUCED", user)
+        self.assertIn("BANNED", user)
+        self.assertIn("BANNED from this image", system)
         self.assertIn("Jaffa Cakes Fanatic", user)
         self.assertEqual(payload["max_tokens"], 400)
 
