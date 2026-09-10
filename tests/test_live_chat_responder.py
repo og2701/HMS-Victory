@@ -551,13 +551,49 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         mock_handle_one_off.assert_called_once_with(client, message)
 
     @patch("lib.features.chat_responder.handle_one_off_owner_mention")
+    async def test_handle_chat_message_roshy_direct_tag_asleep(self, mock_handle_one_off):
+        mock_handle_one_off.return_value = True
+        client = MagicMock()
+        client.user.id = 999999999
+
+        message = MagicMock()
+        message.author.bot = False
+        message.author.id = USERS.ROSHY
+        message.mentions = [client.user]
+        message.content = f"<@{client.user.id}> it's not a she it's an it"
+
+        live_chat_manager.active = False
+        live_chat_manager.owner_mentions_paused = False
+        res = await handle_chat_message(client, message)
+        self.assertTrue(res)
+        mock_handle_one_off.assert_called_once_with(client, message)
+
+    @patch("lib.features.chat_responder.handle_one_off_owner_mention")
+    async def test_handle_chat_message_hadidas_direct_tag_asleep(self, mock_handle_one_off):
+        mock_handle_one_off.return_value = True
+        client = MagicMock()
+        client.user.id = 999999999
+
+        message = MagicMock()
+        message.author.bot = False
+        message.author.id = USERS.HADIDAS
+        message.mentions = [client.user]
+        message.content = f"<@{client.user.id}> status update"
+
+        live_chat_manager.active = False
+        live_chat_manager.owner_mentions_paused = False
+        res = await handle_chat_message(client, message)
+        self.assertTrue(res)
+        mock_handle_one_off.assert_called_once_with(client, message)
+
+    @patch("lib.features.chat_responder.handle_one_off_owner_mention")
     async def test_handle_chat_message_other_user_asleep(self, mock_handle_one_off):
         client = MagicMock()
         client.user.id = 999999999
 
         message = MagicMock()
         message.author.bot = False
-        message.author.id = 11223344  # Not Oggers
+        message.author.id = 11223344  # Not Oggers, Roshy, or Hadidas
         message.mentions = [client.user]
         message.content = f"<@{client.user.id}> write a poem"
 

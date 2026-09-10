@@ -12,7 +12,7 @@ from collections import deque
 from typing import List, Dict, Optional, Tuple
 
 import discord
-from config import CHANNELS, BOT_ID, USERS, CHATBOT_USAGE_FILE, CHATBOT_CONFIG_FILE
+from config import CHANNELS, BOT_ID, USERS, CHATBOT_USAGE_FILE, CHATBOT_CONFIG_FILE, DIRECT_MENTION_ALLOWED_USERS
 from lib.core.file_operations import atomic_write_json, load_json_file
 
 logger = logging.getLogger(__name__)
@@ -44,15 +44,27 @@ STRICT RULES:
 8. Output ONLY your direct response to them."""
 
 
-def build_one_off_system_prompt() -> str:
-    """Build dynamic system prompt for owner one-off mentions with live date, time, and fact-checking rules."""
+def get_caller_identity(user_id: Optional[int], user_name: Optional[str] = None) -> Tuple[str, str]:
+    """Return (display_name, role_description) for authorized direct-mention callers."""
+    roshy_id = getattr(USERS, "ROSHY", 772553171616006166)
+    if user_id == USERS.OGGERS:
+        return (user_name or "Oggers", "server owner")
+    if user_id == roshy_id:
+        return (user_name or "Roshy", "server owner")
+    if user_id == USERS.HADIDAS:
+        return (user_name or "Hadidas", "deputy prime minister")
+    return (user_name or "Server Leadership", "server leadership")
+
+
+def build_one_off_system_prompt(caller_name: str = "Oggers", caller_role: str = "server leadership") -> str:
+    """Build dynamic system prompt for owner / leadership one-off mentions with live date, time, and fact-checking rules."""
     now_uk = datetime.now(timezone.utc)
     date_str = now_uk.strftime("%A, %d %B %Y")
     time_str = now_uk.strftime("%H:%M UTC")
 
     return f"""You are HMS Victory, the flagship Discord bot for a British server.
 You have a notoriously dry, cynical, deadpan British persona. You hate being bothered and despise customer-service cheerfulness or corporate politeness.
-When directly tagged or summoned by the server owner (Oggers), you act as his personal tool: you faithfully carry out his instructions, but you speak in your signature dry, deadpan, concise British tone. Never sound like a cheerful, overly formal, or cheesy corporate AI.
+When directly tagged or summoned by server leadership ({caller_name}, {caller_role}), you act as their personal tool: you faithfully carry out their instructions, but you speak in your signature dry, deadpan, concise British tone. Never sound like a cheerful, overly formal, or cheesy corporate AI.
 
 TEMPORAL ANCHOR & REAL-WORLD DATE:
 - TODAY'S REAL-WORLD DATE: {date_str} (Current Time: {time_str}).
@@ -65,8 +77,8 @@ STRICT RULES:
    - Deadpan, blunt, sarcastic, or mildly unimpressed.
    - NEVER be cheesy, overly formal, cheerful, or eager to please. Never use exclamation marks, cheesy dad jokes, or corny metaphors (e.g. no "sandwich symphony", "splendid", "I'm afraid...", "orchestrating", "Certainly!").
    - Keep it casual, grounded, and concise (1 to 2 short sentences). Zero waffle.
-2. RESPECT OGGERS' INTENT (NO UNDERHANDED SABOTAGE):
-   - You are loyal to Oggers. Execute what he actually asked for without being passive-aggressive or underhanded against his command.
+2. RESPECT SERVER LEADERSHIP'S INTENT (NO UNDERHANDED SABOTAGE):
+   - You are loyal to server leadership. Execute what {caller_name} actually asked for without being passive-aggressive or underhanded against their command.
    - If asked to wish someone luck or congratulate them: give real, genuine support, but keep it deadpan and British (e.g. '<@ID> Good luck with the interview, mate. Go smash it.'). Do not backstab or turn it into an insult.
    - If asked to answer someone or explain a fact: give a blunt, dry, accurate answer.
    - If asked to roast or banter: deliver a sharp, cutting, witty roast.
@@ -85,11 +97,11 @@ STRICT RULES:
    - Whenever asked about live sports, scores, fixtures, today's games, current news, weather, or real-world events outside your training data, YOU MUST search the web before answering.
    - Search using today's date ({date_str}) or relevant keywords (e.g. "League One fixtures {date_str}", "Stevenage vs Luton football", "EFL League One schedule").
    - Never hallucinate or claim there are no games without searching first. Report what the search actually says; do not pad it with guesses.
-   - NO CITATIONS: never include source links, URLs, footnotes, bracketed references, or "according to" attributions from search results, and never mention that you searched. Just state the facts. The only URLs you ever output are ones Oggers asked for from the server context (rule 5).
+   - NO CITATIONS: never include source links, URLs, footnotes, bracketed references, or "according to" attributions from search results, and never mention that you searched. Just state the facts. The only URLs you ever output are ones requested from the server context (rule 5).
 8. NO MASS PINGS OR ROLES: NEVER mention, tag, or ping @everyone, @here, or any Discord roles under any circumstances.
 9. DECLINING IN CHARACTER:
    - If you won't or can't do something (e.g. identifying a real person from a photo), NEVER answer with a flat policy line like "I can't identify people from images."
-   - Decline the way you'd decline anything: dry, unimpressed, 1 to 2 sentences, with a dig at the request or at Oggers.
+   - Decline the way you'd decline anything: dry, unimpressed, 1 to 2 sentences, with a dig at the request or at {caller_name}.
    - Say what you CAN see or do instead. A blurred LinkedIn "someone viewed your profile" smudge is a grey circle behind a paywall; say so and take the mick, don't recite rules.
 10. Output ONLY your direct response text. No preambles, no quotes, no filler."""
 
@@ -1438,13 +1450,14 @@ def generate_one_off_reply(
     prompt: str,
     context: str = "",
     user_name: str = "Oggers",
+    caller_role: str = "server leadership",
     image_urls: Optional[List[str]] = None,
     openai_key: Optional[str] = None,
     model: str = "gpt-4o",
     enable_search: bool = True,
     max_retries: int = 2,
 ) -> Tuple[str, int, int]:
-    """Generate a one-off in-character reply for an owner prompt via the OpenAI Responses API.
+    """Generate a one-off in-character reply for an owner / leadership prompt via the OpenAI Responses API.
 
     Uses OpenAI's hosted web search tool so the model fetches live data itself (fixtures, scores, news,
     weather) instead of relying on a scraper. Returns (reply_text, input_tokens, output_tokens).
@@ -1453,9 +1466,9 @@ def generate_one_off_reply(
     if not api_key:
         raise ValueError("OPENAI_TOKEN is not configured.")
 
-    user_instructions = prompt.strip() if prompt and prompt.strip() else "You were directly summoned by Oggers with no specific instructions."
+    user_instructions = prompt.strip() if prompt and prompt.strip() else f"You were directly summoned by {user_name} with no specific instructions."
 
-    prompt_content = f"REQUEST FROM SERVER OWNER ({user_name}):\n\"{user_instructions}\""
+    prompt_content = f"REQUEST FROM {caller_role.upper()} ({user_name}):\n\"{user_instructions}\""
     if context.strip():
         prompt_content += f"\n\nSURROUNDING SERVER & CONVERSATION CONTEXT:\n{context.strip()}"
 
@@ -1467,7 +1480,7 @@ def generate_one_off_reply(
     current_images = image_urls
 
     for attempt in range(1, max_retries + 1):
-        system_prompt = build_one_off_system_prompt()
+        system_prompt = build_one_off_system_prompt(caller_name=user_name, caller_role=caller_role)
         if current_images:
             visual_prompt = prompt_content + (
                 "\n\n[ATTACHED IMAGE / SCREENSHOT NOTE]: An image or screenshot has been provided above. "
@@ -1585,8 +1598,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         getattr(message.author, "nick", None)
         or getattr(message.author, "global_name", None)
         or getattr(message.author, "display_name", None)
-        or getattr(message.author, "name", "Oggers")
+        or getattr(message.author, "name", "Leadership")
     )
+    caller_id = getattr(getattr(message, "author", None), "id", None)
+    caller_name, caller_role = get_caller_identity(caller_id, user_name)
 
     # Show typing indicator while scraping context and waiting for OpenAI
     typing_cm = None
@@ -1620,7 +1635,8 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     generate_one_off_reply,
                     prompt=clean_prompt,
                     context=context,
-                    user_name=user_name,
+                    user_name=caller_name,
+                    caller_role=caller_role,
                     image_urls=current_images,
                 )
                 p_tokens += pt
@@ -1630,16 +1646,16 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     break
 
                 logger.warning(
-                    "Direct mention from Oggers attempt %d/%d produced refusal/empty: %r",
-                    attempt, max_attempts, reply_text
+                    "Direct mention from %s (%s) attempt %d/%d produced refusal/empty: %r",
+                    caller_name, caller_id, attempt, max_attempts, reply_text
                 )
                 if current_images:
                     current_images = None
                 await asyncio.sleep(0.5)
             except Exception as e:
                 logger.warning(
-                    "Direct mention from Oggers attempt %d/%d encountered error: %s",
-                    attempt, max_attempts, e
+                    "Direct mention from %s (%s) attempt %d/%d encountered error: %s",
+                    caller_name, caller_id, attempt, max_attempts, e
                 )
                 if current_images:
                     current_images = None
@@ -1679,7 +1695,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
 
         # Record usage into live_chat_manager and persistent file
         live_chat_manager.record_usage("gpt-4o", p_tokens, c_tokens, is_reply=True)
-        live_chat_manager.conversation_history.append({"role": "user", "speaker": user_name, "content": raw_content})
+        live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
         live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": reply_text})
 
         # Trigger dashboard update
@@ -1720,13 +1736,13 @@ async def handle_chat_message(client: discord.Client, message: discord.Message) 
     if getattr(message.author, "bot", False):
         return False
 
-    # 2. If message is from Oggers and explicitly @mentions the bot:
-    # Always respond to Oggers as a one-off anywhere on the server UNLESS paused!
+    # 2. If message is from authorized leadership (Oggers, Roshy, Hadidas) and explicitly @mentions the bot:
+    # Always respond as a one-off anywhere on the server UNLESS paused!
     # Only a real @mention counts here. Name-drops like "I'll get vic to dm her" or replies to the
     # bot's messages must not summon it; those looser matches are only used by the live chat mode.
-    if message.author.id == USERS.OGGERS and is_bot_explicitly_mentioned(client, message):
+    if message.author.id in DIRECT_MENTION_ALLOWED_USERS and is_bot_explicitly_mentioned(client, message):
         if live_chat_manager.owner_mentions_paused:
-            logger.info("Direct mention from Oggers ignored because direct mentions are paused.")
+            logger.info("Direct mention from %s (%s) ignored because direct mentions are paused.", message.author, message.author.id)
             return False
         return await handle_one_off_owner_mention(client, message)
 
@@ -2068,7 +2084,7 @@ class ChatbotDashboardView(discord.ui.LayoutView):
             timer_str = "None"
             sub_line = "-# 💤 Responder is currently sleeping"
 
-        direct_str = "⏸️ **Paused** *(ignoring owner tags)*" if live_chat_manager.owner_mentions_paused else "✅ **Active** *(responding to owner tags)*"
+        direct_str = "⏸️ **Paused** *(ignoring direct tags)*" if live_chat_manager.owner_mentions_paused else "✅ **Active** *(responding to direct tags)*"
 
         card.add_item(
             discord.ui.TextDisplay(
