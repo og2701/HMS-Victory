@@ -2389,6 +2389,37 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         rotated = appearance_directives(404634271861571584 + 7919 * 1)
         self.assertNotEqual(base, rotated)
 
+    def test_looks_like_text_creation(self):
+        from lib.features.chat_responder import looks_like_text_creation
+        for yes in ["write a hate soliloquy for <@1>", "make a poem about johnny", "generate a rap about the pub quiz", "create a eulogy for steven's car", "write me a limerick"]:
+            self.assertTrue(looks_like_text_creation(yes), yes)
+        for no in ["generate a comic strip of steven", "draw a poem book on the table", "what do you think i look like", "make a picture of a story book", "write 'loser' on this picture"]:
+            self.assertFalse(looks_like_text_creation(no), no)
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.generate_one_off_reply")
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_written_piece_is_text_even_if_classified_generate(
+        self, mock_classify, mock_find_img, mock_gather, mock_generate, mock_synth, mock_gen_img
+    ):
+        mock_classify.return_value = {"intent": "generate", "subject": "mentioned", "subject_name": "Kaiz", "reason": "a new creation", "input_tokens": 0, "output_tokens": 0}
+        mock_generate.return_value = ("O Kaiz, thou reheated cheese sauce of a man...", 100, 40)
+        client = MagicMock(); client.user.id = 999999999
+        kaiz = MagicMock(); kaiz.id = 128; kaiz.nick = "Kaiz"; kaiz.global_name = None; kaiz.display_name = "Kaiz"; kaiz.name = "kaiz"
+        message = self._leader_message(client, f"<@{client.user.id}> write a hate soliloquy for <@128>", mentions=[kaiz])
+        message.guild = None
+        with patch("lib.features.chat_responder.extract_image_urls", new_callable=AsyncMock, return_value=[]), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_synth.assert_not_called()
+        mock_gen_img.assert_not_called()
+        mock_generate.assert_called_once()
+        self.assertIn("reheated cheese sauce", message.reply.call_args[0][0])
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):

@@ -3058,7 +3058,7 @@ MENTION_INTENT_SCHEMA = {
 MENTION_INTENT_INSTRUCTIONS = """You classify a Discord message addressed to HMS Victory, a bot that can chat AND generate or edit images (portraits, caricatures, drawings, photos) with an AI image generator.
 
 Decide what the user wants:
-- "generate": they want a NEW image made. Any phrasing counts: "draw/paint/generate/make/create ... of X", "portrait/caricature of X", "what does X look like", "generate what you think X looks like based on their messages", "do me next", "same for @X", "now do X", "picture of me", "what would I look like as ...", "show me X as a ...".
+- "generate": they want a NEW image made. Any phrasing counts: "draw/paint/generate/make/create ... of X", "portrait/caricature of X", "what does X look like", "generate what you think X looks like based on their messages", "do me next", "same for @X", "now do X", "picture of me", "what would I look like as ...", "show me X as a ...". It must be a PICTURE. "write/create/make/generate a poem, soliloquy, song, rap, story, speech, roast, letter, limerick, haiku, eulogy, review, joke" is WRITING and is "reply", whatever the verb.
 - "edit": they explicitly want the bot's MOST RECENT image changed, corrected, or redone. This means a request for a change: critiques with an implied fix ("bit generous with the hair", "he doesn't drink tea, try again"), tweaks ("make him balder", "remove the flag", "add a pint"), or "try again / redo / another go / can you do it without X". A terse statement of fact or a bare descriptor sent shortly after an image is a CORRECTION to that image and counts as "edit": "the cat is black", "the green one", "he's bald", "no, blonde", "she has glasses". Use RECENT CHAT to see what was just produced. If USER ATTACHED AN IMAGE is yes and they ask to change, add to, remove from or restyle "this picture" / "this gentleman" / "him" ("add a pink mullet to this fine gentleman", "give this photo a hat", "make him bald"), that is an "edit" of the attachment, NOT a new image. Otherwise only choose "edit" when a recent bot image exists; if none exists but they want a picture, choose "generate".
 - "reply": everything else. This includes commentary or jokes ABOUT an image with no change requested ("notice how it featured the red lion twice", "why is his office in a pub", "lol the degrees", "I didn't ask for that"), questions, banter, roasts, facts, fixtures, describing or reacting to an attached image, thanks, and anything ambiguous. When in doubt between "edit" and "reply", choose "reply": a wasted image costs money, a text reply does not.
 
@@ -3074,6 +3074,27 @@ If subject is "named", put the name in subject_name; otherwise subject_name is n
 If the message is a short delegation like "pls do this", "do that", "this one", "^", "what he said", it refers to THE MESSAGE BEING REPLIED TO: classify that message's request instead, and take the subject from it.
 
 Be decisive. Casual, misspelled, or lowercase phrasing is normal here."""
+
+
+_TEXT_FORM_RE = re.compile(
+    r"\b(?:poem|poetry|soliloquy|monologue|song|lyrics|rap|verse|sonnet|ode|haiku|limerick|story|tale|speech|toast|eulogy|"
+    r"obituary|essay|letter|email|message|paragraph|roast|joke|riddle|pun|review|rant|manifesto|apology|confession|prayer|"
+    r"sermon|lecture|bio|biography|description|summary|list|tweet|slogan|motto|tagline|caption|headline|horoscope|prophecy)s?\b",
+    re.IGNORECASE,
+)
+_IMAGE_NOUN_RE = re.compile(
+    r"\b(?:image|images|picture|pictures|pic|pics|photo|photos|photograph|drawing|draw|paint|painting|sketch|illustration|"
+    r"portrait|caricature|cartoon|comic|strip|sprite|sprites|meme|artwork|art|render|poster|logo|avatar|pfp|fursona|"
+    r"looks?\s+like|look\s+like)\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_text_creation(prompt: str) -> bool:
+    """'write a hate soliloquy for X', 'make a poem about Y': a written thing, not a picture, whatever the verb."""
+    if not prompt:
+        return False
+    return bool(_TEXT_FORM_RE.search(prompt)) and not _IMAGE_NOUN_RE.search(prompt)
 
 
 def classify_mention_intent(
@@ -4018,6 +4039,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             is_edit_req = intent["intent"] == "edit"
             subject = intent.get("subject")
             subject_name = intent.get("subject_name")
+            if is_fresh_img_req and looks_like_text_creation(clean_prompt):
+                # "write a hate soliloquy for X" is writing, not a picture, whatever the classifier thought.
+                logger.info("Classifier said generate but the request is for a written piece; answering in text: %r", clean_prompt)
+                is_fresh_img_req = False
             logger.info(
                 "Mention intent for %s: %s (subject=%s/%s): %s",
                 caller_name, intent["intent"], subject, subject_name, intent.get("reason"),
