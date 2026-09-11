@@ -15,7 +15,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from collections import deque
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Tuple, Any, Union
 
 import discord
 from config import (
@@ -545,7 +545,7 @@ def generate_image_openai(
 
 
 def edit_image_openai(
-    image_bytes: bytes,
+    image_bytes: Union[bytes, List[bytes]],
     prompt: str,
     quality: str = IMAGE_GEN_QUALITY,
     size: str = IMAGE_GEN_SIZE,
@@ -553,13 +553,18 @@ def edit_image_openai(
     openai_key: Optional[str] = None,
     timeout: int = 45,
 ) -> Tuple[bytes, int, int]:
-    """Edit an existing image using OpenAI's image edits endpoint.
+    """Edit an existing image (or compose from several) using OpenAI's image edits endpoint.
 
-    Returns (image_bytes, input_tokens, output_tokens).
+    `image_bytes` may be a single image or a list; with several, they're sent as image[] in order so the
+    prompt can refer to "the first image" / "the second image". Returns (image_bytes, input_tokens, output_tokens).
     """
     api_key = openai_key or os.getenv("OPENAI_TOKEN")
     if not api_key:
         raise ValueError("OPENAI_TOKEN is not configured.")
+
+    images: List[bytes] = list(image_bytes) if isinstance(image_bytes, (list, tuple)) else [image_bytes]
+    if not images:
+        raise ValueError("No image bytes supplied for edit.")
 
     url = "https://api.openai.com/v1/images/edits"
     boundary = f"----WebKitFormBoundaryHMSVictory{uuid.uuid4().hex[:16]}"
@@ -569,10 +574,15 @@ def edit_image_openai(
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\n{prompt}\r\n".encode("utf-8"),
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"size\"\r\n\r\n{size}\r\n".encode("utf-8"),
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"quality\"\r\n\r\n{quality}\r\n".encode("utf-8"),
-        f"--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"image.png\"\r\nContent-Type: image/png\r\n\r\n".encode("utf-8"),
-        image_bytes,
-        f"\r\n--{boundary}--\r\n".encode("utf-8"),
     ]
+    field = "image" if len(images) == 1 else "image[]"
+    for idx, img in enumerate(images, 1):
+        parts.append(
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"{field}\"; filename=\"image{idx}.png\"\r\nContent-Type: image/png\r\n\r\n".encode("utf-8")
+        )
+        parts.append(img)
+        parts.append(b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode("utf-8"))
     body = b"".join(parts)
 
     req = urllib.request.Request(
@@ -1071,7 +1081,7 @@ RULES:
    - style: an art style that matches their vibe and interests (pop-punk karaoke -> gig poster screen print; football and pubs -> 1970s British comic; cosy pets and baking -> gouache storybook; tech and travel -> clean isometric; gaming -> pixel art; gossip and drama -> Victorian satirical engraving), unless the request names a style.
    For each field, cite the direct evidence in a few words. Where there is no direct evidence, DEDUCE: commit to a specific, plausible look implied by their personality, interests, age cues and tone, the way a caricaturist sizes someone up from how they talk (a mortgage-and-kids ranter is not twenty-two; a needy flirt who lives on energy drinks has a look; a pub-quiz pedant has a look). Write "deduced: <why>". Only if nothing about them points anywhere take that field from the VARIETY DIRECTIVES tie-breaker. A caricature exaggerates real, specific, unflattering features. Never the stock cartoon lead (young, conventionally attractive, tousled dark hair, wide grin, holding props up to camera).
 10. Keep visible text minimal: at most two short labels in the whole image. No walls of signs, menus, lists, sticky notes, posters with slogans or speech bubbles unless a comic strip was requested.
-11. REFERENCE IMAGES: if the requester attached images, they are references. Describe what matters in them concretely in the prompt (the actual animal and its colour and markings, the object, the outfit, the setting) so the generator reproduces it. If a reference shows a person, that is their real look and it overrides the character sheet: describe the VISIBLE attributes only (hair colour and length, facial hair, build, skin tone, clothing, expression, era of the portrait) and never attempt to identify or name who it is.
+11. REFERENCE IMAGES: if the requester attached images, they are references and the generator will receive them in the same order. Work out from the request what each one is for (a STYLE reference like a sprite sheet or an art sample; a SUBJECT reference like a profile picture or a photo of the thing) and say so in the prompt by order: "match the pixel style, proportions and sheet layout of the first image; base the character's design on the second image (a cream duck with a bow tie)". Describe what matters in each concretely (the actual animal and its colour and markings, the object, the outfit, the setting) so the generator reproduces it. If a reference shows a person, that is their real look and it overrides the character sheet: describe the VISIBLE attributes only (hair colour and length, facial hair, build, skin tone, clothing, expression, era of the portrait) and never attempt to identify or name who it is.
 
 Respond ONLY with a JSON object. For a single subject:
 {"character_sheet": {"gender": "...", "age_band": "...", "build_hair_face": "...", "expression_energy": "...", "style": "...", "gag": "the central joke, naming the specific thing + the quoted message it comes from", "supporting_references": ["4-6 smaller references from different conversations, each with what it is in the picture + the quote"], "exaggerations": "which traits and features are blown up"}, "image_prompt": "..."}
@@ -4039,17 +4049,35 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 img_bytes = None
                 p_tokens = c_tokens = 0
                 if reference_images:
-                    # A reference photo carries likeness far better through the edit endpoint than through words.
-                    try:
-                        ref_bytes = await asyncio.to_thread(download_image_bytes, reference_images[0])
-                        img_bytes, p_tokens, c_tokens = await asyncio.to_thread(
-                            edit_image_openai, ref_bytes,
-                            f"Using the attached image as the reference for the subject's appearance and likeness: {image_prompt}",
+                    # Reference images carry likeness and style far better through the edit endpoint than through words.
+                    ref_blobs: List[bytes] = []
+                    for url in reference_images[:4]:
+                        try:
+                            ref_blobs.append(await asyncio.to_thread(download_image_bytes, url))
+                        except Exception as dl_err:
+                            logger.warning("Could not download reference %s: %s", url, dl_err)
+                    if ref_blobs:
+                        lead = (
+                            "Using the attached images as references, in the order attached (first image, second image...): "
+                            if len(ref_blobs) > 1 else
+                            "Using the attached image as the reference for the subject's appearance and likeness: "
                         )
-                        logger.info("Generated via image edit with the requester's reference attachment")
-                    except Exception as ref_err:
-                        logger.warning("Reference-based edit failed (%s); falling back to plain generation", ref_err)
-                        img_bytes = None
+                        try:
+                            img_bytes, p_tokens, c_tokens = await asyncio.to_thread(edit_image_openai, ref_blobs, lead + image_prompt)
+                            logger.info("Generated via image edit with %d reference attachment(s)", len(ref_blobs))
+                        except Exception as ref_err:
+                            logger.warning("Reference-based edit failed with %d image(s) (%s)", len(ref_blobs), ref_err)
+                            img_bytes = None
+                            if len(ref_blobs) > 1:
+                                try:
+                                    img_bytes, p_tokens, c_tokens = await asyncio.to_thread(
+                                        edit_image_openai, ref_blobs[-1],
+                                        "Using the attached image as the reference for the subject's appearance and likeness: " + image_prompt,
+                                    )
+                                    logger.info("Generated via image edit with the last reference attachment only")
+                                except Exception as ref_err2:
+                                    logger.warning("Single-reference edit failed too (%s); falling back to plain generation", ref_err2)
+                                    img_bytes = None
                 if img_bytes is None:
                     img_bytes, p_tokens, c_tokens = await asyncio.to_thread(
                         generate_image_openai,

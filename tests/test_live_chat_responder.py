@@ -2018,9 +2018,25 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(res)
         mock_download.assert_called_once_with("https://cdn/oggers.png")
         mock_edit_img.assert_called_once()
-        self.assertEqual(mock_edit_img.call_args[0][0], b"png-of-oggers")
+        self.assertEqual(mock_edit_img.call_args[0][0], [b"png-of-oggers"])
         self.assertIn("a gen 4 trainer sprite sheet", mock_edit_img.call_args[0][1])
         mock_gen_img.assert_not_called()
+
+        # Two attachments (style sheet + profile picture): both go to the edit endpoint, in order
+        mock_download.reset_mock(); mock_edit_img.reset_mock()
+        mock_download.side_effect = lambda url: b"SHEET" if "sheet" in url else b"DUCK"
+        sheet = MagicMock(); sheet.filename = "sheet.png"; sheet.content_type = "image/png"; sheet.url = "https://cdn/sheet.png"
+        duck = MagicMock(); duck.filename = "duck.png"; duck.content_type = "image/png"; duck.url = "https://cdn/duck.png"
+        message3 = self._leader_message(client, f"<@{client.user.id}> generate me a sprite sheet in the style of Ethan using my profile picture for the design", author_id=USERS.HADIDAS)
+        message3.attachments = [sheet, duck]
+        mock_synth.return_value = ("match the first image's sprite style; design from the second image, a cream duck in a bow tie", "Behold.", 10, 5)
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            await handle_one_off_owner_mention(client, message3)
+        self.assertEqual(mock_synth.call_args[1]["reference_image_urls"], ["https://cdn/sheet.png", "https://cdn/duck.png"])
+        self.assertEqual(mock_edit_img.call_args[0][0], [b"SHEET", b"DUCK"])
+        self.assertTrue(mock_edit_img.call_args[0][1].startswith("Using the attached images as references, in the order attached"))
 
         # If the edit endpoint fails, plain generation still happens
         mock_edit_img.side_effect = RuntimeError("edit down")
@@ -2092,6 +2108,23 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         with patch.object(cr.discord, "Message", MagicMock):
             _, _, prev_prompt = await cr.find_recent_image_attachment(message, bot_id=777)
         self.assertEqual(prev_prompt, "sprite sheet of Hadidas")
+
+    @patch("urllib.request.urlopen")
+    def test_edit_image_openai_multiple_images(self, mock_urlopen):
+        from lib.features.chat_responder import edit_image_openai
+        import base64
+        mock_urlopen.return_value = _mock_resp(json.dumps({"data": [{"b64_json": base64.b64encode(b"out").decode()}], "usage": {"input_tokens": 1, "output_tokens": 2}}).encode())
+        img, _, _ = edit_image_openai([b"SHEET", b"DUCK"], "match the first, design from the second", openai_key="test-key")
+        self.assertEqual(img, b"out")
+        body = mock_urlopen.call_args[0][0].data
+        self.assertEqual(body.count(b'name="image[]"'), 2)
+        self.assertNotIn(b'name="image"; ', body)
+        self.assertLess(body.index(b"SHEET"), body.index(b"DUCK"))
+        # single image keeps the plain field name
+        edit_image_openai(b"ONLY", "x", openai_key="test-key")
+        body = mock_urlopen.call_args[0][0].data
+        self.assertEqual(body.count(b'name="image"; '), 1)
+        self.assertNotIn(b"image[]", body)
 
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
