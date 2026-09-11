@@ -1145,7 +1145,12 @@ def synthesize_image_prompt_from_context(
     if is_group:
         user_payload += "\nSUBJECT: the group listed in the SERVER MEMBER ROSTER"
     elif subject_name:
-        user_payload += f"\nSUBJECT: {subject_name} (build the character sheet for this person)"
+        user_payload += (
+            f"\nSUBJECT: {subject_name}. Their history is the source. If the request asks for someone or something RELATED to them "
+            "(their mum, dad, nan, partner, ex, boss, kid, pet, younger or older self, their car), the picture is of THAT, not of them: "
+            "build the character sheet for the related subject from what they've said about it and from their own traits (a family "
+            "resemblance, exaggerated), and adjust gender and age accordingly. Otherwise build the character sheet for this person."
+        )
     else:
         user_payload += (
             "\nSUBJECT: no specific person. Draw exactly what was asked. If the request is about something happening in the chat "

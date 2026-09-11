@@ -1590,7 +1590,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         synthesize_contextual_image_prompt(prompt="what does he look like", context="", user_name="Oggers", caller_role="server owner",
                                            target_name="Lanca", target_id=5, openai_key="test-key")
         user = _sent_payload(mock_urlopen, 2)["messages"][1]["content"]
-        self.assertIn("SUBJECT: Lanca (build the character sheet for this person)", user)
+        self.assertIn("SUBJECT: Lanca. Their history is the source.", user)
+        self.assertIn("their mum, dad, nan", user)
         self.assertIn("Physical base", user)
 
     @patch("lib.features.chat_responder.generate_image_openai")
