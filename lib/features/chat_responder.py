@@ -2936,7 +2936,7 @@ Decide what the user wants:
 - "reply": everything else. This includes commentary or jokes ABOUT an image with no change requested ("notice how it featured the red lion twice", "why is his office in a pub", "lol the degrees", "I didn't ask for that"), questions, banter, roasts, facts, fixtures, describing or reacting to an attached image, thanks, and anything ambiguous. When in doubt between "edit" and "reply", choose "reply": a wasted image costs money, a text reply does not.
 
 Also identify WHO the image is of (the subject):
-- "caller": the person sending the message (me, myself, I, my message history).
+- "caller": ONLY when the picture is of the person sending the message (me, myself, I, my message history). If they name someone else, that person is the subject even if the caller attached the picture ("sprite sheet of hadidas (attached)" -> subject "named", subject_name "hadidas").
 - "mentioned": a user they @mentioned in the message. An explicit @mention beats a stray "I" or "me" elsewhere in the sentence.
 - "named": someone referred to by name or pronoun without an @mention (e.g. "steven", or "him" when the recent bot image was of a specific person).
 - "group": several people or the community as a whole ("the members of ukplace", "everyone here", "the server", "all of us", "the lads", "the regulars").
@@ -3103,6 +3103,51 @@ def delivery_mentions(prompt: str, other_mentions: List[Any], target_id: Optiona
     return out
 
 
+def _resolve_named_user(
+    name: str,
+    other_mentions: List[Any],
+    target_users: Dict[str, int],
+    guild: Any = None,
+) -> Optional[Tuple[str, int]]:
+    """Match a plain name against tagged users, gathered targets, then guild members (exact, then contains)."""
+    key = (name or "").strip().lstrip("@").lower()
+    key = re.sub(r"\s*\(.*?\)\s*$", "", key).strip()  # 'hadidas (attached)' -> 'hadidas'
+    if len(key) < 2:
+        return None
+
+    def _names(u: Any) -> List[str]:
+        return [
+            n.lower() for n in (
+                getattr(u, "nick", None), getattr(u, "global_name", None),
+                getattr(u, "display_name", None), getattr(u, "name", None),
+            ) if isinstance(n, str)
+        ]
+
+    for u in other_mentions or []:
+        if any(key == n or key in n or n in key for n in _names(u)):
+            return _member_display_name(u), u.id
+    for n, uid in (target_users or {}).items():
+        if key == n or key in n or n in key:
+            return n.capitalize(), uid
+    if guild is None:
+        return None
+    try:
+        if hasattr(guild, "get_member_named"):
+            m = guild.get_member_named(key) or guild.get_member_named(name.strip())
+            if m is not None and isinstance(getattr(m, "id", None), int) and getattr(m, "bot", False) is not True:
+                return _member_display_name(m), m.id
+        members = [m for m in (getattr(guild, "members", None) or []) if isinstance(getattr(m, "id", None), int) and getattr(m, "bot", False) is not True]
+        exact = [m for m in members if key in _names(m)]
+        if len(exact) >= 1:
+            return _member_display_name(exact[0]), exact[0].id
+        partial = [m for m in members if any(key in n for n in _names(m))]
+        if len(partial) == 1:
+            return _member_display_name(partial[0]), partial[0].id
+    except Exception as e:
+        logger.debug("Named user lookup failed for %r: %s", name, e)
+    return None
+
+
 def resolve_image_target(
     prompt: str,
     caller_id: Optional[int],
@@ -3111,11 +3156,19 @@ def resolve_image_target(
     target_users: Dict[str, int],
     subject: Optional[str] = None,
     subject_name: Optional[str] = None,
+    guild: Any = None,
 ) -> Tuple[Optional[str], Optional[int]]:
     """Work out whose portrait is being asked for. Returns (target_name, target_id), either may be None.
 
     Uses the classifier's subject when available. Without it, an explicit @mention beats a stray "me"/"I".
+    A subject_name that clearly isn't the caller overrides a "caller" label (the classifier sometimes says
+    "caller" for "sprite sheet of hadidas (attached)" because the caller attached the picture).
     """
+    caller_keys = {n.strip().lower() for n in (caller_name or "",) if n and n.strip()}
+    if subject == "caller" and subject_name and subject_name.strip().lower() not in caller_keys and not re.search(r"\b(?:me|myself|i|my)\b", subject_name.lower()):
+        looked = _resolve_named_user(subject_name, other_mentions, target_users, guild)
+        if looked is not None:
+            return looked
     if subject == "caller" and caller_id is not None:
         return caller_name, caller_id
 
@@ -3141,19 +3194,10 @@ def resolve_image_target(
         return _member_display_name(first), first.id
 
     if subject == "named" and subject_name:
+        looked = _resolve_named_user(subject_name, other_mentions, target_users, guild)
+        if looked is not None:
+            return looked
         key = subject_name.strip().lower()
-        for u in other_mentions:
-            names = [
-                n.lower() for n in (
-                    getattr(u, "nick", None), getattr(u, "global_name", None),
-                    getattr(u, "display_name", None), getattr(u, "name", None),
-                ) if isinstance(n, str)
-            ]
-            if any(key == n or key in n or n in key for n in names):
-                return _member_display_name(u), u.id
-        for name, uid in target_users.items():
-            if key == name or key in name or name in key:
-                return name.capitalize(), uid
         if caller_name and (key == caller_name.lower() or key in caller_name.lower()):
             return caller_name, caller_id
         # Named someone we can't resolve: still hand the name to the synthesiser, just no history to pull.
@@ -3795,7 +3839,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
 
             target_name, target_id = resolve_image_target(
                 clean_prompt, caller_id, caller_name, other_mentions, target_users,
-                subject=subject, subject_name=subject_name,
+                subject=subject, subject_name=subject_name, guild=getattr(message, "guild", None),
             )
             context = await ensure_target_history_in_context(client, message, context, target_id, target_name, prompt=clean_prompt, bot_id=bot_id)
 
@@ -3902,7 +3946,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
 
             target_name, target_id = resolve_image_target(
                 clean_prompt, caller_id, caller_name, other_mentions, target_users,
-                subject=subject, subject_name=subject_name,
+                subject=subject, subject_name=subject_name, guild=getattr(message, "guild", None),
             )
             random_pick = False
             if subject == "random" or (intent is None and target_id is None and looks_like_random_pick(clean_prompt)):

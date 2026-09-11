@@ -2099,6 +2099,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         steven.global_name = None
         steven.display_name = "Steven <3"
         steven.name = "steven_x"
+        steven.bot = False
         mentions = [steven]
         target_users = {"steven": 555, "johnny": 777}
 
@@ -2109,6 +2110,21 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolve_image_target("do steven", 1, "Oggers", mentions, {}, subject="named", subject_name="steven"), ("Steven <3", 555))
         self.assertEqual(resolve_image_target("do dave", 1, "Oggers", [], {}, subject="named", subject_name="Dave"), ("Dave", None))
         self.assertEqual(resolve_image_target("draw a cat for me", 1, "Oggers", [], {}, subject="none"), (None, None))
+
+        # A named subject that isn't the caller beats a mistaken "caller" label, resolved via the guild
+        guild = MagicMock()
+        hadidas = MagicMock(); hadidas.id = 198; hadidas.nick = "Hadidas"; hadidas.global_name = None; hadidas.display_name = "Hadidas"; hadidas.name = "hadidas_"; hadidas.bot = False
+        guild.get_member_named.side_effect = lambda n: hadidas if n.lower().startswith("hadidas") else None
+        guild.members = [hadidas, steven]
+        self.assertEqual(resolve_image_target("sprite sheet of hadidas (attached)", 1, "Oggers", [], {}, subject="caller", subject_name="hadidas", guild=guild), ("Hadidas", 198))
+        self.assertEqual(resolve_image_target("sprite sheet of hadidas (attached)", 1, "Oggers", [], {}, subject="named", subject_name="hadidas (attached)", guild=guild), ("Hadidas", 198))
+        # partial, unique match against member names
+        guild.get_member_named.side_effect = lambda n: None
+        self.assertEqual(resolve_image_target("draw stev", 1, "Oggers", [], {}, subject="named", subject_name="stev", guild=guild), ("Steven <3", 555))
+        # "caller" with a self-word stays the caller
+        self.assertEqual(resolve_image_target("draw me", 1, "Oggers", [], {}, subject="caller", subject_name="me", guild=guild), ("Oggers", 1))
+        # unknown name: passed through, no id
+        self.assertEqual(resolve_image_target("draw zog", 1, "Oggers", [], {}, subject="named", subject_name="Zog", guild=guild), ("Zog", None))
 
         # Two mentions: the classifier's raw <@id> answer wins, then name, then position in the text
         danez = MagicMock(); danez.id = 412; danez.nick = None; danez.global_name = "Danez"; danez.display_name = "Danez"; danez.name = "danez"
