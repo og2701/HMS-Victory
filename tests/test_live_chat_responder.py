@@ -2017,6 +2017,45 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             await handle_one_off_owner_mention(client, message2)
         mock_gen_img.assert_called_once()
 
+    @patch("asyncio.sleep", new_callable=AsyncMock)
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.build_user_dossier", return_value=None)
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_synthesis_retries_once_before_raw_fallback(
+        self, mock_classify, mock_find_img, mock_fetch_chat, _dossier, _sample, _exchanges, mock_synth, mock_gen_img, _sleep
+    ):
+        mock_classify.return_value = {"intent": "generate", "subject": "caller", "subject_name": None, "reason": "", "input_tokens": 0, "output_tokens": 0}
+        mock_synth.side_effect = [RuntimeError("blip"), ("Oggers as a pirate", "<@1> Arr.", 10, 5)]
+        mock_gen_img.return_value = (b"img", 20, 200)
+
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> draw me as a pirate")
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            await handle_one_off_owner_mention(client, message)
+
+        self.assertEqual(mock_synth.call_count, 2)
+        mock_gen_img.assert_called_once_with("Oggers as a pirate")
+        self.assertIn("Arr.", message.reply.call_args[0][0])
+
+        # Two failures: raw prompt fallback
+        mock_synth.reset_mock(); mock_gen_img.reset_mock()
+        mock_synth.side_effect = [RuntimeError("blip"), RuntimeError("blip again")]
+        message2 = self._leader_message(client, f"<@{client.user.id}> draw me a cup of tea")
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            await handle_one_off_owner_mention(client, message2)
+        self.assertEqual(mock_synth.call_count, 2)
+        self.assertIn("cup of tea", mock_gen_img.call_args[0][0])
+        self.assertIn("strain your eyes", message2.reply.call_args[0][0])
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):

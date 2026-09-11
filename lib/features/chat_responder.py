@@ -3929,23 +3929,32 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     "Synthesizing contextual image prompt for %s (target=%s, group=%s, prompt=%r)...",
                     caller_name, target_name, is_group, clean_prompt,
                 )
-                try:
-                    image_prompt, caption, synth_p, synth_c = await asyncio.to_thread(
-                        synthesize_contextual_image_prompt,
-                        prompt=clean_prompt,
-                        context=context,
-                        user_name=caller_name,
-                        caller_role=caller_role,
-                        target_name=target_name,
-                        previous_image_prompts=recent_image_prompts_from_history(3),
-                        target_id=target_id,
-                        is_group=is_group,
-                        reference_image_urls=reference_images,
-                    )
-                    if synth_p or synth_c:
-                        live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)
-                except Exception as synth_err:
-                    logger.warning("Contextual image synthesis failed, falling back to the raw prompt: %s", synth_err)
+                image_prompt = None
+                caption = None
+                for synth_attempt in range(1, 3):
+                    try:
+                        image_prompt, caption, synth_p, synth_c = await asyncio.to_thread(
+                            synthesize_contextual_image_prompt,
+                            prompt=clean_prompt,
+                            context=context,
+                            user_name=caller_name,
+                            caller_role=caller_role,
+                            target_name=target_name,
+                            previous_image_prompts=recent_image_prompts_from_history(3),
+                            target_id=target_id,
+                            is_group=is_group,
+                            reference_image_urls=reference_images,
+                        )
+                        if synth_p or synth_c:
+                            live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)
+                        break
+                    except Exception as synth_err:
+                        logger.warning("Contextual image synthesis attempt %d/2 failed: %s", synth_attempt, synth_err)
+                        image_prompt = None
+                        if synth_attempt < 2:
+                            await asyncio.sleep(1.0)
+                if not image_prompt:
+                    logger.warning("Contextual image synthesis failed twice, falling back to the raw prompt")
                     image_prompt = extract_image_prompt(clean_prompt)
                     caption = f"<@{caller_id}> Here's your image. Try not to strain your eyes."
 
