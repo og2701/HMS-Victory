@@ -1405,6 +1405,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Physical base", a1)
         self.assertIn("Art style if none was requested", a1)
         self.assertIn("infer gender", a1)
+        from lib.features.chat_responder import APPEARANCE_POOLS
+        self.assertFalse(any("photo" in st or "realistic" in st for st in APPEARANCE_POOLS["style"]))
         group = appearance_directives(1, include_physical=False)
         self.assertNotIn("Physical base", group)
         self.assertIn("Art style", group)
@@ -1425,6 +1427,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         system = _sent_payload(mock_urlopen, 0)["messages"][0]["content"]
         self.assertIn("Never the stock cartoon lead", system)
         self.assertIn("at most two short labels", system)
+        self.assertIn("NEVER photorealistic", system)
         self.assertIn("LOOKS COME FROM THE MESSAGES FIRST", system)
         self.assertIn('"character_sheet"', system)
         self.assertIn("tie-breaker ONLY", user)
