@@ -2126,6 +2126,53 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body.count(b'name="image"; '), 1)
         self.assertNotIn(b"image[]", body)
 
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.edit_image_openai")
+    @patch("lib.features.chat_responder.synthesize_image_edit_prompt")
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_edit_with_own_attachment_edits_the_attachment(
+        self, mock_classify, mock_find_img, mock_gather, mock_synth_edit, mock_edit_img, mock_gen_img
+    ):
+        mock_classify.return_value = {"intent": "edit", "subject": "none", "subject_name": None, "reason": "add a mullet", "input_tokens": 0, "output_tokens": 0}
+        # The bot's last image in the channel is something else entirely
+        bot_att = MagicMock(); bot_att.read = AsyncMock(return_value=b"OGGERS-CARICATURE")
+        mock_find_img.return_value = (MagicMock(content="Behold Oggers"), bot_att, "Oggers pub quiz caricature")
+        mock_synth_edit.return_value = ("edit", "add a pink mullet to the man in the portrait", "The canvas has been amended.", 10, 5)
+        mock_edit_img.return_value = (b"edited", 30, 200)
+
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> can you give this picture a pink mullet", author_id=USERS.HADIDAS)
+        own = MagicMock(); own.filename = "portrait.png"; own.content_type = "image/png"; own.url = "https://cdn/portrait.png"
+        own.read = AsyncMock(return_value=b"PORTRAIT")
+        message.attachments = [own]
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        mock_edit_img.assert_called_once()
+        self.assertEqual(mock_edit_img.call_args[0][0], b"PORTRAIT")          # the attachment, not the bot's caricature
+        self.assertRegex(mock_synth_edit.call_args[1]["prev_prompt"], r"^An image attached by \S+ to this request$")
+        self.assertEqual(mock_synth_edit.call_args[1]["reference_image_urls"], [])
+        mock_gen_img.assert_not_called()
+        self.assertIn("file", message.reply.call_args[1])
+
+        # Same request with no recent bot image at all still edits the attachment (doesn't degrade to generate)
+        mock_find_img.return_value = None
+        mock_edit_img.reset_mock()
+        message2 = self._leader_message(client, f"<@{client.user.id}> give this picture a pink mullet", author_id=USERS.HADIDAS)
+        message2.attachments = [own]
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            await handle_one_off_owner_mention(client, message2)
+        self.assertEqual(mock_edit_img.call_args[0][0], b"PORTRAIT")
+        mock_gen_img.assert_not_called()
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):

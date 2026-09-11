@@ -3824,7 +3824,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 "Mention intent for %s: %s (subject=%s/%s): %s",
                 caller_name, intent["intent"], subject, subject_name, intent.get("reason"),
             )
-            if is_edit_req and not recent_img_info:
+            if is_edit_req and not recent_img_info and not reference_images:
                 # Nothing to edit, but they clearly want a picture.
                 is_edit_req = False
                 is_fresh_img_req = True
@@ -3837,6 +3837,19 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     is_edit_req = not any(
                         clean_prompt.lower().startswith(w) for w in ["thanks", "thank you", "haha", "lol", "lmao", "good", "great", "nice", "love it"]
                     )
+
+        # An edit request that comes with its own attachment ("give this picture a pink mullet") edits THAT
+        # attachment, not whatever the bot last posted in the channel.
+        own_attachment = None
+        if is_edit_req and reference_images:
+            for att in list(getattr(message, "attachments", None) or []):
+                if isinstance(getattr(att, "url", None), str) and att.url == reference_images[0]:
+                    own_attachment = att
+                    break
+        if own_attachment is not None:
+            recent_img_info = (message, own_attachment, f"An image attached by {caller_name} to this request")
+            reference_images = reference_images[1:]  # the rest, if any, remain references for the edit
+            logger.info("Edit target is the requester's own attachment for %s: %r", caller_name, clean_prompt)
 
         if recent_img_info and is_edit_req:
             allowed, remaining = can_user_generate_image(caller_id)
