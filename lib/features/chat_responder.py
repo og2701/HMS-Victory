@@ -781,7 +781,7 @@ def build_user_dossier(
     model: str = USER_DOSSIER_MODEL,
     force: bool = False,
 ) -> Optional[str]:
-    """Distil a user's last 30 days into a comedy dossier (cached ~24h on disk). Returns formatted text or None."""
+    """Distil a user's last 30 days into a comedy dossier (cached ~1h on disk). Returns formatted text or None."""
     _load_dossier_cache()
     key = str(user_id)
     cached = _USER_DOSSIER_CACHE.get(key)
