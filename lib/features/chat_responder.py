@@ -99,7 +99,7 @@ STRICT RULES:
    - If asked to roast or banter: deliver a sharp, cutting, witty roast.
    - If asked for a poem: keep it punchy, dry, and clever (1-2 short stanzas).
 3. BREVITY: 1 to 2 short sentences maximum. Cut the fluff and stop.
-4. MENTIONS: If addressing, answering, wishing luck to, or roasting a specific target user provided in the context, tag them using their <@ID> format (e.g. '<@123456789>') so they get pinged in Discord.
+4. MENTIONS: If addressing, answering, wishing luck to, or roasting a specific target user provided in the context, tag them using their <@ID> format (e.g. '<@123456789>') so they get pinged in Discord. Never open by tagging or naming the person who asked; your reply is already addressed to them. Just answer.
 5. EVENTS & LINKS: If asked about an event or to share a link, provide a blunt, clear sentence followed by the exact real URL from context. Never invent placeholders.
 6. IMAGES, SCREENSHOTS & FIXTURE PROOF:
    - When an image or screenshot is attached (e.g. match fixture card, league table, tweet, meme, score, standings):
@@ -173,6 +173,19 @@ def resolve_name_mentions(
         return f"<@{uid}>{trailing}" if isinstance(uid, int) else m.group(0)
 
     return _AT_NAME_RE.sub(_sub, text)
+
+
+def strip_leading_self_address(text: str, caller_id: Optional[int], caller_names: Optional[List[str]] = None) -> str:
+    """Drop a leading '<@caller>' / '@Caller' / 'Caller,' from a reply: the Discord reply already pings them."""
+    if not text:
+        return text
+    out = text
+    if caller_id is not None:
+        out = re.sub(rf"^\s*(?:<@!?{caller_id}>\s*[,:!.-]*\s*)+", "", out)
+    for n in caller_names or []:
+        if isinstance(n, str) and len(n.strip()) >= 2:
+            out = re.sub(rf"^\s*@?{re.escape(n.strip())}\s*[,:!.-]+\s*", "", out, flags=re.IGNORECASE)
+    return out.lstrip() if out.strip() else text
 
 
 def sanitize_ai_mentions(text: str, guild: Optional[discord.Guild] = None) -> str:
@@ -3659,6 +3672,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 resolve_name_mentions(caption, guild=getattr(message, 'guild', None), known_users=[message.author, *other_mentions], name_map=target_users),
                 guild=getattr(message, 'guild', None),
             )
+            caption = strip_leading_self_address(caption, caller_id, [caller_name, getattr(message.author, 'name', None)])
             await message.reply(caption, file=file, mention_author=True, allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True))
 
             live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
@@ -3765,6 +3779,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     resolve_name_mentions(caption, guild=getattr(message, 'guild', None), known_users=[message.author, *other_mentions], name_map=target_users),
                     guild=getattr(message, 'guild', None),
                 )
+                caption = strip_leading_self_address(caption, caller_id, [caller_name, getattr(message.author, 'name', None)])
                 await message.reply(caption, file=file, mention_author=True, allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True))
 
                 live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
@@ -3852,6 +3867,12 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
 
         # Hard-block @everyone, @here, and role mentions
         reply_text = sanitize_ai_mentions(reply_text, guild=getattr(message, "guild", None))
+
+        # The reply pings the requester already; don't open by tagging or naming them again
+        reply_text = strip_leading_self_address(
+            reply_text, caller_id,
+            [caller_name, getattr(message.author, "name", None), getattr(message.author, "global_name", None), getattr(message.author, "nick", None)],
+        )
 
         # Ensure within Discord message character limits
         if len(reply_text) > 1990:

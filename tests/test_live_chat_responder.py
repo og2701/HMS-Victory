@@ -2074,6 +2074,16 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sanitize_ai_mentions(resolve_name_mentions("@Johnny and @everyone", guild, [johnny])), f"<@797> and @{zwsp}everyone")
         self.assertEqual(resolve_name_mentions("email me@example.com", guild, [johnny]), "email me@example.com")
 
+    def test_strip_leading_self_address(self):
+        from lib.features.chat_responder import strip_leading_self_address
+        self.assertEqual(strip_leading_self_address("<@797>\n\nAh, yes, Johnny. A real bargain.", 797, ["Johnny"]), "Ah, yes, Johnny. A real bargain.")
+        self.assertEqual(strip_leading_self_address("<@797>, your timing is impeccable.", 797, ["Johnny"]), "your timing is impeccable.")
+        self.assertEqual(strip_leading_self_address("Johnny: go to bed.", 797, ["Johnny"]), "go to bed.")
+        self.assertEqual(strip_leading_self_address("@Johnny go to bed.", 797, ["Johnny"]), "@Johnny go to bed.")  # no separator: leave it
+        # Other people's pings and mid-sentence uses are untouched
+        self.assertEqual(strip_leading_self_address("<@555> owes Johnny a pint.", 797, ["Johnny"]), "<@555> owes Johnny a pint.")
+        self.assertEqual(strip_leading_self_address("<@797>", 797, ["Johnny"]), "<@797>")  # never empty the reply
+
     def test_sanitize_ai_mentions(self):
         zwsp = "\u200b"
 
