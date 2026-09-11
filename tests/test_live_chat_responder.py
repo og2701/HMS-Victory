@@ -1304,6 +1304,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         guild.get_member.side_effect = lambda uid: {1: johnny, 2: oggers, 3: steven, 4: somebot}.get(uid)
         mock_active.return_value = [(4, 5000), (1, 3774), (2, 3052), (99, 2000), (3, 2083)]
         mock_chat.side_effect = lambda client, uid, ch, limit, spread, older: [{"content": f"msg from {uid}", "ts": 1}]
+        calls = []
+        real_side = mock_chat.side_effect
+        mock_chat.side_effect = lambda *a: (calls.append(a), real_side(*a))[1]
 
         roster = await build_group_roster_context(None, guild, must_include=[steven], max_members=3, bot_id=777)
 
@@ -1314,6 +1317,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("<@99>", roster)
         self.assertIn("  - msg from 1", roster)
         self.assertEqual(mock_active.call_args[0][2], [777, 3])
+        # spread sample per member: 10 recent + 30 older across the archive window
+        self.assertEqual(calls[0][3:], (10, True, 30))
+        self.assertIn("sampled across the last 30 days", roster)
 
     @patch("lib.features.chat_responder.generate_image_openai")
     @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")

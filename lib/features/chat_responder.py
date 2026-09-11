@@ -2988,10 +2988,11 @@ async def build_group_roster_context(
     guild: Any,
     must_include: Optional[List[Any]] = None,
     max_members: int = 6,
-    per_member: int = 7,
+    recent_per_member: int = 10,
+    older_per_member: int = 30,
     bot_id: Optional[int] = None,
 ) -> str:
-    """A roster of real, active members with a few characteristic messages each, for group portraits.
+    """A roster of real, active members with a sample of their messages spread across 30 days, for group portraits.
 
     Explicitly mentioned users come first, then the most active humans in the archive. Bots and anyone we
     can't resolve to a member are skipped, so the image only ever contains real people.
@@ -3040,19 +3041,19 @@ async def build_group_roster_context(
     server_name = getattr(guild, "name", None) or "the server"
     lines = [
         f"SERVER MEMBER ROSTER FOR {server_name} (these {len(chosen)} people are the ONLY people who may appear; "
-        "depict each one once, recognisably, from their own messages; invent nobody):"
+        "depict each one once, recognisably, with a gag from their own messages below, which are sampled across the last 30 days; invent nobody):"
     ]
     for uid, name in chosen:
         try:
-            sample = await asyncio.to_thread(fetch_user_recent_chat, client, uid, None, per_member, True, per_member)
+            sample = await asyncio.to_thread(fetch_user_recent_chat, client, uid, None, recent_per_member, True, older_per_member)
         except Exception:
             sample = []
-        lines.append(f"\nMEMBER: {name} (<@{uid}>)")
+        lines.append(f"\nMEMBER: {name} (<@{uid}>) ({len(sample)} messages sampled)")
         if sample:
-            for r in sample[-per_member:]:
+            for r in sample:
                 content = (r.get("content") or "").replace("\n", " ").strip()
-                if len(content) > 140:
-                    content = content[:140] + "…"
+                if len(content) > 160:
+                    content = content[:160] + "…"
                 lines.append(f"  - {content}")
         else:
             lines.append("  - [no recent messages on record]")
