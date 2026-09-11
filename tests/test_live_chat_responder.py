@@ -1213,6 +1213,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("BANNED", system)
         self.assertIn("GROUP PICTURES", system)
         self.assertIn("never render made-up usernames", system)
+        self.assertIn("WHAT THE IMAGE GENERATOR WILL REJECT", system)
         user = image_call["messages"][1]["content"]
         self.assertIn("HMS VICTORY IS IN THE PICTURE: yes", user)
         self.assertIn("PREVIOUS IMAGES ALREADY PRODUCED", user)
@@ -2262,6 +2263,83 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         mock_download.assert_called_once_with("https://cdn/mogg.jpg")
         self.assertEqual(mock_edit_img.call_args[0][0], [b"REES-MOGG"])
         mock_gen_img.assert_not_called()
+
+    def test_is_bot_command_message(self):
+        from lib.features.chat_responder import is_bot_command_message
+        self.assertTrue(is_bot_command_message("<@777> generate an image of <@1> based on his message history. Depict him as my dog.", bot_id=777))
+        self.assertTrue(is_bot_command_message("@HMS Victory draw me", bot_id=777))
+        self.assertFalse(is_bot_command_message("Vic loves me", bot_id=777))
+        self.assertFalse(is_bot_command_message("Oggers is the dad", bot_id=777))
+
+    @patch("database.DatabaseManager.fetch_all")
+    def test_dossier_inputs_skip_bot_commands(self, mock_fetch):
+        from lib.features import chat_responder as cr
+        mock_fetch.return_value = [(f"<@{cr.BOT_ID}> draw me as a pirate please", 10), ("I could live off pip and state benefits", 11)]
+        self.assertEqual([m["content"] for m in cr.fetch_user_messages_bulk(1)], ["I could live off pip and state benefits"])
+        mock_fetch.return_value = [
+            ("2", f"<@{cr.BOT_ID}> generate an image of <@1> based on his message history. Depict him as my dog.", 900),
+            ("3", "Oggers is the dad", 800),
+            (str(cr.BOT_ID), "Behold Oggers, the dog.", 700),
+        ]
+        self.assertEqual([m["content"] for m in cr.fetch_mentions_of_user(1, ["Oggers"])], ["Oggers is the dad"])
+        self.assertIn("Never turn a bot command", cr.USER_DOSSIER_INSTRUCTIONS)
+
+    @patch("lib.features.chat_responder._save_dossier_cache")
+    @patch("lib.features.chat_responder.fetch_mentions_of_user", return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_messages_bulk")
+    @patch("urllib.request.urlopen")
+    def test_dossier_cache_ignores_old_versions(self, mock_urlopen, mock_bulk, _about, _save):
+        from lib.features import chat_responder as cr
+        cr._dossier_cache_loaded = True
+        cr._USER_DOSSIER_CACHE.clear()
+        cr._USER_DOSSIER_CACHE["5"] = {"ts": time.time(), "name": "X", "text": "OLD DOSSIER", "v": cr.USER_DOSSIER_VERSION - 1}
+        mock_bulk.return_value = [{"content": f"message {i} about things", "ts": i} for i in range(20)]
+        mock_urlopen.return_value = _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps({"summary": "fresh"})}}], "usage": {}}).encode())
+        with patch("lib.features.chat_responder.live_chat_manager.record_usage"):
+            text = cr.build_user_dossier(5, "X", openai_key="test-key")
+        self.assertIn("Summary: fresh", text)
+        self.assertEqual(cr._USER_DOSSIER_CACHE["5"]["v"], cr.USER_DOSSIER_VERSION)
+        cr._USER_DOSSIER_CACHE.clear()
+
+    @patch("lib.features.chat_responder.rewrite_prompt_for_safety")
+    @patch("lib.features.chat_responder.generate_image_openai")
+    async def test_produce_image_rewrites_once_on_safety_rejection(self, mock_gen, mock_rewrite):
+        from lib.features.chat_responder import produce_image
+        import urllib.error
+        rejected = urllib.error.HTTPError("u", 400, "Bad Request", {}, io.BytesIO(b'{"error":{"message":"Your request was rejected by the safety system."}}'))
+        mock_gen.side_effect = [rejected, (b"img", 20, 200)]
+        mock_rewrite.return_value = ("Oggers as a cartoon man in a rowing jersey with robots handing him lasagne", 50, 30)
+
+        with patch("lib.features.chat_responder.live_chat_manager.record_usage"):
+            img, _, _, used = await produce_image("Oggers depicted as a caricature dog on a lead, AI robots serving him")
+
+        self.assertEqual(img, b"img")
+        self.assertEqual(used, "Oggers as a cartoon man in a rowing jersey with robots handing him lasagne")
+        self.assertEqual(mock_gen.call_count, 2)
+        self.assertEqual(mock_gen.call_args_list[1][0][0], used)
+
+        # A non-safety failure is not rewritten
+        mock_gen.reset_mock(); mock_rewrite.reset_mock()
+        mock_gen.side_effect = RuntimeError("No image data returned")
+        with self.assertRaises(RuntimeError):
+            await produce_image("anything")
+        mock_rewrite.assert_not_called()
+
+        # Rejected twice: the original error surfaces (so the excuse says 'rejected')
+        mock_gen.reset_mock()
+        mock_gen.side_effect = [rejected, rejected]
+        mock_rewrite.return_value = ("still dodgy", 1, 1)
+        with patch("lib.features.chat_responder.live_chat_manager.record_usage"):
+            with self.assertRaises(urllib.error.HTTPError):
+                await produce_image("x")
+
+    @patch("urllib.request.urlopen")
+    def test_rewrite_prompt_for_safety(self, mock_urlopen):
+        from lib.features.chat_responder import rewrite_prompt_for_safety
+        mock_urlopen.return_value = _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps({"image_prompt": "safer"})}}], "usage": {"prompt_tokens": 5, "completion_tokens": 2}}).encode())
+        text, p, c = rewrite_prompt_for_safety("dodgy prompt", openai_key="test-key")
+        self.assertEqual((text, p, c), ("safer", 5, 2))
+        self.assertIn("REJECTED PROMPT:\ndodgy prompt", _sent_payload(mock_urlopen)["messages"][1]["content"])
 
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
