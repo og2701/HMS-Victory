@@ -672,14 +672,19 @@ async def create_quote_image(client, message):
 
     reply_html = ""
     replied = None
-    is_forward = getattr(getattr(message, "reference", None), "type", None) == discord.MessageReferenceType.forward or int(getattr(getattr(message, "reference", None), "type", 0) or 0) == 1
-    if message.reference and message.reference.message_id and not is_forward:
-        resolved = message.reference.resolved
+    ref = getattr(message, "reference", None)
+    ref_type = getattr(ref, "type", None)
+    is_forward = (
+        ref_type == getattr(discord.MessageReferenceType, "forward", None)
+        or getattr(ref_type, "value", ref_type) == 1
+    )
+    if ref and getattr(ref, "message_id", None) and not is_forward:
+        resolved = getattr(ref, "resolved", None)
         if isinstance(resolved, discord.Message):
             replied = resolved
         else:
             try:
-                replied = await message.channel.fetch_message(message.reference.message_id)
+                replied = await message.channel.fetch_message(ref.message_id)
             except Exception:
                 replied = None
     if isinstance(replied, discord.Message):

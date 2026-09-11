@@ -231,6 +231,43 @@ class TestHallOfFameBotMessages(unittest.IsolatedAsyncioTestCase):
             "Other bot messages can't be added to the Hall of Fame.", ephemeral=True
         )
 
+    @patch("lib.core.log_functions.screenshot_html", new_callable=AsyncMock, return_value=b"fake-png-bytes")
+    @patch("lib.core.log_functions.get_avatar_data_uri", new_callable=AsyncMock, return_value="data:image/png;base64,123")
+    async def test_create_quote_image_handles_enum_reference_type(self, mock_avatar, mock_screenshot):
+        from lib.core.log_functions import create_quote_image
+
+        msg = MagicMock()
+        msg.content = "Look at this horse"
+        msg.created_at = discord.utils.utcnow()
+        msg.author.display_name = "Chin"
+        msg.author.display_avatar.url = "http://example.com/avatar.png"
+        msg.author.default_avatar.url = "http://example.com/default.png"
+        msg.attachments = []
+        msg.embeds = []
+        msg.snapshots = []
+
+        # Reference with discord.MessageReferenceType.default enum
+        ref = MagicMock()
+        ref.type = discord.MessageReferenceType.default
+        ref.message_id = 987654
+        ref.channel_id = 123456
+        ref.resolved = None
+
+        replied_msg = MagicMock()
+        replied_msg.author.display_name = "Kaizo"
+        replied_msg.author.display_avatar.url = "http://example.com/kaizo.png"
+        replied_msg.author.default_avatar.url = "http://example.com/default.png"
+        replied_msg.content = "I hate horses"
+        replied_msg.attachments = []
+        replied_msg.embeds = []
+
+        msg.reference = ref
+        msg.channel.fetch_message = AsyncMock(return_value=replied_msg)
+
+        # Should not raise TypeError: int() argument must be...
+        buf = await create_quote_image(self.client, msg)
+        self.assertIsNotNone(buf)
+
 
 if __name__ == "__main__":
     unittest.main()

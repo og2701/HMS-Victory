@@ -127,12 +127,21 @@ async def send_hof_post(client, thread, message: discord.Message):
     except Exception as e:
         logger.error(f"[HOF] Error creating quote image: {e}")
         embed.description = f"{embed.description}\n\n{message.content}"
+        fallback_files = list(media_files)
         if message.attachments:
             for attachment in message.attachments:
                 if attachment.content_type and attachment.content_type.startswith("image/") and attachment.content_type != "image/gif":
-                    embed.set_image(url=attachment.url)
-                    break
-        await thread.send(content=f"{announcement}{link_block}", embed=embed, files=media_files)
+                    try:
+                        data = await attachment.read()
+                        img_file = discord.File(io.BytesIO(data), filename=attachment.filename, spoiler=attachment.is_spoiler())
+                        fallback_files.append(img_file)
+                        embed.set_image(url=f"attachment://{attachment.filename}")
+                        break
+                    except Exception as attach_err:
+                        logger.warning(f"[HOF] Fallback attachment download failed: {attach_err}")
+                        embed.set_image(url=attachment.url)
+                        break
+        await thread.send(content=f"{announcement}{link_block}", embed=embed, files=fallback_files)
 
 
 async def _hof_post_exists(thread, jump_url: str) -> bool:
@@ -192,6 +201,7 @@ async def regenerate_hof_images(client):
         try:
             file = discord.File(image_buffer, filename="hof_quote.png")
             new_embed = embed.copy()
+            new_embed.description = f"[Click here to jump to message]({original.jump_url})"
             new_embed.set_image(url="attachment://hof_quote.png")
             size_limit = getattr(thread.guild, "filesize_limit", 25 * 1024 * 1024)
             media_files = await collect_media_files(original, size_limit)
