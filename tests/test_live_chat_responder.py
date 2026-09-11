@@ -2072,6 +2072,27 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("cup of tea", mock_gen_img.call_args[0][0])
         self.assertIn("strain your eyes", message2.reply.call_args[0][0])
 
+    async def test_find_recent_image_attachment_reply_to_user_photo(self):
+        from lib.features import chat_responder as cr
+        cr.live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": "[Generated Image: sprite sheet of Hadidas]"})
+        att = MagicMock(); att.filename = "monkey.jpg"; att.content_type = "image/jpeg"
+        twiggy = MagicMock(); twiggy.id = 4321; twiggy.nick = "hot-dog sized twiggy"; twiggy.global_name = None; twiggy.display_name = "hot-dog sized twiggy"; twiggy.name = "twiggy"
+        ref_msg = MagicMock(); ref_msg.content = "what I imagine oggers looks like"; ref_msg.author = twiggy; ref_msg.attachments = [att]
+        message = MagicMock(); message.reference = MagicMock(); message.reference.message_id = 1; message.reference.resolved = ref_msg
+
+        with patch.object(cr.discord, "Message", MagicMock):
+            res = await cr.find_recent_image_attachment(message, bot_id=777)
+        self.assertIsNotNone(res)
+        prev_msg, prev_att, prev_prompt = res
+        self.assertIs(prev_att, att)
+        self.assertEqual(prev_prompt, 'An image posted by hot-dog sized twiggy with the caption: "what I imagine oggers looks like"')
+
+        # One of the bot's own images still uses the generated prompt
+        ref_msg.author = MagicMock(); ref_msg.author.id = 777
+        with patch.object(cr.discord, "Message", MagicMock):
+            _, _, prev_prompt = await cr.find_recent_image_attachment(message, bot_id=777)
+        self.assertEqual(prev_prompt, "sprite sheet of Hadidas")
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):

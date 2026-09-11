@@ -1468,7 +1468,15 @@ async def find_recent_image_attachment(
                 fn = getattr(att, "filename", "").lower()
                 ct = getattr(att, "content_type", "") or ""
                 if fn.endswith((".png", ".jpg", ".jpeg", ".webp")) or ct.startswith("image/"):
-                    prev_prompt = _extract_recent_image_prompt_from_history() or getattr(target_msg, "content", None)
+                    author_id = getattr(getattr(target_msg, "author", None), "id", None)
+                    if bot_id and author_id == bot_id:
+                        # One of ours: the prompt we generated it from is the best description.
+                        prev_prompt = _extract_recent_image_prompt_from_history() or getattr(target_msg, "content", None)
+                    else:
+                        # Someone else's photo: describe it by its own caption, never by our last generated prompt.
+                        caption = (getattr(target_msg, "content", None) or "").strip()
+                        who = _member_display_name(getattr(target_msg, "author", None), "a user")
+                        prev_prompt = f"An image posted by {who}" + (f" with the caption: \"{caption}\"" if caption else " (no caption)")
                     return target_msg, att, prev_prompt
 
     # 2. Channel history
