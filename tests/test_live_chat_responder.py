@@ -350,6 +350,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("TEMPORAL ANCHOR", ONE_OFF_SYSTEM_PROMPT)
         self.assertIn("TODAY'S REAL-WORLD DATE", ONE_OFF_SYSTEM_PROMPT)
         self.assertIn("DECLINING IN CHARACTER", ONE_OFF_SYSTEM_PROMPT)
+        self.assertIn("FLY THE FLAG, QUIETLY", ONE_OFF_SYSTEM_PROMPT)
+        from lib.features.chat_responder import BASE_SYSTEM_PROMPT
+        self.assertIn("FLY THE FLAG, QUIETLY", BASE_SYSTEM_PROMPT)
 
     @patch("urllib.request.urlopen")
     def test_generate_one_off_reply_payload(self, mock_urlopen):
@@ -1216,9 +1219,13 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Jaffa Cakes Fanatic", user)
         self.assertIn("Vic loves me", user)
 
+        self.assertIn("FLY THE FLAG, QUIETLY", system)
+        self.assertIn("Britain is never the loser", system)
+
         # Call 2: caption, persona on, given the finished image prompt
         caption_call = _sent_payload(mock_urlopen, 1)
         self.assertIn("You are HMS Victory", caption_call["messages"][0]["content"])
+        self.assertIn("sides with Britain", caption_call["messages"][0]["content"])
         self.assertIn("THE IMAGE SHOWS: A four-panel comic strip...", caption_call["messages"][1]["content"])
 
     @patch("urllib.request.urlopen")
