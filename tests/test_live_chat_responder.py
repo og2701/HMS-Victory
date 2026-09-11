@@ -1468,7 +1468,23 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         )
         user = _sent_payload(mock_urlopen, 4)["messages"][1]["content"]
         self.assertIn("VARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): Art style", user)
+        self.assertIn("Every listed person appears, each with their own gag", user)
+        system = _sent_payload(mock_urlopen, 4)["messages"][0]["content"]
+        self.assertIn("EVERY ONE OF THEM MUST APPEAR", system)
+        self.assertIn('"characters": [', system)
         self.assertNotIn("Physical base", user)
+
+    @patch("urllib.request.urlopen")
+    def test_synthesize_group_prompt_parses_characters_and_scales_budget(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_contextual_image_prompt
+        def chat(body):
+            return _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}}], "usage": {}}).encode())
+        mock_urlopen.side_effect = [chat({"characters": [{"name": "Lanca", "gag": "waffles"}, {"name": "Gunner", "gag": "Oxford"}], "scene": "kitchen fire", "image_prompt": "Lanca and Gunner..."}), chat({"caption": "y"})]
+        roster = "SERVER MEMBER ROSTER FOR ukplace (these 2 people...):\n\nMEMBER: Lanca (<@1>)\nDOSSIER...\n\nMEMBER: Gunner (<@2>)\nDOSSIER..."
+        img, _, _, _ = synthesize_contextual_image_prompt(prompt="image of <@1> and <@2>", context=roster, user_name="Hadidas", caller_role="deputy",
+                                                          target_name="Lanca and Gunner", is_group=True, openai_key="test-key")
+        self.assertEqual(img, "Lanca and Gunner...")
+        self.assertEqual(_sent_payload(mock_urlopen, 0)["max_tokens"], 550 + 160)
 
     @patch("urllib.request.urlopen")
     def test_classify_mention_intent_sees_recent_exchanges_and_correction_rule(self, mock_urlopen):

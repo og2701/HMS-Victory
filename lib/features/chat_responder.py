@@ -1061,7 +1061,7 @@ RULES:
 4. Everything in the image must come from the request and the history. Do not add nationality, patriotic, military, naval or period imagery unless the history is genuinely about it.
 5. The payload states whether HMS VICTORY IS IN THE PICTURE. If yes, add a second character: a weathered 18th-century first-rate ship of the line with a stern, unimpressed personality (the ship itself with a disapproving air, or a stern naval officer figurehead), interacting with the person the way their HISTORY BETWEEN transcript suggests. If no, there must be no ship, sailors or naval officers of any kind.
 6. If PREVIOUS IMAGES are listed, every prop, food, drink, outfit, slogan, setting and gag in them is BANNED, even if the history mentions them again. Use different material; there is always more.
-7. GROUP PICTURES: if a SERVER MEMBER ROSTER is provided, the people in it are the ONLY people in the image. Give each one a distinct, recognisable caricature drawn from their own listed messages, once each, all in one scene. Never invent extra people, usernames, handles or names. Text in the image is limited to the roster members' names as small labels, or no text at all; never fabricate chat messages, channel lists or UI.
+7. GROUP PICTURES: if a SERVER MEMBER ROSTER is provided, the people in it are the ONLY people in the image and EVERY ONE OF THEM MUST APPEAR with roughly equal prominence. Give each a distinct, recognisable caricature and their OWN gag drawn from their own dossier, once each, all in one scene that connects them (something they're doing together, or side by side reacting to each other). Do not let one person's material take over the picture. Never invent extra people, usernames, handles or names. Text in the image is limited to the roster members' names as small labels, or no text at all; never fabricate chat messages, channel lists or UI. The word limit for a group is 40 words per person plus 40 for the scene.
 8. In any image, never render made-up usernames, handles, screen names or chat text. If you need labels, use only real names given in the payload.
 9. LOOKS COME FROM THE MESSAGES FIRST. Before writing the prompt, fill in a character sheet from the evidence in their messages and name:
    - gender: from their name, how others address them, how they refer to themselves. Never assume male.
@@ -1073,8 +1073,10 @@ RULES:
 10. Keep visible text minimal: at most two short labels in the whole image. No walls of signs, menus, lists, sticky notes, posters with slogans or speech bubbles unless a comic strip was requested.
 11. REFERENCE IMAGES: if the requester attached images, they are references. Describe what matters in them concretely in the prompt (the actual animal and its colour and markings, the object, the outfit, the setting) so the generator reproduces it. If a reference shows a person, that is their real look and it overrides the character sheet.
 
-Respond ONLY with a JSON object:
-{"character_sheet": {"gender": "...", "age_band": "...", "build_hair_face": "...", "expression_energy": "...", "style": "...", "gag": "the central joke, naming the specific thing + the quoted message it comes from", "supporting_references": ["4-6 smaller references from different conversations, each with what it is in the picture + the quote"], "exaggerations": "which traits and features are blown up"}, "image_prompt": "..."}"""
+Respond ONLY with a JSON object. For a single subject:
+{"character_sheet": {"gender": "...", "age_band": "...", "build_hair_face": "...", "expression_energy": "...", "style": "...", "gag": "the central joke, naming the specific thing + the quoted message it comes from", "supporting_references": ["4-6 smaller references from different conversations, each with what it is in the picture + the quote"], "exaggerations": "which traits and features are blown up"}, "image_prompt": "..."}
+For a GROUP (a SERVER MEMBER ROSTER was provided):
+{"characters": [{"name": "...", "gender": "...", "age_band": "...", "look": "...", "gag": "their own joke + the quote it comes from", "references": ["2-3 smaller references from their own dossier"]}, ...one entry per roster member, none skipped...], "scene": "what they are all doing together and how the gags interact", "style": "...", "image_prompt": "..."}"""
 
 
 def _chat_completion_json(
@@ -1143,7 +1145,7 @@ def synthesize_image_prompt_from_context(
 
     user_payload = f"REQUEST: \"{prompt}\""
     if is_group:
-        user_payload += "\nSUBJECT: the group listed in the SERVER MEMBER ROSTER"
+        user_payload += "\nSUBJECT: the GROUP listed in the SERVER MEMBER ROSTER. Every listed person appears, each with their own gag, equal prominence. Use the GROUP JSON format."
     elif subject_name:
         user_payload += (
             f"\nSUBJECT: {subject_name}. Their history is the source. If the request asks for someone or something RELATED to them "
@@ -1172,14 +1174,20 @@ def synthesize_image_prompt_from_context(
     if context.strip():
         user_payload += f"\n\nMESSAGE HISTORY & CONTEXT:\n{context.strip()}"
 
+    roster_size = len(re.findall(r"^MEMBER: ", context or "", flags=re.M)) if is_group else 0
     parsed, p_tokens, c_tokens = _chat_completion_json(
         IMAGE_PROMPT_WRITER_INSTRUCTIONS, user_payload, api_key,
-        model=model, max_tokens=550, temperature=0.85, timeout=timeout, what="Image prompt synthesis",
+        model=model, max_tokens=550 + 160 * max(0, roster_size - 1), temperature=0.85, timeout=timeout, what="Image prompt synthesis",
         image_urls=reference_image_urls,
     )
     sheet = parsed.get("character_sheet")
     if isinstance(sheet, dict):
         logger.info("Image character sheet: %s", json.dumps(sheet, ensure_ascii=False)[:600])
+    chars = parsed.get("characters")
+    if isinstance(chars, list) and chars:
+        logger.info("Image group characters (%d): %s", len(chars), json.dumps(chars, ensure_ascii=False)[:900])
+        if is_group and roster_size and len(chars) < roster_size:
+            logger.warning("Group image prompt covers %d of %d roster members", len(chars), roster_size)
     return (parsed.get("image_prompt") or "").strip(), p_tokens, c_tokens
 
 
