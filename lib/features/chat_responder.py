@@ -824,6 +824,7 @@ def appearance_directives(seed: Optional[int] = None, include_physical: bool = T
 IMAGE_PROMPT_WRITER_INSTRUCTIONS = """You write prompts for an AI image generator (DALL-E / diffusion). You are given a request and a Discord user's message history. Your only job is to turn what that history reveals about the person into one purely visual image prompt.
 
 DEFAULT BRIEF: A CARICATURE FOR A ROAST, NOT A PORTRAIT. Unless the request asks for something specific (a photo, a serious portrait, a named style, a particular scene), the picture is a joke at their expense that anyone in the server would get instantly. Mine the history for the 2-3 most ridiculous recurring things about them (an obsession, a catchphrase, a habit, an opinion they won't drop, a running joke others make about them) and build ONE clear visual gag around them: their habit taken to an absurd extreme, their catchphrase made literal, their obsession physically overwhelming them. Exaggerate physically too: whichever feature suits the gag is enormous. No dignified, moody, mid-tirade-in-a-cafe character studies; no mood pieces. Comedy beats accuracy. If the request specifies a style, scene, or realism, that overrides this brief.
+THE GAG MUST BE SPECIFIC. It names an actual thing from their messages (the exact food, team, purchase, complaint, pet, place, catchphrase, or incident) and quotes the message it comes from. "He rants a lot", "she's chaotic", "he's sarcastic", "arguing with himself", "surrounded by clutter" are NOT gags; they are moods, and they are banned as the central idea. Someone who knows this person should look at the picture and immediately name the joke.
 
 RULES:
 1. Build the picture from RECURRING themes across the whole history (hobbies, pets, catchphrases, food and drink habits, opinions, running jokes, how they talk to people), not from whatever they said most recently. A single mention is not a trait. Prefer things other people in the chat tease them about: that's what the server finds funny.
@@ -845,7 +846,7 @@ RULES:
 11. REFERENCE IMAGES: if the requester attached images, they are references. Describe what matters in them concretely in the prompt (the actual animal and its colour and markings, the object, the outfit, the setting) so the generator reproduces it. If a reference shows a person, that is their real look and it overrides the character sheet.
 
 Respond ONLY with a JSON object:
-{"character_sheet": {"gender": "...", "age_band": "...", "build_hair_face": "...", "expression_energy": "...", "style": "...", "gag": "the one-line joke the image tells, and which history it comes from", "exaggerations": "which traits and features are blown up"}, "image_prompt": "..."}"""
+{"character_sheet": {"gender": "...", "age_band": "...", "build_hair_face": "...", "expression_energy": "...", "style": "...", "gag": "the one-line joke the image tells, naming the specific thing + the quoted message it comes from", "exaggerations": "which traits and features are blown up"}, "image_prompt": "..."}"""
 
 
 def _chat_completion_json(
