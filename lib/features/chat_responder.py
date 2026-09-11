@@ -1205,17 +1205,32 @@ def synthesize_image_prompt_from_context(
     except OpenAIRefusal as e:
         if not reference_image_urls:
             raise
-        # The vision model balked at the reference (usually a face). Write the prompt from the history instead;
-        # the caller can still hand the reference to the image edit endpoint for likeness.
-        logger.warning("Image prompt writer refused with references (%s); retrying without them", e)
-        user_payload = user_payload.replace(
-            f"\n\nREFERENCE IMAGES ATTACHED BY THE REQUESTER: {len(reference_image_urls)} (see attached; describe what matters from them in the prompt)",
-            "\n\n(A reference photo was attached but could not be inspected; the generator will be given it directly for likeness. Describe pose, style and scene, not their face.)",
-        )
-        parsed, p_tokens, c_tokens = _chat_completion_json(
-            IMAGE_PROMPT_WRITER_INSTRUCTIONS, user_payload, api_key,
-            model=model, max_tokens=max_tokens, temperature=0.85, timeout=timeout, what="Image prompt synthesis (no references)",
-        )
+        # The vision model balked at the reference (usually a face). Retry WITH the image but reframed as pure
+        # art direction: visible attributes only, no identification. That wording is what usually gets through.
+        logger.warning("Image prompt writer refused with references (%s); retrying with them reframed", e)
+        reframed = (
+            "ART-DIRECTION NOTE ABOUT THE ATTACHED IMAGE(S): you are not being asked who anyone is and must not try to identify or "
+            "name them. Treat the attachment purely as a visual reference for an illustrator: list the visible attributes to "
+            "reproduce (hair colour, length and style; facial hair; face shape; build; skin tone; clothing and era; expression; "
+            "colours; pose) and fold them into the image prompt.\n\n"
+        ) + user_payload
+        try:
+            parsed, p_tokens, c_tokens = _chat_completion_json(
+                IMAGE_PROMPT_WRITER_INSTRUCTIONS, reframed, api_key,
+                model=model, max_tokens=max_tokens, temperature=0.6, timeout=timeout, what="Image prompt synthesis (reframed references)",
+                image_urls=reference_image_urls,
+            )
+        except OpenAIRefusal as e2:
+            # Still refused: write the prompt from the history; the caller hands the photo to the edit endpoint for likeness.
+            logger.warning("Image prompt writer refused the reframed references too (%s); retrying without them", e2)
+            user_payload = user_payload.replace(
+                f"\n\nREFERENCE IMAGES ATTACHED BY THE REQUESTER: {len(reference_image_urls)} (see attached; describe what matters from them in the prompt)",
+                "\n\n(A reference photo was attached but could not be inspected; the generator will be given it directly for likeness. Describe pose, style and scene, not their face.)",
+            )
+            parsed, p_tokens, c_tokens = _chat_completion_json(
+                IMAGE_PROMPT_WRITER_INSTRUCTIONS, user_payload, api_key,
+                model=model, max_tokens=max_tokens, temperature=0.85, timeout=timeout, what="Image prompt synthesis (no references)",
+            )
     sheet = parsed.get("character_sheet")
     if isinstance(sheet, dict):
         logger.info("Image character sheet: %s", json.dumps(sheet, ensure_ascii=False)[:600])

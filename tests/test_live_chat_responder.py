@@ -1955,9 +1955,11 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         from lib.features.chat_responder import synthesize_contextual_image_prompt
         def chat(body):
             return _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}}], "usage": {}}).encode())
-        refusal = _mock_resp(json.dumps({"choices": [{"message": {"content": None, "refusal": "no faces"}}], "usage": {}}).encode())
-        mock_urlopen.side_effect = [refusal, chat({"image_prompt": "a gen 4 pokemon trainer sprite of a long-haired man in a cravat"}), chat({"caption": "y"})]
+        def refusal():
+            return _mock_resp(json.dumps({"choices": [{"message": {"content": None, "refusal": "no faces"}}], "usage": {}}).encode())
 
+        # First refusal: retried WITH the image, reframed as art direction
+        mock_urlopen.side_effect = [refusal(), chat({"image_prompt": "a gen 4 pokemon trainer sprite of a long-haired man in a cravat"}), chat({"caption": "y"})]
         img, _, _, _ = synthesize_contextual_image_prompt(
             prompt="using <@1> profile picture can you generate them as a pokemon sprite", context="", user_name="Hadidas", caller_role="deputy",
             target_name="oggers", target_id=1, openai_key="test-key", reference_image_urls=["https://cdn/oggers.png"],
@@ -1965,11 +1967,25 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(img, "a gen 4 pokemon trainer sprite of a long-haired man in a cravat")
         self.assertEqual(mock_urlopen.call_count, 3)
         first = _sent_payload(mock_urlopen, 0)["messages"][1]["content"]
-        self.assertIsInstance(first, list)          # with the image
+        self.assertIsInstance(first, list)
         second = _sent_payload(mock_urlopen, 1)["messages"][1]["content"]
-        self.assertIsInstance(second, str)          # retried without it
-        self.assertIn("could not be inspected", second)
+        self.assertIsInstance(second, list)                        # still has the image
+        self.assertEqual(second[1]["image_url"]["url"], "https://cdn/oggers.png")
+        self.assertIn("ART-DIRECTION NOTE", second[0]["text"])
+        self.assertIn("must not try to identify", second[0]["text"])
         self.assertIn("never attempt to identify", _sent_payload(mock_urlopen, 0)["messages"][0]["content"])
+
+        # Refused twice: only then drop the image
+        mock_urlopen.reset_mock()
+        mock_urlopen.side_effect = [refusal(), refusal(), chat({"image_prompt": "from history only"}), chat({"caption": "y"})]
+        img, _, _, _ = synthesize_contextual_image_prompt(
+            prompt="using <@1> profile picture can you generate them as a pokemon sprite", context="", user_name="Hadidas", caller_role="deputy",
+            target_name="oggers", target_id=1, openai_key="test-key", reference_image_urls=["https://cdn/oggers.png"],
+        )
+        self.assertEqual(img, "from history only")
+        third = _sent_payload(mock_urlopen, 2)["messages"][1]["content"]
+        self.assertIsInstance(third, str)
+        self.assertIn("could not be inspected", third)
 
     @patch("lib.features.chat_responder.download_image_bytes", return_value=b"png-of-oggers")
     @patch("lib.features.chat_responder.edit_image_openai")
