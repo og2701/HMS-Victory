@@ -1239,9 +1239,10 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         # caption call died: canned caption, image prompt still returned
         self.assertEqual(caption, "Here is your image. Try not to strain your eyes.")
 
+    @patch("lib.features.chat_responder.build_user_dossier", return_value=None)
     @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock)
     @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock)
-    async def test_ensure_target_history_adds_sample_and_exchanges(self, mock_sample, mock_exchanges):
+    async def test_ensure_target_history_adds_sample_and_exchanges(self, mock_sample, mock_exchanges, _dossier):
         from lib.features.chat_responder import ensure_target_history_in_context
 
         mock_sample.return_value = [{"content": "I love Bradley Walsh", "channel": "general", "ts": 1}]
@@ -1291,9 +1292,10 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("GROUP BY user_id", q)
         self.assertEqual(params[1], 3)
 
+    @patch("lib.features.chat_responder.build_user_dossier", return_value=None)
     @patch("lib.features.chat_responder.fetch_user_recent_chat")
     @patch("lib.features.chat_responder.fetch_most_active_users")
-    async def test_build_group_roster_context(self, mock_active, mock_chat):
+    async def test_build_group_roster_context(self, mock_active, mock_chat, _dossier):
         from lib.features.chat_responder import build_group_roster_context
 
         def member(uid, name, bot=False):
@@ -1611,6 +1613,98 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         mock_gen_img.assert_called_once_with("A weathered warship strapped to an operating table...")
         self.assertIn("impending lobotomy", message.reply.call_args[0][0])
         self.assertNotIn("strain your eyes", message.reply.call_args[0][0])
+
+    @patch("database.DatabaseManager.fetch_all")
+    def test_fetch_user_messages_bulk_spreads_evenly(self, mock_fetch):
+        from lib.features.chat_responder import fetch_user_messages_bulk
+        rows = [(f"message number {i} about things", 1000 + i) for i in range(100)] + [("<:hips:1>", 2000), ("ok", 2001)]
+        mock_fetch.return_value = rows
+        res = fetch_user_messages_bulk(1, days=30, limit=10)
+        self.assertEqual(len(res), 10)
+        self.assertEqual(res[0]["content"], "message number 0 about things")
+        self.assertEqual(res[-1]["content"], "message number 90 about things")
+        self.assertTrue(all("hips" not in r["content"] for r in res))
+
+    @patch("database.DatabaseManager.fetch_all")
+    def test_fetch_mentions_of_user(self, mock_fetch):
+        from lib.features.chat_responder import fetch_mentions_of_user
+        mock_fetch.return_value = [("2", "tharan is a pub geezer", 900), ("3", "<@1>", 850), ("4", "<@1> stop", 800)]
+        res = fetch_mentions_of_user(1, ["Tharan", "th"], days=30, limit=10)
+        self.assertEqual([r["content"] for r in res], ["tharan is a pub geezer", "<@1> stop"])
+        q, params = mock_fetch.call_args[0]
+        self.assertIn("user_id != ?", q)
+        self.assertEqual(params[0], "1")
+        self.assertIn("%<@1>%", params)
+        self.assertIn("%tharan%", params)
+        self.assertNotIn("%th%", params)  # too short to be a useful alias
+
+    @patch("lib.features.chat_responder._save_dossier_cache")
+    @patch("lib.features.chat_responder.fetch_mentions_of_user")
+    @patch("lib.features.chat_responder.fetch_user_messages_bulk")
+    @patch("urllib.request.urlopen")
+    def test_build_user_dossier_and_cache(self, mock_urlopen, mock_bulk, mock_about, _save):
+        from lib.features import chat_responder as cr
+        cr._USER_DOSSIER_CACHE.clear()
+        cr._dossier_cache_loaded = True
+        mock_bulk.return_value = [{"content": f"msg {i} about pumpkin spice", "ts": i} for i in range(40)]
+        mock_about.return_value = [{"author_id": "2", "content": "tharan is a pub geezer", "ts": 5}]
+        mock_urlopen.return_value = _mock_resp(json.dumps({
+            "choices": [{"message": {"content": json.dumps({
+                "summary": "A pumpkin spice apologist.",
+                "recurring_themes": ["pumpkin spice lattes: 'I understand the hype'"],
+                "running_jokes": ["pub geezer"],
+                "catchphrases": ["corrrr"],
+                "what_others_say": ["<@2>: tharan is a pub geezer"],
+                "notable_incidents": ["stair rail for two steps"],
+                "look_clues": "none",
+            })}}],
+            "usage": {"prompt_tokens": 5000, "completion_tokens": 300},
+        }).encode())
+
+        with patch("lib.features.chat_responder.live_chat_manager.record_usage"):
+            text = cr.build_user_dossier(1, "Tharan", openai_key="test-key")
+
+        self.assertIn("DOSSIER ON Tharan (<@1>), distilled from 40 of their messages and 1 mentions", text)
+        self.assertIn("Summary: A pumpkin spice apologist.", text)
+        self.assertIn("Running jokes:\n  - pub geezer", text)
+        self.assertIn("Notable incidents:\n  - stair rail for two steps", text)
+        self.assertNotIn("Look clues", text)
+        sent = _sent_payload(mock_urlopen)
+        self.assertEqual(sent["model"], "gpt-4o-mini")
+        self.assertIn("comedy dossier", sent["messages"][0]["content"])
+        self.assertIn("msg 39 about pumpkin spice", sent["messages"][1]["content"])
+        self.assertIn("<@2>: tharan is a pub geezer", sent["messages"][1]["content"])
+
+        # cached: no second call
+        text2 = cr.build_user_dossier(1, "Tharan", openai_key="test-key")
+        self.assertEqual(text2, text)
+        self.assertEqual(mock_urlopen.call_count, 1)
+
+        # too little history: no dossier, no call
+        mock_bulk.return_value = [{"content": "hi there mate", "ts": 1}]
+        self.assertIsNone(cr.build_user_dossier(2, "Newbie", openai_key="test-key"))
+        self.assertEqual(mock_urlopen.call_count, 1)
+        cr._USER_DOSSIER_CACHE.clear()
+
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock)
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock)
+    @patch("lib.features.chat_responder.build_user_dossier")
+    async def test_ensure_target_history_prefers_dossier(self, mock_dossier, mock_recent, mock_sample, _ex):
+        from lib.features.chat_responder import ensure_target_history_in_context
+        mock_dossier.return_value = "DOSSIER ON Tharan (<@1>): pumpkin spice"
+        mock_recent.return_value = [{"content": "just now: corrrr", "channel": "general", "ts": 1}]
+        ctx = await ensure_target_history_in_context(MagicMock(), MagicMock(), "", 1, "Tharan", prompt="draw tharan")
+        self.assertIn("DOSSIER ON Tharan", ctx)
+        self.assertIn("THEIR MOST RECENT MESSAGES (for freshness) FOR Tharan", ctx)
+        self.assertIn("just now: corrrr", ctx)
+        mock_sample.assert_not_called()
+
+        mock_dossier.return_value = None
+        mock_sample.return_value = [{"content": "old msg", "channel": "general", "ts": 1}]
+        ctx = await ensure_target_history_in_context(MagicMock(), MagicMock(), "", 1, "Tharan", prompt="draw tharan")
+        self.assertIn("SAMPLED ACROSS THE LAST 30 DAYS", ctx)
+        self.assertNotIn("DOSSIER", ctx)
 
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent

@@ -673,6 +673,170 @@ async def fetch_user_recent_chat_async(
     return results
 
 
+USER_DOSSIER_FILE = os.path.join(os.path.dirname(IMAGE_GEN_USAGE_FILE), "user_dossiers.json")
+USER_DOSSIER_TTL_SECONDS = 24 * 3600
+USER_DOSSIER_MODEL = "gpt-4o-mini"  # ~20k input tokens per person per day; mini keeps that at a fraction of a penny
+_USER_DOSSIER_CACHE: Dict[str, Dict[str, Any]] = {}
+_dossier_cache_loaded = False
+
+USER_DOSSIER_INSTRUCTIONS = """You are compiling a comedy dossier on one Discord user for a caricaturist who will draw them for a roast.
+You get a large sample of their own messages from the last 30 days, plus messages where other people mention them.
+
+Pick out what is actually FUNNY and RECURRING about them. Be concrete and quote them. Prefer things that come up again and again, things other people tease them about, and specific incidents with detail, over one-off remarks. Ignore small talk. Do not moralise, do not pad, do not invent.
+
+Respond ONLY with a JSON object:
+{
+  "summary": "two or three sentences: who this person is in this server, in the caricaturist's terms",
+  "recurring_themes": ["the 4-8 things they go on about most, each with a short quote"],
+  "running_jokes": ["jokes the server makes about them or they make about themselves, with quotes"],
+  "catchphrases": ["exact phrases or spellings they keep using"],
+  "what_others_say": ["how others tease or describe them, quoted, with who said it if known"],
+  "notable_incidents": ["specific stories or moments worth drawing, each in one line with a quote"],
+  "look_clues": "anything they've said about their own appearance, age, job, where they live, gender; or 'none'"
+}"""
+
+
+def _load_dossier_cache() -> None:
+    global _dossier_cache_loaded
+    if _dossier_cache_loaded:
+        return
+    _dossier_cache_loaded = True
+    try:
+        data = load_json_file(USER_DOSSIER_FILE) or {}
+        if isinstance(data, dict):
+            _USER_DOSSIER_CACHE.update({str(k): v for k, v in data.items() if isinstance(v, dict)})
+    except Exception as e:
+        logger.debug("Could not load dossier cache: %s", e)
+
+
+def _save_dossier_cache() -> None:
+    try:
+        atomic_write_json(USER_DOSSIER_FILE, _USER_DOSSIER_CACHE, indent=2)
+    except Exception as e:
+        logger.debug("Could not save dossier cache: %s", e)
+
+
+def fetch_user_messages_bulk(user_id: int, days: int = 30, limit: int = 600) -> List[Dict[str, Any]]:
+    """Up to `limit` substantive messages by a user over `days`, spread evenly across the window, oldest first."""
+    out: List[Dict[str, Any]] = []
+    try:
+        from database import DatabaseManager
+        cutoff = int(time.time()) - days * 86400
+        rows = DatabaseManager.fetch_all(
+            "SELECT content, ts FROM message_archive WHERE user_id = ? AND ts > ? ORDER BY ts ASC",
+            (str(user_id), cutoff),
+        )
+        seen: set = set()
+        for content, ts in rows or []:
+            txt = (content or "").strip()
+            if not is_substantive_message(txt) or txt in seen:
+                continue
+            seen.add(txt)
+            out.append({"content": txt, "ts": ts})
+    except Exception as e:
+        logger.debug("Failed bulk fetch for user %s: %s", user_id, e)
+        return out
+    if len(out) > limit:
+        step = len(out) / float(limit)
+        out = [out[int(i * step)] for i in range(limit)]
+    return out
+
+
+def fetch_mentions_of_user(user_id: int, names: List[str], days: int = 30, limit: int = 150) -> List[Dict[str, Any]]:
+    """Messages by OTHER people that tag the user or use one of their names, newest first, substantive only."""
+    out: List[Dict[str, Any]] = []
+    try:
+        from database import DatabaseManager
+        cutoff = int(time.time()) - days * 86400
+        clauses = ["content LIKE ?"]
+        params: List[Any] = [str(user_id), cutoff, f"%<@{user_id}>%"]
+        for n in names:
+            n = (n or "").strip()
+            if len(n) >= 3:
+                clauses.append("lower(content) LIKE ?")
+                params.append(f"%{n.lower()}%")
+        params.append(limit * 2)
+        rows = DatabaseManager.fetch_all(
+            "SELECT user_id, content, ts FROM message_archive WHERE user_id != ? AND ts > ? AND ("
+            + " OR ".join(clauses) + ") ORDER BY ts DESC LIMIT ?",
+            tuple(params),
+        )
+        for author, content, ts in rows or []:
+            txt = (content or "").strip()
+            if not is_substantive_message(txt):
+                continue
+            out.append({"author_id": author, "content": txt, "ts": ts})
+            if len(out) >= limit:
+                break
+    except Exception as e:
+        logger.debug("Failed mentions fetch for user %s: %s", user_id, e)
+    return out
+
+
+def build_user_dossier(
+    user_id: int,
+    name: str,
+    aliases: Optional[List[str]] = None,
+    openai_key: Optional[str] = None,
+    model: str = USER_DOSSIER_MODEL,
+    force: bool = False,
+) -> Optional[str]:
+    """Distil a user's last 30 days into a comedy dossier (cached ~24h on disk). Returns formatted text or None."""
+    _load_dossier_cache()
+    key = str(user_id)
+    cached = _USER_DOSSIER_CACHE.get(key)
+    if cached and not force and time.time() - float(cached.get("ts", 0)) < USER_DOSSIER_TTL_SECONDS and cached.get("text"):
+        return cached["text"]
+
+    api_key = openai_key or os.getenv("OPENAI_TOKEN")
+    if not api_key:
+        return None
+
+    own = fetch_user_messages_bulk(user_id)
+    if len(own) < 15:
+        return None  # not enough to say anything; the caller falls back to the plain sample
+    names = [n for n in ([name] + list(aliases or [])) if n]
+    about = fetch_mentions_of_user(user_id, names)
+
+    own_lines = "\n".join(f"- {m['content'][:200]}" for m in own)
+    about_lines = "\n".join(f"- <@{m['author_id']}>: {m['content'][:200]}" for m in about) or "- [none found]"
+    user_payload = (
+        f"USER: {name} (<@{user_id}>)\n\n"
+        f"THEIR OWN MESSAGES, LAST 30 DAYS ({len(own)} sampled evenly across the period, oldest first):\n{own_lines}\n\n"
+        f"WHAT OTHERS SAID ABOUT OR TO THEM ({len(about)}):\n{about_lines}"
+    )
+    parsed, p_tok, c_tok = _chat_completion_json(
+        USER_DOSSIER_INSTRUCTIONS, user_payload, api_key, model=model, max_tokens=900, temperature=0.4,
+        timeout=60, what="User dossier",
+    )
+    try:
+        live_chat_manager.record_usage(model, p_tok, c_tok, is_reply=True)
+    except Exception:
+        pass
+
+    def _list(k: str) -> List[str]:
+        v = parsed.get(k)
+        return [str(x) for x in v if x] if isinstance(v, list) else ([str(v)] if v else [])
+
+    parts = [f"DOSSIER ON {name} (<@{user_id}>), distilled from {len(own)} of their messages and {len(about)} mentions over the last 30 days:"]
+    if parsed.get("summary"):
+        parts.append(f"Summary: {parsed['summary']}")
+    for label, k in (("Recurring themes", "recurring_themes"), ("Running jokes", "running_jokes"),
+                     ("Catchphrases", "catchphrases"), ("What others say", "what_others_say"),
+                     ("Notable incidents", "notable_incidents")):
+        items = _list(k)
+        if items:
+            parts.append(f"{label}:\n" + "\n".join(f"  - {i}" for i in items[:10]))
+    if parsed.get("look_clues") and str(parsed["look_clues"]).strip().lower() != "none":
+        parts.append(f"Look clues: {parsed['look_clues']}")
+    text = "\n".join(parts)
+
+    _USER_DOSSIER_CACHE[key] = {"ts": time.time(), "name": name, "text": text}
+    _save_dossier_cache()
+    logger.info("Built dossier for %s (%s): %d own msgs, %d mentions, %d/%d tokens", name, user_id, len(own), len(about), p_tok, c_tok)
+    return text
+
+
 _BOT_NAME_RE = re.compile(r"\b(?:vic|victory|hms\s+victory)\b", re.IGNORECASE)
 
 
@@ -827,7 +991,7 @@ DEFAULT BRIEF: A CARICATURE FOR A ROAST, NOT A PORTRAIT. Unless the request asks
 THE GAG MUST BE SPECIFIC. It names an actual thing from their messages (the exact food, team, purchase, complaint, pet, place, catchphrase, or incident) and quotes the message it comes from. "He rants a lot", "she's chaotic", "he's sarcastic", "arguing with himself", "surrounded by clutter" are NOT gags; they are moods, and they are banned as the central idea. Someone who knows this person should look at the picture and immediately name the joke.
 
 RULES:
-1. Build the picture from RECURRING themes across the whole history (hobbies, pets, catchphrases, food and drink habits, opinions, running jokes, how they talk to people), not from whatever they said most recently. A single mention is not a trait. Prefer things other people in the chat tease them about: that's what the server finds funny.
+1. Build the picture from RECURRING themes across the whole history (hobbies, pets, catchphrases, food and drink habits, opinions, running jokes, how they talk to people), not from whatever they said most recently. A single mention is not a trait. Prefer things other people in the chat tease them about: that's what the server finds funny. If a DOSSIER section is provided, it was distilled from hundreds of their messages and is your primary source; the recent-messages list is only for freshness.
 2. Under 110 words. Purely visual: physical caricature, expression, attire, props in hand, setting. No names, Discord tags, usernames, or meta instructions.
 3. HONOUR THE REQUESTED FORMAT, MEDIUM AND STYLE EXACTLY. 'cartoon strip' / 'comic strip' / 'comic' means ONE image laid out as 3 or 4 sequential panels telling a simple gag, with at most a few words of speech-bubble text. 'photorealistic' / 'photo' means a realistic photograph, not a caricature. 'cartoon', 'anime', 'oil painting', 'pixel art', 'sketch' and the like mean exactly that. Only pick a style when none was requested, and pick one that suits the person and the gag (satirical caricature, comic-book illustration, editorial cartoon, storybook illustration, watercolour, retro poster...). NEVER photorealistic, photographic, hyperreal, or realistic 3D-render unless the request explicitly asks for a photo or realism: the default is illustrated and stylised. Always name the medium explicitly in the prompt (e.g. "ink and watercolour illustration", "flat vector cartoon") so the generator does not drift into realism.
 4. Everything in the image must come from the request and the history. Do not add nationality, patriotic, military, naval or period imagery unless the history is genuinely about it.
@@ -2823,17 +2987,31 @@ async def ensure_target_history_in_context(
         return context
     name = target_name or "Target User"
     sections: List[str] = []
+    dossier = None
     try:
-        sampled = await fetch_user_chat_sample_async(client, target_id)
-        if sampled:
-            sections.append(format_user_chat_for_context(
-                name, target_id, sampled, header="MESSAGE HISTORY SAMPLED ACROSS THE LAST 30 DAYS FOR", max_lines=100,
-            ))
-        elif not context_has_user_history(context, target_id):
-            recent = await fetch_user_recent_chat_async(client, target_id, getattr(message, "channel", None), limit=35)
-            sections.append(format_user_chat_for_context(name, target_id, recent))
+        dossier = await asyncio.to_thread(build_user_dossier, target_id, name)
     except Exception as e:
-        logger.debug("Failed to fetch target user chat for image context: %s", e)
+        logger.warning("Dossier build failed for %s, falling back to a raw sample: %s", target_id, e)
+    if dossier:
+        sections.append(dossier)
+        try:
+            recent = await fetch_user_recent_chat_async(client, target_id, getattr(message, "channel", None), limit=15)
+            if recent:
+                sections.append(format_user_chat_for_context(name, target_id, recent, header="THEIR MOST RECENT MESSAGES (for freshness) FOR", max_lines=15))
+        except Exception as e:
+            logger.debug("Failed to fetch recent chat for %s: %s", target_id, e)
+    else:
+        try:
+            sampled = await fetch_user_chat_sample_async(client, target_id)
+            if sampled:
+                sections.append(format_user_chat_for_context(
+                    name, target_id, sampled, header="MESSAGE HISTORY SAMPLED ACROSS THE LAST 30 DAYS FOR", max_lines=100,
+                ))
+            elif not context_has_user_history(context, target_id):
+                recent = await fetch_user_recent_chat_async(client, target_id, getattr(message, "channel", None), limit=35)
+                sections.append(format_user_chat_for_context(name, target_id, recent))
+        except Exception as e:
+            logger.debug("Failed to fetch target user chat for image context: %s", e)
 
     if prompt_references_bot(prompt):
         try:
@@ -3044,6 +3222,14 @@ async def build_group_roster_context(
         "depict each one once, recognisably, with a gag from their own messages below, which are sampled across the last 30 days; invent nobody):"
     ]
     for uid, name in chosen:
+        dossier = None
+        try:
+            dossier = await asyncio.to_thread(build_user_dossier, uid, name)
+        except Exception as e:
+            logger.warning("Dossier build failed for %s in roster: %s", uid, e)
+        if dossier:
+            lines.append(f"\nMEMBER: {name} (<@{uid}>)\n{dossier}")
+            continue
         try:
             sample = await asyncio.to_thread(fetch_user_recent_chat, client, uid, None, recent_per_member, True, older_per_member)
         except Exception:
