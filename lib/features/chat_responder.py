@@ -674,7 +674,7 @@ async def fetch_user_recent_chat_async(
 
 
 USER_DOSSIER_FILE = os.path.join(os.path.dirname(IMAGE_GEN_USAGE_FILE), "user_dossiers.json")
-USER_DOSSIER_TTL_SECONDS = 24 * 3600
+USER_DOSSIER_TTL_SECONDS = 3600  # rebuilt hourly at ~0.2p a go so today's banter feeds today's portraits
 USER_DOSSIER_MODEL = "gpt-4o-mini"  # ~20k input tokens per person per day; mini keeps that at a fraction of a penny
 _USER_DOSSIER_CACHE: Dict[str, Dict[str, Any]] = {}
 _dossier_cache_loaded = False
