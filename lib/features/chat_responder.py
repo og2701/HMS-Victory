@@ -3285,6 +3285,8 @@ def looks_like_group_request(prompt: str) -> bool:
     return bool(prompt and _GROUP_REQUEST_RE.search(prompt))
 
 
+MAX_TAGGED_SUBJECTS = 12  # explicit @tags in one request; beyond this a single image stops being drawable
+
 _RANDOM_PICK_RE = re.compile(
     r"\b(?:at\s+random|randomly|random\s+(?:user|person|member|someone|victim)|pick\s+(?:someone|a\s+user|a\s+member|one\s+of|anyone)|"
     r"choose\s+(?:someone|a\s+user|a\s+member|one\s+of|anyone)|surprise\s+me\s+with\s+someone)\b",
@@ -3384,6 +3386,7 @@ async def build_group_roster_context(
     recent_per_member: int = 10,
     older_per_member: int = 30,
     bot_id: Optional[int] = None,
+    fill_with_active: bool = True,
 ) -> str:
     """A roster of real, active members with a sample of their messages spread across 30 days, for group portraits.
 
@@ -3415,7 +3418,7 @@ async def build_group_roster_context(
         seen.add(uid)
         chosen.append((uid, _member_display_name(u)))
 
-    if len(chosen) < max_members:
+    if fill_with_active and len(chosen) < max_members:
         active = await asyncio.to_thread(fetch_most_active_users, 30, max_members * 3, [bot_id, *seen])
         for uid, _count in active:
             if uid in seen:
@@ -3848,15 +3851,25 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             # happened to be mentioned or talking nearby.
             context = await ensure_target_history_in_context(client, message, context, target_id, target_name, prompt=clean_prompt, bot_id=bot_id)
 
-            is_group = subject == "group" or (intent is None and looks_like_group_request(clean_prompt))
+            # Two or more people tagged (not counting "send it to @X" recipients) = a picture of exactly those people.
+            recipients = {getattr(u, "id", None) for u in delivery_mentions(clean_prompt, other_mentions, None)}
+            subjects = [u for u in other_mentions if getattr(u, "id", None) not in recipients]
+            multi_subject = len(subjects) >= 2 and subject in ("mentioned", "named", "group", None)
+            is_group = multi_subject or subject == "group" or (intent is None and looks_like_group_request(clean_prompt))
             if is_group:
                 # A group picture needs real people: hand the synthesiser a roster of actual members.
                 roster = await build_group_roster_context(
-                    client, getattr(message, "guild", None), must_include=other_mentions, bot_id=bot_id,
+                    client, getattr(message, "guild", None), must_include=subjects if multi_subject else other_mentions,
+                    max_members=min(len(subjects), MAX_TAGGED_SUBJECTS) if multi_subject else 6, bot_id=bot_id,
+                    fill_with_active=not multi_subject,
                 )
                 if roster:
                     context = f"{roster}\n\n{context}" if context else roster
-                if not target_name:
+                if multi_subject:
+                    names = [_member_display_name(u) for u in subjects[:MAX_TAGGED_SUBJECTS]]
+                    target_name = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+                    target_id = None
+                elif not target_name:
                     target_name = f"the {getattr(getattr(message, 'guild', None), 'name', None) or 'server'} regulars"
 
             # Every image request goes through the synthesiser with the gathered context. The old shortcut

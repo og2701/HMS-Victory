@@ -1870,6 +1870,61 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("make him a fursona", mock_synth.call_args[1]["prompt"])
         mock_gen_img.assert_called_once_with("Lou Skunt as a skunk fursona")
 
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[(1, 9000), (2, 8000)])
+    @patch("lib.features.chat_responder.fetch_user_recent_chat", return_value=[])
+    @patch("lib.features.chat_responder.build_user_dossier", side_effect=lambda uid, name, *a, **k: f"DOSSIER ON {name} (<@{uid}>): stuff")
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_two_tagged_people_is_a_picture_of_exactly_them(
+        self, mock_classify, mock_find_img, mock_fetch_chat, _sample, _exchanges, mock_dossier, _chat, mock_active, mock_synth, mock_gen_img
+    ):
+        mock_classify.return_value = {"intent": "generate", "subject": "mentioned", "subject_name": None, "reason": "", "input_tokens": 0, "output_tokens": 0}
+        mock_synth.return_value = ("MJ and Markoos at the bar", "Behold the pair of them.", 10, 5)
+        mock_gen_img.return_value = (b"img", 20, 200)
+
+        client = MagicMock(); client.user.id = 999999999
+        mj = MagicMock(); mj.id = 301; mj.nick = "MJ Rocker"; mj.global_name = None; mj.display_name = "MJ Rocker"; mj.name = "mj"; mj.bot = False
+        markoos = MagicMock(); markoos.id = 302; markoos.nick = "Markoos(Potatoed)"; markoos.global_name = None; markoos.display_name = "Markoos(Potatoed)"; markoos.name = "markoos"; markoos.bot = False
+        message = self._leader_message(client, f"<@{client.user.id}> based on their message history can you generate an image of <@301> and <@302>", author_id=USERS.HADIDAS, mentions=[markoos, mj])
+        message.guild = MagicMock(); message.guild.name = "ukplace"
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        kw = mock_synth.call_args[1]
+        self.assertTrue(kw["is_group"])
+        self.assertEqual(kw["target_name"], "Markoos(Potatoed) and MJ Rocker")
+        self.assertIn("these 2 people are the ONLY people who may appear", kw["context"])
+        self.assertIn("DOSSIER ON MJ Rocker (<@301>)", kw["context"])
+        self.assertIn("DOSSIER ON Markoos(Potatoed) (<@302>)", kw["context"])
+        self.assertNotIn("MEMBER: Johnny", kw["context"])   # no padding with the server's regulars
+
+        # Many tagged people: all of them, in message order, none dropped
+        people = []
+        for i in range(8):
+            u = MagicMock(); u.id = 400 + i; u.nick = f"P{i}"; u.global_name = None; u.display_name = f"P{i}"; u.name = f"p{i}"; u.bot = False
+            people.append(u)
+        tags = " ".join(f"<@{u.id}>" for u in people)
+        message2 = self._leader_message(client, f"<@{client.user.id}> draw {tags} on a stag do", author_id=USERS.HADIDAS, mentions=list(reversed(people)))
+        message2.guild = MagicMock(); message2.guild.name = "ukplace"
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            await handle_one_off_owner_mention(client, message2)
+        kw = mock_synth.call_args[1]
+        self.assertIn("these 8 people are the ONLY people who may appear", kw["context"])
+        for u in people:
+            self.assertIn(f"DOSSIER ON {u.nick} (<@{u.id}>)", kw["context"])
+        self.assertEqual(kw["target_name"], "P7, P6, P5, P4, P3, P2, P1 and P0")
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):
