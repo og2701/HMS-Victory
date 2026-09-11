@@ -1071,12 +1071,26 @@ RULES:
    - style: an art style that matches their vibe and interests (pop-punk karaoke -> gig poster screen print; football and pubs -> 1970s British comic; cosy pets and baking -> gouache storybook; tech and travel -> clean isometric; gaming -> pixel art; gossip and drama -> Victorian satirical engraving), unless the request names a style.
    For each field, cite the direct evidence in a few words. Where there is no direct evidence, DEDUCE: commit to a specific, plausible look implied by their personality, interests, age cues and tone, the way a caricaturist sizes someone up from how they talk (a mortgage-and-kids ranter is not twenty-two; a needy flirt who lives on energy drinks has a look; a pub-quiz pedant has a look). Write "deduced: <why>". Only if nothing about them points anywhere take that field from the VARIETY DIRECTIVES tie-breaker. A caricature exaggerates real, specific, unflattering features. Never the stock cartoon lead (young, conventionally attractive, tousled dark hair, wide grin, holding props up to camera).
 10. Keep visible text minimal: at most two short labels in the whole image. No walls of signs, menus, lists, sticky notes, posters with slogans or speech bubbles unless a comic strip was requested.
-11. REFERENCE IMAGES: if the requester attached images, they are references. Describe what matters in them concretely in the prompt (the actual animal and its colour and markings, the object, the outfit, the setting) so the generator reproduces it. If a reference shows a person, that is their real look and it overrides the character sheet.
+11. REFERENCE IMAGES: if the requester attached images, they are references. Describe what matters in them concretely in the prompt (the actual animal and its colour and markings, the object, the outfit, the setting) so the generator reproduces it. If a reference shows a person, that is their real look and it overrides the character sheet: describe the VISIBLE attributes only (hair colour and length, facial hair, build, skin tone, clothing, expression, era of the portrait) and never attempt to identify or name who it is.
 
 Respond ONLY with a JSON object. For a single subject:
 {"character_sheet": {"gender": "...", "age_band": "...", "build_hair_face": "...", "expression_energy": "...", "style": "...", "gag": "the central joke, naming the specific thing + the quoted message it comes from", "supporting_references": ["4-6 smaller references from different conversations, each with what it is in the picture + the quote"], "exaggerations": "which traits and features are blown up"}, "image_prompt": "..."}
 For a GROUP (a SERVER MEMBER ROSTER was provided):
 {"characters": [{"name": "...", "gender": "...", "age_band": "...", "look": "...", "gag": "their own joke + the quote it comes from", "references": ["2-3 smaller references from their own dossier"]}, ...one entry per roster member, none skipped...], "scene": "what they are all doing together and how the gags interact", "style": "...", "image_prompt": "..."}"""
+
+
+class OpenAIRefusal(RuntimeError):
+    """The model declined to answer (content=None / refusal field) rather than the API failing."""
+
+
+def download_image_bytes(url: str, timeout: int = 20, max_bytes: int = 12 * 1024 * 1024) -> bytes:
+    """Fetch an image (e.g. a Discord attachment) for use with the image edit endpoint."""
+    req = urllib.request.Request(url, headers={"User-Agent": "HMSVictoryBot"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = resp.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ValueError("reference image too large")
+    return data
 
 
 def _chat_completion_json(
@@ -1118,7 +1132,13 @@ def _chat_completion_json(
     with _urlopen_with_retry(req, timeout, what=what) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     usage = data.get("usage") or {}
-    content = data["choices"][0]["message"]["content"]
+    choice = (data.get("choices") or [{}])[0]
+    msg = choice.get("message") or {}
+    content = msg.get("content")
+    if content is None:
+        # Vision refusals come back as content=None with a 'refusal' field (or finish_reason=content_filter).
+        reason = msg.get("refusal") or choice.get("finish_reason") or "no content"
+        raise OpenAIRefusal(f"{what} refused: {reason}")
     return json.loads(content), usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
 
 
@@ -1175,11 +1195,27 @@ def synthesize_image_prompt_from_context(
         user_payload += f"\n\nMESSAGE HISTORY & CONTEXT:\n{context.strip()}"
 
     roster_size = len(re.findall(r"^MEMBER: ", context or "", flags=re.M)) if is_group else 0
-    parsed, p_tokens, c_tokens = _chat_completion_json(
-        IMAGE_PROMPT_WRITER_INSTRUCTIONS, user_payload, api_key,
-        model=model, max_tokens=550 + 160 * max(0, roster_size - 1), temperature=0.85, timeout=timeout, what="Image prompt synthesis",
-        image_urls=reference_image_urls,
-    )
+    max_tokens = 550 + 160 * max(0, roster_size - 1)
+    try:
+        parsed, p_tokens, c_tokens = _chat_completion_json(
+            IMAGE_PROMPT_WRITER_INSTRUCTIONS, user_payload, api_key,
+            model=model, max_tokens=max_tokens, temperature=0.85, timeout=timeout, what="Image prompt synthesis",
+            image_urls=reference_image_urls,
+        )
+    except OpenAIRefusal as e:
+        if not reference_image_urls:
+            raise
+        # The vision model balked at the reference (usually a face). Write the prompt from the history instead;
+        # the caller can still hand the reference to the image edit endpoint for likeness.
+        logger.warning("Image prompt writer refused with references (%s); retrying without them", e)
+        user_payload = user_payload.replace(
+            f"\n\nREFERENCE IMAGES ATTACHED BY THE REQUESTER: {len(reference_image_urls)} (see attached; describe what matters from them in the prompt)",
+            "\n\n(A reference photo was attached but could not be inspected; the generator will be given it directly for likeness. Describe pose, style and scene, not their face.)",
+        )
+        parsed, p_tokens, c_tokens = _chat_completion_json(
+            IMAGE_PROMPT_WRITER_INSTRUCTIONS, user_payload, api_key,
+            model=model, max_tokens=max_tokens, temperature=0.85, timeout=timeout, what="Image prompt synthesis (no references)",
+        )
     sheet = parsed.get("character_sheet")
     if isinstance(sheet, dict):
         logger.info("Image character sheet: %s", json.dumps(sheet, ensure_ascii=False)[:600])
@@ -3924,10 +3960,25 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             logger.info("Direct mention image generation request from %s (%s): %r (image prompt: %r)", caller_name, caller_id, clean_prompt, image_prompt)
 
             try:
-                img_bytes, p_tokens, c_tokens = await asyncio.to_thread(
-                    generate_image_openai,
-                    image_prompt,
-                )
+                img_bytes = None
+                p_tokens = c_tokens = 0
+                if reference_images:
+                    # A reference photo carries likeness far better through the edit endpoint than through words.
+                    try:
+                        ref_bytes = await asyncio.to_thread(download_image_bytes, reference_images[0])
+                        img_bytes, p_tokens, c_tokens = await asyncio.to_thread(
+                            edit_image_openai, ref_bytes,
+                            f"Using the attached image as the reference for the subject's appearance and likeness: {image_prompt}",
+                        )
+                        logger.info("Generated via image edit with the requester's reference attachment")
+                    except Exception as ref_err:
+                        logger.warning("Reference-based edit failed (%s); falling back to plain generation", ref_err)
+                        img_bytes = None
+                if img_bytes is None:
+                    img_bytes, p_tokens, c_tokens = await asyncio.to_thread(
+                        generate_image_openai,
+                        image_prompt,
+                    )
                 record_user_image_generation(caller_id)
                 live_chat_manager.record_usage(IMAGE_GEN_MODEL, p_tokens, c_tokens, is_reply=True)
 

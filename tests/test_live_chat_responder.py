@@ -1942,6 +1942,81 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             self.assertIn(f"DOSSIER ON {u.nick} (<@{u.id}>)", kw["context"])
         self.assertEqual(kw["target_name"], "P7, P6, P5, P4, P3, P2, P1 and P0")
 
+    @patch("urllib.request.urlopen")
+    def test_chat_completion_null_content_is_a_refusal(self, mock_urlopen):
+        from lib.features.chat_responder import _chat_completion_json, OpenAIRefusal
+        mock_urlopen.return_value = _mock_resp(json.dumps({"choices": [{"message": {"content": None, "refusal": "I can't identify people in images."}, "finish_reason": "stop"}], "usage": {}}).encode())
+        with self.assertRaises(OpenAIRefusal) as cm:
+            _chat_completion_json("sys", "user", "test-key")
+        self.assertIn("can't identify people", str(cm.exception))
+
+    @patch("urllib.request.urlopen")
+    def test_image_prompt_writer_retries_without_references_on_refusal(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_contextual_image_prompt
+        def chat(body):
+            return _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}}], "usage": {}}).encode())
+        refusal = _mock_resp(json.dumps({"choices": [{"message": {"content": None, "refusal": "no faces"}}], "usage": {}}).encode())
+        mock_urlopen.side_effect = [refusal, chat({"image_prompt": "a gen 4 pokemon trainer sprite of a long-haired man in a cravat"}), chat({"caption": "y"})]
+
+        img, _, _, _ = synthesize_contextual_image_prompt(
+            prompt="using <@1> profile picture can you generate them as a pokemon sprite", context="", user_name="Hadidas", caller_role="deputy",
+            target_name="oggers", target_id=1, openai_key="test-key", reference_image_urls=["https://cdn/oggers.png"],
+        )
+        self.assertEqual(img, "a gen 4 pokemon trainer sprite of a long-haired man in a cravat")
+        self.assertEqual(mock_urlopen.call_count, 3)
+        first = _sent_payload(mock_urlopen, 0)["messages"][1]["content"]
+        self.assertIsInstance(first, list)          # with the image
+        second = _sent_payload(mock_urlopen, 1)["messages"][1]["content"]
+        self.assertIsInstance(second, str)          # retried without it
+        self.assertIn("could not be inspected", second)
+        self.assertIn("never attempt to identify", _sent_payload(mock_urlopen, 0)["messages"][0]["content"])
+
+    @patch("lib.features.chat_responder.download_image_bytes", return_value=b"png-of-oggers")
+    @patch("lib.features.chat_responder.edit_image_openai")
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.build_user_dossier", return_value=None)
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_reference_photo_uses_edit_endpoint(
+        self, mock_classify, mock_find_img, mock_fetch_chat, _dossier, _sample, _exchanges, mock_synth, mock_gen_img, mock_edit_img, mock_download
+    ):
+        mock_classify.return_value = {"intent": "generate", "subject": "mentioned", "subject_name": None, "reason": "", "input_tokens": 0, "output_tokens": 0}
+        mock_synth.return_value = ("a gen 4 trainer sprite sheet of a long-haired man in a cravat", "Behold.", 10, 5)
+        mock_edit_img.return_value = (b"sprite", 30, 200)
+
+        client = MagicMock(); client.user.id = 999999999
+        oggers = MagicMock(); oggers.id = USERS.OGGERS; oggers.nick = "oggers"; oggers.global_name = None; oggers.display_name = "oggers"; oggers.name = "ogme01"
+        message = self._leader_message(client, f"<@{client.user.id}> using <@{USERS.OGGERS}> profile picture can you generate them as a pokemon sprite", author_id=USERS.HADIDAS, mentions=[oggers])
+        att = MagicMock(); att.filename = "image.png"; att.content_type = "image/png"; att.url = "https://cdn/oggers.png"
+        message.attachments = [att]
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        mock_download.assert_called_once_with("https://cdn/oggers.png")
+        mock_edit_img.assert_called_once()
+        self.assertEqual(mock_edit_img.call_args[0][0], b"png-of-oggers")
+        self.assertIn("a gen 4 trainer sprite sheet", mock_edit_img.call_args[0][1])
+        mock_gen_img.assert_not_called()
+
+        # If the edit endpoint fails, plain generation still happens
+        mock_edit_img.side_effect = RuntimeError("edit down")
+        mock_gen_img.return_value = (b"sprite2", 20, 200)
+        message2 = self._leader_message(client, f"<@{client.user.id}> using <@{USERS.OGGERS}> profile picture make him a sprite", author_id=USERS.HADIDAS, mentions=[oggers])
+        message2.attachments = [att]
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            await handle_one_off_owner_mention(client, message2)
+        mock_gen_img.assert_called_once()
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):
