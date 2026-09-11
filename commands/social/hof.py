@@ -209,8 +209,13 @@ async def handle_hof_context_menu(interaction: discord.Interaction, message: dis
         await interaction.response.send_message("Only the Deputy PM can use this.", ephemeral=True)
         return
 
-    if message.author.bot:
-        await interaction.response.send_message("Bot messages can't be added to the Hall of Fame.", ephemeral=True)
+    client = interaction.client
+    if message.channel.id == getattr(CHANNELS, "HALL_OF_FAME_THREAD", None):
+        await interaction.response.send_message("Messages from the Hall of Fame thread can't be added.", ephemeral=True)
+        return
+
+    if message.author.bot and message.author.id != client.user.id:
+        await interaction.response.send_message("Other bot messages can't be added to the Hall of Fame.", ephemeral=True)
         return
 
     has_snapshots = bool(getattr(message, "message_snapshots", None))
@@ -220,7 +225,6 @@ async def handle_hof_context_menu(interaction: discord.Interaction, message: dis
 
     await interaction.response.defer(ephemeral=True)
 
-    client = interaction.client
     thread = client.get_channel(CHANNELS.HALL_OF_FAME_THREAD)
     if not thread:
         try:
@@ -243,17 +247,18 @@ async def handle_hof_context_menu(interaction: discord.Interaction, message: dis
         hall_of_fame_data.append(str(message.id))
         save_json_file(HALL_OF_FAME_FILE, hall_of_fame_data)
 
-    from lib.bot.event_handlers import award_badge_with_notify
-    await award_badge_with_notify(client, message.author.id, 'hof')
+    if not message.author.bot:
+        from lib.bot.event_handlers import award_badge_with_notify
+        await award_badge_with_notify(client, message.author.id, 'hof')
 
-    # Pay the same bank-funded reward the automatic 6-reaction path gives. Gated on a
-    # genuinely new entry so a re-add (or a message that already auto-qualified and was
-    # paid) can never double-pay.
-    if newly_added and not message.author.bot:
-        try:
-            from lib.features.ukp_rewards import award_hof_reward
-            await award_hof_reward(client, message.author.id)
-        except Exception:
-            logger.error("[HOF] manual UKP reward failed", exc_info=True)
+        # Pay the same bank-funded reward the automatic 6-reaction path gives. Gated on a
+        # genuinely new entry so a re-add (or a message that already auto-qualified and was
+        # paid) can never double-pay.
+        if newly_added:
+            try:
+                from lib.features.ukp_rewards import award_hof_reward
+                await award_hof_reward(client, message.author.id)
+            except Exception:
+                logger.error("[HOF] manual UKP reward failed", exc_info=True)
 
     await interaction.followup.send("Added to the Hall of Fame!", ephemeral=True)

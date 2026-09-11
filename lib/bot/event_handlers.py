@@ -2041,7 +2041,7 @@ async def check_hall_of_fame(client, payload):
                 
         try:
             message = await channel.fetch_message(payload.message_id)
-            if message.author.bot:
+            if message.author.bot and message.author.id != client.user.id:
                 return
             
             # Prevent old messages from qualifying
@@ -2071,10 +2071,12 @@ async def check_hall_of_fame(client, payload):
         if total_reactions < 6:
             return
 
-        # Hall of Fame is for organic community posts. Skip bot/webhook posts and
-        # announcement channels (which naturally rack up reactions but aren't HoF-worthy).
+        # Hall of Fame is for organic community posts and HMS Victory highlights.
+        # Skip other bot/webhook posts, the HOF thread itself, and announcement channels.
         ch = message.channel
-        if (message.author.bot or getattr(message, "webhook_id", None)
+        if ((message.author.bot and message.author.id != client.user.id)
+                or getattr(message, "webhook_id", None)
+                or ch.id == getattr(CHANNELS, "HALL_OF_FAME_THREAD", None)
                 or getattr(ch, "type", None) == discord.ChannelType.news
                 or ch.id in HOF_EXCLUDED_CHANNELS):
             return
@@ -2105,17 +2107,17 @@ async def check_hall_of_fame(client, payload):
             await send_hof_post(client, thread, message)
 
             logger.info(f"Message {message.id} sent to Hall of Fame.")
-            await award_badge_with_notify(client, message.author.id, 'hof')
-            # UKP reward (from the bank), DM'd to the author.
-            try:
-                if not message.author.bot:
+            if not message.author.bot:
+                await award_badge_with_notify(client, message.author.id, 'hof')
+                # UKP reward (from the bank), DM'd to the author.
+                try:
                     from lib.features.ukp_rewards import award_hof_reward
                     await award_hof_reward(client, message.author.id)
-            except Exception:
-                logger.error("HoF UKP reward failed", exc_info=True)
+                except Exception:
+                    logger.error("HoF UKP reward failed", exc_info=True)
         
         # Local Legend Check (10 unique reactors)
-        if len(unique_reactors) >= 10:
+        if not message.author.bot and len(unique_reactors) >= 10:
             await award_badge_with_notify(client, message.author.id, 'local_legend')
 
 
