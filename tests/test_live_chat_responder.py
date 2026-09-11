@@ -1811,6 +1811,65 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("DOSSIER ON Johnny", mock_synth.call_args[1]["context"])
         self.assertTrue(message.reply.call_args[0][0].startswith("<@797> Behold the fursona"))
 
+    def test_is_delegation_prompt(self):
+        from lib.features.chat_responder import is_delegation_prompt
+        for yes in ["pls do this", "do this", "this", "^", "please do that one", "can you do this pls", "what he said", "ok do it", "Do this!"]:
+            self.assertTrue(is_delegation_prompt(yes), yes)
+        for no in ["do this but make him bald", "draw me", "this is rubbish", "pls do a fursona of <@1>", ""]:
+            self.assertFalse(is_delegation_prompt(no), no)
+
+    @patch("urllib.request.urlopen")
+    def test_classify_mention_intent_sees_replied_to_message(self, mock_urlopen):
+        from lib.features.chat_responder import classify_mention_intent
+        body = json.dumps({"intent": "generate", "subject": "mentioned", "subject_name": "Lou Skunt", "reason": "delegated"})
+        mock_urlopen.return_value = _mock_resp(_responses_body(body))
+        res = classify_mention_intent("pls do this", has_reply_ref=True, replied_to_text="based on <@1022>'s message history can you make him a fursona",
+                                      replied_to_author="Hadidas", mentioned_names=["Lou Skunt"], openai_key="test-key")
+        self.assertEqual(res["subject"], "mentioned")
+        payload = _sent_payload(mock_urlopen)
+        self.assertIn("THE MESSAGE BEING REPLIED TO (by Hadidas): \"based on <@1022>", payload["input"][0]["content"][0]["text"])
+        self.assertIn('"pls do this"', payload["instructions"])
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.build_user_dossier", return_value=None)
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_pls_do_this_delegates_to_replied_message(
+        self, mock_classify, mock_find_img, mock_fetch_chat, _dossier, _sample, _exchanges, mock_synth, mock_gen_img
+    ):
+        mock_classify.return_value = {"intent": "generate", "subject": "mentioned", "subject_name": "<@1022>", "reason": "", "input_tokens": 0, "output_tokens": 0}
+        mock_synth.return_value = ("Lou Skunt as a skunk fursona", "Behold Lou.", 10, 5)
+        mock_gen_img.return_value = (b"img", 20, 200)
+
+        client = MagicMock(); client.user.id = 999999999
+        lou = MagicMock(); lou.id = 1022; lou.nick = "Lou Skunt"; lou.global_name = None; lou.display_name = "Lou Skunt"; lou.name = "lou"
+        hadidas = MagicMock(); hadidas.id = USERS.HADIDAS; hadidas.nick = "Hadidas"; hadidas.global_name = None; hadidas.display_name = "Hadidas"; hadidas.name = "hadidas"
+        ref_msg = MagicMock()
+        ref_msg.content = f"<@{client.user.id}> based on <@1022>'s message history can you make him a fursona"
+        ref_msg.author = hadidas
+        ref_msg.mentions = [client.user, lou]
+        ref = MagicMock(); ref.message_id = 4242; ref.resolved = ref_msg
+
+        message = self._leader_message(client, f"<@{client.user.id}> pls do this", reference=ref)
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        # classifier saw the replied-to request and its mention
+        self.assertEqual(mock_classify.call_args[1]["replied_to_text"], "based on <@1022>'s message history can you make him a fursona")
+        self.assertEqual(mock_classify.call_args[1]["mentioned_names"], ["Lou Skunt"])
+        # and the portrait is of Lou, with the delegated request as the prompt
+        self.assertEqual(mock_synth.call_args[1]["target_id"], 1022)
+        self.assertIn("make him a fursona", mock_synth.call_args[1]["prompt"])
+        mock_gen_img.assert_called_once_with("Lou Skunt as a skunk fursona")
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):
@@ -2514,20 +2573,22 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(allowed)
         self.assertEqual(rem, 999999)
 
+        from lib.features.chat_responder import IMAGE_GEN_DAILY_LIMIT
+
         # 2. Other user with 0 used
         mock_load.return_value = {today: {"12345": 0}}
         allowed, rem = can_user_generate_image(12345)
         self.assertTrue(allowed)
-        self.assertEqual(rem, 3)
+        self.assertEqual(rem, IMAGE_GEN_DAILY_LIMIT)
 
-        # 3. Other user with 2 used
-        mock_load.return_value = {today: {"12345": 2}}
+        # 3. Other user one short of the limit
+        mock_load.return_value = {today: {"12345": IMAGE_GEN_DAILY_LIMIT - 1}}
         allowed, rem = can_user_generate_image(12345)
         self.assertTrue(allowed)
         self.assertEqual(rem, 1)
 
-        # 4. Other user with 3 used (quota reached)
-        mock_load.return_value = {today: {"12345": 3}}
+        # 4. Other user at the limit (quota reached)
+        mock_load.return_value = {today: {"12345": IMAGE_GEN_DAILY_LIMIT}}
         allowed, rem = can_user_generate_image(12345)
         self.assertFalse(allowed)
         self.assertEqual(rem, 0)
@@ -2582,7 +2643,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(res)
         message.reply.assert_called_once()
         reply_text = message.reply.call_args[0][0]
-        self.assertIn("daily limit of 3 image generations", reply_text)
+        from lib.features.chat_responder import IMAGE_GEN_DAILY_LIMIT
+        self.assertIn(f"daily limit of {IMAGE_GEN_DAILY_LIMIT} image generations", reply_text)
 
     def test_dynamic_image_request_patterns(self):
         from lib.features.chat_responder import looks_like_image_request, is_contextual_image_request

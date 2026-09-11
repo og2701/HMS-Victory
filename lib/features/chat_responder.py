@@ -1802,6 +1802,34 @@ def is_message_for_bot(client: discord.Client, message: discord.Message) -> bool
     return False
 
 
+_DELEGATION_RE = re.compile(
+    r"^\s*(?:(?:pls|please|plz|can you|could you|go on|ok|okay)\s+)*(?:do|make|generate|draw|paint|create|render|sort|handle)?\s*"
+    r"(?:this|that|it|the above|this one|that one|what (?:he|she|they) (?:said|asked(?: for)?)|same|\^+)\s*(?:pls|please|plz|for (?:him|her|them|me))?\s*[.!]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def is_delegation_prompt(prompt: str) -> bool:
+    """True for 'pls do this' style prompts that only make sense as 'do what the replied-to message asked'."""
+    return bool(prompt is not None and _DELEGATION_RE.match(prompt.strip()))
+
+
+async def resolve_referenced_message(message: discord.Message) -> Optional[Any]:
+    """The message this one replies to, from the cache or fetched; None if there isn't one or it can't be read."""
+    ref = getattr(message, "reference", None)
+    if not ref or not getattr(ref, "message_id", None):
+        return None
+    for attr in ("resolved", "cached_message"):
+        m = getattr(ref, attr, None)
+        if m is not None and isinstance(getattr(m, "content", None), str):
+            return m
+    try:
+        return await message.channel.fetch_message(ref.message_id)
+    except Exception as e:
+        logger.debug("Could not fetch referenced message %s: %s", getattr(ref, "message_id", None), e)
+        return None
+
+
 def own_attachment_image_urls(message: discord.Message) -> List[str]:
     """Image URLs attached to this very message by its author (no embeds, no replied-to message)."""
     urls: List[str] = []
@@ -2852,6 +2880,8 @@ Also identify WHO the image is of (the subject):
 - "none": not a person (a cat, a landscape, a meme) or not an image request.
 If subject is "named", put the name in subject_name; otherwise subject_name is null.
 
+If the message is a short delegation like "pls do this", "do that", "this one", "^", "what he said", it refers to THE MESSAGE BEING REPLIED TO: classify that message's request instead, and take the subject from it.
+
 Be decisive. Casual, misspelled, or lowercase phrasing is normal here."""
 
 
@@ -2865,6 +2895,8 @@ def classify_mention_intent(
     recent_bot_image_prompt: Optional[str] = None,
     has_attached_image: bool = False,
     recent_history: str = "",
+    replied_to_text: Optional[str] = None,
+    replied_to_author: Optional[str] = None,
     openai_key: Optional[str] = None,
     model: str = MENTION_INTENT_MODEL,
     timeout: int = 15,
@@ -2886,6 +2918,8 @@ def classify_mention_intent(
     ]
     if has_recent_bot_image and recent_bot_image_prompt:
         facts.append(f"MOST RECENT BOT IMAGE WAS: {recent_bot_image_prompt[:300]}")
+    if replied_to_text:
+        facts.append(f"THE MESSAGE BEING REPLIED TO (by {replied_to_author or 'someone'}): \"{replied_to_text.strip()[:500]}\"")
     facts.append(f"USER ATTACHED AN IMAGE: {'yes' if has_attached_image else 'no'}")
     if recent_history and recent_history.strip():
         facts.append(f"RECENT CHAT:\n{recent_history.strip()[:1500]}")
@@ -3602,6 +3636,27 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         ref = getattr(message, "reference", None)
         has_reply_ref = bool(ref and getattr(ref, "message_id", None))
 
+        # If this is a reply, read what it replies to. "pls do this" means "do what that message asked".
+        replied_to_text = None
+        replied_to_author = None
+        ref_msg = await resolve_referenced_message(message) if has_reply_ref else None
+        if ref_msg is not None:
+            raw_ref = getattr(ref_msg, "content", "") or ""
+            if bot_id:
+                raw_ref = re.sub(rf"<@!?{bot_id}>\s*", "", raw_ref)
+            raw_ref = re.sub(r"^@?hms\s+victory[:,]?\s*", "", raw_ref, flags=re.IGNORECASE).strip()
+            replied_to_text = raw_ref or None
+            replied_to_author = _member_display_name(getattr(ref_msg, "author", None), "someone")
+            ref_mentions = [
+                u for u in (getattr(ref_msg, "mentions", None) or [])
+                if getattr(u, "id", None) not in (bot_id, getattr(getattr(client, "user", None), "id", None))
+            ]
+            if replied_to_text and is_delegation_prompt(clean_prompt) and getattr(getattr(ref_msg, "author", None), "id", None) != bot_id:
+                logger.info("Delegated request from %s: %r -> using replied-to message from %s: %r", caller_name, clean_prompt, replied_to_author, replied_to_text)
+                clean_prompt = replied_to_text
+                seen_ids = {getattr(u, "id", None) for u in other_mentions}
+                other_mentions = other_mentions + [u for u in ref_mentions if getattr(u, "id", None) not in seen_ids]
+
         # Look up the bot's most recent image up front: the edit branch needs it, and the intent
         # classifier needs to know whether "try again" can refer to anything.
         recent_img_info = None
@@ -3624,6 +3679,8 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             recent_bot_image_prompt=(recent_img_info[2] if recent_img_info else None),
             has_attached_image=bool(reference_images),
             recent_history=recent_one_off_exchanges(4),
+            replied_to_text=replied_to_text,
+            replied_to_author=replied_to_author,
         )
         subject = None
         subject_name = None
