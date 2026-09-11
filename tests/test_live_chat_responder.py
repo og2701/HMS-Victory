@@ -1664,6 +1664,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
                 "what_others_say": ["<@2>: tharan is a pub geezer"],
                 "notable_incidents": ["stair rail for two steps"],
                 "look_clues": "none",
+                "britain_stance": "insists he's Manx not British: 'yeaaa but I'm not Britain'",
             })}}],
             "usage": {"prompt_tokens": 5000, "completion_tokens": 300},
         }).encode())
@@ -1676,6 +1677,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Running jokes:\n  - pub geezer", text)
         self.assertIn("Notable incidents:\n  - stair rail for two steps", text)
         self.assertNotIn("Look clues", text)
+        self.assertIn("Stance on Britain (if they knock it or disown it, that's the gag and they're the butt of it): insists he's Manx", text)
+        self.assertIn('"britain_stance"', sent["messages"][0]["content"] if (sent := _sent_payload(mock_urlopen)) else "")
         sent = _sent_payload(mock_urlopen)
         self.assertEqual(sent["model"], "gpt-4o-mini")
         self.assertIn("comedy dossier", sent["messages"][0]["content"])

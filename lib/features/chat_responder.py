@@ -695,7 +695,8 @@ Respond ONLY with a JSON object:
   "catchphrases": ["exact phrases or spellings they keep using"],
   "what_others_say": ["how others tease or describe them, quoted, with who said it if known"],
   "notable_incidents": ["specific stories or moments worth drawing, each in one line with a quote"],
-  "look_clues": "anything they've said about their own appearance, age, job, where they live, gender; or 'none'"
+  "look_clues": "anything they've said about their own appearance, age, job, where they live, gender; or 'none'",
+  "britain_stance": "anything they've said knocking or defending the UK, Britain, England, Scotland, Wales or Northern Ireland, or claiming not to be British / to be from somewhere else, with quotes; or 'none'"
 }"""
 
 
@@ -832,6 +833,9 @@ def build_user_dossier(
             parts.append(f"{label}:\n" + "\n".join(f"  - {i}" for i in items[:10]))
     if parsed.get("look_clues") and str(parsed["look_clues"]).strip().lower() != "none":
         parts.append(f"Look clues: {parsed['look_clues']}")
+    stance = parsed.get("britain_stance")
+    if stance and str(stance).strip().lower() != "none":
+        parts.append(f"Stance on Britain (if they knock it or disown it, that's the gag and they're the butt of it): {stance}")
     text = "\n".join(parts)
 
     _USER_DOSSIER_CACHE[key] = {"ts": time.time(), "name": name, "text": text}
