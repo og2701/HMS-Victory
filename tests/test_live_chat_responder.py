@@ -1715,6 +1715,45 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("SAMPLED ACROSS THE LAST 30 DAYS", ctx)
         self.assertNotIn("DOSSIER", ctx)
 
+    def test_delivery_mentions(self):
+        from lib.features.chat_responder import delivery_mentions
+        chin = MagicMock(); chin.id = 795
+        danez = MagicMock(); danez.id = 412
+        prompt = "turn <@795> into an animorph of a horse and send it to <@412>"
+        self.assertEqual([u.id for u in delivery_mentions(prompt, [danez, chin], target_id=795)], [412])
+        self.assertEqual(delivery_mentions("draw <@795> next to <@412>", [danez, chin], target_id=795), [])
+        self.assertEqual(delivery_mentions(prompt, [danez, chin], target_id=412), [])
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.build_user_dossier", return_value=None)
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_two_mentions_picks_subject_and_tags_recipient(
+        self, mock_classify, mock_find_img, mock_fetch_chat, _dossier, _sample, _exchanges, mock_synth, mock_gen_img
+    ):
+        mock_classify.return_value = {"intent": "generate", "subject": "mentioned", "subject_name": "<@795>", "reason": "", "input_tokens": 0, "output_tokens": 0}
+        mock_synth.return_value = ("Chin mid-morph into a horse", "Behold Chin, half horse.", 10, 5)
+        mock_gen_img.return_value = (b"img", 20, 200)
+
+        client = MagicMock(); client.user.id = 999999999
+        chin = MagicMock(); chin.id = 795; chin.nick = "Chin"; chin.global_name = None; chin.display_name = "Chin"; chin.name = "chin"
+        danez = MagicMock(); danez.id = 412; danez.nick = None; danez.global_name = "Danez"; danez.display_name = "Danez"; danez.name = "danez"
+        message = self._leader_message(client, f"<@{client.user.id}> turn <@795> into an animorph of a horse and send it to <@412>", mentions=[danez, chin])
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        self.assertEqual(mock_synth.call_args[1]["target_name"], "Chin")
+        self.assertEqual(mock_synth.call_args[1]["target_id"], 795)
+        self.assertTrue(message.reply.call_args[0][0].startswith("<@412> Behold Chin"))
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):
@@ -1752,6 +1791,16 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolve_image_target("do steven", 1, "Oggers", mentions, {}, subject="named", subject_name="steven"), ("Steven <3", 555))
         self.assertEqual(resolve_image_target("do dave", 1, "Oggers", [], {}, subject="named", subject_name="Dave"), ("Dave", None))
         self.assertEqual(resolve_image_target("draw a cat for me", 1, "Oggers", [], {}, subject="none"), (None, None))
+
+        # Two mentions: the classifier's raw <@id> answer wins, then name, then position in the text
+        danez = MagicMock(); danez.id = 412; danez.nick = None; danez.global_name = "Danez"; danez.display_name = "Danez"; danez.name = "danez"
+        two = [danez, steven]   # Discord order: NOT message order
+        prompt = "turn <@555> into an animorph of a horse and send it to <@412>"
+        self.assertEqual(resolve_image_target(prompt, 1, "Oggers", two, {}, subject="mentioned", subject_name="<@555>"), ("Steven <3", 555))
+        self.assertEqual(resolve_image_target(prompt, 1, "Oggers", two, {}, subject="mentioned", subject_name="Steven"), ("Steven <3", 555))
+        self.assertEqual(resolve_image_target(prompt, 1, "Oggers", two, {}, subject="mentioned", subject_name=None), ("Steven <3", 555))
+        self.assertEqual(resolve_image_target(prompt, 1, "Oggers", two, {}), ("Steven <3", 555))
+        self.assertEqual(resolve_image_target("draw <@412> and <@555>", 1, "Oggers", two, {}, subject="mentioned"), ("Danez", 412))
 
         # Fallback without the classifier: an explicit mention beats a stray "i"
         self.assertEqual(resolve_image_target("generate what you think @Steven looks like, i reckon", 1, "Oggers", mentions, target_users), ("Steven <3", 555))

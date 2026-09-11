@@ -2915,6 +2915,35 @@ def _member_display_name(user: Any, default: str = "the user") -> str:
     )
 
 
+def first_mentioned_in_text(prompt: str, mentions: List[Any]) -> Any:
+    """The mention object whose <@id> appears earliest in the prompt text (falls back to the first in the list)."""
+    best = None
+    best_pos = None
+    for u in mentions:
+        uid = getattr(u, "id", None)
+        if uid is None:
+            continue
+        m = re.search(rf"<@!?{uid}>", prompt or "")
+        if m and (best_pos is None or m.start() < best_pos):
+            best, best_pos = u, m.start()
+    return best if best is not None else mentions[0]
+
+
+_DELIVER_TO_RE_TEMPLATE = r"\b(?:send|show|give|deliver|forward|post|tag|ping|share)\b[^<]{0,40}<@!?%s>"
+
+
+def delivery_mentions(prompt: str, other_mentions: List[Any], target_id: Optional[int]) -> List[Any]:
+    """Users the requester asked to send/show the result to ('... and send it to @X'), excluding the subject."""
+    out = []
+    for u in other_mentions:
+        uid = getattr(u, "id", None)
+        if uid is None or uid == target_id:
+            continue
+        if re.search(_DELIVER_TO_RE_TEMPLATE % uid, prompt or "", flags=re.IGNORECASE):
+            out.append(u)
+    return out
+
+
 def resolve_image_target(
     prompt: str,
     caller_id: Optional[int],
@@ -2932,7 +2961,25 @@ def resolve_image_target(
         return caller_name, caller_id
 
     if subject == "mentioned" and other_mentions:
-        return _member_display_name(other_mentions[0]), other_mentions[0].id
+        # Discord's mentions list is not in message order, so never just take [0]. Prefer the classifier's
+        # answer (it often returns the raw <@id> or the name), then whichever mention appears first in the text.
+        key = (subject_name or "").strip().lower()
+        if key:
+            tagged = re.findall(r"<@!?(\d+)>", key)
+            for u in other_mentions:
+                if str(getattr(u, "id", "")) in tagged:
+                    return _member_display_name(u), u.id
+            for u in other_mentions:
+                names = [
+                    n.lower() for n in (
+                        getattr(u, "nick", None), getattr(u, "global_name", None),
+                        getattr(u, "display_name", None), getattr(u, "name", None),
+                    ) if isinstance(n, str)
+                ]
+                if any(key == n or key in n or n in key for n in names):
+                    return _member_display_name(u), u.id
+        first = first_mentioned_in_text(prompt, other_mentions)
+        return _member_display_name(first), first.id
 
     if subject == "named" and subject_name:
         key = subject_name.strip().lower()
@@ -2956,9 +3003,10 @@ def resolve_image_target(
     if subject in ("none", "group"):
         return None, None
 
-    # Fallback (classifier unavailable or undecided): explicit mentions beat pronouns.
+    # Fallback (classifier unavailable or undecided): explicit mentions beat pronouns, earliest in the text first.
     if other_mentions:
-        return _member_display_name(other_mentions[0]), other_mentions[0].id
+        first = first_mentioned_in_text(prompt, other_mentions)
+        return _member_display_name(first), first.id
     if caller_id is not None and re.search(r"\b(?:me|myself|i|my)\b", (prompt or "").lower()):
         return caller_name, caller_id
     if target_users:
@@ -3642,6 +3690,11 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     logger.warning("Contextual image synthesis failed, falling back to the raw prompt: %s", synth_err)
                     image_prompt = extract_image_prompt(clean_prompt)
                     caption = f"<@{caller_id}> Here's your image. Try not to strain your eyes."
+
+            # "... and send it to @X": make sure X actually gets pinged with the result.
+            for u in delivery_mentions(clean_prompt, other_mentions, target_id):
+                if f"<@{u.id}>" not in caption:
+                    caption = f"<@{u.id}> {caption}"
 
             logger.info("Direct mention image generation request from %s (%s): %r (image prompt: %r)", caller_name, caller_id, clean_prompt, image_prompt)
 
