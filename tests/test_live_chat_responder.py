@@ -1445,6 +1445,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("NEVER photorealistic", system)
         self.assertIn("A CARICATURE FOR A ROAST, NOT A PORTRAIT", system)
         self.assertIn('"gag"', system)
+        self.assertIn('"supporting_references"', system)
+        self.assertIn("PACK THE SCENE with 4-6 SUPPORTING REFERENCES", system)
         self.assertIn("LOOKS COME FROM THE MESSAGES FIRST", system)
         self.assertIn('"character_sheet"', system)
         self.assertIn("tie-breaker ONLY", user)
