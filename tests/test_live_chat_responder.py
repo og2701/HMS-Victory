@@ -1846,6 +1846,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         payload = _sent_payload(mock_urlopen)
         self.assertIn("THE MESSAGE BEING REPLIED TO (by Hadidas): \"based on <@1022>", payload["input"][0]["content"][0]["text"])
         self.assertIn('"pls do this"', payload["instructions"])
+        self.assertIn('"add a pink mullet to this fine gentleman"', payload["instructions"])
 
     @patch("lib.features.chat_responder.generate_image_openai")
     @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
@@ -2171,6 +2172,95 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
              patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
             await handle_one_off_owner_mention(client, message2)
         self.assertEqual(mock_edit_img.call_args[0][0], b"PORTRAIT")
+        mock_gen_img.assert_not_called()
+
+    def test_looks_like_attachment_modification(self):
+        from lib.features.chat_responder import looks_like_attachment_modification
+        for yes in [
+            "add a pink mullet to this fine gentleman",
+            "can you give this picture a pink mullet",
+            "put a hat on him",
+            "make this photo black and white",
+            "remove the background from this image",
+            "turn this into a pokemon card",
+            "this picture but with a moustache",
+        ]:
+            self.assertTrue(looks_like_attachment_modification(yes), yes)
+        for no in [
+            "here is picture of oggers, please generate a picture based on what you think he looks like",
+            "draw me as a pirate",
+            "what do you think of this",
+            "generate a sprite sheet of hadidas (attached) as a pokemon",
+        ]:
+            self.assertFalse(looks_like_attachment_modification(no), no)
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.edit_image_openai")
+    @patch("lib.features.chat_responder.synthesize_image_edit_prompt")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_modification_of_attachment_is_edit_even_if_classified_generate(
+        self, mock_classify, mock_find_img, mock_gather, mock_synth, mock_synth_edit, mock_edit_img, mock_gen_img
+    ):
+        mock_classify.return_value = {"intent": "generate", "subject": "caller", "subject_name": "oggers", "reason": "new image with a mullet", "input_tokens": 0, "output_tokens": 0}
+        mock_synth_edit.return_value = ("edit", "add a flamboyant pink mullet to the man in the portrait, keep everything else", "Amended.", 10, 5)
+        mock_edit_img.return_value = (b"edited", 30, 200)
+
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> add a pink mullet to this fine gentleman")
+        own = MagicMock(); own.filename = "portrait.png"; own.content_type = "image/png"; own.url = "https://cdn/portrait.png"; own.read = AsyncMock(return_value=b"PORTRAIT")
+        message.attachments = [own]
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        mock_synth.assert_not_called()                      # no dossier caricature
+        mock_edit_img.assert_called_once()
+        self.assertEqual(mock_edit_img.call_args[0][0], b"PORTRAIT")
+        self.assertIn("pink mullet", mock_edit_img.call_args[0][1])
+        mock_gen_img.assert_not_called()
+
+    @patch("lib.features.chat_responder.download_image_bytes", return_value=b"REES-MOGG")
+    @patch("lib.features.chat_responder.edit_image_openai")
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.build_user_dossier", return_value=None)
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_delegation_inherits_replied_to_image(
+        self, mock_classify, mock_find_img, mock_fetch_chat, _dossier, _sample, _exchanges, mock_synth, mock_gen_img, mock_edit_img, mock_download
+    ):
+        mock_classify.return_value = {"intent": "generate", "subject": "named", "subject_name": "oggers", "reason": "", "input_tokens": 0, "output_tokens": 0}
+        mock_synth.return_value = ("a rubber-hose cartoon of a man in a top hat and morning suit", "Behold.", 10, 5)
+        mock_edit_img.return_value = (b"img", 20, 200)
+
+        client = MagicMock(); client.user.id = 999999999
+        kim = MagicMock(); kim.id = 31337; kim.nick = "Kim John Un"; kim.global_name = None; kim.display_name = "Kim John Un"; kim.name = "kim"
+        photo = MagicMock(); photo.filename = "mogg.jpg"; photo.content_type = "image/jpeg"; photo.url = "https://cdn/mogg.jpg"
+        ref_msg = MagicMock()
+        ref_msg.content = f"<@{client.user.id}> here is picture of oggers, please generate a picture based on what you think he looks like"
+        ref_msg.author = kim; ref_msg.mentions = [client.user]; ref_msg.attachments = [photo]
+        ref = MagicMock(); ref.message_id = 4242; ref.resolved = ref_msg
+        message = self._leader_message(client, f"<@{client.user.id}> pls do this", reference=ref)
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        self.assertEqual(mock_synth.call_args[1]["reference_image_urls"], ["https://cdn/mogg.jpg"])
+        self.assertTrue(mock_classify.call_args[1]["has_attached_image"])
+        mock_download.assert_called_once_with("https://cdn/mogg.jpg")
+        self.assertEqual(mock_edit_img.call_args[0][0], [b"REES-MOGG"])
         mock_gen_img.assert_not_called()
 
     def test_classify_mention_intent_without_key_returns_none(self):

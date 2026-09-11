@@ -1912,19 +1912,39 @@ async def resolve_referenced_message(message: discord.Message) -> Optional[Any]:
         return None
 
 
-def own_attachment_image_urls(message: discord.Message) -> List[str]:
-    """Image URLs attached to this very message by its author (no embeds, no replied-to message)."""
-    urls: List[str] = []
+def own_image_attachments(message: Any) -> List[Any]:
+    """Image attachment objects on this very message (no embeds, no replied-to message), at most four."""
+    out: List[Any] = []
     try:
         for att in list(getattr(message, "attachments", None) or []):
             fn = (getattr(att, "filename", "") or "").lower()
             ct = (getattr(att, "content_type", "") or "")
             url = getattr(att, "url", None)
             if isinstance(url, str) and (ct.startswith("image/") or fn.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))):
-                urls.append(url)
+                out.append(att)
     except TypeError:
         pass
-    return urls[:4]
+    return out[:4]
+
+
+def own_attachment_image_urls(message: discord.Message) -> List[str]:
+    """Image URLs attached to this very message by its author (no embeds, no replied-to message)."""
+    return [att.url for att in own_image_attachments(message)]
+
+
+_MODIFY_ATTACHED_RE = re.compile(
+    r"\b(?:add|give|put|stick|slap|draw|paint|make|turn|remove|take|get\s+rid\s+of|swap|change|replace|colou?r|edit|photoshop|fix)\b"
+    r".{0,60}?\b(?:this|that|the)\s+(?:picture|pic|photo|image|portrait|drawing|painting|fine\s+gentleman|gentleman|lady|guy|man|woman|bloke|creature|thing|one|him|her|them|it)\b"
+    r"|\b(?:this|that)\s+(?:picture|pic|photo|image|portrait)\b.{0,40}?\b(?:with|but|into|as)\b"
+    r"|^\s*(?:add|give|put|remove|make|turn)\b.{0,60}?\b(?:to|on|onto|into|from|off)\s+(?:this|that|him|her|it)\b"
+    r"|\b(?:turn|make|convert|transform|render|redo|redraw)\s+(?:this|that|it|him|her|them)\s+(?:into|as|in)\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_attachment_modification(prompt: str) -> bool:
+    """'add a pink mullet to this fine gentleman', 'give this picture a hat': change the attached image, don't redraw it."""
+    return bool(prompt and _MODIFY_ATTACHED_RE.search(prompt))
 
 
 async def extract_image_urls(message: discord.Message, client: Optional[discord.Client] = None) -> List[str]:
@@ -2950,7 +2970,7 @@ MENTION_INTENT_INSTRUCTIONS = """You classify a Discord message addressed to HMS
 
 Decide what the user wants:
 - "generate": they want a NEW image made. Any phrasing counts: "draw/paint/generate/make/create ... of X", "portrait/caricature of X", "what does X look like", "generate what you think X looks like based on their messages", "do me next", "same for @X", "now do X", "picture of me", "what would I look like as ...", "show me X as a ...".
-- "edit": they explicitly want the bot's MOST RECENT image changed, corrected, or redone. This means a request for a change: critiques with an implied fix ("bit generous with the hair", "he doesn't drink tea, try again"), tweaks ("make him balder", "remove the flag", "add a pint"), or "try again / redo / another go / can you do it without X". A terse statement of fact or a bare descriptor sent shortly after an image is a CORRECTION to that image and counts as "edit": "the cat is black", "the green one", "he's bald", "no, blonde", "she has glasses". Use RECENT CHAT to see what was just produced. Only choose "edit" when a recent bot image exists; if none exists but they want a picture, choose "generate".
+- "edit": they explicitly want the bot's MOST RECENT image changed, corrected, or redone. This means a request for a change: critiques with an implied fix ("bit generous with the hair", "he doesn't drink tea, try again"), tweaks ("make him balder", "remove the flag", "add a pint"), or "try again / redo / another go / can you do it without X". A terse statement of fact or a bare descriptor sent shortly after an image is a CORRECTION to that image and counts as "edit": "the cat is black", "the green one", "he's bald", "no, blonde", "she has glasses". Use RECENT CHAT to see what was just produced. If USER ATTACHED AN IMAGE is yes and they ask to change, add to, remove from or restyle "this picture" / "this gentleman" / "him" ("add a pink mullet to this fine gentleman", "give this photo a hat", "make him bald"), that is an "edit" of the attachment, NOT a new image. Otherwise only choose "edit" when a recent bot image exists; if none exists but they want a picture, choose "generate".
 - "reply": everything else. This includes commentary or jokes ABOUT an image with no change requested ("notice how it featured the red lion twice", "why is his office in a pub", "lol the degrees", "I didn't ask for that"), questions, banter, roasts, facts, fixtures, describing or reacting to an attached image, thanks, and anything ambiguous. When in doubt between "edit" and "reply", choose "reply": a wasted image costs money, a text reply does not.
 
 Also identify WHO the image is of (the subject):
@@ -3768,6 +3788,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         # If this is a reply, read what it replies to. "pls do this" means "do what that message asked".
         replied_to_text = None
         replied_to_author = None
+        delegated_from = None
         ref_msg = await resolve_referenced_message(message) if has_reply_ref else None
         if ref_msg is not None:
             raw_ref = getattr(ref_msg, "content", "") or ""
@@ -3785,6 +3806,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 clean_prompt = replied_to_text
                 seen_ids = {getattr(u, "id", None) for u in other_mentions}
                 other_mentions = other_mentions + [u for u in ref_mentions if getattr(u, "id", None) not in seen_ids]
+                delegated_from = ref_msg
 
         # Look up the bot's most recent image up front: the edit branch needs it, and the intent
         # classifier needs to know whether "try again" can refer to anything.
@@ -3794,8 +3816,14 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         except Exception as e:
             logger.debug("Could not look up recent bot image: %s", e)
 
-        # Images the requester attached themselves (not the bot's, not the replied-to message's): used as references.
-        reference_images = own_attachment_image_urls(message)
+        # Images the requester attached themselves: used as references, or as the thing to edit. A delegated
+        # "pls do this" inherits the images from the message it points at.
+        reference_attachments = own_image_attachments(message)
+        if not reference_attachments and delegated_from is not None:
+            reference_attachments = own_image_attachments(delegated_from)
+            if reference_attachments:
+                logger.info("Delegated request inherits %d image(s) from the replied-to message", len(reference_attachments))
+        reference_images = [att.url for att in reference_attachments]
 
         # Decide what this mention wants: a new image, an edit of the last one, or a text reply.
         intent = await asyncio.to_thread(
@@ -3841,11 +3869,14 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         # An edit request that comes with its own attachment ("give this picture a pink mullet") edits THAT
         # attachment, not whatever the bot last posted in the channel.
         own_attachment = None
-        if is_edit_req and reference_images:
-            for att in list(getattr(message, "attachments", None) or []):
-                if isinstance(getattr(att, "url", None), str) and att.url == reference_images[0]:
-                    own_attachment = att
-                    break
+        if reference_attachments and not is_edit_req and looks_like_attachment_modification(clean_prompt):
+            # "add a pink mullet to this fine gentleman" with a picture attached is an edit of that picture,
+            # whatever the classifier called it. Redrawing the person from their dossier is not what was asked.
+            logger.info("Attachment plus modification phrasing: treating as an edit of the attachment (classifier said %s)", intent["intent"] if intent else "fallback")
+            is_edit_req = True
+            is_fresh_img_req = False
+        if is_edit_req and reference_attachments:
+            own_attachment = reference_attachments[0]
         if own_attachment is not None:
             recent_img_info = (message, own_attachment, f"An image attached by {caller_name} to this request")
             reference_images = reference_images[1:]  # the rest, if any, remain references for the edit
