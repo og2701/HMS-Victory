@@ -1754,6 +1754,63 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_synth.call_args[1]["target_id"], 795)
         self.assertTrue(message.reply.call_args[0][0].startswith("<@412> Behold Chin"))
 
+    def test_looks_like_random_pick(self):
+        from lib.features.chat_responder import looks_like_random_pick, resolve_image_target
+        for yes in ["can you choose one of the users in this channel at random and make them a fursona", "pick someone and draw them", "draw a random member as a pirate"]:
+            self.assertTrue(looks_like_random_pick(yes), yes)
+        for no in ["draw me", "draw <@1> as a random pirate"]:
+            self.assertFalse(looks_like_random_pick(no), no)
+        self.assertEqual(resolve_image_target("pick someone", 1, "Oggers", [], {}, subject="random"), (None, None))
+
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users")
+    async def test_pick_random_member_skips_bots_and_unknowns(self, mock_channel_users, _active):
+        from lib.features.chat_responder import pick_random_member
+        def member(uid, name, bot=False):
+            m = MagicMock(); m.id = uid; m.nick = name; m.global_name = None; m.display_name = name; m.name = name.lower(); m.bot = bot
+            return m
+        guild = MagicMock()
+        guild.get_member.side_effect = lambda uid: {1: member(1, "Johnny"), 4: member(4, "Claude AI", bot=True)}.get(uid)
+        mock_channel_users.return_value = [4, 99, 1]
+        for _ in range(5):
+            self.assertEqual(await pick_random_member(None, guild, 123, bot_id=777), ("Johnny", 1))
+        self.assertEqual(mock_channel_users.call_args[0][0], 123)
+        self.assertIn(777, mock_channel_users.call_args[0][3])
+        mock_channel_users.return_value = []
+        self.assertEqual(await pick_random_member(None, guild, 123, bot_id=777), (None, None))
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.pick_random_member", new_callable=AsyncMock, return_value=("Johnny", 797))
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.build_user_dossier", return_value="DOSSIER ON Johnny (<@797>): pompey")
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_random_subject(
+        self, mock_classify, mock_find_img, mock_fetch_chat, _dossier, _sample, _exchanges, mock_pick, mock_synth, mock_gen_img
+    ):
+        mock_classify.return_value = {"intent": "generate", "subject": "random", "subject_name": None, "reason": "", "input_tokens": 0, "output_tokens": 0}
+        mock_synth.return_value = ("Johnny as a Pompey-blue fox fursona", "Behold the fursona nobody asked for.", 10, 5)
+        mock_gen_img.return_value = (b"img", 20, 200)
+
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> can you choose one of the users in this channel at random and make them a fursona", author_id=USERS.HADIDAS)
+        message.channel.id = 123
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        self.assertEqual(mock_pick.call_args[0][2], 123)
+        self.assertEqual(mock_synth.call_args[1]["target_name"], "Johnny")
+        self.assertEqual(mock_synth.call_args[1]["target_id"], 797)
+        self.assertIn("DOSSIER ON Johnny", mock_synth.call_args[1]["context"])
+        self.assertTrue(message.reply.call_args[0][0].startswith("<@797> Behold the fursona"))
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):

@@ -2828,7 +2828,7 @@ MENTION_INTENT_SCHEMA = {
     "type": "object",
     "properties": {
         "intent": {"type": "string", "enum": ["generate", "edit", "reply"]},
-        "subject": {"type": "string", "enum": ["caller", "mentioned", "named", "group", "none"]},
+        "subject": {"type": "string", "enum": ["caller", "mentioned", "named", "group", "random", "none"]},
         "subject_name": {"type": ["string", "null"]},
         "reason": {"type": "string"},
     },
@@ -2848,6 +2848,7 @@ Also identify WHO the image is of (the subject):
 - "mentioned": a user they @mentioned in the message. An explicit @mention beats a stray "I" or "me" elsewhere in the sentence.
 - "named": someone referred to by name or pronoun without an @mention (e.g. "steven", or "him" when the recent bot image was of a specific person).
 - "group": several people or the community as a whole ("the members of ukplace", "everyone here", "the server", "all of us", "the lads", "the regulars").
+- "random": they want ONE person picked at random ("choose one of the users in this channel at random", "pick someone", "a random member", "surprise me with someone").
 - "none": not a person (a cat, a landscape, a meme) or not an image request.
 If subject is "named", put the name in subject_name; otherwise subject_name is null.
 
@@ -2950,7 +2951,7 @@ def classify_mention_intent(
     subject = parsed.get("subject")
     if intent not in ("generate", "edit", "reply"):
         return None
-    if subject not in ("caller", "mentioned", "named", "group", "none"):
+    if subject not in ("caller", "mentioned", "named", "group", "random", "none"):
         subject = "none"
 
     usage = data.get("usage") or {}
@@ -3060,7 +3061,7 @@ def resolve_image_target(
         # Named someone we can't resolve: still hand the name to the synthesiser, just no history to pull.
         return subject_name.strip(), None
 
-    if subject in ("none", "group"):
+    if subject in ("none", "group", "random"):
         return None, None
 
     # Fallback (classifier unavailable or undecided): explicit mentions beat pronouns, earliest in the text first.
@@ -3248,6 +3249,72 @@ _GROUP_REQUEST_RE = re.compile(
 def looks_like_group_request(prompt: str) -> bool:
     """Regex fallback for 'draw the members of the server' style requests when the classifier is unavailable."""
     return bool(prompt and _GROUP_REQUEST_RE.search(prompt))
+
+
+_RANDOM_PICK_RE = re.compile(
+    r"\b(?:at\s+random|randomly|random\s+(?:user|person|member|someone|victim)|pick\s+(?:someone|a\s+user|a\s+member|one\s+of|anyone)|"
+    r"choose\s+(?:someone|a\s+user|a\s+member|one\s+of|anyone)|surprise\s+me\s+with\s+someone)\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_random_pick(prompt: str) -> bool:
+    """Regex fallback for 'pick someone at random' requests when the classifier is unavailable."""
+    return bool(prompt and _RANDOM_PICK_RE.search(prompt))
+
+
+def fetch_channel_active_users(channel_id: Optional[int], days: int = 7, limit: int = 40, exclude_ids: Optional[List[int]] = None) -> List[int]:
+    """Distinct user ids who posted in a channel over the last `days`, most active first."""
+    if channel_id is None:
+        return []
+    exclude = {str(x) for x in (exclude_ids or []) if x is not None}
+    out: List[int] = []
+    try:
+        from database import DatabaseManager
+        cutoff = int(time.time()) - days * 86400
+        rows = DatabaseManager.fetch_all(
+            "SELECT user_id, COUNT(*) AS c FROM message_archive WHERE channel_id = ? AND ts > ? GROUP BY user_id ORDER BY c DESC LIMIT ?",
+            (str(channel_id), cutoff, limit + len(exclude)),
+        )
+        for uid, _count in rows or []:
+            if str(uid) in exclude:
+                continue
+            try:
+                out.append(int(uid))
+            except (TypeError, ValueError):
+                continue
+    except Exception as e:
+        logger.debug("Failed to fetch channel active users: %s", e)
+    return out[:limit]
+
+
+async def pick_random_member(
+    client: Optional[discord.Client],
+    guild: Any,
+    channel_id: Optional[int],
+    bot_id: Optional[int] = None,
+    exclude_ids: Optional[List[int]] = None,
+) -> Tuple[Optional[str], Optional[int]]:
+    """Pick a random real, non-bot person who's been active in the channel lately (falling back to the server)."""
+    bot_id = bot_id or BOT_ID
+    exclude = [bot_id, *(exclude_ids or [])]
+    candidates = await asyncio.to_thread(fetch_channel_active_users, channel_id, 7, 40, exclude)
+    if not candidates:
+        candidates = [uid for uid, _c in await asyncio.to_thread(fetch_most_active_users, 30, 20, exclude)]
+    random.shuffle(candidates)
+    for uid in candidates:
+        member = None
+        try:
+            if guild is not None and hasattr(guild, "get_member"):
+                member = guild.get_member(uid)
+            if member is None and client is not None and hasattr(client, "get_user"):
+                member = client.get_user(uid)
+        except Exception:
+            member = None
+        if member is None or getattr(member, "bot", False):
+            continue
+        return _member_display_name(member), uid
+    return None, None
 
 
 def fetch_most_active_users(days: int = 30, limit: int = 12, exclude_ids: Optional[List[int]] = None) -> List[Tuple[int, int]]:
@@ -3713,6 +3780,13 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 clean_prompt, caller_id, caller_name, other_mentions, target_users,
                 subject=subject, subject_name=subject_name,
             )
+            random_pick = False
+            if subject == "random" or (intent is None and target_id is None and looks_like_random_pick(clean_prompt)):
+                target_name, target_id = await pick_random_member(
+                    client, getattr(message, "guild", None), getattr(getattr(message, "channel", None), "id", None), bot_id=bot_id,
+                )
+                random_pick = target_id is not None
+                logger.info("Random subject picked for %s: %s (%s)", caller_name, target_name, target_id)
             # Make sure the subject's own message history is what the synthesiser reads, not just whoever
             # happened to be mentioned or talking nearby.
             context = await ensure_target_history_in_context(client, message, context, target_id, target_name, prompt=clean_prompt, bot_id=bot_id)
@@ -3756,6 +3830,9 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     image_prompt = extract_image_prompt(clean_prompt)
                     caption = f"<@{caller_id}> Here's your image. Try not to strain your eyes."
 
+            # A randomly chosen victim should find out about it.
+            if random_pick and target_id is not None and f"<@{target_id}>" not in caption:
+                caption = f"<@{target_id}> {caption}"
             # "... and send it to @X": make sure X actually gets pinged with the result.
             for u in delivery_mentions(clean_prompt, other_mentions, target_id):
                 if f"<@{u.id}>" not in caption:
