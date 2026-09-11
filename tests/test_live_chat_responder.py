@@ -1428,6 +1428,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Never the stock cartoon lead", system)
         self.assertIn("at most two short labels", system)
         self.assertIn("NEVER photorealistic", system)
+        self.assertIn("A CARICATURE FOR A ROAST, NOT A PORTRAIT", system)
+        self.assertIn('"gag"', system)
         self.assertIn("LOOKS COME FROM THE MESSAGES FIRST", system)
         self.assertIn('"character_sheet"', system)
         self.assertIn("tie-breaker ONLY", user)

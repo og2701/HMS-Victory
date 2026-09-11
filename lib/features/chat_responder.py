@@ -634,8 +634,8 @@ def fetch_user_recent_chat(
 async def fetch_user_chat_sample_async(
     client: Optional[discord.Client],
     user_id: int,
-    recent_limit: int = 25,
-    older_sample: int = 30,
+    recent_limit: int = 40,
+    older_sample: int = 60,
 ) -> List[Dict[str, Any]]:
     """A user's messages sampled across the archive window (recent plus a random older slice), oldest first."""
     return await asyncio.to_thread(fetch_user_recent_chat, client, user_id, None, recent_limit, True, older_sample)
@@ -784,10 +784,12 @@ APPEARANCE_POOLS: Dict[str, List[str]] = {
     ],
     "expression": ["deadpan", "smug", "exasperated", "mid-rant", "a suspicious squint", "utterly unbothered", "sheepish", "scheming", "wearily patient"],
     "style": [
-        "loose ink-and-watercolour caricature", "bold linocut print with two colours", "1970s British comic strip (Viz-like) style",
-        "flat vector illustration with thick outlines", "chunky claymation-style 3D", "scratchy pencil sketch with a single spot colour",
-        "Victorian satirical engraving", "1950s advertising poster style", "gouache storybook illustration", "ligne claire comic art",
-        "pixel art", "woodcut with hand lettering", "chalk pastel on brown paper", "Saturday-morning cartoon cel style",
+        "MAD-magazine style caricature with a huge head and tiny body", "Spitting Image-style grotesque puppet caricature",
+        "Beano-style British kids' comic", "Viz-style crude British comic strip", "rubber-hose 1930s cartoon",
+        "South Park-style flat cutout", "chunky claymation-style 3D", "bobblehead caricature figurine",
+        "1970s British seaside postcard cartoon", "Victorian satirical engraving with exaggerated features",
+        "loose ink-and-watercolour caricature", "Saturday-morning cartoon cel style", "ligne claire comic art",
+        "bold linocut print with two colours",
     ],
     "composition": [
         "full-body, wide shot", "waist-up, slightly low angle", "close-up head and shoulders", "seen from behind, glancing back",
@@ -821,8 +823,10 @@ def appearance_directives(seed: Optional[int] = None, include_physical: bool = T
 
 IMAGE_PROMPT_WRITER_INSTRUCTIONS = """You write prompts for an AI image generator (DALL-E / diffusion). You are given a request and a Discord user's message history. Your only job is to turn what that history reveals about the person into one purely visual image prompt.
 
+DEFAULT BRIEF: A CARICATURE FOR A ROAST, NOT A PORTRAIT. Unless the request asks for something specific (a photo, a serious portrait, a named style, a particular scene), the picture is a joke at their expense that anyone in the server would get instantly. Mine the history for the 2-3 most ridiculous recurring things about them (an obsession, a catchphrase, a habit, an opinion they won't drop, a running joke others make about them) and build ONE clear visual gag around them: their habit taken to an absurd extreme, their catchphrase made literal, their obsession physically overwhelming them. Exaggerate physically too: whichever feature suits the gag is enormous. No dignified, moody, mid-tirade-in-a-cafe character studies; no mood pieces. Comedy beats accuracy. If the request specifies a style, scene, or realism, that overrides this brief.
+
 RULES:
-1. Build the picture from RECURRING themes across the whole history (hobbies, pets, catchphrases, food and drink habits, opinions, running jokes, how they talk to people), not from whatever they said most recently. A single mention is not a trait.
+1. Build the picture from RECURRING themes across the whole history (hobbies, pets, catchphrases, food and drink habits, opinions, running jokes, how they talk to people), not from whatever they said most recently. A single mention is not a trait. Prefer things other people in the chat tease them about: that's what the server finds funny.
 2. Under 110 words. Purely visual: physical caricature, expression, attire, props in hand, setting. No names, Discord tags, usernames, or meta instructions.
 3. HONOUR THE REQUESTED FORMAT, MEDIUM AND STYLE EXACTLY. 'cartoon strip' / 'comic strip' / 'comic' means ONE image laid out as 3 or 4 sequential panels telling a simple gag, with at most a few words of speech-bubble text. 'photorealistic' / 'photo' means a realistic photograph, not a caricature. 'cartoon', 'anime', 'oil painting', 'pixel art', 'sketch' and the like mean exactly that. Only pick a style when none was requested, and pick one that suits the person and the gag (satirical caricature, comic-book illustration, editorial cartoon, storybook illustration, watercolour, retro poster...). NEVER photorealistic, photographic, hyperreal, or realistic 3D-render unless the request explicitly asks for a photo or realism: the default is illustrated and stylised. Always name the medium explicitly in the prompt (e.g. "ink and watercolour illustration", "flat vector cartoon") so the generator does not drift into realism.
 4. Everything in the image must come from the request and the history. Do not add nationality, patriotic, military, naval or period imagery unless the history is genuinely about it.
@@ -841,7 +845,7 @@ RULES:
 11. REFERENCE IMAGES: if the requester attached images, they are references. Describe what matters in them concretely in the prompt (the actual animal and its colour and markings, the object, the outfit, the setting) so the generator reproduces it. If a reference shows a person, that is their real look and it overrides the character sheet.
 
 Respond ONLY with a JSON object:
-{"character_sheet": {"gender": "...", "age_band": "...", "build_hair_face": "...", "expression_energy": "...", "style": "..."}, "image_prompt": "..."}"""
+{"character_sheet": {"gender": "...", "age_band": "...", "build_hair_face": "...", "expression_energy": "...", "style": "...", "gag": "the one-line joke the image tells, and which history it comes from", "exaggerations": "which traits and features are blown up"}, "image_prompt": "..."}"""
 
 
 def _chat_completion_json(
@@ -2822,7 +2826,7 @@ async def ensure_target_history_in_context(
         sampled = await fetch_user_chat_sample_async(client, target_id)
         if sampled:
             sections.append(format_user_chat_for_context(
-                name, target_id, sampled, header="MESSAGE HISTORY SAMPLED ACROSS THE LAST 30 DAYS FOR", max_lines=55,
+                name, target_id, sampled, header="MESSAGE HISTORY SAMPLED ACROSS THE LAST 30 DAYS FOR", max_lines=100,
             ))
         elif not context_has_user_history(context, target_id):
             recent = await fetch_user_recent_chat_async(client, target_id, getattr(message, "channel", None), limit=35)
