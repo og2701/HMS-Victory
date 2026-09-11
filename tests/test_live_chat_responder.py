@@ -1218,6 +1218,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("HMS VICTORY IS IN THE PICTURE: yes", user)
         self.assertIn("PREVIOUS IMAGES ALREADY PRODUCED", user)
         self.assertIn("Jaffa Cakes Fanatic", user)
+        self.assertIn("BANNED ELEMENTS", user)
+        self.assertIn("jaffa", user)
         self.assertIn("Vic loves me", user)
 
         self.assertIn("FLY THE FLAG, QUIETLY", system)
@@ -2340,6 +2342,52 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         text, p, c = rewrite_prompt_for_safety("dodgy prompt", openai_key="test-key")
         self.assertEqual((text, p, c), ("safer", 5, 2))
         self.assertIn("REJECTED PROMPT:\ndodgy prompt", _sent_payload(mock_urlopen)["messages"][1]["content"])
+
+    def test_extract_banned_terms_and_presence(self):
+        from lib.features.chat_responder import extract_banned_terms, banned_terms_present
+        prev = ["A rubber-hose 1930s cartoon scene of Oggers on a plane, surrounded by exaggerated fart clouds. AI robots in masks serve him. "
+                "A plate of lasagne mac and cheese, a Berlin flight ticket for 4.99, a Shakespeare book with question marks."]
+        banned = extract_banned_terms(prev)
+        for expected in ["plane", "fart", "clouds", "robots", "masks", "lasagne", "cheese", "berlin", "4.99", "shakespeare"]:
+            self.assertIn(expected, banned, expected)
+        for stop in ["cartoon", "rubber", "1930s", "exaggerated", "oggers", "with"]:
+            self.assertNotIn(stop, banned, stop)
+        new_prompt = "Oggers holding a Shakespeare quiz card marked wrong, next to a Berlin poster with 4.99 and fart clouds"
+        self.assertEqual(set(banned_terms_present(new_prompt, banned)) >= {"shakespeare", "berlin", "4.99", "fart", "clouds"}, True)
+        self.assertEqual(banned_terms_present("A rowing regatta on the Thames", banned), [])
+
+    @patch("urllib.request.urlopen")
+    def test_writer_is_forced_to_drop_reused_elements(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_contextual_image_prompt
+        def chat(body):
+            return _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}}], "usage": {"prompt_tokens": 10, "completion_tokens": 5}}).encode())
+        prev = ["Oggers on a plane with fart clouds, a Berlin ticket for 4.99 and a Shakespeare quiz card"]
+        mock_urlopen.side_effect = [
+            chat({"image_prompt": "Oggers with a Shakespeare quiz card, a Berlin poster for 4.99 and fart clouds again"}),   # reused
+            chat({"image_prompt": "Oggers at a rowing regatta drenched in curry sauce, a Henry Hoover watching"}),         # strict retry
+            chat({"caption": "y"}),
+        ]
+        img, _, p, _ = synthesize_contextual_image_prompt(
+            prompt="what do you think i look like", context="", user_name="Oggers", caller_role="server owner",
+            target_name="Oggers", target_id=1, openai_key="test-key", previous_image_prompts=prev,
+        )
+        self.assertEqual(img, "Oggers at a rowing regatta drenched in curry sauce, a Henry Hoover watching")
+        self.assertEqual(mock_urlopen.call_count, 3)
+        first_user = _sent_payload(mock_urlopen, 0)["messages"][1]["content"]
+        self.assertIn("BANNED ELEMENTS (used in previous images; none may appear): ", first_user)
+        strict_user = _sent_payload(mock_urlopen, 1)["messages"][1]["content"]
+        self.assertTrue(strict_user.startswith("YOUR PREVIOUS ATTEMPT WAS REJECTED: it reused these banned elements: "))
+        self.assertIn("shakespeare", strict_user.split("\n")[0])
+        self.assertEqual(p, 30)  # writer, strict retry and caption all counted
+        system = _sent_payload(mock_urlopen, 0)["messages"][0]["content"]
+        self.assertIn("THE IMAGE PROMPT MUST THEN SPELL OUT THAT LOOK IN WORDS", system)
+        self.assertIn("that self-description IS the gag", system)
+
+    def test_style_seed_rotates_across_images_of_same_person(self):
+        from lib.features.chat_responder import appearance_directives
+        base = appearance_directives(404634271861571584)
+        rotated = appearance_directives(404634271861571584 + 7919 * 1)
+        self.assertNotEqual(base, rotated)
 
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent

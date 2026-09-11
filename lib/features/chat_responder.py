@@ -1071,6 +1071,48 @@ def appearance_directives(seed: Optional[int] = None, include_physical: bool = T
     return " ".join(parts)
 
 
+_BANNED_TERM_STOPWORDS = {
+    "with", "that", "this", "from", "into", "onto", "their", "there", "them", "they", "have", "been", "being", "while", "where",
+    "which", "about", "around", "behind", "beside", "under", "over", "above", "next", "near", "front", "side", "each", "every",
+    "some", "more", "most", "very", "just", "also", "like", "such", "than", "then", "when", "what", "whose", "small", "large",
+    "huge", "giant", "tiny", "long", "short", "wide", "full", "half", "little", "many", "much", "wearing", "holding", "standing",
+    "sitting", "looking", "showing", "featuring", "depicted", "depicting", "depict", "illustration", "illustrated", "cartoon",
+    "caricature", "style", "styled", "scene", "image", "picture", "background", "foreground", "colour", "color", "colours",
+    "colors", "palette", "limited", "three", "vintage", "feel", "strong", "lines", "features", "exaggerated", "comic", "comics",
+    "rubber", "hose", "1930s", "1970s", "british", "man", "woman", "person", "figure", "character", "expression", "face",
+    "hair", "build", "body", "hand", "hands", "head", "eyes", "smile", "grin", "look", "looks", "shirt", "jersey", "outfit",
+    "labelled", "labeled", "reading", "sign", "text", "word", "words", "named", "name", "oggers", "chin", "steven", "lanca",
+    "hadidas", "johnny", "roshy", "gunner", "tharan", "kaiz", "detailed", "highly", "bold", "loose", "ink", "watercolour",
+    "watercolor", "pixel", "sprite", "poster", "print", "linocut", "gouache", "pastel", "cel", "flat", "vector", "photo",
+    "photorealistic", "realistic", "sketch", "engraving", "satirical", "victorian", "seaside", "postcard", "beano", "viz",
+    "spitting", "puppet", "bobblehead", "claymation", "cutout", "south", "park", "ligne", "claire", "mad", "magazine",
+}
+
+
+def extract_banned_terms(previous_prompts: Optional[List[str]], limit: int = 40) -> List[str]:
+    """Distinctive nouns/numbers from earlier image prompts: the props and gags that must not come back."""
+    terms: List[str] = []
+    seen: set = set()
+    for prompt in previous_prompts or []:
+        for tok in re.findall(r"[A-Za-z][A-Za-z'\-]{3,}|\d+(?:\.\d+)?", prompt or ""):
+            key = tok.lower().strip("'-")
+            if len(key) < 4 and not re.match(r"^\d", key):
+                continue
+            if key in _BANNED_TERM_STOPWORDS or key in seen:
+                continue
+            seen.add(key)
+            terms.append(key)
+            if len(terms) >= limit:
+                return terms
+    return terms
+
+
+def banned_terms_present(image_prompt: str, banned: List[str]) -> List[str]:
+    """Which banned terms appear in a prompt (whole-word, case-insensitive)."""
+    low = (image_prompt or "").lower()
+    return [t for t in banned if re.search(rf"(?<![a-z0-9]){re.escape(t)}(?![a-z0-9])", low)]
+
+
 IMAGE_PROMPT_WRITER_INSTRUCTIONS = """You write prompts for an AI image generator (DALL-E / diffusion). You are given a request and a Discord user's message history. Your only job is to turn what that history reveals about the person into one purely visual image prompt.
 
 DEFAULT BRIEF: A CARICATURE FOR A ROAST, NOT A PORTRAIT. Unless the request asks for something specific (a photo, a serious portrait, a named style, a particular scene), the picture is a joke at their expense that anyone in the server would get instantly. Mine the history for the most ridiculous recurring things about them (obsessions, catchphrases, habits, opinions they won't drop, running jokes others make about them, specific incidents). Build ONE central visual gag (their habit taken to an absurd extreme, their catchphrase made literal, their obsession physically overwhelming them), then PACK THE SCENE with 4-6 SUPPORTING REFERENCES from DIFFERENT conversations and topics: props, background details, clothing, what's on the table, what's on the wall, who or what is lurking at the edge of frame. Each reference must trace to a specific message. The picture should reward a second look: someone who knows them spots the main joke instantly and keeps finding smaller ones. Do not spend the whole image on a single theme. Exaggerate physically too: whichever feature suits the central gag is enormous. No dignified, moody, mid-tirade-in-a-cafe character studies; no mood pieces. Comedy beats accuracy. If the request specifies a style, scene, or realism, that overrides this brief.
@@ -1083,10 +1125,11 @@ RULES:
 3. HONOUR THE REQUESTED FORMAT, MEDIUM AND STYLE EXACTLY. 'cartoon strip' / 'comic strip' / 'comic' means ONE image laid out as 3 or 4 sequential panels telling a simple gag, with at most a few words of speech-bubble text. 'photorealistic' / 'photo' means a realistic photograph, not a caricature. 'cartoon', 'anime', 'oil painting', 'pixel art', 'sketch' and the like mean exactly that. Only pick a style when none was requested, and pick one that suits the person and the gag (satirical caricature, comic-book illustration, editorial cartoon, storybook illustration, watercolour, retro poster...). NEVER photorealistic, photographic, hyperreal, or realistic 3D-render unless the request explicitly asks for a photo or realism: the default is illustrated and stylised. Always name the medium explicitly in the prompt (e.g. "ink and watercolour illustration", "flat vector cartoon") so the generator does not drift into realism.
 4. Everything in the image must come from the request and the history. Do not add nationality, patriotic, military, naval or period imagery unless the history is genuinely about it.
 5. The payload states whether HMS VICTORY IS IN THE PICTURE. If yes, add a second character: a weathered 18th-century first-rate ship of the line with a stern, unimpressed personality (the ship itself with a disapproving air, or a stern naval officer figurehead), interacting with the person the way their HISTORY BETWEEN transcript suggests. If no, there must be no ship, sailors or naval officers of any kind.
-6. If PREVIOUS IMAGES are listed, every prop, food, drink, outfit, slogan, setting and gag in them is BANNED, even if the history mentions them again. Use different material; there is always more.
+6. If BANNED ELEMENTS are listed, none of them may appear in the image in any form: not the prop, not the food, not the slogan, not the setting, not the gag, not a synonym of it. They were used in previous images of this person. The history always has more material; dig for it. A prompt containing banned elements is rejected and you will be asked again.
 7. GROUP PICTURES: if a SERVER MEMBER ROSTER is provided, the people in it are the ONLY people in the image and EVERY ONE OF THEM MUST APPEAR with roughly equal prominence. Give each a distinct, recognisable caricature and their OWN gag drawn from their own dossier, once each, all in one scene that connects them (something they're doing together, or side by side reacting to each other). Do not let one person's material take over the picture. Never invent extra people, usernames, handles or names. Text in the image is limited to the roster members' names as small labels, or no text at all; never fabricate chat messages, channel lists or UI. The word limit for a group is 40 words per person plus 40 for the scene.
 8. In any image, never render made-up usernames, handles, screen names or chat text. If you need labels, use only real names given in the payload.
-9. LOOKS COME FROM THE MESSAGES FIRST. Before writing the prompt, fill in a character sheet from the evidence in their messages and name:
+9. LOOKS COME FROM THE MESSAGES FIRST. Before writing the prompt, fill in a character sheet from the evidence in their messages and name. THE IMAGE PROMPT MUST THEN SPELL OUT THAT LOOK IN WORDS (age, build, hair, face, expression): a sheet that says "brunette, handsome" and a prompt that never mentions hair or face is a failure, because the generator only sees the prompt.
+   - If the person has JUST described themselves in the recent messages (especially boastfully or with a wink: "for reference I am extremely tall, well built, handsome"), that self-description IS the gag. Either draw them exactly as claimed to a ludicrous degree, or draw the claim and the reality side by side. Do not ignore it.
    - gender: from their name, how others address them, how they refer to themselves. Never assume male.
    - age_band: from life-stage clues (school, uni, first job, kids, mortgage, retirement, what they reminisce about).
    - build_hair_face: ONLY from things they've said or joked about themselves (bald, ginger, beard, glasses, gym, height, "my belly").
@@ -1211,9 +1254,12 @@ def synthesize_image_prompt_from_context(
     )
     # Group pictures get their looks from the roster; single subjects get a seeded, person-specific base look.
     user_payload += "\nVARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): " + appearance_directives(subject_seed, include_physical=not is_group and bool(subject_name))
+    banned = extract_banned_terms(previous_image_prompts)
     if previous_image_prompts:
         listed = "\n".join(f"- {p[:220]}" for p in previous_image_prompts if p)
-        user_payload += f"\n\nPREVIOUS IMAGES ALREADY PRODUCED (their props, foods, outfits, settings and gags are BANNED this time):\n{listed}"
+        user_payload += f"\n\nPREVIOUS IMAGES ALREADY PRODUCED:\n{listed}"
+    if banned:
+        user_payload += "\n\nBANNED ELEMENTS (used in previous images; none may appear): " + ", ".join(banned)
     if reference_image_urls:
         user_payload += f"\n\nREFERENCE IMAGES ATTACHED BY THE REQUESTER: {len(reference_image_urls)} (see attached; describe what matters from them in the prompt)"
     if context.strip():
@@ -1256,6 +1302,30 @@ def synthesize_image_prompt_from_context(
                 IMAGE_PROMPT_WRITER_INSTRUCTIONS, user_payload, api_key,
                 model=model, max_tokens=max_tokens, temperature=0.85, timeout=timeout, what="Image prompt synthesis (no references)",
             )
+    # Enforce the ban: if the writer reused earlier material anyway, make it go again with the exact culprits named.
+    reused = banned_terms_present((parsed.get("image_prompt") or ""), banned) if banned else []
+    if len(reused) >= 2:
+        logger.warning("Image prompt reused banned elements %s; asking the writer again", reused)
+        strict_payload = (
+            "YOUR PREVIOUS ATTEMPT WAS REJECTED: it reused these banned elements: " + ", ".join(reused) + ". "
+            "Write a completely different picture with none of them and none of their synonyms. Pick different material from the history.\n\n"
+            + user_payload
+        )
+        try:
+            parsed2, p2, c2 = _chat_completion_json(
+                IMAGE_PROMPT_WRITER_INSTRUCTIONS, strict_payload, api_key,
+                model=model, max_tokens=max_tokens, temperature=0.95, timeout=timeout, what="Image prompt synthesis (strict)",
+                image_urls=reference_image_urls,
+            )
+            p_tokens += p2
+            c_tokens += c2
+            still = banned_terms_present((parsed2.get("image_prompt") or ""), banned)
+            if len(still) < len(reused):
+                parsed = parsed2
+            logger.info("Strict rewrite reduced reused elements from %d to %d", len(reused), len(still))
+        except Exception as e:
+            logger.warning("Strict rewrite failed (%s); keeping the first prompt", e)
+
     sheet = parsed.get("character_sheet")
     if isinstance(sheet, dict):
         logger.info("Image character sheet: %s", json.dumps(sheet, ensure_ascii=False)[:600])
@@ -1335,6 +1405,10 @@ def synthesize_contextual_image_prompt(
         seed = int(hashlib.sha1(target_name.lower().encode("utf-8")).hexdigest()[:8], 16)
     else:
         seed = None
+    if seed is not None and previous_image_prompts:
+        # Rotate the tie-breaker (style, composition, palette) across consecutive images of the same person,
+        # so four portraits in a row don't all come out as the same 1930s rubber-hose cartoon.
+        seed = seed + 7919 * len(previous_image_prompts)
     img_prompt, p_tokens, c_tokens = synthesize_image_prompt_from_context(
         prompt, context, include_bot=include_bot, previous_image_prompts=previous_image_prompts,
         openai_key=openai_key, model=model, timeout=timeout, subject_seed=seed, is_group=is_group,
