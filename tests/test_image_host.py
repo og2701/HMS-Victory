@@ -48,6 +48,8 @@ class FakeClient:
 
 
 def _fresh():
+    import config
+    config.IMAGE_HOST_ENABLED = True   # the switch is off in production; this tests the route
     H._url_cache.clear()
     H._in_flight.clear()
     H._stats.update(hits=0, misses=0, upload_ms=0.0)
@@ -183,3 +185,19 @@ def _run_all():
 
 if __name__ == "__main__":
     sys.exit(0 if _run_all() else 1)
+
+
+def test_switched_off_means_a_plain_attachment_and_no_upload():
+    """With the hosted route off, nothing is posted anywhere and the caller gets the PNG
+    to attach itself - the whole point of the switch is to stop depending on Discord
+    rendering a link to another message's attachment."""
+    import config
+    c = _fresh()
+    config.IMAGE_HOST_ENABLED = False
+    try:
+        assert _run(H.host_image(c, _bytes(PNG_A))) is None
+        embed, files = _run(H.as_embed_or_file(c, _bytes(PNG_A), "board.png"))
+        assert embed is None and len(files) == 1 and files[0].filename == "board.png"
+        assert c.channel.uploads == 0
+    finally:
+        config.IMAGE_HOST_ENABLED = True

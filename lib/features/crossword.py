@@ -839,6 +839,8 @@ async def prewarm_board(client) -> bool:
     """
     if not getattr(config, "CROSSWORD_IMAGE_ENABLED", False):
         return False
+    if not getattr(config, "IMAGE_HOST_ENABLED", True):
+        return False   # nothing to prewarm: boards are attached directly, not linked
     try:
         date = _today()
         _todays_puzzle(date)          # raises if there is no puzzle for today

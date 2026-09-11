@@ -56,6 +56,15 @@ def cache_stats() -> dict:
             "cached": len(_url_cache)}
 
 
+def _enabled() -> bool:
+    """The hosted-link route is switchable (config.IMAGE_HOST_ENABLED) because it depends
+    on Discord rendering an embed that points at another message's attachment, and that
+    has broken before: 11 Sep 2026, every board came up as a blank grey tile although the
+    links were valid. Off means as_embed_or_file hands back a plain attachment instead."""
+    import config
+    return bool(getattr(config, "IMAGE_HOST_ENABLED", True))
+
+
 def _host_channel_id() -> int:
     import config
     explicit = int(getattr(config, "IMAGE_HOST_CHANNEL_ID", 0) or 0)
@@ -75,6 +84,8 @@ async def as_embed_or_file(client, data: io.BytesIO, filename: str = "board.png"
 
     Public messages don't need this - the casino boards attach images directly and are
     fine, because the problem is specific to ephemerals.
+
+    With config.IMAGE_HOST_ENABLED off this is always the plain attachment (see _enabled).
     """
     url = await host_image(client, data, filename)
     if url:
@@ -99,6 +110,8 @@ async def host_image(client, data: io.BytesIO, filename: str = "board.png") -> s
     Falls back to None rather than raising: the caller should then send the image as a
     plain attachment (slower, but a slow board beats no board).
     """
+    if not _enabled():
+        return None
     raw = data.getvalue()
     key = f"{filename}:{hashlib.sha256(raw).hexdigest()}"
     hit = _url_cache.get(key)

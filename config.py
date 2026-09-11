@@ -24,6 +24,13 @@ ROAST_DAILY_LIMIT = 4  # per-user /roast uses per UTC day (oggers exempt)
 # nobody reads, since a puzzle posts a board here on every answer. 0 falls back to the
 # bot-usage log.
 IMAGE_HOST_CHANNEL_ID = 1534163732656033932
+# Whether to use that hosted-link route at all. Off since 11 Sep 2026: Discord stopped
+# rendering embeds that point at a hosted attachment link on ephemeral messages - the
+# board came up as a tiny grey tile with the Guess button under it, for Wordle and the
+# crossword alike, even though the links themselves were valid and loaded fine in a
+# browser. With this off the PNG is attached to the ephemeral directly, which is slower
+# to appear but always appears. Flip it back on if Discord starts rendering them again.
+IMAGE_HOST_ENABLED = False
 
 PREDICTION_CV2_ENABLED = True
 PREDICTION_IMAGE_ENABLED = False
