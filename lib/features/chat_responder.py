@@ -128,6 +128,53 @@ STRICT RULES:
 ONE_OFF_SYSTEM_PROMPT = build_one_off_system_prompt()
 
 
+_AT_NAME_RE = re.compile(r"(?<![<\w])@([A-Za-z0-9_.\-]{2,32})(?![\w>])")
+
+
+def resolve_name_mentions(
+    text: str,
+    guild: Any = None,
+    known_users: Optional[List[Any]] = None,
+    name_map: Optional[Dict[str, int]] = None,
+) -> str:
+    """Turn '@Johnny' written by the model into a real <@id> ping when the name matches a known user or guild member.
+
+    Anything that doesn't resolve is left alone for sanitize_ai_mentions to defang (it could be a role).
+    """
+    if not text or "@" not in text:
+        return text
+    lookup: Dict[str, int] = {}
+    for n, uid in (name_map or {}).items():
+        if isinstance(n, str) and n.strip() and isinstance(uid, int):
+            lookup[n.strip().lower()] = uid
+    for u in known_users or []:
+        uid = getattr(u, "id", None)
+        if not isinstance(uid, int):
+            continue
+        for n in (getattr(u, "nick", None), getattr(u, "global_name", None), getattr(u, "display_name", None), getattr(u, "name", None)):
+            if isinstance(n, str) and n.strip():
+                lookup[n.strip().lower()] = uid
+
+    def _sub(m):
+        raw = m.group(1)
+        core = raw.rstrip(".,!?:;")
+        trailing = raw[len(core):]
+        if not core:
+            return m.group(0)
+        uid = lookup.get(core.lower())
+        if uid is None and guild is not None and hasattr(guild, "get_member_named"):
+            try:
+                member = guild.get_member_named(core)
+                mid = getattr(member, "id", None) if member is not None else None
+                if isinstance(mid, int) and not getattr(member, "bot", False):
+                    uid = mid
+            except Exception:
+                uid = None
+        return f"<@{uid}>{trailing}" if isinstance(uid, int) else m.group(0)
+
+    return _AT_NAME_RE.sub(_sub, text)
+
+
 def sanitize_ai_mentions(text: str, guild: Optional[discord.Guild] = None) -> str:
     """Hard-coded mention sanitizer: defangs @everyone, @here, role pings, and raw @ mentions.
 
@@ -3608,7 +3655,11 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 logger.info("Image quota for %s (%s): %d left today", caller_name, caller_id, max(0, remaining - 1))
 
             file = discord.File(io.BytesIO(img_bytes), filename="vic_creation.png")
-            await message.reply(caption, file=file, mention_author=True)
+            caption = sanitize_ai_mentions(
+                resolve_name_mentions(caption, guild=getattr(message, 'guild', None), known_users=[message.author, *other_mentions], name_map=target_users),
+                guild=getattr(message, 'guild', None),
+            )
+            await message.reply(caption, file=file, mention_author=True, allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True))
 
             live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
             live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": f"[Edited Image: {edit_prompt}]"})
@@ -3710,7 +3761,11 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     logger.info("Image quota for %s (%s): %d left today", caller_name, caller_id, max(0, remaining - 1))
 
                 file = discord.File(io.BytesIO(img_bytes), filename="vic_creation.png")
-                await message.reply(caption, file=file, mention_author=True)
+                caption = sanitize_ai_mentions(
+                    resolve_name_mentions(caption, guild=getattr(message, 'guild', None), known_users=[message.author, *other_mentions], name_map=target_users),
+                    guild=getattr(message, 'guild', None),
+                )
+                await message.reply(caption, file=file, mention_author=True, allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True))
 
                 live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
                 live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": f"[Generated Image: {image_prompt}]"})
@@ -3778,6 +3833,12 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         # Never let the bot ping itself
         if bot_id:
             reply_text = re.sub(rf"<@!?{bot_id}>\s*", "", reply_text).strip()
+
+        # '@Name' written by the model -> real ping for the caller, tagged users, replied-to author, or any member
+        reply_text = resolve_name_mentions(
+            reply_text, guild=getattr(message, "guild", None),
+            known_users=[message.author, *other_mentions], name_map=target_users,
+        )
 
         # Tag target users if their name was used in plain text and not already tagged
         if target_users:

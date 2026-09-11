@@ -2054,6 +2054,26 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(parse_openai_response_output({"output": None}), ("", None, [], 0))
 
+    def test_resolve_name_mentions(self):
+        from lib.features.chat_responder import resolve_name_mentions, sanitize_ai_mentions
+        zwsp = "\u200b"
+        johnny = MagicMock(); johnny.id = 797; johnny.nick = None; johnny.global_name = "Johnny"; johnny.display_name = "Johnny"; johnny.name = "johnny_uk"
+        guild = MagicMock()
+        steven = MagicMock(); steven.id = 555; steven.bot = False
+        guild.get_member_named.side_effect = lambda n: steven if n.lower() == "steven" else None
+
+        # Caller written as @Name becomes a real ping, punctuation preserved
+        self.assertEqual(resolve_name_mentions("@Johnny Want more enthusiasm?", guild, [johnny]), "<@797> Want more enthusiasm?")
+        self.assertEqual(resolve_name_mentions("Nice one, @johnny_uk.", guild, [johnny]), "Nice one, <@797>.")
+        # Guild member lookup for names the model uses that weren't in the request
+        self.assertEqual(resolve_name_mentions("ask @Steven", guild, [johnny]), "ask <@555>")
+        # name_map entries (gathered target users) resolve too
+        self.assertEqual(resolve_name_mentions("@chin owes me", None, [], {"chin": 795}), "<@795> owes me")
+        # Unknown names and existing pings are untouched, and the sanitiser still defangs them
+        self.assertEqual(resolve_name_mentions("@Admin and <@123> and @everyone", guild, [johnny]), "@Admin and <@123> and @everyone")
+        self.assertEqual(sanitize_ai_mentions(resolve_name_mentions("@Johnny and @everyone", guild, [johnny])), f"<@797> and @{zwsp}everyone")
+        self.assertEqual(resolve_name_mentions("email me@example.com", guild, [johnny]), "email me@example.com")
+
     def test_sanitize_ai_mentions(self):
         zwsp = "\u200b"
 
