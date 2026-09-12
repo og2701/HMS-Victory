@@ -2420,6 +2420,80 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         mock_generate.assert_called_once()
         self.assertIn("reheated cheese sauce", message.reply.call_args[0][0])
 
+    async def test_resolve_reply_chain_walks_up_and_stops_on_loops(self):
+        from lib.features import chat_responder as cr
+        def msg(mid, content, parent=None):
+            m = MagicMock(); m.id = mid; m.content = content; m.attachments = []
+            if parent is None:
+                m.reference = None
+            else:
+                m.reference = MagicMock(); m.reference.message_id = parent.id; m.reference.resolved = parent
+            return m
+        root = msg(1, "draw steven as a pirate")
+        mid = msg(2, "with a parrot", root)
+        leaf = msg(3, "pls do this", mid)
+        chain = await cr.resolve_reply_chain(leaf)
+        self.assertEqual([m.id for m in chain], [2, 1])
+        # loop protection
+        root.reference = MagicMock(); root.reference.message_id = 3; root.reference.resolved = leaf
+        chain = await cr.resolve_reply_chain(leaf)
+        self.assertEqual([m.id for m in chain], [2, 1, 3][:3])
+        self.assertLessEqual(len(chain), 5)
+
+    @patch("lib.features.chat_responder.download_image_bytes", return_value=b"PHOTO")
+    @patch("lib.features.chat_responder.edit_image_openai", return_value=(b"img", 20, 200))
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.build_user_dossier", return_value=None)
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_delegation_follows_reply_chain(
+        self, mock_classify, mock_find_img, mock_fetch_chat, _dossier, _sample, _exchanges, mock_synth, mock_gen_img, mock_edit_img, mock_download
+    ):
+        """reply(reply(request)) + 'pls do this': the request is the root, the middle message is a tweak, the root's photo is inherited."""
+        mock_classify.return_value = {"intent": "generate", "subject": "mentioned", "subject_name": "<@555>", "reason": "", "input_tokens": 0, "output_tokens": 0}
+        mock_synth.return_value = ("Steven as a pirate with a parrot", "Arr.", 10, 5)
+
+        client = MagicMock(); client.user.id = 999999999
+        steven = MagicMock(); steven.id = 555; steven.nick = "Steven <3"; steven.global_name = None; steven.display_name = "Steven <3"; steven.name = "steven"
+        chin = MagicMock(); chin.id = 795; chin.nick = "Chin"; chin.global_name = None; chin.display_name = "Chin"; chin.name = "chin"
+        photo = MagicMock(); photo.filename = "steven.jpg"; photo.content_type = "image/jpeg"; photo.url = "https://cdn/steven.jpg"
+
+        root = MagicMock(); root.id = 1; root.content = f"<@{client.user.id}> draw <@555> as a pirate"; root.author = chin; root.mentions = [client.user, steven]; root.attachments = [photo]; root.reference = None
+        mid = MagicMock(); mid.id = 2; mid.content = "with a parrot on his shoulder"; mid.author = chin; mid.mentions = []; mid.attachments = []
+        mid.reference = MagicMock(); mid.reference.message_id = 1; mid.reference.resolved = root
+        ref = MagicMock(); ref.message_id = 2; ref.resolved = mid
+        message = self._leader_message(client, f"<@{client.user.id}> pls do this", reference=ref)
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        kw = mock_classify.call_args[1]
+        self.assertEqual(kw["replied_to_text"], "with a parrot on his shoulder")
+        self.assertEqual(kw["reply_chain"], [("Chin", "with a parrot on his shoulder"), ("Chin", "draw <@555> as a pirate")])
+        self.assertEqual(kw["mentioned_names"], ["Steven <3"])
+        self.assertEqual(mock_synth.call_args[1]["prompt"], "draw <@555> as a pirate (then: with a parrot on his shoulder)")
+        self.assertEqual(mock_synth.call_args[1]["target_id"], 555)
+        self.assertEqual(mock_synth.call_args[1]["reference_image_urls"], ["https://cdn/steven.jpg"])
+        mock_download.assert_called_once_with("https://cdn/steven.jpg")
+
+    @patch("urllib.request.urlopen")
+    def test_classify_mention_intent_gets_the_chain(self, mock_urlopen):
+        from lib.features.chat_responder import classify_mention_intent
+        mock_urlopen.return_value = _mock_resp(_responses_body(json.dumps({"intent": "generate", "subject": "mentioned", "subject_name": None, "reason": ""})))
+        classify_mention_intent("pls do this", has_reply_ref=True, replied_to_text="with a parrot", replied_to_author="Chin",
+                                reply_chain=[("Chin", "with a parrot"), ("Chin", "draw <@555> as a pirate")], openai_key="test-key")
+        text = _sent_payload(mock_urlopen)["input"][0]["content"][0]["text"]
+        self.assertIn("FULL REPLY CHAIN it sits under (nearest first, oldest last):", text)
+        self.assertIn('2. Chin: "draw <@555> as a pirate"', text)
+        self.assertIn("follow the FULL REPLY CHAIN", _sent_payload(mock_urlopen)["instructions"])
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):

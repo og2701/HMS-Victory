@@ -1985,6 +1985,32 @@ def is_delegation_prompt(prompt: str) -> bool:
     return bool(prompt is not None and _DELEGATION_RE.match(prompt.strip()))
 
 
+async def resolve_reply_chain(message: discord.Message, max_depth: int = 5) -> List[Any]:
+    """The messages this one replies to, nearest first, following reply-of-reply links up to max_depth."""
+    chain: List[Any] = []
+    current = message
+    seen: set = set()
+    for _ in range(max_depth):
+        parent = await resolve_referenced_message(current)
+        if parent is None:
+            break
+        pid = getattr(parent, "id", None)
+        if pid is not None and pid in seen:
+            break
+        if pid is not None:
+            seen.add(pid)
+        chain.append(parent)
+        current = parent
+    return chain
+
+
+def _strip_bot_address(text: str, bot_id: Optional[int]) -> str:
+    raw = text or ""
+    if bot_id:
+        raw = re.sub(rf"<@!?{bot_id}>\s*", "", raw)
+    return re.sub(r"^@?hms\s+victory[:,]?\s*", "", raw, flags=re.IGNORECASE).strip()
+
+
 async def resolve_referenced_message(message: discord.Message) -> Optional[Any]:
     """The message this one replies to, from the cache or fetched; None if there isn't one or it can't be read."""
     ref = getattr(message, "reference", None)
@@ -3071,7 +3097,7 @@ Also identify WHO the image is of (the subject):
 - "none": not a person (a cat, a landscape, a meme) or not an image request.
 If subject is "named", put the name in subject_name; otherwise subject_name is null.
 
-If the message is a short delegation like "pls do this", "do that", "this one", "^", "what he said", it refers to THE MESSAGE BEING REPLIED TO: classify that message's request instead, and take the subject from it.
+If the message is a short delegation like "pls do this", "do that", "this one", "^", "what he said", it refers to THE MESSAGE BEING REPLIED TO: classify that message's request instead, and take the subject from it. If that message is itself just a tweak or a delegation, follow the FULL REPLY CHAIN up to the original request and treat the tweaks along the way as amendments to it.
 
 Be decisive. Casual, misspelled, or lowercase phrasing is normal here."""
 
@@ -3109,6 +3135,7 @@ def classify_mention_intent(
     recent_history: str = "",
     replied_to_text: Optional[str] = None,
     replied_to_author: Optional[str] = None,
+    reply_chain: Optional[List[Tuple[str, str]]] = None,
     openai_key: Optional[str] = None,
     model: str = MENTION_INTENT_MODEL,
     timeout: int = 15,
@@ -3132,6 +3159,9 @@ def classify_mention_intent(
         facts.append(f"MOST RECENT BOT IMAGE WAS: {recent_bot_image_prompt[:300]}")
     if replied_to_text:
         facts.append(f"THE MESSAGE BEING REPLIED TO (by {replied_to_author or 'someone'}): \"{replied_to_text.strip()[:500]}\"")
+    if reply_chain and len(reply_chain) > 1:
+        lines = [f"  {i}. {who}: \"{txt.strip()[:220]}\"" for i, (who, txt) in enumerate(reply_chain, 1)]
+        facts.append("FULL REPLY CHAIN it sits under (nearest first, oldest last):\n" + "\n".join(lines))
     facts.append(f"USER ATTACHED AN IMAGE: {'yes' if has_attached_image else 'no'}")
     if recent_history and recent_history.strip():
         facts.append(f"RECENT CHAT:\n{recent_history.strip()[:1500]}")
@@ -3980,24 +4010,57 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         replied_to_text = None
         replied_to_author = None
         delegated_from = None
-        ref_msg = await resolve_referenced_message(message) if has_reply_ref else None
+        reply_chain = await resolve_reply_chain(message) if has_reply_ref else []
+        ref_msg = reply_chain[0] if reply_chain else None
+        reply_chain_facts: List[Tuple[str, str]] = []
+        client_uid = getattr(getattr(client, "user", None), "id", None)
+        for m in reply_chain:
+            txt = _strip_bot_address(getattr(m, "content", "") or "", bot_id)
+            who = _member_display_name(getattr(m, "author", None), "someone")
+            if getattr(getattr(m, "author", None), "id", None) == bot_id:
+                who = "HMS Victory"
+            if txt or getattr(m, "attachments", None):
+                reply_chain_facts.append((who, txt or "[image]"))
         if ref_msg is not None:
-            raw_ref = getattr(ref_msg, "content", "") or ""
-            if bot_id:
-                raw_ref = re.sub(rf"<@!?{bot_id}>\s*", "", raw_ref)
-            raw_ref = re.sub(r"^@?hms\s+victory[:,]?\s*", "", raw_ref, flags=re.IGNORECASE).strip()
-            replied_to_text = raw_ref or None
+            replied_to_text = _strip_bot_address(getattr(ref_msg, "content", "") or "", bot_id) or None
             replied_to_author = _member_display_name(getattr(ref_msg, "author", None), "someone")
-            ref_mentions = [
-                u for u in (getattr(ref_msg, "mentions", None) or [])
-                if getattr(u, "id", None) not in (bot_id, getattr(getattr(client, "user", None), "id", None))
-            ]
-            if replied_to_text and is_delegation_prompt(clean_prompt) and getattr(getattr(ref_msg, "author", None), "id", None) != bot_id:
-                logger.info("Delegated request from %s: %r -> using replied-to message from %s: %r", caller_name, clean_prompt, replied_to_author, replied_to_text)
-                clean_prompt = replied_to_text
-                seen_ids = {getattr(u, "id", None) for u in other_mentions}
-                other_mentions = other_mentions + [u for u in ref_mentions if getattr(u, "id", None) not in seen_ids]
-                delegated_from = ref_msg
+            if is_delegation_prompt(clean_prompt):
+                # "pls do this" on a chain: the original request is the OLDEST human message in the chain that
+                # isn't itself a delegation; everything posted after it on the way here is an amendment.
+                base_idx = None
+                for i in reversed(range(len(reply_chain))):
+                    m = reply_chain[i]
+                    if getattr(getattr(m, "author", None), "id", None) == bot_id:
+                        continue
+                    t = _strip_bot_address(getattr(m, "content", "") or "", bot_id)
+                    if t and not is_delegation_prompt(t):
+                        base_idx = i
+                        break
+                if base_idx is not None:
+                    base_msg = reply_chain[base_idx]
+                    base_text = _strip_bot_address(getattr(base_msg, "content", "") or "", bot_id)
+                    tweaks = []
+                    for m in reversed(reply_chain[:base_idx]):
+                        if getattr(getattr(m, "author", None), "id", None) == bot_id:
+                            continue
+                        t = _strip_bot_address(getattr(m, "content", "") or "", bot_id)
+                        if t and not is_delegation_prompt(t):
+                            tweaks.append(t)
+                    new_prompt = base_text + ("".join(f" (then: {t})" for t in tweaks) if tweaks else "")
+                    logger.info("Delegated request from %s: %r -> chain depth %d, using: %r", caller_name, clean_prompt, base_idx + 1, new_prompt)
+                    clean_prompt = new_prompt
+                    seen_ids = {getattr(u, "id", None) for u in other_mentions}
+                    for m in reply_chain[: base_idx + 1]:
+                        for u in (getattr(m, "mentions", None) or []):
+                            uid = getattr(u, "id", None)
+                            if uid not in (bot_id, client_uid) and uid not in seen_ids:
+                                seen_ids.add(uid)
+                                other_mentions.append(u)
+                    # images: nearest ancestor in the chain (up to and including the base request) that has any
+                    for m in reply_chain[: base_idx + 1]:
+                        if own_image_attachments(m):
+                            delegated_from = m
+                            break
 
         # Look up the bot's most recent image up front: the edit branch needs it, and the intent
         # classifier needs to know whether "try again" can refer to anything.
@@ -4029,6 +4092,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             recent_history=recent_one_off_exchanges(4),
             replied_to_text=replied_to_text,
             replied_to_author=replied_to_author,
+            reply_chain=reply_chain_facts,
         )
         subject = None
         subject_name = None
