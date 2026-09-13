@@ -8,6 +8,7 @@ import io
 import base64
 import time
 import random
+import types
 import hashlib
 import socket
 import asyncio
@@ -3186,6 +3187,200 @@ def looks_like_text_creation(prompt: str) -> bool:
     return bool(_TEXT_FORM_RE.search(prompt)) and not _IMAGE_NOUN_RE.search(prompt)
 
 
+MENTION_PLANNER_MODEL = "gpt-4o"
+
+MENTION_PLAN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": ["generate", "edit", "reply"]},
+        "request": {"type": "string"},
+        "subjects": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["user", "bot", "group", "random", "relative_of_user", "thing", "none"]},
+                    "user_id": {"type": ["string", "null"]},
+                    "name": {"type": ["string", "null"]},
+                    "note": {"type": ["string", "null"]},
+                },
+                "required": ["kind", "user_id", "name", "note"],
+                "additionalProperties": False,
+            },
+        },
+        "edit_source": {"type": "string", "enum": ["attachment", "replied_image", "last_bot_image", "none"]},
+        "attachment_roles": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "index": {"type": "integer"},
+                    "role": {"type": "string", "enum": ["edit_target", "subject_likeness", "style", "content", "ignore"]},
+                },
+                "required": ["index", "role"],
+                "additionalProperties": False,
+            },
+        },
+        "recipient_ids": {"type": "array", "items": {"type": "string"}},
+        "include_bot_in_picture": {"type": "boolean"},
+        "reason": {"type": "string"},
+    },
+    "required": ["action", "request", "subjects", "edit_source", "attachment_roles", "recipient_ids", "include_bot_in_picture", "reason"],
+    "additionalProperties": False,
+}
+
+MENTION_PLANNER_INSTRUCTIONS = """You are the planner for HMS Victory ("Vic"), a Discord bot that chats in a dry British persona and can generate or edit images (caricatures, portraits, sprite sheets, comics, anything visual) with an AI image generator. Someone has tagged the bot. Work out exactly what they want and return a plan. Be decisive and handle ANY phrasing; casual, misspelled, lowercase, sarcastic messages are normal.
+
+FIELDS
+- action: "generate" = make a NEW picture. "edit" = change an EXISTING picture (the bot's last image, an image in the reply chain, or an attachment). "reply" = answer in text. Written things are ALWAYS "reply" whatever the verb: poems, soliloquies, songs, raps, roasts in words, speeches, letters, lists, opinions, facts, questions, banter, thanks, comments about an image with no change requested. When torn between edit and reply, choose reply (a wasted image costs money).
+- request: the full effective request in plain words, with everything resolved: if the message is a delegation ("pls do this", "^", "what he said") use the request it points at in the REPLY CHAIN; fold in any tweaks posted along the chain; replace "this picture"/"him"/"her" with what they refer to; keep any style, format or scene the requester asked for. Do not add ideas of your own.
+- subjects: who or what the picture is OF (for reply, whatever the text is about). Use the PEOPLE DIRECTORY to turn names, nicknames, partial names and mentions into user_id. Kinds:
+    "user": a specific server member (user_id required if you can resolve it; otherwise name). List several for a picture of several people.
+    "bot": the bot itself. In a message addressed to the bot, "you", "yourself", "what you look like", "your self-portrait" mean the BOT, never the caller.
+    "group": the community in general ("the members of ukplace", "everyone here", "the regulars").
+    "random": pick one person at random from the channel.
+    "relative_of_user": someone related to a member (their mum, dad, nan, partner, kid, pet, car): set user_id/name to the MEMBER, and note what the relation is.
+    "thing": not a person (a cat, a landscape, a pub, a meme).
+    "none": no subject (e.g. a text reply that isn't about anyone).
+  The caller is only the subject when they mean themselves ("draw me", "what do I look like", "my message history"). "(attached)" after a name means a picture is attached, not that the caller is the subject.
+- edit_source (for action=edit): "attachment" if the change applies to an image attached to this request; "replied_image" if it applies to an image in the reply chain; "last_bot_image" for the bot's most recent image in the channel; "none" otherwise.
+- attachment_roles: one entry per attachment index listed in ATTACHMENTS: "edit_target" (the picture to change), "subject_likeness" (a photo/profile picture of the subject to base their look on), "style" (an art/style reference like a sprite sheet), "content" (something to put in the picture), "ignore".
+- recipient_ids: user ids the result should be sent/shown to ("... and send it to @X"). Not subjects.
+- include_bot_in_picture: true if the bot itself should appear (subject kind bot, or "with you", "your history together", "you and him", "your thoughts on ...").
+- reason: one short line.
+
+Respond ONLY with the JSON object."""
+
+
+def plan_mention(
+    prompt: str,
+    *,
+    caller_name: str,
+    caller_id: Optional[int],
+    attachments: Optional[List[Tuple[int, str]]] = None,
+    reply_chain: Optional[List[Dict[str, Any]]] = None,
+    mentions: Optional[List[Tuple[str, int]]] = None,
+    directory: Optional[List[Tuple[str, int]]] = None,
+    recent_history: str = "",
+    has_recent_bot_image: bool = False,
+    recent_bot_image_prompt: Optional[str] = None,
+    openai_key: Optional[str] = None,
+    model: str = MENTION_PLANNER_MODEL,
+    timeout: int = 20,
+) -> Optional[Dict[str, Any]]:
+    """Ask a capable model for a full plan of what a direct mention wants. None if the call fails."""
+    api_key = openai_key or os.getenv("OPENAI_TOKEN")
+    if not api_key or not (prompt or "").strip():
+        return None
+
+    facts = [f"CALLER: {caller_name} (id {caller_id})", f"MESSAGE: \"{prompt.strip()}\""]
+    if attachments:
+        facts.append("ATTACHMENTS ON THIS REQUEST (index: filename): " + ", ".join(f"{i}: {fn}" for i, fn in attachments))
+    else:
+        facts.append("ATTACHMENTS ON THIS REQUEST: none")
+    if reply_chain:
+        lines = []
+        for i, m in enumerate(reply_chain, 1):
+            who = "HMS Victory (the bot)" if m.get("is_bot") else f"{m.get('author')} (id {m.get('author_id')})"
+            extra = " [has image attachment(s), inherited by a delegation]" if m.get("has_images") else ""
+            lines.append(f"  {i}. {who}: \"{(m.get('text') or '')[:300]}\"{extra}")
+        facts.append("REPLY CHAIN this message sits under (1 = the message it directly replies to, then its parent, ...):\n" + "\n".join(lines))
+    else:
+        facts.append("REPLY CHAIN: not a reply")
+    if mentions:
+        facts.append("USERS @MENTIONED in the message or the chain: " + ", ".join(f"{n} (id {i})" for n, i in mentions))
+    if directory:
+        facts.append("PEOPLE DIRECTORY (name -> id; use for resolving names/nicknames): " + "; ".join(f"{n} = {i}" for n, i in directory[:60]))
+    facts.append(f"BOT POSTED AN IMAGE RECENTLY IN THIS CHANNEL: {'yes' if has_recent_bot_image else 'no'}")
+    if has_recent_bot_image and recent_bot_image_prompt:
+        facts.append(f"THAT IMAGE WAS: {recent_bot_image_prompt[:300]}")
+    if recent_history and recent_history.strip():
+        facts.append(f"RECENT EXCHANGES WITH THE BOT:\n{recent_history.strip()[:1500]}")
+
+    payload = {
+        "model": model,
+        "instructions": MENTION_PLANNER_INSTRUCTIONS,
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": "\n".join(facts)}]}],
+        "max_output_tokens": 500,
+        "temperature": 0,
+        "store": False,
+        "text": {"format": {"type": "json_schema", "name": "mention_plan", "schema": MENTION_PLAN_SCHEMA, "strict": True}},
+    }
+
+    data = None
+    last_err: Any = None
+    for attempt in range(2):
+        try:
+            data = _post_openai_response(payload, api_key, timeout)
+            break
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8", errors="ignore")[:300]
+            except Exception:
+                pass
+            last_err = f"HTTP {e.code}: {body or e.reason}"
+            if e.code < 500 or attempt == 1:
+                break
+            time.sleep(0.75)
+        except Exception as e:
+            last_err = e
+            if attempt == 1:
+                break
+            time.sleep(0.75)
+    if data is None:
+        logger.warning("Mention planning failed: %s", last_err)
+        return None
+    if data.get("status") == "failed" or data.get("error"):
+        logger.warning("Mention planning error: %s", (data.get("error") or {}).get("message"))
+        return None
+    text, refusal, _, _ = parse_openai_response_output(data)
+    if refusal or not text:
+        return None
+    try:
+        plan = json.loads(text)
+    except Exception:
+        logger.warning("Mention planning returned non-JSON: %r", text[:200])
+        return None
+    if plan.get("action") not in ("generate", "edit", "reply"):
+        return None
+    usage = data.get("usage") or {}
+    plan["input_tokens"] = usage.get("input_tokens", 0)
+    plan["output_tokens"] = usage.get("output_tokens", 0)
+    return plan
+
+
+def _resolve_user_ref(user_id: Any, name: Optional[str], other_mentions: List[Any], guild: Any, client: Any) -> Tuple[Optional[str], Optional[int]]:
+    """Turn a planner subject (id and/or name) into (display_name, id) using mentions, the guild, then the client."""
+    uid: Optional[int] = None
+    try:
+        if user_id not in (None, "", "null"):
+            uid = int(str(user_id))
+    except (TypeError, ValueError):
+        uid = None
+    if uid is not None:
+        for u in other_mentions or []:
+            if getattr(u, "id", None) == uid:
+                return _member_display_name(u), uid
+        member = None
+        try:
+            if guild is not None and hasattr(guild, "get_member"):
+                member = guild.get_member(uid)
+            if member is None and client is not None and hasattr(client, "get_user"):
+                member = client.get_user(uid)
+        except Exception:
+            member = None
+        if member is not None:
+            return _member_display_name(member), uid
+        return (name or f"user {uid}"), uid
+    if name:
+        looked = _resolve_named_user(name, other_mentions or [], {}, guild)
+        if looked is not None:
+            return looked
+        return name, None
+    return None, None
+
+
 def classify_mention_intent(
     prompt: str,
     *,
@@ -4142,67 +4337,207 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 logger.info("Delegated request inherits %d image(s) from the replied-to message", len(reference_attachments))
         reference_images = [att.url for att in reference_attachments]
 
-        # Decide what this mention wants: a new image, an edit of the last one, or a text reply.
-        intent = await asyncio.to_thread(
-            classify_mention_intent,
+        # Plan the request with a capable model: what to do, who it's of (by id), what each attachment is for,
+        # what to edit, who to ping, and the fully resolved request text. Everything below the fallback block
+        # consumes `plan_state`; the old classifier + regex heuristics only run if planning fails.
+        guild_obj = getattr(message, "guild", None)
+        chain_mentions: List[Any] = list(other_mentions)
+        seen_m = {getattr(u, "id", None) for u in chain_mentions}
+        for m in reply_chain:
+            for u in (getattr(m, "mentions", None) or []):
+                uid = getattr(u, "id", None)
+                if uid not in (bot_id, client_uid) and uid not in seen_m:
+                    seen_m.add(uid)
+                    chain_mentions.append(u)
+        directory: List[Tuple[str, int]] = []
+        seen_d: set = set()
+        def _add_dir(name: Optional[str], uid: Any):
+            if isinstance(uid, int) and uid not in seen_d and uid != bot_id and name:
+                seen_d.add(uid)
+                directory.append((name, uid))
+        _add_dir(caller_name, caller_id)
+        for u in chain_mentions:
+            _add_dir(_member_display_name(u), getattr(u, "id", None))
+        for m in reply_chain:
+            a = getattr(m, "author", None)
+            if getattr(a, "id", None) != bot_id:
+                _add_dir(_member_display_name(a, "someone"), getattr(a, "id", None))
+        try:
+            chan_id = getattr(getattr(message, "channel", None), "id", None)
+            active_ids = await asyncio.to_thread(fetch_channel_active_users, chan_id, 7, 25, [bot_id])
+            active_ids += [uid for uid, _c in await asyncio.to_thread(fetch_most_active_users, 30, 25, [bot_id])]
+            for uid in active_ids:
+                if uid in seen_d:
+                    continue
+                member = None
+                try:
+                    member = guild_obj.get_member(uid) if guild_obj is not None and hasattr(guild_obj, "get_member") else None
+                except Exception:
+                    member = None
+                if member is not None and getattr(member, "bot", False) is not True:
+                    _add_dir(_member_display_name(member), uid)
+        except Exception as e:
+            logger.debug("Could not build people directory: %s", e)
+
+        chain_for_plan = []
+        for m in reply_chain:
+            a = getattr(m, "author", None)
+            chain_for_plan.append({
+                "author": _member_display_name(a, "someone"),
+                "author_id": getattr(a, "id", None),
+                "is_bot": getattr(a, "id", None) == bot_id,
+                "text": _strip_bot_address(getattr(m, "content", "") or "", bot_id),
+                "has_images": bool(own_image_attachments(m)),
+            })
+        plan = await asyncio.to_thread(
+            plan_mention,
             clean_prompt,
-            mentioned_names=[_member_display_name(u) for u in other_mentions],
             caller_name=caller_name,
-            has_reply_ref=has_reply_ref,
+            caller_id=caller_id,
+            attachments=[(i, getattr(a, "filename", f"image{i}")) for i, a in enumerate(reference_attachments, 1)],
+            reply_chain=chain_for_plan,
+            mentions=[(_member_display_name(u), getattr(u, "id", None)) for u in chain_mentions if isinstance(getattr(u, "id", None), int)],
+            directory=directory,
+            recent_history=recent_one_off_exchanges(4),
             has_recent_bot_image=bool(recent_img_info),
             recent_bot_image_prompt=(recent_img_info[2] if recent_img_info else None),
-            has_attached_image=bool(reference_images),
-            recent_history=recent_one_off_exchanges(4),
-            replied_to_text=replied_to_text,
-            replied_to_author=replied_to_author,
-            reply_chain=reply_chain_facts,
         )
+        plan_state: Optional[Dict[str, Any]] = None
+        intent = None
         subject = None
         subject_name = None
-        if intent:
-            if intent.get("input_tokens") or intent.get("output_tokens"):
-                live_chat_manager.record_usage(MENTION_INTENT_MODEL, intent["input_tokens"], intent["output_tokens"], is_reply=True)
-            is_fresh_img_req = intent["intent"] == "generate"
-            is_edit_req = intent["intent"] == "edit"
-            subject = intent.get("subject")
-            subject_name = intent.get("subject_name")
-            if is_fresh_img_req and looks_like_text_creation(clean_prompt):
-                # "write a hate soliloquy for X" is writing, not a picture, whatever the classifier thought.
-                logger.info("Classifier said generate but the request is for a written piece; answering in text: %r", clean_prompt)
-                is_fresh_img_req = False
+        if plan:
+            if plan.get("input_tokens") or plan.get("output_tokens"):
+                live_chat_manager.record_usage(MENTION_PLANNER_MODEL, plan["input_tokens"], plan["output_tokens"], is_reply=True)
             logger.info(
-                "Mention intent for %s: %s (subject=%s/%s): %s",
-                caller_name, intent["intent"], subject, subject_name, intent.get("reason"),
+                "Mention plan for %s: %s | request=%r | subjects=%s | edit_source=%s | attachments=%s | recipients=%s | bot=%s | %s",
+                caller_name, plan["action"], (plan.get("request") or "")[:160], plan.get("subjects"), plan.get("edit_source"),
+                plan.get("attachment_roles"), plan.get("recipient_ids"), plan.get("include_bot_in_picture"), plan.get("reason"),
             )
-            if is_edit_req and not recent_img_info and not reference_images:
-                # Nothing to edit, but they clearly want a picture.
-                is_edit_req = False
-                is_fresh_img_req = True
-        else:
-            # Classifier unavailable: fall back to keyword matching.
-            is_fresh_img_req = looks_like_image_request(clean_prompt)
-            is_edit_req = looks_like_image_edit_request(clean_prompt)
-            if not (is_fresh_img_req and not is_edit_req):
-                if recent_img_info and not is_edit_req and has_reply_ref:
-                    is_edit_req = not any(
-                        clean_prompt.lower().startswith(w) for w in ["thanks", "thank you", "haha", "lol", "lmao", "good", "great", "nice", "love it"]
-                    )
+            if (plan.get("request") or "").strip():
+                clean_prompt = plan["request"].strip()
+            is_fresh_img_req = plan["action"] == "generate"
+            is_edit_req = plan["action"] == "edit"
+            other_mentions = chain_mentions
 
-        # An edit request that comes with its own attachment ("give this picture a pink mullet") edits THAT
-        # attachment, not whatever the bot last posted in the channel.
-        own_attachment = None
-        if reference_attachments and not is_edit_req and looks_like_attachment_modification(clean_prompt):
-            # "add a pink mullet to this fine gentleman" with a picture attached is an edit of that picture,
-            # whatever the classifier called it. Redrawing the person from their dossier is not what was asked.
-            logger.info("Attachment plus modification phrasing: treating as an edit of the attachment (classifier said %s)", intent["intent"] if intent else "fallback")
-            is_edit_req = True
-            is_fresh_img_req = False
-        if is_edit_req and reference_attachments:
-            own_attachment = reference_attachments[0]
-        if own_attachment is not None:
-            recent_img_info = (message, own_attachment, f"An image attached by {caller_name} to this request")
-            reference_images = reference_images[1:]  # the rest, if any, remain references for the edit
-            logger.info("Edit target is the requester's own attachment for %s: %r", caller_name, clean_prompt)
+            # attachments: roles decide which is the thing to edit and which are references
+            roles = {int(r.get("index", 0)): r.get("role") for r in (plan.get("attachment_roles") or []) if isinstance(r, dict)}
+            edit_targets = [a for i, a in enumerate(reference_attachments, 1) if roles.get(i) == "edit_target"]
+            refs = [a for i, a in enumerate(reference_attachments, 1) if roles.get(i, "subject_likeness") in ("subject_likeness", "style", "content")]
+            plan_edit_attachment = edit_targets[0] if edit_targets else None
+            if is_edit_req and plan.get("edit_source") == "attachment" and plan_edit_attachment is None and reference_attachments:
+                plan_edit_attachment = reference_attachments[0]
+                refs = [a for a in refs if a is not plan_edit_attachment]
+            if plan_edit_attachment is not None:
+                is_edit_req, is_fresh_img_req = True, False
+                recent_img_info = (message, plan_edit_attachment, f"An image attached by {caller_name} to this request")
+            elif is_edit_req and plan.get("edit_source") == "replied_image":
+                for m in reply_chain:
+                    atts = own_image_attachments(m)
+                    if atts:
+                        who = _member_display_name(getattr(m, "author", None), "a user")
+                        cap = _strip_bot_address(getattr(m, "content", "") or "", bot_id)
+                        recent_img_info = (m, atts[0], f"An image posted by {who}" + (f" with the caption: \"{cap}\"" if cap else ""))
+                        break
+            reference_attachments = refs
+            reference_images = [a.url for a in refs]
+
+            # subjects
+            subj_users: List[Tuple[str, int]] = []
+            plan_bot_self = plan_group = plan_random = False
+            plan_relative_note = None
+            for sj in plan.get("subjects") or []:
+                kind = (sj or {}).get("kind")
+                if kind in ("user", "relative_of_user"):
+                    nm, uid = _resolve_user_ref(sj.get("user_id"), sj.get("name"), chain_mentions, guild_obj, client)
+                    if uid is not None and uid not in {u for _, u in subj_users}:
+                        subj_users.append((nm or f"user {uid}", uid))
+                    elif nm:
+                        subj_users.append((nm, None))
+                    if kind == "relative_of_user" and sj.get("note"):
+                        plan_relative_note = sj.get("note")
+                elif kind == "bot":
+                    plan_bot_self = True
+                elif kind == "group":
+                    plan_group = True
+                elif kind == "random":
+                    plan_random = True
+            recipient_ids: List[int] = []
+            for rid in plan.get("recipient_ids") or []:
+                try:
+                    recipient_ids.append(int(str(rid)))
+                except (TypeError, ValueError):
+                    pass
+            plan_state = {
+                "subjects": subj_users, "bot_self": plan_bot_self, "group": plan_group, "random": plan_random,
+                "recipients": recipient_ids, "include_bot": bool(plan.get("include_bot_in_picture")),
+                "relative_note": plan_relative_note,
+            }
+            if is_edit_req and not recent_img_info:
+                is_edit_req, is_fresh_img_req = False, True
+
+        if plan_state is None:
+            # Planner unavailable: classifier + keyword heuristics.
+            intent = await asyncio.to_thread(
+            classify_mention_intent,
+                clean_prompt,
+                mentioned_names=[_member_display_name(u) for u in other_mentions],
+                caller_name=caller_name,
+                has_reply_ref=has_reply_ref,
+                has_recent_bot_image=bool(recent_img_info),
+                recent_bot_image_prompt=(recent_img_info[2] if recent_img_info else None),
+                has_attached_image=bool(reference_images),
+                recent_history=recent_one_off_exchanges(4),
+                replied_to_text=replied_to_text,
+                replied_to_author=replied_to_author,
+                reply_chain=reply_chain_facts,
+            )
+            subject = None
+            subject_name = None
+            if intent:
+                if intent.get("input_tokens") or intent.get("output_tokens"):
+                    live_chat_manager.record_usage(MENTION_INTENT_MODEL, intent["input_tokens"], intent["output_tokens"], is_reply=True)
+                is_fresh_img_req = intent["intent"] == "generate"
+                is_edit_req = intent["intent"] == "edit"
+                subject = intent.get("subject")
+                subject_name = intent.get("subject_name")
+                if is_fresh_img_req and looks_like_text_creation(clean_prompt):
+                    # "write a hate soliloquy for X" is writing, not a picture, whatever the classifier thought.
+                    logger.info("Classifier said generate but the request is for a written piece; answering in text: %r", clean_prompt)
+                    is_fresh_img_req = False
+                logger.info(
+                    "Mention intent for %s: %s (subject=%s/%s): %s",
+                    caller_name, intent["intent"], subject, subject_name, intent.get("reason"),
+                )
+                if is_edit_req and not recent_img_info and not reference_images:
+                    # Nothing to edit, but they clearly want a picture.
+                    is_edit_req = False
+                    is_fresh_img_req = True
+            else:
+                # Classifier unavailable: fall back to keyword matching.
+                is_fresh_img_req = looks_like_image_request(clean_prompt)
+                is_edit_req = looks_like_image_edit_request(clean_prompt)
+                if not (is_fresh_img_req and not is_edit_req):
+                    if recent_img_info and not is_edit_req and has_reply_ref:
+                        is_edit_req = not any(
+                            clean_prompt.lower().startswith(w) for w in ["thanks", "thank you", "haha", "lol", "lmao", "good", "great", "nice", "love it"]
+                        )
+
+            # An edit request that comes with its own attachment ("give this picture a pink mullet") edits THAT
+            # attachment, not whatever the bot last posted in the channel.
+            own_attachment = None
+            if reference_attachments and not is_edit_req and looks_like_attachment_modification(clean_prompt):
+                # "add a pink mullet to this fine gentleman" with a picture attached is an edit of that picture,
+                # whatever the classifier called it. Redrawing the person from their dossier is not what was asked.
+                logger.info("Attachment plus modification phrasing: treating as an edit of the attachment (classifier said %s)", intent["intent"] if intent else "fallback")
+                is_edit_req = True
+                is_fresh_img_req = False
+            if is_edit_req and reference_attachments:
+                own_attachment = reference_attachments[0]
+            if own_attachment is not None:
+                recent_img_info = (message, own_attachment, f"An image attached by {caller_name} to this request")
+                reference_images = reference_images[1:]  # the rest, if any, remain references for the edit
+                logger.info("Edit target is the requester's own attachment for %s: %r", caller_name, clean_prompt)
 
         if recent_img_info and is_edit_req:
             allowed, remaining = can_user_generate_image(caller_id)
@@ -4221,10 +4556,15 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             else:
                 context, target_users = str(gathered), {}
 
-            target_name, target_id = resolve_image_target(
-                clean_prompt, caller_id, caller_name, other_mentions, target_users,
-                subject=subject, subject_name=subject_name, guild=getattr(message, "guild", None),
-            )
+            if plan_state is not None and len(plan_state["subjects"]) == 1:
+                target_name, target_id = plan_state["subjects"][0]
+            elif plan_state is not None:
+                target_name, target_id = None, None
+            else:
+                target_name, target_id = resolve_image_target(
+                    clean_prompt, caller_id, caller_name, other_mentions, target_users,
+                    subject=subject, subject_name=subject_name, guild=getattr(message, "guild", None),
+                )
             context = await ensure_target_history_in_context(client, message, context, target_id, target_name, prompt=clean_prompt, bot_id=bot_id)
 
             prev_caption = getattr(prev_msg, "content", "")
@@ -4325,13 +4665,21 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             else:
                 context, target_users = str(gathered), {}
 
-            target_name, target_id = resolve_image_target(
-                clean_prompt, caller_id, caller_name, other_mentions, target_users,
-                subject=subject, subject_name=subject_name, guild=getattr(message, "guild", None),
-            )
-            bot_self = subject == "bot" or (
-                intent is None and target_id is None and not other_mentions and looks_like_bot_self_portrait(clean_prompt)
-            )
+            if plan_state is not None:
+                subj = plan_state["subjects"]
+                if len(subj) == 1:
+                    target_name, target_id = subj[0]
+                else:
+                    target_name, target_id = None, None
+                bot_self = plan_state["bot_self"] and not subj
+            else:
+                target_name, target_id = resolve_image_target(
+                    clean_prompt, caller_id, caller_name, other_mentions, target_users,
+                    subject=subject, subject_name=subject_name, guild=getattr(message, "guild", None),
+                )
+                bot_self = subject == "bot" or (
+                    intent is None and target_id is None and not other_mentions and looks_like_bot_self_portrait(clean_prompt)
+                )
             if bot_self:
                 target_name, target_id = "HMS Victory (yourself)", None
                 try:
@@ -4342,7 +4690,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     logger.debug("Could not fetch what the server says about the bot: %s", e)
                 logger.info("Self-portrait request from %s: %r", caller_name, clean_prompt)
             random_pick = False
-            if subject == "random" or (intent is None and target_id is None and looks_like_random_pick(clean_prompt)):
+            want_random = plan_state["random"] if plan_state is not None else (
+                subject == "random" or (intent is None and target_id is None and looks_like_random_pick(clean_prompt))
+            )
+            if want_random and target_id is None:
                 target_name, target_id = await pick_random_member(
                     client, getattr(message, "guild", None), getattr(getattr(message, "channel", None), "id", None), bot_id=bot_id,
                 )
@@ -4352,11 +4703,24 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             # happened to be mentioned or talking nearby.
             context = await ensure_target_history_in_context(client, message, context, target_id, target_name, prompt=clean_prompt, bot_id=bot_id)
 
-            # Two or more people tagged (not counting "send it to @X" recipients) = a picture of exactly those people.
-            recipients = {getattr(u, "id", None) for u in delivery_mentions(clean_prompt, other_mentions, None)}
-            subjects = [u for u in other_mentions if getattr(u, "id", None) not in recipients]
-            multi_subject = len(subjects) >= 2 and subject in ("mentioned", "named", "group", None)
-            is_group = (not bot_self) and (multi_subject or subject == "group" or (intent is None and looks_like_group_request(clean_prompt)))
+            # Two or more people = a picture of exactly those people; "the group" = the server's regulars.
+            if plan_state is not None:
+                subj_objs = []
+                for nm, uid in plan_state["subjects"]:
+                    if uid is None:
+                        continue
+                    obj = next((u for u in other_mentions if getattr(u, "id", None) == uid), None)
+                    if obj is None:
+                        obj = types.SimpleNamespace(id=uid, nick=nm, global_name=None, display_name=nm, name=nm, bot=False)
+                    subj_objs.append(obj)
+                subjects = subj_objs
+                multi_subject = len(subjects) >= 2
+                is_group = (not bot_self) and (multi_subject or plan_state["group"])
+            else:
+                recipients = {getattr(u, "id", None) for u in delivery_mentions(clean_prompt, other_mentions, None)}
+                subjects = [u for u in other_mentions if getattr(u, "id", None) not in recipients]
+                multi_subject = len(subjects) >= 2 and subject in ("mentioned", "named", "group", None)
+                is_group = (not bot_self) and (multi_subject or subject == "group" or (intent is None and looks_like_group_request(clean_prompt)))
             if is_group:
                 # A group picture needs real people: hand the synthesiser a roster of actual members.
                 roster = await build_group_roster_context(
@@ -4397,6 +4761,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                             is_group=is_group,
                             reference_image_urls=reference_images,
                             bot_self=bot_self,
+                            include_bot=(True if (plan_state is not None and plan_state["include_bot"]) else None),
                         )
                         if synth_p or synth_c:
                             live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)
@@ -4415,9 +4780,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             if random_pick and target_id is not None and f"<@{target_id}>" not in caption:
                 caption = f"<@{target_id}> {caption}"
             # "... and send it to @X": make sure X actually gets pinged with the result.
-            for u in delivery_mentions(clean_prompt, other_mentions, target_id):
-                if f"<@{u.id}>" not in caption:
-                    caption = f"<@{u.id}> {caption}"
+            ping_ids = plan_state["recipients"] if plan_state is not None else [u.id for u in delivery_mentions(clean_prompt, other_mentions, target_id)]
+            for pid in ping_ids:
+                if pid != target_id and f"<@{pid}>" not in caption:
+                    caption = f"<@{pid}> {caption}"
 
             logger.info("Direct mention image generation request from %s (%s): %r (image prompt: %r)", caller_name, caller_id, clean_prompt, image_prompt)
 

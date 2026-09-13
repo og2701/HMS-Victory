@@ -174,6 +174,10 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         live_chat_manager.owner_mentions_paused = False
         _handled_one_off_message_ids.clear()
         live_chat_manager.conversation_history.clear()
+        # Handler tests exercise the classifier/heuristic fallback unless they patch plan_mention themselves.
+        self._plan_patch = patch("lib.features.chat_responder.plan_mention", return_value=None)
+        self._plan_patch.start()
+        self.addCleanup(self._plan_patch.stop)
 
     def test_calculate_cost_gpt4o(self):
         # 1,000 prompt tokens = $0.0025, 1,000 completion tokens = $0.0100
@@ -2555,6 +2559,150 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("HMS VICTORY IS IN THE PICTURE: yes", user)
         self.assertNotIn("Physical base", user)
         self.assertIn("of YOURSELF (a self-portrait", _sent_payload(mock_urlopen, 1)["messages"][0]["content"])
+
+    @patch("urllib.request.urlopen")
+    def test_plan_mention_payload_and_parse(self, mock_urlopen):
+        self._plan_patch.stop()
+        from lib.features import chat_responder as cr
+        plan_mention = cr.plan_mention
+        try:
+            plan_json = {"action": "generate", "request": "draw Steven as a pirate with a parrot", "subjects": [{"kind": "user", "user_id": "555", "name": "Steven", "note": None}],
+                         "edit_source": "none", "attachment_roles": [{"index": 1, "role": "subject_likeness"}], "recipient_ids": ["412"], "include_bot_in_picture": False, "reason": "delegated"}
+            mock_urlopen.return_value = _mock_resp(_responses_body(json.dumps(plan_json), usage=(2000, 120)))
+            plan = plan_mention(
+                "pls do this", caller_name="Oggers", caller_id=1, attachments=[(1, "steven.jpg")],
+                reply_chain=[{"author": "Chin", "author_id": 795, "is_bot": False, "text": "with a parrot", "has_images": False},
+                             {"author": "Chin", "author_id": 795, "is_bot": False, "text": "draw <@555> as a pirate", "has_images": True}],
+                mentions=[("Steven <3", 555)], directory=[("Oggers", 1), ("Steven <3", 555), ("Danez", 412)],
+                has_recent_bot_image=True, recent_bot_image_prompt="a cat", openai_key="test-key",
+            )
+            self.assertEqual(plan["action"], "generate")
+            self.assertEqual(plan["subjects"][0]["user_id"], "555")
+            self.assertEqual((plan["input_tokens"], plan["output_tokens"]), (2000, 120))
+            payload = _sent_payload(mock_urlopen)
+            self.assertEqual(payload["model"], "gpt-4o")
+            self.assertEqual(payload["text"]["format"]["name"], "mention_plan")
+            text = payload["input"][0]["content"][0]["text"]
+            self.assertIn("ATTACHMENTS ON THIS REQUEST (index: filename): 1: steven.jpg", text)
+            self.assertIn('2. Chin (id 795): "draw <@555> as a pirate" [has image attachment(s)', text)
+            self.assertIn("PEOPLE DIRECTORY (name -> id", text)
+            self.assertIn("Danez = 412", text)
+            self.assertIn("THAT IMAGE WAS: a cat", text)
+            self.assertIn('"you", "yourself", "what you look like"', payload["instructions"])
+            # bad action -> None
+            mock_urlopen.return_value = _mock_resp(_responses_body(json.dumps({**plan_json, "action": "dance"})))
+            self.assertIsNone(plan_mention("x", caller_name="O", caller_id=1, openai_key="test-key"))
+        finally:
+            self._plan_patch.start()
+
+    def _plan(self, **kw):
+        base = {"action": "generate", "request": "", "subjects": [], "edit_source": "none", "attachment_roles": [], "recipient_ids": [],
+                "include_bot_in_picture": False, "reason": "", "input_tokens": 0, "output_tokens": 0}
+        base.update(kw)
+        return base
+
+    @patch("lib.features.chat_responder.generate_image_openai", return_value=(b"img", 20, 200))
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_bot_mentions_sample", return_value=[])
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_plan_path_bot_self_portrait(self, mock_classify, mock_find, mock_gather, _ch, _act, _said, mock_synth, mock_gen):
+        mock_synth.return_value = ("the ship", "me", 10, 5)
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> show us an image of what you look like", author_id=USERS.JOHNNY)
+        with patch("lib.features.chat_responder.plan_mention", return_value=self._plan(request="a self-portrait of the bot", subjects=[{"kind": "bot", "user_id": None, "name": None, "note": None}], include_bot_in_picture=True)), \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_classify.assert_not_called()             # planner replaced the classifier
+        kw = mock_synth.call_args[1]
+        self.assertTrue(kw["bot_self"]); self.assertIsNone(kw["target_id"]); self.assertEqual(kw["prompt"], "a self-portrait of the bot")
+
+    @patch("lib.features.chat_responder.download_image_bytes", return_value=b"DUCK")
+    @patch("lib.features.chat_responder.edit_image_openai", return_value=(b"img", 20, 200))
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.build_user_dossier", side_effect=lambda uid, name, *a, **k: f"DOSSIER ON {name} (<@{uid}>)")
+    @patch("lib.features.chat_responder.fetch_user_recent_chat", return_value=[])
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    async def test_plan_path_two_subjects_style_ref_and_recipient(self, mock_find, mock_gather, _r, _x, _ch, _act, _chat, _dossier, mock_synth, mock_gen, mock_edit, mock_dl):
+        """'sprite sheet of hadidas and steven in the style of the attached sheet, send it to danez' — resolved by ids from the directory."""
+        mock_synth.return_value = ("two sprites", "Behold both.", 10, 5)
+        client = MagicMock(); client.user.id = 999999999
+        guild = MagicMock(); guild.name = "ukplace"
+        people = {}
+        for uid, nm in ((198, "Hadidas"), (555, "Steven <3"), (412, "Danez")):
+            m = MagicMock(); m.id = uid; m.nick = nm; m.global_name = None; m.display_name = nm; m.name = nm.lower(); m.bot = False; people[uid] = m
+        guild.get_member.side_effect = lambda uid: people.get(uid)
+        message = self._leader_message(client, f"<@{client.user.id}> sprite sheet of hadidas and steven in the style of the attached sheet, send it to danez", author_id=USERS.OGGERS)
+        message.guild = guild
+        sheet = MagicMock(); sheet.filename = "sheet.png"; sheet.content_type = "image/png"; sheet.url = "https://cdn/sheet.png"
+        message.attachments = [sheet]
+        plan = self._plan(
+            request="a Pokémon-style sprite sheet of Hadidas and Steven, matching the style of the attached sheet",
+            subjects=[{"kind": "user", "user_id": "198", "name": "Hadidas", "note": None}, {"kind": "user", "user_id": "555", "name": "Steven", "note": None}],
+            attachment_roles=[{"index": 1, "role": "style"}], recipient_ids=["412"],
+        )
+        with patch("lib.features.chat_responder.plan_mention", return_value=plan), \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        kw = mock_synth.call_args[1]
+        self.assertTrue(kw["is_group"])
+        self.assertEqual(kw["target_name"], "Hadidas and Steven <3")
+        self.assertIn("these 2 people are the ONLY people who may appear", kw["context"])
+        self.assertIn("DOSSIER ON Hadidas (<@198>)", kw["context"]); self.assertIn("DOSSIER ON Steven <3 (<@555>)", kw["context"])
+        self.assertNotIn("Danez", kw["context"])
+        self.assertEqual(kw["reference_image_urls"], ["https://cdn/sheet.png"])
+        self.assertEqual(kw["prompt"], plan["request"])
+        self.assertEqual(mock_edit.call_args[0][0], [b"DUCK"])
+        self.assertTrue(message.reply.call_args[0][0].startswith("<@412> "))
+        mock_gen.assert_not_called()
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.edit_image_openai", return_value=(b"edited", 30, 200))
+    @patch("lib.features.chat_responder.synthesize_image_edit_prompt", return_value=("edit", "add a pink mullet", "Amended.", 10, 5))
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock)
+    async def test_plan_path_edit_replied_image_in_chain(self, mock_find, mock_gather, _ch, _act, mock_synth, mock_synth_edit, mock_edit, mock_gen):
+        """Replying two hops down from someone's monkey photo: 'pls add a pink mullet to this creature' edits that photo."""
+        bot_att = MagicMock(); bot_att.read = AsyncMock(return_value=b"BOT-IMG")
+        mock_find.return_value = (MagicMock(content="bot thing"), bot_att, "the bot's last image")
+        client = MagicMock(); client.user.id = 999999999
+        twiggy = MagicMock(); twiggy.id = 4321; twiggy.nick = "twiggy"; twiggy.global_name = None; twiggy.display_name = "twiggy"; twiggy.name = "twiggy"
+        monkey = MagicMock(); monkey.filename = "monkey.jpg"; monkey.content_type = "image/jpeg"; monkey.url = "https://cdn/monkey.jpg"; monkey.read = AsyncMock(return_value=b"MONKEY")
+        root = MagicMock(); root.id = 1; root.content = "what I imagine oggers looks like"; root.author = twiggy; root.mentions = []; root.attachments = [monkey]; root.reference = None
+        mid = MagicMock(); mid.id = 2; mid.content = "close"; mid.author = MagicMock(id=USERS.OGGERS); mid.mentions = []; mid.attachments = []
+        mid.reference = MagicMock(); mid.reference.message_id = 1; mid.reference.resolved = root
+        ref = MagicMock(); ref.message_id = 2; ref.resolved = mid
+        message = self._leader_message(client, f"<@{client.user.id}> pls add a pink mullet to this creature", reference=ref)
+        plan = self._plan(action="edit", request="add a pink mullet to the monkey in twiggy's photo", edit_source="replied_image",
+                          subjects=[{"kind": "thing", "user_id": None, "name": "the monkey photo", "note": None}])
+        with patch("lib.features.chat_responder.plan_mention", return_value=plan), \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        self.assertEqual(mock_edit.call_args[0][0], b"MONKEY")                # the photo in the chain, not the bot's last image
+        self.assertEqual(mock_synth_edit.call_args[1]["prompt"], "add a pink mullet to the monkey in twiggy's photo")
+        self.assertIn("An image posted by twiggy", mock_synth_edit.call_args[1]["prev_prompt"])
+        mock_synth.assert_not_called(); mock_gen.assert_not_called()
 
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
