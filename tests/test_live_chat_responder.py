@@ -2494,6 +2494,68 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn('2. Chin: "draw <@555> as a pirate"', text)
         self.assertIn("follow the FULL REPLY CHAIN", _sent_payload(mock_urlopen)["instructions"])
 
+    def test_bot_self_portrait_detection(self):
+        from lib.features.chat_responder import looks_like_bot_self_portrait, prompt_references_bot, resolve_image_target
+        for yes in ["show us an image of what you look like", "draw yourself", "what do you look like", "picture of you as a pirate", "your self-portrait please"]:
+            self.assertTrue(looks_like_bot_self_portrait(yes), yes)
+            self.assertTrue(prompt_references_bot(yes), yes)
+        for no in ["what do you think i look like", "draw me", "what do you think steven looks like"]:
+            self.assertFalse(looks_like_bot_self_portrait(no), no)
+        self.assertEqual(resolve_image_target("draw yourself", 1, "Oggers", [], {}, subject="bot"), (None, None))
+
+    @patch("database.DatabaseManager.fetch_all")
+    def test_fetch_bot_mentions_sample(self, mock_fetch):
+        from lib.features import chat_responder as cr
+        mock_fetch.return_value = [
+            ("2", "vic ragebaiting", 900),
+            ("3", f"<@{cr.BOT_ID}> draw me a cat", 850),          # a command: excluded
+            ("4", "the service is down", 800),                    # 'vic' inside 'service': excluded
+            ("5", "fix the dumbass bot, Vic is a menace", 700),
+            ("6", "<:hips:1>", 600),
+        ]
+        res = cr.fetch_bot_mentions_sample(bot_id=cr.BOT_ID, limit=10)
+        self.assertEqual([r["content"] for r in res], ["vic ragebaiting", "fix the dumbass bot, Vic is a menace"])
+        self.assertIn("WHAT THE SERVER SAYS ABOUT YOU (HMS Victory / Vic), 2 messages", cr.format_bot_mentions_for_context(res))
+
+    @patch("lib.features.chat_responder.generate_image_openai", return_value=(b"img", 20, 200))
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.fetch_bot_mentions_sample", return_value=[{"author_id": "2", "content": "vic ragebaiting", "ts": 1}])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("RECENT CHAT", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_handle_one_off_bot_self_portrait(self, mock_classify, mock_find_img, mock_gather, mock_said, mock_synth, mock_gen_img):
+        mock_classify.return_value = {"intent": "generate", "subject": "bot", "subject_name": None, "reason": "self-portrait", "input_tokens": 0, "output_tokens": 0}
+        mock_synth.return_value = ("A weathered first-rate ship of the line slumped at a pub quiz table", "Behold: me.", 10, 5)
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> show us an image of what you look like", author_id=USERS.JOHNNY)
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        kw = mock_synth.call_args[1]
+        self.assertTrue(kw["bot_self"])
+        self.assertFalse(kw["is_group"])
+        self.assertIsNone(kw["target_id"])
+        self.assertEqual(kw["target_name"], "HMS Victory (yourself)")
+        self.assertIn("WHAT THE SERVER SAYS ABOUT YOU", kw["context"])
+        self.assertIn("vic ragebaiting", kw["context"])
+        mock_gen_img.assert_called_once_with("A weathered first-rate ship of the line slumped at a pub quiz table")
+
+    @patch("urllib.request.urlopen")
+    def test_synthesize_bot_self_portrait_brief(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_contextual_image_prompt
+        def chat(body):
+            return _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}}], "usage": {}}).encode())
+        mock_urlopen.side_effect = [chat({"image_prompt": "the ship"}), chat({"caption": "me"})]
+        synthesize_contextual_image_prompt(prompt="show us an image of what you look like", context="WHAT THE SERVER SAYS ABOUT YOU: ...",
+                                           user_name="Johnny", caller_role="server owner", target_name="HMS Victory (yourself)", bot_self=True, openai_key="test-key")
+        user = _sent_payload(mock_urlopen, 0)["messages"][1]["content"]
+        self.assertIn("SUBJECT: HMS Victory ITSELF, a self-portrait", user)
+        self.assertIn("HMS VICTORY IS IN THE PICTURE: yes", user)
+        self.assertNotIn("Physical base", user)
+        self.assertIn("of YOURSELF (a self-portrait", _sent_payload(mock_urlopen, 1)["messages"][0]["content"])
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):

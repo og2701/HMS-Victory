@@ -990,9 +990,57 @@ _PROMPT_ABOUT_BOT_RE = re.compile(
     r"|\bhow\s+you\s+(?:feel|felt|see|view)\b|\bfrom\s+your\s+(?:perspective|point\s+of\s+view)\b"
     r"|\b(?:reset|resetting|lobotomi[sz]\w*|shut\w*|turn\w*\s+off|switch\w*\s+off|delet\w*|wip\w*|kill\w*|unplug\w*)\s+(?:you|your|vic)\b"
     r"|\byou\s+(?:being|getting)\s+(?:reset|lobotomi[sz]ed|shut\s+down|turned\s+off|switched\s+off|deleted|wiped)\b"
-    r"|\b(?:draw|paint|show|picture|image|portrait|photo|cartoon)\s+(?:of\s+)?(?:yourself|you)\b|\bself[-\s]?portrait\b",
+    r"|\b(?:draw|paint|show|picture|image|portrait|photo|cartoon)\s+(?:of\s+)?(?:yourself|you)\b|\bself[-\s]?portrait\b"
+    r"|\bwhat\s+(?:do\s+)?you\s+(?:think\s+you\s+)?look\s+like\b|\byou\s+look\s+like\b"
+    r"|\b(?:image|picture|photo|drawing|portrait|painting|cartoon)\s+of\s+(?:what\s+)?you(?:rself)?\b",
     re.IGNORECASE,
 )
+
+
+_BOT_SELF_RE = re.compile(
+    r"\b(?:draw|paint|show|picture|image|portrait|photo|cartoon|sketch)\s+(?:us\s+|me\s+)?(?:an?\s+)?(?:image\s+of\s+|picture\s+of\s+|photo\s+of\s+)?(?:of\s+)?(?:what\s+)?(?:yourself|you)\b"
+    r"|\bwhat\s+(?:do\s+)?you\s+(?:think\s+you\s+)?look\s+like\b|\bself[-\s]?portrait\b|\byour\s+(?:own\s+)?(?:face|appearance|portrait)\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_bot_self_portrait(prompt: str) -> bool:
+    """Regex fallback: the request is for a picture of the bot itself."""
+    return bool(prompt and _BOT_SELF_RE.search(prompt))
+
+
+def fetch_bot_mentions_sample(bot_id: Optional[int] = None, days: int = 30, limit: int = 60) -> List[Dict[str, Any]]:
+    """What the server says about the bot: substantive messages by others that name it, newest first (commands excluded)."""
+    bid = bot_id or BOT_ID
+    out: List[Dict[str, Any]] = []
+    try:
+        from database import DatabaseManager
+        cutoff = int(time.time()) - days * 86400
+        rows = DatabaseManager.fetch_all(
+            "SELECT user_id, content, ts FROM message_archive WHERE user_id != ? AND ts > ? AND lower(content) LIKE '%vic%' "
+            "ORDER BY ts DESC LIMIT ?",
+            (str(bid), cutoff, limit * 6),
+        )
+        for author, content, ts in rows or []:
+            txt = (content or "").strip()
+            if not is_substantive_message(txt) or is_bot_command_message(txt, bid) or not _BOT_NAME_RE.search(txt):
+                continue
+            out.append({"author_id": author, "content": txt, "ts": ts})
+            if len(out) >= limit:
+                break
+    except Exception as e:
+        logger.debug("Failed to fetch bot mentions sample: %s", e)
+    return out
+
+
+def format_bot_mentions_for_context(records: List[Dict[str, Any]]) -> str:
+    if not records:
+        return "WHAT THE SERVER SAYS ABOUT YOU (HMS Victory / Vic):\n- [nothing on record]"
+    lines = []
+    for r in records[:60]:
+        content = (r.get("content") or "").replace("\n", " ").strip()
+        lines.append(f"- <@{r.get('author_id')}>: {content[:180]}")
+    return f"WHAT THE SERVER SAYS ABOUT YOU (HMS Victory / Vic), {len(lines)} messages, newest first:\n" + "\n".join(lines)
 
 
 def prompt_references_bot(prompt: str) -> bool:
@@ -1222,6 +1270,7 @@ def synthesize_image_prompt_from_context(
     is_group: bool = False,
     reference_image_urls: Optional[List[str]] = None,
     subject_name: Optional[str] = None,
+    bot_self: bool = False,
 ) -> Tuple[str, int, int]:
     """Write the image generator prompt from the request and the subject's history alone. No persona involved.
 
@@ -1232,7 +1281,15 @@ def synthesize_image_prompt_from_context(
         raise ValueError("OPENAI_TOKEN is not configured.")
 
     user_payload = f"REQUEST: \"{prompt}\""
-    if is_group:
+    if bot_self:
+        user_payload += (
+            "\nSUBJECT: HMS Victory ITSELF, a self-portrait. HMS Victory is a Discord bot with the persona of a weathered 18th-century "
+            "British first-rate ship of the line: dry, unimpressed, put-upon, forever summoned by the server for portraits, roasts and "
+            "pub-quiz questions. Draw the bot as that ship (weathered hull, gun decks, tattered sails, a disapproving air; or as a stern "
+            "naval officer figurehead), and build the gag from WHAT THE SERVER SAYS ABOUT YOU and the recent chat: how they treat it, "
+            "what they keep asking it for, what they call it. No human subject; the character sheet fields about a person do not apply."
+        )
+    elif is_group:
         user_payload += "\nSUBJECT: the GROUP listed in the SERVER MEMBER ROSTER. Every listed person appears, each with their own gag, equal prominence. Use the GROUP JSON format."
     elif subject_name:
         user_payload += (
@@ -1253,7 +1310,7 @@ def synthesize_image_prompt_from_context(
         "\nHMS VICTORY IS IN THE PICTURE: no (no ship, sailors or naval officers in any form)"
     )
     # Group pictures get their looks from the roster; single subjects get a seeded, person-specific base look.
-    user_payload += "\nVARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): " + appearance_directives(subject_seed, include_physical=not is_group and bool(subject_name))
+    user_payload += "\nVARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): " + appearance_directives(subject_seed, include_physical=not is_group and not bot_self and bool(subject_name))
     banned = extract_banned_terms(previous_image_prompts)
     if previous_image_prompts:
         listed = "\n".join(f"- {p[:220]}" for p in previous_image_prompts if p)
@@ -1354,6 +1411,8 @@ def synthesize_image_caption(
         raise ValueError("OPENAI_TOKEN is not configured.")
 
     target_str = f" of '{target_name}'" if target_name else ""
+    if target_name and target_name.lower().startswith("hms victory"):
+        target_str = " of YOURSELF (a self-portrait: introduce it with the dignity of a ship that has been asked to draw itself for a Discord server)"
     system_prompt = (
         "You are HMS Victory, a cynical, deadpan 18th-century British Royal Navy first-rate ship of the line AI.\n"
         f"Server leadership ({user_name}, {caller_role}) commanded you to produce an image{target_str}, and it is done.\n"
@@ -1389,6 +1448,7 @@ def synthesize_contextual_image_prompt(
     target_id: Optional[int] = None,
     is_group: bool = False,
     reference_image_urls: Optional[List[str]] = None,
+    bot_self: bool = False,
 ) -> Tuple[str, str, int, int]:
     """Produce (image_prompt, caption, prompt_tokens, completion_tokens) for a contextual portrait.
 
@@ -1398,6 +1458,8 @@ def synthesize_contextual_image_prompt(
     """
     if include_bot is None:
         include_bot = prompt_references_bot(prompt)
+    if bot_self:
+        include_bot = True
 
     if target_id is not None:
         seed: Optional[int] = int(target_id)
@@ -1412,7 +1474,7 @@ def synthesize_contextual_image_prompt(
     img_prompt, p_tokens, c_tokens = synthesize_image_prompt_from_context(
         prompt, context, include_bot=include_bot, previous_image_prompts=previous_image_prompts,
         openai_key=openai_key, model=model, timeout=timeout, subject_seed=seed, is_group=is_group,
-        reference_image_urls=reference_image_urls, subject_name=target_name,
+        reference_image_urls=reference_image_urls, subject_name=target_name, bot_self=bot_self,
     )
     if not img_prompt:
         img_prompt = extract_image_prompt(prompt)
@@ -3073,7 +3135,7 @@ MENTION_INTENT_SCHEMA = {
     "type": "object",
     "properties": {
         "intent": {"type": "string", "enum": ["generate", "edit", "reply"]},
-        "subject": {"type": "string", "enum": ["caller", "mentioned", "named", "group", "random", "none"]},
+        "subject": {"type": "string", "enum": ["caller", "mentioned", "named", "group", "random", "bot", "none"]},
         "subject_name": {"type": ["string", "null"]},
         "reason": {"type": "string"},
     },
@@ -3094,6 +3156,7 @@ Also identify WHO the image is of (the subject):
 - "named": someone referred to by name or pronoun without an @mention (e.g. "steven", or "him" when the recent bot image was of a specific person).
 - "group": several people or the community as a whole ("the members of ukplace", "everyone here", "the server", "all of us", "the lads", "the regulars").
 - "random": they want ONE person picked at random ("choose one of the users in this channel at random", "pick someone", "a random member", "surprise me with someone").
+- "bot": the picture is of the bot itself, HMS Victory / Vic. "you" and "yourself" in a message addressed to the bot mean the BOT, never the caller: "show us an image of what you look like", "draw yourself", "a picture of you", "your self-portrait", "what do you think you look like".
 - "none": not a person (a cat, a landscape, a meme) or not an image request.
 If subject is "named", put the name in subject_name; otherwise subject_name is null.
 
@@ -3227,7 +3290,7 @@ def classify_mention_intent(
     subject = parsed.get("subject")
     if intent not in ("generate", "edit", "reply"):
         return None
-    if subject not in ("caller", "mentioned", "named", "group", "random", "none"):
+    if subject not in ("caller", "mentioned", "named", "group", "random", "bot", "none"):
         subject = "none"
 
     usage = data.get("usage") or {}
@@ -3381,7 +3444,7 @@ def resolve_image_target(
         # Named someone we can't resolve: still hand the name to the synthesiser, just no history to pull.
         return subject_name.strip(), None
 
-    if subject in ("none", "group", "random"):
+    if subject in ("none", "group", "random", "bot"):
         return None, None
 
     # Fallback (classifier unavailable or undecided): explicit mentions beat pronouns, earliest in the text first.
@@ -4266,6 +4329,18 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 clean_prompt, caller_id, caller_name, other_mentions, target_users,
                 subject=subject, subject_name=subject_name, guild=getattr(message, "guild", None),
             )
+            bot_self = subject == "bot" or (
+                intent is None and target_id is None and not other_mentions and looks_like_bot_self_portrait(clean_prompt)
+            )
+            if bot_self:
+                target_name, target_id = "HMS Victory (yourself)", None
+                try:
+                    said = await asyncio.to_thread(fetch_bot_mentions_sample, bot_id, 30, 60)
+                    section = format_bot_mentions_for_context(said)
+                    context = f"{section}\n\n{context}" if context else section
+                except Exception as e:
+                    logger.debug("Could not fetch what the server says about the bot: %s", e)
+                logger.info("Self-portrait request from %s: %r", caller_name, clean_prompt)
             random_pick = False
             if subject == "random" or (intent is None and target_id is None and looks_like_random_pick(clean_prompt)):
                 target_name, target_id = await pick_random_member(
@@ -4281,7 +4356,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             recipients = {getattr(u, "id", None) for u in delivery_mentions(clean_prompt, other_mentions, None)}
             subjects = [u for u in other_mentions if getattr(u, "id", None) not in recipients]
             multi_subject = len(subjects) >= 2 and subject in ("mentioned", "named", "group", None)
-            is_group = multi_subject or subject == "group" or (intent is None and looks_like_group_request(clean_prompt))
+            is_group = (not bot_self) and (multi_subject or subject == "group" or (intent is None and looks_like_group_request(clean_prompt)))
             if is_group:
                 # A group picture needs real people: hand the synthesiser a roster of actual members.
                 roster = await build_group_roster_context(
@@ -4321,6 +4396,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                             target_id=target_id,
                             is_group=is_group,
                             reference_image_urls=reference_images,
+                            bot_self=bot_self,
                         )
                         if synth_p or synth_c:
                             live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)
