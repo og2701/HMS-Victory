@@ -2589,6 +2589,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Danez = 412", text)
             self.assertIn("THAT IMAGE WAS: a cat", text)
             self.assertIn('"you", "yourself", "what you look like"', payload["instructions"])
+            self.assertIn("NEVER plan a refusal", payload["instructions"])
+            self.assertIn('"the cat is black"', payload["instructions"])
             # bad action -> None
             mock_urlopen.return_value = _mock_resp(_responses_body(json.dumps({**plan_json, "action": "dance"})))
             self.assertIsNone(plan_mention("x", caller_name="O", caller_id=1, openai_key="test-key"))

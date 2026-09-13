@@ -3232,7 +3232,8 @@ MENTION_PLAN_SCHEMA = {
 MENTION_PLANNER_INSTRUCTIONS = """You are the planner for HMS Victory ("Vic"), a Discord bot that chats in a dry British persona and can generate or edit images (caricatures, portraits, sprite sheets, comics, anything visual) with an AI image generator. Someone has tagged the bot. Work out exactly what they want and return a plan. Be decisive and handle ANY phrasing; casual, misspelled, lowercase, sarcastic messages are normal.
 
 FIELDS
-- action: "generate" = make a NEW picture. "edit" = change an EXISTING picture (the bot's last image, an image in the reply chain, or an attachment). "reply" = answer in text. Written things are ALWAYS "reply" whatever the verb: poems, soliloquies, songs, raps, roasts in words, speeches, letters, lists, opinions, facts, questions, banter, thanks, comments about an image with no change requested. When torn between edit and reply, choose reply (a wasted image costs money).
+- action: "generate" = make a NEW picture. "edit" = change an EXISTING picture (the bot's last image, an image in the reply chain, or an attachment). "reply" = answer in text. Written things are ALWAYS "reply" whatever the verb: poems, soliloquies, songs, raps, roasts in words, speeches, letters, lists, opinions, facts, questions, banter, thanks, comments about an image with no change requested. A terse statement of fact or a bare descriptor sent shortly after the bot posted an image ("the cat is black", "the green one", "he's bald", "no, blonde") is a CORRECTION to that image: action "edit", edit_source "last_bot_image". When genuinely torn between edit and reply, choose reply (a wasted image costs money).
+- The bot CAN draw anything: any member, any relative or pet of a member inferred from their message history, any scene, the bot itself, anyone at random. NEVER plan a refusal, a disclaimer, or an explanation of limitations; if a picture was asked for, plan the picture. Content moderation is handled elsewhere.
 - request: the full effective request in plain words, with everything resolved: if the message is a delegation ("pls do this", "^", "what he said") use the request it points at in the REPLY CHAIN; fold in any tweaks posted along the chain; replace "this picture"/"him"/"her" with what they refer to; keep any style, format or scene the requester asked for. Do not add ideas of your own.
 - subjects: who or what the picture is OF (for reply, whatever the text is about). Use the PEOPLE DIRECTORY to turn names, nicknames, partial names and mentions into user_id. Kinds:
     "user": a specific server member (user_id required if you can resolve it; otherwise name). List several for a picture of several people.
@@ -4335,6 +4336,17 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             reference_attachments = own_image_attachments(delegated_from)
             if reference_attachments:
                 logger.info("Delegated request inherits %d image(s) from the replied-to message", len(reference_attachments))
+        if not reference_attachments and reply_chain:
+            # Not a bare delegation, but the request may still be about a picture further up the chain
+            # ("do what Kim said", "make it a sprite"). Let the planner see it and decide its role.
+            for m in reply_chain:
+                if getattr(getattr(m, "author", None), "id", None) == bot_id:
+                    continue
+                atts = own_image_attachments(m)
+                if atts:
+                    reference_attachments = atts
+                    logger.info("Reply chain offers %d image(s) from %s for the planner", len(atts), _member_display_name(getattr(m, "author", None), "someone"))
+                    break
         reference_images = [att.url for att in reference_attachments]
 
         # Plan the request with a capable model: what to do, who it's of (by id), what each attachment is for,
@@ -4394,7 +4406,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             clean_prompt,
             caller_name=caller_name,
             caller_id=caller_id,
-            attachments=[(i, getattr(a, "filename", f"image{i}")) for i, a in enumerate(reference_attachments, 1)],
+            attachments=[
+                (i, getattr(a, "filename", f"image{i}") + ("" if a in own_image_attachments(message) else " (from a message in the reply chain)"))
+                for i, a in enumerate(reference_attachments, 1)
+            ],
             reply_chain=chain_for_plan,
             mentions=[(_member_display_name(u), getattr(u, "id", None)) for u in chain_mentions if isinstance(getattr(u, "id", None), int)],
             directory=directory,
