@@ -1283,6 +1283,13 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("HISTORY BETWEEN", ctx2)
         mock_exchanges.assert_not_called()
 
+        # The planner's bot flag wins over the wording ("the bot and Steven" doesn't match the regex)
+        ctx3 = await ensure_target_history_in_context(client, message, "", 555, "Steven", prompt="the bot and Steven sharing a hotdog", bot_id=42, include_bot=True)
+        self.assertIn("HISTORY BETWEEN Steven (<@555>) AND HMS VICTORY", ctx3)
+        mock_exchanges.reset_mock()
+        await ensure_target_history_in_context(client, message, "", 555, "Steven", prompt="draw steven with you", bot_id=42, include_bot=False)
+        mock_exchanges.assert_not_called()
+
         # No target: untouched
         self.assertEqual(await ensure_target_history_in_context(client, message, "ctx", None, None), "ctx")
 

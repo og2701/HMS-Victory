@@ -3708,6 +3708,7 @@ async def ensure_target_history_in_context(
     target_name: Optional[str],
     prompt: str = "",
     bot_id: Optional[int] = None,
+    include_bot: Optional[bool] = None,
 ) -> str:
     """Put the portrait subject's history in front of the synthesiser.
 
@@ -3745,7 +3746,7 @@ async def ensure_target_history_in_context(
         except Exception as e:
             logger.debug("Failed to fetch target user chat for image context: %s", e)
 
-    if prompt_references_bot(prompt):
+    if include_bot or (include_bot is None and prompt_references_bot(prompt)):
         try:
             exchanges = await fetch_user_bot_interactions_async(target_id, bot_id or BOT_ID, 40)
             sections.append(format_bot_interactions_for_context(name, target_id, exchanges))
@@ -4626,7 +4627,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     clean_prompt, caller_id, caller_name, other_mentions, target_users,
                     subject=subject, subject_name=subject_name, guild=getattr(message, "guild", None),
                 )
-            context = await ensure_target_history_in_context(client, message, context, target_id, target_name, prompt=clean_prompt, bot_id=bot_id)
+            context = await ensure_target_history_in_context(
+                client, message, context, target_id, target_name, prompt=clean_prompt, bot_id=bot_id,
+                include_bot=(plan_state["include_bot"] if plan_state is not None else None),
+            )
 
             prev_caption = getattr(prev_msg, "content", "")
             logger.info("Synthesizing image edit for %s: %r (target=%s, prev_prompt=%r)", caller_name, clean_prompt, target_name, prev_prompt)
@@ -4762,7 +4766,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 logger.info("Random subject picked for %s: %s (%s)", caller_name, target_name, target_id)
             # Make sure the subject's own message history is what the synthesiser reads, not just whoever
             # happened to be mentioned or talking nearby.
-            context = await ensure_target_history_in_context(client, message, context, target_id, target_name, prompt=clean_prompt, bot_id=bot_id)
+            context = await ensure_target_history_in_context(
+                client, message, context, target_id, target_name, prompt=clean_prompt, bot_id=bot_id,
+                include_bot=(plan_state["include_bot"] if plan_state is not None else None),
+            )
 
             # Two or more people = a picture of exactly those people; "the group" = the server's regulars.
             if plan_state is not None:
