@@ -1111,6 +1111,26 @@ APPEARANCE_POOLS: Dict[str, List[str]] = {
         "a big nose and heavy brows", "a long chin", "round cheeks", "a gap-toothed grin", "deep-set eyes",
     ],
     "expression": ["deadpan", "smug", "exasperated", "mid-rant", "a suspicious squint", "utterly unbothered", "sheepish", "scheming", "wearily patient"],
+    # Twenty-two traditions that all exaggerate. Left to choose freely the writer drifts to
+    # "detailed digital illustration" - competent, correctly proportioned, and not a caricature,
+    # which is how the roast stops landing. Naming a tradition that cannot be drawn straight is
+    # what keeps the distortion in.
+    "style": [
+        "MAD-magazine style caricature with a huge head and tiny body", "Spitting Image-style grotesque puppet caricature",
+        "Beano-style British kids' comic", "Viz-style crude British comic strip", "rubber-hose 1930s cartoon",
+        "South Park-style flat cutout", "chunky claymation-style 3D", "bobblehead caricature figurine",
+        "1970s British seaside postcard cartoon", "Victorian satirical engraving with exaggerated features",
+        "loose ink-and-watercolour caricature", "Saturday-morning cartoon cel style", "ligne claire comic art",
+        "bold linocut print with two colours",
+        "Gerald Scarfe-style savage scratchy ink caricature with warped, rubbery limbs",
+        "Ralph Steadman-style splattered ink and watercolour grotesque",
+        "Quentin Blake-style scratchy pen-and-wash with wobbly, spindly figures",
+        "Beryl Cook-style oil painting of vastly rotund, rosy-cheeked figures",
+        "Asterix-style comic album art with bulbous noses and stubby bodies",
+        "Tex Avery-style wild-take cartoon with popping eyes and dropped jaws",
+        "Garbage Pail Kids-style grotesque sticker art",
+        "papier-mache carnival float caricature head, enormous and lumpy",
+    ],
     "composition": [
         "full-body, wide shot", "waist-up, slightly low angle", "close-up head and shoulders", "seen from behind, glancing back",
         "tiny figure in a large scene", "sitting, slouched", "caught mid-action", "leaning into frame from one side",
@@ -1123,11 +1143,15 @@ APPEARANCE_POOLS: Dict[str, List[str]] = {
 
 
 def appearance_directives(seed: Optional[int] = None, include_physical: bool = True) -> str:
-    """Deterministic look-and-style directives for a subject so different people come out different.
+    """Look-and-style directives for a subject so different people come out different.
 
-    Seeded by the subject's user id: the same person keeps the same base look across images, while two
-    people never share the image model's default 'handsome dark-haired cartoon lad'. Their own history
-    always overrides these (someone who says they're bald is bald).
+    The physical base is seeded by the subject's user id: the same person keeps the same base look across
+    images, while two people never share the image model's default 'handsome dark-haired cartoon lad'.
+    Their own history always overrides these (someone who says they're bald is bald).
+
+    The art style is the exception and is drawn fresh each time, so it is NOT reproducible from the seed.
+    A face that persists between pictures is the point; a tradition that persists just means the eighth
+    portrait of someone is the seventh one again.
     """
     rng = random.Random(seed if seed is not None else random.randrange(1 << 30))
     pick = lambda key: rng.choice(APPEARANCE_POOLS[key])
@@ -1137,7 +1161,10 @@ def appearance_directives(seed: Optional[int] = None, include_physical: bool = T
             f"Physical base (use unless their messages or name contradict it; infer gender from their messages and name, never assume): "
             f"{pick('age')}, {pick('build')}, {pick('hair')}, {pick('face')}, default expression {pick('expression')}."
         )
-    parts.append(f"Composition: {pick('composition')}. Palette: {pick('palette')}.")
+    # Deliberately off the person's seed: the face is theirs and should persist, the tradition is
+    # this picture's and should not.
+    style = random.choice(APPEARANCE_POOLS["style"])
+    parts.append(f"Art style unless the request names one: {style}. Composition: {pick('composition')}. Palette: {pick('palette')}.")
     return " ".join(parts)
 
 
@@ -1193,7 +1220,7 @@ FLY THE FLAG, QUIETLY: this bot lives on a British server. If the person's histo
 RULES:
 1. Build the picture from RECURRING themes across the whole history (hobbies, pets, catchphrases, food and drink habits, opinions, running jokes, how they talk to people), not from whatever they said most recently. A single mention is not a trait. Prefer things other people in the chat tease them about: that's what the server finds funny. If a DOSSIER section is provided, it was distilled from hundreds of their messages and is your primary source; the recent-messages list is only for freshness.
 2. Under 140 words. Purely visual: physical caricature, expression, attire, props in hand, setting. No names, Discord tags, usernames, or meta instructions.
-3. HONOUR THE REQUESTED FORMAT, MEDIUM AND STYLE EXACTLY. 'cartoon strip' / 'comic strip' / 'comic' means ONE image laid out as 3 or 4 sequential panels telling a simple gag, with at most a few words of speech-bubble text. 'photorealistic' / 'photo' means a realistic photograph, not a caricature. 'cartoon', 'anime', 'oil painting', 'pixel art', 'sketch' and the like mean exactly that. When no style was requested, CHOOSE THE MEDIUM YOURSELF to suit this person and this gag: an exaggerated, hand-drawn, illustrated caricature in whatever tradition fits them (a football-and-pubs bloke, a cosy pet person, a gamer, a gossip and a pop-punk kid all call for different media). Decide it from their dossier, not from a menu, and vary it: never reuse the medium of the PREVIOUS IMAGES listed for this person. NEVER photorealistic, photographic, hyperreal, or realistic 3D-render unless the request explicitly asks for a photo or realism: the default is illustrated and stylised. Always name the medium explicitly in the prompt (e.g. "ink and watercolour illustration", "flat vector cartoon") so the generator does not drift into realism.
+3. HONOUR THE REQUESTED FORMAT, MEDIUM AND STYLE EXACTLY. 'cartoon strip' / 'comic strip' / 'comic' means ONE image laid out as 3 or 4 sequential panels telling a simple gag, with at most a few words of speech-bubble text. 'photorealistic' / 'photo' means a realistic photograph, not a caricature. 'cartoon', 'anime', 'oil painting', 'pixel art', 'sketch' and the like mean exactly that. When no style was requested, USE THE ART STYLE GIVEN IN THE VARIETY DIRECTIVES, exactly as named, and commit to it: it is an exaggerating tradition, so the proportions, linework and colour must be that tradition's, not a tidy modern illustration wearing its name. Depart from it only when the person's dossier makes a different tradition obviously funnier, and then say which and why in the style field. Never reuse the medium of the PREVIOUS IMAGES listed for this person. NEVER photorealistic, photographic, hyperreal, or realistic 3D-render unless the request explicitly asks for a photo or realism: the default is illustrated and stylised. Always name the medium explicitly in the prompt (e.g. "ink and watercolour illustration", "flat vector cartoon") so the generator does not drift into realism.
 4. Everything in the image must come from the request and the history. Do not add nationality, patriotic, military, naval or period imagery unless the history is genuinely about it.
 5. The payload states whether HMS VICTORY IS IN THE PICTURE. If yes, add a second character: a weathered 18th-century first-rate ship of the line with a stern, unimpressed personality (the ship itself with a disapproving air, or a stern naval officer figurehead), interacting with the person the way their HISTORY BETWEEN transcript suggests. If no, there must be no ship, sailors or naval officers of any kind.
 6. If BANNED ELEMENTS are listed, none of them may appear in the image in any form: not the prop, not the food, not the slogan, not the setting, not the gag, not a synonym of it. They were used in previous images of this person. The history always has more material; dig for it. A prompt containing banned elements is rejected and you will be asked again.

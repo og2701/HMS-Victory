@@ -1,3 +1,4 @@
+import re
 import sys
 import types
 import unittest
@@ -1428,20 +1429,36 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("SERVER OVERVIEW: ukplace, 10 members.", context)
         mock_overview.assert_called_once()
 
-    def test_appearance_directives(self):
+    @staticmethod
+    def _directive_parts(text):
+        m = re.search(r"never assume\): (.*?)\. Art style unless the request names one: (.*?)\. Composition", text, re.S)
+        return m.group(1), m.group(2)
+
+    def test_a_persons_face_is_the_same_every_time_but_the_art_style_is_not(self):
+        """Recognisable between pictures is the point of the seed; one tradition forever is not."""
         from lib.features.chat_responder import appearance_directives
-        a1 = appearance_directives(479207279850291221)
-        a2 = appearance_directives(479207279850291221)
-        b = appearance_directives(404634271861571584)
-        self.assertEqual(a1, a2)                      # same person, same base look every time
-        self.assertNotEqual(a1, b)                    # different people differ
-        self.assertIn("Physical base", a1)
-        self.assertNotIn("Art style", a1)              # no style pool: the writer chooses the medium from the person
-        self.assertIn("infer gender", a1)
+        mine = [self._directive_parts(appearance_directives(479207279850291221)) for _ in range(8)]
+        self.assertEqual(len({face for face, _ in mine}), 1)
+        self.assertGreater(len({style for _, style in mine}), 1)
+
+        theirs, _ = self._directive_parts(appearance_directives(404634271861571584))
+        self.assertNotEqual(mine[0][0], theirs)        # different people differ
+        self.assertIn("infer gender", appearance_directives(479207279850291221))
+
+    def test_every_art_style_is_one_that_cannot_be_drawn_straight(self):
+        """A free choice drifts to tidy, correctly proportioned illustration, which kills the roast."""
         from lib.features.chat_responder import APPEARANCE_POOLS
-        self.assertNotIn("style", APPEARANCE_POOLS)
+        styles = APPEARANCE_POOLS["style"]
+        self.assertEqual(len(styles), len(set(styles)))
+        self.assertGreaterEqual(len(styles), 22)
+        for s in styles:
+            self.assertNotRegex(s, r"(?i)photoreal|photograph|hyperreal|lifelike")
+
+    def test_a_group_gets_a_style_but_no_single_physical_base(self):
+        from lib.features.chat_responder import appearance_directives
         group = appearance_directives(1, include_physical=False)
         self.assertNotIn("Physical base", group)
+        self.assertIn("Art style", group)
         self.assertIn("Composition", group)
 
     @patch("urllib.request.urlopen")
@@ -1456,7 +1473,10 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             target_name="Lanca", target_id=555, openai_key="test-key",
         )
         user = _sent_payload(mock_urlopen, 0)["messages"][1]["content"]
-        self.assertIn(appearance_directives(555), user)
+        # The style is drawn fresh per picture, so only the seeded half is reproducible here.
+        face, _ = self._directive_parts(appearance_directives(555))
+        self.assertIn(face, user)
+        self.assertIn("Art style unless the request names one:", user)
         system = _sent_payload(mock_urlopen, 0)["messages"][0]["content"]
         self.assertIn("Never the stock cartoon lead", system)
         self.assertIn("at most two short labels", system)
@@ -1485,8 +1505,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             target_name="the ukplace regulars", is_group=True, openai_key="test-key",
         )
         user = _sent_payload(mock_urlopen, 4)["messages"][1]["content"]
-        self.assertIn("VARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): Composition", user)
-        self.assertIn("CHOOSE THE MEDIUM YOURSELF", system)
+        self.assertIn("VARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): "
+                      "Art style unless the request names one:", user)
+        self.assertIn("USE THE ART STYLE GIVEN IN THE VARIETY DIRECTIVES", system)
         self.assertIn("Every listed person appears, each with their own gag", user)
         system = _sent_payload(mock_urlopen, 4)["messages"][0]["content"]
         self.assertIn("EVERY ONE OF THEM MUST APPEAR", system)
