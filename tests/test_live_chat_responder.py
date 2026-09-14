@@ -4168,6 +4168,53 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("file", message.reply.call_args[1])
 
 
+class TestGroupSizeAndNameLabels(unittest.TestCase):
+    """The head-count in the request, and names drawn in the picture rather than only in the caption."""
+
+    def test_a_requested_head_count_is_read(self):
+        from lib.features.chat_responder import requested_group_size
+        self.assertEqual(requested_group_size(
+            "make a family photo of the 12 most prominent people of the server, include names"), 12)
+        self.assertEqual(requested_group_size("family photo of the 4 most prominent people of the server"), 4)
+        self.assertEqual(requested_group_size("draw the six main members of the server"), 6)
+
+    def test_a_count_that_is_not_a_head_count_is_ignored(self):
+        """'5 different styles' is not five people, and reading it as one would empty the picture."""
+        from lib.features.chat_responder import requested_group_size
+        self.assertIsNone(requested_group_size("draw the server in 5 different styles"))
+        self.assertIsNone(requested_group_size("draw the server regulars"))
+
+    def test_a_head_count_never_exceeds_what_is_drawable(self):
+        from lib.features.chat_responder import requested_group_size, MAX_TAGGED_SUBJECTS
+        self.assertEqual(requested_group_size("draw the 40 most active members"), MAX_TAGGED_SUBJECTS)
+
+    def test_names_in_the_picture_are_only_drawn_when_asked_for(self):
+        from lib.features.chat_responder import wants_name_labels
+        self.assertTrue(wants_name_labels("family photo, include names and roles for each, in the image"))
+        self.assertTrue(wants_name_labels("draw the lads as a band, put their names under them"))
+        self.assertFalse(wants_name_labels("draw the server regulars as a family"))
+
+    def test_asking_for_names_replaces_the_no_text_rule_with_exact_plates(self):
+        """Left as-is the builder bans all text after the writer is done, so the request is silently dropped."""
+        from lib.features.chat_responder import assemble_group_prompt
+        chars = [{"name": "Oggers", "role": "the dad", "look": "tall", "gag": "holding a spreadsheet"},
+                 {"name": "Kim", "role": "the nan", "look": "small", "gag": "pouring tea"}]
+        out = assemble_group_prompt("A family portrait", "posed on a sofa", "ink illustration", chars, labels=True)
+        self.assertIn('"Oggers - the dad"', out)
+        self.assertIn('"Kim - the nan"', out)
+        self.assertNotIn("NO TEXT ANYWHERE", out)
+
+        off = assemble_group_prompt("A family portrait", "posed on a sofa", "ink illustration", chars)
+        self.assertIn("NO TEXT ANYWHERE", off)
+        self.assertNotIn("name plate", off)
+
+    def test_labels_are_not_promised_for_people_the_writer_left_out(self):
+        """A plate is only ever generated from a character the picture actually contains."""
+        from lib.features.chat_responder import assemble_group_prompt
+        out = assemble_group_prompt("A portrait", "s", "st", [{"name": "", "role": "the dad"}], labels=True)
+        self.assertIn("NO TEXT ANYWHERE", out)
+
+
 if __name__ == "__main__":
     unittest.main()
 

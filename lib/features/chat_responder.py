@@ -1197,7 +1197,7 @@ RULES:
 4. Everything in the image must come from the request and the history. Do not add nationality, patriotic, military, naval or period imagery unless the history is genuinely about it.
 5. The payload states whether HMS VICTORY IS IN THE PICTURE. If yes, add a second character: a weathered 18th-century first-rate ship of the line with a stern, unimpressed personality (the ship itself with a disapproving air, or a stern naval officer figurehead), interacting with the person the way their HISTORY BETWEEN transcript suggests. If no, there must be no ship, sailors or naval officers of any kind.
 6. If BANNED ELEMENTS are listed, none of them may appear in the image in any form: not the prop, not the food, not the slogan, not the setting, not the gag, not a synonym of it. They were used in previous images of this person. The history always has more material; dig for it. A prompt containing banned elements is rejected and you will be asked again.
-7. GROUP PICTURES: if a SERVER MEMBER ROSTER is provided, the people in it are the ONLY people in the image and EVERY ONE OF THEM MUST APPEAR with roughly equal prominence. If the request assigns ROLES (a family photo with family roles, a band, a heist crew, a football team, a royal court), give every roster member a specific role that fits their dossier (the dad, the mum, the weird uncle, the golden child, the nan, the dog...), put the role in their entry, and stage them accordingly. "Family photo", "group photo", "school photo", "team photo" mean the classic posed studio-portrait composition (rows, matching awkward smiles, a backdrop), illustrated in the chosen style; not a real photograph unless realism was explicitly asked for. Give each a distinct, recognisable caricature and their OWN gag drawn from their own dossier, once each, all in one scene that connects them (something they're doing together, or side by side reacting to each other). Do not let one person's material take over the picture. Never invent extra people, usernames, handles or names. NO TEXT in group pictures at all (no name labels, no speech bubbles, no signs); the caption names who is who. Never fabricate chat messages, channel lists or UI. The word limit for a group is 40 words per person plus 40 for the scene.
+7. GROUP PICTURES: if a SERVER MEMBER ROSTER is provided, the people in it are the ONLY people in the image and EVERY ONE OF THEM MUST APPEAR with roughly equal prominence. If the request assigns ROLES (a family photo with family roles, a band, a heist crew, a football team, a royal court), give every roster member a specific role that fits their dossier (the dad, the mum, the weird uncle, the golden child, the nan, the dog...), put the role in their entry, and stage them accordingly. "Family photo", "group photo", "school photo", "team photo" mean the classic posed studio-portrait composition (rows, matching awkward smiles, a backdrop), illustrated in the chosen style; not a real photograph unless realism was explicitly asked for. Give each a distinct, recognisable caricature and their OWN gag drawn from their own dossier, once each, all in one scene that connects them (something they're doing together, or side by side reacting to each other). Do not let one person's material take over the picture. Never invent extra people, usernames, handles or names. NO TEXT in group pictures at all (no name labels, no speech bubbles, no signs) and the caption names who is who - UNLESS the request explicitly asks for the names in the picture, in which case name plates are added for you after the fact and you need only leave room for them. Never fabricate chat messages, channel lists or UI. The word limit for a group is 40 words per person plus 40 for the scene.
 8. In any image, never render made-up usernames, handles, screen names or chat text. If you need labels, use only real names given in the payload.
 9. LOOKS COME FROM THE MESSAGES FIRST. Before writing the prompt, fill in a character sheet from the evidence in their messages and name. THE IMAGE PROMPT MUST THEN SPELL OUT THAT LOOK IN WORDS (age, build, hair, face, expression): a sheet that says "brunette, handsome" and a prompt that never mentions hair or face is a failure, because the generator only sees the prompt.
    - If the person has JUST described themselves in the recent messages (especially boastfully or with a wink: "for reference I am extremely tall, well built, handsome"), that self-description IS the gag. Either draw them exactly as claimed to a ludicrous degree, or draw the claim and the reality side by side. Do not ignore it.
@@ -1349,6 +1349,12 @@ def synthesize_image_prompt_from_context(
         )
     elif is_group:
         user_payload += "\nSUBJECT: the GROUP listed in the SERVER MEMBER ROSTER. Every listed person appears, each with their own gag, equal prominence. Use the GROUP JSON format."
+        if wants_name_labels(prompt):
+            user_payload += (
+                "\nNAME LABELS: the request asks for the names in the picture, so rule 7's no-text default is OFF for this one. "
+                "Leave room under each person for a small name plate and compose so nothing important sits where it goes. "
+                "Do not write the labels yourself; give each character an exact 'name' and 'role' and they are added afterwards."
+            )
     elif subject_name and "ABOUT THE SUBJECT '" + subject_name + "'" in (context or ""):
         user_payload += (
             f"\nSUBJECT: '{subject_name}', which is not a member: read the ABOUT THE SUBJECT note and the records that follow it to determine "
@@ -1470,11 +1476,33 @@ def synthesize_image_prompt_from_context(
     _LAST_CHARACTERS[0] = chars if isinstance(chars, list) else None
     image_prompt_out = (parsed.get("image_prompt") or "").strip()
     if is_group and isinstance(chars, list) and chars:
-        image_prompt_out = assemble_group_prompt(image_prompt_out, parsed.get("scene"), parsed.get("style"), chars)
+        image_prompt_out = assemble_group_prompt(image_prompt_out, parsed.get("scene"), parsed.get("style"), chars,
+                                                 labels=wants_name_labels(prompt))
     return image_prompt_out, p_tokens, c_tokens
 
 
-def assemble_group_prompt(image_prompt: str, scene: Optional[str], style: Optional[str], chars: List[Any]) -> str:
+_NAME_LABELS_RE = re.compile(
+    r"\b(?:include|add|write|put|show|label|labelled|labeled|annotate)\b[^.]{0,40}\b(?:names?|labels?|name\s+plates?|name\s+tags?)\b"
+    r"|\b(?:names?|labels?)\b[^.]{0,30}\b(?:in|on|under|beneath|below|above|beside|next\s+to)\s+(?:the\s+)?"
+    r"(?:image|picture|photo|portrait|frame|drawing|shot)\b"
+    r"|\bwith\s+(?:their\s+)?names?\s+(?:on|under|beneath|below|shown|written|labelled|labeled)\b",
+    re.IGNORECASE,
+)
+
+
+def wants_name_labels(prompt: str) -> bool:
+    """True when the request asks for the people's names to appear IN the picture.
+
+    Group pictures are text-free by default: image models garble lettering, and a dozen
+    misspelt name plates ruin a picture that was otherwise fine. But "include names ... in
+    the image" is an explicit instruction, and silently answering it in the caption instead
+    reads as the bot ignoring what it was told.
+    """
+    return bool(prompt and _NAME_LABELS_RE.search(prompt))
+
+
+def assemble_group_prompt(image_prompt: str, scene: Optional[str], style: Optional[str], chars: List[Any],
+                          labels: bool = False) -> str:
     """Build the group image prompt from the per-person entries.
 
     The writer reliably fills the character list and then tends to sum it up as "each person doing their own
@@ -1518,7 +1546,28 @@ def assemble_group_prompt(image_prompt: str, scene: Optional[str], style: Option
         parts.append(f"Exactly {len(people)} people, every one of them clearly visible: " + " ".join(people))
     parts.append("No other people")
     parts.append("Every person has exactly two arms, two hands and one head, correctly proportioned; no merged or extra limbs")
-    parts.append("NO TEXT ANYWHERE in the image: no name labels, no signs, no speech bubbles, no captions, no writing on clothes or objects")
+    plates = []
+    if labels:
+        for ch in chars:
+            if not isinstance(ch, dict):
+                continue
+            nm = (ch.get("name") or "").strip()
+            if not nm:
+                continue
+            role = (ch.get("role") or "").strip()
+            plates.append(f"{nm} - {role}" if role else nm)
+    if plates:
+        # Spelled out one plate at a time, in the same order the people were listed above, because
+        # the generator will otherwise shuffle the names between faces or invent a spelling.
+        parts.append(
+            "The ONLY text in the image is one small name plate under each person, in clean upright block capitals, "
+            "each plate under its own person in the same left-to-right order as they are listed above, reading exactly and "
+            "only: " + "; ".join(f'"{t}"' for t in plates)
+            + ". Spell each one exactly as written. No other text anywhere: no signs, no speech bubbles, no captions, "
+              "no writing on clothes or objects"
+        )
+    else:
+        parts.append("NO TEXT ANYWHERE in the image: no name labels, no signs, no speech bubbles, no captions, no writing on clothes or objects")
     return ". ".join(x.rstrip(".") for x in parts if x) + "."
 
 
@@ -4099,6 +4148,37 @@ def looks_like_group_request(prompt: str) -> bool:
 
 
 MAX_TAGGED_SUBJECTS = 12  # explicit @tags in one request; beyond this a single image stops being drawable
+
+_WORD_NUMBERS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+                 "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
+_GROUP_COUNT_RE = re.compile(
+    r"\b(\d{1,2}|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+"
+    r"(?:(?:most|top|main|biggest|best|worst|least)\s+)?(?:\w+\s+){0,2}?"
+    r"(?:people|persons|members|users|regulars|lads|posters|personalities|figures|characters)\b",
+    re.IGNORECASE,
+)
+
+
+def requested_group_size(prompt: str) -> Optional[int]:
+    """The head-count the request asked for ('the 12 most prominent people'), clamped to what is drawable.
+
+    Without this the number in the request is silently ignored and the roster comes back at its default
+    size, which then contradicts the request in the very same prompt. It reads in both directions: asking
+    for four is also how you get a picture with four people who are big enough to see.
+    """
+    if not prompt:
+        return None
+    m = _GROUP_COUNT_RE.search(prompt)
+    if not m:
+        return None
+    raw = m.group(1).lower()
+    n = _WORD_NUMBERS.get(raw)
+    if n is None:
+        try:
+            n = int(raw)
+        except ValueError:
+            return None
+    return max(2, min(n, MAX_TAGGED_SUBJECTS))
 IMAGE_GEN_QUALITY_GROUP = "medium"   # several people in one frame fall apart at 'low'
 IMAGE_GEN_SIZE_GROUP = "1536x1024"   # landscape gives each person more pixels
 GROUP_RENDER_THRESHOLD = 3            # from this many people, use the group settings
@@ -4303,12 +4383,17 @@ async def build_group_roster_context(
         f"SERVER MEMBER ROSTER FOR {server_name} (these {len(chosen)} people are the ONLY people who may appear; "
         "depict each one once, recognisably, with a gag from their own messages below, which are sampled across the last 30 days; invent nobody):"
     ]
-    for uid, name in chosen:
-        dossier = None
+    # All at once rather than one after another: a dossier is an LLM call, and a roster of twelve with a
+    # cold cache is minutes of the requester watching nothing happen if these queue up.
+    async def _dossier(uid: int, name: str):
         try:
-            dossier = await asyncio.to_thread(build_user_dossier, uid, name)
+            return await asyncio.to_thread(build_user_dossier, uid, name)
         except Exception as e:
             logger.warning("Dossier build failed for %s in roster: %s", uid, e)
+            return None
+
+    dossiers = await asyncio.gather(*(_dossier(uid, name) for uid, name in chosen))
+    for (uid, name), dossier in zip(chosen, dossiers):
         if dossier:
             lines.append(f"\nMEMBER: {name} (<@{uid}>)\n{dossier}")
             continue
@@ -5025,7 +5110,8 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 present = bool(plan_state and plan_state.get("group_present")) and not multi_subject
                 roster = await build_group_roster_context(
                     client, getattr(message, "guild", None), must_include=subjects if multi_subject else other_mentions,
-                    max_members=min(len(subjects), MAX_TAGGED_SUBJECTS) if multi_subject else (MAX_TAGGED_SUBJECTS if present else 6),
+                    max_members=(min(len(subjects), MAX_TAGGED_SUBJECTS) if multi_subject
+                                 else (requested_group_size(clean_prompt) or MAX_TAGGED_SUBJECTS)),
                     bot_id=bot_id, fill_with_active=not multi_subject,
                     channel_id=getattr(getattr(message, "channel", None), "id", None), present=present,
                 )
