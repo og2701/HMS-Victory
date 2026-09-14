@@ -1221,6 +1221,7 @@ def _chat_completion_json(
     timeout: int = 30,
     what: str = "OpenAI chat completion",
     image_urls: Optional[List[str]] = None,
+    _retrying_truncated: bool = False,
 ) -> Tuple[Dict[str, Any], int, int]:
     """POST a JSON-mode chat completion (optionally with images) and return (parsed_json, prompt_tokens, completion_tokens)."""
     user_content: Any = user_payload
@@ -1257,7 +1258,16 @@ def _chat_completion_json(
         # Vision refusals come back as content=None with a 'refusal' field (or finish_reason=content_filter).
         reason = msg.get("refusal") or choice.get("finish_reason") or "no content"
         raise OpenAIRefusal(f"{what} refused: {reason}")
-    return json.loads(content), usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        if choice.get("finish_reason") == "length" and not _retrying_truncated:
+            # Ran out of tokens mid-JSON: go again with room to finish.
+            logger.warning("%s returned truncated JSON at %d tokens; retrying with a larger budget", what, max_tokens)
+            return _chat_completion_json(system_prompt, user_payload, api_key, model=model, max_tokens=max_tokens * 2 + 200,
+                                         temperature=temperature, timeout=timeout, what=what, image_urls=image_urls, _retrying_truncated=True)
+        raise
+    return parsed, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
 
 
 _CARD_KINDS = [
@@ -1430,7 +1440,53 @@ def synthesize_image_prompt_from_context(
             logger.warning("Group image prompt covers %d of %d roster members", len(chars), roster_size)
     chars = parsed.get("characters")
     _LAST_CHARACTERS[0] = chars if isinstance(chars, list) else None
-    return (parsed.get("image_prompt") or "").strip(), p_tokens, c_tokens
+    image_prompt_out = (parsed.get("image_prompt") or "").strip()
+    if is_group and isinstance(chars, list) and chars:
+        image_prompt_out = assemble_group_prompt(image_prompt_out, parsed.get("scene"), parsed.get("style"), chars)
+    return image_prompt_out, p_tokens, c_tokens
+
+
+def assemble_group_prompt(image_prompt: str, scene: Optional[str], style: Optional[str], chars: List[Any]) -> str:
+    """Build the group image prompt from the per-person entries.
+
+    The writer reliably fills the character list and then tends to sum it up as "each person doing their own
+    quirky thing", which the image model can't draw. So the prompt is assembled here: style, scene, then every
+    character with their role, look, gag and references, so nobody from the roster is lost.
+    """
+    parts: List[str] = []
+    style_txt = (style or "").strip()
+    scene_txt = (scene or "").strip()
+    head = image_prompt.strip()
+    if head and not head.lower().startswith(("in a ", "a ", "an ")) and style_txt and style_txt.lower() not in head.lower():
+        head = f"{style_txt}. {head}"
+    if head:
+        parts.append(head.rstrip("."))
+    elif style_txt:
+        parts.append(style_txt.rstrip("."))
+    if scene_txt and scene_txt.lower() not in head.lower():
+        parts.append(scene_txt.rstrip("."))
+    people: List[str] = []
+    for i, ch in enumerate(chars, 1):
+        if not isinstance(ch, dict):
+            continue
+        bits = []
+        name = (ch.get("name") or f"person {i}").strip()
+        role = (ch.get("role") or "").strip()
+        look = (ch.get("look") or "").strip()
+        gag = (ch.get("gag") or "").strip()
+        refs = [str(r).strip() for r in (ch.get("references") or []) if str(r).strip()]
+        label = name + (f" as {role}" if role else "")
+        if look:
+            bits.append(look)
+        if gag:
+            bits.append(gag)
+        if refs:
+            bits.append("with " + "; ".join(refs[:3]))
+        people.append(f"{i}) {label}: " + ". ".join(bits))
+    if people:
+        parts.append(f"Exactly {len(people)} people, every one of them clearly visible: " + " ".join(people))
+    parts.append("No other people. No invented names or text beyond small name labels.")
+    return ". ".join(x.rstrip(".") for x in parts if x) + "."
 
 
 _LAST_CHARACTERS: List[Any] = [None]  # characters from the most recent group prompt, handed to the caption writer
@@ -1494,7 +1550,7 @@ def synthesize_image_caption(
 
     parsed, p_tokens, c_tokens = _chat_completion_json(
         system_prompt, user_payload, api_key,
-        model=model, max_tokens=120, temperature=0.9, timeout=timeout, what="Image caption synthesis",
+        model=model, max_tokens=120 + 30 * (characters.count("\n") + 1 if characters else 0), temperature=0.9, timeout=timeout, what="Image caption synthesis",
     )
     return (parsed.get("caption") or "").strip(), p_tokens, c_tokens
 
@@ -3875,7 +3931,26 @@ def rewrite_prompt_for_safety(image_prompt: str, openai_key: Optional[str] = Non
     return text, p, c
 
 
-async def produce_image(image_prompt: str, reference_urls: Optional[List[str]] = None) -> Tuple[bytes, int, int, str]:
+def reference_lead(roles: Optional[List[str]], count: int) -> str:
+    """The sentence that tells the image model what the attached images are FOR."""
+    roles = [r or "subject_likeness" for r in (roles or [])][:count]
+    while len(roles) < count:
+        roles.append("subject_likeness")
+    if count == 0:
+        return ""
+    if all(r == "style" for r in roles):
+        return (
+            "The attached image(s) are STYLE REFERENCES ONLY: copy their era, medium, lighting, colour palette, composition, "
+            "wardrobe and mood, but do NOT reproduce the people, faces or objects in them. Draw only the characters described here: "
+        )
+    if count == 1:
+        return "Using the attached image as the reference for the subject's appearance and likeness: "
+    words = {"subject_likeness": "the subject's likeness", "style": "style only (era, palette, composition; not its people)", "content": "something to include in the picture", "edit_target": "the picture to change"}
+    listed = "; ".join(f"image {i}: {words.get(r, r)}" for i, r in enumerate(roles, 1))
+    return f"Using the attached images as references ({listed}): "
+
+
+async def produce_image(image_prompt: str, reference_urls: Optional[List[str]] = None, reference_roles: Optional[List[str]] = None) -> Tuple[bytes, int, int, str]:
     """Make the image: edit endpoint with any reference attachments, else plain generation.
 
     If the safety system rejects it, rewrite the prompt once (cheap text call) and try the same way again.
@@ -3890,11 +3965,7 @@ async def produce_image(image_prompt: str, reference_urls: Optional[List[str]] =
 
     async def _attempt(prompt: str) -> Tuple[bytes, int, int]:
         if ref_blobs:
-            lead = (
-                "Using the attached images as references, in the order attached (first image, second image...): "
-                if len(ref_blobs) > 1 else
-                "Using the attached image as the reference for the subject's appearance and likeness: "
-            )
+            lead = reference_lead(reference_roles, len(ref_blobs))
             try:
                 out = await asyncio.to_thread(edit_image_openai, ref_blobs, lead + prompt)
                 logger.info("Generated via image edit with %d reference attachment(s)", len(ref_blobs))
@@ -4535,6 +4606,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         intent = None
         subject = None
         subject_name = None
+        reference_roles: List[str] = ["subject_likeness"] * len(reference_attachments)
         if plan:
             if plan.get("input_tokens") or plan.get("output_tokens"):
                 live_chat_manager.record_usage(MENTION_PLANNER_MODEL, plan["input_tokens"], plan["output_tokens"], is_reply=True)
@@ -4551,6 +4623,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
 
             # attachments: roles decide which is the thing to edit and which are references
             roles = {int(r.get("index", 0)): r.get("role") for r in (plan.get("attachment_roles") or []) if isinstance(r, dict)}
+            all_attachments = list(reference_attachments)
             edit_targets = [a for i, a in enumerate(reference_attachments, 1) if roles.get(i) == "edit_target"]
             refs = [a for i, a in enumerate(reference_attachments, 1) if roles.get(i, "subject_likeness") in ("subject_likeness", "style", "content")]
             plan_edit_attachment = edit_targets[0] if edit_targets else None
@@ -4578,6 +4651,8 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                         break
             reference_attachments = refs
             reference_images = [a.url for a in refs]
+            orig_index = {id(a): i for i, a in enumerate(all_attachments, 1)}
+            reference_roles = [roles.get(orig_index.get(id(a), 0), "subject_likeness") for a in refs]
 
             # subjects
             subj_users: List[Tuple[str, int]] = []
@@ -4877,6 +4952,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 )
                 if present:
                     logger.info("Group roster built from who's in the channel now")
+                    target_name = "everyone in the chat right now"
                 if roster:
                     context = f"{roster}\n\n{context}" if context else roster
                 if multi_subject:
@@ -4937,7 +5013,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             logger.info("Direct mention image generation request from %s (%s): %r (image prompt: %r)", caller_name, caller_id, clean_prompt, image_prompt)
 
             try:
-                img_bytes, p_tokens, c_tokens, image_prompt = await produce_image(image_prompt, reference_images)
+                img_bytes, p_tokens, c_tokens, image_prompt = await produce_image(image_prompt, reference_images, reference_roles)
                 record_user_image_generation(caller_id)
                 live_chat_manager.record_usage(IMAGE_GEN_MODEL, p_tokens, c_tokens, is_reply=True)
 

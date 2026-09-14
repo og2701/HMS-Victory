@@ -1500,7 +1500,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         roster = "SERVER MEMBER ROSTER FOR ukplace (these 2 people...):\n\nMEMBER: Lanca (<@1>)\nDOSSIER...\n\nMEMBER: Gunner (<@2>)\nDOSSIER..."
         img, _, _, _ = synthesize_contextual_image_prompt(prompt="image of <@1> and <@2>", context=roster, user_name="Hadidas", caller_role="deputy",
                                                           target_name="Lanca and Gunner", is_group=True, openai_key="test-key")
-        self.assertEqual(img, "Lanca and Gunner...")
+        # group prompts are assembled from the character entries so nobody is lost
+        self.assertTrue(img.startswith("Lanca and Gunner. kitchen fire. Exactly 2 people"))
+        self.assertIn("1) Lanca: waffles", img); self.assertIn("2) Gunner: Oxford", img)
         self.assertEqual(_sent_payload(mock_urlopen, 0)["max_tokens"], 550 + 160)
 
     @patch("urllib.request.urlopen")
@@ -2054,7 +2056,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             await handle_one_off_owner_mention(client, message3)
         self.assertEqual(mock_synth.call_args[1]["reference_image_urls"], ["https://cdn/sheet.png", "https://cdn/duck.png"])
         self.assertEqual(mock_edit_img.call_args[0][0], [b"SHEET", b"DUCK"])
-        self.assertTrue(mock_edit_img.call_args[0][1].startswith("Using the attached images as references, in the order attached"))
+        self.assertTrue(mock_edit_img.call_args[0][1].startswith("Using the attached images as references (image 1: the subject's likeness; image 2: the subject's likeness): "))
 
         # If the edit endpoint fails, plain generation still happens
         mock_edit_img.side_effect = RuntimeError("edit down")
@@ -2867,6 +2869,87 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         system = _sent_payload(mock_urlopen, 0)["messages"][0]["content"]
         self.assertIn("If the request assigns ROLES", system)
         self.assertIn('"Family photo", "group photo"', system)
+
+    def test_assemble_group_prompt_keeps_everyone(self):
+        from lib.features.chat_responder import assemble_group_prompt
+        chars = [
+            {"name": "Chin", "role": "the mum", "look": "cheerful, holding a chicken strip wrap", "gag": "Chin with a huge wrap: 'Chicken strip wraps and chips :D'", "references": ["Peugeot 508 GT toy"]},
+            {"name": "Kian", "role": None, "look": "rugged, 'Bradford Holiday Resort' t-shirt", "gag": "mocking 'Come to Bradford its like greece'", "references": []},
+        ]
+        out = assemble_group_prompt("depict a lively group scene with each person doing their own thing", "posed 1970s studio family portrait, tartan and big glasses", "warm vintage illustration", chars)
+        self.assertIn("Exactly 2 people, every one of them clearly visible", out)
+        self.assertIn("1) Chin as the mum: cheerful, holding a chicken strip wrap", out)
+        self.assertIn("2) Kian: rugged", out)
+        self.assertIn("Peugeot 508 GT toy", out)
+        self.assertIn("posed 1970s studio family portrait", out)
+        self.assertTrue(out.endswith("No other people. No invented names or text beyond small name labels."))
+
+    @patch("urllib.request.urlopen")
+    def test_group_prompt_is_assembled_from_characters(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_contextual_image_prompt
+        def chat(body, finish="stop"):
+            return _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}, "finish_reason": finish}], "usage": {}}).encode())
+        mock_urlopen.side_effect = [
+            chat({"characters": [{"name": "A", "role": "dad", "look": "tall", "gag": "tea", "references": []}, {"name": "B", "role": "nan", "look": "small", "gag": "bingo", "references": []}],
+                  "scene": "studio", "style": "70s portrait", "image_prompt": "a lively group scene with each person doing their own thing"}),
+            chat({"caption": "The family."}),
+        ]
+        img, _, _, _ = synthesize_contextual_image_prompt(prompt="family photo", context="MEMBER: A (<@1>)\nMEMBER: B (<@2>)", user_name="Oggers", caller_role="owner",
+                                                          target_name="everyone", is_group=True, openai_key="test-key")
+        self.assertIn("1) A as dad: tall. tea", img)
+        self.assertIn("2) B as nan: small. bingo", img)
+        self.assertIn("Exactly 2 people", img)
+        # caption budget grew with the who's-who
+        self.assertGreater(_sent_payload(mock_urlopen, 1)["max_tokens"], 120)
+
+    @patch("urllib.request.urlopen")
+    def test_chat_completion_retries_truncated_json(self, mock_urlopen):
+        from lib.features.chat_responder import _chat_completion_json
+        mock_urlopen.side_effect = [
+            _mock_resp(json.dumps({"choices": [{"message": {"content": '{"caption": "Behold the fam'}, "finish_reason": "length"}], "usage": {}}).encode()),
+            _mock_resp(json.dumps({"choices": [{"message": {"content": '{"caption": "Behold the family."}'}, "finish_reason": "stop"}], "usage": {}}).encode()),
+        ]
+        parsed, _, _ = _chat_completion_json("sys", "user", "test-key", max_tokens=100)
+        self.assertEqual(parsed["caption"], "Behold the family.")
+        self.assertEqual(_sent_payload(mock_urlopen, 1)["max_tokens"], 400)
+
+    def test_reference_lead_by_roles(self):
+        from lib.features.chat_responder import reference_lead
+        self.assertIn("STYLE REFERENCES ONLY", reference_lead(["style", "style"], 2))
+        self.assertIn("do NOT reproduce the people", reference_lead(["style"], 1))
+        self.assertIn("subject's appearance and likeness", reference_lead(["subject_likeness"], 1))
+        self.assertIn("image 1: style only", reference_lead(["style", "subject_likeness"], 2))
+        self.assertIn("image 2: the subject's likeness", reference_lead(["style", "subject_likeness"], 2))
+        self.assertEqual(reference_lead(None, 0), "")
+
+    @patch("lib.features.chat_responder.download_image_bytes", side_effect=lambda u: b"A" if "a.jpg" in u else b"B")
+    @patch("lib.features.chat_responder.edit_image_openai", return_value=(b"img", 20, 200))
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt", return_value=("twelve people in tartan", "The family.", 10, 5))
+    @patch("lib.features.chat_responder.build_group_roster_context", new_callable=AsyncMock, return_value="SERVER MEMBER ROSTER (these 2 people...):\nMEMBER: A (<@1>)")
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    async def test_plan_path_style_only_references_get_style_lead(self, mock_find, mock_gather, _ch, _act, mock_roster, mock_synth, mock_gen, mock_edit, mock_dl):
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> pls create a family portrait of everyone in chat right now - in the style of these examples")
+        message.channel.id = 123; message.guild = MagicMock(); message.guild.name = "ukplace"
+        a = MagicMock(); a.filename = "a.jpg"; a.content_type = "image/jpeg"; a.url = "https://cdn/a.jpg"
+        b = MagicMock(); b.filename = "b.jpg"; b.content_type = "image/jpeg"; b.url = "https://cdn/b.jpg"
+        message.attachments = [a, b]
+        plan = self._plan(request="a family portrait of everyone in chat right now in the style of the attached examples",
+                          subjects=[{"kind": "group", "user_id": None, "name": None, "note": "present"}],
+                          attachment_roles=[{"index": 1, "role": "style"}, {"index": 2, "role": "style"}])
+        with patch("lib.features.chat_responder.plan_mention", return_value=plan), \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            await handle_one_off_owner_mention(client, message)
+        self.assertEqual(mock_edit.call_args[0][0], [b"A", b"B"])
+        self.assertTrue(mock_edit.call_args[0][1].startswith("The attached image(s) are STYLE REFERENCES ONLY"))
+        self.assertIn("twelve people in tartan", mock_edit.call_args[0][1])
+        self.assertEqual(mock_synth.call_args[1]["target_name"], "everyone in the chat right now")
 
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
