@@ -4445,7 +4445,15 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 refs = [a for a in refs if a is not plan_edit_attachment]
             if plan_edit_attachment is not None:
                 is_edit_req, is_fresh_img_req = True, False
-                recent_img_info = (message, plan_edit_attachment, f"An image attached by {caller_name} to this request")
+                if plan_edit_attachment in own_image_attachments(message):
+                    desc = f"An image attached by {caller_name} to this request"
+                    src_msg = message
+                else:
+                    src_msg = next((m for m in reply_chain if plan_edit_attachment in own_image_attachments(m)), message)
+                    who = _member_display_name(getattr(src_msg, "author", None), "a user")
+                    cap = _strip_bot_address(getattr(src_msg, "content", "") or "", bot_id)
+                    desc = f"An image posted by {who}" + (f" with the caption: \"{cap}\"" if cap else " (no caption)")
+                recent_img_info = (src_msg, plan_edit_attachment, desc)
             elif is_edit_req and plan.get("edit_source") == "replied_image":
                 for m in reply_chain:
                     atts = own_image_attachments(m)

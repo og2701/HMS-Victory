@@ -2706,6 +2706,35 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("An image posted by twiggy", mock_synth_edit.call_args[1]["prev_prompt"])
         mock_synth.assert_not_called(); mock_gen.assert_not_called()
 
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.edit_image_openai", return_value=(b"smashed", 30, 200))
+    @patch("lib.features.chat_responder.synthesize_image_edit_prompt", return_value=("edit", "the hoover, smashed to bits", "Farewell, Henry.", 10, 5))
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    async def test_plan_path_smash_up_this_hoover_edits_replied_photo(self, mock_find, mock_gather, _ch, _act, mock_synth_edit, mock_edit, mock_gen):
+        client = MagicMock(); client.user.id = 999999999
+        shuto = MagicMock(); shuto.id = 285; shuto.nick = "shuto"; shuto.global_name = None; shuto.display_name = "shuto"; shuto.name = "shuto"
+        photo = MagicMock(); photo.filename = "image.jpg"; photo.content_type = "image/jpeg"; photo.url = "https://cdn/henry.jpg"; photo.read = AsyncMock(return_value=b"HENRY")
+        parent = MagicMock(); parent.id = 1; parent.content = ""; parent.author = shuto; parent.mentions = []; parent.attachments = [photo]; parent.reference = None
+        ref = MagicMock(); ref.message_id = 1; ref.resolved = parent
+        message = self._leader_message(client, f"<@{client.user.id}> pls smash up this hoover", reference=ref)
+        plan = self._plan(action="edit", request="Edit the attached image to show the hoover being smashed up", edit_source="attachment",
+                          subjects=[{"kind": "thing", "user_id": None, "name": "hoover", "note": None}], attachment_roles=[{"index": 1, "role": "edit_target"}])
+        with patch("lib.features.chat_responder.plan_mention", return_value=plan) as mock_plan, \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        self.assertEqual(mock_plan.call_args[1]["attachments"], [(1, "image.jpg (from a message in the reply chain)")])
+        self.assertEqual(mock_edit.call_args[0][0], b"HENRY")
+        self.assertEqual(mock_synth_edit.call_args[1]["prev_prompt"], "An image posted by shuto (no caption)")
+        self.assertEqual(mock_synth_edit.call_args[1]["prompt"], "Edit the attached image to show the hoover being smashed up")
+        self.assertIn("file", message.reply.call_args[1])
+        mock_gen.assert_not_called()
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):
