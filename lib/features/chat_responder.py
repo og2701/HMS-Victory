@@ -1242,7 +1242,7 @@ RULES:
 Respond ONLY with a JSON object. For a single subject:
 {"character_sheet": {"gender": "...", "age_band": "...", "build_hair_face": "...", "expression_energy": "...", "style": "...", "gag": "the central joke, naming the specific thing + the quoted message it comes from", "supporting_references": ["4-6 smaller references from different conversations, each with what it is in the picture + the quote"], "exaggerations": "which traits and features are blown up"}, "image_prompt": "..."}
 For a GROUP (a SERVER MEMBER ROSTER was provided):
-{"characters": [{"name": "...", "role": "their assigned role if the request assigns roles, else null", "gender": "...", "age_band": "...", "look": "...", "gag": "their own joke + the quote it comes from", "references": ["2-3 smaller references from their own dossier"]}, ...one entry per roster member, none skipped...], "scene": "what they are all doing together and how the gags interact", "style": "...", "image_prompt": "..."}"""
+{"characters": [{"name": "...", "role": "their assigned role if the request assigns roles, else null", "gender": "...", "age_band": "...", "look": "...", "exaggerations": "which of their features are blown up, and how far", "gag": "their own joke + the quote it comes from", "references": ["2-3 smaller references from their own dossier"]}, ...one entry per roster member, none skipped...], "scene": "what they are all doing together and how the gags interact", "style": "...", "image_prompt": "..."}"""
 
 
 class OpenAIRefusal(RuntimeError):
@@ -1329,6 +1329,22 @@ _CARD_KINDS = [
     (re.compile(r"\b(?:merry\s+)?christmas\b", re.I), "Merry Christmas, {name}"),
     (re.compile(r"\bvalentine", re.I), "Happy Valentine's, {name}"),
 ]
+
+
+# The same triggers the TONE SWITCH lists in the writer's instructions. Kept in code as well because
+# exaggeration is now forced into the prompt after the writer has finished, and a get well card is not
+# supposed to give somebody an enormous nose.
+_WARM_REQUEST_RE = re.compile(
+    r"\b(?:nice|kind|kindly|thoughtful|sweet|wholesome|lovely|flattering|complimentary|heartfelt|"
+    r"get\s+well|birthday|congratulat\w*|good\s+luck|thank\s*(?:s|you)|tribute|welcome\s+back|"
+    r"in\s+memory\s+of|cheer\s+(?:them|him|her|\w+)\s+up|condolence\w*|farewell|well\s+wishes)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_warm_request(prompt: str) -> bool:
+    """True when the request asked for something kind, so the roast machinery stands down."""
+    return bool(prompt and _WARM_REQUEST_RE.search(prompt))
 
 
 def card_message_for(request: str, name: Optional[str]) -> Optional[str]:
@@ -1481,6 +1497,38 @@ def synthesize_image_prompt_from_context(
         except Exception as e:
             logger.warning("Strict rewrite failed (%s); keeping the first prompt", e)
 
+    # Enforce the other ban the instructions have always stated: a mood is not a gag. Same shape as the
+    # rewrite above - name what was wrong and ask again - because saying it in the brief plainly is not
+    # enough on its own.
+    if not _is_warm_request(prompt):
+        moods = mood_gags_in(parsed)
+        if moods:
+            logger.warning("Image gag is a mood, not a joke (%s); asking the writer again", moods)
+            mood_payload = (
+                "YOUR PREVIOUS ATTEMPT WAS REJECTED. The central gag was a MOOD, not a joke: "
+                + "; ".join(f'"{m}"' for m in moods) + ". "
+                "A mood is how they come across; a gag is a specific thing that happened or that they will "
+                "not shut up about, named outright. Go back to the history, find the most ridiculous SPECIFIC "
+                "recurring thing - the exact food, purchase, team, complaint, pet, place, catchphrase or "
+                "incident - and build the central visual joke on that, taken to an absurd extreme. Quote the "
+                "message it comes from in the gag field.\n\n" + user_payload
+            )
+            try:
+                parsed3, p3, c3 = _chat_completion_json(
+                    IMAGE_PROMPT_WRITER_INSTRUCTIONS, mood_payload, api_key,
+                    model=model, max_tokens=max_tokens, temperature=0.95, timeout=timeout,
+                    what="Image prompt synthesis (gag rewrite)", image_urls=reference_image_urls,
+                )
+                p_tokens += p3
+                c_tokens += c3
+                if not mood_gags_in(parsed3) and (parsed3.get("image_prompt") or parsed3.get("characters")):
+                    parsed = parsed3
+                    logger.info("Gag rewrite produced a specific gag")
+                else:
+                    logger.info("Gag rewrite was no better; keeping the first prompt")
+            except Exception as e:
+                logger.warning("Gag rewrite failed (%s); keeping the first prompt", e)
+
     # A card must actually say its message; the writer tends to describe "a get well message" instead of writing it.
     image_prompt_text = (parsed.get("image_prompt") or "").strip()
     card_line = card_message_for(prompt, subject_name)
@@ -1505,7 +1553,105 @@ def synthesize_image_prompt_from_context(
     if is_group and isinstance(chars, list) and chars:
         image_prompt_out = assemble_group_prompt(image_prompt_out, parsed.get("scene"), parsed.get("style"), chars,
                                                  labels=wants_name_labels(prompt))
+    elif isinstance(sheet, dict) and not _is_warm_request(prompt):
+        # Not in warm mode: a get-well card is not supposed to give someone a huge nose.
+        image_prompt_out = assemble_single_prompt(image_prompt_out, sheet)
     return image_prompt_out, p_tokens, c_tokens
+
+
+# The instructions have always said a mood is not a gag and named the failures ("he rants a lot",
+# "she's chaotic", "surrounded by clutter"). Nothing checked, and "baffled by the modern world" is
+# what comes back: the specific material sits around the edges as props while the central idea is a
+# feeling. The repeat-material ban is the only rule that was ever enforced, and it is enforced by
+# rewriting and asking again, which is what this does too.
+_MOOD_GAG_RE = re.compile(
+    r"\b(?:baffled|bewildered|confused|perplexed|puzzled|overwhelmed|exasperated|bemused|weary|"
+    r"chaotic|chaos|unhinged|frazzled|sarcastic|deadpan|ranting|rants|raving|moody|brooding|"
+    r"contemplating|pondering|musing|reflecting|lost\s+in\s+thought|existential|"
+    r"modern\s+world|everyday\s+life|daily\s+life|absurdity|surrounded\s+by\s+clutter|"
+    r"arguing\s+with\s+(?:him|her|them)self|embodies|embodying|personification|essence\s+of|"
+    r"vibes|aura|energy\s+of|struggling\s+with\s+life)\b",
+    re.IGNORECASE,
+)
+
+
+def gag_is_a_mood(gag: str) -> bool:
+    """True when the central joke is a feeling rather than a thing that happened.
+
+    Deliberately conservative: it fires only when the gag reads as a mood AND carries no concrete
+    anchor at all - no quoted message, no brand, place or team, no number. "Baffled by the modern
+    world" is caught; "drowning in Popeyes boxes" is not, and neither is a mood that at least names
+    something real. A false positive costs one rewrite, so the bar is set to avoid them.
+    """
+    g = (gag or "").strip()
+    if not g or not _MOOD_GAG_RE.search(g):
+        return False
+    # A real quoted span, not an apostrophe: "she's chaotic" is a contraction and still a mood.
+    if re.search(r"[\"\u201c\u201d]", g) or re.search(r"(?<![A-Za-z])'", g):
+        return False
+    for w in re.findall(r"\S+", g)[1:]:      # skip word 1: a leading capital is just a sentence
+        if re.match(r"[A-Z][a-z]{2,}", w) or re.search(r"\d", w):
+            return False
+    return True
+
+
+def mood_gags_in(parsed: dict) -> List[str]:
+    """The mood-led gags in a writer's response, single subject or group.
+
+    A group is only flagged when MOST of its cast is a mood: one weak character among eight is not
+    worth throwing the whole picture away and paying for it again.
+    """
+    sheet = parsed.get("character_sheet")
+    if isinstance(sheet, dict):
+        g = (sheet.get("gag") or "").strip()
+        return [g] if gag_is_a_mood(g) else []
+    chars = [c for c in (parsed.get("characters") or []) if isinstance(c, dict)]
+    moods = [(c.get("gag") or "").strip() for c in chars if gag_is_a_mood(c.get("gag") or "")]
+    return moods if chars and len(moods) * 2 > len(chars) else []
+
+
+_CONTENT_WORD_RE = re.compile(r"[a-z]{4,}")
+
+
+def _already_says(text: str, phrase: str) -> bool:
+    """Roughly: does the prompt already describe this? Used only to avoid saying it twice."""
+    words = set(_CONTENT_WORD_RE.findall((phrase or "").lower()))
+    if not words:
+        return True
+    low = (text or "").lower()
+    return sum(1 for w in words if w in low) >= max(1, len(words) // 2)
+
+
+def assemble_single_prompt(image_prompt: str, sheet: Optional[Dict[str, Any]]) -> str:
+    """Put the character sheet back into the prompt the image model actually reads.
+
+    The writer fills in a sheet - the look, and which features are blown up - and then writes its prose,
+    and only the prose was ever sent. So the sheet's entire effect was on the writer's own thinking, and
+    the caricature it planned reached nothing: a sheet reading "enormous nose, vast belly" next to a prompt
+    reading "a young man with brown hair" produced a young man with brown hair. A group has been assembled
+    from its character list for a while; a single subject had no equivalent and got whatever prose it wrote.
+    """
+    text = (image_prompt or "").strip()
+    if not isinstance(sheet, dict):
+        return text
+    look = ", ".join(x for x in ((sheet.get("age_band") or "").strip(),
+                                 (sheet.get("build_hair_face") or "").strip()) if x)
+    expr = (sheet.get("expression_energy") or "").strip()
+    exag = (sheet.get("exaggerations") or "").strip()
+    additions: List[str] = []
+    if look and not _already_says(text, look):
+        additions.append(f"The subject is {look}")
+    if expr and not _already_says(text, expr):
+        additions.append(f"Their expression and energy: {expr}")
+    if exag:
+        # Never suppressed by _already_says: prose describing a big nose is not the same as the
+        # generator being told the picture is a caricature rather than a portrait.
+        additions.append(f"Drawn as a caricature with exaggerated proportions, not a naturalistic portrait: {exag}")
+    # Nothing to add means the prompt is returned exactly as written. Rebuilding it anyway would
+    # strip a trailing ellipsis down to a full stop for no reason.
+    if not additions:
+        return text
+    return ". ".join([text.rstrip(".")] + [a.rstrip(".") for a in additions] if text else additions) + "."
 
 
 _NAME_LABELS_RE = re.compile(
@@ -1556,6 +1702,7 @@ def assemble_group_prompt(image_prompt: str, scene: Optional[str], style: Option
         name = (ch.get("name") or f"person {i}").strip()
         role = (ch.get("role") or "").strip()
         look = (ch.get("look") or "").strip()
+        exag = (ch.get("exaggerations") or "").strip()
         gag = _strip_quotes(ch.get("gag") or "")
         refs = [_strip_quotes(str(r)) for r in (ch.get("references") or []) if str(r).strip()]
         refs = [r for r in refs if r]
@@ -1564,6 +1711,8 @@ def assemble_group_prompt(image_prompt: str, scene: Optional[str], style: Option
         label = name + (f" as {role}" if role else "")
         if look:
             bits.append(look)
+        if exag:
+            bits.append(f"exaggerated: {exag}")
         if gag:
             bits.append(gag)
         if refs:
@@ -1572,7 +1721,11 @@ def assemble_group_prompt(image_prompt: str, scene: Optional[str], style: Option
     if people:
         parts.append(f"Exactly {len(people)} people, every one of them clearly visible: " + " ".join(people))
     parts.append("No other people")
-    parts.append("Every person has exactly two arms, two hands and one head, correctly proportioned; no merged or extra limbs")
+    # Counts, not proportions. This line exists to stop the generator fusing limbs, but "correctly
+    # proportioned" also told it to draw everyone straight, which is the exact opposite of the
+    # caricature brief - and the brief only ever reached the writer, while this reaches the generator.
+    parts.append("Every person has exactly two arms, two hands and one head and no merged, fused or extra limbs; "
+                 "within that their proportions are caricatured and exaggerated as described, never naturalistic")
     plates = []
     if labels:
         for ch in chars:

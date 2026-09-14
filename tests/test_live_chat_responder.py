@@ -1496,7 +1496,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             prompt="what does he look like", context="", user_name="Oggers", caller_role="server owner",
             target_name="Kaiz", target_id=556, openai_key="test-key",
         )
-        self.assertEqual(img, "a screen-printed gig poster of...")
+        # The writer's prose still leads; the sheet is appended to it rather than dropped, so this is
+        # no longer an equality check. A sheet with no look and no exaggerations adds nothing.
+        self.assertTrue(img.startswith("a screen-printed gig poster of..."), img)
 
         # group: style directives only, no physical base
         mock_urlopen.side_effect = [chat({"image_prompt": "x"}), chat({"caption": "y"})]
@@ -4242,6 +4244,83 @@ class TestGroupSizeAndNameLabels(unittest.TestCase):
         from lib.features.chat_responder import assemble_group_prompt
         out = assemble_group_prompt("A portrait", "s", "st", [{"name": "", "role": "the dad"}], labels=True)
         self.assertIn("NO TEXT ANYWHERE", out)
+
+
+class TestTheCaricatureActuallyReachesTheGenerator(unittest.TestCase):
+    """The writer planned a caricature and then sent prose. These cover the gap between the two."""
+
+    @staticmethod
+    def _sheet():
+        return {"gender": "male", "age_band": "early twenties", "build_hair_face": "enormous nose, vast belly",
+                "expression_energy": "smug", "style": "MAD-magazine caricature",
+                "gag": "drowning in Popeyes boxes", "supporting_references": ["Vinted"],
+                "exaggerations": "nose the size of a marrow, belly like a space hopper"}
+
+    def test_a_single_subjects_sheet_is_put_back_into_the_prompt(self):
+        """A sheet saying 'enormous nose' beside prose saying 'brown hair' used to send only the prose."""
+        from lib.features.chat_responder import assemble_single_prompt
+        out = assemble_single_prompt("A young man with brown hair holding a chicken bag.", self._sheet())
+        self.assertIn("marrow", out)
+        self.assertIn("enormous nose", out)
+        self.assertIn("caricature", out.lower())
+
+    def test_the_prompt_does_not_repeat_what_it_already_says(self):
+        from lib.features.chat_responder import assemble_single_prompt
+        out = assemble_single_prompt("A smug man in his early twenties with an enormous nose and a vast belly.",
+                                     self._sheet())
+        self.assertEqual(out.lower().count("enormous nose"), 1)
+        self.assertIn("marrow", out)      # the exaggeration is always stated, being a different claim
+
+    def test_a_missing_or_broken_sheet_leaves_the_prompt_alone(self):
+        from lib.features.chat_responder import assemble_single_prompt
+        self.assertEqual(assemble_single_prompt("A man.", None), "A man.")
+        self.assertEqual(assemble_single_prompt("A man.", {}), "A man.")
+
+    def test_a_prompt_with_nothing_to_add_is_returned_byte_for_byte(self):
+        """Rebuilding it anyway chewed a trailing ellipsis down to a single full stop."""
+        from lib.features.chat_responder import assemble_single_prompt
+        sheet = {"gender": "male (name)", "style": "gig poster"}   # no look, no exaggerations
+        self.assertEqual(assemble_single_prompt("a screen-printed gig poster of...", sheet),
+                         "a screen-printed gig poster of...")
+
+    def test_the_anatomy_guard_no_longer_asks_for_correct_proportions(self):
+        """It is there to stop fused limbs; 'correctly proportioned' also cancelled the caricature."""
+        from lib.features.chat_responder import assemble_group_prompt
+        out = assemble_group_prompt("A portrait", "a sofa", "MAD-magazine caricature",
+                                    [{"name": "Steven", "look": "tall", "exaggerations": "nose like a marrow",
+                                      "gag": "drowning in Popeyes boxes"}])
+        self.assertNotIn("correctly proportioned", out)
+        self.assertIn("no merged, fused or extra limbs", out)
+        self.assertIn("never naturalistic", out)
+        self.assertIn("nose like a marrow", out)
+
+    def test_a_mood_is_not_accepted_as_the_central_gag(self):
+        """Every example here is one the writer's own instructions name as a non-gag."""
+        from lib.features.chat_responder import gag_is_a_mood
+        for mood in ("baffled by the modern world", "he rants a lot", "she's chaotic",
+                     "surrounded by clutter", "arguing with himself about the bins"):
+            self.assertTrue(gag_is_a_mood(mood), mood)
+
+    def test_a_gag_naming_something_real_is_left_alone(self):
+        """A rewrite costs a call, so anything with a concrete anchor passes."""
+        from lib.features.chat_responder import gag_is_a_mood
+        for ok in ("drowning in Popeyes boxes", "buried under 40 Vinted parcels",
+                   "chaotic energy of a man who lost his AirPods", ""):
+            self.assertFalse(gag_is_a_mood(ok), ok)
+
+    def test_one_weak_character_does_not_throw_away_a_whole_group(self):
+        from lib.features.chat_responder import mood_gags_in
+        cast = [{"gag": "drowning in Popeyes boxes"}, {"gag": "buried under 40 Vinted parcels"},
+                {"gag": "baffled by the modern world"}]
+        self.assertEqual(mood_gags_in({"characters": cast}), [])
+        allmood = [{"gag": "baffled by the modern world"}, {"gag": "he rants a lot"}]
+        self.assertEqual(len(mood_gags_in({"characters": allmood})), 2)
+
+    def test_a_kind_request_keeps_its_hands_off_the_subjects_face(self):
+        from lib.features.chat_responder import _is_warm_request
+        self.assertTrue(_is_warm_request("make a get well soon card for chin"))
+        self.assertTrue(_is_warm_request("draw a nice picture of lanca"))
+        self.assertFalse(_is_warm_request("draw steven, be mean pls"))
 
 
 if __name__ == "__main__":
