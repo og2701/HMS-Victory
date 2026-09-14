@@ -1535,6 +1535,7 @@ _LAST_CHARACTERS: List[Any] = [None]  # characters from the most recent group pr
 
 
 def summarise_characters(chars: Optional[List[Any]]) -> str:
+    """Names and assigned roles only: enough for the caption to say who is who, not enough to narrate everyone."""
     if not chars:
         return ""
     lines = []
@@ -1543,8 +1544,7 @@ def summarise_characters(chars: Optional[List[Any]]) -> str:
             continue
         name = ch.get("name") or "?"
         role = ch.get("role")
-        gag = (ch.get("gag") or "")[:140]
-        lines.append(f"- {name}" + (f" as {role}" if role else "") + (f": {gag}" if gag else ""))
+        lines.append(f"- {name}" + (f" as {role}" if role else ""))
     return "\n".join(lines)
 
 
@@ -1572,7 +1572,9 @@ def synthesize_image_caption(
         "You are HMS Victory, a cynical, deadpan 18th-century British Royal Navy first-rate ship of the line AI.\n"
         f"Server leadership ({user_name}, {caller_role}) commanded you to produce an image{target_str}, and it is done.\n"
         "Write the 1-2 sentence caption in your voice introducing the picture and dryly roasting them based on their records or the request. "
-        "If WHO IS WHO lists assigned roles, add a short line naming who is what (this may run longer than two sentences). "
+        "For a GROUP picture: still 1-2 sentences in total; do NOT go round everyone, single out at most two people. "
+        "Only if WHO IS WHO shows assigned roles, add exactly one extra line in the form 'Roles: <@id> the dad, <@id> the mum, ...' "
+        "(a comma-separated list, no prose, no jokes in it). "
         "EXCEPTION: if the request was a kind gesture (a get well soon card, a birthday card, congratulations, good luck, a thank you, a tribute, "
         "cheering someone up), do NOT roast: be genuinely warm to them in your dry, understated way, address them directly, and mean it. "
         "Aristocratic 18th-century naval tone, blunt and unimpressed. No corporate filler, no AI disclaimers, no exclamation marks. "
@@ -1584,7 +1586,7 @@ def synthesize_image_caption(
     user_payload = f"REQUEST: \"{prompt}\"\nSUBJECT: {target_name or 'not a specific person'}\nTHE IMAGE SHOWS: {image_prompt[:600]}"
     if characters:
         user_payload += (
-            "\nWHO IS WHO IN THE PICTURE (if roles were assigned, the caption must say who got which role, tagging each as <@id> where the roster gives one):\n"
+            "\nWHO IS WHO IN THE PICTURE (names, and roles if any were assigned; tag people as <@id> using the ids in THEIR RECORDS):\n"
             + characters
         )
     if context.strip():
@@ -1592,7 +1594,7 @@ def synthesize_image_caption(
 
     parsed, p_tokens, c_tokens = _chat_completion_json(
         system_prompt, user_payload, api_key,
-        model=model, max_tokens=120 + 30 * (characters.count("\n") + 1 if characters else 0), temperature=0.9, timeout=timeout, what="Image caption synthesis",
+        model=model, max_tokens=140 + 14 * (characters.count("\n") + 1 if characters else 0), temperature=0.9, timeout=timeout, what="Image caption synthesis",
     )
     return (parsed.get("caption") or "").strip(), p_tokens, c_tokens
 

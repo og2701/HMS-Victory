@@ -2868,8 +2868,11 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
                                                               user_name="Chin", caller_role="member", target_name="the regulars", is_group=True, openai_key="test-key")
         cap_user = _sent_payload(mock_urlopen, 1)["messages"][1]["content"]
         self.assertIn("WHO IS WHO IN THE PICTURE", cap_user)
-        self.assertIn("- Oggers as the dad: tea", cap_user)
-        self.assertIn("- Chin as the golden child: cat", cap_user)
+        self.assertIn("- Oggers as the dad", cap_user)
+        self.assertIn("- Chin as the golden child", cap_user)
+        who = cap_user.split("WHO IS WHO IN THE PICTURE", 1)[1].split("THEIR RECORDS", 1)[0]
+        self.assertNotIn(": tea", who)               # gags stay out of the who's-who
+        self.assertIn("single out at most two people", _sent_payload(mock_urlopen, 1)["messages"][0]["content"])
         self.assertIn("golden child", caption)
         system = _sent_payload(mock_urlopen, 0)["messages"][0]["content"]
         self.assertIn("If the request assigns ROLES", system)
