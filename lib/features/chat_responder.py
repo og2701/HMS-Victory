@@ -176,6 +176,35 @@ def resolve_name_mentions(
     return _AT_NAME_RE.sub(_sub, text)
 
 
+def restrict_caption_mentions(caption: str, allowed_ids: set, context: str = "") -> str:
+    """Keep only pings of people we actually know about (roster, subjects, recipients, caller, mentions).
+
+    The caption writer occasionally invents an id when it's short of one; an invented id renders as an
+    unknown user in Discord, so strip the brackets and leave the text as it is.
+    """
+    if not caption:
+        return caption
+    known = {int(x) for x in re.findall(r"<@!?(\d+)>", context or "")} | {int(x) for x in allowed_ids if isinstance(x, int)}
+    def _sub(m):
+        try:
+            uid = int(m.group(1))
+        except ValueError:
+            return ""
+        return m.group(0) if uid in known else ""
+    out = re.sub(r"<@!?(\d+)>", _sub, caption)
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    return re.sub(r"\s+([.,;:!?])", r"\1", out).strip()
+
+
+def cap_caption_length(caption: str, limit: int = 1900) -> str:
+    """Discord allows 2000 characters with a file; cut a runaway who's-who at a sentence boundary."""
+    if not caption or len(caption) <= limit:
+        return caption
+    cut = caption[:limit]
+    end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "), cut.rfind("\n"))
+    return (cut[: end + 1] if end > limit // 2 else cut).rstrip() + " (and so on.)"
+
+
 def strip_leading_self_address(text: str, caller_id: Optional[int], caller_names: Optional[List[str]] = None) -> str:
     """Drop a leading '<@caller>' / '@Caller' / 'Caller,' from a reply: the Discord reply already pings them."""
     if not text:
@@ -4846,6 +4875,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 guild=getattr(message, 'guild', None),
             )
             caption = strip_leading_self_address(caption, caller_id, [caller_name, getattr(message.author, 'name', None)])
+            caption = cap_caption_length(restrict_caption_mentions(caption, {caller_id, target_id, *[getattr(u, 'id', None) for u in other_mentions], *(plan_state['recipients'] if plan_state else [])}, context))
             await message.reply(caption, file=file, mention_author=True, allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True))
 
             live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
@@ -5026,6 +5056,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     guild=getattr(message, 'guild', None),
                 )
                 caption = strip_leading_self_address(caption, caller_id, [caller_name, getattr(message.author, 'name', None)])
+                caption = cap_caption_length(restrict_caption_mentions(caption, {caller_id, target_id, *[getattr(u, 'id', None) for u in other_mentions], *(plan_state['recipients'] if plan_state else [])}, context))
                 await message.reply(caption, file=file, mention_author=True, allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True))
 
                 live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})

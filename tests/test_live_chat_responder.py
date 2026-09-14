@@ -2951,6 +2951,18 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("twelve people in tartan", mock_edit.call_args[0][1])
         self.assertEqual(mock_synth.call_args[1]["target_name"], "everyone in the chat right now")
 
+    def test_restrict_caption_mentions_and_length(self):
+        from lib.features.chat_responder import restrict_caption_mentions, cap_caption_length
+        roster = "MEMBER: A (<@1>)\nMEMBER: B (<@2>)"
+        cap = "<@1> burns a pie while <@2> feeds cats and <@1221976548499518> wears tape."
+        self.assertEqual(restrict_caption_mentions(cap, {795}, roster), "<@1> burns a pie while <@2> feeds cats and wears tape.")
+        self.assertEqual(restrict_caption_mentions("<@795> Get well soon.", {795}, ""), "<@795> Get well soon.")
+        long = ". ".join(f"Sentence number {i} about someone" for i in range(120)) + "."
+        capped = cap_caption_length(long, limit=300)
+        self.assertLessEqual(len(capped), 320)
+        self.assertTrue(capped.endswith("(and so on.)"))
+        self.assertEqual(cap_caption_length("short", 300), "short")
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):
