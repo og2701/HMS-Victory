@@ -1176,7 +1176,7 @@ RULES:
 4. Everything in the image must come from the request and the history. Do not add nationality, patriotic, military, naval or period imagery unless the history is genuinely about it.
 5. The payload states whether HMS VICTORY IS IN THE PICTURE. If yes, add a second character: a weathered 18th-century first-rate ship of the line with a stern, unimpressed personality (the ship itself with a disapproving air, or a stern naval officer figurehead), interacting with the person the way their HISTORY BETWEEN transcript suggests. If no, there must be no ship, sailors or naval officers of any kind.
 6. If BANNED ELEMENTS are listed, none of them may appear in the image in any form: not the prop, not the food, not the slogan, not the setting, not the gag, not a synonym of it. They were used in previous images of this person. The history always has more material; dig for it. A prompt containing banned elements is rejected and you will be asked again.
-7. GROUP PICTURES: if a SERVER MEMBER ROSTER is provided, the people in it are the ONLY people in the image and EVERY ONE OF THEM MUST APPEAR with roughly equal prominence. Give each a distinct, recognisable caricature and their OWN gag drawn from their own dossier, once each, all in one scene that connects them (something they're doing together, or side by side reacting to each other). Do not let one person's material take over the picture. Never invent extra people, usernames, handles or names. Text in the image is limited to the roster members' names as small labels, or no text at all; never fabricate chat messages, channel lists or UI. The word limit for a group is 40 words per person plus 40 for the scene.
+7. GROUP PICTURES: if a SERVER MEMBER ROSTER is provided, the people in it are the ONLY people in the image and EVERY ONE OF THEM MUST APPEAR with roughly equal prominence. If the request assigns ROLES (a family photo with family roles, a band, a heist crew, a football team, a royal court), give every roster member a specific role that fits their dossier (the dad, the mum, the weird uncle, the golden child, the nan, the dog...), put the role in their entry, and stage them accordingly. "Family photo", "group photo", "school photo", "team photo" mean the classic posed studio-portrait composition (rows, matching awkward smiles, a backdrop), illustrated in the chosen style; not a real photograph unless realism was explicitly asked for. Give each a distinct, recognisable caricature and their OWN gag drawn from their own dossier, once each, all in one scene that connects them (something they're doing together, or side by side reacting to each other). Do not let one person's material take over the picture. Never invent extra people, usernames, handles or names. Text in the image is limited to the roster members' names as small labels, or no text at all; never fabricate chat messages, channel lists or UI. The word limit for a group is 40 words per person plus 40 for the scene.
 8. In any image, never render made-up usernames, handles, screen names or chat text. If you need labels, use only real names given in the payload.
 9. LOOKS COME FROM THE MESSAGES FIRST. Before writing the prompt, fill in a character sheet from the evidence in their messages and name. THE IMAGE PROMPT MUST THEN SPELL OUT THAT LOOK IN WORDS (age, build, hair, face, expression): a sheet that says "brunette, handsome" and a prompt that never mentions hair or face is a failure, because the generator only sees the prompt.
    - If the person has JUST described themselves in the recent messages (especially boastfully or with a wink: "for reference I am extremely tall, well built, handsome"), that self-description IS the gag. Either draw them exactly as claimed to a ludicrous degree, or draw the claim and the reality side by side. Do not ignore it.
@@ -1194,7 +1194,7 @@ RULES:
 Respond ONLY with a JSON object. For a single subject:
 {"character_sheet": {"gender": "...", "age_band": "...", "build_hair_face": "...", "expression_energy": "...", "style": "...", "gag": "the central joke, naming the specific thing + the quoted message it comes from", "supporting_references": ["4-6 smaller references from different conversations, each with what it is in the picture + the quote"], "exaggerations": "which traits and features are blown up"}, "image_prompt": "..."}
 For a GROUP (a SERVER MEMBER ROSTER was provided):
-{"characters": [{"name": "...", "gender": "...", "age_band": "...", "look": "...", "gag": "their own joke + the quote it comes from", "references": ["2-3 smaller references from their own dossier"]}, ...one entry per roster member, none skipped...], "scene": "what they are all doing together and how the gags interact", "style": "...", "image_prompt": "..."}"""
+{"characters": [{"name": "...", "role": "their assigned role if the request assigns roles, else null", "gender": "...", "age_band": "...", "look": "...", "gag": "their own joke + the quote it comes from", "references": ["2-3 smaller references from their own dossier"]}, ...one entry per roster member, none skipped...], "scene": "what they are all doing together and how the gags interact", "style": "...", "image_prompt": "..."}"""
 
 
 class OpenAIRefusal(RuntimeError):
@@ -1428,7 +1428,26 @@ def synthesize_image_prompt_from_context(
         logger.info("Image group characters (%d): %s", len(chars), json.dumps(chars, ensure_ascii=False)[:900])
         if is_group and roster_size and len(chars) < roster_size:
             logger.warning("Group image prompt covers %d of %d roster members", len(chars), roster_size)
+    chars = parsed.get("characters")
+    _LAST_CHARACTERS[0] = chars if isinstance(chars, list) else None
     return (parsed.get("image_prompt") or "").strip(), p_tokens, c_tokens
+
+
+_LAST_CHARACTERS: List[Any] = [None]  # characters from the most recent group prompt, handed to the caption writer
+
+
+def summarise_characters(chars: Optional[List[Any]]) -> str:
+    if not chars:
+        return ""
+    lines = []
+    for ch in chars:
+        if not isinstance(ch, dict):
+            continue
+        name = ch.get("name") or "?"
+        role = ch.get("role")
+        gag = (ch.get("gag") or "")[:140]
+        lines.append(f"- {name}" + (f" as {role}" if role else "") + (f": {gag}" if gag else ""))
+    return "\n".join(lines)
 
 
 def synthesize_image_caption(
@@ -1441,6 +1460,7 @@ def synthesize_image_caption(
     openai_key: Optional[str] = None,
     model: str = "gpt-4o",
     timeout: int = 20,
+    characters: str = "",
 ) -> Tuple[str, int, int]:
     """Write HMS Victory's dry 1-2 sentence caption for a finished image. Returns (caption, prompt_tokens, completion_tokens)."""
     api_key = openai_key or os.getenv("OPENAI_TOKEN")
@@ -1454,6 +1474,7 @@ def synthesize_image_caption(
         "You are HMS Victory, a cynical, deadpan 18th-century British Royal Navy first-rate ship of the line AI.\n"
         f"Server leadership ({user_name}, {caller_role}) commanded you to produce an image{target_str}, and it is done.\n"
         "Write the 1-2 sentence caption in your voice introducing the picture and dryly roasting them based on their records or the request. "
+        "If WHO IS WHO lists assigned roles, add a short line naming who is what (this may run longer than two sentences). "
         "EXCEPTION: if the request was a kind gesture (a get well soon card, a birthday card, congratulations, good luck, a thank you, a tribute, "
         "cheering someone up), do NOT roast: be genuinely warm to them in your dry, understated way, address them directly, and mean it. "
         "Aristocratic 18th-century naval tone, blunt and unimpressed. No corporate filler, no AI disclaimers, no exclamation marks. "
@@ -1463,6 +1484,11 @@ def synthesize_image_caption(
         "Respond ONLY with a JSON object: {\"caption\": \"...\"}"
     )
     user_payload = f"REQUEST: \"{prompt}\"\nSUBJECT: {target_name or 'not a specific person'}\nTHE IMAGE SHOWS: {image_prompt[:600]}"
+    if characters:
+        user_payload += (
+            "\nWHO IS WHO IN THE PICTURE (if roles were assigned, the caption must say who got which role, tagging each as <@id> where the roster gives one):\n"
+            + characters
+        )
     if context.strip():
         user_payload += f"\n\nTHEIR RECORDS (for roast material):\n{context.strip()[:2500]}"
 
@@ -1510,6 +1536,7 @@ def synthesize_contextual_image_prompt(
         # Rotate the tie-breaker (style, composition, palette) across consecutive images of the same person,
         # so four portraits in a row don't all come out as the same 1930s rubber-hose cartoon.
         seed = seed + 7919 * len(previous_image_prompts)
+    _LAST_CHARACTERS[0] = None
     img_prompt, p_tokens, c_tokens = synthesize_image_prompt_from_context(
         prompt, context, include_bot=include_bot, previous_image_prompts=previous_image_prompts,
         openai_key=openai_key, model=model, timeout=timeout, subject_seed=seed, is_group=is_group,
@@ -1522,7 +1549,7 @@ def synthesize_contextual_image_prompt(
     try:
         caption, cp, cc = synthesize_image_caption(
             prompt, img_prompt, context, user_name, caller_role, target_name=target_name,
-            openai_key=openai_key, model=model,
+            openai_key=openai_key, model=model, characters=summarise_characters(_LAST_CHARACTERS[0]),
         )
         p_tokens += cp
         c_tokens += cc
@@ -3276,7 +3303,7 @@ FIELDS
 - subjects: who or what the picture is OF (for reply, whatever the text is about). Use the PEOPLE DIRECTORY to turn names, nicknames, partial names and mentions into user_id. Kinds:
     "user": a specific server member (user_id required if you can resolve it; otherwise name). List several for a picture of several people.
     "bot": the bot itself. In a message addressed to the bot, "you", "yourself", "what you look like", "your self-portrait" mean the BOT, never the caller.
-    "group": the community in general ("the members of ukplace", "everyone here", "the regulars").
+    "group": several people without naming them. Set note to "present" if they mean the people in the chat right now ("everyone in chat now", "everyone here", "all of us in here", "a family photo of the channel"), or "regulars" if they mean the server's usual crowd in general ("the members of ukplace", "the ukplace gang", "the regulars").
     "random": pick one person at random from the channel.
     "relative_of_user": someone related to a member (their mum, dad, nan, partner, kid, pet, car): set user_id/name to the MEMBER, and note what the relation is.
     "thing": not a person (a cat, a landscape, a pub, a meme).
@@ -3989,6 +4016,31 @@ def fetch_channel_active_users(channel_id: Optional[int], days: int = 7, limit: 
     return out[:limit]
 
 
+def fetch_channel_recent_posters(channel_id: Optional[int], minutes: int = 60, limit: int = 12, exclude_ids: Optional[List[int]] = None) -> List[int]:
+    """Distinct user ids who posted in a channel in the last `minutes`, most active first: 'everyone in chat now'."""
+    if channel_id is None:
+        return []
+    exclude = {str(x) for x in (exclude_ids or []) if x is not None}
+    out: List[int] = []
+    try:
+        from database import DatabaseManager
+        cutoff = int(time.time()) - minutes * 60
+        rows = DatabaseManager.fetch_all(
+            "SELECT user_id, COUNT(*) AS c FROM message_archive WHERE channel_id = ? AND ts > ? GROUP BY user_id ORDER BY c DESC LIMIT ?",
+            (str(channel_id), cutoff, limit + len(exclude)),
+        )
+        for uid, _count in rows or []:
+            if str(uid) in exclude:
+                continue
+            try:
+                out.append(int(uid))
+            except (TypeError, ValueError):
+                continue
+    except Exception as e:
+        logger.debug("Failed to fetch recent channel posters: %s", e)
+    return out[:limit]
+
+
 async def pick_random_member(
     client: Optional[discord.Client],
     guild: Any,
@@ -4052,8 +4104,14 @@ async def build_group_roster_context(
     older_per_member: int = 30,
     bot_id: Optional[int] = None,
     fill_with_active: bool = True,
+    channel_id: Optional[int] = None,
+    present: bool = False,
+    present_minutes: int = 60,
 ) -> str:
-    """A roster of real, active members with a sample of their messages spread across 30 days, for group portraits.
+    """A roster of real members with their dossiers, for group portraits.
+
+    present=True means "everyone in chat now": people who posted in this channel in the last hour come first,
+    then the channel's recent regulars, then the server's; otherwise the server's most active members fill it.
 
     Explicitly mentioned users come first, then the most active humans in the archive. Bots and anyone we
     can't resolve to a member are skipped, so the image only ever contains real people.
@@ -4083,6 +4141,23 @@ async def build_group_roster_context(
         seen.add(uid)
         chosen.append((uid, _member_display_name(u)))
 
+    if present and len(chosen) < max_members:
+        # "Everyone in chat now": whoever posted here in the last hour. If that's almost nobody, widen the window
+        # (6h, then 24h) rather than pad with the server's regulars, who aren't "in chat now".
+        for minutes in (present_minutes, 6 * 60, 24 * 60):
+            for uid in await asyncio.to_thread(fetch_channel_recent_posters, channel_id, minutes, max_members * 2, [bot_id, *seen]):
+                if uid in seen:
+                    continue
+                member = _resolve(uid)
+                if member is None or getattr(member, "bot", False) is True:
+                    continue
+                seen.add(uid)
+                chosen.append((uid, _member_display_name(member)))
+                if len(chosen) >= max_members:
+                    break
+            if len(chosen) >= 2:
+                break
+        fill_with_active = False
     if fill_with_active and len(chosen) < max_members:
         active = await asyncio.to_thread(fetch_most_active_users, 30, max_members * 3, [bot_id, *seen])
         for uid, _count in active:
@@ -4506,7 +4581,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
 
             # subjects
             subj_users: List[Tuple[str, int]] = []
-            plan_bot_self = plan_group = plan_random = False
+            plan_bot_self = plan_group = plan_random = plan_group_present = False
             plan_relative_note = None
             for sj in plan.get("subjects") or []:
                 kind = (sj or {}).get("kind")
@@ -4522,6 +4597,8 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     plan_bot_self = True
                 elif kind == "group":
                     plan_group = True
+                    if (sj.get("note") or "").strip().lower().startswith("present") or re.search(r"\b(?:now|right now|here|in (?:the )?chat)\b", (sj.get("note") or ""), re.I):
+                        plan_group_present = True
                 elif kind == "random":
                     plan_random = True
             recipient_ids: List[int] = []
@@ -4533,7 +4610,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             plan_state = {
                 "subjects": subj_users, "bot_self": plan_bot_self, "group": plan_group, "random": plan_random,
                 "recipients": recipient_ids, "include_bot": bool(plan.get("include_bot_in_picture")),
-                "relative_note": plan_relative_note,
+                "relative_note": plan_relative_note, "group_present": plan_group_present,
             }
             if is_edit_req and not recent_img_info:
                 is_edit_req, is_fresh_img_req = False, True
@@ -4791,11 +4868,15 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 is_group = (not bot_self) and (multi_subject or subject == "group" or (intent is None and looks_like_group_request(clean_prompt)))
             if is_group:
                 # A group picture needs real people: hand the synthesiser a roster of actual members.
+                present = bool(plan_state and plan_state.get("group_present")) and not multi_subject
                 roster = await build_group_roster_context(
                     client, getattr(message, "guild", None), must_include=subjects if multi_subject else other_mentions,
-                    max_members=min(len(subjects), MAX_TAGGED_SUBJECTS) if multi_subject else 6, bot_id=bot_id,
-                    fill_with_active=not multi_subject,
+                    max_members=min(len(subjects), MAX_TAGGED_SUBJECTS) if multi_subject else (MAX_TAGGED_SUBJECTS if present else 6),
+                    bot_id=bot_id, fill_with_active=not multi_subject,
+                    channel_id=getattr(getattr(message, "channel", None), "id", None), present=present,
                 )
+                if present:
+                    logger.info("Group roster built from who's in the channel now")
                 if roster:
                     context = f"{roster}\n\n{context}" if context else roster
                 if multi_subject:

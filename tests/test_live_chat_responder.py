@@ -2792,6 +2792,82 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
                                                           target_name="Chin", target_id=795, openai_key="test-key")
         self.assertEqual(img, "A card that reads 'Get well soon, Chin' above a cat.")
 
+    @patch("lib.features.chat_responder.build_user_dossier", return_value=None)
+    @patch("lib.features.chat_responder.fetch_user_recent_chat", return_value=[])
+    @patch("lib.features.chat_responder.fetch_most_active_users")
+    @patch("lib.features.chat_responder.fetch_channel_active_users")
+    @patch("lib.features.chat_responder.fetch_channel_recent_posters")
+    async def test_group_roster_present_mode_uses_whos_in_chat_now(self, mock_recent, mock_chan, mock_active, _chat, _dossier):
+        from lib.features.chat_responder import build_group_roster_context
+        def member(uid, name, bot=False):
+            m = MagicMock(); m.id = uid; m.nick = name; m.global_name = None; m.display_name = name; m.name = name.lower(); m.bot = bot
+            return m
+        guild = MagicMock(); guild.name = "ukplace"
+        people = {1: member(1, "Oggers"), 2: member(2, "Steven"), 3: member(3, "Kim"), 4: member(4, "Claude AI", bot=True), 9: member(9, "Johnny"), 50: member(50, "Lurker")}
+        guild.get_member.side_effect = lambda uid: people.get(uid)
+        mock_recent.side_effect = lambda cid, minutes, limit, excl: [1, 2, 4, 3] if minutes == 60 else [1, 2, 4, 3, 9]
+        mock_chan.return_value = [9]                     # channel regulars this week: not "in chat now"
+        mock_active.return_value = [(50, 9000)]          # server-wide: never used for a present group
+
+        roster = await build_group_roster_context(None, guild, max_members=12, bot_id=777, channel_id=123, present=True)
+
+        self.assertIn("these 3 people are the ONLY people who may appear", roster)
+        for n in ("Oggers", "Steven", "Kim"):
+            self.assertIn(f"MEMBER: {n} ", roster)
+        for n in ("Claude AI", "Johnny", "Lurker"):
+            self.assertNotIn(n, roster)
+        self.assertEqual(mock_recent.call_args[0][:2], (123, 60))
+        mock_active.assert_not_called()
+
+        # Quiet channel: widen the window instead of padding with regulars
+        mock_recent.side_effect = lambda cid, minutes, limit, excl: [] if minutes == 60 else ([1] if minutes == 360 else [1, 2])
+        roster = await build_group_roster_context(None, guild, max_members=12, bot_id=777, channel_id=123, present=True)
+        self.assertIn("these 2 people", roster)
+        self.assertNotIn("Lurker", roster)
+
+    @patch("lib.features.chat_responder.generate_image_openai", return_value=(b"img", 20, 200))
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt", return_value=("family photo", "Say cheese.", 10, 5))
+    @patch("lib.features.chat_responder.build_group_roster_context", new_callable=AsyncMock, return_value="SERVER MEMBER ROSTER FOR ukplace (these 5 people...):\nMEMBER: A (<@1>)")
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    async def test_plan_path_everyone_in_chat_now_builds_present_roster(self, mock_find, mock_gather, _ch, _act, mock_roster, mock_synth, mock_gen):
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> create a family photo of everyone in chat now")
+        message.channel.id = 123; message.guild = MagicMock(); message.guild.name = "ukplace"
+        plan = self._plan(request="a family photo of everyone in the chat right now", subjects=[{"kind": "group", "user_id": None, "name": "everyone in chat", "note": "present"}])
+        with patch("lib.features.chat_responder.plan_mention", return_value=plan), \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        kw = mock_roster.call_args[1]
+        self.assertTrue(kw["present"]); self.assertEqual(kw["channel_id"], 123); self.assertEqual(kw["max_members"], 12)
+        self.assertTrue(mock_synth.call_args[1]["is_group"])
+
+    @patch("urllib.request.urlopen")
+    def test_group_roles_reach_the_caption(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_contextual_image_prompt
+        def chat(body):
+            return _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}}], "usage": {}}).encode())
+        mock_urlopen.side_effect = [
+            chat({"characters": [{"name": "Oggers", "role": "the dad", "gag": "tea"}, {"name": "Chin", "role": "the golden child", "gag": "cat"}], "scene": "studio", "image_prompt": "family portrait"}),
+            chat({"caption": "Behold the family. Oggers as the dad, Chin as the golden child."}),
+        ]
+        roster = "SERVER MEMBER ROSTER (these 2 people...):\n\nMEMBER: Oggers (<@1>)\n\nMEMBER: Chin (<@2>)"
+        _, caption, _, _ = synthesize_contextual_image_prompt(prompt="a family photo of everyone in chat rn, assign each member a role", context=roster,
+                                                              user_name="Chin", caller_role="member", target_name="the regulars", is_group=True, openai_key="test-key")
+        cap_user = _sent_payload(mock_urlopen, 1)["messages"][1]["content"]
+        self.assertIn("WHO IS WHO IN THE PICTURE", cap_user)
+        self.assertIn("- Oggers as the dad: tea", cap_user)
+        self.assertIn("- Chin as the golden child: cat", cap_user)
+        self.assertIn("golden child", caption)
+        system = _sent_payload(mock_urlopen, 0)["messages"][0]["content"]
+        self.assertIn("If the request assigns ROLES", system)
+        self.assertIn('"Family photo", "group photo"', system)
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):
