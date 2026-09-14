@@ -1218,6 +1218,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("GROUP PICTURES", system)
         self.assertIn("never render made-up usernames", system)
         self.assertIn("WHAT THE IMAGE GENERATOR WILL REJECT", system)
+        self.assertIn("TONE SWITCH", system)
+        self.assertIn('"Get well soon, Chin"', system)
+        self.assertIn("carries its own main message as text", system)
         user = image_call["messages"][1]["content"]
         self.assertIn("HMS VICTORY IS IN THE PICTURE: yes", user)
         self.assertIn("PREVIOUS IMAGES ALREADY PRODUCED", user)
@@ -2559,6 +2562,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("HMS VICTORY IS IN THE PICTURE: yes", user)
         self.assertNotIn("Physical base", user)
         self.assertIn("of YOURSELF (a self-portrait", _sent_payload(mock_urlopen, 1)["messages"][0]["content"])
+        self.assertIn("if the request was a kind gesture", _sent_payload(mock_urlopen, 1)["messages"][0]["content"])
 
     @patch("urllib.request.urlopen")
     def test_plan_mention_payload_and_parse(self, mock_urlopen):
@@ -2734,6 +2738,29 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_synth_edit.call_args[1]["prompt"], "Edit the attached image to show the hoover being smashed up")
         self.assertIn("file", message.reply.call_args[1])
         mock_gen.assert_not_called()
+
+    @patch("lib.features.chat_responder.generate_image_openai", return_value=(b"img", 20, 200))
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt", return_value=("a card", "Get well soon, Chin.", 10, 5))
+    @patch("lib.features.chat_responder.build_user_dossier", return_value=None)
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    async def test_plan_path_card_pings_recipient_who_is_also_subject(self, *_mocks):
+        client = MagicMock(); client.user.id = 999999999
+        chin = MagicMock(); chin.id = 795; chin.nick = "Chin"; chin.global_name = None; chin.display_name = "Chin"; chin.name = "chin"
+        message = self._leader_message(client, f"<@{client.user.id}> please create <@795> a very nice and thoughtful get well soon card", mentions=[chin])
+        plan = self._plan(request="create a very nice and thoughtful get well soon card for Chin",
+                          subjects=[{"kind": "user", "user_id": "795", "name": "Chin", "note": None}], recipient_ids=["795"])
+        with patch("lib.features.chat_responder.plan_mention", return_value=plan), \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            await handle_one_off_owner_mention(client, message)
+        self.assertTrue(message.reply.call_args[0][0].startswith("<@795> Get well soon, Chin."))
 
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
