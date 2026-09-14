@@ -3010,6 +3010,46 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             await handle_one_off_owner_mention(client, message)
         self.assertEqual(mock_produce.call_args[1], {"quality": "medium", "size": "1536x1024"})
 
+    @patch("lib.features.chat_responder.generate_image_openai", return_value=(b"img", 20, 200))
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt", return_value=("Susie the cat", "Behold Susie.", 10, 5))
+    @patch("lib.features.chat_responder.build_user_dossier", side_effect=lambda uid, name, *a, **k: f"DOSSIER ON {name} (<@{uid}>): her cat Susie sleeps on her head")
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    async def test_plan_path_unresolved_name_gets_the_raisers_records(self, mock_find, mock_gather, _ch, _act, mock_dossier, mock_synth, mock_gen):
+        """'can you pls do this?' replying to Pengrin's 'What if HMS made Susie a photo': Susie is resolved from Pengrin's records."""
+        client = MagicMock(); client.user.id = 999999999
+        pengrin = MagicMock(); pengrin.id = 1185; pengrin.nick = "Pengrin"; pengrin.global_name = None; pengrin.display_name = "Pengrin"; pengrin.name = "pengrin"
+        parent = MagicMock(); parent.id = 1; parent.content = "What if HMS made Susie a photo"; parent.author = pengrin; parent.mentions = []; parent.attachments = []; parent.reference = None
+        ref = MagicMock(); ref.message_id = 1; ref.resolved = parent
+        message = self._leader_message(client, f"<@{client.user.id}> can you pls do this ?", reference=ref)
+        message.guild = MagicMock(); message.guild.get_member.return_value = None; message.guild.get_member_named.return_value = None; message.guild.members = []
+        plan = self._plan(request="Create a photo of Susie.", subjects=[{"kind": "user", "user_id": None, "name": "Susie", "note": None}])
+        with patch("lib.features.chat_responder.plan_mention", return_value=plan), \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        kw = mock_synth.call_args[1]
+        self.assertEqual(kw["target_name"], "Susie"); self.assertIsNone(kw["target_id"])
+        self.assertIn("ABOUT THE SUBJECT 'Susie': 'Susie' is not a server member. Pengrin (<@1185>) raised the name", kw["context"])
+        self.assertIn("DOSSIER ON Pengrin (<@1185>): her cat Susie", kw["context"])
+        self.assertEqual(mock_dossier.call_args[0][:2], (1185, "Pengrin"))
+
+    @patch("urllib.request.urlopen")
+    def test_unresolved_subject_brief(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_contextual_image_prompt
+        def chat(body):
+            return _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}}], "usage": {}}).encode())
+        mock_urlopen.side_effect = [chat({"image_prompt": "a tabby cat"}), chat({"caption": "y"})]
+        synthesize_contextual_image_prompt(prompt="Create a photo of Susie.", context="ABOUT THE SUBJECT 'Susie': not a member...\n\nDOSSIER ON Pengrin", user_name="oggers",
+                                           caller_role="server owner", target_name="Susie", target_id=None, openai_key="test-key")
+        user = _sent_payload(mock_urlopen, 0)["messages"][1]["content"]
+        self.assertIn("SUBJECT: 'Susie', which is not a member: read the ABOUT THE SUBJECT note", user)
+        self.assertNotIn("Physical base", user)
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):

@@ -1349,6 +1349,12 @@ def synthesize_image_prompt_from_context(
         )
     elif is_group:
         user_payload += "\nSUBJECT: the GROUP listed in the SERVER MEMBER ROSTER. Every listed person appears, each with their own gag, equal prominence. Use the GROUP JSON format."
+    elif subject_name and "ABOUT THE SUBJECT '" + subject_name + "'" in (context or ""):
+        user_payload += (
+            f"\nSUBJECT: '{subject_name}', which is not a member: read the ABOUT THE SUBJECT note and the records that follow it to determine "
+            "who or what this is (a pet, a relative, an object, an in-joke) and draw exactly that, with the details its owner has given. "
+            "Skip the character-sheet fields that don't apply."
+        )
     elif subject_name:
         user_payload += (
             f"\nSUBJECT: {subject_name}. Their history is the source. If the request asks for someone or something RELATED to them "
@@ -1368,7 +1374,8 @@ def synthesize_image_prompt_from_context(
         "\nHMS VICTORY IS IN THE PICTURE: no (no ship, sailors or naval officers in any form)"
     )
     # Group pictures get their looks from the roster; single subjects get a seeded, person-specific base look.
-    user_payload += "\nVARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): " + appearance_directives(subject_seed, include_physical=not is_group and not bot_self and bool(subject_name))
+    unresolved = bool(subject_name) and ("ABOUT THE SUBJECT '" + str(subject_name) + "'") in (context or "")
+    user_payload += "\nVARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): " + appearance_directives(subject_seed, include_physical=not is_group and not bot_self and not unresolved and bool(subject_name))
     banned = extract_banned_terms(previous_image_prompts)
     if previous_image_prompts:
         listed = "\n".join(f"- {p[:220]}" for p in previous_image_prompts if p)
@@ -3397,7 +3404,7 @@ FIELDS
     "bot": the bot itself. In a message addressed to the bot, "you", "yourself", "what you look like", "your self-portrait" mean the BOT, never the caller.
     "group": several people without naming them. Set note to "present" if they mean the people in the chat right now ("everyone in chat now", "everyone here", "all of us in here", "a family photo of the channel"), or "regulars" if they mean the server's usual crowd in general ("the members of ukplace", "the ukplace gang", "the regulars").
     "random": pick one person at random from the channel.
-    "relative_of_user": someone related to a member (their mum, dad, nan, partner, kid, pet, car): set user_id/name to the MEMBER, and note what the relation is.
+    "relative_of_user": someone or something belonging to a member (their mum, dad, nan, partner, kid, pet, car, house): set user_id/name to the MEMBER, and put what it is in note ("her cat Susie"). A name that is NOT in the PEOPLE DIRECTORY and isn't a member is almost always this: a pet, a relative, or an in-joke of whoever raised it. Tie it to the most likely member (the author of the message that mentions it in the REPLY CHAIN, else the caller) rather than returning an unresolvable "user".
     "thing": not a person (a cat, a landscape, a pub, a meme).
     "none": no subject (e.g. a text reply that isn't about anyone).
   The caller is only the subject when they mean themselves ("draw me", "what do I look like", "my message history"). "(attached)" after a name means a picture is attached, not that the caller is the subject.
@@ -4944,6 +4951,31 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 bot_self = subject == "bot" or (
                     intent is None and target_id is None and not other_mentions and looks_like_bot_self_portrait(clean_prompt)
                 )
+            if plan_state is not None and target_id is None and target_name and not bot_self and not plan_state["group"] and not plan_state["random"]:
+                # The planner named someone we can't resolve (a pet, a relative, an in-joke). Whoever raised the
+                # name knows who it is: hand the writer their records with an instruction to work it out.
+                owner = None
+                for m in reply_chain:
+                    a = getattr(m, "author", None)
+                    if getattr(a, "id", None) not in (None, bot_id, client_uid):
+                        owner = a
+                        break
+                owner_id = getattr(owner, "id", None) if owner is not None else caller_id
+                owner_name = _member_display_name(owner, "someone") if owner is not None else caller_name
+                if isinstance(owner_id, int):
+                    owner_dossier = None
+                    try:
+                        owner_dossier = await asyncio.to_thread(build_user_dossier, owner_id, owner_name)
+                    except Exception as e:
+                        logger.debug("Owner dossier failed for %s: %s", owner_id, e)
+                    note = (
+                        f"'{target_name}' is not a server member. {owner_name} (<@{owner_id}>) raised the name, so '{target_name}' is almost "
+                        f"certainly their pet, relative, possession or in-joke: work out exactly who or what '{target_name}' is from the records "
+                        f"below and draw THAT, using what {owner_name} has said about it."
+                    )
+                    section = f"ABOUT THE SUBJECT '{target_name}': {note}\n\n" + (owner_dossier or f"RECORDS OF {owner_name}: [none on file]")
+                    context = f"{section}\n\n{context}" if context else section
+                    logger.info("Unresolved subject %r: attached the records of %s (%s)", target_name, owner_name, owner_id)
             if bot_self:
                 target_name, target_id = "HMS Victory (yourself)", None
                 try:
