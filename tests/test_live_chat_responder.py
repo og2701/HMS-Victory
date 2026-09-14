@@ -2762,6 +2762,29 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             await handle_one_off_owner_mention(client, message)
         self.assertTrue(message.reply.call_args[0][0].startswith("<@795> Get well soon, Chin."))
 
+    def test_card_message_for(self):
+        from lib.features.chat_responder import card_message_for
+        self.assertEqual(card_message_for("create a very nice and thoughtful get well soon card for Chin", "Chin"), "Get well soon, Chin")
+        self.assertEqual(card_message_for("make steven a birthday card", "Steven <3"), "Happy birthday, Steven <3")
+        self.assertEqual(card_message_for("a congratulations poster for hadidas", "Hadidas (yourself)"), "Congratulations, Hadidas")
+        self.assertIsNone(card_message_for("draw chin as a pirate", "Chin"))
+        self.assertIsNone(card_message_for("a get well soon message", "Chin"))   # text, not a card
+
+    @patch("urllib.request.urlopen")
+    def test_card_prompt_gets_its_message_appended(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_contextual_image_prompt
+        def chat(body):
+            return _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}}], "usage": {}}).encode())
+        mock_urlopen.side_effect = [chat({"image_prompt": "A wholesome storybook card with a cat in a backpack, conveying a warm message."}), chat({"caption": "y"})]
+        img, _, _, _ = synthesize_contextual_image_prompt(prompt="create a very nice and thoughtful get well soon card for Chin", context="",
+                                                          user_name="Oggers", caller_role="server owner", target_name="Chin", target_id=795, openai_key="test-key")
+        self.assertTrue(img.endswith('The front of the card reads, in clear lettering, exactly: "Get well soon, Chin".'))
+        # already present: left alone
+        mock_urlopen.side_effect = [chat({"image_prompt": "A card that reads 'Get well soon, Chin' above a cat."}), chat({"caption": "y"})]
+        img, _, _, _ = synthesize_contextual_image_prompt(prompt="get well soon card for Chin", context="", user_name="Oggers", caller_role="server owner",
+                                                          target_name="Chin", target_id=795, openai_key="test-key")
+        self.assertEqual(img, "A card that reads 'Get well soon, Chin' above a cat.")
+
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
         with patch.dict("os.environ", {}, clear=True):

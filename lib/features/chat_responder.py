@@ -1260,6 +1260,31 @@ def _chat_completion_json(
     return json.loads(content), usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
 
 
+_CARD_KINDS = [
+    (re.compile(r"\bget\s+well\b", re.I), "Get well soon, {name}"),
+    (re.compile(r"\b(?:happy\s+)?birthday\b", re.I), "Happy birthday, {name}"),
+    (re.compile(r"\bcongrat", re.I), "Congratulations, {name}"),
+    (re.compile(r"\bgood\s+luck\b", re.I), "Good luck, {name}"),
+    (re.compile(r"\bthank(?:s|\s+you)\b", re.I), "Thank you, {name}"),
+    (re.compile(r"\bwelcome\s+back\b", re.I), "Welcome back, {name}"),
+    (re.compile(r"\b(?:sorry|apolog)", re.I), "Sorry, {name}"),
+    (re.compile(r"\b(?:merry\s+)?christmas\b", re.I), "Merry Christmas, {name}"),
+    (re.compile(r"\bvalentine", re.I), "Happy Valentine's, {name}"),
+]
+
+
+def card_message_for(request: str, name: Optional[str]) -> Optional[str]:
+    """If the request is for a card/poster/banner of a recognisable kind, the line its front should carry."""
+    if not request or not re.search(r"\b(?:card|poster|banner|certificate|invitation|invite)\b", request, re.I):
+        return None
+    who = (name or "").strip()
+    who = re.sub(r"\s*\(.*?\)\s*$", "", who) or "you"
+    for pat, template in _CARD_KINDS:
+        if pat.search(request):
+            return template.format(name=who)
+    return None
+
+
 def synthesize_image_prompt_from_context(
     prompt: str,
     context: str,
@@ -1384,6 +1409,16 @@ def synthesize_image_prompt_from_context(
             logger.info("Strict rewrite reduced reused elements from %d to %d", len(reused), len(still))
         except Exception as e:
             logger.warning("Strict rewrite failed (%s); keeping the first prompt", e)
+
+    # A card must actually say its message; the writer tends to describe "a get well message" instead of writing it.
+    image_prompt_text = (parsed.get("image_prompt") or "").strip()
+    card_line = card_message_for(prompt, subject_name)
+    if card_line and image_prompt_text:
+        key = card_line.split(",")[0].lower()
+        if key not in image_prompt_text.lower():
+            image_prompt_text += f' The front of the card reads, in clear lettering, exactly: "{card_line}".'
+            parsed["image_prompt"] = image_prompt_text
+            logger.info("Appended card message to image prompt: %r", card_line)
 
     sheet = parsed.get("character_sheet")
     if isinstance(sheet, dict):
