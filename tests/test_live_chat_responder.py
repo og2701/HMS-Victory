@@ -1436,13 +1436,13 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(a1, a2)                      # same person, same base look every time
         self.assertNotEqual(a1, b)                    # different people differ
         self.assertIn("Physical base", a1)
-        self.assertIn("Art style if none was requested", a1)
+        self.assertNotIn("Art style", a1)              # no style pool: the writer chooses the medium from the person
         self.assertIn("infer gender", a1)
         from lib.features.chat_responder import APPEARANCE_POOLS
-        self.assertFalse(any("photo" in st or "realistic" in st for st in APPEARANCE_POOLS["style"]))
+        self.assertNotIn("style", APPEARANCE_POOLS)
         group = appearance_directives(1, include_physical=False)
         self.assertNotIn("Physical base", group)
-        self.assertIn("Art style", group)
+        self.assertIn("Composition", group)
 
     @patch("urllib.request.urlopen")
     def test_synthesize_image_prompt_gets_variety_directives(self, mock_urlopen):
@@ -1485,7 +1485,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             target_name="the ukplace regulars", is_group=True, openai_key="test-key",
         )
         user = _sent_payload(mock_urlopen, 4)["messages"][1]["content"]
-        self.assertIn("VARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): Art style", user)
+        self.assertIn("VARIETY DIRECTIVES (tie-breaker ONLY, for character-sheet fields you can neither evidence nor deduce): Composition", user)
+        self.assertIn("CHOOSE THE MEDIUM YOURSELF", system)
         self.assertIn("Every listed person appears, each with their own gag", user)
         system = _sent_payload(mock_urlopen, 4)["messages"][0]["content"]
         self.assertIn("EVERY ONE OF THEM MUST APPEAR", system)
