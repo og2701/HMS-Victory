@@ -1377,7 +1377,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         mock_roster.assert_called_once()
         self.assertIn("SERVER MEMBER ROSTER", mock_synth.call_args[1]["context"])
         self.assertEqual(mock_synth.call_args[1]["target_name"], "the ukplace regulars")
-        mock_gen_img.assert_called_once_with("Johnny and oggers at a pub quiz")
+        mock_gen_img.assert_called_once()
+        self.assertEqual(mock_gen_img.call_args[0][0], "Johnny and oggers at a pub quiz")
 
     @patch("lib.features.chat_responder.fetch_most_active_users")
     async def test_build_server_overview_context(self, mock_active):
@@ -1655,7 +1656,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         mock_synth.assert_called_once()
         self.assertIn("lobotomy table", mock_synth.call_args[1]["context"])
         self.assertIsNone(mock_synth.call_args[1]["target_name"])
-        mock_gen_img.assert_called_once_with("A weathered warship strapped to an operating table...")
+        mock_gen_img.assert_called_once()
+        self.assertEqual(mock_gen_img.call_args[0][0], "A weathered warship strapped to an operating table...")
         self.assertIn("impending lobotomy", message.reply.call_args[0][0])
         self.assertNotIn("strain your eyes", message.reply.call_args[0][0])
 
@@ -1905,7 +1907,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         # and the portrait is of Lou, with the delegated request as the prompt
         self.assertEqual(mock_synth.call_args[1]["target_id"], 1022)
         self.assertIn("make him a fursona", mock_synth.call_args[1]["prompt"])
-        mock_gen_img.assert_called_once_with("Lou Skunt as a skunk fursona")
+        mock_gen_img.assert_called_once()
+        self.assertEqual(mock_gen_img.call_args[0][0], "Lou Skunt as a skunk fursona")
 
     @patch("lib.features.chat_responder.generate_image_openai")
     @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
@@ -2093,7 +2096,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             await handle_one_off_owner_mention(client, message)
 
         self.assertEqual(mock_synth.call_count, 2)
-        mock_gen_img.assert_called_once_with("Oggers as a pirate")
+        mock_gen_img.assert_called_once()
+        self.assertEqual(mock_gen_img.call_args[0][0], "Oggers as a pirate")
         self.assertIn("Arr.", message.reply.call_args[0][0])
 
         # Two failures: raw prompt fallback
@@ -2556,7 +2560,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kw["target_name"], "HMS Victory (yourself)")
         self.assertIn("WHAT THE SERVER SAYS ABOUT YOU", kw["context"])
         self.assertIn("vic ragebaiting", kw["context"])
-        mock_gen_img.assert_called_once_with("A weathered first-rate ship of the line slumped at a pub quiz table")
+        mock_gen_img.assert_called_once()
+        self.assertEqual(mock_gen_img.call_args[0][0], "A weathered first-rate ship of the line slumped at a pub quiz table")
 
     @patch("urllib.request.urlopen")
     def test_synthesize_bot_self_portrait_brief(self, mock_urlopen):
@@ -2882,7 +2887,17 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("2) Kian: rugged", out)
         self.assertIn("Peugeot 508 GT toy", out)
         self.assertIn("posed 1970s studio family portrait", out)
-        self.assertTrue(out.endswith("No other people. No invented names or text beyond small name labels."))
+        self.assertIn("NO TEXT ANYWHERE in the image", out)
+        self.assertIn("exactly two arms", out)
+        # quoted chat lines are stripped so they aren't painted as speech bubbles
+        self.assertNotIn("Chicken strip wraps and chips", out)
+        self.assertNotIn("Come to Bradford", out)
+        self.assertIn("1) Chin as the mum: cheerful, holding a chicken strip wrap. Chin with a huge wrap", out)
+        # big groups: one prop each
+        many = [{"name": f"P{i}", "role": None, "look": "x", "gag": "y", "references": ["r1", "r2", "r3"]} for i in range(8)]
+        out2 = assemble_group_prompt("", "s", "st", many)
+        self.assertEqual(out2.count("with r1"), 8)
+        self.assertNotIn("r2", out2)
 
     @patch("urllib.request.urlopen")
     def test_group_prompt_is_assembled_from_characters(self, mock_urlopen):
@@ -2898,6 +2913,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
                                                           target_name="everyone", is_group=True, openai_key="test-key")
         self.assertIn("1) A as dad: tall. tea", img)
         self.assertIn("2) B as nan: small. bingo", img)
+        self.assertNotIn("small name labels", img)
         self.assertIn("Exactly 2 people", img)
         # caption budget grew with the who's-who
         self.assertGreater(_sent_payload(mock_urlopen, 1)["max_tokens"], 120)
@@ -2962,6 +2978,33 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(len(capped), 320)
         self.assertTrue(capped.endswith("(and so on.)"))
         self.assertEqual(cap_caption_length("short", 300), "short")
+
+    @patch("lib.features.chat_responder.generate_image_openai", return_value=(b"img", 20, 200))
+    async def test_produce_image_passes_quality_and_size(self, mock_gen):
+        from lib.features.chat_responder import produce_image
+        await produce_image("x", quality="medium", size="1536x1024")
+        self.assertEqual(mock_gen.call_args[0][1:], ("medium", "1536x1024"))
+        await produce_image("x")
+        self.assertEqual(mock_gen.call_args[0][1:], ("low", "1024x1024"))
+
+    @patch("lib.features.chat_responder.produce_image", new_callable=AsyncMock, return_value=(b"img", 20, 200, "p"))
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt", return_value=("p", "cap", 10, 5))
+    @patch("lib.features.chat_responder.build_group_roster_context", new_callable=AsyncMock, return_value="ROSTER:\nMEMBER: A (<@1>)\nMEMBER: B (<@2>)\nMEMBER: C (<@3>)")
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    async def test_plan_path_groups_render_at_group_quality(self, mock_find, mock_gather, _ch, _act, mock_roster, mock_synth, mock_produce):
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> family photo of everyone in chat now")
+        message.channel.id = 123; message.guild = MagicMock(); message.guild.name = "ukplace"
+        plan = self._plan(request="family photo", subjects=[{"kind": "group", "user_id": None, "name": None, "note": "present"}])
+        with patch("lib.features.chat_responder.plan_mention", return_value=plan), \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            await handle_one_off_owner_mention(client, message)
+        self.assertEqual(mock_produce.call_args[1], {"quality": "medium", "size": "1536x1024"})
 
     def test_classify_mention_intent_without_key_returns_none(self):
         from lib.features.chat_responder import classify_mention_intent
@@ -3106,7 +3149,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         fetched_ids = [c[0][1] for c in mock_fetch_chat.call_args_list]
         self.assertIn(555, fetched_ids)
         self.assertNotIn(USERS.OGGERS, fetched_ids)
-        mock_gen_img.assert_called_once_with("A cheeky chap clutching Jaffa cakes")
+        mock_gen_img.assert_called_once()
+        self.assertEqual(mock_gen_img.call_args[0][0], "A cheeky chap clutching Jaffa cakes")
 
     @patch("lib.features.chat_responder.generate_image_openai")
     @patch("lib.features.chat_responder.edit_image_openai")
@@ -3197,7 +3241,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("off to Lisbon again", mock_synth_edit.call_args[1]["context"])
         # synth said "new", so it regenerates rather than edits the old pixels
         mock_edit_img.assert_not_called()
-        mock_gen_img.assert_called_once_with("A globe-trotting pub crawler with a passport and a pint")
+        mock_gen_img.assert_called_once()
+        self.assertEqual(mock_gen_img.call_args[0][0], "A globe-trotting pub crawler with a passport and a pint")
         self.assertIn("file", message.reply.call_args[1])
         self.assertIn("Revised. No tea.", message.reply.call_args[0][0])
         self.assertTrue(any(c[0][0] == "gpt-4o-mini" for c in mock_usage.call_args_list))
@@ -3226,7 +3271,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             res = await handle_one_off_owner_mention(client, message)
 
         self.assertTrue(res)
-        mock_gen_img.assert_called_once_with("A portrait of Oggers")
+        mock_gen_img.assert_called_once()
+        self.assertEqual(mock_gen_img.call_args[0][0], "A portrait of Oggers")
         self.assertEqual(mock_synth.call_args[1]["target_name"], "ogme01")
         self.assertEqual(mock_fetch_chat.call_args[0][1], USERS.OGGERS)
 

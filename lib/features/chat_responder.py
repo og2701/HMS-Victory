@@ -1205,7 +1205,7 @@ RULES:
 4. Everything in the image must come from the request and the history. Do not add nationality, patriotic, military, naval or period imagery unless the history is genuinely about it.
 5. The payload states whether HMS VICTORY IS IN THE PICTURE. If yes, add a second character: a weathered 18th-century first-rate ship of the line with a stern, unimpressed personality (the ship itself with a disapproving air, or a stern naval officer figurehead), interacting with the person the way their HISTORY BETWEEN transcript suggests. If no, there must be no ship, sailors or naval officers of any kind.
 6. If BANNED ELEMENTS are listed, none of them may appear in the image in any form: not the prop, not the food, not the slogan, not the setting, not the gag, not a synonym of it. They were used in previous images of this person. The history always has more material; dig for it. A prompt containing banned elements is rejected and you will be asked again.
-7. GROUP PICTURES: if a SERVER MEMBER ROSTER is provided, the people in it are the ONLY people in the image and EVERY ONE OF THEM MUST APPEAR with roughly equal prominence. If the request assigns ROLES (a family photo with family roles, a band, a heist crew, a football team, a royal court), give every roster member a specific role that fits their dossier (the dad, the mum, the weird uncle, the golden child, the nan, the dog...), put the role in their entry, and stage them accordingly. "Family photo", "group photo", "school photo", "team photo" mean the classic posed studio-portrait composition (rows, matching awkward smiles, a backdrop), illustrated in the chosen style; not a real photograph unless realism was explicitly asked for. Give each a distinct, recognisable caricature and their OWN gag drawn from their own dossier, once each, all in one scene that connects them (something they're doing together, or side by side reacting to each other). Do not let one person's material take over the picture. Never invent extra people, usernames, handles or names. Text in the image is limited to the roster members' names as small labels, or no text at all; never fabricate chat messages, channel lists or UI. The word limit for a group is 40 words per person plus 40 for the scene.
+7. GROUP PICTURES: if a SERVER MEMBER ROSTER is provided, the people in it are the ONLY people in the image and EVERY ONE OF THEM MUST APPEAR with roughly equal prominence. If the request assigns ROLES (a family photo with family roles, a band, a heist crew, a football team, a royal court), give every roster member a specific role that fits their dossier (the dad, the mum, the weird uncle, the golden child, the nan, the dog...), put the role in their entry, and stage them accordingly. "Family photo", "group photo", "school photo", "team photo" mean the classic posed studio-portrait composition (rows, matching awkward smiles, a backdrop), illustrated in the chosen style; not a real photograph unless realism was explicitly asked for. Give each a distinct, recognisable caricature and their OWN gag drawn from their own dossier, once each, all in one scene that connects them (something they're doing together, or side by side reacting to each other). Do not let one person's material take over the picture. Never invent extra people, usernames, handles or names. NO TEXT in group pictures at all (no name labels, no speech bubbles, no signs); the caption names who is who. Never fabricate chat messages, channel lists or UI. The word limit for a group is 40 words per person plus 40 for the scene.
 8. In any image, never render made-up usernames, handles, screen names or chat text. If you need labels, use only real names given in the payload.
 9. LOOKS COME FROM THE MESSAGES FIRST. Before writing the prompt, fill in a character sheet from the evidence in their messages and name. THE IMAGE PROMPT MUST THEN SPELL OUT THAT LOOK IN WORDS (age, build, hair, face, expression): a sheet that says "brunette, handsome" and a prompt that never mentions hair or face is a failure, because the generator only sees the prompt.
    - If the person has JUST described themselves in the recent messages (especially boastfully or with a wink: "for reference I am extremely tall, well built, handsome"), that self-description IS the gag. Either draw them exactly as claimed to a ludicrous degree, or draw the claim and the reality side by side. Do not ignore it.
@@ -1502,8 +1502,11 @@ def assemble_group_prompt(image_prompt: str, scene: Optional[str], style: Option
         name = (ch.get("name") or f"person {i}").strip()
         role = (ch.get("role") or "").strip()
         look = (ch.get("look") or "").strip()
-        gag = (ch.get("gag") or "").strip()
-        refs = [str(r).strip() for r in (ch.get("references") or []) if str(r).strip()]
+        gag = _strip_quotes(ch.get("gag") or "")
+        refs = [_strip_quotes(str(r)) for r in (ch.get("references") or []) if str(r).strip()]
+        refs = [r for r in refs if r]
+        if len(chars) > 6:
+            refs = refs[:1]   # a dozen people with three props each is a wall of clutter the model can't resolve
         label = name + (f" as {role}" if role else "")
         if look:
             bits.append(look)
@@ -1514,8 +1517,18 @@ def assemble_group_prompt(image_prompt: str, scene: Optional[str], style: Option
         people.append(f"{i}) {label}: " + ". ".join(bits))
     if people:
         parts.append(f"Exactly {len(people)} people, every one of them clearly visible: " + " ".join(people))
-    parts.append("No other people. No invented names or text beyond small name labels.")
+    parts.append("No other people")
+    parts.append("Every person has exactly two arms, two hands and one head, correctly proportioned; no merged or extra limbs")
+    parts.append("NO TEXT ANYWHERE in the image: no name labels, no signs, no speech bubbles, no captions, no writing on clothes or objects")
     return ". ".join(x.rstrip(".") for x in parts if x) + "."
+
+
+def _strip_quotes(text: str) -> str:
+    """Drop quoted chat lines and 'referencing ...' tails from a gag/reference so the image model doesn't paint them as text."""
+    out = re.sub(r"[\"“”‘’']([^\"“”‘’']{6,})[\"“”‘’']", "", text or "")
+    out = re.sub(r"\b(?:referencing|quoting|quote|from the message|from their message|as they said|citing)\b.*$", "", out, flags=re.IGNORECASE)
+    out = re.sub(r"\s*[,:;]\s*$", "", out)
+    return re.sub(r"\s{2,}", " ", out).strip(" ,.;:")
 
 
 _LAST_CHARACTERS: List[Any] = [None]  # characters from the most recent group prompt, handed to the caption writer
@@ -3979,7 +3992,13 @@ def reference_lead(roles: Optional[List[str]], count: int) -> str:
     return f"Using the attached images as references ({listed}): "
 
 
-async def produce_image(image_prompt: str, reference_urls: Optional[List[str]] = None, reference_roles: Optional[List[str]] = None) -> Tuple[bytes, int, int, str]:
+async def produce_image(
+    image_prompt: str,
+    reference_urls: Optional[List[str]] = None,
+    reference_roles: Optional[List[str]] = None,
+    quality: str = IMAGE_GEN_QUALITY,
+    size: str = IMAGE_GEN_SIZE,
+) -> Tuple[bytes, int, int, str]:
     """Make the image: edit endpoint with any reference attachments, else plain generation.
 
     If the safety system rejects it, rewrite the prompt once (cheap text call) and try the same way again.
@@ -3996,7 +4015,7 @@ async def produce_image(image_prompt: str, reference_urls: Optional[List[str]] =
         if ref_blobs:
             lead = reference_lead(reference_roles, len(ref_blobs))
             try:
-                out = await asyncio.to_thread(edit_image_openai, ref_blobs, lead + prompt)
+                out = await asyncio.to_thread(edit_image_openai, ref_blobs, lead + prompt, quality, size)
                 logger.info("Generated via image edit with %d reference attachment(s)", len(ref_blobs))
                 return out
             except Exception as ref_err:
@@ -4008,6 +4027,7 @@ async def produce_image(image_prompt: str, reference_urls: Optional[List[str]] =
                         out = await asyncio.to_thread(
                             edit_image_openai, ref_blobs[-1],
                             "Using the attached image as the reference for the subject's appearance and likeness: " + prompt,
+                            quality, size,
                         )
                         logger.info("Generated via image edit with the last reference attachment only")
                         return out
@@ -4015,7 +4035,7 @@ async def produce_image(image_prompt: str, reference_urls: Optional[List[str]] =
                         if classify_image_failure(ref_err2) == "rejected":
                             raise
                         logger.warning("Single-reference edit failed too (%s); falling back to plain generation", ref_err2)
-        return await asyncio.to_thread(generate_image_openai, prompt)
+        return await asyncio.to_thread(generate_image_openai, prompt, quality, size)
 
     try:
         img, p, c = await _attempt(image_prompt)
@@ -4078,6 +4098,9 @@ def looks_like_group_request(prompt: str) -> bool:
 
 
 MAX_TAGGED_SUBJECTS = 12  # explicit @tags in one request; beyond this a single image stops being drawable
+IMAGE_GEN_QUALITY_GROUP = "medium"   # several people in one frame fall apart at 'low'
+IMAGE_GEN_SIZE_GROUP = "1536x1024"   # landscape gives each person more pixels
+GROUP_RENDER_THRESHOLD = 3            # from this many people, use the group settings
 
 _RANDOM_PICK_RE = re.compile(
     r"\b(?:at\s+random|randomly|random\s+(?:user|person|member|someone|victim)|pick\s+(?:someone|a\s+user|a\s+member|one\s+of|anyone)|"
@@ -5043,7 +5066,14 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             logger.info("Direct mention image generation request from %s (%s): %r (image prompt: %r)", caller_name, caller_id, clean_prompt, image_prompt)
 
             try:
-                img_bytes, p_tokens, c_tokens, image_prompt = await produce_image(image_prompt, reference_images, reference_roles)
+                roster_n = len(re.findall(r"^MEMBER: ", context or "", flags=re.M)) if is_group else 0
+                if roster_n >= GROUP_RENDER_THRESHOLD:
+                    logger.info("Group of %d: rendering at %s quality, %s", roster_n, IMAGE_GEN_QUALITY_GROUP, IMAGE_GEN_SIZE_GROUP)
+                    img_bytes, p_tokens, c_tokens, image_prompt = await produce_image(
+                        image_prompt, reference_images, reference_roles, quality=IMAGE_GEN_QUALITY_GROUP, size=IMAGE_GEN_SIZE_GROUP,
+                    )
+                else:
+                    img_bytes, p_tokens, c_tokens, image_prompt = await produce_image(image_prompt, reference_images, reference_roles)
                 record_user_image_generation(caller_id)
                 live_chat_manager.record_usage(IMAGE_GEN_MODEL, p_tokens, c_tokens, is_reply=True)
 
