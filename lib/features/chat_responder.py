@@ -4151,10 +4151,18 @@ MAX_TAGGED_SUBJECTS = 12  # explicit @tags in one request; beyond this a single 
 
 _WORD_NUMBERS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
                  "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
+# The noun is what keeps this honest: "5 different styles" is also a number followed by a plural,
+# and reading it as a head-count would hand the writer five strangers. So only words that mean
+# "a person in this server" count, and the superlative may sit on either side of the number
+# ("the 12 biggest chatters", "the top 5 yappers").
+_GROUP_NOUNS = (r"people|persons|members|users|regulars|lads|blokes|posters|chatters|yappers|talkers|"
+                r"spammers|commenters|contributors|personalities|figures|characters|names")
+_GROUP_SUPERLATIVES = r"most|top|main|biggest|best|worst|least|loudest|busiest|largest|active"
 _GROUP_COUNT_RE = re.compile(
+    r"(?:\b(?:" + _GROUP_SUPERLATIVES + r")\s+)?"
     r"\b(\d{1,2}|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+"
-    r"(?:(?:most|top|main|biggest|best|worst|least)\s+)?(?:\w+\s+){0,2}?"
-    r"(?:people|persons|members|users|regulars|lads|posters|personalities|figures|characters)\b",
+    r"(?:(?:" + _GROUP_SUPERLATIVES + r")\s+)?(?:\w+\s+){0,2}?"
+    r"(?:" + _GROUP_NOUNS + r")\b",
     re.IGNORECASE,
 )
 

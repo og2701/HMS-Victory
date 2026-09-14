@@ -4178,10 +4178,18 @@ class TestGroupSizeAndNameLabels(unittest.TestCase):
         self.assertEqual(requested_group_size("family photo of the 4 most prominent people of the server"), 4)
         self.assertEqual(requested_group_size("draw the six main members of the server"), 6)
 
+    def test_a_head_count_reads_however_the_number_is_phrased(self):
+        """'12 biggest chatters' is the same request as '12 most prominent people'."""
+        from lib.features.chat_responder import requested_group_size
+        self.assertEqual(requested_group_size("do a group photo of 12 biggest chatters in the server"), 12)
+        self.assertEqual(requested_group_size("draw the top 5 yappers"), 5)
+        self.assertEqual(requested_group_size("a family photo of the 4 biggest chatters"), 4)
+
     def test_a_count_that_is_not_a_head_count_is_ignored(self):
         """'5 different styles' is not five people, and reading it as one would empty the picture."""
         from lib.features.chat_responder import requested_group_size
         self.assertIsNone(requested_group_size("draw the server in 5 different styles"))
+        self.assertIsNone(requested_group_size("draw the 3 best memes of the week"))
         self.assertIsNone(requested_group_size("draw the server regulars"))
 
     def test_a_head_count_never_exceeds_what_is_drawable(self):
