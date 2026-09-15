@@ -224,8 +224,8 @@ async def handle_hof_context_menu(interaction: discord.Interaction, message: dis
         await interaction.response.send_message("Messages from the Hall of Fame thread can't be added.", ephemeral=True)
         return
 
-    if message.author.bot and message.author.id != client.user.id:
-        await interaction.response.send_message("Other bot messages can't be added to the Hall of Fame.", ephemeral=True)
+    if message.author.bot:
+        await interaction.response.send_message("Bot messages can't be added to the Hall of Fame.", ephemeral=True)
         return
 
     has_snapshots = bool(getattr(message, "message_snapshots", None))

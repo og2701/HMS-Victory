@@ -2041,7 +2041,7 @@ async def check_hall_of_fame(client, payload):
                 
         try:
             message = await channel.fetch_message(payload.message_id)
-            if message.author.bot and message.author.id != client.user.id:
+            if message.author.bot:
                 return
             
             # Prevent old messages from qualifying
@@ -2071,10 +2071,10 @@ async def check_hall_of_fame(client, payload):
         if total_reactions < 6:
             return
 
-        # Hall of Fame is for organic community posts and HMS Victory highlights.
-        # Skip other bot/webhook posts, the HOF thread itself, and announcement channels.
+        # Hall of Fame is for organic community posts. Skip bot/webhook posts and
+        # announcement channels (which naturally rack up reactions but aren't HoF-worthy).
         ch = message.channel
-        if ((message.author.bot and message.author.id != client.user.id)
+        if (message.author.bot
                 or getattr(message, "webhook_id", None)
                 or ch.id == getattr(CHANNELS, "HALL_OF_FAME_THREAD", None)
                 or getattr(ch, "type", None) == discord.ChannelType.news

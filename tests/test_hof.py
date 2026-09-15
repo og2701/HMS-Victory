@@ -89,7 +89,7 @@ class TestHallOfFameBotMessages(unittest.IsolatedAsyncioTestCase):
     @patch("lib.bot.event_handlers.award_badge_with_notify", new_callable=AsyncMock)
     @patch("lib.features.ukp_rewards.award_hof_reward", new_callable=AsyncMock)
     @patch("commands.social.hof.send_hof_post", new_callable=AsyncMock)
-    async def test_bot_own_message_qualifies_without_badge_or_ukp(
+    async def test_bot_own_message_ignored(
         self, mock_send_hof, mock_ukp, mock_badge, mock_save, mock_load
     ):
         # Message from HMS Victory itself
@@ -125,10 +125,9 @@ class TestHallOfFameBotMessages(unittest.IsolatedAsyncioTestCase):
         payload = MagicMock(channel_id=channel.id, message_id=msg.id)
         await check_hall_of_fame(self.client, payload)
 
-        # Should send HOF post
-        mock_send_hof.assert_called_once_with(self.client, thread, msg)
-        mock_save.assert_called_once()
-        # Should NOT award badge or UKP to the bot
+        # Should NOT send HOF post, save, or award badges
+        mock_send_hof.assert_not_called()
+        mock_save.assert_not_called()
         mock_badge.assert_not_called()
         mock_ukp.assert_not_called()
 
@@ -176,41 +175,25 @@ class TestHallOfFameBotMessages(unittest.IsolatedAsyncioTestCase):
         mock_badge.assert_called_once_with(self.client, 424242, 'hof')
         mock_ukp.assert_called_once_with(self.client, 424242)
 
-    @patch("commands.social.hof.load_json_file", return_value=[])
-    @patch("commands.social.hof.save_json_file")
-    @patch("lib.bot.event_handlers.award_badge_with_notify", new_callable=AsyncMock)
-    @patch("lib.features.ukp_rewards.award_hof_reward", new_callable=AsyncMock)
-    @patch("commands.social.hof.send_hof_post", new_callable=AsyncMock)
-    async def test_context_menu_allows_bot_own_message(
-        self, mock_send_hof, mock_ukp, mock_badge, mock_save, mock_load
-    ):
+    async def test_context_menu_rejects_bot_own_message(self):
         # Context menu used by Deputy PM on the bot's own message
         interaction = MagicMock()
         interaction.client = self.client
         role = MagicMock(id=ROLES.DEPUTY_PM)
         interaction.user.roles = [role]
-        interaction.response.defer = AsyncMock()
-        interaction.followup.send = AsyncMock()
-
-        thread = MagicMock()
-        self.client.get_channel = MagicMock(return_value=thread)
+        interaction.response.send_message = AsyncMock()
 
         msg = MagicMock()
         msg.id = 111222
         msg.author.bot = True
         msg.author.id = self.bot_id
         msg.channel.id = 123456
-        msg.content = "I am a sentient toaster"
-        msg.attachments = []
-        msg.embeds = []
 
         await handle_hof_context_menu(interaction, msg)
 
-        mock_send_hof.assert_called_once_with(self.client, thread, msg)
-        mock_save.assert_called_once()
-        mock_badge.assert_not_called()
-        mock_ukp.assert_not_called()
-        interaction.followup.send.assert_called_with("Added to the Hall of Fame!", ephemeral=True)
+        interaction.response.send_message.assert_called_with(
+            "Bot messages can't be added to the Hall of Fame.", ephemeral=True
+        )
 
     async def test_context_menu_rejects_other_bot(self):
         interaction = MagicMock()
@@ -228,7 +211,7 @@ class TestHallOfFameBotMessages(unittest.IsolatedAsyncioTestCase):
         await handle_hof_context_menu(interaction, msg)
 
         interaction.response.send_message.assert_called_with(
-            "Other bot messages can't be added to the Hall of Fame.", ephemeral=True
+            "Bot messages can't be added to the Hall of Fame.", ephemeral=True
         )
 
     @patch("lib.core.log_functions.screenshot_html", new_callable=AsyncMock, return_value=b"fake-png-bytes")
