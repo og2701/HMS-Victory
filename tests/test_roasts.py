@@ -341,7 +341,8 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(sent.kwargs["allowed_mentions"].everyone)
         self.assertEqual(self.award.await_count, 2)
         self.assertEqual(len(R.load_memory(10, TARGET.id)["personal"]), 1)
-        self.api.assert_awaited_once()
+        # One call to draft, one to sharpen; the sharpen reply here is unusable so the draft stands.
+        self.assertEqual(self.api.await_count, 2)
         self.interaction.followup.send.assert_not_awaited()
 
     async def test_empty_history_refunds_and_does_not_call_model(self):
@@ -406,6 +407,30 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
             release.set()
             await asyncio.gather(*requests)
         self.assertEqual(self.interaction.channel.send.await_count, self.command.ROAST_DAILY_LIMIT)
+
+    async def test_sharpened_rewrite_is_posted_and_remembered(self):
+        drafted, sharper = self.response(), self.response(content=json.dumps({"text": "Much harder second pass."}))
+        self.api.side_effect = [drafted, sharper]
+        await self.command.roast(self.interaction, user=TARGET)
+        self.assertIn("Much harder second pass.", self.interaction.channel.send.call_args.args[0])
+        self.assertEqual(R.load_memory(10, TARGET.id)["personal"][0]["text"], "Much harder second pass.")
+        payload = json.loads(self.api.call_args.kwargs["messages"][1]["content"][0]["text"])
+        self.assertEqual(payload["selected_draft"]["text"], drafts()["candidates"][0]["text"])
+
+    async def test_unusable_or_failed_rewrite_still_posts_the_selected_draft(self):
+        unusable = [json.dumps({"text": "word " * 200}), json.dumps({"text": "two\nlines"}),
+                    json.dumps({"text": "hello <@123>"}), json.dumps({"text": "  "}), "not json"]
+        failures = [self.response(content=c) for c in unusable] + [
+            self.response(finish_reason="length"), self.response(refusal="declined"),
+            self.response(content=""), RuntimeError("sharpen outage")]
+        for failure in failures:
+            # Clear the reservation each pass so the daily cap cannot mask a missing delivery.
+            database.DatabaseManager.execute("DELETE FROM roast_usage")
+            self.api.side_effect = [self.response(), failure]
+            await self.command.roast(self.interaction, user=TARGET)
+            self.assertIn(drafts()["candidates"][0]["text"], self.interaction.channel.send.call_args.args[0])
+            self.assertEqual(self.usage(), 1)
+        self.assertEqual(self.interaction.channel.send.await_count, len(failures))
 
     async def test_images_forwarded_and_stray_can_recur_without_cooldown(self):
         self.api.return_value = self.response(content=json.dumps(drafts(stray=True)))
