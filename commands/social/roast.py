@@ -70,25 +70,6 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
             )
             return
 
-        # The drafting call grades its own work, so it cannot tell a composed
-        # paragraph from a cruel one. Hand the winner back with that verdict attached.
-        try:
-            sharpened = await client.chat.completions.create(
-                model="gpt-5.4",
-                messages=[
-                    {"role": "system", "content": roasts.SHARPEN_PROMPT},
-                    {"role": "user", "content": roasts.sharpen_content(
-                        evidence, images, memory, candidate, stray_ids)},
-                ],
-                response_format=roasts.sharpen_format(),
-                max_completion_tokens=2048,
-            )
-            rewrite = sharpened.choices[0]
-            if rewrite.finish_reason == "stop" and not rewrite.message.refusal and rewrite.message.content:
-                candidate = roasts.apply_sharpened(rewrite.message.content, candidate)
-        except Exception:
-            logger.warning("Could not sharpen roast; posting the selected draft", exc_info=True)
-
         header = (f"🔥 {user.mention} 🔥\n"
                   f"-# roasted at {interaction.user.display_name}'s request\n\n")
         await interaction.channel.send(
