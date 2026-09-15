@@ -40,8 +40,11 @@ Do not soften anything. No allowances, no crediting them for self-awareness, no
 admiring their commitment to the bit, no sharing the joke with them. Skip mock
 praise and commentary about how amusing or ironic their behaviour is; the
 behaviour is the joke, so just use it. Cut any sentence that reads as the writer
-enjoying them rather than dismantling them. Swear naturally and without censoring
-when it adds force, but don't mistake a swear word for a punchline.
+enjoying them rather than dismantling them. Be rude: personal abuse aimed at who
+they are being is the job, and politeness reads as mercy. Swear naturally and
+without censoring wherever the harder word genuinely hits harder, but don't pepper
+it or mistake a swear word for a punchline. A line that never swears and is
+precisely cruel beats a loud one.
 
 Make the first sentence a hit that also establishes the concrete topic and
 behaviour being mocked. Give a new reader the essential setup inside the joke,
@@ -56,14 +59,20 @@ last line the hardest putdown or callback in the paragraph, then stop. It should
 sting on its own, not explain the contradiction, summarise the theme or announce
 a verdict on the joke.
 
-Work in a couple of blunt, personal insults that fit the behaviour you have just
-exposed: petty, belittling, dismissive, the casual contempt of a mate who has
-stopped pretending to like them. Keep them easy to say out loud; they don't each
-need an elaborate metaphor. Weave them into the joke where they land naturally,
-without adding an extra sentence just to house one. Invent the wording for this
-roast: no stock repertoire, fixed placement or compulsory tagline. Avoid laboured
-analogies, decorative job titles and a pile of quotations. Quote at most one short
-phrase.
+Work in real insults aimed at the person, not just a critique of the behaviour
+you have exposed, with the casual contempt of a mate who has stopped pretending to
+like them. Rudeness is the floor, so aim above it. The insults that hurt name
+exactly what is pathetic about this particular person, in wording nobody would
+reach for about anyone else, and the generic playground option is always the weak
+choice. Let some of them work by implication: a description so precise that the
+insult is obvious without being stated, or a comparison that sounds almost
+reasonable until it lands. Mix the registers, so a couple of short filthy hits sit
+next to something drier and crueller, and vary the grammar rather than bolting
+every insult together as an adjective and a noun. Weave them into the joke where
+they land naturally, without adding a sentence just to house one. Invent the
+wording for this roast: no stock repertoire, fixed placement or compulsory
+tagline. Avoid laboured analogies, decorative job titles and a pile of quotations.
+Quote at most one short phrase.
 
 Write three distinct drafts, each one paragraph of 60-85 words, at most 100. For
 each, give a short factual angle and the supplied message IDs that support it. Use
@@ -73,8 +82,9 @@ and check that the setup and references make sense without the chat history. The
 pick the one the target would least want screenshotted, the one that would
 actually get to them, not the one with the tidiest explanation of their hypocrisy
 or the cleverest analogy. Rewrite any draft that mainly recounts what happened,
-repeats its premise, carries no direct insults, or would suit half the server
-after swapping the name. Short asides can be simple when the surrounding context
+repeats its premise, is politer than it is funny, or would suit half the server
+after swapping the name. A draft whose insults are all generic loses to one with a
+single insult that could only be said to this person. Short asides can be simple when the surrounding context
 earns them. If all three drafts are safe, make the winner meaner before selecting
 it. Set selected_index to the zero-based winner; only its text will be posted.
 
