@@ -147,8 +147,18 @@ class IcebergAddModal(discord.ui.Modal):
             embed.add_field(name="Level", value=level, inline=True)
             embed.add_field(name="Price Paid", value=f"{actual_price} UKPence", inline=True)
             
-            await staff_channel.send(embed=embed, view=view)
+            msg = await staff_channel.send(embed=embed, view=view)
+            DatabaseManager.execute(
+                "UPDATE pending_iceberg_submissions SET message_id = ? WHERE id = ?",
+                (str(msg.id), submission_id)
+            )
             await interaction.response.send_message("✅ Your submission has been sent to staff for approval!", ephemeral=True)
+
+ICEBERG_STAFF_ROLES = {ROLES.CABINET, ROLES.DEPUTY_PM, ROLES.PCSO, ROLES.MINISTER}
+
+def _is_iceberg_staff(user: discord.Member) -> bool:
+    return any(role.id in ICEBERG_STAFF_ROLES for role in getattr(user, "roles", []))
+
 
 class IcebergApprovalView(View):
     def __init__(self, submission_id: int):
@@ -158,11 +168,13 @@ class IcebergApprovalView(View):
         # Add custom IDs for persistence
         self.approve_button.custom_id = f"iceberg_approve:{submission_id}"
         self.deny_button.custom_id = f"iceberg_deny:{submission_id}"
+        self.edit_text_button.custom_id = f"iceberg_edit_text:{submission_id}"
+        self.amend_level_button.custom_id = f"iceberg_amend_level:{submission_id}"
 
     @discord.ui.button(label="Approve", style=discord.ButtonStyle.green, emoji="✅")
     async def approve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not any(role.id in [ROLES.CABINET, ROLES.DEPUTY_PM] for role in interaction.user.roles):
-            return await interaction.response.send_message("❌ Only staff can approve iceberg entries.", ephemeral=True)
+        if not _is_iceberg_staff(interaction.user):
+            return await interaction.response.send_message("❌ Only staff and PCSOs can approve iceberg entries.", ephemeral=True)
         
         await interaction.response.defer()
         
@@ -213,8 +225,8 @@ class IcebergApprovalView(View):
 
     @discord.ui.button(label="Deny", style=discord.ButtonStyle.red, emoji="❌")
     async def deny_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not any(role.id in [ROLES.CABINET, ROLES.DEPUTY_PM] for role in interaction.user.roles):
-            return await interaction.response.send_message("❌ Only staff can deny iceberg entries.", ephemeral=True)
+        if not _is_iceberg_staff(interaction.user):
+            return await interaction.response.send_message("❌ Only staff and PCSOs can deny iceberg entries.", ephemeral=True)
 
         # Fetch submission info before opening modal
         row = DatabaseManager.fetch_one("SELECT user_id, text, price, status FROM pending_iceberg_submissions WHERE id = ?", (self.submission_id,))
@@ -287,6 +299,105 @@ class IcebergApprovalView(View):
                     pass
 
         await interaction.response.send_modal(IcebergDenyReasonModal())
+
+    @discord.ui.button(label="Edit Text", style=discord.ButtonStyle.secondary, emoji="✏️")
+    async def edit_text_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not _is_iceberg_staff(interaction.user):
+            return await interaction.response.send_message("❌ Only staff and PCSOs can edit iceberg entries.", ephemeral=True)
+
+        row = DatabaseManager.fetch_one("SELECT user_id, text, level, status FROM pending_iceberg_submissions WHERE id = ?", (self.submission_id,))
+        if not row or row[3] != 'pending':
+            return await interaction.response.send_message("❌ Submission not found or already processed.", ephemeral=True)
+
+        user_id, text, level, status = row
+
+        class IcebergEditTextModal(discord.ui.Modal):
+            def __init__(modal_self):
+                super().__init__(title="Edit Iceberg Text")
+                modal_self.text_input = discord.ui.TextInput(
+                    label="Iceberg Text",
+                    placeholder="Enter updated text for this iceberg entry...",
+                    default=text,
+                    min_length=1,
+                    max_length=50,
+                    required=True
+                )
+                modal_self.add_item(modal_self.text_input)
+
+            async def on_submit(modal_self, modal_interaction: discord.Interaction):
+                new_text = modal_self.text_input.value.strip()
+                if not new_text:
+                    return await modal_interaction.response.send_message("❌ Text cannot be empty.", ephemeral=True)
+
+                current_row = DatabaseManager.fetch_one("SELECT status FROM pending_iceberg_submissions WHERE id = ?", (self.submission_id,))
+                if not current_row or current_row[0] != 'pending':
+                    return await modal_interaction.response.send_message("❌ Submission not found or already processed.", ephemeral=True)
+
+                DatabaseManager.execute("UPDATE pending_iceberg_submissions SET text = ? WHERE id = ?", (new_text, self.submission_id))
+
+                embed = modal_interaction.message.embeds[0]
+                for i, field in enumerate(embed.fields):
+                    if field.name == "Text":
+                        embed.set_field_at(i, name="Text", value=new_text, inline=False)
+                        break
+                embed.set_footer(text=f"Last edited by {modal_interaction.user.display_name}")
+
+                await modal_interaction.response.defer()
+                await modal_interaction.edit_original_response(embed=embed, view=self)
+                await modal_interaction.followup.send(f"✅ Updated submission #{self.submission_id} text to: `{new_text}`", ephemeral=True)
+
+        await interaction.response.send_modal(IcebergEditTextModal())
+
+    @discord.ui.button(label="Amend Level", style=discord.ButtonStyle.secondary, emoji="↕️")
+    async def amend_level_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not _is_iceberg_staff(interaction.user):
+            return await interaction.response.send_message("❌ Only staff and PCSOs can amend iceberg levels.", ephemeral=True)
+
+        row = DatabaseManager.fetch_one("SELECT user_id, text, level, status FROM pending_iceberg_submissions WHERE id = ?", (self.submission_id,))
+        if not row or row[3] != 'pending':
+            return await interaction.response.send_message("❌ Submission not found or already processed.", ephemeral=True)
+
+        user_id, text, level, status = row
+
+        class IcebergAmendLevelModal(discord.ui.Modal):
+            def __init__(modal_self):
+                super().__init__(title="Amend Iceberg Level")
+                modal_self.level_input = discord.ui.TextInput(
+                    label="Level (1-6)",
+                    placeholder="1=Tip (Common), 6=Abyss (Deep Lore)",
+                    default=str(level),
+                    min_length=1,
+                    max_length=1,
+                    required=True
+                )
+                modal_self.add_item(modal_self.level_input)
+
+            async def on_submit(modal_self, modal_interaction: discord.Interaction):
+                try:
+                    new_level = int(modal_self.level_input.value.strip())
+                    if not (1 <= new_level <= 6):
+                        raise ValueError()
+                except ValueError:
+                    return await modal_interaction.response.send_message("❌ Level must be an integer between 1 and 6.", ephemeral=True)
+
+                current_row = DatabaseManager.fetch_one("SELECT status FROM pending_iceberg_submissions WHERE id = ?", (self.submission_id,))
+                if not current_row or current_row[0] != 'pending':
+                    return await modal_interaction.response.send_message("❌ Submission not found or already processed.", ephemeral=True)
+
+                DatabaseManager.execute("UPDATE pending_iceberg_submissions SET level = ? WHERE id = ?", (new_level, self.submission_id))
+
+                embed = modal_interaction.message.embeds[0]
+                for i, field in enumerate(embed.fields):
+                    if field.name == "Level":
+                        embed.set_field_at(i, name="Level", value=str(new_level), inline=True)
+                        break
+                embed.set_footer(text=f"Last edited by {modal_interaction.user.display_name}")
+
+                await modal_interaction.response.defer()
+                await modal_interaction.edit_original_response(embed=embed, view=self)
+                await modal_interaction.followup.send(f"✅ Updated submission #{self.submission_id} level to: Level {new_level}", ephemeral=True)
+
+        await interaction.response.send_modal(IcebergAmendLevelModal())
 
 class IcebergAddItem(ShopItem):
     def __init__(self, id: str, name: str, description: str, price: int):

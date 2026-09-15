@@ -3033,6 +3033,48 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             await handle_one_off_owner_mention(client, message)
         self.assertEqual(mock_produce.call_args[1], {"quality": "medium", "size": "1536x1024"})
 
+    @patch("lib.features.chat_responder.produce_image", new_callable=AsyncMock, return_value=(b"img", 20, 200, "p"))
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt", return_value=("p", "cap", 10, 5))
+    @patch("lib.features.chat_responder.build_group_roster_context", new_callable=AsyncMock, return_value="ROSTER:\nMEMBER: A (<@1>)")
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    async def test_the_planners_head_count_sizes_the_roster(self, mock_find, mock_gather, _ch, _act, mock_roster, mock_synth, mock_produce):
+        """'the top 5 NPCs' is five people whatever the request calls them, which is why the planner counts."""
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> image of the top 5 NPCs of the server")
+        message.channel.id = 123; message.guild = MagicMock(); message.guild.name = "ukplace"
+        plan = self._plan(request="image of the top 5 NPCs of the server",
+                          subjects=[{"kind": "group", "user_id": None, "name": None, "note": "regulars", "count": 5}])
+        with patch("lib.features.chat_responder.plan_mention", return_value=plan), \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            await handle_one_off_owner_mention(client, message)
+        self.assertEqual(mock_roster.call_args[1]["max_members"], 5)
+
+    @patch("lib.features.chat_responder.produce_image", new_callable=AsyncMock, return_value=(b"img", 20, 200, "p"))
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt", return_value=("p", "cap", 10, 5))
+    @patch("lib.features.chat_responder.build_group_roster_context", new_callable=AsyncMock, return_value="ROSTER:\nMEMBER: A (<@1>)")
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    async def test_no_head_count_anywhere_fills_the_roster(self, mock_find, mock_gather, _ch, _act, mock_roster, mock_synth, mock_produce):
+        from lib.features.chat_responder import MAX_TAGGED_SUBJECTS
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> draw the server regulars")
+        message.channel.id = 123; message.guild = MagicMock(); message.guild.name = "ukplace"
+        plan = self._plan(request="draw the server regulars",
+                          subjects=[{"kind": "group", "user_id": None, "name": None, "note": "regulars", "count": None}])
+        with patch("lib.features.chat_responder.plan_mention", return_value=plan), \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            await handle_one_off_owner_mention(client, message)
+        self.assertEqual(mock_roster.call_args[1]["max_members"], MAX_TAGGED_SUBJECTS)
+
     @patch("lib.features.chat_responder.generate_image_openai", return_value=(b"img", 20, 200))
     @patch("lib.features.chat_responder.synthesize_contextual_image_prompt", return_value=("Susie the cat", "Behold Susie.", 10, 5))
     @patch("lib.features.chat_responder.build_user_dossier", side_effect=lambda uid, name, *a, **k: f"DOSSIER ON {name} (<@{uid}>): her cat Susie sleeps on her head")
@@ -4201,6 +4243,14 @@ class TestGroupSizeAndNameLabels(unittest.TestCase):
         self.assertEqual(requested_group_size("family photo of the 4 most prominent people of the server"), 4)
         self.assertEqual(requested_group_size("draw the six main members of the server"), 6)
 
+    def test_a_head_count_reads_whatever_the_server_calls_its_people(self):
+        """The fallback stopped depending on a list of nouns: it was 'chatters' once and 'NPCs' next."""
+        from lib.features.chat_responder import requested_group_size
+        self.assertEqual(requested_group_size("image of the top 5 NPCs of the server"), 5)
+        self.assertEqual(requested_group_size("draw the 4 biggest sweats"), 4)
+        self.assertEqual(requested_group_size("draw the 6 loudest legends"), 6)
+        self.assertEqual(requested_group_size("draw the 3 loudest women"), 3)
+
     def test_a_head_count_reads_however_the_number_is_phrased(self):
         """'12 biggest chatters' is the same request as '12 most prominent people'."""
         from lib.features.chat_responder import requested_group_size
@@ -4213,6 +4263,7 @@ class TestGroupSizeAndNameLabels(unittest.TestCase):
         from lib.features.chat_responder import requested_group_size
         self.assertIsNone(requested_group_size("draw the server in 5 different styles"))
         self.assertIsNone(requested_group_size("draw the 3 best memes of the week"))
+        self.assertIsNone(requested_group_size("a comic of the lads in 3 panels"))
         self.assertIsNone(requested_group_size("draw the server regulars"))
 
     def test_a_head_count_never_exceeds_what_is_drawable(self):
@@ -4238,6 +4289,23 @@ class TestGroupSizeAndNameLabels(unittest.TestCase):
         off = assemble_group_prompt("A family portrait", "posed on a sofa", "ink illustration", chars)
         self.assertIn("NO TEXT ANYWHERE", off)
         self.assertNotIn("name plate", off)
+
+    def test_a_requested_reason_goes_on_the_plate_and_into_the_caption(self):
+        """'label them with their names and why they are an NPC': the why had nowhere to live."""
+        from lib.features.chat_responder import assemble_group_prompt, summarise_characters
+        chars = [{"name": "Steven", "label_note": "asks anyone on, every single day", "look": "tall", "gag": "x"},
+                 {"name": "Kim", "role": "the nan", "look": "small", "gag": "y"}]
+        out = assemble_group_prompt("A lineup", "a street", "Beano-style comic", chars, labels=True)
+        self.assertIn('"Steven - asks anyone on, every single', out)
+        self.assertIn('"Kim - the nan"', out)
+        self.assertIn("Steven as asks anyone on, every single day", summarise_characters(chars))
+
+    def test_a_plate_is_never_a_sentence(self):
+        """Every extra word is more lettering for a generator that misspells it."""
+        from lib.features.chat_responder import assemble_group_prompt
+        chars = [{"name": "Steven", "label_note": "one two three four five six seven eight nine", "gag": "x"}]
+        out = assemble_group_prompt("A lineup", "s", "st", chars, labels=True)
+        self.assertIn('"Steven - one two three four five six"', out)
 
     def test_labels_are_not_promised_for_people_the_writer_left_out(self):
         """A plate is only ever generated from a character the picture actually contains."""

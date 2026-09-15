@@ -836,11 +836,13 @@ def init_db():
             )
         ''')
 
-        # Migration: Add deny_reason column if it doesn't exist
+        # Migration: Add deny_reason and message_id columns if they don't exist
         c.execute("PRAGMA table_info(pending_iceberg_submissions)")
         columns = [column[1] for column in c.fetchall()]
         if 'deny_reason' not in columns:
             c.execute("ALTER TABLE pending_iceberg_submissions ADD COLUMN deny_reason TEXT")
+        if 'message_id' not in columns:
+            c.execute("ALTER TABLE pending_iceberg_submissions ADD COLUMN message_id TEXT")
 
         # Custom rank-card background submissions awaiting staff approval. The 700 UKP
         # is charged on upload (stored in `price`) and refunded on denial; `filename`

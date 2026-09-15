@@ -263,10 +263,31 @@ class AClient(discord.Client):
                 except Exception as e:
                     logger.warning(f"Could not update prediction {p.msg_id}: {e}")
 
+        # Proactively update existing pending iceberg submissions to show the new edit/amend buttons
+        try:
+            from lib.economy.shop_items import IcebergApprovalView
+            cm_channel = self.get_channel(CHANNELS.COMMUNITY_MANAGEMENT) or await self.fetch_channel(CHANNELS.COMMUNITY_MANAGEMENT)
+            if cm_channel:
+                rows = DatabaseManager.fetch_all("SELECT id, message_id FROM pending_iceberg_submissions WHERE status = 'pending'")
+                for r in rows:
+                    sub_id, msg_id = r[0], (r[1] if len(r) > 1 and r[1] else None)
+                    if msg_id:
+                        try:
+                            msg = await cm_channel.fetch_message(int(msg_id))
+                            if msg and msg.embeds:
+                                await msg.edit(view=IcebergApprovalView(sub_id))
+                                logger.info(f"Updated pending iceberg submission message {msg_id} with new view.")
+                                await asyncio.sleep(0.5)
+                        except Exception as me:
+                            logger.debug(f"Could not update iceberg message {msg_id}: {me}")
+        except Exception as e:
+            logger.warning(f"Could not backfill iceberg submission views: {e}")
+
         # (Removed the on-ready scheduled-prediction button backfill: it re-edited every
         # pending CM announcement on each restart, 429-storming the API and stalling the
         # event loop. The cancel buttons already work via the persistent views registered
         # in __init__, so the backfill was redundant.)
+
 
         # The lottery is started manually by staff (/lottery-start) rather than
         # auto-opened on boot. While a round is open, the lottery tick posts the

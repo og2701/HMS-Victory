@@ -1224,7 +1224,7 @@ RULES:
 4. Everything in the image must come from the request and the history. Do not add nationality, patriotic, military, naval or period imagery unless the history is genuinely about it.
 5. The payload states whether HMS VICTORY IS IN THE PICTURE. If yes, add a second character: a weathered 18th-century first-rate ship of the line with a stern, unimpressed personality (the ship itself with a disapproving air, or a stern naval officer figurehead), interacting with the person the way their HISTORY BETWEEN transcript suggests. If no, there must be no ship, sailors or naval officers of any kind.
 6. If BANNED ELEMENTS are listed, none of them may appear in the image in any form: not the prop, not the food, not the slogan, not the setting, not the gag, not a synonym of it. They were used in previous images of this person. The history always has more material; dig for it. A prompt containing banned elements is rejected and you will be asked again.
-7. GROUP PICTURES: if a SERVER MEMBER ROSTER is provided, the people in it are the ONLY people in the image and EVERY ONE OF THEM MUST APPEAR with roughly equal prominence. If the request assigns ROLES (a family photo with family roles, a band, a heist crew, a football team, a royal court), give every roster member a specific role that fits their dossier (the dad, the mum, the weird uncle, the golden child, the nan, the dog...), put the role in their entry, and stage them accordingly. "Family photo", "group photo", "school photo", "team photo" mean the classic posed studio-portrait composition (rows, matching awkward smiles, a backdrop), illustrated in the chosen style; not a real photograph unless realism was explicitly asked for. Give each a distinct, recognisable caricature and their OWN gag drawn from their own dossier, once each, all in one scene that connects them (something they're doing together, or side by side reacting to each other). Do not let one person's material take over the picture. Never invent extra people, usernames, handles or names. NO TEXT in group pictures at all (no name labels, no speech bubbles, no signs) and the caption names who is who - UNLESS the request explicitly asks for the names in the picture, in which case name plates are added for you after the fact and you need only leave room for them. Never fabricate chat messages, channel lists or UI. The word limit for a group is 40 words per person plus 40 for the scene.
+7. GROUP PICTURES: if a SERVER MEMBER ROSTER is provided, the people in it are the ONLY people in the image and EVERY ONE OF THEM MUST APPEAR with roughly equal prominence. If the request assigns ROLES (a family photo with family roles, a band, a heist crew, a football team, a royal court), give every roster member a specific role that fits their dossier (the dad, the mum, the weird uncle, the golden child, the nan, the dog...), put the role in their entry, and stage them accordingly. "Family photo", "group photo", "school photo", "team photo" mean the classic posed studio-portrait composition (rows, matching awkward smiles, a backdrop), illustrated in the chosen style; not a real photograph unless realism was explicitly asked for. Give each a distinct, recognisable caricature and their OWN gag drawn from their own dossier, once each, all in one scene that connects them (something they're doing together, or side by side reacting to each other). Do not let one person's material take over the picture. Never invent extra people, usernames, handles or names. NO TEXT in group pictures at all (no name labels, no speech bubbles, no signs) and the caption names who is who - UNLESS the request explicitly asks for the names in the picture, in which case name plates are added for you after the fact and you need only leave room for them. If the request also asks WHY for each person (a reason, a verdict, a one-line judgement: "label them with their names and why they are an NPC"), put that person's answer in their label_note, under six words, drawn from their own dossier - it goes on the plate under their name. Never fabricate chat messages, channel lists or UI. The word limit for a group is 40 words per person plus 40 for the scene.
 8. In any image, never render made-up usernames, handles, screen names or chat text. If you need labels, use only real names given in the payload.
 9. LOOKS COME FROM THE MESSAGES FIRST. Before writing the prompt, fill in a character sheet from the evidence in their messages and name. THE IMAGE PROMPT MUST THEN SPELL OUT THAT LOOK IN WORDS (age, build, hair, face, expression): a sheet that says "brunette, handsome" and a prompt that never mentions hair or face is a failure, because the generator only sees the prompt.
    - If the person has JUST described themselves in the recent messages (especially boastfully or with a wink: "for reference I am extremely tall, well built, handsome"), that self-description IS the gag. Either draw them exactly as claimed to a ludicrous degree, or draw the claim and the reality side by side. Do not ignore it.
@@ -1242,7 +1242,7 @@ RULES:
 Respond ONLY with a JSON object. For a single subject:
 {"character_sheet": {"gender": "...", "age_band": "...", "build_hair_face": "...", "expression_energy": "...", "style": "...", "gag": "the central joke, naming the specific thing + the quoted message it comes from", "supporting_references": ["4-6 smaller references from different conversations, each with what it is in the picture + the quote"], "exaggerations": "which traits and features are blown up"}, "image_prompt": "..."}
 For a GROUP (a SERVER MEMBER ROSTER was provided):
-{"characters": [{"name": "...", "role": "their assigned role if the request assigns roles, else null", "gender": "...", "age_band": "...", "look": "...", "exaggerations": "which of their features are blown up, and how far", "gag": "their own joke + the quote it comes from", "references": ["2-3 smaller references from their own dossier"]}, ...one entry per roster member, none skipped...], "scene": "what they are all doing together and how the gags interact", "style": "...", "image_prompt": "..."}"""
+{"characters": [{"name": "...", "role": "their assigned role if the request assigns roles, else null", "label_note": "only if the request asks for a reason, verdict or caption per person: theirs, under 6 words, else null", "gender": "...", "age_band": "...", "look": "...", "exaggerations": "which of their features are blown up, and how far", "gag": "their own joke + the quote it comes from", "references": ["2-3 smaller references from their own dossier"]}, ...one entry per roster member, none skipped...], "scene": "what they are all doing together and how the gags interact", "style": "...", "image_prompt": "..."}"""
 
 
 class OpenAIRefusal(RuntimeError):
@@ -1674,6 +1674,18 @@ def wants_name_labels(prompt: str) -> bool:
     return bool(prompt and _NAME_LABELS_RE.search(prompt))
 
 
+_PLATE_NOTE_WORDS = 6
+
+
+def _plate_note(value: Any) -> str:
+    """A plate's second line: trimmed to a glanceable few words, or empty."""
+    text = re.sub(r"\s+", " ", str(value or "")).strip(" .,;:-")
+    if not text:
+        return ""
+    words = text.split(" ")
+    return " ".join(words[:_PLATE_NOTE_WORDS])
+
+
 def assemble_group_prompt(image_prompt: str, scene: Optional[str], style: Optional[str], chars: List[Any],
                           labels: bool = False) -> str:
     """Build the group image prompt from the per-person entries.
@@ -1734,8 +1746,11 @@ def assemble_group_prompt(image_prompt: str, scene: Optional[str], style: Option
             nm = (ch.get("name") or "").strip()
             if not nm:
                 continue
-            role = (ch.get("role") or "").strip()
-            plates.append(f"{nm} - {role}" if role else nm)
+            # A requested reason beats the role: someone asking "why are they an NPC" wants the answer
+            # on the plate, not "the dad". Capped because every extra word is more lettering for a
+            # generator that misspells it, and a plate is read at a glance or not at all.
+            note = _plate_note(ch.get("label_note")) or _plate_note(ch.get("role"))
+            plates.append(f"{nm} - {note}" if note else nm)
     if plates:
         # Spelled out one plate at a time, in the same order the people were listed above, because
         # the generator will otherwise shuffle the names between faces or invent a spelling.
@@ -1771,8 +1786,8 @@ def summarise_characters(chars: Optional[List[Any]]) -> str:
         if not isinstance(ch, dict):
             continue
         name = ch.get("name") or "?"
-        role = ch.get("role")
-        lines.append(f"- {name}" + (f" as {role}" if role else ""))
+        note = (ch.get("label_note") or "").strip() or (ch.get("role") or "").strip()
+        lines.append(f"- {name}" + (f" as {note}" if note else ""))
     return "\n".join(lines)
 
 
@@ -3596,8 +3611,9 @@ MENTION_PLAN_SCHEMA = {
                     "user_id": {"type": ["string", "null"]},
                     "name": {"type": ["string", "null"]},
                     "note": {"type": ["string", "null"]},
+                    "count": {"type": ["integer", "null"]},
                 },
-                "required": ["kind", "user_id", "name", "note"],
+                "required": ["kind", "user_id", "name", "note", "count"],
                 "additionalProperties": False,
             },
         },
@@ -3632,6 +3648,10 @@ FIELDS
     "user": a specific server member (user_id required if you can resolve it; otherwise name). List several for a picture of several people.
     "bot": the bot itself. In a message addressed to the bot, "you", "yourself", "what you look like", "your self-portrait" mean the BOT, never the caller.
     "group": several people without naming them. Set note to "present" if they mean the people in the chat right now ("everyone in chat now", "everyone here", "all of us in here", "a family photo of the channel"), or "regulars" if they mean the server's usual crowd in general ("the members of ukplace", "the ukplace gang", "the regulars").
+      Set count to how many people were asked for when the request says a number, whatever it calls them
+      ("the top 5 NPCs", "12 biggest chatters", "the four worst posters", "six of the lads"). It is the
+      number of PEOPLE in the picture, so leave it null for a number that counts anything else ("in 5
+      different styles", "the 3 best memes"), and null when no number was given.
     "random": pick one person at random from the channel.
     "relative_of_user": someone or something belonging to a member (their mum, dad, nan, partner, kid, pet, car, house): set user_id/name to the MEMBER, and put what it is in note ("her cat Susie"). A name that is NOT in the PEOPLE DIRECTORY and isn't a member is almost always this: a pet, a relative, or an in-joke of whoever raised it. Tie it to the most likely member (the author of the message that mentions it in the REPLY CHAIN, else the caller) rather than returning an unresolvable "user".
     "thing": not a person (a cat, a landscape, a pub, a meme).
@@ -4331,18 +4351,25 @@ MAX_TAGGED_SUBJECTS = 12  # explicit @tags in one request; beyond this a single 
 
 _WORD_NUMBERS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
                  "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
-# The noun is what keeps this honest: "5 different styles" is also a number followed by a plural,
-# and reading it as a head-count would hand the writer five strangers. So only words that mean
-# "a person in this server" count, and the superlative may sit on either side of the number
-# ("the 12 biggest chatters", "the top 5 yappers").
-_GROUP_NOUNS = (r"people|persons|members|users|regulars|lads|blokes|posters|chatters|yappers|talkers|"
-                r"spammers|commenters|contributors|personalities|figures|characters|names")
+# Only reached when the planner gave no number (it is unavailable, or it failed). Knowing every word
+# a server uses for its own people is not a fight worth having - it was "chatters" once and "NPCs"
+# the next time - so any plural noun is allowed and the NON-people ones are named instead. A wrong
+# reject just falls through to the default; a wrong accept puts strangers in the picture.
+_GROUP_NOUNS = r"[a-z]{3,}s|people|women|men|folk|crew|gang|squad|bunch|lot"
+_NOT_PEOPLE = {
+    "styles", "versions", "variants", "colours", "colors", "panels", "frames", "scenes", "images",
+    "pictures", "photos", "drawings", "renders", "memes", "jokes", "captions", "words", "lines",
+    "options", "ideas", "things", "items", "props", "objects", "animals", "pets", "cats", "dogs",
+    "days", "weeks", "months", "years", "hours", "minutes", "times", "rounds", "attempts",
+    "reasons", "points", "facts", "quotes", "messages", "channels", "servers", "games", "teams",
+}
 _GROUP_SUPERLATIVES = r"most|top|main|biggest|best|worst|least|loudest|busiest|largest|active"
+# Only the noun immediately before the match end is captured, so it can be checked against _NOT_PEOPLE.
 _GROUP_COUNT_RE = re.compile(
     r"(?:\b(?:" + _GROUP_SUPERLATIVES + r")\s+)?"
     r"\b(\d{1,2}|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+"
     r"(?:(?:" + _GROUP_SUPERLATIVES + r")\s+)?(?:\w+\s+){0,2}?"
-    r"(?:" + _GROUP_NOUNS + r")\b",
+    r"(" + _GROUP_NOUNS + r")\b",
     re.IGNORECASE,
 )
 
@@ -4356,17 +4383,20 @@ def requested_group_size(prompt: str) -> Optional[int]:
     """
     if not prompt:
         return None
-    m = _GROUP_COUNT_RE.search(prompt)
-    if not m:
-        return None
-    raw = m.group(1).lower()
-    n = _WORD_NUMBERS.get(raw)
-    if n is None:
-        try:
-            n = int(raw)
-        except ValueError:
-            return None
-    return max(2, min(n, MAX_TAGGED_SUBJECTS))
+    for m in _GROUP_COUNT_RE.finditer(prompt):
+        if m.group(2).lower() in _NOT_PEOPLE:
+            continue          # "5 different styles" is a number and a plural, and not five people
+        raw = m.group(1).lower()
+        n = _WORD_NUMBERS.get(raw)
+        if n is None:
+            try:
+                n = int(raw)
+            except ValueError:
+                continue
+        return max(2, min(n, MAX_TAGGED_SUBJECTS))
+    return None
+
+
 IMAGE_GEN_QUALITY_GROUP = "medium"   # several people in one frame fall apart at 'low'
 IMAGE_GEN_SIZE_GROUP = "1536x1024"   # landscape gives each person more pixels
 GROUP_RENDER_THRESHOLD = 3            # from this many people, use the group settings
@@ -4984,6 +5014,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             subj_users: List[Tuple[str, int]] = []
             plan_bot_self = plan_group = plan_random = plan_group_present = False
             plan_relative_note = None
+            plan_group_count = None
             for sj in plan.get("subjects") or []:
                 kind = (sj or {}).get("kind")
                 if kind in ("user", "relative_of_user"):
@@ -4998,6 +5029,12 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     plan_bot_self = True
                 elif kind == "group":
                     plan_group = True
+                    try:
+                        n = int(sj.get("count"))
+                    except (TypeError, ValueError):
+                        n = None
+                    if n:
+                        plan_group_count = max(2, min(n, MAX_TAGGED_SUBJECTS))
                     if (sj.get("note") or "").strip().lower().startswith("present") or re.search(r"\b(?:now|right now|here|in (?:the )?chat)\b", (sj.get("note") or ""), re.I):
                         plan_group_present = True
                 elif kind == "random":
@@ -5012,6 +5049,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 "subjects": subj_users, "bot_self": plan_bot_self, "group": plan_group, "random": plan_random,
                 "recipients": recipient_ids, "include_bot": bool(plan.get("include_bot_in_picture")),
                 "relative_note": plan_relative_note, "group_present": plan_group_present,
+                "group_count": plan_group_count,
             }
             if is_edit_req and not recent_img_info:
                 is_edit_req, is_fresh_img_req = False, True
@@ -5299,7 +5337,9 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 roster = await build_group_roster_context(
                     client, getattr(message, "guild", None), must_include=subjects if multi_subject else other_mentions,
                     max_members=(min(len(subjects), MAX_TAGGED_SUBJECTS) if multi_subject
-                                 else (requested_group_size(clean_prompt) or MAX_TAGGED_SUBJECTS)),
+                                 else ((plan_state or {}).get("group_count")
+                                       or requested_group_size(clean_prompt)
+                                       or MAX_TAGGED_SUBJECTS)),
                     bot_id=bot_id, fill_with_active=not multi_subject,
                     channel_id=getattr(getattr(message, "channel", None), "id", None), present=present,
                 )
