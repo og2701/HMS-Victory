@@ -1777,17 +1777,49 @@ def _strip_quotes(text: str) -> str:
 _LAST_CHARACTERS: List[Any] = [None]  # characters from the most recent group prompt, handed to the caption writer
 
 
-def summarise_characters(chars: Optional[List[Any]]) -> str:
-    """Names and assigned roles only: enough for the caption to say who is who, not enough to narrate everyone."""
+def roster_ids_by_name(context: str) -> Dict[str, int]:
+    """Name -> user id, read off the roster lines in the context."""
+    out: Dict[str, int] = {}
+    for name, uid in re.findall(r"^MEMBER: (.+?) \(<@!?(\d+)>\)", context or "", flags=re.M):
+        try:
+            out[name.strip().casefold()] = int(uid)
+        except ValueError:
+            continue
+    return out
+
+
+def _id_for_name(name: str, ids_by_name: Dict[str, int]) -> Optional[int]:
+    """The writer's spelling of a name is close to the roster's, not always identical."""
+    key = (name or "").strip().casefold()
+    if not key or not ids_by_name:
+        return None
+    if key in ids_by_name:
+        return ids_by_name[key]
+    for roster_name, uid in ids_by_name.items():
+        if roster_name.startswith(key) or key.startswith(roster_name):
+            return uid
+    return None
+
+
+def summarise_characters(chars: Optional[List[Any]], context: str = "") -> str:
+    """Names, ids and assigned roles: enough for the caption to say who is who and tag them.
+
+    The id has to be here rather than left to the caption writer to find. It was told to take ids from
+    the records further down its payload, and those records are truncated to fit - with five people and
+    a dossier each, only the first two ids survive the cut, which is exactly how a Roles line ends up
+    naming five people and tagging two of them.
+    """
     if not chars:
         return ""
+    ids_by_name = roster_ids_by_name(context)
     lines = []
     for ch in chars:
         if not isinstance(ch, dict):
             continue
         name = ch.get("name") or "?"
         note = (ch.get("label_note") or "").strip() or (ch.get("role") or "").strip()
-        lines.append(f"- {name}" + (f" as {note}" if note else ""))
+        uid = _id_for_name(name, ids_by_name)
+        lines.append(f"- {name}" + (f" (<@{uid}>)" if uid else "") + (f" as {note}" if note else ""))
     return "\n".join(lines)
 
 
@@ -1829,7 +1861,9 @@ def synthesize_image_caption(
     user_payload = f"REQUEST: \"{prompt}\"\nSUBJECT: {target_name or 'not a specific person'}\nTHE IMAGE SHOWS: {image_prompt[:600]}"
     if characters:
         user_payload += (
-            "\nWHO IS WHO IN THE PICTURE (names, and roles if any were assigned; tag people as <@id> using the ids in THEIR RECORDS):\n"
+            "\nWHO IS WHO IN THE PICTURE (names, their ids, and roles if any were assigned; tag EVERY one of them "
+            "with the <@id> given on their own line here, never from anywhere else, and never leave a role "
+            "attached to a bare name):\n"
             + characters
         )
     if context.strip():
@@ -1892,7 +1926,8 @@ def synthesize_contextual_image_prompt(
     try:
         caption, cp, cc = synthesize_image_caption(
             prompt, img_prompt, context, user_name, caller_role, target_name=target_name,
-            openai_key=openai_key, model=model, characters=summarise_characters(_LAST_CHARACTERS[0]),
+            openai_key=openai_key, model=model,
+            characters=summarise_characters(_LAST_CHARACTERS[0], context),
         )
         p_tokens += cp
         c_tokens += cc

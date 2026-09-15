@@ -2892,8 +2892,10 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
                                                               user_name="Chin", caller_role="member", target_name="the regulars", is_group=True, openai_key="test-key")
         cap_user = _sent_payload(mock_urlopen, 1)["messages"][1]["content"]
         self.assertIn("WHO IS WHO IN THE PICTURE", cap_user)
-        self.assertIn("- Oggers as the dad", cap_user)
-        self.assertIn("- Chin as the golden child", cap_user)
+        # Each line carries the id, so the caption can tag everyone rather than only whoever
+        # survived the truncation of the records further down.
+        self.assertIn("- Oggers (<@1>) as the dad", cap_user)
+        self.assertIn("- Chin (<@2>) as the golden child", cap_user)
         who = cap_user.split("WHO IS WHO IN THE PICTURE", 1)[1].split("THEIR RECORDS", 1)[0]
         self.assertNotIn(": tea", who)               # gags stay out of the who's-who
         self.assertIn("single out at most two people", _sent_payload(mock_urlopen, 1)["messages"][0]["content"])
@@ -4299,6 +4301,28 @@ class TestGroupSizeAndNameLabels(unittest.TestCase):
         self.assertIn('"Steven - asks anyone on, every single', out)
         self.assertIn('"Kim - the nan"', out)
         self.assertIn("Steven as asks anyone on, every single day", summarise_characters(chars))
+
+    def test_every_person_in_the_caption_can_be_tagged(self):
+        """Five people and a dossier each: only the first two ids survived the payload truncation,
+        so the Roles line named five and tagged two."""
+        from lib.features.chat_responder import summarise_characters
+        dossier = "SUMMARY: " + ("they go on about it constantly. " * 30)
+        names = [("Shuto", 1), ("Kim John Unc", 2), ("Pengrin", 3), ("Oggers", 4), ("Steven <3", 5)]
+        context = "ROSTER:" + "".join(f"\n\nMEMBER: {n} (<@{i}>)\n{dossier}" for n, i in names)
+        self.assertGreater(len(context), 2500)          # the cut that caused it
+        out = summarise_characters([{"name": n, "label_note": "npc"} for n, _ in names], context)
+        for _, uid in names:
+            self.assertIn(f"(<@{uid}>)", out)
+
+    def test_a_name_the_writer_spelled_differently_still_resolves(self):
+        from lib.features.chat_responder import summarise_characters
+        context = "ROSTER:\n\nMEMBER: Steven <3 (<@5>)\nSUMMARY: x"
+        self.assertIn("(<@5>)", summarise_characters([{"name": "Steven"}], context))
+
+    def test_no_roster_means_no_invented_tags(self):
+        from lib.features.chat_responder import summarise_characters
+        out = summarise_characters([{"name": "Steven", "role": "the dad"}], "")
+        self.assertEqual(out, "- Steven as the dad")
 
     def test_a_plate_is_never_a_sentence(self):
         """Every extra word is more lettering for a generator that misspells it."""
