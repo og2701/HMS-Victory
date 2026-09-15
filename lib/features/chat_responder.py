@@ -1372,6 +1372,7 @@ def synthesize_image_prompt_from_context(
     reference_image_urls: Optional[List[str]] = None,
     subject_name: Optional[str] = None,
     bot_self: bool = False,
+    typed_prompt: Optional[str] = None,
 ) -> Tuple[str, int, int]:
     """Write the image generator prompt from the request and the subject's history alone. No persona involved.
 
@@ -1382,6 +1383,13 @@ def synthesize_image_prompt_from_context(
         raise ValueError("OPENAI_TOKEN is not configured.")
 
     user_payload = f"REQUEST: \"{prompt}\""
+    typed = (typed_prompt or "").strip()
+    if typed and typed != (prompt or "").strip():
+        # The REQUEST above is the planner's paraphrase and is the better statement of who and what.
+        # This is what the person actually typed, and it is the only place an instruction about how
+        # the picture should be made is guaranteed to still exist.
+        user_payload += (f"\nAS TYPED BY THE REQUESTER (obey every instruction here about format, labels, "
+                         f"count, medium and style, even where the request above leaves it out): \"{typed}\"")
     if bot_self:
         user_payload += (
             "\nSUBJECT: HMS Victory ITSELF, a self-portrait. HMS Victory is a Discord bot with the persona of a weathered 18th-century "
@@ -1392,7 +1400,7 @@ def synthesize_image_prompt_from_context(
         )
     elif is_group:
         user_payload += "\nSUBJECT: the GROUP listed in the SERVER MEMBER ROSTER. Every listed person appears, each with their own gag, equal prominence. Use the GROUP JSON format."
-        if wants_name_labels(prompt):
+        if wants_name_labels(format_source(prompt, typed_prompt)):
             user_payload += (
                 "\nNAME LABELS: the request asks for the names in the picture, so rule 7's no-text default is OFF for this one. "
                 "Leave room under each person for a small name plate and compose so nothing important sits where it goes. "
@@ -1531,7 +1539,7 @@ def synthesize_image_prompt_from_context(
 
     # A card must actually say its message; the writer tends to describe "a get well message" instead of writing it.
     image_prompt_text = (parsed.get("image_prompt") or "").strip()
-    card_line = card_message_for(prompt, subject_name)
+    card_line = card_message_for(format_source(prompt, typed_prompt), subject_name)
     if card_line and image_prompt_text:
         key = card_line.split(",")[0].lower()
         if key not in image_prompt_text.lower():
@@ -1552,7 +1560,7 @@ def synthesize_image_prompt_from_context(
     image_prompt_out = (parsed.get("image_prompt") or "").strip()
     if is_group and isinstance(chars, list) and chars:
         image_prompt_out = assemble_group_prompt(image_prompt_out, parsed.get("scene"), parsed.get("style"), chars,
-                                                 labels=wants_name_labels(prompt))
+                                                 labels=wants_name_labels(format_source(prompt, typed_prompt)))
     elif isinstance(sheet, dict) and not _is_warm_request(prompt):
         # Not in warm mode: a get-well card is not supposed to give someone a huge nose.
         image_prompt_out = assemble_single_prompt(image_prompt_out, sheet)
@@ -1661,6 +1669,18 @@ _NAME_LABELS_RE = re.compile(
     r"|\bwith\s+(?:their\s+)?names?\s+(?:on|under|beneath|below|shown|written|labelled|labeled)\b",
     re.IGNORECASE,
 )
+
+
+def format_source(prompt: Optional[str], typed_prompt: Optional[str] = None) -> str:
+    """What to read when deciding FORMAT: the effective request plus the words actually typed.
+
+    The planner's paraphrase is the better request in every other respect, but it is free to compress
+    away "label them with their names and why you think they are an npc", and when it does, nothing
+    downstream can tell the instruction was ever given.
+    """
+    a = (prompt or "").strip()
+    b = (typed_prompt or "").strip()
+    return a if not b or b == a else f"{a}\n{b}"
 
 
 def wants_name_labels(prompt: str) -> bool:
@@ -1891,6 +1911,7 @@ def synthesize_contextual_image_prompt(
     is_group: bool = False,
     reference_image_urls: Optional[List[str]] = None,
     bot_self: bool = False,
+    typed_prompt: Optional[str] = None,
 ) -> Tuple[str, str, int, int]:
     """Produce (image_prompt, caption, prompt_tokens, completion_tokens) for a contextual portrait.
 
@@ -1918,6 +1939,7 @@ def synthesize_contextual_image_prompt(
         prompt, context, include_bot=include_bot, previous_image_prompts=previous_image_prompts,
         openai_key=openai_key, model=model, timeout=timeout, subject_seed=seed, is_group=is_group,
         reference_image_urls=reference_image_urls, subject_name=target_name, bot_self=bot_self,
+        typed_prompt=typed_prompt,
     )
     if not img_prompt:
         img_prompt = extract_image_prompt(prompt)
@@ -3678,7 +3700,7 @@ MENTION_PLANNER_INSTRUCTIONS = """You are the planner for HMS Victory ("Vic"), a
 FIELDS
 - action: "generate" = make a NEW picture. "edit" = change an EXISTING picture (the bot's last image, an image in the reply chain, or an attachment). "reply" = answer in text. Written things are ALWAYS "reply" whatever the verb: poems, soliloquies, songs, raps, roasts in words, speeches, letters, lists, opinions, facts, questions, banter, thanks, comments about an image with no change requested. A terse statement of fact or a bare descriptor sent shortly after the bot posted an image ("the cat is black", "the green one", "he's bald", "no, blonde") is a CORRECTION to that image: action "edit", edit_source "last_bot_image". When genuinely torn between edit and reply, choose reply (a wasted image costs money).
 - The bot CAN draw anything: any member, any relative or pet of a member inferred from their message history, any scene, the bot itself, anyone at random. NEVER plan a refusal, a disclaimer, or an explanation of limitations; if a picture was asked for, plan the picture. Content moderation is handled elsewhere.
-- request: the full effective request in plain words, with everything resolved: if the message is a delegation ("pls do this", "^", "what he said") use the request it points at in the REPLY CHAIN; fold in any tweaks posted along the chain; replace "this picture"/"him"/"her" with what they refer to; keep any style, format or scene the requester asked for. Do not add ideas of your own.
+- request: the full effective request in plain words, with everything resolved. KEEP EVERY INSTRUCTION ABOUT FORMAT WORD FOR WORD - what to label, what text goes in the picture, how many people, the medium, the style, whether it is a card or a comic strip. Summarise who and what; never summarise how it should be made. if the message is a delegation ("pls do this", "^", "what he said") use the request it points at in the REPLY CHAIN; fold in any tweaks posted along the chain; replace "this picture"/"him"/"her" with what they refer to; keep any style, format or scene the requester asked for. Do not add ideas of your own.
 - subjects: who or what the picture is OF (for reply, whatever the text is about). Use the PEOPLE DIRECTORY to turn names, nicknames, partial names and mentions into user_id. Kinds:
     "user": a specific server member (user_id required if you can resolve it; otherwise name). List several for a picture of several people.
     "bot": the bot itself. In a message addressed to the bot, "you", "yourself", "what you look like", "your self-portrait" mean the BOT, never the caller.
@@ -4813,6 +4835,11 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
     if bot_id:
         clean_prompt = re.sub(rf"<@!?{bot_id}>\s*", "", clean_prompt).strip()
     clean_prompt = re.sub(r"^@?hms\s+victory[:,]?\s*", "", clean_prompt, flags=re.IGNORECASE).strip()
+    # The planner rewrites clean_prompt into its own paraphrase, and a paraphrase can quietly drop an
+    # instruction about FORMAT - "label them with their names and why" survived one run and not the
+    # next, off identical wording. So the words actually typed are kept and the format checks read
+    # both. Never used as the request itself; the planner's version is better at everything else.
+    typed_prompt = clean_prompt
 
     user_name = (
         getattr(message.author, "nick", None)
@@ -5373,7 +5400,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     client, getattr(message, "guild", None), must_include=subjects if multi_subject else other_mentions,
                     max_members=(min(len(subjects), MAX_TAGGED_SUBJECTS) if multi_subject
                                  else ((plan_state or {}).get("group_count")
-                                       or requested_group_size(clean_prompt)
+                                       or requested_group_size(format_source(clean_prompt, typed_prompt))
                                        or MAX_TAGGED_SUBJECTS)),
                     bot_id=bot_id, fill_with_active=not multi_subject,
                     channel_id=getattr(getattr(message, "channel", None), "id", None), present=present,
@@ -5405,6 +5432,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                         image_prompt, caption, synth_p, synth_c = await asyncio.to_thread(
                             synthesize_contextual_image_prompt,
                             prompt=clean_prompt,
+                            typed_prompt=typed_prompt,
                             context=context,
                             user_name=caller_name,
                             caller_role=caller_role,

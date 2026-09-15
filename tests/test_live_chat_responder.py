@@ -4324,6 +4324,38 @@ class TestGroupSizeAndNameLabels(unittest.TestCase):
         out = summarise_characters([{"name": "Steven", "role": "the dad"}], "")
         self.assertEqual(out, "- Steven as the dad")
 
+    def test_a_format_instruction_survives_the_planners_paraphrase(self):
+        """The same wording produced plates one run and none the next: the planner compressed
+        'label them with their names and why' out of the request everything downstream reads."""
+        from lib.features.chat_responder import wants_name_labels, requested_group_size, format_source
+        typed = ("pls create an image of the top 5 NPCs of the server. label them with their "
+                 "names and why you think they are an npc")
+        paraphrase = "an image of the top 5 NPCs of the server"
+        self.assertFalse(wants_name_labels(paraphrase))                       # the regression
+        self.assertTrue(wants_name_labels(format_source(paraphrase, typed)))
+        self.assertEqual(requested_group_size(format_source(paraphrase, typed)), 5)
+
+    def test_identical_wording_is_not_doubled_up(self):
+        from lib.features.chat_responder import format_source
+        self.assertEqual(format_source("draw the lads", "draw the lads"), "draw the lads")
+        self.assertEqual(format_source("draw the lads", ""), "draw the lads")
+        self.assertEqual(format_source("draw the lads", None), "draw the lads")
+
+    @patch("urllib.request.urlopen")
+    def test_the_writer_is_shown_what_the_requester_actually_typed(self, mock_urlopen):
+        from lib.features.chat_responder import synthesize_image_prompt_from_context
+        body = {"characters": [{"name": "Shuto", "label_note": "comically tiny car", "gag": "x"}],
+                "scene": "a pub", "style": "Beano-style comic", "image_prompt": "A lineup"}
+        mock_urlopen.side_effect = [
+            _mock_resp(json.dumps({"choices": [{"message": {"content": json.dumps(body)}}], "usage": {}}).encode())]
+        out, _, _ = synthesize_image_prompt_from_context(
+            prompt="an image of the top 5 NPCs of the server", context="ROSTER:\nMEMBER: Shuto (<@1>)",
+            openai_key="test-key", is_group=True,
+            typed_prompt="pls create an image of the top 5 NPCs. label them with their names and why")
+        payload = _sent_payload(mock_urlopen, 0)["messages"][1]["content"]
+        self.assertIn("AS TYPED BY THE REQUESTER", payload)
+        self.assertIn('"Shuto - comically tiny car"', out)
+
     def test_a_plate_is_never_a_sentence(self):
         """Every extra word is more lettering for a generator that misspells it."""
         from lib.features.chat_responder import assemble_group_prompt
