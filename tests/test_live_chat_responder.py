@@ -167,6 +167,17 @@ def _sent_payload(mock_urlopen, index=-1):
     return json.loads(req.data.decode("utf-8"))
 
 
+def _jev_signals(action="reply", confidence=0.95, group_count=None, input_tokens=0, **nouls):
+    """A Jev verdict as the handler receives it; unnamed yes/no signals sit well below the threshold."""
+    from lib.features import mention_signals as ms
+    vals = {k: 0.05 for k in ms._NOUL_KEYS}
+    vals.update(nouls)
+    return ms.MentionSignals(
+        action=action, action_confidence=confidence, action_probabilities={}, group_count=group_count,
+        input_tokens=input_tokens, output_tokens=0, **vals,
+    )
+
+
 
 class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -179,11 +190,20 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self._plan_patch = patch("lib.features.chat_responder.plan_mention", return_value=None)
         self._plan_patch.start()
         self.addCleanup(self._plan_patch.stop)
+        # Jev never runs in tests unless a test patches judge_mention itself: a key in the developer's
+        # environment must not turn unit tests into network calls.
+        self._jev_patch = patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock, return_value=None)
+        self._jev_patch.start()
+        self.addCleanup(self._jev_patch.stop)
 
     def test_calculate_cost_gpt4o(self):
         # 1,000 prompt tokens = $0.0025, 1,000 completion tokens = $0.0100
         cost = calculate_cost("gpt-4o", 1000, 1000)
         self.assertAlmostEqual(cost, 0.0125, places=5)
+
+    def test_calculate_cost_jev(self):
+        # 1M input tokens = $0.042; output is not metered
+        self.assertAlmostEqual(calculate_cost("jev-latest", 1_000_000, 5_000), 0.042, places=6)
 
     def test_calculate_cost_gpt4o_mini(self):
         # 10,000 prompt tokens = $0.0015, 10,000 completion tokens = $0.0060
@@ -3213,6 +3233,103 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         message.channel.history = MagicMock()
         message.reply = AsyncMock()
         return message
+
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    @patch("lib.features.chat_responder.plan_mention")
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("Absolutely not.", 100, 20))
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("RECENT CHAT", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_jev_confident_reply_skips_planner(self, mock_judge, _find, _gather, mock_generate, mock_plan, mock_classify):
+        mock_judge.return_value = _jev_signals(action="reply", confidence=0.93, live_query=0.9, input_tokens=350)
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> what league one games are on tonight")
+        with patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock), \
+             patch("lib.features.chat_responder.live_chat_manager.record_usage") as mock_usage:
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_plan.assert_not_called()        # the gpt-4o planner is the thing being saved
+        mock_classify.assert_not_called()    # and the gpt-4o-mini classifier never runs either
+        mock_generate.assert_called_once()
+        self.assertEqual(mock_generate.call_args[1]["prompt"], "what league one games are on tonight")
+        self.assertTrue(mock_generate.call_args[1]["force_search"])
+        mock_usage.assert_any_call("jev-latest", 350, 0)
+        self.assertEqual(mock_judge.call_args[0][0], "what league one games are on tonight")
+
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    @patch("lib.features.chat_responder.plan_mention", return_value=None)
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("Fine.", 100, 20))
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("RECENT CHAT", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_jev_unsure_reply_still_plans(self, mock_judge, _find, _gather, mock_generate, mock_plan, mock_classify):
+        mock_judge.return_value = _jev_signals(action="reply", confidence=0.55)
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> the green one")
+        with patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_plan.assert_called_once()       # a flat edit/reply split is exactly what the planner is for
+        mock_classify.assert_not_called()    # but with the planner down, Jev's verdict stands in for the classifier
+        mock_generate.assert_called_once()
+        self.assertFalse(mock_generate.call_args[1]["force_search"])
+
+    @patch("lib.features.chat_responder.generate_image_openai", return_value=(b"img", 20, 200))
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt", return_value=("the ship at a pub quiz", "Behold: me.", 10, 5))
+    @patch("lib.features.chat_responder.fetch_bot_mentions_sample", return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("RECENT CHAT", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_jev_drives_the_fallback_when_the_planner_fails(
+        self, mock_judge, mock_classify, _find, _gather, _said, mock_synth, mock_gen_img
+    ):
+        # Phrasing no regex here recognises as a self-portrait; Jev's bot_self signal carries it.
+        mock_judge.return_value = _jev_signals(action="generate", confidence=0.8, bot_self=0.92)
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> go on then, show us what you reckon you look like", author_id=USERS.JOHNNY)
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_classify.assert_not_called()
+        kw = mock_synth.call_args[1]
+        self.assertTrue(kw["bot_self"])
+        self.assertEqual(kw["target_name"], "HMS Victory (yourself)")
+        mock_gen_img.assert_called_once()
+
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("A ballad.", 100, 20))
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("RECENT CHAT", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_jev_written_piece_overrides_generate(self, mock_judge, mock_classify, _find, _gather, mock_generate):
+        # "ballad" is not in the written-forms regex; Jev's text_creation signal turns a generate into a text reply.
+        mock_judge.return_value = _jev_signals(action="generate", confidence=0.6, text_creation=0.85)
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> knock up a wee ballad about the lads")
+        with patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_classify.assert_not_called()
+        mock_generate.assert_called_once()
+        self.assertEqual(mock_generate.call_args[1]["prompt"], "knock up a wee ballad about the lads")
+
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("Still here.", 100, 20))
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("RECENT CHAT", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent", return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock, side_effect=RuntimeError("jev exploded"))
+    async def test_handle_one_off_jev_failure_falls_through(self, mock_judge, mock_classify, _find, _gather, mock_generate):
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> evening vic")
+        with patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_classify.assert_called_once()   # the old cascade, exactly as before
+        mock_generate.assert_called_once()
+        self.assertIsNone(mock_generate.call_args[1]["force_search"])
 
     @patch("lib.features.chat_responder.generate_image_openai")
     @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")

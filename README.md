@@ -23,7 +23,7 @@ To set up the bot on a fresh Ubuntu instance, follow these steps:
     ```bash
     nano .env
     ```
-    *Fill in `DISCORD_TOKEN` and `OPENAI_TOKEN`.*
+    *Fill in `DISCORD_TOKEN` and `OPENAI_TOKEN`. `TYPESAFE_API_KEY` is optional: with it, mentions get a fast Jev pass that decides text-vs-image and skips the planner for plain chat.*
 
 4.  **Start the Bot:**
     ```bash

@@ -91,6 +91,7 @@ if [ ! -f ".env" ]; then
 DISCORD_TOKEN=your_token_here
 OPENAI_TOKEN=your_openai_token_here
 GEMINI_TOKEN=your_gemini_token_here
+TYPESAFE_API_KEY=your_typesafe_key_here
 CHROME_PATH=/usr/bin/google-chrome-stable
 EOF
         echo "Created basic .env. PLEASE FILL IT IN."

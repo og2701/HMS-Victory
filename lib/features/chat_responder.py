@@ -25,6 +25,7 @@ from config import (
     IMAGE_GEN_MODEL, IMAGE_GEN_QUALITY, IMAGE_GEN_SIZE
 )
 from lib.core.file_operations import atomic_write_json, load_json_file
+from lib.features.mention_signals import judge_mention, MENTION_SIGNALS_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -267,7 +268,11 @@ NOTE: Use this topic as an initial grievance, backdrop, or when relevant, but fo
 def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
     """Calculate USD cost based on token counts and model pricing."""
     m = (model or "").lower()
-    if "mini" in m and "image" not in m:
+    if "jev" in m:
+        # TypeSafe Jev: $0.042 / 1M input; output is not metered
+        input_cost = (prompt_tokens / 1_000_000) * 0.042
+        output_cost = 0.0
+    elif "mini" in m and "image" not in m:
         # gpt-4o-mini: $0.15 / 1M prompt, $0.60 / 1M completion
         input_cost = (prompt_tokens / 1_000_000) * 0.15
         output_cost = (completion_tokens / 1_000_000) * 0.60
@@ -4698,6 +4703,7 @@ def generate_one_off_reply(
     model: str = "gpt-4o",
     enable_search: bool = True,
     max_retries: int = 2,
+    force_search: Optional[bool] = None,
 ) -> Tuple[str, int, int]:
     """Generate a one-off in-character reply for an owner / leadership prompt via the OpenAI Responses API.
 
@@ -4714,7 +4720,8 @@ def generate_one_off_reply(
     if context.strip():
         prompt_content += f"\n\nSURROUNDING SERVER & CONVERSATION CONTEXT:\n{context.strip()}"
 
-    force_search = enable_search and looks_like_live_query(user_instructions)
+    # A caller that already judged the message (Jev) says whether it needs live data; the regex is the fallback.
+    force_search = enable_search and (force_search if force_search is not None else looks_like_live_query(user_instructions))
 
     last_error = None
     total_p_tokens = 0
@@ -4886,7 +4893,40 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         if ref_msg is not None:
             replied_to_text = _strip_bot_address(getattr(ref_msg, "content", "") or "", bot_id) or None
             replied_to_author = _member_display_name(getattr(ref_msg, "author", None), "someone")
-            if is_delegation_prompt(clean_prompt):
+
+        # Look up the bot's most recent image up front: the edit branch needs it, and anything judging
+        # whether "try again" can refer to something needs to know.
+        recent_img_info = None
+        try:
+            recent_img_info = await find_recent_image_attachment(message, bot_id=bot_id)
+        except Exception as e:
+            logger.debug("Could not look up recent bot image: %s", e)
+
+        # One fast typed pass over the message before any language model runs: what kind of thing it
+        # wants, plus the yes/no signals the regexes used to guess at. None means Jev is not configured
+        # or did not answer, and every use below falls back to what it did before.
+        signals = None
+        try:
+            signals = await judge_mention(
+                clean_prompt,
+                caller_name=caller_name,
+                mentioned_names=[_member_display_name(u) for u in other_mentions],
+                has_reply_ref=has_reply_ref,
+                replied_to_text=replied_to_text,
+                replied_to_author=replied_to_author,
+                reply_chain=reply_chain_facts,
+                has_attached_image=bool(own_image_attachments(message)),
+                has_recent_bot_image=bool(recent_img_info),
+                recent_bot_image_prompt=(recent_img_info[2] if recent_img_info else None),
+                recent_history=recent_one_off_exchanges(4),
+            )
+        except Exception as e:
+            logger.warning("Jev judgment failed, continuing without it: %s", e)
+        if signals is not None and (signals.input_tokens or signals.output_tokens):
+            live_chat_manager.record_usage(MENTION_SIGNALS_MODEL, signals.input_tokens, signals.output_tokens)
+
+        if ref_msg is not None:
+            if is_delegation_prompt(clean_prompt) or (signals is not None and signals.says("delegation")):
                 # "pls do this" on a chain: the original request is the OLDEST human message in the chain that
                 # isn't itself a delegation; everything posted after it on the way here is an amendment.
                 base_idx = None
@@ -4923,14 +4963,6 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                         if own_image_attachments(m):
                             delegated_from = m
                             break
-
-        # Look up the bot's most recent image up front: the edit branch needs it, and the intent
-        # classifier needs to know whether "try again" can refer to anything.
-        recent_img_info = None
-        try:
-            recent_img_info = await find_recent_image_attachment(message, bot_id=bot_id)
-        except Exception as e:
-            logger.debug("Could not look up recent bot image: %s", e)
 
         # Images the requester attached themselves: used as references, or as the thing to edit. A delegated
         # "pls do this" inherits the images from the message it points at.
@@ -5004,22 +5036,31 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 "text": _strip_bot_address(getattr(m, "content", "") or "", bot_id),
                 "has_images": bool(own_image_attachments(m)),
             })
-        plan = await asyncio.to_thread(
-            plan_mention,
-            clean_prompt,
-            caller_name=caller_name,
-            caller_id=caller_id,
-            attachments=[
-                (i, getattr(a, "filename", f"image{i}") + ("" if a in own_image_attachments(message) else " (from a message in the reply chain)"))
-                for i, a in enumerate(reference_attachments, 1)
-            ],
-            reply_chain=chain_for_plan,
-            mentions=[(_member_display_name(u), getattr(u, "id", None)) for u in chain_mentions if isinstance(getattr(u, "id", None), int)],
-            directory=directory,
-            recent_history=recent_one_off_exchanges(4),
-            has_recent_bot_image=bool(recent_img_info),
-            recent_bot_image_prompt=(recent_img_info[2] if recent_img_info else None),
-        )
+        # Jev already read the message. When it is sure this wants text and nothing is attached that a
+        # picture could be made from, the planner's paraphrase and people-resolution add nothing a text
+        # reply uses, so the gpt-4o call is skipped. Anything less certain still gets planned.
+        skip_planner = signals is not None and signals.confident_reply() and not reference_attachments
+        plan = None
+        if skip_planner:
+            logger.info("Jev is confident %s wants a text reply (%.2f); skipping the planner for %r",
+                        caller_name, signals.action_confidence, clean_prompt[:120])
+        else:
+            plan = await asyncio.to_thread(
+                plan_mention,
+                clean_prompt,
+                caller_name=caller_name,
+                caller_id=caller_id,
+                attachments=[
+                    (i, getattr(a, "filename", f"image{i}") + ("" if a in own_image_attachments(message) else " (from a message in the reply chain)"))
+                    for i, a in enumerate(reference_attachments, 1)
+                ],
+                reply_chain=chain_for_plan,
+                mentions=[(_member_display_name(u), getattr(u, "id", None)) for u in chain_mentions if isinstance(getattr(u, "id", None), int)],
+                directory=directory,
+                recent_history=recent_one_off_exchanges(4),
+                has_recent_bot_image=bool(recent_img_info),
+                recent_bot_image_prompt=(recent_img_info[2] if recent_img_info else None),
+            )
         plan_state: Optional[Dict[str, Any]] = None
         intent = None
         subject = None
@@ -5116,22 +5157,28 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             if is_edit_req and not recent_img_info:
                 is_edit_req, is_fresh_img_req = False, True
 
-        if plan_state is None:
-            # Planner unavailable: classifier + keyword heuristics.
-            intent = await asyncio.to_thread(
-            classify_mention_intent,
-                clean_prompt,
-                mentioned_names=[_member_display_name(u) for u in other_mentions],
-                caller_name=caller_name,
-                has_reply_ref=has_reply_ref,
-                has_recent_bot_image=bool(recent_img_info),
-                recent_bot_image_prompt=(recent_img_info[2] if recent_img_info else None),
-                has_attached_image=bool(reference_images),
-                recent_history=recent_one_off_exchanges(4),
-                replied_to_text=replied_to_text,
-                replied_to_author=replied_to_author,
-                reply_chain=reply_chain_facts,
-            )
+        if plan_state is None and skip_planner:
+            # Jev was sure this is a text reply, so no other model has been asked and none is needed.
+            is_fresh_img_req, is_edit_req = False, False
+        elif plan_state is None:
+            # Planner unavailable: Jev's verdict if it answered, else the classifier, else keyword heuristics.
+            if signals is not None:
+                intent = signals.as_intent()
+            else:
+                intent = await asyncio.to_thread(
+                    classify_mention_intent,
+                    clean_prompt,
+                    mentioned_names=[_member_display_name(u) for u in other_mentions],
+                    caller_name=caller_name,
+                    has_reply_ref=has_reply_ref,
+                    has_recent_bot_image=bool(recent_img_info),
+                    recent_bot_image_prompt=(recent_img_info[2] if recent_img_info else None),
+                    has_attached_image=bool(reference_images),
+                    recent_history=recent_one_off_exchanges(4),
+                    replied_to_text=replied_to_text,
+                    replied_to_author=replied_to_author,
+                    reply_chain=reply_chain_facts,
+                )
             subject = None
             subject_name = None
             if intent:
@@ -5141,7 +5188,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 is_edit_req = intent["intent"] == "edit"
                 subject = intent.get("subject")
                 subject_name = intent.get("subject_name")
-                if is_fresh_img_req and looks_like_text_creation(clean_prompt):
+                if is_fresh_img_req and (signals.says("text_creation") if signals is not None else looks_like_text_creation(clean_prompt)):
                     # "write a hate soliloquy for X" is writing, not a picture, whatever the classifier thought.
                     logger.info("Classifier said generate but the request is for a written piece; answering in text: %r", clean_prompt)
                     is_fresh_img_req = False
@@ -5166,7 +5213,9 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             # An edit request that comes with its own attachment ("give this picture a pink mullet") edits THAT
             # attachment, not whatever the bot last posted in the channel.
             own_attachment = None
-            if reference_attachments and not is_edit_req and looks_like_attachment_modification(clean_prompt):
+            if reference_attachments and not is_edit_req and (
+                signals.says("attachment_modification") if signals is not None else looks_like_attachment_modification(clean_prompt)
+            ):
                 # "add a pink mullet to this fine gentleman" with a picture attached is an edit of that picture,
                 # whatever the classifier called it. Redrawing the person from their dossier is not what was asked.
                 logger.info("Attachment plus modification phrasing: treating as an edit of the attachment (classifier said %s)", intent["intent"] if intent else "fallback")
@@ -5282,7 +5331,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
 
         # Check if the prompt is asking to generate/draw an image
         is_img_req = is_fresh_img_req
-        if not is_img_req and intent is None and any(re.search(pat, clean_prompt.lower()) for pat in FOLLOW_UP_IMAGE_PATTERNS):
+        if not is_img_req and (
+            (signals is not None and signals.says("follow_up_image"))
+            or (intent is None and any(re.search(pat, clean_prompt.lower()) for pat in FOLLOW_UP_IMAGE_PATTERNS))
+        ):
             if hasattr(message.channel, "history"):
                 try:
                     async for prev_m in message.channel.history(limit=35, before=message):
@@ -5400,6 +5452,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     client, getattr(message, "guild", None), must_include=subjects if multi_subject else other_mentions,
                     max_members=(min(len(subjects), MAX_TAGGED_SUBJECTS) if multi_subject
                                  else ((plan_state or {}).get("group_count")
+                                       or (signals.group_count if signals is not None else None)
                                        or requested_group_size(format_source(clean_prompt, typed_prompt))
                                        or MAX_TAGGED_SUBJECTS)),
                     bot_id=bot_id, fill_with_active=not multi_subject,
@@ -5529,6 +5582,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     user_name=caller_name,
                     caller_role=caller_role,
                     image_urls=current_images,
+                    force_search=(signals.says("live_query") if signals is not None else None),
                 )
                 p_tokens += pt
                 c_tokens += ct
