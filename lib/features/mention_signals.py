@@ -55,6 +55,11 @@ GROUP_COUNT_CONFIDENCE = 0.6
 # clearly picked; anything flatter goes to the normal reply, which can still talk about it. The
 # metric Choice has thirty options, so 0.5 is already a clear peak rather than a coin toss.
 DATA_QUERY_CONFIDENCE = 0.5
+# With sixty metrics, near-twins ("paid to others" / "received from others", net / staked) split the vote on
+# a question that plainly wants a figure. When the shape is beyond doubt, the metric only needs to be the
+# clear favourite: the heading names which metric answered, so a near-miss is visible, not silent.
+METRIC_WITH_SURE_SHAPE_CONFIDENCE = 0.35
+SURE_SHAPE_CONFIDENCE = 0.85
 # The follow-up call that picks a named person out of the people directory.
 NAMED_SUBJECT_CONFIDENCE = 0.6
 
@@ -332,12 +337,21 @@ class MentionSignals:
         picked: "what's the lottery pot" comes back shape total with metric none and list lottery, and the
         list is the only one of the three that names something the code can produce."""
         list_sure = self.data_list != "none" and self.data_list_confidence >= DATA_QUERY_CONFIDENCE
-        metric_sure = self.data_metric != "none" and self.data_metric_confidence >= DATA_QUERY_CONFIDENCE
+        metric_sure = self.metric_sure
         if list_sure and (self.data_shape == "list" or not metric_sure):
             return "list"
         if self.data_shape == "list" or self.data_shape_confidence < DATA_QUERY_CONFIDENCE:
             return "none"
         return self.data_shape
+
+    @property
+    def metric_sure(self) -> bool:
+        if self.data_metric == "none":
+            return False
+        if self.data_metric_confidence >= DATA_QUERY_CONFIDENCE:
+            return True
+        return (self.data_shape not in ("none", "list") and self.data_shape_confidence >= SURE_SHAPE_CONFIDENCE
+                and self.data_metric_confidence >= METRIC_WITH_SURE_SHAPE_CONFIDENCE)
 
     def data_query_requested(self) -> bool:
         """True when Jev clearly picked something the code can fetch: answer from the database, not a model.
@@ -351,7 +365,7 @@ class MentionSignals:
             return True
         if shape == "none":
             return False
-        return self.data_metric != "none" and self.data_metric_confidence >= DATA_QUERY_CONFIDENCE
+        return self.metric_sure
 
     def as_intent(self) -> Dict[str, Any]:
         """The shape `classify_mention_intent` returned, so the fallback path consumes Jev unchanged.

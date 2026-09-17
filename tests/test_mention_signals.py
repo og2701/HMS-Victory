@@ -214,6 +214,15 @@ class TestDataSignals(unittest.TestCase):
         self.assertFalse(parse_signals(_with_data(_answers(), shape="none"), {}).data_query_requested())
         self.assertTrue(parse_signals(_with_data(_answers(), metric_conf=0.5, shape_conf=0.5), {}).data_query_requested())
 
+    def test_a_sure_shape_lowers_the_metric_bar_a_little(self):
+        # "how much has snake paid kim": between at 1.00, paid_out at 0.48 (split with paid_in)
+        sig = parse_signals(_with_data(_answers(), metric="paid_out", metric_conf=0.48, shape="between", shape_conf=1.0), {})
+        self.assertTrue(sig.metric_sure)
+        self.assertTrue(sig.data_query_requested())
+        self.assertFalse(parse_signals(_with_data(_answers(), metric="paid_out", metric_conf=0.30, shape="between", shape_conf=1.0), {}).data_query_requested())
+        self.assertFalse(parse_signals(_with_data(_answers(), metric="paid_out", metric_conf=0.48, shape="leaderboard", shape_conf=0.7), {}).data_query_requested())
+        self.assertFalse(parse_signals(_with_data(_answers(), metric="none", metric_conf=0.99, shape="between", shape_conf=1.0), {}).data_query_requested())
+
     def test_a_picture_request_is_never_a_records_question(self):
         # "draw the top 5 richest as pigs": the roster gets drawn, not tabulated
         sig = parse_signals(_with_data(_answers(action="generate", probs={"generate": 0.9, "edit": 0.05, "reply": 0.05}), metric="ukpence"), {})

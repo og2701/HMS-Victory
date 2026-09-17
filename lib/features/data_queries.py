@@ -405,7 +405,7 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
        "UKP received from other members with /pay",
        ["who's been paid the most", "biggest beggar", "how much has kim been sent"],
        lambda since, game: _agg("pay_transfers", "COALESCE(SUM(amount),0)", user_col="recipient_id", ts_col="timestamp", since=since),
-       windowable=True),
+       windowable=True, pair=_pair_sum("pay_transfers", "COALESCE(SUM(amount),0)", "recipient_id", "payer_id", "timestamp"), pair_verb="was paid by"),
     _m("shop_spent", "UKP spent in the shop", "UKP",
        "UKP spent in the server shop (shutcoins, lucky dips, VIP cases and so on)",
        ["who's spent the most in the shop", "biggest shop spender", "how much has steven spent in the shop"],
