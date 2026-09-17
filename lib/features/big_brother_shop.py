@@ -519,26 +519,56 @@ def restore_timers(client: discord.Client) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Control panel actions
+# Catalogue capture: the host sends the list as a normal message (or a .txt) in the
+# control channel after pressing Add items, and the bot picks it up.
 # ---------------------------------------------------------------------------
 
-class _CatalogueModal(discord.ui.Modal, title="Shop catalogue"):
-    def __init__(self, on_submit):
-        super().__init__()
-        self._on_submit = on_submit
-        # No label on the TextInput itself: the Label wrapper carries it (Discord rejects both).
-        self.text = discord.ui.TextInput(
-            style=discord.TextStyle.long, required=True, max_length=4000,
-            placeholder="Meat & Fish\nWhole chicken — £7.00\nSausages — £3.00\n\nFruit & Veg\nCarrots — £1.00")
-        self.replace = discord.ui.Checkbox(default=False)
-        self.add_item(discord.ui.Label(text="Items (a line with no price starts an aisle)", component=self.text))
-        self.add_item(discord.ui.Label(text="Replace the whole catalogue",
-                                       description="Unticked: these are added to what's already there.",
-                                       component=self.replace))
+CAPTURE_KEY = "shop_catalogue_capture"
+CAPTURE_WINDOW = 15 * 60
 
-    async def on_submit(self, interaction: discord.Interaction):
-        await self._on_submit(interaction, self.text.value or "", bool(self.replace.value))
 
+def start_capture(user_id: int, replace: bool) -> None:
+    bb.set_state(CAPTURE_KEY, {"user": int(user_id), "replace": bool(replace), "until": bb._now() + CAPTURE_WINDOW})
+
+
+def pending_capture(user_id: int) -> Optional[dict]:
+    cap = bb.get_state(CAPTURE_KEY)
+    if not cap or int(cap.get("user", 0)) != int(user_id) or int(cap.get("until", 0)) < bb._now():
+        return None
+    return cap
+
+
+async def maybe_capture(client: discord.Client, message: discord.Message) -> bool:
+    """Called for every message in the control channel. Returns True if it was a catalogue."""
+    cap = pending_capture(message.author.id)
+    if not cap:
+        return False
+    text = message.content or ""
+    for att in message.attachments:
+        if (att.filename or "").lower().endswith((".txt", ".md", ".csv")) and att.size < 200_000:
+            try:
+                text += "\n" + (await att.read()).decode("utf-8", errors="replace")
+            except discord.HTTPException:
+                pass
+    entries = parse_catalogue(text)
+    if not entries:
+        return False  # ordinary chat while a capture is pending; keep waiting
+    bb.set_state(CAPTURE_KEY, None)
+    set_catalogue(entries, replace=cap["replace"])
+    bb.log_event("shop_catalogue_updated", actor=message.author.id, added=len(entries), replaced=cap["replace"])
+    try:
+        await message.reply(
+            f"🛒 {'Replaced the catalogue with' if cap['replace'] else 'Added'} **{len(entries)}** item(s). "
+            f"Now {len(catalogue())} items in {len(categories())} aisles. Press Catalogue on the panel to check.",
+            mention_author=False)
+    except discord.HTTPException:
+        pass
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Control panel actions
+# ---------------------------------------------------------------------------
 
 class _OpenShopModal(discord.ui.Modal, title="Open the shop"):
     def __init__(self, on_submit):
@@ -621,11 +651,26 @@ class _CatalogueView(discord.ui.View):
         self.add_item(full)
 
         add = discord.ui.Button(label="Add items", emoji="➕", row=4)
+        replace = discord.ui.Button(label="Replace all", emoji="♻️", style=discord.ButtonStyle.danger, row=4)
+
+        async def _capture(interaction: discord.Interaction, replace_all: bool):
+            start_capture(interaction.user.id, replace_all)
+            await interaction.response.edit_message(
+                content=("♻️ **Replacing the catalogue.**" if replace_all else "➕ **Adding to the catalogue.**")
+                        + " Now send the list as a normal message in this channel, or attach a .txt file. "
+                        "A line with no price starts an aisle, e.g.\n"
+                        "```\nMeat & Fish\nWhole chicken — £7.00\nSausages — £3.00\n```\n"
+                        "I'll pick it up within the next 15 minutes and reply with what I added.",
+                view=None)
 
         async def _add(interaction: discord.Interaction):
-            await interaction.response.send_modal(_CatalogueModal(_catalogue_submitted))
-        add.callback = _add
+            await _capture(interaction, False)
+
+        async def _replace(interaction: discord.Interaction):
+            await _capture(interaction, True)
+        add.callback, replace.callback = _add, _replace
         self.add_item(add)
+        self.add_item(replace)
 
         if os.path.exists(SEED_FILE):
             load = discord.ui.Button(label="Load saved list", emoji="📥", row=4)

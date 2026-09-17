@@ -403,7 +403,7 @@ def test_modals_serialise_within_discord_rules(bb, shop):
                 yield from walk([inner])
             yield from walk(c.get("components", []))
 
-    for modal in (shop._OpenShopModal(None), shop._CatalogueModal(None), bb._AnnounceModal(None),
+    for modal in (shop._OpenShopModal(None), bb._AnnounceModal(None),
                   bb._TextModal("t", [("k", "Label", True, 10, False)], None)):
         payload = modal.to_dict()
         for comp in walk(payload["components"]):
@@ -442,3 +442,13 @@ def test_timed_close_runs_to_completion(shop, bb):
     assert shop.get_task(tid)["status"] == "closed"
     # The steps after the DB write ran: the closing event is logged last in close_shop.
     assert [e["kind"] for e in bb.events()][-1] == "shop_closed"
+
+
+def test_catalogue_capture_window(shop, bb, monkeypatch):
+    assert shop.pending_capture(5) is None
+    shop.start_capture(5, replace=False)
+    assert shop.pending_capture(5)["replace"] is False
+    assert shop.pending_capture(6) is None            # someone else's message is ignored
+    real_now = bb._now
+    monkeypatch.setattr(bb, "_now", lambda: real_now() + shop.CAPTURE_WINDOW + 1)
+    assert shop.pending_capture(5) is None            # expired

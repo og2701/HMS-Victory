@@ -375,6 +375,11 @@ class AClient(discord.Client):
                     message.channel.id, getattr(message.channel, "parent_id", None)):
             from lib.features.big_brother import on_house_message
             asyncio.create_task(on_house_message(self, message))
+        # Big Brother control channel: the host pastes a shop catalogue after pressing Add items.
+        if getattr(config, "BIG_BROTHER_ENABLED", False) and \
+                message.channel.id == getattr(config, "BIG_BROTHER_CONTROL_CHANNEL", 0):
+            from lib.features.big_brother_shop import maybe_capture
+            asyncio.create_task(maybe_capture(self, message))
 
         if message.type == discord.MessageType.auto_moderation_action:
             target_user_id_str = None
