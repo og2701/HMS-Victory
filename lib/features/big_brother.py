@@ -1875,7 +1875,7 @@ async def _act_broadcast(interaction: discord.Interaction):
         if not ch:
             await _reply(inter, "House channel not found.", refresh=False)
             return
-        ping = _role_mention() if values.get("ping", "").lower().startswith("y") else ""
+        ping = "" if values.get("ping", "").strip().lower().startswith("n") else _role_mention()
         text = values["text"]
         if len(text) < 1800:
             await bb_send(ch, content=f"{ping}{EYE} {text}")
@@ -1886,7 +1886,7 @@ async def _act_broadcast(interaction: discord.Interaction):
 
     await interaction.response.send_modal(_TextModal("Announce in the house", [
         ("text", "Announcement", True, 1800, True),
-        ("ping", "Ping the housemate role? (yes/no)", False, 3, False),
+        ("ping", "Ping housemates? (pings unless you type no)", False, 3, False),
     ], submitted))
 
 
