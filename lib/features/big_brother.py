@@ -1222,6 +1222,24 @@ class _CountGrid(discord.ui.View):
             self.add_item(btn)
 
 
+class _AnnounceModal(discord.ui.Modal, title="Announce in the house"):
+    """Announcement text plus a tick box for pinging the Housemate role (on by default)."""
+
+    def __init__(self, on_submit: Callable):
+        super().__init__()
+        self._on_submit = on_submit
+        self.text = discord.ui.TextInput(label="Announcement", style=discord.TextStyle.long,
+                                         required=True, max_length=1800)
+        self.ping = discord.ui.Checkbox(default=True)
+        self.add_item(discord.ui.Label(text="Announcement", component=self.text))
+        self.add_item(discord.ui.Label(text="Notify housemates",
+                                       description="Ping the Housemate role with this announcement.",
+                                       component=self.ping))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await self._on_submit(interaction, {"text": (self.text.value or "").strip(), "ping": bool(self.ping.value)})
+
+
 class _Confirm(discord.ui.View):
     def __init__(self, on_yes: Callable, label: str = "Confirm"):
         super().__init__(timeout=120)
@@ -1875,7 +1893,7 @@ async def _act_broadcast(interaction: discord.Interaction):
         if not ch:
             await _reply(inter, "House channel not found.", refresh=False)
             return
-        ping = "" if values.get("ping", "").strip().lower().startswith("n") else _role_mention()
+        ping = _role_mention() if values.get("ping", True) else ""
         text = values["text"]
         if len(text) < 1800:
             await bb_send(ch, content=f"{ping}{EYE} {text}")
@@ -1884,10 +1902,7 @@ async def _act_broadcast(interaction: discord.Interaction):
         log_event("bb_announcement", text=text, pinged=bool(ping))
         await _reply(inter, "Posted in the house.", refresh=False)
 
-    await interaction.response.send_modal(_TextModal("Announce in the house", [
-        ("text", "Announcement", True, 1800, True),
-        ("ping", "Ping housemates? (pings unless you type no)", False, 3, False),
-    ], submitted))
+    await interaction.response.send_modal(_AnnounceModal(submitted))
 
 
 async def _act_crown(interaction: discord.Interaction):
