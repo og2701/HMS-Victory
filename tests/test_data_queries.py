@@ -197,7 +197,7 @@ class TestSourcesDatesAndAsOf(unittest.TestCase):
         res = compute(QuerySpec(metric="first_seen", shape="leaderboard", lowest=True, limit=5))
         text = render(res, self.names)
         self.assertTrue(text.startswith("Earliest 3 by first seen"), text)
-        self.assertIn("Johnny  14 Nov 2023", text)
+        self.assertIn(" 1. 14 Nov 2023  Johnny", text)
         person = compute(QuerySpec(metric="first_seen", shape="person", subjects=[("Kim", "3")]))
         self.assertEqual(render(person, self.names), "**Kim**: first seen 09 Mar 2024")
         cmp_ = compute(QuerySpec(metric="first_seen", shape="compare", subjects=[("Johnny", "1"), ("Steven", "2")]))
@@ -296,6 +296,47 @@ class TestLists(unittest.TestCase):
             self.assertEqual(compute(QuerySpec(metric="skyrim_dragons", shape="leaderboard")).rows, [("1", 2)])
 
 
+class TestClosest(unittest.TestCase):
+    def setUp(self):
+        self._p = patch("lib.features.data_queries._fetch", _fake_fetch())
+        self._p.start()
+        self.addCleanup(self._p.stop)
+        self.names = {"1": "Johnny", "2": "Steven", "3": "Kim", "4": "Hadidas"}
+
+    def test_target_number_is_read_from_the_words(self):
+        parse = dq.parse_target_number
+        self.assertEqual(parse("who has closest to 100k xp"), 100_000)
+        self.assertEqual(parse("who's nearest to 1.5m ukp"), 1_500_000)
+        self.assertEqual(parse("closest to 100,000 messages"), 100_000)
+        self.assertEqual(parse("who has about 50 shutcoins"), 50)
+        self.assertEqual(parse("nearest to half a million"), 500_000)
+        self.assertEqual(parse("who's around a million ukp"), 1_000_000)
+        self.assertEqual(parse("top 5 closest to 100k xp"), 100_000)    # the cued number, not the 5
+        self.assertEqual(parse("who is at 300 xp exactly, top 3"), 300)  # no cue: the larger
+        self.assertIsNone(parse("who is closest to the top"))
+        self.assertIsNone(parse(""))
+
+    def test_closest_orders_by_distance_and_shows_the_gap(self):
+        res = compute(QuerySpec(metric="xp", shape="closest", target=1000, limit=3))
+        self.assertEqual(res.rows, [("1", 1240), ("2", 300), ("4", 300)])
+        self.assertEqual(res.ranks, {"1": 1, "2": 2, "4": 3})
+        text = render(res, self.names)
+        self.assertTrue(text.startswith("Closest 3 to 1,000 XP\n```"), text)
+        self.assertIn(" 1. 1,240 XP  +240 XP  Johnny", text)
+        self.assertIn(" 2.   300 XP  -700 XP  Steven", text)
+        exact = compute(QuerySpec(metric="xp", shape="closest", target=5000, limit=3))
+        self.assertRegex(render(exact, self.names), r" 1\. 5,000 XP  spot on\s+Kim")
+
+    def test_closest_without_a_target_is_empty(self):
+        res = compute(QuerySpec(metric="xp", shape="closest", target=None))
+        self.assertEqual(res.rows, [])
+        self.assertIn("Nobody has any XP", render(res, self.names))
+
+    def test_closest_heading_for_a_unit_that_is_not_in_the_label(self):
+        res = compute(QuerySpec(metric="shutcoins", shape="closest", target=10, limit=3), exclude_ids={"999"})
+        self.assertTrue(render(res, self.names).startswith("Closest 3 to 10 shutcoins held\n"), render(res, self.names))
+
+
 class TestRender(unittest.TestCase):
     def setUp(self):
         self._p = patch("lib.features.data_queries._fetch", _fake_fetch())
@@ -307,16 +348,16 @@ class TestRender(unittest.TestCase):
         res = compute(QuerySpec(metric="shutcoins", shape="leaderboard", limit=10), exclude_ids={"999"})
         text = render(res, self.names)
         self.assertTrue(text.startswith("Top 3 by shutcoins held\n```"))
-        self.assertIn(" 1. Johnny   14 shutcoins", text)
-        self.assertIn(" 3. Hadidas  2 shutcoins", text)
+        self.assertIn(" 1. 14 shutcoins  Johnny", text)
+        self.assertIn(" 3.  2 shutcoins  Hadidas", text)
         self.assertNotIn("Kim", text)
 
     def test_leaderboard_scope_and_signed_values(self):
         res = compute(QuerySpec(metric="casino_net", shape="leaderboard", game="blackjack", window="week", lowest=True, limit=5))
         text = render(res, self.names)
         self.assertIn("Bottom 2 by casino profit and loss (blackjack, last 7 days)", text)
-        self.assertIn("Johnny  -500 UKP", text)
-        self.assertIn("Steven  +120 UKP", text)
+        self.assertIn(" 1. -500 UKP  Johnny", text)
+        self.assertIn(" 2. +120 UKP  Steven", text)
 
     def test_empty_leaderboard(self):
         res = compute(QuerySpec(metric="counties", shape="leaderboard"))
@@ -350,7 +391,7 @@ class TestRender(unittest.TestCase):
             res = compute(QuerySpec(metric="times_shut", shape="person", subjects=[("Johnny", "1")]))
             self.assertEqual(render(res, self.names), "**Johnny**: 7 times shut (rank 1 of 1)")
             board = compute(QuerySpec(metric="times_shut", shape="leaderboard"))
-            self.assertIn(" 1. Johnny  7", render(board, self.names))
+            self.assertIn(" 1. 7  Johnny", render(board, self.names))
 
     def test_total_line(self):
         res = compute(QuerySpec(metric="xp", shape="total"))

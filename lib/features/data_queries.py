@@ -29,6 +29,7 @@ county tables came later than the economy ones) yields no rows rather than an er
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -606,7 +607,39 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
        lambda since, game: _skyrim(("stats", "sweetrolls"))),
 ]}
 
-SHAPES = ("leaderboard", "person", "compare", "total", "list")
+SHAPES = ("leaderboard", "person", "compare", "total", "list", "closest")
+
+_NUMBER_RE = re.compile(r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|m|bn|b|thousand|million|mil|grand|billion)?(?![\w.])", re.IGNORECASE)
+_TARGET_CUE_RE = re.compile(r"\b(?:closest|nearest|close|near|around|about|approx\w*|roughly|to)\s+(?:to\s+)?(?:the\s+)?$", re.IGNORECASE)
+_MULTIPLIERS = {"k": 1_000, "thousand": 1_000, "grand": 1_000, "m": 1_000_000, "mil": 1_000_000, "million": 1_000_000,
+                "b": 1_000_000_000, "bn": 1_000_000_000, "billion": 1_000_000_000}
+
+
+def parse_target_number(text: str) -> Optional[int]:
+    """The figure a "closest to ..." question names, read from the words: 100k, 1.5m, 100,000, "half a million".
+
+    Jev cannot write a number back, so the target is the one thing taken from the text by code. When
+    several numbers appear ("top 5 closest to 100k"), the one after a cue word wins; otherwise the
+    largest, since a target is rarely the smaller of "5" and "100k".
+    """
+    if not text:
+        return None
+    t = text.replace("½", " 0.5 ")
+    t = re.sub(r"\bhalf\s+a\s+(million|thousand|grand|billion)", r"0.5 \1", t, flags=re.IGNORECASE)
+    t = re.sub(r"\b(a|one)\s+(million|thousand|grand|billion)\b", r"1 \2", t, flags=re.IGNORECASE)
+    found: List[Tuple[bool, int]] = []
+    for m in _NUMBER_RE.finditer(t):
+        raw, suffix = m.group(1).replace(",", ""), (m.group(2) or "").lower()
+        try:
+            value = float(raw) * _MULTIPLIERS.get(suffix, 1)
+        except ValueError:
+            continue
+        cued = bool(_TARGET_CUE_RE.search(t[: m.start()]))
+        found.append((cued, int(round(value))))
+    if not found:
+        return None
+    cued = [v for c, v in found if c]
+    return cued[0] if cued else max(v for _, v in found)
 
 
 # --- lists ----------------------------------------------------------------------------------
@@ -996,6 +1029,7 @@ class QuerySpec:
     subjects: List[Tuple[str, str]] = field(default_factory=list)   # (display name, user_id), as many as the shape needs
     list_kind: Optional[str] = None
     pick: Optional[str] = None
+    target: Optional[int] = None      # the figure a "closest to" question names
 
 
 @dataclass
@@ -1051,11 +1085,16 @@ def compute(spec: QuerySpec, *, exclude_ids: Optional[set] = None, member_ids: O
 
     if spec.shape == "leaderboard":
         shown = populated[: normalise_limit(spec.limit)]
+    elif spec.shape == "closest" and spec.target is not None:
+        # Nearest to the target either side, closest first; ties by user id so the order is stable.
+        shown = sorted(rows, key=lambda r: (abs(r[1] - spec.target), r[0]))[: min(normalise_limit(spec.limit), 5) if not spec.limit else normalise_limit(spec.limit)]
     elif spec.shape in ("person", "compare"):
         shown = [(uid, values.get(uid, 0)) for _, uid in spec.subjects]
     else:
         shown = []
     ranks = {uid: rank_of(uid) for uid, _ in shown}
+    if spec.shape == "closest":
+        ranks = {uid: i for i, (uid, _) in enumerate(shown, 1)}
     ids = [uid for uid, _ in shown] + [uid for _, uid in spec.subjects if uid not in {u for u, _ in shown}]
     return QueryResult(spec=spec, metric=metric, rows=shown, ranks=ranks, population=population, total=total, ids=ids)
 
@@ -1130,8 +1169,23 @@ def render(res: QueryResult, names: Dict[str, str]) -> str:
             head = f"{'Earliest' if spec.lowest else 'Latest'} {len(res.rows)} by {metric.label}{scope}"
         else:
             head = f"{'Bottom' if spec.lowest else 'Top'} {len(res.rows)} by {metric.label}{scope}"
-        width = max(len(name(u)) for u, _ in res.rows)
-        lines = [f"{res.ranks[u]:>2}. {name(u):<{width}}  {_fmt(metric, v)}" for u, v in res.rows]
+        # Figures first, names last: figures are plain ASCII so the columns line up, while a nickname
+        # full of emoji is any width Discord feels like.
+        vwidth = max(len(_fmt(metric, v)) for _, v in res.rows)
+        lines = [f"{res.ranks[u]:>2}. {_fmt(metric, v):>{vwidth}}  {name(u)}" for u, v in res.rows]
+        return f"{head}\n```\n" + "\n".join(lines) + "\n```" + foot
+
+    if spec.shape == "closest":
+        if not res.rows or spec.target is None:
+            return f"Nobody has any {metric.label}{scope} on record."
+        head = f"Closest {len(res.rows)} to {_fmt(metric, spec.target)} {metric.label}{scope}".replace(f"{metric.unit} {metric.label}", metric.label if metric.unit and metric.unit.lower() in metric.label.lower() else f"{metric.unit} {metric.label}")
+        vwidth = max(len(_fmt(metric, v)) for _, v in res.rows)
+        gaps = []
+        for u, v in res.rows:
+            diff = v - spec.target
+            gaps.append("spot on" if diff == 0 else f"{diff:+,} {metric.unit}".rstrip())
+        gwidth = max(len(g) for g in gaps)
+        lines = [f"{res.ranks[u]:>2}. {_fmt(metric, v):>{vwidth}}  {g:<{gwidth}}  {name(u)}" for (u, v), g in zip(res.rows, gaps)]
         return f"{head}\n```\n" + "\n".join(lines) + "\n```" + foot
 
     if spec.shape == "person":

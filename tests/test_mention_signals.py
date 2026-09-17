@@ -184,7 +184,7 @@ class TestDataSignals(unittest.TestCase):
         crit = QUESTIONS["data_metric"]["criteria"]
         from lib.features.data_queries import METRICS
         self.assertEqual(set(crit), set(METRICS) | {"none"})
-        self.assertEqual(set(QUESTIONS["data_shape"]["criteria"]), {"leaderboard", "person", "compare", "total", "list", "none"})
+        self.assertEqual(set(QUESTIONS["data_shape"]["criteria"]), {"leaderboard", "person", "compare", "total", "list", "closest", "none"})
         self.assertIn("blackjack", QUESTIONS["data_game"]["criteria"])
         self.assertIn("connect4", QUESTIONS["data_game"]["criteria"])
 
@@ -230,6 +230,12 @@ class TestDataSignals(unittest.TestCase):
 
     def test_flat_limit_is_ignored(self):
         self.assertIsNone(parse_signals(_with_data(_answers(), limit="5", limit_conf=0.3), {}).data_limit)
+
+    def test_single_member_question_gets_a_short_board(self):
+        # "who has used the most shutcoins" is one person plus context, not the top 10
+        self.assertEqual(parse_signals(_with_data(_answers(), limit="single"), {}).data_limit, ms.SINGLE_ANSWER_LIMIT)
+        self.assertIsNone(parse_signals(_with_data(_answers(), limit="single", limit_conf=0.3), {}).data_limit)
+        self.assertIn("single", QUESTIONS["data_limit"]["criteria"])
 
     def test_list_questions_and_sources(self):
         from lib.features.data_queries import LISTS, SOURCES

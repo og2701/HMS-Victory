@@ -4900,6 +4900,12 @@ async def answer_data_query(
     list_kind = dq.LISTS.get(spec.list_kind or "")
     if spec.shape == "list" and list_kind is None:
         return False
+    if spec.shape == "closest":
+        # Jev flagged a target; the number itself is read from the words by code.
+        spec.target = dq.parse_target_number(clean_prompt)
+        if spec.target is None or dq.METRICS[spec.metric].kind != "int":
+            await message.reply("Closest to what? Give me a number.", mention_author=True)
+            return True
     # A list about one named thing (who holds a badge, who owns a county): pick it from the real
     # catalogue, so the answer can only ever be about something that exists.
     if list_kind is not None and list_kind.pick:

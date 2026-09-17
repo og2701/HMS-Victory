@@ -172,9 +172,13 @@ QUESTIONS: Dict[str, Dict[str, Any]] = {
     },
 }
 
-_DATA_LIMIT_OPTIONS = {"not_given": "No number of entries was asked for"}
+_DATA_LIMIT_OPTIONS = {
+    "not_given": "A list is wanted and no number of entries was stated ('leaderboard', 'the rankings', 'top players')",
+    "single": "One member is asked for: who has the most or least, who's the richest, the biggest yapper, the most shut member",
+}
 for _n in (3, 5, 10, 15, 20):
     _DATA_LIMIT_OPTIONS[str(_n)] = f"{_n} entries"
+SINGLE_ANSWER_LIMIT = 3   # "who has the most": the winner plus two runners-up for context
 _DATA_GAME_OPTIONS = {"any": "No particular game named, or a game not listed here"}
 for _g in list(CASINO_GAMES) + list(PVP_GAMES):
     _DATA_GAME_OPTIONS[_g] = GAME_LABELS[_g]
@@ -199,6 +203,7 @@ QUESTIONS.update({
                 "A superlative about an unnamed member ('who has the most', 'who's the richest', 'biggest yapper', 'most shut member') is a leaderboard: the answer is the top of a ranked list.",
                 "person is only for a member identified by name, @mention, or as the caller.",
                 "list is for things rather than a number: what someone owns or has done, or a server fact sheet (the house bank, the lottery, the shop, the iceberg, open predictions), or who holds a particular badge or county.",
+                "A target figure in the message ('closest to 100k', 'nearest to a million', 'who has about 50') is closest: the members nearest to that number, not the top of the list.",
             ],
         },
         "criteria": {
@@ -207,6 +212,7 @@ QUESTIONS.update({
             "compare": {"what": "Two members set against each other on a number", "examples": ["who has more ukpence, me or steven", "compare my xp with kim's"]},
             "total": {"what": "One number for the whole server", "examples": ["how much ukpence is in circulation", "how many messages were sent today", "total badges handed out"]},
             "list": {"what": "A list of things or a fact sheet, not a single number", "examples": ["what badges has steven got", "what's in the house bank", "what counties does kim own", "what predictions are open", "who has the warden badge", "who owns yorkshire", "what did johnny say last"]},
+            "closest": {"what": "The members whose figure is nearest to a target number stated in the message", "examples": ["who has closest to 100k xp", "who's nearest to a million ukp", "who has about 50 shutcoins", "who is closest to 10,000 messages"]},
             "none": {"what": "Not a records question"},
         },
     },
@@ -222,7 +228,7 @@ QUESTIONS.update({
     },
     "data_limit": {
         "type": "choice",
-        "instructions": "How many entries does `message.text` ask a ranked list for ('top 10', 'the five richest')? not_given when no number is stated or it isn't a ranked list.",
+        "instructions": "How many entries does `message.text` ask for? A stated number ('top 10', 'the five richest'); single when it asks who THE top or bottom member is; not_given when a list is wanted with no number, or it isn't a ranked list.",
         "criteria": _DATA_LIMIT_OPTIONS,
     },
     "data_lowest": {
@@ -447,7 +453,12 @@ def parse_signals(answers: Dict[str, Any], usage: Optional[Dict[str, Any]] = Non
     data_metric, metric_conf = choice("data_metric", metric_keys, "none")
     data_shape, shape_conf = choice("data_shape", DATA_SHAPES, "none")
     limit_pick, limit_conf = choice("data_limit", set(_DATA_LIMIT_OPTIONS), "not_given")
-    data_limit = int(limit_pick) if limit_pick != "not_given" and limit_conf >= GROUP_COUNT_CONFIDENCE else None
+    if limit_pick == "single" and limit_conf >= GROUP_COUNT_CONFIDENCE:
+        data_limit: Optional[int] = SINGLE_ANSWER_LIMIT
+    elif limit_pick not in ("not_given", "single") and limit_conf >= GROUP_COUNT_CONFIDENCE:
+        data_limit = int(limit_pick)
+    else:
+        data_limit = None
     data_window, _ = choice("data_window", set(WINDOWS), "all_time")
     game_pick, _ = choice("data_game", set(_DATA_GAME_OPTIONS), "any")
     data_subject, _ = choice("data_subject", DATA_SUBJECTS, "not_applicable")

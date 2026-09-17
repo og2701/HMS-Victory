@@ -3355,9 +3355,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         mock_plan.assert_not_called()
         text = message.reply.call_args[0][0]
         self.assertTrue(text.startswith("Behold the degenerates.\nTop 3 by shutcoins held\n```"), text)
-        self.assertIn(" 1. Johnny   14 shutcoins", text)
-        self.assertIn(" 2. Steven   9 shutcoins", text)
-        self.assertIn(" 3. Hadidas  2 shutcoins", text)
+        self.assertIn(" 1. 14 shutcoins  Johnny", text)
+        self.assertIn(" 2.  9 shutcoins  Steven", text)
+        self.assertIn(" 3.  2 shutcoins  Hadidas", text)
         self.assertNotIn("Wick", text)
         self.assertNotIn("555", text)
         self.assertFalse(message.reply.call_args[1]["allowed_mentions"].users)
@@ -3465,6 +3465,42 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("**holders of a badge: Warden**", text)
         self.assertIn("- Johnny: since 14 Nov 2023", text)
         self.assertIn("- Steven: since", text)
+
+    @patch("lib.features.chat_responder.plan_mention")
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("Closer than a cat is to loving water.", 5, 5))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_records_closest_reads_the_target_from_the_words(self, mock_judge, _find, _generate, mock_plan):
+        mock_judge.return_value = _jev_signals(action="reply", confidence=0.99, data={"metric": "xp", "shape": "closest"})
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> who has closest to 100k XP")
+        people = {1: _member(1, "Kim John Unc"), 2: _member(2, "Chin"), 3: _member(3, "Tharan")}
+        message.guild = MagicMock(); message.guild.members = []
+        message.guild.get_member.side_effect = lambda uid: people.get(uid)
+        rows = [("1", 1_274_476), ("2", 730_827), ("3", 98_500)]
+        with patch("lib.features.data_queries._fetch", lambda sql, params=(): rows if "FROM xp" in sql else []), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_plan.assert_not_called()
+        text = message.reply.call_args[0][0]
+        self.assertIn("Closest 3 to 100,000 XP", text)
+        self.assertRegex(text, r" 1\.\s+98,500 XP  -1,500 XP\s+Tharan")
+        self.assertRegex(text, r" 2\.\s+730,827 XP  \+630,827 XP\s+Chin")
+
+    @patch("lib.features.chat_responder.plan_mention")
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_records_closest_without_a_number_asks(self, mock_judge, _find, mock_plan):
+        mock_judge.return_value = _jev_signals(action="reply", confidence=0.99, data={"metric": "xp", "shape": "closest"})
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> who's closest to the top")
+        message.guild = MagicMock(); message.guild.members = []
+        with patch("lib.features.data_queries._fetch", side_effect=AssertionError("must not query")), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        self.assertIn("Closest to what", message.reply.call_args[0][0])
 
     @patch("lib.features.chat_responder.judge_named_subject", new_callable=AsyncMock, return_value=(None, 50, 0))
     @patch("lib.features.chat_responder.plan_mention")
