@@ -1577,6 +1577,17 @@ async def _reply(interaction: discord.Interaction, text: str, *, refresh: bool =
         asyncio.create_task(refresh_panel(interaction.client))
 
 
+async def _dm_doors_open(client: discord.Client) -> None:
+    """Day-one roll call: every housemate gets the doors-open DM with a read receipt."""
+    for uid in housemates():
+        await dm_user(client, uid, ack="doors open (day one)", embed=bb_embed(
+            "The doors are open",
+            f"UKPlace Big Brother has started. Head to <#{house_channel_id()}>. The panel at the bottom of "
+            f"that channel is how you talk to Big Brother: the diary room, nominations when they open, your "
+            f"secret mission, immunity and the snug.\n\nPress the button below so Big Brother knows you're here."))
+        await asyncio.sleep(0.5)
+
+
 async def _act_start(interaction: discord.Interaction):
     if game_started():
         await _reply(interaction, f"The game has been live since <t:{game_started_at()}:f>.", refresh=False)
@@ -1597,7 +1608,10 @@ async def _act_start(interaction: discord.Interaction):
                 f"the diary room, nominations, your secret mission and the snug are all there. "
                 f"Big Brother is watching. Good luck.")
         await refresh_panel(inter.client)
-        await _reply(inter, "The game is live. The house panel is unlocked and the doors announcement is posted.", refresh=False)
+        await _reply(inter, "The game is live. The house panel is unlocked and the doors announcement is posted. "
+                            "Each housemate is being DMed with an 'I've seen this' button so you can see who's turned up.",
+                     refresh=False)
+        asyncio.create_task(_dm_doors_open(inter.client))
 
     await interaction.response.send_message(
         f"Start the game with {len(housemates())} housemates? This unlocks the house panel and posts the opening announcement.",
