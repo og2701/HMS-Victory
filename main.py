@@ -370,7 +370,8 @@ class AClient(discord.Client):
 
         # Big Brother house channel: activity tracking + auto-judged challenges.
         if getattr(config, "BIG_BROTHER_ENABLED", False) and \
-                message.channel.id == getattr(config, "BIG_BROTHER_HOUSE_CHANNEL", 0):
+                getattr(config, "BIG_BROTHER_HOUSE_CHANNEL", 0) in (
+                    message.channel.id, getattr(message.channel, "parent_id", None)):
             from lib.features.big_brother import on_house_message
             asyncio.create_task(on_house_message(self, message))
 

@@ -135,7 +135,7 @@ def test_panel_text_and_view_have_no_secrets(bb):
     assert view.timeout is None
     ids = [c.custom_id for row in view.children[0].children
            if hasattr(row, "children") for c in row.children]
-    assert len(ids) == 15 and len(set(ids)) == 15
+    assert len(ids) == 17 and len(set(ids)) == 17
     assert set(ids) == {f"bb:ctl:{a}" for a in bb.PANEL_ACTIONS}
     # Rows stay short so buttons don't wrap mid-row on desktop.
     assert all(len(row.children) <= 3 for row in view.children[0].children if hasattr(row, "children"))
@@ -179,6 +179,32 @@ def test_events_and_rundown(bb):
     assert "diary (anonymous): I trust nobody" in timeline
     import json
     json.dumps(dump)  # must be serialisable as-is
+
+
+def test_tokens_immunity_and_swap(bb):
+    for u in (1, 2, 3, 4):
+        bb.db_add_housemate(u)
+    assert bb.tokens_of(1) == 0
+    assert not bb.spend_token(1)
+    assert bb.grant_token(1) == 1
+    assert bb.spend_token(1) and not bb.spend_token(1)
+
+    bb.set_immune(2, True)
+    assert bb.immune_ids() == {2}
+    assert bb.clear_all_immunity() == [2]
+    assert bb.immune_ids() == set()
+
+    vid = bb.create_round(bb.KIND_VOTE, nominees=[1, 3])
+    bb.cast_vote(vid, 10, 1)
+    bb.cast_vote(vid, 11, 3)
+    bb.replace_nominee(vid, 1, 4)
+    assert bb.get_round(vid)["nominees"] == [4, 3]
+    assert bb.vote_tally(vid) == {3: 1}  # votes for the swapped-out nominee are voided
+
+    sid = bb.add_snug(555, 1, [1, 2])
+    assert bb.snugs()[0] == {"id": sid, "thread_id": 555, "opened_by": 1, "members": [1, 2],
+                             "created_at": bb.snugs()[0]["created_at"]}
+    assert bb.recent_snug_by(1, 60) and not bb.recent_snug_by(2, 60)
 
 
 def test_vote_button_custom_id(bb):

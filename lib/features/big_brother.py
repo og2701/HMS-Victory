@@ -136,7 +136,19 @@ def ensure_tables() -> None:
         # Full transcript of the house channel (the message archive elsewhere is rolling).
         c.execute("""CREATE TABLE IF NOT EXISTS bb_messages (
             message_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, content TEXT,
-            at INTEGER NOT NULL, attachments INTEGER NOT NULL DEFAULT 0, reply_to TEXT)""")
+            at INTEGER NOT NULL, attachments INTEGER NOT NULL DEFAULT 0, reply_to TEXT,
+            thread_id TEXT)""")
+        # Private "snug" threads: two or more housemates talking strategy with Big Brother listening.
+        c.execute("""CREATE TABLE IF NOT EXISTS bb_snugs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, thread_id TEXT NOT NULL, opened_by TEXT,
+            members TEXT NOT NULL, created_at INTEGER NOT NULL)""")
+        # Columns added after the first deploy; harmless when they already exist.
+        for stmt in ("ALTER TABLE bb_housemates ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0",
+                     "ALTER TABLE bb_messages ADD COLUMN thread_id TEXT"):
+            try:
+                c.execute(stmt)
+            except Exception:
+                pass
     _tables_ready = True
 
 
@@ -177,12 +189,14 @@ def log_event(kind: str, actor: Optional[int] = None, target: Optional[int] = No
 
 def store_message(message: discord.Message) -> None:
     ensure_tables()
+    in_thread = isinstance(message.channel, discord.Thread)
     DatabaseManager.execute(
-        "INSERT OR REPLACE INTO bb_messages (message_id, user_id, content, at, attachments, reply_to) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO bb_messages (message_id, user_id, content, at, attachments, reply_to, thread_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (str(message.id), str(message.author.id), message.content or "",
          int(message.created_at.timestamp()), len(message.attachments),
-         str(message.reference.message_id) if message.reference and message.reference.message_id else None))
+         str(message.reference.message_id) if message.reference and message.reference.message_id else None,
+         str(message.channel.id) if in_thread else None))
 
 
 def events() -> list[dict]:
@@ -250,6 +264,71 @@ def db_toggle_immunity(user_id: int) -> bool:
     new = 0 if (row and row[0]) else 1
     DatabaseManager.execute("UPDATE bb_housemates SET immune = ? WHERE user_id = ?", (new, str(user_id)))
     return bool(new)
+
+
+def tokens_of(user_id: int) -> int:
+    ensure_tables()
+    row = DatabaseManager.fetch_one("SELECT tokens FROM bb_housemates WHERE user_id = ?", (str(user_id),))
+    return int(row[0]) if row and row[0] else 0
+
+
+def grant_token(user_id: int, n: int = 1) -> int:
+    ensure_tables()
+    DatabaseManager.execute("UPDATE bb_housemates SET tokens = tokens + ? WHERE user_id = ?", (int(n), str(user_id)))
+    return tokens_of(user_id)
+
+
+def spend_token(user_id: int) -> bool:
+    """Atomically take one token; False if they had none."""
+    ensure_tables()
+    changed = DatabaseManager.execute(
+        "UPDATE bb_housemates SET tokens = tokens - 1 WHERE user_id = ? AND tokens > 0", (str(user_id),))
+    return bool(changed)
+
+
+def set_immune(user_id: int, immune: bool) -> None:
+    DatabaseManager.execute("UPDATE bb_housemates SET immune = ? WHERE user_id = ?",
+                            (1 if immune else 0, str(user_id)))
+
+
+def clear_all_immunity() -> list[int]:
+    """Immunity covers one nominations round; called when that round closes."""
+    was = sorted(immune_ids())
+    DatabaseManager.execute("UPDATE bb_housemates SET immune = 0")
+    return was
+
+
+def add_snug(thread_id: int, opened_by: Optional[int], members: Iterable[int]) -> int:
+    ensure_tables()
+    return DatabaseManager.execute_insert(
+        "INSERT INTO bb_snugs (thread_id, opened_by, members, created_at) VALUES (?, ?, ?, ?)",
+        (str(thread_id), str(opened_by) if opened_by else None, json.dumps([int(m) for m in members]), _now()))
+
+
+def snugs() -> list[dict]:
+    ensure_tables()
+    rows = DatabaseManager.fetch_all("SELECT id, thread_id, opened_by, members, created_at FROM bb_snugs ORDER BY id")
+    return [{"id": r[0], "thread_id": int(r[1]), "opened_by": int(r[2]) if r[2] else None,
+             "members": json.loads(r[3]), "created_at": r[4]} for r in rows]
+
+
+def recent_snug_by(user_id: int, within_seconds: int) -> bool:
+    ensure_tables()
+    row = DatabaseManager.fetch_one(
+        "SELECT 1 FROM bb_snugs WHERE opened_by = ? AND created_at > ? LIMIT 1",
+        (str(user_id), _now() - int(within_seconds)))
+    return row is not None
+
+
+def replace_nominee(round_id: int, old: int, new: int) -> None:
+    """Save-and-replace: swap a nominee on an open vote and void the votes cast for them."""
+    rnd = get_round(round_id)
+    if not rnd:
+        return
+    nominees = [new if n == old else n for n in rnd["nominees"]]
+    with DatabaseManager.transaction() as c:
+        c.execute("UPDATE bb_rounds SET nominees = ? WHERE id = ?", (json.dumps(nominees), int(round_id)))
+        c.execute("DELETE FROM bb_votes WHERE round_id = ? AND nominee_id = ?", (int(round_id), str(old)))
 
 
 # --- rounds ---
@@ -574,6 +653,9 @@ async def close_nominations(client: discord.Client) -> Optional[dict]:
         return None
     close_round(rnd["id"])
     guild = _guild(client)
+    expired = clear_all_immunity()
+    if expired:
+        log_event("immunity_expired", housemates=expired, round_id=rnd["id"])
     pairs = nominations_for(rnd["id"])
     counts: dict[int, list[int]] = {}
     for nominator, nominee in pairs:
@@ -600,6 +682,23 @@ async def close_nominations(client: discord.Client) -> Optional[dict]:
     return {"round_id": rnd["id"], "ranked": ranked, "missing": missing}
 
 
+def _vote_view(round_id: int, nominee_ids: Iterable[int], guild: Optional[discord.Guild]) -> discord.ui.View:
+    view = discord.ui.View(timeout=None)
+    for n in nominee_ids:
+        view.add_item(VoteButton(round_id, n, _name(guild, n)))
+    return view
+
+
+def _vote_embed(nominee_ids: Iterable[int], guild: Optional[discord.Guild]) -> discord.Embed:
+    names = ", ".join(f"**{_name(guild, n)}**" for n in nominee_ids)
+    return bb_embed(
+        "Eviction vote",
+        f"The housemates have nominated. Now the server decides.\n\n"
+        f"Facing eviction: {names}\n\n"
+        f"Press a button to vote for who should **leave** the house. One vote each, and you can "
+        f"change it until the vote closes. Results stay secret until Big Brother reveals them.")
+
+
 async def start_vote(client: discord.Client, nominee_ids: list[int]) -> Optional[dict]:
     if open_round(KIND_VOTE):
         return None
@@ -609,16 +708,9 @@ async def start_vote(client: discord.Client, nominee_ids: list[int]) -> Optional
         return None
     rid = create_round(KIND_VOTE, nominees=nominee_ids)
     names = ", ".join(f"**{_name(guild, n)}**" for n in nominee_ids)
-    embed = bb_embed(
-        "Eviction vote",
-        f"The housemates have nominated. Now the server decides.\n\n"
-        f"Facing eviction: {names}\n\n"
-        f"Press a button to vote for who should **leave** the house. One vote each, and you can "
-        f"change it until the vote closes. Results stay secret until Big Brother reveals them.")
-    view = discord.ui.View(timeout=None)
-    for n in nominee_ids:
-        view.add_item(VoteButton(rid, n, _name(guild, n)))
-    msg = await ch.send(content=f"{EYE} **Eviction vote is open.**", embed=embed, view=view)
+    embed = _vote_embed(nominee_ids, guild)
+    msg = await ch.send(content=f"{EYE} **Eviction vote is open.**", embed=embed,
+                        view=_vote_view(rid, nominee_ids, guild))
     set_round_message(rid, ch.id, msg.id)
     log_event("vote_opened", round_id=rid, nominees=list(nominee_ids), channel_id=ch.id, message_id=msg.id)
     hc = await house_channel(client)
@@ -659,6 +751,49 @@ async def close_vote(client: discord.Client) -> Optional[dict]:
             except discord.HTTPException:
                 pass
     return {"round_id": rnd["id"], "ranked": ranked, "tally": tally, "total": total}
+
+
+SNUG_ARCHIVE_MINUTES = 60
+SNUG_COOLDOWN_SECONDS = 2 * 3600
+
+
+async def open_snug(client: discord.Client, opened_by: Optional[int], member_ids: list[int],
+                    *, reason: str = "") -> tuple[Optional[discord.Thread], str]:
+    """Create a private thread under the house channel with the members and the host in it.
+    Big Brother watches: the host is added, and every message is stored in the transcript."""
+    ch = await house_channel(client)
+    if not isinstance(ch, discord.TextChannel):
+        return None, "House channel not found."
+    guild = ch.guild
+    members = list(dict.fromkeys(int(m) for m in member_ids))
+    label = " & ".join(_name(guild, m) for m in members)[:80]
+    try:
+        thread = await ch.create_thread(
+            name=f"🛋️ snug: {label}"[:100], type=discord.ChannelType.private_thread,
+            invitable=False, auto_archive_duration=SNUG_ARCHIVE_MINUTES,
+            reason="Big Brother snug")
+    except discord.HTTPException as e:
+        log.warning("Big Brother: snug thread failed: %s", e)
+        return None, "Couldn't open a private thread here (check the bot can create private threads)."
+    for uid in members + [host_id()]:
+        member = guild.get_member(uid)
+        if member:
+            try:
+                await thread.add_user(member)
+            except discord.HTTPException:
+                pass
+    sid = add_snug(thread.id, opened_by, members)
+    log_event("snug_opened", actor=opened_by, snug_id=sid, thread_id=thread.id, members=members, reason=reason)
+    mentions = " ".join(f"<@{m}>" for m in members)
+    intro = (f"{EYE} **Welcome to the snug.** {mentions}\n\n"
+             + (f"{reason}\n\n" if reason else "")
+             + f"Talk freely. Big Brother is in here too, and is watching. "
+             f"This thread closes itself after {SNUG_ARCHIVE_MINUTES} minutes of quiet.")
+    try:
+        await thread.send(intro)
+    except discord.HTTPException:
+        pass
+    return thread, ""
 
 
 async def crown_winner(client: discord.Client, user_id: int) -> tuple[bool, str]:
@@ -848,6 +983,8 @@ class BigBrotherControlView(discord.ui.LayoutView):
             ("### 🏠 Housemates", [
                 [_PanelButton("add", "Add housemates", discord.ButtonStyle.success, "➕"),
                  _PanelButton("immunity", "Toggle immunity", emoji="🛡️"),
+                 _PanelButton("token", "Grant immunity token", emoji="🎟️")],
+                [_PanelButton("snug", "Open a snug", emoji="🛋️"),
                  _PanelButton("crown", "Crown winner", discord.ButtonStyle.success, "👑")],
             ]),
             ("### 🕵️ Secret missions", [
@@ -1096,6 +1233,54 @@ async def _act_immunity(interaction: discord.Interaction):
         view=view, ephemeral=True)
 
 
+async def _act_token(interaction: discord.Interaction):
+    ins = housemates()
+    if not ins:
+        await _reply(interaction, "No housemates.", refresh=False)
+        return
+
+    async def picked(inter: discord.Interaction, ids: list[int]):
+        out = []
+        for uid in ids:
+            total = grant_token(uid)
+            log_event("token_granted", target=uid, tokens=total, source="host")
+            await dm_user(inter.client, uid, embed=bb_embed("Immunity token", _token_blurb(total)))
+            out.append(f"{_name(inter.guild, uid)}: now holds {total}")
+        await _reply(inter, "\n".join(out), refresh=False)
+
+    view = _HousematePicker(interaction.guild, ins, picked, placeholder="Who earns a token?",
+                            max_values=min(25, len(ins)))
+    await interaction.response.send_message("Pick who gets an immunity token.", view=view, ephemeral=True)
+
+
+async def _act_snug(interaction: discord.Interaction):
+    ins = housemates()
+    if len(ins) < 2:
+        await _reply(interaction, "Need at least two housemates.", refresh=False)
+        return
+
+    async def picked(inter: discord.Interaction, ids: list[int]):
+        async def submitted(inter2: discord.Interaction, values: dict):
+            await inter2.response.defer(ephemeral=True)
+            thread, err = await open_snug(inter2.client, None, ids, reason=values.get("reason", ""))
+            await _reply(inter2, err or f"Snug opened: <#{thread.id}>", refresh=False)
+        await inter.response.send_modal(_TextModal("Open a snug", [
+            ("reason", "What's it for? (optional, shown in the thread)", False, 500, True)], submitted))
+
+    view = _HousematePicker(interaction.guild, ins, picked, placeholder="Who goes in the snug?",
+                            min_values=2, max_values=min(25, len(ins)))
+    await interaction.response.send_message("Pick the housemates for the snug.", view=view, ephemeral=True)
+
+
+def _token_blurb(total: int) -> str:
+    return (f"You now hold **{total}** immunity token{'s' if total != 1 else ''}.\n\n"
+            f"Press **Use immunity** on the house panel to spend one:\n"
+            f"• protect yourself from the next nominations\n"
+            f"• give that protection to another housemate\n"
+            f"• or bank it, and if you're ever facing the public vote, swap yourself out for "
+            f"a housemate who wasn't nominated.")
+
+
 async def _act_mission(interaction: discord.Interaction):
     ins = housemates()
     if not ins:
@@ -1149,12 +1334,17 @@ async def _act_resolve_mission(interaction: discord.Interaction):
                 return
             log_event("mission_resolved", target=m["user_id"], mission_id=mid, status=status, brief=m["brief"])
             if status == "done":
+                total = grant_token(m["user_id"])
+                log_event("token_granted", target=m["user_id"], tokens=total, source=f"mission:{mid}")
                 await dm_user(inter2.client, m["user_id"], embed=bb_embed(
-                    "Mission complete", f"Big Brother is pleased. {m['brief']}\n\nYour reward will follow."))
+                    "Mission complete",
+                    f"Big Brother is pleased. *{m['brief']}*\n\n🎟️ You've earned an **immunity token**. "
+                    + _token_blurb(total)))
             else:
                 await dm_user(inter2.client, m["user_id"], embed=bb_embed(
                     "Mission failed", f"You were rumbled. {m['brief']}"))
-            await _reply(inter2, f"Mission #{mid} marked {status}. The housemate has been told.")
+            await _reply(inter2, f"Mission #{mid} marked {status}. The housemate has been told"
+                         + (" and given an immunity token." if status == "done" else "."))
 
         async def _d(i): await _finish(i, "done")
         async def _f(i): await _finish(i, "failed")
@@ -1284,6 +1474,7 @@ PANEL_ACTIONS = {
     "open_noms": _act_open_noms, "close_noms": _act_close_noms, "start_vote": _act_start_vote,
     "close_vote": _act_close_vote, "evict": _act_evict, "add": _act_add, "immunity": _act_immunity,
     "mission": _act_mission, "resolve_mission": _act_resolve_mission, "challenge": _act_challenge,
+    "token": _act_token, "snug": _act_snug,
     "end_challenge": _act_end_challenge, "dm": _act_dm, "broadcast": _act_broadcast,
     "crown": _act_crown, "refresh": _act_refresh,
 }
@@ -1404,9 +1595,152 @@ async def _house_diary_anon(interaction):
     await handle_diary(interaction, anonymous=True)
 
 
+async def handle_use_immunity(interaction: discord.Interaction):
+    me = interaction.user.id
+    have = tokens_of(me)
+    if have <= 0:
+        await interaction.response.send_message(
+            f"{EYE} You don't hold an immunity token. Complete a secret mission to earn one.", ephemeral=True)
+        return
+    vote = open_round(KIND_VOTE)
+    facing = bool(vote and me in vote["nominees"])
+    others = [u for u in housemates() if u != me]
+
+    view = discord.ui.View(timeout=300)
+    protect = discord.ui.Button(label="Protect myself", style=discord.ButtonStyle.primary, emoji="🛡️")
+    gift = discord.ui.Button(label="Give to a housemate", emoji="🎁")
+    swap = discord.ui.Button(label="Save & replace", style=discord.ButtonStyle.danger, emoji="🔁", disabled=not facing)
+
+    async def _protect(inter: discord.Interaction):
+        if me in immune_ids():
+            await inter.response.edit_message(content="You're already immune from the next nominations.", view=None)
+            return
+        if not spend_token(me):
+            await inter.response.edit_message(content="No token left.", view=None)
+            return
+        set_immune(me, True)
+        log_event("immunity_used", actor=me, target=me, mode="self")
+        await notify_host(inter.client, f"{EYE} {_mention_and_name(inter.guild, me)} used a token: immune from the next nominations.")
+        await inter.response.edit_message(
+            content=f"{EYE} Done. You're immune from the next nominations. Nobody will be able to pick you.", view=None)
+        asyncio.create_task(refresh_panel(inter.client))
+
+    async def _gift(inter: discord.Interaction):
+        async def picked(inter2: discord.Interaction, ids: list[int]):
+            target = ids[0]
+            if target in immune_ids():
+                await inter2.response.edit_message(content=f"{_name(inter2.guild, target)} is already immune.", view=None)
+                return
+            if not spend_token(me):
+                await inter2.response.edit_message(content="No token left.", view=None)
+                return
+            set_immune(target, True)
+            log_event("immunity_used", actor=me, target=target, mode="gift")
+            await dm_user(inter2.client, target, embed=bb_embed(
+                "A gift", f"{_name(inter2.guild, me)} has given you immunity from the next nominations."))
+            await notify_host(inter2.client, f"{EYE} {_mention_and_name(inter2.guild, me)} gave immunity to {_mention_and_name(inter2.guild, target)}.")
+            await inter2.response.edit_message(
+                content=f"{EYE} Done. {_name(inter2.guild, target)} is immune from the next nominations, and knows it came from you.", view=None)
+            asyncio.create_task(refresh_panel(inter2.client))
+        await inter.response.edit_message(content="Who gets your immunity?",
+                                          view=_HousematePicker(inter.guild, others, picked, placeholder="Give immunity to..."))
+
+    async def _swap(inter: discord.Interaction):
+        vote_now = open_round(KIND_VOTE)
+        if not vote_now or me not in vote_now["nominees"]:
+            await inter.response.edit_message(content="You're not facing the public vote right now.", view=None)
+            return
+        immune = immune_ids()
+        pool = [u for u in others if u not in vote_now["nominees"] and u not in immune]
+        if not pool:
+            await inter.response.edit_message(content="There's nobody you can swap with.", view=None)
+            return
+
+        async def picked(inter2: discord.Interaction, ids: list[int]):
+            target = ids[0]
+            rnd = open_round(KIND_VOTE)
+            if not rnd or me not in rnd["nominees"] or target in rnd["nominees"]:
+                await inter2.response.edit_message(content="The vote changed under you. Try again.", view=None)
+                return
+            if not spend_token(me):
+                await inter2.response.edit_message(content="No token left.", view=None)
+                return
+            await inter2.response.defer()
+            replace_nominee(rnd["id"], me, target)
+            log_event("immunity_used", actor=me, target=target, mode="swap", round_id=rnd["id"])
+            new_nominees = get_round(rnd["id"])["nominees"]
+            guild = inter2.guild
+            # Re-post the buttons on the public vote and tell voters why.
+            ch = await _channel(inter2.client, rnd["channel_id"]) if rnd["channel_id"] else None
+            if ch and rnd["message_id"]:
+                try:
+                    msg = await ch.fetch_message(rnd["message_id"])
+                    await msg.edit(embed=_vote_embed(new_nominees, guild), view=_vote_view(rnd["id"], new_nominees, guild))
+                    await ch.send(f"{EYE} **Save and replace.** {_name(guild, me)} has used immunity to leave the "
+                                  f"eviction line-up, and **{_name(guild, target)}** takes their place. "
+                                  f"Votes for {_name(guild, me)} have been cleared. If that was your vote, vote again.")
+                except discord.HTTPException:
+                    log.exception("Big Brother: could not update vote message after swap")
+            hc = await house_channel(inter2.client)
+            if hc and (not ch or hc.id != ch.id):
+                await hc.send(f"{_role_mention()}{EYE} **Save and replace.** {_name(guild, me)} has used immunity "
+                              f"and **{_name(guild, target)}** now faces the public vote instead.")
+            await dm_user(inter2.client, target, embed=bb_embed(
+                "You're facing eviction", f"{_name(guild, me)} used immunity to swap out of the vote and put you in."))
+            await notify_host(inter2.client, f"{EYE} {_mention_and_name(guild, me)} swapped out of the vote for "
+                                             f"{_mention_and_name(guild, target)}. Votes for them were cleared.")
+            await inter2.edit_original_response(
+                content=f"{EYE} Done. You're out of the line-up and {_name(guild, target)} is in.", view=None)
+            asyncio.create_task(refresh_panel(inter2.client))
+
+        await inter.response.edit_message(content="Who takes your place in the vote?",
+                                          view=_HousematePicker(inter.guild, pool, picked, placeholder="Swap with..."))
+
+    protect.callback, gift.callback, swap.callback = _protect, _gift, _swap
+    view.add_item(protect)
+    view.add_item(gift)
+    view.add_item(swap)
+    await interaction.response.send_message(
+        f"🎟️ You hold **{have}** immunity token{'s' if have != 1 else ''}. Spend one how?\n"
+        f"• **Protect myself**: nobody can nominate you in the next round.\n"
+        f"• **Give to a housemate**: they get that protection instead, and they'll know it was you.\n"
+        f"• **Save & replace**: only while you're facing the public vote. You leave the line-up and pick who replaces you."
+        + ("" if facing else "\n-# You're not facing a vote right now, so that one's greyed out."),
+        view=view, ephemeral=True)
+
+
+async def handle_snug(interaction: discord.Interaction):
+    me = interaction.user.id
+    others = [u for u in housemates() if u != me]
+    if not others:
+        await interaction.response.send_message("There's nobody else in the house.", ephemeral=True)
+        return
+    if recent_snug_by(me, SNUG_COOLDOWN_SECONDS):
+        await interaction.response.send_message(
+            f"{EYE} You've opened a snug recently. Try again in a couple of hours.", ephemeral=True)
+        return
+
+    async def picked(inter: discord.Interaction, ids: list[int]):
+        await inter.response.defer(ephemeral=True)
+        thread, err = await open_snug(inter.client, me, [me] + ids)
+        if err:
+            await inter.edit_original_response(content=err, view=None)
+            return
+        await notify_host(inter.client, f"{EYE} {_mention_and_name(inter.guild, me)} opened a snug with "
+                                        + ", ".join(_name(inter.guild, i) for i in ids) + f": <#{thread.id}>")
+        await inter.edit_original_response(content=f"{EYE} The snug is open: <#{thread.id}>. Big Brother is listening.", view=None)
+
+    view = _HousematePicker(interaction.guild, others, picked, placeholder="Who joins you in the snug?",
+                            max_values=min(4, len(others)))
+    await interaction.response.send_message(
+        "Pick up to four housemates to take into the snug. It's a private thread, just you, them and Big Brother.",
+        view=view, ephemeral=True)
+
+
 HOUSE_ACTIONS = {
     "diary": _house_diary, "diary_anon": _house_diary_anon, "nominate": handle_nominate,
     "mission": handle_mission, "expose": handle_expose, "housemates": handle_housemates,
+    "immunity": handle_use_immunity, "snug": handle_snug,
 }
 # Anyone in the server may press these; the rest need to be a housemate.
 HOUSE_PUBLIC_ACTIONS = {"housemates"}
@@ -1434,6 +1768,10 @@ def _house_panel_text(guild: Optional[discord.Guild]) -> str:
     if vote:
         lines.append(f"🗳️ **Eviction vote is open** in <#{vote['channel_id']}>.")
     lines.append("")
+    lines.append("🎟️ Complete a secret mission to earn an **immunity token**: protect yourself, gift it, or "
+                 "save-and-replace when you're up for eviction.")
+    lines.append("🛋️ **The snug** is a private thread for you and up to four others to talk strategy. Big Brother listens.")
+    lines.append("")
     lines.append("-# Everything you press here is between you and Big Brother. Nobody else sees it.")
     return "\n".join(lines)
 
@@ -1452,6 +1790,10 @@ class HousePanelView(discord.ui.LayoutView):
         card.add_item(discord.ui.ActionRow(
             _HouseButton("mission", "My mission", emoji="🕵️"),
             _HouseButton("expose", "Expose a housemate", emoji="🔦"),
+            _HouseButton("immunity", "Use immunity", emoji="🎟️"),
+        ))
+        card.add_item(discord.ui.ActionRow(
+            _HouseButton("snug", "The snug", emoji="🛋️"),
             _HouseButton("housemates", "Who's in the house", emoji="🏠"),
         ))
         self.add_item(card)
@@ -1504,6 +1846,8 @@ async def on_house_message(client: discord.Client, message: discord.Message) -> 
         touch_activity(message.author.id)
     except Exception:
         log.exception("Big Brother: activity update failed")
+    if isinstance(message.channel, discord.Thread):
+        return  # snug chatter is recorded, but challenge answers only count in the house itself
     chal = open_challenge()
     if not chal or not chal.get("answer"):
         return
@@ -1541,9 +1885,9 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
         return _name(guild, uid) if uid is not None else None
 
     rows = DatabaseManager.fetch_all(
-        "SELECT user_id, joined_at, status, evicted_at, immune FROM bb_housemates ORDER BY joined_at")
+        "SELECT user_id, joined_at, status, evicted_at, immune, tokens FROM bb_housemates ORDER BY joined_at")
     hm = [{"user_id": int(r[0]), "name": n(int(r[0])), "joined_at": r[1], "status": r[2],
-           "evicted_at": r[3], "immune": bool(r[4])} for r in rows]
+           "evicted_at": r[3], "immune": bool(r[4]), "tokens": int(r[5] or 0)} for r in rows]
     rounds = [dict(_round_row(r), closed_at=r[7]) for r in DatabaseManager.fetch_all(
         "SELECT id, kind, status, opened_at, channel_id, message_id, nominees, closed_at FROM bb_rounds ORDER BY id")]
     noms = [{"round_id": r[0], "nominator": int(r[1]), "nominator_name": n(int(r[1])),
@@ -1569,9 +1913,11 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
                       "SELECT id, title, body, answer, status, winner_id, created_at, resolved_at "
                       "FROM bb_challenges ORDER BY id")]
     msgs = [{"message_id": int(r[0]), "user_id": int(r[1]), "name": n(int(r[1])), "content": r[2],
-             "at": r[3], "attachments": r[4], "reply_to": int(r[5]) if r[5] else None}
+             "at": r[3], "attachments": r[4], "reply_to": int(r[5]) if r[5] else None,
+             "thread_id": int(r[6]) if r[6] else None}
             for r in DatabaseManager.fetch_all(
-                "SELECT message_id, user_id, content, at, attachments, reply_to FROM bb_messages ORDER BY at")]
+                "SELECT message_id, user_id, content, at, attachments, reply_to, thread_id FROM bb_messages ORDER BY at")]
+    snug_rows = [dict(sn, member_names=[n(m) for m in sn["members"]]) for sn in snugs()]
     activity = [{"user_id": int(r[0]), "name": n(int(r[0])), "messages": r[2], "last_message_at": r[1]}
                 for r in DatabaseManager.fetch_all(
                     "SELECT user_id, last_message_at, messages FROM bb_activity ORDER BY messages DESC")]
@@ -1582,7 +1928,7 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
 
     dump = {"exported_at": _now(), "housemates": hm, "rounds": rounds, "nominations": noms, "votes": votes,
             "diary": diary, "missions": missions, "challenges": challenges, "events": evs,
-            "activity": activity, "house_messages": msgs}
+            "activity": activity, "snugs": snug_rows, "house_messages": msgs}
 
     lines = [f"# Big Brother rundown", f"Exported {_fmt_ts(_now())} UTC", "",
              "## Housemates"]
@@ -1612,6 +1958,14 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
             detail = f"mission #{e.get('mission_id')} for {tgt} {e.get('status', 'assigned')}: {e.get('brief', '')}"
         elif kind.startswith("challenge"):
             detail = f"{kind.replace('_', ' ')}: {e.get('title', '')}" + (f" - won by {who}" if who else "")
+        elif kind == "immunity_used":
+            detail = {"self": f"{who} used immunity on themselves",
+                      "gift": f"{who} gave immunity to {tgt}",
+                      "swap": f"{who} used save-and-replace: {tgt} takes their place in the vote"}.get(e.get("mode"), kind)
+        elif kind == "token_granted":
+            detail = f"{tgt} earned an immunity token ({e.get('source', '')}), now holds {e.get('tokens')}"
+        elif kind == "snug_opened":
+            detail = f"snug opened by {who or 'Big Brother'}: " + ", ".join(n(m) for m in e.get("members", []))
         elif kind in ("bb_dm", "bb_announcement"):
             detail = f"{kind.replace('_', ' ')}" + (f" to {tgt}" if tgt else "") + f": {e.get('text', '')}"
         else:
