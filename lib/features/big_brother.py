@@ -720,12 +720,31 @@ async def add_housemates(client: discord.Client, user_ids: Iterable[int]) -> lis
     return added
 
 
+async def _grant_spectator_access(client: discord.Client, user_id: int) -> bool:
+    """Evicted housemates keep watching: a member overwrite on the house channel that lets
+    them read but not post (the role that gave them access has just been removed)."""
+    ch = await house_channel(client)
+    member = ch.guild.get_member(int(user_id)) if isinstance(ch, discord.TextChannel) else None
+    if not member:
+        return False
+    try:
+        await ch.set_permissions(member, view_channel=True, read_message_history=True,
+                                 send_messages=False, send_messages_in_threads=False,
+                                 create_public_threads=False, create_private_threads=False,
+                                 reason="Big Brother: evicted, read-only")
+        return True
+    except discord.HTTPException as e:
+        log.warning("Big Brother: could not set spectator perms for %s: %s", user_id, e)
+        return False
+
+
 async def evict(client: discord.Client, user_id: int, *, announce: bool = True) -> None:
     guild = _guild(client)
     db_set_status(user_id, STATUS_EVICTED)
     last = get_state(STATE_LAST_VOTE_RESULT) or {}
     log_event("evicted", target=user_id, announced=announce, last_vote=last)
     await _sync_role(guild, user_id, False)
+    await _grant_spectator_access(client, user_id)
     if announce:
         ch = await house_channel(client)
         if ch:
@@ -735,7 +754,7 @@ async def evict(client: discord.Client, user_id: int, *, announce: bool = True) 
                 f"Please leave through the diary room door.")
     await dm_user(client, user_id, embed=bb_embed(
         "You have been evicted",
-        "Thanks for playing. You can still watch and vote in the public evictions."))
+        "Thanks for playing. You can still watch the house (read-only) and vote in the public evictions."))
 
 
 async def set_house_silence(client: discord.Client, silent: bool) -> bool:
