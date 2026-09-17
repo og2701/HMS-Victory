@@ -409,6 +409,7 @@ def test_modals_serialise_within_discord_rules(bb, shop):
         for comp in walk(payload["components"]):
             if comp.get("type") == 18:      # Label wrapper
                 assert 1 <= len(comp["label"]) <= 45, comp["label"]
-                assert "label" not in comp["component"], (type(modal).__name__, comp)
+                # discord.py serialises a wrapped TextInput's label as null; a real string is what Discord rejects.
+                assert not comp["component"].get("label"), (type(modal).__name__, comp)
             elif comp.get("type") == 4 and "label" in comp:   # bare TextInput
                 assert 1 <= len(comp["label"]) <= 45, comp["label"]
