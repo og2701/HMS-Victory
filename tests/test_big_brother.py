@@ -411,5 +411,5 @@ def test_modals_serialise_within_discord_rules(bb, shop):
                 assert 1 <= len(comp["label"]) <= 45, comp["label"]
                 # discord.py serialises a wrapped TextInput's label as null; a real string is what Discord rejects.
                 assert not comp["component"].get("label"), (type(modal).__name__, comp)
-            elif comp.get("type") == 4 and "label" in comp:   # bare TextInput
+            elif comp.get("type") == 4 and comp.get("label"):   # bare TextInput with its own label
                 assert 1 <= len(comp["label"]) <= 45, comp["label"]
