@@ -184,7 +184,7 @@ class TestDataSignals(unittest.TestCase):
         crit = QUESTIONS["data_metric"]["criteria"]
         from lib.features.data_queries import METRICS
         self.assertEqual(set(crit), set(METRICS) | {"none"})
-        self.assertEqual(set(QUESTIONS["data_shape"]["criteria"]), {"leaderboard", "person", "compare", "total", "list", "closest", "none"})
+        self.assertEqual(set(QUESTIONS["data_shape"]["criteria"]), {"leaderboard", "person", "compare", "total", "list", "closest", "between", "none"})
         self.assertIn("blackjack", QUESTIONS["data_game"]["criteria"])
         self.assertIn("connect4", QUESTIONS["data_game"]["criteria"])
 
