@@ -139,6 +139,23 @@ def test_panel_text_and_view_have_no_secrets(bb):
     assert set(ids) == {f"bb:ctl:{a}" for a in bb.PANEL_ACTIONS}
 
 
+def test_house_panel_buttons_and_gating(bb):
+    bb.db_add_housemate(1)
+    bb.create_round(bb.KIND_NOMINATIONS)
+    text = bb._house_panel_text(None)
+    assert "Nominations are open" in text and "1** housemates remain" in text
+
+    view = bb.HousePanelView(None)
+    assert view.timeout is None
+    ids = [c.custom_id for row in view.children[0].children
+           if hasattr(row, "children") for c in row.children]
+    assert set(ids) == {f"bb:house:{a}" for a in bb.HOUSE_ACTIONS}
+    # The two registries never share a custom_id, so both views can be persistent at once.
+    control_ids = {f"bb:ctl:{a}" for a in bb.PANEL_ACTIONS}
+    assert not control_ids & set(ids)
+    assert bb.HOUSE_PUBLIC_ACTIONS <= set(bb.HOUSE_ACTIONS)
+
+
 def test_vote_button_custom_id(bb):
     btn = bb.VoteButton(7, 42, "Bob")
     assert btn.custom_id == "bb:vote:7:42"

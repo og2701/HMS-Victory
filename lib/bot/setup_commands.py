@@ -940,26 +940,6 @@ def define_commands(tree, client):
     if getattr(config, "BIG_BROTHER_ENABLED", False):
         from lib.features import big_brother as _bb
 
-        @command("diary", "Big Brother diary room: a private word with Big Brother (housemates only)")
-        async def bb_diary_command(interaction: Interaction, anonymous: bool = False):
-            await _bb.handle_diary(interaction, anonymous)
-
-        @command("nominate", "Nominate housemates for eviction (housemates only, while nominations are open)")
-        async def bb_nominate_command(interaction: Interaction):
-            await _bb.handle_nominate(interaction)
-
-        @command("mission", "See your current secret mission (housemates only)")
-        async def bb_mission_command(interaction: Interaction):
-            await _bb.handle_mission(interaction)
-
-        @command("expose", "Tell Big Brother you think a housemate is on a secret mission")
-        async def bb_expose_command(interaction: Interaction, suspect: Member, what: str):
-            await _bb.handle_expose(interaction, suspect, what)
-
-        @command("housemates", "Who's in the Big Brother house")
-        async def bb_housemates_command(interaction: Interaction):
-            await _bb.handle_housemates(interaction)
-
         @command("bb-panel", "Re-post the Big Brother control panel (host only)")
         async def bb_panel_command(interaction: Interaction):
             await _bb.handle_panel(interaction)

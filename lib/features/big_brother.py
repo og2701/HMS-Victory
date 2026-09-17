@@ -33,6 +33,7 @@ STATUS_WINNER = "winner"
 KIND_NOMINATIONS = "nominations"
 KIND_VOTE = "vote"
 STATE_PANEL_MSG = "panel_message_id"
+STATE_HOUSE_PANEL_MSG = "house_panel_message_id"
 STATE_LAST_NOM_TALLY = "last_nomination_tally"
 STATE_LAST_VOTE_RESULT = "last_vote_result"
 
@@ -757,12 +758,19 @@ def _panel_text(guild: Optional[discord.Guild]) -> str:
 
 
 class _PanelButton(discord.ui.Button):
+    """A button whose handler is looked up by name at press time, so the view stays a
+    plain persistent layout and the registries below can be edited freely."""
+    prefix = "bb:ctl"
+
     def __init__(self, action: str, label: str, style=discord.ButtonStyle.secondary, emoji=None):
-        super().__init__(label=label, style=style, emoji=emoji, custom_id=f"bb:ctl:{action}")
+        super().__init__(label=label, style=style, emoji=emoji, custom_id=f"{self.prefix}:{action}")
         self.action = action
 
+    def registry(self) -> dict:
+        return PANEL_ACTIONS
+
     async def callback(self, interaction: discord.Interaction):
-        handler = PANEL_ACTIONS.get(self.action)
+        handler = self.registry().get(self.action)
         if not handler:
             await interaction.response.send_message("Unknown action.", ephemeral=True)
             return
@@ -809,15 +817,19 @@ class BigBrotherControlView(discord.ui.LayoutView):
 
 
 async def refresh_panel(client: discord.Client) -> None:
-    mid = get_state(STATE_PANEL_MSG)
-    ch = await _channel(client, control_channel_id())
-    if not ch or not mid:
-        return
-    try:
-        msg = await ch.fetch_message(int(mid))
-        await msg.edit(view=BigBrotherControlView(_guild(client)))
-    except discord.HTTPException as e:
-        log.info("Big Brother: panel refresh failed: %s", e)
+    """Re-render both panels (control channel and house channel) from current state."""
+    guild = _guild(client)
+    for key, channel_id, build in ((STATE_PANEL_MSG, control_channel_id(), BigBrotherControlView),
+                                   (STATE_HOUSE_PANEL_MSG, house_channel_id(), HousePanelView)):
+        mid = get_state(key)
+        ch = await _channel(client, channel_id)
+        if not ch or not mid:
+            continue
+        try:
+            msg = await ch.fetch_message(int(mid))
+            await msg.edit(view=build(guild))
+        except discord.HTTPException as e:
+            log.info("Big Brother: panel refresh failed (%s): %s", key, e)
 
 
 async def ensure_control_panel(client: discord.Client) -> None:
@@ -841,6 +853,38 @@ async def ensure_control_panel(client: discord.Client) -> None:
     msg = await ch.send(view=view)
     set_state(STATE_PANEL_MSG, msg.id)
     log.info("Big Brother: posted control panel %s in %s", msg.id, ch.id)
+
+
+async def ensure_house_panel(client: discord.Client) -> None:
+    """The housemates' panel in the house channel: diary, nominate, mission, expose."""
+    if not enabled():
+        return
+    ensure_tables()
+    ch = await _channel(client, house_channel_id())
+    if not ch:
+        log.warning("Big Brother: house channel %s not found", house_channel_id())
+        return
+    view = HousePanelView(_guild(client))
+    mid = get_state(STATE_HOUSE_PANEL_MSG)
+    if mid:
+        try:
+            msg = await ch.fetch_message(int(mid))
+            await msg.edit(view=view)
+            return
+        except discord.HTTPException:
+            pass
+    msg = await ch.send(view=view)
+    set_state(STATE_HOUSE_PANEL_MSG, msg.id)
+    try:
+        await msg.pin(reason="Big Brother house panel")
+    except discord.HTTPException:
+        pass
+    log.info("Big Brother: posted house panel %s in %s", msg.id, ch.id)
+
+
+async def ensure_panels(client: discord.Client) -> None:
+    await ensure_control_panel(client)
+    await ensure_house_panel(client)
 
 
 # --- panel actions: each is `async (interaction) -> None` and responds itself ---
@@ -948,12 +992,12 @@ async def _act_add(interaction: discord.Interaction):
         for uid in added:
             await dm_user(inter.client, uid, embed=bb_embed(
                 "Welcome to the house",
-                "You're a housemate in UKPlace Big Brother.\n\n"
-                "• `/diary` - talk to Big Brother in private (optionally anonymous)\n"
-                "• `/nominate` - when nominations are open\n"
-                "• `/mission` - see your current secret mission\n"
-                "• `/expose` - report a housemate you think is on a secret mission\n\n"
-                "Big Brother will ping you in the house channel when something is happening."))
+                f"You're a housemate in UKPlace Big Brother.\n\n"
+                f"The pinned panel in <#{house_channel_id()}> is how you talk to Big Brother: "
+                f"the diary room (optionally anonymous), nominations when they're open, your "
+                f"secret mission, and exposing a housemate you think is on one. Everything you "
+                f"press there is only seen by you and Big Brother.\n\n"
+                f"Big Brother will ping the house channel when something is happening."))
         await _reply(inter, f"Added {len(added)} housemate{'s' if len(added) != 1 else ''}. "
                      f"{len(ids) - len(added)} were already in.")
     select.callback = cb
@@ -1000,7 +1044,7 @@ async def _act_mission(interaction: discord.Interaction):
             ok = await dm_user(inter2.client, uid, embed=bb_embed(
                 "Secret mission",
                 f"{brief}\n\nComplete it without the other housemates noticing. "
-                f"Big Brother will let you know when it's done. Use `/mission` to see this again."))
+                f"Big Brother will let you know when it's done. Press **My mission** on the house panel to see this again."))
             await notify_host(inter2.client, embed=bb_embed(
                 f"Mission #{mid} assigned", f"{_mention_and_name(inter2.guild, uid)}\n\n{brief}"
                 + ("" if ok else "\n\n⚠️ Their DMs are closed - the brief did not reach them.")))
@@ -1173,22 +1217,11 @@ PANEL_ACTIONS = {
 
 
 # ---------------------------------------------------------------------------
-# Housemate slash commands
+# House panel (in the house channel; everyone sees the buttons, every follow-up is
+# ephemeral or a modal, so only the presser and Big Brother ever see what was said)
 # ---------------------------------------------------------------------------
 
-async def _require_housemate(interaction: discord.Interaction) -> bool:
-    if not enabled():
-        await interaction.response.send_message("Big Brother isn't running right now.", ephemeral=True)
-        return False
-    if not is_housemate(interaction.user.id):
-        await interaction.response.send_message(f"{EYE} Only housemates can do that.", ephemeral=True)
-        return False
-    return True
-
-
 async def handle_diary(interaction: discord.Interaction, anonymous: bool = False):
-    if not await _require_housemate(interaction):
-        return
 
     async def submitted(inter: discord.Interaction, values: dict):
         text = values["text"]
@@ -1205,8 +1238,6 @@ async def handle_diary(interaction: discord.Interaction, anonymous: bool = False
 
 
 async def handle_nominate(interaction: discord.Interaction):
-    if not await _require_housemate(interaction):
-        return
     rnd = open_round(KIND_NOMINATIONS)
     if not rnd:
         await interaction.response.send_message("Nominations aren't open right now.", ephemeral=True)
@@ -1240,8 +1271,6 @@ async def handle_nominate(interaction: discord.Interaction):
 
 
 async def handle_mission(interaction: discord.Interaction):
-    if not await _require_housemate(interaction):
-        return
     m = active_mission_for(interaction.user.id)
     if not m:
         await interaction.response.send_message(f"{EYE} No mission right now. Big Brother may be in touch.", ephemeral=True)
@@ -1250,27 +1279,35 @@ async def handle_mission(interaction: discord.Interaction):
         "Your secret mission", f"{m['brief']}\n\n-# Assigned <t:{m['created_at']}:R>"), ephemeral=True)
 
 
-async def handle_expose(interaction: discord.Interaction, suspect: discord.Member, what: str):
-    if not await _require_housemate(interaction):
+async def handle_expose(interaction: discord.Interaction):
+    others = [u for u in housemates() if u != interaction.user.id]
+    if not others:
+        await interaction.response.send_message("There's nobody else in the house.", ephemeral=True)
         return
-    if not is_housemate(suspect.id):
-        await interaction.response.send_message("They're not in the house.", ephemeral=True)
-        return
-    on_mission = active_mission_for(suspect.id) is not None
-    await notify_host(interaction.client, embed=bb_embed(
-        "Exposure attempt",
-        f"{_mention_and_name(interaction.guild, interaction.user.id)} thinks "
-        f"{_mention_and_name(interaction.guild, suspect.id)} is on a mission:\n\n{what}\n\n"
-        f"-# {suspect.display_name} {'DOES' if on_mission else 'does NOT'} currently have an active mission."))
-    await interaction.response.send_message(
-        f"{EYE} Big Brother has noted your suspicion about **{suspect.display_name}**. "
-        f"You'll find out if you were right.", ephemeral=True)
+
+    async def picked(inter: discord.Interaction, ids: list[int]):
+        suspect = ids[0]
+
+        async def submitted(inter2: discord.Interaction, values: dict):
+            on_mission = active_mission_for(suspect) is not None
+            await notify_host(inter2.client, embed=bb_embed(
+                "Exposure attempt",
+                f"{_mention_and_name(inter2.guild, inter2.user.id)} thinks "
+                f"{_mention_and_name(inter2.guild, suspect)} is on a mission:\n\n{values['what']}\n\n"
+                f"-# {_name(inter2.guild, suspect)} {'DOES' if on_mission else 'does NOT'} currently have an active mission."))
+            await inter2.response.send_message(
+                f"{EYE} Big Brother has noted your suspicion about **{_name(inter2.guild, suspect)}**. "
+                f"You'll find out if you were right.", ephemeral=True)
+
+        await inter.response.send_modal(_TextModal(
+            f"Expose {_name(inter.guild, suspect)}",
+            [("what", "What do you think they're up to?", True, 500, True)], submitted))
+
+    view = _HousematePicker(interaction.guild, others, picked, placeholder="Who's on a secret mission?")
+    await interaction.response.send_message("Who do you suspect?", view=view, ephemeral=True)
 
 
 async def handle_housemates(interaction: discord.Interaction):
-    if not enabled():
-        await interaction.response.send_message("Big Brother isn't running right now.", ephemeral=True)
-        return
     ins = housemates()
     out = housemates(STATUS_EVICTED)
     winner = housemates(STATUS_WINNER)
@@ -1283,14 +1320,89 @@ async def handle_housemates(interaction: discord.Interaction):
     await interaction.response.send_message(embed=bb_embed("The house", desc), ephemeral=True)
 
 
+async def _house_diary(interaction):
+    await handle_diary(interaction, anonymous=False)
+
+
+async def _house_diary_anon(interaction):
+    await handle_diary(interaction, anonymous=True)
+
+
+HOUSE_ACTIONS = {
+    "diary": _house_diary, "diary_anon": _house_diary_anon, "nominate": handle_nominate,
+    "mission": handle_mission, "expose": handle_expose, "housemates": handle_housemates,
+}
+# Anyone in the server may press these; the rest need to be a housemate.
+HOUSE_PUBLIC_ACTIONS = {"housemates"}
+
+
+class _HouseButton(_PanelButton):
+    prefix = "bb:house"
+
+    def registry(self) -> dict:
+        return HOUSE_ACTIONS
+
+
+def _house_panel_text(guild: Optional[discord.Guild]) -> str:
+    ins = housemates()
+    noms = open_round(KIND_NOMINATIONS)
+    vote = open_round(KIND_VOTE)
+    n = nominations_each()
+    lines = [f"## {EYE} The Big Brother House",
+             f"**{len(ins)}** housemates remain · **{len(housemates(STATUS_EVICTED))}** evicted",
+             ""]
+    if noms:
+        lines.append(f"📝 **Nominations are open.** Pick the {n} housemate{'s' if n != 1 else ''} you want to face the public vote.")
+    else:
+        lines.append("📝 Nominations are closed.")
+    if vote:
+        lines.append(f"🗳️ **Eviction vote is open** in <#{vote['channel_id']}>.")
+    lines.append("")
+    lines.append("-# Everything you press here is between you and Big Brother. Nobody else sees it.")
+    return "\n".join(lines)
+
+
+class HousePanelView(discord.ui.LayoutView):
+    def __init__(self, guild: Optional[discord.Guild] = None):
+        super().__init__(timeout=None)
+        card = discord.ui.Container(accent_colour=ACCENT)
+        card.add_item(discord.ui.TextDisplay(_house_panel_text(guild)))
+        card.add_item(discord.ui.Separator())
+        card.add_item(discord.ui.ActionRow(
+            _HouseButton("diary", "Diary room", discord.ButtonStyle.primary, "🎙️"),
+            _HouseButton("diary_anon", "Diary room (anonymous)", emoji="🎭"),
+            _HouseButton("nominate", "Nominate", discord.ButtonStyle.danger, "📝"),
+        ))
+        card.add_item(discord.ui.ActionRow(
+            _HouseButton("mission", "My mission", emoji="🕵️"),
+            _HouseButton("expose", "Expose a housemate", emoji="🔦"),
+            _HouseButton("housemates", "Who's in the house", emoji="🏠"),
+        ))
+        self.add_item(card)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not enabled():
+            await interaction.response.send_message("Big Brother isn't running right now.", ephemeral=True)
+            return False
+        cid = (interaction.data or {}).get("custom_id", "")
+        action = cid.rsplit(":", 1)[-1]
+        if action in HOUSE_PUBLIC_ACTIONS:
+            return True
+        if not is_housemate(interaction.user.id):
+            await interaction.response.send_message(f"{EYE} Only housemates can press that.", ephemeral=True)
+            return False
+        return True
+
+
 async def handle_panel(interaction: discord.Interaction):
     if not enabled() or not is_operator(interaction.user.id):
         await interaction.response.send_message("Not for you.", ephemeral=True)
         return
     await interaction.response.defer(ephemeral=True)
     set_state(STATE_PANEL_MSG, None)
-    await ensure_control_panel(interaction.client)
-    await interaction.followup.send("Panel re-posted.", ephemeral=True)
+    set_state(STATE_HOUSE_PANEL_MSG, None)
+    await ensure_panels(interaction.client)
+    await interaction.followup.send("Both panels re-posted.", ephemeral=True)
 
 
 # ---------------------------------------------------------------------------

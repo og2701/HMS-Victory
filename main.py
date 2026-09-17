@@ -206,8 +206,9 @@ class AClient(discord.Client):
         # Big Brother (temporary event): control panel buttons + public vote buttons.
         if getattr(config, "BIG_BROTHER_ENABLED", False):
             try:
-                from lib.features.big_brother import BigBrotherControlView, VoteButton
+                from lib.features.big_brother import BigBrotherControlView, HousePanelView, VoteButton
                 self.add_view(BigBrotherControlView())
+                self.add_view(HousePanelView())
                 self.add_dynamic_items(VoteButton)
                 logger.info("Registered Big Brother control panel + vote buttons.")
             except Exception as e:
@@ -225,8 +226,8 @@ class AClient(discord.Client):
 
         if getattr(config, "BIG_BROTHER_ENABLED", False):
             try:
-                from lib.features.big_brother import ensure_control_panel
-                asyncio.create_task(ensure_control_panel(self))
+                from lib.features.big_brother import ensure_panels
+                asyncio.create_task(ensure_panels(self))
             except Exception:
                 logger.exception("could not ensure Big Brother control panel")
 
