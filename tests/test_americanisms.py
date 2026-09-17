@@ -50,6 +50,13 @@ def test_corrections():
         ("a gas meter on the first floor", "a gas meter on the first floor"),
         ("i tire of this practice", "i tire of this practice"),
         ("chips and jelly", "chips and jelly"),
+        # spaced-out / obfuscated y'all attempts
+        ("Drinking tea rn so guess that means I'm more British than all y a l l", "Drinking tea rn so guess that means I'm more British than all you all"),
+        ("Said y a l l", "Said you all"),
+        ("Y  A  L  L", "YOU ALL"),
+        ("Y a l l", "You all"),
+        ("y a ll", "you all"),
+        ("ya ll", "you all"),
     ]
     
     for input_text, expected in test_cases:

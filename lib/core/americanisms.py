@@ -79,6 +79,9 @@ AMERICAN_TO_BRITISH = {
     "theater": "theatre",
     "theaters": "theatres",
     "unshakable": "unshakeable",
+    "y a l l": "you all",
+    "y a ll": "you all",
+    "ya ll": "you all",
     "y all": "you all",
     "ya'll": "you all",
     "yall": "you all",
@@ -294,10 +297,27 @@ AMERICAN_TO_BRITISH.update({
 _SORTED_KEYS = sorted(AMERICAN_TO_BRITISH.keys(), key=len, reverse=True)
 _PATTERN = re.compile(r'\b(' + '|'.join(map(re.escape, _SORTED_KEYS)) + r')\b', re.IGNORECASE)
 
+# Pattern to catch obfuscated, spaced-out or punctuated variations of y'all / yall (e.g. "y a l l", "y  a  l  l")
+_YALL_PATTERN = re.compile(
+    r"\b[yY]\s*['’`ʼ‘]?\s*[aA]\s*['’`ʼ‘]?\s*[lL]\s*['’`ʼ‘]?\s*[lL]\b",
+    re.IGNORECASE
+)
+
 def correct_americanisms(text: str) -> str:
     """
     Corrects Americanisms in the given text to British English while preserving case.
     """
+    def replace_yall(match):
+        w = match.group(0)
+        letters = [c for c in w if c.isalpha()]
+        if all(c.isupper() for c in letters):
+            return "YOU ALL"
+        if letters and letters[0].isupper():
+            return "You all"
+        return "you all"
+
+    text = _YALL_PATTERN.sub(replace_yall, text)
+
     def replace(match):
         word = match.group(0)
         lower_word = word.lower()
