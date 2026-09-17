@@ -528,7 +528,7 @@ class _CatalogueModal(discord.ui.Modal, title="Shop catalogue"):
             label="Items", style=discord.TextStyle.long, required=True, max_length=4000,
             placeholder="Meat & Fish\nWhole chicken — £7.00\nSausages — £3.00\n\nFruit & Veg\nCarrots — £1.00")
         self.replace = discord.ui.Checkbox(default=False)
-        self.add_item(discord.ui.Label(text="Items (a line without a price starts a category)", component=self.text))
+        self.add_item(discord.ui.Label(text="Items (a line with no price starts an aisle)", component=self.text))
         self.add_item(discord.ui.Label(text="Replace the whole catalogue",
                                        description="Unticked: these are added to what's already there.",
                                        component=self.replace))
@@ -541,13 +541,14 @@ class _OpenShopModal(discord.ui.Modal, title="Open the shop"):
     def __init__(self, on_submit):
         super().__init__()
         self._on_submit = on_submit
+        # Discord caps modal labels at 45 characters.
         self.brief = discord.ui.TextInput(label="The task, as the house will see it", style=discord.TextStyle.long,
                                           required=True, max_length=1000)
         self.budget = discord.ui.TextInput(label="Shared budget (e.g. 100 or £75.50)", required=True, max_length=12)
-        self.minutes = discord.ui.TextInput(label="Minutes until it closes (blank = until you close it)",
+        self.minutes = discord.ui.TextInput(label="Minutes open (blank = until you close it)",
                                             required=False, max_length=5)
         self.required = discord.ui.TextInput(
-            label="Secret shopping list (one per line, optional)", style=discord.TextStyle.long, required=False,
+            label="Secret shopping list (one per line)", style=discord.TextStyle.long, required=False,
             max_length=1000, placeholder="Whole chicken\nMaris Piper potatoes\nCarrots")
         for item in (self.brief, self.budget, self.minutes, self.required):
             self.add_item(item)

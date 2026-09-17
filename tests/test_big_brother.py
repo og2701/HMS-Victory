@@ -390,3 +390,15 @@ def test_shop_buy_judge_and_close(shop, bb):
     assert not ok and "closed" in reason
     dump = shop.export()
     assert len(dump["tasks"][0]["purchases"]) == 3
+
+
+def test_modal_labels_fit_discord_limit(bb, shop):
+    """Discord rejects a modal whose text-input label is over 45 characters."""
+    for modal in (shop._OpenShopModal(None), shop._CatalogueModal(None), bb._AnnounceModal(None)):
+        for item in modal.children:
+            label = getattr(item, "label", None) or getattr(item, "text", None) or ""
+            assert 1 <= len(label) <= 45, (type(modal).__name__, label)
+            inner = getattr(item, "component", None)
+            inner_label = getattr(inner, "label", None)
+            if inner_label:
+                assert len(inner_label) <= 45, (type(modal).__name__, inner_label)
