@@ -393,6 +393,7 @@ class Metric:
     note: str = ""                   # shown under the figures when the data has a caveat
     pair: Optional[Callable[..., int]] = None   # (from_id, to_id, since, game) -> the figure from one member to another
     pair_verb: str = "to"            # how the pair reads: "paid to", "beat", "gave to"
+    ignore_lowest: bool = False      # the name already says "worst": "biggest loss" must not flip to the smallest losses
 
 
 def _pair_sum(table: str, value_expr: str, from_col: str, to_col: str, ts_col: str, extra_where: str = ""):
@@ -570,11 +571,11 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
        windowable=True, games="casino"),
     _m("casino_worst_day", "biggest single-day casino loss", "UKP",
        "The most UKP a member has lost at the casino in ONE DAY (net over the day), and which day",
-       ["biggest single day casino loss", "worst day at the casino", "who's had the worst casino day", "steven's worst day"],
+       ["biggest single day casino loss", "worst day at the casino", "worst casino day ever", "who's had the worst casino day", "steven's worst day"],
        lambda since, game: _daily_extreme("casino_results", "COALESCE(SUM(net),0)", "timestamp", "min", since=since,
                                           where=("game = ?" if CASINO_GAMES.get(game or "") else ""), params=((CASINO_GAMES[game],) if CASINO_GAMES.get(game or "") else ()),
                                           keep=lambda v: v < 0, magnitude=True),
-       windowable=True, games="casino"),
+       windowable=True, games="casino", ignore_lowest=True),
     _m("casino_best_day", "biggest single-day casino win", "UKP",
        "The most UKP a member has won at the casino in ONE DAY (net over the day), and which day",
        ["best casino day", "biggest single day win", "who's had the best day at the casino"],
@@ -604,12 +605,12 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
        "A member's heaviest single day of UKP debits (bets, shop, pay), and which day",
        ["most spent in a single day", "who's blown the most in one day", "johnny's most expensive day"],
        lambda since, game: _daily_extreme("user_transactions", "COALESCE(SUM(amount),0)", "ts", "min", since=since, where="amount < 0", keep=lambda v: v < 0, magnitude=True),
-       windowable=True),
+       windowable=True, ignore_lowest=True),
     _m("casino_biggest_loss", "biggest single casino loss", "UKP",
        "Largest net loss in a single casino round",
        ["biggest single loss", "worst hand anyone's had", "kim's worst casino loss"],
        lambda since, game: [(u, -v) for u, v in _casino("COALESCE(MIN(net),0)", since, game)],
-       windowable=True, games="casino"),
+       windowable=True, games="casino", ignore_lowest=True),
     # --- pvp
     _m("pvp_wins", "PvP wins", "wins",
        "Wins in player-versus-player wager games (Connect 4, Battleship, rock paper scissors)",
@@ -1279,6 +1280,8 @@ def compute(spec: QuerySpec, *, exclude_ids: Optional[set] = None, member_ids: O
     if spec.shape == "list":
         return compute_list(spec, exclude_ids=exclude_ids, member_ids=member_ids)
     metric = METRICS[spec.metric]
+    if metric.ignore_lowest:
+        spec.lowest = False
     if spec.shape == "between" and (metric.pair is None or len(spec.subjects) < 2):
         spec.shape = "compare"      # no directional figure for this metric: side by side is the nearest thing
     if spec.shape == "between":

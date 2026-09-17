@@ -211,8 +211,10 @@ class TestDataSignals(unittest.TestCase):
     def test_records_question_needs_both_picks_to_be_confident(self):
         self.assertFalse(parse_signals(_with_data(_answers(), metric_conf=0.3), {}).data_query_requested())
         self.assertFalse(parse_signals(_with_data(_answers(), metric_conf=0.4, shape_conf=0.7), {}).data_query_requested())
-        self.assertFalse(parse_signals(_with_data(_answers(), shape_conf=0.4), {}).data_query_requested())
-        self.assertFalse(parse_signals(_with_data(_answers(), shape="none"), {}).data_query_requested())
+        self.assertFalse(parse_signals(_with_data(_answers(), shape_conf=0.2), {}).data_query_requested())
+        self.assertTrue(parse_signals(_with_data(_answers(), shape_conf=0.4), {}).data_query_requested())   # sure metric carries a torn shape
+        self.assertFalse(parse_signals(_with_data(_answers(), shape="none", metric_conf=0.7), {}).data_query_requested())
+        self.assertTrue(parse_signals(_with_data(_answers(), shape="none", metric_conf=0.9), {}).data_query_requested())   # a very sure metric alone reads as "who has the most"
         self.assertTrue(parse_signals(_with_data(_answers(), metric_conf=0.5, shape_conf=0.5), {}).data_query_requested())
 
     def test_a_sure_shape_lowers_the_metric_bar_a_little(self):
@@ -223,6 +225,17 @@ class TestDataSignals(unittest.TestCase):
         self.assertFalse(parse_signals(_with_data(_answers(), metric="paid_out", metric_conf=0.30, shape="between", shape_conf=1.0), {}).data_query_requested())
         self.assertFalse(parse_signals(_with_data(_answers(), metric="paid_out", metric_conf=0.48, shape="leaderboard", shape_conf=0.7), {}).data_query_requested())
         self.assertFalse(parse_signals(_with_data(_answers(), metric="none", metric_conf=0.99, shape="between", shape_conf=1.0), {}).data_query_requested())
+
+    def test_a_sure_metric_accepts_the_favourite_shape_or_defaults_to_a_board(self):
+        # "single biggest loss day in casino?": metric 0.68, leaderboard 0.41 torn with total and person
+        sig = parse_signals(_with_data(_answers(), metric="casino_worst_day", metric_conf=0.68, shape="leaderboard", shape_conf=0.41), {})
+        self.assertEqual(sig.effective_shape, "leaderboard")
+        self.assertTrue(sig.data_query_requested())
+        self.assertFalse(parse_signals(_with_data(_answers(), metric="casino_worst_day", metric_conf=0.55, shape="leaderboard", shape_conf=0.41), {}).data_query_requested())
+        self.assertFalse(parse_signals(_with_data(_answers(), metric="casino_worst_day", metric_conf=0.9, shape="leaderboard", shape_conf=0.2), {}).data_query_requested())
+        # a very sure metric with no shape at all reads as "who has the most"
+        self.assertEqual(parse_signals(_with_data(_answers(), metric="xp", metric_conf=0.9, shape="none", shape_conf=0.6), {}).effective_shape, "leaderboard")
+        self.assertEqual(parse_signals(_with_data(_answers(), metric="xp", metric_conf=0.7, shape="none", shape_conf=0.6), {}).effective_shape, "none")
 
     def test_a_picture_request_is_never_a_records_question(self):
         # "draw the top 5 richest as pigs": the roster gets drawn, not tabulated
@@ -276,10 +289,12 @@ class TestDataSignals(unittest.TestCase):
         answers = _with_data(_answers(), metric="ukp_earned", metric_conf=0.99, shape="person", shape_conf=0.99)
         answers["data_list"] = {"choice": "casino_breakdown", "confidence": 0.7}
         self.assertEqual(parse_signals(answers, {}).effective_shape, "person")
-        # a weak shape with a confident metric and no list is still not answered
+        # a torn shape under a sure metric is carried by the metric; a hopeless one is not
         answers = _with_data(_answers(), metric="first_seen", metric_conf=0.98, shape="person", shape_conf=0.38)
+        self.assertEqual(parse_signals(answers, {}).effective_shape, "person")
+        self.assertTrue(parse_signals(answers, {}).data_query_requested())
+        answers = _with_data(_answers(), metric="first_seen", metric_conf=0.98, shape="person", shape_conf=0.2)
         self.assertEqual(parse_signals(answers, {}).effective_shape, "none")
-        self.assertFalse(parse_signals(answers, {}).data_query_requested())
 
 
 class TestJudgeNamedSubject(unittest.IsolatedAsyncioTestCase):

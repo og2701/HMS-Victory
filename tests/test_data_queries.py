@@ -447,6 +447,13 @@ class TestDayGrain(unittest.TestCase):
             person = compute(QuerySpec(metric="casino_worst_day", shape="person", subjects=[("Johnny", "1")]))
         self.assertIn("Johnny: 12,000 UKP (biggest single-day casino loss) on 03 Sep 2026", render(person, {"1": "Johnny"}))
 
+    def test_a_loss_metric_ignores_the_lowest_flag(self):
+        fetch = lambda sql, params=(): [("1", -12000, "2026-09-03"), ("3", -50, "2026-08-30")] if "MIN(d)" in sql else []
+        with patch("lib.features.data_queries._fetch", fetch):
+            res = compute(QuerySpec(metric="casino_worst_day", shape="leaderboard", lowest=True))
+        self.assertEqual(res.rows, [("1", 12000), ("3", 50)])    # biggest loss first, not the smallest
+        self.assertFalse(res.spec.lowest)
+
     def test_best_day_keeps_only_winning_days(self):
         fetch = lambda sql, params=(): [("1", 900, "2026-09-01"), ("2", -40, "2026-09-02")] if "MAX(d)" in sql else []
         with patch("lib.features.data_queries._fetch", fetch):

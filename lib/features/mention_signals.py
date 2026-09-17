@@ -60,6 +60,12 @@ DATA_QUERY_CONFIDENCE = 0.5
 # clear favourite: the heading names which metric answered, so a near-miss is visible, not silent.
 METRIC_WITH_SURE_SHAPE_CONFIDENCE = 0.35
 SURE_SHAPE_CONFIDENCE = 0.85
+# ...and the mirror image: a sure metric accepts the clear-favourite shape ("single biggest loss day in
+# casino?" had the metric at 0.68 and leaderboard at 0.41, torn with total and person). A sure metric with
+# no shape at all is read as "who has the most": a short leaderboard.
+SHAPE_WITH_SURE_METRIC_CONFIDENCE = 0.3
+SURE_METRIC_CONFIDENCE = 0.6
+DEFAULT_SHAPE_METRIC_CONFIDENCE = 0.8
 # The follow-up call that picks a named person out of the people directory.
 NAMED_SUBJECT_CONFIDENCE = 0.6
 
@@ -349,9 +355,16 @@ class MentionSignals:
         metric_sure = self.metric_sure
         if list_sure and (self.data_shape == "list" or not metric_sure):
             return "list"
-        if self.data_shape == "list" or self.data_shape_confidence < DATA_QUERY_CONFIDENCE:
+        if self.data_shape == "list":
             return "none"
-        return self.data_shape
+        if self.data_shape == "none":
+            return "leaderboard" if (self.data_metric != "none" and self.data_metric_confidence >= DEFAULT_SHAPE_METRIC_CONFIDENCE) else "none"
+        if self.data_shape_confidence >= DATA_QUERY_CONFIDENCE:
+            return self.data_shape
+        if (self.data_metric != "none" and self.data_metric_confidence >= SURE_METRIC_CONFIDENCE
+                and self.data_shape_confidence >= SHAPE_WITH_SURE_METRIC_CONFIDENCE):
+            return self.data_shape
+        return "none"
 
     @property
     def metric_sure(self) -> bool:

@@ -3495,9 +3495,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
     async def test_handle_one_off_records_correction_reuses_the_previous_question(self, mock_judge, _find, _generate, mock_plan):
         from lib.features import chat_responder as cr
         from lib.features.data_queries import QuerySpec
-        # "users, not holders" under the bot's top-10 table: a confident metric, a vague shape, nothing else named
+        # "users, not holders" under the bot's top-10 table: a confident metric, no usable shape, nothing else named
         sig = _jev_signals(action="reply", confidence=0.95, data={"metric": "shutcoins_used", "shape": "leaderboard"})
-        mock_judge.return_value = ms_replace(sig, data_shape_confidence=0.41)
+        mock_judge.return_value = ms_replace(sig, data_shape_confidence=0.2)
         self.assertFalse(mock_judge.return_value.data_query_requested())
         client = MagicMock(); client.user.id = 999999999
         bot_msg = MagicMock(); bot_msg.id = 424242; bot_msg.author.id = client.user.id; bot_msg.content = "Top 10 by shutcoins held"; bot_msg.attachments = []; bot_msg.mentions = []
