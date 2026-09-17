@@ -252,12 +252,14 @@ def test_grids_render_state(bb):
     counts = bb._CountGrid(None, ids, {2: 3}, on_press=None)
     assert [b.label for b in counts.children] == ["user 1 · 0", "user 2 · 3", "user 3 · 0"]
 
-    pick = bb._pick_view(None, ids, None, placeholder="x", marked=[3])
-    assert isinstance(pick, bb._PickGrid)
+    gs = bb._GridSet()
+    pick = bb._PickGrid(None, ids, None, gs, marked=[3])
     assert pick.children[2].style == discord.ButtonStyle.primary
-    # Over the button cap it degrades to the dropdown picker.
-    many = list(range(1, 30))
-    assert isinstance(bb._pick_view(None, many, None, placeholder="x"), bb._HousematePicker)
+    # Over the per-message button cap the grid is paged across several messages.
+    many = list(range(1, 60))
+    pages = bb._chunks(many)
+    assert [len(p) for p in pages] == [25, 25, 9]
+    assert bb._chunks([]) == [[]]
 
 
 def test_house_panel_signature_tracks_visible_changes(bb):
