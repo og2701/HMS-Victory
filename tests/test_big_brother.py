@@ -357,8 +357,10 @@ def test_shop_catalogue_parse_and_store(shop):
 def test_shop_seed_file_parses(shop):
     with open(shop.SEED_FILE, encoding="utf-8") as f:
         entries = shop.parse_catalogue(f.read())
-    assert len(entries) == 52
-    assert {c for c, _, _ in entries} == {"Meat & Fish", "Fruit & Veg", "Misc", "Breakfast & Tea"}
+    assert len(entries) == 114
+    assert {c for c, _, _ in entries} == {"Meat & Fish", "Fruit & Veg", "Misc", "Breakfast & Tea",
+                                          "Sweets", "Crisps & Snacks", "Drinks & Temptations", "Spices"}
+    assert ("Drinks & Temptations", "4-pack Stella", 550) in entries   # hyphen in the name survives
     assert shop.parse_catalogue("Misc. .\nSalt — £0.80")[0][0] == "Misc"
 
 
