@@ -542,38 +542,79 @@ class _OpenShopModal(discord.ui.Modal, title="Open the shop"):
         await self._on_submit(interaction, self)
 
 
+def _catalogue_summary() -> str:
+    items = catalogue()
+    if not items:
+        return "🛒 **Catalogue is empty.** Press Load saved list, or Add items and paste a list."
+    counts: dict[str, int] = {}
+    for it in items:
+        counts[it["category"]] = counts.get(it["category"], 0) + 1
+    lines = [f"🛒 **Catalogue:** {len(items)} items in {len(counts)} aisles. Press an aisle to see its prices."]
+    lines += [f"• **{cat}** · {n}" for cat, n in counts.items()]
+    return "\n".join(lines)
+
+
+def _aisle_text(category: str) -> str:
+    items = [it for it in catalogue() if it["category"] == category]
+    return f"🛒 **{category}** ({len(items)})\n" + "\n".join(f"{it['name']} — {pounds(it['price'])}" for it in items)
+
+
+class _CatalogueView(discord.ui.View):
+    """Summary with one button per aisle (rows 0-3), and Add / Load on the last row."""
+
+    def __init__(self, aisle: Optional[str] = None):
+        super().__init__(timeout=300)
+        cats = categories()[:20]
+        for cat in cats:
+            btn = discord.ui.Button(label=cat[:80], style=discord.ButtonStyle.primary if cat == aisle
+                                    else discord.ButtonStyle.secondary)
+
+            async def _show(interaction: discord.Interaction, _cat=cat):
+                await interaction.response.edit_message(content=_aisle_text(_cat)[:1900], view=_CatalogueView(_cat))
+            btn.callback = _show
+            self.add_item(btn)
+
+        if aisle:
+            back = discord.ui.Button(label="All aisles", emoji="↩️", row=4)
+
+            async def _back(interaction: discord.Interaction):
+                await interaction.response.edit_message(content=_catalogue_summary(), view=_CatalogueView())
+            back.callback = _back
+            self.add_item(back)
+
+        add = discord.ui.Button(label="Add items", emoji="➕", row=4)
+
+        async def _add(interaction: discord.Interaction):
+            await interaction.response.send_modal(_CatalogueModal(_catalogue_submitted))
+        add.callback = _add
+        self.add_item(add)
+
+        if os.path.exists(SEED_FILE):
+            load = discord.ui.Button(label="Load saved list", emoji="📥", row=4)
+
+            async def _load(interaction: discord.Interaction):
+                with open(SEED_FILE, encoding="utf-8") as f:
+                    await _catalogue_submitted(interaction, f.read(), True)
+            load.callback = _load
+            self.add_item(load)
+
+
+async def _catalogue_submitted(inter: discord.Interaction, text: str, replace: bool):
+    await inter.response.defer(ephemeral=True, thinking=True)
+    entries = parse_catalogue(text)
+    if not entries:
+        await inter.edit_original_response(content="No priced lines found. Use `Name — £1.50`, one per line.")
+        return
+    set_catalogue(entries, replace=replace)
+    bb.log_event("shop_catalogue_updated", actor=inter.user.id, added=len(entries), replaced=replace)
+    await inter.edit_original_response(
+        content=f"{'Replaced with' if replace else 'Added'} {len(entries)} item(s).\n\n" + _catalogue_summary(),
+        view=_CatalogueView())
+
+
 async def act_catalogue(interaction: discord.Interaction):
-    """Ephemeral: current catalogue with Add / Replace buttons."""
-    view = discord.ui.View(timeout=300)
-    add = discord.ui.Button(label="Add items", style=discord.ButtonStyle.primary, emoji="➕")
-
-    async def submitted(inter: discord.Interaction, text: str, replace: bool):
-        await inter.response.defer(ephemeral=True, thinking=True)
-        entries = parse_catalogue(text)
-        if not entries:
-            await inter.edit_original_response(content="No priced lines found. Use `Name — £1.50`, one per line.")
-            return
-        set_catalogue(entries, replace=replace)
-        bb.log_event("shop_catalogue_updated", actor=inter.user.id, added=len(entries), replaced=replace)
-        await inter.edit_original_response(
-            content=f"{'Replaced with' if replace else 'Added'} {len(entries)} item(s). "
-                    f"Catalogue now has {len(catalogue())} items in {len(categories())} categories.")
-
-    async def _add(inter: discord.Interaction):
-        await inter.response.send_modal(_CatalogueModal(submitted))
-    add.callback = _add
-    view.add_item(add)
-    if os.path.exists(SEED_FILE):
-        load = discord.ui.Button(label="Load saved list", style=discord.ButtonStyle.secondary, emoji="📥")
-
-        async def _load(inter: discord.Interaction):
-            with open(SEED_FILE, encoding="utf-8") as f:
-                await submitted(inter, f.read(), True)
-        load.callback = _load
-        view.add_item(load)
-    text = catalogue_text()
-    await interaction.response.send_message(
-        f"🛒 **Catalogue** ({len(catalogue())} items)\n{text}"[:1900], view=view, ephemeral=True)
+    """Ephemeral: aisle summary, one button per aisle to see prices, Add / Load buttons."""
+    await interaction.response.send_message(_catalogue_summary(), view=_CatalogueView(), ephemeral=True)
 
 
 async def act_shop(interaction: discord.Interaction):
