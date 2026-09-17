@@ -276,6 +276,18 @@ def test_house_panel_signature_tracks_visible_changes(bb):
     assert "1** secret mission in play" in bb._house_panel_text(None)
 
 
+def test_acks_are_single_use_and_owned(bb):
+    aid = bb.create_ack(7, "mission #1 brief")
+    assert [a["id"] for a in bb.pending_acks()] == [aid]
+    assert bb.mark_ack(aid, 8) is None          # someone else's button
+    assert bb.mark_ack(aid, 7) == "mission #1 brief"
+    assert bb.mark_ack(aid, 7) is None          # second press does nothing
+    assert bb.pending_acks() == []
+    btn = bb.AckButton(aid, 7)
+    assert btn.custom_id == f"bb:ack:{aid}:7" and not btn.item.disabled
+    assert bb.AckButton(aid, 7, done=True).item.disabled
+
+
 def test_vote_button_custom_id(bb):
     btn = bb.VoteButton(7, 42, "Bob")
     assert btn.custom_id == "bb:vote:7:42"

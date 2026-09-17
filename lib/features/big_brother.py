@@ -149,6 +149,10 @@ def ensure_tables() -> None:
         c.execute("""CREATE TABLE IF NOT EXISTS bb_snugs (
             id INTEGER PRIMARY KEY AUTOINCREMENT, thread_id TEXT NOT NULL, opened_by TEXT,
             members TEXT NOT NULL, created_at INTEGER NOT NULL)""")
+        # Read receipts for DMs that carry an "I've seen this" button.
+        c.execute("""CREATE TABLE IF NOT EXISTS bb_acks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, label TEXT NOT NULL,
+            sent_at INTEGER NOT NULL, acked_at INTEGER)""")
         # Columns added after the first deploy; harmless when they already exist.
         for stmt in ("ALTER TABLE bb_housemates ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0",
                      "ALTER TABLE bb_messages ADD COLUMN thread_id TEXT"):
@@ -321,6 +325,29 @@ def clear_all_immunity() -> list[int]:
     was = sorted(immune_ids())
     DatabaseManager.execute("UPDATE bb_housemates SET immune = 0")
     return was
+
+
+def create_ack(user_id: int, label: str) -> int:
+    ensure_tables()
+    return DatabaseManager.execute_insert(
+        "INSERT INTO bb_acks (user_id, label, sent_at) VALUES (?, ?, ?)", (str(user_id), label[:200], _now()))
+
+
+def mark_ack(ack_id: int, user_id: int) -> Optional[str]:
+    """Record the press; returns the label the first time, None if already acked or not theirs."""
+    ensure_tables()
+    row = DatabaseManager.fetch_one("SELECT user_id, label, acked_at FROM bb_acks WHERE id = ?", (int(ack_id),))
+    if not row or str(row[0]) != str(user_id) or row[2]:
+        return None
+    DatabaseManager.execute("UPDATE bb_acks SET acked_at = ? WHERE id = ?", (_now(), int(ack_id)))
+    return row[1]
+
+
+def pending_acks() -> list[dict]:
+    ensure_tables()
+    rows = DatabaseManager.fetch_all(
+        "SELECT id, user_id, label, sent_at FROM bb_acks WHERE acked_at IS NULL ORDER BY sent_at")
+    return [{"id": r[0], "user_id": int(r[1]), "label": r[2], "sent_at": r[3]} for r in rows]
 
 
 def add_snug(thread_id: int, opened_by: Optional[int], members: Iterable[int]) -> int:
@@ -616,11 +643,21 @@ async def _echo_to_host(client: discord.Client, where: str, content: Optional[st
 
 
 async def dm_user(client: discord.Client, user_id: int, content: Optional[str] = None,
-                  embed: Optional[discord.Embed] = None, *, echo: bool = True) -> bool:
+                  embed: Optional[discord.Embed] = None, *, echo: bool = True,
+                  ack: Optional[str] = None) -> bool:
+    """ack: a short label (e.g. "Mission #4") attaches an "I've seen this" button; the press
+    is logged and DMed to the host, so Big Brother knows it was read."""
     ok = True
+    view = None
+    if ack and int(user_id) != host_id():
+        view = discord.ui.View(timeout=None)
+        view.add_item(AckButton(create_ack(user_id, ack), user_id))
     try:
         user = client.get_user(int(user_id)) or await client.fetch_user(int(user_id))
-        await user.send(content=content, embed=embed)
+        if view is not None:
+            await user.send(content=content, embed=embed, view=view)
+        else:
+            await user.send(content=content, embed=embed)
     except discord.HTTPException as e:
         log.info("Big Brother: could not DM %s: %s", user_id, e)
         ok = False
@@ -959,6 +996,38 @@ class VoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:vote:(
             f"Press another button to change it.", ephemeral=True)
 
 
+class AckButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:ack:(?P<aid>\d+):(?P<uid>\d+)"):
+    """"I've seen this" on a DM. One press, then it greys out; the host is told."""
+
+    def __init__(self, ack_id: int, user_id: int, done: bool = False):
+        self.ack_id, self.user_id = int(ack_id), int(user_id)
+        super().__init__(discord.ui.Button(
+            label="Seen ✓" if done else "I've seen this", emoji=EYE if not done else None,
+            style=discord.ButtonStyle.secondary if done else discord.ButtonStyle.primary,
+            disabled=done, custom_id=f"bb:ack:{self.ack_id}:{self.user_id}"))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(int(match["aid"]), int(match["uid"]), done=bool(item.disabled))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("That's not yours to press.", ephemeral=True)
+            return
+        label = mark_ack(self.ack_id, self.user_id)
+        view = discord.ui.View(timeout=None)
+        view.add_item(AckButton(self.ack_id, self.user_id, done=True))
+        try:
+            await interaction.response.edit_message(view=view)
+        except discord.HTTPException:
+            pass
+        if label is None:
+            return
+        log_event("acknowledged", actor=self.user_id, label=label)
+        await notify_host(interaction.client,
+                          f"👁️‍🗨️ **{_name(_guild(interaction.client), self.user_id)}** has seen: {label}")
+
+
 # ---------------------------------------------------------------------------
 # Ephemeral pickers used by the panel
 # ---------------------------------------------------------------------------
@@ -1125,6 +1194,10 @@ def _panel_text(guild: Optional[discord.Guild]) -> str:
     else:
         lines.append("**Eviction vote:** ⚪ none running")
     lines.append("**House chat:** " + ("🔇 housemates silenced" if house_silent() else "🟢 open"))
+    unread = pending_acks()
+    if unread:
+        lines.append(f"**Unread DMs:** {len(unread)} · " + ", ".join(
+            f"{_name(guild, a['user_id'])} ({a['label']})" for a in unread[:6]) + (" …" if len(unread) > 6 else ""))
     lines.append(f"**Secret missions:** {len(missions)} active")
     lines.append(f"**Challenge:** {('🟢 ' + chal['title']) if chal else '⚪ none open'}")
     if quiet:
@@ -1464,7 +1537,7 @@ async def _act_add(interaction: discord.Interaction):
         ids = [u.id for u in select.values if not getattr(u, "bot", False)]
         added = await add_housemates(inter.client, ids)
         for uid in added:
-            await dm_user(inter.client, uid, embed=bb_embed(
+            await dm_user(inter.client, uid, ack="the welcome message", embed=bb_embed(
                 "Welcome to the house",
                 f"You're a housemate in UKPlace Big Brother.\n\n"
                 f"The panel at the bottom of <#{house_channel_id()}> is how you talk to Big Brother: "
@@ -1510,7 +1583,7 @@ async def _act_token(interaction: discord.Interaction):
     async def pressed(inter: discord.Interaction, uid: int) -> int:
         total = grant_token(uid)
         log_event("token_granted", target=uid, tokens=total, source="host")
-        asyncio.create_task(dm_user(inter.client, uid, embed=bb_embed("Immunity token", _token_blurb(total))))
+        asyncio.create_task(dm_user(inter.client, uid, ack="immunity token", embed=bb_embed("Immunity token", _token_blurb(total))))
         return total
 
     view = _CountGrid(interaction.guild, ins, {u: tokens_of(u) for u in ins}, pressed)
@@ -1558,7 +1631,7 @@ async def _act_mission(interaction: discord.Interaction):
             brief = values["brief"]
             mid = add_mission(uid, brief)
             log_event("mission_assigned", target=uid, mission_id=mid, brief=brief)
-            ok = await dm_user(inter2.client, uid, embed=bb_embed(
+            ok = await dm_user(inter2.client, uid, ack=f"mission #{mid} brief", embed=bb_embed(
                 "Secret mission",
                 f"{brief}\n\nComplete it without the other housemates noticing. "
                 f"Big Brother will let you know when it's done. Press **My mission** on the house panel to see this again."))
@@ -1603,7 +1676,7 @@ async def _act_resolve_mission(interaction: discord.Interaction):
             if status == "done":
                 total = grant_token(m["user_id"])
                 log_event("token_granted", target=m["user_id"], tokens=total, source=f"mission:{mid}")
-                await dm_user(inter2.client, m["user_id"], embed=bb_embed(
+                await dm_user(inter2.client, m["user_id"], ack=f"mission #{mid} completed + token", embed=bb_embed(
                     "Mission complete",
                     f"Big Brother is pleased. *{m['brief']}*\n\n🎟️ You've earned an **immunity token**. "
                     + _token_blurb(total)))
@@ -1673,7 +1746,8 @@ async def _act_dm(interaction: discord.Interaction):
         async def submitted(inter2: discord.Interaction, values: dict):
             sent, closed = 0, []
             for uid in ids:
-                ok = await dm_user(inter2.client, uid, embed=bb_embed("Big Brother", values["text"]))
+                ok = await dm_user(inter2.client, uid, ack=f"DM: {values['text'][:60]}",
+                                   embed=bb_embed("Big Brother", values["text"]))
                 log_event("bb_dm", target=uid, text=values["text"], delivered=ok)
                 sent += ok
                 if not ok:
@@ -2222,7 +2296,9 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
         e["actor_name"] = n(e["actor_id"])
         e["target_name"] = n(e["target_id"])
 
-    dump = {"exported_at": _now(), "housemates": hm, "rounds": rounds, "nominations": noms, "votes": votes,
+    acks = [{"id": r[0], "user_id": int(r[1]), "name": n(int(r[1])), "label": r[2], "sent_at": r[3], "acked_at": r[4]}
+            for r in DatabaseManager.fetch_all("SELECT id, user_id, label, sent_at, acked_at FROM bb_acks ORDER BY id")]
+    dump = {"exported_at": _now(), "housemates": hm, "acks": acks, "rounds": rounds, "nominations": noms, "votes": votes,
             "diary": diary, "missions": missions, "challenges": challenges, "events": evs,
             "activity": activity, "snugs": snug_rows, "house_messages": msgs}
 
