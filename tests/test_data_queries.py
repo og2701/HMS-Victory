@@ -17,6 +17,11 @@ def _fake_fetch(calls=None):
             return [("1", 20), ("2", 9), ("5", 3)]
         if "FROM xp" in sql:
             return [("1", 1240), ("2", 300), ("3", 5000), ("4", 300)]
+        if "FROM shutcoin_ledger" in sql:
+            if "amount > 0" in sql:
+                return [("5", 4), ("2", 1)]       # lucky-dip wins
+            if "amount < 0" in sql:
+                return [("1", 6), ("5", 7)]
         if "FROM casino_results" in sql:
             if params and params[0] == "blackjack":
                 return [("1", -500), ("2", 120)]
@@ -128,10 +133,12 @@ class TestCompute(unittest.TestCase):
         self.assertEqual(tot.total, 6840)
         self.assertEqual(tot.rows, [])
 
-    def test_derived_shutcoins_used_is_bought_minus_held(self):
+    def test_derived_shutcoins_used_is_bought_plus_wins_minus_held(self):
         res = compute(QuerySpec(metric="shutcoins_used", shape="leaderboard"), exclude_ids={"999"})
-        # 1: 20-14=6, 2: 9-9=0 (dropped), 5: 3-0=3, 3/4 bought nothing -> 0 (dropped)
-        self.assertEqual(res.rows, [("1", 6), ("5", 3)])
+        # 1: 20+0-14=6, 2: 9+1-9=1, 5: 3+4-0=7, 3/4 bought nothing -> 0 (dropped)
+        self.assertEqual(res.rows, [("5", 7), ("1", 6), ("2", 1)])
+        self.assertEqual(compute(QuerySpec(metric="shutcoins_won", shape="leaderboard")).rows, [("5", 4), ("2", 1)])
+        self.assertEqual(compute(QuerySpec(metric="shuts_given", shape="leaderboard")).rows, [("5", 7), ("1", 6)])
 
     def test_game_filter_and_window_reach_the_sql(self):
         compute(QuerySpec(metric="casino_net", shape="leaderboard", game="blackjack", window="week"))
@@ -199,7 +206,7 @@ class TestSourcesDatesAndAsOf(unittest.TestCase):
         self.assertTrue(text.startswith("Earliest 3 by first seen"), text)
         self.assertIn(" 1. 14 Nov 2023  Johnny", text)
         person = compute(QuerySpec(metric="first_seen", shape="person", subjects=[("Kim", "3")]))
-        self.assertEqual(render(person, self.names), "**Kim**: first seen 09 Mar 2024")
+        self.assertEqual(render(person, self.names), "```\nKim: first seen 09 Mar 2024\n```")
         cmp_ = compute(QuerySpec(metric="first_seen", shape="compare", subjects=[("Johnny", "1"), ("Steven", "2")]))
         self.assertIn("Johnny earlier by 231 days.", render(cmp_, self.names))
 
@@ -229,33 +236,33 @@ class TestLists(unittest.TestCase):
     def test_badges_sorted_by_rarity(self):
         res = compute(QuerySpec(metric="none", shape="list", list_kind="badges", subjects=[("Steven", "2")]))
         text = render(res, self.names)
-        self.assertTrue(text.startswith("**Steven's badges**\n"), text)
+        self.assertTrue(text.startswith("```\nSteven's badges\nWarden [Gold]"), text)
         self.assertLess(text.index("Warden [Gold]"), text.index("Night Owl [Silver]"))
         self.assertLess(text.index("Night Owl [Silver]"), text.index("Shut Victim [Bronze]"))
 
     def test_counties_named_and_tiered(self):
         res = compute(QuerySpec(metric="none", shape="list", list_kind="counties", subjects=[("Kim", "3")]))
         text = render(res, self.names)
-        self.assertIn("- London x1 [legendary]", text)
-        self.assertIn("- Bedfordshire x3 [common]", text)
+        self.assertIn("\nLondon x1 [legendary]", text)
+        self.assertIn("\nBedfordshire x3 [common]", text)
         self.assertLess(text.index("London"), text.index("Bedfordshire"))
 
     def test_empty_list_says_so(self):
         res = compute(QuerySpec(metric="none", shape="list", list_kind="bonds", subjects=[("Kim", "3")]))
-        self.assertEqual(render(res, self.names), "**Kim's bonds**: no bonds.")
+        self.assertEqual(render(res, self.names), "```\nKim's bonds: no bonds.\n```")
 
     def test_pvp_record_per_game_and_opponent(self):
         res = compute(QuerySpec(metric="none", shape="list", list_kind="pvp_record", subjects=[("Johnny", "1")]))
         text = render(res, self.names)
-        self.assertIn("- Battleship: 1W 0L 0D", text)
-        self.assertIn("- Connect 4: 1W 1L 0D", text)
-        self.assertIn("- Steven: 1W 1L 0D", text)
-        self.assertIn("- Hadidas: 1W 0L 0D", text)
+        self.assertIn("\nBattleship: 1W 0L 0D", text)
+        self.assertIn("\nConnect 4: 1W 1L 0D", text)
+        self.assertIn("\nSteven: 1W 1L 0D", text)
+        self.assertIn("\nHadidas: 1W 0L 0D", text)
 
     def test_bank_fact_sheet(self):
         res = compute(QuerySpec(metric="none", shape="list", list_kind="bank"))
         text = render(res, {})
-        self.assertIn("**house bank**", text)
+        self.assertTrue(text.startswith("```\nhouse bank\n"), text)
         self.assertIn("house balance 123,456 UKP", text)
         self.assertIn("blackjack: house +600 UKP (took 1,000, paid 400)", text)
         self.assertIn("slots: house -600 UKP", text)
@@ -265,16 +272,16 @@ class TestLists(unittest.TestCase):
         text = render(res, self.names)
         self.assertIn("round 7: 120 tickets sold to 9 players at 10 UKP each (cap 500)", text)
         self.assertIn("pot about 1,080 UKP after 10% rake", text)
-        self.assertIn("- Kim: won the last draw: 900 UKP", text)
+        self.assertIn("\nKim: won the last draw: 900 UKP on", text)
 
     def test_pick_lists_filter_bots_and_departed(self):
         holders = compute(QuerySpec(metric="none", shape="list", list_kind="badge_holders", pick="Warden"), exclude_ids={"2"})
         text = render(holders, self.names)
-        self.assertIn("**holders of a badge: Warden**", text)
-        self.assertIn("- Johnny: since", text)
+        self.assertIn("holders of a badge: Warden\n", text)
+        self.assertIn("\nJohnny: since", text)
         self.assertNotIn("Steven", text)
         owners = compute(QuerySpec(metric="none", shape="list", list_kind="county_owners", pick="London"), member_ids={"2"})
-        self.assertEqual(render(owners, self.names), "**owners of a county: London**\n- Steven: x2")
+        self.assertEqual(render(owners, self.names), "```\nowners of a county: London\nSteven: x2\n```")
         nothing = compute(QuerySpec(metric="none", shape="list", list_kind="badge_holders", pick="Nonexistent"))
         self.assertIn("nobody holds it", render(nothing, self.names))
         self.assertEqual(dq.pick_candidates("badge"), ["Night Owl", "Shut Victim", "Warden"])
@@ -284,7 +291,7 @@ class TestLists(unittest.TestCase):
         with patch("lib.features.data_queries._json", return_value=None):
             for key in ("night_owl", "weekend_warrior", "skyrim_level", "skyrim_septims", "prediction_streak"):
                 self.assertEqual(compute(QuerySpec(metric=key, shape="leaderboard")).rows, [], key)
-            self.assertEqual(render(compute(QuerySpec(metric="none", shape="list", list_kind="graveyard")), {}), "**Skyrim graveyard**: nobody has died lately.")
+            self.assertEqual(render(compute(QuerySpec(metric="none", shape="list", list_kind="graveyard")), {}), "```\nSkyrim graveyard: nobody has died lately.\n```")
 
     def test_json_backed_metrics_read_counts(self):
         files = {"NIGHT_OWL_COUNTS_FILE": {"1": 40, "2": 12}, "WEEKEND_WARRIOR_COUNTS_FILE": {"2026-w1": {"1": 5}, "2026-w2": {"1": 7, "3": 2}},
@@ -365,23 +372,23 @@ class TestRender(unittest.TestCase):
 
     def test_person_line(self):
         res = compute(QuerySpec(metric="xp", shape="person", subjects=[("Steven", "2")]))
-        self.assertEqual(render(res, self.names), "**Steven**: 300 XP (rank 3 of 4)")
+        self.assertEqual(render(res, self.names), "```\nSteven: 300 XP (rank 3 of 4)\n```")
 
     def test_person_with_note_and_unknown_name(self):
         res = compute(QuerySpec(metric="shutcoins_used", shape="person", subjects=[("?", "5")]))
         text = render(res, {})
-        self.assertIn("**user 5**: 3 shutcoins used", text)
-        self.assertIn("bought minus held", text)
+        self.assertIn("\nuser 5: 7 shutcoins used", text)
+        self.assertIn("minus held", text)
 
     def test_compare_verdict(self):
         res = compute(QuerySpec(metric="xp", shape="compare", subjects=[("Johnny", "1"), ("Kim", "3")]))
         text = render(res, self.names)
-        self.assertIn("**Johnny**: 1,240 XP", text)
-        self.assertIn("**Kim**: 5,000 XP", text)
+        self.assertIn("\nJohnny: 1,240 XP", text)
+        self.assertIn("\nKim: 5,000 XP", text)
         self.assertIn("Kim ahead by 3,760 XP.", text)
         net = compute(QuerySpec(metric="casino_net", shape="compare", game="blackjack", subjects=[("Johnny", "1"), ("Steven", "2")]))
         text = render(net, self.names)
-        self.assertIn("**Johnny**: -500 UKP (casino profit and loss)", text)
+        self.assertIn("\nJohnny: -500 UKP (casino profit and loss)", text)
         self.assertIn("Steven ahead by 620 UKP. (blackjack)", text)
         tie = compute(QuerySpec(metric="xp", shape="compare", subjects=[("Steven", "2"), ("Hadidas", "4")]))
         self.assertIn("Dead level.", render(tie, self.names))
@@ -389,13 +396,13 @@ class TestRender(unittest.TestCase):
     def test_unitless_metric_reads_naturally(self):
         with patch("lib.features.data_queries._fetch", lambda sql, params=(): [("1", 7)] if "shut_counts" in sql else []):
             res = compute(QuerySpec(metric="times_shut", shape="person", subjects=[("Johnny", "1")]))
-            self.assertEqual(render(res, self.names), "**Johnny**: 7 times shut (rank 1 of 1)")
+            self.assertEqual(render(res, self.names), "```\nJohnny: 7 times shut (rank 1 of 1)\n```")
             board = compute(QuerySpec(metric="times_shut", shape="leaderboard"))
             self.assertIn(" 1. 7  Johnny", render(board, self.names))
 
     def test_total_line(self):
         res = compute(QuerySpec(metric="xp", shape="total"))
-        self.assertEqual(render(res, {}), "Total XP: 6,840 XP across 4 members")
+        self.assertEqual(render(res, {}), "```\nTotal XP: 6,840 XP across 4 members\n```")
 
 
 if __name__ == "__main__":

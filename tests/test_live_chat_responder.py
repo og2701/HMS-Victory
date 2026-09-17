@@ -3386,7 +3386,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             res = await handle_one_off_owner_mention(client, message)
         self.assertTrue(res)
         mock_plan.assert_not_called()
-        self.assertEqual(message.reply.call_args[0][0], "**Steven**: 300 XP (rank 3 of 3)")
+        self.assertEqual(message.reply.call_args[0][0], "```\nSteven: 300 XP (rank 3 of 3)\n```")
         # the directory offered to the name-picker includes Steven from the channel's active users
         self.assertIn(("Steven", 2), mock_named.call_args[0][1])
 
@@ -3413,7 +3413,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         mock_plan.assert_not_called()
         mock_named.assert_not_called()
         text = message.reply.call_args[0][0]
-        self.assertTrue(text.startswith("**Steven**: 6 shutcoins used (rank 1 of 1)"), text)
+        self.assertTrue(text.startswith("```\nSteven: 6 shutcoins used (rank 1 of 1)\n```"), text)
 
     @patch("lib.features.chat_responder.plan_mention")
     @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("", 0, 0))
@@ -3433,8 +3433,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(res)
         mock_plan.assert_not_called()
         text = message.reply.call_args[0][0]
-        self.assertTrue(text.startswith("**Steven's badges**\n- Warden [Gold]"), text)
-        self.assertIn("- Shut Victim [Bronze]", text)
+        self.assertTrue(text.startswith("```\nSteven's badges\nWarden [Gold]"), text)
+        self.assertIn("\nShut Victim [Bronze]", text)
 
     @patch("lib.features.chat_responder.judge_pick", new_callable=AsyncMock, return_value=("Warden", 80, 0))
     @patch("lib.features.chat_responder.plan_mention")
@@ -3462,9 +3462,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_pick.call_args[0][1], ["Night Owl", "Warden"])
         self.assertEqual(mock_pick.call_args[1]["what"], "badges")
         text = message.reply.call_args[0][0]
-        self.assertIn("**holders of a badge: Warden**", text)
-        self.assertIn("- Johnny: since 14 Nov 2023", text)
-        self.assertIn("- Steven: since", text)
+        self.assertIn("holders of a badge: Warden\n", text)
+        self.assertIn("\nJohnny: since 14 Nov 2023", text)
+        self.assertIn("\nSteven: since", text)
 
     @patch("lib.features.chat_responder.plan_mention")
     @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("Closer than a cat is to loving water.", 5, 5))
@@ -3487,6 +3487,129 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Closest 3 to 100,000 XP", text)
         self.assertRegex(text, r" 1\.\s+98,500 XP  -1,500 XP\s+Tharan")
         self.assertRegex(text, r" 2\.\s+730,827 XP  \+630,827 XP\s+Chin")
+
+    @patch("lib.features.chat_responder.plan_mention")
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("Fine, users.", 5, 5))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_records_correction_reuses_the_previous_question(self, mock_judge, _find, _generate, mock_plan):
+        from lib.features import chat_responder as cr
+        from lib.features.data_queries import QuerySpec
+        # "users, not holders" under the bot's top-10 table: a confident metric, a vague shape, nothing else named
+        sig = _jev_signals(action="reply", confidence=0.95, data={"metric": "shutcoins_used", "shape": "leaderboard"})
+        mock_judge.return_value = ms_replace(sig, data_shape_confidence=0.41)
+        self.assertFalse(mock_judge.return_value.data_query_requested())
+        client = MagicMock(); client.user.id = 999999999
+        bot_msg = MagicMock(); bot_msg.id = 424242; bot_msg.author.id = client.user.id; bot_msg.content = "Top 10 by shutcoins held"; bot_msg.attachments = []; bot_msg.mentions = []
+        cr.remember_records_answer(bot_msg, 777, QuerySpec(metric="shutcoins", shape="leaderboard", limit=10))
+        reference = MagicMock(); reference.message_id = 424242
+        message = self._leader_message(client, f"<@{client.user.id}> users, not holders", reference=reference)
+        message.channel.id = 777
+        people = {1: _member(1, "shuto"), 2: _member(2, "Gunner")}
+        message.guild = MagicMock(); message.guild.members = []
+        message.guild.get_member.side_effect = lambda uid: people.get(uid)
+        def fetch(sql, params=()):
+            if "FROM shop_purchases" in sql:
+                return [("1", 80), ("2", 60)]
+            if "FROM shutcoins" in sql:
+                return [("1", 13), ("2", 3)]
+            return []
+        with patch("lib.features.chat_responder.resolve_reply_chain", new_callable=AsyncMock, return_value=[bot_msg]), \
+             patch("lib.features.data_queries._fetch", fetch), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_plan.assert_not_called()
+        text = message.reply.call_args[0][0]
+        self.assertIn("Top 2 by shutcoins used", text)
+        self.assertIn(" 1. 67 shutcoins  shuto", text)
+
+    @patch("lib.features.chat_responder.plan_mention")
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("", 0, 0))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_records_they_means_the_previous_person(self, mock_judge, _find, _generate, mock_plan):
+        from lib.features import chat_responder as cr
+        from lib.features.data_queries import QuerySpec
+        # "and how many times have they shut others" under an answer about Solid-Snake: a full question, but "they" is him
+        mock_judge.return_value = _jev_signals(action="reply", confidence=0.99, data={"metric": "shuts_given", "shape": "person", "subject": "not_applicable"})
+        client = MagicMock(); client.user.id = 999999999
+        bot_msg = MagicMock(); bot_msg.id = 4343; bot_msg.author.id = client.user.id; bot_msg.content = "Solid-Snake: 11 times shut"; bot_msg.attachments = []; bot_msg.mentions = []
+        cr.remember_records_answer(bot_msg, 778, QuerySpec(metric="times_shut", shape="person", subjects=[("Solid-Snake", "9")]))
+        reference = MagicMock(); reference.message_id = 4343
+        message = self._leader_message(client, f"<@{client.user.id}> and how many times have they shut others", reference=reference)
+        message.channel.id = 778
+        snake = _member(9, "Solid-Snake")
+        message.guild = MagicMock(); message.guild.members = []
+        message.guild.get_member.side_effect = lambda uid: {9: snake}.get(uid)
+        fetch = lambda sql, params=(): [("9", 4)] if "FROM shutcoin_ledger" in sql and "amount < 0" in sql else []
+        with patch("lib.features.chat_responder.resolve_reply_chain", new_callable=AsyncMock, return_value=[bot_msg]), \
+             patch("lib.features.chat_responder.judge_named_subject", new_callable=AsyncMock, return_value=(None, 0, 0)) as mock_named, \
+             patch("lib.features.data_queries._fetch", fetch), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_named.assert_not_called()
+        self.assertEqual(message.reply.call_args[0][0], "```\nSolid-Snake: 4 shuts given (rank 1 of 1)\n```")
+
+    @patch("lib.features.chat_responder.plan_mention")
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("", 0, 0))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_records_not_me_someone_else_is_a_correction(self, mock_judge, _find, _generate, mock_plan):
+        from lib.features import chat_responder as cr
+        from lib.features.data_queries import QuerySpec
+        # "not me, @Solid-Snake" under "oggers: 0 times shut": nothing but the person changes
+        sig = _jev_signals(action="reply", confidence=0.95, data={"metric": "none", "shape": "none", "subject": "mentioned_user"})
+        mock_judge.return_value = sig
+        self.assertFalse(sig.data_query_requested())
+        client = MagicMock(); client.user.id = 999999999
+        bot_msg = MagicMock(); bot_msg.id = 4444; bot_msg.author.id = client.user.id; bot_msg.content = "oggers: 0 shuts given"; bot_msg.attachments = []; bot_msg.mentions = []
+        cr.remember_records_answer(bot_msg, 779, QuerySpec(metric="shuts_given", shape="person", subjects=[("oggers", str(USERS.OGGERS))]))
+        snake = _member(9, "Solid-Snake")
+        reference = MagicMock(); reference.message_id = 4444
+        message = self._leader_message(client, f"<@{client.user.id}> not me, <@9>", reference=reference, mentions=[snake])
+        message.channel.id = 779
+        message.guild = MagicMock(); message.guild.members = []
+        message.guild.get_member.side_effect = lambda uid: {9: snake}.get(uid)
+        fetch = lambda sql, params=(): [("9", 4), (str(USERS.OGGERS), 0)] if "FROM shutcoin_ledger" in sql and "amount < 0" in sql else []
+        with patch("lib.features.chat_responder.resolve_reply_chain", new_callable=AsyncMock, return_value=[bot_msg]), \
+             patch("lib.features.data_queries._fetch", fetch), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_plan.assert_not_called()
+        self.assertEqual(message.reply.call_args[0][0], "```\nSolid-Snake: 4 shuts given (rank 1 of 1)\n```")
+
+    async def test_corrected_records_spec_changes_only_what_was_named(self):
+        from lib.features import chat_responder as cr
+        from lib.features.data_queries import QuerySpec
+        prev = QuerySpec(metric="shutcoins", shape="leaderboard", limit=10, subjects=[])
+        # a length alone
+        sig = ms_replace(_jev_signals(action="reply", data={"metric": "none", "shape": "leaderboard", "limit": 20}), data_metric_confidence=0.2)
+        out = cr.corrected_records_spec(prev, sig)
+        self.assertEqual((out.metric, out.limit, out.shape), ("shutcoins", 20, "leaderboard"))
+        # a window alone
+        sig = ms_replace(_jev_signals(action="reply", data={"metric": "none", "shape": "none", "window": "month"}), data_shape_confidence=0.3)
+        self.assertEqual(cr.corrected_records_spec(prev, sig).window, "month")
+        # lowest alone
+        sig = _jev_signals(action="reply", data={"metric": "none", "shape": "none"}, data_lowest=0.9)
+        self.assertTrue(cr.corrected_records_spec(prev, sig).lowest)
+        # nothing named -> no correction; a picture -> no correction
+        self.assertIsNone(cr.corrected_records_spec(prev, _jev_signals(action="reply")))
+        self.assertIsNone(cr.corrected_records_spec(prev, _jev_signals(action="generate", data={"metric": "xp", "shape": "leaderboard"})))
+        # a list correction replaces a metric question
+        sig = _jev_signals(action="reply", data={"metric": "none", "shape": "list", "list": "bank"})
+        out = cr.corrected_records_spec(prev, sig)
+        self.assertEqual((out.shape, out.list_kind), ("list", "bank"))
+        # previous answers are found by replied-to message, else by channel within the window
+        bot = MagicMock(); bot.id = 5; bot.author.id = 99
+        cr.remember_records_answer(bot, 42, prev)
+        self.assertIs(cr.previous_records_answer(bot, 42, 99), prev)
+        self.assertIs(cr.previous_records_answer(None, 42, 99), prev)
+        self.assertIsNone(cr.previous_records_answer(None, 43, 99))
+        other = MagicMock(); other.id = 6; other.author.id = 99
+        self.assertIsNone(cr.previous_records_answer(other, 42, 99))
 
     @patch("lib.features.chat_responder.plan_mention")
     @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)

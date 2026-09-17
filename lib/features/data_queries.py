@@ -369,8 +369,8 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
        lambda since, game: _agg("bonds", "COALESCE(SUM(principal),0)", where="status = 'active'")),
     # --- shutcoins
     _m("shutcoins", "shutcoins held", "shutcoins",
-       "Shutcoins currently held (a shutcoin buys a 30-second timeout of another member via the :Shut: reaction)",
-       ["top 10 shutcoin users", "who has the most shutcoins", "how many shutcoins does johnny have"],
+       "Shutcoins currently HELD, unspent (a shutcoin buys a 30-second timeout of another member via the :Shut: reaction). Not for 'shutcoin users': that is shutcoins_used",
+       ["who holds the most shutcoins", "how many shutcoins does johnny have", "shutcoin balances"],
        lambda since, game: _agg("shutcoins", "balance")),
     _m("shutcoins_bought", "shutcoins bought", "shutcoins",
        "Shutcoins bought from the shop",
@@ -379,12 +379,23 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
                                 where="item_id = 'shutcoin'"),
        windowable=True),
     _m("shutcoins_used", "shutcoins used", "shutcoins",
-       "Shutcoins spent shutting people up: bought minus still held",
-       ["how many shutcoins has this person used", "who's used the most shutcoins", "biggest shutcoin spender"],
+       "Shutcoins SPENT shutting people up (bought plus recorded wins, minus still held). 'Shutcoin users' means the people who use them: this metric",
+       ["top 10 shutcoin users", "how many shutcoins has this person used", "who's used the most shutcoins", "biggest shutcoin users"],
        lambda since, game: _merge(
            _agg("shop_purchases", "COALESCE(SUM(quantity),0)", where="item_id = 'shutcoin'"),
-           _agg("shutcoins", "balance"), op=lambda bought, held: max(0, bought - held)),
-       note="bought minus held; staff shuts don't cost a coin and aren't counted"),
+           _agg("shutcoin_ledger", "COALESCE(SUM(amount),0)", where="amount > 0 AND reason != 'shop'"),
+           _agg("shutcoins", "balance"), op=lambda bought, won, held: max(0, bought + won - held)),
+       note="bought plus recorded lucky-dip/VIP wins, minus held; wins before the ledger began and staff shuts aren't on record"),
+    _m("shutcoins_won", "shutcoins won", "shutcoins",
+       "Shutcoins won from lucky dips and VIP cases (recorded since the shutcoin ledger began)",
+       ["who's won the most shutcoins from lucky dips", "how many shutcoins has kim won", "luckiest shutcoin winner"],
+       lambda since, game: _agg("shutcoin_ledger", "COALESCE(SUM(amount),0)", ts_col="ts", since=since, where="amount > 0 AND reason != 'shop'"),
+       windowable=True),
+    _m("shuts_given", "shuts given", "shuts",
+       "Shutcoins actually spent on shutting someone, one per shut (recorded since the shutcoin ledger began)",
+       ["who's shut people the most", "how many shuts has steven done", "most trigger-happy shutter"],
+       lambda since, game: _agg("shutcoin_ledger", "COUNT(*)", ts_col="ts", since=since, where="amount < 0"),
+       windowable=True),
     _m("times_shut", "times shut", "",
        "How many times a member has been timed out by the :Shut: reaction (the victim, not the shutter)",
        ["who's been shut the most", "how many times has steven been shut", "most shut member"],
@@ -651,10 +662,11 @@ def _dt(ts: Any) -> str:
         return "?"
 
 
-def _rel(ts: Any) -> str:
+def _when(ts: Any) -> str:
+    """Date and time, for lines that live inside a code block (Discord's <t:..> stamps would show raw there)."""
     try:
-        return f"<t:{int(float(ts))}:R>"
-    except (TypeError, ValueError):
+        return datetime.fromtimestamp(int(float(ts)), tz=timezone.utc).strftime("%d %b %Y %H:%M")
+    except (TypeError, ValueError, OverflowError):
         return "?"
 
 
@@ -686,7 +698,7 @@ def _list_counties(uid, limit, since, pick) -> Lines:
 def _list_bonds(uid, limit, since, pick) -> Lines:
     rows = _fetch("SELECT principal, rate_pct, term_days, matures_ts, status FROM bonds WHERE user_id = ? "
                   "ORDER BY status = 'active' DESC, matures_ts DESC", (uid,))
-    return [(None, f"{int(p):,} UKP at {r}% over {d} days, matures {_rel(m)} [{s}]") for p, r, d, m, s in rows]
+    return [(None, f"{int(p):,} UKP at {r}% over {d} days, matures {_dt(m)} [{s}]") for p, r, d, m, s in rows]
 
 
 def _list_purchases(uid, limit, since, pick) -> Lines:
@@ -704,12 +716,12 @@ def _list_messages(uid, limit, since, pick) -> Lines:
     if since is not None:
         clauses.append("ts >= ?")
         params.append(int(since))
-    rows = _fetch(f"SELECT channel_id, content, ts FROM message_archive WHERE {' AND '.join(clauses)} "
+    rows = _fetch(f"SELECT content, ts FROM message_archive WHERE {' AND '.join(clauses)} "
                   "ORDER BY ts DESC LIMIT ?", params + [int(limit)])
     out: Lines = []
-    for ch, content, ts in rows:
+    for content, ts in rows:
         text = " ".join(str(content or "").split())[:140] or "[attachment]"
-        out.append((None, f"{_rel(ts)} in <#{ch}>: {text}"))
+        out.append((None, f"{_when(ts)}  {text}"))
     return out
 
 
@@ -824,7 +836,7 @@ def _list_money_supply(uid, limit, since, pick) -> Lines:
     if coins:
         out.append((None, f"{int(coins[0][0]):,} shutcoins held by {int(coins[0][1]):,} members"))
     if snap:
-        out.append((None, f"last circulation snapshot: {int(snap[0][0]):,} UKP {_rel(snap[0][1])}"))
+        out.append((None, f"last circulation snapshot: {int(snap[0][0]):,} UKP on {_dt(snap[0][1])}"))
     return out
 
 
@@ -837,12 +849,12 @@ def _list_lottery_round(uid, limit, since, pick) -> Lines:
         tickets, players = (int(sold[0][0]), int(sold[0][1])) if sold else (0, 0)
         pot = tickets * int(price) * (100 - int(rake or 0)) // 100
         out.append((None, f"round {rid}: {tickets:,} tickets sold to {players:,} players at {int(price):,} UKP each (cap {int(cap):,})"))
-        out.append((None, f"pot about {pot:,} UKP after {int(rake or 0)}% rake, draw {_rel(draw)}"))
+        out.append((None, f"pot about {pot:,} UKP after {int(rake or 0)}% rake, draw {_when(draw)} UTC"))
     else:
         out.append((None, "no lottery round is open right now"))
     last = _fetch("SELECT winner_id, pot, drawn_at FROM lottery_rounds WHERE winner_id IS NOT NULL ORDER BY drawn_at DESC LIMIT 1")
     if last:
-        out.append((str(last[0][0]), f"won the last draw: {int(last[0][1] or 0):,} UKP {_rel(last[0][2])}"))
+        out.append((str(last[0][0]), f"won the last draw: {int(last[0][1] or 0):,} UKP on {_dt(last[0][2])}"))
     return out
 
 
@@ -888,9 +900,9 @@ def _list_predictions(uid, limit, since, pick) -> Lines:
                 pool = bets.get(str(i)) or bets.get(i) or {}
                 totals.append(f"{opt} {sum(int(v) for v in pool.values() if isinstance(v, (int, float))):,}")
             state = "locked" if p.get("locked") else "open"
-            out.append((None, f"{p.get('title', '?')[:80]} [{state}]: " + " | ".join(totals) + (f", ends {_rel(p.get('end_ts'))}" if p.get("end_ts") else "")))
+            out.append((None, f"{p.get('title', '?')[:80]} [{state}]: " + " | ".join(totals) + (f", ends {_when(p.get('end_ts'))} UTC" if p.get("end_ts") else "")))
     rows = _fetch("SELECT title, opt1, opt2, scheduled_ts FROM scheduled_predictions WHERE status = 'pending' ORDER BY scheduled_ts LIMIT ?", (int(limit),))
-    out += [(None, f"scheduled {_rel(ts)}: {str(t)[:80]} ({a} vs {b})") for t, a, b, ts in rows]
+    out += [(None, f"scheduled {_when(ts)} UTC: {str(t)[:80]} ({a} vs {b})") for t, a, b, ts in rows]
     return out[: int(limit)]
 
 
@@ -1191,11 +1203,11 @@ def render(res: QueryResult, names: Dict[str, str]) -> str:
     if spec.shape == "person":
         uid, v = res.rows[0]
         rank = f" (rank {res.ranks[uid]} of {res.population})" if v != 0 and res.population and metric.kind == "int" else ""
-        return f"**{name(uid)}**: {_figure(metric, v)}{scope}{rank}" + foot
+        return _block(f"{name(uid)}: {_figure(metric, v)}{scope}{rank}") + foot
 
     if spec.shape == "compare":
         (a, va), (b, vb) = res.rows[0], res.rows[1]
-        lines = [f"**{name(a)}**: {_figure(metric, va)}", f"**{name(b)}**: {_figure(metric, vb)}"]
+        lines = [f"{name(a)}: {_figure(metric, va)}", f"{name(b)}: {_figure(metric, vb)}"]
         if va == vb:
             verdict = "Dead level."
         elif metric.kind == "date":
@@ -1204,12 +1216,16 @@ def render(res: QueryResult, names: Dict[str, str]) -> str:
         else:
             lead, trail = (a, b) if (va > vb) != spec.lowest else (b, a)
             verdict = f"{name(lead)} ahead by {abs(va - vb):,} {metric.unit}".rstrip() + "."
-        return "\n".join(lines) + (f"\n{verdict}" if not scope else f"\n{verdict} ({scope.strip(' ()')})") + foot
+        return _block("\n".join(lines) + (f"\n{verdict}" if not scope else f"\n{verdict} ({scope.strip(' ()')})")) + foot
 
     # total
     if metric.kind == "date":
-        return f"{res.population:,} members have a {metric.label} date on record"
-    return (f"Total {metric.label}{scope}: {_fmt(metric, res.total)} across {res.population:,} members" + foot)
+        return _block(f"{res.population:,} members have a {metric.label} date on record")
+    return _block(f"Total {metric.label}{scope}: {_fmt(metric, res.total)} across {res.population:,} members") + foot
+
+
+def _block(text: str) -> str:
+    return f"```\n{text}\n```"
 
 
 def _render_list(res: QueryResult, name) -> str:
@@ -1218,11 +1234,11 @@ def _render_list(res: QueryResult, name) -> str:
     what = f"{kind.label}" + (f": {spec.pick}" if spec.pick else "")
     window, _ = _since_for(kind.windowable, spec.window)
     scope = f" ({WINDOW_LABELS[window]})" if window != "all_time" else ""
-    head = f"**{who}{what}**{scope}"
+    head = f"{who}{what}{scope}"
     if not res.lines:
-        return f"{head}: {kind.empty}."
-    body = "\n".join(f"- {name(u) + ': ' if u else ''}{t}" for u, t in res.lines)
-    return f"{head}\n{body}"
+        return _block(f"{head}: {kind.empty}.")
+    body = "\n".join(f"{name(u) + ': ' if u else ''}{t}" for u, t in res.lines)
+    return _block(f"{head}\n{body}")
 
 
 # --- what Jev is offered -----------------------------------------------------------------------

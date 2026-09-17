@@ -487,7 +487,7 @@ class ShutcoinItem(ShopItem):
         self.amount = amount
 
     async def execute(self, interaction) -> str:
-        add_shutcoins(interaction.user.id, self.amount)
+        add_shutcoins(interaction.user.id, self.amount, reason="shop")
         return f"You have successfully purchased **{self.amount} Shutcoins**!"
 
 class PersonalVCItem(ShopItem):

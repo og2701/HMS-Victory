@@ -646,7 +646,7 @@ class VIPCaseSpinView(View):
                         result_embed.description = f"🛡️ {self.user.mention} is immune to timeouts (Staff/Admin)!\n\nYou got lucky, you are too broke to pay the exemption tax! 😅"
 
         elif outcome["type"] == "shutcoins":
-            add_shutcoins(interaction.user.id, outcome["amount"])
+            add_shutcoins(interaction.user.id, outcome["amount"], reason="lucky dip")
             result_embed.description = f"{outcome['emoji']} {self.user.mention} won **{outcome['amount']} Shutcoins**!\n\nNot bad!"
 
         elif outcome["type"] == "cashback":
@@ -905,7 +905,7 @@ class LuckyDipCaseSpinView(View):
                 result_embed.description = f"{outcome['emoji']} {self.user.mention} won **{amount} UKPence** but the bank is empty! Contact staff."
 
         elif outcome["type"] == "shutcoins":
-            add_shutcoins(interaction.user.id, outcome["amount"])
+            add_shutcoins(interaction.user.id, outcome["amount"], reason="vip case")
             result_embed.description = f"{outcome['emoji']} {self.user.mention} won **{outcome['amount']} Shutcoin{'s' if outcome['amount'] != 1 else ''}**!\n\nNot bad!"
 
         elif outcome["type"] == "timeout":

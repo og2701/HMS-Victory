@@ -124,7 +124,8 @@ STRICT RULES:
 10. IMAGE GENERATION CAPABILITY:
    - You CAN generate images, caricatures, and portraits when commanded by server leadership (e.g. "draw @user", "generate a photo of X", "do the same for @user"). An AI image generator is integrated into your command pipeline.
    - NEVER claim that you cannot generate images, lack artistic tools, or misplaced your paintbrush.
-11. Output ONLY your direct response text. No preambles, no quotes, no filler."""
+11. NO INVENTED FIGURES: never make up statistics, counts, balances, rankings, leaderboards or "top 10" lists about members. Server figures come from the bot's database and are posted by the system, not by you. If someone asks for figures and none are in the context, say you haven't got the numbers in front of you and tell them to ask again plainly, in one dry line. Never dress up message counts or anything else from the context as an answer to a different question.
+12. Output ONLY your direct response text. No preambles, no quotes, no filler."""
 
 
 ONE_OFF_SYSTEM_PROMPT = build_one_off_system_prompt()
@@ -4865,6 +4866,94 @@ async def _resolve_member_names(client: Any, guild: Any, ids: List[str]) -> Dict
     return names
 
 
+# The bot's recent records answers, by the id of the message it posted and by channel, so a correction
+# ("users, not holders", "make it 20", "lowest") can be applied to the question it corrects rather than
+# starting from nothing. Small and in-memory: a correction that arrives after a restart just re-asks.
+_RECORDS_ANSWERS: "deque[Tuple[Any, Any]]" = deque(maxlen=60)          # (posted message id, QuerySpec)
+_RECORDS_BY_CHANNEL: Dict[Any, Tuple[float, Any]] = {}                  # channel id -> (posted at, QuerySpec)
+CORRECTION_WINDOW_SECONDS = 180
+
+
+def remember_records_answer(posted: Any, channel_id: Any, spec: Any) -> None:
+    pid = getattr(posted, "id", None)
+    if pid is not None:
+        _RECORDS_ANSWERS.append((pid, spec))
+    if channel_id is not None:
+        _RECORDS_BY_CHANNEL[channel_id] = (time.time(), spec)
+
+
+def previous_records_answer(ref_msg: Any, channel_id: Any, bot_id: Optional[int]) -> Any:
+    """The QuerySpec a correction refers to: the bot's records answer being replied to, else the channel's
+    last one if it was moments ago. None when there is nothing to correct."""
+    if ref_msg is not None and getattr(getattr(ref_msg, "author", None), "id", None) == bot_id:
+        rid = getattr(ref_msg, "id", None)
+        for pid, spec in reversed(_RECORDS_ANSWERS):
+            if pid == rid:
+                return spec
+        return None
+    entry = _RECORDS_BY_CHANNEL.get(channel_id)
+    if entry and time.time() - entry[0] <= CORRECTION_WINDOW_SECONDS:
+        return entry[1]
+    return None
+
+
+def corrected_records_spec(prev: Any, signals: Any, has_new_subject: bool = False) -> Any:
+    """A previous records question with a correction applied, or None if the message names nothing to change.
+
+    Jev reads the correction with the bot's previous answer in front of it, so "users, not holders" comes
+    back with a confident metric and a vague shape; "make it 20" with a length and nothing else. Whatever
+    it names confidently replaces that part of the previous question and the rest carries over.
+    """
+    import copy
+    from lib.features import data_queries as dq
+    from lib.features.mention_signals import DATA_QUERY_CONFIDENCE
+    if signals is None or signals.action != "reply":
+        return None
+    spec = copy.deepcopy(prev)
+    changed = False
+    metric_sure = signals.data_metric != "none" and signals.data_metric_confidence >= DATA_QUERY_CONFIDENCE
+    list_sure = signals.data_list != "none" and signals.data_list_confidence >= DATA_QUERY_CONFIDENCE
+    if list_sure and (signals.data_shape == "list" or not metric_sure):
+        if signals.data_list != spec.list_kind:
+            spec.shape, spec.list_kind, spec.metric = "list", signals.data_list, "none"
+            changed = True
+    elif metric_sure and signals.data_metric != spec.metric:
+        spec.metric = signals.data_metric
+        if spec.shape == "list":
+            spec.shape, spec.list_kind = "leaderboard", None
+        changed = True
+    if (signals.data_shape in ("leaderboard", "compare", "total") and signals.data_shape_confidence >= DATA_QUERY_CONFIDENCE
+            and signals.data_shape != spec.shape and spec.shape != "list"):
+        spec.shape = signals.data_shape
+        changed = True
+    if signals.data_limit and signals.data_limit != spec.limit:
+        spec.limit = signals.data_limit
+        changed = True
+    if signals.data_window != "all_time" and signals.data_window != spec.window:
+        spec.window = signals.data_window
+        changed = True
+    if signals.says("data_lowest") and not spec.lowest:
+        spec.lowest = True
+        changed = True
+    if signals.data_game and signals.data_game != spec.game:
+        spec.game = signals.data_game
+        changed = True
+    if signals.data_source and signals.data_source != spec.source:
+        spec.source = signals.data_source
+        changed = True
+    if has_new_subject and (spec.shape in ("person", "compare") or (spec.shape == "list" and spec.list_kind in dq.LISTS and dq.LISTS[spec.list_kind].per_person)):
+        # "not me, @Solid-Snake": the same question about someone else. The new person is resolved by the caller.
+        spec.subjects = []
+        changed = True
+    if not changed:
+        return None
+    if spec.shape == "list" and spec.list_kind not in dq.LISTS:
+        return None
+    if spec.shape != "list" and spec.metric not in dq.METRICS:
+        return None
+    return spec
+
+
 async def answer_data_query(
     client: Any,
     message: Any,
@@ -4879,6 +4968,8 @@ async def answer_data_query(
     raw_content: str,
     bot_id: Optional[int],
     replied_author: Optional[Tuple[str, int]] = None,
+    spec: Any = None,
+    prev_subjects: Optional[List[Tuple[str, int]]] = None,
 ) -> bool:
     """Answer a question about the server's records from the database. True when a reply was sent.
 
@@ -4890,17 +4981,19 @@ async def answer_data_query(
     from lib.features import data_queries as dq
 
     guild = getattr(message, "guild", None)
-    shape = signals.effective_shape
-    spec = dq.QuerySpec(
-        metric=signals.data_metric, shape=shape,
-        limit=dq.normalise_limit(signals.data_limit), lowest=signals.says("data_lowest"),
-        window=signals.data_window, game=signals.data_game, source=signals.data_source,
-        list_kind=(signals.data_list if shape == "list" else None),
-    )
+    corrected = spec is not None
+    if spec is None:
+        shape = signals.effective_shape
+        spec = dq.QuerySpec(
+            metric=signals.data_metric, shape=shape,
+            limit=dq.normalise_limit(signals.data_limit), lowest=signals.says("data_lowest"),
+            window=signals.data_window, game=signals.data_game, source=signals.data_source,
+            list_kind=(signals.data_list if shape == "list" else None),
+        )
     list_kind = dq.LISTS.get(spec.list_kind or "")
     if spec.shape == "list" and list_kind is None:
         return False
-    if spec.shape == "closest":
+    if spec.shape == "closest" and not (corrected and spec.target is not None):
         # Jev flagged a target; the number itself is read from the words by code.
         spec.target = dq.parse_target_number(clean_prompt)
         if spec.target is None or dq.METRICS[spec.metric].kind != "int":
@@ -4908,7 +5001,7 @@ async def answer_data_query(
             return True
     # A list about one named thing (who holds a badge, who owns a county): pick it from the real
     # catalogue, so the answer can only ever be about something that exists.
-    if list_kind is not None and list_kind.pick:
+    if list_kind is not None and list_kind.pick and not (corrected and spec.pick):
         picked, in_tok, out_tok = await judge_pick(clean_prompt, dq.pick_candidates(list_kind.pick), what=f"{list_kind.pick}s")
         if in_tok or out_tok:
             live_chat_manager.record_usage(MENTION_SIGNALS_MODEL, in_tok, out_tok)
@@ -4936,15 +5029,24 @@ async def answer_data_query(
 
     subjects: List[Tuple[str, int]] = []
     wants_person = spec.shape == "person" or (list_kind is not None and list_kind.per_person)
-    if wants_person:
+    carried = [(n, int(i)) for n, i in (spec.subjects if corrected else []) if str(i).isdigit()]
+    if not carried and prev_subjects:
+        carried = list(prev_subjects)
+    if corrected and carried and not pool and signals.data_subject != "caller":
+        # A correction keeps the people the previous answer was about unless it names someone new.
+        subjects = carried
+    elif wants_person:
         if signals.data_subject == "caller" and isinstance(caller_id, int):
             subjects = [(caller_name, caller_id)]
         elif pool and signals.data_subject != "someone_named":
             subjects = [pool[0]]
         else:
-            who = await named()
+            who = await named() if signals.data_subject == "someone_named" or not carried else None
             if who is None and pool:
                 who = pool[0]
+            if who is None and carried:
+                # "how many times have THEY shut others" under an answer about someone: the same person.
+                who = carried[0]
             if who is None and signals.data_subject != "someone_named" and isinstance(caller_id, int):
                 who = (caller_name, caller_id)
             if who is not None:
@@ -4955,6 +5057,9 @@ async def answer_data_query(
             who = await named()
             if who is not None and who[1] not in {i for _, i in subjects}:
                 subjects.append(who)
+        for c in carried:
+            if len(subjects) < 2 and c[1] not in {i for _, i in subjects}:
+                subjects.append(c)
         if len(subjects) < 2 and isinstance(caller_id, int) and caller_id not in {i for _, i in subjects}:
             subjects.insert(0, (caller_name, caller_id))
     needed = 1 if wants_person else (2 if spec.shape == "compare" else 0)
@@ -5008,10 +5113,11 @@ async def answer_data_query(
     text = f"{remark}\n{figures}" if remark else figures
     if len(text) > 1990:
         text = text[:1985] + "..."
-    await message.reply(
+    posted = await message.reply(
         text, mention_author=True,
         allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=False, replied_user=True),
     )
+    remember_records_answer(posted, getattr(getattr(message, "channel", None), "id", None), spec)
     live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
     live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": text})
     asyncio.create_task(live_chat_manager.update_dashboard())
@@ -5229,18 +5335,33 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
 
         # A question about the server's own records ("top 10 shutcoin users", "how much XP has steven
         # got") is answered from the database, never by a language model guessing at numbers.
+        ref_author = getattr(ref_msg, "author", None) if ref_msg is not None else None
+        replied_author = (
+            (_member_display_name(ref_author, "someone"), ref_author.id)
+            if ref_author is not None and isinstance(getattr(ref_author, "id", None), int) else None
+        )
+        prev = previous_records_answer(ref_msg, getattr(getattr(message, "channel", None), "id", None), bot_id) if signals is not None else None
+        prev_subjects = [(n, int(i)) for n, i in getattr(prev, "subjects", []) if str(i).isdigit()] if prev is not None else []
         if signals is not None and signals.data_query_requested():
-            ref_author = getattr(ref_msg, "author", None) if ref_msg is not None else None
-            replied_author = (
-                (_member_display_name(ref_author, "someone"), ref_author.id)
-                if ref_author is not None and isinstance(getattr(ref_author, "id", None), int) else None
-            )
             if await answer_data_query(
                 client, message, signals, clean_prompt, caller_id=caller_id, caller_name=caller_name,
                 caller_role=caller_role, other_mentions=other_mentions, directory=directory,
-                raw_content=raw_content, bot_id=bot_id, replied_author=replied_author,
+                raw_content=raw_content, bot_id=bot_id, replied_author=replied_author, prev_subjects=prev_subjects,
             ):
                 return True
+        elif signals is not None:
+            # "users, not holders" under the bot's last table: the same question with one part changed.
+            has_new_subject = bool(other_mentions) or signals.data_subject == "caller"
+            corrected = corrected_records_spec(prev, signals, has_new_subject=has_new_subject) if prev is not None else None
+            if corrected is not None:
+                logger.info("Correction to a records answer from %s: %r -> %s/%s", caller_name, clean_prompt[:80],
+                            corrected.list_kind or corrected.metric, corrected.shape)
+                if await answer_data_query(
+                    client, message, signals, clean_prompt, caller_id=caller_id, caller_name=caller_name,
+                    caller_role=caller_role, other_mentions=other_mentions, directory=directory,
+                    raw_content=raw_content, bot_id=bot_id, replied_author=replied_author, spec=corrected,
+                ):
+                    return True
 
         # Jev already read the message. When it is sure this wants text and nothing is attached that a
         # picture could be made from, the planner's paraphrase and people-resolution add nothing a text

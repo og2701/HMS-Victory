@@ -20,12 +20,26 @@ class ShutcoinManager:
         DatabaseManager.execute("INSERT OR REPLACE INTO shutcoins (user_id, balance) VALUES (?, ?)", (str(user_id), amount))
 
     @staticmethod
-    def add_amount(user_id: int, amount: int) -> None:
-        current = ShutcoinManager.get_balance(user_id)
-        ShutcoinManager.set_balance(user_id, current + amount)
+    def _log(user_id: int, amount: int, reason: str) -> None:
+        """Append to the shutcoin ledger. Never lets a bookkeeping failure block the coin itself."""
+        import time
+        try:
+            DatabaseManager.execute(
+                "INSERT INTO shutcoin_ledger (user_id, ts, amount, reason) VALUES (?, ?, ?, ?)",
+                (str(user_id), int(time.time()), int(amount), reason or "unspecified"),
+            )
+        except Exception:
+            logging.getLogger(__name__).debug("shutcoin ledger write failed", exc_info=True)
 
     @staticmethod
-    def remove_amount(user_id: int, amount: int = 1) -> bool:
+    def add_amount(user_id: int, amount: int, reason: str = "unspecified") -> None:
+        current = ShutcoinManager.get_balance(user_id)
+        ShutcoinManager.set_balance(user_id, current + amount)
+        if amount:
+            ShutcoinManager._log(user_id, amount, reason)
+
+    @staticmethod
+    def remove_amount(user_id: int, amount: int = 1, reason: str = "shut") -> bool:
         # Atomic update: only subtract if the balance is sufficient
         with DatabaseManager.locked_connection() as conn:
             c = conn.cursor()
@@ -34,7 +48,10 @@ class ShutcoinManager:
                 (amount, str(user_id), amount)
             )
             conn.commit()
-            return c.rowcount > 0
+            removed = c.rowcount > 0
+        if removed and amount:
+            ShutcoinManager._log(user_id, -int(amount), reason)
+        return removed
 
     @staticmethod
     def can_afford(user_id: int, amount: int = 1) -> bool:
@@ -344,11 +361,11 @@ def get_shutcoins(user_id: int) -> int:
 def set_shutcoins(user_id: int, amount: int) -> None:
     ShutcoinManager.set_balance(user_id, amount)
 
-def add_shutcoins(user_id: int, amount: int) -> None:
-    ShutcoinManager.add_amount(user_id, amount)
+def add_shutcoins(user_id: int, amount: int, reason: str = "unspecified") -> None:
+    ShutcoinManager.add_amount(user_id, amount, reason=reason)
 
-def remove_shutcoin(user_id: int) -> bool:
-    return ShutcoinManager.remove_amount(user_id, 1)
+def remove_shutcoin(user_id: int, reason: str = "shut") -> bool:
+    return ShutcoinManager.remove_amount(user_id, 1, reason=reason)
 
 def can_use_shutcoin(user_id: int) -> bool:
     return ShutcoinManager.can_afford(user_id, 1)

@@ -277,6 +277,18 @@ def init_db():
                 balance INTEGER NOT NULL DEFAULT 0
             )
         ''')
+        # Every shutcoin credit and debit with why: shop purchases, lucky-dip and VIP-case wins, and
+        # each coin spent on a shut. The balance table alone cannot say how many a member has used.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS shutcoin_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                ts INTEGER NOT NULL,
+                amount INTEGER NOT NULL,
+                reason TEXT NOT NULL
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_shutcoin_ledger_user ON shutcoin_ledger(user_id)')
         c.execute('''
             CREATE TABLE IF NOT EXISTS ukpence (
                 user_id TEXT PRIMARY KEY,

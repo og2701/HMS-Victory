@@ -191,6 +191,8 @@ QUESTIONS.update({
             "rules": [
                 "Records questions ask for a count, balance, amount, rank, ranking, leaderboard, 'who has the most/least', 'how much/many does X have', or a server total.",
                 "A picture request, banter, an opinion or a question about the outside world is none, even if it mentions money or XP in passing.",
+                "If `message.text` corrects or refines a records answer the bot just gave (see `replied_to` and `recent_chat`: 'users, not holders', 'no, this month', 'make it 20', 'lowest', 'in ukp not xp'), it is the SAME records question with the correction applied: pick the corrected metric, not none.",
+                "'Shutcoin users' are the people who USE shutcoins (shutcoins_used); 'holders' hold them (shutcoins).",
             ],
         },
         "criteria": catalogue_for_jev(),
@@ -204,6 +206,7 @@ QUESTIONS.update({
                 "person is only for a member identified by name, @mention, or as the caller.",
                 "list is for things rather than a number: what someone owns or has done, or a server fact sheet (the house bank, the lottery, the shop, the iceberg, open predictions), or who holds a particular badge or county.",
                 "A target figure in the message ('closest to 100k', 'nearest to a million', 'who has about 50') is closest: the members nearest to that number, not the top of the list.",
+                "A correction to a records answer the bot just gave ('users, not holders', 'no, this month', 'make it 20') keeps the shape of that answer (see `replied_to` and `recent_chat`) unless the correction changes it.",
             ],
         },
         "criteria": {
@@ -228,7 +231,7 @@ QUESTIONS.update({
     },
     "data_limit": {
         "type": "choice",
-        "instructions": "How many entries does `message.text` ask for? A stated number ('top 10', 'the five richest'); single when it asks who THE top or bottom member is; not_given when a list is wanted with no number, or it isn't a ranked list.",
+        "instructions": "How many entries does `message.text` ask for? A stated number ('top 10', 'the five richest'); single when it asks who THE top or bottom member is; not_given when a list is wanted with no number, or it isn't a ranked list. A correction to a records answer the bot just gave keeps that answer's length (see `replied_to`) unless it says otherwise.",
         "criteria": _DATA_LIMIT_OPTIONS,
     },
     "data_lowest": {
