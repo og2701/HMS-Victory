@@ -524,8 +524,9 @@ class _CatalogueModal(discord.ui.Modal, title="Shop catalogue"):
     def __init__(self, on_submit):
         super().__init__()
         self._on_submit = on_submit
+        # No label on the TextInput itself: the Label wrapper carries it (Discord rejects both).
         self.text = discord.ui.TextInput(
-            label="Items", style=discord.TextStyle.long, required=True, max_length=4000,
+            style=discord.TextStyle.long, required=True, max_length=4000,
             placeholder="Meat & Fish\nWhole chicken — £7.00\nSausages — £3.00\n\nFruit & Veg\nCarrots — £1.00")
         self.replace = discord.ui.Checkbox(default=False)
         self.add_item(discord.ui.Label(text="Items (a line with no price starts an aisle)", component=self.text))

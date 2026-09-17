@@ -392,13 +392,23 @@ def test_shop_buy_judge_and_close(shop, bb):
     assert len(dump["tasks"][0]["purchases"]) == 3
 
 
-def test_modal_labels_fit_discord_limit(bb, shop):
-    """Discord rejects a modal whose text-input label is over 45 characters."""
-    for modal in (shop._OpenShopModal(None), shop._CatalogueModal(None), bb._AnnounceModal(None)):
-        for item in modal.children:
-            label = getattr(item, "label", None) or getattr(item, "text", None) or ""
-            assert 1 <= len(label) <= 45, (type(modal).__name__, label)
-            inner = getattr(item, "component", None)
-            inner_label = getattr(inner, "label", None)
-            if inner_label:
-                assert len(inner_label) <= 45, (type(modal).__name__, inner_label)
+def test_modals_serialise_within_discord_rules(bb, shop):
+    """Discord rejects modal labels over 45 chars, and a TextInput inside a Label must not
+    carry its own label. Check the wire form of every Big Brother modal."""
+    def walk(components):
+        for c in components:
+            yield c
+            inner = c.get("component")
+            if inner:
+                yield from walk([inner])
+            yield from walk(c.get("components", []))
+
+    for modal in (shop._OpenShopModal(None), shop._CatalogueModal(None), bb._AnnounceModal(None),
+                  bb._TextModal("t", [("k", "Label", True, 10, False)], None)):
+        payload = modal.to_dict()
+        for comp in walk(payload["components"]):
+            if comp.get("type") == 18:      # Label wrapper
+                assert 1 <= len(comp["label"]) <= 45, comp["label"]
+                assert "label" not in comp["component"], (type(modal).__name__, comp)
+            elif comp.get("type") == 4 and "label" in comp:   # bare TextInput
+                assert 1 <= len(comp["label"]) <= 45, comp["label"]

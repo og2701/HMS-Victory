@@ -1289,8 +1289,8 @@ class _AnnounceModal(discord.ui.Modal, title="Announce in the house"):
     def __init__(self, on_submit: Callable):
         super().__init__()
         self._on_submit = on_submit
-        self.text = discord.ui.TextInput(label="Announcement", style=discord.TextStyle.long,
-                                         required=True, max_length=1800)
+        # No label on the TextInput itself: the Label wrapper carries it (Discord rejects both).
+        self.text = discord.ui.TextInput(style=discord.TextStyle.long, required=True, max_length=1800)
         self.ping = discord.ui.Checkbox(default=True)
         self.add_item(discord.ui.Label(text="Announcement", component=self.text))
         self.add_item(discord.ui.Label(text="Notify housemates",
