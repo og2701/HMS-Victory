@@ -224,6 +224,11 @@ def game_started() -> bool:
     return game_started_at() is not None
 
 
+def house_unlocked() -> bool:
+    """The house panel works once the game has started, or while the test override is on."""
+    return game_started() or bool(getattr(config, "BIG_BROTHER_HOUSE_PANEL_UNLOCKED", False))
+
+
 # --- housemates ---
 
 def housemates(status: Optional[str] = STATUS_IN) -> list[int]:
@@ -1852,7 +1857,7 @@ def _house_panel_text(guild: Optional[discord.Guild]) -> str:
     lines = [f"## {EYE} The Big Brother House",
              f"**{len(ins)}** housemates remain · **{len(housemates(STATUS_EVICTED))}** evicted",
              ""]
-    if not game_started():
+    if not house_unlocked():
         lines.append("🚪 **The doors aren't open yet.** Big Brother will unlock this panel when the game starts.")
         lines.append("")
         lines.append("-# Everything you press here is between you and Big Brother. Nobody else sees it.")
@@ -1896,7 +1901,7 @@ class HousePanelView(discord.ui.LayoutView):
                  _HouseButton("housemates", "Who's in the house", emoji="🏠")],
             ]),
         ]
-        locked = not game_started()
+        locked = not house_unlocked()
         for heading, rows in sections:
             card.add_item(discord.ui.Separator())
             card.add_item(discord.ui.TextDisplay(heading))
@@ -1910,7 +1915,7 @@ class HousePanelView(discord.ui.LayoutView):
         if not enabled():
             await interaction.response.send_message("Big Brother isn't running right now.", ephemeral=True)
             return False
-        if not game_started():
+        if not house_unlocked():
             await interaction.response.send_message(f"{EYE} The doors aren't open yet.", ephemeral=True)
             return False
         cid = (interaction.data or {}).get("custom_id", "")

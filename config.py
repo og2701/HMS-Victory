@@ -682,6 +682,7 @@ BIG_BROTHER_HOUSEMATE_ROLE = 1550132346295029892    # Housemate role: assigned o
 BIG_BROTHER_PRIZE_UKP = 5000
 BIG_BROTHER_NOMINATIONS_PER_HOUSEMATE = 2
 BIG_BROTHER_QUIET_HOURS = 48                        # panel flags housemates silent this long
+BIG_BROTHER_HOUSE_PANEL_UNLOCKED = True             # TEMP: house panel usable before Start is pressed; set False before the doors open
 
 # ---------------------------------------------------------------------------
 # Anti-alt / anti-farm / anti-laundering detection (lib/core/detection.py)

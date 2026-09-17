@@ -141,7 +141,9 @@ def test_panel_text_and_view_have_no_secrets(bb):
     assert all(len(row.children) <= 3 for row in view.children[0].children if hasattr(row, "children"))
 
 
-def test_house_panel_locked_until_game_starts(bb):
+def test_house_panel_locked_until_game_starts(bb, monkeypatch):
+    import config
+    monkeypatch.setattr(config, "BIG_BROTHER_HOUSE_PANEL_UNLOCKED", False)
     bb.db_add_housemate(1)
     assert not bb.game_started()
     assert "doors aren't open" in bb._house_panel_text(None)
@@ -153,6 +155,10 @@ def test_house_panel_locked_until_game_starts(bb):
     view = bb.HousePanelView(None)
     buttons = [c for row in view.children[0].children if hasattr(row, "children") for c in row.children]
     assert all(not b.disabled for b in buttons)
+    # The test override unlocks the panel without starting the game.
+    bb.set_state(bb.STATE_GAME_STARTED_AT, None)
+    monkeypatch.setattr(config, "BIG_BROTHER_HOUSE_PANEL_UNLOCKED", True)
+    assert not bb.game_started() and bb.house_unlocked()
 
 
 def test_house_panel_buttons_and_gating(bb):
