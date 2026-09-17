@@ -228,6 +228,14 @@ def test_tokens_immunity_and_swap(bb):
     assert bb.recent_snug_by(1, 60) and not bb.recent_snug_by(2, 60)
 
 
+def test_echo_body_covers_content_and_embed(bb):
+    e = bb.bb_embed("Secret mission", "say crumpet")
+    body = bb._echo_body("hello", e)
+    assert "hello" in body and "Secret mission" in body and "say crumpet" in body
+    assert bb._echo_body(None, None) == "*(no text)*"
+    assert len(bb._echo_body("x" * 5000, None)) <= 3800
+
+
 def test_vote_button_custom_id(bb):
     btn = bb.VoteButton(7, 42, "Bob")
     assert btn.custom_id == "bb:vote:7:42"

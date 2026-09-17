@@ -39,6 +39,7 @@ STATE_LAST_VOTE_RESULT = "last_vote_result"
 STATE_GAME_STARTED_AT = "game_started_at"
 
 _tables_ready = False
+_client_ref: Optional[discord.Client] = None  # set on ready; lets channel sends echo to the host
 
 
 # ---------------------------------------------------------------------------
@@ -575,15 +576,59 @@ async def notify_host(client: discord.Client, content: Optional[str] = None,
         return False
 
 
+def _echo_body(content: Optional[str], embed: Optional[discord.Embed]) -> str:
+    parts = []
+    if content:
+        parts.append(content)
+    if embed:
+        if embed.title:
+            parts.append(f"**{embed.title}**")
+        if embed.description:
+            parts.append(embed.description)
+    return "\n".join(parts)[:3800] or "*(no text)*"
+
+
+async def _echo_to_host(client: discord.Client, where: str, content: Optional[str],
+                        embed: Optional[discord.Embed], delivered: bool = True) -> None:
+    """Copy of every message Big Brother sends, so the host can see what went out and that it
+    arrived. Never raises."""
+    try:
+        e = discord.Embed(title=f"{'📨' if delivered else '⚠️'} {where}", description=_echo_body(content, embed),
+                          colour=ACCENT if delivered else 0xE74C3C)
+        e.set_footer(text="sent" if delivered else "NOT delivered (DMs closed?)")
+        await notify_host(client, embed=e)
+    except Exception:
+        log.exception("Big Brother: echo to host failed")
+
+
 async def dm_user(client: discord.Client, user_id: int, content: Optional[str] = None,
-                  embed: Optional[discord.Embed] = None) -> bool:
+                  embed: Optional[discord.Embed] = None, *, echo: bool = True) -> bool:
+    ok = True
     try:
         user = client.get_user(int(user_id)) or await client.fetch_user(int(user_id))
         await user.send(content=content, embed=embed)
-        return True
     except discord.HTTPException as e:
         log.info("Big Brother: could not DM %s: %s", user_id, e)
-        return False
+        ok = False
+    if echo and int(user_id) != host_id():
+        await _echo_to_host(client, f"DM to {_name(_guild(client), user_id)}", content, embed, ok)
+    return ok
+
+
+async def bb_send(channel, content: Optional[str] = None, embed: Optional[discord.Embed] = None,
+                  view=None, *, reply_to: Optional[discord.Message] = None):
+    """Send as Big Brother into a channel and echo a copy to the host."""
+    if reply_to is not None:
+        msg = await reply_to.reply(content=content, embed=embed, view=view) if view is not None \
+            else await reply_to.reply(content=content, embed=embed)
+    elif view is not None:
+        msg = await channel.send(content=content, embed=embed, view=view)
+    else:
+        msg = await channel.send(content=content, embed=embed)
+    if _client_ref is not None:
+        where = f"Posted in #{getattr(channel, 'name', 'channel')}"
+        await _echo_to_host(_client_ref, where, content, embed, True)
+    return msg
 
 
 def bb_embed(title: str, description: str = "") -> discord.Embed:
@@ -633,7 +678,7 @@ async def evict(client: discord.Client, user_id: int, *, announce: bool = True) 
     if announce:
         ch = await house_channel(client)
         if ch:
-            await ch.send(
+            await bb_send(ch, 
                 f"{_role_mention()}{EYE} **Big Brother has made a decision.**\n\n"
                 f"<@{user_id}>, you have been evicted from the Big Brother house. "
                 f"Please leave through the diary room door.")
@@ -650,7 +695,7 @@ async def open_nominations(client: discord.Client) -> Optional[int]:
     ch = await house_channel(client)
     if ch:
         n = nominations_each()
-        await ch.send(
+        await bb_send(ch, 
             f"{_role_mention()}{EYE} **Nominations are open.**\n\n"
             f"Use `/nominate` to pick the {n} housemate{'s' if n != 1 else ''} you want to face the public vote. "
             f"Only you and Big Brother will see who you chose. You can change your mind until nominations close.")
@@ -688,7 +733,7 @@ async def close_nominations(client: discord.Client) -> Optional[dict]:
     set_state(STATE_LAST_NOM_TALLY, {"round_id": rnd["id"], "ranked": [[n, len(counts[n])] for n in top]})
     ch = await house_channel(client)
     if ch:
-        await ch.send(f"{EYE} **Nominations are closed.** Big Brother is counting. The nominees will be announced shortly.")
+        await bb_send(ch, f"{EYE} **Nominations are closed.** Big Brother is counting. The nominees will be announced shortly.")
     return {"round_id": rnd["id"], "ranked": ranked, "missing": missing}
 
 
@@ -719,13 +764,13 @@ async def start_vote(client: discord.Client, nominee_ids: list[int]) -> Optional
     rid = create_round(KIND_VOTE, nominees=nominee_ids)
     names = ", ".join(f"**{_name(guild, n)}**" for n in nominee_ids)
     embed = _vote_embed(nominee_ids, guild)
-    msg = await ch.send(content=f"{EYE} **Eviction vote is open.**", embed=embed,
+    msg = await bb_send(ch, content=f"{EYE} **Eviction vote is open.**", embed=embed,
                         view=_vote_view(rid, nominee_ids, guild))
     set_round_message(rid, ch.id, msg.id)
     log_event("vote_opened", round_id=rid, nominees=list(nominee_ids), channel_id=ch.id, message_id=msg.id)
     hc = await house_channel(client)
     if hc and hc.id != ch.id:
-        await hc.send(f"{_role_mention()}{EYE} The public eviction vote is open in <#{ch.id}>. "
+        await bb_send(hc, f"{_role_mention()}{EYE} The public eviction vote is open in <#{ch.id}>. "
                       f"Facing eviction: {names}.")
     return {"round_id": rid, "message_id": msg.id, "channel_id": ch.id}
 
@@ -821,7 +866,7 @@ async def crown_winner(client: discord.Client, user_id: int) -> tuple[bool, str]
             paid = False
     ch = await house_channel(client)
     if ch:
-        await ch.send(
+        await bb_send(ch, 
             f"{_role_mention()}{EYE} **We have a winner.**\n\n"
             f"After two weeks in the house, the winner of UKPlace Big Brother is <@{user_id}>! "
             + (f"{prize:,} UKP is on its way." if prize and paid else ""))
@@ -1103,6 +1148,8 @@ async def ensure_house_panel(client: discord.Client) -> None:
 
 
 async def ensure_panels(client: discord.Client) -> None:
+    global _client_ref
+    _client_ref = client
     await ensure_control_panel(client)
     await ensure_house_panel(client)
 
@@ -1132,7 +1179,7 @@ async def _act_start(interaction: discord.Interaction):
         log_event("game_started", housemates=housemates())
         ch = await house_channel(inter.client)
         if ch:
-            await ch.send(
+            await bb_send(ch, 
                 f"{_role_mention()}{EYE} **The doors are open.**\n\n"
                 f"Welcome to the Big Brother house. The pinned panel is how you talk to Big Brother: "
                 f"the diary room, nominations, your secret mission and the snug are all there. "
@@ -1415,7 +1462,7 @@ async def _act_challenge(interaction: discord.Interaction):
         embed = bb_embed(values["title"], values["body"])
         if answer:
             embed.add_field(name="How to win", value="First housemate to post the exact answer in this channel wins.")
-        msg = await ch.send(content=f"{_role_mention()}{EYE} **Challenge time.**", embed=embed)
+        msg = await bb_send(ch, content=f"{_role_mention()}{EYE} **Challenge time.**", embed=embed)
         cid = add_challenge(values["title"], values["body"], answer, msg.id)
         log_event("challenge_posted", challenge_id=cid, title=values["title"], body=values["body"], answer=answer)
         await _reply(inter, f"Challenge #{cid} posted." + (" The bot will spot the first correct answer." if answer else ""))
@@ -1436,7 +1483,7 @@ async def _act_end_challenge(interaction: discord.Interaction):
     log_event("challenge_ended", challenge_id=chal["id"], title=chal["title"])
     ch = await house_channel(interaction.client)
     if ch:
-        await ch.send(f"{EYE} **Challenge over:** {chal['title']}. Big Brother will announce the outcome.")
+        await bb_send(ch, f"{EYE} **Challenge over:** {chal['title']}. Big Brother will announce the outcome.")
     await _reply(interaction, f"Challenge #{chal['id']} closed with no auto-winner.")
 
 
@@ -1473,9 +1520,9 @@ async def _act_broadcast(interaction: discord.Interaction):
         ping = _role_mention() if values.get("ping", "").lower().startswith("y") else ""
         text = values["text"]
         if len(text) < 1800:
-            await ch.send(content=f"{ping}{EYE} {text}")
+            await bb_send(ch, content=f"{ping}{EYE} {text}")
         else:
-            await ch.send(content=ping or None, embed=bb_embed("Big Brother", text))
+            await bb_send(ch, content=ping or None, embed=bb_embed("Big Brother", text))
         log_event("bb_announcement", text=text, pinged=bool(ping))
         await _reply(inter, "Posted in the house.", refresh=False)
 
@@ -1720,14 +1767,14 @@ async def handle_use_immunity(interaction: discord.Interaction):
                 try:
                     msg = await ch.fetch_message(rnd["message_id"])
                     await msg.edit(embed=_vote_embed(new_nominees, guild), view=_vote_view(rnd["id"], new_nominees, guild))
-                    await ch.send(f"{EYE} **Save and replace.** {_name(guild, me)} has used immunity to leave the "
+                    await bb_send(ch, f"{EYE} **Save and replace.** {_name(guild, me)} has used immunity to leave the "
                                   f"eviction line-up, and **{_name(guild, target)}** takes their place. "
                                   f"Votes for {_name(guild, me)} have been cleared. If that was your vote, vote again.")
                 except discord.HTTPException:
                     log.exception("Big Brother: could not update vote message after swap")
             hc = await house_channel(inter2.client)
             if hc and (not ch or hc.id != ch.id):
-                await hc.send(f"{_role_mention()}{EYE} **Save and replace.** {_name(guild, me)} has used immunity "
+                await bb_send(hc, f"{_role_mention()}{EYE} **Save and replace.** {_name(guild, me)} has used immunity "
                               f"and **{_name(guild, target)}** now faces the public vote instead.")
             await dm_user(inter2.client, target, embed=bb_embed(
                 "You're facing eviction", f"{_name(guild, me)} used immunity to swap out of the vote and put you in."))
@@ -1898,6 +1945,8 @@ def _norm(s: str) -> str:
 async def on_house_message(client: discord.Client, message: discord.Message) -> None:
     """Called for every human message in the house channel: activity tracking and
     auto-judging an open challenge with an exact answer."""
+    global _client_ref
+    _client_ref = client
     if not enabled() or message.author.bot:
         return
     try:
@@ -1924,7 +1973,8 @@ async def on_house_message(client: discord.Client, message: discord.Message) -> 
     log_event("challenge_won", actor=message.author.id, challenge_id=chal["id"], title=chal["title"],
               message_id=message.id)
     try:
-        await message.reply(f"{EYE} **Correct.** {message.author.mention} wins **{chal['title']}**.")
+        await bb_send(message.channel, f"{EYE} **Correct.** {message.author.mention} wins **{chal['title']}**.",
+                      reply_to=message)
     except discord.HTTPException:
         pass
     await notify_host(client, f"{EYE} Challenge **{chal['title']}** won by "
