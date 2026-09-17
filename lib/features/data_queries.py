@@ -414,6 +414,12 @@ def _pair_sum(table: str, value_expr: str, from_col: str, to_col: str, ts_col: s
     return fn
 
 
+# /pay lives in the ledger with the counterparty on each row. The separate pay_transfers table only holds
+# a third of them (it was added later, for the anti-shuffle wealth calculation), so money between members
+# is read from the ledger.
+_PAY_WHERE = "(reason LIKE 'Pay%' OR reason LIKE '/pay%')"
+
+
 def _m(key, label, unit, what, examples, rows, **kw) -> Metric:
     return Metric(key=key, label=label, unit=unit, what=what, examples=tuple(examples), rows=rows, **kw)
 
@@ -437,15 +443,25 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
        ["who's spent the most on lucky dips", "how much has johnny blown on predictions", "biggest spender this month", "what has kim spent on the shop"],
        lambda since, game, source: _ledger(-1, since, source), windowable=True, sources=True),
     _m("paid_out", "UKP paid to others", "UKP",
-       "UKP sent to other members with /pay",
+       "Total UKP sent to other members with /pay (the amount, not the number of payments)",
        ["most generous member", "who's paid out the most", "how much has steven given away"],
-       lambda since, game: _agg("pay_transfers", "COALESCE(SUM(amount),0)", user_col="payer_id", ts_col="timestamp", since=since),
-       windowable=True, pair=_pair_sum("pay_transfers", "COALESCE(SUM(amount),0)", "payer_id", "recipient_id", "timestamp"), pair_verb="paid to"),
+       lambda since, game: _agg("user_transactions", "COALESCE(-SUM(amount),0)", ts_col="ts", since=since, where=f"amount < 0 AND {_PAY_WHERE}"),
+       windowable=True, pair=_pair_sum("user_transactions", "COALESCE(-SUM(amount),0)", "user_id", "counterparty_id", "ts", f"amount < 0 AND {_PAY_WHERE}"), pair_verb="paid to"),
     _m("paid_in", "UKP received from others", "UKP",
-       "UKP received from other members with /pay",
-       ["who's been paid the most", "biggest beggar", "how much has kim been sent"],
-       lambda since, game: _agg("pay_transfers", "COALESCE(SUM(amount),0)", user_col="recipient_id", ts_col="timestamp", since=since),
-       windowable=True, pair=_pair_sum("pay_transfers", "COALESCE(SUM(amount),0)", "recipient_id", "payer_id", "timestamp"), pair_verb="was paid by"),
+       "Total UKP received from other members with /pay (the amount, not the number of payments)",
+       ["who's been paid the most", "biggest beggar", "how much has kim been sent", "who has received the most ukpence"],
+       lambda since, game: _agg("user_transactions", "COALESCE(SUM(amount),0)", ts_col="ts", since=since, where=f"amount > 0 AND {_PAY_WHERE}"),
+       windowable=True, pair=_pair_sum("user_transactions", "COALESCE(SUM(amount),0)", "user_id", "counterparty_id", "ts", f"amount > 0 AND {_PAY_WHERE}"), pair_verb="was paid by"),
+    _m("payments_made", "payments made", "payments",
+       "NUMBER of /pay payments a member has sent (count, not amount)",
+       ["who has made the most payments", "how many times has steven paid someone", "most frequent payer"],
+       lambda since, game: _agg("user_transactions", "COUNT(*)", ts_col="ts", since=since, where=f"amount < 0 AND {_PAY_WHERE}"),
+       windowable=True, pair=_pair_sum("user_transactions", "COUNT(*)", "user_id", "counterparty_id", "ts", f"amount < 0 AND {_PAY_WHERE}"), pair_verb="paid"),
+    _m("payments_received", "payments received", "payments",
+       "NUMBER of /pay payments a member has received (count, not amount)",
+       ["who has received the most payments", "how many payments has kim had", "most paid-to member by count"],
+       lambda since, game: _agg("user_transactions", "COUNT(*)", ts_col="ts", since=since, where=f"amount > 0 AND {_PAY_WHERE}"),
+       windowable=True),
     _m("shop_spent", "UKP spent in the shop", "UKP",
        "UKP spent in the server shop (shutcoins, lucky dips, VIP cases and so on)",
        ["who's spent the most in the shop", "biggest shop spender", "how much has steven spent in the shop"],

@@ -378,7 +378,7 @@ class TestBetween(unittest.TestCase):
         calls = []
         def fetch(sql, params=()):
             calls.append((sql, tuple(params)))
-            if "FROM pay_transfers WHERE payer_id = ? AND recipient_id = ?" in sql:
+            if "WHERE user_id = ? AND counterparty_id = ?" in sql:
                 return [(1200,)] if params[:2] == ("9", "3") else [(50,)]
             return []
         with patch("lib.features.data_queries._fetch", fetch):
@@ -388,7 +388,19 @@ class TestBetween(unittest.TestCase):
         self.assertIn("Snake paid to Kim: 1,200 UKP", text)
         self.assertIn("Kim paid to Snake: 50 UKP", text)
         self.assertIn("(last 30 days)", text)
-        self.assertTrue(all("timestamp >= ?" in s for s, _ in calls))
+        self.assertTrue(all("ts >= ?" in s and "amount < 0" in s and "reason LIKE 'Pay%'" in s for s, _ in calls))
+
+    def test_payments_come_from_the_ledger_not_the_transfers_table(self):
+        calls = []
+        fetch = lambda sql, params=(): (calls.append(sql) or [("1", 5)])
+        with patch("lib.features.data_queries._fetch", fetch):
+            compute(QuerySpec(metric="paid_in", shape="leaderboard"))
+            compute(QuerySpec(metric="payments_received", shape="leaderboard"))
+            compute(QuerySpec(metric="payments_made", shape="leaderboard"))
+        self.assertTrue(all("FROM user_transactions" in s and "pay_transfers" not in s for s in calls))
+        self.assertIn("amount > 0 AND (reason LIKE 'Pay%' OR reason LIKE '/pay%')", calls[0])
+        self.assertIn("COUNT(*)", calls[1])
+        self.assertIn("amount < 0", calls[2])
 
     def test_head_to_head_wins_filter_by_game(self):
         calls = []

@@ -3642,7 +3642,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         message.guild = MagicMock(); message.guild.members = []
         message.guild.get_member.side_effect = lambda uid: {9: snake, 3: kim}.get(uid)
         def fetch(sql, params=()):
-            if "FROM pay_transfers WHERE payer_id = ? AND recipient_id = ?" in sql:
+            if "WHERE user_id = ? AND counterparty_id = ?" in sql:
                 return [(1200,)] if params[:2] == ("9", "3") else [(0,)]
             return []
         with patch("lib.features.data_queries._fetch", fetch), \
@@ -3669,9 +3669,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         message.guild = MagicMock(); message.guild.members = []
         message.guild.get_member.side_effect = lambda uid: people.get(uid)
         def fetch(sql, params=()):
-            if "payer_id, COALESCE" in sql:
+            if "amount < 0 AND (reason LIKE 'Pay%'" in sql:
                 return [("1", 74653), ("2", 57241)]
-            if "recipient_id, COALESCE" in sql:
+            if "amount > 0 AND (reason LIKE 'Pay%'" in sql:
                 return [("3", 90000), ("1", 100)]
             return []
         with patch("lib.features.data_queries._fetch", fetch), \
