@@ -41,6 +41,18 @@ def _signals(**kw) -> MentionSignals:
     return parse_signals(_answers(**kw), {"input_tokens": 300, "output_tokens": 0})
 
 
+def _with_data(answers, metric="shutcoins", metric_conf=0.9, shape="leaderboard", shape_conf=0.9,
+               limit="10", limit_conf=0.9, window="all_time", game="any", subject="not_applicable", lowest=0.05):
+    answers["data_metric"] = {"type": "choice", "choice": metric, "confidence": metric_conf, "probabilities": {}}
+    answers["data_shape"] = {"type": "choice", "choice": shape, "confidence": shape_conf, "probabilities": {}}
+    answers["data_limit"] = {"type": "choice", "choice": limit, "confidence": limit_conf, "probabilities": {}}
+    answers["data_window"] = {"type": "choice", "choice": window, "confidence": 0.9, "probabilities": {}}
+    answers["data_game"] = {"type": "choice", "choice": game, "confidence": 0.9, "probabilities": {}}
+    answers["data_subject"] = {"type": "choice", "choice": subject, "confidence": 0.9, "probabilities": {}}
+    answers["data_lowest"] = {"type": "noul", "noul": lowest}
+    return answers
+
+
 class _FakeResponse:
     def __init__(self, status, body=None, text=""):
         self.status = status
@@ -165,6 +177,93 @@ class TestParseSignals(unittest.TestCase):
         self.assertEqual(_signals(action="generate", random_pick=0.7).as_intent()["subject"], "random")
         self.assertEqual(_signals(action="generate", group=0.7).as_intent()["subject"], "group")
         self.assertIsNone(_signals(action="generate").as_intent()["subject"])
+
+
+class TestDataSignals(unittest.TestCase):
+    def test_batch_offers_every_metric_and_shape(self):
+        crit = QUESTIONS["data_metric"]["criteria"]
+        from lib.features.data_queries import METRICS
+        self.assertEqual(set(crit), set(METRICS) | {"none"})
+        self.assertEqual(set(QUESTIONS["data_shape"]["criteria"]), {"leaderboard", "person", "compare", "total", "none"})
+        self.assertIn("blackjack", QUESTIONS["data_game"]["criteria"])
+        self.assertIn("connect4", QUESTIONS["data_game"]["criteria"])
+
+    def test_absent_data_answers_mean_not_a_records_question(self):
+        sig = _signals()
+        self.assertEqual(sig.data_metric, "none")
+        self.assertEqual(sig.data_shape, "none")
+        self.assertIsNone(sig.data_limit)
+        self.assertIsNone(sig.data_game)
+        self.assertFalse(sig.data_query_requested())
+
+    def test_parses_a_records_question(self):
+        sig = parse_signals(_with_data(_answers(), metric="casino_net", shape="leaderboard", limit="5", window="week",
+                                       game="blackjack", lowest=0.9), {})
+        self.assertEqual(sig.data_metric, "casino_net")
+        self.assertEqual(sig.data_shape, "leaderboard")
+        self.assertEqual(sig.data_limit, 5)
+        self.assertEqual(sig.data_window, "week")
+        self.assertEqual(sig.data_game, "blackjack")
+        self.assertTrue(sig.says("data_lowest"))
+        self.assertTrue(sig.data_query_requested())
+        self.assertIn("data=casino_net", sig.summary())
+
+    def test_records_question_needs_both_picks_to_be_confident(self):
+        self.assertFalse(parse_signals(_with_data(_answers(), metric_conf=0.4), {}).data_query_requested())
+        self.assertFalse(parse_signals(_with_data(_answers(), shape_conf=0.4), {}).data_query_requested())
+        self.assertFalse(parse_signals(_with_data(_answers(), shape="none"), {}).data_query_requested())
+        self.assertTrue(parse_signals(_with_data(_answers(), metric_conf=0.5, shape_conf=0.5), {}).data_query_requested())
+
+    def test_a_picture_request_is_never_a_records_question(self):
+        # "draw the top 5 richest as pigs": the roster gets drawn, not tabulated
+        sig = parse_signals(_with_data(_answers(action="generate", probs={"generate": 0.9, "edit": 0.05, "reply": 0.05}), metric="ukpence"), {})
+        self.assertFalse(sig.data_query_requested())
+
+    def test_unknown_picks_fall_back_to_defaults(self):
+        sig = parse_signals(_with_data(_answers(), metric="bitcoin", shape="graph", limit="99", window="decade", game="chess", subject="dog"), {})
+        self.assertEqual(sig.data_metric, "none")
+        self.assertEqual(sig.data_shape, "none")
+        self.assertIsNone(sig.data_limit)
+        self.assertEqual(sig.data_window, "all_time")
+        self.assertIsNone(sig.data_game)
+        self.assertEqual(sig.data_subject, "not_applicable")
+
+    def test_flat_limit_is_ignored(self):
+        self.assertIsNone(parse_signals(_with_data(_answers(), limit="5", limit_conf=0.3), {}).data_limit)
+
+
+class TestJudgeNamedSubject(unittest.IsolatedAsyncioTestCase):
+    async def test_no_candidates_or_key_means_nobody(self):
+        session = _FakeSession([])
+        self.assertEqual(await ms.judge_named_subject("steven's xp", [], api_key="k", session=session), (None, 0, 0))
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("TYPESAFE_API_KEY", None)
+            self.assertEqual(await ms.judge_named_subject("steven's xp", [("Steven", 2)], session=session), (None, 0, 0))
+        self.assertEqual(session.calls, [])
+
+    async def test_picks_a_member_and_returns_usage(self):
+        body = {"answers": {"who": {"type": "choice", "choice": "Steven <3", "confidence": 0.93, "probabilities": {}}},
+                "usage": {"input_tokens": 120, "output_tokens": 0}}
+        session = _FakeSession([_FakeResponse(200, body)])
+        res = await ms.judge_named_subject("how much xp has steven got", [("Oggers", 1), ("Steven <3", 2), ("Kim", 3)],
+                                           api_key="k", session=session)
+        self.assertEqual(res, (2, 120, 0))
+        q = session.calls[0]["json"]["questions"]["who"]
+        self.assertEqual(set(q["criteria"]), {"none", "Oggers", "Steven <3", "Kim"})
+        self.assertEqual(session.calls[0]["json"]["state"]["members"], ["Oggers", "Steven <3", "Kim"])
+
+    async def test_duplicate_names_are_disambiguated_by_id(self):
+        body = {"answers": {"who": {"choice": "Steven (5)", "confidence": 0.9}}}
+        session = _FakeSession([_FakeResponse(200, body)])
+        res = await ms.judge_named_subject("steven", [("Steven", 2), ("Steven", 5)], api_key="k", session=session)
+        self.assertEqual(res[0], 5)
+
+    async def test_low_confidence_or_none_is_nobody(self):
+        for body in ({"answers": {"who": {"choice": "Steven", "confidence": 0.4}}},
+                     {"answers": {"who": {"choice": "none", "confidence": 0.95}}}):
+            session = _FakeSession([_FakeResponse(200, body)])
+            res = await ms.judge_named_subject("who", [("Steven", 2)], api_key="k", session=session)
+            self.assertIsNone(res[0])
 
 
 class TestJudgeMention(unittest.IsolatedAsyncioTestCase):

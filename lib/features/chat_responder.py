@@ -25,7 +25,7 @@ from config import (
     IMAGE_GEN_MODEL, IMAGE_GEN_QUALITY, IMAGE_GEN_SIZE
 )
 from lib.core.file_operations import atomic_write_json, load_json_file
-from lib.features.mention_signals import judge_mention, MENTION_SIGNALS_MODEL
+from lib.features.mention_signals import judge_mention, judge_named_subject, MENTION_SIGNALS_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -4828,6 +4828,174 @@ def generate_one_off_reply(
     return fallback, total_p_tokens, total_c_tokens
 
 
+async def _resolve_member_names(client: Any, guild: Any, ids: List[str]) -> Dict[str, str]:
+    """Display names for user ids: the member cache first, one bulk fetch for the rest, then whatever the client knows."""
+    names: Dict[str, str] = {}
+    missing: List[int] = []
+    for uid in ids:
+        try:
+            n = int(uid)
+        except (TypeError, ValueError):
+            continue
+        member = None
+        try:
+            member = guild.get_member(n) if guild is not None and hasattr(guild, "get_member") else None
+        except Exception:
+            member = None
+        if member is not None:
+            names[str(uid)] = _member_display_name(member, f"user {uid}")
+        else:
+            missing.append(n)
+    if missing and guild is not None and hasattr(guild, "query_members"):
+        try:
+            fetched = await guild.query_members(user_ids=missing[:100], cache=True)
+            for m in fetched or []:
+                names[str(m.id)] = _member_display_name(m, f"user {m.id}")
+        except Exception as e:
+            logger.debug("Bulk member fetch failed: %s", e)
+    for n in missing:
+        if str(n) in names:
+            continue
+        user = None
+        try:
+            user = client.get_user(n) if client is not None and hasattr(client, "get_user") else None
+        except Exception:
+            user = None
+        names[str(n)] = _member_display_name(user, f"user {n}") if user is not None else f"user {n}"
+    return names
+
+
+async def answer_data_query(
+    client: Any,
+    message: Any,
+    signals: Any,
+    clean_prompt: str,
+    *,
+    caller_id: Optional[int],
+    caller_name: str,
+    caller_role: str,
+    other_mentions: List[Any],
+    directory: List[Tuple[str, int]],
+    raw_content: str,
+    bot_id: Optional[int],
+    replied_author: Optional[Tuple[str, int]] = None,
+) -> bool:
+    """Answer a question about the server's records from the database. True when a reply was sent.
+
+    Jev chose the metric and the shape; code runs the query and posts the exact figures. A language
+    model only ever adds a dry line above them, so it cannot invent a number. Who a "person" or
+    "compare" question is about comes from the caller, the @mentions, or a second Jev pick from the
+    people directory; if nobody can be resolved the bot says so rather than guessing.
+    """
+    from lib.features import data_queries as dq
+
+    guild = getattr(message, "guild", None)
+    spec = dq.QuerySpec(
+        metric=signals.data_metric, shape=signals.data_shape,
+        limit=dq.normalise_limit(signals.data_limit), lowest=signals.says("data_lowest"),
+        window=signals.data_window, game=signals.data_game,
+    )
+    mentioned: List[Tuple[str, int]] = [
+        (_member_display_name(u), getattr(u, "id", None)) for u in other_mentions if isinstance(getattr(u, "id", None), int)
+    ]
+
+    async def named() -> Optional[Tuple[str, int]]:
+        uid, in_tok, out_tok = await judge_named_subject(clean_prompt, directory)
+        if in_tok or out_tok:
+            live_chat_manager.record_usage(MENTION_SIGNALS_MODEL, in_tok, out_tok)
+        if uid is None:
+            return None
+        return next((n for n, i in directory if i == uid), None) or f"user {uid}", uid
+
+    # People the message points at without naming them: @mentions first, then whoever they replied
+    # to ("how many shutcoins has this person used" under someone's message).
+    pool: List[Tuple[str, int]] = list(mentioned)
+    if replied_author is not None and replied_author[1] not in {i for _, i in pool} and replied_author[1] != bot_id:
+        pool.append(replied_author)
+
+    subjects: List[Tuple[str, int]] = []
+    if spec.shape == "person":
+        if signals.data_subject == "caller" and isinstance(caller_id, int):
+            subjects = [(caller_name, caller_id)]
+        elif pool and signals.data_subject != "someone_named":
+            subjects = [pool[0]]
+        else:
+            who = await named()
+            if who is None and pool:
+                who = pool[0]
+            if who is None and signals.data_subject != "someone_named" and isinstance(caller_id, int):
+                who = (caller_name, caller_id)
+            if who is not None:
+                subjects = [who]
+    elif spec.shape == "compare":
+        subjects = list(pool[:2])
+        if len(subjects) < 2:
+            who = await named()
+            if who is not None and who[1] not in {i for _, i in subjects}:
+                subjects.append(who)
+        if len(subjects) < 2 and isinstance(caller_id, int) and caller_id not in {i for _, i in subjects}:
+            subjects.insert(0, (caller_name, caller_id))
+    needed = {"person": 1, "compare": 2}.get(spec.shape, 0)
+    if len(subjects) < needed:
+        logger.info("Records question from %s needs a person nobody could resolve: %r", caller_name, clean_prompt)
+        await message.reply("No idea who you mean. Tag them and I'll look it up.", mention_author=True)
+        return True
+    spec.subjects = [(n, str(i)) for n, i in subjects]
+
+    member_ids = None
+    excluded: set = set()
+    try:
+        members = list(getattr(guild, "members", None) or [])
+        if members:
+            member_ids = {str(m.id) for m in members}
+            excluded = {str(m.id) for m in members if getattr(m, "bot", False)}
+    except Exception:
+        member_ids = None
+    if bot_id:
+        excluded.add(str(bot_id))
+    try:
+        result = await asyncio.to_thread(dq.compute, spec, exclude_ids=excluded, member_ids=member_ids)
+    except Exception as e:
+        logger.warning("Records query failed for %r: %s", clean_prompt, e)
+        return False
+    names = await _resolve_member_names(client, guild, result.ids)
+    for n, i in subjects:
+        names.setdefault(str(i), n)
+    figures = dq.render(result, names)
+    logger.info("Records answer for %s: %s/%s %s", caller_name, spec.metric, spec.shape, figures.replace("\n", " | ")[:200])
+
+    remark = ""
+    try:
+        remark, p_tok, c_tok = await asyncio.to_thread(
+            generate_one_off_reply,
+            prompt=(f'{caller_name} asked: "{clean_prompt}". The exact figures are posted directly beneath your message. '
+                    "Write ONE short dry line to sit above them: a reaction, not a repeat. Do not state, round or invent "
+                    "any numbers or names from the figures."),
+            context=f"THE FIGURES (the system posts these beneath your line; do not repeat them):\n{figures}",
+            user_name=caller_name, caller_role=caller_role, enable_search=False,
+        )
+        if p_tok or c_tok:
+            live_chat_manager.record_usage("gpt-4o", p_tok, c_tok, is_reply=True)
+        if not remark or is_openai_refusal(remark):
+            remark = ""
+        else:
+            remark = sanitize_ai_mentions(strip_leading_self_address(remark.strip(), caller_id, [caller_name]), guild=guild)
+    except Exception as e:
+        logger.debug("Remark for the records answer failed: %s", e)
+        remark = ""
+    text = f"{remark}\n{figures}" if remark else figures
+    if len(text) > 1990:
+        text = text[:1985] + "..."
+    await message.reply(
+        text, mention_author=True,
+        allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=False, replied_user=True),
+    )
+    live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
+    live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": text})
+    asyncio.create_task(live_chat_manager.update_dashboard())
+    return True
+
+
 async def handle_one_off_owner_mention(client: discord.Client, message: discord.Message) -> bool:
     """Handle a direct mention of the bot by Oggers, showing typing, gathering context, and replying."""
     if message.id in _handled_one_off_message_ids:
@@ -5036,6 +5204,22 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 "text": _strip_bot_address(getattr(m, "content", "") or "", bot_id),
                 "has_images": bool(own_image_attachments(m)),
             })
+
+        # A question about the server's own records ("top 10 shutcoin users", "how much XP has steven
+        # got") is answered from the database, never by a language model guessing at numbers.
+        if signals is not None and signals.data_query_requested():
+            ref_author = getattr(ref_msg, "author", None) if ref_msg is not None else None
+            replied_author = (
+                (_member_display_name(ref_author, "someone"), ref_author.id)
+                if ref_author is not None and isinstance(getattr(ref_author, "id", None), int) else None
+            )
+            if await answer_data_query(
+                client, message, signals, clean_prompt, caller_id=caller_id, caller_name=caller_name,
+                caller_role=caller_role, other_mentions=other_mentions, directory=directory,
+                raw_content=raw_content, bot_id=bot_id, replied_author=replied_author,
+            ):
+                return True
+
         # Jev already read the message. When it is sure this wants text and nothing is attached that a
         # picture could be made from, the planner's paraphrase and people-resolution add nothing a text
         # reply uses, so the gpt-4o call is skipped. Anything less certain still gets planned.
