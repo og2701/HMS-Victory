@@ -156,6 +156,29 @@ def test_house_panel_buttons_and_gating(bb):
     assert bb.HOUSE_PUBLIC_ACTIONS <= set(bb.HOUSE_ACTIONS)
 
 
+def test_events_and_rundown(bb):
+    bb.db_add_housemate(1)
+    bb.db_add_housemate(2)
+    bb.log_event("housemate_added", target=1)
+    rid = bb.create_round(bb.KIND_NOMINATIONS)
+    bb.record_nominations(rid, 1, [2])
+    bb.log_event("nominated", actor=1, round_id=rid, nominees=[2], changed=False)
+    bb.add_diary(2, "I trust nobody", True)
+    bb.log_event("diary", actor=2, anonymous=True, text="I trust nobody")
+    evs = bb.events()
+    assert [e["kind"] for e in evs] == ["housemate_added", "nominated", "diary"]
+    assert evs[1]["nominees"] == [2] and evs[1]["actor_id"] == 1
+
+    dump, timeline = bb.build_rundown(None)
+    assert {h["user_id"] for h in dump["housemates"]} == {1, 2}
+    assert dump["nominations"][0]["nominee"] == 2
+    assert dump["diary"][0]["anonymous"] is True
+    assert "user 1 nominated user 2" in timeline
+    assert "diary (anonymous): I trust nobody" in timeline
+    import json
+    json.dumps(dump)  # must be serialisable as-is
+
+
 def test_vote_button_custom_id(bb):
     btn = bb.VoteButton(7, 42, "Bob")
     assert btn.custom_id == "bb:vote:7:42"

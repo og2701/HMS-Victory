@@ -129,6 +129,14 @@ def ensure_tables() -> None:
             messages INTEGER NOT NULL DEFAULT 0)""")
         c.execute("""CREATE TABLE IF NOT EXISTS bb_state (
             key TEXT PRIMARY KEY, value TEXT)""")
+        # Unified timeline of everything that happened, for the post-event rundown.
+        c.execute("""CREATE TABLE IF NOT EXISTS bb_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, kind TEXT NOT NULL,
+            actor_id TEXT, target_id TEXT, payload TEXT)""")
+        # Full transcript of the house channel (the message archive elsewhere is rolling).
+        c.execute("""CREATE TABLE IF NOT EXISTS bb_messages (
+            message_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, content TEXT,
+            at INTEGER NOT NULL, attachments INTEGER NOT NULL DEFAULT 0, reply_to TEXT)""")
     _tables_ready = True
 
 
@@ -153,6 +161,42 @@ def set_state(key: str, value) -> None:
     DatabaseManager.execute(
         "INSERT OR REPLACE INTO bb_state (key, value) VALUES (?, ?)",
         (key, json.dumps(value)))
+
+
+def log_event(kind: str, actor: Optional[int] = None, target: Optional[int] = None, **payload) -> None:
+    """Append to the timeline. Never raises: logging must not break the game."""
+    try:
+        ensure_tables()
+        DatabaseManager.execute(
+            "INSERT INTO bb_events (at, kind, actor_id, target_id, payload) VALUES (?, ?, ?, ?, ?)",
+            (_now(), kind, str(actor) if actor is not None else None,
+             str(target) if target is not None else None, json.dumps(payload) if payload else None))
+    except Exception:
+        log.exception("Big Brother: could not log event %s", kind)
+
+
+def store_message(message: discord.Message) -> None:
+    ensure_tables()
+    DatabaseManager.execute(
+        "INSERT OR REPLACE INTO bb_messages (message_id, user_id, content, at, attachments, reply_to) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (str(message.id), str(message.author.id), message.content or "",
+         int(message.created_at.timestamp()), len(message.attachments),
+         str(message.reference.message_id) if message.reference and message.reference.message_id else None))
+
+
+def events() -> list[dict]:
+    ensure_tables()
+    rows = DatabaseManager.fetch_all("SELECT id, at, kind, actor_id, target_id, payload FROM bb_events ORDER BY id")
+    out = []
+    for r in rows:
+        try:
+            payload = json.loads(r[5]) if r[5] else {}
+        except (TypeError, ValueError):
+            payload = {"raw": r[5]}
+        out.append({"id": r[0], "at": r[1], "kind": r[2], "actor_id": int(r[3]) if r[3] else None,
+                    "target_id": int(r[4]) if r[4] else None, **payload})
+    return out
 
 
 # --- housemates ---
@@ -486,6 +530,7 @@ async def add_housemates(client: discord.Client, user_ids: Iterable[int]) -> lis
     for uid in user_ids:
         if db_add_housemate(uid):
             added.append(int(uid))
+            log_event("housemate_added", target=uid)
         await _sync_role(guild, uid, True)
     return added
 
@@ -493,6 +538,8 @@ async def add_housemates(client: discord.Client, user_ids: Iterable[int]) -> lis
 async def evict(client: discord.Client, user_id: int, *, announce: bool = True) -> None:
     guild = _guild(client)
     db_set_status(user_id, STATUS_EVICTED)
+    last = get_state(STATE_LAST_VOTE_RESULT) or {}
+    log_event("evicted", target=user_id, announced=announce, last_vote=last)
     await _sync_role(guild, user_id, False)
     if announce:
         ch = await house_channel(client)
@@ -510,6 +557,7 @@ async def open_nominations(client: discord.Client) -> Optional[int]:
     if open_round(KIND_NOMINATIONS):
         return None
     rid = create_round(KIND_NOMINATIONS)
+    log_event("nominations_opened", round_id=rid)
     ch = await house_channel(client)
     if ch:
         n = nominations_each()
@@ -543,6 +591,8 @@ async def close_nominations(client: discord.Client) -> Optional[dict]:
     await notify_host(client, embed=bb_embed(f"Nomination results (round {rnd['id']})", desc))
 
     top = [nominee for nominee, _ in ranked]
+    log_event("nominations_closed", round_id=rnd["id"],
+              tally=[[n, v] for n, v in ranked], did_not_nominate=missing)
     set_state(STATE_LAST_NOM_TALLY, {"round_id": rnd["id"], "ranked": [[n, len(counts[n])] for n in top]})
     ch = await house_channel(client)
     if ch:
@@ -570,6 +620,7 @@ async def start_vote(client: discord.Client, nominee_ids: list[int]) -> Optional
         view.add_item(VoteButton(rid, n, _name(guild, n)))
     msg = await ch.send(content=f"{EYE} **Eviction vote is open.**", embed=embed, view=view)
     set_round_message(rid, ch.id, msg.id)
+    log_event("vote_opened", round_id=rid, nominees=list(nominee_ids), channel_id=ch.id, message_id=msg.id)
     hc = await house_channel(client)
     if hc and hc.id != ch.id:
         await hc.send(f"{_role_mention()}{EYE} The public eviction vote is open in <#{ch.id}>. "
@@ -596,6 +647,7 @@ async def close_vote(client: discord.Client) -> Optional[dict]:
     await notify_host(client, embed=bb_embed(f"Eviction vote result (round {rnd['id']})", desc))
     set_state(STATE_LAST_VOTE_RESULT, {"round_id": rnd["id"], "ranked": [[n, tally.get(n, 0)] for n in ranked],
                                        "total": total})
+    log_event("vote_closed", round_id=rnd["id"], tally=[[n, tally.get(n, 0)] for n in ranked], total=total)
     if rnd["channel_id"] and rnd["message_id"]:
         ch = await _channel(client, rnd["channel_id"])
         if ch:
@@ -628,6 +680,7 @@ async def crown_winner(client: discord.Client, user_id: int) -> tuple[bool, str]
             f"{_role_mention()}{EYE} **We have a winner.**\n\n"
             f"After two weeks in the house, the winner of UKPlace Big Brother is <@{user_id}>! "
             + (f"{prize:,} UKP is on its way." if prize and paid else ""))
+    log_event("winner_crowned", target=user_id, prize=prize, paid=paid)
     note = f"{_name(guild, user_id)} crowned." + ("" if paid else f" Prize of {prize:,} UKP was NOT paid (bank refused) - pay manually.")
     return paid, note
 
@@ -661,6 +714,7 @@ class VoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:vote:(
         if interaction.user.bot:
             return
         cast_vote(self.round_id, interaction.user.id, self.nominee_id)
+        log_event("vote_cast", actor=interaction.user.id, target=self.nominee_id, round_id=self.round_id)
         await interaction.response.send_message(
             f"Vote recorded: you voted to evict **{_name(interaction.guild, self.nominee_id)}**. "
             f"Press another button to change it.", ephemeral=True)
@@ -1016,6 +1070,7 @@ async def _act_immunity(interaction: discord.Interaction):
         for uid in ids:
             now_immune = db_toggle_immunity(uid)
             out.append(f"{_name(inter.guild, uid)}: {'immune' if now_immune else 'no longer immune'}")
+            log_event("immunity_toggled", target=uid, immune=now_immune)
             if now_immune:
                 await dm_user(inter.client, uid, embed=bb_embed(
                     "Immunity", "You are immune from the next nominations. Housemates won't be able to pick you."))
@@ -1041,6 +1096,7 @@ async def _act_mission(interaction: discord.Interaction):
         async def submitted(inter2: discord.Interaction, values: dict):
             brief = values["brief"]
             mid = add_mission(uid, brief)
+            log_event("mission_assigned", target=uid, mission_id=mid, brief=brief)
             ok = await dm_user(inter2.client, uid, embed=bb_embed(
                 "Secret mission",
                 f"{brief}\n\nComplete it without the other housemates noticing. "
@@ -1079,6 +1135,7 @@ async def _act_resolve_mission(interaction: discord.Interaction):
             if not m:
                 await _reply(inter2, "Mission not found.", refresh=False)
                 return
+            log_event("mission_resolved", target=m["user_id"], mission_id=mid, status=status, brief=m["brief"])
             if status == "done":
                 await dm_user(inter2.client, m["user_id"], embed=bb_embed(
                     "Mission complete", f"Big Brother is pleased. {m['brief']}\n\nYour reward will follow."))
@@ -1114,6 +1171,7 @@ async def _act_challenge(interaction: discord.Interaction):
             embed.add_field(name="How to win", value="First housemate to post the exact answer in this channel wins.")
         msg = await ch.send(content=f"{_role_mention()}{EYE} **Challenge time.**", embed=embed)
         cid = add_challenge(values["title"], values["body"], answer, msg.id)
+        log_event("challenge_posted", challenge_id=cid, title=values["title"], body=values["body"], answer=answer)
         await _reply(inter, f"Challenge #{cid} posted." + (" The bot will spot the first correct answer." if answer else ""))
 
     await interaction.response.send_modal(_TextModal("New challenge", [
@@ -1129,6 +1187,7 @@ async def _act_end_challenge(interaction: discord.Interaction):
         await _reply(interaction, "No challenge is open.", refresh=False)
         return
     close_challenge(chal["id"], None)
+    log_event("challenge_ended", challenge_id=chal["id"], title=chal["title"])
     ch = await house_channel(interaction.client)
     if ch:
         await ch.send(f"{EYE} **Challenge over:** {chal['title']}. Big Brother will announce the outcome.")
@@ -1146,6 +1205,7 @@ async def _act_dm(interaction: discord.Interaction):
             sent, closed = 0, []
             for uid in ids:
                 ok = await dm_user(inter2.client, uid, embed=bb_embed("Big Brother", values["text"]))
+                log_event("bb_dm", target=uid, text=values["text"], delivered=ok)
                 sent += ok
                 if not ok:
                     closed.append(_name(inter2.guild, uid))
@@ -1170,6 +1230,7 @@ async def _act_broadcast(interaction: discord.Interaction):
             await ch.send(content=f"{ping}{EYE} {text}")
         else:
             await ch.send(content=ping or None, embed=bb_embed("Big Brother", text))
+        log_event("bb_announcement", text=text, pinged=bool(ping))
         await _reply(inter, "Posted in the house.", refresh=False)
 
     await interaction.response.send_modal(_TextModal("Announce in the house", [
@@ -1226,6 +1287,7 @@ async def handle_diary(interaction: discord.Interaction, anonymous: bool = False
     async def submitted(inter: discord.Interaction, values: dict):
         text = values["text"]
         add_diary(inter.user.id, text, anonymous)
+        log_event("diary", actor=inter.user.id, anonymous=anonymous, text=text)
         who = "An anonymous housemate" if anonymous else _mention_and_name(inter.guild, inter.user.id)
         await notify_host(inter.client, embed=bb_embed("Diary room", f"**{who}** says:\n\n{text}"))
         await inter.response.send_message(
@@ -1252,6 +1314,7 @@ async def handle_nominate(interaction: discord.Interaction):
 
     async def done(inter: discord.Interaction, ids: list[int]):
         record_nominations(rnd["id"], inter.user.id, ids)
+        log_event("nominated", actor=inter.user.id, round_id=rnd["id"], nominees=ids, changed=bool(already))
         names = ", ".join(_name(inter.guild, i) for i in ids)
         await notify_host(inter.client, embed=bb_embed(
             f"Nomination (round {rnd['id']})",
@@ -1290,6 +1353,7 @@ async def handle_expose(interaction: discord.Interaction):
 
         async def submitted(inter2: discord.Interaction, values: dict):
             on_mission = active_mission_for(suspect) is not None
+            log_event("exposed", actor=inter2.user.id, target=suspect, what=values["what"], was_on_mission=on_mission)
             await notify_host(inter2.client, embed=bb_embed(
                 "Exposure attempt",
                 f"{_mention_and_name(inter2.guild, inter2.user.id)} thinks "
@@ -1416,7 +1480,13 @@ def _norm(s: str) -> str:
 async def on_house_message(client: discord.Client, message: discord.Message) -> None:
     """Called for every human message in the house channel: activity tracking and
     auto-judging an open challenge with an exact answer."""
-    if not enabled() or message.author.bot or not is_housemate(message.author.id):
+    if not enabled() or message.author.bot:
+        return
+    try:
+        store_message(message)
+    except Exception:
+        log.exception("Big Brother: transcript store failed")
+    if not is_housemate(message.author.id):
         return
     try:
         touch_activity(message.author.id)
@@ -1431,6 +1501,8 @@ async def on_house_message(client: discord.Client, message: discord.Message) -> 
     if not open_challenge() or open_challenge()["id"] != chal["id"]:
         return
     close_challenge(chal["id"], message.author.id)
+    log_event("challenge_won", actor=message.author.id, challenge_id=chal["id"], title=chal["title"],
+              message_id=message.id)
     try:
         await message.reply(f"{EYE} **Correct.** {message.author.mention} wins **{chal['title']}**.")
     except discord.HTTPException:
@@ -1438,3 +1510,119 @@ async def on_house_message(client: discord.Client, message: discord.Message) -> 
     await notify_host(client, f"{EYE} Challenge **{chal['title']}** won by "
                               f"{_mention_and_name(message.guild, message.author.id)}.")
     asyncio.create_task(refresh_panel(client))
+
+
+# ---------------------------------------------------------------------------
+# Rundown export: everything, as JSON plus a readable timeline
+# ---------------------------------------------------------------------------
+
+def _fmt_ts(ts: int) -> str:
+    import datetime as _dt
+    return _dt.datetime.fromtimestamp(int(ts), _dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+
+def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
+    """Returns (json-able dump, markdown timeline). Names are resolved from the guild so
+    the files still read well once the roles and channel are gone."""
+    ensure_tables()
+    def n(uid):
+        return _name(guild, uid) if uid is not None else None
+
+    rows = DatabaseManager.fetch_all(
+        "SELECT user_id, joined_at, status, evicted_at, immune FROM bb_housemates ORDER BY joined_at")
+    hm = [{"user_id": int(r[0]), "name": n(int(r[0])), "joined_at": r[1], "status": r[2],
+           "evicted_at": r[3], "immune": bool(r[4])} for r in rows]
+    rounds = [dict(_round_row(r), closed_at=r[7]) for r in DatabaseManager.fetch_all(
+        "SELECT id, kind, status, opened_at, channel_id, message_id, nominees, closed_at FROM bb_rounds ORDER BY id")]
+    noms = [{"round_id": r[0], "nominator": int(r[1]), "nominator_name": n(int(r[1])),
+             "nominee": int(r[2]), "nominee_name": n(int(r[2])), "at": r[3]}
+            for r in DatabaseManager.fetch_all(
+                "SELECT round_id, nominator_id, nominee_id, created_at FROM bb_nominations ORDER BY created_at")]
+    votes = [{"round_id": r[0], "voter": int(r[1]), "voter_name": n(int(r[1])),
+              "nominee": int(r[2]), "nominee_name": n(int(r[2])), "at": r[3]}
+             for r in DatabaseManager.fetch_all(
+                 "SELECT round_id, voter_id, nominee_id, created_at FROM bb_votes ORDER BY created_at")]
+    diary = [{"id": r[0], "user_id": int(r[1]), "name": n(int(r[1])), "anonymous": bool(r[2]),
+              "text": r[3], "at": r[4]}
+             for r in DatabaseManager.fetch_all(
+                 "SELECT id, user_id, anonymous, text, created_at FROM bb_diary ORDER BY id")]
+    missions = [{"id": r[0], "user_id": int(r[1]), "name": n(int(r[1])), "brief": r[2], "status": r[3],
+                 "at": r[4], "resolved_at": r[5]}
+                for r in DatabaseManager.fetch_all(
+                    "SELECT id, user_id, brief, status, created_at, resolved_at FROM bb_missions ORDER BY id")]
+    challenges = [{"id": r[0], "title": r[1], "body": r[2], "answer": r[3], "status": r[4],
+                   "winner": int(r[5]) if r[5] else None, "winner_name": n(int(r[5])) if r[5] else None,
+                   "at": r[6], "resolved_at": r[7]}
+                  for r in DatabaseManager.fetch_all(
+                      "SELECT id, title, body, answer, status, winner_id, created_at, resolved_at "
+                      "FROM bb_challenges ORDER BY id")]
+    msgs = [{"message_id": int(r[0]), "user_id": int(r[1]), "name": n(int(r[1])), "content": r[2],
+             "at": r[3], "attachments": r[4], "reply_to": int(r[5]) if r[5] else None}
+            for r in DatabaseManager.fetch_all(
+                "SELECT message_id, user_id, content, at, attachments, reply_to FROM bb_messages ORDER BY at")]
+    activity = [{"user_id": int(r[0]), "name": n(int(r[0])), "messages": r[2], "last_message_at": r[1]}
+                for r in DatabaseManager.fetch_all(
+                    "SELECT user_id, last_message_at, messages FROM bb_activity ORDER BY messages DESC")]
+    evs = events()
+    for e in evs:
+        e["actor_name"] = n(e["actor_id"])
+        e["target_name"] = n(e["target_id"])
+
+    dump = {"exported_at": _now(), "housemates": hm, "rounds": rounds, "nominations": noms, "votes": votes,
+            "diary": diary, "missions": missions, "challenges": challenges, "events": evs,
+            "activity": activity, "house_messages": msgs}
+
+    lines = [f"# Big Brother rundown", f"Exported {_fmt_ts(_now())} UTC", "",
+             "## Housemates"]
+    for h in hm:
+        lines.append(f"- {h['name']} - {h['status']}" + (f" (evicted {_fmt_ts(h['evicted_at'])})" if h["evicted_at"] else ""))
+    lines += ["", "## Timeline"]
+    for e in evs:
+        kind = e["kind"]
+        who = e.get("actor_name") or ""
+        tgt = e.get("target_name") or ""
+        if kind == "nominated":
+            names = ", ".join(n(x) for x in e.get("nominees", []))
+            detail = f"{who} nominated {names}" + (" (changed)" if e.get("changed") else "")
+        elif kind == "vote_cast":
+            detail = f"{who} voted to evict {tgt}"
+        elif kind == "nominations_closed":
+            detail = "nominations closed: " + ", ".join(f"{n(x)} {c}" for x, c in e.get("tally", []))
+        elif kind == "vote_closed":
+            detail = f"vote closed ({e.get('total')} votes): " + ", ".join(f"{n(x)} {c}" for x, c in e.get("tally", []))
+        elif kind == "vote_opened":
+            detail = "vote opened: " + ", ".join(n(x) for x in e.get("nominees", []))
+        elif kind == "diary":
+            detail = f"diary ({'anonymous' if e.get('anonymous') else who}): {e.get('text', '')}"
+        elif kind == "exposed":
+            detail = f"{who} accused {tgt}: {e.get('what', '')} [{'right' if e.get('was_on_mission') else 'wrong'}]"
+        elif kind in ("mission_assigned", "mission_resolved"):
+            detail = f"mission #{e.get('mission_id')} for {tgt} {e.get('status', 'assigned')}: {e.get('brief', '')}"
+        elif kind.startswith("challenge"):
+            detail = f"{kind.replace('_', ' ')}: {e.get('title', '')}" + (f" - won by {who}" if who else "")
+        elif kind in ("bb_dm", "bb_announcement"):
+            detail = f"{kind.replace('_', ' ')}" + (f" to {tgt}" if tgt else "") + f": {e.get('text', '')}"
+        else:
+            detail = f"{kind.replace('_', ' ')}" + (f": {tgt}" if tgt else "")
+        lines.append(f"- {_fmt_ts(e['at'])}  {detail}")
+    lines += ["", "## Activity (house channel messages)"]
+    for a in activity:
+        lines.append(f"- {a['name']}: {a['messages']}")
+    return dump, "\n".join(lines)
+
+
+async def handle_export(interaction: discord.Interaction):
+    """Host-only: DM the full dump (JSON) and a readable timeline (markdown) to whoever asked."""
+    if not enabled() or not is_operator(interaction.user.id):
+        await interaction.response.send_message("Not for you.", ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True)
+    import io
+    dump, timeline = build_rundown(interaction.guild)
+    files = [discord.File(io.BytesIO(json.dumps(dump, indent=1, ensure_ascii=False).encode()), "big_brother_full.json"),
+             discord.File(io.BytesIO(timeline.encode()), "big_brother_timeline.md")]
+    try:
+        await interaction.user.send(content=f"{EYE} Big Brother rundown export.", files=files)
+        await interaction.followup.send("Sent to your DMs.", ephemeral=True)
+    except discord.HTTPException as e:
+        await interaction.followup.send(f"Couldn't DM you the files: {e}", ephemeral=True)

@@ -944,5 +944,9 @@ def define_commands(tree, client):
         async def bb_panel_command(interaction: Interaction):
             await _bb.handle_panel(interaction)
 
+        @command("bb-export", "DM yourself the full Big Brother log: timeline, votes, diary, transcript (host only)")
+        async def bb_export_command(interaction: Interaction):
+            await _bb.handle_export(interaction)
+
     from commands.moderation.verification import setup_verification_commands
     setup_verification_commands(tree, client)
