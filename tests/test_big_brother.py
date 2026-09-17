@@ -354,6 +354,14 @@ def test_shop_catalogue_parse_and_store(shop):
     assert shop.pounds(1050) == "£10.50"
 
 
+def test_shop_seed_file_parses(shop):
+    with open(shop.SEED_FILE, encoding="utf-8") as f:
+        entries = shop.parse_catalogue(f.read())
+    assert len(entries) == 40
+    assert {c for c, _, _ in entries} == {"Meat & Fish", "Fruit & Veg", "Misc"}
+    assert shop.parse_catalogue("Misc. .\nSalt — £0.80")[0][0] == "Misc"
+
+
 def test_shop_buy_judge_and_close(shop, bb):
     shop.set_catalogue(shop.parse_catalogue(CATALOGUE), replace=True)
     ids = {i["name"]: i["id"] for i in shop.catalogue()}

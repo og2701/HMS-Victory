@@ -1,0 +1,45 @@
+Meat & Fish
+Whole chicken — £7.00
+Chicken breast — £6.00
+Chicken thighs — £4.50
+Beef joint — £9.00
+Pork joint — £8.00
+Sausages — £3.00
+Bacon — £3.00
+Pigs in blankets — £3.50
+Cod fillets — £7.00
+Haddock fillets — £6.50
+Frozen white fish — £4.00
+Fish fingers — £2.50
+
+Fruit & Veg
+Maris Piper potatoes — £2.50
+Carrots — £1.00
+Broccoli — £1.50
+Cauliflower — £1.50
+Peas — £1.50
+Parsnips — £1.50
+Mushrooms — £1.50
+Tomatoes — £1.50
+Onions — £1.00
+Garlic — £1.00
+Ginger — £1.00
+Lemon — £0.50
+Coriander — £1.00
+
+Misc
+Yorkshire puddings — £2.00
+Stuffing — £1.50
+Gravy granules — £1.50
+Apple sauce — £1.50
+Mint sauce — £1.20
+Horseradish sauce — £1.50
+Beer — £2.00
+Mushy peas — £1.20
+Curry sauce — £1.50
+Tartare sauce — £1.80
+Pickled onions — £1.50
+Pickled eggs — £2.00
+Gherkins — £1.50
+Malt vinegar — £1.20
+Salt — £0.80

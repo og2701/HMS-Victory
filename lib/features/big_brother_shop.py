@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 from typing import Optional
 
@@ -27,6 +28,8 @@ log = logging.getLogger(__name__)
 
 _tables_ready = False
 _close_tasks: dict[int, asyncio.Task] = {}
+SEED_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                         "data", "big_brother_catalogue.txt")
 _PRICE_LINE = re.compile(r"^(?P<name>.+?)\s*[-–—:]+\s*£?\s*(?P<price>\d+(?:[.,]\d{1,2})?)\s*$")
 
 
@@ -77,7 +80,7 @@ def parse_catalogue(text: str) -> list[tuple[str, str, int]]:
             pence = int(round(float(m.group("price").replace(",", ".")) * 100))
             out.append((category, m.group("name").strip(), pence))
         else:
-            category = line.rstrip(":").strip()[:60] or "Other"
+            category = line.rstrip(":.,;- ").strip()[:60] or "Other"
     return out
 
 
@@ -560,6 +563,14 @@ async def act_catalogue(interaction: discord.Interaction):
         await inter.response.send_modal(_CatalogueModal(submitted))
     add.callback = _add
     view.add_item(add)
+    if os.path.exists(SEED_FILE):
+        load = discord.ui.Button(label="Load saved list", style=discord.ButtonStyle.secondary, emoji="📥")
+
+        async def _load(inter: discord.Interaction):
+            with open(SEED_FILE, encoding="utf-8") as f:
+                await submitted(inter, f.read(), True)
+        load.callback = _load
+        view.add_item(load)
     text = catalogue_text()
     await interaction.response.send_message(
         f"🛒 **Catalogue** ({len(catalogue())} items)\n{text}"[:1900], view=view, ephemeral=True)
