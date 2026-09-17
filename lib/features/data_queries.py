@@ -209,6 +209,33 @@ def _ledger(sign: int, since: Optional[int], source: Optional[str]) -> Rows:
     return _agg("user_transactions", expr, ts_col="ts", since=since, where=" AND ".join(clauses), params=p)
 
 
+_WITHHELD_TAX_RE = re.compile(r"tax:\s*-\s*([\d,]+)")
+
+
+def _tax_paid(since: Optional[int]) -> Rows:
+    """Tax per member: the wealth tax withheld from taxable income (recorded only inside the ledger's reason
+    text, "[gross: 100, tax: -60 (60%)]") plus outright tax debits (exemption taxes, the Council Tax dip)."""
+    clauses, p = ["reason LIKE '%tax%'"], []
+    if since is not None:
+        clauses.append("ts >= ?")
+        p.append(int(since))
+    rows = _fetch(f"SELECT user_id, amount, reason FROM user_transactions WHERE {' AND '.join(clauses)}", p)
+    totals: Dict[str, int] = {}
+    for uid, amount, reason in rows:
+        if uid is None:
+            continue
+        text = str(reason or "")
+        m = _WITHHELD_TAX_RE.search(text)
+        if m:
+            try:
+                totals[str(uid)] = totals.get(str(uid), 0) + int(m.group(1).replace(",", ""))
+            except ValueError:
+                pass
+        elif int(amount or 0) < 0:
+            totals[str(uid)] = totals.get(str(uid), 0) + -int(amount)
+    return list(totals.items())
+
+
 def _balance_as_of(ts: int) -> Rows:
     """Each member's UKP balance as it stood at `ts`, from the balance history."""
     rows = _fetch(
@@ -363,6 +390,10 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
        ["who's spent the most in the shop", "biggest shop spender", "how much has steven spent in the shop"],
        lambda since, game: _agg("shop_purchases", "COALESCE(SUM(price_paid),0)", ts_col="purchase_time", since=since),
        windowable=True),
+    _m("tax_paid", "tax paid", "UKP",
+       "UKP taken in tax: the wealth tax withheld from taxable income (rewards, bonuses) plus exemption taxes and tax penalties",
+       ["who has paid the most tax", "how much tax has steven paid", "biggest taxpayer", "tax paid this month"],
+       lambda since, game: _tax_paid(since), windowable=True),
     _m("bonds", "UKP locked in bonds", "UKP",
        "UKP currently locked in active savings bonds",
        ["who has the most in bonds", "how much has kim got in bonds", "biggest bond holder"],

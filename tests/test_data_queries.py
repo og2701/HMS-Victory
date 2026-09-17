@@ -35,6 +35,11 @@ def _fake_fetch(calls=None):
                 return [("connect4", "1", "2", "win", 50), ("connect4", "2", "1", "win", 50), ("battleship", "1", "4", "win", 100), ("rps", None, None, "draw", 10)]
         if "FROM user_transactions" in sql and "SUM(amount)" in sql:
             return [("1", 900), ("2", 100)]
+        if "FROM user_transactions" in sql and "reason LIKE '%tax%'" in sql:
+            return [("1", 40, "Server booster daily bonus [gross: 100, tax: -60 (60%)]"),
+                    ("1", 20, "Top chatter daily reward [gross: 50, tax: -30 (60%)]"),
+                    ("2", -25, "Lucky Dip penalty (Council Tax)"),
+                    ("3", 200, "Syntax reward")]
         if "FROM member_profile" in sql:
             return [("1", 1_700_000_000), ("2", 1_720_000_000), ("3", 1_710_000_000)]
         if "FROM balance_history" in sql:
@@ -193,6 +198,13 @@ class TestSourcesDatesAndAsOf(unittest.TestCase):
         self.assertIn("amount < 0", sql)
         self.assertIn("-SUM(amount)", sql)
         self.assertGreater(len(params), 5)   # every casino spelling
+
+    def test_tax_paid_is_parsed_from_the_reason_text(self):
+        res = compute(QuerySpec(metric="tax_paid", shape="leaderboard"))
+        self.assertEqual(res.rows, [("1", 90), ("2", 25)])      # withheld 60+30; an outright tax debit; "Syntax" is not tax
+        compute(QuerySpec(metric="tax_paid", shape="total", window="week"))
+        sql, params = self.calls[-1]
+        self.assertIn("ts >= ?", sql)
 
     def test_unknown_source_means_everything(self):
         compute(QuerySpec(metric="ukp_earned", shape="total", source="bitcoin"))
