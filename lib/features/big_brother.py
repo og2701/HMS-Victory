@@ -1379,8 +1379,18 @@ async def refresh_panel(client: discord.Client) -> None:
             log.info("Big Brother: control panel refresh failed: %s", e)
     try:
         sig = _house_panel_signature(guild)
-        if sig != get_state(STATE_HOUSE_PANEL_SIG):
+        if sig == get_state(STATE_HOUSE_PANEL_SIG):
+            return
+        if house_unlocked():
             await repost_house_panel(client)
+        else:
+            # Before the doors open the panel stays put and just updates in place.
+            hmid = get_state(STATE_HOUSE_PANEL_MSG)
+            hch = await _channel(client, house_channel_id())
+            if hch and hmid:
+                msg = await hch.fetch_message(int(hmid))
+                await msg.edit(content=None, view=HousePanelView(guild))
+                set_state(STATE_HOUSE_PANEL_SIG, sig)
     except Exception:
         log.exception("Big Brother: house panel repost failed")
 
@@ -2287,8 +2297,11 @@ async def on_house_message(client: discord.Client, message: discord.Message) -> 
     if isinstance(message.channel, discord.Thread):
         return  # snug chatter is recorded, but challenge answers only count in the house itself
     # Keep the panel within reach: after every few chat messages, move it back to the bottom.
+    # Not before the doors open: a locked panel bouncing around the pre-game chat is just noise.
     try:
         n = int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0) + 1
+        if not house_unlocked():
+            n = 0
         if n >= HOUSE_PANEL_REPOST_EVERY:
             asyncio.create_task(repost_house_panel(client))
         else:
