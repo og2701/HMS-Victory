@@ -5018,6 +5018,54 @@ async def records_digest_for(client: Any, message: Any, bot_id: Optional[int]) -
     return dq.render_digest(sections, names)
 
 
+def dq_split_records_questions(text: str) -> List[str]:
+    from lib.features.data_queries import split_records_questions
+    return split_records_questions(text)
+
+
+async def post_collected_records(client: Any, message: Any, collected: List[Any], clean_prompt: str, *,
+                                 caller_id: Optional[int], caller_name: str, caller_role: str, raw_content: str) -> bool:
+    """Post the answers to several records questions as one message, with one dry line above them."""
+    guild = getattr(message, "guild", None)
+    figures = "\n".join(f for f, _, _, _ in collected)
+    remark = ""
+    try:
+        remark, p_tok, c_tok = await asyncio.to_thread(
+            generate_one_off_reply,
+            prompt=(f'{caller_name} asked: "{clean_prompt}". The exact figures for each part are posted directly beneath your '
+                    "message. Write ONE short dry line to sit above them: a reaction, not a repeat. Do not state, round or "
+                    "invent any numbers or names from the figures."),
+            context=f"THE FIGURES (the system posts these beneath your line; do not repeat them):\n{figures}",
+            user_name=caller_name, caller_role=caller_role, enable_search=False,
+        )
+        if p_tok or c_tok:
+            live_chat_manager.record_usage("gpt-4o", p_tok, c_tok, is_reply=True)
+        if not remark or is_openai_refusal(remark):
+            remark = ""
+        else:
+            remark = sanitize_ai_mentions(strip_leading_self_address(remark.strip(), caller_id, [caller_name]), guild=guild)
+    except Exception as e:
+        logger.debug("Remark for the collected records answer failed: %s", e)
+        remark = ""
+    text = f"{remark}\n{figures}" if remark else figures
+    if len(text) > 1990:
+        text = text[:1985] + "..."
+    posted = await message.reply(
+        text, mention_author=True,
+        allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=False, replied_user=True),
+    )
+    names: Dict[str, str] = {}
+    figs: Dict[str, str] = {}
+    for _, _, n, f in collected:
+        names.update(n)
+        figs.update(f)
+    remember_records_answer(posted, getattr(getattr(message, "channel", None), "id", None), collected[-1][1], names=names, figures=figs, text=figures)
+    live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
+    live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": text})
+    asyncio.create_task(live_chat_manager.update_dashboard())
+    return True
+
+
 async def answer_data_query(
     client: Any,
     message: Any,
@@ -5034,6 +5082,7 @@ async def answer_data_query(
     replied_author: Optional[Tuple[str, int]] = None,
     spec: Any = None,
     prev_subjects: Optional[List[Tuple[str, int]]] = None,
+    collect: Optional[List[Any]] = None,
 ) -> bool:
     """Answer a question about the server's records from the database. True when a reply was sent.
 
@@ -5158,6 +5207,10 @@ async def answer_data_query(
         names.setdefault(str(i), n)
     figures = dq.render(result, names)
     logger.info("Records answer for %s: %s/%s %s", caller_name, spec.list_kind or spec.metric, spec.shape, figures.replace("\n", " | ")[:200])
+    if collect is not None:
+        # Part of a several-questions message: the caller posts everything together.
+        collect.append((figures, spec, {uid: names.get(uid, f"user {uid}") for uid in result.ids}, dq.figures_by_member(result)))
+        return True
 
     remark = ""
     try:
@@ -5413,6 +5466,40 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         )
         prev, prev_direct = previous_records_answer(ref_msg, getattr(getattr(message, "channel", None), "id", None), bot_id) if signals is not None else (None, False)
         prev_subjects = [(n, int(i)) for n, i in getattr(prev, "subjects", []) if str(i).isdigit()] if prev is not None else []
+        if signals is not None and signals.says("data_multi"):
+            # "Who has paid out the most, and who has received the most": each question answered, one post.
+            parts = dq_split_records_questions(clean_prompt)
+            if len(parts) >= 2:
+                collected: List[Any] = []
+                for part in parts:
+                    part_mentions = [u for u in other_mentions if f"<@{getattr(u, 'id', '')}>" in part or f"<@!{getattr(u, 'id', '')}>" in part] or other_mentions
+                    try:
+                        part_signals = await judge_mention(
+                            part, caller_name=caller_name, mentioned_names=[_member_display_name(u) for u in part_mentions],
+                            has_reply_ref=has_reply_ref, replied_to_text=replied_to_text, replied_to_author=replied_to_author,
+                            reply_chain=reply_chain_facts, has_attached_image=bool(own_image_attachments(message)),
+                            has_recent_bot_image=bool(recent_img_info), recent_bot_image_prompt=(recent_img_info[2] if recent_img_info else None),
+                            recent_history=recent_one_off_exchanges(4),
+                        )
+                    except Exception as e:
+                        logger.warning("Jev judgment on a part failed: %s", e)
+                        part_signals = None
+                    if part_signals is None:
+                        continue
+                    if part_signals.input_tokens or part_signals.output_tokens:
+                        live_chat_manager.record_usage(MENTION_SIGNALS_MODEL, part_signals.input_tokens, part_signals.output_tokens)
+                    if not part_signals.data_query_requested():
+                        continue
+                    await answer_data_query(
+                        client, message, part_signals, part, caller_id=caller_id, caller_name=caller_name,
+                        caller_role=caller_role, other_mentions=part_mentions, directory=directory,
+                        raw_content=raw_content, bot_id=bot_id, replied_author=replied_author, prev_subjects=prev_subjects,
+                        collect=collected,
+                    )
+                if collected:
+                    if await post_collected_records(client, message, collected, clean_prompt, caller_id=caller_id, caller_name=caller_name,
+                                                    caller_role=caller_role, raw_content=raw_content):
+                        return True
         if signals is not None and signals.data_query_requested():
             if await answer_data_query(
                 client, message, signals, clean_prompt, caller_id=caller_id, caller_name=caller_name,

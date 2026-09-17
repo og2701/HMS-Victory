@@ -209,7 +209,8 @@ class TestDataSignals(unittest.TestCase):
         self.assertIn("data=casino_net", sig.summary())
 
     def test_records_question_needs_both_picks_to_be_confident(self):
-        self.assertFalse(parse_signals(_with_data(_answers(), metric_conf=0.4), {}).data_query_requested())
+        self.assertFalse(parse_signals(_with_data(_answers(), metric_conf=0.3), {}).data_query_requested())
+        self.assertFalse(parse_signals(_with_data(_answers(), metric_conf=0.4, shape_conf=0.7), {}).data_query_requested())
         self.assertFalse(parse_signals(_with_data(_answers(), shape_conf=0.4), {}).data_query_requested())
         self.assertFalse(parse_signals(_with_data(_answers(), shape="none"), {}).data_query_requested())
         self.assertTrue(parse_signals(_with_data(_answers(), metric_conf=0.5, shape_conf=0.5), {}).data_query_requested())

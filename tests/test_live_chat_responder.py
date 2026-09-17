@@ -3654,6 +3654,42 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Snake paid to Kim: 1,200 UKP", text)
         self.assertIn("Kim paid to Snake: 0 UKP", text)
 
+    @patch("lib.features.chat_responder.plan_mention")
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("Two for the price of one.", 5, 5))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_records_two_questions_in_one_message(self, mock_judge, _find, mock_generate, mock_plan):
+        whole = _jev_signals(action="reply", confidence=0.99, data={"metric": "paid_out", "shape": "leaderboard", "limit": 3}, data_multi=0.9)
+        first = _jev_signals(action="reply", confidence=0.99, data={"metric": "paid_out", "shape": "leaderboard", "limit": 3})
+        second = _jev_signals(action="reply", confidence=0.99, data={"metric": "paid_in", "shape": "leaderboard", "limit": 3})
+        mock_judge.side_effect = [whole, first, second]
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> who has paid out the most, and who has received the most ukpence")
+        people = {1: _member(1, "Top chap"), 2: _member(2, "oggers"), 3: _member(3, "Kim")}
+        message.guild = MagicMock(); message.guild.members = []
+        message.guild.get_member.side_effect = lambda uid: people.get(uid)
+        def fetch(sql, params=()):
+            if "payer_id, COALESCE" in sql:
+                return [("1", 74653), ("2", 57241)]
+            if "recipient_id, COALESCE" in sql:
+                return [("3", 90000), ("1", 100)]
+            return []
+        with patch("lib.features.data_queries._fetch", fetch), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_plan.assert_not_called()
+        self.assertEqual(mock_judge.call_count, 3)
+        self.assertEqual(mock_judge.call_args_list[1][0][0], "who has paid out the most")
+        self.assertEqual(mock_judge.call_args_list[2][0][0], "who has received the most ukpence")
+        text = message.reply.call_args[0][0]
+        self.assertIn("Top 2 by UKP paid to others", text)
+        self.assertIn("Top 2 by UKP received from others", text)
+        self.assertIn("74,653 UKP  Top chap", text)
+        self.assertIn("90,000 UKP  Kim", text)
+        self.assertTrue(text.startswith("Two for the price of one.\n"), text)
+        self.assertEqual(mock_generate.call_count, 1)
+
     async def test_corrected_records_spec_changes_only_what_was_named(self):
         from lib.features import chat_responder as cr
         from lib.features.data_queries import QuerySpec

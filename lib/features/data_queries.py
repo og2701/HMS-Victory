@@ -236,6 +236,46 @@ def _tax_paid(since: Optional[int]) -> Rows:
     return list(totals.items())
 
 
+def _daily_extreme(table: str, value_expr: str, ts_col: str, mode: str, *, user_col: str = "user_id",
+                   since: Optional[int] = None, where: str = "", params: Sequence = (), keep=lambda v: True,
+                   magnitude: bool = False) -> List[Tuple[str, int, str]]:
+    """Each member's best (max) or worst (min) single day of `value_expr`, with the day it happened.
+
+    SQLite hands back the bare `day` column from the row that holds the MIN or MAX, which is exactly
+    the day wanted. `keep` drops members whose extreme is on the wrong side of zero (a best day that
+    is a loss is not a best day); `magnitude` reports a loss as a positive size.
+    """
+    clauses = [where] if where else []
+    p = list(params)
+    if since is not None:
+        clauses.append(f"{ts_col} >= ?")
+        p.append(int(since))
+    w = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    agg = "MIN" if mode == "min" else "MAX"
+    rows = _fetch(
+        f"SELECT user_id, {agg}(d), day FROM (SELECT {user_col} AS user_id, date({ts_col}, 'unixepoch') AS day, "
+        f"{value_expr} AS d FROM {table} {w} GROUP BY {user_col}, day) GROUP BY user_id", tuple(p))
+    out: List[Tuple[str, int, str]] = []
+    for u, v, day in rows:
+        if u is None or v is None:
+            continue
+        try:
+            v = int(v)
+        except (TypeError, ValueError):
+            continue
+        if not keep(v):
+            continue
+        out.append((str(u), abs(v) if magnitude else v, f"on {_dt_iso(day)}"))
+    return out
+
+
+def _dt_iso(day: Any) -> str:
+    try:
+        return datetime.strptime(str(day), "%Y-%m-%d").strftime("%d %b %Y")
+    except (TypeError, ValueError):
+        return str(day)
+
+
 def _balance_as_of(ts: int) -> Rows:
     """Each member's UKP balance as it stood at `ts`, from the balance history."""
     rows = _fetch(
@@ -512,6 +552,43 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
        ["biggest single win", "what's the most anyone's won in one go", "steven's best casino win"],
        lambda since, game: _casino("COALESCE(MAX(net),0)", since, game),
        windowable=True, games="casino"),
+    _m("casino_worst_day", "biggest single-day casino loss", "UKP",
+       "The most UKP a member has lost at the casino in ONE DAY (net over the day), and which day",
+       ["biggest single day casino loss", "worst day at the casino", "who's had the worst casino day", "steven's worst day"],
+       lambda since, game: _daily_extreme("casino_results", "COALESCE(SUM(net),0)", "timestamp", "min", since=since,
+                                          where=("game = ?" if CASINO_GAMES.get(game or "") else ""), params=((CASINO_GAMES[game],) if CASINO_GAMES.get(game or "") else ()),
+                                          keep=lambda v: v < 0, magnitude=True),
+       windowable=True, games="casino"),
+    _m("casino_best_day", "biggest single-day casino win", "UKP",
+       "The most UKP a member has won at the casino in ONE DAY (net over the day), and which day",
+       ["best casino day", "biggest single day win", "who's had the best day at the casino"],
+       lambda since, game: _daily_extreme("casino_results", "COALESCE(SUM(net),0)", "timestamp", "max", since=since,
+                                          where=("game = ?" if CASINO_GAMES.get(game or "") else ""), params=((CASINO_GAMES[game],) if CASINO_GAMES.get(game or "") else ()),
+                                          keep=lambda v: v > 0),
+       windowable=True, games="casino"),
+    _m("casino_biggest_day_stake", "most wagered in one day", "UKP",
+       "The most UKP a member has staked at the casino in ONE DAY, and which day",
+       ["most gambled in a single day", "biggest gambling day", "kim's heaviest day at the tables"],
+       lambda since, game: _daily_extreme("casino_results", "COALESCE(SUM(staked),0)", "timestamp", "max", since=since,
+                                          where=("game = ?" if CASINO_GAMES.get(game or "") else ""), params=((CASINO_GAMES[game],) if CASINO_GAMES.get(game or "") else ()),
+                                          keep=lambda v: v > 0),
+       windowable=True, games="casino"),
+    _m("messages_best_day", "most messages in one day", "messages",
+       "A member's busiest single day of posting (last 30 days), and which day",
+       ["most messages in a single day", "who's had the yappiest day", "steven's busiest day"],
+       lambda since, game: _daily_extreme("message_archive", "COUNT(*)", "ts", "max",
+                                          since=(since if since is not None else int(time.time()) - WINDOWS["month"]), keep=lambda v: v > 0),
+       windowable=True, default_window="month", note="the archive keeps about 30 days"),
+    _m("earned_best_day", "most UKP earned in one day", "UKP",
+       "A member's best single day of UKP credits, and which day",
+       ["biggest single day earnings", "who's had the best payday", "kim's best day for ukp"],
+       lambda since, game: _daily_extreme("user_transactions", "COALESCE(SUM(amount),0)", "ts", "max", since=since, where="amount > 0", keep=lambda v: v > 0),
+       windowable=True),
+    _m("spent_worst_day", "most UKP spent in one day", "UKP",
+       "A member's heaviest single day of UKP debits (bets, shop, pay), and which day",
+       ["most spent in a single day", "who's blown the most in one day", "johnny's most expensive day"],
+       lambda since, game: _daily_extreme("user_transactions", "COALESCE(SUM(amount),0)", "ts", "min", since=since, where="amount < 0", keep=lambda v: v < 0, magnitude=True),
+       windowable=True),
     _m("casino_biggest_loss", "biggest single casino loss", "UKP",
        "Largest net loss in a single casino round",
        ["biggest single loss", "worst hand anyone's had", "kim's worst casino loss"],
@@ -990,6 +1067,22 @@ def _list_county_owners(uid, limit, since, pick) -> Lines:
     return [(str(u), f"x{int(n)}") for u, n in rows]
 
 
+def _list_busiest_days(uid, limit, since, pick) -> Lines:
+    rows = _fetch("SELECT date(ts, 'unixepoch') AS day, COUNT(*), COUNT(DISTINCT user_id) FROM message_archive "
+                  "GROUP BY day ORDER BY COUNT(*) DESC LIMIT ?", (int(limit),))
+    return [(None, f"{_dt_iso(d)}: {int(n):,} messages from {int(u):,} members") for d, n, u in rows]
+
+
+def _list_casino_days(uid, limit, since, pick) -> Lines:
+    rows = _fetch("SELECT date(timestamp, 'unixepoch') AS day, COALESCE(-SUM(net),0), COUNT(*), COUNT(DISTINCT user_id) "
+                  "FROM casino_results GROUP BY day ORDER BY ABS(SUM(net)) DESC LIMIT ?", (int(limit),))
+    out: Lines = []
+    for d, house, n, players in rows:
+        sign = "took" if int(house) >= 0 else "paid out"
+        out.append((None, f"{_dt_iso(d)}: house {sign} {abs(int(house)):,} UKP over {int(n):,} rounds by {int(players):,} players"))
+    return out
+
+
 def _list_economy_today(uid, limit, since, pick) -> Lines:
     data = _json("ECONOMY_METRICS_FILE")
     if not isinstance(data, dict) or not data:
@@ -1101,6 +1194,10 @@ LISTS: Dict[str, ListKind] = {l.key: l for l in [
        ["what predictions are open", "any predictions on", "what's the pool on the prediction"], _list_predictions, per_person=False, empty="no predictions open"),
     _l("graveyard", "Skyrim graveyard", "Adventurers who died recently in the Skyrim game",
        ["who's died in skyrim recently", "show the graveyard", "who fell last"], _list_graveyard, per_person=False, empty="nobody has died lately"),
+    _l("busiest_days", "busiest days", "The server's busiest days by messages (last 30 days)",
+       ["what was the busiest day", "busiest days in chat", "when was the server most active"], _list_busiest_days, per_person=False, empty="no archive"),
+    _l("casino_days", "biggest casino days", "The casino's biggest days: how much the house took or paid out each day",
+       ["biggest casino day ever", "what was the house's best day", "when did the casino pay out the most"], _list_casino_days, per_person=False, empty="no casino results"),
     _l("economy_today", "today's payouts", "Today's server payouts by type (welcome bonuses and so on)",
        ["how much has the bot paid out today", "today's economy figures"], _list_economy_today, per_person=False, empty="no payouts recorded"),
     _l("badge_holders", "holders of a badge", "Who holds a particular badge (named in the message)",
@@ -1147,6 +1244,7 @@ class QueryResult:
     ids: List[str]                   # every user id the renderer needs a name for
     lines: Lines = field(default_factory=list)
     list_kind: Optional[ListKind] = None
+    details: Dict[str, str] = field(default_factory=dict)   # e.g. the day a single-day figure happened
 
 
 def normalise_limit(n: Optional[int]) -> int:
@@ -1180,7 +1278,8 @@ def compute(spec: QuerySpec, *, exclude_ids: Optional[set] = None, member_ids: O
     excluded = {str(x) for x in (exclude_ids or set())} | EXCLUDED_USER_IDS
     members = {str(x) for x in member_ids} if member_ids else None
     raw = metric.rows(since, game, source) if metric.sources else metric.rows(since, game)
-    rows = [(u, v) for u, v in raw if u not in excluded and (members is None or u in members)]
+    details = {r[0]: r[2] for r in raw if len(r) > 2 and r[2]}
+    rows = [(r[0], r[1]) for r in raw if r[0] not in excluded and (members is None or r[0] in members)]
     values = dict(rows)
     # Ties keep a stable, readable order (lowest user id first) whichever way the board runs.
     ordered = sorted(rows, key=lambda r: ((r[1] if spec.lowest else -r[1]), r[0]))
@@ -1208,7 +1307,8 @@ def compute(spec: QuerySpec, *, exclude_ids: Optional[set] = None, member_ids: O
     if spec.shape == "closest":
         ranks = {uid: i for i, (uid, _) in enumerate(shown, 1)}
     ids = [uid for uid, _ in shown] + [uid for _, uid in spec.subjects if uid not in {u for u, _ in shown}]
-    return QueryResult(spec=spec, metric=metric, rows=shown, ranks=ranks, population=population, total=total, ids=ids)
+    return QueryResult(spec=spec, metric=metric, rows=shown, ranks=ranks, population=population, total=total, ids=ids,
+                       details={u: details[u] for u, _ in shown if u in details})
 
 
 def compute_list(spec: QuerySpec, *, exclude_ids: Optional[set] = None, member_ids: Optional[set] = None) -> QueryResult:
@@ -1289,7 +1389,7 @@ def render(res: QueryResult, names: Dict[str, str]) -> str:
         # Figures first, names last: figures are plain ASCII so the columns line up, while a nickname
         # full of emoji is any width Discord feels like.
         vwidth = max(len(_fmt(metric, v)) for _, v in res.rows)
-        lines = [f"{res.ranks[u]:>2}. {_fmt(metric, v):>{vwidth}}  {name(u)}" for u, v in res.rows]
+        lines = [f"{res.ranks[u]:>2}. {_fmt(metric, v):>{vwidth}}  {name(u)}" + (f"  ({res.details[u]})" if u in res.details else "") for u, v in res.rows]
         return f"{head}\n```\n" + "\n".join(lines) + "\n```" + foot
 
     if spec.shape == "closest":
@@ -1308,7 +1408,8 @@ def render(res: QueryResult, names: Dict[str, str]) -> str:
     if spec.shape == "person":
         uid, v = res.rows[0]
         rank = f" (rank {res.ranks[uid]} of {res.population})" if v != 0 and res.population and metric.kind == "int" else ""
-        return _block(f"{name(uid)}: {_figure(metric, v)}{scope}{rank}") + foot
+        detail = f" {res.details[uid]}" if uid in res.details else ""
+        return _block(f"{name(uid)}: {_figure(metric, v)}{detail}{scope}{rank}") + foot
 
     if spec.shape == "between":
         (a, va), (b, vb) = res.rows[0], res.rows[1]
@@ -1348,8 +1449,29 @@ def figures_by_member(res: QueryResult) -> Dict[str, str]:
     for uid, v in res.rows:
         rank = res.ranks.get(uid)
         place = f", {rank}{'th' if 11 <= rank % 100 <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(rank % 10, 'th')}" if rank and res.spec.shape in ("leaderboard", "closest") else ""
-        out[uid] = f"{_figure(res.metric, v)}{place}"
+        detail = f" {res.details[uid]}" if uid in res.details else ""
+        out[uid] = f"{_figure(res.metric, v)}{detail}{place}"
     return out
+
+
+# --- several questions in one message ------------------------------------------------------------
+
+_SPLIT_RE = re.compile(
+    r"\s*(?:;|\?\s+(?=\S)|,?\s+(?:and|&|also|plus|then|as well as)\s+"
+    r"(?=(?:who|whose|how|what|which|when|where|top|bottom|list|show|give|get|tell|the)\b))",
+    re.IGNORECASE,
+)
+
+
+def split_records_questions(text: str, max_parts: int = 4) -> List[str]:
+    """Split "who has paid out the most, and who has received the most" into its questions.
+
+    Jev says whether a message holds several questions; the cut itself is made here, only where a
+    joiner is followed by a question word, so "me and steven" or "between A and B" stay whole.
+    """
+    parts = [re.sub(r"^(?:and|&|also|then|plus|as well as)\s+", "", p.strip(" ,;?"), flags=re.IGNORECASE) for p in _SPLIT_RE.split(text or "")]
+    parts = [p for p in parts if len(p) >= 4]
+    return parts[:max_parts] if len(parts) >= 2 else [text.strip()] if text else []
 
 
 def _render_list(res: QueryResult, name) -> str:

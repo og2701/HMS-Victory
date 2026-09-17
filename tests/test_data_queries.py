@@ -410,6 +410,65 @@ class TestBetween(unittest.TestCase):
         self.assertIn("Kim ahead by 3,760 XP.", render(res, {"1": "Johnny", "3": "Kim"}))
 
 
+class TestDayGrain(unittest.TestCase):
+    def test_worst_day_carries_the_day_and_reports_a_loss_as_a_size(self):
+        calls = []
+        def fetch(sql, params=()):
+            calls.append((sql, tuple(params)))
+            if "GROUP BY user_id, day" in sql and "MIN(d)" in sql:
+                return [("1", -12000, "2026-09-03"), ("2", 300, "2026-09-05"), ("3", -50, "2026-08-30")]
+            return []
+        with patch("lib.features.data_queries._fetch", fetch):
+            res = compute(QuerySpec(metric="casino_worst_day", shape="leaderboard", game="blackjack", window="month"))
+            text = render(res, {"1": "Johnny", "3": "Kim"})
+        self.assertEqual(res.rows, [("1", 12000), ("3", 50)])          # 2 never had a losing day
+        self.assertEqual(res.details, {"1": "on 03 Sep 2026", "3": "on 30 Aug 2026"})
+        self.assertIn("Top 2 by biggest single-day casino loss (blackjack, last 30 days)", text)
+        self.assertIn(" 1. 12,000 UKP  Johnny  (on 03 Sep 2026)", text)
+        sql, params = calls[0]
+        self.assertIn("date(timestamp, 'unixepoch')", sql)
+        self.assertIn("game = ?", sql)
+        self.assertIn("timestamp >= ?", sql)
+        self.assertEqual(params[0], "blackjack")
+        person = compute(QuerySpec(metric="casino_worst_day", shape="person", subjects=[("Johnny", "1")]))
+        with patch("lib.features.data_queries._fetch", fetch):
+            person = compute(QuerySpec(metric="casino_worst_day", shape="person", subjects=[("Johnny", "1")]))
+        self.assertIn("Johnny: 12,000 UKP (biggest single-day casino loss) on 03 Sep 2026", render(person, {"1": "Johnny"}))
+
+    def test_best_day_keeps_only_winning_days(self):
+        fetch = lambda sql, params=(): [("1", 900, "2026-09-01"), ("2", -40, "2026-09-02")] if "MAX(d)" in sql else []
+        with patch("lib.features.data_queries._fetch", fetch):
+            self.assertEqual(compute(QuerySpec(metric="casino_best_day", shape="leaderboard")).rows, [("1", 900)])
+            self.assertEqual(compute(QuerySpec(metric="messages_best_day", shape="leaderboard")).rows, [("1", 900)])
+
+    def test_server_day_lists(self):
+        def fetch(sql, params=()):
+            if "FROM message_archive" in sql and "GROUP BY day" in sql:
+                return [("2026-09-16", 4100, 97)]
+            if "FROM casino_results GROUP BY day" in sql:
+                return [("2026-09-10", 25000, 400, 30), ("2026-09-11", -8000, 120, 12)]
+            return []
+        with patch("lib.features.data_queries._fetch", fetch):
+            busiest = render(compute(QuerySpec(metric="none", shape="list", list_kind="busiest_days")), {})
+            casino = render(compute(QuerySpec(metric="none", shape="list", list_kind="casino_days")), {})
+        self.assertIn("16 Sep 2026: 4,100 messages from 97 members", busiest)
+        self.assertIn("10 Sep 2026: house took 25,000 UKP over 400 rounds by 30 players", casino)
+        self.assertIn("11 Sep 2026: house paid out 8,000 UKP", casino)
+
+
+class TestSplit(unittest.TestCase):
+    def test_splits_only_at_a_joiner_followed_by_a_question(self):
+        split = dq.split_records_questions
+        self.assertEqual(split("who has paid out the most, and who has received the most ukpence"),
+                         ["who has paid out the most", "who has received the most ukpence"])
+        self.assertEqual(split("how much xp has steven got and how many badges"), ["how much xp has steven got", "how many badges"])
+        self.assertEqual(split("top 5 by messages; top 5 by xp"), ["top 5 by messages", "top 5 by xp"])
+        self.assertEqual(split("who's the richest? and who's the poorest"), ["who's the richest", "who's the poorest"])
+        self.assertEqual(split("who has more xp, me and steven"), ["who has more xp, me and steven"])
+        self.assertEqual(split("how much has snake paid to kim and gunner"), ["how much has snake paid to kim and gunner"])
+        self.assertEqual(split(""), [])
+
+
 class TestDigest(unittest.TestCase):
     def test_digest_takes_the_top_few_per_metric_with_names(self):
         with patch("lib.features.data_queries._fetch", _fake_fetch()):

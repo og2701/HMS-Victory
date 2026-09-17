@@ -197,6 +197,14 @@ QUESTIONS.update({
             "false": {"what": "A specific figure or list (that is a records question), a picture, banter, or an opinion about something outside the server"},
         },
     },
+    "data_multi": {
+        "type": "noul",
+        "instructions": "Does `message.text` contain MORE THAN ONE separate records question, each wanting its own figure or list ('who has paid out the most, and who has received the most', 'top 5 richest and top 5 poorest')? One question that mentions two people or two numbers is a single question.",
+        "criteria": {
+            "true": {"examples": ["who has paid out the most, and who has received the most ukpence", "how much xp has steven got and how many badges", "top 5 by messages; top 5 by xp"]},
+            "false": {"examples": ["who has more xp, me or steven", "how much has snake paid to kim", "top 10 shutcoin users"]},
+        },
+    },
     "data_metric": {
         "type": "choice",
         "instructions": {
@@ -283,7 +291,7 @@ QUESTIONS.update({
     },
 })
 
-_NOUL_KEYS = ("text_creation", "delegation", "attachment_modification", "bot_self", "random_pick", "group", "follow_up_image", "live_query", "data_lowest", "stats_opinion")
+_NOUL_KEYS = ("text_creation", "delegation", "attachment_modification", "bot_self", "random_pick", "group", "follow_up_image", "live_query", "data_lowest", "stats_opinion", "data_multi")
 ACTIONS = ("generate", "edit", "reply")
 DATA_SHAPES = SHAPES + ("none",)
 DATA_SUBJECTS = ("caller", "mentioned_user", "someone_named", "not_applicable")
@@ -306,6 +314,7 @@ class MentionSignals:
     live_query: float
     data_lowest: float
     stats_opinion: float
+    data_multi: float
     group_count: Optional[int]
     data_metric: str = "none"
     data_metric_confidence: float = 0.0
