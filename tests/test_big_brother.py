@@ -16,6 +16,7 @@ def bb():
     if database.DatabaseManager._connection is not None:
         database.DatabaseManager._connection.close()
         database.DatabaseManager._connection = None
+    original_db_file = database.DB_FILE
     tmpdir = tempfile.mkdtemp()
     database.DB_FILE = os.path.join(tmpdir, "test.db")
 
@@ -24,8 +25,15 @@ def bb():
     module._tables_ready = False
     module.ensure_tables()
     yield module
+    # Later test files lean on whatever connection was open before this one (some point at
+    # a temp file an earlier test has already deleted), so restore the path and make sure
+    # the schema exists there again rather than leaving them an empty database.
     database.DatabaseManager._connection.close()
     database.DatabaseManager._connection = None
+    database.DB_FILE = original_db_file
+    os.makedirs(os.path.dirname(os.path.abspath(original_db_file)), exist_ok=True)
+    database.init_db()
+    module._tables_ready = False
 
 
 def test_housemates_add_evict_and_immunity(bb):
