@@ -955,6 +955,36 @@ def _list_economy_today(uid, limit, since, pick) -> Lines:
     return lines
 
 
+PROFILE_METRICS = ("ukpence", "xp", "messages", "shutcoins", "shutcoins_used", "times_shut", "casino_net", "casino_staked",
+                   "pvp_wins", "pvp_losses", "badges", "gold_badges", "counties", "bonds", "paid_out", "lottery_wins",
+                   "first_seen", "skyrim_level")
+
+
+def _list_profile(uid, limit, since, pick) -> Lines:
+    """A member's main figures with their rank: the answer to "stats about X"."""
+    out: Lines = []
+    for key in PROFILE_METRICS:
+        metric = METRICS[key]
+        try:
+            rows = [(u, v) for u, v in metric.rows(None, None) if u not in EXCLUDED_USER_IDS]
+        except Exception as e:
+            logger.debug("profile metric %s failed: %s", key, e)
+            continue
+        values = dict(rows)
+        v = values.get(str(uid), 0)
+        if v == 0 and metric.kind != "date":
+            continue
+        if metric.kind == "date":
+            if not v:
+                continue
+            out.append((None, _figure(metric, v)))
+            continue
+        better = sum(1 for _, x in rows if x > v)
+        population = sum(1 for _, x in rows if x != 0)
+        out.append((None, f"{_figure(metric, v)} (rank {better + 1} of {population})"))
+    return out
+
+
 @dataclass(frozen=True)
 class ListKind:
     key: str
@@ -973,6 +1003,8 @@ def _l(key, label, what, examples, lines, **kw) -> ListKind:
 
 
 LISTS: Dict[str, ListKind] = {l.key: l for l in [
+    _l("profile", "stats", "A member's main figures at a glance: balance, XP, messages, shutcoins, casino, PvP, badges, counties, bonds, first seen",
+       ["fetch me stats about steven", "kim's stats", "what are my numbers", "give me a rundown on johnny", "profile for @X"], _list_profile, empty="nothing on record at all"),
     _l("badges", "badges", "The badges a member has earned, with rarity and date",
        ["what badges has steven got", "show me kim's badges", "list my badges"], _list_badges, empty="no badges yet"),
     _l("counties", "county collection", "The county balls a member owns, with tier and count",

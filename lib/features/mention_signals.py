@@ -214,7 +214,7 @@ QUESTIONS.update({
             "person": {"what": "One member's own figure or date", "examples": ["how much xp does steven have", "how many shutcoins have I got", "what rank is @johnny", "when did steven first show up", "when was kim last here"]},
             "compare": {"what": "Two members set against each other on a number", "examples": ["who has more ukpence, me or steven", "compare my xp with kim's"]},
             "total": {"what": "One number for the whole server", "examples": ["how much ukpence is in circulation", "how many messages were sent today", "total badges handed out"]},
-            "list": {"what": "A list of things or a fact sheet, not a single number", "examples": ["what badges has steven got", "what's in the house bank", "what counties does kim own", "what predictions are open", "who has the warden badge", "who owns yorkshire", "what did johnny say last"]},
+            "list": {"what": "A list of things or a fact sheet, not a single number", "examples": ["what badges has steven got", "what's in the house bank", "what counties does kim own", "what predictions are open", "who has the warden badge", "who owns yorkshire", "what did johnny say last", "fetch me stats about steven", "kim's stats"]},
             "closest": {"what": "The members whose figure is nearest to a target number stated in the message", "examples": ["who has closest to 100k xp", "who's nearest to a million ukp", "who has about 50 shutcoins", "who is closest to 10,000 messages"]},
             "none": {"what": "Not a records question"},
         },

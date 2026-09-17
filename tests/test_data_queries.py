@@ -233,6 +233,17 @@ class TestLists(unittest.TestCase):
         self.assertEqual(set(crit), set(dq.LISTS) | {"none"})
         self.assertEqual(set(dq.sources_for_jev()), set(dq.SOURCES) | {"all"})
 
+    def test_profile_sheet_pulls_the_main_figures_with_ranks(self):
+        res = compute(QuerySpec(metric="none", shape="list", list_kind="profile", subjects=[("Steven", "2")]))
+        text = render(res, self.names)
+        self.assertTrue(text.startswith("```\nSteven's stats\n"), text)
+        self.assertIn("\n300 XP (rank 3 of 4)", text)
+        self.assertIn("\n9 shutcoins held (rank 3 of 4)", text)
+        self.assertIn("\n+800 UKP (casino profit and loss) (rank 1 of 2)", text)
+        self.assertIn("\nfirst seen 03 Jul 2024", text)
+        self.assertNotIn("counties", text)   # nothing on record is left out, not shown as zero
+        self.assertIn("profile", dq.lists_for_jev())
+
     def test_badges_sorted_by_rarity(self):
         res = compute(QuerySpec(metric="none", shape="list", list_kind="badges", subjects=[("Steven", "2")]))
         text = render(res, self.names)
