@@ -32,7 +32,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
 
-from lib.features.data_queries import CASINO_GAMES, GAME_LABELS, PVP_GAMES, SHAPES, WINDOWS, catalogue_for_jev
+from lib.features.data_queries import (CASINO_GAMES, GAME_LABELS, PVP_GAMES, SHAPES, WINDOWS, catalogue_for_jev,
+                                       lists_for_jev, sources_for_jev)
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ QUESTIONS: Dict[str, Dict[str, Any]] = {
                 "If `message.attached_image` is true and they ask to change, add to, remove from or restyle 'this picture' / 'this gentleman' / 'him', that is an edit of the attachment, not a new image.",
                 "Only choose edit when there is something to edit: a recent bot image, an image in the reply chain, or an attachment. If they want a picture and nothing exists, choose generate.",
                 "When torn between edit and reply, choose reply: a wasted image costs money, a text reply does not.",
+                "'Show me' / 'let's see' a member's badges, counties, balance, stats, record or Skyrim character means post the records as text: reply, not a picture.",
             ],
         },
         "criteria": {
@@ -95,7 +97,7 @@ QUESTIONS: Dict[str, Dict[str, Any]] = {
             },
             "reply": {
                 "what": "Answer in text: banter, questions, facts, opinions, written pieces, reactions to an image with no change asked for",
-                "examples": ["write a poem about johnny", "why is his office in a pub", "lol the degrees", "what's the score tonight", "thanks vic", "notice how it featured the red lion twice"],
+                "examples": ["write a poem about johnny", "why is his office in a pub", "lol the degrees", "what's the score tonight", "thanks vic", "notice how it featured the red lion twice", "show me my skyrim character", "show me kim's badges", "top 10 richest"],
             },
         },
     },
@@ -192,19 +194,31 @@ QUESTIONS.update({
     "data_shape": {
         "type": "choice",
         "instructions": {
-            "question": "If `message.text` asks for a figure from the server's records, what shape of answer does it want? Otherwise none.",
+            "question": "If `message.text` asks for something from the server's records, what shape of answer does it want? Otherwise none.",
             "rules": [
                 "A superlative about an unnamed member ('who has the most', 'who's the richest', 'biggest yapper', 'most shut member') is a leaderboard: the answer is the top of a ranked list.",
                 "person is only for a member identified by name, @mention, or as the caller.",
+                "list is for things rather than a number: what someone owns or has done, or a server fact sheet (the house bank, the lottery, the shop, the iceberg, open predictions), or who holds a particular badge or county.",
             ],
         },
         "criteria": {
-            "leaderboard": {"what": "A ranked list of members, or the single top or bottom member", "examples": ["top 10 shutcoin users", "who's got the most xp", "richest members", "who's lost the most this week", "biggest yapper", "who's been shut the most"]},
-            "person": {"what": "One member's own figure", "examples": ["how much xp does steven have", "how many shutcoins have I got", "what rank is @johnny"]},
-            "compare": {"what": "Two members set against each other", "examples": ["who has more ukpence, me or steven", "compare my xp with kim's"]},
-            "total": {"what": "A figure for the whole server", "examples": ["how much ukpence is in circulation", "how many messages were sent today", "total badges handed out"]},
+            "leaderboard": {"what": "A ranked list of members by a number, or the single top or bottom member", "examples": ["top 10 shutcoin users", "who's got the most xp", "richest members", "who's lost the most this week", "biggest yapper", "who's been shut the most"]},
+            "person": {"what": "One member's own figure or date", "examples": ["how much xp does steven have", "how many shutcoins have I got", "what rank is @johnny", "when did steven first show up", "when was kim last here"]},
+            "compare": {"what": "Two members set against each other on a number", "examples": ["who has more ukpence, me or steven", "compare my xp with kim's"]},
+            "total": {"what": "One number for the whole server", "examples": ["how much ukpence is in circulation", "how many messages were sent today", "total badges handed out"]},
+            "list": {"what": "A list of things or a fact sheet, not a single number", "examples": ["what badges has steven got", "what's in the house bank", "what counties does kim own", "what predictions are open", "who has the warden badge", "who owns yorkshire", "what did johnny say last"]},
             "none": {"what": "Not a records question"},
         },
+    },
+    "data_list": {
+        "type": "choice",
+        "instructions": "If `message.text` asks for a list of things or a fact sheet from the server's records (`data_shape` list), which one? Otherwise none.",
+        "criteria": lists_for_jev(),
+    },
+    "data_source": {
+        "type": "choice",
+        "instructions": "For a question about UKP earned or spent, does `message.text` name one source of the money? all when it doesn't.",
+        "criteria": sources_for_jev(),
     },
     "data_limit": {
         "type": "choice",
@@ -277,6 +291,9 @@ class MentionSignals:
     data_window: str = "all_time"
     data_game: Optional[str] = None
     data_subject: str = "not_applicable"
+    data_list: str = "none"
+    data_list_confidence: float = 0.0
+    data_source: Optional[str] = None
     input_tokens: int = 0
     output_tokens: int = 0
 
@@ -290,17 +307,32 @@ class MentionSignals:
         """True when the message so clearly wants text that the gpt-4o planner can be skipped."""
         return self.action == "reply" and self.action_confidence >= REPLY_GATE_CONFIDENCE
 
+    @property
+    def effective_shape(self) -> str:
+        """The shape to answer in. A confident list pick wins whenever the shape is 'list' or no metric was
+        picked: "what's the lottery pot" comes back shape total with metric none and list lottery, and the
+        list is the only one of the three that names something the code can produce."""
+        list_sure = self.data_list != "none" and self.data_list_confidence >= DATA_QUERY_CONFIDENCE
+        metric_sure = self.data_metric != "none" and self.data_metric_confidence >= DATA_QUERY_CONFIDENCE
+        if list_sure and (self.data_shape == "list" or not metric_sure):
+            return "list"
+        if self.data_shape == "list" or self.data_shape_confidence < DATA_QUERY_CONFIDENCE:
+            return "none"
+        return self.data_shape
+
     def data_query_requested(self) -> bool:
-        """True when Jev clearly picked both a metric and a shape: answer from the database, not a model.
+        """True when Jev clearly picked something the code can fetch: answer from the database, not a model.
 
         Never for a picture: "draw the top 5 richest as pigs" wants the roster drawn, not a table.
         """
-        return (
-            self.action == "reply"
-            and self.data_metric != "none" and self.data_shape != "none"
-            and self.data_metric_confidence >= DATA_QUERY_CONFIDENCE
-            and self.data_shape_confidence >= DATA_QUERY_CONFIDENCE
-        )
+        if self.action != "reply":
+            return False
+        shape = self.effective_shape
+        if shape == "list":
+            return True
+        if shape == "none":
+            return False
+        return self.data_metric != "none" and self.data_metric_confidence >= DATA_QUERY_CONFIDENCE
 
     def as_intent(self) -> Dict[str, Any]:
         """The shape `classify_mention_intent` returned, so the fallback path consumes Jev unchanged.
@@ -330,9 +362,10 @@ class MentionSignals:
         flags = " ".join(f"{k}={getattr(self, k):.2f}" for k in _NOUL_KEYS)
         count = f" count={self.group_count}" if self.group_count else ""
         data = ""
-        if self.data_metric != "none" or self.data_shape != "none":
+        if self.data_metric != "none" or self.data_shape != "none" or self.data_list != "none":
             data = (f" data={self.data_metric}({self.data_metric_confidence:.2f})/{self.data_shape}({self.data_shape_confidence:.2f})"
-                    f" limit={self.data_limit} window={self.data_window} game={self.data_game} subject={self.data_subject}")
+                    f"/{self.data_list}({self.data_list_confidence:.2f}) limit={self.data_limit} window={self.data_window}"
+                    f" game={self.data_game} source={self.data_source} subject={self.data_subject}")
         return f"action={self.action}({self.action_confidence:.2f}) {flags}{count}{data}"
 
 
@@ -418,6 +451,8 @@ def parse_signals(answers: Dict[str, Any], usage: Optional[Dict[str, Any]] = Non
     data_window, _ = choice("data_window", set(WINDOWS), "all_time")
     game_pick, _ = choice("data_game", set(_DATA_GAME_OPTIONS), "any")
     data_subject, _ = choice("data_subject", DATA_SUBJECTS, "not_applicable")
+    data_list, list_conf = choice("data_list", set(QUESTIONS["data_list"]["criteria"]), "none")
+    source_pick, _ = choice("data_source", set(QUESTIONS["data_source"]["criteria"]), "all")
 
     usage = usage or {}
     return MentionSignals(
@@ -433,6 +468,9 @@ def parse_signals(answers: Dict[str, Any], usage: Optional[Dict[str, Any]] = Non
         data_window=data_window,
         data_game=None if game_pick == "any" else game_pick,
         data_subject=data_subject,
+        data_list=data_list,
+        data_list_confidence=list_conf,
+        data_source=None if source_pick == "all" else source_pick,
         input_tokens=int(usage.get("input_tokens", 0) or 0),
         output_tokens=int(usage.get("output_tokens", 0) or 0),
         **nouls,
@@ -487,6 +525,54 @@ async def judge_mention(
     return signals
 
 
+async def judge_option(
+    prompt: str,
+    options: Dict[str, Any],
+    *,
+    what: str,
+    instructions: str,
+    none_means: str,
+    api_key: Optional[str] = None,
+    session: Optional[aiohttp.ClientSession] = None,
+    timeout: float = REQUEST_TIMEOUT_SECONDS,
+    max_options: int = 120,
+) -> Tuple[Any, int, int]:
+    """One Choice over real candidates: (the chosen option's value or None, input_tokens, output_tokens).
+
+    A second, tiny call for things the first verdict cannot name: a member from the people
+    directory, a badge, a county. Selecting from a list is the point: Jev can pick a name it
+    could never spell, and it cannot answer with something that does not exist.
+    """
+    key = api_key or os.getenv("TYPESAFE_API_KEY")
+    if not key or not (prompt or "").strip() or not options:
+        return None, 0, 0
+    labels = [str(k).strip() for k in options if str(k).strip()][:max_options]
+    if not labels:
+        return None, 0, 0
+    criteria: Dict[str, Any] = {"none": none_means}
+    criteria.update({label: None for label in labels})
+    payload = {
+        "model": MENTION_SIGNALS_MODEL,
+        "state": {"message": (prompt or "").strip(), what: labels},
+        "questions": {"which": {"type": "choice", "instructions": instructions, "criteria": criteria}},
+    }
+    body = await _post(payload, key, session=session, timeout=timeout)
+    if not isinstance(body, dict):
+        return None, 0, 0
+    usage = body.get("usage") or {}
+    in_tok, out_tok = int(usage.get("input_tokens", 0) or 0), int(usage.get("output_tokens", 0) or 0)
+    ans = (body.get("answers") or {}).get("which") or {}
+    picked = ans.get("choice")
+    try:
+        conf = float(ans.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        conf = 0.0
+    logger.info("Jev pick (%s) on %r: %r (%.2f)", what, (prompt or "")[:80], picked, conf)
+    if picked in options and picked != "none" and conf >= NAMED_SUBJECT_CONFIDENCE:
+        return options[picked], in_tok, out_tok
+    return None, in_tok, out_tok
+
+
 async def judge_named_subject(
     prompt: str,
     candidates: List[Tuple[str, int]],
@@ -495,15 +581,7 @@ async def judge_named_subject(
     session: Optional[aiohttp.ClientSession] = None,
     timeout: float = REQUEST_TIMEOUT_SECONDS,
 ) -> Tuple[Optional[int], int, int]:
-    """Which member of the people directory a records question names. (user_id or None, input_tokens, output_tokens).
-
-    A second, tiny call: the directory is only built after the first verdict says a person is
-    involved, and Jev can pick from a list where it could never spell a name. Selecting from
-    candidates also means it cannot answer with someone who isn't a member.
-    """
-    key = api_key or os.getenv("TYPESAFE_API_KEY")
-    if not key or not (prompt or "").strip() or not candidates:
-        return None, 0, 0
+    """Which member of the people directory a records question names. (user_id or None, input_tokens, output_tokens)."""
     by_label: Dict[str, int] = {}
     for name, uid in candidates:
         label = (name or "").strip()
@@ -514,36 +592,29 @@ async def judge_named_subject(
         by_label.setdefault(label, uid)
         if len(by_label) >= 80:
             break
-    if not by_label:
-        return None, 0, 0
-    criteria = {"none": "The person asked about is not in the list, or the message is not about one particular person"}
-    criteria.update({label: None for label in by_label})
-    payload = {
-        "model": MENTION_SIGNALS_MODEL,
-        "state": {"message": (prompt or "").strip(), "members": list(by_label)},
-        "questions": {
-            "who": {
-                "type": "choice",
-                "instructions": "Which of `members` is the person `message` asks about? Match names, nicknames, partial names and misspellings; none if they are not listed.",
-                "criteria": criteria,
-            }
-        },
-    }
-    body = await _post(payload, key, session=session, timeout=timeout)
-    if not isinstance(body, dict):
-        return None, 0, 0
-    usage = body.get("usage") or {}
-    in_tok, out_tok = int(usage.get("input_tokens", 0) or 0), int(usage.get("output_tokens", 0) or 0)
-    ans = (body.get("answers") or {}).get("who") or {}
-    picked = ans.get("choice")
-    try:
-        conf = float(ans.get("confidence", 0.0))
-    except (TypeError, ValueError):
-        conf = 0.0
-    logger.info("Jev named-subject on %r: %r (%.2f)", (prompt or "")[:80], picked, conf)
-    if picked in by_label and conf >= NAMED_SUBJECT_CONFIDENCE:
-        return by_label[picked], in_tok, out_tok
-    return None, in_tok, out_tok
+    return await judge_option(
+        prompt, by_label, what="members",
+        instructions="Which of `members` is the person `message` asks about? Match names, nicknames, partial names and misspellings; none if they are not listed.",
+        none_means="The person asked about is not in the list, or the message is not about one particular person",
+        api_key=api_key, session=session, timeout=timeout,
+    )
+
+
+async def judge_pick(
+    prompt: str,
+    names: List[str],
+    *,
+    what: str,
+    api_key: Optional[str] = None,
+    session: Optional[aiohttp.ClientSession] = None,
+) -> Tuple[Optional[str], int, int]:
+    """Which named thing (a badge, a county) a records question is about. (name or None, tokens in, tokens out)."""
+    return await judge_option(
+        prompt, {n: n for n in names}, what=what,
+        instructions=f"Which of `{what}` does `message` ask about? Match names, nicknames, partial names and misspellings; none if it is not listed.",
+        none_means="Not one of the listed names, or the message is not about one in particular",
+        api_key=api_key, session=session,
+    )
 
 
 async def _post(payload: Dict[str, Any], key: str, *, session: Optional[aiohttp.ClientSession], timeout: float) -> Any:

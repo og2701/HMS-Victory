@@ -25,7 +25,7 @@ from config import (
     IMAGE_GEN_MODEL, IMAGE_GEN_QUALITY, IMAGE_GEN_SIZE
 )
 from lib.core.file_operations import atomic_write_json, load_json_file
-from lib.features.mention_signals import judge_mention, judge_named_subject, MENTION_SIGNALS_MODEL
+from lib.features.mention_signals import judge_mention, judge_named_subject, judge_pick, MENTION_SIGNALS_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -4890,11 +4890,26 @@ async def answer_data_query(
     from lib.features import data_queries as dq
 
     guild = getattr(message, "guild", None)
+    shape = signals.effective_shape
     spec = dq.QuerySpec(
-        metric=signals.data_metric, shape=signals.data_shape,
+        metric=signals.data_metric, shape=shape,
         limit=dq.normalise_limit(signals.data_limit), lowest=signals.says("data_lowest"),
-        window=signals.data_window, game=signals.data_game,
+        window=signals.data_window, game=signals.data_game, source=signals.data_source,
+        list_kind=(signals.data_list if shape == "list" else None),
     )
+    list_kind = dq.LISTS.get(spec.list_kind or "")
+    if spec.shape == "list" and list_kind is None:
+        return False
+    # A list about one named thing (who holds a badge, who owns a county): pick it from the real
+    # catalogue, so the answer can only ever be about something that exists.
+    if list_kind is not None and list_kind.pick:
+        picked, in_tok, out_tok = await judge_pick(clean_prompt, dq.pick_candidates(list_kind.pick), what=f"{list_kind.pick}s")
+        if in_tok or out_tok:
+            live_chat_manager.record_usage(MENTION_SIGNALS_MODEL, in_tok, out_tok)
+        if not picked:
+            await message.reply(f"No idea which {list_kind.pick} you mean. Name it properly.", mention_author=True)
+            return True
+        spec.pick = picked
     mentioned: List[Tuple[str, int]] = [
         (_member_display_name(u), getattr(u, "id", None)) for u in other_mentions if isinstance(getattr(u, "id", None), int)
     ]
@@ -4914,7 +4929,8 @@ async def answer_data_query(
         pool.append(replied_author)
 
     subjects: List[Tuple[str, int]] = []
-    if spec.shape == "person":
+    wants_person = spec.shape == "person" or (list_kind is not None and list_kind.per_person)
+    if wants_person:
         if signals.data_subject == "caller" and isinstance(caller_id, int):
             subjects = [(caller_name, caller_id)]
         elif pool and signals.data_subject != "someone_named":
@@ -4935,7 +4951,7 @@ async def answer_data_query(
                 subjects.append(who)
         if len(subjects) < 2 and isinstance(caller_id, int) and caller_id not in {i for _, i in subjects}:
             subjects.insert(0, (caller_name, caller_id))
-    needed = {"person": 1, "compare": 2}.get(spec.shape, 0)
+    needed = 1 if wants_person else (2 if spec.shape == "compare" else 0)
     if len(subjects) < needed:
         logger.info("Records question from %s needs a person nobody could resolve: %r", caller_name, clean_prompt)
         await message.reply("No idea who you mean. Tag them and I'll look it up.", mention_author=True)
@@ -4962,7 +4978,7 @@ async def answer_data_query(
     for n, i in subjects:
         names.setdefault(str(i), n)
     figures = dq.render(result, names)
-    logger.info("Records answer for %s: %s/%s %s", caller_name, spec.metric, spec.shape, figures.replace("\n", " | ")[:200])
+    logger.info("Records answer for %s: %s/%s %s", caller_name, spec.list_kind or spec.metric, spec.shape, figures.replace("\n", " | ")[:200])
 
     remark = ""
     try:

@@ -26,6 +26,34 @@ def _fake_fetch(calls=None):
                 return [("1", 3), ("2", 1)]
             if "loser_id, COUNT" in sql:
                 return [("1", 1), ("2", 3), ("4", 2)]
+            if "SELECT game, winner_id, loser_id" in sql:
+                return [("connect4", "1", "2", "win", 50), ("connect4", "2", "1", "win", 50), ("battleship", "1", "4", "win", 100), ("rps", None, None, "draw", 10)]
+        if "FROM user_transactions" in sql and "SUM(amount)" in sql:
+            return [("1", 900), ("2", 100)]
+        if "FROM member_profile" in sql:
+            return [("1", 1_700_000_000), ("2", 1_720_000_000), ("3", 1_710_000_000)]
+        if "FROM balance_history" in sql:
+            return [("1", 5000), ("2", 40)]
+        if "JOIN badges b" in sql and "b.name, b.rarity" in sql:
+            return [("Warden", "Gold", 1_720_000_000), ("Shut Victim", "Bronze", 1_710_000_000), ("Night Owl", "Silver", 1_730_000_000)]
+        if "JOIN badges b" in sql and "b.name = ?" in sql:
+            return [("1", 1_700_000_000), ("2", 1_710_000_000)] if params[0] == "Warden" else []
+        if "FROM county_instances WHERE user_id = ? GROUP BY county" in sql:
+            return [("bedfordshire", 3), ("london", 1)]
+        if "FROM county_instances WHERE county = ? GROUP BY user_id" in sql:
+            return [("2", 2), ("1", 1)] if params[0] == "london" else []
+        if "FROM bank" in sql:
+            return [(1, 123456, 50000, 7000, 1000, 400, 300, 900)]
+        if "PRAGMA table_info(bank)" in sql:
+            return [(0, "id"), (1, "balance"), (2, "total_revenue"), (3, "total_tax_collected"), (4, "total_blackjack_in"), (5, "total_blackjack_out"), (6, "total_slots_in"), (7, "total_slots_out")]
+        if "FROM lottery_rounds WHERE status = 'open'" in sql:
+            return [(7, 10, 500, 10, 1_800_000_000)]
+        if "FROM lottery_entries WHERE round_id = ?" in sql:
+            return [(120, 9)]
+        if "FROM lottery_rounds WHERE winner_id IS NOT NULL" in sql:
+            return [("3", 900, 1_790_000_000)]
+        if "FROM badges ORDER BY name" in sql:
+            return [("Night Owl",), ("Shut Victim",), ("Warden",)]
         return []
     return fetch
 
@@ -132,6 +160,140 @@ class TestCompute(unittest.TestCase):
     def test_signed_metric_keeps_losers_in_lowest_view(self):
         res = compute(QuerySpec(metric="casino_net", shape="leaderboard", lowest=True, limit=3))
         self.assertEqual(res.rows, [("1", -2000), ("3", 0), ("2", 800)])
+
+
+class TestSourcesDatesAndAsOf(unittest.TestCase):
+    def setUp(self):
+        self.calls = []
+        self._p = patch("lib.features.data_queries._fetch", _fake_fetch(self.calls))
+        self._p.start()
+        self.addCleanup(self._p.stop)
+        self.names = {"1": "Johnny", "2": "Steven", "3": "Kim"}
+
+    def test_earned_from_a_source_filters_the_ledger(self):
+        res = compute(QuerySpec(metric="ukp_earned", shape="leaderboard", source="chatting", window="week"))
+        sql, params = self.calls[-1]
+        self.assertIn("amount > 0", sql)
+        self.assertIn("reason LIKE ?", sql)
+        self.assertEqual(params[0], "Chatting activity reward%")
+        self.assertIn("ts >= ?", sql)
+        self.assertEqual(res.rows, [("1", 900), ("2", 100)])
+        self.assertIn("Top 2 by UKP earned (from chatting, last 7 days)", render(res, self.names))
+
+    def test_spent_on_a_source_uses_debits(self):
+        compute(QuerySpec(metric="ukp_spent", shape="total", source="casino"))
+        sql, params = self.calls[-1]
+        self.assertIn("amount < 0", sql)
+        self.assertIn("-SUM(amount)", sql)
+        self.assertGreater(len(params), 5)   # every casino spelling
+
+    def test_unknown_source_means_everything(self):
+        compute(QuerySpec(metric="ukp_earned", shape="total", source="bitcoin"))
+        sql, params = self.calls[-1]
+        self.assertNotIn("reason LIKE", sql)
+        self.assertEqual(params, ())
+
+    def test_date_metric_renders_dates_and_earliest_first(self):
+        res = compute(QuerySpec(metric="first_seen", shape="leaderboard", lowest=True, limit=5))
+        text = render(res, self.names)
+        self.assertTrue(text.startswith("Earliest 3 by first seen"), text)
+        self.assertIn("Johnny  14 Nov 2023", text)
+        person = compute(QuerySpec(metric="first_seen", shape="person", subjects=[("Kim", "3")]))
+        self.assertEqual(render(person, self.names), "**Kim**: first seen 09 Mar 2024")
+        cmp_ = compute(QuerySpec(metric="first_seen", shape="compare", subjects=[("Johnny", "1"), ("Steven", "2")]))
+        self.assertIn("Johnny earlier by 231 days.", render(cmp_, self.names))
+
+    def test_balance_with_a_window_reads_the_history(self):
+        res = compute(QuerySpec(metric="ukpence", shape="leaderboard", window="month"))
+        sql, params = self.calls[-1]
+        self.assertIn("FROM balance_history", sql)
+        self.assertAlmostEqual(params[0], int(time.time()) - 30 * 86400, delta=5)
+        self.assertEqual(res.rows, [("1", 5000), ("2", 40)])
+        self.assertIn("(as of a month ago)", render(res, self.names))
+        compute(QuerySpec(metric="ukpence", shape="leaderboard"))
+        self.assertIn("FROM ukpence", self.calls[-1][0])
+
+
+class TestLists(unittest.TestCase):
+    def setUp(self):
+        self._p = patch("lib.features.data_queries._fetch", _fake_fetch())
+        self._p.start()
+        self.addCleanup(self._p.stop)
+        self.names = {"1": "Johnny", "2": "Steven", "3": "Kim", "4": "Hadidas"}
+
+    def test_every_list_is_offered_to_jev(self):
+        crit = dq.lists_for_jev()
+        self.assertEqual(set(crit), set(dq.LISTS) | {"none"})
+        self.assertEqual(set(dq.sources_for_jev()), set(dq.SOURCES) | {"all"})
+
+    def test_badges_sorted_by_rarity(self):
+        res = compute(QuerySpec(metric="none", shape="list", list_kind="badges", subjects=[("Steven", "2")]))
+        text = render(res, self.names)
+        self.assertTrue(text.startswith("**Steven's badges**\n"), text)
+        self.assertLess(text.index("Warden [Gold]"), text.index("Night Owl [Silver]"))
+        self.assertLess(text.index("Night Owl [Silver]"), text.index("Shut Victim [Bronze]"))
+
+    def test_counties_named_and_tiered(self):
+        res = compute(QuerySpec(metric="none", shape="list", list_kind="counties", subjects=[("Kim", "3")]))
+        text = render(res, self.names)
+        self.assertIn("- London x1 [legendary]", text)
+        self.assertIn("- Bedfordshire x3 [common]", text)
+        self.assertLess(text.index("London"), text.index("Bedfordshire"))
+
+    def test_empty_list_says_so(self):
+        res = compute(QuerySpec(metric="none", shape="list", list_kind="bonds", subjects=[("Kim", "3")]))
+        self.assertEqual(render(res, self.names), "**Kim's bonds**: no bonds.")
+
+    def test_pvp_record_per_game_and_opponent(self):
+        res = compute(QuerySpec(metric="none", shape="list", list_kind="pvp_record", subjects=[("Johnny", "1")]))
+        text = render(res, self.names)
+        self.assertIn("- Battleship: 1W 0L 0D", text)
+        self.assertIn("- Connect 4: 1W 1L 0D", text)
+        self.assertIn("- Steven: 1W 1L 0D", text)
+        self.assertIn("- Hadidas: 1W 0L 0D", text)
+
+    def test_bank_fact_sheet(self):
+        res = compute(QuerySpec(metric="none", shape="list", list_kind="bank"))
+        text = render(res, {})
+        self.assertIn("**house bank**", text)
+        self.assertIn("house balance 123,456 UKP", text)
+        self.assertIn("blackjack: house +600 UKP (took 1,000, paid 400)", text)
+        self.assertIn("slots: house -600 UKP", text)
+
+    def test_lottery_round_and_names_in_lines(self):
+        res = compute(QuerySpec(metric="none", shape="list", list_kind="lottery"))
+        text = render(res, self.names)
+        self.assertIn("round 7: 120 tickets sold to 9 players at 10 UKP each (cap 500)", text)
+        self.assertIn("pot about 1,080 UKP after 10% rake", text)
+        self.assertIn("- Kim: won the last draw: 900 UKP", text)
+
+    def test_pick_lists_filter_bots_and_departed(self):
+        holders = compute(QuerySpec(metric="none", shape="list", list_kind="badge_holders", pick="Warden"), exclude_ids={"2"})
+        text = render(holders, self.names)
+        self.assertIn("**holders of a badge: Warden**", text)
+        self.assertIn("- Johnny: since", text)
+        self.assertNotIn("Steven", text)
+        owners = compute(QuerySpec(metric="none", shape="list", list_kind="county_owners", pick="London"), member_ids={"2"})
+        self.assertEqual(render(owners, self.names), "**owners of a county: London**\n- Steven: x2")
+        nothing = compute(QuerySpec(metric="none", shape="list", list_kind="badge_holders", pick="Nonexistent"))
+        self.assertIn("nobody holds it", render(nothing, self.names))
+        self.assertEqual(dq.pick_candidates("badge"), ["Night Owl", "Shut Victim", "Warden"])
+        self.assertIn("Yorkshire", dq.pick_candidates("county"))
+
+    def test_json_backed_metrics_survive_missing_files(self):
+        with patch("lib.features.data_queries._json", return_value=None):
+            for key in ("night_owl", "weekend_warrior", "skyrim_level", "skyrim_septims", "prediction_streak"):
+                self.assertEqual(compute(QuerySpec(metric=key, shape="leaderboard")).rows, [], key)
+            self.assertEqual(render(compute(QuerySpec(metric="none", shape="list", list_kind="graveyard")), {}), "**Skyrim graveyard**: nobody has died lately.")
+
+    def test_json_backed_metrics_read_counts(self):
+        files = {"NIGHT_OWL_COUNTS_FILE": {"1": 40, "2": 12}, "WEEKEND_WARRIOR_COUNTS_FILE": {"2026-w1": {"1": 5}, "2026-w2": {"1": 7, "3": 2}},
+                 "SKYRIM_PROFILES_FILE": {"1": {"xp": 0, "septims": 300, "stats": {"dragons": 2}}}}
+        with patch("lib.features.data_queries._json", side_effect=lambda k: files.get(k)):
+            self.assertEqual(compute(QuerySpec(metric="night_owl", shape="leaderboard")).rows, [("1", 40), ("2", 12)])
+            self.assertEqual(compute(QuerySpec(metric="weekend_warrior", shape="leaderboard")).rows, [("1", 12), ("3", 2)])
+            self.assertEqual(compute(QuerySpec(metric="skyrim_septims", shape="leaderboard")).rows, [("1", 300)])
+            self.assertEqual(compute(QuerySpec(metric="skyrim_dragons", shape="leaderboard")).rows, [("1", 2)])
 
 
 class TestRender(unittest.TestCase):

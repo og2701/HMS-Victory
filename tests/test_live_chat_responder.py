@@ -184,6 +184,7 @@ def _jev_signals(action="reply", confidence=0.95, group_count=None, input_tokens
             "data_shape": data.get("shape", "none"), "data_shape_confidence": 0.9,
             "data_limit": data.get("limit"), "data_window": data.get("window", "all_time"),
             "data_game": data.get("game"), "data_subject": data.get("subject", "not_applicable"),
+            "data_list": data.get("list", "none"), "data_list_confidence": 0.9, "data_source": data.get("source"),
         }
     return ms.MentionSignals(
         action=action, action_confidence=confidence, action_probabilities={}, group_count=group_count,
@@ -3413,6 +3414,57 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         mock_named.assert_not_called()
         text = message.reply.call_args[0][0]
         self.assertTrue(text.startswith("**Steven**: 6 shutcoins used (rank 1 of 1)"), text)
+
+    @patch("lib.features.chat_responder.plan_mention")
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("", 0, 0))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_records_list_for_a_mentioned_member(self, mock_judge, _find, _generate, mock_plan):
+        mock_judge.return_value = _jev_signals(action="reply", confidence=0.99, data={"shape": "list", "list": "badges", "subject": "mentioned_user"})
+        client = MagicMock(); client.user.id = 999999999
+        steven = _member(2, "Steven")
+        message = self._leader_message(client, f"<@{client.user.id}> what badges has <@2> got", mentions=[steven])
+        message.guild = MagicMock(); message.guild.members = []
+        message.guild.get_member.side_effect = lambda uid: {2: steven}.get(uid)
+        rows = [("Warden", "Gold", 1_720_000_000), ("Shut Victim", "Bronze", 1_710_000_000)]
+        with patch("lib.features.data_queries._fetch", lambda sql, params=(): rows if "b.name, b.rarity" in sql else []), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_plan.assert_not_called()
+        text = message.reply.call_args[0][0]
+        self.assertTrue(text.startswith("**Steven's badges**\n- Warden [Gold]"), text)
+        self.assertIn("- Shut Victim [Bronze]", text)
+
+    @patch("lib.features.chat_responder.judge_pick", new_callable=AsyncMock, return_value=("Warden", 80, 0))
+    @patch("lib.features.chat_responder.plan_mention")
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("Behold.", 5, 5))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_records_badge_holders_picks_the_badge(self, mock_judge, _find, _generate, mock_plan, mock_pick):
+        mock_judge.return_value = _jev_signals(action="reply", confidence=0.99, data={"shape": "list", "list": "badge_holders"})
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> who's got the warden badge")
+        people = {1: _member(1, "Johnny"), 2: _member(2, "Steven")}
+        message.guild = MagicMock(); message.guild.members = []
+        message.guild.get_member.side_effect = lambda uid: people.get(uid)
+        def fetch(sql, params=()):
+            if "FROM badges ORDER BY name" in sql:
+                return [("Night Owl",), ("Warden",)]
+            if "b.name = ?" in sql and params[0] == "Warden":
+                return [("1", 1_700_000_000), ("2", 1_710_000_000)]
+            return []
+        with patch("lib.features.data_queries._fetch", fetch), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_plan.assert_not_called()
+        self.assertEqual(mock_pick.call_args[0][1], ["Night Owl", "Warden"])
+        self.assertEqual(mock_pick.call_args[1]["what"], "badges")
+        text = message.reply.call_args[0][0]
+        self.assertIn("**holders of a badge: Warden**", text)
+        self.assertIn("- Johnny: since 14 Nov 2023", text)
+        self.assertIn("- Steven: since", text)
 
     @patch("lib.features.chat_responder.judge_named_subject", new_callable=AsyncMock, return_value=(None, 50, 0))
     @patch("lib.features.chat_responder.plan_mention")
