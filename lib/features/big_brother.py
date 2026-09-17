@@ -696,18 +696,50 @@ async def evict(client: discord.Client, user_id: int, *, announce: bool = True) 
         "Thanks for playing. You can still watch and vote in the public evictions."))
 
 
+async def set_house_silence(client: discord.Client, silent: bool) -> bool:
+    """During nominations the house goes quiet: the Housemate role can't send in the house
+    channel or its snug threads. Lifted when nominations close. Needs the role configured."""
+    rid = housemate_role_id()
+    ch = await house_channel(client)
+    if not rid or not isinstance(ch, discord.TextChannel):
+        return False
+    role = ch.guild.get_role(rid)
+    if not role:
+        return False
+    overwrite = ch.overwrites_for(role)
+    if silent:
+        overwrite.send_messages = False
+        overwrite.send_messages_in_threads = False
+    else:
+        overwrite.send_messages = None
+        overwrite.send_messages_in_threads = None
+    try:
+        if overwrite.is_empty():
+            await ch.set_permissions(role, overwrite=None, reason="Big Brother: nominations closed")
+        else:
+            await ch.set_permissions(role, overwrite=overwrite,
+                                     reason="Big Brother: nominations " + ("open" if silent else "closed"))
+        return True
+    except discord.HTTPException as e:
+        log.warning("Big Brother: could not %s the house: %s", "silence" if silent else "unsilence", e)
+        return False
+
+
 async def open_nominations(client: discord.Client) -> Optional[int]:
     if open_round(KIND_NOMINATIONS):
         return None
     rid = create_round(KIND_NOMINATIONS)
-    log_event("nominations_opened", round_id=rid)
+    silenced = await set_house_silence(client, True)
+    log_event("nominations_opened", round_id=rid, house_silenced=silenced)
     ch = await house_channel(client)
     if ch:
         n = nominations_each()
-        await bb_send(ch, 
+        await bb_send(ch,
             f"{_role_mention()}{EYE} **Nominations are open.**\n\n"
-            f"Use `/nominate` to pick the {n} housemate{'s' if n != 1 else ''} you want to face the public vote. "
-            f"Only you and Big Brother will see who you chose. You can change your mind until nominations close.")
+            f"Press **Nominate** on the panel below to pick the {n} housemate{'s' if n != 1 else ''} you want "
+            f"to face the public vote. Only you and Big Brother will see who you chose. You can change your "
+            f"mind until nominations close."
+            + ("\n\nThe house is silent until then. No talking." if silenced else ""))
     return rid
 
 
@@ -716,6 +748,7 @@ async def close_nominations(client: discord.Client) -> Optional[dict]:
     if not rnd:
         return None
     close_round(rnd["id"])
+    await set_house_silence(client, False)
     guild = _guild(client)
     expired = clear_all_immunity()
     if expired:
@@ -742,7 +775,8 @@ async def close_nominations(client: discord.Client) -> Optional[dict]:
     set_state(STATE_LAST_NOM_TALLY, {"round_id": rnd["id"], "ranked": [[n, len(counts[n])] for n in top]})
     ch = await house_channel(client)
     if ch:
-        await bb_send(ch, f"{EYE} **Nominations are closed.** Big Brother is counting. The nominees will be announced shortly.")
+        await bb_send(ch, f"{EYE} **Nominations are closed.** You may talk again. Big Brother is counting, and the "
+                          f"nominees will be announced shortly.")
     return {"round_id": rnd["id"], "ranked": ranked, "missing": missing}
 
 
