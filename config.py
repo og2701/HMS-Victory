@@ -660,6 +660,30 @@ BOT_ID = USERS.HMS_VICTORY
 DIRECT_MENTION_ALLOWED_USERS = [USERS.OGGERS, USERS.ROSHY, USERS.HADIDAS, USERS.JOHNNY]
 
 # ---------------------------------------------------------------------------
+# Big Brother (lib/features/big_brother.py) - TEMPORARY two-week event, Sept/Oct 2026.
+#
+# Everything the event touches is gated on BIG_BROTHER_ENABLED: the slash commands, the
+# control panel, the vote buttons and the house-channel message hook. Flip it to False
+# when the event is over and the whole thing goes dormant without a code change; the
+# tables stay in the DB so the history is still there if anyone wants it.
+#
+# The host runs the show from the control channel, but staff can see that channel and
+# some of them are playing, so nothing secret is ever rendered there. The panel only ever
+# shows phase and counts; nomination tallies, vote results, diary entries and mission
+# reports go to the host's DMs (BIG_BROTHER_HOST_ID).
+# ---------------------------------------------------------------------------
+BIG_BROTHER_ENABLED = True
+BIG_BROTHER_HOST_ID = USERS.CHIN                    # gets every secret by DM
+BIG_BROTHER_OPERATOR_IDS = {USERS.CHIN, USERS.OGGERS}  # may press the control panel
+BIG_BROTHER_HOUSE_CHANNEL = 1550122475159945306     # housemates only: challenges, announcements
+BIG_BROTHER_CONTROL_CHANNEL = 1550122551068463174   # the host's control panel lives here
+BIG_BROTHER_VOTE_CHANNEL = CHANNELS.VOTING          # public eviction votes post here
+BIG_BROTHER_HOUSEMATE_ROLE = None                   # set once the Housemate role exists; None = DB list only
+BIG_BROTHER_PRIZE_UKP = 5000
+BIG_BROTHER_NOMINATIONS_PER_HOUSEMATE = 2
+BIG_BROTHER_QUIET_HOURS = 48                        # panel flags housemates silent this long
+
+# ---------------------------------------------------------------------------
 # Anti-alt / anti-farm / anti-laundering detection (lib/core/detection.py)
 #
 # Every threshold is here rather than in the detectors, because these are the numbers that

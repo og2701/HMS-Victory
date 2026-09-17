@@ -1,0 +1,143 @@
+"""Big Brother event: storage layer, tallies, panel text and the persistent components."""
+
+import os
+import sys
+import tempfile
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+@pytest.fixture
+def bb():
+    import database
+
+    if database.DatabaseManager._connection is not None:
+        database.DatabaseManager._connection.close()
+        database.DatabaseManager._connection = None
+    tmpdir = tempfile.mkdtemp()
+    database.DB_FILE = os.path.join(tmpdir, "test.db")
+
+    from lib.features import big_brother as module
+
+    module._tables_ready = False
+    module.ensure_tables()
+    yield module
+    database.DatabaseManager._connection.close()
+    database.DatabaseManager._connection = None
+
+
+def test_housemates_add_evict_and_immunity(bb):
+    assert bb.db_add_housemate(1) and bb.db_add_housemate(2) and bb.db_add_housemate(3)
+    assert not bb.db_add_housemate(1)
+    assert bb.housemates() == [1, 2, 3]
+    assert bb.is_housemate(2)
+
+    assert bb.db_toggle_immunity(3) is True
+    assert bb.immune_ids() == {3}
+    assert bb.db_toggle_immunity(3) is False
+
+    bb.db_set_status(2, bb.STATUS_EVICTED)
+    assert bb.housemates() == [1, 3]
+    assert bb.housemates(bb.STATUS_EVICTED) == [2]
+    assert not bb.is_housemate(2)
+    # An evicted housemate can be put back in (host mis-click).
+    assert bb.db_add_housemate(2)
+    assert bb.housemates() == [1, 3, 2] or set(bb.housemates()) == {1, 2, 3}
+
+
+def test_nominations_replace_and_tally(bb):
+    for u in (1, 2, 3, 4):
+        bb.db_add_housemate(u)
+    rid = bb.create_round(bb.KIND_NOMINATIONS)
+    assert bb.open_round(bb.KIND_NOMINATIONS)["id"] == rid
+
+    bb.record_nominations(rid, 1, [2, 3])
+    bb.record_nominations(rid, 2, [3, 1])
+    # Re-nominating replaces the earlier pair rather than adding to it.
+    bb.record_nominations(rid, 1, [3, 4])
+    assert sorted(bb.nominations_for(rid)) == [(1, 3), (1, 4), (2, 1), (2, 3)]
+    assert bb.nominators_done(rid) == {1, 2}
+
+    bb.close_round(rid)
+    assert bb.open_round(bb.KIND_NOMINATIONS) is None
+    assert bb.get_round(rid)["status"] == "closed"
+
+
+def test_votes_one_per_voter_and_tally(bb):
+    vid = bb.create_round(bb.KIND_VOTE, nominees=[1, 3])
+    assert bb.get_round(vid)["nominees"] == [1, 3]
+    bb.cast_vote(vid, 10, 1)
+    bb.cast_vote(vid, 11, 3)
+    bb.cast_vote(vid, 10, 3)  # changed their mind
+    assert bb.vote_tally(vid) == {3: 2}
+    assert bb.vote_count(vid) == 2
+
+
+def test_state_roundtrip(bb):
+    bb.set_state("k", {"a": [1, 2]})
+    assert bb.get_state("k") == {"a": [1, 2]}
+    assert bb.get_state("missing", "d") == "d"
+    bb.set_state("k", None)
+    assert bb.get_state("k", "d") == "d"
+
+
+def test_missions_and_challenges(bb):
+    bb.db_add_housemate(2)
+    mid = bb.add_mission(2, "say crumpet")
+    assert bb.active_mission_for(2)["id"] == mid
+    assert [m["id"] for m in bb.active_missions()] == [mid]
+    assert bb.resolve_mission(mid, "done")["user_id"] == 2
+    assert bb.active_missions() == []
+    assert bb.resolve_mission(999, "done") is None
+
+    cid = bb.add_challenge("Q", "2+2?", "Four", None)
+    assert bb.open_challenge()["answer"] == "Four"
+    assert bb._norm(" four! ") == bb._norm("Four")
+    assert bb._norm("4") != bb._norm("Four")
+    bb.close_challenge(cid, 3)
+    assert bb.open_challenge() is None
+
+
+def test_quiet_housemates_uses_last_message_or_join(bb, monkeypatch):
+    bb.db_add_housemate(1)
+    bb.db_add_housemate(2)
+    assert bb.quiet_housemates() == []
+    # Jump the clock past the quiet window: both are quiet, then 1 speaks.
+    real_now = bb._now
+    monkeypatch.setattr(bb, "_now", lambda: real_now() + bb.quiet_hours() * 3600 + 60)
+    assert set(bb.quiet_housemates()) == {1, 2}
+    bb.touch_activity(1)
+    assert bb.quiet_housemates() == [2]
+
+
+def test_panel_text_and_view_have_no_secrets(bb):
+    for u in (1, 2, 3):
+        bb.db_add_housemate(u)
+    rid = bb.create_round(bb.KIND_NOMINATIONS)
+    bb.record_nominations(rid, 1, [2, 3])
+    text = bb._panel_text(None)
+    assert "3 in the house" in text
+    assert "1/3 have nominated" in text
+    # Counts only: the nominee names never appear on the panel.
+    assert "user 2" not in text and "user 3" not in text
+
+    view = bb.BigBrotherControlView(None)
+    assert view.timeout is None
+    ids = [c.custom_id for row in view.children[0].children
+           if hasattr(row, "children") for c in row.children]
+    assert len(ids) == 15 and len(set(ids)) == 15
+    assert set(ids) == {f"bb:ctl:{a}" for a in bb.PANEL_ACTIONS}
+
+
+def test_vote_button_custom_id(bb):
+    btn = bb.VoteButton(7, 42, "Bob")
+    assert btn.custom_id == "bb:vote:7:42"
+    assert btn.item.label == "Bob"
+
+
+def test_disabled_flag_blocks_everything(bb, monkeypatch):
+    import config
+    monkeypatch.setattr(config, "BIG_BROTHER_ENABLED", False)
+    assert not bb.enabled()

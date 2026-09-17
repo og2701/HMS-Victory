@@ -18,6 +18,7 @@ from lib.bot.event_handlers import *
 from lib.features.on_message_functions import *
 from lib.bot.setup_commands import define_commands
 from config import *
+import config
 from lib.features.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.economy.prediction_system import Prediction, _load as load_predictions, _save as save_predictions
 from lib.economy.economy_manager import add_bb, get_all_balances as load_ukpence_data
@@ -202,6 +203,16 @@ class AClient(discord.Client):
         except Exception as e:
             logger.warning(f"Could not register ChatbotDashboardView: {e}")
 
+        # Big Brother (temporary event): control panel buttons + public vote buttons.
+        if getattr(config, "BIG_BROTHER_ENABLED", False):
+            try:
+                from lib.features.big_brother import BigBrotherControlView, VoteButton
+                self.add_view(BigBrotherControlView())
+                self.add_dynamic_items(VoteButton)
+                logger.info("Registered Big Brother control panel + vote buttons.")
+            except Exception as e:
+                logger.warning(f"Could not register Big Brother views: {e}")
+
         logger.info("Persistent prediction views registered in setup_hook.")
 
     async def on_ready(self):
@@ -211,6 +222,13 @@ class AClient(discord.Client):
             asyncio.create_task(ensure_chatbot_dashboard_message(self))
         except Exception:
             logger.exception("could not ensure chatbot controller dashboard message")
+
+        if getattr(config, "BIG_BROTHER_ENABLED", False):
+            try:
+                from lib.features.big_brother import ensure_control_panel
+                asyncio.create_task(ensure_control_panel(self))
+            except Exception:
+                logger.exception("could not ensure Big Brother control panel")
 
         # Registered before anything else can trip a detector. The money rules hang off
         # economy_manager, which has no route to a client of its own, so without this an
@@ -348,6 +366,12 @@ class AClient(discord.Client):
         # County Balls: chat activity fills the spawn bar (config-gated inside).
         from lib.features.counties import county_on_message
         asyncio.create_task(county_on_message(self, message))
+
+        # Big Brother house channel: activity tracking + auto-judged challenges.
+        if getattr(config, "BIG_BROTHER_ENABLED", False) and \
+                message.channel.id == getattr(config, "BIG_BROTHER_HOUSE_CHANNEL", 0):
+            from lib.features.big_brother import on_house_message
+            asyncio.create_task(on_house_message(self, message))
 
         if message.type == discord.MessageType.auto_moderation_action:
             target_user_id_str = None

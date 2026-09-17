@@ -1,0 +1,1328 @@
+"""Big Brother - a temporary two-week house event run by a host from a control panel.
+
+Everything here is gated on config.BIG_BROTHER_ENABLED and reads the rest of its
+settings from the BIG_BROTHER_* block in config.py, so the event can be switched off
+without touching code once it's over.
+
+The one design rule that shapes the whole module: the control channel is visible to
+staff, and some staff are playing. So the panel posted there only ever shows phase and
+counts. Anything that would give a player an edge (who nominated whom, vote tallies,
+diary entries, mission briefs and outcomes, exposures) is sent to the host's DMs.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import time
+from typing import Callable, Iterable, Optional
+
+import discord
+
+import config
+from database import DatabaseManager
+
+log = logging.getLogger(__name__)
+
+ACCENT = 0x8E44AD  # Big Brother purple
+EYE = "👁️"
+STATUS_IN = "in"
+STATUS_EVICTED = "evicted"
+STATUS_WINNER = "winner"
+KIND_NOMINATIONS = "nominations"
+KIND_VOTE = "vote"
+STATE_PANEL_MSG = "panel_message_id"
+STATE_LAST_NOM_TALLY = "last_nomination_tally"
+STATE_LAST_VOTE_RESULT = "last_vote_result"
+
+_tables_ready = False
+
+
+# ---------------------------------------------------------------------------
+# Config accessors (read live so a config reload or test override takes effect)
+# ---------------------------------------------------------------------------
+
+def enabled() -> bool:
+    return bool(getattr(config, "BIG_BROTHER_ENABLED", False))
+
+
+def host_id() -> int:
+    return int(getattr(config, "BIG_BROTHER_HOST_ID", 0))
+
+
+def operator_ids() -> set[int]:
+    return {int(x) for x in getattr(config, "BIG_BROTHER_OPERATOR_IDS", set())}
+
+
+def is_operator(user_id: int) -> bool:
+    return int(user_id) in operator_ids()
+
+
+def house_channel_id() -> int:
+    return int(getattr(config, "BIG_BROTHER_HOUSE_CHANNEL", 0))
+
+
+def control_channel_id() -> int:
+    return int(getattr(config, "BIG_BROTHER_CONTROL_CHANNEL", 0))
+
+
+def vote_channel_id() -> int:
+    return int(getattr(config, "BIG_BROTHER_VOTE_CHANNEL", 0) or house_channel_id())
+
+
+def housemate_role_id() -> Optional[int]:
+    rid = getattr(config, "BIG_BROTHER_HOUSEMATE_ROLE", None)
+    return int(rid) if rid else None
+
+
+def nominations_each() -> int:
+    return max(1, int(getattr(config, "BIG_BROTHER_NOMINATIONS_PER_HOUSEMATE", 2)))
+
+
+def prize_ukp() -> int:
+    return int(getattr(config, "BIG_BROTHER_PRIZE_UKP", 0))
+
+
+def quiet_hours() -> int:
+    return int(getattr(config, "BIG_BROTHER_QUIET_HOURS", 48))
+
+
+# ---------------------------------------------------------------------------
+# Storage
+# ---------------------------------------------------------------------------
+
+def ensure_tables() -> None:
+    """Create the event's tables on first use. Kept here rather than in database.init_db
+    so the whole feature is one file that can be deleted after the event."""
+    global _tables_ready
+    if _tables_ready:
+        return
+    with DatabaseManager.transaction() as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS bb_housemates (
+            user_id TEXT PRIMARY KEY, joined_at INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'in', evicted_at INTEGER,
+            immune INTEGER NOT NULL DEFAULT 0)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS bb_rounds (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open', opened_at INTEGER NOT NULL,
+            closed_at INTEGER, channel_id TEXT, message_id TEXT, nominees TEXT)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS bb_nominations (
+            round_id INTEGER NOT NULL, nominator_id TEXT NOT NULL, nominee_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL, UNIQUE(round_id, nominator_id, nominee_id))""")
+        c.execute("""CREATE TABLE IF NOT EXISTS bb_votes (
+            round_id INTEGER NOT NULL, voter_id TEXT NOT NULL, nominee_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL, UNIQUE(round_id, voter_id))""")
+        c.execute("""CREATE TABLE IF NOT EXISTS bb_diary (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL,
+            anonymous INTEGER NOT NULL DEFAULT 0, text TEXT NOT NULL, created_at INTEGER NOT NULL)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS bb_missions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, brief TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL, resolved_at INTEGER)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS bb_challenges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, body TEXT NOT NULL,
+            answer TEXT, status TEXT NOT NULL DEFAULT 'open', winner_id TEXT, message_id TEXT,
+            created_at INTEGER NOT NULL, resolved_at INTEGER)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS bb_activity (
+            user_id TEXT PRIMARY KEY, last_message_at INTEGER NOT NULL,
+            messages INTEGER NOT NULL DEFAULT 0)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS bb_state (
+            key TEXT PRIMARY KEY, value TEXT)""")
+    _tables_ready = True
+
+
+def _now() -> int:
+    return int(time.time())
+
+
+def get_state(key: str, default=None):
+    ensure_tables()
+    row = DatabaseManager.fetch_one("SELECT value FROM bb_state WHERE key = ?", (key,))
+    if not row or row[0] is None:
+        return default
+    try:
+        value = json.loads(row[0])
+    except (TypeError, ValueError):
+        return row[0]
+    return default if value is None else value
+
+
+def set_state(key: str, value) -> None:
+    ensure_tables()
+    DatabaseManager.execute(
+        "INSERT OR REPLACE INTO bb_state (key, value) VALUES (?, ?)",
+        (key, json.dumps(value)))
+
+
+# --- housemates ---
+
+def housemates(status: Optional[str] = STATUS_IN) -> list[int]:
+    ensure_tables()
+    if status is None:
+        rows = DatabaseManager.fetch_all("SELECT user_id FROM bb_housemates ORDER BY joined_at")
+    else:
+        rows = DatabaseManager.fetch_all(
+            "SELECT user_id FROM bb_housemates WHERE status = ? ORDER BY joined_at", (status,))
+    return [int(r[0]) for r in rows]
+
+
+def is_housemate(user_id: int) -> bool:
+    ensure_tables()
+    row = DatabaseManager.fetch_one(
+        "SELECT 1 FROM bb_housemates WHERE user_id = ? AND status = ?", (str(user_id), STATUS_IN))
+    return row is not None
+
+
+def immune_ids() -> set[int]:
+    ensure_tables()
+    rows = DatabaseManager.fetch_all(
+        "SELECT user_id FROM bb_housemates WHERE status = ? AND immune = 1", (STATUS_IN,))
+    return {int(r[0]) for r in rows}
+
+
+def db_add_housemate(user_id: int) -> bool:
+    """Returns True if newly added (or re-entered after eviction)."""
+    ensure_tables()
+    if is_housemate(user_id):
+        return False
+    DatabaseManager.execute(
+        "INSERT OR REPLACE INTO bb_housemates (user_id, joined_at, status, evicted_at, immune) "
+        "VALUES (?, ?, ?, NULL, 0)", (str(user_id), _now(), STATUS_IN))
+    return True
+
+
+def db_set_status(user_id: int, status: str) -> None:
+    ensure_tables()
+    DatabaseManager.execute(
+        "UPDATE bb_housemates SET status = ?, evicted_at = ?, immune = 0 WHERE user_id = ?",
+        (status, _now() if status == STATUS_EVICTED else None, str(user_id)))
+
+
+def db_toggle_immunity(user_id: int) -> bool:
+    """Flip immunity, return the new value."""
+    ensure_tables()
+    row = DatabaseManager.fetch_one("SELECT immune FROM bb_housemates WHERE user_id = ?", (str(user_id),))
+    new = 0 if (row and row[0]) else 1
+    DatabaseManager.execute("UPDATE bb_housemates SET immune = ? WHERE user_id = ?", (new, str(user_id)))
+    return bool(new)
+
+
+# --- rounds ---
+
+def open_round(kind: str) -> Optional[dict]:
+    ensure_tables()
+    row = DatabaseManager.fetch_one(
+        "SELECT id, kind, status, opened_at, channel_id, message_id, nominees FROM bb_rounds "
+        "WHERE kind = ? AND status = 'open' ORDER BY id DESC LIMIT 1", (kind,))
+    return _round_row(row)
+
+
+def get_round(round_id: int) -> Optional[dict]:
+    ensure_tables()
+    row = DatabaseManager.fetch_one(
+        "SELECT id, kind, status, opened_at, channel_id, message_id, nominees FROM bb_rounds WHERE id = ?",
+        (int(round_id),))
+    return _round_row(row)
+
+
+def _round_row(row) -> Optional[dict]:
+    if not row:
+        return None
+    nominees = []
+    if row[6]:
+        try:
+            nominees = [int(x) for x in json.loads(row[6])]
+        except (TypeError, ValueError):
+            nominees = []
+    return {"id": row[0], "kind": row[1], "status": row[2], "opened_at": row[3],
+            "channel_id": int(row[4]) if row[4] else None,
+            "message_id": int(row[5]) if row[5] else None, "nominees": nominees}
+
+
+def create_round(kind: str, *, channel_id: Optional[int] = None, message_id: Optional[int] = None,
+                 nominees: Optional[Iterable[int]] = None) -> int:
+    ensure_tables()
+    return DatabaseManager.execute_insert(
+        "INSERT INTO bb_rounds (kind, status, opened_at, channel_id, message_id, nominees) "
+        "VALUES (?, 'open', ?, ?, ?, ?)",
+        (kind, _now(), str(channel_id) if channel_id else None,
+         str(message_id) if message_id else None,
+         json.dumps([int(x) for x in nominees]) if nominees else None))
+
+
+def set_round_message(round_id: int, channel_id: int, message_id: int) -> None:
+    DatabaseManager.execute("UPDATE bb_rounds SET channel_id = ?, message_id = ? WHERE id = ?",
+                            (str(channel_id), str(message_id), int(round_id)))
+
+
+def close_round(round_id: int) -> None:
+    DatabaseManager.execute("UPDATE bb_rounds SET status = 'closed', closed_at = ? WHERE id = ?",
+                            (_now(), int(round_id)))
+
+
+# --- nominations ---
+
+def record_nominations(round_id: int, nominator_id: int, nominee_ids: Iterable[int]) -> None:
+    with DatabaseManager.transaction() as c:
+        c.execute("DELETE FROM bb_nominations WHERE round_id = ? AND nominator_id = ?",
+                  (int(round_id), str(nominator_id)))
+        for nid in nominee_ids:
+            c.execute("INSERT OR IGNORE INTO bb_nominations (round_id, nominator_id, nominee_id, created_at) "
+                      "VALUES (?, ?, ?, ?)", (int(round_id), str(nominator_id), str(nid), _now()))
+
+
+def nominations_for(round_id: int) -> list[tuple[int, int]]:
+    rows = DatabaseManager.fetch_all(
+        "SELECT nominator_id, nominee_id FROM bb_nominations WHERE round_id = ? ORDER BY created_at",
+        (int(round_id),))
+    return [(int(a), int(b)) for a, b in rows]
+
+
+def nominators_done(round_id: int) -> set[int]:
+    rows = DatabaseManager.fetch_all(
+        "SELECT DISTINCT nominator_id FROM bb_nominations WHERE round_id = ?", (int(round_id),))
+    return {int(r[0]) for r in rows}
+
+
+# --- votes ---
+
+def cast_vote(round_id: int, voter_id: int, nominee_id: int) -> None:
+    DatabaseManager.execute(
+        "INSERT OR REPLACE INTO bb_votes (round_id, voter_id, nominee_id, created_at) VALUES (?, ?, ?, ?)",
+        (int(round_id), str(voter_id), str(nominee_id), _now()))
+
+
+def vote_tally(round_id: int) -> dict[int, int]:
+    rows = DatabaseManager.fetch_all(
+        "SELECT nominee_id, COUNT(*) FROM bb_votes WHERE round_id = ? GROUP BY nominee_id", (int(round_id),))
+    return {int(a): int(b) for a, b in rows}
+
+
+def vote_count(round_id: int) -> int:
+    row = DatabaseManager.fetch_one("SELECT COUNT(*) FROM bb_votes WHERE round_id = ?", (int(round_id),))
+    return int(row[0]) if row else 0
+
+
+# --- diary / missions / challenges / activity ---
+
+def add_diary(user_id: int, text: str, anonymous: bool) -> int:
+    ensure_tables()
+    return DatabaseManager.execute_insert(
+        "INSERT INTO bb_diary (user_id, anonymous, text, created_at) VALUES (?, ?, ?, ?)",
+        (str(user_id), 1 if anonymous else 0, text, _now()))
+
+
+def add_mission(user_id: int, brief: str) -> int:
+    ensure_tables()
+    return DatabaseManager.execute_insert(
+        "INSERT INTO bb_missions (user_id, brief, status, created_at) VALUES (?, ?, 'active', ?)",
+        (str(user_id), brief, _now()))
+
+
+def active_missions() -> list[dict]:
+    ensure_tables()
+    rows = DatabaseManager.fetch_all(
+        "SELECT id, user_id, brief, created_at FROM bb_missions WHERE status = 'active' ORDER BY id")
+    return [{"id": r[0], "user_id": int(r[1]), "brief": r[2], "created_at": r[3]} for r in rows]
+
+
+def active_mission_for(user_id: int) -> Optional[dict]:
+    ensure_tables()
+    row = DatabaseManager.fetch_one(
+        "SELECT id, user_id, brief, created_at FROM bb_missions WHERE status = 'active' AND user_id = ? "
+        "ORDER BY id DESC LIMIT 1", (str(user_id),))
+    return {"id": row[0], "user_id": int(row[1]), "brief": row[2], "created_at": row[3]} if row else None
+
+
+def resolve_mission(mission_id: int, status: str) -> Optional[dict]:
+    row = DatabaseManager.fetch_one("SELECT id, user_id, brief FROM bb_missions WHERE id = ?", (int(mission_id),))
+    if not row:
+        return None
+    DatabaseManager.execute("UPDATE bb_missions SET status = ?, resolved_at = ? WHERE id = ?",
+                            (status, _now(), int(mission_id)))
+    return {"id": row[0], "user_id": int(row[1]), "brief": row[2]}
+
+
+def add_challenge(title: str, body: str, answer: Optional[str], message_id: Optional[int]) -> int:
+    ensure_tables()
+    return DatabaseManager.execute_insert(
+        "INSERT INTO bb_challenges (title, body, answer, status, message_id, created_at) "
+        "VALUES (?, ?, ?, 'open', ?, ?)",
+        (title, body, answer or None, str(message_id) if message_id else None, _now()))
+
+
+def open_challenge() -> Optional[dict]:
+    ensure_tables()
+    row = DatabaseManager.fetch_one(
+        "SELECT id, title, body, answer, created_at FROM bb_challenges WHERE status = 'open' ORDER BY id DESC LIMIT 1")
+    return {"id": row[0], "title": row[1], "body": row[2], "answer": row[3], "created_at": row[4]} if row else None
+
+
+def close_challenge(challenge_id: int, winner_id: Optional[int]) -> None:
+    DatabaseManager.execute(
+        "UPDATE bb_challenges SET status = 'closed', winner_id = ?, resolved_at = ? WHERE id = ?",
+        (str(winner_id) if winner_id else None, _now(), int(challenge_id)))
+
+
+def touch_activity(user_id: int) -> None:
+    ensure_tables()
+    DatabaseManager.execute(
+        "INSERT INTO bb_activity (user_id, last_message_at, messages) VALUES (?, ?, 1) "
+        "ON CONFLICT(user_id) DO UPDATE SET last_message_at = excluded.last_message_at, messages = messages + 1",
+        (str(user_id), _now()))
+
+
+def quiet_housemates() -> list[int]:
+    """Housemates with no house-channel message in the configured window. Never posted
+    means quiet since they joined."""
+    ensure_tables()
+    cutoff = _now() - quiet_hours() * 3600
+    rows = DatabaseManager.fetch_all(
+        "SELECT h.user_id, h.joined_at, a.last_message_at FROM bb_housemates h "
+        "LEFT JOIN bb_activity a ON a.user_id = h.user_id WHERE h.status = ?", (STATUS_IN,))
+    out = []
+    for uid, joined, last in rows:
+        last_seen = last if last is not None else joined
+        if last_seen < cutoff:
+            out.append(int(uid))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Discord helpers
+# ---------------------------------------------------------------------------
+
+def _guild(client: discord.Client) -> Optional[discord.Guild]:
+    return client.get_guild(int(getattr(config, "GUILD_ID", 0)))
+
+
+def _name(guild: Optional[discord.Guild], user_id: int) -> str:
+    member = guild.get_member(int(user_id)) if guild else None
+    return member.display_name if member else f"user {user_id}"
+
+
+def _mention_and_name(guild: Optional[discord.Guild], user_id: int) -> str:
+    return f"<@{user_id}> ({_name(guild, user_id)})"
+
+
+async def _channel(client: discord.Client, channel_id: int):
+    if not channel_id:
+        return None
+    ch = client.get_channel(channel_id)
+    if ch is None:
+        try:
+            ch = await client.fetch_channel(channel_id)
+        except discord.HTTPException:
+            return None
+    return ch
+
+
+async def house_channel(client: discord.Client):
+    return await _channel(client, house_channel_id())
+
+
+def _role_mention() -> str:
+    rid = housemate_role_id()
+    return f"<@&{rid}> " if rid else ""
+
+
+async def notify_host(client: discord.Client, content: Optional[str] = None,
+                      embed: Optional[discord.Embed] = None) -> bool:
+    """Every secret goes here and nowhere else."""
+    uid = host_id()
+    if not uid:
+        return False
+    try:
+        user = client.get_user(uid) or await client.fetch_user(uid)
+        await user.send(content=content, embed=embed)
+        return True
+    except discord.HTTPException as e:
+        log.warning("Big Brother: could not DM host %s: %s", uid, e)
+        return False
+
+
+async def dm_user(client: discord.Client, user_id: int, content: Optional[str] = None,
+                  embed: Optional[discord.Embed] = None) -> bool:
+    try:
+        user = client.get_user(int(user_id)) or await client.fetch_user(int(user_id))
+        await user.send(content=content, embed=embed)
+        return True
+    except discord.HTTPException as e:
+        log.info("Big Brother: could not DM %s: %s", user_id, e)
+        return False
+
+
+def bb_embed(title: str, description: str = "") -> discord.Embed:
+    e = discord.Embed(title=f"{EYE} {title}", description=description, colour=ACCENT)
+    e.set_footer(text="Big Brother is watching.")
+    return e
+
+
+async def _sync_role(guild: Optional[discord.Guild], user_id: int, give: bool) -> None:
+    rid = housemate_role_id()
+    if not guild or not rid:
+        return
+    role = guild.get_role(rid)
+    member = guild.get_member(int(user_id))
+    if not role or not member:
+        return
+    try:
+        if give and role not in member.roles:
+            await member.add_roles(role, reason="Big Brother housemate")
+        elif not give and role in member.roles:
+            await member.remove_roles(role, reason="Big Brother eviction")
+    except discord.HTTPException as e:
+        log.warning("Big Brother: role sync failed for %s: %s", user_id, e)
+
+
+# ---------------------------------------------------------------------------
+# Game actions (shared by the panel and the slash commands)
+# ---------------------------------------------------------------------------
+
+async def add_housemates(client: discord.Client, user_ids: Iterable[int]) -> list[int]:
+    guild = _guild(client)
+    added = []
+    for uid in user_ids:
+        if db_add_housemate(uid):
+            added.append(int(uid))
+        await _sync_role(guild, uid, True)
+    return added
+
+
+async def evict(client: discord.Client, user_id: int, *, announce: bool = True) -> None:
+    guild = _guild(client)
+    db_set_status(user_id, STATUS_EVICTED)
+    await _sync_role(guild, user_id, False)
+    if announce:
+        ch = await house_channel(client)
+        if ch:
+            await ch.send(
+                f"{_role_mention()}{EYE} **Big Brother has made a decision.**\n\n"
+                f"<@{user_id}>, you have been evicted from the Big Brother house. "
+                f"Please leave through the diary room door.")
+    await dm_user(client, user_id, embed=bb_embed(
+        "You have been evicted",
+        "Thanks for playing. You can still watch and vote in the public evictions."))
+
+
+async def open_nominations(client: discord.Client) -> Optional[int]:
+    if open_round(KIND_NOMINATIONS):
+        return None
+    rid = create_round(KIND_NOMINATIONS)
+    ch = await house_channel(client)
+    if ch:
+        n = nominations_each()
+        await ch.send(
+            f"{_role_mention()}{EYE} **Nominations are open.**\n\n"
+            f"Use `/nominate` to pick the {n} housemate{'s' if n != 1 else ''} you want to face the public vote. "
+            f"Only you and Big Brother will see who you chose. You can change your mind until nominations close.")
+    return rid
+
+
+async def close_nominations(client: discord.Client) -> Optional[dict]:
+    rnd = open_round(KIND_NOMINATIONS)
+    if not rnd:
+        return None
+    close_round(rnd["id"])
+    guild = _guild(client)
+    pairs = nominations_for(rnd["id"])
+    counts: dict[int, list[int]] = {}
+    for nominator, nominee in pairs:
+        counts.setdefault(nominee, []).append(nominator)
+    ranked = sorted(counts.items(), key=lambda kv: (-len(kv[1]), _name(guild, kv[0]).lower()))
+    done = nominators_done(rnd["id"])
+    missing = [u for u in housemates() if u not in done]
+
+    lines = [f"**{len(v)}** - {_mention_and_name(guild, nominee)}\n-# nominated by " +
+             ", ".join(_name(guild, n) for n in v) for nominee, v in ranked] or ["Nobody nominated anyone."]
+    desc = "\n".join(lines)
+    if missing:
+        desc += "\n\n**Did not nominate:** " + ", ".join(_name(guild, u) for u in missing)
+    desc += "\n\nOpen the panel and press **Start eviction vote** to put the nominees to the public."
+    await notify_host(client, embed=bb_embed(f"Nomination results (round {rnd['id']})", desc))
+
+    top = [nominee for nominee, _ in ranked]
+    set_state(STATE_LAST_NOM_TALLY, {"round_id": rnd["id"], "ranked": [[n, len(counts[n])] for n in top]})
+    ch = await house_channel(client)
+    if ch:
+        await ch.send(f"{EYE} **Nominations are closed.** Big Brother is counting. The nominees will be announced shortly.")
+    return {"round_id": rnd["id"], "ranked": ranked, "missing": missing}
+
+
+async def start_vote(client: discord.Client, nominee_ids: list[int]) -> Optional[dict]:
+    if open_round(KIND_VOTE):
+        return None
+    guild = _guild(client)
+    ch = await _channel(client, vote_channel_id())
+    if not ch:
+        return None
+    rid = create_round(KIND_VOTE, nominees=nominee_ids)
+    names = ", ".join(f"**{_name(guild, n)}**" for n in nominee_ids)
+    embed = bb_embed(
+        "Eviction vote",
+        f"The housemates have nominated. Now the server decides.\n\n"
+        f"Facing eviction: {names}\n\n"
+        f"Press a button to vote for who should **leave** the house. One vote each, and you can "
+        f"change it until the vote closes. Results stay secret until Big Brother reveals them.")
+    view = discord.ui.View(timeout=None)
+    for n in nominee_ids:
+        view.add_item(VoteButton(rid, n, _name(guild, n)))
+    msg = await ch.send(content=f"{EYE} **Eviction vote is open.**", embed=embed, view=view)
+    set_round_message(rid, ch.id, msg.id)
+    hc = await house_channel(client)
+    if hc and hc.id != ch.id:
+        await hc.send(f"{_role_mention()}{EYE} The public eviction vote is open in <#{ch.id}>. "
+                      f"Facing eviction: {names}.")
+    return {"round_id": rid, "message_id": msg.id, "channel_id": ch.id}
+
+
+async def close_vote(client: discord.Client) -> Optional[dict]:
+    rnd = open_round(KIND_VOTE)
+    if not rnd:
+        return None
+    close_round(rnd["id"])
+    guild = _guild(client)
+    tally = vote_tally(rnd["id"])
+    total = sum(tally.values())
+    ranked = sorted(rnd["nominees"], key=lambda n: (-tally.get(n, 0), _name(guild, n).lower()))
+    lines = []
+    for n in ranked:
+        c = tally.get(n, 0)
+        pct = (100 * c / total) if total else 0
+        lines.append(f"**{c}** ({pct:.0f}%) - {_mention_and_name(guild, n)}")
+    desc = "\n".join(lines) + f"\n\n{total} vote{'s' if total != 1 else ''} cast."
+    desc += "\n\nNothing has been announced. Press **Evict housemate** on the panel when you're ready to reveal it."
+    await notify_host(client, embed=bb_embed(f"Eviction vote result (round {rnd['id']})", desc))
+    set_state(STATE_LAST_VOTE_RESULT, {"round_id": rnd["id"], "ranked": [[n, tally.get(n, 0)] for n in ranked],
+                                       "total": total})
+    if rnd["channel_id"] and rnd["message_id"]:
+        ch = await _channel(client, rnd["channel_id"])
+        if ch:
+            try:
+                msg = await ch.fetch_message(rnd["message_id"])
+                embed = msg.embeds[0] if msg.embeds else bb_embed("Eviction vote")
+                embed.description = (embed.description or "") + f"\n\n**Voting is closed.** {total} votes cast."
+                await msg.edit(content=f"{EYE} **Eviction vote is closed.**", embed=embed, view=None)
+            except discord.HTTPException:
+                pass
+    return {"round_id": rnd["id"], "ranked": ranked, "tally": tally, "total": total}
+
+
+async def crown_winner(client: discord.Client, user_id: int) -> tuple[bool, str]:
+    guild = _guild(client)
+    db_set_status(user_id, STATUS_WINNER)
+    prize = prize_ukp()
+    paid = True
+    if prize > 0:
+        try:
+            from lib.economy.economy_manager import add_bb
+            paid = bool(add_bb(int(user_id), prize, reason="Big Brother winner",
+                               taxable=False, discretionary=True))
+        except Exception:
+            log.exception("Big Brother: prize payout failed")
+            paid = False
+    ch = await house_channel(client)
+    if ch:
+        await ch.send(
+            f"{_role_mention()}{EYE} **We have a winner.**\n\n"
+            f"After two weeks in the house, the winner of UKPlace Big Brother is <@{user_id}>! "
+            + (f"{prize:,} UKP is on its way." if prize and paid else ""))
+    note = f"{_name(guild, user_id)} crowned." + ("" if paid else f" Prize of {prize:,} UKP was NOT paid (bank refused) - pay manually.")
+    return paid, note
+
+
+# ---------------------------------------------------------------------------
+# Public vote button (dynamic so it survives restarts with no per-message registration)
+# ---------------------------------------------------------------------------
+
+class VoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:vote:(?P<rid>\d+):(?P<uid>\d+)"):
+    def __init__(self, round_id: int, nominee_id: int, label: str = "Vote"):
+        self.round_id, self.nominee_id = int(round_id), int(nominee_id)
+        super().__init__(discord.ui.Button(
+            label=label[:80], emoji=EYE, style=discord.ButtonStyle.secondary,
+            custom_id=f"bb:vote:{self.round_id}:{self.nominee_id}"))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(int(match["rid"]), int(match["uid"]), item.label or "Vote")
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not enabled():
+            await interaction.response.send_message("Big Brother has left the building.", ephemeral=True)
+            return
+        rnd = get_round(self.round_id)
+        if not rnd or rnd["status"] != "open":
+            await interaction.response.send_message("This vote has closed.", ephemeral=True)
+            return
+        if self.nominee_id not in rnd["nominees"]:
+            await interaction.response.send_message("That housemate isn't up for eviction.", ephemeral=True)
+            return
+        if interaction.user.bot:
+            return
+        cast_vote(self.round_id, interaction.user.id, self.nominee_id)
+        await interaction.response.send_message(
+            f"Vote recorded: you voted to evict **{_name(interaction.guild, self.nominee_id)}**. "
+            f"Press another button to change it.", ephemeral=True)
+
+
+# ---------------------------------------------------------------------------
+# Ephemeral pickers used by the panel
+# ---------------------------------------------------------------------------
+
+class _HousematePicker(discord.ui.View):
+    """Ephemeral dropdown of housemates. `on_done(interaction, [ids])` runs on submit."""
+
+    def __init__(self, guild: Optional[discord.Guild], ids: list[int], on_done: Callable,
+                 *, placeholder: str, min_values: int = 1, max_values: int = 1,
+                 defaults: Iterable[int] = ()):
+        super().__init__(timeout=300)
+        defaults = set(defaults)
+        options = [discord.SelectOption(label=_name(guild, i)[:100], value=str(i), default=i in defaults)
+                   for i in ids[:25]]
+        select = discord.ui.Select(placeholder=placeholder, options=options,
+                                   min_values=min(min_values, len(options)),
+                                   max_values=min(max_values, len(options)))
+
+        async def _cb(interaction: discord.Interaction):
+            await on_done(interaction, [int(v) for v in select.values])
+        select.callback = _cb
+        self.add_item(select)
+
+
+class _Confirm(discord.ui.View):
+    def __init__(self, on_yes: Callable, label: str = "Confirm"):
+        super().__init__(timeout=120)
+        self.on_yes = on_yes
+        yes = discord.ui.Button(label=label, style=discord.ButtonStyle.danger)
+        no = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.secondary)
+
+        async def _yes(interaction):
+            await on_yes(interaction)
+        async def _no(interaction):
+            await interaction.response.edit_message(content="Cancelled.", view=None, embed=None)
+        yes.callback, no.callback = _yes, _no
+        self.add_item(yes)
+        self.add_item(no)
+
+
+class _TextModal(discord.ui.Modal):
+    def __init__(self, title: str, fields: list[tuple[str, str, bool, int, bool]], on_submit: Callable):
+        """fields: (key, label, required, max_length, long)"""
+        super().__init__(title=title[:45])
+        self._on_submit = on_submit
+        self._inputs = {}
+        for key, label, required, max_len, long in fields[:5]:
+            ti = discord.ui.TextInput(label=label[:45], required=required, max_length=max_len,
+                                      style=discord.TextStyle.long if long else discord.TextStyle.short)
+            self._inputs[key] = ti
+            self.add_item(ti)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        values = {k: (v.value or "").strip() for k, v in self._inputs.items()}
+        await self._on_submit(interaction, values)
+
+
+# ---------------------------------------------------------------------------
+# Control panel
+# ---------------------------------------------------------------------------
+
+def _panel_text(guild: Optional[discord.Guild]) -> str:
+    ins = housemates()
+    evicted = housemates(STATUS_EVICTED)
+    noms = open_round(KIND_NOMINATIONS)
+    vote = open_round(KIND_VOTE)
+    missions = active_missions()
+    chal = open_challenge()
+    quiet = quiet_housemates()
+
+    lines = [f"## {EYE} Big Brother Control",
+             "-# Only phase and counts are shown here. Everything secret is sent to the host's DMs.",
+             "",
+             f"**Housemates:** {len(ins)} in the house · {len(evicted)} evicted · {len(immune_ids())} immune"]
+    if noms:
+        lines.append(f"**Nominations:** 🟢 open · {len(nominators_done(noms['id']))}/{len(ins)} have nominated")
+    else:
+        lines.append("**Nominations:** ⚪ closed")
+    if vote:
+        lines.append(f"**Eviction vote:** 🟢 open in <#{vote['channel_id']}> · {vote_count(vote['id'])} votes cast")
+    else:
+        lines.append("**Eviction vote:** ⚪ none running")
+    lines.append(f"**Secret missions:** {len(missions)} active")
+    lines.append(f"**Challenge:** {('🟢 ' + chal['title']) if chal else '⚪ none open'}")
+    if quiet:
+        lines.append(f"**Quiet for {quiet_hours()}h:** " + ", ".join(_name(guild, u) for u in quiet[:15]))
+    lines.append("")
+    lines.append(f"-# Updated <t:{_now()}:R>")
+    return "\n".join(lines)
+
+
+class _PanelButton(discord.ui.Button):
+    def __init__(self, action: str, label: str, style=discord.ButtonStyle.secondary, emoji=None):
+        super().__init__(label=label, style=style, emoji=emoji, custom_id=f"bb:ctl:{action}")
+        self.action = action
+
+    async def callback(self, interaction: discord.Interaction):
+        handler = PANEL_ACTIONS.get(self.action)
+        if not handler:
+            await interaction.response.send_message("Unknown action.", ephemeral=True)
+            return
+        await handler(interaction)
+
+
+class BigBrotherControlView(discord.ui.LayoutView):
+    def __init__(self, guild: Optional[discord.Guild] = None):
+        super().__init__(timeout=None)
+        card = discord.ui.Container(accent_colour=ACCENT)
+        card.add_item(discord.ui.TextDisplay(_panel_text(guild)))
+        card.add_item(discord.ui.Separator())
+        card.add_item(discord.ui.ActionRow(
+            _PanelButton("open_noms", "Open nominations", discord.ButtonStyle.primary, "📝"),
+            _PanelButton("close_noms", "Close nominations", emoji="🔒"),
+            _PanelButton("start_vote", "Start eviction vote", discord.ButtonStyle.primary, "🗳️"),
+            _PanelButton("close_vote", "Close vote", emoji="🔒"),
+            _PanelButton("evict", "Evict housemate", discord.ButtonStyle.danger, "🚪"),
+        ))
+        card.add_item(discord.ui.ActionRow(
+            _PanelButton("add", "Add housemates", discord.ButtonStyle.success, "➕"),
+            _PanelButton("immunity", "Toggle immunity", emoji="🛡️"),
+            _PanelButton("mission", "Assign mission", emoji="🕵️"),
+            _PanelButton("resolve_mission", "Resolve mission", emoji="✅"),
+            _PanelButton("challenge", "Post challenge", emoji="🧠"),
+        ))
+        card.add_item(discord.ui.ActionRow(
+            _PanelButton("dm", "DM as Big Brother", emoji="✉️"),
+            _PanelButton("broadcast", "Announce in house", emoji="📣"),
+            _PanelButton("end_challenge", "End challenge", emoji="🏁"),
+            _PanelButton("crown", "Crown winner", discord.ButtonStyle.success, "👑"),
+            _PanelButton("refresh", "Refresh", emoji="🔄"),
+        ))
+        self.add_item(card)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not enabled():
+            await interaction.response.send_message("Big Brother is switched off.", ephemeral=True)
+            return False
+        if not is_operator(interaction.user.id):
+            await interaction.response.send_message(f"{EYE} Only Big Brother can press that.", ephemeral=True)
+            return False
+        return True
+
+
+async def refresh_panel(client: discord.Client) -> None:
+    mid = get_state(STATE_PANEL_MSG)
+    ch = await _channel(client, control_channel_id())
+    if not ch or not mid:
+        return
+    try:
+        msg = await ch.fetch_message(int(mid))
+        await msg.edit(view=BigBrotherControlView(_guild(client)))
+    except discord.HTTPException as e:
+        log.info("Big Brother: panel refresh failed: %s", e)
+
+
+async def ensure_control_panel(client: discord.Client) -> None:
+    """Post the panel in the control channel once, then keep editing that message."""
+    if not enabled():
+        return
+    ensure_tables()
+    ch = await _channel(client, control_channel_id())
+    if not ch:
+        log.warning("Big Brother: control channel %s not found", control_channel_id())
+        return
+    view = BigBrotherControlView(_guild(client))
+    mid = get_state(STATE_PANEL_MSG)
+    if mid:
+        try:
+            msg = await ch.fetch_message(int(mid))
+            await msg.edit(view=view)
+            return
+        except discord.HTTPException:
+            pass
+    msg = await ch.send(view=view)
+    set_state(STATE_PANEL_MSG, msg.id)
+    log.info("Big Brother: posted control panel %s in %s", msg.id, ch.id)
+
+
+# --- panel actions: each is `async (interaction) -> None` and responds itself ---
+
+async def _reply(interaction: discord.Interaction, text: str, *, refresh: bool = True):
+    if interaction.response.is_done():
+        await interaction.edit_original_response(content=text, view=None, embed=None)
+    else:
+        await interaction.response.send_message(text, ephemeral=True)
+    if refresh:
+        asyncio.create_task(refresh_panel(interaction.client))
+
+
+async def _act_open_noms(interaction: discord.Interaction):
+    if not housemates():
+        await _reply(interaction, "No housemates yet. Add some first.", refresh=False)
+        return
+    rid = await open_nominations(interaction.client)
+    await _reply(interaction, "Nominations are already open." if rid is None else f"Nominations opened (round {rid}).")
+
+
+async def _act_close_noms(interaction: discord.Interaction):
+    res = await close_nominations(interaction.client)
+    await _reply(interaction, "No nominations round is open." if res is None
+                 else "Nominations closed. The tally is in your DMs.")
+
+
+async def _act_start_vote(interaction: discord.Interaction):
+    if open_round(KIND_VOTE):
+        await _reply(interaction, "A vote is already running. Close it first.", refresh=False)
+        return
+    ins = housemates()
+    if len(ins) < 2:
+        await _reply(interaction, "Need at least two housemates for a vote.", refresh=False)
+        return
+    last = get_state(STATE_LAST_NOM_TALLY) or {}
+    ranked = [int(n) for n, _ in last.get("ranked", []) if int(n) in ins]
+    # Default to everyone who tied at the highest nomination count, minimum two.
+    defaults: list[int] = []
+    if last.get("ranked"):
+        top = None
+        for n, c in last["ranked"]:
+            if int(n) not in ins:
+                continue
+            if top is None:
+                top = c
+            if c == top or len(defaults) < 2:
+                defaults.append(int(n))
+    immune = immune_ids()
+    choices = [u for u in ranked if u not in immune] + [u for u in ins if u not in ranked and u not in immune]
+    if len(choices) < 2:
+        await _reply(interaction, "Fewer than two housemates are eligible (immunity excludes the rest).", refresh=False)
+        return
+
+    async def done(inter: discord.Interaction, ids: list[int]):
+        res = await start_vote(inter.client, ids)
+        await _reply(inter, "Couldn't start the vote (already open, or the vote channel is missing)."
+                     if not res else f"Eviction vote posted in <#{res['channel_id']}>.")
+
+    view = _HousematePicker(interaction.guild, choices, done, placeholder="Who faces the public vote?",
+                            min_values=2, max_values=min(25, len(choices)), defaults=defaults)
+    await interaction.response.send_message(
+        "Pick the nominees for the public vote. Pre-selected from the last nomination tally where there is one.",
+        view=view, ephemeral=True)
+
+
+async def _act_close_vote(interaction: discord.Interaction):
+    res = await close_vote(interaction.client)
+    await _reply(interaction, "No vote is open." if res is None
+                 else "Vote closed. The result is in your DMs and nothing has been announced yet.")
+
+
+async def _act_evict(interaction: discord.Interaction):
+    ins = housemates()
+    if not ins:
+        await _reply(interaction, "Nobody to evict.", refresh=False)
+        return
+    last = get_state(STATE_LAST_VOTE_RESULT) or {}
+    default = [int(last["ranked"][0][0])] if last.get("ranked") and int(last["ranked"][0][0]) in ins else []
+
+    async def picked(inter: discord.Interaction, ids: list[int]):
+        uid = ids[0]
+
+        async def yes(inter2: discord.Interaction):
+            await inter2.response.defer(ephemeral=True)
+            await evict(inter2.client, uid)
+            await notify_host(inter2.client, f"{EYE} {_mention_and_name(inter2.guild, uid)} has been evicted and announced in the house.")
+            await _reply(inter2, f"Evicted {_name(inter2.guild, uid)}. Announced in the house channel.")
+
+        await inter.response.edit_message(
+            content=f"Evict **{_name(inter.guild, uid)}**? This posts the announcement in the house channel and removes the role.",
+            view=_Confirm(yes, "Evict"))
+
+    view = _HousematePicker(interaction.guild, ins, picked, placeholder="Who is leaving?", defaults=default)
+    await interaction.response.send_message("Pick the housemate to evict.", view=view, ephemeral=True)
+
+
+async def _act_add(interaction: discord.Interaction):
+    view = discord.ui.View(timeout=300)
+    select = discord.ui.UserSelect(placeholder="Pick the new housemates", min_values=1, max_values=25)
+
+    async def cb(inter: discord.Interaction):
+        ids = [u.id for u in select.values if not getattr(u, "bot", False)]
+        added = await add_housemates(inter.client, ids)
+        for uid in added:
+            await dm_user(inter.client, uid, embed=bb_embed(
+                "Welcome to the house",
+                "You're a housemate in UKPlace Big Brother.\n\n"
+                "• `/diary` - talk to Big Brother in private (optionally anonymous)\n"
+                "• `/nominate` - when nominations are open\n"
+                "• `/mission` - see your current secret mission\n"
+                "• `/expose` - report a housemate you think is on a secret mission\n\n"
+                "Big Brother will ping you in the house channel when something is happening."))
+        await _reply(inter, f"Added {len(added)} housemate{'s' if len(added) != 1 else ''}. "
+                     f"{len(ids) - len(added)} were already in.")
+    select.callback = cb
+    view.add_item(select)
+    await interaction.response.send_message("Who's moving in?", view=view, ephemeral=True)
+
+
+async def _act_immunity(interaction: discord.Interaction):
+    ins = housemates()
+    if not ins:
+        await _reply(interaction, "No housemates.", refresh=False)
+        return
+
+    async def picked(inter: discord.Interaction, ids: list[int]):
+        out = []
+        for uid in ids:
+            now_immune = db_toggle_immunity(uid)
+            out.append(f"{_name(inter.guild, uid)}: {'immune' if now_immune else 'no longer immune'}")
+            if now_immune:
+                await dm_user(inter.client, uid, embed=bb_embed(
+                    "Immunity", "You are immune from the next nominations. Housemates won't be able to pick you."))
+        await _reply(inter, "\n".join(out))
+
+    immune = immune_ids()
+    view = _HousematePicker(interaction.guild, ins, picked, placeholder="Toggle immunity for...",
+                            max_values=min(25, len(ins)), defaults=immune)
+    await interaction.response.send_message(
+        "Pick housemates to toggle. Currently immune are pre-ticked; submitting with someone unticked removes it.",
+        view=view, ephemeral=True)
+
+
+async def _act_mission(interaction: discord.Interaction):
+    ins = housemates()
+    if not ins:
+        await _reply(interaction, "No housemates.", refresh=False)
+        return
+
+    async def picked(inter: discord.Interaction, ids: list[int]):
+        uid = ids[0]
+
+        async def submitted(inter2: discord.Interaction, values: dict):
+            brief = values["brief"]
+            mid = add_mission(uid, brief)
+            ok = await dm_user(inter2.client, uid, embed=bb_embed(
+                "Secret mission",
+                f"{brief}\n\nComplete it without the other housemates noticing. "
+                f"Big Brother will let you know when it's done. Use `/mission` to see this again."))
+            await notify_host(inter2.client, embed=bb_embed(
+                f"Mission #{mid} assigned", f"{_mention_and_name(inter2.guild, uid)}\n\n{brief}"
+                + ("" if ok else "\n\n⚠️ Their DMs are closed - the brief did not reach them.")))
+            await _reply(inter2, f"Mission #{mid} sent to {_name(inter2.guild, uid)}." + ("" if ok else " Their DMs are closed."))
+
+        await inter.response.send_modal(_TextModal(
+            f"Mission for {_name(inter.guild, uid)}",
+            [("brief", "The secret mission", True, 1000, True)], submitted))
+
+    view = _HousematePicker(interaction.guild, ins, picked, placeholder="Who gets the mission?")
+    await interaction.response.send_message("Pick the housemate.", view=view, ephemeral=True)
+
+
+async def _act_resolve_mission(interaction: discord.Interaction):
+    missions = active_missions()
+    if not missions:
+        await _reply(interaction, "No active missions.", refresh=False)
+        return
+    view = discord.ui.View(timeout=300)
+    options = [discord.SelectOption(label=f"#{m['id']} {_name(interaction.guild, m['user_id'])}"[:100],
+                                    description=m["brief"][:100], value=str(m["id"])) for m in missions[:25]]
+    select = discord.ui.Select(placeholder="Which mission?", options=options)
+
+    async def cb(inter: discord.Interaction):
+        mid = int(select.values[0])
+        v = discord.ui.View(timeout=120)
+        done = discord.ui.Button(label="Completed", style=discord.ButtonStyle.success)
+        failed = discord.ui.Button(label="Failed", style=discord.ButtonStyle.danger)
+
+        async def _finish(inter2: discord.Interaction, status: str):
+            m = resolve_mission(mid, status)
+            if not m:
+                await _reply(inter2, "Mission not found.", refresh=False)
+                return
+            if status == "done":
+                await dm_user(inter2.client, m["user_id"], embed=bb_embed(
+                    "Mission complete", f"Big Brother is pleased. {m['brief']}\n\nYour reward will follow."))
+            else:
+                await dm_user(inter2.client, m["user_id"], embed=bb_embed(
+                    "Mission failed", f"You were rumbled. {m['brief']}"))
+            await _reply(inter2, f"Mission #{mid} marked {status}. The housemate has been told.")
+
+        async def _d(i): await _finish(i, "done")
+        async def _f(i): await _finish(i, "failed")
+        done.callback, failed.callback = _d, _f
+        v.add_item(done)
+        v.add_item(failed)
+        await inter.response.edit_message(content=f"Mission #{mid}: how did it go?", view=v)
+    select.callback = cb
+    view.add_item(select)
+    await interaction.response.send_message("Pick the mission to resolve.", view=view, ephemeral=True)
+
+
+async def _act_challenge(interaction: discord.Interaction):
+    if open_challenge():
+        await _reply(interaction, "A challenge is already open. End it first.", refresh=False)
+        return
+
+    async def submitted(inter: discord.Interaction, values: dict):
+        ch = await house_channel(inter.client)
+        if not ch:
+            await _reply(inter, "House channel not found.", refresh=False)
+            return
+        answer = values.get("answer") or None
+        embed = bb_embed(values["title"], values["body"])
+        if answer:
+            embed.add_field(name="How to win", value="First housemate to post the exact answer in this channel wins.")
+        msg = await ch.send(content=f"{_role_mention()}{EYE} **Challenge time.**", embed=embed)
+        cid = add_challenge(values["title"], values["body"], answer, msg.id)
+        await _reply(inter, f"Challenge #{cid} posted." + (" The bot will spot the first correct answer." if answer else ""))
+
+    await interaction.response.send_modal(_TextModal("New challenge", [
+        ("title", "Title", True, 100, False),
+        ("body", "The challenge", True, 1500, True),
+        ("answer", "Exact answer (optional, auto-judged)", False, 200, False),
+    ], submitted))
+
+
+async def _act_end_challenge(interaction: discord.Interaction):
+    chal = open_challenge()
+    if not chal:
+        await _reply(interaction, "No challenge is open.", refresh=False)
+        return
+    close_challenge(chal["id"], None)
+    ch = await house_channel(interaction.client)
+    if ch:
+        await ch.send(f"{EYE} **Challenge over:** {chal['title']}. Big Brother will announce the outcome.")
+    await _reply(interaction, f"Challenge #{chal['id']} closed with no auto-winner.")
+
+
+async def _act_dm(interaction: discord.Interaction):
+    ins = housemates()
+    if not ins:
+        await _reply(interaction, "No housemates.", refresh=False)
+        return
+
+    async def picked(inter: discord.Interaction, ids: list[int]):
+        async def submitted(inter2: discord.Interaction, values: dict):
+            sent, closed = 0, []
+            for uid in ids:
+                ok = await dm_user(inter2.client, uid, embed=bb_embed("Big Brother", values["text"]))
+                sent += ok
+                if not ok:
+                    closed.append(_name(inter2.guild, uid))
+            await _reply(inter2, f"Sent to {sent}." + (f" DMs closed: {', '.join(closed)}" if closed else ""), refresh=False)
+        await inter.response.send_modal(_TextModal("Message from Big Brother",
+                                                   [("text", "Message", True, 1500, True)], submitted))
+
+    view = _HousematePicker(interaction.guild, ins, picked, placeholder="Who should hear from Big Brother?",
+                            max_values=min(25, len(ins)))
+    await interaction.response.send_message("Pick one or more housemates.", view=view, ephemeral=True)
+
+
+async def _act_broadcast(interaction: discord.Interaction):
+    async def submitted(inter: discord.Interaction, values: dict):
+        ch = await house_channel(inter.client)
+        if not ch:
+            await _reply(inter, "House channel not found.", refresh=False)
+            return
+        ping = _role_mention() if values.get("ping", "").lower().startswith("y") else ""
+        text = values["text"]
+        if len(text) < 1800:
+            await ch.send(content=f"{ping}{EYE} {text}")
+        else:
+            await ch.send(content=ping or None, embed=bb_embed("Big Brother", text))
+        await _reply(inter, "Posted in the house.", refresh=False)
+
+    await interaction.response.send_modal(_TextModal("Announce in the house", [
+        ("text", "Announcement", True, 1800, True),
+        ("ping", "Ping the housemate role? (yes/no)", False, 3, False),
+    ], submitted))
+
+
+async def _act_crown(interaction: discord.Interaction):
+    ins = housemates()
+    if not ins:
+        await _reply(interaction, "No housemates.", refresh=False)
+        return
+
+    async def picked(inter: discord.Interaction, ids: list[int]):
+        uid = ids[0]
+
+        async def yes(inter2: discord.Interaction):
+            await inter2.response.defer(ephemeral=True)
+            paid, note = await crown_winner(inter2.client, uid)
+            await notify_host(inter2.client, f"{EYE} {note}")
+            await _reply(inter2, note)
+
+        await inter.response.edit_message(
+            content=f"Crown **{_name(inter.guild, uid)}** and pay {prize_ukp():,} UKP? This announces it in the house.",
+            view=_Confirm(yes, "Crown"))
+
+    view = _HousematePicker(interaction.guild, ins, picked, placeholder="Who wins?")
+    await interaction.response.send_message("Pick the winner.", view=view, ephemeral=True)
+
+
+async def _act_refresh(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    await refresh_panel(interaction.client)
+    await interaction.followup.send("Panel refreshed.", ephemeral=True)
+
+
+PANEL_ACTIONS = {
+    "open_noms": _act_open_noms, "close_noms": _act_close_noms, "start_vote": _act_start_vote,
+    "close_vote": _act_close_vote, "evict": _act_evict, "add": _act_add, "immunity": _act_immunity,
+    "mission": _act_mission, "resolve_mission": _act_resolve_mission, "challenge": _act_challenge,
+    "end_challenge": _act_end_challenge, "dm": _act_dm, "broadcast": _act_broadcast,
+    "crown": _act_crown, "refresh": _act_refresh,
+}
+
+
+# ---------------------------------------------------------------------------
+# Housemate slash commands
+# ---------------------------------------------------------------------------
+
+async def _require_housemate(interaction: discord.Interaction) -> bool:
+    if not enabled():
+        await interaction.response.send_message("Big Brother isn't running right now.", ephemeral=True)
+        return False
+    if not is_housemate(interaction.user.id):
+        await interaction.response.send_message(f"{EYE} Only housemates can do that.", ephemeral=True)
+        return False
+    return True
+
+
+async def handle_diary(interaction: discord.Interaction, anonymous: bool = False):
+    if not await _require_housemate(interaction):
+        return
+
+    async def submitted(inter: discord.Interaction, values: dict):
+        text = values["text"]
+        add_diary(inter.user.id, text, anonymous)
+        who = "An anonymous housemate" if anonymous else _mention_and_name(inter.guild, inter.user.id)
+        await notify_host(inter.client, embed=bb_embed("Diary room", f"**{who}** says:\n\n{text}"))
+        await inter.response.send_message(
+            f"{EYE} Big Brother has heard you." + (" Your name was not attached." if anonymous else ""),
+            ephemeral=True)
+
+    await interaction.response.send_modal(_TextModal(
+        "Diary room" + (" (anonymous)" if anonymous else ""),
+        [("text", "Tell Big Brother what you really think", True, 1500, True)], submitted))
+
+
+async def handle_nominate(interaction: discord.Interaction):
+    if not await _require_housemate(interaction):
+        return
+    rnd = open_round(KIND_NOMINATIONS)
+    if not rnd:
+        await interaction.response.send_message("Nominations aren't open right now.", ephemeral=True)
+        return
+    immune = immune_ids()
+    eligible = [u for u in housemates() if u != interaction.user.id and u not in immune]
+    n = min(nominations_each(), len(eligible))
+    if n == 0:
+        await interaction.response.send_message("There's nobody you can nominate.", ephemeral=True)
+        return
+    already = {b for a, b in nominations_for(rnd["id"]) if a == interaction.user.id}
+
+    async def done(inter: discord.Interaction, ids: list[int]):
+        record_nominations(rnd["id"], inter.user.id, ids)
+        names = ", ".join(_name(inter.guild, i) for i in ids)
+        await notify_host(inter.client, embed=bb_embed(
+            f"Nomination (round {rnd['id']})",
+            f"{_mention_and_name(inter.guild, inter.user.id)} nominated **{names}**"
+            + ("\n-# (changed their earlier nomination)" if already else "")))
+        await inter.response.edit_message(
+            content=f"{EYE} Noted. You nominated **{names}**. Only Big Brother knows.", view=None)
+        asyncio.create_task(refresh_panel(inter.client))
+
+    view = _HousematePicker(interaction.guild, eligible, done,
+                            placeholder=f"Pick {n} housemate{'s' if n != 1 else ''}",
+                            min_values=n, max_values=n, defaults=already)
+    await interaction.response.send_message(
+        f"Choose the {n} housemate{'s' if n != 1 else ''} you're nominating for eviction."
+        + (" You've already nominated; submitting again replaces it." if already else ""),
+        view=view, ephemeral=True)
+
+
+async def handle_mission(interaction: discord.Interaction):
+    if not await _require_housemate(interaction):
+        return
+    m = active_mission_for(interaction.user.id)
+    if not m:
+        await interaction.response.send_message(f"{EYE} No mission right now. Big Brother may be in touch.", ephemeral=True)
+        return
+    await interaction.response.send_message(embed=bb_embed(
+        "Your secret mission", f"{m['brief']}\n\n-# Assigned <t:{m['created_at']}:R>"), ephemeral=True)
+
+
+async def handle_expose(interaction: discord.Interaction, suspect: discord.Member, what: str):
+    if not await _require_housemate(interaction):
+        return
+    if not is_housemate(suspect.id):
+        await interaction.response.send_message("They're not in the house.", ephemeral=True)
+        return
+    on_mission = active_mission_for(suspect.id) is not None
+    await notify_host(interaction.client, embed=bb_embed(
+        "Exposure attempt",
+        f"{_mention_and_name(interaction.guild, interaction.user.id)} thinks "
+        f"{_mention_and_name(interaction.guild, suspect.id)} is on a mission:\n\n{what}\n\n"
+        f"-# {suspect.display_name} {'DOES' if on_mission else 'does NOT'} currently have an active mission."))
+    await interaction.response.send_message(
+        f"{EYE} Big Brother has noted your suspicion about **{suspect.display_name}**. "
+        f"You'll find out if you were right.", ephemeral=True)
+
+
+async def handle_housemates(interaction: discord.Interaction):
+    if not enabled():
+        await interaction.response.send_message("Big Brother isn't running right now.", ephemeral=True)
+        return
+    ins = housemates()
+    out = housemates(STATUS_EVICTED)
+    winner = housemates(STATUS_WINNER)
+    g = interaction.guild
+    desc = "**In the house:**\n" + ("\n".join(f"• {_name(g, u)}" for u in ins) or "nobody")
+    if out:
+        desc += "\n\n**Evicted:**\n" + "\n".join(f"• {_name(g, u)}" for u in out)
+    if winner:
+        desc += "\n\n**Winner:** 👑 " + ", ".join(_name(g, u) for u in winner)
+    await interaction.response.send_message(embed=bb_embed("The house", desc), ephemeral=True)
+
+
+async def handle_panel(interaction: discord.Interaction):
+    if not enabled() or not is_operator(interaction.user.id):
+        await interaction.response.send_message("Not for you.", ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True)
+    set_state(STATE_PANEL_MSG, None)
+    await ensure_control_panel(interaction.client)
+    await interaction.followup.send("Panel re-posted.", ephemeral=True)
+
+
+# ---------------------------------------------------------------------------
+# House channel message hook
+# ---------------------------------------------------------------------------
+
+def _norm(s: str) -> str:
+    return " ".join(s.lower().strip().strip(".!?\"'`").split())
+
+
+async def on_house_message(client: discord.Client, message: discord.Message) -> None:
+    """Called for every human message in the house channel: activity tracking and
+    auto-judging an open challenge with an exact answer."""
+    if not enabled() or message.author.bot or not is_housemate(message.author.id):
+        return
+    try:
+        touch_activity(message.author.id)
+    except Exception:
+        log.exception("Big Brother: activity update failed")
+    chal = open_challenge()
+    if not chal or not chal.get("answer"):
+        return
+    if _norm(message.content or "") != _norm(chal["answer"]):
+        return
+    # First correct answer wins; close before announcing so a second one can't also win.
+    if not open_challenge() or open_challenge()["id"] != chal["id"]:
+        return
+    close_challenge(chal["id"], message.author.id)
+    try:
+        await message.reply(f"{EYE} **Correct.** {message.author.mention} wins **{chal['title']}**.")
+    except discord.HTTPException:
+        pass
+    await notify_host(client, f"{EYE} Challenge **{chal['title']}** won by "
+                              f"{_mention_and_name(message.guild, message.author.id)}.")
+    asyncio.create_task(refresh_panel(client))
