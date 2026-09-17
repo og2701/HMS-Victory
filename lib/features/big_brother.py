@@ -36,6 +36,7 @@ STATE_PANEL_MSG = "panel_message_id"
 STATE_HOUSE_PANEL_MSG = "house_panel_message_id"
 STATE_LAST_NOM_TALLY = "last_nomination_tally"
 STATE_LAST_VOTE_RESULT = "last_vote_result"
+STATE_GAME_STARTED_AT = "game_started_at"
 
 _tables_ready = False
 
@@ -211,6 +212,15 @@ def events() -> list[dict]:
         out.append({"id": r[0], "at": r[1], "kind": r[2], "actor_id": int(r[3]) if r[3] else None,
                     "target_id": int(r[4]) if r[4] else None, **payload})
     return out
+
+
+def game_started_at() -> Optional[int]:
+    v = get_state(STATE_GAME_STARTED_AT)
+    return int(v) if v else None
+
+
+def game_started() -> bool:
+    return game_started_at() is not None
 
 
 # --- housemates ---
@@ -925,9 +935,12 @@ def _panel_text(guild: Optional[discord.Guild]) -> str:
     chal = open_challenge()
     quiet = quiet_housemates()
 
+    started = game_started_at()
     lines = [f"## {EYE} Big Brother Control",
              "-# Only phase and counts are shown here. Everything secret is sent to the host's DMs.",
              "",
+             (f"**Game:** 🟢 live since <t:{started}:f>" if started
+              else "**Game:** ⚪ not started. Housemates can be added now; their panel unlocks when you press **Start the game**."),
              f"**Housemates:** {len(ins)} in the house · {len(evicted)} evicted · {len(immune_ids())} immune"]
     if noms:
         lines.append(f"**Nominations:** 🟢 open · {len(nominators_done(noms['id']))}/{len(ins)} have nominated")
@@ -972,7 +985,12 @@ class BigBrotherControlView(discord.ui.LayoutView):
         card = discord.ui.Container(accent_colour=ACCENT)
         card.add_item(discord.ui.TextDisplay(_panel_text(guild)))
 
+        started = game_started()
         sections = [
+            ("### 🎬 Game", [
+                [_PanelButton("start", "Start the game" if not started else "Game is live",
+                              discord.ButtonStyle.success if not started else discord.ButtonStyle.secondary, "🎬")],
+            ]),
             ("### 🗳️ Eviction cycle", [
                 [_PanelButton("open_noms", "Open nominations", discord.ButtonStyle.primary, "📝"),
                  _PanelButton("close_noms", "Close nominations", emoji="🔒")],
@@ -1099,6 +1117,33 @@ async def _reply(interaction: discord.Interaction, text: str, *, refresh: bool =
         await interaction.response.send_message(text, ephemeral=True)
     if refresh:
         asyncio.create_task(refresh_panel(interaction.client))
+
+
+async def _act_start(interaction: discord.Interaction):
+    if game_started():
+        await _reply(interaction, f"The game has been live since <t:{game_started_at()}:f>.", refresh=False)
+        return
+    if not housemates():
+        await _reply(interaction, "Add the housemates first, then start the game.", refresh=False)
+        return
+
+    async def yes(inter: discord.Interaction):
+        await inter.response.defer(ephemeral=True)
+        set_state(STATE_GAME_STARTED_AT, _now())
+        log_event("game_started", housemates=housemates())
+        ch = await house_channel(inter.client)
+        if ch:
+            await ch.send(
+                f"{_role_mention()}{EYE} **The doors are open.**\n\n"
+                f"Welcome to the Big Brother house. The pinned panel is how you talk to Big Brother: "
+                f"the diary room, nominations, your secret mission and the snug are all there. "
+                f"Big Brother is watching. Good luck.")
+        await refresh_panel(inter.client)
+        await _reply(inter, "The game is live. The house panel is unlocked and the doors announcement is posted.", refresh=False)
+
+    await interaction.response.send_message(
+        f"Start the game with {len(housemates())} housemates? This unlocks the house panel and posts the opening announcement.",
+        view=_Confirm(yes, "Start the game"), ephemeral=True)
 
 
 async def _act_open_noms(interaction: discord.Interaction):
@@ -1471,7 +1516,7 @@ async def _act_refresh(interaction: discord.Interaction):
 
 
 PANEL_ACTIONS = {
-    "open_noms": _act_open_noms, "close_noms": _act_close_noms, "start_vote": _act_start_vote,
+    "start": _act_start, "open_noms": _act_open_noms, "close_noms": _act_close_noms, "start_vote": _act_start_vote,
     "close_vote": _act_close_vote, "evict": _act_evict, "add": _act_add, "immunity": _act_immunity,
     "mission": _act_mission, "resolve_mission": _act_resolve_mission, "challenge": _act_challenge,
     "token": _act_token, "snug": _act_snug,
@@ -1761,6 +1806,11 @@ def _house_panel_text(guild: Optional[discord.Guild]) -> str:
     lines = [f"## {EYE} The Big Brother House",
              f"**{len(ins)}** housemates remain · **{len(housemates(STATUS_EVICTED))}** evicted",
              ""]
+    if not game_started():
+        lines.append("🚪 **The doors aren't open yet.** Big Brother will unlock this panel when the game starts.")
+        lines.append("")
+        lines.append("-# Everything you press here is between you and Big Brother. Nobody else sees it.")
+        return "\n".join(lines)
     if noms:
         lines.append(f"📝 **Nominations are open.** Pick the {n} housemate{'s' if n != 1 else ''} you want to face the public vote.")
     else:
@@ -1796,16 +1846,22 @@ class HousePanelView(discord.ui.LayoutView):
                  _HouseButton("housemates", "Who's in the house", emoji="🏠")],
             ]),
         ]
+        locked = not game_started()
         for heading, rows in sections:
             card.add_item(discord.ui.Separator())
             card.add_item(discord.ui.TextDisplay(heading))
             for row in rows:
+                for btn in row:
+                    btn.disabled = locked
                 card.add_item(discord.ui.ActionRow(*row))
         self.add_item(card)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if not enabled():
             await interaction.response.send_message("Big Brother isn't running right now.", ephemeral=True)
+            return False
+        if not game_started():
+            await interaction.response.send_message(f"{EYE} The doors aren't open yet.", ephemeral=True)
             return False
         cid = (interaction.data or {}).get("custom_id", "")
         action = cid.rsplit(":", 1)[-1]

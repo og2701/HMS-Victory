@@ -135,14 +135,29 @@ def test_panel_text_and_view_have_no_secrets(bb):
     assert view.timeout is None
     ids = [c.custom_id for row in view.children[0].children
            if hasattr(row, "children") for c in row.children]
-    assert len(ids) == 17 and len(set(ids)) == 17
+    assert len(ids) == 18 and len(set(ids)) == 18
     assert set(ids) == {f"bb:ctl:{a}" for a in bb.PANEL_ACTIONS}
     # Rows stay short so buttons don't wrap mid-row on desktop.
     assert all(len(row.children) <= 3 for row in view.children[0].children if hasattr(row, "children"))
 
 
+def test_house_panel_locked_until_game_starts(bb):
+    bb.db_add_housemate(1)
+    assert not bb.game_started()
+    assert "doors aren't open" in bb._house_panel_text(None)
+    view = bb.HousePanelView(None)
+    buttons = [c for row in view.children[0].children if hasattr(row, "children") for c in row.children]
+    assert buttons and all(b.disabled for b in buttons)
+    bb.set_state(bb.STATE_GAME_STARTED_AT, 123)
+    assert bb.game_started_at() == 123
+    view = bb.HousePanelView(None)
+    buttons = [c for row in view.children[0].children if hasattr(row, "children") for c in row.children]
+    assert all(not b.disabled for b in buttons)
+
+
 def test_house_panel_buttons_and_gating(bb):
     bb.db_add_housemate(1)
+    bb.set_state(bb.STATE_GAME_STARTED_AT, 1)
     bb.create_round(bb.KIND_NOMINATIONS)
     text = bb._house_panel_text(None)
     assert "Nominations are open" in text and "1** housemates remain" in text
