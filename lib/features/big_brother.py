@@ -38,6 +38,7 @@ STATE_LAST_NOM_TALLY = "last_nomination_tally"
 STATE_LAST_VOTE_RESULT = "last_vote_result"
 STATE_GAME_STARTED_AT = "game_started_at"
 STATE_HOUSE_MSGS_SINCE_PANEL = "house_msgs_since_panel"
+STATE_HOUSE_SILENT = "house_silent"
 STATE_HOUSE_PANEL_SIG = "house_panel_signature"  # what the house panel last showed; a change re-posts it
 HOUSE_PANEL_REPOST_EVERY = 20  # chat messages in the house before the panel is re-posted at the bottom
 _repost_lock = asyncio.Lock()
@@ -226,6 +227,10 @@ def game_started_at() -> Optional[int]:
 
 def game_started() -> bool:
     return game_started_at() is not None
+
+
+def house_silent() -> bool:
+    return bool(get_state(STATE_HOUSE_SILENT, False))
 
 
 def house_unlocked() -> bool:
@@ -718,7 +723,8 @@ async def set_house_silence(client: discord.Client, silent: bool) -> bool:
             await ch.set_permissions(role, overwrite=None, reason="Big Brother: nominations closed")
         else:
             await ch.set_permissions(role, overwrite=overwrite,
-                                     reason="Big Brother: nominations " + ("open" if silent else "closed"))
+                                     reason="Big Brother: house " + ("silenced" if silent else "unsilenced"))
+        set_state(STATE_HOUSE_SILENT, bool(silent))
         return True
     except discord.HTTPException as e:
         log.warning("Big Brother: could not %s the house: %s", "silence" if silent else "unsilence", e)
@@ -1118,6 +1124,7 @@ def _panel_text(guild: Optional[discord.Guild]) -> str:
         lines.append(f"**Eviction vote:** 🟢 open in <#{vote['channel_id']}> · {vote_count(vote['id'])} votes cast")
     else:
         lines.append("**Eviction vote:** ⚪ none running")
+    lines.append("**House chat:** " + ("🔇 housemates silenced" if house_silent() else "🟢 open"))
     lines.append(f"**Secret missions:** {len(missions)} active")
     lines.append(f"**Challenge:** {('🟢 ' + chal['title']) if chal else '⚪ none open'}")
     if quiet:
@@ -1172,6 +1179,9 @@ class BigBrotherControlView(discord.ui.LayoutView):
                  _PanelButton("immunity", "Toggle immunity", emoji="🛡️"),
                  _PanelButton("token", "Grant immunity token", emoji="🎟️")],
                 [_PanelButton("snug", "Open a snug", emoji="🛋️"),
+                 _PanelButton("silence", "Unsilence house" if house_silent() else "Silence house",
+                              discord.ButtonStyle.secondary if house_silent() else discord.ButtonStyle.danger,
+                              "🔊" if house_silent() else "🔇"),
                  _PanelButton("crown", "Crown winner", discord.ButtonStyle.success, "👑")],
             ]),
             ("### 🕵️ Secret missions", [
@@ -1343,6 +1353,22 @@ async def _act_start(interaction: discord.Interaction):
     await interaction.response.send_message(
         f"Start the game with {len(housemates())} housemates? This unlocks the house panel and posts the opening announcement.",
         view=_Confirm(yes, "Start the game"), ephemeral=True)
+
+
+async def _act_silence(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    target = not house_silent()
+    ok = await set_house_silence(interaction.client, target)
+    if not ok:
+        await _reply(interaction, "Couldn't change the house permissions (is the Housemate role configured?).", refresh=False)
+        return
+    log_event("house_silenced" if target else "house_unsilenced", actor=interaction.user.id)
+    ch = await house_channel(interaction.client)
+    if ch:
+        await bb_send(ch, f"{EYE} **The house is silent.** No talking until Big Brother says so." if target
+                      else f"{EYE} **You may talk again.**")
+    await _reply(interaction, "Housemates can no longer send messages in the house." if target
+                 else "Housemates can talk in the house again.")
 
 
 async def _act_open_noms(interaction: discord.Interaction):
@@ -1710,7 +1736,7 @@ async def _act_refresh(interaction: discord.Interaction):
 
 
 PANEL_ACTIONS = {
-    "start": _act_start, "open_noms": _act_open_noms, "close_noms": _act_close_noms, "start_vote": _act_start_vote,
+    "start": _act_start, "silence": _act_silence, "open_noms": _act_open_noms, "close_noms": _act_close_noms, "start_vote": _act_start_vote,
     "close_vote": _act_close_vote, "evict": _act_evict, "add": _act_add, "immunity": _act_immunity,
     "mission": _act_mission, "resolve_mission": _act_resolve_mission, "challenge": _act_challenge,
     "token": _act_token, "snug": _act_snug,
