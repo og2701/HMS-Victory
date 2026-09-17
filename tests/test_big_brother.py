@@ -452,3 +452,20 @@ def test_catalogue_capture_window(shop, bb, monkeypatch):
     real_now = bb._now
     monkeypatch.setattr(bb, "_now", lambda: real_now() + shop.CAPTURE_WINDOW + 1)
     assert shop.pending_capture(5) is None            # expired
+
+
+def test_bare_item_lines_and_price_bands(shop):
+    text = "Sweets:\nHaribo\n- Jelly Babies\n\nBottle of rum\n"
+    assert shop.bare_item_lines(text) == [("Sweets", "Haribo"), ("Sweets", "Jelly Babies"), ("Sweets", "Bottle of rum")]
+    assert shop.bare_item_lines("Haribo — £2.00\nJelly Babies") == []   # priced lines use the normal parser
+    assert shop.bare_item_lines("") == []
+    # Every band round-trips through the money formatter and parser Jev's answers go through.
+    for pence in shop.PRICE_BANDS:
+        assert shop.parse_money(shop.pounds(pence)) == pence
+
+
+def test_jev_pricing_without_key_skips_cleanly(shop, monkeypatch):
+    import asyncio
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    entries, failures = asyncio.run(shop.jev_sort_and_price([(None, "Haribo")]))
+    assert entries == [] and failures == 1

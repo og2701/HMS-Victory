@@ -519,6 +519,90 @@ def restore_timers(client: discord.Client) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Jev sorts and prices bare item names: one call per item, two picks (aisle, price band),
+# calibrated on a few priced examples from each existing aisle.
+# ---------------------------------------------------------------------------
+
+PRICE_BANDS = [50, 80, 100, 120, 150, 180, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700,
+               800, 900, 1000, 1200, 1500, 1800, 2000, 2500]
+DEFAULT_AISLES = ["Meat & Fish", "Fruit & Veg", "Misc", "Breakfast & Tea", "Sweets", "Crisps & Snacks",
+                  "Drinks & Temptations", "Spices"]
+JEV_CONCURRENCY = 6
+
+
+def bare_item_lines(text: str) -> list[tuple[Optional[str], str]]:
+    """For a message with no priced lines at all: every line is an item. A line ending with a
+    colon is an aisle hint for the lines under it. Returns (aisle_hint, name) pairs."""
+    if parse_catalogue(text):
+        return []
+    out, hint = [], None
+    for raw in (text or "").splitlines():
+        line = raw.strip().lstrip("-•* ").strip()
+        if not line:
+            continue
+        if line.endswith(":"):
+            hint = line.rstrip(":").strip()[:60] or None
+            continue
+        out.append((hint, line[:80]))
+    return out
+
+
+def _price_examples() -> dict[str, list[str]]:
+    by: dict[str, list[str]] = {}
+    for it in catalogue():
+        lst = by.setdefault(it["category"], [])
+        if len(lst) < 5:
+            lst.append(f"{it['name']} {pounds(it['price'])}")
+    return by
+
+
+async def jev_sort_and_price(items: list[tuple[Optional[str], str]]) -> tuple[list[tuple[str, str, int]], int]:
+    """(entries, failures). Each entry is (aisle, name, pence). Items Jev couldn't judge are
+    counted in failures and left out rather than guessed."""
+    from lib.features.mention_signals import MENTION_SIGNALS_MODEL, _post
+    key = os.getenv("TYPESAFE_API_KEY")
+    if not key:
+        return [], len(items)
+    aisles = categories() or DEFAULT_AISLES
+    examples = _price_examples()
+    price_criteria = {pounds(p): None for p in PRICE_BANDS}
+    sem = asyncio.Semaphore(JEV_CONCURRENCY)
+
+    async def one(hint: Optional[str], name: str):
+        questions = {
+            "price": {
+                "type": "choice",
+                "instructions": "A fair UK supermarket shelf price for one `item` (one normal pack, bottle or unit), "
+                                "on the same scale as `examples`. A single veg, tin or sachet is cheap; alcohol, "
+                                "joints of meat and multipacks are dear.",
+                "criteria": price_criteria,
+            },
+        }
+        if not hint or hint not in aisles:
+            questions["aisle"] = {
+                "type": "choice",
+                "instructions": "Which aisle of the shop does `item` belong in? `examples` shows what each aisle holds.",
+                "criteria": {a: None for a in aisles},
+            }
+        payload = {"model": MENTION_SIGNALS_MODEL,
+                   "state": {"item": name, "aisles": aisles, "examples": examples},
+                   "questions": questions}
+        async with sem:
+            body = await _post(payload, key, session=None, timeout=8.0)
+        answers = (body or {}).get("answers") or {}
+        price_label = (answers.get("price") or {}).get("choice")
+        pence = parse_money(price_label or "")
+        aisle = hint if hint else (answers.get("aisle") or {}).get("choice")
+        if pence is None or not aisle:
+            return None
+        return (aisle, name, pence)
+
+    results = await asyncio.gather(*(one(h, n) for h, n in items), return_exceptions=True)
+    entries = [r for r in results if isinstance(r, tuple)]
+    return entries, len(items) - len(entries)
+
+
+# ---------------------------------------------------------------------------
 # Catalogue capture: the host sends the list as a normal message (or a .txt) in the
 # control channel after pressing Add items, and the bot picks it up.
 # ---------------------------------------------------------------------------
@@ -551,15 +635,37 @@ async def maybe_capture(client: discord.Client, message: discord.Message) -> boo
             except discord.HTTPException:
                 pass
     entries = parse_catalogue(text)
+    judged = ""
     if not entries:
-        return False  # ordinary chat while a capture is pending; keep waiting
+        bare = bare_item_lines(text)
+        if not bare:
+            return False  # ordinary chat while a capture is pending; keep waiting
+        # No prices given: let Jev sort and price them.
+        try:
+            await message.add_reaction("🤔")
+        except discord.HTTPException:
+            pass
+        entries, failures = await jev_sort_and_price(bare)
+        if not entries:
+            try:
+                await message.reply("🛒 I couldn't price those (is Jev reachable?). Send them with prices, "
+                                    "e.g. `Sausages — £3.00`.", mention_author=False)
+            except discord.HTTPException:
+                pass
+            return True
+        judged = "\n".join(f"• {n} — {pounds(p)} ({a})" for a, n, p in entries)[:1500]
+        if failures:
+            judged += f"\n-# {failures} item(s) skipped: Jev wasn't sure."
+        judged += "\n-# Don't like a price or aisle? Send that line again with a price and it'll update."
     bb.set_state(CAPTURE_KEY, None)
     set_catalogue(entries, replace=cap["replace"])
-    bb.log_event("shop_catalogue_updated", actor=message.author.id, added=len(entries), replaced=cap["replace"])
+    bb.log_event("shop_catalogue_updated", actor=message.author.id, added=len(entries), replaced=cap["replace"],
+                 priced_by_jev=bool(judged))
     try:
         await message.reply(
             f"🛒 {'Replaced the catalogue with' if cap['replace'] else 'Added'} **{len(entries)}** item(s). "
-            f"Now {len(catalogue())} items in {len(categories())} aisles. Press Catalogue on the panel to check.",
+            f"Now {len(catalogue())} items in {len(categories())} aisles."
+            + (f"\n{judged}" if judged else " Press Catalogue on the panel to check."),
             mention_author=False)
     except discord.HTTPException:
         pass
@@ -657,9 +763,12 @@ class _CatalogueView(discord.ui.View):
             start_capture(interaction.user.id, replace_all)
             await interaction.response.edit_message(
                 content=("♻️ **Replacing the catalogue.**" if replace_all else "➕ **Adding to the catalogue.**")
-                        + " Now send the list as a normal message in this channel, or attach a .txt file. "
-                        "A line with no price starts an aisle, e.g.\n"
-                        "```\nMeat & Fish\nWhole chicken — £7.00\nSausages — £3.00\n```\n"
+                        + " Now send the list as a normal message in this channel, or attach a .txt file.\n\n"
+                        "**With prices**, a line with no price starts an aisle:\n"
+                        "```\nMeat & Fish\nWhole chicken — £7.00\nSausages — £3.00\n```"
+                        "**Or just names**, and Big Brother's assistant will sort them into aisles and price them "
+                        "(a line ending in a colon fixes the aisle for the lines under it):\n"
+                        "```\nSweets:\nHaribo\nJelly Babies\nBottle of rum\n```"
                         "I'll pick it up within the next 15 minutes and reply with what I added.",
                 view=None)
 
