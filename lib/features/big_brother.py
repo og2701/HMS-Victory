@@ -836,28 +836,40 @@ class BigBrotherControlView(discord.ui.LayoutView):
         super().__init__(timeout=None)
         card = discord.ui.Container(accent_colour=ACCENT)
         card.add_item(discord.ui.TextDisplay(_panel_text(guild)))
+
+        sections = [
+            ("### 🗳️ Eviction cycle", [
+                [_PanelButton("open_noms", "Open nominations", discord.ButtonStyle.primary, "📝"),
+                 _PanelButton("close_noms", "Close nominations", emoji="🔒")],
+                [_PanelButton("start_vote", "Start eviction vote", discord.ButtonStyle.primary, "🗳️"),
+                 _PanelButton("close_vote", "Close vote", emoji="🔒"),
+                 _PanelButton("evict", "Evict housemate", discord.ButtonStyle.danger, "🚪")],
+            ]),
+            ("### 🏠 Housemates", [
+                [_PanelButton("add", "Add housemates", discord.ButtonStyle.success, "➕"),
+                 _PanelButton("immunity", "Toggle immunity", emoji="🛡️"),
+                 _PanelButton("crown", "Crown winner", discord.ButtonStyle.success, "👑")],
+            ]),
+            ("### 🕵️ Secret missions", [
+                [_PanelButton("mission", "Assign mission", emoji="🕵️"),
+                 _PanelButton("resolve_mission", "Resolve mission", emoji="✅")],
+            ]),
+            ("### 🧠 Challenges", [
+                [_PanelButton("challenge", "Post challenge", emoji="🧠"),
+                 _PanelButton("end_challenge", "End challenge", emoji="🏁")],
+            ]),
+            ("### 📣 Messages", [
+                [_PanelButton("dm", "DM as Big Brother", emoji="✉️"),
+                 _PanelButton("broadcast", "Announce in house", emoji="📣")],
+            ]),
+        ]
+        for heading, rows in sections:
+            card.add_item(discord.ui.Separator())
+            card.add_item(discord.ui.TextDisplay(heading))
+            for row in rows:
+                card.add_item(discord.ui.ActionRow(*row))
         card.add_item(discord.ui.Separator())
-        card.add_item(discord.ui.ActionRow(
-            _PanelButton("open_noms", "Open nominations", discord.ButtonStyle.primary, "📝"),
-            _PanelButton("close_noms", "Close nominations", emoji="🔒"),
-            _PanelButton("start_vote", "Start eviction vote", discord.ButtonStyle.primary, "🗳️"),
-            _PanelButton("close_vote", "Close vote", emoji="🔒"),
-            _PanelButton("evict", "Evict housemate", discord.ButtonStyle.danger, "🚪"),
-        ))
-        card.add_item(discord.ui.ActionRow(
-            _PanelButton("add", "Add housemates", discord.ButtonStyle.success, "➕"),
-            _PanelButton("immunity", "Toggle immunity", emoji="🛡️"),
-            _PanelButton("mission", "Assign mission", emoji="🕵️"),
-            _PanelButton("resolve_mission", "Resolve mission", emoji="✅"),
-            _PanelButton("challenge", "Post challenge", emoji="🧠"),
-        ))
-        card.add_item(discord.ui.ActionRow(
-            _PanelButton("dm", "DM as Big Brother", emoji="✉️"),
-            _PanelButton("broadcast", "Announce in house", emoji="📣"),
-            _PanelButton("end_challenge", "End challenge", emoji="🏁"),
-            _PanelButton("crown", "Crown winner", discord.ButtonStyle.success, "👑"),
-            _PanelButton("refresh", "Refresh", emoji="🔄"),
-        ))
+        card.add_item(discord.ui.ActionRow(_PanelButton("refresh", "Refresh", emoji="🔄")))
         self.add_item(card)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:

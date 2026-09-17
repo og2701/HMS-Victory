@@ -137,6 +137,8 @@ def test_panel_text_and_view_have_no_secrets(bb):
            if hasattr(row, "children") for c in row.children]
     assert len(ids) == 15 and len(set(ids)) == 15
     assert set(ids) == {f"bb:ctl:{a}" for a in bb.PANEL_ACTIONS}
+    # Rows stay short so buttons don't wrap mid-row on desktop.
+    assert all(len(row.children) <= 3 for row in view.children[0].children if hasattr(row, "children"))
 
 
 def test_house_panel_buttons_and_gating(bb):
