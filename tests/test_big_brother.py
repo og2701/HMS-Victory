@@ -290,6 +290,22 @@ def test_acks_are_single_use_and_owned(bb):
     assert bb.AckButton(aid, 7, done=True).item.disabled
 
 
+def test_multi_pick_grid_state(bb):
+    import discord
+    state = bb._MultiState([1, 2, 3], [2], 2, 2, on_done=None)
+    page = bb._MultiPickGrid(None, [1, 2, 3], state, "Nominate")
+    names = page.children[:3]
+    assert names[1].style == discord.ButtonStyle.primary and names[1].label.startswith("✓")
+    done = page.children[3]
+    assert done.label == "Nominate (1)" and done.disabled  # below the minimum
+    state.selected.add(3)
+    page._build()
+    assert page.children[3].label == "Nominate (2)" and not page.children[3].disabled
+    assert state.chosen() == [2, 3]
+    # 24 names per page leaves room for the Done button under the 25-button cap.
+    assert bb.MULTI_PAGE == 24
+
+
 def test_vote_button_custom_id(bb):
     btn = bb.VoteButton(7, 42, "Bob")
     assert btn.custom_id == "bb:vote:7:42"

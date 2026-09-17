@@ -1051,26 +1051,6 @@ class AckButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:ack:(?P
 # Ephemeral pickers used by the panel
 # ---------------------------------------------------------------------------
 
-class _HousematePicker(discord.ui.View):
-    """Ephemeral dropdown of housemates. `on_done(interaction, [ids])` runs on submit."""
-
-    def __init__(self, guild: Optional[discord.Guild], ids: list[int], on_done: Callable,
-                 *, placeholder: str, min_values: int = 1, max_values: int = 1,
-                 defaults: Iterable[int] = ()):
-        super().__init__(timeout=300)
-        defaults = set(defaults)
-        options = [discord.SelectOption(label=_name(guild, i)[:100], value=str(i), default=i in defaults)
-                   for i in ids[:25]]
-        select = discord.ui.Select(placeholder=placeholder, options=options,
-                                   min_values=min(min_values, len(options)),
-                                   max_values=min(max_values, len(options)))
-
-        async def _cb(interaction: discord.Interaction):
-            await on_done(interaction, [int(v) for v in select.values])
-        select.callback = _cb
-        self.add_item(select)
-
-
 GRID_MAX = 25  # Discord: 5 rows x 5 buttons on one message
 
 
@@ -1168,6 +1148,84 @@ async def _send_count(interaction: discord.Interaction, content: str, guild, ids
                       counts: dict[int, int], on_press: Callable):
     views = [_CountGrid(guild, page, counts, on_press) for page in _chunks(ids)]
     await _GridSet().deliver(interaction, content, views)
+
+
+MULTI_PAGE = GRID_MAX - 1  # one slot per page goes to the Done button
+
+
+class _MultiState:
+    def __init__(self, order: list[int], selected: Iterable[int], min_values: int, max_values: int, on_done: Callable):
+        self.order, self.selected = list(order), set(selected)
+        self.min_values, self.max_values, self.on_done = min_values, max_values, on_done
+        self.done = False
+
+    def chosen(self) -> list[int]:
+        return [u for u in self.order if u in self.selected]
+
+
+class _MultiPickGrid(discord.ui.View):
+    """One page of a multi-pick: press names to select or unselect them (blue = picked), then
+    press Done. Selection is shared across pages, so Done on any page submits the lot."""
+
+    def __init__(self, guild: Optional[discord.Guild], ids: list[int], state: _MultiState, done_label: str):
+        super().__init__(timeout=300)
+        self.guild, self.ids, self.state, self.done_label = guild, ids, state, done_label
+        self._build()
+
+    def _build(self):
+        self.clear_items()
+        for uid in self.ids[:MULTI_PAGE]:
+            picked = uid in self.state.selected
+            btn = discord.ui.Button(label=(("✓ " if picked else "") + _name(self.guild, uid))[:80],
+                                    style=discord.ButtonStyle.primary if picked else discord.ButtonStyle.secondary)
+
+            async def _toggle(interaction: discord.Interaction, _uid=uid):
+                if self.state.done:
+                    await interaction.response.send_message("That list has already been submitted.", ephemeral=True)
+                    return
+                if _uid in self.state.selected:
+                    self.state.selected.discard(_uid)
+                elif len(self.state.selected) >= self.state.max_values:
+                    await interaction.response.send_message(
+                        f"You can pick at most {self.state.max_values}. Unpick someone first.", ephemeral=True)
+                    return
+                else:
+                    self.state.selected.add(_uid)
+                self._build()
+                await interaction.response.edit_message(view=self)
+            btn.callback = _toggle
+            self.add_item(btn)
+
+        n = len(self.state.selected)
+        ok = self.state.min_values <= n <= self.state.max_values
+        done = discord.ui.Button(label=f"{self.done_label} ({n})", emoji="✅",
+                                 style=discord.ButtonStyle.success if ok else discord.ButtonStyle.secondary,
+                                 disabled=not ok, row=4)
+
+        async def _done(interaction: discord.Interaction):
+            if self.state.done:
+                await interaction.response.send_message("Already submitted.", ephemeral=True)
+                return
+            chosen = self.state.chosen()
+            if not (self.state.min_values <= len(chosen) <= self.state.max_values):
+                await interaction.response.send_message(
+                    f"Pick between {self.state.min_values} and {self.state.max_values}.", ephemeral=True)
+                return
+            self.state.done = True
+            await self.state.on_done(interaction, chosen)
+        done.callback = _done
+        self.add_item(done)
+
+
+async def _send_multi(interaction: discord.Interaction, content: str, guild, ids: list[int], on_done: Callable,
+                      *, min_values: int = 1, max_values: Optional[int] = None, defaults: Iterable[int] = (),
+                      done_label: str = "Done", edit: bool = False):
+    ids = list(ids)
+    max_values = len(ids) if max_values is None else min(max_values, len(ids))
+    state = _MultiState(ids, [d for d in defaults if d in ids], min(min_values, len(ids)), max_values, on_done)
+    pages = [ids[i:i + MULTI_PAGE] for i in range(0, len(ids), MULTI_PAGE)] or [[]]
+    views = [_MultiPickGrid(guild, page, state, done_label) for page in pages]
+    await _GridSet().deliver(interaction, content, views, edit=edit)
 
 
 class _ToggleGrid(discord.ui.View):
@@ -1613,11 +1671,9 @@ async def _act_start_vote(interaction: discord.Interaction):
         await _reply(inter, "Couldn't start the vote (already open, or the vote channel is missing)."
                      if not res else f"Eviction vote posted in <#{res['channel_id']}>.")
 
-    view = _HousematePicker(interaction.guild, choices, done, placeholder="Who faces the public vote?",
-                            min_values=2, max_values=min(25, len(choices)), defaults=defaults)
-    await interaction.response.send_message(
-        "Pick the nominees for the public vote. Pre-selected from the last nomination tally where there is one.",
-        view=view, ephemeral=True)
+    await _send_multi(interaction,
+                      "Press the names facing the public vote, then Done. Pre-selected from the last nomination tally where there is one.",
+                      interaction.guild, choices, done, min_values=2, defaults=defaults, done_label="Start vote")
 
 
 async def _act_close_vote(interaction: discord.Interaction):
@@ -1727,9 +1783,8 @@ async def _act_snug(interaction: discord.Interaction):
         await inter.response.send_modal(_TextModal("Open a snug", [
             ("reason", "What's it for? (optional, shown in the thread)", False, 500, True)], submitted))
 
-    view = _HousematePicker(interaction.guild, ins, picked, placeholder="Who goes in the snug?",
-                            min_values=2, max_values=min(25, len(ins)))
-    await interaction.response.send_message("Pick the housemates for the snug.", view=view, ephemeral=True)
+    await _send_multi(interaction, "Press the housemates going into the snug, then Done.",
+                      interaction.guild, ins, picked, min_values=2, done_label="Open snug")
 
 
 def _token_blurb(total: int) -> str:
@@ -1881,9 +1936,8 @@ async def _act_dm(interaction: discord.Interaction):
         await inter.response.send_modal(_TextModal("Message from Big Brother",
                                                    [("text", "Message", True, 1500, True)], submitted))
 
-    view = _HousematePicker(interaction.guild, ins, picked, placeholder="Who should hear from Big Brother?",
-                            max_values=min(25, len(ins)))
-    await interaction.response.send_message("Pick one or more housemates.", view=view, ephemeral=True)
+    await _send_multi(interaction, "Press everyone who should hear from Big Brother, then Done.",
+                      interaction.guild, ins, picked, min_values=1, done_label="Write message")
 
 
 async def _act_broadcast(interaction: discord.Interaction):
@@ -1990,13 +2044,11 @@ async def handle_nominate(interaction: discord.Interaction):
             content=f"{EYE} Noted. You nominated **{names}**. Only Big Brother knows.", view=None)
         asyncio.create_task(refresh_panel(inter.client))
 
-    view = _HousematePicker(interaction.guild, eligible, done,
-                            placeholder=f"Pick {n} housemate{'s' if n != 1 else ''}",
-                            min_values=n, max_values=n, defaults=already)
-    await interaction.response.send_message(
-        f"Choose the {n} housemate{'s' if n != 1 else ''} you're nominating for eviction."
-        + (" You've already nominated; submitting again replaces it." if already else ""),
-        view=view, ephemeral=True)
+    await _send_multi(interaction,
+                      f"Press the {n} housemate{'s' if n != 1 else ''} you're nominating for eviction, then Nominate."
+                      + (" You've already nominated; submitting again replaces it." if already else ""),
+                      interaction.guild, eligible, done, min_values=n, max_values=n, defaults=already,
+                      done_label="Nominate")
 
 
 async def handle_mission(interaction: discord.Interaction):
@@ -2187,11 +2239,9 @@ async def handle_snug(interaction: discord.Interaction):
                                         + ", ".join(_name(inter.guild, i) for i in ids) + f": <#{thread.id}>")
         await inter.edit_original_response(content=f"{EYE} The snug is open: <#{thread.id}>. Big Brother is listening.", view=None)
 
-    view = _HousematePicker(interaction.guild, others, picked, placeholder="Who joins you in the snug?",
-                            max_values=min(4, len(others)))
-    await interaction.response.send_message(
-        "Pick up to four housemates to take into the snug. It's a private thread, just you, them and Big Brother.",
-        view=view, ephemeral=True)
+    await _send_multi(interaction,
+                      "Press up to four housemates to take into the snug, then Done. It's a private thread, just you, them and Big Brother.",
+                      interaction.guild, others, picked, min_values=1, max_values=4, done_label="Open snug")
 
 
 HOUSE_ACTIONS = {
