@@ -21,6 +21,7 @@ from typing import Optional
 
 import discord
 
+import config
 from database import DatabaseManager
 from lib.features import big_brother as bb
 
@@ -31,6 +32,19 @@ _close_tasks: dict[int, asyncio.Task] = {}
 SEED_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                          "data", "big_brother_catalogue.txt")
 _PRICE_LINE = re.compile(r"^(?P<name>.+?)\s*[-–—:]+\s*£?\s*(?P<price>\d+(?:[.,]\d{1,2})?)\s*$")
+
+
+async def shop_channel(client: discord.Client):
+    """Where the shop and its announcements post: the house, unless config points elsewhere
+    (used to test the shop in the control channel without touching the live house)."""
+    override = getattr(config, "BIG_BROTHER_SHOP_CHANNEL", None)
+    if override:
+        return await bb._channel(client, int(override))
+    return await bb.house_channel(client)
+
+
+def can_shop(user_id: int) -> bool:
+    return bb.is_housemate(user_id) or bb.is_operator(user_id)
 
 
 def ensure_tables() -> None:
@@ -305,7 +319,7 @@ class ShopBrowseButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:
         if not bb.enabled():
             await interaction.response.send_message("Big Brother isn't running right now.", ephemeral=True)
             return
-        if not bb.is_housemate(interaction.user.id):
+        if not can_shop(interaction.user.id):
             await interaction.response.send_message(f"{bb.EYE} Only housemates can shop.", ephemeral=True)
             return
         task = get_task(self.task_id)
@@ -386,7 +400,7 @@ class _ItemView(discord.ui.View):
                 task = get_task(self.task_id)
                 bb.log_event("shop_purchase", actor=interaction.user.id, task_id=self.task_id,
                              item=item["name"], price=item["price"], remaining=left_now)
-                ch = await bb.house_channel(interaction.client)
+                ch = await shop_channel(interaction.client)
                 if ch:
                     await bb.bb_send(ch, f"🛒 **{bb._name(interaction.guild, interaction.user.id)}** bought "
                                          f"**{item['name']}** for {pounds(item['price'])}. "
@@ -423,9 +437,9 @@ async def open_shop(client: discord.Client, brief: str, budget: int, required: l
         return None, "A shop is already open. Close it first."
     if not catalogue():
         return None, "The catalogue is empty. Add items first."
-    ch = await bb.house_channel(client)
+    ch = await shop_channel(client)
     if not ch:
-        return None, "House channel not found."
+        return None, "Shop channel not found."
     closes_at = bb._now() + minutes * 60 if minutes else None
     tid = create_task(brief, budget, required, closes_at)
     task = get_task(tid)
@@ -453,7 +467,7 @@ async def close_shop(client: discord.Client, task_id: int, reason: str) -> Optio
     task = get_task(task_id)
     guild = bb._guild(client)
     await update_shop_message(client, task)
-    ch = await bb.house_channel(client)
+    ch = await shop_channel(client)
     if ch:
         if task["required"]:
             text = (f"🛒 **The shop is closed.** {reason}\n\n"
