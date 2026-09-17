@@ -384,6 +384,12 @@ def test_shop_buy_judge_and_close(shop, bb):
 
     passed, missing, extras = shop.judge(shop.get_task(tid))
     assert not passed and missing == ["Carrots"] and extras == ["Lemon"]
+    on_list, extra_rows, _ = shop.split_basket(shop.get_task(tid))
+    assert [p["name"] for p in on_list] == ["Whole chicken", "Maris Piper potatoes"]
+    assert [p["name"] for p in extra_rows] == ["Lemon"]
+    embed = shop.shop_embed(shop.get_task(tid), None)
+    names = [f.name for f in embed.fields]
+    assert any(n.startswith("✅ On the list (2)") for n in names) and any(n.startswith("🍬 Extras (1)") for n in names)
     shop.close_task_db(tid, "done")
     assert shop.current_task() is None
     ok, reason, _, _ = shop.buy(tid, ids["Carrots"], 1)

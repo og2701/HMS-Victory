@@ -248,10 +248,11 @@ def nothing_affordable(task: dict) -> bool:
     return all(it["id"] in bought or it["price"] > left for it in catalogue())
 
 
-def judge(task: dict) -> tuple[bool, list[str], list[str]]:
-    """(passed, missing, extras): required names against the basket, loosely matched."""
-    basket = [p["name"] for p in purchases(task["id"])]
-    basket_norm = [_norm(n) for n in basket]
+def split_basket(task: dict) -> tuple[list[dict], list[dict], list[str]]:
+    """(on_list, extras, missing): the basket split against the secret list, loosely matched
+    so 'potatoes' counts for 'Maris Piper potatoes'."""
+    basket = purchases(task["id"])
+    basket_norm = [_norm(p["name"]) for p in basket]
     missing, matched = [], set()
     for req in task["required"]:
         rn = _norm(req)
@@ -260,8 +261,15 @@ def judge(task: dict) -> tuple[bool, list[str], list[str]]:
             missing.append(req)
         else:
             matched.add(hit)
-    extras = [basket[i] for i in range(len(basket)) if i not in matched]
-    return (not missing), missing, extras
+    on_list = [p for i, p in enumerate(basket) if i in matched]
+    extras = [p for i, p in enumerate(basket) if i not in matched]
+    return on_list, extras, missing
+
+
+def judge(task: dict) -> tuple[bool, list[str], list[str]]:
+    """(passed, missing, extras) from the split basket."""
+    _, extras, missing = split_basket(task)
+    return (not missing), missing, [p["name"] for p in extras]
 
 
 def close_task_db(task_id: int, result: str) -> None:
@@ -291,13 +299,22 @@ def shop_embed(task: dict, guild: Optional[discord.Guild]) -> discord.Embed:
     e.add_field(name="Pot", value=f"**{pounds(left)}** left of {pounds(task['budget'])}", inline=True)
     if task["closes_at"]:
         e.add_field(name="Closes", value=f"<t:{task['closes_at']}:R>", inline=True)
-    if bought:
-        lines = [f"• {p['name']} - {pounds(p['price'])} ({bb._name(guild, p['user_id'])})" for p in bought[-15:]]
-        if len(bought) > 15:
-            lines.insert(0, f"-# …and {len(bought) - 15} earlier")
-        e.add_field(name=f"Basket ({len(bought)})", value="\n".join(lines)[:1024], inline=False)
-    else:
+    def _lines(items: list[dict]) -> str:
+        lines = [f"• {p['name']} - {pounds(p['price'])} ({bb._name(guild, p['user_id'])})" for p in items[-15:]]
+        if len(items) > 15:
+            lines.insert(0, f"-# …and {len(items) - 15} earlier")
+        return "\n".join(lines)[:1024]
+
+    if not bought:
         e.add_field(name="Basket", value="Empty. Press Browse to shop.", inline=False)
+    elif task["required"]:
+        on_list, extras, _ = split_basket(task)
+        if on_list:
+            e.add_field(name=f"✅ On the list ({len(on_list)})", value=_lines(on_list), inline=False)
+        if extras:
+            e.add_field(name=f"🍬 Extras ({len(extras)})", value=_lines(extras), inline=False)
+    else:
+        e.add_field(name=f"Basket ({len(bought)})", value=_lines(bought), inline=False)
     if task["status"] != "open":
         e.add_field(name="Status", value=f"**Closed.** {task.get('result') or ''}"[:1024], inline=False)
     return e
@@ -459,8 +476,8 @@ async def close_shop(client: discord.Client, task_id: int, reason: str) -> Optio
         return None
     passed, missing, extras = judge(task)
     left = remaining(task)
-    verdict = ("PASSED" if passed else "FAILED") if task["required"] else "closed"
-    close_task_db(task_id, f"{reason} {verdict}.".strip())
+    verdict = ("PASSED" if passed else "FAILED") if task["required"] else ""
+    close_task_db(task_id, f"{reason} {verdict}".strip())
     t = _close_tasks.pop(task_id, None)
     # When the timer itself is what called us, cancelling it would cancel this very coroutine
     # at the next await and silently drop the announcement and DM.
@@ -486,7 +503,7 @@ async def close_shop(client: discord.Client, task_id: int, reason: str) -> Optio
     if task["required"]:
         detail += f"\n\n**Required:** {', '.join(task['required'])}\n**Missing:** {', '.join(missing) or 'none'}"
         detail += f"\n**Temptations bought:** {', '.join(extras) or 'none'}"
-    await bb.notify_host(client, embed=bb.bb_embed(f"Shop task #{task_id} {verdict}", detail[:3900]))
+    await bb.notify_host(client, embed=bb.bb_embed(f"Shop task #{task_id} {verdict or 'closed'}", detail[:3900]))
     bb.log_event("shop_closed", task_id=task_id, reason=reason, passed=passed if task["required"] else None,
                  missing=missing, extras=extras, left=left)
     asyncio.create_task(bb.refresh_panel(client))
