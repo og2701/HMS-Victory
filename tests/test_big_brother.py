@@ -167,6 +167,12 @@ def test_house_panel_buttons_and_gating(bb):
     ids = [c.custom_id for row in view.children[0].children
            if hasattr(row, "children") for c in row.children]
     assert set(ids) == {f"bb:house:{a}" for a in bb.HOUSE_ACTIONS}
+
+    # Nominate only exists on the panel while a nominations round is open.
+    bb.close_round(bb.open_round(bb.KIND_NOMINATIONS)["id"])
+    closed_ids = [c.custom_id for row in bb.HousePanelView(None).children[0].children
+                  if hasattr(row, "children") for c in row.children]
+    assert "bb:house:nominate" not in closed_ids and "bb:house:immunity" in closed_ids
     # The two registries never share a custom_id, so both views can be persistent at once.
     control_ids = {f"bb:ctl:{a}" for a in bb.PANEL_ACTIONS}
     assert not control_ids & set(ids)

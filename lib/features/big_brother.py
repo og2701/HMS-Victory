@@ -989,7 +989,8 @@ class BigBrotherControlView(discord.ui.LayoutView):
         sections = [
             ("### 🎬 Game", [
                 [_PanelButton("start", "Start the game" if not started else "Game is live",
-                              discord.ButtonStyle.success if not started else discord.ButtonStyle.secondary, "🎬")],
+                              discord.ButtonStyle.success if not started else discord.ButtonStyle.secondary, "🎬"),
+                 _PanelButton("refresh", "Refresh", emoji="🔄")],
             ]),
             ("### 🗳️ Eviction cycle", [
                 [_PanelButton("open_noms", "Open nominations", discord.ButtonStyle.primary, "📝"),
@@ -1009,22 +1010,20 @@ class BigBrotherControlView(discord.ui.LayoutView):
                 [_PanelButton("mission", "Assign mission", emoji="🕵️"),
                  _PanelButton("resolve_mission", "Resolve mission", emoji="✅")],
             ]),
-            ("### 🧠 Challenges", [
+            ("### 🧠 Challenges & messages", [
                 [_PanelButton("challenge", "Post challenge", emoji="🧠"),
                  _PanelButton("end_challenge", "End challenge", emoji="🏁")],
-            ]),
-            ("### 📣 Messages", [
                 [_PanelButton("dm", "DM as Big Brother", emoji="✉️"),
                  _PanelButton("broadcast", "Announce in house", emoji="📣")],
             ]),
         ]
+        # Discord caps a layout at 40 components counting every nested item; keep an eye on
+        # this if adding sections (each is separator + heading + rows + buttons).
         for heading, rows in sections:
             card.add_item(discord.ui.Separator())
             card.add_item(discord.ui.TextDisplay(heading))
             for row in rows:
                 card.add_item(discord.ui.ActionRow(*row))
-        card.add_item(discord.ui.Separator())
-        card.add_item(discord.ui.ActionRow(_PanelButton("refresh", "Refresh", emoji="🔄")))
         self.add_item(card)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -1828,14 +1827,18 @@ class HousePanelView(discord.ui.LayoutView):
         card = discord.ui.Container(accent_colour=ACCENT)
         card.add_item(discord.ui.TextDisplay(_house_panel_text(guild)))
 
+        noms_open = open_round(KIND_NOMINATIONS) is not None
         sections = [
-            ("### 🎙️ Diary room\n-# A private word with Big Brother. Anonymous hides your name even from him.", [
+            ("### 🎙️ Diary room\n-# A private word with Big Brother. Anonymous hides your name even from her.", [
                 [_HouseButton("diary", "Diary room", discord.ButtonStyle.primary, "🎙️"),
                  _HouseButton("diary_anon", "Diary room (anonymous)", emoji="🎭")],
             ]),
-            ("### 🗳️ Nominations & immunity\n-# Nominate when the round is open. Spend an immunity token to protect yourself, gift it, or save-and-replace when you're up for eviction.", [
-                [_HouseButton("nominate", "Nominate", discord.ButtonStyle.danger, "📝"),
-                 _HouseButton("immunity", "Use immunity", emoji="🎟️")],
+            (("### 🗳️ Nominations are open\n-# Pick who you want to face the public vote. Only you and Big Brother will know. "
+              "Spend an immunity token to protect yourself, gift it, or save-and-replace when you're up for eviction.")
+             if noms_open else
+             "### 🎟️ Immunity\n-# Spend an immunity token to protect yourself, gift it, or save-and-replace when you're up for eviction.", [
+                ([_HouseButton("nominate", "Nominate", discord.ButtonStyle.danger, "📝")] if noms_open else [])
+                + [_HouseButton("immunity", "Use immunity", emoji="🎟️")],
             ]),
             ("### 🕵️ Secret missions\n-# Complete yours unnoticed to earn an immunity token. Spot someone else on one? Expose them.", [
                 [_HouseButton("mission", "My mission", emoji="🕵️"),
