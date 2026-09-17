@@ -373,6 +373,58 @@ class TestClosest(unittest.TestCase):
         self.assertTrue(render(res, self.names).startswith("Closest 3 to 10 shutcoins held\n"), render(res, self.names))
 
 
+class TestBetween(unittest.TestCase):
+    def test_pair_figure_runs_both_ways(self):
+        calls = []
+        def fetch(sql, params=()):
+            calls.append((sql, tuple(params)))
+            if "FROM pay_transfers WHERE payer_id = ? AND recipient_id = ?" in sql:
+                return [(1200,)] if params[:2] == ("9", "3") else [(50,)]
+            return []
+        with patch("lib.features.data_queries._fetch", fetch):
+            res = compute(QuerySpec(metric="paid_out", shape="between", window="month", subjects=[("Snake", "9"), ("Kim", "3")]))
+            text = render(res, {"9": "Snake", "3": "Kim"})
+        self.assertEqual(res.rows, [("9", 1200), ("3", 50)])
+        self.assertIn("Snake paid to Kim: 1,200 UKP", text)
+        self.assertIn("Kim paid to Snake: 50 UKP", text)
+        self.assertIn("(last 30 days)", text)
+        self.assertTrue(all("timestamp >= ?" in s for s, _ in calls))
+
+    def test_head_to_head_wins_filter_by_game(self):
+        calls = []
+        def fetch(sql, params=()):
+            calls.append((sql, tuple(params)))
+            return [(3,)]
+        with patch("lib.features.data_queries._fetch", fetch):
+            res = compute(QuerySpec(metric="pvp_wins", shape="between", game="connect4", subjects=[("A", "1"), ("B", "2")]))
+            text = render(res, {"1": "A", "2": "B"})
+        self.assertIn("A beat B: 3 wins", text)
+        self.assertIn("outcome != 'draw'", calls[0][0])
+        self.assertIn("game = ?", calls[0][0])
+        self.assertEqual(calls[0][1][-1], "connect4")
+
+    def test_between_falls_back_to_compare_without_a_pair_figure(self):
+        with patch("lib.features.data_queries._fetch", _fake_fetch()):
+            res = compute(QuerySpec(metric="xp", shape="between", subjects=[("Johnny", "1"), ("Kim", "3")]))
+        self.assertEqual(res.spec.shape, "compare")
+        self.assertIn("Kim ahead by 3,760 XP.", render(res, {"1": "Johnny", "3": "Kim"}))
+
+
+class TestDigest(unittest.TestCase):
+    def test_digest_takes_the_top_few_per_metric_with_names(self):
+        with patch("lib.features.data_queries._fetch", _fake_fetch()):
+            sections, ids = dq.stats_digest(exclude_ids={"999"}, top=2)
+        headings = [h for h, _ in sections]
+        self.assertIn("XP", headings)
+        self.assertIn("shutcoins used", headings)
+        self.assertIn("casino profit and loss", headings)
+        self.assertNotIn("counties caught", headings)      # nothing on record: left out
+        text = dq.render_digest(sections, {"1": "Johnny", "3": "Kim", "5": "Chin"})
+        self.assertIn("XP: Kim 5,000 XP; Johnny 1,240 XP", text)
+        self.assertIn("shutcoins used: Chin 7 shutcoins; Johnny 6 shutcoins", text)
+        self.assertIn("3", ids)
+
+
 class TestRender(unittest.TestCase):
     def setUp(self):
         self._p = patch("lib.features.data_queries._fetch", _fake_fetch())

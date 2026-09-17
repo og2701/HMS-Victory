@@ -4964,7 +4964,7 @@ def corrected_records_spec(prev: Any, signals: Any, has_new_subject: bool = Fals
         if spec.shape == "list":
             spec.shape, spec.list_kind = "leaderboard", None
         changed = True
-    if (signals.data_shape in ("leaderboard", "compare", "total") and signals.data_shape_confidence >= DATA_QUERY_CONFIDENCE
+    if (signals.data_shape in ("leaderboard", "compare", "total", "between") and signals.data_shape_confidence >= DATA_QUERY_CONFIDENCE
             and signals.data_shape != spec.shape and spec.shape != "list"):
         spec.shape = signals.data_shape
         changed = True
@@ -4994,6 +4994,28 @@ def corrected_records_spec(prev: Any, signals: Any, has_new_subject: bool = Fals
     if spec.shape != "list" and spec.metric not in dq.METRICS:
         return None
     return spec
+
+
+async def records_digest_for(client: Any, message: Any, bot_id: Optional[int]) -> str:
+    """The top members on the headline metrics, with names, as text for a stats-backed opinion."""
+    from lib.features import data_queries as dq
+    guild = getattr(message, "guild", None)
+    member_ids = None
+    excluded: set = set()
+    try:
+        members = list(getattr(guild, "members", None) or [])
+        if members:
+            member_ids = {str(m.id) for m in members}
+            excluded = {str(m.id) for m in members if getattr(m, "bot", False)}
+    except Exception:
+        member_ids = None
+    if bot_id:
+        excluded.add(str(bot_id))
+    sections, ids = await asyncio.to_thread(dq.stats_digest, exclude_ids=excluded, member_ids=member_ids)
+    if not sections:
+        return ""
+    names = await _resolve_member_names(client, guild, ids)
+    return dq.render_digest(sections, names)
 
 
 async def answer_data_query(
@@ -5093,7 +5115,11 @@ async def answer_data_query(
                 who = (caller_name, caller_id)
             if who is not None:
                 subjects = [who]
-    elif spec.shape == "compare":
+    elif spec.shape in ("compare", "between"):
+        if spec.shape == "between":
+            # Direction comes from the order the people are named in the message.
+            pool.sort(key=lambda p: (clean_prompt.find(f"<@{p[1]}>") if f"<@{p[1]}>" in clean_prompt else
+                                     clean_prompt.find(f"<@!{p[1]}>") if f"<@!{p[1]}>" in clean_prompt else 10**9))
         subjects = list(pool[:2])
         if len(subjects) < 2:
             who = await named()
@@ -5104,7 +5130,7 @@ async def answer_data_query(
                 subjects.append(c)
         if len(subjects) < 2 and isinstance(caller_id, int) and caller_id not in {i for _, i in subjects}:
             subjects.insert(0, (caller_name, caller_id))
-    needed = 1 if wants_person else (2 if spec.shape == "compare" else 0)
+    needed = 1 if wants_person else (2 if spec.shape in ("compare", "between") else 0)
     if len(subjects) < needed:
         logger.info("Records question from %s needs a person nobody could resolve: %r", caller_name, clean_prompt)
         await message.reply("No idea who you mean. Tag them and I'll look it up.", mention_author=True)
@@ -5943,6 +5969,18 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             context, target_users = gathered
         else:
             context, target_users = str(gathered), {}
+        if signals is not None and signals.says("stats_opinion"):
+            # "Who's your favourite member, based on stats": code picks the facts, the model picks among them.
+            try:
+                digest = await records_digest_for(client, message, bot_id)
+                if digest:
+                    context = (
+                        "SERVER RECORDS DIGEST (real figures from the bot's database; the ONLY figures you may cite. "
+                        "Base your pick or verdict on these and say which figure swung it):\n" + digest + "\n\n" + (context or "")
+                    ).strip()
+                    logger.info("Stats digest attached for %s: %r", caller_name, clean_prompt[:80])
+            except Exception as e:
+                logger.warning("Stats digest failed: %s", e)
         image_urls = await extract_image_urls(message, client)
 
         # 2. Call OpenAI with retries

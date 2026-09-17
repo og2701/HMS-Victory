@@ -351,6 +351,27 @@ class Metric:
     as_of: bool = False              # a stock, not a flow: a window means "as it stood back then"
     default_window: str = "all_time"
     note: str = ""                   # shown under the figures when the data has a caveat
+    pair: Optional[Callable[..., int]] = None   # (from_id, to_id, since, game) -> the figure from one member to another
+    pair_verb: str = "to"            # how the pair reads: "paid to", "beat", "gave to"
+
+
+def _pair_sum(table: str, value_expr: str, from_col: str, to_col: str, ts_col: str, extra_where: str = ""):
+    def fn(a: str, b: str, since: Optional[int], game: Optional[str]) -> int:
+        clauses, p = [f"{from_col} = ?", f"{to_col} = ?"], [str(a), str(b)]
+        if extra_where:
+            clauses.append(extra_where)
+        if since is not None:
+            clauses.append(f"{ts_col} >= ?")
+            p.append(int(since))
+        if game and table == "pvp_results" and PVP_GAMES.get(game):
+            clauses.append("game = ?")
+            p.append(PVP_GAMES[game])
+        rows = _fetch(f"SELECT {value_expr} FROM {table} WHERE {' AND '.join(clauses)}", tuple(p))
+        try:
+            return int((rows[0][0] if rows and rows[0] else 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+    return fn
 
 
 def _m(key, label, unit, what, examples, rows, **kw) -> Metric:
@@ -379,7 +400,7 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
        "UKP sent to other members with /pay",
        ["most generous member", "who's paid out the most", "how much has steven given away"],
        lambda since, game: _agg("pay_transfers", "COALESCE(SUM(amount),0)", user_col="payer_id", ts_col="timestamp", since=since),
-       windowable=True),
+       windowable=True, pair=_pair_sum("pay_transfers", "COALESCE(SUM(amount),0)", "payer_id", "recipient_id", "timestamp"), pair_verb="paid to"),
     _m("paid_in", "UKP received from others", "UKP",
        "UKP received from other members with /pay",
        ["who's been paid the most", "biggest beggar", "how much has kim been sent"],
@@ -501,7 +522,7 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
        "Wins in player-versus-player wager games (Connect 4, Battleship, rock paper scissors)",
        ["who's won the most connect 4", "how many battleship games has kim won", "pvp leaderboard"],
        lambda since, game: _pvp("wins", since, game),
-       windowable=True, games="pvp"),
+       windowable=True, games="pvp", pair=_pair_sum("pvp_results", "COUNT(*)", "winner_id", "loser_id", "timestamp", "outcome != 'draw'"), pair_verb="beat"),
     _m("pvp_losses", "PvP losses", "losses",
        "Losses in player-versus-player wager games",
        ["who's lost the most connect 4 games", "how many times has steven lost at battleship"],
@@ -545,7 +566,7 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
        "County balls gifted to other members",
        ["who's given away the most counties", "how many counties has steven gifted"],
        lambda since, game: _agg("county_transfers", "COUNT(*)", user_col="from_user", ts_col="transferred_at", since=since),
-       windowable=True),
+       windowable=True, pair=_pair_sum("county_transfers", "COUNT(*)", "from_user", "to_user", "transferred_at"), pair_verb="gave to"),
     _m("county_gifts_received", "counties received", "counties",
        "County balls received as gifts",
        ["who's been given the most counties", "how many counties has kim been gifted"],
@@ -649,7 +670,7 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
        lambda since, game: _skyrim(("stats", "sweetrolls"))),
 ]}
 
-SHAPES = ("leaderboard", "person", "compare", "total", "list", "closest")
+SHAPES = ("leaderboard", "person", "compare", "total", "list", "closest", "between")
 
 _NUMBER_RE = re.compile(r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|m|bn|b|thousand|million|mil|grand|billion)?(?![\w.])", re.IGNORECASE)
 _TARGET_CUE_RE = re.compile(r"\b(?:closest|nearest|close|near|around|about|approx\w*|roughly|to)\s+(?:to\s+)?(?:the\s+)?$", re.IGNORECASE)
@@ -1144,6 +1165,14 @@ def compute(spec: QuerySpec, *, exclude_ids: Optional[set] = None, member_ids: O
     if spec.shape == "list":
         return compute_list(spec, exclude_ids=exclude_ids, member_ids=member_ids)
     metric = METRICS[spec.metric]
+    if spec.shape == "between" and (metric.pair is None or len(spec.subjects) < 2):
+        spec.shape = "compare"      # no directional figure for this metric: side by side is the nearest thing
+    if spec.shape == "between":
+        _, since = _since_for(metric.windowable, spec.window, metric.default_window)
+        game = spec.game if metric.games and spec.game else None
+        (na, a), (nb, b) = spec.subjects[0], spec.subjects[1]
+        ab, ba = metric.pair(a, b, since, game), metric.pair(b, a, since, game)
+        return QueryResult(spec=spec, metric=metric, rows=[(a, ab), (b, ba)], ranks={}, population=2, total=ab + ba, ids=[a, b])
     window, since = _since_for(metric.windowable, spec.window, metric.default_window)
     game = spec.game if metric.games and spec.game else None
     source = spec.source if metric.sources and spec.source in SOURCES else None
@@ -1281,6 +1310,13 @@ def render(res: QueryResult, names: Dict[str, str]) -> str:
         rank = f" (rank {res.ranks[uid]} of {res.population})" if v != 0 and res.population and metric.kind == "int" else ""
         return _block(f"{name(uid)}: {_figure(metric, v)}{scope}{rank}") + foot
 
+    if spec.shape == "between":
+        (a, va), (b, vb) = res.rows[0], res.rows[1]
+        unit = metric.unit or metric.label
+        lines = [f"{name(a)} {metric.pair_verb} {name(b)}: {va:,} {unit}".rstrip(),
+                 f"{name(b)} {metric.pair_verb} {name(a)}: {vb:,} {unit}".rstrip()]
+        return _block("\n".join(lines) + (f"\n({scope.strip(' ()')})" if scope else "")) + foot
+
     if spec.shape == "compare":
         (a, va), (b, vb) = res.rows[0], res.rows[1]
         lines = [f"{name(a)}: {_figure(metric, va)}", f"{name(b)}: {_figure(metric, vb)}"]
@@ -1327,6 +1363,40 @@ def _render_list(res: QueryResult, name) -> str:
         return _block(f"{head}: {kind.empty}.")
     body = "\n".join(f"{name(u) + ': ' if u else ''}{t}" for u, t in res.lines)
     return _block(f"{head}\n{body}")
+
+
+# --- a digest for opinions -----------------------------------------------------------------------
+
+DIGEST_METRICS = ("messages", "xp", "ukpence", "times_shut", "shutcoins_used", "casino_net", "casino_staked", "badges",
+                  "counties", "paid_out", "pvp_wins", "tax_paid")
+
+
+def stats_digest(*, exclude_ids: Optional[set] = None, member_ids: Optional[set] = None, top: int = 5) -> Tuple[List[Tuple[str, List[Tuple[str, str]]]], List[str]]:
+    """The top few members on each headline metric, for a language model asked for an opinion "based on stats".
+
+    Returns ([(heading, [(user_id, figure)])], every user id mentioned). Code picks the facts; the model
+    only chooses among them, so it can justify a pick without inventing a number.
+    """
+    sections: List[Tuple[str, List[Tuple[str, str]]]] = []
+    ids: List[str] = []
+    for key in DIGEST_METRICS:
+        metric = METRICS[key]
+        try:
+            res = compute(QuerySpec(metric=key, shape="leaderboard", limit=max(MIN_LIMIT, top)), exclude_ids=exclude_ids, member_ids=member_ids)
+        except Exception as e:
+            logger.debug("digest metric %s failed: %s", key, e)
+            continue
+        if not res.rows:
+            continue
+        window = f" ({WINDOW_LABELS[metric.default_window]})" if metric.default_window != "all_time" else ""
+        sections.append((f"{metric.label}{window}", [(uid, _fmt(metric, v)) for uid, v in res.rows[:top]]))
+        ids += [uid for uid, _ in res.rows[:top]]
+    return sections, list(dict.fromkeys(ids))
+
+
+def render_digest(sections: List[Tuple[str, List[Tuple[str, str]]]], names: Dict[str, str]) -> str:
+    lines = [f"{heading}: " + "; ".join(f"{names.get(uid) or f'user {uid}'} {fig}" for uid, fig in rows) for heading, rows in sections]
+    return "\n".join(lines)
 
 
 # --- what Jev is offered -----------------------------------------------------------------------

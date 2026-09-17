@@ -3607,6 +3607,53 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.reply.call_args[0][0], "Clown is <@9>: 34 times shut, 5th.")
         self.assertTrue(message.reply.call_args[1]["allowed_mentions"].users)
 
+    @patch("lib.features.chat_responder.plan_mention", return_value=None)
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("Kim, obviously. Nobody else yaps like that.", 100, 20))
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("RECENT CHAT", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_stats_backed_opinion_gets_a_digest(self, mock_judge, _find, _gather, mock_generate, _plan):
+        mock_judge.return_value = _jev_signals(action="reply", confidence=0.99, stats_opinion=0.92)
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> who is your favourite member, based on stats")
+        people = {1: _member(1, "Johnny"), 3: _member(3, "Kim")}
+        message.guild = MagicMock(); message.guild.members = []
+        message.guild.get_member.side_effect = lambda uid: people.get(uid)
+        rows = [("1", 1240), ("3", 5000)]
+        with patch("lib.features.data_queries._fetch", lambda sql, params=(): rows if "FROM xp" in sql else []), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        ctx = mock_generate.call_args[1]["context"]
+        self.assertTrue(ctx.startswith("SERVER RECORDS DIGEST"), ctx)
+        self.assertIn("XP: Kim 5,000 XP; Johnny 1,240 XP", ctx)
+        self.assertIn("RECENT CHAT", ctx)
+
+    @patch("lib.features.chat_responder.plan_mention")
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("", 0, 0))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_records_between_two_mentioned_members_in_text_order(self, mock_judge, _find, _generate, mock_plan):
+        mock_judge.return_value = _jev_signals(action="reply", confidence=0.99, data={"metric": "paid_out", "shape": "between", "subject": "mentioned_user"})
+        client = MagicMock(); client.user.id = 999999999
+        snake, kim = _member(9, "Snake"), _member(3, "Kim")
+        # Discord's mentions list is not in message order: Kim first here, Snake first in the words
+        message = self._leader_message(client, f"<@{client.user.id}> how much ukpence has <@9> paid to <@3>", mentions=[kim, snake])
+        message.guild = MagicMock(); message.guild.members = []
+        message.guild.get_member.side_effect = lambda uid: {9: snake, 3: kim}.get(uid)
+        def fetch(sql, params=()):
+            if "FROM pay_transfers WHERE payer_id = ? AND recipient_id = ?" in sql:
+                return [(1200,)] if params[:2] == ("9", "3") else [(0,)]
+            return []
+        with patch("lib.features.data_queries._fetch", fetch), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_plan.assert_not_called()
+        text = message.reply.call_args[0][0]
+        self.assertIn("Snake paid to Kim: 1,200 UKP", text)
+        self.assertIn("Kim paid to Snake: 0 UKP", text)
+
     async def test_corrected_records_spec_changes_only_what_was_named(self):
         from lib.features import chat_responder as cr
         from lib.features.data_queries import QuerySpec

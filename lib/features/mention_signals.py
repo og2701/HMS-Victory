@@ -184,6 +184,14 @@ for _g in list(CASINO_GAMES) + list(PVP_GAMES):
     _DATA_GAME_OPTIONS[_g] = GAME_LABELS[_g]
 
 QUESTIONS.update({
+    "stats_opinion": {
+        "type": "noul",
+        "instructions": "Does `message.text` (or the request it hands off to, see `replied_to`) ask for an OPINION, pick, verdict or ranking that should be based on the server's records, rather than a specific figure? Examples of yes: 'who is your favourite member based on stats', 'who's the best member', 'who deserves a medal', 'answer this based on stats', 'rate the server's gamblers'.",
+        "criteria": {
+            "true": {"what": "A judgement the bot should ground in real figures about members"},
+            "false": {"what": "A specific figure or list (that is a records question), a picture, banter, or an opinion about something outside the server"},
+        },
+    },
     "data_metric": {
         "type": "choice",
         "instructions": {
@@ -216,6 +224,7 @@ QUESTIONS.update({
             "total": {"what": "One number for the whole server", "examples": ["how much ukpence is in circulation", "how many messages were sent today", "total badges handed out"]},
             "list": {"what": "A list of things or a fact sheet, not a single number", "examples": ["what badges has steven got", "what's in the house bank", "what counties does kim own", "what predictions are open", "who has the warden badge", "who owns yorkshire", "what did johnny say last", "fetch me stats about steven", "kim's stats"]},
             "closest": {"what": "The members whose figure is nearest to a target number stated in the message", "examples": ["who has closest to 100k xp", "who's nearest to a million ukp", "who has about 50 shutcoins", "who is closest to 10,000 messages"]},
+            "between": {"what": "A figure that runs FROM one named member TO another: money paid between them, head-to-head wins, counties gifted", "examples": ["how much ukpence has steven paid to kim", "how many times has johnny beaten kim at connect 4", "how many counties has kim given steven", "what's the head to head between me and @X"]},
             "none": {"what": "Not a records question"},
         },
     },
@@ -269,7 +278,7 @@ QUESTIONS.update({
     },
 })
 
-_NOUL_KEYS = ("text_creation", "delegation", "attachment_modification", "bot_self", "random_pick", "group", "follow_up_image", "live_query", "data_lowest")
+_NOUL_KEYS = ("text_creation", "delegation", "attachment_modification", "bot_self", "random_pick", "group", "follow_up_image", "live_query", "data_lowest", "stats_opinion")
 ACTIONS = ("generate", "edit", "reply")
 DATA_SHAPES = SHAPES + ("none",)
 DATA_SUBJECTS = ("caller", "mentioned_user", "someone_named", "not_applicable")
@@ -291,6 +300,7 @@ class MentionSignals:
     follow_up_image: float
     live_query: float
     data_lowest: float
+    stats_opinion: float
     group_count: Optional[int]
     data_metric: str = "none"
     data_metric_confidence: float = 0.0
