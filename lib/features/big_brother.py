@@ -1768,10 +1768,6 @@ def _house_panel_text(guild: Optional[discord.Guild]) -> str:
     if vote:
         lines.append(f"🗳️ **Eviction vote is open** in <#{vote['channel_id']}>.")
     lines.append("")
-    lines.append("🎟️ Complete a secret mission to earn an **immunity token**: protect yourself, gift it, or "
-                 "save-and-replace when you're up for eviction.")
-    lines.append("🛋️ **The snug** is a private thread for you and up to four others to talk strategy. Big Brother listens.")
-    lines.append("")
     lines.append("-# Everything you press here is between you and Big Brother. Nobody else sees it.")
     return "\n".join(lines)
 
@@ -1781,21 +1777,30 @@ class HousePanelView(discord.ui.LayoutView):
         super().__init__(timeout=None)
         card = discord.ui.Container(accent_colour=ACCENT)
         card.add_item(discord.ui.TextDisplay(_house_panel_text(guild)))
-        card.add_item(discord.ui.Separator())
-        card.add_item(discord.ui.ActionRow(
-            _HouseButton("diary", "Diary room", discord.ButtonStyle.primary, "🎙️"),
-            _HouseButton("diary_anon", "Diary room (anonymous)", emoji="🎭"),
-            _HouseButton("nominate", "Nominate", discord.ButtonStyle.danger, "📝"),
-        ))
-        card.add_item(discord.ui.ActionRow(
-            _HouseButton("mission", "My mission", emoji="🕵️"),
-            _HouseButton("expose", "Expose a housemate", emoji="🔦"),
-            _HouseButton("immunity", "Use immunity", emoji="🎟️"),
-        ))
-        card.add_item(discord.ui.ActionRow(
-            _HouseButton("snug", "The snug", emoji="🛋️"),
-            _HouseButton("housemates", "Who's in the house", emoji="🏠"),
-        ))
+
+        sections = [
+            ("### 🎙️ Diary room\n-# A private word with Big Brother. Anonymous hides your name even from him.", [
+                [_HouseButton("diary", "Diary room", discord.ButtonStyle.primary, "🎙️"),
+                 _HouseButton("diary_anon", "Diary room (anonymous)", emoji="🎭")],
+            ]),
+            ("### 🗳️ Nominations & immunity\n-# Nominate when the round is open. Spend an immunity token to protect yourself, gift it, or save-and-replace when you're up for eviction.", [
+                [_HouseButton("nominate", "Nominate", discord.ButtonStyle.danger, "📝"),
+                 _HouseButton("immunity", "Use immunity", emoji="🎟️")],
+            ]),
+            ("### 🕵️ Secret missions\n-# Complete yours unnoticed to earn an immunity token. Spot someone else on one? Expose them.", [
+                [_HouseButton("mission", "My mission", emoji="🕵️"),
+                 _HouseButton("expose", "Expose a housemate", emoji="🔦")],
+            ]),
+            ("### 🛋️ The house\n-# The snug is a private thread for you and up to four others to talk strategy. Big Brother listens.", [
+                [_HouseButton("snug", "The snug", emoji="🛋️"),
+                 _HouseButton("housemates", "Who's in the house", emoji="🏠")],
+            ]),
+        ]
+        for heading, rows in sections:
+            card.add_item(discord.ui.Separator())
+            card.add_item(discord.ui.TextDisplay(heading))
+            for row in rows:
+                card.add_item(discord.ui.ActionRow(*row))
         self.add_item(card)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
