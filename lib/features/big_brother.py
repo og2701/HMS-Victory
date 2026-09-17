@@ -1303,7 +1303,7 @@ async def refresh_panel(client: discord.Client) -> None:
     if ch and mid:
         try:
             msg = await ch.fetch_message(int(mid))
-            await msg.edit(view=BigBrotherControlView(guild))
+            await msg.edit(content=None, view=BigBrotherControlView(guild))
         except discord.HTTPException as e:
             log.info("Big Brother: control panel refresh failed: %s", e)
     try:
@@ -1429,7 +1429,9 @@ async def _act_start(interaction: discord.Interaction):
 
 
 async def _act_silence(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    # thinking=True: on a panel button a plain defer would make the panel message itself the
+    # "original response", and _reply would overwrite the panel with the confirmation text.
+    await interaction.response.defer(ephemeral=True, thinking=True)
     target = not house_silent()
     ok = await set_house_silence(interaction.client, target)
     if not ok:
@@ -1804,7 +1806,7 @@ async def _act_crown(interaction: discord.Interaction):
 
 
 async def _act_refresh(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=True, thinking=True)
     await refresh_panel(interaction.client)
     await interaction.followup.send("Panel refreshed.", ephemeral=True)
 
