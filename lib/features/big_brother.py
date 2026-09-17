@@ -37,6 +37,9 @@ STATE_HOUSE_PANEL_MSG = "house_panel_message_id"
 STATE_LAST_NOM_TALLY = "last_nomination_tally"
 STATE_LAST_VOTE_RESULT = "last_vote_result"
 STATE_GAME_STARTED_AT = "game_started_at"
+STATE_HOUSE_MSGS_SINCE_PANEL = "house_msgs_since_panel"
+HOUSE_PANEL_REPOST_EVERY = 10  # chat messages in the house before the panel is re-posted at the bottom
+_repost_lock = asyncio.Lock()
 
 _tables_ready = False
 _client_ref: Optional[discord.Client] = None  # set on ready; lets channel sends echo to the host
@@ -1225,11 +1228,26 @@ async def ensure_house_panel(client: discord.Client) -> None:
             pass
     msg = await ch.send(view=view)
     set_state(STATE_HOUSE_PANEL_MSG, msg.id)
-    try:
-        await msg.pin(reason="Big Brother house panel")
-    except discord.HTTPException:
-        pass
+    set_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0)
     log.info("Big Brother: posted house panel %s in %s", msg.id, ch.id)
+
+
+async def repost_house_panel(client: discord.Client) -> None:
+    """Delete the current house panel and post a fresh one so it sits under the chat."""
+    async with _repost_lock:
+        ch = await _channel(client, house_channel_id())
+        if not ch:
+            return
+        old = get_state(STATE_HOUSE_PANEL_MSG)
+        msg = await ch.send(view=HousePanelView(_guild(client)))
+        set_state(STATE_HOUSE_PANEL_MSG, msg.id)
+        set_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0)
+        if old:
+            try:
+                old_msg = await ch.fetch_message(int(old))
+                await old_msg.delete()
+            except discord.HTTPException:
+                pass
 
 
 async def ensure_panels(client: discord.Client) -> None:
@@ -1266,7 +1284,7 @@ async def _act_start(interaction: discord.Interaction):
         if ch:
             await bb_send(ch, 
                 f"{_role_mention()}{EYE} **The doors are open.**\n\n"
-                f"Welcome to the Big Brother house. The pinned panel is how you talk to Big Brother: "
+                f"Welcome to the Big Brother house. The panel at the bottom of this channel is how you talk to Big Brother: "
                 f"the diary room, nominations, your secret mission and the snug are all there. "
                 f"Big Brother is watching. Good luck.")
         await refresh_panel(inter.client)
@@ -1373,7 +1391,7 @@ async def _act_add(interaction: discord.Interaction):
             await dm_user(inter.client, uid, embed=bb_embed(
                 "Welcome to the house",
                 f"You're a housemate in UKPlace Big Brother.\n\n"
-                f"The pinned panel in <#{house_channel_id()}> is how you talk to Big Brother: "
+                f"The panel at the bottom of <#{house_channel_id()}> is how you talk to Big Brother: "
                 f"the diary room (optionally anonymous), nominations when they're open, your "
                 f"secret mission, and exposing a housemate you think is on one. Everything you "
                 f"press there is only seen by you and Big Brother.\n\n"
@@ -2037,6 +2055,15 @@ async def on_house_message(client: discord.Client, message: discord.Message) -> 
         log.exception("Big Brother: activity update failed")
     if isinstance(message.channel, discord.Thread):
         return  # snug chatter is recorded, but challenge answers only count in the house itself
+    # Keep the panel within reach: after every few chat messages, move it back to the bottom.
+    try:
+        n = int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0) + 1
+        if n >= HOUSE_PANEL_REPOST_EVERY:
+            asyncio.create_task(repost_house_panel(client))
+        else:
+            set_state(STATE_HOUSE_MSGS_SINCE_PANEL, n)
+    except Exception:
+        log.exception("Big Brother: panel repost bookkeeping failed")
     chal = open_challenge()
     if not chal or not chal.get("answer"):
         return
