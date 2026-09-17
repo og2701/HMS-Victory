@@ -1101,9 +1101,10 @@ class _ToggleGrid(discord.ui.View):
                                     style=discord.ButtonStyle.success if on else discord.ButtonStyle.danger)
 
             async def _cb(interaction: discord.Interaction, _uid=uid):
+                await interaction.response.defer()
                 self.state[_uid] = await self.on_toggle(interaction, _uid)
                 self._build()
-                await interaction.response.edit_message(view=self)
+                await interaction.edit_original_response(view=self)
             btn.callback = _cb
             self.add_item(btn)
 
@@ -1125,9 +1126,10 @@ class _CountGrid(discord.ui.View):
                                     style=discord.ButtonStyle.primary if n else discord.ButtonStyle.secondary)
 
             async def _cb(interaction: discord.Interaction, _uid=uid):
+                await interaction.response.defer()
                 self.counts[_uid] = await self.on_press(interaction, _uid)
                 self._build()
-                await interaction.response.edit_message(view=self)
+                await interaction.edit_original_response(view=self)
             btn.callback = _cb
             self.add_item(btn)
 
@@ -1447,6 +1449,7 @@ async def _act_silence(interaction: discord.Interaction):
 
 
 async def _act_open_noms(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True, thinking=True)
     if not housemates():
         await _reply(interaction, "No housemates yet. Add some first.", refresh=False)
         return
@@ -1455,6 +1458,7 @@ async def _act_open_noms(interaction: discord.Interaction):
 
 
 async def _act_close_noms(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True, thinking=True)
     res = await close_nominations(interaction.client)
     await _reply(interaction, "No nominations round is open." if res is None
                  else "Nominations closed. The tally is in your DMs.")
@@ -1488,6 +1492,7 @@ async def _act_start_vote(interaction: discord.Interaction):
         return
 
     async def done(inter: discord.Interaction, ids: list[int]):
+        await inter.response.defer(ephemeral=True)
         res = await start_vote(inter.client, ids)
         await _reply(inter, "Couldn't start the vote (already open, or the vote channel is missing)."
                      if not res else f"Eviction vote posted in <#{res['channel_id']}>.")
@@ -1500,6 +1505,7 @@ async def _act_start_vote(interaction: discord.Interaction):
 
 
 async def _act_close_vote(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True, thinking=True)
     res = await close_vote(interaction.client)
     await _reply(interaction, "No vote is open." if res is None
                  else "Vote closed. The result is in your DMs and nothing has been announced yet.")
@@ -1536,6 +1542,7 @@ async def _act_add(interaction: discord.Interaction):
     select = discord.ui.UserSelect(placeholder="Pick the new housemates", min_values=1, max_values=25)
 
     async def cb(inter: discord.Interaction):
+        await inter.response.defer(ephemeral=True)
         ids = [u.id for u in select.values if not getattr(u, "bot", False)]
         added = await add_housemates(inter.client, ids)
         for uid in added:
@@ -1630,6 +1637,7 @@ async def _act_mission(interaction: discord.Interaction):
 
     async def picked(inter: discord.Interaction, uid: int):
         async def submitted(inter2: discord.Interaction, values: dict):
+            await inter2.response.defer(ephemeral=True)
             brief = values["brief"]
             mid = add_mission(uid, brief)
             log_event("mission_assigned", target=uid, mission_id=mid, brief=brief)
@@ -1670,6 +1678,7 @@ async def _act_resolve_mission(interaction: discord.Interaction):
         failed = discord.ui.Button(label="Failed", style=discord.ButtonStyle.danger)
 
         async def _finish(inter2: discord.Interaction, status: str):
+            await inter2.response.defer(ephemeral=True)
             m = resolve_mission(mid, status)
             if not m:
                 await _reply(inter2, "Mission not found.", refresh=False)
@@ -1705,6 +1714,7 @@ async def _act_challenge(interaction: discord.Interaction):
         return
 
     async def submitted(inter: discord.Interaction, values: dict):
+        await inter.response.defer(ephemeral=True, thinking=True)
         ch = await house_channel(inter.client)
         if not ch:
             await _reply(inter, "House channel not found.", refresh=False)
@@ -1726,6 +1736,7 @@ async def _act_challenge(interaction: discord.Interaction):
 
 
 async def _act_end_challenge(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True, thinking=True)
     chal = open_challenge()
     if not chal:
         await _reply(interaction, "No challenge is open.", refresh=False)
@@ -1746,6 +1757,7 @@ async def _act_dm(interaction: discord.Interaction):
 
     async def picked(inter: discord.Interaction, ids: list[int]):
         async def submitted(inter2: discord.Interaction, values: dict):
+            await inter2.response.defer(ephemeral=True)
             sent, closed = 0, []
             for uid in ids:
                 ok = await dm_user(inter2.client, uid, ack=f"DM: {values['text'][:60]}",
@@ -1765,6 +1777,7 @@ async def _act_dm(interaction: discord.Interaction):
 
 async def _act_broadcast(interaction: discord.Interaction):
     async def submitted(inter: discord.Interaction, values: dict):
+        await inter.response.defer(ephemeral=True, thinking=True)
         ch = await house_channel(inter.client)
         if not ch:
             await _reply(inter, "House channel not found.", refresh=False)
@@ -1829,14 +1842,14 @@ PANEL_ACTIONS = {
 async def handle_diary(interaction: discord.Interaction, anonymous: bool = False):
 
     async def submitted(inter: discord.Interaction, values: dict):
+        await inter.response.defer(ephemeral=True, thinking=True)
         text = values["text"]
         add_diary(inter.user.id, text, anonymous)
         log_event("diary", actor=inter.user.id, anonymous=anonymous, text=text)
         who = "An anonymous housemate" if anonymous else _mention_and_name(inter.guild, inter.user.id)
         await notify_host(inter.client, embed=bb_embed("Diary room", f"**{who}** says:\n\n{text}"))
-        await inter.response.send_message(
-            f"{EYE} Big Brother has heard you." + (" Your name was not attached." if anonymous else ""),
-            ephemeral=True)
+        await inter.edit_original_response(
+            content=f"{EYE} Big Brother has heard you." + (" Your name was not attached." if anonymous else ""))
 
     await interaction.response.send_modal(_TextModal(
         "Diary room" + (" (anonymous)" if anonymous else ""),
@@ -1857,6 +1870,7 @@ async def handle_nominate(interaction: discord.Interaction):
     already = {b for a, b in nominations_for(rnd["id"]) if a == interaction.user.id}
 
     async def done(inter: discord.Interaction, ids: list[int]):
+        await inter.response.defer(ephemeral=True)
         record_nominations(rnd["id"], inter.user.id, ids)
         log_event("nominated", actor=inter.user.id, round_id=rnd["id"], nominees=ids, changed=bool(already))
         names = ", ".join(_name(inter.guild, i) for i in ids)
@@ -1864,7 +1878,7 @@ async def handle_nominate(interaction: discord.Interaction):
             f"Nomination (round {rnd['id']})",
             f"{_mention_and_name(inter.guild, inter.user.id)} nominated **{names}**"
             + ("\n-# (changed their earlier nomination)" if already else "")))
-        await inter.response.edit_message(
+        await inter.edit_original_response(
             content=f"{EYE} Noted. You nominated **{names}**. Only Big Brother knows.", view=None)
         asyncio.create_task(refresh_panel(inter.client))
 
@@ -1894,6 +1908,7 @@ async def handle_expose(interaction: discord.Interaction):
 
     async def picked(inter: discord.Interaction, suspect: int):
         async def submitted(inter2: discord.Interaction, values: dict):
+            await inter2.response.defer(ephemeral=True)
             on_mission = active_mission_for(suspect) is not None
             log_event("exposed", actor=inter2.user.id, target=suspect, what=values["what"], was_on_mission=on_mission)
             await notify_host(inter2.client, embed=bb_embed(
@@ -1901,9 +1916,9 @@ async def handle_expose(interaction: discord.Interaction):
                 f"{_mention_and_name(inter2.guild, inter2.user.id)} thinks "
                 f"{_mention_and_name(inter2.guild, suspect)} is on a mission:\n\n{values['what']}\n\n"
                 f"-# {_name(inter2.guild, suspect)} {'DOES' if on_mission else 'does NOT'} currently have an active mission."))
-            await inter2.response.send_message(
-                f"{EYE} Big Brother has noted your suspicion about **{_name(inter2.guild, suspect)}**. "
-                f"You'll find out if you were right.", ephemeral=True)
+            await inter2.edit_original_response(
+                content=f"{EYE} Big Brother has noted your suspicion about **{_name(inter2.guild, suspect)}**. "
+                        f"You'll find out if you were right.", view=None)
 
         await inter.response.send_modal(_TextModal(
             f"Expose {_name(inter.guild, suspect)}",
@@ -1959,7 +1974,7 @@ async def handle_use_immunity(interaction: discord.Interaction):
             return
         set_immune(me, True)
         log_event("immunity_used", actor=me, target=me, mode="self")
-        await notify_host(inter.client, f"{EYE} {_mention_and_name(inter.guild, me)} used a token: immune from the next nominations.")
+        asyncio.create_task(notify_host(inter.client, f"{EYE} {_mention_and_name(inter.guild, me)} used a token: immune from the next nominations."))
         await inter.response.edit_message(
             content=f"{EYE} Done. You're immune from the next nominations. Nobody will be able to pick you.", view=None)
         asyncio.create_task(refresh_panel(inter.client))
@@ -1974,9 +1989,9 @@ async def handle_use_immunity(interaction: discord.Interaction):
                 return
             set_immune(target, True)
             log_event("immunity_used", actor=me, target=target, mode="gift")
-            await dm_user(inter2.client, target, embed=bb_embed(
-                "A gift", f"{_name(inter2.guild, me)} has given you immunity from the next nominations."))
-            await notify_host(inter2.client, f"{EYE} {_mention_and_name(inter2.guild, me)} gave immunity to {_mention_and_name(inter2.guild, target)}.")
+            asyncio.create_task(dm_user(inter2.client, target, embed=bb_embed(
+                "A gift", f"{_name(inter2.guild, me)} has given you immunity from the next nominations.")))
+            asyncio.create_task(notify_host(inter2.client, f"{EYE} {_mention_and_name(inter2.guild, me)} gave immunity to {_mention_and_name(inter2.guild, target)}."))
             await inter2.response.edit_message(
                 content=f"{EYE} Done. {_name(inter2.guild, target)} is immune from the next nominations, and knows it came from you.", view=None)
             asyncio.create_task(refresh_panel(inter2.client))
