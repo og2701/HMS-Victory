@@ -25,7 +25,7 @@ from config import (
     IMAGE_GEN_MODEL, IMAGE_GEN_QUALITY, IMAGE_GEN_SIZE
 )
 from lib.core.file_operations import atomic_write_json, load_json_file
-from lib.features.mention_signals import judge_mention, judge_named_subject, judge_pick, MENTION_SIGNALS_MODEL
+from lib.features.mention_signals import judge_mention, judge_named_subject, judge_pick, judge_identify, MENTION_SIGNALS_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -4871,33 +4871,72 @@ async def _resolve_member_names(client: Any, guild: Any, ids: List[str]) -> Dict
 # starting from nothing. Small and in-memory: a correction that arrives after a restart just re-asks.
 _RECORDS_ANSWERS: "deque[Tuple[Any, Any]]" = deque(maxlen=60)          # (posted message id, QuerySpec)
 _RECORDS_BY_CHANNEL: Dict[Any, Tuple[float, Any]] = {}                  # channel id -> (posted at, QuerySpec)
+_RECORDS_ENTRIES: Dict[int, Tuple[Dict[str, str], Dict[str, str], str]] = {}   # id(spec) -> (names, figures, text)
 CORRECTION_WINDOW_SECONDS = 180
 
 
-def remember_records_answer(posted: Any, channel_id: Any, spec: Any) -> None:
+def remember_records_answer(posted: Any, channel_id: Any, spec: Any, names: Optional[Dict[str, str]] = None,
+                            figures: Optional[Dict[str, str]] = None, text: str = "") -> None:
     pid = getattr(posted, "id", None)
     if pid is not None:
         _RECORDS_ANSWERS.append((pid, spec))
     if channel_id is not None:
         _RECORDS_BY_CHANNEL[channel_id] = (time.time(), spec)
+    _RECORDS_ENTRIES[id(spec)] = (dict(names or {}), dict(figures or {}), text or "")
+    if len(_RECORDS_ENTRIES) > 120:
+        for key in list(_RECORDS_ENTRIES)[:-60]:
+            _RECORDS_ENTRIES.pop(key, None)
 
 
-def previous_records_answer(ref_msg: Any, channel_id: Any, bot_id: Optional[int]) -> Any:
-    """The QuerySpec a correction refers to: the bot's records answer being replied to, else the channel's
-    last one if it was moments ago. None when there is nothing to correct."""
-    if ref_msg is not None and getattr(getattr(ref_msg, "author", None), "id", None) == bot_id:
+def records_answer_entries(spec: Any) -> Tuple[Dict[str, str], Dict[str, str], str]:
+    """(names by user id, figures by user id, posted text) of a remembered records answer."""
+    return _RECORDS_ENTRIES.get(id(spec), ({}, {}, ""))
+
+
+def previous_records_answer(ref_msg: Any, channel_id: Any, bot_id: Optional[int]) -> Tuple[Any, bool]:
+    """(QuerySpec, direct) for the records answer a follow-up refers to.
+
+    direct is True when the message replies to that very answer. Replying to another bot message ("tag
+    them" under a text reply) or to nothing falls back to the channel's last answer if it was moments
+    ago. Replying to someone else's message is never about the bot's table: "pls answer" under a
+    member's question was once read as a correction to the last leaderboard.
+    """
+    if ref_msg is not None:
+        if getattr(getattr(ref_msg, "author", None), "id", None) != bot_id:
+            return None, False
         rid = getattr(ref_msg, "id", None)
         for pid, spec in reversed(_RECORDS_ANSWERS):
             if pid == rid:
-                return spec
-        return None
+                return spec, True
     entry = _RECORDS_BY_CHANNEL.get(channel_id)
     if entry and time.time() - entry[0] <= CORRECTION_WINDOW_SECONDS:
-        return entry[1]
-    return None
+        return entry[1], False
+    return None, False
 
 
-def corrected_records_spec(prev: Any, signals: Any, has_new_subject: bool = False) -> Any:
+async def identify_records_entry(message: Any, prev: Any, clean_prompt: str, caller_name: str) -> bool:
+    """"Who is clown", "tag them", "ping number 5" under a records answer: name the member with a real mention."""
+    names, figures, text = records_answer_entries(prev)
+    entries = {n: int(uid) for uid, n in names.items() if str(uid).isdigit() and n}
+    if not entries:
+        return False
+    uid, in_tok, out_tok = await judge_identify(clean_prompt, entries, previous_answer=text)
+    if in_tok or out_tok:
+        live_chat_manager.record_usage(MENTION_SIGNALS_MODEL, in_tok, out_tok)
+    if uid is None:
+        return False
+    label = names.get(str(uid), "that")
+    figure = figures.get(str(uid))
+    reply = f"{label} is <@{uid}>" + (f": {figure}." if figure else ".")
+    logger.info("Identified %r for %s as %s", label, caller_name, uid)
+    await message.reply(reply, mention_author=True,
+                        allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True))
+    live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": clean_prompt})
+    live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": reply})
+    return True
+
+
+def corrected_records_spec(prev: Any, signals: Any, has_new_subject: bool = False, direct: bool = True) -> Any:
     """A previous records question with a correction applied, or None if the message names nothing to change.
 
     Jev reads the correction with the bot's previous answer in front of it, so "users, not holders" comes
@@ -4907,12 +4946,15 @@ def corrected_records_spec(prev: Any, signals: Any, has_new_subject: bool = Fals
     import copy
     from lib.features import data_queries as dq
     from lib.features.mention_signals import DATA_QUERY_CONFIDENCE
-    if signals is None or signals.action != "reply":
+    if signals is None or signals.action != "reply" or signals.says("delegation"):
         return None
     spec = copy.deepcopy(prev)
     changed = False
     metric_sure = signals.data_metric != "none" and signals.data_metric_confidence >= DATA_QUERY_CONFIDENCE
     list_sure = signals.data_list != "none" and signals.data_list_confidence >= DATA_QUERY_CONFIDENCE
+    if not direct and not (metric_sure or list_sure or has_new_subject):
+        # Not a reply to the table: a stray "top 3" or "lowest" in ordinary chat is not a correction.
+        return None
     if list_sure and (signals.data_shape == "list" or not metric_sure):
         if signals.data_list != spec.list_kind:
             spec.shape, spec.list_kind, spec.metric = "list", signals.data_list, "none"
@@ -5117,7 +5159,10 @@ async def answer_data_query(
         text, mention_author=True,
         allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=False, replied_user=True),
     )
-    remember_records_answer(posted, getattr(getattr(message, "channel", None), "id", None), spec)
+    remember_records_answer(
+        posted, getattr(getattr(message, "channel", None), "id", None), spec,
+        names={uid: names.get(uid, f"user {uid}") for uid in result.ids}, figures=dq.figures_by_member(result), text=figures,
+    )
     live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
     live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": text})
     asyncio.create_task(live_chat_manager.update_dashboard())
@@ -5340,7 +5385,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             (_member_display_name(ref_author, "someone"), ref_author.id)
             if ref_author is not None and isinstance(getattr(ref_author, "id", None), int) else None
         )
-        prev = previous_records_answer(ref_msg, getattr(getattr(message, "channel", None), "id", None), bot_id) if signals is not None else None
+        prev, prev_direct = previous_records_answer(ref_msg, getattr(getattr(message, "channel", None), "id", None), bot_id) if signals is not None else (None, False)
         prev_subjects = [(n, int(i)) for n, i in getattr(prev, "subjects", []) if str(i).isdigit()] if prev is not None else []
         if signals is not None and signals.data_query_requested():
             if await answer_data_query(
@@ -5352,7 +5397,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         elif signals is not None:
             # "users, not holders" under the bot's last table: the same question with one part changed.
             has_new_subject = bool(other_mentions) or signals.data_subject == "caller"
-            corrected = corrected_records_spec(prev, signals, has_new_subject=has_new_subject) if prev is not None else None
+            corrected = corrected_records_spec(prev, signals, has_new_subject=has_new_subject, direct=prev_direct) if prev is not None else None
             if corrected is not None:
                 logger.info("Correction to a records answer from %s: %r -> %s/%s", caller_name, clean_prompt[:80],
                             corrected.list_kind or corrected.metric, corrected.shape)
@@ -5362,6 +5407,13 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     raw_content=raw_content, bot_id=bot_id, replied_author=replied_author, spec=corrected,
                 ):
                     return True
+            elif prev is not None and not other_mentions and len(clean_prompt) <= 80 and not signals.says("delegation"):
+                # "who is clown" / "tag them" about an entry in the table: answer with the real member.
+                try:
+                    if await identify_records_entry(message, prev, clean_prompt, caller_name):
+                        return True
+                except Exception as e:
+                    logger.warning("Identifying a records entry failed: %s", e)
 
         # Jev already read the message. When it is sure this wants text and nothing is attached that a
         # picture could be made from, the planner's paraphrase and people-resolution add nothing a text

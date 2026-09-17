@@ -1228,6 +1228,18 @@ def _block(text: str) -> str:
     return f"```\n{text}\n```"
 
 
+def figures_by_member(res: QueryResult) -> Dict[str, str]:
+    """Each shown member's figure in words, for follow-ups ("who is clown"): {user_id: "34 times shut, 5th"}."""
+    out: Dict[str, str] = {}
+    if res.metric is None:
+        return out
+    for uid, v in res.rows:
+        rank = res.ranks.get(uid)
+        place = f", {rank}{'th' if 11 <= rank % 100 <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(rank % 10, 'th')}" if rank and res.spec.shape in ("leaderboard", "closest") else ""
+        out[uid] = f"{_figure(res.metric, v)}{place}"
+    return out
+
+
 def _render_list(res: QueryResult, name) -> str:
     kind, spec = res.list_kind, res.spec
     who = f"{name(spec.subjects[0][1])}'s " if kind.per_person and spec.subjects else ""

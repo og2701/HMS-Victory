@@ -550,6 +550,7 @@ async def judge_option(
     session: Optional[aiohttp.ClientSession] = None,
     timeout: float = REQUEST_TIMEOUT_SECONDS,
     max_options: int = 120,
+    context: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Any, int, int]:
     """One Choice over real candidates: (the chosen option's value or None, input_tokens, output_tokens).
 
@@ -565,9 +566,11 @@ async def judge_option(
         return None, 0, 0
     criteria: Dict[str, Any] = {"none": none_means}
     criteria.update({label: None for label in labels})
+    state: Dict[str, Any] = {"message": (prompt or "").strip(), what: labels}
+    state.update(context or {})
     payload = {
         "model": MENTION_SIGNALS_MODEL,
-        "state": {"message": (prompt or "").strip(), what: labels},
+        "state": state,
         "questions": {"which": {"type": "choice", "instructions": instructions, "criteria": criteria}},
     }
     body = await _post(payload, key, session=session, timeout=timeout)
@@ -611,6 +614,28 @@ async def judge_named_subject(
         instructions="Which of `members` is the person `message` asks about? Match names, nicknames, partial names and misspellings; none if they are not listed.",
         none_means="The person asked about is not in the list, or the message is not about one particular person",
         api_key=api_key, session=session, timeout=timeout,
+    )
+
+
+async def judge_identify(
+    prompt: str,
+    entries: Dict[str, int],
+    *,
+    previous_answer: str = "",
+    api_key: Optional[str] = None,
+    session: Optional[aiohttp.ClientSession] = None,
+) -> Tuple[Optional[int], int, int]:
+    """Which entry of the bot's previous records answer a follow-up asks about: "who is clown", "tag them",
+    "ping number 5". (user_id or None, tokens in, tokens out)."""
+    return await judge_option(
+        prompt, dict(entries), what="entries",
+        instructions=("Does `message` ask who one of `entries` (names from the bot's previous answer, see `previous_answer`) "
+                      "is, or to tag, ping or mention one of them? They may be named, given by place in the list, or be "
+                      "'them'/'him'/'her' meaning whoever was just being discussed. Pick that entry; none if the message "
+                      "is about nothing in the list."),
+        none_means="The message does not ask to identify or tag one of the listed entries",
+        api_key=api_key, session=session,
+        context={"previous_answer": (previous_answer or "")[:1200]},
     )
 
 

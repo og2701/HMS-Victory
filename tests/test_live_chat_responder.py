@@ -3581,6 +3581,32 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         mock_plan.assert_not_called()
         self.assertEqual(message.reply.call_args[0][0], "```\nSolid-Snake: 4 shuts given (rank 1 of 1)\n```")
 
+    @patch("lib.features.chat_responder.judge_identify", new_callable=AsyncMock, return_value=(9, 40, 0))
+    @patch("lib.features.chat_responder.plan_mention")
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("", 0, 0))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_records_who_is_an_entry_tags_them(self, mock_judge, _find, _generate, mock_plan, mock_identify):
+        from lib.features import chat_responder as cr
+        from lib.features.data_queries import QuerySpec
+        mock_judge.return_value = _jev_signals(action="reply", confidence=0.99)   # "who is clown": no records fields at all
+        client = MagicMock(); client.user.id = 999999999
+        bot_msg = MagicMock(); bot_msg.id = 5151; bot_msg.author.id = client.user.id; bot_msg.content = "Top 10 by times shut"; bot_msg.attachments = []; bot_msg.mentions = []
+        spec = QuerySpec(metric="times_shut", shape="leaderboard", limit=10)
+        cr.remember_records_answer(bot_msg, 780, spec, names={"1": "Lanca", "9": "Clown"}, figures={"9": "34 times shut, 5th"}, text="Top 10 by times shut ...")
+        reference = MagicMock(); reference.message_id = 5151
+        message = self._leader_message(client, f"<@{client.user.id}> who is clown", reference=reference)
+        message.channel.id = 780
+        with patch("lib.features.chat_responder.resolve_reply_chain", new_callable=AsyncMock, return_value=[bot_msg]), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_plan.assert_not_called()
+        self.assertEqual(mock_identify.call_args[0][1], {"Lanca": 1, "Clown": 9})
+        self.assertEqual(mock_identify.call_args[1]["previous_answer"], "Top 10 by times shut ...")
+        self.assertEqual(message.reply.call_args[0][0], "Clown is <@9>: 34 times shut, 5th.")
+        self.assertTrue(message.reply.call_args[1]["allowed_mentions"].users)
+
     async def test_corrected_records_spec_changes_only_what_was_named(self):
         from lib.features import chat_responder as cr
         from lib.features.data_queries import QuerySpec
@@ -3602,14 +3628,22 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         sig = _jev_signals(action="reply", data={"metric": "none", "shape": "list", "list": "bank"})
         out = cr.corrected_records_spec(prev, sig)
         self.assertEqual((out.shape, out.list_kind), ("list", "bank"))
-        # previous answers are found by replied-to message, else by channel within the window
+        # previous answers are found by replied-to message (direct), else by channel within the window
         bot = MagicMock(); bot.id = 5; bot.author.id = 99
         cr.remember_records_answer(bot, 42, prev)
-        self.assertIs(cr.previous_records_answer(bot, 42, 99), prev)
-        self.assertIs(cr.previous_records_answer(None, 42, 99), prev)
-        self.assertIsNone(cr.previous_records_answer(None, 43, 99))
-        other = MagicMock(); other.id = 6; other.author.id = 99
-        self.assertIsNone(cr.previous_records_answer(other, 42, 99))
+        self.assertEqual(cr.previous_records_answer(bot, 42, 99), (prev, True))
+        self.assertEqual(cr.previous_records_answer(None, 42, 99), (prev, False))
+        self.assertEqual(cr.previous_records_answer(None, 43, 99), (None, False))
+        other_bot_msg = MagicMock(); other_bot_msg.id = 6; other_bot_msg.author.id = 99
+        self.assertEqual(cr.previous_records_answer(other_bot_msg, 42, 99), (prev, False))
+        human = MagicMock(); human.id = 7; human.author.id = 12345
+        self.assertEqual(cr.previous_records_answer(human, 42, 99), (None, False))   # "pls answer" under a member's question
+        # a channel follow-up that names no metric is not a correction; a direct reply with a length is
+        sig = ms_replace(_jev_signals(action="reply", data={"metric": "none", "shape": "leaderboard", "limit": 3}), data_metric_confidence=0.2)
+        self.assertIsNone(cr.corrected_records_spec(prev, sig, direct=False))
+        self.assertEqual(cr.corrected_records_spec(prev, sig, direct=True).limit, 3)
+        # a delegation is never a correction
+        self.assertIsNone(cr.corrected_records_spec(prev, _jev_signals(action="reply", data={"metric": "xp", "shape": "leaderboard"}, delegation=0.9)))
 
     @patch("lib.features.chat_responder.plan_mention")
     @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
