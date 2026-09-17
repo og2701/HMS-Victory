@@ -260,6 +260,22 @@ def test_grids_render_state(bb):
     assert isinstance(bb._pick_view(None, many, None, placeholder="x"), bb._HousematePicker)
 
 
+def test_house_panel_signature_tracks_visible_changes(bb):
+    bb.db_add_housemate(1)
+    bb.db_add_housemate(2)
+    bb.set_state(bb.STATE_GAME_STARTED_AT, 1)
+    base = bb._house_panel_signature(None)
+    assert bb._house_panel_signature(None) == base  # stable between calls
+    rid = bb.create_round(bb.KIND_NOMINATIONS)
+    opened = bb._house_panel_signature(None)
+    assert opened != base
+    bb.record_nominations(rid, 1, [2])  # a housemate's own press changes nothing visible
+    assert bb._house_panel_signature(None) == opened
+    bb.add_mission(2, "m")
+    assert bb._house_panel_signature(None) != opened
+    assert "1** secret mission in play" in bb._house_panel_text(None)
+
+
 def test_vote_button_custom_id(bb):
     btn = bb.VoteButton(7, 42, "Bob")
     assert btn.custom_id == "bb:vote:7:42"

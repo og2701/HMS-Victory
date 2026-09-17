@@ -38,6 +38,7 @@ STATE_LAST_NOM_TALLY = "last_nomination_tally"
 STATE_LAST_VOTE_RESULT = "last_vote_result"
 STATE_GAME_STARTED_AT = "game_started_at"
 STATE_HOUSE_MSGS_SINCE_PANEL = "house_msgs_since_panel"
+STATE_HOUSE_PANEL_SIG = "house_panel_signature"  # what the house panel last showed; a change re-posts it
 HOUSE_PANEL_REPOST_EVERY = 10  # chat messages in the house before the panel is re-posted at the bottom
 _repost_lock = asyncio.Lock()
 
@@ -1169,20 +1170,31 @@ class BigBrotherControlView(discord.ui.LayoutView):
         return True
 
 
+def _house_panel_signature(guild: Optional[discord.Guild]) -> str:
+    """Everything that affects what the house panel shows, minus the timestamp."""
+    return json.dumps({"text": _house_panel_text(guild), "unlocked": house_unlocked(),
+                       "noms_open": open_round(KIND_NOMINATIONS) is not None})
+
+
 async def refresh_panel(client: discord.Client) -> None:
-    """Re-render both panels (control channel and house channel) from current state."""
+    """Re-render the control panel in place. The house panel is re-posted at the bottom of
+    the channel when what it shows has changed (phase, counts, missions), and left alone
+    otherwise so housemates' own presses don't make it jump around."""
     guild = _guild(client)
-    for key, channel_id, build in ((STATE_PANEL_MSG, control_channel_id(), BigBrotherControlView),
-                                   (STATE_HOUSE_PANEL_MSG, house_channel_id(), HousePanelView)):
-        mid = get_state(key)
-        ch = await _channel(client, channel_id)
-        if not ch or not mid:
-            continue
+    mid = get_state(STATE_PANEL_MSG)
+    ch = await _channel(client, control_channel_id())
+    if ch and mid:
         try:
             msg = await ch.fetch_message(int(mid))
-            await msg.edit(view=build(guild))
+            await msg.edit(view=BigBrotherControlView(guild))
         except discord.HTTPException as e:
-            log.info("Big Brother: panel refresh failed (%s): %s", key, e)
+            log.info("Big Brother: control panel refresh failed: %s", e)
+    try:
+        sig = _house_panel_signature(guild)
+        if sig != get_state(STATE_HOUSE_PANEL_SIG):
+            await repost_house_panel(client)
+    except Exception:
+        log.exception("Big Brother: house panel repost failed")
 
 
 async def ensure_control_panel(client: discord.Client) -> None:
@@ -1223,12 +1235,14 @@ async def ensure_house_panel(client: discord.Client) -> None:
         try:
             msg = await ch.fetch_message(int(mid))
             await msg.edit(view=view)
+            set_state(STATE_HOUSE_PANEL_SIG, _house_panel_signature(_guild(client)))
             return
         except discord.HTTPException:
             pass
     msg = await ch.send(view=view)
     set_state(STATE_HOUSE_PANEL_MSG, msg.id)
     set_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0)
+    set_state(STATE_HOUSE_PANEL_SIG, _house_panel_signature(_guild(client)))
     log.info("Big Brother: posted house panel %s in %s", msg.id, ch.id)
 
 
@@ -1239,9 +1253,11 @@ async def repost_house_panel(client: discord.Client) -> None:
         if not ch:
             return
         old = get_state(STATE_HOUSE_PANEL_MSG)
-        msg = await ch.send(view=HousePanelView(_guild(client)))
+        guild = _guild(client)
+        msg = await ch.send(view=HousePanelView(guild))
         set_state(STATE_HOUSE_PANEL_MSG, msg.id)
         set_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0)
+        set_state(STATE_HOUSE_PANEL_SIG, _house_panel_signature(guild))
         if old:
             try:
                 old_msg = await ch.fetch_message(int(old))
@@ -1957,6 +1973,9 @@ def _house_panel_text(guild: Optional[discord.Guild]) -> str:
         lines.append("📝 Nominations are closed.")
     if vote:
         lines.append(f"🗳️ **Eviction vote is open** in <#{vote['channel_id']}>.")
+    missions = len(active_missions())
+    if missions:
+        lines.append(f"🕵️ **{missions}** secret mission{'s' if missions != 1 else ''} in play. Trust no one.")
     lines.append("")
     lines.append("-# Everything you press here is between you and Big Brother. Nobody else sees it.")
     return "\n".join(lines)
