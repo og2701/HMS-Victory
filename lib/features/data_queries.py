@@ -991,16 +991,24 @@ PROFILE_METRICS = ("ukpence", "xp", "messages", "shutcoins", "shutcoins_used", "
                    "first_seen", "skyrim_level")
 
 
+# Who counts when a list ranks people: set by compute_list for the duration of one query.
+_SCOPE: Tuple[set, Optional[set]] = (set(), None)
+
+
 def _list_profile(uid, limit, since, pick) -> Lines:
     """A member's main figures with their rank: the answer to "stats about X"."""
     out: Lines = []
+    excluded, members = _SCOPE
+    excluded = excluded | EXCLUDED_USER_IDS
     for key in PROFILE_METRICS:
         metric = METRICS[key]
         try:
-            rows = [(u, v) for u, v in metric.rows(None, None) if u not in EXCLUDED_USER_IDS]
+            rows = [(u, v) for u, v in metric.rows(None, None)
+                    if u not in excluded and (members is None or u in members or u == str(uid))]
         except Exception as e:
             logger.debug("profile metric %s failed: %s", key, e)
             continue
+        window = f" ({WINDOW_LABELS[metric.default_window]})" if metric.default_window != "all_time" else ""
         values = dict(rows)
         v = values.get(str(uid), 0)
         if v == 0 and metric.kind != "date":
@@ -1012,7 +1020,7 @@ def _list_profile(uid, limit, since, pick) -> Lines:
             continue
         better = sum(1 for _, x in rows if x > v)
         population = sum(1 for _, x in rows if x != 0)
-        out.append((None, f"{_figure(metric, v)} (rank {better + 1} of {population})"))
+        out.append((None, f"{_figure(metric, v)}{window} (rank {better + 1} of {population})"))
     return out
 
 
@@ -1175,13 +1183,18 @@ def compute(spec: QuerySpec, *, exclude_ids: Optional[set] = None, member_ids: O
 
 
 def compute_list(spec: QuerySpec, *, exclude_ids: Optional[set] = None, member_ids: Optional[set] = None) -> QueryResult:
+    global _SCOPE
     kind = LISTS[spec.list_kind or ""]
     _, since = _since_for(kind.windowable, spec.window)
     subject = spec.subjects[0][1] if (kind.per_person and spec.subjects) else None
     limit = normalise_limit(spec.limit)
-    lines = kind.lines(subject, limit, since, spec.pick)
     excluded = {str(x) for x in (exclude_ids or set())} | EXCLUDED_USER_IDS
     members = {str(x) for x in member_ids} if member_ids else None
+    _SCOPE = (excluded, members)
+    try:
+        lines = kind.lines(subject, limit, since, spec.pick)
+    finally:
+        _SCOPE = (set(), None)
     if not kind.per_person:
         lines = [(u, t) for u, t in lines if u is None or (u not in excluded and (members is None or u in members))]
     lines = lines[: max(limit, 12)] if kind.per_person and kind.key in ("badges", "counties") else lines[:limit]

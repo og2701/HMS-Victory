@@ -251,6 +251,12 @@ class TestLists(unittest.TestCase):
         self.assertTrue(text.startswith("```\nSteven's stats\n"), text)
         self.assertIn("\n300 XP (rank 3 of 4)", text)
         self.assertIn("\n9 shutcoins held (rank 3 of 4)", text)
+        # departed members drop out of the ranks when the guild roster is known
+        scoped = compute(QuerySpec(metric="none", shape="list", list_kind="profile", subjects=[("Steven", "2")]), member_ids={"1", "2"})
+        self.assertIn("\n300 XP (rank 2 of 2)", render(scoped, self.names))
+        with patch("lib.features.data_queries._fetch", lambda sql, params=(): [("2", 77)] if "FROM message_archive" in sql else []):
+            msgs = render(compute(QuerySpec(metric="none", shape="list", list_kind="profile", subjects=[("Steven", "2")])), self.names)
+            self.assertIn("\n77 messages sent (last 30 days) (rank 1 of 1)", msgs)
         self.assertIn("\n+800 UKP (casino profit and loss) (rank 1 of 2)", text)
         self.assertIn("\nfirst seen 03 Jul 2024", text)
         self.assertNotIn("counties", text)   # nothing on record is left out, not shown as zero
