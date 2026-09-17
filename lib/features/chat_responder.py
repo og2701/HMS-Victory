@@ -5823,9 +5823,11 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
 
         # Check if the prompt is asking to generate/draw an image
         is_img_req = is_fresh_img_req
+        # The regex net only runs when nobody judged the message: with Jev's verdict in hand, "why do you do
+        # this" must not become a picture because "do you" matches the "do @someone" follow-up pattern.
         if not is_img_req and (
             (signals is not None and signals.says("follow_up_image"))
-            or (intent is None and any(re.search(pat, clean_prompt.lower()) for pat in FOLLOW_UP_IMAGE_PATTERNS))
+            or (signals is None and intent is None and any(re.search(pat, clean_prompt.lower()) for pat in FOLLOW_UP_IMAGE_PATTERNS))
         ):
             if hasattr(message.channel, "history"):
                 try:

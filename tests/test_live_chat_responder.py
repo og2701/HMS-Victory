@@ -3690,6 +3690,26 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(text.startswith("Two for the price of one.\n"), text)
         self.assertEqual(mock_generate.call_count, 1)
 
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("Because you asked.", 100, 20))
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("RECENT CHAT", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock)
+    async def test_handle_one_off_confident_reply_is_not_turned_into_a_picture_by_the_regex_net(self, mock_judge, _find, _gather, mock_generate, mock_synth):
+        # "why do you do this": Jev says reply; "do you" matches the old "do @someone" follow-up regex and a bot image is nearby
+        mock_judge.return_value = _jev_signals(action="reply", confidence=0.87, follow_up_image=0.06)
+        client = MagicMock(); client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> why do you do this")
+        bot_image_msg = MagicMock(); bot_image_msg.author.id = client.user.id; bot_image_msg.attachments = [MagicMock()]
+        async def history(*a, **k):
+            yield bot_image_msg
+        message.channel.history = history
+        with patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_synth.assert_not_called()
+        mock_generate.assert_called_once()
+
     async def test_corrected_records_spec_changes_only_what_was_named(self):
         from lib.features import chat_responder as cr
         from lib.features.data_queries import QuerySpec
