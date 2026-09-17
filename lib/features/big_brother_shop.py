@@ -462,7 +462,9 @@ async def close_shop(client: discord.Client, task_id: int, reason: str) -> Optio
     verdict = ("PASSED" if passed else "FAILED") if task["required"] else "closed"
     close_task_db(task_id, f"{reason} {verdict}.".strip())
     t = _close_tasks.pop(task_id, None)
-    if t and not t.done():
+    # When the timer itself is what called us, cancelling it would cancel this very coroutine
+    # at the next await and silently drop the announcement and DM.
+    if t and t is not asyncio.current_task() and not t.done():
         t.cancel()
     task = get_task(task_id)
     guild = bb._guild(client)

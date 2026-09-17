@@ -413,3 +413,32 @@ def test_modals_serialise_within_discord_rules(bb, shop):
                 assert not comp["component"].get("label"), (type(modal).__name__, comp)
             elif comp.get("type") == 4 and comp.get("label"):   # bare TextInput with its own label
                 assert 1 <= len(comp["label"]) <= 45, comp["label"]
+
+
+def test_timed_close_runs_to_completion(shop, bb):
+    """The timer task calls close_shop from inside itself; the close must not cancel its own
+    coroutine, or the announcement and host DM after the DB write never happen."""
+    import asyncio
+    import types
+    import discord
+
+    class FakeClient:
+        def get_guild(self, _): return None
+        def get_channel(self, _): return None
+        async def fetch_channel(self, _):
+            raise discord.NotFound(types.SimpleNamespace(status=404, reason="nf"), "nf")
+        def get_user(self, _): return None
+        async def fetch_user(self, _):
+            raise discord.NotFound(types.SimpleNamespace(status=404, reason="nf"), "nf")
+
+    shop.set_catalogue(shop.parse_catalogue(CATALOGUE), replace=True)
+    tid = shop.create_task("Roast", 1000, ["Carrots"], bb._now())  # closes now
+
+    async def run():
+        shop.schedule_close(FakeClient(), shop.get_task(tid))
+        await asyncio.wait_for(shop._close_tasks[tid], timeout=5)
+    asyncio.run(run())
+
+    assert shop.get_task(tid)["status"] == "closed"
+    # The steps after the DB write ran: the closing event is logged last in close_shop.
+    assert [e["kind"] for e in bb.events()][-1] == "shop_closed"
