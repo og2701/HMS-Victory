@@ -161,6 +161,9 @@ def ensure_tables() -> None:
             except Exception:
                 pass
     _tables_ready = True
+    # The shop's tables live in their own module; make sure they exist alongside ours.
+    from lib.features import big_brother_shop as _shop
+    _shop.ensure_tables()
 
 
 def _now() -> int:
@@ -1360,6 +1363,13 @@ def _panel_text(guild: Optional[discord.Guild]) -> str:
     else:
         lines.append("**Eviction vote:** ⚪ none running")
     lines.append("**House chat:** " + ("🔇 housemates silenced" if house_silent() else "🟢 open"))
+    from lib.features import big_brother_shop as _shop
+    shop_task = _shop.current_task()
+    if shop_task:
+        lines.append(f"**Shop:** 🟢 open · {_shop.pounds(_shop.remaining(shop_task))} left"
+                     + (f" · closes <t:{shop_task['closes_at']}:R>" if shop_task["closes_at"] else ""))
+    else:
+        lines.append(f"**Shop:** ⚪ closed · {len(_shop.catalogue())} items in the catalogue")
     unread = pending_acks()
     if unread:
         lines.append(f"**Unread DMs:** {len(unread)} · " + ", ".join(
@@ -1400,6 +1410,8 @@ class BigBrotherControlView(discord.ui.LayoutView):
         card.add_item(discord.ui.TextDisplay(_panel_text(guild)))
 
         started = game_started()
+        from lib.features import big_brother_shop as _shop
+        shop_open = _shop.current_task() is not None
         sections = [
             ("### 🎬 Game", [
                 [_PanelButton("start", "Start the game" if not started else "Game is live",
@@ -1433,11 +1445,16 @@ class BigBrotherControlView(discord.ui.LayoutView):
                 [_PanelButton("dm", "DM as Big Brother", emoji="✉️"),
                  _PanelButton("broadcast", "Announce in house", emoji="📣")],
             ]),
+            ("### 🛒 Shop", [
+                [_PanelButton("catalogue", "Catalogue", emoji="📋"),
+                 _PanelButton("shop", "Close shop" if shop_open else "Open shop",
+                              discord.ButtonStyle.danger if shop_open else discord.ButtonStyle.primary, "🛒")],
+            ]),
         ]
-        # Discord caps a layout at 40 components counting every nested item; keep an eye on
-        # this if adding sections (each is separator + heading + rows + buttons).
+        # Discord caps a layout at 40 components counting every nested item (container, each
+        # heading, each row, each button). Headings alone mark the sections; separators would
+        # push this over the cap.
         for heading, rows in sections:
-            card.add_item(discord.ui.Separator())
             card.add_item(discord.ui.TextDisplay(heading))
             for row in rows:
                 card.add_item(discord.ui.ActionRow(*row))
@@ -1562,6 +1579,11 @@ async def repost_house_panel(client: discord.Client) -> None:
 async def ensure_panels(client: discord.Client) -> None:
     global _client_ref
     _client_ref = client
+    try:
+        from lib.features import big_brother_shop as _shop
+        _shop.restore_timers(client)
+    except Exception:
+        log.exception("Big Brother: could not restore shop timer")
     await ensure_control_panel(client)
     await ensure_house_panel(client)
 
@@ -1999,7 +2021,18 @@ async def _act_refresh(interaction: discord.Interaction):
     await interaction.followup.send("Panel refreshed.", ephemeral=True)
 
 
+async def _act_catalogue(interaction: discord.Interaction):
+    from lib.features import big_brother_shop as _shop
+    await _shop.act_catalogue(interaction)
+
+
+async def _act_shop(interaction: discord.Interaction):
+    from lib.features import big_brother_shop as _shop
+    await _shop.act_shop(interaction)
+
+
 PANEL_ACTIONS = {
+    "catalogue": _act_catalogue, "shop": _act_shop,
     "start": _act_start, "silence": _act_silence, "open_noms": _act_open_noms, "close_noms": _act_close_noms, "start_vote": _act_start_vote,
     "close_vote": _act_close_vote, "evict": _act_evict, "add": _act_add, "immunity": _act_immunity,
     "mission": _act_mission, "resolve_mission": _act_resolve_mission, "challenge": _act_challenge,
@@ -2295,6 +2328,11 @@ def _house_panel_text(guild: Optional[discord.Guild]) -> str:
     missions = len(active_missions())
     if missions:
         lines.append(f"🕵️ **{missions}** secret mission{'s' if missions != 1 else ''} in play. Trust no one.")
+    from lib.features import big_brother_shop as _shop
+    shop_task = _shop.current_task()
+    if shop_task:
+        lines.append(f"🛒 **The shop is open** with {_shop.pounds(_shop.remaining(shop_task))} in the pot. "
+                     f"Scroll up to the shop message to browse.")
     lines.append("")
     lines.append("-# Everything you press here is between you and Big Brother. Nobody else sees it.")
     return "\n".join(lines)
@@ -2486,7 +2524,16 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
 
     acks = [{"id": r[0], "user_id": int(r[1]), "name": n(int(r[1])), "label": r[2], "sent_at": r[3], "acked_at": r[4]}
             for r in DatabaseManager.fetch_all("SELECT id, user_id, label, sent_at, acked_at FROM bb_acks ORDER BY id")]
-    dump = {"exported_at": _now(), "housemates": hm, "acks": acks, "rounds": rounds, "nominations": noms, "votes": votes,
+    try:
+        from lib.features import big_brother_shop as _shop
+        shop = _shop.export()
+        for t in shop["tasks"]:
+            for pch in t["purchases"]:
+                pch["name_of_buyer"] = n(pch["user_id"])
+    except Exception:
+        log.exception("Big Brother: shop export failed")
+        shop = {}
+    dump = {"exported_at": _now(), "housemates": hm, "acks": acks, "shop": shop, "rounds": rounds, "nominations": noms, "votes": votes,
             "diary": diary, "missions": missions, "challenges": challenges, "events": evs,
             "activity": activity, "snugs": snug_rows, "house_messages": msgs}
 
@@ -2526,6 +2573,14 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
             detail = f"{tgt} earned an immunity token ({e.get('source', '')}), now holds {e.get('tokens')}"
         elif kind == "snug_opened":
             detail = f"snug opened by {who or 'Big Brother'}: " + ", ".join(n(m) for m in e.get("members", []))
+        elif kind == "shop_purchase":
+            detail = f"{who} bought {e.get('item')} for £{e.get('price', 0) / 100:.2f} ({e.get('remaining', 0) / 100:.2f} left)"
+        elif kind == "shop_opened":
+            detail = f"shop opened: {e.get('brief', '')} (budget £{e.get('budget', 0) / 100:.2f})"
+        elif kind == "shop_closed":
+            detail = f"shop closed: {e.get('reason', '')} " + (
+                {"True": "PASSED", "False": "FAILED"}.get(str(e.get("passed")), "")) + (
+                f" missing {', '.join(e.get('missing', []))}" if e.get("missing") else "")
         elif kind in ("bb_dm", "bb_announcement"):
             detail = f"{kind.replace('_', ' ')}" + (f" to {tgt}" if tgt else "") + f": {e.get('text', '')}"
         else:

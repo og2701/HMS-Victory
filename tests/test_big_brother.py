@@ -10,6 +10,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 @pytest.fixture
+def shop(bb):
+    from lib.features import big_brother_shop as module
+    module._tables_ready = False
+    module.ensure_tables()
+    return module
+
+
+@pytest.fixture
 def bb():
     import database
 
@@ -21,8 +29,10 @@ def bb():
     database.DB_FILE = os.path.join(tmpdir, "test.db")
 
     from lib.features import big_brother as module
+    from lib.features import big_brother_shop as shop_module
 
     module._tables_ready = False
+    shop_module._tables_ready = False
     module.ensure_tables()
     yield module
     # Later test files lean on whatever connection was open before this one (some point at
@@ -135,7 +145,7 @@ def test_panel_text_and_view_have_no_secrets(bb):
     assert view.timeout is None
     ids = [c.custom_id for row in view.children[0].children
            if hasattr(row, "children") for c in row.children]
-    assert len(ids) == 19 and len(set(ids)) == 19
+    assert len(ids) == 21 and len(set(ids)) == 21
     assert set(ids) == {f"bb:ctl:{a}" for a in bb.PANEL_ACTIONS}
     # Rows stay short so buttons don't wrap mid-row on desktop.
     assert all(len(row.children) <= 3 for row in view.children[0].children if hasattr(row, "children"))
@@ -316,3 +326,57 @@ def test_disabled_flag_blocks_everything(bb, monkeypatch):
     import config
     monkeypatch.setattr(config, "BIG_BROTHER_ENABLED", False)
     assert not bb.enabled()
+
+
+CATALOGUE = """Meat & Fish
+Whole chicken — £7.00
+Sausages — £3.00
+
+Fruit & Veg
+Maris Piper potatoes — £2.50
+Carrots — £1.00
+Lemon - 0.50
+"""
+
+
+def test_shop_catalogue_parse_and_store(shop):
+    entries = shop.parse_catalogue(CATALOGUE)
+    assert entries == [("Meat & Fish", "Whole chicken", 700), ("Meat & Fish", "Sausages", 300),
+                       ("Fruit & Veg", "Maris Piper potatoes", 250), ("Fruit & Veg", "Carrots", 100),
+                       ("Fruit & Veg", "Lemon", 50)]
+    shop.set_catalogue(entries, replace=True)
+    assert shop.categories() == ["Meat & Fish", "Fruit & Veg"]
+    # Re-adding the same item updates its price instead of duplicating it.
+    shop.set_catalogue([("Meat & Fish", "sausages", 350)], replace=False)
+    assert len(shop.catalogue()) == 5
+    assert next(i for i in shop.catalogue() if i["name"] == "Sausages")["price"] == 350
+    assert shop.parse_money("£75.50") == 7550 and shop.parse_money("100") == 10000 and shop.parse_money("x") is None
+    assert shop.pounds(1050) == "£10.50"
+
+
+def test_shop_buy_judge_and_close(shop, bb):
+    shop.set_catalogue(shop.parse_catalogue(CATALOGUE), replace=True)
+    ids = {i["name"]: i["id"] for i in shop.catalogue()}
+    tid = shop.create_task("Roast dinner", 1000, ["Whole chicken", "potatoes", "Carrots"], None)
+    task = shop.get_task(tid)
+    assert shop.current_task()["id"] == tid and shop.remaining(task) == 1000
+
+    ok, _, item, left = shop.buy(tid, ids["Whole chicken"], 1)
+    assert ok and item["name"] == "Whole chicken" and left == 300
+    ok, reason, _, _ = shop.buy(tid, ids["Whole chicken"], 2)
+    assert not ok and "already" in reason          # one of each
+    assert shop.buy(tid, ids["Lemon"], 3)[0]        # a temptation: 250 left
+    ok, reason, _, _ = shop.buy(tid, ids["Sausages"], 2)
+    assert not ok and "Not enough" in reason        # 300 > 250
+    assert shop.buy(tid, ids["Maris Piper potatoes"], 2)[0]
+    assert shop.remaining(shop.get_task(tid)) == 0
+    assert shop.nothing_affordable(shop.get_task(tid))
+
+    passed, missing, extras = shop.judge(shop.get_task(tid))
+    assert not passed and missing == ["Carrots"] and extras == ["Lemon"]
+    shop.close_task_db(tid, "done")
+    assert shop.current_task() is None
+    ok, reason, _, _ = shop.buy(tid, ids["Carrots"], 1)
+    assert not ok and "closed" in reason
+    dump = shop.export()
+    assert len(dump["tasks"][0]["purchases"]) == 3

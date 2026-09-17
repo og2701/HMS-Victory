@@ -207,9 +207,10 @@ class AClient(discord.Client):
         if getattr(config, "BIG_BROTHER_ENABLED", False):
             try:
                 from lib.features.big_brother import AckButton, BigBrotherControlView, HousePanelView, VoteButton
+                from lib.features.big_brother_shop import ShopBrowseButton
                 self.add_view(BigBrotherControlView())
                 self.add_view(HousePanelView())
-                self.add_dynamic_items(VoteButton, AckButton)
+                self.add_dynamic_items(VoteButton, AckButton, ShopBrowseButton)
                 logger.info("Registered Big Brother control panel + vote buttons.")
             except Exception as e:
                 logger.warning(f"Could not register Big Brother views: {e}")
