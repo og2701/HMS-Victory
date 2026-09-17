@@ -582,6 +582,26 @@ class _CatalogueView(discord.ui.View):
             back.callback = _back
             self.add_item(back)
 
+        full = discord.ui.Button(label="Full list", emoji="📜", row=4)
+
+        async def _full(interaction: discord.Interaction):
+            # Everything, one aisle per block, spread over as many ephemeral follow-ups as it takes.
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            chunks, current = [], ""
+            for cat in categories():
+                block = _aisle_text(cat) + "\n\n"
+                if len(current) + len(block) > 1900:
+                    chunks.append(current)
+                    current = ""
+                current += block
+            if current:
+                chunks.append(current)
+            await interaction.edit_original_response(content=chunks[0].rstrip() if chunks else "Empty.")
+            for chunk in chunks[1:]:
+                await interaction.followup.send(chunk.rstrip(), ephemeral=True)
+        full.callback = _full
+        self.add_item(full)
+
         add = discord.ui.Button(label="Add items", emoji="➕", row=4)
 
         async def _add(interaction: discord.Interaction):
