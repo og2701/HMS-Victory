@@ -939,6 +939,86 @@ class _HousematePicker(discord.ui.View):
         self.add_item(select)
 
 
+GRID_MAX = 25  # Discord: 5 rows x 5 buttons on one message
+
+
+class _PickGrid(discord.ui.View):
+    """One button per housemate; pressing one calls on_pick(interaction, user_id).
+    Falls back to a dropdown when there are more housemates than buttons allowed."""
+
+    def __init__(self, guild: Optional[discord.Guild], ids: list[int], on_pick: Callable,
+                 *, style=discord.ButtonStyle.secondary, marked: Iterable[int] = ()):
+        super().__init__(timeout=300)
+        marked = set(marked)
+        for uid in ids[:GRID_MAX]:
+            btn = discord.ui.Button(label=_name(guild, uid)[:80],
+                                    style=discord.ButtonStyle.primary if uid in marked else style)
+
+            async def _cb(interaction: discord.Interaction, _uid=uid):
+                await on_pick(interaction, _uid)
+            btn.callback = _cb
+            self.add_item(btn)
+
+
+def _pick_view(guild, ids, on_pick, *, placeholder: str, marked: Iterable[int] = (), style=discord.ButtonStyle.secondary):
+    if len(ids) <= GRID_MAX:
+        return _PickGrid(guild, ids, on_pick, style=style, marked=marked)
+
+    async def done(interaction, picked):
+        await on_pick(interaction, picked[0])
+    return _HousematePicker(guild, ids, done, placeholder=placeholder, defaults=marked)
+
+
+class _ToggleGrid(discord.ui.View):
+    """One button per housemate showing an on/off state (green/red). Pressing flips it via
+    on_toggle(interaction, user_id) -> new state, then the grid redraws itself."""
+
+    def __init__(self, guild: Optional[discord.Guild], ids: list[int], state: dict[int, bool],
+                 on_toggle: Callable, *, label: Callable[[int], str] = None):
+        super().__init__(timeout=300)
+        self.guild, self.ids, self.state, self.on_toggle = guild, ids, dict(state), on_toggle
+        self.label = label or (lambda uid: _name(guild, uid))
+        self._build()
+
+    def _build(self):
+        self.clear_items()
+        for uid in self.ids[:GRID_MAX]:
+            on = self.state.get(uid, False)
+            btn = discord.ui.Button(label=self.label(uid)[:80],
+                                    style=discord.ButtonStyle.success if on else discord.ButtonStyle.danger)
+
+            async def _cb(interaction: discord.Interaction, _uid=uid):
+                self.state[_uid] = await self.on_toggle(interaction, _uid)
+                self._build()
+                await interaction.response.edit_message(view=self)
+            btn.callback = _cb
+            self.add_item(btn)
+
+
+class _CountGrid(discord.ui.View):
+    """One button per housemate with a running number; each press calls on_press and the
+    button's count redraws. Used for handing out tokens."""
+
+    def __init__(self, guild: Optional[discord.Guild], ids: list[int], counts: dict[int, int], on_press: Callable):
+        super().__init__(timeout=300)
+        self.guild, self.ids, self.counts, self.on_press = guild, ids, dict(counts), on_press
+        self._build()
+
+    def _build(self):
+        self.clear_items()
+        for uid in self.ids[:GRID_MAX]:
+            n = self.counts.get(uid, 0)
+            btn = discord.ui.Button(label=f"{_name(self.guild, uid)} · {n}"[:80],
+                                    style=discord.ButtonStyle.primary if n else discord.ButtonStyle.secondary)
+
+            async def _cb(interaction: discord.Interaction, _uid=uid):
+                self.counts[_uid] = await self.on_press(interaction, _uid)
+                self._build()
+                await interaction.response.edit_message(view=self)
+            btn.callback = _cb
+            self.add_item(btn)
+
+
 class _Confirm(discord.ui.View):
     def __init__(self, on_yes: Callable, label: str = "Confirm"):
         super().__init__(timeout=120)
@@ -1264,9 +1344,7 @@ async def _act_evict(interaction: discord.Interaction):
     last = get_state(STATE_LAST_VOTE_RESULT) or {}
     default = [int(last["ranked"][0][0])] if last.get("ranked") and int(last["ranked"][0][0]) in ins else []
 
-    async def picked(inter: discord.Interaction, ids: list[int]):
-        uid = ids[0]
-
+    async def picked(inter: discord.Interaction, uid: int):
         async def yes(inter2: discord.Interaction):
             await inter2.response.defer(ephemeral=True)
             await evict(inter2.client, uid)
@@ -1277,8 +1355,11 @@ async def _act_evict(interaction: discord.Interaction):
             content=f"Evict **{_name(inter.guild, uid)}**? This posts the announcement in the house channel and removes the role.",
             view=_Confirm(yes, "Evict"))
 
-    view = _HousematePicker(interaction.guild, ins, picked, placeholder="Who is leaving?", defaults=default)
-    await interaction.response.send_message("Pick the housemate to evict.", view=view, ephemeral=True)
+    view = _pick_view(interaction.guild, ins, picked, placeholder="Who is leaving?", marked=default,
+                      style=discord.ButtonStyle.danger)
+    await interaction.response.send_message(
+        "Pick the housemate to evict." + (" The last vote's top nominee is highlighted." if default else ""),
+        view=view, ephemeral=True)
 
 
 async def _act_add(interaction: discord.Interaction):
@@ -1310,22 +1391,19 @@ async def _act_immunity(interaction: discord.Interaction):
         await _reply(interaction, "No housemates.", refresh=False)
         return
 
-    async def picked(inter: discord.Interaction, ids: list[int]):
-        out = []
-        for uid in ids:
-            now_immune = db_toggle_immunity(uid)
-            out.append(f"{_name(inter.guild, uid)}: {'immune' if now_immune else 'no longer immune'}")
-            log_event("immunity_toggled", target=uid, immune=now_immune)
-            if now_immune:
-                await dm_user(inter.client, uid, embed=bb_embed(
-                    "Immunity", "You are immune from the next nominations. Housemates won't be able to pick you."))
-        await _reply(inter, "\n".join(out))
+    async def toggled(inter: discord.Interaction, uid: int) -> bool:
+        now_immune = db_toggle_immunity(uid)
+        log_event("immunity_toggled", target=uid, immune=now_immune)
+        if now_immune:
+            await dm_user(inter.client, uid, embed=bb_embed(
+                "Immunity", "You are immune from the next nominations. Housemates won't be able to pick you."))
+        asyncio.create_task(refresh_panel(inter.client))
+        return now_immune
 
     immune = immune_ids()
-    view = _HousematePicker(interaction.guild, ins, picked, placeholder="Toggle immunity for...",
-                            max_values=min(25, len(ins)), defaults=immune)
+    view = _ToggleGrid(interaction.guild, ins, {u: u in immune for u in ins}, toggled)
     await interaction.response.send_message(
-        "Pick housemates to toggle. Currently immune are pre-ticked; submitting with someone unticked removes it.",
+        "🟢 immune · 🔴 not immune. Press a name to flip it. Immunity lasts until nominations close.",
         view=view, ephemeral=True)
 
 
@@ -1335,18 +1413,16 @@ async def _act_token(interaction: discord.Interaction):
         await _reply(interaction, "No housemates.", refresh=False)
         return
 
-    async def picked(inter: discord.Interaction, ids: list[int]):
-        out = []
-        for uid in ids:
-            total = grant_token(uid)
-            log_event("token_granted", target=uid, tokens=total, source="host")
-            await dm_user(inter.client, uid, embed=bb_embed("Immunity token", _token_blurb(total)))
-            out.append(f"{_name(inter.guild, uid)}: now holds {total}")
-        await _reply(inter, "\n".join(out), refresh=False)
+    async def pressed(inter: discord.Interaction, uid: int) -> int:
+        total = grant_token(uid)
+        log_event("token_granted", target=uid, tokens=total, source="host")
+        asyncio.create_task(dm_user(inter.client, uid, embed=bb_embed("Immunity token", _token_blurb(total))))
+        return total
 
-    view = _HousematePicker(interaction.guild, ins, picked, placeholder="Who earns a token?",
-                            max_values=min(25, len(ins)))
-    await interaction.response.send_message("Pick who gets an immunity token.", view=view, ephemeral=True)
+    view = _CountGrid(interaction.guild, ins, {u: tokens_of(u) for u in ins}, pressed)
+    await interaction.response.send_message(
+        "Each press gives that housemate one immunity token and DMs them. The number is how many they hold.",
+        view=view, ephemeral=True)
 
 
 async def _act_snug(interaction: discord.Interaction):
@@ -1383,9 +1459,7 @@ async def _act_mission(interaction: discord.Interaction):
         await _reply(interaction, "No housemates.", refresh=False)
         return
 
-    async def picked(inter: discord.Interaction, ids: list[int]):
-        uid = ids[0]
-
+    async def picked(inter: discord.Interaction, uid: int):
         async def submitted(inter2: discord.Interaction, values: dict):
             brief = values["brief"]
             mid = add_mission(uid, brief)
@@ -1403,8 +1477,11 @@ async def _act_mission(interaction: discord.Interaction):
             f"Mission for {_name(inter.guild, uid)}",
             [("brief", "The secret mission", True, 1000, True)], submitted))
 
-    view = _HousematePicker(interaction.guild, ins, picked, placeholder="Who gets the mission?")
-    await interaction.response.send_message("Pick the housemate.", view=view, ephemeral=True)
+    busy = {m["user_id"] for m in active_missions()}
+    view = _pick_view(interaction.guild, ins, picked, placeholder="Who gets the mission?", marked=busy)
+    await interaction.response.send_message(
+        "Pick the housemate." + (" Highlighted ones already have an active mission." if busy else ""),
+        view=view, ephemeral=True)
 
 
 async def _act_resolve_mission(interaction: discord.Interaction):
@@ -1543,9 +1620,7 @@ async def _act_crown(interaction: discord.Interaction):
         await _reply(interaction, "No housemates.", refresh=False)
         return
 
-    async def picked(inter: discord.Interaction, ids: list[int]):
-        uid = ids[0]
-
+    async def picked(inter: discord.Interaction, uid: int):
         async def yes(inter2: discord.Interaction):
             await inter2.response.defer(ephemeral=True)
             paid, note = await crown_winner(inter2.client, uid)
@@ -1556,7 +1631,7 @@ async def _act_crown(interaction: discord.Interaction):
             content=f"Crown **{_name(inter.guild, uid)}** and pay {prize_ukp():,} UKP? This announces it in the house.",
             view=_Confirm(yes, "Crown"))
 
-    view = _HousematePicker(interaction.guild, ins, picked, placeholder="Who wins?")
+    view = _pick_view(interaction.guild, ins, picked, placeholder="Who wins?", style=discord.ButtonStyle.success)
     await interaction.response.send_message("Pick the winner.", view=view, ephemeral=True)
 
 
@@ -1647,9 +1722,7 @@ async def handle_expose(interaction: discord.Interaction):
         await interaction.response.send_message("There's nobody else in the house.", ephemeral=True)
         return
 
-    async def picked(inter: discord.Interaction, ids: list[int]):
-        suspect = ids[0]
-
+    async def picked(inter: discord.Interaction, suspect: int):
         async def submitted(inter2: discord.Interaction, values: dict):
             on_mission = active_mission_for(suspect) is not None
             log_event("exposed", actor=inter2.user.id, target=suspect, what=values["what"], was_on_mission=on_mission)
@@ -1666,7 +1739,7 @@ async def handle_expose(interaction: discord.Interaction):
             f"Expose {_name(inter.guild, suspect)}",
             [("what", "What do you think they're up to?", True, 500, True)], submitted))
 
-    view = _HousematePicker(interaction.guild, others, picked, placeholder="Who's on a secret mission?")
+    view = _pick_view(interaction.guild, others, picked, placeholder="Who's on a secret mission?")
     await interaction.response.send_message("Who do you suspect?", view=view, ephemeral=True)
 
 
@@ -1722,8 +1795,7 @@ async def handle_use_immunity(interaction: discord.Interaction):
         asyncio.create_task(refresh_panel(inter.client))
 
     async def _gift(inter: discord.Interaction):
-        async def picked(inter2: discord.Interaction, ids: list[int]):
-            target = ids[0]
+        async def picked(inter2: discord.Interaction, target: int):
             if target in immune_ids():
                 await inter2.response.edit_message(content=f"{_name(inter2.guild, target)} is already immune.", view=None)
                 return
@@ -1739,7 +1811,7 @@ async def handle_use_immunity(interaction: discord.Interaction):
                 content=f"{EYE} Done. {_name(inter2.guild, target)} is immune from the next nominations, and knows it came from you.", view=None)
             asyncio.create_task(refresh_panel(inter2.client))
         await inter.response.edit_message(content="Who gets your immunity?",
-                                          view=_HousematePicker(inter.guild, others, picked, placeholder="Give immunity to..."))
+                                          view=_pick_view(inter.guild, others, picked, placeholder="Give immunity to..."))
 
     async def _swap(inter: discord.Interaction):
         vote_now = open_round(KIND_VOTE)
@@ -1752,8 +1824,7 @@ async def handle_use_immunity(interaction: discord.Interaction):
             await inter.response.edit_message(content="There's nobody you can swap with.", view=None)
             return
 
-        async def picked(inter2: discord.Interaction, ids: list[int]):
-            target = ids[0]
+        async def picked(inter2: discord.Interaction, target: int):
             rnd = open_round(KIND_VOTE)
             if not rnd or me not in rnd["nominees"] or target in rnd["nominees"]:
                 await inter2.response.edit_message(content="The vote changed under you. Try again.", view=None)
@@ -1790,7 +1861,7 @@ async def handle_use_immunity(interaction: discord.Interaction):
             asyncio.create_task(refresh_panel(inter2.client))
 
         await inter.response.edit_message(content="Who takes your place in the vote?",
-                                          view=_HousematePicker(inter.guild, pool, picked, placeholder="Swap with..."))
+                                          view=_pick_view(inter.guild, pool, picked, placeholder="Swap with..."))
 
     protect.callback, gift.callback, swap.callback = _protect, _gift, _swap
     view.add_item(protect)

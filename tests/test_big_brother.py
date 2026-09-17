@@ -242,6 +242,24 @@ def test_echo_body_covers_content_and_embed(bb):
     assert len(bb._echo_body("x" * 5000, None)) <= 3800
 
 
+def test_grids_render_state(bb):
+    import discord
+    ids = [1, 2, 3]
+    grid = bb._ToggleGrid(None, ids, {1: True, 2: False}, on_toggle=None)
+    styles = [b.style for b in grid.children]
+    assert styles == [discord.ButtonStyle.success, discord.ButtonStyle.danger, discord.ButtonStyle.danger]
+
+    counts = bb._CountGrid(None, ids, {2: 3}, on_press=None)
+    assert [b.label for b in counts.children] == ["user 1 · 0", "user 2 · 3", "user 3 · 0"]
+
+    pick = bb._pick_view(None, ids, None, placeholder="x", marked=[3])
+    assert isinstance(pick, bb._PickGrid)
+    assert pick.children[2].style == discord.ButtonStyle.primary
+    # Over the button cap it degrades to the dropdown picker.
+    many = list(range(1, 30))
+    assert isinstance(bb._pick_view(None, many, None, placeholder="x"), bb._HousematePicker)
+
+
 def test_vote_button_custom_id(bb):
     btn = bb.VoteButton(7, 42, "Bob")
     assert btn.custom_id == "bb:vote:7:42"
