@@ -2591,7 +2591,20 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
              "thread_id": int(r[6]) if r[6] else None}
             for r in DatabaseManager.fetch_all(
                 "SELECT message_id, user_id, content, at, attachments, reply_to, thread_id FROM bb_messages ORDER BY at")]
-    snug_rows = [dict(sn, member_names=[n(m) for m in sn["members"]]) for sn in snugs()]
+    # Snugs have no explicit end - they archive themselves after an hour of quiet - so the
+    # span is taken from the messages actually sent in the thread.
+    snug_rows = []
+    for sn in snugs():
+        stats = DatabaseManager.fetch_one(
+            "SELECT COUNT(*), MIN(at), MAX(at) FROM bb_messages WHERE thread_id = ?", (str(sn["thread_id"]),))
+        count, first, last = (int(stats[0]), stats[1], stats[2]) if stats else (0, None, None)
+        snug_rows.append(dict(
+            sn, member_names=[n(m) for m in sn["members"]], messages=count,
+            first_message_at=first, last_message_at=last,
+            active_minutes=round((last - first) / 60) if first and last else 0,
+            transcript=[{"name": n(int(r[0])), "at": r[1], "content": r[2]} for r in DatabaseManager.fetch_all(
+                "SELECT user_id, at, content FROM bb_messages WHERE thread_id = ? ORDER BY at",
+                (str(sn["thread_id"]),))]))
     activity = [{"user_id": int(r[0]), "name": n(int(r[0])), "messages": r[2], "last_message_at": r[1]}
                 for r in DatabaseManager.fetch_all(
                     "SELECT user_id, last_message_at, messages FROM bb_activity ORDER BY messages DESC")]
@@ -2657,6 +2670,9 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
             detail = f"{tgt} earned an immunity token ({e.get('source', '')}), now holds {e.get('tokens')}"
         elif kind == "snug_opened":
             detail = f"snug opened by {who or 'Big Brother'}: " + ", ".join(n(m) for m in e.get("members", []))
+            sn = next((x for x in snug_rows if x["thread_id"] == e.get("thread_id")), None)
+            if sn and sn["messages"]:
+                detail += f" — {sn['messages']} messages over {sn['active_minutes']} min"
         elif kind == "shop_purchase":
             detail = f"{who} bought {e.get('item')} for £{e.get('price', 0) / 100:.2f} ({e.get('remaining', 0) / 100:.2f} left)"
         elif kind == "shop_opened":
@@ -2670,6 +2686,13 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
         else:
             detail = f"{kind.replace('_', ' ')}" + (f": {tgt}" if tgt else "")
         lines.append(f"- {_fmt_ts(e['at'])}  {detail}")
+    if snug_rows:
+        lines += ["", "## Snugs"]
+        for sn in snug_rows:
+            lines.append(
+                f"- {_fmt_ts(sn['created_at'])} — {', '.join(sn['member_names'])}"
+                + (f" · {sn['messages']} messages over {sn['active_minutes']} min" if sn["messages"]
+                   else " · never used"))
     lines += ["", "## Activity (house channel messages)"]
     for a in activity:
         lines.append(f"- {a['name']}: {a['messages']}")

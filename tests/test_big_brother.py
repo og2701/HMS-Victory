@@ -548,3 +548,24 @@ def test_destructive_team_buttons_are_not_one_press(bb):
         body = src[src.index(handler):]
         body = body[:body.index("\n\n        async def")] if "\n\n        async def" in body else body
         assert "_Confirm" in body, handler
+
+
+def test_rundown_records_each_snug_and_how_long_it_ran(bb):
+    import database
+    bb.db_add_housemate(1)
+    bb.db_add_housemate(2)
+    sid = bb.add_snug(777, 1, [1, 2])
+    bb.log_event("snug_opened", actor=1, snug_id=sid, thread_id=777, members=[1, 2])
+    base = bb._now()
+    for i, (who, text) in enumerate([(1, "who worked in a chip shop"), (2, "kaizo did"), (1, "ta")]):
+        database.DatabaseManager.execute(
+            "INSERT INTO bb_messages (message_id, user_id, content, at, attachments, reply_to, thread_id) "
+            "VALUES (?, ?, ?, ?, 0, NULL, ?)", (str(900 + i), str(who), text, base + i * 300, "777"))
+
+    dump, timeline = bb.build_rundown(None)
+    snug = dump["snugs"][0]
+    assert snug["member_names"] == ["user 1", "user 2"]
+    assert snug["messages"] == 3 and snug["active_minutes"] == 10
+    assert [m["content"] for m in snug["transcript"]] == ["who worked in a chip shop", "kaizo did", "ta"]
+    assert "## Snugs" in timeline
+    assert "3 messages over 10 min" in timeline
