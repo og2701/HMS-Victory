@@ -1707,6 +1707,8 @@ async def _act_who(interaction: discord.Interaction):
         team = _teams.team_of(u)
         if team:
             flags.append(_teams.TEAM_LABEL[team])
+        if u in set(_teams.moles()):
+            flags.append("🕵️ MOLE")
         lines.append(f"• {_name(g, u)}" + (f"  -# {' · '.join(flags)}" if flags else ""))
     out = housemates(STATUS_EVICTED)
     if out:
@@ -2495,7 +2497,15 @@ async def on_house_message(client: discord.Client, message: discord.Message) -> 
     except Exception:
         log.exception("Big Brother: activity update failed")
     if isinstance(message.channel, discord.Thread) or message.channel.id != house_channel_id():
-        return  # snug and team-room chatter is recorded, but challenge answers only count in the house itself
+        # Snug and team-room chatter is recorded, but challenge answers only count in the house
+        # itself. A team room is also what the moles read, so pass it to the relay on the way out.
+        try:
+            from lib.features import big_brother_teams as _teams
+            if _teams.is_room(message.channel.id):
+                asyncio.create_task(_teams.relay_room_message(client, message))
+        except Exception:
+            log.exception("Big Brother: mole relay failed")
+        return
     # Keep the panel within reach: after every few chat messages, move it back to the bottom.
     # Not before the doors open: a locked panel bouncing around the pre-game chat is just noise.
     try:

@@ -8,6 +8,7 @@ the event transcript like the house does.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -23,7 +24,10 @@ TEAM_LABEL = {"A": "🅰️ Team A", "B": "🅱️ Team B"}
 ROOM_NAME = {"A": "🅰️-team-a", "B": "🅱️-team-b"}
 STATE_ROOMS = "team_rooms"  # {"A": channel_id, "B": channel_id}
 _tables_ready = False
-GRID_PAGE = 21  # names per page, leaving room for the three action buttons
+GRID_PAGE = 20  # names per page, leaving room for the action buttons
+RELAY_DELAY = 8.0  # seconds of room chat gathered before a mole's DM goes out
+_relay_buffer: dict[int, list[str]] = {}
+_relay_tasks: dict[int, asyncio.Task] = {}
 
 
 def ensure_tables() -> None:
@@ -32,10 +36,12 @@ def ensure_tables() -> None:
         return
     bb.ensure_tables()
     with DatabaseManager.transaction() as c:
-        try:
-            c.execute("ALTER TABLE bb_housemates ADD COLUMN team TEXT")
-        except Exception:
-            pass
+        for stmt in ("ALTER TABLE bb_housemates ADD COLUMN team TEXT",
+                     "ALTER TABLE bb_housemates ADD COLUMN mole INTEGER NOT NULL DEFAULT 0"):
+            try:
+                c.execute(stmt)
+            except Exception:
+                pass
     _tables_ready = True
 
 
@@ -80,6 +86,22 @@ def clear_teams() -> None:
     DatabaseManager.execute("UPDATE bb_housemates SET team = NULL")
 
 
+def moles() -> list[int]:
+    """Housemates secretly reading the other team's room."""
+    ensure_tables()
+    rows = DatabaseManager.fetch_all(
+        "SELECT user_id FROM bb_housemates WHERE status = ? AND mole = 1 ORDER BY joined_at", (bb.STATUS_IN,))
+    return [int(r[0]) for r in rows]
+
+
+def toggle_mole(user_id: int) -> bool:
+    ensure_tables()
+    row = DatabaseManager.fetch_one("SELECT mole FROM bb_housemates WHERE user_id = ?", (str(user_id),))
+    new = 0 if (row and row[0]) else 1
+    DatabaseManager.execute("UPDATE bb_housemates SET mole = ? WHERE user_id = ?", (new, str(user_id)))
+    return bool(new)
+
+
 def room_ids() -> dict[str, int]:
     rooms = bb.get_state(STATE_ROOMS) or {}
     return {t: int(cid) for t, cid in rooms.items() if t in TEAMS and cid}
@@ -87,6 +109,57 @@ def room_ids() -> dict[str, int]:
 
 def is_room(channel_id: int) -> bool:
     return int(channel_id) in room_ids().values()
+
+
+def team_for_room(channel_id: int) -> Optional[str]:
+    for t, cid in room_ids().items():
+        if int(cid) == int(channel_id):
+            return t
+    return None
+
+
+# ---------------------------------------------------------------------------
+# The mole relay: the other team's room, forwarded to the mole's DMs.
+#
+# A mole is never given access to the room they are spying on - no overwrite, nothing in
+# the member list, nothing for the other team to notice. They read it in their DMs and pass
+# what they learn back to their own side through the snug.
+# ---------------------------------------------------------------------------
+
+async def _flush_relay(client: discord.Client, room_id: int, team: str) -> None:
+    try:
+        await asyncio.sleep(RELAY_DELAY)
+    except asyncio.CancelledError:
+        return
+    _relay_tasks.pop(room_id, None)
+    lines = _relay_buffer.pop(room_id, [])
+    if not lines:
+        return
+    targets = [m for m in moles() if team_of(m) and team_of(m) != team]
+    if not targets:
+        return
+    body = "\n".join(lines)[:3900]
+    embed = bb.bb_embed(f"{TEAM_LABEL[team]} room", body)
+    embed.set_footer(text="Nobody knows you can see this. Big Brother is watching.")
+    for uid in targets:
+        await bb.dm_user(client, uid, embed=embed, echo=False)
+    bb.log_event("mole_relay", team=team, lines=len(lines), moles=targets)
+
+
+async def relay_room_message(client: discord.Client, message: discord.Message) -> None:
+    """Buffer a room message and make sure a flush is pending."""
+    team = team_for_room(message.channel.id)
+    if not team or not moles():
+        return
+    name = bb._name(message.guild, message.author.id)
+    text = (message.content or "").strip()
+    if message.attachments:
+        text = (text + " " if text else "") + f"[{len(message.attachments)} attachment(s)]"
+    if not text:
+        return
+    _relay_buffer.setdefault(message.channel.id, []).append(f"**{name}:** {text}"[:400])
+    if message.channel.id not in _relay_tasks:
+        _relay_tasks[message.channel.id] = asyncio.create_task(_flush_relay(client, message.channel.id, team))
 
 
 # ---------------------------------------------------------------------------
@@ -163,9 +236,10 @@ def _summary(guild) -> str:
     split = teams()
     rooms = room_ids()
     unassigned = [u for u in bb.housemates() if team_of(u) is None]
+    spies = set(moles())
     lines = ["Tap a name to cycle it: none → 🅰️ → 🅱️ → none."]
     for t in TEAMS:
-        names = ", ".join(bb._name(guild, u) for u in split[t]) or "nobody yet"
+        names = ", ".join(bb._name(guild, u) + (" 🕵️" if u in spies else "") for u in split[t]) or "nobody yet"
         room = f" · <#{rooms[t]}>" if t in rooms else ""
         lines.append(f"**{TEAM_LABEL[t]}** ({len(split[t])}){room}: {names}")
     if unassigned:
@@ -221,8 +295,35 @@ class _TeamsPage(discord.ui.View):
             self._build()
             await interaction.response.edit_message(content=_summary(interaction.guild), view=self)
 
+        moles_btn = discord.ui.Button(label="Moles", emoji="🕵️", row=4)
+
+        async def _moles(interaction: discord.Interaction):
+            on_team = [u for u in bb.housemates() if team_of(u)]
+            if not on_team:
+                await interaction.response.send_message("Assign some teams first.", ephemeral=True)
+                return
+
+            async def toggled(inter: discord.Interaction, uid: int) -> bool:
+                now_mole = toggle_mole(uid)
+                bb.log_event("mole_toggled", target=uid, mole=now_mole, team=team_of(uid))
+                if now_mole:
+                    other = "B" if team_of(uid) == "A" else "A"
+                    await bb.dm_user(inter.client, uid, ack="mole briefing", embed=bb.bb_embed(
+                        "You are the mole",
+                        f"You're on {TEAM_LABEL[team_of(uid)]}, but Big Brother is going to show you what "
+                        f"{TEAM_LABEL[other]} are saying. Their room chat will arrive here, in your DMs, every "
+                        f"few seconds.\n\nYou have no access to their room and you never will, so there is "
+                        f"nothing for them to notice.\n\nGetting what you learn back to your own side is your "
+                        f"problem: use **The snug** on the house panel and choose who to take in with you. "
+                        f"Choose carefully. Say nothing in the house."))
+                return now_mole
+
+            await bb._send_toggle(interaction, "🟢 mole · 🔴 not. A mole reads the OTHER team's room in their DMs.",
+                                  interaction.guild, on_team, {u: u in set(moles()) for u in on_team}, toggled)
+
+        moles_btn.callback = _moles
         open_btn.callback, close_btn.callback, clear_btn.callback = _open, _close, _clear
-        for b in (open_btn, close_btn, clear_btn):
+        for b in (open_btn, close_btn, clear_btn, moles_btn):
             self.add_item(b)
 
 
@@ -237,4 +338,4 @@ async def act_teams(interaction: discord.Interaction):
 
 
 def export() -> dict:
-    return {"teams": teams(), "rooms": room_ids()}
+    return {"teams": teams(), "rooms": room_ids(), "moles": moles()}
