@@ -1097,28 +1097,10 @@ class _GridSet:
         self.interaction: Optional[discord.Interaction] = None
         self.first_id: Optional[int] = None
         self.followup_ids: list[int] = []
+        # Each page is edited only by its own button presses: a page's message belongs to the
+        # interaction token that created it, so editing a sibling page from another page's
+        # press fails silently and leaves Discord showing buttons the bot no longer knows.
         self.views: list = []
-
-    def page_ids(self) -> list[Optional[int]]:
-        return [self.first_id, *self.followup_ids]
-
-    async def resync(self, interaction: discord.Interaction, content: Callable[[int], str]) -> None:
-        """Re-render every page in place, so a press on one page updates the others too.
-        `content(index)` gives each page's text. Acknowledges the press first."""
-        if not interaction.response.is_done():
-            await interaction.response.defer()
-        for i, (mid, view) in enumerate(zip(self.page_ids(), self.views)):
-            if mid is None:
-                continue
-            if hasattr(view, "_build"):
-                view._build()
-            try:
-                if i == 0:
-                    await interaction.edit_original_response(content=content(i), view=view)
-                else:
-                    await interaction.followup.edit_message(mid, content=content(i), view=view)
-            except discord.HTTPException as e:
-                log.info("Big Brother: could not resync grid page %s: %s", i, e)
 
     async def deliver(self, interaction: discord.Interaction, content: str, views: list, *, edit: bool = False):
         self.interaction = interaction

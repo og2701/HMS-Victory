@@ -519,10 +519,9 @@ def test_teams_pages_share_actions_and_summary(bb):
     for u in range(1, 27):
         bb.db_add_housemate(u)
     ins = bb.housemates()
-    gs = bb._GridSet()
     pages = [ins[i:i + teams.GRID_PAGE] for i in range(0, len(ins), teams.GRID_PAGE)]
-    views = [teams._TeamsPage(None, p, gs, actions=(i == 0)) for i, p in enumerate(pages)]
-    gs.views = views
+    views = [teams._TeamsPage(None, p, index=i, pages=len(pages), actions=(i == 0))
+             for i, p in enumerate(pages)]
 
     def labels(v):
         return {getattr(c, "label", "") for c in v.children}
@@ -531,8 +530,9 @@ def test_teams_pages_share_actions_and_summary(bb):
     assert not {"Open rooms", "Close rooms", "Clear teams"} & labels(views[1])
     assert len(views[1].children) == len(pages[1])          # names only
 
-    # Page one carries the summary, later pages just say which page they are.
-    assert "Team A" in teams._page_content(None, 0, 2) and "page 1 of 2" in teams._page_content(None, 0, 2)
-    assert teams._page_content(None, 1, 2) == "-# page 2 of 2"
+    # Every page carries the live summary, so a press on either one shows the truth.
+    for i in (0, 1):
+        assert "Team A" in teams._page_content(None, i, 2)
+        assert f"page {i + 1} of 2" in teams._page_content(None, i, 2)
     # A long unassigned list collapses to a count rather than naming everyone.
     assert "Not on a team yet: 26" in teams._summary(None)
