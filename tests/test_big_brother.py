@@ -536,3 +536,15 @@ def test_teams_pages_share_actions_and_summary(bb):
         assert f"page {i + 1} of 2" in teams._page_content(None, i, 2)
     # A long unassigned list collapses to a count rather than naming everyone.
     assert "Not on a team yet: 26" in teams._summary(None)
+
+
+def test_destructive_team_buttons_are_not_one_press(bb):
+    """Close rooms and Clear teams both delete something that cannot be undone in Discord,
+    so neither may act straight from the grid button."""
+    import inspect
+    from lib.features import big_brother_teams as teams
+    src = inspect.getsource(teams._TeamsPage._build)
+    for handler in ("async def _close", "async def _clear"):
+        body = src[src.index(handler):]
+        body = body[:body.index("\n\n        async def")] if "\n\n        async def" in body else body
+        assert "_Confirm" in body, handler

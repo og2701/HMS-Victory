@@ -225,17 +225,29 @@ class _TeamsPage(discord.ui.View):
             await interaction.edit_original_response(content=f"{note}\n\n" + self.content(interaction.guild), view=self)
 
         async def _close(interaction: discord.Interaction):
-            await interaction.response.defer()
-            n = await close_rooms(interaction.client)
-            self._build()
-            await interaction.edit_original_response(
-                content=f"Closed {n} room(s). Teams are still assigned.\n\n" + self.content(interaction.guild), view=self)
+            # Deleting both channels is not undoable in Discord, so it asks first.
+            async def yes(inter: discord.Interaction):
+                await inter.response.defer(ephemeral=True)
+                n = await close_rooms(inter.client)
+                await inter.edit_original_response(
+                    content=f"Closed {n} room(s). Teams are still assigned, and everything said in them is "
+                            f"saved for the rundown.", view=None)
+            await interaction.response.send_message(
+                "**Close both team rooms?** The channels are deleted for good. The chat is already saved for "
+                "the rundown and the team assignments stay.",
+                view=bb._Confirm(yes, "Close rooms"), ephemeral=True)
 
         async def _clear(interaction: discord.Interaction):
-            clear_teams()
-            bb.log_event("teams_cleared", actor=interaction.user.id)
-            self._build()
-            await interaction.response.edit_message(content=self.content(interaction.guild), view=self)
+            async def yes(inter: discord.Interaction):
+                clear_teams()
+                bb.log_event("teams_cleared", actor=inter.user.id)
+                await inter.response.edit_message(
+                    content="Teams cleared. Press Teams again for a fresh grid.", view=None)
+            split = teams()
+            await interaction.response.send_message(
+                f"**Clear the teams?** {len(split['A']) + len(split['B'])} assignment(s) are wiped and you'd be "
+                f"starting the grid from scratch. Open rooms are left alone.",
+                view=bb._Confirm(yes, "Clear teams"), ephemeral=True)
 
         open_btn.callback, close_btn.callback, clear_btn.callback = _open, _close, _clear
         for b in (open_btn, close_btn, clear_btn):
