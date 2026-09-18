@@ -1435,7 +1435,8 @@ class BigBrotherControlView(discord.ui.LayoutView):
             ("### 🎬 Game", [
                 [_PanelButton("start", "Start the game" if not started else "Game is live",
                               discord.ButtonStyle.success if not started else discord.ButtonStyle.secondary, "🎬"),
-                 _PanelButton("refresh", "Refresh", emoji="🔄")],
+                 _PanelButton("refresh", "Refresh", emoji="🔄"),
+                 _PanelButton("who", "Who's in", emoji="🏠")],
             ]),
             ("### 🗳️ Eviction cycle", [
                 [_PanelButton("open_noms", "Open nominations", discord.ButtonStyle.primary, "📝"),
@@ -1678,6 +1679,35 @@ async def _act_silence(interaction: discord.Interaction):
                       else f"{EYE} **You may talk again.**")
     await _reply(interaction, "Housemates can no longer send messages in the house." if target
                  else "Housemates can talk in the house again.")
+
+
+async def _act_who(interaction: discord.Interaction):
+    """Host-only roll call: everyone still in, with the flags only Big Brother should see."""
+    g = interaction.guild
+    ins = housemates()
+    immune = immune_ids()
+    on_mission = {m["user_id"] for m in active_missions()}
+    quiet = set(quiet_housemates())
+    lines = [f"**In the house ({len(ins)}):**"]
+    for u in ins:
+        flags = []
+        if u in immune:
+            flags.append("🛡️ immune")
+        t = tokens_of(u)
+        if t:
+            flags.append(f"🎟️ {t}")
+        if u in on_mission:
+            flags.append("🕵️ on a mission")
+        if u in quiet:
+            flags.append("💤 quiet")
+        lines.append(f"• {_name(g, u)}" + (f"  -# {' · '.join(flags)}" if flags else ""))
+    out = housemates(STATUS_EVICTED)
+    if out:
+        lines.append(f"\n**Evicted ({len(out)}):** " + ", ".join(_name(g, u) for u in out))
+    winner = housemates(STATUS_WINNER)
+    if winner:
+        lines.append("\n**Winner:** 👑 " + ", ".join(_name(g, u) for u in winner))
+    await interaction.response.send_message("\n".join(lines)[:1900], ephemeral=True)
 
 
 async def _act_open_noms(interaction: discord.Interaction):
@@ -2056,7 +2086,7 @@ async def _act_shop(interaction: discord.Interaction):
 
 PANEL_ACTIONS = {
     "catalogue": _act_catalogue, "shop": _act_shop,
-    "start": _act_start, "silence": _act_silence, "open_noms": _act_open_noms, "close_noms": _act_close_noms, "start_vote": _act_start_vote,
+    "start": _act_start, "who": _act_who, "silence": _act_silence, "open_noms": _act_open_noms, "close_noms": _act_close_noms, "start_vote": _act_start_vote,
     "close_vote": _act_close_vote, "evict": _act_evict, "add": _act_add, "immunity": _act_immunity,
     "mission": _act_mission, "resolve_mission": _act_resolve_mission, "challenge": _act_challenge,
     "token": _act_token, "snug": _act_snug,
