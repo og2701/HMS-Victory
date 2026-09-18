@@ -771,23 +771,42 @@ async def set_house_silence(client: discord.Client, silent: bool) -> bool:
     if not role:
         return False
     overwrite = ch.overwrites_for(role)
-    if silent:
-        overwrite.send_messages = False
-        overwrite.send_messages_in_threads = False
-    else:
-        overwrite.send_messages = None
-        overwrite.send_messages_in_threads = None
+    # Explicit allow when not silenced: once the doors open, @everyone is denied sending, so a
+    # cleared role override would leave housemates inheriting that deny.
+    overwrite.send_messages = not silent
+    overwrite.send_messages_in_threads = not silent
     try:
-        if overwrite.is_empty():
-            await ch.set_permissions(role, overwrite=None, reason="Big Brother: nominations closed")
-        else:
-            await ch.set_permissions(role, overwrite=overwrite,
-                                     reason="Big Brother: house " + ("silenced" if silent else "unsilenced"))
+        await ch.set_permissions(role, overwrite=overwrite,
+                                 reason="Big Brother: house " + ("silenced" if silent else "unsilenced"))
         set_state(STATE_HOUSE_SILENT, bool(silent))
         return True
     except discord.HTTPException as e:
         log.warning("Big Brother: could not %s the house: %s", "silence" if silent else "unsilence", e)
         return False
+
+
+async def open_house_to_spectators(client: discord.Client) -> bool:
+    """When the doors open the whole server can watch the house but not post in it. The
+    Housemate role's own override keeps housemates able to talk."""
+    ch = await house_channel(client)
+    if not isinstance(ch, discord.TextChannel):
+        return False
+    everyone = ch.guild.default_role
+    ow = ch.overwrites_for(everyone)
+    ow.view_channel = True
+    ow.read_message_history = True
+    ow.send_messages = False
+    ow.send_messages_in_threads = False
+    ow.create_public_threads = False
+    ow.create_private_threads = False
+    try:
+        await ch.set_permissions(everyone, overwrite=ow, reason="Big Brother: doors open, server may watch")
+    except discord.HTTPException as e:
+        log.warning("Big Brother: could not open the house to spectators: %s", e)
+        return False
+    # Make sure housemates keep (or regain) the ability to post now that @everyone can't.
+    await set_house_silence(client, house_silent())
+    return True
 
 
 async def open_nominations(client: discord.Client) -> Optional[int]:
@@ -1621,7 +1640,8 @@ async def _act_start(interaction: discord.Interaction):
     async def yes(inter: discord.Interaction):
         await inter.response.defer(ephemeral=True)
         set_state(STATE_GAME_STARTED_AT, _now())
-        log_event("game_started", housemates=housemates())
+        spectators = await open_house_to_spectators(inter.client)
+        log_event("game_started", housemates=housemates(), spectators_opened=spectators)
         ch = await house_channel(inter.client)
         if ch:
             await bb_send(ch, 
@@ -1631,7 +1651,10 @@ async def _act_start(interaction: discord.Interaction):
                 f"Big Brother is watching. Good luck.")
         await refresh_panel(inter.client)
         await _reply(inter, "The game is live. The house panel is unlocked, the doors announcement is posted, "
-                            "and every housemate is being DMed.", refresh=False)
+                            "every housemate is being DMed"
+                            + (", and the rest of the server can now watch the house (read-only)." if spectators
+                               else ". ⚠️ Couldn't open the channel to spectators; check the channel permissions."),
+                     refresh=False)
         asyncio.create_task(_dm_doors_open(inter.client))
 
     await interaction.response.send_message(
