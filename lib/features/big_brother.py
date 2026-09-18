@@ -334,8 +334,10 @@ def clear_all_immunity() -> list[int]:
 
 def create_ack(user_id: int, label: str) -> int:
     ensure_tables()
+    # The label is rendered on a single panel line, so a multi-line DM must not smear across it.
+    flat = " ".join((label or "").split())[:80]
     return DatabaseManager.execute_insert(
-        "INSERT INTO bb_acks (user_id, label, sent_at) VALUES (?, ?, ?)", (str(user_id), label[:200], _now()))
+        "INSERT INTO bb_acks (user_id, label, sent_at) VALUES (?, ?, ?)", (str(user_id), flat, _now()))
 
 
 def mark_ack(ack_id: int, user_id: int) -> Optional[str]:
@@ -1393,8 +1395,14 @@ def _panel_text(guild: Optional[discord.Guild]) -> str:
         lines.append(f"**Shop:** ⚪ closed · {len(_shop.catalogue())} items in the catalogue")
     unread = pending_acks()
     if unread:
-        lines.append(f"**Unread DMs:** {len(unread)} · " + ", ".join(
-            f"{_name(guild, a['user_id'])} ({a['label']})" for a in unread[:6]) + (" …" if len(unread) > 6 else ""))
+        by_message: dict[str, list[int]] = {}
+        for a in unread:
+            by_message.setdefault(a["label"], []).append(a["user_id"])
+        lines.append(f"**Not yet read:** {len(unread)} across {len(by_message)} message(s)")
+        for label, who in list(by_message.items())[:3]:
+            names = ", ".join(_name(guild, u) for u in who[:4])
+            more = f" +{len(who) - 4} more" if len(who) > 4 else ""
+            lines.append(f"-# *{label[:45]}* — {names}{more}")
     lines.append(f"**Secret missions:** {len(missions)} active")
     lines.append(f"**Challenge:** {('🟢 ' + chal['title']) if chal else '⚪ none open'}")
     if quiet:
@@ -2021,7 +2029,7 @@ async def _act_dm(interaction: discord.Interaction):
             await inter2.response.defer(ephemeral=True)
             sent, closed = 0, []
             for uid in ids:
-                ok = await dm_user(inter2.client, uid, ack=f"DM: {values['text'][:60]}",
+                ok = await dm_user(inter2.client, uid, ack=" ".join(values["text"].split())[:45],
                                    embed=bb_embed("Big Brother", values["text"]))
                 log_event("bb_dm", target=uid, text=values["text"], delivered=ok)
                 sent += ok

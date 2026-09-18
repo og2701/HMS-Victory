@@ -498,3 +498,17 @@ def test_teams_cycle_and_rooms_state(bb):
     assert [b.label for b in page.children[:2]] == ["A · user 1", "B · user 2"]
     teams.clear_teams()
     assert teams.teams() == {"A": [], "B": []}
+
+
+def test_unread_line_is_one_line_per_message(bb):
+    """A multi-line DM must not smear the panel across six lines."""
+    for u in (1, 2, 3):
+        bb.db_add_housemate(u)
+        bb.create_ack(u, "Hello Housemates....\n\nThe house opens shortly\n\n- BB")
+    bb.create_ack(1, "mission #4 brief")
+    labels = {a["label"] for a in bb.pending_acks()}
+    assert all("\n" not in lb for lb in labels)
+    assert len(labels) == 2                      # the bulk DM groups into one
+    text = bb._panel_text(None)
+    assert "**Not yet read:** 4 across 2 message(s)" in text
+    assert text.count("Hello Housemates") == 1
