@@ -30,9 +30,11 @@ def bb():
 
     from lib.features import big_brother as module
     from lib.features import big_brother_shop as shop_module
+    from lib.features import big_brother_teams as teams_module
 
     module._tables_ready = False
     shop_module._tables_ready = False
+    teams_module._tables_ready = False
     module.ensure_tables()
     yield module
     # Later test files lean on whatever connection was open before this one (some point at
@@ -145,7 +147,7 @@ def test_panel_text_and_view_have_no_secrets(bb):
     assert view.timeout is None
     ids = [c.custom_id for row in view.children[0].children
            if hasattr(row, "children") for c in row.children]
-    assert len(ids) == 22 and len(set(ids)) == 22
+    assert len(ids) == 23 and len(set(ids)) == 23
     assert set(ids) == {f"bb:ctl:{a}" for a in bb.PANEL_ACTIONS}
     # Rows stay short so buttons don't wrap mid-row on desktop.
     assert all(len(row.children) <= 3 for row in view.children[0].children if hasattr(row, "children"))
@@ -475,3 +477,24 @@ def test_jev_pricing_without_key_skips_cleanly(shop, monkeypatch):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     entries, failures = asyncio.run(shop.jev_sort_and_price([(None, "Haribo")]))
     assert entries == [] and failures == 1
+
+
+def test_teams_cycle_and_rooms_state(bb):
+    from lib.features import big_brother_teams as teams
+    for u in (1, 2, 3):
+        bb.db_add_housemate(u)
+    assert teams.team_of(1) is None
+    assert teams.cycle_team(1) == "A" and teams.cycle_team(1) == "B" and teams.cycle_team(1) is None
+    teams.set_team(1, "A"); teams.set_team(2, "B"); teams.set_team(3, "A")
+    assert teams.teams() == {"A": [1, 3], "B": [2]}
+    bb.db_set_status(3, bb.STATUS_EVICTED)
+    assert teams.teams() == {"A": [1], "B": [2]}          # evicted housemates drop out of their team
+    assert teams.room_ids() == {} and not teams.is_room(5)
+    bb.set_state(teams.STATE_ROOMS, {"A": 5, "B": 6})
+    assert teams.room_ids() == {"A": 5, "B": 6} and teams.is_room(6)
+    summary = teams._summary(None)
+    assert "Team A** (1)" in summary and "<#5>" in summary
+    page = teams._TeamsPage(None, [1, 2])
+    assert [b.label for b in page.children[:2]] == ["A · user 1", "B · user 2"]
+    teams.clear_teams()
+    assert teams.teams() == {"A": [], "B": []}

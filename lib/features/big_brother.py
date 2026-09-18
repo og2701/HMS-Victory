@@ -161,9 +161,11 @@ def ensure_tables() -> None:
             except Exception:
                 pass
     _tables_ready = True
-    # The shop's tables live in their own module; make sure they exist alongside ours.
+    # The shop's tables and the teams column live in their own modules; make sure they exist.
     from lib.features import big_brother_shop as _shop
+    from lib.features import big_brother_teams as _teams
     _shop.ensure_tables()
+    _teams.ensure_tables()
 
 
 def _now() -> int:
@@ -1455,9 +1457,10 @@ class BigBrotherControlView(discord.ui.LayoutView):
                               "🔊" if house_silent() else "🔇"),
                  _PanelButton("crown", "Crown winner", discord.ButtonStyle.success, "👑")],
             ]),
-            ("### 🕵️ Secret missions", [
+            ("### 🕵️ Missions & teams", [
                 [_PanelButton("mission", "Assign mission", emoji="🕵️"),
-                 _PanelButton("resolve_mission", "Resolve mission", emoji="✅")],
+                 _PanelButton("resolve_mission", "Resolve mission", emoji="✅"),
+                 _PanelButton("teams", "Teams", discord.ButtonStyle.primary, "🅰️")],
             ]),
             ("### 🧠 Challenges & messages", [
                 [_PanelButton("challenge", "Post challenge", emoji="🧠"),
@@ -1700,6 +1703,10 @@ async def _act_who(interaction: discord.Interaction):
             flags.append("🕵️ on a mission")
         if u in quiet:
             flags.append("💤 quiet")
+        from lib.features import big_brother_teams as _teams
+        team = _teams.team_of(u)
+        if team:
+            flags.append(_teams.TEAM_LABEL[team])
         lines.append(f"• {_name(g, u)}" + (f"  -# {' · '.join(flags)}" if flags else ""))
     out = housemates(STATUS_EVICTED)
     if out:
@@ -2074,6 +2081,11 @@ async def _act_refresh(interaction: discord.Interaction):
     await interaction.followup.send("Panel refreshed.", ephemeral=True)
 
 
+async def _act_teams(interaction: discord.Interaction):
+    from lib.features import big_brother_teams as _teams
+    await _teams.act_teams(interaction)
+
+
 async def _act_catalogue(interaction: discord.Interaction):
     from lib.features import big_brother_shop as _shop
     await _shop.act_catalogue(interaction)
@@ -2085,7 +2097,7 @@ async def _act_shop(interaction: discord.Interaction):
 
 
 PANEL_ACTIONS = {
-    "catalogue": _act_catalogue, "shop": _act_shop,
+    "catalogue": _act_catalogue, "shop": _act_shop, "teams": _act_teams,
     "start": _act_start, "who": _act_who, "silence": _act_silence, "open_noms": _act_open_noms, "close_noms": _act_close_noms, "start_vote": _act_start_vote,
     "close_vote": _act_close_vote, "evict": _act_evict, "add": _act_add, "immunity": _act_immunity,
     "mission": _act_mission, "resolve_mission": _act_resolve_mission, "challenge": _act_challenge,
@@ -2482,8 +2494,8 @@ async def on_house_message(client: discord.Client, message: discord.Message) -> 
         touch_activity(message.author.id)
     except Exception:
         log.exception("Big Brother: activity update failed")
-    if isinstance(message.channel, discord.Thread):
-        return  # snug chatter is recorded, but challenge answers only count in the house itself
+    if isinstance(message.channel, discord.Thread) or message.channel.id != house_channel_id():
+        return  # snug and team-room chatter is recorded, but challenge answers only count in the house itself
     # Keep the panel within reach: after every few chat messages, move it back to the bottom.
     # Not before the doors open: a locked panel bouncing around the pre-game chat is just noise.
     try:
@@ -2586,7 +2598,13 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
     except Exception:
         log.exception("Big Brother: shop export failed")
         shop = {}
-    dump = {"exported_at": _now(), "housemates": hm, "acks": acks, "shop": shop, "rounds": rounds, "nominations": noms, "votes": votes,
+    try:
+        from lib.features import big_brother_teams as _teams
+        team_dump = _teams.export()
+    except Exception:
+        log.exception("Big Brother: teams export failed")
+        team_dump = {}
+    dump = {"exported_at": _now(), "housemates": hm, "acks": acks, "shop": shop, "teams": team_dump, "rounds": rounds, "nominations": noms, "votes": votes,
             "diary": diary, "missions": missions, "challenges": challenges, "events": evs,
             "activity": activity, "snugs": snug_rows, "house_messages": msgs}
 

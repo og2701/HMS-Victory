@@ -370,11 +370,12 @@ class AClient(discord.Client):
         asyncio.create_task(county_on_message(self, message))
 
         # Big Brother house channel: activity tracking + auto-judged challenges.
-        if getattr(config, "BIG_BROTHER_ENABLED", False) and \
-                getattr(config, "BIG_BROTHER_HOUSE_CHANNEL", 0) in (
-                    message.channel.id, getattr(message.channel, "parent_id", None)):
+        if getattr(config, "BIG_BROTHER_ENABLED", False):
             from lib.features.big_brother import on_house_message
-            asyncio.create_task(on_house_message(self, message))
+            from lib.features.big_brother_teams import is_room
+            if getattr(config, "BIG_BROTHER_HOUSE_CHANNEL", 0) in (
+                    message.channel.id, getattr(message.channel, "parent_id", None)) or is_room(message.channel.id):
+                asyncio.create_task(on_house_message(self, message))
         # Big Brother control channel: the host pastes a shop catalogue after pressing Add items.
         if getattr(config, "BIG_BROTHER_ENABLED", False) and \
                 message.channel.id == getattr(config, "BIG_BROTHER_CONTROL_CHANNEL", 0):
