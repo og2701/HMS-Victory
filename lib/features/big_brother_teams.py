@@ -169,15 +169,36 @@ def _summary(guild) -> str:
         room = f" · <#{rooms[t]}>" if t in rooms else ""
         lines.append(f"**{TEAM_LABEL[t]}** ({len(split[t])}){room}: {names}")
     if unassigned:
-        lines.append(f"-# Not on a team: {', '.join(bb._name(guild, u) for u in unassigned)}")
+        if len(unassigned) > 8:
+            lines.append(f"-# Not on a team yet: {len(unassigned)}")
+        else:
+            lines.append(f"-# Not on a team: {', '.join(bb._name(guild, u) for u in unassigned)}")
     return "\n".join(lines)[:1900]
 
 
+def _page_content(guild, index: int, pages: int) -> str:
+    """Page one carries the summary; later pages are just more names."""
+    if index == 0:
+        return _summary(guild) + (f"\n-# page 1 of {pages}" if pages > 1 else "")
+    return f"-# page {index + 1} of {pages}"
+
+
 class _TeamsPage(discord.ui.View):
-    def __init__(self, guild, ids: list[int]):
+    """One page of the teams grid. The action buttons live on page one only, next to the
+    summary; every page shares a _GridSet so a press anywhere updates all of them."""
+
+    def __init__(self, guild, ids: list[int], gridset=None, *, actions: bool = True):
         super().__init__(timeout=600)
-        self.guild, self.ids = guild, ids
+        self.guild, self.ids, self.gridset, self.actions = guild, ids, gridset, actions
         self._build()
+
+    async def _resync(self, interaction: discord.Interaction):
+        pages = len(self.gridset.views) if self.gridset else 1
+        if self.gridset:
+            await self.gridset.resync(interaction, lambda i: _page_content(interaction.guild, i, pages))
+        else:
+            self._build()
+            await interaction.response.edit_message(content=_summary(interaction.guild), view=self)
 
     def _build(self):
         self.clear_items()
@@ -188,11 +209,12 @@ class _TeamsPage(discord.ui.View):
 
             async def _cycle(interaction: discord.Interaction, _uid=uid):
                 cycle_team(_uid)
-                self._build()
-                await interaction.response.edit_message(content=_summary(interaction.guild), view=self)
+                await self._resync(interaction)
             btn.callback = _cycle
             self.add_item(btn)
 
+        if not self.actions:
+            return
         rooms_open = bool(room_ids())
         open_btn = discord.ui.Button(label="Re-sync rooms" if rooms_open else "Open rooms",
                                      style=discord.ButtonStyle.success, emoji="🚪", row=4)
@@ -203,23 +225,31 @@ class _TeamsPage(discord.ui.View):
         async def _open(interaction: discord.Interaction):
             await interaction.response.defer()
             rooms, err = await open_rooms(interaction.client)
-            self._build()
-            await interaction.edit_original_response(
-                content=(err or "Rooms are open. Each team has been welcomed in theirs.") + "\n\n" + _summary(interaction.guild),
-                view=self)
+            note = err or "Rooms are open. Each team has been welcomed in theirs."
+            pages = len(self.gridset.views) if self.gridset else 1
+            if self.gridset:
+                await self.gridset.resync(
+                    interaction, lambda i: (note + "\n\n" if i == 0 else "") + _page_content(interaction.guild, i, pages))
+            else:
+                self._build()
+                await interaction.edit_original_response(content=f"{note}\n\n" + _summary(interaction.guild), view=self)
 
         async def _close(interaction: discord.Interaction):
             await interaction.response.defer()
             n = await close_rooms(interaction.client)
-            self._build()
-            await interaction.edit_original_response(
-                content=f"Closed {n} room(s). Teams are still assigned.\n\n" + _summary(interaction.guild), view=self)
+            note = f"Closed {n} room(s). Teams are still assigned."
+            pages = len(self.gridset.views) if self.gridset else 1
+            if self.gridset:
+                await self.gridset.resync(
+                    interaction, lambda i: (note + "\n\n" if i == 0 else "") + _page_content(interaction.guild, i, pages))
+            else:
+                self._build()
+                await interaction.edit_original_response(content=f"{note}\n\n" + _summary(interaction.guild), view=self)
 
         async def _clear(interaction: discord.Interaction):
             clear_teams()
             bb.log_event("teams_cleared", actor=interaction.user.id)
-            self._build()
-            await interaction.response.edit_message(content=_summary(interaction.guild), view=self)
+            await self._resync(interaction)
 
         open_btn.callback, close_btn.callback, clear_btn.callback = _open, _close, _clear
         for b in (open_btn, close_btn, clear_btn):
@@ -232,8 +262,9 @@ async def act_teams(interaction: discord.Interaction):
         await interaction.response.send_message("No housemates yet.", ephemeral=True)
         return
     pages = [ins[i:i + GRID_PAGE] for i in range(0, len(ins), GRID_PAGE)]
-    views = [_TeamsPage(interaction.guild, page) for page in pages]
-    await bb._GridSet().deliver(interaction, _summary(interaction.guild), views)
+    gs = bb._GridSet()
+    views = [_TeamsPage(interaction.guild, page, gs, actions=(i == 0)) for i, page in enumerate(pages)]
+    await gs.deliver(interaction, _summary(interaction.guild), views)
 
 
 def export() -> dict:

@@ -512,3 +512,27 @@ def test_unread_line_is_one_line_per_message(bb):
     text = bb._panel_text(None)
     assert "**Not yet read:** 4 across 2 message(s)" in text
     assert text.count("Hello Housemates") == 1
+
+
+def test_teams_pages_share_actions_and_summary(bb):
+    from lib.features import big_brother_teams as teams
+    for u in range(1, 27):
+        bb.db_add_housemate(u)
+    ins = bb.housemates()
+    gs = bb._GridSet()
+    pages = [ins[i:i + teams.GRID_PAGE] for i in range(0, len(ins), teams.GRID_PAGE)]
+    views = [teams._TeamsPage(None, p, gs, actions=(i == 0)) for i, p in enumerate(pages)]
+    gs.views = views
+
+    def labels(v):
+        return {getattr(c, "label", "") for c in v.children}
+    # Open / Close / Clear / Moles-free actions sit on page one only.
+    assert {"Open rooms", "Close rooms", "Clear teams"} <= labels(views[0])
+    assert not {"Open rooms", "Close rooms", "Clear teams"} & labels(views[1])
+    assert len(views[1].children) == len(pages[1])          # names only
+
+    # Page one carries the summary, later pages just say which page they are.
+    assert "Team A" in teams._page_content(None, 0, 2) and "page 1 of 2" in teams._page_content(None, 0, 2)
+    assert teams._page_content(None, 1, 2) == "-# page 2 of 2"
+    # A long unassigned list collapses to a count rather than naming everyone.
+    assert "Not on a team yet: 26" in teams._summary(None)
