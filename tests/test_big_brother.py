@@ -739,7 +739,8 @@ def test_a_running_vote_moves_into_a_thread_on_deploy(bb, monkeypatch):
     assert events == ["board posted in the thread", "mentioned the house", "the mention deleted",
                       "old board deleted", "house told where it went"]
     # One mention message, deleted straight after, instead of 26 "added X to the thread" lines.
-    assert thread.mentioned == ["<@1> <@2> <@3>"] and thread.locked
+    # The thread is left unlocked: locking would grey out the very buttons it exists for.
+    assert thread.mentioned == ["<@1> <@2> <@3>"] and not thread.locked
     rnd = bb.get_round(vid)
     assert rnd["channel_id"] == 777 and rnd["message_id"] == 4242
     assert bb.vote_count(vid) == 1                      # votes are keyed to the round, so they survive
@@ -755,14 +756,15 @@ def test_a_running_vote_moves_into_a_thread_on_deploy(bb, monkeypatch):
     assert bb.vote_count(vid) == 1
 
 
-def test_house_threads_are_public_locked_and_slow_to_archive(bb):
+def test_house_threads_are_public_open_and_slow_to_archive(bb):
     import inspect
     assert bb.vote_in_thread() and bb.panel_in_thread()   # on by default, config can turn them off
     src = inspect.getsource(bb.open_house_thread)
     assert "public_thread" in src                         # spectators can watch, they just can't press
     assert "VOTE_THREAD_AUTO_ARCHIVE" in src and bb.VOTE_THREAD_AUTO_ARCHIVE == 10080
     fill = inspect.getsource(bb.fill_thread)
-    assert "add_user" not in fill and "msg.delete()" in fill and "locked=True" in fill
+    assert "add_user" not in fill and "msg.delete()" in fill
+    assert "locked=True" not in fill and "locked=True" not in src   # locking greys the buttons out
     # Opening a vote sets the thread up before telling the house about it.
     start = inspect.getsource(bb.start_vote)
     assert start.index("fill_thread") < start.index("house_channel(client)")
@@ -812,7 +814,54 @@ def test_the_panel_moves_into_a_thread_when_the_doors_open(bb, monkeypatch):
     assert len(opened) == 2
 
 
-def test_the_host_can_still_speak_in_a_locked_thread(bb):
+def test_chat_in_a_button_thread_is_cleared_away(bb, monkeypatch):
+    """The threads stay unlocked so their buttons work, so the bot tidies them instead."""
+    import asyncio, types
+    bb.db_add_housemate(1)
+    bb.set_state(bb.STATE_HOUSE_PANEL_THREAD, 888)
+    assert bb.managed_thread_ids() == {888}                # the panel thread, no snugs
+
+    vid = bb.create_round(bb.KIND_VOTE, nominees=[1])
+    bb.set_round_message(vid, 777, 5)
+    assert bb.managed_thread_ids() == {888, 777}           # and the open vote's thread
+
+    deleted, sent = [], []
+
+    class FakeChannel:
+        id = 888
+        async def send(self, content):
+            sent.append(content)
+            return types.SimpleNamespace(delete=_noop)
+
+    async def _noop(*a):
+        deleted.append("the reminder")
+
+    msg = types.SimpleNamespace(channel=FakeChannel(), content="hello?",
+                                author=types.SimpleNamespace(id=1),
+                                delete=lambda: _noop())
+    monkeypatch.setattr(bb.asyncio, "sleep", _noop)
+    asyncio.run(bb.tidy_managed_thread(msg))
+    assert deleted and "Talk in" in sent[0]
+    assert [e["kind"] for e in bb.events()][-1] == "thread_message_cleared"
+
+    sent.clear()
+    asyncio.run(bb.tidy_managed_thread(msg))
+    assert sent == []                                      # one reminder a minute, not one each
+
+    hook = inspect_source(bb.on_house_message)
+    assert "managed_thread_ids()" in hook and "is_operator(message.author.id)" in hook
+    # A deploy opens any thread that went out locked, and says so where the house will see it.
+    boot = inspect_source(bb.ensure_panels)
+    assert "unlock_house_threads(client)" in boot and "announce_threads_fixed(client)" in boot
+    assert "is **now** open" in inspect_source(bb.announce_threads_fixed)
+
+
+def inspect_source(fn):
+    import inspect
+    return inspect.getsource(fn)
+
+
+def test_the_host_can_still_speak_in_her_own_threads(bb):
     import inspect
     assert "let_host_post_in_threads" in inspect.getsource(bb.open_house_thread)
     src = inspect.getsource(bb.let_host_post_in_threads)

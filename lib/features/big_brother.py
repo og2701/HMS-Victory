@@ -1088,7 +1088,8 @@ async def let_host_post_in_threads(house) -> None:
 
 async def open_house_thread(house, name: str, reason: str):
     """A room of its own off the house channel. Public, so anyone watching can see it, and
-    locked once it's set up: locking stops messages, it does not stop buttons or modals."""
+    left unlocked so its buttons stay pressable - see tidy_managed_thread for what keeps the
+    chat out of it."""
     if not isinstance(house, discord.TextChannel):
         return None
     await let_host_post_in_threads(house)
@@ -1127,9 +1128,10 @@ VOTE_THREAD_MENTION_BATCH = 25
 
 
 async def fill_thread(thread) -> None:
-    """Pull every housemate in so the thread sits in their sidebar, then lock it shut.
-    Mentioning someone joins them to a public thread, and the mention is deleted straight
-    after, so the house gets one ping instead of a wall of "added X to the thread" lines."""
+    """Pull every housemate in so the thread sits in their sidebar. Mentioning someone joins
+    them to a public thread, and the mention is deleted straight after, so the house gets one
+    ping instead of a wall of "added X to the thread" lines. The thread is left unlocked:
+    locking it would grey out its own buttons, so chat is tidied away instead."""
     ids = housemates()
     for i in range(0, len(ids), VOTE_THREAD_MENTION_BATCH):
         batch = ids[i:i + VOTE_THREAD_MENTION_BATCH]
@@ -1138,10 +1140,84 @@ async def fill_thread(thread) -> None:
             await msg.delete()
         except discord.HTTPException as e:
             log.warning("Big Brother: could not pull %d housemate(s) into the thread: %s", len(batch), e)
+
+
+THREAD_NOTE_COOLDOWN = 60  # seconds between reminders, so a chatty thread gets one, not ten
+_thread_notes: dict[int, int] = {}
+
+
+def managed_thread_ids() -> set[int]:
+    """The threads that exist for their buttons: the panel, an open vote, an open shop. Snugs
+    and team rooms are for talking, so they are never in here."""
+    ids: set[int] = set()
+    tid = get_state(STATE_HOUSE_PANEL_THREAD)
+    if tid:
+        ids.add(int(tid))
+    rnd = open_round(KIND_VOTE)
+    if rnd and rnd["channel_id"] and rnd["channel_id"] != house_channel_id():
+        ids.add(int(rnd["channel_id"]))
     try:
-        await thread.edit(locked=True, reason="Big Brother: this thread is for buttons, not chat")
+        from lib.features import big_brother_shop as _shop
+        task = _shop.current_task()
+        if task and task["channel_id"] and task["channel_id"] != _shop.shop_channel_id():
+            ids.add(int(task["channel_id"]))
+    except Exception:
+        log.exception("Big Brother: could not read the shop thread")
+    return ids
+
+
+async def tidy_managed_thread(message: discord.Message) -> None:
+    """Locking a thread greys its buttons out, so these are left open and cleared up instead:
+    what a housemate says in one is removed, what Big Brother says stays."""
+    try:
+        await message.delete()
     except discord.HTTPException as e:
-        log.warning("Big Brother: could not lock the thread: %s", e)
+        log.info("Big Brother: could not clear a message from %s: %s", message.channel.id, e)
+        return
+    log_event("thread_message_cleared", actor=message.author.id, channel_id=message.channel.id,
+              text=(message.content or "")[:500])
+    cid = int(message.channel.id)
+    if _now() - _thread_notes.get(cid, 0) < THREAD_NOTE_COOLDOWN:
+        return
+    _thread_notes[cid] = _now()
+    try:
+        note = await message.channel.send(
+            f"-# {EYE} This thread is for the buttons. Talk in <#{house_channel_id()}>.")
+        await asyncio.sleep(8)
+        await note.delete()
+    except discord.HTTPException:
+        pass
+
+
+async def unlock_house_threads(client: discord.Client) -> int:
+    """Threads opened while they were being locked have their buttons greyed out, so a deploy
+    opens them back up."""
+    freed = 0
+    for tid in managed_thread_ids():
+        ch = await _channel(client, tid)
+        if isinstance(ch, discord.Thread) and (ch.locked or ch.archived):
+            try:
+                await ch.edit(archived=False, locked=False, reason="Big Brother: locking greys out the buttons")
+                freed += 1
+            except discord.HTTPException as e:
+                log.warning("Big Brother: could not unlock thread %s: %s", tid, e)
+    return freed
+
+
+async def announce_threads_fixed(client: discord.Client) -> None:
+    """The first threads went out locked, which greys out the buttons they exist for. When a
+    deploy opens them back up, the house is told - the shop really is open this time."""
+    house = await house_channel(client)
+    if not house:
+        return
+    from lib.features import big_brother_shop as _shop
+    task = _shop.current_task()
+    if task and task["channel_id"] and task["channel_id"] != _shop.shop_channel_id():
+        await bb_send(house, f"{_role_mention()}{EYE} The shop is **now** open in "
+                             f"<#{task['channel_id']}> - the buttons work this time. "
+                             f"{_shop.pounds(_shop.remaining(task))} in the pot.")
+    else:
+        await bb_send(house, f"{EYE} The buttons in the house threads work again. Carry on.")
 
 
 async def drop_from_threads(client: discord.Client, user_id: int) -> None:
@@ -2208,6 +2284,11 @@ async def ensure_panels(client: discord.Client) -> None:
     # A restart doesn't reset the counter, so if the house talked past the vote while the bot
     # was down, bring it back to the bottom now instead of waiting for five more messages.
     try:
+        if await unlock_house_threads(client):
+            await announce_threads_fixed(client)
+    except Exception:
+        log.exception("Big Brother: could not unlock the house threads")
+    try:
         rnd = open_round(KIND_VOTE)
         if rnd:
             gone = drop_outsider_votes(rnd["id"])
@@ -3171,6 +3252,11 @@ async def on_house_message(client: discord.Client, message: discord.Message) -> 
         store_message(message)
     except Exception:
         log.exception("Big Brother: transcript store failed")
+    # The button threads are not for chat. Big Brother and the operators can say what they
+    # like in them; everyone else's message is cleared away.
+    if message.channel.id in managed_thread_ids() and not is_operator(message.author.id):
+        asyncio.create_task(tidy_managed_thread(message))
+        return
     if not is_housemate(message.author.id):
         return
     try:
