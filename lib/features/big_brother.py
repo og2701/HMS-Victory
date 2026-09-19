@@ -359,6 +359,20 @@ def pending_acks() -> list[dict]:
     return [{"id": r[0], "user_id": int(r[1]), "label": r[2], "sent_at": r[3]} for r in rows]
 
 
+def snug_last_activity(thread_id: int) -> Optional[int]:
+    row = DatabaseManager.fetch_one("SELECT MAX(at) FROM bb_messages WHERE thread_id = ?", (str(thread_id),))
+    return int(row[0]) if row and row[0] else None
+
+
+def mark_snug_closed(snug_id: int) -> None:
+    ensure_tables()
+    try:
+        DatabaseManager.execute("ALTER TABLE bb_snugs ADD COLUMN closed_at INTEGER")
+    except Exception:
+        pass
+    DatabaseManager.execute("UPDATE bb_snugs SET closed_at = ? WHERE id = ?", (_now(), int(snug_id)))
+
+
 def add_snug(thread_id: int, opened_by: Optional[int], members: Iterable[int]) -> int:
     ensure_tables()
     return DatabaseManager.execute_insert(
@@ -368,9 +382,14 @@ def add_snug(thread_id: int, opened_by: Optional[int], members: Iterable[int]) -
 
 def snugs() -> list[dict]:
     ensure_tables()
-    rows = DatabaseManager.fetch_all("SELECT id, thread_id, opened_by, members, created_at FROM bb_snugs ORDER BY id")
+    try:
+        DatabaseManager.execute("ALTER TABLE bb_snugs ADD COLUMN closed_at INTEGER")
+    except Exception:
+        pass
+    rows = DatabaseManager.fetch_all(
+        "SELECT id, thread_id, opened_by, members, created_at, closed_at FROM bb_snugs ORDER BY id")
     return [{"id": r[0], "thread_id": int(r[1]), "opened_by": int(r[2]) if r[2] else None,
-             "members": json.loads(r[3]), "created_at": r[4]} for r in rows]
+             "members": json.loads(r[3]), "created_at": r[4], "closed_at": r[5]} for r in rows]
 
 
 def recent_snug_by(user_id: int, within_seconds: int) -> bool:
@@ -943,6 +962,8 @@ async def close_vote(client: discord.Client) -> Optional[dict]:
 
 SNUG_ARCHIVE_MINUTES = 60
 SNUG_COOLDOWN_SECONDS = 2 * 3600
+SNUG_SWEEP_SECONDS = 300  # how often the bot checks for snugs that have gone quiet
+_snug_sweeper: Optional[asyncio.Task] = None
 
 
 async def open_snug(client: discord.Client, opened_by: Optional[int], member_ids: list[int],
@@ -976,12 +997,63 @@ async def open_snug(client: discord.Client, opened_by: Optional[int], member_ids
     intro = (f"{EYE} **Welcome to the snug.** {mentions}\n\n"
              + (f"{reason}\n\n" if reason else "")
              + f"Talk freely. Big Brother is in here too, and is watching. "
-             f"This thread closes itself after {SNUG_ARCHIVE_MINUTES} minutes of quiet.")
+             f"Big Brother closes this thread after {SNUG_ARCHIVE_MINUTES} minutes of quiet, and it "
+             f"cannot be reopened.")
     try:
         await thread.send(intro)
     except discord.HTTPException:
         pass
     return thread, ""
+
+
+async def close_idle_snugs(client: discord.Client) -> int:
+    """Discord's auto_archive only hides a thread and a member posting reopens it, so the bot
+    does the closing itself: lock and archive anything quiet for SNUG_ARCHIVE_MINUTES. The
+    transcript is already stored, so nothing is lost."""
+    closed = 0
+    cutoff = _now() - SNUG_ARCHIVE_MINUTES * 60
+    for sn in snugs():
+        if sn.get("closed_at"):
+            continue
+        last = snug_last_activity(sn["thread_id"]) or sn["created_at"]
+        if last > cutoff:
+            continue
+        try:
+            thread = client.get_channel(sn["thread_id"]) or await client.fetch_channel(sn["thread_id"])
+        except discord.NotFound:
+            mark_snug_closed(sn["id"])
+            continue
+        except discord.HTTPException:
+            continue
+        if not isinstance(thread, discord.Thread) or thread.locked:
+            mark_snug_closed(sn["id"])
+            continue
+        try:
+            if thread.archived:
+                await thread.edit(archived=False)
+            await thread.send(f"{EYE} **This snug is closed.** It went quiet, so Big Brother has shut the door. "
+                              f"Everything said here is kept.")
+            await thread.edit(archived=True, locked=True, reason="Big Brother: snug idle")
+            mark_snug_closed(sn["id"])
+            log_event("snug_closed", snug_id=sn["id"], thread_id=sn["thread_id"], members=sn["members"])
+            closed += 1
+        except discord.HTTPException as e:
+            log.warning("Big Brother: could not close snug %s: %s", sn["id"], e)
+    return closed
+
+
+async def _sweep_snugs_forever(client: discord.Client) -> None:
+    while True:
+        try:
+            await asyncio.sleep(SNUG_SWEEP_SECONDS)
+            if enabled():
+                n = await close_idle_snugs(client)
+                if n:
+                    log.info("Big Brother: closed %s idle snug(s)", n)
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            log.exception("Big Brother: snug sweep failed")
 
 
 async def crown_winner(client: discord.Client, user_id: int) -> tuple[bool, str]:
@@ -1615,8 +1687,10 @@ async def repost_house_panel(client: discord.Client) -> None:
 
 
 async def ensure_panels(client: discord.Client) -> None:
-    global _client_ref
+    global _client_ref, _snug_sweeper
     _client_ref = client
+    if _snug_sweeper is None or _snug_sweeper.done():
+        _snug_sweeper = asyncio.create_task(_sweep_snugs_forever(client))
     try:
         from lib.features import big_brother_shop as _shop
         _shop.restore_timers(client)

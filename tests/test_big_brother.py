@@ -241,8 +241,8 @@ def test_tokens_immunity_and_swap(bb):
     assert bb.vote_tally(vid) == {3: 1}  # votes for the swapped-out nominee are voided
 
     sid = bb.add_snug(555, 1, [1, 2])
-    assert bb.snugs()[0] == {"id": sid, "thread_id": 555, "opened_by": 1, "members": [1, 2],
-                             "created_at": bb.snugs()[0]["created_at"]}
+    sn = bb.snugs()[0]
+    assert (sn["id"], sn["thread_id"], sn["opened_by"], sn["members"], sn["closed_at"]) == (sid, 555, 1, [1, 2], None)
     assert bb.recent_snug_by(1, 60) and not bb.recent_snug_by(2, 60)
 
 
@@ -589,3 +589,40 @@ def test_rundown_separates_house_team_rooms_and_snugs(bb):
     assert by_label["the house"] == 1 and by_label["snug: user 1"] == 1
     assert "## Where the talking happened" in timeline
     assert "**Team A room** — 2 messages from 1 people" in timeline
+
+
+def test_idle_snugs_are_closed_by_the_bot(bb, monkeypatch):
+    """Discord only archives; the bot locks, so a member cannot reopen by posting."""
+    import asyncio
+    import database
+
+    bb.db_add_housemate(1)
+    quiet = bb.add_snug(111, 1, [1])
+    busy = bb.add_snug(222, 1, [1])
+    old = bb._now() - (bb.SNUG_ARCHIVE_MINUTES + 5) * 60
+    database.DatabaseManager.execute(
+        "INSERT INTO bb_messages (message_id, user_id, content, at, attachments, reply_to, thread_id) "
+        "VALUES ('1', '1', 'old', ?, 0, NULL, '111')", (old,))
+    database.DatabaseManager.execute(
+        "INSERT INTO bb_messages (message_id, user_id, content, at, attachments, reply_to, thread_id) "
+        "VALUES ('2', '1', 'recent', ?, 0, NULL, '222')", (bb._now(),))
+    assert bb.snug_last_activity(111) == old
+
+    class FakeThread(discord.Thread if False else object):
+        def __init__(self): self.archived, self.locked, self.sent = False, False, []
+        async def send(self, text): self.sent.append(text)
+        async def edit(self, **kw): self.__dict__.update({k: v for k, v in kw.items() if k in ("archived", "locked")})
+
+    threads = {111: FakeThread(), 222: FakeThread()}
+    monkeypatch.setattr(bb.discord, "Thread", FakeThread)
+
+    class FakeClient:
+        def get_channel(self, cid): return threads.get(cid)
+    assert asyncio.run(bb.close_idle_snugs(FakeClient())) == 1
+    assert threads[111].locked and threads[111].archived and threads[111].sent
+    assert not threads[222].locked          # still busy, left alone
+
+    closed = {s["id"]: s["closed_at"] for s in bb.snugs()}
+    assert closed[quiet] and not closed[busy]
+    assert [e["kind"] for e in bb.events()][-1] == "snug_closed"
+    assert asyncio.run(bb.close_idle_snugs(FakeClient())) == 0   # not closed twice
