@@ -2126,10 +2126,11 @@ def msgs_since_vote_repost() -> int:
     return n - at if 0 <= at <= n else n
 
 
-async def repost_vote_message(client: discord.Client) -> None:
+async def repost_vote_message(client: discord.Client, *, force: bool = False) -> None:
     """While a vote is running in the house, keep it within reach by moving it to the bottom
     rather than letting chat bury it. Votes are keyed to the round, not the message, so the
-    ones already cast are untouched."""
+    ones already cast are untouched. `force` skips the every-ten-minutes floor, which is what
+    a restart wants: fresh buttons, sitting at the bottom of the thread."""
     # The marker moves whether or not there is anything to move, so a closed vote doesn't
     # leave the every-five check firing on every single message.
     set_state(STATE_VOTE_REPOST_AT, int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0))
@@ -2146,7 +2147,7 @@ async def repost_vote_message(client: discord.Client) -> None:
     in_thread = bool(getattr(ch, "parent_id", None))
     # In its own thread the board isn't being buried, so the re-post is only there to bump the
     # thread up everyone's sidebar. Ten minutes apart is plenty for that.
-    if in_thread and _now() - int(get_state(STATE_VOTE_BUMPED_AT, 0) or 0) < VOTE_THREAD_BUMP_SECONDS:
+    if in_thread and not force and _now() - int(get_state(STATE_VOTE_BUMPED_AT, 0) or 0) < VOTE_THREAD_BUMP_SECONDS:
         return
     guild = _guild(client)
     try:
@@ -2218,9 +2219,13 @@ async def ensure_panels(client: discord.Client) -> None:
                     + ", ".join(_mention_and_name(_guild(client), u) for u in gone)
                     + f" no longer count{'s' if len(gone) == 1 else ''} in round {rnd['id']}."))
         if await migrate_vote_to_thread(client) is None:
-            await rename_vote_thread(client, open_round(KIND_VOTE))
-            if msgs_since_vote_repost() >= VOTE_REPOST_EVERY:
-                await repost_vote_message(client)
+            rnd = open_round(KIND_VOTE)
+            await rename_vote_thread(client, rnd)
+            # A restart re-posts the board once: it lands at the bottom of the thread with
+            # buttons this process knows, whatever was said above it while the bot was down.
+            in_thread = bool(rnd and rnd["channel_id"] and rnd["channel_id"] != house_channel_id())
+            if in_thread or msgs_since_vote_repost() >= VOTE_REPOST_EVERY:
+                await repost_vote_message(client, force=True)
     except Exception:
         log.exception("Big Brother: could not catch the vote up on startup")
 

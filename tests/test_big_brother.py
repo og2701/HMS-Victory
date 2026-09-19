@@ -678,6 +678,9 @@ def test_vote_reposts_in_the_house_or_its_own_thread(bb, monkeypatch):
     calls.clear()
     asyncio.run(bb.repost_vote_message(None))
     assert calls == []                                          # bumped a moment ago, left alone
+    asyncio.run(bb.repost_vote_message(None, force=True))
+    assert "posted" in calls                                    # a restart moves it anyway
+    calls.clear()
     bb.set_state(bb.STATE_VOTE_BUMPED_AT, bb._now() - bb.VOTE_THREAD_BUMP_SECONDS - 1)
     asyncio.run(bb.repost_vote_message(None))
     assert "posted" in calls                                    # due again
@@ -924,7 +927,8 @@ def test_a_restart_catches_the_vote_up(bb):
     bb.set_state(bb.STATE_HOUSE_MSGS_SINCE_PANEL, 9)
     assert bb.msgs_since_vote_repost() >= bb.VOTE_REPOST_EVERY
     src = inspect.getsource(bb.ensure_panels)
-    assert "msgs_since_vote_repost() >= VOTE_REPOST_EVERY" in src and "repost_vote_message(client)" in src
+    assert "msgs_since_vote_repost() >= VOTE_REPOST_EVERY" in src
+    assert "repost_vote_message(client, force=True)" in src
     # Moving it resets the gap, whether or not there was a vote to move.
     assert "set_state(STATE_VOTE_REPOST_AT" in inspect.getsource(bb.repost_vote_message)
     # A panel repost zeroes the house counter, which must not read as a negative gap.
