@@ -690,7 +690,7 @@ BIG_BROTHER_PRIZE_UKP = 5000
 BIG_BROTHER_NOMINATIONS_PER_HOUSEMATE = 2
 BIG_BROTHER_QUIET_HOURS = 48                        # panel flags housemates silent this long
 BIG_BROTHER_HOUSE_PANEL_UNLOCKED = False            # TEMP: house panel usable before Start is pressed; set False before the doors open
-BIG_BROTHER_SHOP_CHANNEL = BIG_BROTHER_CONTROL_CHANNEL  # TEMP for testing; set back to None so the shop posts in the house
+BIG_BROTHER_SHOP_CHANNEL = None                     # where shop tasks post; None = the house channel (set to the control channel to test)
 
 # ---------------------------------------------------------------------------
 # Anti-alt / anti-farm / anti-laundering detection (lib/core/detection.py)
