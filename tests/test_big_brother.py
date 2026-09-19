@@ -731,3 +731,22 @@ def test_panel_repost_brings_the_vote_down_with_it(bb):
     # and the chat path no longer schedules the vote separately at the panel threshold
     hook = inspect.getsource(bb.on_house_message)
     assert hook.count("repost_vote_message") == 1
+
+
+def test_a_vote_updates_both_the_message_and_the_host_panel(bb):
+    import inspect
+    src = inspect.getsource(bb.refresh_vote_count)
+    assert "msg.edit(embed=" in src and "await refresh_panel(client)" in src
+    assert bb.VOTE_REFRESH_DELAY <= 1.0
+
+    # Casting a vote must not change what the house panel says, or every vote would drag
+    # the panel and the vote itself to the bottom of the channel.
+    bb.db_add_housemate(1)
+    bb.set_state(bb.STATE_GAME_STARTED_AT, 1)
+    vid = bb.create_round(bb.KIND_VOTE, nominees=[1, 2])
+    bb.set_round_message(vid, bb.house_channel_id(), 42)
+    before = bb._house_panel_signature(None)
+    bb.cast_vote(vid, 10, 1)
+    assert bb._house_panel_signature(None) == before
+    # but the host's panel does show the new count
+    assert "1 votes cast" in bb._panel_text(None)

@@ -941,23 +941,28 @@ def _vote_embed(nominee_ids: Iterable[int], guild: Optional[discord.Guild],
 _vote_refresh: dict[int, asyncio.Task] = {}
 
 
+VOTE_REFRESH_DELAY = 1.0  # a beat, so a rush of votes is one edit rather than a dozen
+
+
 async def refresh_vote_count(client: discord.Client, round_id: int) -> None:
-    """Nudge the running total on the vote message. Debounced, so a rush of votes is one edit."""
+    """Update the running total on the vote message and the host's panel. Edits in place, so
+    the message does not move. Coalesced over a second in case several people vote at once."""
     if round_id in _vote_refresh:
         return
 
     async def _later():
         try:
-            await asyncio.sleep(3)
+            await asyncio.sleep(VOTE_REFRESH_DELAY)
             _vote_refresh.pop(round_id, None)
             rnd = get_round(round_id)
-            if not rnd or rnd["status"] != "open" or not rnd["message_id"]:
-                return
-            ch = await _channel(client, rnd["channel_id"])
-            if not ch:
-                return
-            msg = await ch.fetch_message(rnd["message_id"])
-            await msg.edit(embed=_vote_embed(rnd["nominees"], _guild(client), rnd["id"]))
+            if rnd and rnd["status"] == "open" and rnd["message_id"]:
+                ch = await _channel(client, rnd["channel_id"])
+                if ch:
+                    msg = await ch.fetch_message(rnd["message_id"])
+                    await msg.edit(embed=_vote_embed(rnd["nominees"], _guild(client), rnd["id"]))
+            # The control panel counts votes too. Casting one never changes what the house
+            # panel says, so this only edits the host's panel and never moves anything.
+            await refresh_panel(client)
         except asyncio.CancelledError:
             raise
         except Exception:
