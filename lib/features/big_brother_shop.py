@@ -34,13 +34,19 @@ SEED_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path
 _PRICE_LINE = re.compile(r"^(?P<name>.+?)\s*[-–—:]+\s*£?\s*(?P<price>\d+(?:[.,]\d{1,2})?)\s*$")
 
 
-async def shop_channel(client: discord.Client):
-    """Where the shop and its announcements post: the house, unless config points elsewhere
-    (used to test the shop in the control channel without touching the live house)."""
+def shop_channel_id() -> int:
+    """Where the shop posts: the house, unless config points elsewhere (used to test the shop
+    in the control channel without touching the live house)."""
     override = getattr(config, "BIG_BROTHER_SHOP_CHANNEL", None)
-    if override:
-        return await bb._channel(client, int(override))
-    return await bb.house_channel(client)
+    return int(override) if override else bb.house_channel_id()
+
+
+def shop_is_in_the_house() -> bool:
+    return shop_channel_id() == bb.house_channel_id()
+
+
+async def shop_channel(client: discord.Client):
+    return await bb._channel(client, shop_channel_id())
 
 
 def can_shop(user_id: int) -> bool:

@@ -2627,9 +2627,14 @@ def _house_panel_text(guild: Optional[discord.Guild]) -> str:
         lines.append(f"🕵️ **{missions}** secret mission{'s' if missions != 1 else ''} in play. Trust no one.")
     from lib.features import big_brother_shop as _shop
     shop_task = _shop.current_task()
-    if shop_task:
-        lines.append(f"🛒 **The shop is open** with {_shop.pounds(_shop.remaining(shop_task))} in the pot. "
-                     f"Scroll up to the shop message to browse.")
+    # Only mention a shop the housemates can actually reach: while it is being tested in the
+    # control channel, pointing them at it would be telling them to open a door that is not there.
+    if shop_task and _shop.shop_is_in_the_house():
+        where = ""
+        if shop_task["channel_id"] and shop_task["message_id"]:
+            where = (f" [Go to the shop](https://discord.com/channels/"
+                     f"{getattr(config, 'GUILD_ID', '@me')}/{shop_task['channel_id']}/{shop_task['message_id']})")
+        lines.append(f"🛒 **The shop is open** with {_shop.pounds(_shop.remaining(shop_task))} in the pot.{where}")
     lines.append("")
     lines.append("-# Everything you press here is between you and Big Brother. Nobody else sees it.")
     return "\n".join(lines)

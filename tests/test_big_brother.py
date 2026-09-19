@@ -750,3 +750,23 @@ def test_a_vote_updates_both_the_message_and_the_host_panel(bb):
     assert bb._house_panel_signature(None) == before
     # but the host's panel does show the new count
     assert "1 votes cast" in bb._panel_text(None)
+
+
+def test_house_panel_hides_a_shop_the_housemates_cannot_reach(bb, shop, monkeypatch):
+    import config
+    bb.db_add_housemate(1)
+    bb.set_state(bb.STATE_GAME_STARTED_AT, 1)
+    shop.set_catalogue([("Misc", "Salt", 80)], replace=True)
+    tid = shop.create_task("Roast", 10000, [], None)
+    shop.set_task_message(tid, bb.house_channel_id(), 4242)
+
+    monkeypatch.setattr(config, "BIG_BROTHER_SHOP_CHANNEL", None)
+    assert shop.shop_is_in_the_house()
+    text = bb._house_panel_text(None)
+    assert "The shop is open" in text and "/4242" in text      # links straight to it
+
+    # Being tested in the control channel: the house is told nothing, and the panel text is
+    # unchanged, so it does not re-post into the house either.
+    monkeypatch.setattr(config, "BIG_BROTHER_SHOP_CHANNEL", bb.control_channel_id())
+    assert not shop.shop_is_in_the_house()
+    assert "The shop is open" not in bb._house_panel_text(None)
