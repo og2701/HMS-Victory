@@ -192,6 +192,13 @@ SKYRIM_DRAGON_MIN_LEVEL = 8        # dragon lairs appear as destinations from th
 SKYRIM_ALDUIN_MIN_LEVEL = 20       # Skuldafn (the Alduin fight) needs this level...
 SKYRIM_ALDUIN_MIN_DRAGONS = 5      # ...plus all 3 shout words and this many dragons slain.
 SKYRIM_ALDUIN_DRAGONS_PER_ECHO = 3  # each Alduin kill demands this many MORE dragons before a rematch
+# Faction favour used to be strictly one per ISO week, which made the guild ladder a
+# calendar rather than a game: Harbinger needed 8 real weeks no matter how hard you
+# played, while everything else in the game could be rebuilt in days. The guild now
+# sets the task again the moment you finish it, up to this many times a week, so an
+# active player earns rank by playing. Repeat claims pay a reduced stipend (the coin
+# is for the week's service, not per errand) - see engine.claim_faction.
+SKYRIM_FACTION_FAVOUR_PER_WEEK = 3
 # The game log: every meaningful action (delves, kills of note, purchases, pit bouts,
 # duels, marches, builds, retirements...) is posted as compact one-liners to this
 # thread - a full audit trail of who is doing what. Reactive only: lines are queued

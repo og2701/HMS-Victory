@@ -3784,8 +3784,17 @@ def join_faction(profile, key: str) -> str | None:
     return None
 
 
+def faction_favour_per_week() -> int:
+    return max(1, int(getattr(config, "SKYRIM_FACTION_FAVOUR_PER_WEEK", 3)))
+
+
 def faction_state(profile) -> dict:
-    """Weekly tracker - snapshots the tracked stat at the start of each ISO week."""
+    """Weekly tracker - snapshots the tracked stat at the start of each ISO week.
+
+    `claims` counts the favour already taken from THIS guild this week. The snapshot
+    moves forward on every claim rather than only at the rollover, so finishing the
+    task simply earns the task again until the week's allowance runs out.
+    """
     f = profile.setdefault("faction", {})
     wk = _iso_week()
     if f.get("week") != wk:
@@ -3793,8 +3802,34 @@ def faction_state(profile) -> dict:
         stat = D.FACTIONS[fac]["stat"] if fac in D.FACTIONS else None
         f["week"] = wk
         f["snap"] = int(profile["stats"].get(stat, 0)) if stat else 0
-        f["claimed"] = False
+        f["claims"] = 0
+        f.pop("claimed", None)
+    elif "claims" not in f:                  # pre-repeat tracker: one bool, one claim
+        f["claims"] = 1 if f.pop("claimed", False) else 0
     return f
+
+
+def faction_claims_taken(profile) -> int:
+    """Favour already taken this ISO week, counted ACROSS every guild - otherwise
+    swearing elsewhere mid-week would buy a second week's allowance."""
+    wk = _iso_week()
+    record = profile.get("faction_claims")
+    if not isinstance(record, dict) or record.get("week") != wk:
+        # the old single-claim marker is the only evidence an old profile carries
+        record = {"week": wk, "n": 1 if profile.get("faction_claimed_week") == wk else 0}
+        profile["faction_claims"] = record
+    return int(record.get("n", 0))
+
+
+def faction_claims_left(profile) -> int:
+    return max(0, faction_favour_per_week() - faction_claims_taken(profile))
+
+
+def faction_claimable(profile) -> bool:
+    """Sworn, this task finished, and the week still has favour left to give."""
+    return bool(profile.get("allegiance") in D.FACTIONS
+                and faction_progress(profile)[2]
+                and faction_claims_left(profile))
 
 
 def faction_progress(profile) -> tuple:
@@ -3822,29 +3857,40 @@ def faction_rank(profile, key: str = None) -> str:
 
 
 def claim_faction(profile) -> str | None:
+    """Take one favour for a finished task, then have the guild set it again.
+
+    The allowance is per ISO week and shared across guilds; the stipend is for the
+    week's service, so only the first claim pays in full and repeats pay a third.
+    """
     P.ensure_promotions(profile)
-    goal, prog, done = faction_progress(profile)
     if profile.get("allegiance") not in D.FACTIONS:
         return "You owe no faction your allegiance yet."
-    if profile.get("faction_claimed_week") == _iso_week():
-        return "You've already claimed a faction favour this week. Come back next week."
+    taken, cap = faction_claims_taken(profile), faction_favour_per_week()
+    if taken >= cap:
+        return (f"You've taken everything the guilds owe you this week ({taken}/{cap}). "
+                "Come back next week.")
+    goal, prog, done = faction_progress(profile)
     if not done:
         return f"The week's work isn't finished ({prog}/{goal})."
-    f = faction_state(profile)
-    if f.get("claimed"):
-        return "You've already claimed this week's favour. Come back next week."
-    f["claimed"] = True
-    profile["faction_claimed_week"] = _iso_week()
     fac = profile["allegiance"]
+    f = faction_state(profile)
+    f["snap"] = int(profile["stats"].get(D.FACTIONS[fac]["stat"], 0))  # the task is set again
+    f["claims"] = int(f.get("claims", 0)) + 1
+    profile["faction_claims"]["n"] = taken + 1
+    profile["faction_claimed_week"] = _iso_week()   # still read by older profiles
     favour = faction_favour(profile) + 1
     profile.setdefault("favours", {})[fac] = favour
     rank_i = P.faction_rank_index(profile)
-    reward = _septims(profile, 400 + 150 * rank_i)
+    scale = 1.0 if taken == 0 else 0.34
+    reward = _septims(profile, int(round((400 + 150 * rank_i) * scale)))
     profile["septims"] += reward
-    gained, _ = add_xp(profile, 120 + 40 * rank_i)
-    glog(f"🏅 **{profile['name']}** claimed the week's faction favour - now "
+    gained, _ = add_xp(profile, int(round((120 + 40 * rank_i) * scale)))
+    left = faction_claims_left(profile)
+    glog(f"🏅 **{profile['name']}** claimed faction favour {taken + 1}/{cap} this week - now "
          f"**{D.FACTION_RANKS[rank_i]}** of {D.FACTIONS[profile['allegiance']]['name']}")
-    return f"favour +1 ({D.FACTION_RANKS[rank_i]}), +{reward} septims, +{gained} XP"
+    return (f"favour +1 ({D.FACTION_RANKS[rank_i]}), +{reward} septims, +{gained} XP"
+            + (f" - they'll set you the task {left} more time{'s' if left > 1 else ''} this week"
+               if left else " - that's the week's favour spent"))
 
 
 def faction_news() -> list:
@@ -4131,14 +4177,15 @@ def retire(profile, boon_key: str = None, stone_key: str = None, *, expected_ran
     profile["elixirs"] = {}
     profile["nextelixirs"] = []
     profile["nextpacts"] = []
-    # a guild only knows the champion who earned the rank, so allegiance and favour
-    # go with them - and a housecarl answers to a Thane, not to whoever wakes up on
-    # the cart, so any errand still out is called off rather than paying the newborn
-    profile["allegiance"] = None
+    # Guild standing is the one ladder rebirth does NOT take back. It only moves on
+    # the calendar (a few favour a week, at most), so wiping it meant a retiree could
+    # never finish it: every life restarted a clock the rest of the game beats in
+    # days. The guilds remember their Champion; allegiance, favour and rank carry over
+    # and only the week's errand is reset. A housecarl, though, answers to a Thane and
+    # not to whoever wakes up on the cart, so any errand still out is called off.
     profile["faction"] = {}
-    profile["favours"] = {}
-    profile["promotions"] = {}
     P.ensure_promotions(profile)
+    faction_state(profile)
     profile["expedition"] = None
     profile["expedition2"] = None
     profile["created"] = _today_str()

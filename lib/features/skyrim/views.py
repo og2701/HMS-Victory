@@ -780,8 +780,7 @@ def _hub_rows(profile):
     row2.add_item(_cb_btn(discord.ButtonStyle.success if pit_ready
                           else discord.ButtonStyle.secondary, "The Pit", "🗡️", _hub_pit))
     # Factions + Expeditions light up when there's something to collect this week/day
-    fac_ready = profile.get("allegiance") and E.faction_progress(profile)[2] \
-        and not (profile.get("faction") or {}).get("claimed")
+    fac_ready = E.faction_claimable(profile)
     row2.add_item(_cb_btn(discord.ButtonStyle.success if fac_ready else discord.ButtonStyle.secondary,
                           "Factions", "🏰", _hub_factions))
     hs = E.homestead(profile)
@@ -2622,19 +2621,25 @@ async def _hub_pacts(interaction: Interaction, notice: str = ""):
 
 # --- NPC factions -------------------------------------------------------------------
 def _factions_text(profile) -> str:
+    cap = E.faction_favour_per_week()
     lines = ["## 🏰 Factions of Skyrim",
-             "-# Swear to a faction and each week they set you a task in a skill the endgame "
-             "tends to forget. Finish it for favour, rank and coin.", ""]
+             "-# Swear to a faction and they set you a task in a skill the endgame "
+             f"tends to forget. Finish it for favour, rank and coin - up to {cap} times "
+             "a week, and they set it again each time.", ""]
     fac_key = profile.get("allegiance")
     if fac_key in D.FACTIONS:
         fac = D.FACTIONS[fac_key]
         goal, prog, done = E.faction_progress(profile)
         rank = E.faction_rank(profile)
+        left = E.faction_claims_left(profile)
         lines.append(f"{fac['emoji']} **{fac['name']}** - you are **{rank}** "
                      f"(favour {E.faction_favour(profile)})")
         bar = _bar(min(prog, goal), 0, goal, 10)
-        state = "✅ ready to claim" if done else f"{prog}/{goal}"
-        lines.append(f"-# This week: **{goal} {fac['verb']}**  {bar}  {state}")
+        state = ("✅ ready to claim" if done and left
+                 else "done - the week's favour is spent" if done
+                 else f"{prog}/{goal}")
+        lines.append(f"-# The task: **{goal} {fac['verb']}**  {bar}  {state}")
+        lines.append(f"-# Favour this week: **{cap - left}/{cap}** claimed.")
         story = E.H.story_state(profile)
         saved = E.H.ensure(profile)["stories"].get(fac_key, {})
         if story:
@@ -2658,7 +2663,7 @@ def _factions_text(profile) -> str:
         lines.append("**Choose an allegiance:**")
         for k, fac in D.FACTIONS.items():
             lines.append(f"{fac['emoji']} **{fac['name']}** ({fac['seat']}) - {fac['blurb']}  "
-                         f"Weekly task: {fac['goal']} {fac['verb']}.")
+                         f"Their task: {fac['goal']} {fac['verb']}.")
     # the REAL fellowship first: every sworn player on the server, live progress
     members = E.faction_members(E.all_profiles())
     others = [m for m in members if m[1] != profile.get("name")]
@@ -2707,8 +2712,7 @@ async def _hub_factions(interaction: Interaction, notice: str = ""):
     fac_key = profile.get("allegiance")
     can_join = E.level(profile) >= int(getattr(E.config, "SKYRIM_DRAGON_MIN_LEVEL", 8))
     if fac_key in D.FACTIONS:
-        _g, _p, done = E.faction_progress(profile)
-        if done:
+        if E.faction_claimable(profile):
             row = discord.ui.ActionRow()
 
             async def _claim(inter: Interaction):
@@ -2717,7 +2721,7 @@ async def _hub_factions(interaction: Interaction, notice: str = ""):
                 E.save_profile(p)
                 await _hub_factions(inter, notice=f"-# 🏅 {res}" if res and "favour" in res
                                     else f"-# {res}")
-            row.add_item(_cb_btn(discord.ButtonStyle.success, "Claim this week's favour", "🏅", _claim))
+            row.add_item(_cb_btn(discord.ButtonStyle.success, "Claim favour", "🏅", _claim))
             rows.append(row)
     if can_join:
         sworn = fac_key in D.FACTIONS
@@ -2727,7 +2731,7 @@ async def _hub_factions(interaction: Interaction, notice: str = ""):
             if k == fac_key:
                 continue
             held = E.faction_favour(profile, k)
-            desc = f"Weekly: {fac['goal']} {fac['verb']}"
+            desc = f"Task: {fac['goal']} {fac['verb']}"
             if held:
                 desc += f" · {E.faction_rank(profile, k)} there already"
             sel.add_option(label=fac["name"], value=k, emoji=fac["emoji"],
@@ -2793,8 +2797,11 @@ async def _faction_confirm(interaction: Interaction, key: str):
     if old and prog and prog < goal:
         lines.append(f"-# ⚠️ This week's **{prog}/{goal} {old['verb']}** is lost. "
                      f"{new['name']} counts from zero.")
-    lines.append(f"-# {new['seat']} sets you **{new['goal']} {new['verb']}** a week."
+    lines.append(f"-# {new['seat']} sets you **{new['goal']} {new['verb']}**, over and over."
                  + (f" You're already **{E.faction_rank(profile, key)}** there." if held else ""))
+    left = E.faction_claims_left(profile)
+    lines.append(f"-# The week's favour allowance is shared across all guilds: "
+                 f"**{left}** left to claim, wherever you serve.")
     row = discord.ui.ActionRow()
 
     async def _do(inter: Interaction):
@@ -3534,11 +3541,15 @@ HELP_PAGES = {
         "fate hangs on the board.\n"
         "**Cooperate** - choose Attack for full damage, Expose to help the next ally hit, or "
         "Protect to cover them. Support trades 10% hit and lasts up to 24 hours.\n"
-        "**🏰 Factions** (L8+) - swear an allegiance; a weekly task in a neglected skill "
-        "pays favour, rank and coin. You may **switch guilds** whenever you like: your "
-        "standing with each one is remembered separately. Rank-specific promotion trials "
-        "unlock elixirs and a final title. Only the current week's "
-        "progress is lost.\n"
+        "**🏰 Factions** (L8+) - swear an allegiance; a task in a neglected skill pays "
+        "favour, rank and coin, and the guild sets it again the moment you finish it, up "
+        f"to **{getattr(config, 'SKYRIM_FACTION_FAVOUR_PER_WEEK', 3)} favour a week** "
+        "across all guilds (the coin is for the week's service, so "
+        "repeats pay less). You may **switch guilds** whenever you like: your standing "
+        "with each one is remembered separately, and only the current task's progress is "
+        "lost. Rank-specific promotion trials unlock elixirs and a final title. **Guild "
+        "standing survives retirement** - the halls remember their Champion even when the "
+        "climb starts again at level 1.\n"
         "**🗡️ The Pit** (L5+) - Windhelm's arena ladder, round by round, each champion "
         "with a signature trick. Fight on while you win; a loss ends your day. Resets "
         "Monday. **⚔️ Ghost Duels** live here too - fight a snapshot of a rival's build, "

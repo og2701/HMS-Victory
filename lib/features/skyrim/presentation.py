@@ -76,7 +76,6 @@ def short_label(label, limit=24):
     aliases = {
         "Abandon and delve anew": "Replace adventure",
         "Hall of Legends - retirement awaits": "Hall of Legends",
-        "Claim this week's favour": "Claim favour",
         "Retire them, forever": "Confirm retirement",
         "The deep way": "Deep route",
         "The safe way": "Safe route",

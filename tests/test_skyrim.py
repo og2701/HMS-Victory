@@ -23,6 +23,7 @@ config.SKYRIM_WORLDBOSS_FILE = os.path.join(_TMP, "worldboss.json")
 
 from lib.features.skyrim import data as D
 from lib.features.skyrim import engine as E
+from lib.features.skyrim import progression as P
 
 
 def _fixed_rolls(*vals):
@@ -1524,18 +1525,46 @@ def test_soulcairn_depth_is_a_prestige_ladder():
     assert last > 0                                # never free, however storied
 
 
-def test_factions_weekly_task():
+def test_factions_task_repeats_until_the_weekly_allowance_runs_out():
+    """Favour is earned by working, not by waiting: finishing the task sets it
+    again, capped at SKYRIM_FACTION_FAVOUR_PER_WEEK claims across all guilds."""
     p = _profile()
     p["xp"] = 3000                                 # level 8+
+    cap = E.faction_favour_per_week()
+    assert cap >= 2                                # the point of the change
     assert E.join_faction(p, "companions") is None
     goal, prog, done = E.faction_progress(p)
     assert prog == 0 and not done
+    for n in range(cap):
+        assert E.faction_claims_left(p) == cap - n
+        p["stats"]["kills"] = p["faction"]["snap"] + goal
+        assert E.faction_claimable(p)
+        res = E.claim_faction(p)
+        assert res and "favour" in res
+        assert E.faction_favour(p) == n + 1
+        # the guild sets the same task again, counted from where you now stand
+        assert E.faction_progress(p)[1] == 0
+    assert E.faction_claims_left(p) == 0
     p["stats"]["kills"] = p["faction"]["snap"] + goal
-    assert E.faction_progress(p)[2]                # done
-    res = E.claim_faction(p)
-    assert res and "favour" in res
-    assert E.faction_favour(p) >= 1
-    assert "already claimed" in E.claim_faction(p).lower()   # once a week
+    assert not E.faction_claimable(p)
+    assert "come back next week" in E.claim_faction(p).lower()
+    # and the allowance is shared, so a mid-week guild switch buys nothing
+    assert E.join_faction(p, "thieves") is None
+    p["stats"]["sneaks"] = p["faction"]["snap"] + E.faction_progress(p)[0]
+    assert "come back next week" in E.claim_faction(p).lower()
+    assert E.faction_favour(p, "thieves") == 0
+
+
+def test_legacy_single_claim_marker_counts_against_the_new_allowance():
+    """A profile written under the one-per-week rule must not get a fresh
+    allowance the moment the new counter is introduced mid-week."""
+    p = _profile()
+    p["xp"] = 3000
+    assert E.join_faction(p, "companions") is None
+    p["faction_claimed_week"] = E._iso_week()      # claimed once, old-style
+    p.pop("faction_claims", None)
+    assert E.faction_claims_taken(p) == 1
+    assert E.faction_claims_left(p) == E.faction_favour_per_week() - 1
 
 
 def test_expedition_roundtrip():
@@ -1947,7 +1976,10 @@ def test_legacy_rebirth():
     p["souls"] = 7
     p["potions"] = 9
     p["allegiance"] = "companions"
-    p["faction"] = {"favour": 6, "week": [2020, 1]}
+    p["favours"] = {"companions": 6}
+    p["promotions"] = {}
+    P.ensure_promotions(p)
+    p["faction"] = {"week": [2020, 1], "snap": 0, "claims": 0}
     p["expedition"] = {"key": "whatever", "return": "2020-01-01"}
     p["expedition2"] = {"key": "whatever", "return": "2020-01-01"}
     E.homestead(p)["built"]["land"] = "2020-01-01"
@@ -1965,7 +1997,12 @@ def test_legacy_rebirth():
     assert p["temper"]["armour"] == 0
     assert p["temper"]["weapon"] == (3 if boon == "heirloom" else 0)
     assert p["voice"]["charges"] == 0
-    assert p["allegiance"] is None and p["faction"] == {}   # the guild knew the champion
+    # guild standing is the one ladder rebirth does NOT take back: it moves on the
+    # calendar, so wiping it meant a retiree could never finish it
+    assert p["allegiance"] == "companions"
+    assert p["favours"]["companions"] == 6
+    assert E.faction_rank(p) == D.FACTION_RANKS[3]
+    assert E.faction_progress(p)[1] == 0                   # only the errand is reset
     assert p["expedition"] is None and p["expedition2"] is None
     if boon == "heirloom":
         assert p["weapon_tier"] == 5                       # the blade passes down

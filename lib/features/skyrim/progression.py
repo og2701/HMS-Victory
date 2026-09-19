@@ -359,6 +359,8 @@ def next_goal(profile):
     current = promotion(profile)
     if current and current["claimable"]:
         return {"text": f"Claim your {current['rank']} promotion.", "action": "factions"}
+    if E.faction_claimable(profile):
+        return {"text": "Claim the favour your guild owes you.", "action": "factions"}
     if E.retire_ready(profile)[0]:
         return {"text": "Choose an inherited ability and enter the Hall.", "action": "hall"}
     hall_goal = E.H.goal(profile)
