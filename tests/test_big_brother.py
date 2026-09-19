@@ -626,3 +626,40 @@ def test_idle_snugs_are_closed_by_the_bot(bb, monkeypatch):
     assert closed[quiet] and not closed[busy]
     assert [e["kind"] for e in bb.events()][-1] == "snug_closed"
     assert asyncio.run(bb.close_idle_snugs(FakeClient())) == 0   # not closed twice
+
+
+def test_vote_reposts_only_when_it_lives_in_the_house(bb, monkeypatch):
+    """The vote is moved to the bottom of the house as chat buries it, but a vote posted in
+    a separate voting channel is left where it is."""
+    import asyncio
+    calls = []
+
+    class FakeMsg:
+        id = 999
+        async def delete(self): calls.append("deleted old")
+
+    class FakeChannel:
+        id = bb.house_channel_id()
+        async def send(self, **kw):
+            calls.append("posted")
+            return FakeMsg()
+        async def fetch_message(self, mid):
+            calls.append(f"fetched {mid}")
+            return FakeMsg()
+
+    async def fake_channel(client, cid):
+        return FakeChannel()
+    monkeypatch.setattr(bb, "_channel", fake_channel)
+    monkeypatch.setattr(bb, "_guild", lambda client: None)
+    monkeypatch.setattr(bb, "_vote_embed", lambda *a: None)
+    monkeypatch.setattr(bb, "_vote_view", lambda *a: None)
+
+    vid = bb.create_round(bb.KIND_VOTE, nominees=[1, 2])
+    bb.set_round_message(vid, 12345, 555)          # a different channel
+    asyncio.run(bb.repost_vote_message(None))
+    assert calls == []                              # left alone
+
+    bb.set_round_message(vid, bb.house_channel_id(), 555)
+    asyncio.run(bb.repost_vote_message(None))
+    assert "posted" in calls and "deleted old" in calls
+    assert bb.get_round(vid)["message_id"] == 999   # the round now points at the new message

@@ -1666,6 +1666,33 @@ async def ensure_house_panel(client: discord.Client) -> None:
     log.info("Big Brother: posted house panel %s in %s", msg.id, ch.id)
 
 
+async def repost_vote_message(client: discord.Client) -> None:
+    """While a vote is running in the house, keep it within reach by moving it to the bottom
+    rather than letting chat bury it. Votes are keyed to the round, not the message, so the
+    ones already cast are untouched."""
+    rnd = open_round(KIND_VOTE)
+    if not rnd or not rnd["channel_id"] or rnd["channel_id"] != house_channel_id():
+        return
+    ch = await _channel(client, rnd["channel_id"])
+    if not ch:
+        return
+    guild = _guild(client)
+    try:
+        msg = await ch.send(content=f"{EYE} **Eviction vote is open.**",
+                            embed=_vote_embed(rnd["nominees"], guild),
+                            view=_vote_view(rnd["id"], rnd["nominees"], guild))
+    except discord.HTTPException as e:
+        log.warning("Big Brother: could not repost the vote: %s", e)
+        return
+    old = rnd["message_id"]
+    set_round_message(rnd["id"], ch.id, msg.id)
+    if old:
+        try:
+            await (await ch.fetch_message(int(old))).delete()
+        except discord.HTTPException:
+            pass
+
+
 async def repost_house_panel(client: discord.Client) -> None:
     """Delete the current house panel and post a fresh one so it sits under the chat."""
     async with _repost_lock:
@@ -2593,6 +2620,8 @@ async def on_house_message(client: discord.Client, message: discord.Message) -> 
             n = 0
         if n >= HOUSE_PANEL_REPOST_EVERY:
             asyncio.create_task(repost_house_panel(client))
+            # An open vote rides along, and goes last so it sits at the very bottom.
+            asyncio.create_task(repost_vote_message(client))
         else:
             set_state(STATE_HOUSE_MSGS_SINCE_PANEL, n)
     except Exception:
