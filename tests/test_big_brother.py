@@ -721,3 +721,13 @@ def test_vote_moves_down_twice_as_often_as_the_panel(bb):
         if vote or panel:
             fires.append((n, "vote" if vote else "both"))
     assert fires == [(10, "vote"), (20, "both")]
+
+
+def test_panel_repost_brings_the_vote_down_with_it(bb):
+    """Whatever moves the panel - chat, or a phase change - must leave the vote underneath."""
+    import inspect
+    src = inspect.getsource(bb.repost_house_panel)
+    assert "await repost_vote_message(client)" in src
+    # and the chat path no longer schedules the vote separately at the panel threshold
+    hook = inspect.getsource(bb.on_house_message)
+    assert hook.count("repost_vote_message") == 1

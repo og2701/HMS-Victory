@@ -1786,6 +1786,9 @@ async def repost_house_panel(client: discord.Client) -> None:
                 await old_msg.delete()
             except discord.HTTPException:
                 pass
+    # The panel has just jumped to the bottom, so an open vote follows it down and ends up
+    # underneath. Outside the lock: repost_vote_message does not take it.
+    await repost_vote_message(client)
 
 
 async def ensure_panels(client: discord.Client) -> None:
@@ -2730,9 +2733,8 @@ async def on_house_message(client: discord.Client, message: discord.Message) -> 
         if n % VOTE_REPOST_EVERY == 0 and n < HOUSE_PANEL_REPOST_EVERY:
             asyncio.create_task(repost_vote_message(client))
         if n >= HOUSE_PANEL_REPOST_EVERY:
+            # repost_house_panel brings any open vote down with it, so the vote stays last.
             asyncio.create_task(repost_house_panel(client))
-            # The vote goes last so it sits at the very bottom.
-            asyncio.create_task(repost_vote_message(client))
             n = 0
         set_state(STATE_HOUSE_MSGS_SINCE_PANEL, n)
     except Exception:
