@@ -41,6 +41,7 @@ STATE_HOUSE_MSGS_SINCE_PANEL = "house_msgs_since_panel"
 STATE_HOUSE_SILENT = "house_silent"
 STATE_HOUSE_PANEL_SIG = "house_panel_signature"  # what the house panel last showed; a change re-posts it
 HOUSE_PANEL_REPOST_EVERY = 20  # chat messages in the house before the panel is re-posted at the bottom
+VOTE_REPOST_EVERY = 10         # an open vote moves down twice as often, so nobody misses it
 _repost_lock = asyncio.Lock()
 
 _tables_ready = False
@@ -2725,12 +2726,15 @@ async def on_house_message(client: discord.Client, message: discord.Message) -> 
         n = int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0) + 1
         if not house_unlocked():
             n = 0
+        # The vote moves down more often than the panel, so a busy house cannot bury it.
+        if n % VOTE_REPOST_EVERY == 0 and n < HOUSE_PANEL_REPOST_EVERY:
+            asyncio.create_task(repost_vote_message(client))
         if n >= HOUSE_PANEL_REPOST_EVERY:
             asyncio.create_task(repost_house_panel(client))
-            # An open vote rides along, and goes last so it sits at the very bottom.
+            # The vote goes last so it sits at the very bottom.
             asyncio.create_task(repost_vote_message(client))
-        else:
-            set_state(STATE_HOUSE_MSGS_SINCE_PANEL, n)
+            n = 0
+        set_state(STATE_HOUSE_MSGS_SINCE_PANEL, n)
     except Exception:
         log.exception("Big Brother: panel repost bookkeeping failed")
     chal = open_challenge()

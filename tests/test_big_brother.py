@@ -709,3 +709,15 @@ def test_opening_nominations_is_not_one_press(bb):
     # The explanation has to cover the consequences the host cannot undo with one press.
     for point in ("Housemate role is pinged", "say why", "by DM", "Close nominations"):
         assert point in src, point
+
+
+def test_vote_moves_down_twice_as_often_as_the_panel(bb):
+    """At 10 messages only the vote moves; at 20 both do and the counter restarts."""
+    assert bb.VOTE_REPOST_EVERY == 10 and bb.HOUSE_PANEL_REPOST_EVERY == 20
+    fires = []
+    for n in range(1, 21):
+        vote = n % bb.VOTE_REPOST_EVERY == 0 and n < bb.HOUSE_PANEL_REPOST_EVERY
+        panel = n >= bb.HOUSE_PANEL_REPOST_EVERY
+        if vote or panel:
+            fires.append((n, "vote" if vote else "both"))
+    assert fires == [(10, "vote"), (20, "both")]
