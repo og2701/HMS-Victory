@@ -685,6 +685,7 @@ BIG_BROTHER_OPERATOR_IDS = {USERS.CHIN, USERS.OGGERS}  # may press the control p
 BIG_BROTHER_HOUSE_CHANNEL = 1550122475159945306     # housemates only: challenges, announcements
 BIG_BROTHER_CONTROL_CHANNEL = 1550122551068463174   # the host's control panel lives here
 BIG_BROTHER_VOTE_CHANNEL = None                     # public eviction votes post here; None = the house channel
+BIG_BROTHER_VOTE_IN_THREAD = True                   # the vote board gets its own locked thread off the house channel
 BIG_BROTHER_HOUSEMATE_ROLE = 1550132346295029892    # Housemate role: assigned on add, stripped on eviction, pinged
 BIG_BROTHER_PRIZE_UKP = 5000
 BIG_BROTHER_NOMINATIONS_PER_HOUSEMATE = 2

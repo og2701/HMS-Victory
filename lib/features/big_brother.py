@@ -41,8 +41,11 @@ STATE_HOUSE_MSGS_SINCE_PANEL = "house_msgs_since_panel"
 STATE_HOUSE_SILENT = "house_silent"
 STATE_HOUSE_PANEL_SIG = "house_panel_signature"  # what the house panel last showed; a change re-posts it
 STATE_VOTE_REPOST_AT = "house_msgs_at_vote_repost"  # the house counter when the vote last moved down
+STATE_VOTE_BUMPED_AT = "vote_thread_bumped_at"      # when the board was last re-posted inside its thread
 HOUSE_PANEL_REPOST_EVERY = 20  # chat messages in the house before the panel is re-posted at the bottom
 VOTE_REPOST_EVERY = 5          # an open vote moves down far more often, so nobody misses it
+VOTE_THREAD_BUMP_SECONDS = 600 # floor between bumps inside the vote thread: a busy house would
+                               # otherwise mark it unread every couple of minutes
 _repost_lock = asyncio.Lock()
 
 _tables_ready = False
@@ -79,6 +82,10 @@ def control_channel_id() -> int:
 
 def vote_channel_id() -> int:
     return int(getattr(config, "BIG_BROTHER_VOTE_CHANNEL", 0) or house_channel_id())
+
+
+def vote_in_thread() -> bool:
+    return bool(getattr(config, "BIG_BROTHER_VOTE_IN_THREAD", True))
 
 
 def housemate_role_id() -> Optional[int]:
@@ -526,6 +533,20 @@ def vote_reasons(round_id: int) -> list[tuple[int, int, str]]:
     return [(int(a), int(b), c) for a, b, c in rows]
 
 
+def drop_outsider_votes(round_id: int) -> list[int]:
+    """Votes from anyone who isn't a housemate, removed. Only the house evicts the house."""
+    ensure_tables()
+    rows = DatabaseManager.fetch_all("SELECT DISTINCT voter_id FROM bb_votes WHERE round_id = ?",
+                                     (int(round_id),))
+    outsiders = [int(r[0]) for r in rows if not is_housemate(int(r[0]))]
+    for uid in outsiders:
+        DatabaseManager.execute("DELETE FROM bb_votes WHERE round_id = ? AND voter_id = ?",
+                                (int(round_id), str(uid)))
+    if outsiders:
+        log_event("outsider_votes_dropped", round_id=int(round_id), voters=outsiders)
+    return outsiders
+
+
 def vote_of(round_id: int, voter_id: int) -> Optional[tuple[int, Optional[str]]]:
     """Who this person voted for in this round, and why. None if they haven't voted."""
     row = DatabaseManager.fetch_one(
@@ -955,10 +976,11 @@ def _vote_embed(nominee_ids: Iterable[int], guild: Optional[discord.Guild],
     names = ", ".join(f"**{_name(guild, n)}**" for n in nominee_ids)
     e = bb_embed(
         "Eviction vote",
-        f"The housemates have nominated. Now the server decides.\n\n"
+        f"The housemates have nominated. Now the house decides.\n\n"
         f"Facing eviction: {names}\n\n"
-        f"Press a button to vote for who should **leave** the house. One vote each, and you can "
-        f"change it until the vote closes. Results stay secret until Big Brother reveals them.")
+        f"Press a button to vote for who should **leave** the house. Housemates only, one vote "
+        f"each, and you can change it until the vote closes. Results stay secret until Big "
+        f"Brother reveals them.")
     if round_id is not None:
         # The running total only: who is ahead stays secret until she closes it.
         cast = vote_count(round_id)
@@ -998,6 +1020,37 @@ async def refresh_vote_count(client: discord.Client, round_id: int) -> None:
     _vote_refresh[round_id] = asyncio.create_task(_later())
 
 
+VOTE_THREAD_AUTO_ARCHIVE = 10080  # a week: an archived thread freezes its buttons
+
+
+async def open_vote_thread(house, round_id: int):
+    """A room of its own for the vote board, so it isn't buried by house chat. Public, so the
+    whole server can still vote, and locked once it's set up: locking stops messages, it does
+    not stop buttons or modals."""
+    if not isinstance(house, discord.TextChannel):
+        return None
+    try:
+        return await house.create_thread(
+            name=f"🗳️ eviction vote {round_id}"[:100], type=discord.ChannelType.public_thread,
+            auto_archive_duration=VOTE_THREAD_AUTO_ARCHIVE, reason="Big Brother: eviction vote")
+    except discord.HTTPException as e:
+        log.warning("Big Brother: could not open the vote thread: %s", e)
+        return None
+
+
+async def fill_vote_thread(thread) -> None:
+    """Pull every housemate in so it shows up in their sidebar, then lock it shut."""
+    for uid in housemates():
+        try:
+            await thread.add_user(discord.Object(id=int(uid)))
+        except discord.HTTPException as e:
+            log.info("Big Brother: could not add %s to the vote thread: %s", uid, e)
+    try:
+        await thread.edit(locked=True, reason="Big Brother: the vote thread is for voting, not chat")
+    except discord.HTTPException as e:
+        log.warning("Big Brother: could not lock the vote thread: %s", e)
+
+
 async def start_vote(client: discord.Client, nominee_ids: list[int]) -> Optional[dict]:
     if open_round(KIND_VOTE):
         return None
@@ -1008,16 +1061,54 @@ async def start_vote(client: discord.Client, nominee_ids: list[int]) -> Optional
     rid = create_round(KIND_VOTE, nominees=nominee_ids)
     names = ", ".join(f"**{_name(guild, n)}**" for n in nominee_ids)
     embed = _vote_embed(nominee_ids, guild, rid)
-    msg = await bb_send(ch, content=f"{EYE} **Eviction vote is open.**", embed=embed,
+    thread = await open_vote_thread(ch, rid) if vote_in_thread() else None
+    where = thread or ch
+    msg = await bb_send(where, content=f"{EYE} **Eviction vote is open.**", embed=embed,
                         view=_vote_view(rid, nominee_ids, guild))
-    set_round_message(rid, ch.id, msg.id)
+    set_round_message(rid, where.id, msg.id)
     set_state(STATE_VOTE_REPOST_AT, int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0))
-    log_event("vote_opened", round_id=rid, nominees=list(nominee_ids), channel_id=ch.id, message_id=msg.id)
+    set_state(STATE_VOTE_BUMPED_AT, _now())
+    log_event("vote_opened", round_id=rid, nominees=list(nominee_ids), channel_id=where.id, message_id=msg.id)
+    if thread:
+        await fill_vote_thread(thread)
     hc = await house_channel(client)
-    if hc and hc.id != ch.id:
-        await bb_send(hc, f"{_role_mention()}{EYE} The public eviction vote is open in <#{ch.id}>. "
-                      f"Facing eviction: {names}.")
-    return {"round_id": rid, "message_id": msg.id, "channel_id": ch.id}
+    if hc and hc.id != where.id:
+        await bb_send(hc, f"{_role_mention()}{EYE} The eviction vote is open in <#{where.id}>. "
+                      f"Housemates only. Facing eviction: {names}. Vote in there - the house stays "
+                      f"for talking.")
+    return {"round_id": rid, "message_id": msg.id, "channel_id": where.id}
+
+
+async def migrate_vote_to_thread(client: discord.Client) -> Optional[int]:
+    """Move a vote that is sitting in the house channel into a thread of its own. Runs on
+    startup, so a vote opened before this existed catches up without being restarted."""
+    rnd = open_round(KIND_VOTE)
+    if not rnd or not vote_in_thread() or rnd["channel_id"] != house_channel_id():
+        return None
+    house = await house_channel(client)
+    thread = await open_vote_thread(house, rnd["id"])
+    if not thread:
+        return None
+    guild = _guild(client)
+    msg = await thread.send(content=f"{EYE} **Eviction vote is open.**",
+                            embed=_vote_embed(rnd["nominees"], guild, rnd["id"]),
+                            view=_vote_view(rnd["id"], rnd["nominees"], guild))
+    old = rnd["message_id"]
+    set_round_message(rnd["id"], thread.id, msg.id)
+    set_state(STATE_VOTE_REPOST_AT, int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0))
+    set_state(STATE_VOTE_BUMPED_AT, _now())
+    log_event("vote_moved_to_thread", round_id=rnd["id"], thread_id=thread.id, message_id=msg.id)
+    await fill_vote_thread(thread)
+    if old and house:
+        try:
+            await (await house.fetch_message(int(old))).delete()
+        except discord.HTTPException:
+            pass
+    if house:
+        names = ", ".join(f"**{_name(guild, n)}**" for n in rnd["nominees"])
+        await bb_send(house, f"{_role_mention()}{EYE} The eviction vote has moved to <#{thread.id}>. "
+                             f"Every vote already cast still counts. Facing eviction: {names}.")
+    return thread.id
 
 
 def standings_lines(rnd: dict, guild: Optional[discord.Guild]) -> list[str]:
@@ -1088,6 +1179,11 @@ async def close_vote(client: discord.Client) -> Optional[dict]:
                 await msg.edit(content=f"{EYE} **Eviction vote is closed.**", embed=embed, view=None)
             except discord.HTTPException:
                 pass
+            if isinstance(ch, discord.Thread):
+                try:
+                    await ch.edit(archived=True, locked=True, reason="Big Brother: the vote is over")
+                except discord.HTTPException:
+                    pass
     return {"round_id": rnd["id"], "ranked": ranked, "tally": tally, "total": total}
 
 
@@ -1239,6 +1335,10 @@ class VoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:vote:(
             return
         if interaction.user.bot:
             return
+        if not is_housemate(interaction.user.id):
+            await interaction.response.send_message(
+                f"{EYE} Only housemates vote in this house.", ephemeral=True)
+            return
         who = _name(interaction.guild, self.nominee_id)
 
         async def submitted(inter: discord.Interaction, values: dict):
@@ -1272,6 +1372,10 @@ class MyVoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:myvo
     async def callback(self, interaction: discord.Interaction) -> None:
         if not enabled():
             await interaction.response.send_message("Big Brother has left the building.", ephemeral=True)
+            return
+        if not is_housemate(interaction.user.id):
+            await interaction.response.send_message(
+                f"{EYE} Only housemates vote in this house.", ephemeral=True)
             return
         mine = vote_of(self.round_id, interaction.user.id)
         if not mine:
@@ -1854,10 +1958,19 @@ async def repost_vote_message(client: discord.Client) -> None:
     # leave the every-five check firing on every single message.
     set_state(STATE_VOTE_REPOST_AT, int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0))
     rnd = open_round(KIND_VOTE)
-    if not rnd or not rnd["channel_id"] or rnd["channel_id"] != house_channel_id():
+    if not rnd or not rnd["channel_id"]:
         return
     ch = await _channel(client, rnd["channel_id"])
     if not ch:
+        return
+    # The house channel itself, or the vote's own thread off it. A vote parked in some other
+    # channel is left where the host put it.
+    if ch.id != house_channel_id() and getattr(ch, "parent_id", None) != house_channel_id():
+        return
+    in_thread = bool(getattr(ch, "parent_id", None))
+    # In its own thread the board isn't being buried, so the re-post is only there to bump the
+    # thread up everyone's sidebar. Ten minutes apart is plenty for that.
+    if in_thread and _now() - int(get_state(STATE_VOTE_BUMPED_AT, 0) or 0) < VOTE_THREAD_BUMP_SECONDS:
         return
     guild = _guild(client)
     try:
@@ -1869,6 +1982,8 @@ async def repost_vote_message(client: discord.Client) -> None:
         return
     old = rnd["message_id"]
     set_round_message(rnd["id"], ch.id, msg.id)
+    if in_thread:
+        set_state(STATE_VOTE_BUMPED_AT, _now())
     if old:
         try:
             await (await ch.fetch_message(int(old))).delete()
@@ -1914,7 +2029,17 @@ async def ensure_panels(client: discord.Client) -> None:
     # A restart doesn't reset the counter, so if the house talked past the vote while the bot
     # was down, bring it back to the bottom now instead of waiting for five more messages.
     try:
-        if msgs_since_vote_repost() >= VOTE_REPOST_EVERY:
+        rnd = open_round(KIND_VOTE)
+        if rnd:
+            gone = drop_outsider_votes(rnd["id"])
+            if gone:
+                log.info("Big Brother: dropped %d vote(s) from non-housemates", len(gone))
+                await notify_host(client, embed=bb_embed(
+                    "Votes from outside the house removed",
+                    "Only housemates can vote now, so "
+                    + ", ".join(_mention_and_name(_guild(client), u) for u in gone)
+                    + f" no longer count{'s' if len(gone) == 1 else ''} in round {rnd['id']}."))
+        if await migrate_vote_to_thread(client) is None and msgs_since_vote_repost() >= VOTE_REPOST_EVERY:
             await repost_vote_message(client)
     except Exception:
         log.exception("Big Brother: could not catch the vote up on startup")

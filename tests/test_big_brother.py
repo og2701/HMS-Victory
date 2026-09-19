@@ -628,9 +628,9 @@ def test_idle_snugs_are_closed_by_the_bot(bb, monkeypatch):
     assert asyncio.run(bb.close_idle_snugs(FakeClient())) == 0   # not closed twice
 
 
-def test_vote_reposts_only_when_it_lives_in_the_house(bb, monkeypatch):
-    """The vote is moved to the bottom of the house as chat buries it, but a vote posted in
-    a separate voting channel is left where it is."""
+def test_vote_reposts_in_the_house_or_its_own_thread(bb, monkeypatch):
+    """The board is moved to the bottom as chat buries it, and bumped inside its thread to
+    keep the thread in everyone's sidebar. A vote in some other channel is left alone."""
     import asyncio
     calls = []
 
@@ -639,7 +639,8 @@ def test_vote_reposts_only_when_it_lives_in_the_house(bb, monkeypatch):
         async def delete(self): calls.append("deleted old")
 
     class FakeChannel:
-        id = bb.house_channel_id()
+        def __init__(self, cid, parent_id=None):
+            self.id, self.parent_id = cid, parent_id
         async def send(self, **kw):
             calls.append("posted")
             return FakeMsg()
@@ -647,22 +648,109 @@ def test_vote_reposts_only_when_it_lives_in_the_house(bb, monkeypatch):
             calls.append(f"fetched {mid}")
             return FakeMsg()
 
+    channels = {}
+
     async def fake_channel(client, cid):
-        return FakeChannel()
+        return channels.get(cid)
     monkeypatch.setattr(bb, "_channel", fake_channel)
     monkeypatch.setattr(bb, "_guild", lambda client: None)
     monkeypatch.setattr(bb, "_vote_embed", lambda *a: None)
     monkeypatch.setattr(bb, "_vote_view", lambda *a: None)
 
     vid = bb.create_round(bb.KIND_VOTE, nominees=[1, 2])
-    bb.set_round_message(vid, 12345, 555)          # a different channel
+    channels[12345] = FakeChannel(12345)                       # somewhere else entirely
+    bb.set_round_message(vid, 12345, 555)
     asyncio.run(bb.repost_vote_message(None))
-    assert calls == []                              # left alone
+    assert calls == []                                          # left alone
 
+    channels[bb.house_channel_id()] = FakeChannel(bb.house_channel_id())
     bb.set_round_message(vid, bb.house_channel_id(), 555)
     asyncio.run(bb.repost_vote_message(None))
     assert "posted" in calls and "deleted old" in calls
-    assert bb.get_round(vid)["message_id"] == 999   # the round now points at the new message
+    assert bb.get_round(vid)["message_id"] == 999               # the round follows the new message
+
+    calls.clear()
+    channels[777] = FakeChannel(777, parent_id=bb.house_channel_id())   # the vote's own thread
+    bb.set_round_message(vid, 777, 555)
+    asyncio.run(bb.repost_vote_message(None))
+    assert "posted" in calls and "deleted old" in calls
+
+    calls.clear()
+    asyncio.run(bb.repost_vote_message(None))
+    assert calls == []                                          # bumped a moment ago, left alone
+    bb.set_state(bb.STATE_VOTE_BUMPED_AT, bb._now() - bb.VOTE_THREAD_BUMP_SECONDS - 1)
+    asyncio.run(bb.repost_vote_message(None))
+    assert "posted" in calls                                    # due again
+
+
+def test_a_running_vote_moves_into_a_thread_on_deploy(bb, monkeypatch):
+    """The board gets a room of its own: housemates pulled in, chat locked, house told once."""
+    import asyncio
+    events = []
+
+    class FakeMsg:
+        id = 4242
+        async def delete(self): events.append("old board deleted")
+
+    class FakeThread:
+        id = 777
+        def __init__(self): self.added, self.locked = [], False
+        async def send(self, **kw):
+            events.append("board posted in the thread")
+            return FakeMsg()
+        async def add_user(self, obj): self.added.append(obj.id)
+        async def edit(self, **kw): self.locked = kw.get("locked", self.locked)
+
+    class FakeHouse:
+        id = bb.house_channel_id()
+        async def fetch_message(self, mid): return FakeMsg()
+
+    thread, house = FakeThread(), FakeHouse()
+
+    async def fake_house_channel(client): return house
+    async def fake_open_thread(ch, rid): return thread
+    async def fake_send(channel, content=None, **kw):
+        events.append("house told where it went")
+        return FakeMsg()
+    monkeypatch.setattr(bb, "house_channel", fake_house_channel)
+    monkeypatch.setattr(bb, "open_vote_thread", fake_open_thread)
+    monkeypatch.setattr(bb, "bb_send", fake_send)
+    monkeypatch.setattr(bb, "_guild", lambda client: None)
+    monkeypatch.setattr(bb, "_vote_embed", lambda *a: None)
+    monkeypatch.setattr(bb, "_vote_view", lambda *a: None)
+
+    for u in (1, 2, 3):
+        bb.db_add_housemate(u)
+    vid = bb.create_round(bb.KIND_VOTE, nominees=[1, 2])
+    bb.cast_vote(vid, 10, 1)
+    bb.set_round_message(vid, bb.house_channel_id(), 555)
+
+    assert asyncio.run(bb.migrate_vote_to_thread(None)) == 777
+    assert events == ["board posted in the thread", "old board deleted", "house told where it went"]
+    assert sorted(thread.added) == [1, 2, 3] and thread.locked
+    rnd = bb.get_round(vid)
+    assert rnd["channel_id"] == 777 and rnd["message_id"] == 4242
+    assert bb.vote_count(vid) == 1                      # votes are keyed to the round, so they survive
+    assert [e["kind"] for e in bb.events()][-1] == "vote_moved_to_thread"
+
+    events.clear()
+    assert asyncio.run(bb.migrate_vote_to_thread(None)) is None   # already in its thread
+    assert events == []
+
+
+def test_the_vote_thread_is_public_locked_and_slow_to_archive(bb):
+    import inspect
+    assert bb.vote_in_thread()                          # on by default, config can turn it off
+    src = inspect.getsource(bb.open_vote_thread)
+    assert "public_thread" in src                       # the whole server votes, not just the house
+    assert "VOTE_THREAD_AUTO_ARCHIVE" in src and bb.VOTE_THREAD_AUTO_ARCHIVE == 10080
+    fill = inspect.getsource(bb.fill_vote_thread)
+    assert "add_user" in fill and "locked=True" in fill
+    # Opening a vote sets the thread up before telling the house about it.
+    start = inspect.getsource(bb.start_vote)
+    assert start.index("fill_vote_thread") < start.index("house_channel(client)")
+    # Closing it shuts the thread behind the board.
+    assert "archived=True" in inspect.getsource(bb.close_vote)
 
 
 def test_nomination_and_vote_reasons_are_kept(bb):
@@ -768,6 +856,29 @@ def test_standings_break_down_who_voted_for_who(bb):
     assert "dm_user(interaction.client, interaction.user.id, echo=False" in src
     assert "notify_host" not in src and "ephemeral=True" in src
     assert bb.PANEL_ACTIONS["standings"] is bb._act_standings
+
+
+def test_only_housemates_vote(bb):
+    """Rem isn't playing, so his vote doesn't count and the button tells him so."""
+    import inspect
+    bb.db_add_housemate(1)
+    bb.db_add_housemate(2)
+    vid = bb.create_round(bb.KIND_VOTE, nominees=[1, 2])
+    bb.cast_vote(vid, 1, 2, "obvious")
+    bb.cast_vote(vid, 99, 1, "just passing through")      # not in the house
+    assert bb.vote_count(vid) == 2
+    assert bb.drop_outsider_votes(vid) == [99]
+    assert bb.vote_count(vid) == 1 and bb.vote_of(vid, 99) is None
+    assert bb.drop_outsider_votes(vid) == []               # nothing left to drop
+    assert [e["kind"] for e in bb.events()][-1] == "outsider_votes_dropped"
+
+    for button in (bb.VoteButton, bb.MyVoteButton):
+        assert "is_housemate(interaction.user.id)" in inspect.getsource(button.callback), button.__name__
+    # and the board itself no longer invites the whole server
+    assert "the house decides" in (bb._vote_embed([1], None).description or "")
+    assert "Housemates only" in (bb._vote_embed([1], None).description or "")
+    # a vote already running is cleaned up on the next deploy
+    assert "drop_outsider_votes" in inspect.getsource(bb.ensure_panels)
 
 
 def test_you_can_check_your_own_vote(bb):
