@@ -663,3 +663,38 @@ def test_vote_reposts_only_when_it_lives_in_the_house(bb, monkeypatch):
     asyncio.run(bb.repost_vote_message(None))
     assert "posted" in calls and "deleted old" in calls
     assert bb.get_round(vid)["message_id"] == 999   # the round now points at the new message
+
+
+def test_nomination_and_vote_reasons_are_kept(bb):
+    for u in (1, 2, 3):
+        bb.db_add_housemate(u)
+    rid = bb.create_round(bb.KIND_NOMINATIONS)
+    bb.record_nominations(rid, 1, [2, 3], {2: "never speaks", 3: "threw the challenge"})
+    assert bb.nomination_reasons(rid) == {(1, 2): "never speaks", (1, 3): "threw the challenge"}
+    # Re-nominating replaces the reasons along with the picks.
+    bb.record_nominations(rid, 1, [2], {2: "changed my mind"})
+    assert bb.nomination_reasons(rid) == {(1, 2): "changed my mind"}
+
+    vid = bb.create_round(bb.KIND_VOTE, nominees=[2, 3])
+    bb.cast_vote(vid, 10, 2, "dead weight")
+    bb.cast_vote(vid, 11, 3, "")            # skipped the box
+    assert bb.vote_reasons(vid) == [(10, 2, "dead weight")]
+    assert bb.vote_count(vid) == 2
+
+    dump, _ = bb.build_rundown(None)
+    assert dump["nominations"][0]["reason"] == "changed my mind"
+    assert [v["reason"] for v in dump["votes"]] == ["dead weight", None]
+
+
+def test_vote_embed_shows_the_total_but_not_the_split(bb):
+    vid = bb.create_round(bb.KIND_VOTE, nominees=[1, 2])
+    fields = {f.name: f.value for f in bb._vote_embed([1, 2], None, vid).fields}
+    assert fields["Votes cast"] == "none yet"
+    bb.cast_vote(vid, 10, 1)
+    bb.cast_vote(vid, 11, 1)
+    e = bb._vote_embed([1, 2], None, vid)
+    fields = {f.name: f.value for f in e.fields}
+    assert fields["Votes cast"] == "**2**"
+    # The running total must never give away who is ahead.
+    assert "user 1" not in str(fields) and "1 vote" not in (e.description or "")
+    assert not bb._vote_embed([1, 2], None).fields      # omitted when no round is given

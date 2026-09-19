@@ -155,7 +155,9 @@ def ensure_tables() -> None:
             sent_at INTEGER NOT NULL, acked_at INTEGER)""")
         # Columns added after the first deploy; harmless when they already exist.
         for stmt in ("ALTER TABLE bb_housemates ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0",
-                     "ALTER TABLE bb_messages ADD COLUMN thread_id TEXT"):
+                     "ALTER TABLE bb_messages ADD COLUMN thread_id TEXT",
+                     "ALTER TABLE bb_nominations ADD COLUMN reason TEXT",
+                     "ALTER TABLE bb_votes ADD COLUMN reason TEXT"):
             try:
                 c.execute(stmt)
             except Exception:
@@ -466,13 +468,23 @@ def close_round(round_id: int) -> None:
 
 # --- nominations ---
 
-def record_nominations(round_id: int, nominator_id: int, nominee_ids: Iterable[int]) -> None:
+def record_nominations(round_id: int, nominator_id: int, nominee_ids: Iterable[int],
+                       reasons: Optional[dict[int, str]] = None) -> None:
+    reasons = reasons or {}
     with DatabaseManager.transaction() as c:
         c.execute("DELETE FROM bb_nominations WHERE round_id = ? AND nominator_id = ?",
                   (int(round_id), str(nominator_id)))
         for nid in nominee_ids:
-            c.execute("INSERT OR IGNORE INTO bb_nominations (round_id, nominator_id, nominee_id, created_at) "
-                      "VALUES (?, ?, ?, ?)", (int(round_id), str(nominator_id), str(nid), _now()))
+            c.execute("INSERT OR IGNORE INTO bb_nominations "
+                      "(round_id, nominator_id, nominee_id, created_at, reason) VALUES (?, ?, ?, ?, ?)",
+                      (int(round_id), str(nominator_id), str(nid), _now(), reasons.get(int(nid))))
+
+
+def nomination_reasons(round_id: int) -> dict[tuple[int, int], str]:
+    rows = DatabaseManager.fetch_all(
+        "SELECT nominator_id, nominee_id, reason FROM bb_nominations WHERE round_id = ? AND reason IS NOT NULL",
+        (int(round_id),))
+    return {(int(a), int(b)): c for a, b, c in rows}
 
 
 def nominations_for(round_id: int) -> list[tuple[int, int]]:
@@ -490,10 +502,17 @@ def nominators_done(round_id: int) -> set[int]:
 
 # --- votes ---
 
-def cast_vote(round_id: int, voter_id: int, nominee_id: int) -> None:
+def cast_vote(round_id: int, voter_id: int, nominee_id: int, reason: Optional[str] = None) -> None:
     DatabaseManager.execute(
-        "INSERT OR REPLACE INTO bb_votes (round_id, voter_id, nominee_id, created_at) VALUES (?, ?, ?, ?)",
-        (int(round_id), str(voter_id), str(nominee_id), _now()))
+        "INSERT OR REPLACE INTO bb_votes (round_id, voter_id, nominee_id, created_at, reason) "
+        "VALUES (?, ?, ?, ?, ?)", (int(round_id), str(voter_id), str(nominee_id), _now(), reason or None))
+
+
+def vote_reasons(round_id: int) -> list[tuple[int, int, str]]:
+    rows = DatabaseManager.fetch_all(
+        "SELECT voter_id, nominee_id, reason FROM bb_votes WHERE round_id = ? AND reason IS NOT NULL "
+        "AND reason != '' ORDER BY created_at", (int(round_id),))
+    return [(int(a), int(b), c) for a, b, c in rows]
 
 
 def vote_tally(round_id: int) -> dict[int, int]:
@@ -870,8 +889,14 @@ async def close_nominations(client: discord.Client) -> Optional[dict]:
     done = nominators_done(rnd["id"])
     missing = [u for u in housemates() if u not in done]
 
-    lines = [f"**{len(v)}** - {_mention_and_name(guild, nominee)}\n-# nominated by " +
-             ", ".join(_name(guild, n) for n in v) for nominee, v in ranked] or ["Nobody nominated anyone."]
+    why = nomination_reasons(rnd["id"])
+    lines = []
+    for nominee, v in ranked:
+        lines.append(f"**{len(v)}** - {_mention_and_name(guild, nominee)}")
+        for nom in v:
+            reason = why.get((nom, nominee))
+            lines.append(f"-# {_name(guild, nom)}: {reason}" if reason else f"-# {_name(guild, nom)}")
+    lines = lines or ["Nobody nominated anyone."]
     desc = "\n".join(lines)
     if missing:
         desc += "\n\n**Did not nominate:** " + ", ".join(_name(guild, u) for u in missing)
@@ -896,14 +921,47 @@ def _vote_view(round_id: int, nominee_ids: Iterable[int], guild: Optional[discor
     return view
 
 
-def _vote_embed(nominee_ids: Iterable[int], guild: Optional[discord.Guild]) -> discord.Embed:
+def _vote_embed(nominee_ids: Iterable[int], guild: Optional[discord.Guild],
+                round_id: Optional[int] = None) -> discord.Embed:
     names = ", ".join(f"**{_name(guild, n)}**" for n in nominee_ids)
-    return bb_embed(
+    e = bb_embed(
         "Eviction vote",
         f"The housemates have nominated. Now the server decides.\n\n"
         f"Facing eviction: {names}\n\n"
         f"Press a button to vote for who should **leave** the house. One vote each, and you can "
         f"change it until the vote closes. Results stay secret until Big Brother reveals them.")
+    if round_id is not None:
+        # The running total only: who is ahead stays secret until she closes it.
+        cast = vote_count(round_id)
+        e.add_field(name="Votes cast", value=f"**{cast}**" if cast else "none yet", inline=False)
+    return e
+
+
+_vote_refresh: dict[int, asyncio.Task] = {}
+
+
+async def refresh_vote_count(client: discord.Client, round_id: int) -> None:
+    """Nudge the running total on the vote message. Debounced, so a rush of votes is one edit."""
+    if round_id in _vote_refresh:
+        return
+
+    async def _later():
+        try:
+            await asyncio.sleep(3)
+            _vote_refresh.pop(round_id, None)
+            rnd = get_round(round_id)
+            if not rnd or rnd["status"] != "open" or not rnd["message_id"]:
+                return
+            ch = await _channel(client, rnd["channel_id"])
+            if not ch:
+                return
+            msg = await ch.fetch_message(rnd["message_id"])
+            await msg.edit(embed=_vote_embed(rnd["nominees"], _guild(client), rnd["id"]))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.info("Big Brother: could not refresh the vote count", exc_info=True)
+    _vote_refresh[round_id] = asyncio.create_task(_later())
 
 
 async def start_vote(client: discord.Client, nominee_ids: list[int]) -> Optional[dict]:
@@ -915,7 +973,7 @@ async def start_vote(client: discord.Client, nominee_ids: list[int]) -> Optional
         return None
     rid = create_round(KIND_VOTE, nominees=nominee_ids)
     names = ", ".join(f"**{_name(guild, n)}**" for n in nominee_ids)
-    embed = _vote_embed(nominee_ids, guild)
+    embed = _vote_embed(nominee_ids, guild, rid)
     msg = await bb_send(ch, content=f"{EYE} **Eviction vote is open.**", embed=embed,
                         view=_vote_view(rid, nominee_ids, guild))
     set_round_message(rid, ch.id, msg.id)
@@ -942,6 +1000,12 @@ async def close_vote(client: discord.Client) -> Optional[dict]:
         pct = (100 * c / total) if total else 0
         lines.append(f"**{c}** ({pct:.0f}%) - {_mention_and_name(guild, n)}")
     desc = "\n".join(lines) + f"\n\n{total} vote{'s' if total != 1 else ''} cast."
+    said = vote_reasons(rnd["id"])
+    if said:
+        desc += "\n\n**Why people voted:**\n" + "\n".join(
+            f"-# {_name(guild, voter)} → {_name(guild, nominee)}: {reason}" for voter, nominee, reason in said[:20])
+        if len(said) > 20:
+            desc += f"\n-# …and {len(said) - 20} more"
     desc += "\n\nNothing has been announced. Press **Evict housemate** on the panel when you're ready to reveal it."
     await notify_host(client, embed=bb_embed(f"Eviction vote result (round {rnd['id']})", desc))
     set_state(STATE_LAST_VOTE_RESULT, {"round_id": rnd["id"], "ranked": [[n, tally.get(n, 0)] for n in ranked],
@@ -1108,11 +1172,21 @@ class VoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:vote:(
             return
         if interaction.user.bot:
             return
-        cast_vote(self.round_id, interaction.user.id, self.nominee_id)
-        log_event("vote_cast", actor=interaction.user.id, target=self.nominee_id, round_id=self.round_id)
-        await interaction.response.send_message(
-            f"Vote recorded: you voted to evict **{_name(interaction.guild, self.nominee_id)}**. "
-            f"Press another button to change it.", ephemeral=True)
+        who = _name(interaction.guild, self.nominee_id)
+
+        async def submitted(inter: discord.Interaction, values: dict):
+            reason = (values.get("reason") or "").strip()
+            cast_vote(self.round_id, inter.user.id, self.nominee_id, reason)
+            log_event("vote_cast", actor=inter.user.id, target=self.nominee_id,
+                      round_id=self.round_id, reason=reason or None)
+            asyncio.create_task(refresh_vote_count(inter.client, self.round_id))
+            await inter.response.send_message(
+                f"Vote recorded: you voted to evict **{who}**." + (f"\n-# \"{reason[:200]}\"" if reason else "")
+                + "\nPress another button to change it.", ephemeral=True)
+
+        # The modal has to be the first reply to the press, so the vote is stored on submit.
+        await interaction.response.send_modal(_TextModal(
+            f"Evict {who}"[:45], [("reason", "Why? (optional)", False, 300, True)], submitted))
 
 
 class AckButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:ack:(?P<aid>\d+):(?P<uid>\d+)"):
@@ -1679,7 +1753,7 @@ async def repost_vote_message(client: discord.Client) -> None:
     guild = _guild(client)
     try:
         msg = await ch.send(content=f"{EYE} **Eviction vote is open.**",
-                            embed=_vote_embed(rnd["nominees"], guild),
+                            embed=_vote_embed(rnd["nominees"], guild, rnd["id"]),
                             view=_vote_view(rnd["id"], rnd["nominees"], guild))
     except discord.HTTPException as e:
         log.warning("Big Brother: could not repost the vote: %s", e)
@@ -2259,17 +2333,26 @@ async def handle_nominate(interaction: discord.Interaction):
     already = {b for a, b in nominations_for(rnd["id"]) if a == interaction.user.id}
 
     async def done(inter: discord.Interaction, ids: list[int]):
-        await inter.response.defer(ephemeral=True)
-        record_nominations(rnd["id"], inter.user.id, ids)
-        log_event("nominated", actor=inter.user.id, round_id=rnd["id"], nominees=ids, changed=bool(already))
-        names = ", ".join(_name(inter.guild, i) for i in ids)
-        await notify_host(inter.client, embed=bb_embed(
-            f"Nomination (round {rnd['id']})",
-            f"{_mention_and_name(inter.guild, inter.user.id)} nominated **{names}**"
-            + ("\n-# (changed their earlier nomination)" if already else "")))
-        await inter.edit_original_response(
-            content=f"{EYE} Noted. You nominated **{names}**. Only Big Brother knows.", view=None)
-        asyncio.create_task(refresh_panel(inter.client))
+        async def submitted(inter2: discord.Interaction, values: dict):
+            reasons = {int(k): v.strip() for k, v in values.items() if v.strip()}
+            record_nominations(rnd["id"], inter2.user.id, ids, reasons)
+            log_event("nominated", actor=inter2.user.id, round_id=rnd["id"], nominees=ids,
+                      changed=bool(already), reasons={str(k): v for k, v in reasons.items()})
+            names = ", ".join(_name(inter2.guild, i) for i in ids)
+            detail = "\n".join(f"**{_name(inter2.guild, i)}** — {reasons.get(i) or '*no reason given*'}" for i in ids)
+            await notify_host(inter2.client, embed=bb_embed(
+                f"Nomination (round {rnd['id']})",
+                f"{_mention_and_name(inter2.guild, inter2.user.id)} nominated:\n\n{detail}"
+                + ("\n\n-# (changed their earlier nomination)" if already else "")))
+            await inter2.response.send_message(
+                f"{EYE} Noted. You nominated **{names}**, and told Big Brother why. Only she will see it.",
+                ephemeral=True)
+            asyncio.create_task(refresh_panel(inter2.client))
+
+        # A modal must be the first reply to the press, so the nomination is stored on submit.
+        await inter.response.send_modal(_TextModal(
+            "Why these nominations?",
+            [(str(i), f"Why {_name(inter.guild, i)}?"[:45], True, 300, True) for i in ids], submitted))
 
     await _send_multi(interaction,
                       f"Press the {n} housemate{'s' if n != 1 else ''} you're nominating for eviction, then Nominate."
@@ -2412,7 +2495,8 @@ async def handle_use_immunity(interaction: discord.Interaction):
             if ch and rnd["message_id"]:
                 try:
                     msg = await ch.fetch_message(rnd["message_id"])
-                    await msg.edit(embed=_vote_embed(new_nominees, guild), view=_vote_view(rnd["id"], new_nominees, guild))
+                    await msg.edit(embed=_vote_embed(new_nominees, guild, rnd["id"]),
+                                   view=_vote_view(rnd["id"], new_nominees, guild))
                     await bb_send(ch, f"{EYE} **Save and replace.** {_name(guild, me)} has used immunity to leave the "
                                   f"eviction line-up, and **{_name(guild, target)}** takes their place. "
                                   f"Votes for {_name(guild, me)} have been cleared. If that was your vote, vote again.")
@@ -2670,13 +2754,14 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
     rounds = [dict(_round_row(r), closed_at=r[7]) for r in DatabaseManager.fetch_all(
         "SELECT id, kind, status, opened_at, channel_id, message_id, nominees, closed_at FROM bb_rounds ORDER BY id")]
     noms = [{"round_id": r[0], "nominator": int(r[1]), "nominator_name": n(int(r[1])),
-             "nominee": int(r[2]), "nominee_name": n(int(r[2])), "at": r[3]}
+             "nominee": int(r[2]), "nominee_name": n(int(r[2])), "at": r[3], "reason": r[4]}
             for r in DatabaseManager.fetch_all(
-                "SELECT round_id, nominator_id, nominee_id, created_at FROM bb_nominations ORDER BY created_at")]
+                "SELECT round_id, nominator_id, nominee_id, created_at, reason FROM bb_nominations "
+                "ORDER BY created_at")]
     votes = [{"round_id": r[0], "voter": int(r[1]), "voter_name": n(int(r[1])),
-              "nominee": int(r[2]), "nominee_name": n(int(r[2])), "at": r[3]}
+              "nominee": int(r[2]), "nominee_name": n(int(r[2])), "at": r[3], "reason": r[4]}
              for r in DatabaseManager.fetch_all(
-                 "SELECT round_id, voter_id, nominee_id, created_at FROM bb_votes ORDER BY created_at")]
+                 "SELECT round_id, voter_id, nominee_id, created_at, reason FROM bb_votes ORDER BY created_at")]
     diary = [{"id": r[0], "user_id": int(r[1]), "name": n(int(r[1])), "anonymous": bool(r[2]),
               "text": r[3], "at": r[4]}
              for r in DatabaseManager.fetch_all(
@@ -2764,8 +2849,10 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
         if kind == "nominated":
             names = ", ".join(n(x) for x in e.get("nominees", []))
             detail = f"{who} nominated {names}" + (" (changed)" if e.get("changed") else "")
+            for nid, reason in (e.get("reasons") or {}).items():
+                detail += f"\n    - {n(int(nid))}: {reason}"
         elif kind == "vote_cast":
-            detail = f"{who} voted to evict {tgt}"
+            detail = f"{who} voted to evict {tgt}" + (f" — {e['reason']}" if e.get("reason") else "")
         elif kind == "nominations_closed":
             detail = "nominations closed: " + ", ".join(f"{n(x)} {c}" for x, c in e.get("tally", []))
         elif kind == "vote_closed":
