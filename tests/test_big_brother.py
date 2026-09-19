@@ -752,19 +752,105 @@ def test_a_running_vote_moves_into_a_thread_on_deploy(bb, monkeypatch):
     assert bb.vote_count(vid) == 1
 
 
-def test_the_vote_thread_is_public_locked_and_slow_to_archive(bb):
+def test_house_threads_are_public_locked_and_slow_to_archive(bb):
     import inspect
-    assert bb.vote_in_thread()                          # on by default, config can turn it off
-    src = inspect.getsource(bb.open_vote_thread)
-    assert "public_thread" in src                       # the whole server votes, not just the house
+    assert bb.vote_in_thread() and bb.panel_in_thread()   # on by default, config can turn them off
+    src = inspect.getsource(bb.open_house_thread)
+    assert "public_thread" in src                         # spectators can watch, they just can't press
     assert "VOTE_THREAD_AUTO_ARCHIVE" in src and bb.VOTE_THREAD_AUTO_ARCHIVE == 10080
-    fill = inspect.getsource(bb.fill_vote_thread)
+    fill = inspect.getsource(bb.fill_thread)
     assert "add_user" not in fill and "msg.delete()" in fill and "locked=True" in fill
     # Opening a vote sets the thread up before telling the house about it.
     start = inspect.getsource(bb.start_vote)
-    assert start.index("fill_vote_thread") < start.index("house_channel(client)")
+    assert start.index("fill_thread") < start.index("house_channel(client)")
     # Closing it shuts the thread behind the board.
     assert "archived=True" in inspect.getsource(bb.close_vote)
+    # An eviction takes them out of both threads.
+    assert "drop_from_threads" in inspect.getsource(bb.evict)
+
+
+def test_the_panel_moves_into_a_thread_when_the_doors_open(bb, monkeypatch):
+    """Before the doors open it stays in the channel; after, it gets a thread of its own."""
+    import asyncio
+    opened = []
+
+    class FakeThread:
+        id = 888
+        parent_id = bb.house_channel_id()
+
+    class FakeHouse:
+        id = bb.house_channel_id()
+
+    async def fake_channel(client, cid):
+        return FakeHouse() if cid == bb.house_channel_id() else (FakeThread() if cid == 888 else None)
+
+    async def fake_open(house, name, reason):
+        opened.append(name)
+        return FakeThread()
+    monkeypatch.setattr(bb, "_channel", fake_channel)
+    monkeypatch.setattr(bb, "open_house_thread", fake_open)
+
+    monkeypatch.setattr(bb, "house_unlocked", lambda: False)
+    assert asyncio.run(bb.house_panel_channel(None)).id == bb.house_channel_id()
+    assert opened == []                                     # nobody pinged before the game starts
+
+    monkeypatch.setattr(bb, "house_unlocked", lambda: True)
+    assert asyncio.run(bb.house_panel_channel(None)).id == 888
+    assert opened == [bb.PANEL_THREAD_NAME]
+    assert bb.get_state(bb.STATE_HOUSE_PANEL_THREAD) == 888
+    assert asyncio.run(bb.house_panel_channel(None)).id == 888
+    assert len(opened) == 1                                 # re-used, not re-made
+
+    # Bin the thread in Discord and the next call builds a fresh one.
+    async def gone(client, cid):
+        return FakeHouse() if cid == bb.house_channel_id() else None
+    monkeypatch.setattr(bb, "_channel", gone)
+    assert asyncio.run(bb.house_panel_channel(None)).id == 888
+    assert len(opened) == 2
+
+
+def test_the_host_can_still_speak_in_a_locked_thread(bb):
+    import inspect
+    assert "let_host_post_in_threads" in inspect.getsource(bb.open_house_thread)
+    src = inspect.getsource(bb.let_host_post_in_threads)
+    assert "manage_threads=True" in src and "send_messages_in_threads=True" in src
+    # Threads are dated, not numbered: a round opened in testing made the number lie.
+    assert bb.vote_thread_name(1758240000) == "🗳️ eviction vote - 19 Sep"
+    assert bb.today_label()[0].isdigit()
+    assert "rename_vote_thread" in inspect.getsource(bb.ensure_panels)
+
+
+def test_the_shop_gets_a_thread_but_purchases_stay_in_the_house(bb):
+    import inspect
+    from lib.features import big_brother_shop as shop
+    assert shop.shop_in_thread()                            # on while the shop is in the house
+    src = inspect.getsource(shop.open_shop)
+    assert "open_house_thread" in src and "fill_thread(thread)" in src
+    assert "set_task_message(tid, where.id" in src          # the board lives in the thread
+    # Every purchase is still announced in the channel itself, where the house can see it.
+    assert "ch = await shop_channel(interaction.client)" in inspect.getsource(shop._ItemView)
+    assert "archived=True" in inspect.getsource(shop.close_shop)
+
+
+def test_threads_are_bumped_on_a_timer_but_not_overnight(bb, monkeypatch):
+    """Chat can't bury a thread, so the panel is re-posted on the clock instead - by day."""
+    import asyncio
+    assert bb.thread_bump_seconds() == 30 * 60
+    assert bb.night_hours() == (0, 8)                       # midnight to 8am, UK time
+    for hour, night in ((0, True), (1, True), (7, True), (8, False), (13, False), (23, False)):
+        monkeypatch.setattr(bb, "_hour_of_day", lambda: hour)
+        assert bb.is_night() is night, hour
+
+    reposted = []
+    async def fake_repost(client): reposted.append(True)
+    monkeypatch.setattr(bb, "repost_house_panel", fake_repost)
+    monkeypatch.setattr(bb, "house_unlocked", lambda: True)
+
+    bb.set_state(bb.STATE_HOUSE_PANEL_THREAD, None)
+    assert asyncio.run(bb.bump_house_threads(None)) is False   # no thread, nothing to bump
+    bb.set_state(bb.STATE_HOUSE_PANEL_THREAD, 777)
+    assert asyncio.run(bb.bump_house_threads(None)) is True
+    assert reposted == [True]
 
 
 def test_nomination_and_vote_reasons_are_kept(bb):

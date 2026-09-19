@@ -45,6 +45,12 @@ def shop_is_in_the_house() -> bool:
     return shop_channel_id() == bb.house_channel_id()
 
 
+def shop_in_thread() -> bool:
+    """The shop board gets its own thread, so browsing doesn't push the house chat along.
+    Purchases and the closing verdict still land in the channel itself, in the open."""
+    return bool(getattr(config, "BIG_BROTHER_SHOP_IN_THREAD", True)) and shop_is_in_the_house()
+
+
 async def shop_channel(client: discord.Client):
     return await bb._channel(client, shop_channel_id())
 
@@ -423,6 +429,7 @@ class _ItemView(discord.ui.View):
                 task = get_task(self.task_id)
                 bb.log_event("shop_purchase", actor=interaction.user.id, task_id=self.task_id,
                              item=item["name"], price=item["price"], remaining=left_now)
+                # The channel itself, not the shop thread: the house watches the pot drain.
                 ch = await shop_channel(interaction.client)
                 if ch:
                     await bb.bb_send(ch, f"🛒 **{bb._name(interaction.guild, interaction.user.id)}** bought "
@@ -466,11 +473,19 @@ async def open_shop(client: discord.Client, brief: str, budget: int, required: l
     closes_at = bb._now() + minutes * 60 if minutes else None
     tid = create_task(brief, budget, required, closes_at)
     task = get_task(tid)
-    msg = await bb.bb_send(ch, content=f"{bb._role_mention()}{bb.EYE} **The shop is open.**",
+    thread = await bb.open_house_thread(ch, f"🛒 the shop - {bb.today_label()}",
+                                        "Big Brother: the shop") if shop_in_thread() else None
+    where = thread or ch
+    msg = await bb.bb_send(where, content=f"{'' if thread else bb._role_mention()}{bb.EYE} **The shop is open.**",
                            embed=shop_embed(task, bb._guild(client)), view=_shop_view(task))
-    set_task_message(tid, ch.id, msg.id)
+    set_task_message(tid, where.id, msg.id)
     task = get_task(tid)
-    bb.log_event("shop_opened", task_id=tid, brief=brief, budget=budget, required=required, closes_at=closes_at)
+    if thread:
+        await bb.fill_thread(thread)
+        await bb.bb_send(ch, f"{bb._role_mention()}{bb.EYE} **The shop is open** in <#{thread.id}>. "
+                             f"{pounds(budget)} in the pot. Everything you buy still shows up here.")
+    bb.log_event("shop_opened", task_id=tid, brief=brief, budget=budget, required=required, closes_at=closes_at,
+                 thread_id=thread.id if thread else None)
     schedule_close(client, task)
     asyncio.create_task(bb.refresh_panel(client))
     return task, ""
@@ -510,6 +525,13 @@ async def close_shop(client: discord.Client, task_id: int, reason: str) -> Optio
         detail += f"\n\n**Required:** {', '.join(task['required'])}\n**Missing:** {', '.join(missing) or 'none'}"
         detail += f"\n**Temptations bought:** {', '.join(extras) or 'none'}"
     await bb.notify_host(client, embed=bb.bb_embed(f"Shop task #{task_id} {verdict or 'closed'}", detail[:3900]))
+    if task["channel_id"] and task["channel_id"] != shop_channel_id():
+        shelf = await bb._channel(client, task["channel_id"])
+        if isinstance(shelf, discord.Thread):
+            try:
+                await shelf.edit(archived=True, locked=True, reason="Big Brother: the shop is shut")
+            except discord.HTTPException:
+                pass
     bb.log_event("shop_closed", task_id=task_id, reason=reason, passed=passed if task["required"] else None,
                  missing=missing, extras=extras, left=left)
     asyncio.create_task(bb.refresh_panel(client))

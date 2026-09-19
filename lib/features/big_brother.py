@@ -42,6 +42,7 @@ STATE_HOUSE_SILENT = "house_silent"
 STATE_HOUSE_PANEL_SIG = "house_panel_signature"  # what the house panel last showed; a change re-posts it
 STATE_VOTE_REPOST_AT = "house_msgs_at_vote_repost"  # the house counter when the vote last moved down
 STATE_VOTE_BUMPED_AT = "vote_thread_bumped_at"      # when the board was last re-posted inside its thread
+STATE_HOUSE_PANEL_THREAD = "house_panel_thread"     # the panel's own thread off the house channel
 HOUSE_PANEL_REPOST_EVERY = 20  # chat messages in the house before the panel is re-posted at the bottom
 VOTE_REPOST_EVERY = 5          # an open vote moves down far more often, so nobody misses it
 VOTE_THREAD_BUMP_SECONDS = 600 # floor between bumps inside the vote thread: a busy house would
@@ -86,6 +87,37 @@ def vote_channel_id() -> int:
 
 def vote_in_thread() -> bool:
     return bool(getattr(config, "BIG_BROTHER_VOTE_IN_THREAD", True))
+
+
+def panel_in_thread() -> bool:
+    return bool(getattr(config, "BIG_BROTHER_PANEL_IN_THREAD", True))
+
+
+def thread_bump_seconds() -> int:
+    return max(60, int(getattr(config, "BIG_BROTHER_THREAD_BUMP_MINUTES", 30)) * 60)
+
+
+def night_hours() -> tuple[int, int]:
+    start, end = getattr(config, "BIG_BROTHER_NIGHT_HOURS", (0, 8))
+    return int(start), int(end)
+
+
+def _hour_of_day() -> int:
+    try:
+        import pytz, datetime as _dt
+        return _dt.datetime.now(pytz.timezone("Europe/London")).hour
+    except Exception:
+        import datetime as _dt
+        return _dt.datetime.now().hour
+
+
+def is_night() -> bool:
+    """Bumping a thread marks it unread for everyone in it, which nobody wants at 4am."""
+    start, end = night_hours()
+    if start == end:
+        return False
+    hour = _hour_of_day()
+    return start <= hour < end if start < end else (hour >= start or hour < end)
 
 
 def housemate_role_id() -> Optional[int]:
@@ -840,6 +872,7 @@ async def evict(client: discord.Client, user_id: int, *, announce: bool = True) 
     log_event("evicted", target=user_id, announced=announce, last_vote=last)
     await _sync_role(guild, user_id, False)
     await _grant_spectator_access(client, user_id)
+    await drop_from_threads(client, user_id)
     if announce:
         ch = await house_channel(client)
         if ch:
@@ -1023,25 +1056,77 @@ async def refresh_vote_count(client: discord.Client, round_id: int) -> None:
 VOTE_THREAD_AUTO_ARCHIVE = 10080  # a week: an archived thread freezes its buttons
 
 
-async def open_vote_thread(house, round_id: int):
-    """A room of its own for the vote board, so it isn't buried by house chat. Public, so the
-    whole server can still vote, and locked once it's set up: locking stops messages, it does
-    not stop buttons or modals."""
+def today_label(ts: Optional[int] = None) -> str:
+    """Threads are named by the day they opened: a number would go wrong the moment a round
+    is restarted, a date never does."""
+    import datetime as _dt
+    try:
+        import pytz
+        tz = pytz.timezone("Europe/London")
+        when = _dt.datetime.fromtimestamp(int(ts), tz) if ts else _dt.datetime.now(tz)
+    except Exception:
+        when = _dt.datetime.fromtimestamp(int(ts)) if ts else _dt.datetime.now()
+    return f"{when.day} {when.strftime('%b')}"
+
+
+async def let_host_post_in_threads(house) -> None:
+    """A locked thread only stops people without Manage Threads, so the host is given it on
+    the house channel. Big Brother can always speak in her own threads; housemates can't."""
+    guild = getattr(house, "guild", None)
+    member = guild.get_member(host_id()) if guild else None
+    if not member:
+        return
+    try:
+        ow = house.overwrites_for(member)
+        if ow.manage_threads and ow.send_messages_in_threads:
+            return
+        ow.update(manage_threads=True, send_messages_in_threads=True, send_messages=True)
+        await house.set_permissions(member, overwrite=ow, reason="Big Brother speaks in her own threads")
+    except discord.HTTPException as e:
+        log.warning("Big Brother: could not give the host thread permissions: %s", e)
+
+
+async def open_house_thread(house, name: str, reason: str):
+    """A room of its own off the house channel. Public, so anyone watching can see it, and
+    locked once it's set up: locking stops messages, it does not stop buttons or modals."""
     if not isinstance(house, discord.TextChannel):
         return None
+    await let_host_post_in_threads(house)
     try:
         return await house.create_thread(
-            name=f"🗳️ eviction vote {round_id}"[:100], type=discord.ChannelType.public_thread,
-            auto_archive_duration=VOTE_THREAD_AUTO_ARCHIVE, reason="Big Brother: eviction vote")
+            name=name[:100], type=discord.ChannelType.public_thread,
+            auto_archive_duration=VOTE_THREAD_AUTO_ARCHIVE, reason=reason)
     except discord.HTTPException as e:
-        log.warning("Big Brother: could not open the vote thread: %s", e)
+        log.warning("Big Brother: could not open the %s thread: %s", name, e)
         return None
+
+
+async def open_vote_thread(house, round_id: int):
+    return await open_house_thread(house, vote_thread_name(), "Big Brother: eviction vote")
+
+
+def vote_thread_name(opened_at: Optional[int] = None) -> str:
+    return f"🗳️ eviction vote - {today_label(opened_at)}"
+
+
+async def rename_vote_thread(client: discord.Client, rnd: Optional[dict]) -> None:
+    """The first votes were numbered by round id, which counted a round opened in testing and
+    so ran one ahead of the house. Names carry the date the vote opened instead."""
+    if not rnd or not rnd["channel_id"] or rnd["channel_id"] == house_channel_id():
+        return
+    ch = await _channel(client, rnd["channel_id"])
+    want = vote_thread_name(rnd.get("opened_at"))
+    if isinstance(ch, discord.Thread) and ch.name != want:
+        try:
+            await ch.edit(name=want, reason="Big Brother: votes are dated, not numbered")
+        except discord.HTTPException as e:
+            log.info("Big Brother: could not rename the vote thread: %s", e)
 
 
 VOTE_THREAD_MENTION_BATCH = 25
 
 
-async def fill_vote_thread(thread) -> None:
+async def fill_thread(thread) -> None:
     """Pull every housemate in so the thread sits in their sidebar, then lock it shut.
     Mentioning someone joins them to a public thread, and the mention is deleted straight
     after, so the house gets one ping instead of a wall of "added X to the thread" lines."""
@@ -1052,11 +1137,26 @@ async def fill_vote_thread(thread) -> None:
             msg = await thread.send(" ".join(f"<@{u}>" for u in batch))
             await msg.delete()
         except discord.HTTPException as e:
-            log.warning("Big Brother: could not pull %d housemate(s) into the vote thread: %s", len(batch), e)
+            log.warning("Big Brother: could not pull %d housemate(s) into the thread: %s", len(batch), e)
     try:
-        await thread.edit(locked=True, reason="Big Brother: the vote thread is for voting, not chat")
+        await thread.edit(locked=True, reason="Big Brother: this thread is for buttons, not chat")
     except discord.HTTPException as e:
-        log.warning("Big Brother: could not lock the vote thread: %s", e)
+        log.warning("Big Brother: could not lock the thread: %s", e)
+
+
+async def drop_from_threads(client: discord.Client, user_id: int) -> None:
+    """An evicted housemate leaves the house threads, so they drop out of their sidebar."""
+    ids = [get_state(STATE_HOUSE_PANEL_THREAD)]
+    rnd = open_round(KIND_VOTE)
+    if rnd and rnd["channel_id"] and rnd["channel_id"] != house_channel_id():
+        ids.append(rnd["channel_id"])
+    for tid in [i for i in ids if i]:
+        ch = await _channel(client, int(tid))
+        if isinstance(ch, discord.Thread):
+            try:
+                await ch.remove_user(discord.Object(id=int(user_id)))
+            except discord.HTTPException as e:
+                log.info("Big Brother: could not remove %s from thread %s: %s", user_id, tid, e)
 
 
 async def start_vote(client: discord.Client, nominee_ids: list[int]) -> Optional[dict]:
@@ -1078,7 +1178,7 @@ async def start_vote(client: discord.Client, nominee_ids: list[int]) -> Optional
     set_state(STATE_VOTE_BUMPED_AT, _now())
     log_event("vote_opened", round_id=rid, nominees=list(nominee_ids), channel_id=where.id, message_id=msg.id)
     if thread:
-        await fill_vote_thread(thread)
+        await fill_thread(thread)
     hc = await house_channel(client)
     if hc and hc.id != where.id:
         await bb_send(hc, f"{_role_mention()}{EYE} The eviction vote is open in <#{where.id}>. "
@@ -1111,7 +1211,7 @@ async def migrate_vote_to_thread(client: discord.Client) -> Optional[int]:
     set_state(STATE_VOTE_REPOST_AT, int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0))
     set_state(STATE_VOTE_BUMPED_AT, _now())
     log_event("vote_moved_to_thread", round_id=rnd["id"], thread_id=thread.id, message_id=msg.id)
-    await fill_vote_thread(thread)
+    await fill_thread(thread)
     if old and house:
         try:
             await (await house.fetch_message(int(old))).delete()
@@ -1280,6 +1380,33 @@ async def close_idle_snugs(client: discord.Client) -> int:
         except discord.HTTPException as e:
             log.warning("Big Brother: could not close snug %s: %s", sn["id"], e)
     return closed
+
+
+_bumper: Optional[asyncio.Task] = None
+
+
+async def bump_house_threads(client: discord.Client) -> bool:
+    """Re-post the panel (and with it the vote board) so their threads stay near the top of
+    everyone's channel list. Nothing to bump if they aren't in threads."""
+    if not enabled() or not house_unlocked() or not panel_in_thread():
+        return False
+    if not get_state(STATE_HOUSE_PANEL_THREAD):
+        return False
+    await repost_house_panel(client)   # brings the vote board down with it
+    return True
+
+
+async def _bump_threads_forever(client: discord.Client) -> None:
+    while True:
+        try:
+            await asyncio.sleep(thread_bump_seconds())
+            if is_night():
+                continue
+            await bump_house_threads(client)
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            log.exception("Big Brother: thread bump failed")
 
 
 async def _sweep_snugs_forever(client: discord.Client) -> None:
@@ -1897,7 +2024,7 @@ async def refresh_panel(client: discord.Client) -> None:
         else:
             # Before the doors open the panel stays put and just updates in place.
             hmid = get_state(STATE_HOUSE_PANEL_MSG)
-            hch = await _channel(client, house_channel_id())
+            hch = await house_panel_channel(client, create=False)
             if hch and hmid:
                 msg = await hch.fetch_message(int(hmid))
                 await msg.edit(content=None, view=HousePanelView(guild))
@@ -1929,15 +2056,43 @@ async def ensure_control_panel(client: discord.Client) -> None:
     log.info("Big Brother: posted control panel %s in %s", msg.id, ch.id)
 
 
+PANEL_THREAD_NAME = "🏠 the house panel"
+
+
+async def house_panel_channel(client: discord.Client, *, create: bool = True):
+    """Where the panel lives: its own thread once the doors are open, the house channel
+    before that. A thread keeps the panel out of the chat and in everyone's sidebar."""
+    house = await _channel(client, house_channel_id())
+    if not panel_in_thread() or not house_unlocked():
+        return house
+    tid = get_state(STATE_HOUSE_PANEL_THREAD)
+    if tid:
+        ch = await _channel(client, int(tid))
+        if ch is not None:
+            return ch
+        set_state(STATE_HOUSE_PANEL_THREAD, None)   # deleted: build a fresh one below
+    if not create:
+        return house
+    thread = await open_house_thread(house, PANEL_THREAD_NAME, "Big Brother: the house panel")
+    if not thread:
+        return house
+    set_state(STATE_HOUSE_PANEL_THREAD, thread.id)
+    set_state(STATE_HOUSE_PANEL_MSG, None)          # the old panel is in the channel, not here
+    log_event("panel_thread_opened", thread_id=thread.id)
+    return thread
+
+
 async def ensure_house_panel(client: discord.Client) -> None:
-    """The housemates' panel in the house channel: diary, nominate, mission, expose."""
+    """The housemates' panel: diary, nominate, mission, expose. In its own thread off the
+    house channel once the game is running."""
     if not enabled():
         return
     ensure_tables()
-    ch = await _channel(client, house_channel_id())
+    ch = await house_panel_channel(client)
     if not ch:
         log.warning("Big Brother: house channel %s not found", house_channel_id())
         return
+    fresh_thread = isinstance(ch, discord.Thread) and not get_state(STATE_HOUSE_PANEL_MSG)
     view = HousePanelView(_guild(client))
     mid = get_state(STATE_HOUSE_PANEL_MSG)
     if mid:
@@ -1953,6 +2108,14 @@ async def ensure_house_panel(client: discord.Client) -> None:
     set_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0)
     set_state(STATE_HOUSE_PANEL_SIG, _house_panel_signature(_guild(client)))
     log.info("Big Brother: posted house panel %s in %s", msg.id, ch.id)
+    if fresh_thread:
+        # First time in the new thread: pull the house in, lock it, and say where it went.
+        await fill_thread(ch)
+        house = await house_channel(client)
+        if house:
+            await bb_send(house, f"{_role_mention()}{EYE} Your panel now lives in <#{ch.id}> - diary room, "
+                                 f"nominations, missions and the snug are all in there. This channel is "
+                                 f"yours to talk in.")
 
 
 def msgs_since_vote_repost() -> int:
@@ -2007,7 +2170,7 @@ async def repost_vote_message(client: discord.Client) -> None:
 async def repost_house_panel(client: discord.Client) -> None:
     """Delete the current house panel and post a fresh one so it sits under the chat."""
     async with _repost_lock:
-        ch = await _channel(client, house_channel_id())
+        ch = await house_panel_channel(client)
         if not ch:
             return
         old = get_state(STATE_HOUSE_PANEL_MSG)
@@ -2028,10 +2191,12 @@ async def repost_house_panel(client: discord.Client) -> None:
 
 
 async def ensure_panels(client: discord.Client) -> None:
-    global _client_ref, _snug_sweeper
+    global _client_ref, _snug_sweeper, _bumper
     _client_ref = client
     if _snug_sweeper is None or _snug_sweeper.done():
         _snug_sweeper = asyncio.create_task(_sweep_snugs_forever(client))
+    if _bumper is None or _bumper.done():
+        _bumper = asyncio.create_task(_bump_threads_forever(client))
     try:
         from lib.features import big_brother_shop as _shop
         _shop.restore_timers(client)
@@ -2052,8 +2217,10 @@ async def ensure_panels(client: discord.Client) -> None:
                     "Only housemates can vote now, so "
                     + ", ".join(_mention_and_name(_guild(client), u) for u in gone)
                     + f" no longer count{'s' if len(gone) == 1 else ''} in round {rnd['id']}."))
-        if await migrate_vote_to_thread(client) is None and msgs_since_vote_repost() >= VOTE_REPOST_EVERY:
-            await repost_vote_message(client)
+        if await migrate_vote_to_thread(client) is None:
+            await rename_vote_thread(client, open_round(KIND_VOTE))
+            if msgs_since_vote_repost() >= VOTE_REPOST_EVERY:
+                await repost_vote_message(client)
     except Exception:
         log.exception("Big Brother: could not catch the vote up on startup")
 
@@ -3010,16 +3177,19 @@ async def on_house_message(client: discord.Client, message: discord.Message) -> 
     # Keep the panel within reach: after every few chat messages, move it back to the bottom.
     # Not before the doors open: a locked panel bouncing around the pre-game chat is just noise.
     try:
-        n = int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0) + 1
-        if not house_unlocked():
-            n = 0
-        set_state(STATE_HOUSE_MSGS_SINCE_PANEL, n)
-        if n >= HOUSE_PANEL_REPOST_EVERY:
-            # repost_house_panel brings any open vote down with it, so the vote stays last.
-            asyncio.create_task(repost_house_panel(client))
-        elif msgs_since_vote_repost() >= VOTE_REPOST_EVERY:
-            # The vote moves down more often than the panel, so a busy house cannot bury it.
-            asyncio.create_task(repost_vote_message(client))
+        # Once the panel has a thread of its own, chat can't bury it and the timer keeps it
+        # alive, so counting messages is only for the case where it sits in the channel.
+        if not (panel_in_thread() and get_state(STATE_HOUSE_PANEL_THREAD)):
+            n = int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0) + 1
+            if not house_unlocked():
+                n = 0
+            set_state(STATE_HOUSE_MSGS_SINCE_PANEL, n)
+            if n >= HOUSE_PANEL_REPOST_EVERY:
+                # repost_house_panel brings any open vote down with it, so the vote stays last.
+                asyncio.create_task(repost_house_panel(client))
+            elif msgs_since_vote_repost() >= VOTE_REPOST_EVERY:
+                # The vote moves down more often than the panel, so a busy house cannot bury it.
+                asyncio.create_task(repost_vote_message(client))
     except Exception:
         log.exception("Big Brother: panel repost bookkeeping failed")
     chal = open_challenge()
