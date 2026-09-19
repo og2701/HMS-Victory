@@ -698,3 +698,14 @@ def test_vote_embed_shows_the_total_but_not_the_split(bb):
     # The running total must never give away who is ahead.
     assert "user 1" not in str(fields) and "1 vote" not in (e.description or "")
     assert not bb._vote_embed([1, 2], None).fields      # omitted when no round is given
+
+
+def test_opening_nominations_is_not_one_press(bb):
+    """It silences the house and pings everyone, so it explains itself and asks first."""
+    import inspect
+    src = inspect.getsource(bb._act_open_noms)
+    assert "_Confirm" in src
+    assert "Open nominations?" in src
+    # The explanation has to cover the consequences the host cannot undo with one press.
+    for point in ("Housemate role is pinged", "say why", "by DM", "Close nominations"):
+        assert point in src, point

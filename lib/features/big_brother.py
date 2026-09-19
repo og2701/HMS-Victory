@@ -1908,12 +1908,35 @@ async def _act_who(interaction: discord.Interaction):
 
 
 async def _act_open_noms(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True, thinking=True)
-    if not housemates():
-        await _reply(interaction, "No housemates yet. Add some first.", refresh=False)
+    ins = housemates()
+    if not ins:
+        await interaction.response.send_message("No housemates yet. Add some first.", ephemeral=True)
         return
-    rid = await open_nominations(interaction.client)
-    await _reply(interaction, "Nominations are already open." if rid is None else f"Nominations opened (round {rid}).")
+    if open_round(KIND_NOMINATIONS):
+        await interaction.response.send_message("Nominations are already open.", ephemeral=True)
+        return
+    immune = immune_ids()
+    n = nominations_each()
+    silence = "the house is silenced so nobody can talk" if housemate_role_id() else \
+              "⚠️ no Housemate role is configured, so the house will NOT be silenced"
+
+    async def yes(inter: discord.Interaction):
+        await inter.response.defer(ephemeral=True)
+        rid = await open_nominations(inter.client)
+        await inter.edit_original_response(
+            content="Nominations are already open." if rid is None
+            else f"Round {rid} is open. The house is silent and the housemates have been asked to nominate.",
+            view=None)
+        asyncio.create_task(refresh_panel(inter.client))
+
+    await interaction.response.send_message(
+        f"**Open nominations?** Here's what happens:\n"
+        f"• The Housemate role is pinged in the house and {silence}.\n"
+        f"• All **{len(ins)}** housemates are asked to pick **{n}** each, and to say why.\n"
+        + (f"• **{len(immune)}** immune housemate(s) can't be picked by anyone.\n" if immune else "")
+        + f"• Their picks and reasons come to you by DM. Nobody else sees them.\n"
+        f"• Nothing is announced until you press **Close nominations**, which lets them talk again.",
+        view=_Confirm(yes, "Open nominations"), ephemeral=True)
 
 
 async def _act_close_noms(interaction: discord.Interaction):
