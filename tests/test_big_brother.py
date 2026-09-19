@@ -569,3 +569,23 @@ def test_rundown_records_each_snug_and_how_long_it_ran(bb):
     assert [m["content"] for m in snug["transcript"]] == ["who worked in a chip shop", "kaizo did", "ta"]
     assert "## Snugs" in timeline
     assert "3 messages over 10 min" in timeline
+
+
+def test_rundown_separates_house_team_rooms_and_snugs(bb):
+    import database
+    bb.db_add_housemate(1)
+    sid = bb.add_snug(777, 1, [1])
+    bb.log_event("snug_opened", actor=1, snug_id=sid, thread_id=777, members=[1])
+    bb.log_event("team_rooms_opened", teams={"A": [1]}, rooms={"A": 500, "B": 501})
+    base = bb._now()
+    for i, cid in enumerate([bb.house_channel_id(), 500, 500, 501, 777]):
+        database.DatabaseManager.execute(
+            "INSERT INTO bb_messages (message_id, user_id, content, at, attachments, reply_to, thread_id) "
+            "VALUES (?, '1', 'x', ?, 0, NULL, ?)", (str(800 + i), base + i, str(cid)))
+
+    dump, timeline = bb.build_rundown(None)
+    by_label = {c["label"]: c["messages"] for c in dump["channels"]}
+    assert by_label["Team A room"] == 2 and by_label["Team B room"] == 1
+    assert by_label["the house"] == 1 and by_label["snug: user 1"] == 1
+    assert "## Where the talking happened" in timeline
+    assert "**Team A room** — 2 messages from 1 people" in timeline

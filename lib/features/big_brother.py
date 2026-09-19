@@ -204,15 +204,17 @@ def log_event(kind: str, actor: Optional[int] = None, target: Optional[int] = No
 
 
 def store_message(message: discord.Message) -> None:
+    """The `thread_id` column holds the id of whatever channel or thread the message was in:
+    the house, a team room or a snug. Without it, team room chat is indistinguishable from
+    house chat once the rooms are deleted."""
     ensure_tables()
-    in_thread = isinstance(message.channel, discord.Thread)
     DatabaseManager.execute(
         "INSERT OR REPLACE INTO bb_messages (message_id, user_id, content, at, attachments, reply_to, thread_id) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (str(message.id), str(message.author.id), message.content or "",
          int(message.created_at.timestamp()), len(message.attachments),
          str(message.reference.message_id) if message.reference and message.reference.message_id else None,
-         str(message.channel.id) if in_thread else None))
+         str(message.channel.id)))
 
 
 def events() -> list[dict]:
@@ -2612,6 +2614,19 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
     for e in evs:
         e["actor_name"] = n(e["actor_id"])
         e["target_name"] = n(e["target_id"])
+    # Where the talking happened: house, team rooms, snugs, one row each.
+    labels = {str(house_channel_id()): "the house"}
+    for e in evs:
+        for team, cid in (e.get("rooms") or {}).items():
+            labels[str(cid)] = f"Team {team} room"
+    for sn in snug_rows:
+        labels[str(sn["thread_id"])] = "snug: " + ", ".join(sn["member_names"])
+    channels = [{"channel_id": r[0], "label": labels.get(str(r[0]), "unknown channel"), "messages": int(r[1]),
+                 "first_message_at": r[2], "last_message_at": r[3],
+                 "people": int(r[4])}
+                for r in DatabaseManager.fetch_all(
+                    "SELECT COALESCE(thread_id, 'unrecorded'), COUNT(*), MIN(at), MAX(at), COUNT(DISTINCT user_id) "
+                    "FROM bb_messages GROUP BY thread_id ORDER BY COUNT(*) DESC")]
 
     acks = [{"id": r[0], "user_id": int(r[1]), "name": n(int(r[1])), "label": r[2], "sent_at": r[3], "acked_at": r[4]}
             for r in DatabaseManager.fetch_all("SELECT id, user_id, label, sent_at, acked_at FROM bb_acks ORDER BY id")]
@@ -2632,7 +2647,7 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
         team_dump = {}
     dump = {"exported_at": _now(), "housemates": hm, "acks": acks, "shop": shop, "teams": team_dump, "rounds": rounds, "nominations": noms, "votes": votes,
             "diary": diary, "missions": missions, "challenges": challenges, "events": evs,
-            "activity": activity, "snugs": snug_rows, "house_messages": msgs}
+            "activity": activity, "snugs": snug_rows, "channels": channels, "house_messages": msgs}
 
     lines = [f"# Big Brother rundown", f"Exported {_fmt_ts(_now())} UTC", "",
              "## Housemates"]
@@ -2686,6 +2701,11 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
         else:
             detail = f"{kind.replace('_', ' ')}" + (f": {tgt}" if tgt else "")
         lines.append(f"- {_fmt_ts(e['at'])}  {detail}")
+    lines += ["", "## Where the talking happened"]
+    for c in channels:
+        lines.append(f"- **{c['label']}** — {c['messages']} messages from {c['people']} people"
+                     + (f", {_fmt_ts(c['first_message_at'])} to {_fmt_ts(c['last_message_at'])}"
+                        if c["first_message_at"] else ""))
     if snug_rows:
         lines += ["", "## Snugs"]
         for sn in snug_rows:
