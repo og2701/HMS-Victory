@@ -763,8 +763,10 @@ def test_standings_break_down_who_voted_for_who(bb):
     assert "user 10 - never speaks" in text and "user 12 - threw the challenge" in text
     assert "user 11" in text                                 # a vote with no reason still shows
 
+    # It goes to whoever pressed it, privately, and is not echoed to the host.
     src = inspect.getsource(bb._act_standings)
-    assert "notify_host" in src and "ephemeral=True" in src
+    assert "dm_user(interaction.client, interaction.user.id, echo=False" in src
+    assert "notify_host" not in src and "ephemeral=True" in src
     assert bb.PANEL_ACTIONS["standings"] is bb._act_standings
 
 

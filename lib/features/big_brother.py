@@ -2111,7 +2111,8 @@ async def _act_close_vote(interaction: discord.Interaction):
 
 
 async def _act_standings(interaction: discord.Interaction):
-    """The live split and who voted for whom, by DM so the control channel never sees it."""
+    """The live split and who voted for whom, DMed to whoever pressed it so the control
+    channel never sees it. No echo to the host: she gets her own copy when she presses."""
     await interaction.response.defer(ephemeral=True, thinking=True)
     rnd = open_round(KIND_VOTE) or latest_round(KIND_VOTE)
     if not rnd:
@@ -2121,17 +2122,18 @@ async def _act_standings(interaction: discord.Interaction):
     total = vote_count(rnd["id"])
     live = rnd["status"] == "open"
     head = (f"The vote is still open, so this changes. **{total}** vote{'s' if total != 1 else ''} so far, "
-            f"and nobody but you has seen any of it."
+            f"and nobody in the house has seen any of it."
             if live else
             f"This vote is closed. **{total}** vote{'s' if total != 1 else ''} were cast.")
     title = f"Vote standings (round {rnd['id']})" + ("" if live else " - closed")
-    blocks = _paragraphs(standings_lines(rnd, guild))
-    for i, block in enumerate(blocks):
-        await notify_host(interaction.client, embed=bb_embed(
-            title if i == 0 else f"{title}, continued", (head + "\n\n" if i == 0 else "") + block))
+    ok = True
+    for i, block in enumerate(_paragraphs(standings_lines(rnd, guild))):
+        ok = await dm_user(interaction.client, interaction.user.id, echo=False, embed=bb_embed(
+            title if i == 0 else f"{title}, continued", (head + "\n\n" if i == 0 else "") + block)) and ok
     log_event("standings_checked", actor=interaction.user.id, round_id=rnd["id"], total=total, live=live)
-    await _reply(interaction, f"Standings for round {rnd['id']} are in Big Brother's DMs - "
-                              f"{total} vote{'s' if total != 1 else ''}, with who voted for who.", refresh=False)
+    await _reply(interaction, (f"Standings for round {rnd['id']} are in your DMs - "
+                               f"{total} vote{'s' if total != 1 else ''}, with who voted for who.") if ok
+                 else "Couldn't DM you - your DMs from this server look closed.", refresh=False)
 
 
 async def _act_evict(interaction: discord.Interaction):
