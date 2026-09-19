@@ -41,7 +41,7 @@ STATE_HOUSE_MSGS_SINCE_PANEL = "house_msgs_since_panel"
 STATE_HOUSE_SILENT = "house_silent"
 STATE_HOUSE_PANEL_SIG = "house_panel_signature"  # what the house panel last showed; a change re-posts it
 HOUSE_PANEL_REPOST_EVERY = 20  # chat messages in the house before the panel is re-posted at the bottom
-VOTE_REPOST_EVERY = 10         # an open vote moves down twice as often, so nobody misses it
+VOTE_REPOST_EVERY = 5          # an open vote moves down far more often, so nobody misses it
 _repost_lock = asyncio.Lock()
 
 _tables_ready = False

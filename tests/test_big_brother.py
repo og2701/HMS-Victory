@@ -713,14 +713,14 @@ def test_opening_nominations_is_not_one_press(bb):
 
 def test_vote_moves_down_twice_as_often_as_the_panel(bb):
     """At 10 messages only the vote moves; at 20 both do and the counter restarts."""
-    assert bb.VOTE_REPOST_EVERY == 10 and bb.HOUSE_PANEL_REPOST_EVERY == 20
+    assert bb.VOTE_REPOST_EVERY == 5 and bb.HOUSE_PANEL_REPOST_EVERY == 20
     fires = []
     for n in range(1, 21):
         vote = n % bb.VOTE_REPOST_EVERY == 0 and n < bb.HOUSE_PANEL_REPOST_EVERY
         panel = n >= bb.HOUSE_PANEL_REPOST_EVERY
         if vote or panel:
             fires.append((n, "vote" if vote else "both"))
-    assert fires == [(10, "vote"), (20, "both")]
+    assert fires == [(5, "vote"), (10, "vote"), (15, "vote"), (20, "both")]
 
 
 def test_panel_repost_brings_the_vote_down_with_it(bb):
