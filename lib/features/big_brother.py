@@ -40,6 +40,7 @@ STATE_GAME_STARTED_AT = "game_started_at"
 STATE_HOUSE_MSGS_SINCE_PANEL = "house_msgs_since_panel"
 STATE_HOUSE_SILENT = "house_silent"
 STATE_HOUSE_PANEL_SIG = "house_panel_signature"  # what the house panel last showed; a change re-posts it
+STATE_VOTE_REPOST_AT = "house_msgs_at_vote_repost"  # the house counter when the vote last moved down
 HOUSE_PANEL_REPOST_EVERY = 20  # chat messages in the house before the panel is re-posted at the bottom
 VOTE_REPOST_EVERY = 5          # an open vote moves down far more often, so nobody misses it
 _repost_lock = asyncio.Lock()
@@ -424,6 +425,15 @@ def open_round(kind: str) -> Optional[dict]:
     return _round_row(row)
 
 
+def latest_round(kind: str) -> Optional[dict]:
+    """The newest round of a kind, open or not."""
+    ensure_tables()
+    row = DatabaseManager.fetch_one(
+        "SELECT id, kind, status, opened_at, channel_id, message_id, nominees FROM bb_rounds "
+        "WHERE kind = ? ORDER BY id DESC LIMIT 1", (kind,))
+    return _round_row(row)
+
+
 def get_round(round_id: int) -> Optional[dict]:
     ensure_tables()
     row = DatabaseManager.fetch_one(
@@ -514,6 +524,22 @@ def vote_reasons(round_id: int) -> list[tuple[int, int, str]]:
         "SELECT voter_id, nominee_id, reason FROM bb_votes WHERE round_id = ? AND reason IS NOT NULL "
         "AND reason != '' ORDER BY created_at", (int(round_id),))
     return [(int(a), int(b), c) for a, b, c in rows]
+
+
+def vote_of(round_id: int, voter_id: int) -> Optional[tuple[int, Optional[str]]]:
+    """Who this person voted for in this round, and why. None if they haven't voted."""
+    row = DatabaseManager.fetch_one(
+        "SELECT nominee_id, reason FROM bb_votes WHERE round_id = ? AND voter_id = ?",
+        (int(round_id), str(voter_id)))
+    return (int(row[0]), row[1] or None) if row else None
+
+
+def vote_breakdown(round_id: int) -> list[tuple[int, int, Optional[str]]]:
+    """Every vote as (voter, nominee, reason), oldest first. Host's eyes only."""
+    rows = DatabaseManager.fetch_all(
+        "SELECT voter_id, nominee_id, reason FROM bb_votes WHERE round_id = ? ORDER BY created_at",
+        (int(round_id),))
+    return [(int(a), int(b), (c or None)) for a, b, c in rows]
 
 
 def vote_tally(round_id: int) -> dict[int, int]:
@@ -919,6 +945,8 @@ def _vote_view(round_id: int, nominee_ids: Iterable[int], guild: Optional[discor
     view = discord.ui.View(timeout=None)
     for n in nominee_ids:
         view.add_item(VoteButton(round_id, n, _name(guild, n)))
+    # People change their minds and forget; this tells them privately, and only them.
+    view.add_item(MyVoteButton(round_id))
     return view
 
 
@@ -983,12 +1011,45 @@ async def start_vote(client: discord.Client, nominee_ids: list[int]) -> Optional
     msg = await bb_send(ch, content=f"{EYE} **Eviction vote is open.**", embed=embed,
                         view=_vote_view(rid, nominee_ids, guild))
     set_round_message(rid, ch.id, msg.id)
+    set_state(STATE_VOTE_REPOST_AT, int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0))
     log_event("vote_opened", round_id=rid, nominees=list(nominee_ids), channel_id=ch.id, message_id=msg.id)
     hc = await house_channel(client)
     if hc and hc.id != ch.id:
         await bb_send(hc, f"{_role_mention()}{EYE} The public eviction vote is open in <#{ch.id}>. "
                       f"Facing eviction: {names}.")
     return {"round_id": rid, "message_id": msg.id, "channel_id": ch.id}
+
+
+def standings_lines(rnd: dict, guild: Optional[discord.Guild]) -> list[str]:
+    """Nominees by votes, each followed by the people who voted for them and why."""
+    tally = vote_tally(rnd["id"])
+    total = sum(tally.values())
+    voters: dict[int, list[tuple[int, Optional[str]]]] = {}
+    for voter, nominee, reason in vote_breakdown(rnd["id"]):
+        voters.setdefault(nominee, []).append((voter, reason))
+    order = sorted(set(rnd["nominees"]) | set(tally), key=lambda n: (-tally.get(n, 0), _name(guild, n).lower()))
+    lines = []
+    for n in order:
+        c = tally.get(n, 0)
+        pct = (100 * c / total) if total else 0
+        lines.append(f"**{c}** ({pct:.0f}%) - {_mention_and_name(guild, n)}")
+        for voter, reason in voters.get(n, []):
+            lines.append(f"-# · {_name(guild, voter)}" + (f" - {reason}" if reason else ""))
+        lines.append("")
+    return lines
+
+
+def _paragraphs(lines: list[str], limit: int = 3500) -> list[str]:
+    """Group lines into blocks that fit an embed description."""
+    blocks, cur = [], ""
+    for line in lines:
+        if len(cur) + len(line) + 1 > limit and cur:
+            blocks.append(cur.rstrip())
+            cur = ""
+        cur += line + "\n"
+    if cur.strip():
+        blocks.append(cur.rstrip())
+    return blocks or [""]
 
 
 async def close_vote(client: discord.Client) -> Optional[dict]:
@@ -1193,6 +1254,38 @@ class VoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:vote:(
         # The modal has to be the first reply to the press, so the vote is stored on submit.
         await interaction.response.send_modal(_TextModal(
             f"Evict {who}"[:45], [("reason", "Why? (optional)", False, 300, True)], submitted))
+
+
+class MyVoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:myvote:(?P<rid>\d+)"):
+    """A private reminder of your own vote. Nobody else's is ever shown."""
+
+    def __init__(self, round_id: int):
+        self.round_id = int(round_id)
+        super().__init__(discord.ui.Button(
+            label="Who did I vote for?", emoji="\N{THINKING FACE}", style=discord.ButtonStyle.secondary,
+            custom_id=f"bb:myvote:{self.round_id}"))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(int(match["rid"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not enabled():
+            await interaction.response.send_message("Big Brother has left the building.", ephemeral=True)
+            return
+        mine = vote_of(self.round_id, interaction.user.id)
+        if not mine:
+            await interaction.response.send_message(
+                "You haven't voted yet. Press a name above to vote.", ephemeral=True)
+            return
+        nominee, reason = mine
+        rnd = get_round(self.round_id)
+        closed = not rnd or rnd["status"] != "open"
+        await interaction.response.send_message(
+            f"You voted to evict **{_name(interaction.guild, nominee)}**."
+            + (f"\n-# you said: \"{reason[:300]}\"" if reason else "")
+            + ("\n-# this vote has closed, so it stands." if closed
+               else "\n-# press another name above to change it."), ephemeral=True)
 
 
 class AckButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:ack:(?P<aid>\d+):(?P<uid>\d+)"):
@@ -1609,8 +1702,9 @@ class BigBrotherControlView(discord.ui.LayoutView):
             ]),
             ("### 🗳️ Eviction cycle", [
                 [_PanelButton("open_noms", "Open nominations", discord.ButtonStyle.primary, "📝"),
-                 _PanelButton("close_noms", "Close nominations", emoji="🔒")],
-                [_PanelButton("start_vote", "Start eviction vote", discord.ButtonStyle.primary, "🗳️"),
+                 _PanelButton("close_noms", "Close nominations", emoji="🔒"),
+                 _PanelButton("start_vote", "Start eviction vote", discord.ButtonStyle.primary, "🗳️")],
+                [_PanelButton("standings", "Standings", emoji="📊"),
                  _PanelButton("close_vote", "Close vote", emoji="🔒"),
                  _PanelButton("evict", "Evict housemate", discord.ButtonStyle.danger, "🚪")],
             ]),
@@ -1629,13 +1723,11 @@ class BigBrotherControlView(discord.ui.LayoutView):
                  _PanelButton("resolve_mission", "Resolve mission", emoji="✅"),
                  _PanelButton("teams", "Teams", discord.ButtonStyle.primary, "🅰️")],
             ]),
-            ("### 🧠 Challenges & messages", [
+            ("### 🧠 Challenges, messages & shop", [
                 [_PanelButton("challenge", "Post challenge", emoji="🧠"),
                  _PanelButton("end_challenge", "End challenge", emoji="🏁")],
                 [_PanelButton("dm", "DM as Big Brother", emoji="✉️"),
                  _PanelButton("broadcast", "Announce in house", emoji="📣")],
-            ]),
-            ("### 🛒 Shop", [
                 [_PanelButton("catalogue", "Catalogue", emoji="📋"),
                  _PanelButton("shop", "Close shop" if shop_open else "Open shop",
                               discord.ButtonStyle.danger if shop_open else discord.ButtonStyle.primary, "🛒")],
@@ -1746,10 +1838,21 @@ async def ensure_house_panel(client: discord.Client) -> None:
     log.info("Big Brother: posted house panel %s in %s", msg.id, ch.id)
 
 
+def msgs_since_vote_repost() -> int:
+    """House messages since the vote last moved to the bottom. Both numbers are stored, so a
+    restart doesn't lose count: whatever piled up while the bot was down still counts."""
+    n = int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0)
+    at = int(get_state(STATE_VOTE_REPOST_AT, 0) or 0)
+    return n - at if 0 <= at <= n else n
+
+
 async def repost_vote_message(client: discord.Client) -> None:
     """While a vote is running in the house, keep it within reach by moving it to the bottom
     rather than letting chat bury it. Votes are keyed to the round, not the message, so the
     ones already cast are untouched."""
+    # The marker moves whether or not there is anything to move, so a closed vote doesn't
+    # leave the every-five check firing on every single message.
+    set_state(STATE_VOTE_REPOST_AT, int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0))
     rnd = open_round(KIND_VOTE)
     if not rnd or not rnd["channel_id"] or rnd["channel_id"] != house_channel_id():
         return
@@ -1808,6 +1911,13 @@ async def ensure_panels(client: discord.Client) -> None:
         log.exception("Big Brother: could not restore shop timer")
     await ensure_control_panel(client)
     await ensure_house_panel(client)
+    # A restart doesn't reset the counter, so if the house talked past the vote while the bot
+    # was down, bring it back to the bottom now instead of waiting for five more messages.
+    try:
+        if msgs_since_vote_repost() >= VOTE_REPOST_EVERY:
+            await repost_vote_message(client)
+    except Exception:
+        log.exception("Big Brother: could not catch the vote up on startup")
 
 
 # --- panel actions: each is `async (interaction) -> None` and responds itself ---
@@ -1998,6 +2108,30 @@ async def _act_close_vote(interaction: discord.Interaction):
     res = await close_vote(interaction.client)
     await _reply(interaction, "No vote is open." if res is None
                  else "Vote closed. The result is in your DMs and nothing has been announced yet.")
+
+
+async def _act_standings(interaction: discord.Interaction):
+    """The live split and who voted for whom, by DM so the control channel never sees it."""
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    rnd = open_round(KIND_VOTE) or latest_round(KIND_VOTE)
+    if not rnd:
+        await _reply(interaction, "No eviction vote has run yet.", refresh=False)
+        return
+    guild = _guild(interaction.client)
+    total = vote_count(rnd["id"])
+    live = rnd["status"] == "open"
+    head = (f"The vote is still open, so this changes. **{total}** vote{'s' if total != 1 else ''} so far, "
+            f"and nobody but you has seen any of it."
+            if live else
+            f"This vote is closed. **{total}** vote{'s' if total != 1 else ''} were cast.")
+    title = f"Vote standings (round {rnd['id']})" + ("" if live else " - closed")
+    blocks = _paragraphs(standings_lines(rnd, guild))
+    for i, block in enumerate(blocks):
+        await notify_host(interaction.client, embed=bb_embed(
+            title if i == 0 else f"{title}, continued", (head + "\n\n" if i == 0 else "") + block))
+    log_event("standings_checked", actor=interaction.user.id, round_id=rnd["id"], total=total, live=live)
+    await _reply(interaction, f"Standings for round {rnd['id']} are in Big Brother's DMs - "
+                              f"{total} vote{'s' if total != 1 else ''}, with who voted for who.", refresh=False)
 
 
 async def _act_evict(interaction: discord.Interaction):
@@ -2321,7 +2455,7 @@ async def _act_shop(interaction: discord.Interaction):
 PANEL_ACTIONS = {
     "catalogue": _act_catalogue, "shop": _act_shop, "teams": _act_teams,
     "start": _act_start, "who": _act_who, "silence": _act_silence, "open_noms": _act_open_noms, "close_noms": _act_close_noms, "start_vote": _act_start_vote,
-    "close_vote": _act_close_vote, "evict": _act_evict, "add": _act_add, "immunity": _act_immunity,
+    "close_vote": _act_close_vote, "standings": _act_standings, "evict": _act_evict, "add": _act_add, "immunity": _act_immunity,
     "mission": _act_mission, "resolve_mission": _act_resolve_mission, "challenge": _act_challenge,
     "token": _act_token, "snug": _act_snug,
     "end_challenge": _act_end_challenge, "dm": _act_dm, "broadcast": _act_broadcast,
@@ -2739,14 +2873,13 @@ async def on_house_message(client: discord.Client, message: discord.Message) -> 
         n = int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0) + 1
         if not house_unlocked():
             n = 0
-        # The vote moves down more often than the panel, so a busy house cannot bury it.
-        if n % VOTE_REPOST_EVERY == 0 and n < HOUSE_PANEL_REPOST_EVERY:
-            asyncio.create_task(repost_vote_message(client))
+        set_state(STATE_HOUSE_MSGS_SINCE_PANEL, n)
         if n >= HOUSE_PANEL_REPOST_EVERY:
             # repost_house_panel brings any open vote down with it, so the vote stays last.
             asyncio.create_task(repost_house_panel(client))
-            n = 0
-        set_state(STATE_HOUSE_MSGS_SINCE_PANEL, n)
+        elif msgs_since_vote_repost() >= VOTE_REPOST_EVERY:
+            # The vote moves down more often than the panel, so a busy house cannot bury it.
+            asyncio.create_task(repost_vote_message(client))
     except Exception:
         log.exception("Big Brother: panel repost bookkeeping failed")
     chal = open_challenge()

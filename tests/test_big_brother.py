@@ -147,7 +147,7 @@ def test_panel_text_and_view_have_no_secrets(bb):
     assert view.timeout is None
     ids = [c.custom_id for row in view.children[0].children
            if hasattr(row, "children") for c in row.children]
-    assert len(ids) == 23 and len(set(ids)) == 23
+    assert len(ids) == 24 and len(set(ids)) == 24
     assert set(ids) == {f"bb:ctl:{a}" for a in bb.PANEL_ACTIONS}
     # Rows stay short so buttons don't wrap mid-row on desktop.
     assert all(len(row.children) <= 3 for row in view.children[0].children if hasattr(row, "children"))
@@ -712,15 +712,84 @@ def test_opening_nominations_is_not_one_press(bb):
 
 
 def test_vote_moves_down_twice_as_often_as_the_panel(bb):
-    """At 10 messages only the vote moves; at 20 both do and the counter restarts."""
+    """At 5 messages only the vote moves; at 20 both do and the counters restart."""
     assert bb.VOTE_REPOST_EVERY == 5 and bb.HOUSE_PANEL_REPOST_EVERY == 20
     fires = []
     for n in range(1, 21):
-        vote = n % bb.VOTE_REPOST_EVERY == 0 and n < bb.HOUSE_PANEL_REPOST_EVERY
-        panel = n >= bb.HOUSE_PANEL_REPOST_EVERY
-        if vote or panel:
-            fires.append((n, "vote" if vote else "both"))
+        bb.set_state(bb.STATE_HOUSE_MSGS_SINCE_PANEL, n)
+        if n >= bb.HOUSE_PANEL_REPOST_EVERY:
+            fires.append((n, "both"))
+            bb.set_state(bb.STATE_HOUSE_MSGS_SINCE_PANEL, 0)   # what repost_house_panel does
+            bb.set_state(bb.STATE_VOTE_REPOST_AT, 0)
+        elif bb.msgs_since_vote_repost() >= bb.VOTE_REPOST_EVERY:
+            fires.append((n, "vote"))
+            bb.set_state(bb.STATE_VOTE_REPOST_AT, n)           # what repost_vote_message does
     assert fires == [(5, "vote"), (10, "vote"), (15, "vote"), (20, "both")]
+
+
+def test_a_restart_catches_the_vote_up(bb):
+    """Chat that piled up while the bot was down still counts, so the vote moves on boot."""
+    import inspect
+    bb.set_state(bb.STATE_HOUSE_MSGS_SINCE_PANEL, 3)
+    bb.set_state(bb.STATE_VOTE_REPOST_AT, 0)
+    assert bb.msgs_since_vote_repost() == 3          # under the threshold, nothing to do
+    bb.set_state(bb.STATE_HOUSE_MSGS_SINCE_PANEL, 9)
+    assert bb.msgs_since_vote_repost() >= bb.VOTE_REPOST_EVERY
+    src = inspect.getsource(bb.ensure_panels)
+    assert "msgs_since_vote_repost() >= VOTE_REPOST_EVERY" in src and "repost_vote_message(client)" in src
+    # Moving it resets the gap, whether or not there was a vote to move.
+    assert "set_state(STATE_VOTE_REPOST_AT" in inspect.getsource(bb.repost_vote_message)
+    # A panel repost zeroes the house counter, which must not read as a negative gap.
+    bb.set_state(bb.STATE_HOUSE_MSGS_SINCE_PANEL, 0)
+    bb.set_state(bb.STATE_VOTE_REPOST_AT, 9)
+    assert bb.msgs_since_vote_repost() == 0
+
+
+def test_standings_break_down_who_voted_for_who(bb):
+    """The host's DM shows the split and every voter with their reason; nobody else sees it."""
+    import inspect
+    for u in (1, 2):
+        bb.db_add_housemate(u)
+    vid = bb.create_round(bb.KIND_VOTE, nominees=[1, 2])
+    bb.cast_vote(vid, 10, 1, "never speaks")
+    bb.cast_vote(vid, 11, 1)
+    bb.cast_vote(vid, 12, 2, "threw the challenge")
+    assert bb.vote_breakdown(vid) == [(10, 1, "never speaks"), (11, 1, None), (12, 2, "threw the challenge")]
+    assert bb.latest_round(bb.KIND_VOTE)["id"] == vid
+
+    text = "\n".join(bb.standings_lines(bb.get_round(vid), None))
+    assert "**2** (67%) - <@1> (user 1)" in text and "**1** (33%) - <@2> (user 2)" in text
+    assert text.index("<@1>") < text.index("<@2>")          # ahead first
+    assert "user 10 - never speaks" in text and "user 12 - threw the challenge" in text
+    assert "user 11" in text                                 # a vote with no reason still shows
+
+    src = inspect.getsource(bb._act_standings)
+    assert "notify_host" in src and "ephemeral=True" in src
+    assert bb.PANEL_ACTIONS["standings"] is bb._act_standings
+
+
+def test_you_can_check_your_own_vote(bb):
+    """The vote message carries a private reminder button; it only ever shows your own vote."""
+    import inspect
+    vid = bb.create_round(bb.KIND_VOTE, nominees=[1, 2])
+    bb.cast_vote(vid, 10, 2, "chaotic")
+    assert bb.vote_of(vid, 10) == (2, "chaotic")
+    assert bb.vote_of(vid, 11) is None                      # hasn't voted
+    bb.cast_vote(vid, 10, 1)                                 # changed their mind, reason dropped
+    assert bb.vote_of(vid, 10) == (1, None)
+
+    ids = [i.custom_id for i in bb._vote_view(vid, [1, 2], None).children]
+    assert ids == [f"bb:vote:{vid}:1", f"bb:vote:{vid}:2", f"bb:myvote:{vid}"]
+    src = inspect.getsource(bb.MyVoteButton.callback)
+    # Every reply it can make is private, and it never reaches for anyone else's vote.
+    assert src.count("ephemeral=True") == src.count("send_message(") and "vote_breakdown" not in src
+
+
+def test_standings_split_across_embeds_when_long(bb):
+    lines = [f"-# · user {i} - " + "x" * 60 for i in range(200)]
+    blocks = bb._paragraphs(lines)
+    assert len(blocks) > 1 and all(len(b) <= 3500 for b in blocks)
+    assert "".join(b.replace("\n", "") for b in blocks).count("user 199") == 1
 
 
 def test_panel_repost_brings_the_vote_down_with_it(bb):
