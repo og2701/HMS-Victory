@@ -1038,13 +1038,21 @@ async def open_vote_thread(house, round_id: int):
         return None
 
 
+VOTE_THREAD_MENTION_BATCH = 25
+
+
 async def fill_vote_thread(thread) -> None:
-    """Pull every housemate in so it shows up in their sidebar, then lock it shut."""
-    for uid in housemates():
+    """Pull every housemate in so the thread sits in their sidebar, then lock it shut.
+    Mentioning someone joins them to a public thread, and the mention is deleted straight
+    after, so the house gets one ping instead of a wall of "added X to the thread" lines."""
+    ids = housemates()
+    for i in range(0, len(ids), VOTE_THREAD_MENTION_BATCH):
+        batch = ids[i:i + VOTE_THREAD_MENTION_BATCH]
         try:
-            await thread.add_user(discord.Object(id=int(uid)))
+            msg = await thread.send(" ".join(f"<@{u}>" for u in batch))
+            await msg.delete()
         except discord.HTTPException as e:
-            log.info("Big Brother: could not add %s to the vote thread: %s", uid, e)
+            log.warning("Big Brother: could not pull %d housemate(s) into the vote thread: %s", len(batch), e)
     try:
         await thread.edit(locked=True, reason="Big Brother: the vote thread is for voting, not chat")
     except discord.HTTPException as e:
@@ -1083,8 +1091,13 @@ async def migrate_vote_to_thread(client: discord.Client) -> Optional[int]:
     """Move a vote that is sitting in the house channel into a thread of its own. Runs on
     startup, so a vote opened before this existed catches up without being restarted."""
     rnd = open_round(KIND_VOTE)
-    if not rnd or not vote_in_thread() or rnd["channel_id"] != house_channel_id():
+    if not rnd or not vote_in_thread():
         return None
+    if rnd["channel_id"] and rnd["channel_id"] != house_channel_id():
+        # Already out of the house. Only step in if the thread it was in has been deleted,
+        # which is also how the host asks for a fresh one: bin the thread and redeploy.
+        if await _channel(client, rnd["channel_id"]) is not None:
+            return None
     house = await house_channel(client)
     thread = await open_vote_thread(house, rnd["id"])
     if not thread:

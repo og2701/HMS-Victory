@@ -683,22 +683,29 @@ def test_vote_reposts_in_the_house_or_its_own_thread(bb, monkeypatch):
     assert "posted" in calls                                    # due again
 
 
+async def _alive(value):
+    return value
+
+
 def test_a_running_vote_moves_into_a_thread_on_deploy(bb, monkeypatch):
     """The board gets a room of its own: housemates pulled in, chat locked, house told once."""
     import asyncio
     events = []
 
     class FakeMsg:
-        id = 4242
-        async def delete(self): events.append("old board deleted")
+        def __init__(self, tag="old board"): self.id, self.tag = 4242, tag
+        async def delete(self): events.append(f"{self.tag} deleted")
 
     class FakeThread:
         id = 777
-        def __init__(self): self.added, self.locked = [], False
-        async def send(self, **kw):
+        def __init__(self): self.mentioned, self.locked = [], False
+        async def send(self, content=None, **kw):
+            if (content or "").startswith("<@"):
+                self.mentioned.append(content)
+                events.append("mentioned the house")
+                return FakeMsg("the mention")
             events.append("board posted in the thread")
             return FakeMsg()
-        async def add_user(self, obj): self.added.append(obj.id)
         async def edit(self, **kw): self.locked = kw.get("locked", self.locked)
 
     class FakeHouse:
@@ -726,16 +733,23 @@ def test_a_running_vote_moves_into_a_thread_on_deploy(bb, monkeypatch):
     bb.set_round_message(vid, bb.house_channel_id(), 555)
 
     assert asyncio.run(bb.migrate_vote_to_thread(None)) == 777
-    assert events == ["board posted in the thread", "old board deleted", "house told where it went"]
-    assert sorted(thread.added) == [1, 2, 3] and thread.locked
+    assert events == ["board posted in the thread", "mentioned the house", "the mention deleted",
+                      "old board deleted", "house told where it went"]
+    # One mention message, deleted straight after, instead of 26 "added X to the thread" lines.
+    assert thread.mentioned == ["<@1> <@2> <@3>"] and thread.locked
     rnd = bb.get_round(vid)
     assert rnd["channel_id"] == 777 and rnd["message_id"] == 4242
     assert bb.vote_count(vid) == 1                      # votes are keyed to the round, so they survive
     assert [e["kind"] for e in bb.events()][-1] == "vote_moved_to_thread"
 
     events.clear()
+    monkeypatch.setattr(bb, "_channel", lambda client, cid: _alive(thread))
     assert asyncio.run(bb.migrate_vote_to_thread(None)) is None   # already in its thread
     assert events == []
+    # Bin the thread and redeploy and it builds a fresh one rather than losing the vote.
+    monkeypatch.setattr(bb, "_channel", lambda client, cid: _alive(None))
+    assert asyncio.run(bb.migrate_vote_to_thread(None)) == 777
+    assert bb.vote_count(vid) == 1
 
 
 def test_the_vote_thread_is_public_locked_and_slow_to_archive(bb):
@@ -745,7 +759,7 @@ def test_the_vote_thread_is_public_locked_and_slow_to_archive(bb):
     assert "public_thread" in src                       # the whole server votes, not just the house
     assert "VOTE_THREAD_AUTO_ARCHIVE" in src and bb.VOTE_THREAD_AUTO_ARCHIVE == 10080
     fill = inspect.getsource(bb.fill_vote_thread)
-    assert "add_user" in fill and "locked=True" in fill
+    assert "add_user" not in fill and "msg.delete()" in fill and "locked=True" in fill
     # Opening a vote sets the thread up before telling the house about it.
     start = inspect.getsource(bb.start_vote)
     assert start.index("fill_vote_thread") < start.index("house_channel(client)")
