@@ -1654,7 +1654,7 @@ def house_chat_transcript(guild: Optional[discord.Guild], hours: int = 24, max_m
     return "\n".join(lines)
 
 
-def get_recent_public_events(hours: int = 24) -> list[str]:
+def get_recent_public_events(hours: int = 24, guild: Optional[discord.Guild] = None) -> list[str]:
     """Summary of big milestone events in the house over the last N hours."""
     since = _now() - (hours * 3600)
     evs = [e for e in events() if e["at"] >= since]
@@ -1663,18 +1663,37 @@ def get_recent_public_events(hours: int = 24) -> list[str]:
         k = e.get("kind")
         if k == "challenge_posted":
             lines.append(f"Challenge posted: '{e.get('title')}'")
+        elif k == "challenge_won":
+            actor = e.get("actor")
+            name = _name(guild, actor) if actor else "Someone"
+            lines.append(f"Challenge '{e.get('title')}' won by {name}")
         elif k == "challenge_ended":
             lines.append(f"Challenge ended: '{e.get('title')}'")
+        elif k == "bb_announcement":
+            lines.append(f"Big Brother announcement to the house: \"{e.get('text')}\"")
+        elif k == "nominations_opened":
+            lines.append(f"Nominations opened for Round {e.get('round_id')}")
+        elif k == "nominations_closed":
+            lines.append(f"Nominations closed for Round {e.get('round_id')}")
         elif k == "vote_opened":
-            lines.append(f"Public eviction vote opened (Round {e.get('round_id')})")
+            noms = e.get("nominees") or []
+            nom_names = [_name(guild, n) for n in noms if n]
+            n_str = (": " + ", ".join(nom_names)) if nom_names else ""
+            lines.append(f"Public eviction vote opened (Round {e.get('round_id')}) — Nominees{n_str}")
         elif k == "vote_closed":
             lines.append(f"Public eviction vote closed (Round {e.get('round_id')})")
         elif k == "evicted":
-            lines.append(f"Housemate evicted: ID {e.get('target')}")
+            target = e.get("target")
+            name = _name(guild, target) if target else f"ID {target}"
+            lines.append(f"Housemate evicted: {name}")
         elif k == "shop_opened":
             lines.append("The Big Brother shop opened.")
         elif k == "shop_closed":
             lines.append("The Big Brother shop closed.")
+        elif k == "winner_crowned":
+            target = e.get("target")
+            name = _name(guild, target) if target else f"ID {target}"
+            lines.append(f"Big Brother winner crowned: {name}!")
     return lines
 
 
@@ -1694,7 +1713,7 @@ async def generate_daily_roundup(
     if day is None:
         day = day_number()
 
-    events_list = get_recent_public_events(hours=hours)
+    events_list = get_recent_public_events(hours=hours, guild=guild)
     events_section = (f"Key events on Day {day}:\n" + "\n".join(f"- {ev}" for ev in events_list) + "\n\n") if events_list else ""
 
     if previous_draft and feedback:

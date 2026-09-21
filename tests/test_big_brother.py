@@ -1204,9 +1204,13 @@ def test_daily_roundup_transcript_and_events(bb):
     assert "Secret snug talk" not in transcript
 
     bb.log_event("challenge_posted", challenge_id=1, title="Pancake Stack")
+    bb.log_event("challenge_won", actor=101, challenge_id=1, title="Pancake Stack")
+    bb.log_event("bb_announcement", text="Hot water is back on.")
     bb.log_event("shop_opened")
     events_list = bb.get_recent_public_events(hours=24)
     assert any("Pancake Stack" in ev for ev in events_list)
+    assert any("won by" in ev for ev in events_list)
+    assert any("Hot water is back on" in ev for ev in events_list)
     assert any("shop opened" in ev for ev in events_list)
 
 
