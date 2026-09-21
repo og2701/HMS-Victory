@@ -2695,17 +2695,17 @@ async def _act_resolve_mission(interaction: discord.Interaction):
                 return
             log_event("mission_resolved", target=m["user_id"], mission_id=mid, status=status, brief=m["brief"])
             if status == "done":
-                total = grant_token(m["user_id"])
-                log_event("token_granted", target=m["user_id"], tokens=total, source=f"mission:{mid}")
-                await dm_user(inter2.client, m["user_id"], ack=f"mission #{mid} completed + token", embed=bb_embed(
+                set_immune(m["user_id"], True)
+                log_event("immunity_used", actor=m["user_id"], target=m["user_id"], mode="self", source=f"mission:{mid}")
+                await dm_user(inter2.client, m["user_id"], ack=f"mission #{mid} completed + immunity", embed=bb_embed(
                     "Mission complete",
-                    f"Big Brother is pleased. *{m['brief']}*\n\n🎟️ You've earned an **immunity token**. "
-                    + _token_blurb(total)))
+                    f"Big Brother is pleased. *{m['brief']}*\n\n🛡️ You have completed your mission and earned **immunity from the next nominations**! "
+                    f"You are safe — nobody will be able to pick you."))
             else:
                 await dm_user(inter2.client, m["user_id"], embed=bb_embed(
                     "Mission failed", f"You were rumbled. {m['brief']}"))
             await _reply(inter2, f"Mission #{mid} marked {status}. The housemate has been told"
-                         + (" and given an immunity token." if status == "done" else "."))
+                         + (" and made immune from the next nominations." if status == "done" else "."))
 
         async def _d(i): await _finish(i, "done")
         async def _f(i): await _finish(i, "failed")
