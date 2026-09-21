@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from typing import Callable, Iterable, Optional
 
@@ -757,6 +758,10 @@ async def _channel(client: discord.Client, channel_id: int):
 
 async def house_channel(client: discord.Client):
     return await _channel(client, house_channel_id())
+
+
+async def control_channel(client: discord.Client):
+    return await _channel(client, control_channel_id())
 
 
 def _role_mention() -> str:
@@ -1681,6 +1686,27 @@ async def generate_daily_roundup(
             f"Write today's Big Brother daily roundup following the guidelines (concise, under 200 words, dramatic intro, 3-4 bullet highlights, 1 quote of the day)."
         )
 
+    # Try OpenAI gpt-5.6-terra first (smart model requested by user)
+    openai_key = os.getenv("OPENAI_TOKEN") or os.getenv("OPENAI_API_KEY")
+    if openai_key:
+        try:
+            from openai import AsyncOpenAI
+            oa_client = AsyncOpenAI(api_key=openai_key, max_retries=2, timeout=45.0)
+            resp = await oa_client.chat.completions.create(
+                model="gpt-5.6-terra",
+                messages=[
+                    {"role": "system", "content": ROUNDUP_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt}
+                ],
+                max_completion_tokens=650
+            )
+            content = resp.choices[0].message.content
+            if content:
+                return content.strip(), None
+        except Exception as oa_err:
+            log.warning("Big Brother: OpenAI gpt-5.6-terra generation failed, falling back to Gemini: %s", oa_err)
+
+    # Fallback to Gemini
     try:
         from lib.core.gemini import gemini_generate
         session = getattr(client, "session", None)
@@ -1689,7 +1715,7 @@ async def generate_daily_roundup(
             ROUNDUP_SYSTEM_PROMPT,
             [{"text": user_prompt}],
             temperature=0.7,
-            max_output_tokens=600,
+            max_output_tokens=650,
         )
         if err or not text:
             return None, err or "No text returned by AI."
