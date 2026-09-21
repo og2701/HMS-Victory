@@ -1248,3 +1248,55 @@ def test_immunity_cleared_on_close_vote_and_eviction(bb):
     assert "clear_all_immunity" in src_evict
     assert "clear_all_eviction_safe" in src_evict
 
+
+def test_roundup_auto_delete_handlers(bb):
+    import inspect
+    src_approve = inspect.getsource(bb.handle_roundup_approve)
+    src_discard = inspect.getsource(bb.handle_roundup_discard)
+    src_draft = inspect.getsource(bb.post_daily_roundup_draft)
+
+    assert "await interaction.message.delete()" in src_approve
+    assert "await interaction.message.delete()" in src_discard
+    assert "await old_msg.delete()" in src_draft
+
+
+def test_scheduled_house_silence_and_unsilence(bb, monkeypatch):
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    # Game not started -> no-op
+    mock_client = MagicMock()
+    bb.set_state(bb.STATE_GAME_STARTED_AT, None)
+    asyncio.run(bb.scheduled_house_silence(mock_client))
+    assert not bb.house_silent()
+
+    # Game started -> silence works
+    bb.set_state(bb.STATE_GAME_STARTED_AT, bb._now() - 100)
+    monkeypatch.setattr(bb, "set_house_silence", AsyncMock(return_value=True))
+    monkeypatch.setattr(bb, "house_channel", AsyncMock(return_value=None))
+    monkeypatch.setattr(bb, "refresh_panel", AsyncMock())
+
+    # Initially not silent
+    bb.set_state(bb.STATE_HOUSE_SILENT, False)
+    asyncio.run(bb.scheduled_house_silence(mock_client))
+    bb.set_house_silence.assert_awaited_once_with(mock_client, True)
+
+    # If already silent, scheduled_house_silence is a no-op
+    bb.set_house_silence.reset_mock()
+    bb.set_state(bb.STATE_HOUSE_SILENT, True)
+    asyncio.run(bb.scheduled_house_silence(mock_client))
+    bb.set_house_silence.assert_not_awaited()
+
+    # Scheduled unsilence when silent
+    bb.set_house_silence.reset_mock()
+    asyncio.run(bb.scheduled_house_unsilence(mock_client))
+    bb.set_house_silence.assert_awaited_once_with(mock_client, False)
+
+    # Scheduled unsilence when nominations are open -> kept silent
+    bb.set_house_silence.reset_mock()
+    bb.set_state(bb.STATE_HOUSE_SILENT, True)
+    monkeypatch.setattr(bb, "open_round", lambda kind: {"id": 1} if kind == bb.KIND_NOMINATIONS else None)
+    asyncio.run(bb.scheduled_house_unsilence(mock_client))
+    bb.set_house_silence.assert_not_awaited()
+
+

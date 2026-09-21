@@ -1737,17 +1737,14 @@ async def post_daily_roundup_draft(client: discord.Client) -> tuple[bool, str]:
     embed = bb_embed(f"Daily Roundup Draft — Day {day}", draft)
     embed.set_footer(text="Review the draft above. Approve to post to #the-house with an @Housemates ping, or request changes.")
 
-    # If there was a previous unapproved draft message, supersede and disable its buttons
+    # If there was a previous unapproved draft message, delete it
     old_state = get_state(STATE_DAILY_ROUNDUP_DRAFT) or {}
     old_mid = old_state.get("message_id")
     if old_mid and ch:
         try:
             old_msg = await ch.fetch_message(int(old_mid))
-            if old_msg and old_msg.embeds:
-                old_embed = old_msg.embeds[0]
-                old_embed.colour = discord.Colour.dark_grey().value
-                old_embed.set_footer(text="Superseded by a newer draft below.")
-                await old_msg.edit(content="⚠️ **Superseded by a newer draft below.**", embed=old_embed, view=None)
+            if old_msg:
+                await old_msg.delete()
         except Exception:
             pass
 
@@ -1774,6 +1771,47 @@ async def trigger_daily_roundup_draft(client: discord.Client) -> None:
         log.info("Big Brother: midnight daily roundup draft posted successfully.")
     else:
         log.warning("Big Brother: midnight daily roundup draft failed: %s", msg)
+
+
+async def scheduled_house_silence(client: discord.Client) -> None:
+    """Scheduled task at 1:00 AM: silence the house for the night if game is in progress."""
+    if not enabled() or not game_started():
+        return
+    if house_silent():
+        log.info("Big Brother: nightly silence triggered, but house is already silent.")
+        return
+    ok = await set_house_silence(client, True)
+    if ok:
+        log_event("house_silenced", actor=None, reason="scheduled_nightly")
+        ch = await house_channel(client)
+        if ch:
+            await bb_send(ch, f"{_role_mention()}{EYE} **It is 1:00 AM. The house is now silent for the night.** Sleep well, housemates. No talking until morning.")
+        await refresh_panel(client)
+        log.info("Big Brother: house silenced for the night (1:00 AM).")
+    else:
+        log.warning("Big Brother: failed to silence the house at 1:00 AM.")
+
+
+async def scheduled_house_unsilence(client: discord.Client) -> None:
+    """Scheduled task at 6:00 AM: unsilence the house for the morning if game is in progress."""
+    if not enabled() or not game_started():
+        return
+    if not house_silent():
+        log.info("Big Brother: morning unsilence triggered, but house is already unsilenced.")
+        return
+    if open_round(KIND_NOMINATIONS):
+        log.info("Big Brother: morning unsilence triggered, but nominations are open; keeping house silent.")
+        return
+    ok = await set_house_silence(client, False)
+    if ok:
+        log_event("house_unsilenced", actor=None, reason="scheduled_morning")
+        ch = await house_channel(client)
+        if ch:
+            await bb_send(ch, f"{_role_mention()}{EYE} **Good morning, housemates.** It is 6:00 AM. The house is no longer silent — you may talk again.")
+        await refresh_panel(client)
+        log.info("Big Brother: house unsilenced for the morning (6:00 AM).")
+    else:
+        log.warning("Big Brother: failed to unsilence the house at 6:00 AM.")
 
 
 async def handle_roundup_approve(interaction: discord.Interaction):
@@ -1803,15 +1841,8 @@ async def handle_roundup_approve(interaction: discord.Interaction):
         return
 
     if interaction.message:
-        orig_embed = interaction.message.embeds[0] if interaction.message.embeds else bb_embed(f"Daily Roundup — Day {day}", draft)
-        orig_embed.colour = discord.Colour.green().value
-        orig_embed.set_footer(text=f"Approved by {_name(interaction.guild, interaction.user.id)} and posted to #the-house.")
         try:
-            await interaction.message.edit(
-                content=f"✅ **Approved by {_mention_and_name(interaction.guild, interaction.user.id)} and posted to <#{hc.id}>.**",
-                embed=orig_embed,
-                view=None
-            )
+            await interaction.message.delete()
         except discord.HTTPException:
             pass
 
@@ -1878,16 +1909,8 @@ async def handle_roundup_discard(interaction: discord.Interaction):
     day = state.get("day") or day_number()
 
     if interaction.message:
-        orig_embed = interaction.message.embeds[0] if interaction.message.embeds else None
-        if orig_embed:
-            orig_embed.colour = discord.Colour.dark_grey().value
-            orig_embed.set_footer(text=f"Discarded by {_name(interaction.guild, interaction.user.id)}.")
         try:
-            await interaction.message.edit(
-                content=f"❌ **Daily roundup draft discarded by {_mention_and_name(interaction.guild, interaction.user.id)}.**",
-                embed=orig_embed,
-                view=None
-            )
+            await interaction.message.delete()
         except discord.HTTPException:
             pass
 
