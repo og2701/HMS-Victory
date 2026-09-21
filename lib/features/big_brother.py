@@ -17,6 +17,7 @@ import datetime
 import json
 import logging
 import os
+import re
 import time
 from typing import Callable, Iterable, Optional
 
@@ -773,12 +774,26 @@ def set_housemate_alias(user_id: int, alias: Optional[str]) -> None:
     set_state(STATE_HOUSEMATE_ALIASES, aliases)
 
 
+def _parse_character_and_nick(name: Optional[str]) -> tuple[str, str]:
+    """Split 'Katie price (Gunner)' into ('Katie price', 'Gunner')."""
+    if not name:
+        return "", ""
+    m = re.match(r"^(.+?)\s*[\(\[]([^\)\]]+)[\)\]]$", name)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return name.strip(), ""
+
+
 def _name(guild: Optional[discord.Guild], user_id: int) -> str:
     alias = housemate_alias(user_id)
     if alias:
         return alias
     member = guild.get_member(int(user_id)) if guild else None
-    return member.display_name if member else f"user {user_id}"
+    if not member:
+        return f"user {user_id}"
+    raw = member.display_name
+    char_name, _ = _parse_character_and_nick(raw)
+    return char_name or raw
 
 
 def _mention_and_name(guild: Optional[discord.Guild], user_id: int) -> str:
@@ -1642,8 +1657,25 @@ CRITICAL GUIDELINES:
    - 3 to 4 punchy bullet points capturing the day's real drama, funniest clashes, alliances, or bizarre debates.
    - Quote of the Day: Exactly one standout, funny or unhinged quote from a housemate (format: `> "..."` — HousemateName).
 3. TONE: Dry British humor, slightly dramatic, observant, theatrical, cheeky.
-4. ACCURACY: ONLY reference events and banter that actually occurred in the provided transcript. Do not invent fake drama. Never mention secret snugs or secret missions. Use the housemates' real names as given in the transcript.
+4. ACCURACY: ONLY reference events and banter that actually occurred in the provided transcript. Do not invent fake drama. Never mention secret snugs or secret missions.
+5. CHARACTER IDENTITIES ONLY (NO DISCORD HANDLES):
+   Every housemate has an official celebrity or character identity (detailed in the Cast Roster).
+   Housemates in chat will frequently talk to or about each other using their real-life Discord usernames, handles, gamer tags, or server nicknames (for example calling Michael Barrymore 'crayfish' / 'cray', calling Katie Price 'gunner', calling Jeremy Clarkson 'shuto', calling Harvey Price 'lanca', calling James Blunt 'kaizo', etc.).
+   You MUST ALWAYS translate any Discord handles or nicknames into their official House Character Name using the Cast Roster!
+   NEVER mention Discord handles, gamer tags, or non-character names anywhere in the roundup or quote attribution. ALWAYS use their official House Character Name.
 """
+
+
+def _clean_content_mentions(guild: Optional[discord.Guild], text: str) -> str:
+    """Replace <@123456> with @CharacterName in chat messages."""
+    def _sub(match):
+        uid_str = match.group(1)
+        try:
+            uid = int(uid_str)
+            return f"@{_name(guild, uid)}"
+        except (ValueError, TypeError):
+            return match.group(0)
+    return re.sub(r"<@!?(\d+)>", _sub, text)
 
 
 def house_chat_transcript(guild: Optional[discord.Guild], hours: int = 24, max_messages: int = 800) -> str:
@@ -1667,7 +1699,7 @@ def house_chat_transcript(guild: Optional[discord.Guild], hours: int = 24, max_m
             continue
         name = _name(guild, uid)
         tm = time.strftime("%H:%M", time.gmtime(at))
-        clean_content = " ".join(content.split())
+        clean_content = _clean_content_mentions(guild, " ".join(content.split()))
         lines.append(f"[{tm}] {name}: {clean_content}")
     return "\n".join(lines)
 
@@ -1715,6 +1747,68 @@ def get_recent_public_events(hours: int = 24, guild: Optional[discord.Guild] = N
     return lines
 
 
+def _handle_variations(handle: str) -> set[str]:
+    res = {handle}
+    stripped = re.sub(r'[\d._\-]+$', '', handle).strip()
+    if len(stripped) >= 3:
+        res.add(stripped)
+    collapsed = re.sub(r'(.)\1+$', r'\1', handle).strip()
+    if len(collapsed) >= 3:
+        res.add(collapsed)
+        stripped_c = re.sub(r'[\d._\-]+$', '', collapsed).strip()
+        if len(stripped_c) >= 3:
+            res.add(stripped_c)
+    return res
+
+
+async def build_cast_guide(guild: Optional[discord.Guild]) -> str:
+    """Build a mapping of character identities and their known Discord handles, nicks, and abbreviations."""
+    ensure_tables()
+    all_uids = housemates(status=None)
+    if not all_uids:
+        return ""
+
+    entries = []
+    for uid in all_uids:
+        member = None
+        if guild:
+            member = guild.get_member(uid)
+            if member is None and hasattr(guild, "fetch_member"):
+                try:
+                    member = await guild.fetch_member(uid)
+                except Exception:
+                    member = None
+
+        alias = housemate_alias(uid)
+        raw_nick = member.nick if member else ""
+        raw_display = member.display_name if member else ""
+        raw_user = member.name if member else ""
+        raw_global = member.global_name if member else ""
+
+        char_nick, pnick = _parse_character_and_nick(raw_nick)
+        char_disp, pdisp = _parse_character_and_nick(raw_display)
+        char_glob, pglob = _parse_character_and_nick(raw_global)
+
+        char_name = alias or char_nick or char_disp or char_glob or raw_user or f"user {uid}"
+
+        candidate_handles = set()
+        for cand in (raw_user, raw_global, raw_nick, raw_display, pnick, pdisp, pglob):
+            if cand and cand.lower() != char_name.lower():
+                for var in _handle_variations(cand):
+                    if var.lower() != char_name.lower() and len(var) >= 2:
+                        candidate_handles.add(var)
+
+        if "crayfish" in {h.lower() for h in candidate_handles}:
+            candidate_handles.add("cray")
+
+        valid_handles = sorted([h for h in candidate_handles if h.lower() != char_name.lower()])
+        handles_str = f" (Discord handles / chat nicknames: {', '.join(valid_handles)})" if valid_handles else ""
+        entries.append(f"- **{char_name}**{handles_str}")
+
+    entries.sort()
+    return "OFFICIAL CAST ROSTER & NICKNAME TRANSLATION GUIDE:\n" + "\n".join(entries)
+
+
 async def generate_daily_roundup(
     client: discord.Client,
     *,
@@ -1733,21 +1827,31 @@ async def generate_daily_roundup(
 
     events_list = get_recent_public_events(hours=hours, guild=guild)
     events_section = (f"Key events on Day {day}:\n" + "\n".join(f"- {ev}" for ev in events_list) + "\n\n") if events_list else ""
+    cast_guide = await build_cast_guide(guild)
+    cast_section = (cast_guide + "\n\n") if cast_guide else ""
 
     if previous_draft and feedback:
         user_prompt = (
+            f"{cast_section}"
             f"Here is the public house chat transcript covering Day {day} (the last {hours} hours):\n"
             f"{transcript}\n\n"
             f"Previous Draft:\n{previous_draft}\n\n"
             f"Operator Feedback / Changes to make:\n{feedback}\n\n"
-            f"Please revise the daily roundup for Day {day} to incorporate the feedback. Remember: strictly concise (under 200 words), punchy, line 1 title must start with **Day {day}: ...**, 3-4 bullet highlights, 1 quote of the day."
+            f"Please revise the daily roundup for Day {day} to incorporate the feedback. "
+            f"Remember: strictly concise (under 200 words), punchy, line 1 title must start with **Day {day}: ...**, "
+            f"3-4 bullet highlights, 1 quote of the day. "
+            f"CRITICAL: Always use the official House Character Names from the Cast Roster. Translate any Discord usernames or nicknames in the transcript into official character names."
         )
     else:
         user_prompt = (
             f"{events_section}"
+            f"{cast_section}"
             f"Public house chat transcript covering Day {day} (the past 24 hours leading up to bedtime silence):\n"
             f"{transcript}\n\n"
-            f"Write the Big Brother Daily Roundup for **Day {day}** (summarizing the house action and drama leading up to bedtime). Follow the guidelines: strictly concise (under 200 words), line 1 title must start with **Day {day}: <Dramatic Subtitle>**, short 1-sentence intro, 3-4 bullet highlights capturing real drama/banter from the transcript, and 1 standout quote of the day (`> \"...\"` — HousemateName)."
+            f"Write the Big Brother Daily Roundup for **Day {day}** (summarizing the house action and drama leading up to bedtime). "
+            f"Follow the guidelines: strictly concise (under 200 words), line 1 title must start with **Day {day}: <Dramatic Subtitle>**, "
+            f"short 1-sentence intro, 3-4 bullet highlights capturing real drama/banter from the transcript, and 1 standout quote of the day (`> \"...\"` — HousemateName).\n"
+            f"CRITICAL: Use ONLY the official House Character Names from the Cast Roster. Translate any Discord usernames or nicknames found in the transcript (e.g. 'crayfish'/'cray' -> Michael Barrymore, 'gunner' -> Katie Price, 'shuto' -> Jeremy Clarkson, 'lanca' -> Harvey Price, 'kaizo' -> James Blunt, etc.) into their character identities. NEVER use raw Discord handles."
         )
 
     # Try OpenAI gpt-5.6-terra first (smart model requested by user)

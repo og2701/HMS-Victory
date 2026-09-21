@@ -1414,6 +1414,86 @@ def test_housemate_aliases(bb):
     assert bb._name(None, 828728237789020240) == "user 828728237789020240"
 
 
+def test_parse_character_and_nick(bb):
+    assert bb._parse_character_and_nick("Katie price (Gunner)") == ("Katie price", "Gunner")
+    assert bb._parse_character_and_nick("Nadine Coyle (Gemini)") == ("Nadine Coyle", "Gemini")
+    assert bb._parse_character_and_nick("𝖘𝖙𝖗𝖆𝖜𝖇𝖊𝖗𝖗𝖞🍓 [Beetle]") == ("𝖘𝖙𝖗𝖆𝖜𝖇𝖊𝖗𝖗𝖞🍓", "Beetle")
+    assert bb._parse_character_and_nick("Jeremy Clarkson") == ("Jeremy Clarkson", "")
+    assert bb._parse_character_and_nick(None) == ("", "")
+
+
+def test_clean_content_mentions(bb):
+    from unittest.mock import MagicMock
+    mock_guild = MagicMock()
+    m1 = MagicMock()
+    m1.display_name = "Katie price (Gunner)"
+    mock_guild.get_member.side_effect = lambda uid: m1 if uid == 101 else None
+
+    bb.set_housemate_alias(102, "Michael Barrymore")
+
+    text = "Hey <@101> did you see <@102> talk to <@999>?"
+    cleaned = bb._clean_content_mentions(mock_guild, text)
+    assert cleaned == "Hey @Katie price did you see @Michael Barrymore talk to @user 999?"
+
+
+def test_build_cast_guide_and_roundup_prompt(bb, monkeypatch):
+    import asyncio
+    from unittest.mock import MagicMock
+
+    bb.db_add_housemate(101)
+    bb.db_add_housemate(102)
+
+    mock_guild = MagicMock()
+    m101 = MagicMock()
+    m101.name = "gunner345"
+    m101.nick = "Katie price (Gunner)"
+    m101.display_name = "Katie price (Gunner)"
+    m101.global_name = "Gunner"
+
+    m102 = MagicMock()
+    m102.name = "crayfishhh"
+    m102.nick = "crayfishhh"
+    m102.display_name = "crayfishhh"
+    m102.global_name = "crayfishhhh🌱"
+
+    mock_guild.get_member.side_effect = lambda uid: m101 if uid == 101 else (m102 if uid == 102 else None)
+    bb.set_housemate_alias(102, "Michael Barrymore")
+
+    guide = asyncio.run(bb.build_cast_guide(mock_guild))
+    assert "Michael Barrymore" in guide
+    assert "crayfish" in guide
+    assert "cray" in guide
+    assert "Katie price" in guide
+    assert "gunner" in guide
+
+    captured_prompts = []
+    async def mock_gemini(session, system_prompt, contents, **kwargs):
+        captured_prompts.append((system_prompt, contents[0]["text"]))
+        return "**Day 1: Test**", None
+
+    import lib.core.gemini as gemini_mod
+    monkeypatch.setattr(gemini_mod, "gemini_generate", mock_gemini)
+
+    mock_client = MagicMock()
+    monkeypatch.setattr(bb, "_guild", lambda client: mock_guild)
+
+    from database import DatabaseManager
+    hid = bb.house_channel_id()
+    DatabaseManager.execute(
+        "INSERT INTO bb_messages (message_id, user_id, content, at, attachments, reply_to, thread_id) "
+        "VALUES ('m1', '101', 'Hello world', ?, 0, NULL, ?)", (bb._now() - 50, str(hid)))
+
+    roundup, err = asyncio.run(bb.generate_daily_roundup(mock_client, day=1))
+    assert err is None
+    assert len(captured_prompts) == 1
+    sys_prompt, user_p = captured_prompts[0]
+    assert "CHARACTER IDENTITIES ONLY" in sys_prompt
+    assert "OFFICIAL CAST ROSTER & NICKNAME TRANSLATION GUIDE" in user_p
+    assert "Michael Barrymore" in user_p
+    assert "Katie price" in user_p
+
+
+
 
 
 
