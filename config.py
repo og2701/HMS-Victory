@@ -787,6 +787,16 @@ INSTAGRAM_EMBED_MAX_BYTES = 25 * 1024 * 1024          # never upload more than t
 INSTAGRAM_EMBED_COMPRESS = True
 INSTAGRAM_EMBED_SOURCE_MAX_BYTES = 60 * 1024 * 1024
 
+# --- X (Twitter) link embeds ---
+# X's own card will not play the video in it. fxtwitter serves Discord a card that does,
+# with the author, the full text and the counts, so an x.com link gets re-posted on that
+# host and X's dud card is suppressed. vxtwitter.com and fixupx.com are drop-in swaps if
+# fxtwitter starts struggling. Suppressing needs Manage Messages; without it the fixed
+# embed still appears, just underneath X's own.
+TWITTER_EMBED_FIX_ENABLED = True
+TWITTER_EMBED_HOST = "fxtwitter.com"
+TWITTER_EMBED_SUPPRESS_ORIGINAL = True
+
 # --- Voice Channel Lockdown ---
 VC_LOCKDOWN_WHITELIST = [
     ROLES.ROYAL_DUKE, ROLES.ARCHDUKE, ROLES.GRAND_DUKE, ROLES.LORD_HIGH_STEWARD,

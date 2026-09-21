@@ -68,12 +68,16 @@ class Message:
         self.guild = types.SimpleNamespace(filesize_limit=filesize_limit)
         self.channel = types.SimpleNamespace(send=self._send)
         self.posts = []
+        self.suppressed = False
 
     async def reply(self, **kwargs):
         self.posts.append(kwargs)
 
     async def _send(self, **kwargs):
         self.posts.append(kwargs)
+
+    async def edit(self, **kwargs):
+        self.suppressed = kwargs.get("suppress", False)
 
 
 def client_with(session):
@@ -382,3 +386,106 @@ def test_the_encoder_refuses_what_it_cannot_do_honestly():
     assert run(L.compress_video(b"not a video at all", 1_000_000)) is None
     assert run(L.compress_video(b"", 1_000_000)) is None
     assert run(L.compress_video(b"anything", 0)) is None
+
+
+# --- X ---------------------------------------------------------------------------------
+
+STATUS = "2101704848009744783"
+
+
+def test_every_x_link_shape_is_recognised():
+    cases = {
+        f"https://x.com/DeptofWar/status/{STATUS}": ("DeptofWar", STATUS),
+        f"https://twitter.com/DeptofWar/status/{STATUS}": ("DeptofWar", STATUS),
+        f"https://www.x.com/DeptofWar/status/{STATUS}?s=20&t=abc": ("DeptofWar", STATUS),
+        f"https://mobile.twitter.com/DeptofWar/statuses/{STATUS}": ("DeptofWar", STATUS),
+        f"https://x.com/DeptofWar/status/{STATUS}/photo/1": ("DeptofWar", STATUS),
+        # the /i/ forms carry no username; fxtwitter takes 'i' in its place
+        f"https://x.com/i/web/status/{STATUS}": (None, STATUS),
+        f"absolute banger https://x.com/DeptofWar/status/{STATUS} nice one": ("DeptofWar", STATUS),
+    }
+    for content, expected in cases.items():
+        assert L.find_twitter_posts(content) == [expected], content
+
+
+def test_things_on_x_that_are_not_tweets_are_left_alone():
+    for content in [
+        "",
+        "https://x.com/DeptofWar",
+        "https://x.com/i/communities/123456",
+        "https://example.com/user/status/123456789",
+        f"<https://x.com/DeptofWar/status/{STATUS}>",
+    ]:
+        assert L.find_twitter_posts(content) == [], content
+
+
+def test_a_tweet_somebody_already_fixed_is_not_fixed_again():
+    """Pooja posted the x.com link and the fxtwitter one; a third copy helps nobody."""
+    both = (f"https://x.com/DeptofWar/status/{STATUS}\n"
+            f"https://fxtwitter.com/DeptofWar/status/{STATUS}")
+    assert L.find_twitter_posts(both) == []
+    # a different tweet in the same message is still fixed
+    other = both + "\nhttps://x.com/elonmusk/status/1585841080431321088"
+    assert L.find_twitter_posts(other) == [("elonmusk", "1585841080431321088")]
+    # any mirror counts, not just fxtwitter
+    for mirror in ("vxtwitter.com", "fixupx.com", "girlcockx.com"):
+        assert L.find_twitter_posts(
+            f"https://x.com/DeptofWar/status/{STATUS} https://{mirror}/DeptofWar/status/{STATUS}") == []
+
+
+def test_the_fixed_link_points_at_the_configured_host(monkeypatch):
+    assert L.fixed_twitter_url("DeptofWar", STATUS) == f"https://fxtwitter.com/DeptofWar/status/{STATUS}"
+    assert L.fixed_twitter_url(None, STATUS) == f"https://fxtwitter.com/i/status/{STATUS}"
+    monkeypatch.setattr(config_module(), "TWITTER_EMBED_HOST", "vxtwitter.com")
+    assert L.fixed_twitter_url("DeptofWar", STATUS) == f"https://vxtwitter.com/DeptofWar/status/{STATUS}"
+
+
+def test_an_x_link_is_reposted_on_fxtwitter_and_the_dud_card_hidden():
+    message = Message(f"absolute banger, nice one https://x.com/DeptofWar/status/{STATUS}")
+    run(L.fix_twitter_links(message))
+
+    assert message.posts[0]["content"] == f"https://fxtwitter.com/DeptofWar/status/{STATUS}"
+    assert message.posts[0]["mention_author"] is False
+    assert message.suppressed is True
+
+
+def test_two_tweets_in_one_message_come_back_in_one_reply():
+    message = Message(f"https://x.com/DeptofWar/status/{STATUS} and https://x.com/elonmusk/status/1585841080431321088")
+    run(L.fix_twitter_links(message))
+
+    assert len(message.posts) == 1
+    assert message.posts[0]["content"].splitlines() == [
+        f"https://fxtwitter.com/DeptofWar/status/{STATUS}",
+        "https://fxtwitter.com/elonmusk/status/1585841080431321088",
+    ]
+
+
+def test_the_members_own_card_is_left_alone_when_told_to(monkeypatch):
+    monkeypatch.setattr(config_module(), "TWITTER_EMBED_SUPPRESS_ORIGINAL", False)
+    message = Message(f"https://x.com/DeptofWar/status/{STATUS}")
+    run(L.fix_twitter_links(message))
+
+    assert len(message.posts) == 1
+    assert message.suppressed is False
+
+
+def test_the_x_toggle_turns_it_off(monkeypatch):
+    monkeypatch.setattr(config_module(), "TWITTER_EMBED_FIX_ENABLED", False)
+    message = Message(f"https://x.com/DeptofWar/status/{STATUS}")
+    run(L.fix_twitter_links(message))
+    assert message.posts == []
+
+
+def test_both_fixers_run_off_one_message_but_not_for_bots():
+    quiet = Message(f"https://x.com/DeptofWar/status/{STATUS}", bot=True)
+    run(L.fix_broken_embeds(client_with(Session()), quiet))
+    assert quiet.posts == []
+
+    both = Message(f"https://x.com/DeptofWar/status/{STATUS} https://instagram.com/reel/CkdGjonI08u")
+    session = Session(
+        Response(302, {"Location": MEDIA}),
+        Response(200, {"Content-Type": "video/mp4", "Content-Length": "9"}, b"mp4 bytes"),
+    )
+    run(L.fix_broken_embeds(client_with(session), both))
+    assert both.posts[0]["content"] == f"https://fxtwitter.com/DeptofWar/status/{STATUS}"
+    assert both.posts[1]["file"].filename == "CkdGjonI08u.mp4"

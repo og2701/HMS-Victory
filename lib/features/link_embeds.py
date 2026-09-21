@@ -1,16 +1,23 @@
-"""Instagram links posted in chat, turned back into something you can actually watch.
+"""Instagram and X links posted in chat, turned back into something you can actually watch.
 
-Instagram serves Discord's link crawler a login wall, so a reel or photo someone drops in
-chat arrives as a bare blue URL with no thumbnail and no player, and everyone has to leave
-the server to see what was posted. kkinstagram.com (the instafix service) answers that
-crawler with a redirect straight to the underlying fbcdn file, which is the whole trick
-behind swapping the domain by hand.
+Both sites break Discord's link crawler, and they break it differently, so the fix differs
+too.
 
-The bot does that lookup itself rather than rewriting the member's link, and posts the
-media as an attachment under their message. Two reasons: the reel then plays inline with
-no third party between a member and the video (kkinstagram sends humans who click it to
-kkclip.com, an "Open in App" interstitial), and the member's own link is left untouched
-above it.
+X shows a card but will not play the video in it, and fxtwitter.com serves the crawler a
+proper one - author, full text, the counts, and a player that works - so an x.com link is
+answered with the same link on fxtwitter and Discord does the rest. The original card is
+suppressed so the same tweet is not sat in the channel twice.
+
+Instagram serves the crawler a login wall, so a reel or photo arrives as a bare blue URL
+with no thumbnail and no player at all, and everyone has to leave the server to see what
+was posted. kkinstagram.com (the instafix service) answers that crawler with a redirect
+straight to the underlying media file, which is the whole trick behind swapping the domain
+by hand. Swapping is not enough on its own here: unlike fxtwitter it serves no card, so the
+link would buy a bare video player and a click through kkclip's "Open in App" page. The bot
+follows the redirect itself instead and posts the file.
+
+Posting the file rather than the link also leaves the member's own link untouched above it,
+and the video keeps working if kkinstagram goes down later.
 
 Reels routinely land between the guild's upload limit and ~50MB, so a video too big to
 post as it stands is re-encoded to fit rather than given up on: ffmpeg is told how many
@@ -67,6 +74,20 @@ MEDIA_CDNS = ("fbcdn.net", "cdninstagram.com")
 # instagram.com/reels/audio/<id> and friends match the shape above but are not posts.
 NOT_A_SHORTCODE = {"audio", "explore", "highlights", "stories", "video"}
 
+# x.com/<user>/status/<id>, plus the /i/web/status/ form the app sometimes hands out and
+# the archaic /statuses/. The username is missing on the /i/ forms, hence the optional group.
+TWITTER_LINK = re.compile(
+    r"https?://(?:www\.|mobile\.)?(?:twitter|x)\.com/"
+    r"(?:i/web/status|i/status|([A-Za-z0-9_]{1,15})/status(?:es)?)/"
+    r"(\d{5,25})",
+    re.IGNORECASE,
+)
+
+# Any .../status/<id> link, whatever the host - used to spot a tweet someone has already
+# fixed by hand, so the bot does not put a third copy of it in the channel.
+ANY_STATUS_LINK = re.compile(r"https?://([A-Za-z0-9.-]+)/[^\s]*?status(?:es)?/(\d{5,25})", re.IGNORECASE)
+X_HOSTS = {"x.com", "www.x.com", "mobile.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com"}
+
 MAX_LINKS_PER_MESSAGE = 2
 REQUEST_TIMEOUT = 20            # kkinstagram scrapes Instagram live, so it is not instant
 UPLOAD_HEADROOM = 512 * 1024    # multipart overhead, kept clear of the guild's hard limit
@@ -110,6 +131,18 @@ def _compress_enabled() -> bool:
     return bool(getattr(config, "INSTAGRAM_EMBED_COMPRESS", True))
 
 
+def _twitter_enabled() -> bool:
+    return bool(getattr(config, "TWITTER_EMBED_FIX_ENABLED", True))
+
+
+def _twitter_mirror() -> str:
+    return str(getattr(config, "TWITTER_EMBED_HOST", "fxtwitter.com")).strip("/")
+
+
+def _suppress_original() -> bool:
+    return bool(getattr(config, "TWITTER_EMBED_SUPPRESS_ORIGINAL", True))
+
+
 def _suppressed(content: str, start: int, end: int) -> bool:
     """<https://...> is Discord's own "don't preview this" syntax, so honour it.
 
@@ -149,6 +182,35 @@ def find_instagram_posts(content: str) -> List[Tuple[str, str]]:
         if len(found) >= MAX_LINKS_PER_MESSAGE:
             break
     return found
+
+
+def find_twitter_posts(content: str) -> List[Tuple[Optional[str], str]]:
+    """Return [(username, status id)] for every X link worth fixing in the message."""
+    if not content:
+        return []
+
+    # A tweet someone has already run through fxtwitter (or vxtwitter, or any of the other
+    # mirrors) is left alone - the embed they wanted is already there.
+    fixed = {
+        status for host, status in ANY_STATUS_LINK.findall(content)
+        if host.lower() not in X_HOSTS
+    }
+
+    found: List[Tuple[Optional[str], str]] = []
+    seen = set()
+    for match in TWITTER_LINK.finditer(content):
+        username, status = match.group(1), match.group(2)
+        if _suppressed(content, match.start(), match.end()) or status in fixed or status in seen:
+            continue
+        seen.add(status)
+        found.append((username, status))
+        if len(found) >= MAX_LINKS_PER_MESSAGE:
+            break
+    return found
+
+
+def fixed_twitter_url(username: Optional[str], status: str) -> str:
+    return f"https://{_twitter_mirror()}/{username or 'i'}/status/{status}"
 
 
 def mirror_url(kind: str, code: str) -> str:
@@ -325,6 +387,49 @@ async def _post(message, payload) -> None:
             await message.channel.send(**kwargs)
         except discord.HTTPException:
             logger.debug("could not post fixed Instagram embed", exc_info=True)
+
+
+async def fix_broken_embeds(client, message) -> None:
+    """Both fixers, for one message. Neither says anything when it has nothing to add."""
+    if getattr(message.author, "bot", False):
+        return
+    await fix_twitter_links(message)
+    await fix_instagram_links(client, message)
+
+
+async def fix_twitter_links(message) -> None:
+    """Re-post X links on fxtwitter, where the card actually plays, and hide the dud one."""
+    if not _twitter_enabled():
+        return
+
+    posts = find_twitter_posts(getattr(message, "content", "") or "")
+    if not posts:
+        return
+
+    links = []
+    for username, status in posts:
+        if _rate_limited(message.author.id):
+            break
+        links.append(fixed_twitter_url(username, status))
+    if not links:
+        return
+
+    await _post(message, {"content": "\n".join(links)})
+    await _suppress_embeds(message)
+
+
+async def _suppress_embeds(message) -> None:
+    """Hide X's own card so the tweet is not in the channel twice.
+
+    Needs Manage Messages, and it is only tidiness - if it fails, the fixed embed is still
+    there underneath, which was the point.
+    """
+    if not _suppress_original():
+        return
+    try:
+        await message.edit(suppress=True)
+    except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+        logger.debug("could not suppress the original X embed", exc_info=True)
 
 
 async def fix_instagram_links(client, message) -> None:

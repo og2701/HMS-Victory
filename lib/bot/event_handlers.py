@@ -1339,14 +1339,14 @@ async def on_message(client, message):
     except Exception:
         logger.debug("yaris chain hook failed", exc_info=True)
 
-    # Instagram reels/photos, which Discord refuses to preview, posted as playable media.
-    # Fire-and-forget: it waits on kkinstagram and then on a download, and nothing else in
-    # on_message should sit behind that.
+    # Instagram reels and X links, neither of which Discord previews properly: the reel is
+    # posted as playable media, the tweet re-posted on fxtwitter. Fire-and-forget, since it
+    # waits on kkinstagram and then on a download and nothing else should sit behind that.
     try:
-        from lib.features.link_embeds import fix_instagram_links
-        asyncio.create_task(fix_instagram_links(client, message))
+        from lib.features.link_embeds import fix_broken_embeds
+        asyncio.create_task(fix_broken_embeds(client, message))
     except Exception:
-        logger.debug("instagram embed hook failed", exc_info=True)
+        logger.debug("link embed hook failed", exc_info=True)
 
     await client.xp_system.update_xp(message)
 
