@@ -43,6 +43,8 @@ STATE_HOUSE_PANEL_SIG = "house_panel_signature"  # what the house panel last sho
 STATE_VOTE_REPOST_AT = "house_msgs_at_vote_repost"  # the house counter when the vote last moved down
 STATE_VOTE_BUMPED_AT = "vote_thread_bumped_at"      # when the board was last re-posted inside its thread
 STATE_HOUSE_PANEL_THREAD = "house_panel_thread"     # the panel's own thread off the house channel
+STATE_DAILY_ROUNDUP_DRAFT = "daily_roundup_draft"
+STATE_LAST_ROUNDUP_AT = "last_roundup_at"
 HOUSE_PANEL_REPOST_EVERY = 20  # chat messages in the house before the panel is re-posted at the bottom
 VOTE_REPOST_EVERY = 5          # an open vote moves down far more often, so nobody misses it
 VOTE_THREAD_BUMP_SECONDS = 600 # floor between bumps inside the vote thread: a busy house would
@@ -282,6 +284,14 @@ def game_started_at() -> Optional[int]:
 
 def game_started() -> bool:
     return game_started_at() is not None
+
+
+def day_number() -> int:
+    start = game_started_at()
+    if not start:
+        return 1
+    passed = _now() - start
+    return max(1, (passed // 86400) + 1)
 
 
 def house_silent() -> bool:
@@ -1565,6 +1575,313 @@ async def crown_winner(client: discord.Client, user_id: int) -> tuple[bool, str]
 
 
 # ---------------------------------------------------------------------------
+# Daily Roundup (AI-generated Marcus Bentley-style daily recap)
+# ---------------------------------------------------------------------------
+
+ROUNDUP_SYSTEM_PROMPT = """You are Big Brother, the theatrical, witty, observant narrator of the UK Big Brother house (in the signature voice of Marcus Bentley).
+Your job is to write a sharp, highly entertaining DAILY ROUNDUP summarizing the past 24 hours in the house for the housemates to read.
+
+CRITICAL GUIDELINES:
+1. STRICTLY CONCISE: Under 200-220 words total. Absolutely NO long essays or rambling. It must be a snappy, 30-second read on mobile.
+2. FORMAT:
+   - Line 1: A dramatic, punchy title/tagline in bold (e.g., "**Day 4: The Pancake Mutiny & The Great Vote Flip**")
+   - A short 1-sentence dramatic scene-setter in classic Big Brother UK voice.
+   - 3 to 4 punchy bullet points capturing the day's real drama, funniest clashes, alliances, or bizarre debates.
+   - Quote of the Day: Exactly one standout, funny or unhinged quote from a housemate (format: `> "..."` — HousemateName).
+3. TONE: Dry British humor, slightly dramatic, observant, theatrical, cheeky.
+4. ACCURACY: ONLY reference events and banter that actually occurred in the provided transcript. Do not invent fake drama. Never mention secret snugs or secret missions. Use the housemates' real names as given in the transcript.
+"""
+
+
+def house_chat_transcript(guild: Optional[discord.Guild], hours: int = 24, max_messages: int = 800) -> str:
+    """Extract public house messages from the last N hours, resolved with character/member names."""
+    ensure_tables()
+    hid = str(house_channel_id())
+    since = _now() - (hours * 3600)
+    rows = DatabaseManager.fetch_all(
+        "SELECT user_id, content, at FROM bb_messages "
+        "WHERE thread_id = ? AND at >= ? AND content IS NOT NULL AND content != '' "
+        "ORDER BY at DESC LIMIT ?",
+        (hid, since, max_messages))
+    rows.reverse()
+    lines = []
+    for uid_str, content, at in rows:
+        try:
+            uid = int(uid_str)
+        except (ValueError, TypeError):
+            continue
+        if is_operator(uid) and (EYE in content or "Big Brother" in content):
+            continue
+        name = _name(guild, uid)
+        tm = time.strftime("%H:%M", time.gmtime(at))
+        clean_content = " ".join(content.split())
+        lines.append(f"[{tm}] {name}: {clean_content}")
+    return "\n".join(lines)
+
+
+def get_recent_public_events(hours: int = 24) -> list[str]:
+    """Summary of big milestone events in the house over the last N hours."""
+    since = _now() - (hours * 3600)
+    evs = [e for e in events() if e["at"] >= since]
+    lines = []
+    for e in evs:
+        k = e.get("kind")
+        if k == "challenge_posted":
+            lines.append(f"Challenge posted: '{e.get('title')}'")
+        elif k == "challenge_ended":
+            lines.append(f"Challenge ended: '{e.get('title')}'")
+        elif k == "vote_opened":
+            lines.append(f"Public eviction vote opened (Round {e.get('round_id')})")
+        elif k == "vote_closed":
+            lines.append(f"Public eviction vote closed (Round {e.get('round_id')})")
+        elif k == "evicted":
+            lines.append(f"Housemate evicted: ID {e.get('target')}")
+        elif k == "shop_opened":
+            lines.append("The Big Brother shop opened.")
+        elif k == "shop_closed":
+            lines.append("The Big Brother shop closed.")
+    return lines
+
+
+async def generate_daily_roundup(
+    client: discord.Client,
+    *,
+    feedback: Optional[str] = None,
+    previous_draft: Optional[str] = None,
+    hours: int = 24
+) -> tuple[Optional[str], Optional[str]]:
+    guild = _guild(client) if client else None
+    transcript = house_chat_transcript(guild, hours=hours)
+    if not transcript:
+        return None, "No house messages found in the last 24 hours to summarize."
+
+    events_list = get_recent_public_events(hours=hours)
+    events_section = ("Key events today:\n" + "\n".join(f"- {ev}" for ev in events_list) + "\n\n") if events_list else ""
+
+    if previous_draft and feedback:
+        user_prompt = (
+            f"Here is the public house chat transcript from the last {hours} hours:\n"
+            f"{transcript}\n\n"
+            f"Previous Draft:\n{previous_draft}\n\n"
+            f"Operator Feedback / Changes to make:\n{feedback}\n\n"
+            f"Please revise the daily roundup to incorporate the feedback. Remember: strictly concise (under 200 words), punchy, 3-4 bullet points, 1 quote of the day."
+        )
+    else:
+        user_prompt = (
+            f"{events_section}"
+            f"Public house chat transcript from the last {hours} hours:\n"
+            f"{transcript}\n\n"
+            f"Write today's Big Brother daily roundup following the guidelines (concise, under 200 words, dramatic intro, 3-4 bullet highlights, 1 quote of the day)."
+        )
+
+    try:
+        from lib.core.gemini import gemini_generate
+        session = getattr(client, "session", None)
+        text, err = await gemini_generate(
+            session,
+            ROUNDUP_SYSTEM_PROMPT,
+            [{"text": user_prompt}],
+            temperature=0.7,
+            max_output_tokens=600,
+        )
+        if err or not text:
+            return None, err or "No text returned by AI."
+        return text.strip(), None
+    except Exception as exc:
+        log.exception("Big Brother: daily roundup generation failed")
+        return None, str(exc)
+
+
+async def post_daily_roundup_draft(client: discord.Client) -> tuple[bool, str]:
+    ch = await control_channel(client)
+    if not ch:
+        return False, "Control channel not found."
+    draft, err = await generate_daily_roundup(client)
+    if err or not draft:
+        return False, f"Could not generate draft: {err}"
+
+    day = day_number()
+    embed = bb_embed(f"Daily Roundup Draft — Day {day}", draft)
+    embed.set_footer(text="Review the draft above. Approve to post to #the-house with an @Housemates ping, or request changes.")
+
+    try:
+        msg = await ch.send(content=f"{EYE} **New Daily Roundup Draft for Day {day}:**", embed=embed, view=RoundupReviewView())
+        set_state(STATE_DAILY_ROUNDUP_DRAFT, {
+            "draft": draft,
+            "message_id": msg.id,
+            "day": day,
+            "created_at": _now()
+        })
+        log_event("daily_roundup_drafted", day=day, message_id=msg.id)
+        return True, f"Draft posted to <#{ch.id}>: https://discord.com/channels/{getattr(config, 'GUILD_ID', '@me')}/{ch.id}/{msg.id}"
+    except discord.HTTPException as e:
+        log.exception("Big Brother: failed to post roundup draft")
+        return False, f"Failed to post draft: {e}"
+
+
+async def trigger_daily_roundup_draft(client: discord.Client) -> None:
+    if not enabled() or not game_started():
+        return
+    ok, msg = await post_daily_roundup_draft(client)
+    if ok:
+        log.info("Big Brother: midnight daily roundup draft posted successfully.")
+    else:
+        log.warning("Big Brother: midnight daily roundup draft failed: %s", msg)
+
+
+async def handle_roundup_approve(interaction: discord.Interaction):
+    if not is_operator(interaction.user.id):
+        await interaction.response.send_message(f"{EYE} Only Big Brother operators can approve the roundup.", ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True)
+    state = get_state(STATE_DAILY_ROUNDUP_DRAFT) or {}
+    draft = state.get("draft")
+    if not draft and interaction.message and interaction.message.embeds:
+        draft = interaction.message.embeds[0].description
+    if not draft:
+        await interaction.edit_original_response(content="Could not find the draft content.")
+        return
+
+    hc = await house_channel(interaction.client)
+    if not hc:
+        await interaction.edit_original_response(content="House channel not found.")
+        return
+
+    day = state.get("day") or day_number()
+    house_embed = bb_embed(f"Daily Roundup — Day {day}", draft)
+    try:
+        await bb_send(hc, content=f"{_role_mention()}{EYE} **The Daily Roundup is in.**", embed=house_embed)
+    except discord.HTTPException as e:
+        await interaction.edit_original_response(content=f"Failed to send to #the-house: {e}")
+        return
+
+    if interaction.message:
+        orig_embed = interaction.message.embeds[0] if interaction.message.embeds else bb_embed(f"Daily Roundup — Day {day}", draft)
+        orig_embed.colour = discord.Colour.green().value
+        orig_embed.set_footer(text=f"Approved by {_name(interaction.guild, interaction.user.id)} and posted to #the-house.")
+        try:
+            await interaction.message.edit(
+                content=f"✅ **Approved by {_mention_and_name(interaction.guild, interaction.user.id)} and posted to <#{hc.id}>.**",
+                embed=orig_embed,
+                view=None
+            )
+        except discord.HTTPException:
+            pass
+
+    set_state(STATE_DAILY_ROUNDUP_DRAFT, None)
+    set_state(STATE_LAST_ROUNDUP_AT, _now())
+    log_event("daily_roundup_posted", actor=interaction.user.id, day=day)
+    await interaction.edit_original_response(content=f"{EYE} Daily roundup posted to <#{hc.id}>!")
+
+
+async def handle_roundup_edit(interaction: discord.Interaction):
+    if not is_operator(interaction.user.id):
+        await interaction.response.send_message(f"{EYE} Only Big Brother operators can request changes.", ephemeral=True)
+        return
+
+    async def submitted(inter: discord.Interaction, values: dict):
+        feedback = (values.get("feedback") or "").strip()
+        if not feedback:
+            await inter.response.send_message("No feedback entered.", ephemeral=True)
+            return
+        await inter.response.defer(ephemeral=True)
+
+        state = get_state(STATE_DAILY_ROUNDUP_DRAFT) or {}
+        curr_draft = state.get("draft")
+        if not curr_draft and interaction.message and interaction.message.embeds:
+            curr_draft = interaction.message.embeds[0].description
+
+        revised, err = await generate_daily_roundup(inter.client, feedback=feedback, previous_draft=curr_draft)
+        if err or not revised:
+            await inter.edit_original_response(content=f"Could not regenerate draft: {err or 'Unknown error'}")
+            return
+
+        day = state.get("day") or day_number()
+        set_state(STATE_DAILY_ROUNDUP_DRAFT, {
+            "draft": revised,
+            "message_id": interaction.message.id if interaction.message else None,
+            "day": day,
+            "updated_at": _now()
+        })
+        log_event("daily_roundup_revised", actor=inter.user.id, feedback=feedback)
+
+        if interaction.message:
+            new_embed = bb_embed(f"Daily Roundup Draft — Day {day} (Revised)", revised)
+            new_embed.set_footer(text=f"Revision requested by {_name(inter.guild, inter.user.id)}: \"{feedback[:50]}\"")
+            try:
+                await interaction.message.edit(embed=new_embed, view=RoundupReviewView())
+            except discord.HTTPException as e:
+                log.warning("Big Brother: failed to edit draft message: %s", e)
+
+        await inter.edit_original_response(content=f"{EYE} Draft updated! Review the revised version above.")
+
+    await interaction.response.send_modal(_TextModal(
+        "Request Changes to Roundup",
+        [("feedback", "What should Big Brother change?", True, 500, True)],
+        submitted
+    ))
+
+
+async def handle_roundup_discard(interaction: discord.Interaction):
+    if not is_operator(interaction.user.id):
+        await interaction.response.send_message(f"{EYE} Only Big Brother operators can discard the roundup.", ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True)
+    state = get_state(STATE_DAILY_ROUNDUP_DRAFT) or {}
+    day = state.get("day") or day_number()
+
+    if interaction.message:
+        orig_embed = interaction.message.embeds[0] if interaction.message.embeds else None
+        if orig_embed:
+            orig_embed.colour = discord.Colour.dark_grey().value
+            orig_embed.set_footer(text=f"Discarded by {_name(interaction.guild, interaction.user.id)}.")
+        try:
+            await interaction.message.edit(
+                content=f"❌ **Daily roundup draft discarded by {_mention_and_name(interaction.guild, interaction.user.id)}.**",
+                embed=orig_embed,
+                view=None
+            )
+        except discord.HTTPException:
+            pass
+
+    set_state(STATE_DAILY_ROUNDUP_DRAFT, None)
+    log_event("daily_roundup_discarded", actor=interaction.user.id, day=day)
+    await interaction.edit_original_response(content=f"{EYE} Draft discarded.")
+
+
+class RoundupReviewView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Approve & Post",
+        emoji="✅",
+        style=discord.ButtonStyle.success,
+        custom_id="bb_roundup_approve"
+    )
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_roundup_approve(interaction)
+
+    @discord.ui.button(
+        label="Request Changes",
+        emoji="✏️",
+        style=discord.ButtonStyle.primary,
+        custom_id="bb_roundup_edit"
+    )
+    async def edit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_roundup_edit(interaction)
+
+    @discord.ui.button(
+        label="Discard",
+        emoji="❌",
+        style=discord.ButtonStyle.danger,
+        custom_id="bb_roundup_discard"
+    )
+    async def discard(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_roundup_discard(interaction)
+
+
+# ---------------------------------------------------------------------------
 # Public vote button (dynamic so it survives restarts with no per-message registration)
 # ---------------------------------------------------------------------------
 
@@ -2086,16 +2403,15 @@ class BigBrotherControlView(discord.ui.LayoutView):
                               "🔊" if house_silent() else "🔇"),
                  _PanelButton("crown", "Crown winner", discord.ButtonStyle.success, "👑")],
             ]),
-            ("### 🕵️ Missions & teams", [
+            ("### 🕵️ Missions, challenges & shop", [
                 [_PanelButton("mission", "Assign mission", emoji="🕵️"),
                  _PanelButton("resolve_mission", "Resolve mission", emoji="✅"),
                  _PanelButton("teams", "Teams", discord.ButtonStyle.primary, "🅰️")],
-            ]),
-            ("### 🧠 Challenges, messages & shop", [
                 [_PanelButton("challenge", "Post challenge", emoji="🧠"),
                  _PanelButton("end_challenge", "End challenge", emoji="🏁")],
                 [_PanelButton("dm", "DM as Big Brother", emoji="✉️"),
-                 _PanelButton("broadcast", "Announce in house", emoji="📣")],
+                 _PanelButton("broadcast", "Announce in house", emoji="📣"),
+                 _PanelButton("roundup", "Draft roundup", emoji="📰")],
                 [_PanelButton("catalogue", "Catalogue", emoji="📋"),
                  _PanelButton("shop", "Close shop" if shop_open else "Open shop",
                               discord.ButtonStyle.danger if shop_open else discord.ButtonStyle.primary, "🛒")],
@@ -2944,6 +3260,12 @@ async def _act_shop(interaction: discord.Interaction):
     await _shop.act_shop(interaction)
 
 
+async def _act_draft_roundup(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    ok, msg = await post_daily_roundup_draft(interaction.client)
+    await _reply(interaction, msg, refresh=False)
+
+
 PANEL_ACTIONS = {
     "catalogue": _act_catalogue, "shop": _act_shop, "teams": _act_teams,
     "start": _act_start, "who": _act_who, "silence": _act_silence, "open_noms": _act_open_noms, "close_noms": _act_close_noms, "start_vote": _act_start_vote,
@@ -2951,7 +3273,7 @@ PANEL_ACTIONS = {
     "mission": _act_mission, "resolve_mission": _act_resolve_mission, "challenge": _act_challenge,
     "token": _act_token, "snug": _act_snug,
     "end_challenge": _act_end_challenge, "dm": _act_dm, "broadcast": _act_broadcast,
-    "crown": _act_crown, "refresh": _act_refresh,
+    "crown": _act_crown, "refresh": _act_refresh, "roundup": _act_draft_roundup,
 }
 
 

@@ -538,6 +538,13 @@ def _register_client_jobs(client, scheduler):
     _add_process_job(scheduler, daily_summary, CronTrigger(hour=0, minute=1, timezone="Europe/London"), args=[client], id="daily_summary_job", name="Daily Summary, Chat Rewards & Economy Metrics")
     _add_process_job(scheduler, post_daily_economy_stats, CronTrigger(hour=0, minute=5, timezone="Europe/London"), args=[client], id="post_daily_economy_stats_job", name="Post Daily UKPence Economy Stats")
 
+    if getattr(config, "BIG_BROTHER_ENABLED", False):
+        try:
+            from lib.features.big_brother import trigger_daily_roundup_draft
+            _add_process_job(scheduler, trigger_daily_roundup_draft, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client], id="bb_daily_roundup_job", name="Big Brother Daily Roundup Draft")
+        except Exception as e:
+            logger.warning(f"Could not register Big Brother daily roundup job: {e}")
+
     _add_process_job(scheduler, weekly_summary, CronTrigger(day_of_week="mon", hour=0, minute=2, timezone="Europe/London"), args=[client], id="weekly_summary_job")
     _add_process_job(scheduler, monthly_summary, CronTrigger(day=1, hour=0, minute=3, timezone="Europe/London"), args=[client], id="monthly_summary_job")
     _add_process_job(scheduler, client.clear_image_cache, CronTrigger(day_of_week="sun", hour=0, minute=4, timezone="Europe/London"), id="clear_image_cache_job")

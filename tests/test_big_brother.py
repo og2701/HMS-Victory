@@ -147,7 +147,7 @@ def test_panel_text_and_view_have_no_secrets(bb):
     assert view.timeout is None
     ids = [c.custom_id for row in view.children[0].children
            if hasattr(row, "children") for c in row.children]
-    assert len(ids) == 24 and len(set(ids)) == 24
+    assert len(ids) == 25 and len(set(ids)) == 25
     assert set(ids) == {f"bb:ctl:{a}" for a in bb.PANEL_ACTIONS}
     # Rows stay short so buttons don't wrap mid-row on desktop.
     assert all(len(row.children) <= 3 for row in view.children[0].children if hasattr(row, "children"))
@@ -1179,3 +1179,61 @@ def test_house_panel_hides_a_shop_the_housemates_cannot_reach(bb, shop, monkeypa
     monkeypatch.setattr(config, "BIG_BROTHER_SHOP_CHANNEL", bb.control_channel_id())
     assert not shop.shop_is_in_the_house()
     assert "The shop is open" not in bb._house_panel_text(None)
+
+
+def test_daily_roundup_transcript_and_events(bb):
+    from database import DatabaseManager
+    bb.ensure_tables()
+    hid = bb.house_channel_id()
+
+    now = bb._now()
+    DatabaseManager.execute(
+        "INSERT INTO bb_messages (message_id, user_id, content, at, attachments, reply_to, thread_id) "
+        "VALUES ('m1', '101', 'Hello housemates!', ?, 0, NULL, ?)", (now - 100, str(hid)))
+    DatabaseManager.execute(
+        "INSERT INTO bb_messages (message_id, user_id, content, at, attachments, reply_to, thread_id) "
+        "VALUES ('m2', '102', 'Secret snug talk', ?, 0, NULL, 'snug_999')", (now - 80, ))
+    DatabaseManager.execute(
+        "INSERT INTO bb_messages (message_id, user_id, content, at, attachments, reply_to, thread_id) "
+        "VALUES ('m3', '101', 'Someone stole my crumpet!', ?, 0, NULL, ?)", (now - 50, str(hid)))
+
+    transcript = bb.house_chat_transcript(None, hours=24)
+    assert "Hello housemates!" in transcript
+    assert "Someone stole my crumpet!" in transcript
+    # Snug messages must be strictly excluded
+    assert "Secret snug talk" not in transcript
+
+    bb.log_event("challenge_posted", challenge_id=1, title="Pancake Stack")
+    bb.log_event("shop_opened")
+    events_list = bb.get_recent_public_events(hours=24)
+    assert any("Pancake Stack" in ev for ev in events_list)
+    assert any("shop opened" in ev for ev in events_list)
+
+
+def test_daily_roundup_generation_and_approval(bb, monkeypatch):
+    import asyncio
+    from database import DatabaseManager
+
+    mock_draft = "**Day 1: The Crumpet Scandal**\nTensions rose today.\n* Someone stole a crumpet.\n> 'Who took it?' — Alice"
+    async def mock_gemini(*args, **kwargs):
+        return mock_draft, None
+
+    import lib.core.gemini as gemini_mod
+    monkeypatch.setattr(gemini_mod, "gemini_generate", mock_gemini)
+
+    hid = bb.house_channel_id()
+    DatabaseManager.execute(
+        "INSERT INTO bb_messages (message_id, user_id, content, at, attachments, reply_to, thread_id) "
+        "VALUES ('m1', '101', 'Who stole my crumpet?', ?, 0, NULL, ?)", (bb._now() - 50, str(hid)))
+
+    text, err = asyncio.run(bb.generate_daily_roundup(None))
+    assert err is None
+    assert "Crumpet Scandal" in text
+
+    assert "roundup" in bb.PANEL_ACTIONS
+    assert bb.PANEL_ACTIONS["roundup"] is bb._act_draft_roundup
+    buttons = [item for item in bb.RoundupReviewView().children if hasattr(item, "custom_id")]
+    custom_ids = [b.custom_id for b in buttons]
+    assert "bb_roundup_approve" in custom_ids
+    assert "bb_roundup_edit" in custom_ids
+    assert "bb_roundup_discard" in custom_ids
