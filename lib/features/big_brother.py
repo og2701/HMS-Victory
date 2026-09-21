@@ -196,6 +196,7 @@ def ensure_tables() -> None:
             sent_at INTEGER NOT NULL, acked_at INTEGER)""")
         # Columns added after the first deploy; harmless when they already exist.
         for stmt in ("ALTER TABLE bb_housemates ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0",
+                     "ALTER TABLE bb_housemates ADD COLUMN eviction_safe INTEGER NOT NULL DEFAULT 0",
                      "ALTER TABLE bb_messages ADD COLUMN thread_id TEXT",
                      "ALTER TABLE bb_nominations ADD COLUMN reason TEXT",
                      "ALTER TABLE bb_votes ADD COLUMN reason TEXT"):
@@ -374,6 +375,30 @@ def clear_all_immunity() -> list[int]:
     """Immunity covers one nominations round; called when that round closes."""
     was = sorted(immune_ids())
     DatabaseManager.execute("UPDATE bb_housemates SET immune = 0")
+    return was
+
+
+def set_eviction_safe(user_id: int, safe: bool) -> None:
+    """Safety from the next public vote. Separate from nomination immunity: a twist can put
+    housemates straight up for eviction with no nominations round in between, and this is what
+    keeps a winner out of that line-up."""
+    ensure_tables()
+    DatabaseManager.execute("UPDATE bb_housemates SET eviction_safe = ? WHERE user_id = ?",
+                            (1 if safe else 0, str(user_id)))
+
+
+def eviction_safe_ids() -> set[int]:
+    ensure_tables()
+    rows = DatabaseManager.fetch_all(
+        "SELECT user_id FROM bb_housemates WHERE status = ? AND eviction_safe = 1", (STATUS_IN,))
+    return {int(r[0]) for r in rows}
+
+
+def clear_all_eviction_safe() -> list[int]:
+    """Safety covers one vote. Nominations closing never runs in a twist, so the vote itself
+    clears it and the next cycle starts clean."""
+    was = sorted(eviction_safe_ids())
+    DatabaseManager.execute("UPDATE bb_housemates SET eviction_safe = 0")
     return was
 
 
@@ -1253,6 +1278,11 @@ async def start_vote(client: discord.Client, nominee_ids: list[int]) -> Optional
     set_state(STATE_VOTE_REPOST_AT, int(get_state(STATE_HOUSE_MSGS_SINCE_PANEL, 0) or 0))
     set_state(STATE_VOTE_BUMPED_AT, _now())
     log_event("vote_opened", round_id=rid, nominees=list(nominee_ids), channel_id=where.id, message_id=msg.id)
+    # Safety was for this vote. Spending it here means the next cycle starts clean even when
+    # a twist skips nominations, which is the only thing that clears nomination immunity.
+    spent = clear_all_eviction_safe()
+    if spent:
+        log_event("eviction_safety_cleared", round_id=rid, housemates=spent)
     if thread:
         await fill_thread(thread)
     hc = await house_channel(client)
@@ -1747,9 +1777,9 @@ async def _send_pick(interaction: discord.Interaction, content: str, guild, ids:
     await gs.deliver(interaction, content, views, edit=edit)
 
 
-async def _send_toggle(interaction: discord.Interaction, content: str, guild, ids: list[int],
-                       state: dict[int, bool], on_toggle: Callable):
-    views = [_ToggleGrid(guild, page, state, on_toggle) for page in _chunks(ids)]
+async def _send_cycle(interaction: discord.Interaction, content: str, guild, ids: list[int],
+                      state: dict[int, str], on_cycle: Callable, styles: dict[str, tuple]):
+    views = [_CycleGrid(guild, page, state, on_cycle, styles) for page in _chunks(ids)]
     await _GridSet().deliver(interaction, content, views)
 
 
@@ -1837,27 +1867,25 @@ async def _send_multi(interaction: discord.Interaction, content: str, guild, ids
     await _GridSet().deliver(interaction, content, views, edit=edit)
 
 
-class _ToggleGrid(discord.ui.View):
-    """One button per housemate showing an on/off state (green/red). Pressing flips it via
-    on_toggle(interaction, user_id) -> new state, then the grid redraws itself."""
+class _CycleGrid(discord.ui.View):
+    """One button per housemate cycling through a handful of states. on_cycle(interaction,
+    user_id) -> the new state key, then the grid redraws itself."""
 
-    def __init__(self, guild: Optional[discord.Guild], ids: list[int], state: dict[int, bool],
-                 on_toggle: Callable, *, label: Callable[[int], str] = None):
+    def __init__(self, guild: Optional[discord.Guild], ids: list[int], state: dict[int, str],
+                 on_cycle: Callable, styles: dict[str, tuple]):
         super().__init__(timeout=300)
-        self.guild, self.ids, self.state, self.on_toggle = guild, ids, dict(state), on_toggle
-        self.label = label or (lambda uid: _name(guild, uid))
+        self.guild, self.ids, self.state, self.on_cycle, self.styles = guild, ids, dict(state), on_cycle, styles
         self._build()
 
     def _build(self):
         self.clear_items()
         for uid in self.ids[:GRID_MAX]:
-            on = self.state.get(uid, False)
-            btn = discord.ui.Button(label=self.label(uid)[:80],
-                                    style=discord.ButtonStyle.success if on else discord.ButtonStyle.danger)
+            style, prefix = self.styles[self.state.get(uid, next(iter(self.styles)))]
+            btn = discord.ui.Button(label=(prefix + _name(self.guild, uid))[:80], style=style)
 
             async def _cb(interaction: discord.Interaction, _uid=uid):
                 await interaction.response.defer()
-                self.state[_uid] = await self.on_toggle(interaction, _uid)
+                self.state[_uid] = await self.on_cycle(interaction, _uid)
                 self._build()
                 await interaction.edit_original_response(view=self)
             btn.callback = _cb
@@ -1986,6 +2014,12 @@ def _panel_text(guild: Optional[discord.Guild]) -> str:
             names = ", ".join(_name(guild, u) for u in who[:4])
             more = f" +{len(who) - 4} more" if len(who) > 4 else ""
             lines.append(f"-# *{label[:45]}* — {names}{more}")
+    protected = len(immune_ids())
+    safe_now = len(eviction_safe_ids())
+    if protected or safe_now:
+        bits = ([f"🛡️ {protected} immune from nominations"] if protected else []) + \
+               ([f"🚫 {safe_now} safe from the vote"] if safe_now else [])
+        lines.append("**Protected:** " + " · ".join(bits))
     lines.append(f"**Secret missions:** {len(missions)} active")
     lines.append(f"**Challenge:** {('🟢 ' + chal['title']) if chal else '⚪ none open'}")
     if quiet:
@@ -2488,10 +2522,14 @@ async def _act_start_vote(interaction: discord.Interaction):
                 top = c
             if c == top or len(defaults) < 2:
                 defaults.append(int(n))
-    immune = immune_ids()
-    choices = [u for u in ranked if u not in immune] + [u for u in ins if u not in ranked and u not in immune]
+    # Nomination immunity keeps you off the ballot, and so does safety won in a twist where
+    # there were no nominations at all.
+    safe = immune_ids() | eviction_safe_ids()
+    choices = [u for u in ranked if u not in safe] + [u for u in ins if u not in ranked and u not in safe]
+    defaults = [u for u in defaults if u not in safe]
     if len(choices) < 2:
-        await _reply(interaction, "Fewer than two housemates are eligible (immunity excludes the rest).", refresh=False)
+        await _reply(interaction, "Fewer than two housemates are eligible (immunity and eviction safety exclude "
+                                  "the rest).", refresh=False)
         return
 
     async def done(inter: discord.Interaction, ids: list[int]):
@@ -2592,19 +2630,36 @@ async def _act_immunity(interaction: discord.Interaction):
         await _reply(interaction, "No housemates.", refresh=False)
         return
 
-    async def toggled(inter: discord.Interaction, uid: int) -> bool:
-        now_immune = db_toggle_immunity(uid)
-        log_event("immunity_toggled", target=uid, immune=now_immune)
-        if now_immune:
+    NEXT = {"none": "immune", "immune": "safe", "safe": "none"}
+    STYLES = {"none": (discord.ButtonStyle.danger, ""),
+              "immune": (discord.ButtonStyle.success, "🛡️ "),
+              "safe": (discord.ButtonStyle.primary, "🚫 ")}
+
+    def state_of(uid: int) -> str:
+        if uid in eviction_safe_ids():
+            return "safe"
+        return "immune" if uid in immune_ids() else "none"
+
+    async def cycled(inter: discord.Interaction, uid: int) -> str:
+        new = NEXT[state_of(uid)]
+        set_immune(uid, new == "immune")
+        set_eviction_safe(uid, new == "safe")
+        log_event("protection_set", target=uid, state=new)
+        if new == "immune":
             await dm_user(inter.client, uid, embed=bb_embed(
                 "Immunity", "You are immune from the next nominations. Housemates won't be able to pick you."))
+        elif new == "safe":
+            await dm_user(inter.client, uid, embed=bb_embed(
+                "You're safe", "🚫 You are safe from the next public eviction vote. You will not face eviction "
+                               "this round."))
         asyncio.create_task(refresh_panel(inter.client))
-        return now_immune
+        return new
 
-    immune = immune_ids()
-    await _send_toggle(interaction,
-                       "🟢 immune · 🔴 not immune. Press a name to flip it. Immunity lasts until nominations close.",
-                       interaction.guild, ins, {u: u in immune for u in ins}, toggled)
+    await _send_cycle(interaction,
+                      "Press a name to cycle it: 🔴 nothing → 🛡️ immune from the next nominations → "
+                      "🚫 safe from the next eviction vote → back. Immunity lasts until nominations close, "
+                      "safety until a vote starts.",
+                      interaction.guild, ins, {u: state_of(u) for u in ins}, cycled, STYLES)
 
 
 async def _act_token(interaction: discord.Interaction):
@@ -2696,12 +2751,13 @@ async def _act_resolve_mission(interaction: discord.Interaction):
         mid = int(select.values[0])
         v = discord.ui.View(timeout=120)
         auto_immune = discord.ui.Button(label="Auto-Immune", emoji="🛡️", style=discord.ButtonStyle.success)
+        safe_btn = discord.ui.Button(label="Eviction Safe", emoji="🚫", style=discord.ButtonStyle.success)
         token_btn = discord.ui.Button(label="Give Token", emoji="🎟️", style=discord.ButtonStyle.primary)
         failed = discord.ui.Button(label="Failed", emoji="❌", style=discord.ButtonStyle.danger)
 
         async def _finish(inter2: discord.Interaction, outcome: str):
             await inter2.response.defer(ephemeral=True)
-            status = "done" if outcome in ("auto_immune", "token") else "failed"
+            status = "done" if outcome in ("auto_immune", "eviction_safe", "token") else "failed"
             m = resolve_mission(mid, status)
             if not m:
                 await _reply(inter2, "Mission not found.", refresh=False)
@@ -2716,6 +2772,17 @@ async def _act_resolve_mission(interaction: discord.Interaction):
                     f"Big Brother is pleased. *{m['brief']}*\n\n🛡️ You have completed your mission and earned **immunity from the next nominations**! "
                     f"You are safe — nobody will be able to pick you."))
                 await _reply(inter2, f"Mission #{mid} marked done. The housemate has been told and made immune from the next nominations.")
+            elif outcome == "eviction_safe":
+                set_eviction_safe(m["user_id"], True)
+                log_event("eviction_safety_granted", target=m["user_id"], source=f"mission:{mid}")
+                await dm_user(inter2.client, m["user_id"], ack=f"mission #{mid} completed + eviction safety",
+                              embed=bb_embed(
+                                  "Mission complete",
+                                  f"Big Brother is pleased. *{m['brief']}*\n\n🚫 You have completed your mission and "
+                                  f"earned **safety from the next public eviction vote**! You will not face eviction "
+                                  f"this round."))
+                await _reply(inter2, f"Mission #{mid} marked done. The housemate has been told and made safe from the "
+                                     f"next eviction vote.")
             elif outcome == "token":
                 total = grant_token(m["user_id"])
                 log_event("token_granted", target=m["user_id"], tokens=total, source=f"mission:{mid}")
@@ -2730,12 +2797,15 @@ async def _act_resolve_mission(interaction: discord.Interaction):
                 await _reply(inter2, f"Mission #{mid} marked failed. The housemate has been told.")
 
         async def _ai(i): await _finish(i, "auto_immune")
+        async def _safe(i): await _finish(i, "eviction_safe")
         async def _tok(i): await _finish(i, "token")
         async def _f(i): await _finish(i, "failed")
         auto_immune.callback = _ai
+        safe_btn.callback = _safe
         token_btn.callback = _tok
         failed.callback = _f
         v.add_item(auto_immune)
+        v.add_item(safe_btn)
         v.add_item(token_btn)
         v.add_item(failed)
         await inter.response.edit_message(content=f"Mission #{mid}: how did it go?", view=v)

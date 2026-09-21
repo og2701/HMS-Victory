@@ -260,9 +260,12 @@ def test_echo_body_covers_content_and_embed(bb):
 def test_grids_render_state(bb):
     import discord
     ids = [1, 2, 3]
-    grid = bb._ToggleGrid(None, ids, {1: True, 2: False}, on_toggle=None)
-    styles = [b.style for b in grid.children]
-    assert styles == [discord.ButtonStyle.success, discord.ButtonStyle.danger, discord.ButtonStyle.danger]
+    styles = {"none": (discord.ButtonStyle.danger, ""), "immune": (discord.ButtonStyle.success, "🛡️ "),
+              "safe": (discord.ButtonStyle.primary, "🚫 ")}
+    grid = bb._CycleGrid(None, ids, {1: "immune", 2: "safe"}, None, styles)
+    assert [b.style for b in grid.children] == [discord.ButtonStyle.success, discord.ButtonStyle.primary,
+                                                discord.ButtonStyle.danger]
+    assert [b.label for b in grid.children] == ["🛡️ user 1", "🚫 user 2", "user 3"]
 
     counts = bb._CountGrid(None, ids, {2: 3}, on_press=None)
     assert [b.label for b in counts.children] == ["user 1 · 0", "user 2 · 3", "user 3 · 0"]
@@ -1012,6 +1015,74 @@ def test_standings_break_down_who_voted_for_who(bb):
     assert "dm_user(interaction.client, interaction.user.id, echo=False" in src
     assert "notify_host" not in src and "ephemeral=True" in src
     assert bb.PANEL_ACTIONS["standings"] is bb._act_standings
+
+
+def test_eviction_safety_is_stored_and_spent_by_the_vote(bb):
+    """A twist can skip nominations entirely, so safety is cleared by the vote itself."""
+    for uid in (1, 2, 3):
+        bb.db_add_housemate(uid)
+    assert bb.eviction_safe_ids() == set()
+
+    bb.set_eviction_safe(1, True)
+    bb.set_eviction_safe(2, True)
+    assert bb.eviction_safe_ids() == {1, 2}
+    bb.set_eviction_safe(2, False)
+    assert bb.eviction_safe_ids() == {1}
+
+    # It is its own flag: nomination immunity is untouched and vice versa.
+    bb.set_immune(3, True)
+    assert bb.immune_ids() == {3} and bb.eviction_safe_ids() == {1}
+    assert bb.clear_all_immunity() == [3] and bb.eviction_safe_ids() == {1}
+
+    assert bb.clear_all_eviction_safe() == [1]
+    assert bb.eviction_safe_ids() == set()
+    assert bb.clear_all_eviction_safe() == []          # nothing left to clear
+
+    # An evicted housemate's flag is not counted, whatever the column says.
+    bb.set_eviction_safe(2, True)
+    bb.db_set_status(2, bb.STATUS_EVICTED)
+    assert bb.eviction_safe_ids() == set()
+
+
+def test_the_safe_are_kept_off_the_ballot(bb):
+    """Both kinds of protection exclude a housemate from the line-up the host picks from."""
+    import inspect
+    for uid in (1, 2, 3, 4):
+        bb.db_add_housemate(uid)
+    bb.set_immune(1, True)
+    bb.set_eviction_safe(2, True)
+
+    ins = bb.housemates()
+    ranked = [1, 2, 3]
+    safe = bb.immune_ids() | bb.eviction_safe_ids()
+    choices = [u for u in ranked if u not in safe] + [u for u in ins if u not in ranked and u not in safe]
+    assert choices == [3, 4]
+
+    src = inspect.getsource(bb._act_start_vote)
+    assert "immune_ids() | eviction_safe_ids()" in src
+    assert "defaults = [u for u in defaults if u not in safe]" in src
+    # Opening the vote spends it, so the next cycle starts clean with or without nominations.
+    opened = inspect.getsource(bb.start_vote)
+    assert "clear_all_eviction_safe()" in opened and "eviction_safety_cleared" in opened
+    # Save and replace still reaches anyone who isn't already on the block.
+    swap = inspect.getsource(bb.handle_use_immunity)
+    assert "eviction_safe_ids()" not in swap
+
+
+def test_a_mission_can_be_paid_in_eviction_safety(bb):
+    import inspect
+    src = inspect.getsource(bb._act_resolve_mission)
+    assert 'label="Eviction Safe"' in src
+    assert 'outcome in ("auto_immune", "eviction_safe", "token")' in src   # counts as done, not failed
+    assert 'set_eviction_safe(m["user_id"], True)' in src
+    assert 'log_event("eviction_safety_granted"' in src
+    assert "safety from the next public eviction vote" in src
+    assert "made safe from the " in src
+
+    # The host can hand the same thing to a challenge winner from the protection grid.
+    grid = inspect.getsource(bb._act_immunity)
+    assert '"none": "immune", "immune": "safe", "safe": "none"' in grid
+    assert "set_eviction_safe(uid, new == \"safe\")" in grid
 
 
 def test_only_housemates_vote(bb):
