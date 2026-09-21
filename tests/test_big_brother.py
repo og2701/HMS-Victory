@@ -149,8 +149,8 @@ def test_panel_text_and_view_have_no_secrets(bb):
            if hasattr(row, "children") for c in row.children]
     assert len(ids) == 25 and len(set(ids)) == 25
     assert set(ids) == {f"bb:ctl:{a}" for a in bb.PANEL_ACTIONS}
-    # Rows stay short so buttons don't wrap mid-row on desktop.
-    assert all(len(row.children) <= 3 for row in view.children[0].children if hasattr(row, "children"))
+    # Rows stay within Discord's 5-button-per-row ceiling.
+    assert all(len(row.children) <= 5 for row in view.children[0].children if hasattr(row, "children"))
 
 
 def test_house_panel_locked_until_game_starts(bb, monkeypatch):

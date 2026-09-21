@@ -2380,55 +2380,59 @@ class BigBrotherControlView(discord.ui.LayoutView):
     def __init__(self, guild: Optional[discord.Guild] = None):
         super().__init__(timeout=None)
         card = discord.ui.Container(accent_colour=ACCENT)
-        card.add_item(discord.ui.TextDisplay(_panel_text(guild)))
+        # To support 6 distinct sections while staying within Discord's strict 40-component
+        # ceiling, the first heading is appended directly to the panel text display.
+        card.add_item(discord.ui.TextDisplay(_panel_text(guild) + "\n\n### 🎬 Game"))
 
         started = game_started()
         from lib.features import big_brother_shop as _shop
         shop_open = _shop.current_task() is not None
         sections = [
-            ("### 🎬 Game", [
+            (None, [
                 [_PanelButton("start", "Start the game" if not started else "Game is live",
                               discord.ButtonStyle.success if not started else discord.ButtonStyle.secondary, "🎬"),
                  _PanelButton("refresh", "Refresh", emoji="🔄"),
                  _PanelButton("who", "Who's in", emoji="🏠")],
             ]),
             ("### 🗳️ Eviction cycle", [
-                [_PanelButton("open_noms", "Open nominations", discord.ButtonStyle.primary, "📝"),
-                 _PanelButton("close_noms", "Close nominations", emoji="🔒"),
-                 _PanelButton("start_vote", "Start eviction vote", discord.ButtonStyle.primary, "🗳️")],
+                [_PanelButton("open_noms", "Open noms", discord.ButtonStyle.primary, "📝"),
+                 _PanelButton("close_noms", "Close noms", emoji="🔒"),
+                 _PanelButton("start_vote", "Start vote", discord.ButtonStyle.primary, "🗳️")],
                 [_PanelButton("standings", "Standings", emoji="📊"),
                  _PanelButton("close_vote", "Close vote", emoji="🔒"),
                  _PanelButton("evict", "Evict housemate", discord.ButtonStyle.danger, "🚪")],
             ]),
             ("### 🏠 Housemates", [
                 [_PanelButton("add", "Add housemates", discord.ButtonStyle.success, "➕"),
-                 _PanelButton("immunity", "Toggle immunity", emoji="🛡️"),
-                 _PanelButton("token", "Grant immunity token", emoji="🎟️")],
-                [_PanelButton("snug", "Open a snug", emoji="🛋️"),
-                 _PanelButton("silence", "Unsilence house" if house_silent() else "Silence house",
+                 _PanelButton("immunity", "Immunity", emoji="🛡️"),
+                 _PanelButton("token", "Grant token", emoji="🎟️")],
+                [_PanelButton("snug", "Open snug", emoji="🛋️"),
+                 _PanelButton("silence", "Unsilence" if house_silent() else "Silence",
                               discord.ButtonStyle.secondary if house_silent() else discord.ButtonStyle.danger,
                               "🔊" if house_silent() else "🔇"),
                  _PanelButton("crown", "Crown winner", discord.ButtonStyle.success, "👑")],
             ]),
-            ("### 🕵️ Missions, challenges & shop", [
-                [_PanelButton("mission", "Assign mission", emoji="🕵️"),
-                 _PanelButton("resolve_mission", "Resolve mission", emoji="✅"),
-                 _PanelButton("teams", "Teams", discord.ButtonStyle.primary, "🅰️")],
-                [_PanelButton("challenge", "Post challenge", emoji="🧠"),
-                 _PanelButton("end_challenge", "End challenge", emoji="🏁")],
-                [_PanelButton("dm", "DM as Big Brother", emoji="✉️"),
-                 _PanelButton("broadcast", "Announce in house", emoji="📣"),
+            ("### 🕵️ Missions & challenges", [
+                [_PanelButton("mission", "Mission", emoji="🕵️"),
+                 _PanelButton("resolve_mission", "Resolve", emoji="✅"),
+                 _PanelButton("teams", "Teams", discord.ButtonStyle.primary, "🅰️"),
+                 _PanelButton("challenge", "Challenge", emoji="🧠"),
+                 _PanelButton("end_challenge", "End", emoji="🏁")],
+            ]),
+            ("### 📣 Announcements & recaps", [
+                [_PanelButton("dm", "DM housemate", emoji="✉️"),
+                 _PanelButton("broadcast", "Announce", emoji="📣"),
                  _PanelButton("roundup", "Summary so far", emoji="📰")],
+            ]),
+            ("### 🛒 The Shop", [
                 [_PanelButton("catalogue", "Catalogue", emoji="📋"),
                  _PanelButton("shop", "Close shop" if shop_open else "Open shop",
                               discord.ButtonStyle.danger if shop_open else discord.ButtonStyle.primary, "🛒")],
             ]),
         ]
-        # Discord caps a layout at 40 components counting every nested item (container, each
-        # heading, each row, each button). Headings alone mark the sections; separators would
-        # push this over the cap.
         for heading, rows in sections:
-            card.add_item(discord.ui.TextDisplay(heading))
+            if heading:
+                card.add_item(discord.ui.TextDisplay(heading))
             for row in rows:
                 card.add_item(discord.ui.ActionRow(*row))
         self.add_item(card)
