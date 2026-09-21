@@ -1358,4 +1358,41 @@ def test_ensure_daily_roundup_posted_before_silence(bb, monkeypatch):
     assert bb.get_state(bb.STATE_LAST_ROUNDUP_AT) is not None
 
 
+def test_day_number_calendar_and_bedtime_silence_logic(bb, monkeypatch):
+    import datetime
+    from zoneinfo import ZoneInfo
+    london = ZoneInfo("Europe/London")
+
+    # Start: Friday 2026-09-18 at 16:00 London time
+    start_dt = datetime.datetime(2026, 9, 18, 16, 0, 0, tzinfo=london)
+    start_ts = int(start_dt.timestamp())
+    bb.set_state(bb.STATE_GAME_STARTED_AT, start_ts)
+
+    # Friday 23:00 -> Day 1
+    t_fri_night = datetime.datetime(2026, 9, 18, 23, 0, 0, tzinfo=london)
+    monkeypatch.setattr(bb, "_now", lambda: int(t_fri_night.timestamp()))
+    assert bb.day_number() == 1
+
+    # Saturday 01:00 AM (Friday night bedtime silence) -> Still Day 1!
+    t_sat_1am = datetime.datetime(2026, 9, 19, 1, 0, 0, tzinfo=london)
+    monkeypatch.setattr(bb, "_now", lambda: int(t_sat_1am.timestamp()))
+    assert bb.day_number() == 1
+
+    # Saturday 05:59 AM -> Still Day 1!
+    t_sat_559am = datetime.datetime(2026, 9, 19, 5, 59, 0, tzinfo=london)
+    monkeypatch.setattr(bb, "_now", lambda: int(t_sat_559am.timestamp()))
+    assert bb.day_number() == 1
+
+    # Saturday 06:00 AM (Morning wake up) -> Day 2 begins!
+    t_sat_6am = datetime.datetime(2026, 9, 19, 6, 0, 0, tzinfo=london)
+    monkeypatch.setattr(bb, "_now", lambda: int(t_sat_6am.timestamp()))
+    assert bb.day_number() == 2
+
+    # Tuesday 01:00 AM (Monday night bedtime silence) -> Day 4 (previous completed day)!
+    t_tue_1am = datetime.datetime(2026, 9, 22, 1, 0, 0, tzinfo=london)
+    monkeypatch.setattr(bb, "_now", lambda: int(t_tue_1am.timestamp()))
+    assert bb.day_number() == 4
+
+
+
 

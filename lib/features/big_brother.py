@@ -13,6 +13,7 @@ diary entries, mission briefs and outcomes, exposures) is sent to the host's DMs
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import logging
 import os
@@ -290,11 +291,31 @@ def game_started() -> bool:
 
 
 def day_number() -> int:
+    """Returns the current Big Brother game day number based on Europe/London calendar days.
+    Between midnight (00:00) and 06:00 AM, housemates are sleeping at the end of the day that
+    just concluded, so the day number reflects that completed day until morning unsilence at 6:00 AM.
+    """
     start = game_started_at()
     if not start:
         return 1
-    passed = _now() - start
-    return max(1, (passed // 86400) + 1)
+
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Europe/London")
+    except Exception:
+        import pytz
+        tz = pytz.timezone("Europe/London")
+
+    start_dt = datetime.datetime.fromtimestamp(start, tz=tz)
+    now_dt = datetime.datetime.fromtimestamp(_now(), tz=tz)
+
+    cal_days = (now_dt.date() - start_dt.date()).days
+    if now_dt.hour < 6 and cal_days > 0:
+        day = cal_days
+    else:
+        day = cal_days + 1
+
+    return max(1, day)
 
 
 def house_silent() -> bool:
@@ -1662,30 +1683,34 @@ async def generate_daily_roundup(
     *,
     feedback: Optional[str] = None,
     previous_draft: Optional[str] = None,
-    hours: int = 24
+    hours: int = 24,
+    day: Optional[int] = None
 ) -> tuple[Optional[str], Optional[str]]:
     guild = _guild(client) if client else None
     transcript = house_chat_transcript(guild, hours=hours)
     if not transcript:
         return None, "No house messages found in the last 24 hours to summarize."
 
+    if day is None:
+        day = day_number()
+
     events_list = get_recent_public_events(hours=hours)
-    events_section = ("Key events today:\n" + "\n".join(f"- {ev}" for ev in events_list) + "\n\n") if events_list else ""
+    events_section = (f"Key events on Day {day}:\n" + "\n".join(f"- {ev}" for ev in events_list) + "\n\n") if events_list else ""
 
     if previous_draft and feedback:
         user_prompt = (
-            f"Here is the public house chat transcript from the last {hours} hours:\n"
+            f"Here is the public house chat transcript covering Day {day} (the last {hours} hours):\n"
             f"{transcript}\n\n"
             f"Previous Draft:\n{previous_draft}\n\n"
             f"Operator Feedback / Changes to make:\n{feedback}\n\n"
-            f"Please revise the daily roundup to incorporate the feedback. Remember: strictly concise (under 200 words), punchy, 3-4 bullet points, 1 quote of the day."
+            f"Please revise the daily roundup for Day {day} to incorporate the feedback. Remember: strictly concise (under 200 words), punchy, line 1 title must start with **Day {day}: ...**, 3-4 bullet highlights, 1 quote of the day."
         )
     else:
         user_prompt = (
             f"{events_section}"
-            f"Public house chat transcript from the last {hours} hours:\n"
+            f"Public house chat transcript covering Day {day} (the past 24 hours leading up to bedtime silence):\n"
             f"{transcript}\n\n"
-            f"Write today's Big Brother daily roundup following the guidelines (concise, under 200 words, dramatic intro, 3-4 bullet highlights, 1 quote of the day)."
+            f"Write the Big Brother Daily Roundup for **Day {day}** (summarizing the house action and drama leading up to bedtime). Follow the guidelines: strictly concise (under 200 words), line 1 title must start with **Day {day}: <Dramatic Subtitle>**, short 1-sentence intro, 3-4 bullet highlights capturing real drama/banter from the transcript, and 1 standout quote of the day (`> \"...\"` — HousemateName)."
         )
 
     # Try OpenAI gpt-5.6-terra first (smart model requested by user)
@@ -1731,11 +1756,11 @@ async def post_daily_roundup_draft(client: discord.Client) -> tuple[bool, str]:
     ch = await control_channel(client)
     if not ch:
         return False, "Control channel not found."
-    draft, err = await generate_daily_roundup(client)
+    day = day_number()
+    draft, err = await generate_daily_roundup(client, day=day)
     if err or not draft:
         return False, f"Could not generate draft: {err}"
 
-    day = day_number()
     embed = bb_embed(f"Daily Roundup Draft — Day {day}", draft)
     embed.set_footer(text="Review the draft above. Approve to post to #the-house with an @Housemates ping, or request changes.")
 
@@ -1802,8 +1827,8 @@ async def ensure_daily_roundup_posted_before_silence(client: discord.Client) -> 
         return False
 
     if not draft:
-        log.info("Big Brother: no pending draft found before silence; generating one now...")
-        draft, err = await generate_daily_roundup(client)
+        log.info("Big Brother: no pending draft found before silence; generating for Day %s now...", day)
+        draft, err = await generate_daily_roundup(client, day=day)
         if err or not draft:
             log.warning("Big Brother: could not auto-generate roundup before silence: %s", err)
             return False
@@ -1937,12 +1962,12 @@ async def handle_roundup_edit(interaction: discord.Interaction):
         if not curr_draft and interaction.message and interaction.message.embeds:
             curr_draft = interaction.message.embeds[0].description
 
-        revised, err = await generate_daily_roundup(inter.client, feedback=feedback, previous_draft=curr_draft)
+        day = state.get("day") or day_number()
+        revised, err = await generate_daily_roundup(inter.client, feedback=feedback, previous_draft=curr_draft, day=day)
         if err or not revised:
             await inter.edit_original_response(content=f"Could not regenerate draft: {err or 'Unknown error'}")
             return
 
-        day = state.get("day") or day_number()
         set_state(STATE_DAILY_ROUNDUP_DRAFT, {
             "draft": revised,
             "message_id": interaction.message.id if interaction.message else None,
