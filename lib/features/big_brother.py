@@ -3056,8 +3056,7 @@ async def handle_use_immunity(interaction: discord.Interaction):
         if not vote_now or me not in vote_now["nominees"]:
             await inter.response.edit_message(content="You're not facing the public vote right now.", view=None)
             return
-        immune = immune_ids()
-        pool = [u for u in others if u not in vote_now["nominees"] and u not in immune]
+        pool = [u for u in others if u not in vote_now["nominees"]]
         if not pool:
             await inter.response.edit_message(content="There's nobody you can swap with.", view=None)
             return
@@ -3072,6 +3071,7 @@ async def handle_use_immunity(interaction: discord.Interaction):
                 return
             await inter2.response.defer()
             replace_nominee(rnd["id"], me, target)
+            set_immune(target, False)
             log_event("immunity_used", actor=me, target=target, mode="swap", round_id=rnd["id"])
             new_nominees = get_round(rnd["id"])["nominees"]
             guild = inter2.guild
