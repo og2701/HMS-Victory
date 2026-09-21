@@ -1300,3 +1300,62 @@ def test_scheduled_house_silence_and_unsilence(bb, monkeypatch):
     bb.set_house_silence.assert_not_awaited()
 
 
+def test_ensure_daily_roundup_posted_before_silence(bb, monkeypatch):
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    mock_client = MagicMock()
+    bb.set_state(bb.STATE_GAME_STARTED_AT, bb._now() - 3600 * 25)
+    bb.set_state(bb.STATE_LAST_ROUNDUP_AT, None)
+    bb.set_state(bb.STATE_DAILY_ROUNDUP_DISCARDED_DAY, None)
+
+    mock_house = MagicMock()
+    mock_house.id = 999
+    monkeypatch.setattr(bb, "house_channel", AsyncMock(return_value=mock_house))
+    monkeypatch.setattr(bb, "bb_send", AsyncMock())
+
+    # Case 1: Pending draft exists -> auto-posts and clears draft
+    mock_control = MagicMock()
+    mock_msg = MagicMock()
+    mock_msg.delete = AsyncMock()
+    mock_control.fetch_message = AsyncMock(return_value=mock_msg)
+    monkeypatch.setattr(bb, "control_channel", AsyncMock(return_value=mock_control))
+
+    bb.set_state(bb.STATE_DAILY_ROUNDUP_DRAFT, {
+        "draft": "**Day 2: Tea and Tears**\n* Drama happened.",
+        "message_id": "777",
+        "day": 2,
+        "created_at": bb._now() - 1800
+    })
+
+    posted = asyncio.run(bb.ensure_daily_roundup_posted_before_silence(mock_client))
+    assert posted is True
+    bb.bb_send.assert_awaited_once()
+    mock_msg.delete.assert_awaited_once()
+    assert bb.get_state(bb.STATE_DAILY_ROUNDUP_DRAFT) is None
+    assert bb.get_state(bb.STATE_LAST_ROUNDUP_AT) is not None
+    assert bb.get_state(bb.STATE_LAST_ROUNDUP_DAY) == 2
+
+    # Case 2: Already posted within the last 18 hours -> skips
+    bb.bb_send.reset_mock()
+    posted = asyncio.run(bb.ensure_daily_roundup_posted_before_silence(mock_client))
+    assert posted is False
+    bb.bb_send.assert_not_awaited()
+
+    # Case 3: More than 18 hours ago, but day was discarded -> skips
+    bb.set_state(bb.STATE_LAST_ROUNDUP_AT, bb._now() - 3600 * 20)
+    bb.set_state(bb.STATE_DAILY_ROUNDUP_DISCARDED_DAY, bb.day_number())
+    posted = asyncio.run(bb.ensure_daily_roundup_posted_before_silence(mock_client))
+    assert posted is False
+    bb.bb_send.assert_not_awaited()
+
+    # Case 4: More than 18 hours ago, not discarded, no draft in state -> generates and posts
+    bb.set_state(bb.STATE_DAILY_ROUNDUP_DISCARDED_DAY, None)
+    monkeypatch.setattr(bb, "generate_daily_roundup", AsyncMock(return_value=("**Day 2: Generated on the fly**", None)))
+    posted = asyncio.run(bb.ensure_daily_roundup_posted_before_silence(mock_client))
+    assert posted is True
+    bb.bb_send.assert_awaited_once()
+    assert bb.get_state(bb.STATE_LAST_ROUNDUP_AT) is not None
+
+
+

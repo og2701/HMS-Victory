@@ -46,6 +46,8 @@ STATE_VOTE_BUMPED_AT = "vote_thread_bumped_at"      # when the board was last re
 STATE_HOUSE_PANEL_THREAD = "house_panel_thread"     # the panel's own thread off the house channel
 STATE_DAILY_ROUNDUP_DRAFT = "daily_roundup_draft"
 STATE_LAST_ROUNDUP_AT = "last_roundup_at"
+STATE_LAST_ROUNDUP_DAY = "last_roundup_day"
+STATE_DAILY_ROUNDUP_DISCARDED_DAY = "daily_roundup_discarded_day"
 HOUSE_PANEL_REPOST_EVERY = 20  # chat messages in the house before the panel is re-posted at the bottom
 VOTE_REPOST_EVERY = 5          # an open vote moves down far more often, so nobody misses it
 VOTE_THREAD_BUMP_SECONDS = 600 # floor between bumps inside the vote thread: a busy house would
@@ -1756,6 +1758,7 @@ async def post_daily_roundup_draft(client: discord.Client) -> tuple[bool, str]:
             "day": day,
             "created_at": _now()
         })
+        set_state(STATE_DAILY_ROUNDUP_DISCARDED_DAY, None)
         log_event("daily_roundup_drafted", day=day, message_id=msg.id)
         return True, f"Draft posted to <#{ch.id}>: https://discord.com/channels/{getattr(config, 'GUILD_ID', '@me')}/{ch.id}/{msg.id}"
     except discord.HTTPException as e:
@@ -1773,10 +1776,74 @@ async def trigger_daily_roundup_draft(client: discord.Client) -> None:
         log.warning("Big Brother: midnight daily roundup draft failed: %s", msg)
 
 
+async def ensure_daily_roundup_posted_before_silence(client: discord.Client) -> bool:
+    """If the previous day's roundup hasn't been posted yet to #the-house, post it right before silencing."""
+    if not enabled() or not game_started():
+        return False
+
+    last_posted = get_state(STATE_LAST_ROUNDUP_AT)
+    if last_posted and (_now() - int(last_posted) < 18 * 3600):
+        log.info("Big Brother: daily roundup was already posted within the last 18 hours; skipping pre-silence auto-post.")
+        return False
+
+    draft_state = get_state(STATE_DAILY_ROUNDUP_DRAFT) or {}
+    draft = draft_state.get("draft")
+    day = draft_state.get("day") or day_number()
+    msg_id = draft_state.get("message_id")
+
+    # If the draft was explicitly discarded by an operator for this day, respect that decision
+    if not draft and get_state(STATE_DAILY_ROUNDUP_DISCARDED_DAY) == day:
+        log.info("Big Brother: roundup for Day %s was discarded by an operator; skipping auto-post.", day)
+        return False
+
+    hc = await house_channel(client)
+    if not hc:
+        log.warning("Big Brother: house channel not found for pre-silence roundup.")
+        return False
+
+    if not draft:
+        log.info("Big Brother: no pending draft found before silence; generating one now...")
+        draft, err = await generate_daily_roundup(client)
+        if err or not draft:
+            log.warning("Big Brother: could not auto-generate roundup before silence: %s", err)
+            return False
+
+    house_embed = bb_embed(f"Daily Roundup — Day {day}", draft)
+    try:
+        await bb_send(hc, content=f"{_role_mention()}{EYE} **The Daily Roundup is in.**", embed=house_embed)
+    except discord.HTTPException as e:
+        log.warning("Big Brother: failed to post pre-silence roundup to house: %s", e)
+        return False
+
+    # Clean up review message in control channel if one was waiting
+    if msg_id:
+        ch = await control_channel(client)
+        if ch:
+            try:
+                m = await ch.fetch_message(int(msg_id))
+                if m:
+                    await m.delete()
+            except Exception:
+                pass
+
+    set_state(STATE_DAILY_ROUNDUP_DRAFT, None)
+    set_state(STATE_LAST_ROUNDUP_AT, _now())
+    set_state(STATE_LAST_ROUNDUP_DAY, day)
+    log_event("daily_roundup_auto_posted", day=day)
+    log.info("Big Brother: daily roundup for Day %s auto-posted before 1:00 AM silence.", day)
+    return True
+
+
 async def scheduled_house_silence(client: discord.Client) -> None:
     """Scheduled task at 1:00 AM: silence the house for the night if game is in progress."""
     if not enabled() or not game_started():
         return
+
+    # If the previous day's roundup hasn't been posted yet, release it right before silencing
+    posted = await ensure_daily_roundup_posted_before_silence(client)
+    if posted:
+        await asyncio.sleep(2)
+
     if house_silent():
         log.info("Big Brother: nightly silence triggered, but house is already silent.")
         return
@@ -1848,6 +1915,7 @@ async def handle_roundup_approve(interaction: discord.Interaction):
 
     set_state(STATE_DAILY_ROUNDUP_DRAFT, None)
     set_state(STATE_LAST_ROUNDUP_AT, _now())
+    set_state(STATE_LAST_ROUNDUP_DAY, day)
     log_event("daily_roundup_posted", actor=interaction.user.id, day=day)
     await interaction.edit_original_response(content=f"{EYE} Daily roundup posted to <#{hc.id}>!")
 
@@ -1915,6 +1983,7 @@ async def handle_roundup_discard(interaction: discord.Interaction):
             pass
 
     set_state(STATE_DAILY_ROUNDUP_DRAFT, None)
+    set_state(STATE_DAILY_ROUNDUP_DISCARDED_DAY, day)
     log_event("daily_roundup_discarded", actor=interaction.user.id, day=day)
     await interaction.edit_original_response(content=f"{EYE} Draft discarded.")
 
