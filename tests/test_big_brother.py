@@ -887,7 +887,7 @@ def test_the_shop_gets_a_thread_but_purchases_stay_in_the_house(bb):
 def test_threads_are_bumped_on_a_timer_but_not_overnight(bb, monkeypatch):
     """Chat can't bury a thread, so the panel is re-posted on the clock instead - by day."""
     import asyncio
-    assert bb.thread_bump_seconds() == 30 * 60
+    assert bb.thread_bump_seconds() == 120 * 60
     assert bb.night_hours() == (0, 8)                       # midnight to 8am, UK time
     for hour, night in ((0, True), (1, True), (7, True), (8, False), (13, False), (23, False)):
         monkeypatch.setattr(bb, "_hour_of_day", lambda: hour)
