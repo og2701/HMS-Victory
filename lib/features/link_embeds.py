@@ -50,6 +50,11 @@ INSTAGRAM_LINK = re.compile(
     re.IGNORECASE,
 )
 
+# Where a resolved post's media actually lives. Which of the two Meta hands back varies by
+# post and by region - the first build only knew about fbcdn.net and quietly dropped every
+# reel served from cdninstagram.com, which was most of them.
+MEDIA_CDNS = ("fbcdn.net", "cdninstagram.com")
+
 # instagram.com/reels/audio/<id> and friends match the shape above but are not posts.
 NOT_A_SHORTCODE = {"audio", "explore", "highlights", "stories", "video"}
 
@@ -143,8 +148,9 @@ def _rate_limited(user_id: int, now: Optional[float] = None) -> bool:
 async def resolve_media(session, kind: str, code: str) -> Optional[str]:
     """Ask kkinstagram where the media lives, or None if it could not find it.
 
-    A resolvable post answers the crawler with a redirect to *.fbcdn.net. Anything else -
-    a redirect back to instagram.com, a 404, one of the service's intermittent 502s - means
+    A resolvable post answers the crawler with a redirect to one of Meta's media CDNs -
+    which one varies by post and by region, so both are accepted. Anything else - a
+    redirect back to instagram.com, a 404, one of the service's intermittent 502s - means
     there is nothing to post.
     """
     try:
@@ -162,7 +168,8 @@ async def resolve_media(session, kind: str, code: str) -> Optional[str]:
         return None
 
     host = (urlparse(target).hostname or "").lower()
-    if not (host == "fbcdn.net" or host.endswith(".fbcdn.net")):
+    if not any(host == cdn or host.endswith("." + cdn) for cdn in MEDIA_CDNS):
+        logger.debug("kkinstagram did not resolve %s/%s (sent us to %s)", kind, code, host or "nowhere")
         return None
     return target
 

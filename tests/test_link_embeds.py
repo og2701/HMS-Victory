@@ -160,14 +160,21 @@ def test_only_a_redirect_to_the_cdn_counts_as_resolved():
     assert session.requests[0][1]["allow_redirects"] is False
 
 
+def test_both_of_metas_media_cdns_are_accepted():
+    """Which CDN a post comes back on varies; only knowing fbcdn.net dropped most reels."""
+    for host in ("instagram.flim1-1.fna.fbcdn.net", "scontent-waw2-1.cdninstagram.com"):
+        target = f"https://{host}/o1/v/t2/f2/m86/AQPPWYcC.mp4?_nc_cat=100"
+        assert run(L.resolve_media(Session(Response(302, {"Location": target})), "reel", "x12345")) == target
+
+
 def test_a_post_it_cannot_scrape_resolves_to_nothing():
     # deleted/private/age-gated: kkinstagram hands the crawler straight back to Instagram
     bounced = Session(Response(302, {"Location": "https://www.instagram.com/reel/Cl5xJY1AjAO/"}))
     assert run(L.resolve_media(bounced, "reel", "Cl5xJY1AjAO")) is None
 
     # and a lookalike host must not pass for the CDN
-    spoofed = Session(Response(302, {"Location": "https://fbcdn.net.evil.example/x.mp4"}))
-    assert run(L.resolve_media(spoofed, "reel", "CkdGjonI08u")) is None
+    for lookalike in ("https://fbcdn.net.evil.example/x.mp4", "https://cdninstagram.com.evil.example/x.mp4"):
+        assert run(L.resolve_media(Session(Response(302, {"Location": lookalike})), "reel", "CkdGjonI08u")) is None
 
     # the service's intermittent 502s, and its 404 for a bad shortcode
     assert run(L.resolve_media(Session(Response(504)), "p", "ZZZZnotreal9")) is None
