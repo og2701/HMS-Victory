@@ -2018,7 +2018,7 @@ async def scheduled_house_silence(client: discord.Client) -> None:
         log_event("house_silenced", actor=None, reason="scheduled_nightly")
         ch = await house_channel(client)
         if ch:
-            await bb_send(ch, f"{_role_mention()}{EYE} **It is 00:30. The house is now silent for the night.** Sleep well, housemates. No talking until morning.")
+            await bb_send(ch, f"{EYE} **It is 00:30. The house is now silent for the night.** Sleep well, housemates. No talking until morning.")
         await refresh_panel(client)
         log.info("Big Brother: house silenced for the night (00:30).")
     else:
@@ -2040,7 +2040,7 @@ async def scheduled_house_unsilence(client: discord.Client) -> None:
         log_event("house_unsilenced", actor=None, reason="scheduled_morning")
         ch = await house_channel(client)
         if ch:
-            await bb_send(ch, f"{_role_mention()}{EYE} **Good morning, housemates.** It is 6:00 AM. The house is no longer silent — you may talk again.")
+            await bb_send(ch, f"{EYE} **Good morning, housemates.** It is 6:00 AM. The house is no longer silent — you may talk again.")
         await refresh_panel(client)
         log.info("Big Brother: house unsilenced for the morning (6:00 AM).")
     else:

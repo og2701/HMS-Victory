@@ -1303,6 +1303,26 @@ def test_scheduled_house_silence_and_unsilence(bb, monkeypatch):
     asyncio.run(bb.scheduled_house_unsilence(mock_client))
     bb.set_house_silence.assert_not_awaited()
 
+    # Verify messages do not ping housemate role
+    sent_messages = []
+    mock_house_ch = MagicMock()
+    monkeypatch.setattr(bb, "house_channel", AsyncMock(return_value=mock_house_ch))
+    monkeypatch.setattr(bb, "bb_send", AsyncMock(side_effect=lambda ch, text, **kwargs: sent_messages.append(text)))
+    monkeypatch.setattr(bb, "housemate_role_id", lambda: 99999)
+    monkeypatch.setattr(bb, "open_round", lambda kind: None)
+
+    bb.set_state(bb.STATE_HOUSE_SILENT, False)
+    asyncio.run(bb.scheduled_house_silence(mock_client))
+    assert len(sent_messages) == 1
+    assert "00:30" in sent_messages[0]
+    assert "<@&" not in sent_messages[0]  # Must NOT ping role
+
+    bb.set_state(bb.STATE_HOUSE_SILENT, True)
+    asyncio.run(bb.scheduled_house_unsilence(mock_client))
+    assert len(sent_messages) == 2
+    assert "6:00 AM" in sent_messages[1]
+    assert "<@&" not in sent_messages[1]  # Must NOT ping role
+
 
 def test_ensure_daily_roundup_posted_before_silence(bb, monkeypatch):
     import asyncio
