@@ -1737,6 +1737,20 @@ async def post_daily_roundup_draft(client: discord.Client) -> tuple[bool, str]:
     embed = bb_embed(f"Daily Roundup Draft — Day {day}", draft)
     embed.set_footer(text="Review the draft above. Approve to post to #the-house with an @Housemates ping, or request changes.")
 
+    # If there was a previous unapproved draft message, supersede and disable its buttons
+    old_state = get_state(STATE_DAILY_ROUNDUP_DRAFT) or {}
+    old_mid = old_state.get("message_id")
+    if old_mid and ch:
+        try:
+            old_msg = await ch.fetch_message(int(old_mid))
+            if old_msg and old_msg.embeds:
+                old_embed = old_msg.embeds[0]
+                old_embed.colour = discord.Colour.dark_grey().value
+                old_embed.set_footer(text="Superseded by a newer draft below.")
+                await old_msg.edit(content="⚠️ **Superseded by a newer draft below.**", embed=old_embed, view=None)
+        except Exception:
+            pass
+
     try:
         msg = await ch.send(content=f"{EYE} **New Daily Roundup Draft for Day {day}:**", embed=embed, view=RoundupReviewView())
         set_state(STATE_DAILY_ROUNDUP_DRAFT, {
