@@ -688,7 +688,7 @@ BIG_BROTHER_VOTE_CHANNEL = None                     # public eviction votes post
 BIG_BROTHER_VOTE_IN_THREAD = True                   # the vote board gets its own locked thread off the house channel
 BIG_BROTHER_PANEL_IN_THREAD = True                  # so does the housemates' panel, once the doors are open
 BIG_BROTHER_SHOP_IN_THREAD = True                   # and the shop, while purchases still land in the house
-BIG_BROTHER_THREAD_BUMP_MINUTES = 30                # how often those threads are re-posted to stay near the top
+BIG_BROTHER_THREAD_BUMP_MINUTES = 120               # how often those threads are re-posted to stay near the top (2 hours)
 BIG_BROTHER_NIGHT_HOURS = (0, 8)                    # UK hours with no bumping: midnight until 8am
 BIG_BROTHER_HOUSEMATE_ROLE = 1550132346295029892    # Housemate role: assigned on add, stripped on eviction, pinged
 BIG_BROTHER_PRIZE_UKP = 5000
@@ -772,6 +772,14 @@ VOICE_NOTE_TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"
 # audio file gets the button too. The cap keeps a shared song out: a two-minute note is
 # ~700KB, a track is several MB.
 VOICE_NOTE_MAX_BYTES = 2 * 1024 * 1024
+
+# --- Instagram link embeds ---
+# Instagram shows Discord's crawler a login wall, so a reel posted in chat is a bare link
+# with no preview. The bot resolves it through kkinstagram (the instafix service, the same
+# trick as typing the domain in by hand) and posts the video itself, so it plays inline.
+# Anything over the guild's upload limit falls back to posting the kkinstagram link.
+INSTAGRAM_EMBED_FIX_ENABLED = True
+INSTAGRAM_EMBED_MAX_BYTES = 25 * 1024 * 1024
 
 # --- Voice Channel Lockdown ---
 VC_LOCKDOWN_WHITELIST = [
