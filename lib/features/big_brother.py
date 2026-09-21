@@ -918,6 +918,10 @@ async def evict(client: discord.Client, user_id: int, *, announce: bool = True) 
     await dm_user(client, user_id, embed=bb_embed(
         "You have been evicted",
         "Thanks for playing. You can still watch the house (read-only) and vote in the public evictions."))
+    expired = clear_all_immunity()
+    if expired:
+        log_event("immunity_expired", target=user_id, housemates=expired, reason="eviction_complete")
+    clear_all_eviction_safe()
 
 
 async def set_house_silence(client: discord.Client, silent: bool) -> bool:
@@ -1377,6 +1381,9 @@ async def close_vote(client: discord.Client) -> Optional[dict]:
     if not rnd:
         return None
     close_round(rnd["id"])
+    expired = clear_all_immunity()
+    if expired:
+        log_event("immunity_expired", round_id=rnd["id"], housemates=expired, reason="vote_closed")
     guild = _guild(client)
     tally = vote_tally(rnd["id"])
     total = sum(tally.values())
@@ -2411,7 +2418,7 @@ class BigBrotherControlView(discord.ui.LayoutView):
                  _PanelButton("end_challenge", "End challenge", emoji="🏁")],
                 [_PanelButton("dm", "DM as Big Brother", emoji="✉️"),
                  _PanelButton("broadcast", "Announce in house", emoji="📣"),
-                 _PanelButton("roundup", "Draft roundup", emoji="📰")],
+                 _PanelButton("roundup", "Summary so far", emoji="📰")],
                 [_PanelButton("catalogue", "Catalogue", emoji="📋"),
                  _PanelButton("shop", "Close shop" if shop_open else "Open shop",
                               discord.ButtonStyle.danger if shop_open else discord.ButtonStyle.primary, "🛒")],

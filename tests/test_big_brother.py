@@ -1237,3 +1237,14 @@ def test_daily_roundup_generation_and_approval(bb, monkeypatch):
     assert "bb_roundup_approve" in custom_ids
     assert "bb_roundup_edit" in custom_ids
     assert "bb_roundup_discard" in custom_ids
+
+
+def test_immunity_cleared_on_close_vote_and_eviction(bb):
+    import inspect
+    # Ensure clear_all_immunity is called in both close_vote and evict
+    src_close = inspect.getsource(bb.close_vote)
+    src_evict = inspect.getsource(bb.evict)
+    assert "clear_all_immunity" in src_close
+    assert "clear_all_immunity" in src_evict
+    assert "clear_all_eviction_safe" in src_evict
+
