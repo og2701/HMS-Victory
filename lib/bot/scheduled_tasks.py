@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+import config
 from config import *
 from lib.features.summary import initialize_summary_data, update_summary_data, post_summary
 from lib.features.dm_spam_watch import sweep as sweep_dm_spam_flags
