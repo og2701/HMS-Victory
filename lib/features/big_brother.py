@@ -49,6 +49,7 @@ STATE_DAILY_ROUNDUP_DRAFT = "daily_roundup_draft"
 STATE_LAST_ROUNDUP_AT = "last_roundup_at"
 STATE_LAST_ROUNDUP_DAY = "last_roundup_day"
 STATE_DAILY_ROUNDUP_DISCARDED_DAY = "daily_roundup_discarded_day"
+STATE_HOUSEMATE_ALIASES = "housemate_aliases"
 HOUSE_PANEL_REPOST_EVERY = 20  # chat messages in the house before the panel is re-posted at the bottom
 VOTE_REPOST_EVERY = 5          # an open vote moves down far more often, so nobody misses it
 VOTE_THREAD_BUMP_SECONDS = 600 # floor between bumps inside the vote thread: a busy house would
@@ -758,7 +759,24 @@ def _guild(client: discord.Client) -> Optional[discord.Guild]:
     return client.get_guild(int(getattr(config, "GUILD_ID", 0)))
 
 
+def housemate_alias(user_id: int) -> Optional[str]:
+    aliases = get_state(STATE_HOUSEMATE_ALIASES) or {}
+    return aliases.get(str(user_id))
+
+
+def set_housemate_alias(user_id: int, alias: Optional[str]) -> None:
+    aliases = get_state(STATE_HOUSEMATE_ALIASES) or {}
+    if alias:
+        aliases[str(user_id)] = alias.strip()
+    else:
+        aliases.pop(str(user_id), None)
+    set_state(STATE_HOUSEMATE_ALIASES, aliases)
+
+
 def _name(guild: Optional[discord.Guild], user_id: int) -> str:
+    alias = housemate_alias(user_id)
+    if alias:
+        return alias
     member = guild.get_member(int(user_id)) if guild else None
     return member.display_name if member else f"user {user_id}"
 

@@ -1398,5 +1398,22 @@ def test_day_number_calendar_and_bedtime_silence_logic(bb, monkeypatch):
     assert bb.day_number() == 4
 
 
+def test_housemate_aliases(bb):
+    # Without alias, falls back to guild member or default string
+    assert bb.housemate_alias(828728237789020240) is None
+    assert bb._name(None, 828728237789020240) == "user 828728237789020240"
+
+    # Set alias
+    bb.set_housemate_alias(828728237789020240, "Michael Barrymore")
+    assert bb.housemate_alias(828728237789020240) == "Michael Barrymore"
+    assert bb._name(None, 828728237789020240) == "Michael Barrymore"
+
+    # Clear alias
+    bb.set_housemate_alias(828728237789020240, None)
+    assert bb.housemate_alias(828728237789020240) is None
+    assert bb._name(None, 828728237789020240) == "user 828728237789020240"
+
+
+
 
 
