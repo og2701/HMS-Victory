@@ -244,6 +244,9 @@ def test_tokens_immunity_and_swap(bb):
     sn = bb.snugs()[0]
     assert (sn["id"], sn["thread_id"], sn["opened_by"], sn["members"], sn["closed_at"]) == (sid, 555, 1, [1, 2], None)
     assert bb.recent_snug_by(1, 60) and not bb.recent_snug_by(2, 60)
+    assert bb.SNUG_COOLDOWN_SECONDS == 30 * 60
+    assert bb.snug_cooldown_remaining(1, 60) > 0
+    assert bb.snug_cooldown_remaining(2, 60) == 0
 
 
 def test_echo_body_covers_content_and_embed(bb):

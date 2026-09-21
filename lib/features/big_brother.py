@@ -1377,9 +1377,20 @@ async def close_vote(client: discord.Client) -> Optional[dict]:
 
 
 SNUG_ARCHIVE_MINUTES = 60
-SNUG_COOLDOWN_SECONDS = 2 * 3600
+SNUG_COOLDOWN_SECONDS = 30 * 60
 SNUG_SWEEP_SECONDS = 300  # how often the bot checks for snugs that have gone quiet
 _snug_sweeper: Optional[asyncio.Task] = None
+
+
+def snug_cooldown_remaining(user_id: int, cooldown_seconds: int = SNUG_COOLDOWN_SECONDS) -> int:
+    ensure_tables()
+    row = DatabaseManager.fetch_one(
+        "SELECT MAX(created_at) FROM bb_snugs WHERE opened_by = ?",
+        (str(user_id),))
+    if not row or not row[0]:
+        return 0
+    passed = _now() - int(row[0])
+    return max(0, int(cooldown_seconds) - passed)
 
 
 async def open_snug(client: discord.Client, opened_by: Optional[int], member_ids: list[int],
@@ -3109,9 +3120,12 @@ async def handle_snug(interaction: discord.Interaction):
     if not others:
         await interaction.response.send_message("There's nobody else in the house.", ephemeral=True)
         return
-    if recent_snug_by(me, SNUG_COOLDOWN_SECONDS):
+    left_sec = snug_cooldown_remaining(me, SNUG_COOLDOWN_SECONDS)
+    if left_sec > 0:
+        left_min = max(1, (left_sec + 59) // 60)
         await interaction.response.send_message(
-            f"{EYE} You've opened a snug recently. Try again in a couple of hours.", ephemeral=True)
+            f"{EYE} You've opened a snug recently. You can open another in {left_min} minute{'s' if left_min != 1 else ''}.",
+            ephemeral=True)
         return
 
     async def picked(inter: discord.Interaction, ids: list[int]):
