@@ -779,7 +779,13 @@ VOICE_NOTE_MAX_BYTES = 2 * 1024 * 1024
 # trick as typing the domain in by hand) and posts the video itself, so it plays inline.
 # Anything over the guild's upload limit falls back to posting the kkinstagram link.
 INSTAGRAM_EMBED_FIX_ENABLED = True
-INSTAGRAM_EMBED_MAX_BYTES = 25 * 1024 * 1024
+INSTAGRAM_EMBED_MAX_BYTES = 25 * 1024 * 1024          # never upload more than this
+# Reels routinely come down at 15-40MB, over what the guild will take, so an oversized
+# video is re-encoded to fit (ffmpeg, bitrate worked back from the clip's duration) rather
+# than handed over as a link. The source cap is the point where that stops being worth the
+# bandwidth and the CPU.
+INSTAGRAM_EMBED_COMPRESS = True
+INSTAGRAM_EMBED_SOURCE_MAX_BYTES = 60 * 1024 * 1024
 
 # --- Voice Channel Lockdown ---
 VC_LOCKDOWN_WHITELIST = [

@@ -10,7 +10,13 @@ The bot does that lookup itself rather than rewriting the member's link, and pos
 media as an attachment under their message. Two reasons: the reel then plays inline with
 no third party between a member and the video (kkinstagram sends humans who click it to
 kkclip.com, an "Open in App" interstitial), and the member's own link is left untouched
-above it. When the file is bigger than the guild's upload limit it falls back to posting
+above it.
+
+Reels routinely land between the guild's upload limit and ~50MB, so a video too big to
+post as it stands is re-encoded to fit rather than given up on: ffmpeg is told how many
+bytes it has, works the bitrate back from the clip's duration, and drops the picture to
+720p (then 480p on a second go) if that is what it takes. Only when even that overshoots,
+or the source is bigger than the bot is willing to pull down, does it fall back to posting
 the kkinstagram link, which unfurls the same media through Discord's crawler.
 
 Posts kkinstagram cannot resolve - deleted, private or age-gated - redirect back to
@@ -21,7 +27,10 @@ post would beat the link the member already sent.
 import asyncio
 import io
 import logging
+import os
 import re
+import shutil
+import tempfile
 import time
 from collections import deque
 from typing import List, Optional, Tuple
@@ -64,6 +73,13 @@ UPLOAD_HEADROOM = 512 * 1024    # multipart overhead, kept clear of the guild's 
 RATE_LIMIT_PER_USER = 4         # fixes per member per minute; a paste of ten reels is spam
 RATE_WINDOW = 60.0
 
+# Re-encoding budget. The bitrate is worked back from the clip's duration, so a long reel
+# gets a lower one; the ladder is the fallback when that alone does not bring it under.
+ENCODE_TIMEOUT = 180
+AUDIO_BITRATE = 96_000
+BITRATE_SAFETY = 0.92           # container overhead ffmpeg's -b:v does not account for
+ENCODE_LADDER = (720, 480)      # max output height per attempt
+
 EXTENSIONS = {
     "video/mp4": ".mp4",
     "video/quicktime": ".mov",
@@ -83,6 +99,15 @@ def _enabled() -> bool:
 
 def _max_bytes() -> int:
     return int(getattr(config, "INSTAGRAM_EMBED_MAX_BYTES", 25 * 1024 * 1024))
+
+
+def _source_max_bytes() -> int:
+    """How big a reel the bot will pull down before deciding it is not worth the bandwidth."""
+    return int(getattr(config, "INSTAGRAM_EMBED_SOURCE_MAX_BYTES", 60 * 1024 * 1024))
+
+
+def _compress_enabled() -> bool:
+    return bool(getattr(config, "INSTAGRAM_EMBED_COMPRESS", True))
 
 
 def _suppressed(content: str, start: int, end: int) -> bool:
@@ -206,6 +231,87 @@ def upload_limit(message) -> int:
     return max(0, min(int(guild_limit) - UPLOAD_HEADROOM, _max_bytes()))
 
 
+async def _run(program: str, *arguments: str, timeout: int) -> Tuple[int, bytes]:
+    """Run a tool, never leaving a stuck process behind. Returns (exit code, stdout)."""
+    process = await asyncio.create_subprocess_exec(
+        program, *arguments,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        process.kill()
+        await process.wait()
+        raise
+    return process.returncode, stdout
+
+
+async def video_duration(path: str) -> Optional[float]:
+    code, stdout = await _run(
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", path, timeout=30,
+    )
+    try:
+        duration = float(stdout.decode().strip())
+    except (ValueError, UnicodeDecodeError):
+        return None
+    return duration if code == 0 and duration > 0 else None
+
+
+async def compress_video(data: bytes, target_bytes: int) -> Optional[bytes]:
+    """Re-encode a video to land under `target_bytes`, or None if it cannot be done.
+
+    The bitrate is the budget divided by the running time, so the encoder is aiming at a
+    size rather than a quality, and a long reel simply gets a softer picture. Height is
+    stepped down the ladder on each attempt, since a 1080p reel squeezed into a few
+    megabytes looks far worse than the same clip at 720p.
+    """
+    if target_bytes <= 0 or not data:
+        return None
+
+    workspace = tempfile.mkdtemp(prefix="ig-embed-")
+    source = os.path.join(workspace, "source")
+    try:
+        with open(source, "wb") as handle:
+            handle.write(data)
+
+        duration = await video_duration(source)
+        if not duration:
+            return None
+
+        for attempt, height in enumerate(ENCODE_LADDER):
+            budget = int(target_bytes * BITRATE_SAFETY * (0.85 ** attempt))
+            video_bitrate = int(budget * 8 / duration) - AUDIO_BITRATE
+            if video_bitrate < 120_000:     # below this it is a slideshow; not worth posting
+                return None
+
+            output = os.path.join(workspace, f"out{attempt}.mp4")
+            code, _ = await _run(
+                "ffmpeg", "-y", "-i", source,
+                # Only ever scale down, and keep the height even for H.264.
+                "-vf", f"scale=-2:'min({height},ih)'",
+                "-c:v", "libx264", "-preset", "veryfast",
+                "-b:v", str(video_bitrate),
+                "-maxrate", str(int(video_bitrate * 1.25)),
+                "-bufsize", str(video_bitrate * 2),
+                "-c:a", "aac", "-b:a", str(AUDIO_BITRATE),
+                "-movflags", "+faststart",
+                output, timeout=ENCODE_TIMEOUT,
+            )
+            if code != 0 or not os.path.exists(output):
+                continue
+            if os.path.getsize(output) <= target_bytes:
+                with open(output, "rb") as handle:
+                    return handle.read()
+        return None
+    except (asyncio.TimeoutError, FileNotFoundError, OSError):
+        logger.debug("re-encode failed", exc_info=True)
+        return None
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+
 async def _post(message, payload) -> None:
     """Reply under the member's message, falling back to a plain channel send."""
     kwargs = dict(allowed_mentions=discord.AllowedMentions.none(), **payload)
@@ -243,12 +349,34 @@ async def fix_instagram_links(client, message) -> None:
         if not media_url:
             continue
 
-        downloaded = await download_media(session, media_url, limit) if limit else None
-        if downloaded:
-            data, content_type = downloaded
-            file = discord.File(io.BytesIO(data), filename=filename_for(code, content_type))
-            await _post(message, {"file": file})
-        else:
-            # Too big to re-host, so hand Discord the link and let its crawler follow the
-            # same redirect we just did.
+        # Pulled down against the bigger ceiling, not the upload limit: a reel over the
+        # limit is a candidate for re-encoding, so it has to be in hand first.
+        downloaded = await download_media(session, media_url, _source_max_bytes())
+        if not downloaded:
             await _post(message, {"content": mirror_url(kind, code)})
+            continue
+
+        data, content_type = downloaded
+        if len(data) > limit:
+            data = await _shrink(data, content_type, limit)
+            if not data:
+                # A still image, or a clip that will not come down far enough: hand Discord
+                # the link and let its crawler follow the same redirect we just did.
+                await _post(message, {"content": mirror_url(kind, code)})
+                continue
+            content_type = "video/mp4"
+
+        file = discord.File(io.BytesIO(data), filename=filename_for(code, content_type))
+        await _post(message, {"file": file})
+
+
+async def _shrink(data: bytes, content_type: str, limit: int) -> Optional[bytes]:
+    """Re-encode an oversized video to fit. Images are left alone - there is nothing
+    sensible to trade away on a photo that Discord would not already do itself."""
+    if not _compress_enabled() or not (content_type or "").startswith("video/") or limit <= 0:
+        return None
+    shrunk = await compress_video(data, limit)
+    if shrunk:
+        logger.info("re-encoded an Instagram video from %.1fMB to %.1fMB to fit the upload limit",
+                    len(data) / 1e6, len(shrunk) / 1e6)
+    return shrunk

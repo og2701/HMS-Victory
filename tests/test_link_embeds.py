@@ -222,17 +222,71 @@ def test_a_reel_is_posted_as_a_playable_file():
     assert message.posts[0]["file"].filename == "CkdGjonI08u.mp4"
 
 
-def test_a_reel_too_big_to_rehost_falls_back_to_the_link():
-    session = Session(
+def oversized_session(body=b"x" * 2048):
+    """A resolvable reel whose media is past a 1KB upload limit."""
+    return Session(
         Response(302, {"Location": MEDIA}),
-        Response(200, {"Content-Type": "video/mp4", "Content-Length": str(50 * 1024 * 1024)}, b"x"),
+        Response(200, {"Content-Type": "video/mp4", "Content-Length": str(len(body))}, body),
     )
-    message = Message("https://www.instagram.com/reel/CkdGjonI08u/")
-    run(L.fix_instagram_links(client_with(session), message))
+
+
+def test_a_reel_over_the_limit_is_re_encoded_rather_than_given_up_on(monkeypatch):
+    asked = {}
+
+    async def fake_compress(data, target_bytes):
+        asked["target"] = target_bytes
+        asked["source"] = len(data)
+        return b"smaller"
+
+    monkeypatch.setattr(L, "compress_video", fake_compress)
+    message = Message("https://www.instagram.com/reel/CkdGjonI08u/", filesize_limit=1024 + L.UPLOAD_HEADROOM)
+    run(L.fix_instagram_links(client_with(oversized_session()), message))
+
+    assert asked == {"target": 1024, "source": 2048}
+    assert len(message.posts) == 1
+    assert message.posts[0]["file"].filename == "CkdGjonI08u.mp4"
+
+
+def test_a_reel_that_will_not_come_down_far_enough_falls_back_to_the_link(monkeypatch):
+    async def cannot_compress(_data, _target):
+        return None
+
+    monkeypatch.setattr(L, "compress_video", cannot_compress)
+    message = Message("https://www.instagram.com/reel/CkdGjonI08u/", filesize_limit=1024 + L.UPLOAD_HEADROOM)
+    run(L.fix_instagram_links(client_with(oversized_session()), message))
 
     assert len(message.posts) == 1
     assert message.posts[0]["content"] == "https://kkinstagram.com/reel/CkdGjonI08u"
     assert message.posts[0]["mention_author"] is False
+
+
+def test_an_oversized_photo_is_linked_not_re_encoded(monkeypatch):
+    """There is nothing worth trading away on a still, so it is not put through ffmpeg."""
+    async def unexpected(_data, _target):
+        raise AssertionError("a photo should never reach the encoder")
+
+    monkeypatch.setattr(L, "compress_video", unexpected)
+    session = Session(
+        Response(302, {"Location": MEDIA}),
+        Response(200, {"Content-Type": "image/jpeg", "Content-Length": "2048"}, b"x" * 2048),
+    )
+    message = Message("https://www.instagram.com/p/DHiT76Bihqa/", filesize_limit=1024 + L.UPLOAD_HEADROOM)
+    run(L.fix_instagram_links(client_with(session), message))
+
+    assert message.posts[0]["content"] == "https://kkinstagram.com/p/DHiT76Bihqa"
+
+
+def test_a_reel_bigger_than_the_download_ceiling_is_never_pulled_down(monkeypatch):
+    monkeypatch.setattr(config_module(), "INSTAGRAM_EMBED_SOURCE_MAX_BYTES", 1000)
+    message = Message("https://www.instagram.com/reel/CkdGjonI08u/")
+    run(L.fix_instagram_links(client_with(oversized_session()), message))
+
+    assert message.posts[0]["content"] == "https://kkinstagram.com/reel/CkdGjonI08u"
+
+
+def config_module():
+    import config
+    return config
 
 
 def test_nothing_is_posted_when_there_is_nothing_to_add():
@@ -274,3 +328,57 @@ def test_the_upload_cap_stays_under_the_guilds_limit():
     no_guild = Message("")
     no_guild.guild = None
     assert L.upload_limit(no_guild) == 8 * 1024 * 1024 - L.UPLOAD_HEADROOM
+
+
+# --- the encoder ----------------------------------------------------------------------
+
+def _ffmpeg_missing():
+    import shutil as _shutil
+    return _shutil.which("ffmpeg") is None or _shutil.which("ffprobe") is None
+
+
+def _sample_video(seconds=5, path=None):
+    """A synthetic clip fat enough that it has to be squeezed to hit a small target."""
+    import subprocess, tempfile, os
+    path = path or os.path.join(tempfile.mkdtemp(prefix="ig-test-"), "sample.mp4")
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", f"testsrc=size=1280x720:rate=30:duration={seconds}",
+         "-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}",
+         "-c:v", "libx264", "-preset", "veryfast", "-b:v", "6000k", "-c:a", "aac", path],
+        check=True, capture_output=True,
+    )
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
+def test_the_encoder_lands_under_the_target_and_keeps_the_clip_playable():
+    if _ffmpeg_missing():
+        import pytest
+        pytest.skip("ffmpeg is not installed")
+
+    import subprocess, tempfile, os
+    source = _sample_video()
+    target = len(source) // 3
+    shrunk = run(L.compress_video(source, target))
+
+    assert shrunk is not None and len(shrunk) <= target
+
+    # still a real video of the same length, not a truncated file
+    path = os.path.join(tempfile.mkdtemp(prefix="ig-test-"), "out.mp4")
+    with open(path, "wb") as handle:
+        handle.write(shrunk)
+    assert abs(run(L.video_duration(path)) - 5) < 0.5
+
+
+def test_the_encoder_refuses_what_it_cannot_do_honestly():
+    if _ffmpeg_missing():
+        import pytest
+        pytest.skip("ffmpeg is not installed")
+
+    source = _sample_video()
+    # a target so small the picture would be a slideshow - better to post the link
+    assert run(L.compress_video(source, 20_000)) is None
+    # and nothing that is not a video gets through
+    assert run(L.compress_video(b"not a video at all", 1_000_000)) is None
+    assert run(L.compress_video(b"", 1_000_000)) is None
+    assert run(L.compress_video(b"anything", 0)) is None
