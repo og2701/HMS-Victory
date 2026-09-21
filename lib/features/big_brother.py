@@ -1600,17 +1600,20 @@ class VoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:vote:(
 
         async def submitted(inter: discord.Interaction, values: dict):
             reason = (values.get("reason") or "").strip()
+            if not reason:
+                await inter.response.send_message("You must provide a reason for your vote.", ephemeral=True)
+                return
             cast_vote(self.round_id, inter.user.id, self.nominee_id, reason)
             log_event("vote_cast", actor=inter.user.id, target=self.nominee_id,
-                      round_id=self.round_id, reason=reason or None)
+                      round_id=self.round_id, reason=reason)
             asyncio.create_task(refresh_vote_count(inter.client, self.round_id))
             await inter.response.send_message(
-                f"Vote recorded: you voted to evict **{who}**." + (f"\n-# \"{reason[:200]}\"" if reason else "")
+                f"Vote recorded: you voted to evict **{who}**.\n-# \"{reason[:200]}\""
                 + "\nPress another button to change it.", ephemeral=True)
 
         # The modal has to be the first reply to the press, so the vote is stored on submit.
         await interaction.response.send_modal(_TextModal(
-            f"Evict {who}"[:45], [("reason", "Why? (optional)", False, 300, True)], submitted))
+            f"Evict {who}"[:45], [("reason", "Why are you voting to evict them?", True, 300, True)], submitted))
 
 
 class MyVoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:myvote:(?P<rid>\d+)"):
