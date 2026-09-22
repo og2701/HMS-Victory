@@ -260,16 +260,17 @@ async def _collect(guild, only, include_threads):
             add(thread)
         if not isinstance(channel, (discord.TextChannel, discord.ForumChannel)):
             continue
-        for private in (False, True):
+        # Only text channels have private threads; a forum's archived_threads takes no
+        # `private` argument at all, and passing one is a TypeError.
+        variants = ({}, {"private": True}) if isinstance(channel, discord.TextChannel) else ({},)
+        for kwargs in variants:
             try:
-                async for thread in channel.archived_threads(limit=None, private=private,
-                                                             joined=False):
+                async for thread in channel.archived_threads(limit=None, **kwargs):
                     add(thread)
             except discord.Forbidden:
                 pass          # private archived threads need Manage Threads
             except discord.HTTPException as e:
-                log.debug("archived threads (private=%s) failed on #%s: %s",
-                          private, channel.name, e)
+                log.debug("archived threads %s failed on #%s: %s", kwargs, channel.name, e)
     return out
 
 
