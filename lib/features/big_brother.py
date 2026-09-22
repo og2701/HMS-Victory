@@ -294,8 +294,8 @@ def game_started() -> bool:
 
 def day_number() -> int:
     """Returns the current Big Brother game day number based on Europe/London calendar days.
-    Between midnight (00:00) and 06:00 AM, housemates are sleeping at the end of the day that
-    just concluded, so the day number reflects that completed day until morning unsilence at 6:00 AM.
+    Between midnight (00:00) and 06:30 AM, housemates are sleeping at the end of the day that
+    just concluded, so the day number reflects that completed day until morning unsilence at 6:30 AM.
     """
     start = game_started_at()
     if not start:
@@ -312,7 +312,7 @@ def day_number() -> int:
     now_dt = datetime.datetime.fromtimestamp(_now(), tz=tz)
 
     cal_days = (now_dt.date() - start_dt.date()).days
-    if now_dt.hour < 6 and cal_days > 0:
+    if (now_dt.hour < 6 or (now_dt.hour == 6 and now_dt.minute < 30)) and cal_days > 0:
         day = cal_days
     else:
         day = cal_days + 1
@@ -1996,12 +1996,12 @@ async def ensure_daily_roundup_posted_before_silence(client: discord.Client) -> 
     set_state(STATE_LAST_ROUNDUP_AT, _now())
     set_state(STATE_LAST_ROUNDUP_DAY, day)
     log_event("daily_roundup_auto_posted", day=day)
-    log.info("Big Brother: daily roundup for Day %s auto-posted before 00:30 silence.", day)
+    log.info("Big Brother: daily roundup for Day %s auto-posted before 00:00 silence.", day)
     return True
 
 
 async def scheduled_house_silence(client: discord.Client) -> None:
-    """Scheduled task at 00:30: silence the house for the night if game is in progress."""
+    """Scheduled task at 00:00: silence the house for the night if game is in progress."""
     if not enabled() or not game_started():
         return
 
@@ -2018,15 +2018,15 @@ async def scheduled_house_silence(client: discord.Client) -> None:
         log_event("house_silenced", actor=None, reason="scheduled_nightly")
         ch = await house_channel(client)
         if ch:
-            await bb_send(ch, f"{EYE} **It is 00:30. The house is now silent for the night.** Sleep well, housemates. No talking until morning.")
+            await bb_send(ch, f"{EYE} **It is midnight (00:00). The house is now silent for the night.** Sleep well, housemates. No talking until morning.")
         await refresh_panel(client)
-        log.info("Big Brother: house silenced for the night (00:30).")
+        log.info("Big Brother: house silenced for the night (00:00).")
     else:
-        log.warning("Big Brother: failed to silence the house at 00:30.")
+        log.warning("Big Brother: failed to silence the house at 00:00.")
 
 
 async def scheduled_house_unsilence(client: discord.Client) -> None:
-    """Scheduled task at 6:00 AM: unsilence the house for the morning if game is in progress."""
+    """Scheduled task at 6:30 AM: unsilence the house for the morning if game is in progress."""
     if not enabled() or not game_started():
         return
     if not house_silent():
@@ -2040,11 +2040,11 @@ async def scheduled_house_unsilence(client: discord.Client) -> None:
         log_event("house_unsilenced", actor=None, reason="scheduled_morning")
         ch = await house_channel(client)
         if ch:
-            await bb_send(ch, f"{EYE} **Good morning, housemates.** It is 6:00 AM. The house is no longer silent — you may talk again.")
+            await bb_send(ch, f"{EYE} **Good morning, housemates.** It is 6:30 AM. The house is no longer silent — you may talk again.")
         await refresh_panel(client)
-        log.info("Big Brother: house unsilenced for the morning (6:00 AM).")
+        log.info("Big Brother: house unsilenced for the morning (6:30 AM).")
     else:
-        log.warning("Big Brother: failed to unsilence the house at 6:00 AM.")
+        log.warning("Big Brother: failed to unsilence the house at 6:30 AM.")
 
 
 async def handle_roundup_approve(interaction: discord.Interaction):

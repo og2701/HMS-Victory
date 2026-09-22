@@ -1377,13 +1377,13 @@ def test_scheduled_house_silence_and_unsilence(bb, monkeypatch):
     bb.set_state(bb.STATE_HOUSE_SILENT, False)
     asyncio.run(bb.scheduled_house_silence(mock_client))
     assert len(sent_messages) == 1
-    assert "00:30" in sent_messages[0]
+    assert "00:00" in sent_messages[0]
     assert "<@&" not in sent_messages[0]  # Must NOT ping role
 
     bb.set_state(bb.STATE_HOUSE_SILENT, True)
     asyncio.run(bb.scheduled_house_unsilence(mock_client))
     assert len(sent_messages) == 2
-    assert "6:00 AM" in sent_messages[1]
+    assert "6:30 AM" in sent_messages[1]
     assert "<@&" not in sent_messages[1]  # Must NOT ping role
 
 
@@ -1504,9 +1504,14 @@ def test_day_number_calendar_and_bedtime_silence_logic(bb, monkeypatch):
     monkeypatch.setattr(bb, "_now", lambda: int(t_sat_559am.timestamp()))
     assert bb.day_number() == 1
 
-    # Saturday 06:00 AM (Morning wake up) -> Day 2 begins!
+    # Saturday 06:00 AM -> Still Day 1 (sleeping until 06:30 AM)!
     t_sat_6am = datetime.datetime(2026, 9, 19, 6, 0, 0, tzinfo=london)
     monkeypatch.setattr(bb, "_now", lambda: int(t_sat_6am.timestamp()))
+    assert bb.day_number() == 1
+
+    # Saturday 06:30 AM (Morning wake up) -> Day 2 begins!
+    t_sat_630am = datetime.datetime(2026, 9, 19, 6, 30, 0, tzinfo=london)
+    monkeypatch.setattr(bb, "_now", lambda: int(t_sat_630am.timestamp()))
     assert bb.day_number() == 2
 
     # Tuesday 01:00 AM (Monday night bedtime silence) -> Day 4 (previous completed day)!

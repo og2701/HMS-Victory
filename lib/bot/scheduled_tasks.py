@@ -546,9 +546,9 @@ def _register_client_jobs(client, scheduler):
                 scheduled_house_silence,
                 scheduled_house_unsilence,
             )
-            _add_process_job(scheduler, trigger_daily_roundup_draft, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client], id="bb_daily_roundup_job", name="Big Brother Daily Roundup Draft")
-            _add_process_job(scheduler, scheduled_house_silence, CronTrigger(hour=0, minute=30, timezone="Europe/London"), args=[client], id="bb_house_silence_job", name="Big Brother Nightly Silence")
-            _add_process_job(scheduler, scheduled_house_unsilence, CronTrigger(hour=6, minute=0, timezone="Europe/London"), args=[client], id="bb_house_unsilence_job", name="Big Brother Morning Unsilence")
+            _add_process_job(scheduler, trigger_daily_roundup_draft, CronTrigger(hour=23, minute=30, timezone="Europe/London"), args=[client], id="bb_daily_roundup_job", name="Big Brother Daily Roundup Draft")
+            _add_process_job(scheduler, scheduled_house_silence, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client], id="bb_house_silence_job", name="Big Brother Nightly Silence")
+            _add_process_job(scheduler, scheduled_house_unsilence, CronTrigger(hour=6, minute=30, timezone="Europe/London"), args=[client], id="bb_house_unsilence_job", name="Big Brother Morning Unsilence")
         except Exception as e:
             logger.warning(f"Could not register Big Brother scheduled jobs: {e}")
 
