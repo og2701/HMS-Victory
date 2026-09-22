@@ -459,10 +459,13 @@ def record_interaction(interaction):
 def audit_row(entry):
     """The one row an audit entry produces, shared by the live hook and the backfill."""
     target = getattr(entry, "target", None)
-    changes = [{"attr": change.attribute,
-                "before": _readable(getattr(change, "before", None)),
-                "after": _readable(getattr(change, "after", None))}
-               for change in (getattr(entry, "changes", []) or [])]
+    # entry.changes is an AuditLogChanges holding two AuditLogDiffs, not a list of
+    # changes; each diff iterates as (attribute, value) pairs.
+    changes = {}
+    for side in ("before", "after"):
+        diff = getattr(getattr(entry, "changes", None), side, None)
+        if diff is not None:
+            changes[side] = {attr: _readable(value) for attr, value in diff}
     extra = _readable(getattr(entry, "extra", None))
     return (AUDIT_SQL, (
         entry.id, getattr(getattr(entry, "guild", None), "id", None),

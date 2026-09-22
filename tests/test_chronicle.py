@@ -120,6 +120,16 @@ class TestMessageRows(ChronicleTestCase):
             ChronicleDB.fetch_one("SELECT COUNT(*) FROM messages WHERE message_id = 6")[0], 1)
 
 
+class _Diff:
+    """Stands in for discord.py's AuditLogDiff, which iterates as (attribute, value)."""
+
+    def __init__(self, **fields):
+        self.fields = fields
+
+    def __iter__(self):
+        return iter(self.fields.items())
+
+
 class TestAuditAndPolls(ChronicleTestCase):
     def test_audit_entry_keeps_actor_target_and_changes(self):
         entry = SimpleNamespace(
@@ -128,9 +138,9 @@ class TestAuditAndPolls(ChronicleTestCase):
             user=SimpleNamespace(id=100),
             target=SimpleNamespace(id=200, name="victim"),
             reason="spam",
-            changes=[SimpleNamespace(attribute="roles",
-                                     before=[SimpleNamespace(id=7, name="member")],
-                                     after=[SimpleNamespace(id=8, name="muted")])],
+            changes=SimpleNamespace(
+                before=_Diff(roles=[SimpleNamespace(id=7, name="member")]),
+                after=_Diff(roles=[SimpleNamespace(id=8, name="muted")])),
             extra=None,
             created_at=datetime(2026, 6, 1, 12, tzinfo=timezone.utc))
         self.write([recorder.audit_row(entry)])
@@ -142,7 +152,8 @@ class TestAuditAndPolls(ChronicleTestCase):
     def test_audit_entries_dedupe_on_rerun(self):
         entry = SimpleNamespace(
             id=556, guild=SimpleNamespace(id=1), action=SimpleNamespace(name="kick"),
-            user=SimpleNamespace(id=100), target=None, reason=None, changes=[], extra=None,
+            user=SimpleNamespace(id=100), target=None, reason=None,
+            changes=SimpleNamespace(before=_Diff(), after=_Diff()), extra=None,
             created_at=datetime(2026, 6, 1, 12, tzinfo=timezone.utc))
         self.write([recorder.audit_row(entry)])
         self.write([recorder.audit_row(entry)])

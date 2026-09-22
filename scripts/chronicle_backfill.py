@@ -288,6 +288,8 @@ async def run(args):
 
     @client.event
     async def on_ready():
+        # Anything raised in here would otherwise be swallowed by the gateway's error
+        # handling and the process would just exit, looking like a clean finish.
         try:
             guild = client.get_guild(GUILD_ID)
             if guild is None:
@@ -314,6 +316,8 @@ async def run(args):
                     log.error("channel #%s raised: %r", getattr(channel, "name", channel.id), result)
             log.info("backfill finished: %s messages in %.1f minutes, chronicle.db is %s bytes",
                      f"{grand:,}", (time.time() - started) / 60, f"{ChronicleDB.size_bytes():,}")
+        except Exception:
+            log.error("backfill aborted", exc_info=True)
         finally:
             ChronicleDB.checkpoint()
             await client.close()
