@@ -987,7 +987,7 @@ async def evict(client: discord.Client, user_id: int, *, announce: bool = True) 
 
 async def set_house_silence(client: discord.Client, silent: bool) -> bool:
     """During nominations the house goes quiet: the Housemate role can't send in the house
-    channel or its snug threads. Lifted when nominations close. Needs the role configured."""
+    channel, but snug threads remain open. Lifted when nominations close. Needs the role configured."""
     rid = housemate_role_id()
     ch = await house_channel(client)
     if not rid or not isinstance(ch, discord.TextChannel):
@@ -997,12 +997,12 @@ async def set_house_silence(client: discord.Client, silent: bool) -> bool:
         return False
     overwrite = ch.overwrites_for(role)
     # Explicit allow when not silenced: once the doors open, @everyone is denied sending, so a
-    # cleared role override would leave housemates inheriting that deny.
+    # cleared role override would leave housemates inheriting that deny. Snugs (threads) stay open.
     overwrite.send_messages = not silent
-    overwrite.send_messages_in_threads = not silent
+    overwrite.send_messages_in_threads = True
     try:
         await ch.set_permissions(role, overwrite=overwrite,
-                                 reason="Big Brother: house " + ("silenced" if silent else "unsilenced"))
+                                 reason="Big Brother: house " + ("silenced (snugs open)" if silent else "unsilenced"))
         set_state(STATE_HOUSE_SILENT, bool(silent))
         return True
     except discord.HTTPException as e:

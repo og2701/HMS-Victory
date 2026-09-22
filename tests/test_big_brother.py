@@ -1324,6 +1324,40 @@ def test_scheduled_house_silence_and_unsilence(bb, monkeypatch):
     assert "<@&" not in sent_messages[1]  # Must NOT ping role
 
 
+def test_set_house_silence_keeps_threads_open(bb, monkeypatch):
+    import asyncio
+    import discord
+    from unittest.mock import AsyncMock, MagicMock
+
+    mock_client = MagicMock()
+    mock_house = MagicMock(spec=discord.TextChannel)
+    mock_role = MagicMock()
+    mock_house.guild.get_role.return_value = mock_role
+
+    created_overwrites = []
+    mock_house.overwrites_for.return_value = discord.PermissionOverwrite()
+
+    async def fake_set_permissions(target, overwrite=None, reason=None):
+        created_overwrites.append(overwrite)
+
+    mock_house.set_permissions = AsyncMock(side_effect=fake_set_permissions)
+
+    monkeypatch.setattr(bb, "house_channel", AsyncMock(return_value=mock_house))
+    monkeypatch.setattr(bb, "housemate_role_id", lambda: 12345)
+
+    # Silencing the house
+    ok = asyncio.run(bb.set_house_silence(mock_client, True))
+    assert ok is True
+    assert created_overwrites[-1].send_messages is False
+    assert created_overwrites[-1].send_messages_in_threads is True
+
+    # Unsilencing the house
+    ok = asyncio.run(bb.set_house_silence(mock_client, False))
+    assert ok is True
+    assert created_overwrites[-1].send_messages is True
+    assert created_overwrites[-1].send_messages_in_threads is True
+
+
 def test_ensure_daily_roundup_posted_before_silence(bb, monkeypatch):
     import asyncio
     from unittest.mock import AsyncMock, MagicMock
