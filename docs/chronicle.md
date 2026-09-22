@@ -32,6 +32,11 @@ upload is skipped with a warning: at that point it wants off-box storage, not Di
 | `voice_events` | `on_voice_state_update` | join/leave/move plus mute, deafen, stream and video flips. |
 | `member_events` | joins, leaves, bans, `on_member_update` | Nick and username changes, role add/remove, timeouts. |
 | `interactions` | `on_interaction` | Slash commands with their options, plus buttons and modals. |
+| `audit_log` | `on_audit_log_entry_create` | Kicks, bans, timeouts, channel/role/webhook/emoji edits, pins, thread creation - who did it, to whom, and why. |
+| `polls` / `poll_votes` | `on_message`, `on_raw_poll_vote_add/remove` | Question, answers, and every individual vote. |
+
+`messages.flags` carries Discord's own MessageFlags, which is the only way to tell a
+voice note from any other audio attachment, or a forward from an ordinary post.
 
 Every recorder swallows its own exceptions. Losing a row of history is acceptable; the
 bot falling over because of one is not.
@@ -39,6 +44,24 @@ bot falling over because of one is not.
 Attachments and voice notes are stored as **Discord CDN URLs and metadata, not bytes**.
 Keeping the files themselves would be hundreds of gigabytes; the URLs stay valid while
 the message does.
+
+### What cannot be captured
+
+Worth knowing before someone asks why a stat looks thin:
+
+- **Audit log older than 45 days.** Discord itself deletes it. The first backfill rescues
+  whatever window is open on the day it runs; everything before that is gone.
+- **Reactions on old messages**, unless the backfill is run with `--reactions`. The live
+  hook only sees reactions added from the deploy onwards.
+- **Anything that happened while the bot was offline** - reactions, voice moves, audit
+  entries. Messages are fine, the backfill picks those up.
+- **Attachment and voice note bytes.** Only the CDN URL and metadata are kept; the files
+  themselves would be hundreds of gigabytes.
+- **DMs, and channels the bot cannot read.**
+- **Presence and status changes.** They need the privileged presences intent, which the
+  bot does not enable, and the volume dwarfs everything else here.
+- **Who invited whom.** Discord does not attribute a join to an invite; getting it means
+  snapshotting invite use counts and diffing them on every join. Doable, not built.
 
 ### Timestamps
 
@@ -67,7 +90,17 @@ python scripts/chronicle_backfill.py --channel 123 456  # just these
 python scripts/chronicle_backfill.py --after 2026-01-01 # only this year
 python scripts/chronicle_backfill.py --threads          # archived threads too
 python scripts/chronicle_backfill.py --reactions        # who reacted (very slow)
+python scripts/chronicle_backfill.py --concurrency 6    # channels walked in parallel
+python scripts/chronicle_backfill.py --no-audit         # skip the 45-day audit sweep
 ```
+
+Parallelism is across channels, inside one process, on purpose. Discord buckets message
+history per channel, so several channels at once is genuinely faster while splitting one
+channel into date ranges is not - those pages share a bucket either way. Several
+*processes* on one token is worse than useless: each keeps its own idea of the rate
+limit, none of them sees the others' 429s, and the global cap is per token, so the usual
+end of it is a Cloudflare ban that takes the bot offline too. A lock file enforces one
+run at a time.
 
 History pages are 100 messages per request, so a few million messages is a few hours.
 `--reactions` costs an extra request per emoji per message, which turns that into days -

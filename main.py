@@ -699,6 +699,17 @@ class AClient(discord.Client):
         update_summary_data("reacting_members", user_id=user.id, remove=True)
         await on_reaction_remove(reaction, user)
 
+    async def on_audit_log_entry_create(self, entry):
+        # Nothing else listens to this: it exists so the chronicle keeps the server's
+        # administrative history, which Discord itself throws away after 45 days.
+        chronicle.record_audit_entry(entry)
+
+    async def on_raw_poll_vote_add(self, payload):
+        chronicle.record_poll_vote(payload, "add")
+
+    async def on_raw_poll_vote_remove(self, payload):
+        chronicle.record_poll_vote(payload, "remove")
+
     async def on_voice_state_update(self, member, before, after):
         chronicle.record_voice(member, before, after)
         await on_voice_state_update(member, before, after)

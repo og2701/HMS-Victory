@@ -12,6 +12,7 @@ an interrupted run picks up where it stopped instead of re-walking millions of m
     python scripts/chronicle_backfill.py --reactions        # who reacted (SLOW, see below)
     python scripts/chronicle_backfill.py --resume           # skip channels marked complete
     python scripts/chronicle_backfill.py --concurrency 6    # channels walked in parallel
+    python scripts/chronicle_backfill.py --no-audit         # skip the audit log sweep
 
 Rate limits: history pages are 100 messages per request, so a few million messages is a
 few hours. Reaction users cost one extra request *per distinct emoji per message*, which
@@ -47,7 +48,7 @@ from dotenv import load_dotenv  # noqa: E402
 
 from config import GUILD_ID  # noqa: E402
 from lib.chronicle.db import ChronicleDB  # noqa: E402
-from lib.chronicle.recorder import REACTION_SQL, message_rows  # noqa: E402
+from lib.chronicle.recorder import REACTION_SQL, audit_row, message_rows  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("chronicle-backfill")
@@ -194,6 +195,28 @@ async def backfill_channel(channel, after=None, want_reactions=False, resume=Tru
     return total
 
 
+async def backfill_audit_log(guild):
+    """Everything Discord still holds: kicks, bans, timeouts, channel and role edits,
+    webhooks, pins, thread creation. Only 45 days of it exist, so this is a one-off
+    rescue of the window that happened to be open - after this the live hook keeps it.
+    """
+    rows, n = [], 0
+    try:
+        async for entry in guild.audit_logs(limit=None, oldest_first=False):
+            rows.append(audit_row(entry))
+            n += 1
+            if len(rows) >= BATCH:
+                _write(rows)
+                rows = []
+        _write(rows)
+        log.info("audit log: %s entries (Discord keeps 45 days)", f"{n:,}")
+    except discord.Forbidden:
+        log.warning("no View Audit Log permission - skipping the audit sweep")
+    except Exception:
+        log.error("audit log sweep failed", exc_info=True)
+    return n
+
+
 async def _flush(messages, channel, want_reactions, oldest, newest):
     already = _existing(m.id for m in messages)
     rows = []
@@ -210,20 +233,43 @@ async def _flush(messages, channel, want_reactions, oldest, newest):
     return fresh
 
 
-def _channels(guild, only, include_threads):
-    out = []
+async def _collect(guild, only, include_threads):
+    """Everything with a message history: text, voice and stage channels, forums, and
+    every thread under them - active, archived public, and archived private where the
+    bot can see them. Deduped, because an active thread shows up in more than one list."""
+    out, seen = [], set()
+
+    def add(channel):
+        if channel.id in seen:
+            return
+        seen.add(channel.id)
+        out.append(channel)
+
     for channel in guild.channels:
         if not isinstance(channel, (discord.TextChannel, discord.VoiceChannel,
                                     discord.ForumChannel, discord.StageChannel)):
             continue
         if only and channel.id not in only:
             continue
-        if isinstance(channel, discord.ForumChannel):
-            out.extend(channel.threads)
+        # A forum has no messages of its own - all of its content lives in its threads.
+        if not isinstance(channel, discord.ForumChannel):
+            add(channel)
+        if not include_threads:
             continue
-        out.append(channel)
-        if include_threads:
-            out.extend(channel.threads)
+        for thread in getattr(channel, "threads", []):
+            add(thread)
+        if not isinstance(channel, (discord.TextChannel, discord.ForumChannel)):
+            continue
+        for private in (False, True):
+            try:
+                async for thread in channel.archived_threads(limit=None, private=private,
+                                                             joined=False):
+                    add(thread)
+            except discord.Forbidden:
+                pass          # private archived threads need Manage Threads
+            except discord.HTTPException as e:
+                log.debug("archived threads (private=%s) failed on #%s: %s",
+                          private, channel.name, e)
     return out
 
 
@@ -247,15 +293,9 @@ async def run(args):
             if guild is None:
                 log.error("guild %s not visible to this token", GUILD_ID)
                 return
-            channels = _channels(guild, set(args.channel or []), args.threads)
-            if args.threads:
-                for parent in list(channels):
-                    if isinstance(parent, discord.TextChannel):
-                        try:
-                            async for thread in parent.archived_threads(limit=None):
-                                channels.append(thread)
-                        except discord.HTTPException:
-                            pass
+            if args.audit and not args.channel:
+                await backfill_audit_log(guild)
+            channels = await _collect(guild, set(args.channel or []), args.threads)
             log.info("backfilling %d channels, %d at a time%s", len(channels),
                      args.concurrency, " (with reaction users)" if args.reactions else "")
             # Channels in parallel, one HTTPClient: discord.py serialises each channel's
@@ -292,6 +332,8 @@ def main():
                     help="skip channels already marked complete (default)")
     ap.add_argument("--no-resume", dest="resume", action="store_false",
                     help="re-walk channels from the top (rows are still deduped)")
+    ap.add_argument("--no-audit", dest="audit", action="store_false", default=True,
+                    help="skip the 45-day audit log sweep (it runs first by default)")
     ap.add_argument("--concurrency", type=int, default=4,
                     help="channels walked at once (default 4; past ~8 the global rate "
                          "limit, not the bucket, becomes the wall)")

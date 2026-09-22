@@ -25,7 +25,7 @@ from config import CHRONICLE_DB_FILE
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Timestamps are epoch SECONDS (UTC) everywhere. Discord snowflake ids are stored as
 # INTEGER - they fit in 64 bits and sort chronologically, which makes range scans on
@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS messages (
     -- "what hour do you post at" has to mean the clock people were looking at, and
     -- strftime('localtime') would silently answer in whatever TZ the box happens to run.
     local_day    TEXT,              -- YYYY-MM-DD in Europe/London
-    local_hour   INTEGER            -- 0-23 in Europe/London
+    local_hour   INTEGER,           -- 0-23 in Europe/London
+    flags        INTEGER NOT NULL DEFAULT 0  -- discord MessageFlags: voice note, forward, silent...
 );
 CREATE INDEX IF NOT EXISTS idx_messages_local_day ON messages(local_day);
 CREATE INDEX IF NOT EXISTS idx_messages_user_ts    ON messages(user_id, ts);
@@ -162,6 +163,49 @@ CREATE TABLE IF NOT EXISTS interactions (
 CREATE INDEX IF NOT EXISTS idx_interactions_user ON interactions(user_id, ts);
 CREATE INDEX IF NOT EXISTS idx_interactions_name ON interactions(name, ts);
 
+-- Server administration: channel/role/webhook/emoji changes, kicks, bans, timeouts,
+-- pins, thread creation - Discord logs all of it, and one event hook catches the lot.
+-- Note Discord itself only keeps 45 days, so anything older than the deploy is gone
+-- for good and cannot be backfilled.
+CREATE TABLE IF NOT EXISTS audit_log (
+    entry_id    INTEGER PRIMARY KEY,   -- Discord's own id, so re-walks dedupe
+    guild_id    INTEGER,
+    action      TEXT NOT NULL,         -- e.g. kick, channel_create, member_role_update
+    user_id     INTEGER,               -- who did it
+    target_id   INTEGER,               -- who or what it was done to
+    target_type TEXT,
+    reason      TEXT,
+    changes     TEXT,                  -- JSON [{attr, before, after}]
+    extra       TEXT,                  -- JSON, action-specific (count, channel, duration)
+    ts          INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_user   ON audit_log(user_id, ts);
+CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action, ts);
+CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_log(target_id, ts);
+
+CREATE TABLE IF NOT EXISTS polls (
+    message_id INTEGER PRIMARY KEY,
+    channel_id INTEGER,
+    user_id    INTEGER NOT NULL,
+    question   TEXT,
+    answers    TEXT,                   -- JSON [{id, text, emoji}]
+    multiple   INTEGER NOT NULL DEFAULT 0,
+    expires_ts INTEGER,
+    ts         INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS poll_votes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL,
+    channel_id INTEGER,
+    user_id    INTEGER NOT NULL,
+    answer_id  INTEGER NOT NULL,
+    action     TEXT NOT NULL,          -- add | remove
+    ts         INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_poll_votes_message ON poll_votes(message_id);
+CREATE INDEX IF NOT EXISTS idx_poll_votes_user    ON poll_votes(user_id, ts);
+
 -- Where the history backfill got to per channel, so it can resume instead of
 -- re-walking millions of messages after an interruption.
 CREATE TABLE IF NOT EXISTS backfill_progress (
@@ -202,9 +246,20 @@ class ChronicleDB:
             cls._init_schema(cls._connection)
         return cls._connection
 
+    # Columns added after the first deploy. CREATE TABLE IF NOT EXISTS does nothing to
+    # a table that already exists, so new columns have to be ALTERed in explicitly.
+    _ADDED_COLUMNS = (
+        ("messages", "flags", "INTEGER NOT NULL DEFAULT 0"),
+    )
+
     @classmethod
     def _init_schema(cls, conn):
         conn.executescript(_SCHEMA)
+        for table, column, spec in cls._ADDED_COLUMNS:
+            existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if existing and column not in existing:
+                log.info("chronicle: adding %s.%s", table, column)
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {spec}")
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
                      (str(SCHEMA_VERSION),))
         conn.commit()

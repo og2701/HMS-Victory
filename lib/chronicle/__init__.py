@@ -9,12 +9,14 @@ command use, kept forever in their own ``chronicle.db``, for year-in-review stat
 from lib.chronicle.db import ChronicleDB
 from lib.chronicle.recorder import (
     flush,
+    record_audit_entry,
     record_delete,
     record_edit,
     record_interaction,
     record_member_event,
     record_member_update,
     record_message,
+    record_poll_vote,
     record_raw_edit,
     record_raw_reaction,
     record_voice,
@@ -25,5 +27,6 @@ __all__ = [
     "ChronicleDB", "flush", "stats",
     "record_message", "record_edit", "record_raw_edit", "record_delete",
     "record_raw_reaction", "record_voice", "record_member_event",
-    "record_member_update", "record_interaction",
+    "record_member_update", "record_interaction", "record_audit_entry",
+    "record_poll_vote",
 ]

@@ -17,7 +17,7 @@ UK = pytz.timezone("Europe/London")
 
 def _msg(mid, uid, content="hello", ts=None, channel_id=10, bot=False,
          mentions=(), role_mentions=(), everyone=False, reply=None,
-         attachments=(), embeds=0):
+         attachments=(), embeds=0, flags=0, poll=None):
     created = ts or datetime(2026, 6, 1, 12, 30, tzinfo=timezone.utc)
     reference = None
     if reply:
@@ -35,6 +35,7 @@ def _msg(mid, uid, content="hello", ts=None, channel_id=10, bot=False,
         stickers=[], embeds=[None] * embeds,
         raw_mentions=list(mentions), raw_role_mentions=list(role_mentions),
         raw_channel_mentions=[], mention_everyone=everyone,
+        flags=SimpleNamespace(value=flags), poll=poll,
     )
 
 
@@ -119,6 +120,62 @@ class TestMessageRows(ChronicleTestCase):
             ChronicleDB.fetch_one("SELECT COUNT(*) FROM messages WHERE message_id = 6")[0], 1)
 
 
+class TestAuditAndPolls(ChronicleTestCase):
+    def test_audit_entry_keeps_actor_target_and_changes(self):
+        entry = SimpleNamespace(
+            id=555, guild=SimpleNamespace(id=1),
+            action=SimpleNamespace(name="member_role_update"),
+            user=SimpleNamespace(id=100),
+            target=SimpleNamespace(id=200, name="victim"),
+            reason="spam",
+            changes=[SimpleNamespace(attribute="roles",
+                                     before=[SimpleNamespace(id=7, name="member")],
+                                     after=[SimpleNamespace(id=8, name="muted")])],
+            extra=None,
+            created_at=datetime(2026, 6, 1, 12, tzinfo=timezone.utc))
+        self.write([recorder.audit_row(entry)])
+        row = ChronicleDB.fetch_one(
+            "SELECT action, user_id, target_id, target_type, reason, changes FROM audit_log")
+        self.assertEqual(row[:5], ("member_role_update", 100, 200, "SimpleNamespace", "spam"))
+        self.assertIn('"name": "muted"'.replace(" ", ""), row[5].replace(" ", ""))
+
+    def test_audit_entries_dedupe_on_rerun(self):
+        entry = SimpleNamespace(
+            id=556, guild=SimpleNamespace(id=1), action=SimpleNamespace(name="kick"),
+            user=SimpleNamespace(id=100), target=None, reason=None, changes=[], extra=None,
+            created_at=datetime(2026, 6, 1, 12, tzinfo=timezone.utc))
+        self.write([recorder.audit_row(entry)])
+        self.write([recorder.audit_row(entry)])
+        self.assertEqual(ChronicleDB.fetch_one("SELECT COUNT(*) FROM audit_log")[0], 1)
+
+    def test_poll_is_stored_with_its_answers(self):
+        poll = SimpleNamespace(
+            question="beans?", multiple=False, expires_at=None,
+            answers=[SimpleNamespace(id=1, text="yes", emoji=None),
+                     SimpleNamespace(id=2, text="no", emoji=None)])
+        self.write(recorder.message_rows(_msg(40, 100, "", poll=poll)))
+        self.assertEqual(
+            ChronicleDB.fetch_one("SELECT question, multiple FROM polls WHERE message_id = 40"),
+            ("beans?", 0))
+
+    def test_poll_votes_record_both_directions(self):
+        payload = SimpleNamespace(message_id=40, channel_id=10, user_id=100, answer_id=2)
+        rows = []
+        with unittest_patch(recorder, "enqueue", lambda sql, params: rows.append((sql, params))):
+            recorder.record_poll_vote(payload, "add")
+            recorder.record_poll_vote(payload, "remove")
+        self.write(rows)
+        self.assertEqual([r[0] for r in ChronicleDB.fetch_all(
+            "SELECT action FROM poll_votes ORDER BY id")], ["add", "remove"])
+
+    def test_message_flags_are_kept(self):
+        # MessageFlags.voice - the only thing separating a voice note from any other
+        # audio attachment.
+        self.write(recorder.message_rows(_msg(41, 100, "", flags=8192)))
+        self.assertEqual(
+            ChronicleDB.fetch_one("SELECT flags FROM messages WHERE message_id = 41")[0], 8192)
+
+
 class TestEditsAndDeletes(ChronicleTestCase):
     def test_edit_updates_content_and_logs_the_old_text(self):
         self.write(recorder.message_rows(_msg(10, 100, "before")))
@@ -151,6 +208,30 @@ class TestEditsAndDeletes(ChronicleTestCase):
             "SELECT content, deleted_ts FROM messages WHERE message_id = 12")
         self.assertEqual(content, "gone")
         self.assertIsNotNone(deleted)
+
+
+class TestMemberUpdates(ChronicleTestCase):
+    def _member(self, nick=None, roles=(), boost=None, timeout=None):
+        return SimpleNamespace(
+            id=100, guild=SimpleNamespace(id=1), nick=nick, global_name="owen",
+            roles=[SimpleNamespace(id=r, name=f"role{r}") for r in roles],
+            premium_since=boost, timed_out_until=timeout)
+
+    def _capture(self, before, after):
+        rows = []
+        with unittest_patch(recorder, "enqueue", lambda sql, params: rows.append((sql, params))):
+            recorder.record_member_update(before, after)
+        self.write(rows)
+        return [r[0] for r in ChronicleDB.fetch_all("SELECT action FROM member_events ORDER BY id")]
+
+    def test_nick_and_role_changes(self):
+        actions = self._capture(self._member("old", roles=(1, 2)),
+                                self._member("new", roles=(2, 3)))
+        self.assertEqual(set(actions), {"nick", "role_add", "role_remove"})
+
+    def test_boost_is_recorded(self):
+        started = datetime(2026, 6, 1, tzinfo=timezone.utc)
+        self.assertEqual(self._capture(self._member(), self._member(boost=started)), ["boost"])
 
 
 class TestVoice(ChronicleTestCase):

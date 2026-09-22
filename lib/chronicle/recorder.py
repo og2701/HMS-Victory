@@ -39,8 +39,8 @@ _dropped = 0
 MSG_SQL = (
     "INSERT OR IGNORE INTO messages (message_id, guild_id, channel_id, parent_id, user_id, "
     "is_bot, content, ts, reply_to, reply_to_user, attachments, n_attachments, stickers, "
-    "n_embeds, char_count, word_count, edited_ts, source, local_day, local_hour) "
-    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+    "n_embeds, char_count, word_count, edited_ts, source, local_day, local_hour, flags) "
+    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
 )
 MENTION_SQL = ("INSERT INTO mentions (message_id, ts, channel_id, user_id, target_id, kind) "
                "VALUES (?,?,?,?,?,?)")
@@ -55,6 +55,12 @@ VOICE_SQL = ("INSERT INTO voice_events (user_id, guild_id, channel_id, from_chan
 MEMBER_SQL = "INSERT INTO member_events (user_id, guild_id, action, detail, ts) VALUES (?,?,?,?,?)"
 INTERACTION_SQL = ("INSERT INTO interactions (user_id, guild_id, channel_id, kind, name, detail, ts) "
                    "VALUES (?,?,?,?,?,?,?)")
+AUDIT_SQL = ("INSERT OR IGNORE INTO audit_log (entry_id, guild_id, action, user_id, target_id, "
+             "target_type, reason, changes, extra, ts) VALUES (?,?,?,?,?,?,?,?,?,?)")
+POLL_SQL = ("INSERT OR IGNORE INTO polls (message_id, channel_id, user_id, question, answers, "
+            "multiple, expires_ts, ts) VALUES (?,?,?,?,?,?,?,?)")
+POLL_VOTE_SQL = ("INSERT INTO poll_votes (message_id, channel_id, user_id, answer_id, action, ts) "
+                 "VALUES (?,?,?,?,?,?)")
 
 
 # --------------------------------------------------------------------------- writer
@@ -227,12 +233,22 @@ def message_rows(message, source="live"):
     stickers = [{"id": s.id, "name": s.name} for s in getattr(message, "stickers", [])]
 
     local_day, local_hour = _local(message.created_at)
+    # MessageFlags is how a voice note, a forward and a silent message are told apart
+    # from ordinary text - all three look like an attachment or empty content otherwise.
+    flags = getattr(getattr(message, "flags", None), "value", 0) or 0
     rows = [(MSG_SQL, (
         mid, guild.id, cid, getattr(channel, "parent_id", None), uid,
         int(bool(message.author.bot)), content, ts, reply_to, reply_to_user,
         _json_or_none(attachments), len(attachments), _json_or_none(stickers),
         len(message.embeds or []), len(content), len(content.split()),
-        _ts(message.edited_at), source, local_day, local_hour))]
+        _ts(message.edited_at), source, local_day, local_hour, flags))]
+
+    poll = getattr(message, "poll", None)
+    if poll is not None:
+        answers = [{"id": a.id, "text": a.text,
+                    "emoji": str(a.emoji) if a.emoji else None} for a in poll.answers]
+        rows.append((POLL_SQL, (mid, cid, uid, poll.question, _json_or_none(answers),
+                                int(bool(poll.multiple)), _ts(poll.expires_at), ts)))
 
     for target in message.raw_mentions:
         rows.append((MENTION_SQL, (mid, ts, cid, uid, target, "user")))
@@ -405,6 +421,11 @@ def record_member_update(before, after):
         if b_to != a_to:
             record_member_event(after.id, "timeout" if a_to else "untimeout", guild_id,
                                 {"until": a_to.isoformat() if a_to else None})
+        b_boost = getattr(before, "premium_since", None)
+        a_boost = getattr(after, "premium_since", None)
+        if b_boost != a_boost:
+            record_member_event(after.id, "boost" if a_boost else "unboost", guild_id,
+                                {"since": a_boost.isoformat() if a_boost else None})
     except Exception:
         log.debug("chronicle record_member_update failed", exc_info=True)
 
@@ -431,3 +452,62 @@ def record_interaction(interaction):
             kind, name, _json_or_none(detail), int(time.time())))
     except Exception:
         log.debug("chronicle record_interaction failed", exc_info=True)
+
+
+# ------------------------------------------------------------------------ audit log
+
+def audit_row(entry):
+    """The one row an audit entry produces, shared by the live hook and the backfill."""
+    target = getattr(entry, "target", None)
+    changes = [{"attr": change.attribute,
+                "before": _readable(getattr(change, "before", None)),
+                "after": _readable(getattr(change, "after", None))}
+               for change in (getattr(entry, "changes", []) or [])]
+    extra = _readable(getattr(entry, "extra", None))
+    return (AUDIT_SQL, (
+        entry.id, getattr(getattr(entry, "guild", None), "id", None),
+        getattr(entry.action, "name", str(entry.action)),
+        getattr(entry.user, "id", None),
+        getattr(target, "id", None) if target is not None else None,
+        type(target).__name__ if target is not None else None,
+        entry.reason, _json_or_none(changes),
+        _json_or_none(extra) if extra else None,
+        _ts(entry.created_at)))
+
+
+def record_audit_entry(entry):
+    """Channel and role edits, kicks, bans, timeouts, pins, webhooks, thread creation -
+    Discord logs all of it and one event carries the lot, including who did it and why.
+
+    Discord keeps only 45 days of audit log, so anything before the first backfill is
+    gone for good; from here on the chronicle holds it permanently.
+    """
+    try:
+        sql, params = audit_row(entry)
+        enqueue(sql, params)
+    except Exception:
+        log.debug("chronicle record_audit_entry failed", exc_info=True)
+
+
+def _readable(value):
+    """Audit log before/after values are arbitrary discord objects; keep them as
+    something JSON can hold without losing which object it was."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (list, tuple, set)):
+        return [_readable(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _readable(v) for k, v in value.items()}
+    if hasattr(value, "id"):
+        return {"id": value.id, "name": getattr(value, "name", None)}
+    return str(value)
+
+
+# ---------------------------------------------------------------------------- polls
+
+def record_poll_vote(payload, action):
+    try:
+        enqueue(POLL_VOTE_SQL, (payload.message_id, payload.channel_id, payload.user_id,
+                                payload.answer_id, action, int(time.time())))
+    except Exception:
+        log.debug("chronicle record_poll_vote failed", exc_info=True)
