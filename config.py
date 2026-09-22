@@ -539,6 +539,11 @@ IMAGE_GEN_USAGE_FILE = os.path.join(JSON_DATA_DIR, "image_gen_usage.json")
 IMAGE_GEN_DAILY_LIMIT = 10
 IMAGE_GEN_MODEL = "gpt-image-2.5-flare"
 MESSAGE_ARCHIVE_RETENTION_DAYS = 30
+# The chronicle is the permanent, never-purged event log (messages, edits, deletes,
+# reactions, mentions, voice, joins, commands) that the year-in-review stats are built
+# from. It lives in its own SQLite file so the five-minute database.db backup - which
+# re-uploads the whole file every time - never has to carry a gigabyte-a-year table.
+CHRONICLE_DB_FILE = os.path.join(BASE_DIR, "chronicle.db")
 IMAGE_GEN_QUALITY = "low"
 IMAGE_GEN_SIZE = "1024x1024"
 BALANCE_SNAPSHOT_DIR = "balance_snapshots"

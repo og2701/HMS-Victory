@@ -17,6 +17,12 @@ from config import *
 logger = logging.getLogger(__name__)
 MAX_PART_SIZE = 8 * 1024 * 1024
 DB_BACKUP_PREFIX = "database_backup_"
+CHRONICLE_BACKUP_PREFIX = "chronicle_backup_"
+# The chronicle grows forever (~1GB/year), so it gets a daily backup rather than the
+# database's five-minute one. Past this zipped size, uploading it to Discord in 8MB
+# parts stops being reasonable: the job logs loudly and skips, which is the signal to
+# move the file to off-box storage (S3 or similar).
+MAX_CHRONICLE_UPLOAD_BYTES = 200 * 1024 * 1024
 # How far back the restore will look for a database backup. The channel also carries a
 # json_backup_ every five minutes, so 100 messages reached back about eight hours - a
 # daily database backup was never once inside the window it was searched in.
@@ -994,6 +1000,49 @@ async def backup_database(client):
                 os.remove(snapshot_path)
             except OSError as e:
                 logger.warning(f"Could not remove temporary snapshot {snapshot_path}: {e}")
+
+async def backup_chronicle(client):
+    """Daily off-box copy of chronicle.db, the permanent server history.
+
+    Deliberately NOT on the five-minute database cycle: this file only grows, and
+    re-uploading it 288 times a day would cost more every year. A day's worth of lost
+    history in the worst case is an acceptable trade for a backup that stays cheap.
+    """
+    from lib.chronicle.db import ChronicleDB
+
+    channel = client.get_channel(CHANNELS.DATA_BACKUP)
+    if not channel:
+        logger.warning(f"Backup channel {CHANNELS.DATA_BACKUP} not found.")
+        return
+    if not os.path.exists(CHRONICLE_DB_FILE):
+        logger.info("No chronicle database yet; nothing to back up.")
+        return
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    snapshot_path = f"chronicle_snapshot_{timestamp}.db"
+    try:
+        # Online backup API: consistent even though the writer thread keeps inserting.
+        await asyncio.to_thread(ChronicleDB.snapshot_to_file, snapshot_path)
+        zip_buffer = await asyncio.to_thread(_zip_single_file_to_buffer, snapshot_path, "chronicle.db")
+        size = zip_buffer.getbuffer().nbytes
+        if size > MAX_CHRONICLE_UPLOAD_BYTES:
+            logger.warning(
+                "Chronicle backup is %s bytes zipped, over the %s-byte upload ceiling - "
+                "skipping the Discord upload. Move it to off-box storage.",
+                f"{size:,}", f"{MAX_CHRONICLE_UPLOAD_BYTES:,}")
+            return
+        n_parts = await _send_archive_in_parts(channel, zip_buffer, CHRONICLE_BACKUP_PREFIX, timestamp)
+        logger.info("Chronicle backed up to Discord (%s bytes, %d part%s).",
+                    f"{size:,}", n_parts, "" if n_parts == 1 else "s")
+    except Exception as e:
+        logger.error("CHRONICLE BACKUP FAILED: %s", e, exc_info=True)
+    finally:
+        if os.path.exists(snapshot_path):
+            try:
+                os.remove(snapshot_path)
+            except OSError as e:
+                logger.warning(f"Could not remove temporary chronicle snapshot: {e}")
+
 
 async def backup_bot(client):
     logger.info("Backing up bot...")

@@ -17,7 +17,7 @@ from lib.economy.economy_manager import add_bb, get_bb, get_all_balances as load
 from lib.economy.bank_manager import BankManager
 from lib.economy.economy_stats_html import create_economy_stats_image
 from database import award_badge
-from lib.bot.backup_manager import zip_and_send_folder, backup_database, backup_bot, backup_json_data
+from lib.bot.backup_manager import zip_and_send_folder, backup_database, backup_bot, backup_json_data, backup_chronicle
 from lib.core.file_operations import load_webhook_deletions, save_webhook_deletions, atomic_write_json
 from lib.economy.prediction_system import _save, _load, Prediction
 from commands.moderation.overnight_mute import mute_visitors, unmute_visitors
@@ -565,6 +565,9 @@ def _register_client_jobs(client, scheduler):
     
     _add_process_job(scheduler, backup_database, IntervalTrigger(minutes=5, timezone="Europe/London"), args=[client], id="backup_database_job", name="Backup SQLite Database")
     _add_process_job(scheduler, backup_json_data, IntervalTrigger(minutes=5, timezone="Europe/London"), args=[client], id="backup_json_data_job", name="Backup JSON State")
+    # Once a day, not every five minutes: chronicle.db only grows, so re-uploading it on
+    # the database cycle would get more expensive every year for no extra safety.
+    _add_process_job(scheduler, backup_chronicle, CronTrigger(hour=4, minute=20, timezone="Europe/London"), args=[client], id="backup_chronicle_job", name="Backup Chronicle History")
     _add_process_job(scheduler, cleanup_webhook_reactions, IntervalTrigger(minutes=1), args=[client], id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
 
     _add_process_job(scheduler, process_economy_logs, IntervalTrigger(seconds=15), args=[client], id="process_economy_logs_interval", name="Process Economy Log Queue")

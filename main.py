@@ -24,6 +24,7 @@ from lib.economy.prediction_system import Prediction, _load as load_predictions,
 from lib.economy.economy_manager import add_bb, get_all_balances as load_ukpence_data
 from lib.economy.economy_stats_html import create_economy_stats_image
 from database import init_db
+from lib import chronicle
 from lib.core.americanisms import correct_americanisms
 from lib.core.webhook_utils import send_as_webhook
 from lib.core.file_operations import load_webhook_deletions, save_webhook_deletions
@@ -220,6 +221,14 @@ class AClient(discord.Client):
         logger.info("Persistent prediction views registered in setup_hook.")
 
     async def on_ready(self):
+        # Open chronicle.db up front so a disk or permissions problem shows in the boot
+        # log rather than silently, inside the writer thread, hours later.
+        try:
+            from lib.chronicle.queries import coverage
+            logger.info("Chronicle ready: %s", coverage())
+        except Exception:
+            logger.exception("could not open the chronicle database")
+
         # Ensure chatbot controller dashboard is active in its dedicated thread
         try:
             from lib.features.chat_responder import ensure_chatbot_dashboard_message
@@ -316,6 +325,10 @@ class AClient(discord.Client):
         # periodic reminders to the casino channel.
 
     async def on_message(self, message):
+        # Permanent history first: every early return below (bots, Ballsdex, DISBOARD)
+        # would otherwise punch a hole in the year-in-review stats.
+        chronicle.record_message(message)
+
         if message.author.id == USERS.COUNTRYBALL_BOT:
             # Gather all text from content, embeds, and component labels
             full_text = message.content or ""
@@ -568,28 +581,35 @@ class AClient(discord.Client):
             logger.info(f"[PID {os.getpid()}] Corrected Americanism for {member.display_name} in {channel.name}")
 
     async def on_interaction(self, interaction):
+        chronicle.record_interaction(interaction)
         await on_interaction(interaction)
 
     async def on_member_update(self, before, after):
+        chronicle.record_member_update(before, after)
         from lib.bot.event_handlers import on_member_update
         await on_member_update(before, after)
 
     async def on_member_join(self, member):
+        chronicle.record_member_event(member.id, "join", member.guild.id if member.guild else None,
+                                      {"created_at": member.created_at.isoformat()})
         initialize_summary_data()
         update_summary_data("members_joined")
         await on_member_join(member)
 
     async def on_member_remove(self, member):
+        chronicle.record_member_event(member.id, "leave", member.guild.id if member.guild else None)
         initialize_summary_data()
         update_summary_data("members_left")
         await on_member_remove(member)
 
     async def on_member_ban(self, guild, user):
+        chronicle.record_member_event(user.id, "ban", guild.id if guild else None)
         initialize_summary_data()
         update_summary_data("members_banned")
         await on_member_ban(guild, user)
 
     async def on_message_delete(self, message):
+        chronicle.record_delete([message.id])
         if message.author.bot:
             # Bots get their own path: only logged when somebody else did it, and kept out
             # of the deleted_messages count, which is there to measure human chat.
@@ -600,6 +620,7 @@ class AClient(discord.Client):
         await on_message_delete(self, message)
 
     async def on_raw_bulk_message_delete(self, payload):
+        chronicle.record_delete(payload.message_ids)
         # Bulk deletes (ban purges, mod/bot sweeps) never reach on_message_delete and the
         # cache rarely still holds them - recover content from the message archive instead.
         try:
@@ -615,6 +636,8 @@ class AClient(discord.Client):
             logger.error("bulk delete logging failed", exc_info=True)
 
     async def on_raw_message_delete(self, payload):
+        if payload.cached_message is None:   # the cached path already marked it deleted
+            chronicle.record_delete([payload.message_id])
         # Uncached single deletes (the cached path is handled by on_message_delete).
         try:
             from lib.features.message_archive import handle_raw_single_delete
@@ -623,12 +646,15 @@ class AClient(discord.Client):
             logger.debug("raw single delete logging failed", exc_info=True)
 
     async def on_message_edit(self, before, after):
+        chronicle.record_edit(before, after)
         from lib.core.whitespace_moderation import check_whitespace_spam
         if await check_whitespace_spam(self, after):
             return
         await on_message_edit(self, before, after)
 
     async def on_raw_message_edit(self, payload):
+        if payload.cached_message is None:   # the cached path already logged this edit
+            chronicle.record_raw_edit(payload)
         # Grow-a-Tree usually EDITS the tree message in place when someone waters (instead of
         # posting a new one), and that old message is often out of the cache - so use the RAW
         # edit event (fires regardless of cache) and fetch the current message. Dedup is by
@@ -655,9 +681,15 @@ class AClient(discord.Client):
         await on_reaction_add(reaction, user)
 
     async def on_raw_reaction_add(self, payload):
+        chronicle.record_raw_reaction(payload, "add")
         if payload.member and payload.member.bot:
             return
         await on_raw_reaction_add(self, payload)
+
+    async def on_raw_reaction_remove(self, payload):
+        # No feature listens to this one; it exists so the chronicle sees removals on
+        # uncached messages, which the cached on_reaction_remove never gets.
+        chronicle.record_raw_reaction(payload, "remove")
 
     async def on_reaction_remove(self, reaction, user):
         if user.bot:
@@ -668,6 +700,7 @@ class AClient(discord.Client):
         await on_reaction_remove(reaction, user)
 
     async def on_voice_state_update(self, member, before, after):
+        chronicle.record_voice(member, before, after)
         await on_voice_state_update(member, before, after)
 
     async def on_stage_instance_create(self, stage_instance):
@@ -813,6 +846,16 @@ async def graceful_shutdown(client, sig_name):
         DatabaseManager.shutdown_checkpoint()
     except Exception as e:
         logger.error(f"WAL checkpoint error: {e}")
+
+    # 4b. Drain the chronicle's write queue before the process dies, so the last
+    #     second or so of history isn't lost on every restart.
+    try:
+        if not chronicle.flush(timeout=15):
+            logger.warning("Chronicle queue did not drain in time: %s", chronicle.stats())
+        chronicle.ChronicleDB.checkpoint()
+        chronicle.ChronicleDB.close()
+    except Exception as e:
+        logger.error(f"Chronicle flush error: {e}")
 
     # 5. Log out of the Discord gateway (returns from client.start()).
     try:
