@@ -11,17 +11,29 @@ an interrupted run picks up where it stopped instead of re-walking millions of m
     python scripts/chronicle_backfill.py --threads          # include archived threads
     python scripts/chronicle_backfill.py --reactions        # who reacted (SLOW, see below)
     python scripts/chronicle_backfill.py --resume           # skip channels marked complete
+    python scripts/chronicle_backfill.py --concurrency 6    # channels walked in parallel
 
-Rate limits: history pages are 100 messages per request, so a 5m-message server is on
-the order of a few hours. Reaction users cost one extra request *per distinct emoji per
-message*, which is why they are opt-in - on a busy server that turns hours into days.
+Rate limits: history pages are 100 messages per request, so a few million messages is a
+few hours. Reaction users cost one extra request *per distinct emoji per message*, which
+is why they are opt-in - on a busy server that turns hours into days.
 
-Safe to run while the bot is live: SQLite WAL plus busy_timeout handles both writers,
-and inserts are INSERT OR IGNORE keyed on message_id, so re-running never duplicates.
+Parallelism is across CHANNELS, inside ONE process, and that is deliberate. Discord
+buckets message history per channel, so several channels at once is genuinely faster,
+while splitting one channel into date ranges is not - the pages share a bucket either
+way. Running several *processes* on the same token is worse than useless: each has its
+own idea of the rate limit, they cannot see each other's 429s, and the global 50/s cap
+is per token, so the usual outcome is a Cloudflare ban that takes the bot offline with
+it. One process, one HTTPClient, a handful of channels at a time.
+
+Only one run at a time: a lock file stops a second invocation from racing the first on
+the same channels. Safe to run while the bot is live - SQLite WAL plus busy_timeout
+handles both writers, and inserts are INSERT OR IGNORE keyed on message_id, so re-runs
+never duplicate.
 """
 
 import argparse
 import asyncio
+import errno
 import logging
 import os
 import sys
@@ -42,6 +54,32 @@ log = logging.getLogger("chronicle-backfill")
 
 BATCH = 500          # messages per write transaction
 PROGRESS_EVERY = 5_000
+LOCK_PATH = "/tmp/chronicle_backfill.lock"
+
+
+class _Lock:
+    """One backfill at a time. Two runs would walk the same channels in parallel and
+    burn the token's rate limit on work the other is already doing."""
+
+    def __enter__(self):
+        try:
+            fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except OSError as e:
+            if e.errno != errno.EEXIST:
+                raise
+            existing = open(LOCK_PATH).read().strip()
+            sys.exit(f"A backfill is already running (pid {existing}, lock {LOCK_PATH}). "
+                     f"If it is not, delete the lock file and rerun.")
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            os.remove(LOCK_PATH)
+        except OSError:
+            pass
+        return False
 
 
 def _existing(message_ids):
@@ -214,11 +252,22 @@ async def run(args):
                                 channels.append(thread)
                         except discord.HTTPException:
                             pass
-            log.info("backfilling %d channels%s", len(channels),
-                     " (with reaction users)" if args.reactions else "")
-            grand = 0
-            for channel in channels:
-                grand += await backfill_channel(channel, after, args.reactions, args.resume)
+            log.info("backfilling %d channels, %d at a time%s", len(channels),
+                     args.concurrency, " (with reaction users)" if args.reactions else "")
+            # Channels in parallel, one HTTPClient: discord.py serialises each channel's
+            # own bucket and the shared global limit, so this speeds things up without
+            # the 429 storm that separate processes would cause.
+            gate = asyncio.Semaphore(args.concurrency)
+
+            async def one(channel):
+                async with gate:
+                    return await backfill_channel(channel, after, args.reactions, args.resume)
+
+            done = await asyncio.gather(*(one(c) for c in channels), return_exceptions=True)
+            grand = sum(n for n in done if isinstance(n, int))
+            for channel, result in zip(channels, done):
+                if isinstance(result, Exception):
+                    log.error("channel #%s raised: %r", getattr(channel, "name", channel.id), result)
             log.info("backfill finished: %s messages in %.1f minutes, chronicle.db is %s bytes",
                      f"{grand:,}", (time.time() - started) / 60, f"{ChronicleDB.size_bytes():,}")
         finally:
@@ -239,7 +288,12 @@ def main():
                     help="skip channels already marked complete (default)")
     ap.add_argument("--no-resume", dest="resume", action="store_false",
                     help="re-walk channels from the top (rows are still deduped)")
-    asyncio.run(run(ap.parse_args()))
+    ap.add_argument("--concurrency", type=int, default=4,
+                    help="channels walked at once (default 4; past ~8 the global rate "
+                         "limit, not the bucket, becomes the wall)")
+    args = ap.parse_args()
+    with _Lock():
+        asyncio.run(run(args))
 
 
 if __name__ == "__main__":
