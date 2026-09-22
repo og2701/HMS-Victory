@@ -229,10 +229,14 @@ class AClient(discord.Client):
 
     async def on_ready(self):
         # Open chronicle.db up front so a disk or permissions problem shows in the boot
-        # log rather than silently, inside the writer thread, hours later.
+        # log rather than silently, inside the writer thread, hours later. A one-row
+        # probe, off the loop: anything that counts rows here scans millions of them
+        # and stalls the gateway heartbeat.
         try:
-            from lib.chronicle.queries import coverage
-            logger.info("Chronicle ready: %s", coverage())
+            from lib.chronicle.db import ChronicleDB
+            version = await asyncio.to_thread(
+                ChronicleDB.fetch_one, "SELECT value FROM meta WHERE key = 'schema_version'")
+            logger.info("Chronicle ready (schema %s)", version[0] if version else "?")
         except Exception:
             logger.exception("could not open the chronicle database")
 
