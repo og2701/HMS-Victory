@@ -224,6 +224,8 @@ def coverage():
         "member_events": _one("SELECT COUNT(*) FROM member_events"),
         "interactions": _one("SELECT COUNT(*) FROM interactions"),
         "channels_backfilled": _one("SELECT COUNT(*) FROM backfill_progress WHERE complete = 1"),
+        "caught_up": _one("SELECT COUNT(*) FROM messages WHERE source = 'catchup'"),
+        "outages": _one("SELECT COUNT(*) FROM outages"),
         "size_bytes": ChronicleDB.size_bytes(),
     }
 

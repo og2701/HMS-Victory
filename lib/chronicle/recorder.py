@@ -109,13 +109,21 @@ def _run():
                 return
 
 
+LAST_ALIVE_KEY = "last_alive_ts"
+
+
 def _write(batch):
     """One transaction, with consecutive identical statements collapsed into executemany.
 
     Order is preserved, which matters: an edit or delete UPDATE must land after the
     INSERT of the message it refers to.
+
+    Every commit also stamps ``last_alive_ts``: the last moment the bot was provably
+    hearing the gateway. After a restart or outage, that is where the gap starts.
     """
     with ChronicleDB.transaction() as cur:
+        cur.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                    (LAST_ALIVE_KEY, str(int(time.time()))))
         run_sql, run_params = None, []
         for sql, params in batch:
             if sql != run_sql:
@@ -156,6 +164,21 @@ def flush(timeout=10.0):
 def stats():
     return {"queued": _queue.qsize(), "dropped": _dropped,
             "worker_alive": bool(_worker and _worker.is_alive())}
+
+
+def stored_message_ids(message_ids):
+    """Which of these ids are already in the chronicle. The message row itself is
+    INSERT OR IGNORE, but its mention and emoji rows are not, so anything re-fetched
+    from Discord has to be filtered through this first or those rows double up."""
+    found = set()
+    ids = list(message_ids)
+    for i in range(0, len(ids), 500):       # stay under SQLite's parameter limit
+        chunk = ids[i:i + 500]
+        ph = ",".join("?" * len(chunk))
+        rows = ChronicleDB.fetch_all(
+            f"SELECT message_id FROM messages WHERE message_id IN ({ph})", tuple(chunk))
+        found.update(r[0] for r in rows)
+    return found
 
 
 # --------------------------------------------------------------------- field helpers

@@ -49,7 +49,9 @@ from dotenv import load_dotenv  # noqa: E402
 
 from config import GUILD_ID  # noqa: E402
 from lib.chronicle.db import ChronicleDB  # noqa: E402
-from lib.chronicle.recorder import REACTION_SQL, audit_row, message_rows  # noqa: E402
+from lib.chronicle.recorder import (  # noqa: E402
+    REACTION_SQL, audit_row, message_rows, stored_message_ids,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("chronicle-backfill")
@@ -84,17 +86,7 @@ class _Lock:
         return False
 
 
-def _existing(message_ids):
-    """Which of these ids are already stored, so a resumed run skips their child rows."""
-    found = set()
-    ids = list(message_ids)
-    for i in range(0, len(ids), 500):
-        chunk = ids[i:i + 500]
-        ph = ",".join("?" * len(chunk))
-        rows = ChronicleDB.fetch_all(
-            f"SELECT message_id FROM messages WHERE message_id IN ({ph})", tuple(chunk))
-        found.update(r[0] for r in rows)
-    return found
+_existing = stored_message_ids
 
 
 def _write(rows):

@@ -25,7 +25,7 @@ from config import CHRONICLE_DB_FILE
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Timestamps are epoch SECONDS (UTC) everywhere. Discord snowflake ids are stored as
 # INTEGER - they fit in 64 bits and sort chronologically, which makes range scans on
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS messages (
     word_count   INTEGER NOT NULL DEFAULT 0,
     edited_ts    INTEGER,           -- last edit seen
     deleted_ts   INTEGER,           -- set in place; rows are never removed
-    source       TEXT NOT NULL DEFAULT 'live',  -- 'live' or 'backfill'
+    source       TEXT NOT NULL DEFAULT 'live',  -- 'live', 'backfill' or 'catchup'
     -- Local-time buckets written at insert, because SQLite has no timezone database:
     -- "what hour do you post at" has to mean the clock people were looking at, and
     -- strftime('localtime') would silently answer in whatever TZ the box happens to run.
@@ -205,6 +205,20 @@ CREATE TABLE IF NOT EXISTS poll_votes (
 );
 CREATE INDEX IF NOT EXISTS idx_poll_votes_message ON poll_votes(message_id);
 CREATE INDEX IF NOT EXISTS idx_poll_votes_user    ON poll_votes(user_id, ts);
+
+-- Every restart or outage the catch-up pass closed, and what it could not: messages
+-- and audit entries come back, but reactions, voice and poll votes in the window are
+-- gone, so stats over these windows should be read as undercounts.
+CREATE TABLE IF NOT EXISTS outages (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    start_ts         INTEGER,          -- last write before the gap (last_alive_ts)
+    end_ts           INTEGER NOT NULL, -- when the bot was hearing the gateway again
+    reason           TEXT,             -- restart | reconnect
+    channels_fetched INTEGER NOT NULL DEFAULT 0,
+    messages_recovered INTEGER NOT NULL DEFAULT 0,
+    audit_recovered  INTEGER NOT NULL DEFAULT 0,
+    finished_ts      INTEGER
+);
 
 -- Where the history backfill got to per channel, so it can resume instead of
 -- re-walking millions of messages after an interruption.

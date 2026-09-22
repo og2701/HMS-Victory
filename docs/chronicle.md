@@ -24,7 +24,7 @@ upload is skipped with a warning: at that point it wants off-box storage, not Di
 
 | Table | Rows come from | Notes |
 | --- | --- | --- |
-| `messages` | `on_message` | Bots included and flagged with `is_bot`. DMs excluded. Deletes set `deleted_ts` in place, so nothing ever disappears. |
+| `messages` | `on_message` | Bots included and flagged with `is_bot`. DMs excluded. Deletes set `deleted_ts` in place, so nothing ever disappears. `source` says whether a row came from `live`, `backfill` or `catchup`. |
 | `message_edits` | `on_message_edit`, `on_raw_message_edit` | Old and new text per edit; the `messages` row carries the current text. |
 | `mentions` | `on_message` | One row per mentioned user/role/channel, plus `@everyone` and the person being replied to. |
 | `reactions` | `on_raw_reaction_add/remove` | Raw events, so uncached messages count too. `author_id` is filled when the message was cached. |
@@ -53,8 +53,10 @@ Worth knowing before someone asks why a stat looks thin:
   whatever window is open on the day it runs; everything before that is gone.
 - **Reactions on old messages**, unless the backfill is run with `--reactions`. The live
   hook only sees reactions added from the deploy onwards.
-- **Anything that happened while the bot was offline** - reactions, voice moves, audit
-  entries. Messages are fine, the backfill picks those up.
+- **Reactions, voice events and poll votes while the bot was offline.** They only ever
+  exist as gateway events. Messages and audit entries from the gap are recovered
+  automatically (see below), and every gap is logged in `outages` so stats over that
+  window can be read as undercounts.
 - **Attachment and voice note bytes.** Only the CDN URL and metadata are kept; the files
   themselves would be hundreds of gigabytes.
 - **DMs, and channels the bot cannot read.**
@@ -77,6 +79,23 @@ plain tuples and drops them on a bounded queue; one background thread commits th
 batches of up to 2000 (or every second). Order is preserved, which matters: an edit's
 `UPDATE` has to land after the `INSERT` of the message it refers to. `chronicle.flush()`
 drains the queue and runs on graceful shutdown.
+
+## Restarts and outages
+
+`lib/chronicle/catchup.py` runs on every fresh gateway session: each restart, and any
+reconnect that couldn't RESUME (a RESUME replays missed events itself and never reaches
+`on_ready`). It runs as a background task, so the bot is fully up while it works.
+
+- **Messages.** READY hands over every channel's `last_message_id` for free, so a
+  channel only costs a request when it holds something newer than the newest message we
+  have for it - usually a handful, not the thousand in the server. Only messages created
+  before this session's READY are fetched; everything after reached `on_message` live.
+- **Audit log** entries newer than the newest stored one.
+- An **`outages`** row per pass: the gap's start (`last_alive_ts`, stamped on every
+  write and on clean shutdown), its end, and what was recovered.
+
+It waits for a running backfill to release its lock rather than put two processes on
+one token's rate limit. Rows it adds carry `source = 'catchup'`.
 
 ## Backfilling history
 

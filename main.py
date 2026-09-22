@@ -3,6 +3,7 @@ from discord.ext import tasks
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
 import signal
+import time
 import logging
 import pytz
 from datetime import datetime, timedelta
@@ -77,6 +78,12 @@ class AClient(discord.Client):
     async def setup_hook(self):
         self.session = aiohttp.ClientSession()
         import config
+        # Where the chronicle's gap starts: read now, before the gateway connects,
+        # because the first live write after READY overwrites it.
+        from lib.chronicle.catchup import read_last_alive
+        self._chronicle_gap_start = read_last_alive()
+        self._chronicle_disconnected_at = None
+        self._chronicle_first_ready = True
         # Persistent 'Ask a follow-up' buttons on moderation analysis reports.
         try:
             from commands.moderation.user_analysis import FollowupButton
@@ -228,6 +235,22 @@ class AClient(discord.Client):
             logger.info("Chronicle ready: %s", coverage())
         except Exception:
             logger.exception("could not open the chronicle database")
+
+        # Every fresh gateway session (a restart, or a reconnect that couldn't RESUME)
+        # missed whatever happened while we weren't listening. Ask Discord for it.
+        # A RESUME replays the missed events itself and never reaches on_ready.
+        try:
+            from lib.chronicle.catchup import catch_up
+            boundary = datetime.now(pytz.utc)
+            if self._chronicle_first_ready:
+                reason, gap_start = "restart", self._chronicle_gap_start
+            else:
+                reason, gap_start = "reconnect", self._chronicle_disconnected_at
+            self._chronicle_first_ready = False
+            self._chronicle_disconnected_at = None
+            asyncio.create_task(catch_up(self, GUILD_ID, gap_start, boundary, reason))
+        except Exception:
+            logger.exception("could not start the chronicle catch-up")
 
         # Ensure chatbot controller dashboard is active in its dedicated thread
         try:
@@ -710,6 +733,16 @@ class AClient(discord.Client):
     async def on_raw_poll_vote_remove(self, payload):
         chronicle.record_poll_vote(payload, "remove")
 
+    async def on_disconnect(self):
+        # First drop only: discord.py retries in a loop, and the gap starts at the
+        # first one, not the last.
+        if getattr(self, "_chronicle_disconnected_at", None) is None:
+            self._chronicle_disconnected_at = int(time.time())
+
+    async def on_resumed(self):
+        # A RESUME replays everything missed, so there is no gap to fill.
+        self._chronicle_disconnected_at = None
+
     async def on_voice_state_update(self, member, before, after):
         chronicle.record_voice(member, before, after)
         await on_voice_state_update(member, before, after)
@@ -859,8 +892,11 @@ async def graceful_shutdown(client, sig_name):
         logger.error(f"WAL checkpoint error: {e}")
 
     # 4b. Drain the chronicle's write queue before the process dies, so the last
-    #     second or so of history isn't lost on every restart.
+    #     second or so of history isn't lost on every restart. Stamping last-alive
+    #     first means the next boot's catch-up labels the gap from this exact moment.
     try:
+        from lib.chronicle.catchup import mark_alive
+        mark_alive()
         if not chronicle.flush(timeout=15):
             logger.warning("Chronicle queue did not drain in time: %s", chronicle.stats())
         chronicle.ChronicleDB.checkpoint()
