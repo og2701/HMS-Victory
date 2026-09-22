@@ -180,8 +180,12 @@ async def backfill_channel(channel, after=None, want_reactions=False, resume=Tru
                     log.info("#%s: %s messages", channel.name, f"{total:,}")
         if pending:
             total += await _flush(pending, channel, want_reactions, oldest, newest)
-        _save_progress(channel, oldest, newest, 0, complete=True)
-        log.info("done #%s: %s messages", channel.name, f"{total:,}")
+        # Only a full walk earns the complete flag. A date-limited run reached the
+        # bottom of its window, not the bottom of the channel, and marking it done
+        # would make every later --resume skip everything older.
+        _save_progress(channel, oldest, newest, 0, complete=after is None)
+        log.info("done #%s: %s messages%s", channel.name, f"{total:,}",
+                 "" if after is None else " (date-limited, channel not marked complete)")
     except discord.Forbidden:
         log.warning("no access to #%s, skipping", getattr(channel, "name", channel.id))
     except Exception:
