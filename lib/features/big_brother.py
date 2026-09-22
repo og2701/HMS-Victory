@@ -2403,7 +2403,12 @@ async def _send_pick(interaction: discord.Interaction, content: str, guild, ids:
 
 
 async def _send_cycle(interaction: discord.Interaction, content: str, guild, ids: list[int],
-                      state: dict[int, str], on_cycle: Callable, styles: dict[str, tuple]):
+                      state: dict[int, str], on_cycle: Callable, styles: dict[str, tuple],
+                      *, filter_teams: bool = False):
+    if filter_teams:
+        view = _CycleGrid(guild, ids, state, on_cycle, styles, filter_teams=True)
+        await interaction.response.send_message(content, view=view, ephemeral=True)
+        return
     views = [_CycleGrid(guild, page, state, on_cycle, styles) for page in _chunks(ids)]
     await _GridSet().deliver(interaction, content, views)
 
@@ -2497,16 +2502,99 @@ class _CycleGrid(discord.ui.View):
     user_id) -> the new state key, then the grid redraws itself."""
 
     def __init__(self, guild: Optional[discord.Guild], ids: list[int], state: dict[int, str],
-                 on_cycle: Callable, styles: dict[str, tuple]):
+                 on_cycle: Callable, styles: dict[str, tuple], *, filter_teams: bool = False):
         super().__init__(timeout=300)
-        self.guild, self.ids, self.state, self.on_cycle, self.styles = guild, ids, dict(state), on_cycle, styles
+        self.guild = guild
+        self.all_ids = list(ids)
+        self.state = dict(state)
+        self.on_cycle = on_cycle
+        self.styles = styles
+        self.filter_teams = filter_teams
+        self.current_filter = "all"
+        self.page = 0
         self._build()
+
+    def _get_filtered_ids(self) -> list[int]:
+        if not self.filter_teams or self.current_filter == "all":
+            return self.all_ids
+        from lib.features import big_brother_teams as _teams
+        split = _teams.teams()
+        if self.current_filter in ("A", "B"):
+            team_members = set(split.get(self.current_filter, []))
+            return [u for u in self.all_ids if u in team_members]
+        if self.current_filter == "none":
+            team_members = set(split.get("A", [])) | set(split.get("B", []))
+            return [u for u in self.all_ids if u not in team_members]
+        return self.all_ids
 
     def _build(self):
         self.clear_items()
-        for uid in self.ids[:GRID_MAX]:
+        if not self.filter_teams:
+            for uid in self.all_ids[:GRID_MAX]:
+                style, prefix = self.styles[self.state.get(uid, next(iter(self.styles)))]
+                btn = discord.ui.Button(label=(prefix + _name(self.guild, uid))[:80], style=style)
+
+                async def _cb(interaction: discord.Interaction, _uid=uid):
+                    await interaction.response.defer()
+                    self.state[_uid] = await self.on_cycle(interaction, _uid)
+                    self._build()
+                    await interaction.edit_original_response(view=self)
+                btn.callback = _cb
+                self.add_item(btn)
+            return
+
+        from lib.features import big_brother_teams as _teams
+        split = _teams.teams()
+        team_a = [u for u in self.all_ids if u in split.get("A", [])]
+        team_b = [u for u in self.all_ids if u in split.get("B", [])]
+        unassigned = [u for u in self.all_ids if u not in team_a and u not in team_b]
+
+        opts = [
+            discord.SelectOption(label=f"All housemates ({len(self.all_ids)})", value="all", emoji="🌐",
+                                 default=(self.current_filter == "all")),
+            discord.SelectOption(label=f"Team A ({len(team_a)})", value="A", emoji="🅰️",
+                                 default=(self.current_filter == "A")),
+            discord.SelectOption(label=f"Team B ({len(team_b)})", value="B", emoji="🅱️",
+                                 default=(self.current_filter == "B")),
+        ]
+        if unassigned and (team_a or team_b):
+            opts.append(discord.SelectOption(label=f"Unassigned ({len(unassigned)})", value="none", emoji="⚪",
+                                             default=(self.current_filter == "none")))
+
+        select = discord.ui.Select(placeholder="Filter by team...", options=opts, row=0)
+
+        async def _select_cb(interaction: discord.Interaction):
+            self.current_filter = select.values[0]
+            self.page = 0
+            self._build()
+            await interaction.response.edit_message(view=self)
+
+        select.callback = _select_cb
+        self.add_item(select)
+
+        active_ids = self._get_filtered_ids()
+        total = len(active_ids)
+
+        if total == 0:
+            self.add_item(discord.ui.Button(label="No housemates on this team", disabled=True, row=1))
+            return
+
+        if total <= 20:
+            PAGE_SIZE = 20
+            paged_ids = active_ids
+            has_nav = False
+        else:
+            PAGE_SIZE = 15
+            total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+            self.page = min(self.page, total_pages - 1)
+            start = self.page * PAGE_SIZE
+            paged_ids = active_ids[start:start + PAGE_SIZE]
+            has_nav = True
+
+        for idx, uid in enumerate(paged_ids):
+            row_num = 1 + (idx // 5)
             style, prefix = self.styles[self.state.get(uid, next(iter(self.styles)))]
-            btn = discord.ui.Button(label=(prefix + _name(self.guild, uid))[:80], style=style)
+            btn = discord.ui.Button(label=(prefix + _name(self.guild, uid))[:80], style=style, row=row_num)
 
             async def _cb(interaction: discord.Interaction, _uid=uid):
                 await interaction.response.defer()
@@ -2515,6 +2603,31 @@ class _CycleGrid(discord.ui.View):
                 await interaction.edit_original_response(view=self)
             btn.callback = _cb
             self.add_item(btn)
+
+        if has_nav:
+            total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+            prev_btn = discord.ui.Button(label="◀ Prev", style=discord.ButtonStyle.secondary, row=4,
+                                         disabled=(self.page == 0))
+            page_info = discord.ui.Button(label=f"Page {self.page + 1}/{total_pages}",
+                                          style=discord.ButtonStyle.secondary, row=4, disabled=True)
+            next_btn = discord.ui.Button(label="Next ▶", style=discord.ButtonStyle.secondary, row=4,
+                                         disabled=(self.page >= total_pages - 1))
+
+            async def _prev_cb(interaction: discord.Interaction):
+                self.page = max(0, self.page - 1)
+                self._build()
+                await interaction.response.edit_message(view=self)
+
+            async def _next_cb(interaction: discord.Interaction):
+                self.page += 1
+                self._build()
+                await interaction.response.edit_message(view=self)
+
+            prev_btn.callback = _prev_cb
+            next_btn.callback = _next_cb
+            self.add_item(prev_btn)
+            self.add_item(page_info)
+            self.add_item(next_btn)
 
 
 class _CountGrid(discord.ui.View):
@@ -3287,7 +3400,8 @@ async def _act_immunity(interaction: discord.Interaction):
                       "Press a name to cycle it: 🔴 nothing → 🛡️ immune from the next nominations → "
                       "🚫 safe from the next eviction vote → back. Immunity lasts until nominations close, "
                       "safety until a vote starts.",
-                      interaction.guild, ins, {u: state_of(u) for u in ins}, cycled, STYLES)
+                      interaction.guild, ins, {u: state_of(u) for u in ins}, cycled, STYLES,
+                      filter_teams=True)
 
 
 async def _act_token(interaction: discord.Interaction):

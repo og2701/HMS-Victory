@@ -280,6 +280,69 @@ def test_grids_render_state(bb):
     assert bb._chunks([]) == [[]]
 
 
+def test_cycle_grid_team_filter_and_pagination(bb):
+    import discord
+    from lib.features import big_brother_teams as teams
+
+    uids = list(range(1, 25))
+    for u in uids:
+        bb.db_add_housemate(u)
+    for u in range(1, 11):
+        teams.set_team(u, "A")
+    for u in range(11, 21):
+        teams.set_team(u, "B")
+
+    styles = {"none": (discord.ButtonStyle.danger, ""), "immune": (discord.ButtonStyle.success, "🛡️ "),
+              "safe": (discord.ButtonStyle.primary, "🚫 ")}
+    state = {1: "immune", 11: "safe"}
+
+    grid = bb._CycleGrid(None, uids, state, None, styles, filter_teams=True)
+
+    select = grid.children[0]
+    assert isinstance(select, discord.ui.Select)
+    assert [opt.value for opt in select.options] == ["all", "A", "B", "none"]
+    assert "All housemates (24)" in select.options[0].label
+    assert "Team A (10)" in select.options[1].label
+    assert "Team B (10)" in select.options[2].label
+    assert "Unassigned (4)" in select.options[3].label
+
+    buttons = [b for b in grid.children if isinstance(b, discord.ui.Button)]
+    assert len(buttons) == 18  # 15 housemates + 3 nav
+    assert buttons[0].label == "🛡️ user 1"
+    assert buttons[0].style == discord.ButtonStyle.success
+
+    nav_labels = [b.label for b in buttons[-3:]]
+    assert nav_labels == ["◀ Prev", "Page 1/2", "Next ▶"]
+    assert buttons[-3].disabled is True
+    assert buttons[-1].disabled is False
+
+    # Team A filter (<= 20, no nav)
+    grid.current_filter = "A"
+    grid.page = 0
+    grid._build()
+    team_a_buttons = [b for b in grid.children if isinstance(b, discord.ui.Button)]
+    assert len(team_a_buttons) == 10
+    assert [b.label for b in team_a_buttons] == ["🛡️ user 1"] + [f"user {i}" for i in range(2, 11)]
+
+    # Team B filter
+    grid.current_filter = "B"
+    grid.page = 0
+    grid._build()
+    team_b_buttons = [b for b in grid.children if isinstance(b, discord.ui.Button)]
+    assert len(team_b_buttons) == 10
+    assert team_b_buttons[0].label == "🚫 user 11"
+    assert team_b_buttons[0].style == discord.ButtonStyle.primary
+
+    # Unassigned filter
+    grid.current_filter = "none"
+    grid.page = 0
+    grid._build()
+    unassigned_buttons = [b for b in grid.children if isinstance(b, discord.ui.Button)]
+    assert len(unassigned_buttons) == 4
+    assert [b.label for b in unassigned_buttons] == ["user 21", "user 22", "user 23", "user 24"]
+    teams.clear_teams()
+
+
 def test_house_panel_signature_tracks_visible_changes(bb):
     bb.db_add_housemate(1)
     bb.db_add_housemate(2)
