@@ -39,6 +39,12 @@ def test_avoids_common_false_positives():
     assert find_blocked_moderation_match("custard tart") is None
     assert find_blocked_moderation_match("geological dike") is None
     assert find_blocked_moderation_match("tardy arrival") is None
+    assert find_blocked_moderation_match("it's pick up and put down") is None
+    assert find_blocked_moderation_match("let's pick") is None
+    assert find_blocked_moderation_match("he's picky") is None
+    assert find_blocked_moderation_match("that's pics") is None
+    assert find_blocked_moderation_match("who's picking") is None
+    assert find_blocked_moderation_match("I can carry do up to about 10kg for a little while but anything that it's pick up and put down lol") is None
 
 
 def test_detects_expanded_slurs():
@@ -57,6 +63,9 @@ def test_detects_expanded_slurs():
 
     spic_match = find_blocked_moderation_match("you sp!ck")
     assert spic_match is not None and spic_match.label == "racial slur"
+    assert find_blocked_moderation_match("dirty spic") is not None
+    assert find_blocked_moderation_match("s p i c") is not None
+    assert find_blocked_moderation_match("s.p.i.c.k") is not None
 
     coon_match = find_blocked_moderation_match("dirty c00n")
     assert coon_match is not None and coon_match.label == "racial slur"
