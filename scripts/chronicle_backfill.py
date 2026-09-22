@@ -43,6 +43,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import aiohttp  # noqa: E402
 import discord  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
@@ -153,14 +154,41 @@ async def _reaction_rows(message):
     return rows
 
 
-async def backfill_channel(channel, after=None, want_reactions=False, resume=True):
+async def backfill_channel(channel, after=None, want_reactions=False, resume=True,
+                           attempts=6):
+    """Walk one channel, retrying through Discord's 5xx blips.
+
+    A 503 mid-walk used to abandon the channel for the rest of the run, which on the
+    two busiest channels cost more than half the server's history. Progress is saved
+    per batch, so a retry just resumes below the oldest id already stored.
+    """
+    total = 0
+    for attempt in range(1, attempts + 1):
+        got, interrupted = await _walk(channel, after, want_reactions,
+                                       resume or attempt > 1)
+        total += got
+        if not interrupted:
+            return total
+        if attempt == attempts:
+            log.error("#%s: giving up after %d attempts, %s messages stored - rerun to resume",
+                      getattr(channel, "name", channel.id), attempts, f"{total:,}")
+            return total
+        delay = min(60, 2 ** attempt)
+        log.warning("#%s: Discord blipped, resuming in %ds (attempt %d/%d)",
+                    getattr(channel, "name", channel.id), delay, attempt, attempts)
+        await asyncio.sleep(delay)
+    return total
+
+
+async def _walk(channel, after=None, want_reactions=False, resume=True):
+    """One pass over a channel. Returns (messages stored, whether it was interrupted)."""
     row = _progress_row(channel.id)
     before = None
     if resume and row:
         oldest_seen, done, complete = row
         if complete:
             log.info("skip #%s (already complete, %s messages)", channel.name, f"{done:,}")
-            return 0
+            return 0, False
         if oldest_seen:
             # Walking newest-to-oldest, so resume just below the oldest id already stored.
             before = discord.Object(id=oldest_seen)
@@ -189,10 +217,22 @@ async def backfill_channel(channel, after=None, want_reactions=False, resume=Tru
                  "" if after is None else " (date-limited, channel not marked complete)")
     except discord.Forbidden:
         log.warning("no access to #%s, skipping", getattr(channel, "name", channel.id))
+    except discord.NotFound:
+        # Deleted or archived out from under us mid-walk; retrying would never help.
+        log.warning("#%s vanished mid-walk, keeping the %s messages stored",
+                    getattr(channel, "name", channel.id), f"{total:,}")
+    except (discord.DiscordServerError, discord.HTTPException, aiohttp.ClientError,
+            asyncio.TimeoutError) as e:
+        # Transient: Discord 5xx, a dropped connection, a timeout. Worth resuming.
+        if pending:
+            total += await _flush(pending, channel, want_reactions, oldest, newest)
+        log.warning("#%s interrupted after %s messages: %r",
+                    getattr(channel, "name", channel.id), f"{total:,}", e)
+        return total, True
     except Exception:
         log.error("backfill of #%s failed - progress is saved, rerun to resume",
                   getattr(channel, "name", channel.id), exc_info=True)
-    return total
+    return total, False
 
 
 async def backfill_audit_log(guild):
