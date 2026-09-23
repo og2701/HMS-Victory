@@ -16,9 +16,12 @@ extra safety. It also writes constantly and append-only, while the economy table
 read-modify-write and latency-sensitive; separate files mean separate WALs, so an insert
 burst can never hold up a `/pay`. And it is disposable in a way balances are not.
 
-`chronicle.db` is backed up **daily at 04:20** instead (`backup_chronicle`), as
-`chronicle_backup_<timestamp>.zip` parts in the same channel. Past 200MB zipped the
-upload is skipped with a warning: at that point it wants off-box storage, not Discord.
+`chronicle.db` is **kept on the instance only**, by decision. At ~2GB (540MB zipped)
+after the full backfill it no longer fits the Discord backup path, and off-box storage
+was declined. `backup_chronicle` writes one rolling local snapshot nightly at 04:20, to
+`chronicle.db.snapshot`, which guards against a corrupted file but not a lost disk. If
+the disk goes, the messages can be re-backfilled from Discord; the audit log beyond its
+45-day window, and past reactions and voice events, cannot.
 
 ## What is recorded
 
@@ -143,9 +146,14 @@ leave/move, closing anything still open at the end of the window.
 
 ## Restoring
 
-Download every `chronicle_backup_<timestamp>` part from `#data-backup`, concatenate them
-in order, unzip, and drop the resulting `chronicle.db` next to `main.py`:
+Stop the bot, then put the snapshot back in place of the live file:
 
 ```bash
-cat chronicle_backup_*_part*.zip > chronicle.zip && unzip chronicle.zip
+sudo systemctl stop hms-victory
+rm -f chronicle.db-wal chronicle.db-shm
+cp chronicle.db.snapshot chronicle.db
+sudo systemctl start hms-victory
 ```
+
+The catch-up on the next boot refills messages and audit entries from after the
+snapshot; reactions and voice events from that window are gone.

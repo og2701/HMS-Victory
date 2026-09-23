@@ -16,6 +16,8 @@ data/iceberg_texts.json
 database.db*
 remote_database.db*
 *.db
+# chronicle's nightly local snapshot (~2GB) and its in-progress temp file
+*.db.snapshot*
 # secret_badges.json (plaintext secret-badge config) is covered by *.json above; only the
 # encrypted secret_badges.json.enc is committed.
 .env

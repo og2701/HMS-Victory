@@ -542,7 +542,8 @@ MESSAGE_ARCHIVE_RETENTION_DAYS = 30
 # The chronicle is the permanent, never-purged event log (messages, edits, deletes,
 # reactions, mentions, voice, joins, commands) that the year-in-review stats are built
 # from. It lives in its own SQLite file so the five-minute database.db backup - which
-# re-uploads the whole file every time - never has to carry a gigabyte-a-year table.
+# re-uploads the whole file every time - never has to carry a gigabyte-a-year table. It
+# is kept on the instance only, with a nightly local snapshot (backup_chronicle).
 CHRONICLE_DB_FILE = os.path.join(BASE_DIR, "chronicle.db")
 IMAGE_GEN_QUALITY = "low"
 IMAGE_GEN_SIZE = "1024x1024"

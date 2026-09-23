@@ -565,9 +565,9 @@ def _register_client_jobs(client, scheduler):
     
     _add_process_job(scheduler, backup_database, IntervalTrigger(minutes=5, timezone="Europe/London"), args=[client], id="backup_database_job", name="Backup SQLite Database")
     _add_process_job(scheduler, backup_json_data, IntervalTrigger(minutes=5, timezone="Europe/London"), args=[client], id="backup_json_data_job", name="Backup JSON State")
-    # Once a day, not every five minutes: chronicle.db only grows, so re-uploading it on
-    # the database cycle would get more expensive every year for no extra safety.
-    _add_process_job(scheduler, backup_chronicle, CronTrigger(hour=4, minute=20, timezone="Europe/London"), args=[client], id="backup_chronicle_job", name="Backup Chronicle History")
+    # Once a day, locally: chronicle.db is ~2GB and growing, too big for the Discord
+    # backup path, and it's kept on the instance by decision.
+    _add_process_job(scheduler, backup_chronicle, CronTrigger(hour=4, minute=20, timezone="Europe/London"), args=[client], id="backup_chronicle_job", name="Snapshot Chronicle History")
     _add_process_job(scheduler, cleanup_webhook_reactions, IntervalTrigger(minutes=1), args=[client], id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
 
     _add_process_job(scheduler, process_economy_logs, IntervalTrigger(seconds=15), args=[client], id="process_economy_logs_interval", name="Process Economy Log Queue")

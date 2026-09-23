@@ -17,12 +17,6 @@ from config import *
 logger = logging.getLogger(__name__)
 MAX_PART_SIZE = 8 * 1024 * 1024
 DB_BACKUP_PREFIX = "database_backup_"
-CHRONICLE_BACKUP_PREFIX = "chronicle_backup_"
-# The chronicle grows forever (~1GB/year), so it gets a daily backup rather than the
-# database's five-minute one. Past this zipped size, uploading it to Discord in 8MB
-# parts stops being reasonable: the job logs loudly and skips, which is the signal to
-# move the file to off-box storage (S3 or similar).
-MAX_CHRONICLE_UPLOAD_BYTES = 200 * 1024 * 1024
 # How far back the restore will look for a database backup. The channel also carries a
 # json_backup_ every five minutes, so 100 messages reached back about eight hours - a
 # daily database backup was never once inside the window it was searched in.
@@ -1002,46 +996,36 @@ async def backup_database(client):
                 logger.warning(f"Could not remove temporary snapshot {snapshot_path}: {e}")
 
 async def backup_chronicle(client):
-    """Daily off-box copy of chronicle.db, the permanent server history.
+    """Nightly local snapshot of chronicle.db, the permanent server history.
 
-    Deliberately NOT on the five-minute database cycle: this file only grows, and
-    re-uploading it 288 times a day would cost more every year. A day's worth of lost
-    history in the worst case is an acceptable trade for a backup that stays cheap.
+    Kept on the instance by decision: at ~2GB (540MB zipped) it no longer fits
+    Discord's upload path, and off-box storage was declined. So this guards against a
+    corrupted file - a crash mid-migration, a bad write - not against losing the disk.
+    One rolling copy, written to a temp name and renamed into place so a snapshot
+    that dies halfway never replaces the last good one.
     """
     from lib.chronicle.db import ChronicleDB
 
-    channel = client.get_channel(CHANNELS.DATA_BACKUP)
-    if not channel:
-        logger.warning(f"Backup channel {CHANNELS.DATA_BACKUP} not found.")
-        return
     if not os.path.exists(CHRONICLE_DB_FILE):
-        logger.info("No chronicle database yet; nothing to back up.")
+        logger.info("No chronicle database yet; nothing to snapshot.")
         return
-
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    snapshot_path = f"chronicle_snapshot_{timestamp}.db"
+    final_path = CHRONICLE_DB_FILE + ".snapshot"
+    temp_path = final_path + ".tmp"
+    started = datetime.now()
     try:
         # Online backup API: consistent even though the writer thread keeps inserting.
-        await asyncio.to_thread(ChronicleDB.snapshot_to_file, snapshot_path)
-        zip_buffer = await asyncio.to_thread(_zip_single_file_to_buffer, snapshot_path, "chronicle.db")
-        size = zip_buffer.getbuffer().nbytes
-        if size > MAX_CHRONICLE_UPLOAD_BYTES:
-            logger.warning(
-                "Chronicle backup is %s bytes zipped, over the %s-byte upload ceiling - "
-                "skipping the Discord upload. Move it to off-box storage.",
-                f"{size:,}", f"{MAX_CHRONICLE_UPLOAD_BYTES:,}")
-            return
-        n_parts = await _send_archive_in_parts(channel, zip_buffer, CHRONICLE_BACKUP_PREFIX, timestamp)
-        logger.info("Chronicle backed up to Discord (%s bytes, %d part%s).",
-                    f"{size:,}", n_parts, "" if n_parts == 1 else "s")
+        await asyncio.to_thread(ChronicleDB.snapshot_to_file, temp_path)
+        os.replace(temp_path, final_path)
+        logger.info("Chronicle snapshot written to %s (%s bytes, %.0fs).", final_path,
+                    f"{os.path.getsize(final_path):,}",
+                    (datetime.now() - started).total_seconds())
     except Exception as e:
-        logger.error("CHRONICLE BACKUP FAILED: %s", e, exc_info=True)
-    finally:
-        if os.path.exists(snapshot_path):
+        logger.error("CHRONICLE SNAPSHOT FAILED: %s", e, exc_info=True)
+        if os.path.exists(temp_path):
             try:
-                os.remove(snapshot_path)
-            except OSError as e:
-                logger.warning(f"Could not remove temporary chronicle snapshot: {e}")
+                os.remove(temp_path)
+            except OSError:
+                pass
 
 
 async def backup_bot(client):
