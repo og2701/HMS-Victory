@@ -699,6 +699,7 @@ BIG_BROTHER_NIGHT_HOURS = (0, 8)                    # UK hours with no bumping: 
 BIG_BROTHER_HOUSEMATE_ROLE = 1550132346295029892    # Housemate role: assigned on add, stripped on eviction, pinged
 BIG_BROTHER_PRIZE_UKP = 5000
 BIG_BROTHER_NOMINATIONS_PER_HOUSEMATE = 2
+BIG_BROTHER_VOTES_PER_HOUSEMATE = 1
 BIG_BROTHER_QUIET_HOURS = 48                        # panel flags housemates silent this long
 BIG_BROTHER_HOUSE_PANEL_UNLOCKED = False            # TEMP: house panel usable before Start is pressed; set False before the doors open
 BIG_BROTHER_SHOP_CHANNEL = None                     # where shop tasks post; None = the house channel (set to the control channel to test)

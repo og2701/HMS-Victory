@@ -95,6 +95,23 @@ def test_votes_one_per_voter_and_tally(bb):
     assert bb.vote_count(vid) == 2
 
 
+def test_votes_multi_per_voter_and_clear(bb):
+    vid = bb.create_round(bb.KIND_VOTE, nominees=[1, 2, 3], votes_each=2)
+    assert bb.votes_each(vid) == 2
+    bb.cast_vote(vid, 10, 1, "first pick")
+    bb.cast_vote(vid, 10, 2, "second pick")
+    assert bb.votes_of(vid, 10) == [(1, "first pick"), (2, "second pick")]
+    assert bb.vote_of(vid, 10) == (1, "first pick")
+    assert bb.vote_tally(vid) == {1: 1, 2: 1}
+    assert bb.vote_count(vid) == 2
+
+    # Clear votes
+    bb.clear_votes(vid, 10)
+    assert bb.votes_of(vid, 10) == []
+    assert bb.vote_of(vid, 10) is None
+    assert bb.vote_count(vid) == 0
+
+
 def test_state_roundtrip(bb):
     bb.set_state("k", {"a": [1, 2]})
     assert bb.get_state("k") == {"a": [1, 2]}

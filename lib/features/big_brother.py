@@ -137,6 +137,14 @@ def nominations_each() -> int:
     return max(1, int(getattr(config, "BIG_BROTHER_NOMINATIONS_PER_HOUSEMATE", 2)))
 
 
+def votes_each(round_id: Optional[int] = None) -> int:
+    if round_id is not None:
+        rnd = get_round(round_id)
+        if rnd and "votes_each" in rnd and rnd["votes_each"] is not None:
+            return max(1, int(rnd["votes_each"]))
+    return max(1, int(getattr(config, "BIG_BROTHER_VOTES_PER_HOUSEMATE", 1)))
+
+
 def prize_ukp() -> int:
     return int(getattr(config, "BIG_BROTHER_PRIZE_UKP", 0))
 
@@ -169,7 +177,7 @@ def ensure_tables() -> None:
             created_at INTEGER NOT NULL, UNIQUE(round_id, nominator_id, nominee_id))""")
         c.execute("""CREATE TABLE IF NOT EXISTS bb_votes (
             round_id INTEGER NOT NULL, voter_id TEXT NOT NULL, nominee_id TEXT NOT NULL,
-            created_at INTEGER NOT NULL, UNIQUE(round_id, voter_id))""")
+            created_at INTEGER NOT NULL, UNIQUE(round_id, voter_id, nominee_id))""")
         c.execute("""CREATE TABLE IF NOT EXISTS bb_diary (
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL,
             anonymous INTEGER NOT NULL DEFAULT 0, text TEXT NOT NULL, created_at INTEGER NOT NULL)""")
@@ -202,12 +210,22 @@ def ensure_tables() -> None:
         c.execute("""CREATE TABLE IF NOT EXISTS bb_acks (
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, label TEXT NOT NULL,
             sent_at INTEGER NOT NULL, acked_at INTEGER)""")
+        # Migrate bb_votes constraint to UNIQUE(round_id, voter_id, nominee_id) if still old schema
+        row = c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='bb_votes'").fetchone()
+        if row and "UNIQUE(round_id, voter_id)" in row[0]:
+            c.execute("""CREATE TABLE bb_votes_mig (
+                round_id INTEGER NOT NULL, voter_id TEXT NOT NULL, nominee_id TEXT NOT NULL,
+                created_at INTEGER NOT NULL, reason TEXT, UNIQUE(round_id, voter_id, nominee_id))""")
+            c.execute("INSERT OR IGNORE INTO bb_votes_mig (round_id, voter_id, nominee_id, created_at, reason) SELECT round_id, voter_id, nominee_id, created_at, reason FROM bb_votes")
+            c.execute("DROP TABLE bb_votes")
+            c.execute("ALTER TABLE bb_votes_mig RENAME TO bb_votes")
         # Columns added after the first deploy; harmless when they already exist.
         for stmt in ("ALTER TABLE bb_housemates ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0",
                      "ALTER TABLE bb_housemates ADD COLUMN eviction_safe INTEGER NOT NULL DEFAULT 0",
                      "ALTER TABLE bb_messages ADD COLUMN thread_id TEXT",
                      "ALTER TABLE bb_nominations ADD COLUMN reason TEXT",
-                     "ALTER TABLE bb_votes ADD COLUMN reason TEXT"):
+                     "ALTER TABLE bb_votes ADD COLUMN reason TEXT",
+                     "ALTER TABLE bb_rounds ADD COLUMN votes_each INTEGER NOT NULL DEFAULT 1"):
             try:
                 c.execute(stmt)
             except Exception:
@@ -520,7 +538,7 @@ def replace_nominee(round_id: int, old: int, new: int) -> None:
 def open_round(kind: str) -> Optional[dict]:
     ensure_tables()
     row = DatabaseManager.fetch_one(
-        "SELECT id, kind, status, opened_at, channel_id, message_id, nominees FROM bb_rounds "
+        "SELECT id, kind, status, opened_at, channel_id, message_id, nominees, votes_each FROM bb_rounds "
         "WHERE kind = ? AND status = 'open' ORDER BY id DESC LIMIT 1", (kind,))
     return _round_row(row)
 
@@ -529,7 +547,7 @@ def latest_round(kind: str) -> Optional[dict]:
     """The newest round of a kind, open or not."""
     ensure_tables()
     row = DatabaseManager.fetch_one(
-        "SELECT id, kind, status, opened_at, channel_id, message_id, nominees FROM bb_rounds "
+        "SELECT id, kind, status, opened_at, channel_id, message_id, nominees, votes_each FROM bb_rounds "
         "WHERE kind = ? ORDER BY id DESC LIMIT 1", (kind,))
     return _round_row(row)
 
@@ -537,7 +555,7 @@ def latest_round(kind: str) -> Optional[dict]:
 def get_round(round_id: int) -> Optional[dict]:
     ensure_tables()
     row = DatabaseManager.fetch_one(
-        "SELECT id, kind, status, opened_at, channel_id, message_id, nominees FROM bb_rounds WHERE id = ?",
+        "SELECT id, kind, status, opened_at, channel_id, message_id, nominees, votes_each FROM bb_rounds WHERE id = ?",
         (int(round_id),))
     return _round_row(row)
 
@@ -551,20 +569,23 @@ def _round_row(row) -> Optional[dict]:
             nominees = [int(x) for x in json.loads(row[6])]
         except (TypeError, ValueError):
             nominees = []
+    votes_each_val = int(row[7]) if len(row) > 7 and row[7] is not None else 1
     return {"id": row[0], "kind": row[1], "status": row[2], "opened_at": row[3],
             "channel_id": int(row[4]) if row[4] else None,
-            "message_id": int(row[5]) if row[5] else None, "nominees": nominees}
+            "message_id": int(row[5]) if row[5] else None, "nominees": nominees,
+            "votes_each": votes_each_val}
 
 
 def create_round(kind: str, *, channel_id: Optional[int] = None, message_id: Optional[int] = None,
-                 nominees: Optional[Iterable[int]] = None) -> int:
+                 nominees: Optional[Iterable[int]] = None, votes_each: int = 1) -> int:
     ensure_tables()
     return DatabaseManager.execute_insert(
-        "INSERT INTO bb_rounds (kind, status, opened_at, channel_id, message_id, nominees) "
-        "VALUES (?, 'open', ?, ?, ?, ?)",
+        "INSERT INTO bb_rounds (kind, status, opened_at, channel_id, message_id, nominees, votes_each) "
+        "VALUES (?, 'open', ?, ?, ?, ?, ?)",
         (kind, _now(), str(channel_id) if channel_id else None,
          str(message_id) if message_id else None,
-         json.dumps([int(x) for x in nominees]) if nominees else None))
+         json.dumps([int(x) for x in nominees]) if nominees else None,
+         int(votes_each)))
 
 
 def set_round_message(round_id: int, channel_id: int, message_id: int) -> None:
@@ -614,9 +635,17 @@ def nominators_done(round_id: int) -> set[int]:
 # --- votes ---
 
 def cast_vote(round_id: int, voter_id: int, nominee_id: int, reason: Optional[str] = None) -> None:
-    DatabaseManager.execute(
-        "INSERT OR REPLACE INTO bb_votes (round_id, voter_id, nominee_id, created_at, reason) "
-        "VALUES (?, ?, ?, ?, ?)", (int(round_id), str(voter_id), str(nominee_id), _now(), reason or None))
+    ve = votes_each(round_id)
+    if ve <= 1:
+        with DatabaseManager.transaction() as c:
+            c.execute("DELETE FROM bb_votes WHERE round_id = ? AND voter_id = ? AND nominee_id != ?",
+                      (int(round_id), str(voter_id), str(nominee_id)))
+            c.execute("INSERT OR REPLACE INTO bb_votes (round_id, voter_id, nominee_id, created_at, reason) "
+                      "VALUES (?, ?, ?, ?, ?)", (int(round_id), str(voter_id), str(nominee_id), _now(), reason or None))
+    else:
+        DatabaseManager.execute(
+            "INSERT OR REPLACE INTO bb_votes (round_id, voter_id, nominee_id, created_at, reason) "
+            "VALUES (?, ?, ?, ?, ?)", (int(round_id), str(voter_id), str(nominee_id), _now(), reason or None))
 
 
 def vote_reasons(round_id: int) -> list[tuple[int, int, str]]:
@@ -640,12 +669,25 @@ def drop_outsider_votes(round_id: int) -> list[int]:
     return outsiders
 
 
+def votes_of(round_id: int, voter_id: int) -> list[tuple[int, Optional[str]]]:
+    """All votes this person cast in this round, oldest first."""
+    rows = DatabaseManager.fetch_all(
+        "SELECT nominee_id, reason FROM bb_votes WHERE round_id = ? AND voter_id = ? ORDER BY created_at",
+        (int(round_id), str(voter_id)))
+    return [(int(r[0]), r[1] or None) for r in rows]
+
+
 def vote_of(round_id: int, voter_id: int) -> Optional[tuple[int, Optional[str]]]:
     """Who this person voted for in this round, and why. None if they haven't voted."""
-    row = DatabaseManager.fetch_one(
-        "SELECT nominee_id, reason FROM bb_votes WHERE round_id = ? AND voter_id = ?",
+    votes = votes_of(round_id, voter_id)
+    return votes[0] if votes else None
+
+
+def clear_votes(round_id: int, voter_id: int) -> None:
+    """Clear all votes cast by this voter in this round."""
+    DatabaseManager.execute(
+        "DELETE FROM bb_votes WHERE round_id = ? AND voter_id = ?",
         (int(round_id), str(voter_id)))
-    return (int(row[0]), row[1] or None) if row else None
 
 
 def vote_breakdown(round_id: int) -> list[tuple[int, int, Optional[str]]]:
@@ -1107,11 +1149,13 @@ def _vote_view(round_id: int, nominee_ids: Iterable[int], guild: Optional[discor
 def _vote_embed(nominee_ids: Iterable[int], guild: Optional[discord.Guild],
                 round_id: Optional[int] = None) -> discord.Embed:
     names = ", ".join(f"**{_name(guild, n)}**" for n in nominee_ids)
+    ve = votes_each(round_id) if round_id is not None else 1
+    votes_word = "two votes" if ve == 2 else ("one vote" if ve == 1 else f"{ve} votes")
     e = bb_embed(
         "Eviction vote",
         f"The housemates have nominated. Now the house decides.\n\n"
         f"Facing eviction: {names}\n\n"
-        f"Press a button to vote for who should **leave** the house. Housemates only, one vote "
+        f"Press a button to vote for who should **leave** the house. Housemates only, {votes_word} "
         f"each, and you can change it until the vote closes. Results stay secret until Big "
         f"Brother reveals them.")
     if round_id is not None:
@@ -1335,14 +1379,14 @@ async def drop_from_threads(client: discord.Client, user_id: int) -> None:
                 log.info("Big Brother: could not remove %s from thread %s: %s", user_id, tid, e)
 
 
-async def start_vote(client: discord.Client, nominee_ids: list[int]) -> Optional[dict]:
+async def start_vote(client: discord.Client, nominee_ids: list[int], votes_each: int = 1) -> Optional[dict]:
     if open_round(KIND_VOTE):
         return None
     guild = _guild(client)
     ch = await _channel(client, vote_channel_id())
     if not ch:
         return None
-    rid = create_round(KIND_VOTE, nominees=nominee_ids)
+    rid = create_round(KIND_VOTE, nominees=nominee_ids, votes_each=votes_each)
     names = ", ".join(f"**{_name(guild, n)}**" for n in nominee_ids)
     embed = _vote_embed(nominee_ids, guild, rid)
     thread = await open_vote_thread(ch, rid) if vote_in_thread() else None
@@ -2219,6 +2263,26 @@ class VoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:vote:(
                 f"{EYE} Only housemates vote in this house.", ephemeral=True)
             return
         who = _name(interaction.guild, self.nominee_id)
+        mine = votes_of(self.round_id, interaction.user.id)
+        current_nominees = [v[0] for v in mine]
+        ve = votes_each(self.round_id)
+        if self.nominee_id not in current_nominees and len(mine) >= ve:
+            voted_names = ", ".join(f"**{_name(interaction.guild, nid)}**" for nid in current_nominees)
+            view = discord.ui.View(timeout=120)
+            async def clear_cb(inter: discord.Interaction):
+                clear_votes(self.round_id, inter.user.id)
+                log_event("votes_cleared", round_id=self.round_id, actor=inter.user.id)
+                asyncio.create_task(refresh_vote_count(inter.client, self.round_id))
+                await inter.response.send_message("Your votes have been cleared. You can now vote again.", ephemeral=True)
+            btn = discord.ui.Button(label="Clear My Votes", style=discord.ButtonStyle.danger, emoji="🗑️")
+            btn.callback = clear_cb
+            view.add_item(btn)
+            await interaction.response.send_message(
+                f"You have already cast all **{ve}** of your votes to evict:\n"
+                f"{voted_names}\n\n"
+                f"To change your votes, press **Clear My Votes** below and pick again.",
+                view=view, ephemeral=True)
+            return
 
         async def submitted(inter: discord.Interaction, values: dict):
             reason = (values.get("reason") or "").strip()
@@ -2229,9 +2293,25 @@ class VoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:vote:(
             log_event("vote_cast", actor=inter.user.id, target=self.nominee_id,
                       round_id=self.round_id, reason=reason)
             asyncio.create_task(refresh_vote_count(inter.client, self.round_id))
-            await inter.response.send_message(
-                f"Vote recorded: you voted to evict **{who}**.\n-# \"{reason[:200]}\""
-                + "\nPress another button to change it.", ephemeral=True)
+            updated_mine = votes_of(self.round_id, inter.user.id)
+            if ve <= 1:
+                await inter.response.send_message(
+                    f"Vote recorded: you voted to evict **{who}**.\n-# \"{reason[:200]}\""
+                    + "\nPress another button to change it.", ephemeral=True)
+            else:
+                remaining = ve - len(updated_mine)
+                if remaining > 0:
+                    await inter.response.send_message(
+                        f"Vote {len(updated_mine)} of {ve} recorded: you voted to evict **{who}**.\n-# \"{reason[:200]}\""
+                        f"\n\n👉 You still have **{remaining} vote** remaining! Press another housemate's button to cast your second vote.",
+                        ephemeral=True)
+                else:
+                    voted_names = " and ".join(f"**{_name(inter.guild, nid)}**" for nid, _ in updated_mine)
+                    await inter.response.send_message(
+                        f"Vote {len(updated_mine)} of {ve} recorded: you voted to evict **{who}**.\n-# \"{reason[:200]}\""
+                        f"\n\n✅ You have cast both of your votes to evict: {voted_names}.\n"
+                        f"Press **Who did I vote for?** if you ever want to check or clear them.",
+                        ephemeral=True)
 
         # The modal has to be the first reply to the press, so the vote is stored on submit.
         await interaction.response.send_modal(_TextModal(
@@ -2259,19 +2339,44 @@ class MyVoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:myvo
             await interaction.response.send_message(
                 f"{EYE} Only housemates vote in this house.", ephemeral=True)
             return
-        mine = vote_of(self.round_id, interaction.user.id)
+        mine = votes_of(self.round_id, interaction.user.id)
         if not mine:
             await interaction.response.send_message(
                 "You haven't voted yet. Press a name above to vote.", ephemeral=True)
             return
-        nominee, reason = mine
         rnd = get_round(self.round_id)
         closed = not rnd or rnd["status"] != "open"
-        await interaction.response.send_message(
-            f"You voted to evict **{_name(interaction.guild, nominee)}**."
-            + (f"\n-# you said: \"{reason[:300]}\"" if reason else "")
-            + ("\n-# this vote has closed, so it stands." if closed
-               else "\n-# press another name above to change it."), ephemeral=True)
+        ve = votes_each(self.round_id)
+        if ve <= 1:
+            nominee, reason = mine[0]
+            await interaction.response.send_message(
+                f"You voted to evict **{_name(interaction.guild, nominee)}**."
+                + (f"\n-# you said: \"{reason[:300]}\"" if reason else "")
+                + ("\n-# this vote has closed, so it stands." if closed
+                   else "\n-# press another name above to change it."), ephemeral=True)
+            return
+        lines = []
+        for nid, reason in mine:
+            lines.append(f"• **{_name(interaction.guild, nid)}**" + (f"\n  -# you said: \"{reason[:300]}\"" if reason else ""))
+        msg = f"You have cast **{len(mine)} of {ve}** vote{'s' if ve != 1 else ''} to evict:\n" + "\n".join(lines)
+        if closed:
+            msg += "\n\n-# this vote has closed, so it stands."
+            await interaction.response.send_message(msg, ephemeral=True)
+        else:
+            view = discord.ui.View(timeout=120)
+            async def clear_cb(inter: discord.Interaction):
+                clear_votes(self.round_id, inter.user.id)
+                log_event("votes_cleared", round_id=self.round_id, actor=inter.user.id)
+                asyncio.create_task(refresh_vote_count(inter.client, self.round_id))
+                await inter.response.send_message("Your votes have been cleared. You can now vote again.", ephemeral=True)
+            btn = discord.ui.Button(label="Clear My Votes", style=discord.ButtonStyle.danger, emoji="🗑️")
+            btn.callback = clear_cb
+            view.add_item(btn)
+            if len(mine) < ve:
+                msg += f"\n\n-# You still have {ve - len(mine)} vote left. Press another name above to cast it."
+            else:
+                msg += "\n\n-# Press **Clear My Votes** below if you want to wipe and recast your votes."
+            await interaction.response.send_message(msg, view=view, ephemeral=True)
 
 
 class AckButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:ack:(?P<aid>\d+):(?P<uid>\d+)"):
@@ -3274,10 +3379,25 @@ async def _act_start_vote(interaction: discord.Interaction):
         return
 
     async def done(inter: discord.Interaction, ids: list[int]):
-        await inter.response.defer(ephemeral=True)
-        res = await start_vote(inter.client, ids)
-        await _reply(inter, "Couldn't start the vote (already open, or the vote channel is missing)."
-                     if not res else f"Eviction vote posted in <#{res['channel_id']}>.")
+        async def go(inter2: discord.Interaction, count: int):
+            await inter2.response.defer(ephemeral=True)
+            res = await start_vote(inter2.client, ids, votes_each=count)
+            await _reply(inter2, "Couldn't start the vote (already open, or the vote channel is missing)."
+                         if not res else f"Eviction vote ({count} vote{'s' if count != 1 else ''} each) posted in <#{res['channel_id']}>.")
+
+        view = discord.ui.View(timeout=120)
+        btn1 = discord.ui.Button(label="1 Vote Each", style=discord.ButtonStyle.primary, emoji="1️⃣")
+        btn2 = discord.ui.Button(label="2 Votes Each", style=discord.ButtonStyle.success, emoji="2️⃣")
+        async def cb1(i): await go(i, 1)
+        async def cb2(i): await go(i, 2)
+        btn1.callback = cb1
+        btn2.callback = cb2
+        view.add_item(btn1)
+        view.add_item(btn2)
+        names = ", ".join(_name(inter.guild, i) for i in ids)
+        await inter.response.edit_message(
+            content=f"Nominees selected ({len(ids)}): {names}\n\nHow many votes should each housemate get?",
+            view=view)
 
     await _send_multi(interaction,
                       "Press the names facing the public vote, then Done. Pre-selected from the last nomination tally where there is one.",
