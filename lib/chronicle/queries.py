@@ -18,6 +18,11 @@ from lib.chronicle.db import ChronicleDB
 
 UK = pytz.timezone("Europe/London")
 
+# Pins, forwards and thread starters carry a message reference exactly like a reply, so
+# a reply is decided by the message type. Rows written before msg_type existed (NULL
+# until the reactions walk fills them in) fall back to trusting the reference.
+_IS_REPLY = "(msg_type = 'reply' OR msg_type IS NULL)"
+
 # Day and hour come from the local_day / local_hour columns the recorder fills in UK
 # time, rather than SQLite's strftime - which has no timezone database and would answer
 # in whatever TZ the box runs in.
@@ -144,11 +149,12 @@ def user_wrapped(user_id, year, top_n=5):
             "SELECT COUNT(*) FROM mentions WHERE target_id = ? AND ts >= ? AND ts < ? AND kind = 'user'", p),
         "replies_to": _rows(
             "SELECT reply_to_user, COUNT(*) n FROM messages WHERE user_id = ? AND ts >= ? AND ts < ? "
-            "AND reply_to_user IS NOT NULL AND reply_to_user != user_id "
+            f"AND reply_to_user IS NOT NULL AND reply_to_user != user_id AND {_IS_REPLY} "
             "GROUP BY reply_to_user ORDER BY n DESC LIMIT ?", (*p, top_n)),
         "replied_by": _rows(
             "SELECT user_id, COUNT(*) n FROM messages WHERE reply_to_user = ? AND ts >= ? AND ts < ? "
-            "AND user_id != reply_to_user GROUP BY user_id ORDER BY n DESC LIMIT ?", (*p, top_n)),
+            f"AND user_id != reply_to_user AND {_IS_REPLY} GROUP BY user_id ORDER BY n DESC LIMIT ?",
+            (*p, top_n)),
         "most_reacted_message": ChronicleDB.fetch_one(
             "SELECT m.message_id, m.channel_id, m.content, COUNT(r.id) n FROM messages m "
             "JOIN reactions r ON r.message_id = m.message_id AND r.action = 'add' "

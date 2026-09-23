@@ -9,14 +9,13 @@ an interrupted run picks up where it stopped instead of re-walking millions of m
     python scripts/chronicle_backfill.py --channel 123 456  # just these
     python scripts/chronicle_backfill.py --after 2026-01-01 # only this year
     python scripts/chronicle_backfill.py --threads          # include archived threads
-    python scripts/chronicle_backfill.py --reactions        # who reacted (SLOW, see below)
     python scripts/chronicle_backfill.py --resume           # skip channels marked complete
     python scripts/chronicle_backfill.py --concurrency 6    # channels walked in parallel
     python scripts/chronicle_backfill.py --no-audit         # skip the audit log sweep
 
 Rate limits: history pages are 100 messages per request, so a few million messages is a
-few hours. Reaction users cost one extra request *per distinct emoji per message*, which
-is why they are opt-in - on a busy server that turns hours into days.
+few hours. Who reacted to what is a separate, much longer walk:
+scripts/chronicle_reactions_backfill.py.
 
 Parallelism is across CHANNELS, inside ONE process, and that is deliberate. Discord
 buckets message history per channel, so several channels at once is genuinely faster,
@@ -34,7 +33,6 @@ never duplicate.
 
 import argparse
 import asyncio
-import errno
 import logging
 import os
 import sys
@@ -49,43 +47,14 @@ from dotenv import load_dotenv  # noqa: E402
 
 from config import GUILD_ID  # noqa: E402
 from lib.chronicle.db import ChronicleDB  # noqa: E402
-from lib.chronicle.recorder import (  # noqa: E402
-    REACTION_SQL, audit_row, message_rows, stored_message_ids,
-)
+from lib.chronicle.recorder import audit_row, message_rows, stored_message_ids  # noqa: E402
+from lib.chronicle.walk import RunLock, collect_channels  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("chronicle-backfill")
 
 BATCH = 500          # messages per write transaction
 PROGRESS_EVERY = 5_000
-LOCK_PATH = "/tmp/chronicle_backfill.lock"
-
-
-class _Lock:
-    """One backfill at a time. Two runs would walk the same channels in parallel and
-    burn the token's rate limit on work the other is already doing."""
-
-    def __enter__(self):
-        try:
-            fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except OSError as e:
-            if e.errno != errno.EEXIST:
-                raise
-            existing = open(LOCK_PATH).read().strip()
-            sys.exit(f"A backfill is already running (pid {existing}, lock {LOCK_PATH}). "
-                     f"If it is not, delete the lock file and rerun.")
-        os.write(fd, str(os.getpid()).encode())
-        os.close(fd)
-        return self
-
-    def __exit__(self, *exc):
-        try:
-            os.remove(LOCK_PATH)
-        except OSError:
-            pass
-        return False
-
-
 _existing = stored_message_ids
 
 
@@ -124,26 +93,6 @@ def _progress_row(channel_id):
     return ChronicleDB.fetch_one(
         "SELECT oldest_seen, n_messages, complete FROM backfill_progress WHERE channel_id = ?",
         (channel_id,))
-
-
-async def _reaction_rows(message):
-    """One add row per user per emoji. Costs a request per reaction - opt-in only."""
-    rows = []
-    ts = int(message.created_at.timestamp())
-    for reaction in message.reactions:
-        emoji = reaction.emoji
-        name = getattr(emoji, "name", None) or str(emoji)
-        eid = getattr(emoji, "id", None)
-        animated = int(bool(getattr(emoji, "animated", False)))
-        try:
-            async for user in reaction.users(limit=None):
-                rows.append((REACTION_SQL, (
-                    message.id, message.channel.id,
-                    message.guild.id if message.guild else None,
-                    user.id, message.author.id, name, eid, animated, "add", ts)))
-        except discord.HTTPException as e:
-            log.debug("reaction users fetch failed on %s: %s", message.id, e)
-    return rows
 
 
 async def backfill_channel(channel, after=None, want_reactions=False, resume=True,
@@ -258,52 +207,9 @@ async def _flush(messages, channel, want_reactions, oldest, newest):
             continue
         fresh += 1
         rows += message_rows(m, source="backfill")
-        if want_reactions and m.reactions:
-            rows += await _reaction_rows(m)
     _write(rows)
     _save_progress(channel, oldest, newest, fresh)
     return fresh
-
-
-async def _collect(guild, only, include_threads):
-    """Everything with a message history: text, voice and stage channels, forums, and
-    every thread under them - active, archived public, and archived private where the
-    bot can see them. Deduped, because an active thread shows up in more than one list."""
-    out, seen = [], set()
-
-    def add(channel):
-        if channel.id in seen:
-            return
-        seen.add(channel.id)
-        out.append(channel)
-
-    for channel in guild.channels:
-        if not isinstance(channel, (discord.TextChannel, discord.VoiceChannel,
-                                    discord.ForumChannel, discord.StageChannel)):
-            continue
-        if only and channel.id not in only:
-            continue
-        # A forum has no messages of its own - all of its content lives in its threads.
-        if not isinstance(channel, discord.ForumChannel):
-            add(channel)
-        if not include_threads:
-            continue
-        for thread in getattr(channel, "threads", []):
-            add(thread)
-        if not isinstance(channel, (discord.TextChannel, discord.ForumChannel)):
-            continue
-        # Only text channels have private threads; a forum's archived_threads takes no
-        # `private` argument at all, and passing one is a TypeError.
-        variants = ({}, {"private": True}) if isinstance(channel, discord.TextChannel) else ({},)
-        for kwargs in variants:
-            try:
-                async for thread in channel.archived_threads(limit=None, **kwargs):
-                    add(thread)
-            except discord.Forbidden:
-                pass          # private archived threads need Manage Threads
-            except discord.HTTPException as e:
-                log.debug("archived threads %s failed on #%s: %s", kwargs, channel.name, e)
-    return out
 
 
 async def run(args):
@@ -330,9 +236,8 @@ async def run(args):
                 return
             if args.audit and not args.channel:
                 await backfill_audit_log(guild)
-            channels = await _collect(guild, set(args.channel or []), args.threads)
-            log.info("backfilling %d channels, %d at a time%s", len(channels),
-                     args.concurrency, " (with reaction users)" if args.reactions else "")
+            channels = await collect_channels(guild, set(args.channel or []), args.threads)
+            log.info("backfilling %d channels, %d at a time", len(channels), args.concurrency)
             # Channels in parallel, one HTTPClient: discord.py serialises each channel's
             # own bucket and the shared global limit, so this speeds things up without
             # the 429 storm that separate processes would cause.
@@ -340,7 +245,7 @@ async def run(args):
 
             async def one(channel):
                 async with gate:
-                    return await backfill_channel(channel, after, args.reactions, args.resume)
+                    return await backfill_channel(channel, after, False, args.resume)
 
             done = await asyncio.gather(*(one(c) for c in channels), return_exceptions=True)
             grand = sum(n for n in done if isinstance(n, int))
@@ -363,8 +268,6 @@ def main():
     ap.add_argument("--channel", nargs="*", type=int, help="only these channel ids")
     ap.add_argument("--after", help="only messages after this UTC date (YYYY-MM-DD)")
     ap.add_argument("--threads", action="store_true", help="include threads, archived ones too")
-    ap.add_argument("--reactions", action="store_true",
-                    help="also fetch who reacted to each message (very slow)")
     ap.add_argument("--resume", action="store_true", default=True,
                     help="skip channels already marked complete (default)")
     ap.add_argument("--no-resume", dest="resume", action="store_false",
@@ -375,7 +278,7 @@ def main():
                     help="channels walked at once (default 4; past ~8 the global rate "
                          "limit, not the bucket, becomes the wall)")
     args = ap.parse_args()
-    with _Lock():
+    with RunLock():
         asyncio.run(run(args))
 
 

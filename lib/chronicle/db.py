@@ -25,7 +25,7 @@ from config import CHRONICLE_DB_FILE
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Timestamps are epoch SECONDS (UTC) everywhere. Discord snowflake ids are stored as
 # INTEGER - they fit in 64 bits and sort chronologically, which makes range scans on
@@ -61,7 +61,11 @@ CREATE TABLE IF NOT EXISTS messages (
     -- strftime('localtime') would silently answer in whatever TZ the box happens to run.
     local_day    TEXT,              -- YYYY-MM-DD in Europe/London
     local_hour   INTEGER,           -- 0-23 in Europe/London
-    flags        INTEGER NOT NULL DEFAULT 0  -- discord MessageFlags: voice note, forward, silent...
+    flags        INTEGER NOT NULL DEFAULT 0, -- discord MessageFlags: voice note, forward, silent...
+    -- discord MessageType name: 'default', 'reply', 'pins_add', 'new_member', ... Pins,
+    -- forwards and thread starters all carry a message reference just like a reply
+    -- does, so reply_to alone can't say whether someone was actually replying.
+    msg_type     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_messages_local_day ON messages(local_day);
 CREATE INDEX IF NOT EXISTS idx_messages_user_ts    ON messages(user_id, ts);
@@ -103,7 +107,12 @@ CREATE TABLE IF NOT EXISTS reactions (
     emoji_id    INTEGER,            -- NULL for unicode
     animated    INTEGER NOT NULL DEFAULT 0,
     action      TEXT NOT NULL,      -- add | remove
-    ts          INTEGER NOT NULL
+    ts          INTEGER NOT NULL,
+    burst       INTEGER NOT NULL DEFAULT 0,       -- super reaction
+    -- 'live' rows are events as they happened. 'backfill' rows were read off the
+    -- message later: current state only, and ts is the MESSAGE's time, because
+    -- Discord doesn't record when a reaction was added.
+    source      TEXT NOT NULL DEFAULT 'live'
 );
 CREATE INDEX IF NOT EXISTS idx_reactions_user    ON reactions(user_id, ts);
 CREATE INDEX IF NOT EXISTS idx_reactions_author  ON reactions(author_id, ts);
@@ -206,6 +215,31 @@ CREATE TABLE IF NOT EXISTS poll_votes (
 CREATE INDEX IF NOT EXISTS idx_poll_votes_message ON poll_votes(message_id);
 CREATE INDEX IF NOT EXISTS idx_poll_votes_user    ON poll_votes(user_id, ts);
 
+-- Discord's own per-emoji totals for a message, as of the last time it was read. Kept
+-- alongside the per-user rows because it's exact even where fetching the users isn't
+-- (a user who has since left still counts here).
+CREATE TABLE IF NOT EXISTS reaction_counts (
+    message_id  INTEGER NOT NULL,
+    emoji_key   TEXT NOT NULL,       -- custom emoji id, or the unicode emoji itself
+    emoji       TEXT NOT NULL,
+    emoji_id    INTEGER,
+    count       INTEGER NOT NULL,
+    burst_count INTEGER NOT NULL DEFAULT 0,
+    fetched_ts  INTEGER NOT NULL,
+    PRIMARY KEY (message_id, emoji_key)
+);
+
+-- Where the reaction backfill got to per channel, resumable like backfill_progress.
+CREATE TABLE IF NOT EXISTS reaction_progress (
+    channel_id   INTEGER PRIMARY KEY,
+    channel_name TEXT,
+    oldest_seen  INTEGER,
+    n_messages   INTEGER NOT NULL DEFAULT 0,
+    n_reactions  INTEGER NOT NULL DEFAULT 0,
+    complete     INTEGER NOT NULL DEFAULT 0,
+    updated_ts   INTEGER
+);
+
 -- Every restart or outage the catch-up pass closed, and what it could not: messages
 -- and audit entries come back, but reactions, voice and poll votes in the window are
 -- gone, so stats over these windows should be read as undercounts.
@@ -264,6 +298,9 @@ class ChronicleDB:
     # a table that already exists, so new columns have to be ALTERed in explicitly.
     _ADDED_COLUMNS = (
         ("messages", "flags", "INTEGER NOT NULL DEFAULT 0"),
+        ("messages", "msg_type", "TEXT"),
+        ("reactions", "burst", "INTEGER NOT NULL DEFAULT 0"),
+        ("reactions", "source", "TEXT NOT NULL DEFAULT 'live'"),
     )
 
     @classmethod

@@ -30,12 +30,13 @@ import discord
 
 from lib.chronicle import recorder
 from lib.chronicle.db import ChronicleDB
+from lib.chronicle.walk import LOCK_PATH
 
 log = logging.getLogger(__name__)
 
-# The manual backfill holds this while it runs. Catching up at the same time would put
+# The manual backfills hold this while they run. Catching up at the same time would put
 # two processes on one token's rate limit, so the catch-up waits for it instead.
-BACKFILL_LOCK = "/tmp/chronicle_backfill.lock"
+BACKFILL_LOCK = LOCK_PATH
 CONCURRENCY = 4
 BATCH = 500
 ATTEMPTS = 3

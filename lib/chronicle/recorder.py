@@ -39,8 +39,8 @@ _dropped = 0
 MSG_SQL = (
     "INSERT OR IGNORE INTO messages (message_id, guild_id, channel_id, parent_id, user_id, "
     "is_bot, content, ts, reply_to, reply_to_user, attachments, n_attachments, stickers, "
-    "n_embeds, char_count, word_count, edited_ts, source, local_day, local_hour, flags) "
-    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+    "n_embeds, char_count, word_count, edited_ts, source, local_day, local_hour, flags, "
+    "msg_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
 )
 MENTION_SQL = ("INSERT INTO mentions (message_id, ts, channel_id, user_id, target_id, kind) "
                "VALUES (?,?,?,?,?,?)")
@@ -49,7 +49,13 @@ EMOJI_SQL = ("INSERT INTO emoji_uses (message_id, user_id, channel_id, ts, emoji
 EDIT_SQL = ("INSERT INTO message_edits (message_id, user_id, ts, old_content, new_content) "
             "VALUES (?,?,?,?,?)")
 REACTION_SQL = ("INSERT INTO reactions (message_id, channel_id, guild_id, user_id, author_id, "
-                "emoji, emoji_id, animated, action, ts) VALUES (?,?,?,?,?,?,?,?,?,?)")
+                "emoji, emoji_id, animated, action, ts, burst) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+BACKFILL_REACTION_SQL = (
+    "INSERT INTO reactions (message_id, channel_id, guild_id, user_id, author_id, emoji, "
+    "emoji_id, animated, action, ts, burst, source) VALUES (?,?,?,?,?,?,?,?,'add',?,?,'backfill')")
+REACTION_COUNT_SQL = (
+    "INSERT OR REPLACE INTO reaction_counts (message_id, emoji_key, emoji, emoji_id, count, "
+    "burst_count, fetched_ts) VALUES (?,?,?,?,?,?,?)")
 VOICE_SQL = ("INSERT INTO voice_events (user_id, guild_id, channel_id, from_channel, action, "
              "self_state, ts) VALUES (?,?,?,?,?,?,?)")
 MEMBER_SQL = "INSERT INTO member_events (user_id, guild_id, action, detail, ts) VALUES (?,?,?,?,?)"
@@ -112,18 +118,21 @@ def _run():
 LAST_ALIVE_KEY = "last_alive_ts"
 
 
-def _write(batch):
+def _write(batch, stamp=True):
     """One transaction, with consecutive identical statements collapsed into executemany.
 
     Order is preserved, which matters: an edit or delete UPDATE must land after the
     INSERT of the message it refers to.
 
     Every commit also stamps ``last_alive_ts``: the last moment the bot was provably
-    hearing the gateway. After a restart or outage, that is where the gap starts.
+    hearing the gateway. After a restart or outage, that is where the gap starts. The
+    backfill scripts pass ``stamp=False``: they write from a separate process, and
+    their activity says nothing about whether the bot itself was listening.
     """
     with ChronicleDB.transaction() as cur:
-        cur.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
-                    (LAST_ALIVE_KEY, str(int(time.time()))))
+        if stamp:
+            cur.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                        (LAST_ALIVE_KEY, str(int(time.time()))))
         run_sql, run_params = None, []
         for sql, params in batch:
             if sql != run_sql:
@@ -264,7 +273,8 @@ def message_rows(message, source="live"):
         int(bool(message.author.bot)), content, ts, reply_to, reply_to_user,
         _json_or_none(attachments), len(attachments), _json_or_none(stickers),
         len(message.embeds or []), len(content), len(content.split()),
-        _ts(message.edited_at), source, local_day, local_hour, flags))]
+        _ts(message.edited_at), source, local_day, local_hour, flags,
+        getattr(getattr(message, "type", None), "name", None)))]
 
     poll = getattr(message, "poll", None)
     if poll is not None:
@@ -348,14 +358,16 @@ def record_raw_reaction(payload, action):
     """Fed from the RAW events so uncached (i.e. most) messages are covered too."""
     try:
         emoji = payload.emoji
-        author_id = None
+        # The add event names the message's author itself, cached or not; the remove
+        # event doesn't, so fall back to the cache there.
+        author_id = getattr(payload, "message_author_id", None)
         cached = getattr(payload, "cached_message", None)
-        if cached is not None and cached.author is not None:
+        if author_id is None and cached is not None and cached.author is not None:
             author_id = cached.author.id
         enqueue(REACTION_SQL, (
             payload.message_id, payload.channel_id, payload.guild_id, payload.user_id,
             author_id, emoji.name or str(emoji), emoji.id, int(bool(emoji.animated)),
-            action, int(time.time())))
+            action, int(time.time()), int(bool(getattr(payload, "burst", False)))))
     except Exception:
         log.debug("chronicle record_raw_reaction failed", exc_info=True)
 

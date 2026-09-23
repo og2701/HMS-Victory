@@ -30,13 +30,18 @@ the disk goes, the messages can be re-backfilled from Discord; the audit log bey
 | `messages` | `on_message` | Bots included and flagged with `is_bot`. DMs excluded. Deletes set `deleted_ts` in place, so nothing ever disappears. `source` says whether a row came from `live`, `backfill` or `catchup`. |
 | `message_edits` | `on_message_edit`, `on_raw_message_edit` | Old and new text per edit; the `messages` row carries the current text. |
 | `mentions` | `on_message` | One row per mentioned user/role/channel, plus `@everyone` and the person being replied to. |
-| `reactions` | `on_raw_reaction_add/remove` | Raw events, so uncached messages count too. `author_id` is filled when the message was cached. |
+| `reactions` | `on_raw_reaction_add/remove`, reactions backfill | Raw events, so uncached messages count too; super reactions flagged `burst`. `source='backfill'` rows are current state read off old messages, with the message's time as `ts`, since Discord doesn't record when a reaction was added. |
+| `reaction_counts` | reactions backfill | Discord's own per-emoji totals per message; exact even for reactors who have left. |
 | `emoji_uses` | `on_message` | Custom emoji exactly; unicode emoji best-effort by regex. |
 | `voice_events` | `on_voice_state_update` | join/leave/move plus mute, deafen, stream and video flips. |
 | `member_events` | joins, leaves, bans, `on_member_update` | Nick and username changes, role add/remove, timeouts. |
 | `interactions` | `on_interaction` | Slash commands with their options, plus buttons and modals. |
 | `audit_log` | `on_audit_log_entry_create` | Kicks, bans, timeouts, channel/role/webhook/emoji edits, pins, thread creation - who did it, to whom, and why. |
 | `polls` / `poll_votes` | `on_message`, `on_raw_poll_vote_add/remove` | Question, answers, and every individual vote. |
+
+`messages.msg_type` is Discord's MessageType. Pins, forwards and thread starters carry a
+message reference exactly like a reply does, so "is this a reply" is `msg_type = 'reply'`,
+not `reply_to IS NOT NULL`.
 
 `messages.flags` carries Discord's own MessageFlags, which is the only way to tell a
 voice note from any other audio attachment, or a forward from an ordinary post.
@@ -54,8 +59,8 @@ Worth knowing before someone asks why a stat looks thin:
 
 - **Audit log older than 45 days.** Discord itself deletes it. The first backfill rescues
   whatever window is open on the day it runs; everything before that is gone.
-- **Reactions on old messages**, unless the backfill is run with `--reactions`. The live
-  hook only sees reactions added from the deploy onwards.
+- **When an old reaction was added, and reactions later removed.** The reactions
+  backfill reads each message's current reactions; Discord keeps no history of them.
 - **Reactions, voice events and poll votes while the bot was offline.** They only ever
   exist as gateway events. Messages and audit entries from the gap are recovered
   automatically (see below), and every gap is logged in `outages` so stats over that
@@ -128,6 +133,14 @@ History pages are 100 messages per request, so a few million messages is a few h
 `--reactions` costs an extra request per emoji per message, which turns that into days -
 hence opt-in. It is safe to run while the bot is live (WAL plus `busy_timeout`), and
 inserts are `INSERT OR IGNORE` on `message_id`, so re-running never duplicates.
+
+## Backfilling reactions
+
+`scripts/chronicle_reactions_backfill.py` walks every channel and thread again and, for
+each message carrying reactions, asks who is on each emoji - one request per emoji per
+reacted message, on top of the history pages. It fills `msg_type` and any missing
+messages on the way past, skips reactions the live hook already has, and resumes per
+channel from `reaction_progress`. It takes the same lock as the message backfill.
 
 ## Reading
 
