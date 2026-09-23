@@ -30,7 +30,7 @@ import discord
 
 from lib.chronicle import recorder
 from lib.chronicle.db import ChronicleDB
-from lib.chronicle.walk import LOCK_PATH
+from lib.chronicle.walk import LOCK_PATH, lock_holder
 
 log = logging.getLogger(__name__)
 
@@ -190,7 +190,7 @@ async def catch_up(client, guild_id, gap_start, boundary, reason):
     _running = True
     try:
         waited = False
-        while os.path.exists(BACKFILL_LOCK):
+        while lock_holder(BACKFILL_LOCK) is not None:
             if not waited:
                 log.info("chronicle catch-up waiting for the running backfill to finish")
                 waited = True

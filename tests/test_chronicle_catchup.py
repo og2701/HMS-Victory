@@ -179,6 +179,7 @@ class TestCatchUp(CatchupTestCase):
 
         original_lock, original_sleep = catchup.BACKFILL_LOCK, catchup.asyncio.sleep
         fd, catchup.BACKFILL_LOCK = tempfile.mkstemp()
+        os.write(fd, str(os.getpid()).encode())     # held by a live process: this one
         os.close(fd)
         catchup.asyncio.sleep = fake_sleep
         try:
@@ -186,6 +187,41 @@ class TestCatchUp(CatchupTestCase):
         finally:
             catchup.BACKFILL_LOCK, catchup.asyncio.sleep = original_lock, original_sleep
         self.assertEqual(slept, [60])
+
+
+class TestStaleLock(CatchupTestCase):
+    def test_lock_left_by_a_dead_process_does_not_block(self):
+        """A killed backfill leaves its lock behind; the catch-up must not wait on it."""
+        import subprocess, sys
+        dead = subprocess.Popen([sys.executable, "-c", "pass"])
+        dead.wait()
+        with open(catchup.BACKFILL_LOCK, "w") as f:
+            f.write(str(dead.pid))
+        slept = []
+
+        async def fake_sleep(seconds):
+            slept.append(seconds)
+
+        original_sleep = catchup.asyncio.sleep
+        catchup.asyncio.sleep = fake_sleep
+        try:
+            client = SimpleNamespace(get_guild=lambda gid: SimpleNamespace(
+                id=1, channels=[], threads=[], audit_logs=lambda **k: _empty()))
+            asyncio.run(catchup.catch_up(client, 1, None, NOW, "restart"))
+        finally:
+            catchup.asyncio.sleep = original_sleep
+        self.assertEqual(slept, [])
+
+    def test_live_holder_is_reported(self):
+        from lib.chronicle.walk import lock_holder
+        with open(catchup.BACKFILL_LOCK, "w") as f:
+            f.write(str(os.getpid()))
+        self.assertEqual(lock_holder(catchup.BACKFILL_LOCK), os.getpid())
+
+
+async def _empty():
+    return
+    yield
 
 
 class TestLastAlive(CatchupTestCase):

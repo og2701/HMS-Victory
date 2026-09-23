@@ -49,7 +49,10 @@ log = logging.getLogger("chronicle-reactions")
 
 PAGE = 100
 PREFETCH = 3          # history pages buffered ahead of the reaction lookups
-USER_FETCHES = 4      # concurrent reaction-user lookups per channel (one bucket anyway)
+# Reaction-user lookups in one channel share a rate limit bucket. Run several at once and
+# they collide before discord.py has read the bucket's headers - a steady trickle of 429s
+# on the busiest channels. Sequential costs nothing: the history walk is the slow part.
+USER_FETCHES = 1
 ATTEMPTS = 6
 PROGRESS_EVERY = 25_000
 
