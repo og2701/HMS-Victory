@@ -1722,11 +1722,16 @@ def _clean_content_mentions(guild: Optional[discord.Guild], text: str) -> str:
     return re.sub(r"<@!?(\d+)>", _sub, text)
 
 
-def house_chat_transcript(guild: Optional[discord.Guild], hours: int = 24, max_messages: int = 800) -> str:
+def house_chat_transcript(guild: Optional[discord.Guild], hours: int = 24, max_messages: int = 800, since_ts: Optional[int] = None) -> str:
     """Extract public house messages from the last N hours, resolved with character/member names."""
     ensure_tables()
     hid = str(house_channel_id())
     since = _now() - (hours * 3600)
+    if since_ts is not None:
+        try:
+            since = max(since, int(since_ts))
+        except (ValueError, TypeError):
+            pass
     rows = DatabaseManager.fetch_all(
         "SELECT user_id, content, at FROM bb_messages "
         "WHERE thread_id = ? AND at >= ? AND content IS NOT NULL AND content != '' "
@@ -1862,9 +1867,11 @@ async def generate_daily_roundup(
     day: Optional[int] = None
 ) -> tuple[Optional[str], Optional[str]]:
     guild = _guild(client) if client else None
-    transcript = house_chat_transcript(guild, hours=hours)
+    last_roundup = get_state(STATE_LAST_ROUNDUP_AT)
+    since_ts = int(last_roundup) if last_roundup else None
+    transcript = house_chat_transcript(guild, hours=hours, since_ts=since_ts)
     if not transcript:
-        return None, "No house messages found in the last 24 hours to summarize."
+        return None, "No house messages found in the house to summarize."
 
     if day is None:
         day = day_number()
@@ -1942,6 +1949,11 @@ async def post_daily_roundup_draft(client: discord.Client) -> tuple[bool, str]:
     if not ch:
         return False, "Control channel not found."
     day = day_number()
+    discarded = get_state(STATE_DAILY_ROUNDUP_DISCARDED_DAY)
+    if discarded is not None and int(discarded) == day:
+        log.info("Big Brother: daily roundup for Day %s is marked discarded/rest day; skipping draft.", day)
+        return False, f"Roundup for Day {day} is discarded/rest day."
+
     draft, err = await generate_daily_roundup(client, day=day)
     if err or not draft:
         return False, f"Could not generate draft: {err}"
@@ -1979,6 +1991,11 @@ async def post_daily_roundup_draft(client: discord.Client) -> tuple[bool, str]:
 async def trigger_daily_roundup_draft(client: discord.Client) -> None:
     if not enabled() or not game_started():
         return
+    day = day_number()
+    discarded = get_state(STATE_DAILY_ROUNDUP_DISCARDED_DAY)
+    if discarded is not None and int(discarded) == day:
+        log.info("Big Brother: daily roundup draft for Day %s skipped (marked discarded/rest day).", day)
+        return
     ok, msg = await post_daily_roundup_draft(client)
     if ok:
         log.info("Big Brother: midnight daily roundup draft posted successfully.")
@@ -2001,9 +2018,10 @@ async def ensure_daily_roundup_posted_before_silence(client: discord.Client) -> 
     day = draft_state.get("day") or day_number()
     msg_id = draft_state.get("message_id")
 
-    # If the draft was explicitly discarded by an operator for this day, respect that decision
-    if not draft and get_state(STATE_DAILY_ROUNDUP_DISCARDED_DAY) == day:
-        log.info("Big Brother: roundup for Day %s was discarded by an operator; skipping auto-post.", day)
+    # If the draft was explicitly discarded or rest day for this day, respect that decision
+    discarded = get_state(STATE_DAILY_ROUNDUP_DISCARDED_DAY)
+    if discarded is not None and int(discarded) == day:
+        log.info("Big Brother: roundup for Day %s was discarded by an operator/rest day; skipping auto-post.", day)
         return False
 
     hc = await house_channel(client)

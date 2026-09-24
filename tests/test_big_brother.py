@@ -1344,6 +1344,27 @@ def test_roundup_auto_delete_handlers(bb):
     assert "await old_msg.delete()" in src_draft
 
 
+def test_discarded_day_skips_roundup_draft_and_posting(bb, monkeypatch):
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    mock_client = MagicMock()
+    bb.set_state(bb.STATE_GAME_STARTED_AT, bb._now() - 86400)
+    day = bb.day_number()
+    bb.set_state(bb.STATE_DAILY_ROUNDUP_DISCARDED_DAY, day)
+
+    # post_daily_roundup_draft should skip
+    monkeypatch.setattr(bb, "control_channel", AsyncMock(return_value=MagicMock()))
+    ok, msg = asyncio.run(bb.post_daily_roundup_draft(mock_client))
+    assert not ok
+    assert "discarded/rest day" in msg
+
+    # ensure_daily_roundup_posted_before_silence should also skip
+    posted = asyncio.run(bb.ensure_daily_roundup_posted_before_silence(mock_client))
+    assert not posted
+
+
+
 def test_scheduled_house_silence_and_unsilence(bb, monkeypatch):
     import asyncio
     from unittest.mock import AsyncMock, MagicMock
