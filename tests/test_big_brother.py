@@ -1824,3 +1824,16 @@ def test_hand_placed_item_hides_inside_its_aisle(shop, monkeypatch):
     labels = [c.label for c in shop._CatalogueView(aisle).children]
     assert "Add to this aisle" in labels and "Load saved list" not in labels
     assert len([c for c in shop._CatalogueView(aisle).children if c.row == 4]) <= 5
+
+
+def test_shop_buttons_lead_with_the_price_and_the_aisle_lists_full_names(shop):
+    shop.set_catalogue([("Cheese", "Diary Room Leak: Read One Housemate's Anonymous Diary Entry", 3000),
+                        ("Cheese", "Brie", 300)], replace=True)
+    tid = shop.create_task("Treats", 5000, [], None)
+    ids = {i["name"]: i["id"] for i in shop.catalogue()}
+    labels = [b.label for b in shop._ItemView(tid, "Cheese", None).children]
+    assert labels[0].startswith("£30.00 · Diary Room Leak")
+    assert shop.buy(tid, ids["Brie"], 1)[0]
+    shelf = shop._shelf(tid, "Cheese")
+    assert "£30.00 · Diary Room Leak: Read One Housemate's Anonymous Diary Entry" in shelf
+    assert "~~£3.00 · Brie~~ ✓" in shelf

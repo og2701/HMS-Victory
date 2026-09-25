@@ -447,6 +447,15 @@ async def update_shop_message(client: discord.Client, task: dict) -> None:
 # Browsing (ephemeral): aisle buttons -> item buttons -> buy on press
 # ---------------------------------------------------------------------------
 
+def _shelf(task_id: int, category: str) -> str:
+    """The aisle written out in full above its buttons: a long name gets cut on a phone-width
+    button, so this is where it can always be read."""
+    bought = bought_item_ids(task_id)
+    lines = [f"{'~~' if it['id'] in bought else ''}{pounds(it['price'])} · {it['name']}{'~~ ✓' if it['id'] in bought else ''}"
+             for it in catalogue() if it["category"] == category][:24]
+    return "\n".join(lines)[:1500]
+
+
 class _AisleView(discord.ui.View):
     def __init__(self, task_id: int, guild):
         super().__init__(timeout=300)
@@ -462,7 +471,8 @@ class _AisleView(discord.ui.View):
                 await interaction.response.edit_message(
                     content=(f"👀 **{_cat}** · {pounds(remaining(task))} in the pot. Buying opens "
                              f"<t:{task['buy_from']}:R>, then come back and press an item." if viewing(task) else
-                             f"🛒 **{_cat}** · {pounds(remaining(task))} left. Press an item to buy it for the house."),
+                             f"🛒 **{_cat}** · {pounds(remaining(task))} left. Press an item to buy it for the house.")
+                            + "\n" + _shelf(self.task_id, _cat),
                     view=_ItemView(self.task_id, _cat, self.guild))
             btn.callback = _open
             self.add_item(btn)
@@ -481,7 +491,8 @@ class _ItemView(discord.ui.View):
             gone = it["id"] in bought
             pricey = it["price"] > left
             btn = discord.ui.Button(
-                label=(("✓ " if gone else "") + f"{it['name']} {pounds(it['price'])}")[:80],
+                # Price first: when a phone cuts a long label short, the price is what survives.
+                label=(("✓ " if gone else "") + f"{pounds(it['price'])} · {it['name']}")[:80],
                 style=discord.ButtonStyle.secondary if gone or looking else
                 (discord.ButtonStyle.danger if pricey else discord.ButtonStyle.success),
                 disabled=gone or pricey or looking)
@@ -491,7 +502,8 @@ class _ItemView(discord.ui.View):
                 ok, reason, item, left_now = buy(self.task_id, _item["id"], interaction.user.id)
                 if not ok:
                     await interaction.edit_original_response(
-                        content=f"❌ {reason}", view=_ItemView(self.task_id, self.category, self.guild))
+                        content=f"❌ {reason}\n" + _shelf(self.task_id, self.category),
+                        view=_ItemView(self.task_id, self.category, self.guild))
                     return
                 task = get_task(self.task_id)
                 bb.log_event("shop_purchase", actor=interaction.user.id, task_id=self.task_id,
@@ -505,7 +517,7 @@ class _ItemView(discord.ui.View):
                 await update_shop_message(interaction.client, task)
                 await interaction.edit_original_response(
                     content=f"✅ Bought **{item['name']}** for {pounds(item['price'])}. {pounds(left_now)} left. "
-                            f"Keep shopping or dismiss this.",
+                            f"Keep shopping or dismiss this.\n" + _shelf(self.task_id, self.category),
                     view=_ItemView(self.task_id, self.category, self.guild))
                 if nothing_affordable(task):
                     asyncio.create_task(close_shop(interaction.client, self.task_id,
