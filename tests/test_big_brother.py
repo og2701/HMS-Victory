@@ -1701,3 +1701,43 @@ def test_silence_can_let_chosen_housemates_talk(bb, monkeypatch):
     assert bb.house_speakers() == [] and not bb.house_silent()
     assert 3 not in stored
     assert stored[2].send_messages is None and stored[2].manage_threads is True
+
+
+def test_shop_viewing_period_blocks_buying_until_the_tills_open(shop, bb):
+    """Housemates can browse the shelves during the viewing period but nothing sells until
+    buy_from; opening the tills early lets them buy straight away."""
+    import asyncio
+
+    shop.set_catalogue(shop.parse_catalogue(CATALOGUE), replace=True)
+    ids = {i["name"]: i["id"] for i in shop.catalogue()}
+    tid = shop.create_task("Roast", 1000, [], None, bb._now() + 60)
+    task = shop.get_task(tid)
+    assert shop.viewing(task)
+    ok, reason, _, _ = shop.buy(tid, ids["Lemon"], 1)
+    assert not ok and "tills open" in reason
+    view = shop._ItemView(tid, shop.catalogue()[0]["category"], None)
+    assert all(b.disabled for b in view.children if b.label != "Back to aisles")
+    assert any(f.name.startswith("👀") for f in shop.shop_embed(task, None).fields)
+    assert "viewing" in bb._panel_text(None)
+
+    asyncio.run(shop.start_buying(_NoClient(), tid, early=True))
+    assert not shop.viewing(shop.get_task(tid))
+    assert shop.buy(tid, ids["Lemon"], 1)[0]
+    assert [e["kind"] for e in bb.events()][-1] == "shop_buying_opened"
+
+
+def test_shop_viewing_seconds_default_and_remembered(shop, bb):
+    assert shop.viewing_seconds() == 60
+    bb.set_state(shop.STATE_VIEWING_SECONDS, 0)
+    assert shop.viewing_seconds() == 0
+    assert shop._OpenShopModal(None).viewing.default == "0"
+    tid = shop.create_task("Roast", 1000, [], None)          # no viewing period
+    assert not shop.viewing(shop.get_task(tid))
+
+
+class _NoClient:
+    def get_guild(self, _): return None
+    def get_channel(self, _): return None
+    async def fetch_channel(self, _):
+        import types, discord
+        raise discord.NotFound(types.SimpleNamespace(status=404, reason="nf"), "nf")

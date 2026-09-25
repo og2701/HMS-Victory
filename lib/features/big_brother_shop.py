@@ -29,6 +29,8 @@ log = logging.getLogger(__name__)
 
 _tables_ready = False
 _close_tasks: dict[int, asyncio.Task] = {}
+_buying_tasks: dict[int, asyncio.Task] = {}
+STATE_VIEWING_SECONDS = "shop_viewing_seconds"  # the host's last choice, pre-filled next time
 SEED_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                          "data", "big_brother_catalogue.txt")
 _PRICE_LINE = re.compile(r"^(?P<name>.+?)\s*[-–—:]+\s*£?\s*(?P<price>\d+(?:[.,]\d{1,2})?)\s*$")
@@ -59,6 +61,14 @@ def can_shop(user_id: int) -> bool:
     return bb.is_housemate(user_id) or bb.is_operator(user_id)
 
 
+def viewing_seconds() -> int:
+    """How long the house can look before it can buy: the host's last choice, else config."""
+    saved = bb.get_state(STATE_VIEWING_SECONDS)
+    if saved is not None:
+        return max(0, int(saved))
+    return max(0, int(getattr(config, "BIG_BROTHER_SHOP_VIEWING_SECONDS", 60)))
+
+
 def ensure_tables() -> None:
     global _tables_ready
     if _tables_ready:
@@ -75,6 +85,10 @@ def ensure_tables() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL, item_id INTEGER NOT NULL,
             user_id TEXT NOT NULL, price INTEGER NOT NULL, at INTEGER NOT NULL,
             UNIQUE(task_id, item_id))""")
+        try:
+            c.execute("ALTER TABLE bb_shop_tasks ADD COLUMN buy_from INTEGER")
+        except Exception:
+            pass
     _tables_ready = True
 
 
@@ -178,10 +192,16 @@ def _task_row(r) -> Optional[dict]:
     return {"id": r[0], "brief": r[1], "budget": int(r[2]), "required": required, "status": r[4],
             "opened_at": r[5], "closes_at": r[6], "closed_at": r[7],
             "channel_id": int(r[8]) if r[8] else None, "message_id": int(r[9]) if r[9] else None,
-            "result": r[10]}
+            "result": r[10], "buy_from": r[11]}
 
 
-_TASK_COLS = "id, brief, budget, required, status, opened_at, closes_at, closed_at, channel_id, message_id, result"
+_TASK_COLS = ("id, brief, budget, required, status, opened_at, closes_at, closed_at, channel_id, message_id, "
+              "result, buy_from")
+
+
+def viewing(task: Optional[dict]) -> bool:
+    """Still in the viewing period: the shelves can be browsed but nothing bought."""
+    return bool(task and task.get("buy_from") and bb._now() < task["buy_from"])
 
 
 def current_task() -> Optional[dict]:
@@ -195,11 +215,17 @@ def get_task(task_id: int) -> Optional[dict]:
     return _task_row(DatabaseManager.fetch_one(f"SELECT {_TASK_COLS} FROM bb_shop_tasks WHERE id = ?", (int(task_id),)))
 
 
-def create_task(brief: str, budget: int, required: list[str], closes_at: Optional[int]) -> int:
+def create_task(brief: str, budget: int, required: list[str], closes_at: Optional[int],
+                buy_from: Optional[int] = None) -> int:
     ensure_tables()
     return DatabaseManager.execute_insert(
-        "INSERT INTO bb_shop_tasks (brief, budget, required, status, opened_at, closes_at) VALUES (?, ?, ?, 'open', ?, ?)",
-        (brief, int(budget), json.dumps(required), bb._now(), closes_at))
+        "INSERT INTO bb_shop_tasks (brief, budget, required, status, opened_at, closes_at, buy_from) "
+        "VALUES (?, ?, ?, 'open', ?, ?, ?)",
+        (brief, int(budget), json.dumps(required), bb._now(), closes_at, buy_from))
+
+
+def set_buy_from(task_id: int, buy_from: Optional[int]) -> None:
+    DatabaseManager.execute("UPDATE bb_shop_tasks SET buy_from = ? WHERE id = ?", (buy_from, int(task_id)))
 
 
 def set_task_message(task_id: int, channel_id: int, message_id: int) -> None:
@@ -234,9 +260,11 @@ def buy(task_id: int, item_id: int, user_id: int) -> tuple[bool, str, Optional[d
     """Atomic: one of each item, and never over budget. Returns (ok, reason, item, remaining)."""
     ensure_tables()
     with DatabaseManager.transaction() as c:
-        t = c.execute("SELECT budget, status FROM bb_shop_tasks WHERE id = ?", (int(task_id),)).fetchone()
+        t = c.execute("SELECT budget, status, buy_from FROM bb_shop_tasks WHERE id = ?", (int(task_id),)).fetchone()
         if not t or t[1] != "open":
             return False, "The shop is closed.", None, 0
+        if t[2] and bb._now() < t[2]:
+            return False, f"No buying yet. The tills open <t:{t[2]}:R>.", None, 0
         it = c.execute("SELECT id, category, name, price FROM bb_shop_items WHERE id = ?", (int(item_id),)).fetchone()
         if not it:
             return False, "That item isn't on the shelves.", None, 0
@@ -309,6 +337,8 @@ def shop_embed(task: dict, guild: Optional[discord.Guild]) -> discord.Embed:
     bought = purchases(task["id"])
     e = bb.bb_embed("The shop", task["brief"])
     e.add_field(name="Pot", value=f"**{pounds(left)}** left of {pounds(task['budget'])}", inline=True)
+    if viewing(task) and task["status"] == "open":
+        e.add_field(name="👀 Viewing only", value=f"Buying opens <t:{task['buy_from']}:R>", inline=True)
     if task["closes_at"]:
         e.add_field(name="Closes", value=f"<t:{task['closes_at']}:R>", inline=True)
     def _lines(items: list[dict]) -> str:
@@ -356,8 +386,14 @@ class ShopBrowseButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:
             await interaction.response.send_message("The shop is closed.", ephemeral=True)
             return
         await interaction.response.send_message(
-            f"🛒 **{pounds(remaining(task))}** left in the pot. Pick an aisle.",
-            view=_AisleView(task["id"], interaction.guild), ephemeral=True)
+            _aisles_prompt(task), view=_AisleView(task["id"], interaction.guild), ephemeral=True)
+
+
+def _aisles_prompt(task: dict) -> str:
+    if viewing(task):
+        return (f"👀 **Viewing only.** Have a look round; the tills open <t:{task['buy_from']}:R>. "
+                f"**{pounds(remaining(task))}** in the pot. Pick an aisle.")
+    return f"🛒 **{pounds(remaining(task))}** left in the pot. Pick an aisle."
 
 
 def _shop_view(task: dict) -> discord.ui.View:
@@ -396,7 +432,9 @@ class _AisleView(discord.ui.View):
                     await interaction.response.edit_message(content="The shop is closed.", view=None)
                     return
                 await interaction.response.edit_message(
-                    content=f"🛒 **{_cat}** · {pounds(remaining(task))} left. Press an item to buy it for the house.",
+                    content=(f"👀 **{_cat}** · {pounds(remaining(task))} in the pot. Buying opens "
+                             f"<t:{task['buy_from']}:R>, then come back and press an item." if viewing(task) else
+                             f"🛒 **{_cat}** · {pounds(remaining(task))} left. Press an item to buy it for the house."),
                     view=_ItemView(self.task_id, _cat, self.guild))
             btn.callback = _open
             self.add_item(btn)
@@ -409,15 +447,16 @@ class _ItemView(discord.ui.View):
         task = get_task(task_id)
         left = remaining(task) if task else 0
         bought = bought_item_ids(task_id)
+        looking = viewing(task)
         items = [it for it in catalogue() if it["category"] == category][:24]
         for it in items:
             gone = it["id"] in bought
             pricey = it["price"] > left
             btn = discord.ui.Button(
                 label=(("✓ " if gone else "") + f"{it['name']} {pounds(it['price'])}")[:80],
-                style=discord.ButtonStyle.secondary if gone else
+                style=discord.ButtonStyle.secondary if gone or looking else
                 (discord.ButtonStyle.danger if pricey else discord.ButtonStyle.success),
-                disabled=gone or pricey)
+                disabled=gone or pricey or looking)
 
             async def _buy(interaction: discord.Interaction, _item=it):
                 await interaction.response.defer()
@@ -451,7 +490,7 @@ class _ItemView(discord.ui.View):
             task = get_task(self.task_id)
             left_now = remaining(task) if task else 0
             await interaction.response.edit_message(
-                content=f"🛒 **{pounds(left_now)}** left in the pot. Pick an aisle.",
+                content=_aisles_prompt(task) if task else f"🛒 **{pounds(left_now)}** left in the pot. Pick an aisle.",
                 view=_AisleView(self.task_id, self.guild))
         back.callback = _back
         self.add_item(back)
@@ -462,7 +501,7 @@ class _ItemView(discord.ui.View):
 # ---------------------------------------------------------------------------
 
 async def open_shop(client: discord.Client, brief: str, budget: int, required: list[str],
-                    minutes: Optional[int]) -> tuple[Optional[dict], str]:
+                    minutes: Optional[int], view_seconds: int = 0) -> tuple[Optional[dict], str]:
     if current_task():
         return None, "A shop is already open. Close it first."
     if not catalogue():
@@ -470,23 +509,30 @@ async def open_shop(client: discord.Client, brief: str, budget: int, required: l
     ch = await shop_channel(client)
     if not ch:
         return None, "Shop channel not found."
-    closes_at = bb._now() + minutes * 60 if minutes else None
-    tid = create_task(brief, budget, required, closes_at)
+    # The timer counts buying time, so a viewing period pushes the close back by as much.
+    buy_from = bb._now() + view_seconds if view_seconds > 0 else None
+    closes_at = (buy_from or bb._now()) + minutes * 60 if minutes else None
+    tid = create_task(brief, budget, required, closes_at, buy_from)
     task = get_task(tid)
     thread = await bb.open_house_thread(ch, f"🛒 the shop - {bb.today_label()}",
                                         "Big Brother: the shop") if shop_in_thread() else None
     where = thread or ch
-    msg = await bb.bb_send(where, content=f"{'' if thread else bb._role_mention()}{bb.EYE} **The shop is open.**",
+    opening = (f"**The shop is open for viewing.** Look round now; the tills open <t:{buy_from}:R>."
+               if buy_from else "**The shop is open.**")
+    msg = await bb.bb_send(where, content=f"{'' if thread else bb._role_mention()}{bb.EYE} {opening}",
                            embed=shop_embed(task, bb._guild(client)), view=_shop_view(task))
     set_task_message(tid, where.id, msg.id)
     task = get_task(tid)
     if thread:
         await bb.fill_thread(thread)
         await bb.bb_send(ch, f"{bb._role_mention()}{bb.EYE} **The shop is open** in <#{thread.id}>. "
-                             f"{pounds(budget)} in the pot. Everything you buy still shows up here.")
+                             f"{pounds(budget)} in the pot. "
+                             + (f"Viewing only until <t:{buy_from}:t>, then buying opens. " if buy_from else "")
+                             + "Everything you buy still shows up here.")
     bb.log_event("shop_opened", task_id=tid, brief=brief, budget=budget, required=required, closes_at=closes_at,
-                 thread_id=thread.id if thread else None)
+                 buy_from=buy_from, thread_id=thread.id if thread else None)
     schedule_close(client, task)
+    schedule_buying(client, task)
     asyncio.create_task(bb.refresh_panel(client))
     return task, ""
 
@@ -499,6 +545,9 @@ async def close_shop(client: discord.Client, task_id: int, reason: str) -> Optio
     left = remaining(task)
     verdict = ("PASSED" if passed else "FAILED") if task["required"] else ""
     close_task_db(task_id, f"{reason} {verdict}".strip())
+    b = _buying_tasks.pop(task_id, None)
+    if b and b is not asyncio.current_task() and not b.done():
+        b.cancel()
     t = _close_tasks.pop(task_id, None)
     # When the timer itself is what called us, cancelling it would cancel this very coroutine
     # at the next await and silently drop the announcement and DM.
@@ -556,11 +605,57 @@ def schedule_close(client: discord.Client, task: dict) -> None:
     _close_tasks[task["id"]] = asyncio.create_task(_wait())
 
 
+async def start_buying(client: discord.Client, task_id: int, *, early: bool = False) -> bool:
+    """End the viewing period: the tills open, the house is told, the board redraws."""
+    task = get_task(task_id)
+    if not task or task["status"] != "open" or not task.get("buy_from"):
+        return False
+    if early:
+        set_buy_from(task_id, bb._now())
+        # Pull the close in by however much viewing was skipped, so buying time stays as set.
+        if task["closes_at"]:
+            DatabaseManager.execute("UPDATE bb_shop_tasks SET closes_at = ? WHERE id = ?",
+                                    (task["closes_at"] - max(0, task["buy_from"] - bb._now()), task_id))
+        b = _buying_tasks.pop(task_id, None)
+        if b and b is not asyncio.current_task() and not b.done():
+            b.cancel()
+        task = get_task(task_id)
+        schedule_close(client, task)
+    await update_shop_message(client, task)
+    ch = await shop_channel(client)
+    where = f" in <#{task['channel_id']}>" if task["channel_id"] and task["channel_id"] != shop_channel_id() else ""
+    if ch:
+        await bb.bb_send(ch, f"{bb._role_mention()}🛒 **The tills are open!** Buying has started{where}. "
+                             f"{pounds(remaining(task))} in the pot.")
+    bb.log_event("shop_buying_opened", task_id=task_id, early=early)
+    asyncio.create_task(bb.refresh_panel(client))
+    return True
+
+
+def schedule_buying(client: discord.Client, task: dict) -> None:
+    if not viewing(task) or task["status"] != "open":
+        return
+    old = _buying_tasks.pop(task["id"], None)
+    if old and not old.done():
+        old.cancel()
+
+    async def _wait():
+        try:
+            await asyncio.sleep(max(0, task["buy_from"] - bb._now()))
+            await start_buying(client, task["id"])
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            log.exception("Big Brother shop: opening the tills failed")
+    _buying_tasks[task["id"]] = asyncio.create_task(_wait())
+
+
 def restore_timers(client: discord.Client) -> None:
-    """After a restart, pick the open task's timer back up."""
+    """After a restart, pick the open task's timers back up."""
     task = current_task()
     if task:
         schedule_close(client, task)
+        schedule_buying(client, task)
 
 
 # ---------------------------------------------------------------------------
@@ -731,10 +826,12 @@ class _OpenShopModal(discord.ui.Modal, title="Open the shop"):
         self.budget = discord.ui.TextInput(label="Shared budget (e.g. 100 or £75.50)", required=True, max_length=12)
         self.minutes = discord.ui.TextInput(label="Minutes open (blank = until you close it)",
                                             required=False, max_length=5)
+        self.viewing = discord.ui.TextInput(label="Viewing seconds before buying (0 = off)",
+                                            required=False, max_length=4, default=str(viewing_seconds()))
         self.required = discord.ui.TextInput(
             label="Secret shopping list (one per line)", style=discord.TextStyle.long, required=False,
             max_length=1000, placeholder="Whole chicken\nMaris Piper potatoes\nCarrots")
-        for item in (self.brief, self.budget, self.minutes, self.required):
+        for item in (self.brief, self.budget, self.minutes, self.viewing, self.required):
             self.add_item(item)
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -857,6 +954,27 @@ async def act_catalogue(interaction: discord.Interaction):
 async def act_shop(interaction: discord.Interaction):
     """Open a shop task, or close the open one."""
     task = current_task()
+    if task and viewing(task):
+        view = discord.ui.View(timeout=120)
+        go = discord.ui.Button(label="Start buying now", emoji="🛒", style=discord.ButtonStyle.success)
+        shut = discord.ui.Button(label="Close shop", style=discord.ButtonStyle.danger)
+
+        async def _go(inter: discord.Interaction):
+            await inter.response.defer()
+            ok = await start_buying(inter.client, task["id"], early=True)
+            await inter.edit_original_response(content="The tills are open." if ok else "The shop has already moved on.",
+                                               view=None)
+
+        async def _shut(inter: discord.Interaction):
+            await inter.response.defer()
+            await close_shop(inter.client, task["id"], "Big Brother has closed the shop.")
+            await inter.edit_original_response(content="Shop closed.", view=None)
+        go.callback, shut.callback = _go, _shut
+        view.add_item(go)
+        view.add_item(shut)
+        await interaction.response.send_message(
+            f"👀 The shop is in its viewing period; buying opens <t:{task['buy_from']}:R>.", view=view, ephemeral=True)
+        return
     if task:
         async def yes(inter: discord.Interaction):
             await inter.response.defer(ephemeral=True)
@@ -885,14 +1003,22 @@ async def act_shop(interaction: discord.Interaction):
                 await inter.edit_original_response(content="Minutes needs to be a whole number, or blank.")
                 return
             minutes = int(modal.minutes.value.strip())
+        view_raw = (modal.viewing.value or "").strip() or "0"
+        if not view_raw.isdigit():
+            await inter.edit_original_response(content="Viewing seconds needs to be a whole number (0 for none).")
+            return
+        view_seconds = int(view_raw)
+        bb.set_state(STATE_VIEWING_SECONDS, view_seconds)
         required = [ln.strip() for ln in re.split(r"[\n,]", modal.required.value or "") if ln.strip()]
         unknown = [r for r in required if not any(_norm(r) in _norm(it["name"]) or _norm(it["name"]) in _norm(r)
                                                   for it in catalogue())]
-        task, err = await open_shop(inter.client, modal.brief.value.strip(), budget, required, minutes)
+        task, err = await open_shop(inter.client, modal.brief.value.strip(), budget, required, minutes, view_seconds)
         if err:
             await inter.edit_original_response(content=err)
             return
         note = f"Shop #{task['id']} is open in the house with {pounds(budget)}."
+        if view_seconds:
+            note += f" Viewing only for {view_seconds}s; the panel's shop button can start buying early."
         if required:
             note += f" Secret list: {', '.join(required)}."
         if unknown:

@@ -2894,7 +2894,8 @@ def _panel_text(guild: Optional[discord.Guild]) -> str:
     from lib.features import big_brother_shop as _shop
     shop_task = _shop.current_task()
     if shop_task:
-        lines.append(f"**Shop:** 🟢 open · {_shop.pounds(_shop.remaining(shop_task))} left"
+        lines.append(f"**Shop:** {'👀 viewing, buying opens <t:' + str(shop_task['buy_from']) + ':R>' if _shop.viewing(shop_task) else '🟢 open'}"
+                     f" · {_shop.pounds(_shop.remaining(shop_task))} left"
                      + (f" · closes <t:{shop_task['closes_at']}:R>" if shop_task["closes_at"] else ""))
     else:
         lines.append(f"**Shop:** ⚪ closed · {len(_shop.catalogue())} items in the catalogue")
