@@ -37,6 +37,14 @@ SEED_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path
                          "data", "big_brother_catalogue.txt")
 _PRICE_LINE = re.compile(r"^(?P<name>.+?)\s*[-–—:]+\s*£?\s*(?P<price>\d+(?:[.,]\d{1,2})?)\s*$")
 _PRICE_FIRST_LINE = re.compile(r"^£?\s*(?P<price>\d+(?:[.,]\d{1,2})?)\s*[-–—:]+\s*(?P<name>.+?)\s*$")
+_ROGUE_NAMES = {
+    "1000 ukpence",
+    "diary leak",
+    "immunity token",
+    "force nominate",
+    "george's catsuit",
+    "raw pigeon",
+}
 
 
 def shop_channel_id() -> int:
@@ -451,17 +459,31 @@ def _shelf(task_id: int, category: str) -> str:
     """The aisle written out in full above its buttons: a long name gets cut on a phone-width
     button, so this is where it can always be read."""
     bought = bought_item_ids(task_id)
-    lines = [f"{'~~' if it['id'] in bought else ''}{pounds(it['price'])} · {it['name']}{'~~ ✓' if it['id'] in bought else ''}"
-             for it in catalogue() if it["category"] == category][:24]
-    return "\n".join(lines)[:1500]
+    lines = []
+    for it in catalogue():
+        if it["category"] != category:
+            continue
+        is_bought = it["id"] in bought
+        is_rogue = it["name"].strip().lower() in _ROGUE_NAMES
+        marker = "⚡ " if (is_rogue and not is_bought) else ""
+        strike = "~~" if is_bought else ""
+        tick = "~~ ✓" if is_bought else ""
+        lines.append(f"{marker}{strike}{pounds(it['price'])} · {it['name']}{tick}")
+    return "\n".join(lines[:24])[:1500]
 
 
 class _AisleView(discord.ui.View):
     def __init__(self, task_id: int, guild):
         super().__init__(timeout=300)
         self.task_id, self.guild = task_id, guild
+        bought = bought_item_ids(task_id)
+        rogue_cats = {it["category"] for it in catalogue()
+                      if it["name"].strip().lower() in _ROGUE_NAMES and it["id"] not in bought}
         for cat in categories()[:25]:
-            btn = discord.ui.Button(label=cat[:80], style=discord.ButtonStyle.secondary)
+            has_rogue = cat in rogue_cats
+            label = f"⚡ {cat}"[:80] if has_rogue else cat[:80]
+            style = discord.ButtonStyle.primary if has_rogue else discord.ButtonStyle.secondary
+            btn = discord.ui.Button(label=label, style=style)
 
             async def _open(interaction: discord.Interaction, _cat=cat):
                 task = get_task(self.task_id)
@@ -490,11 +512,23 @@ class _ItemView(discord.ui.View):
         for it in items:
             gone = it["id"] in bought
             pricey = it["price"] > left
+            is_rogue = it["name"].strip().lower() in _ROGUE_NAMES
+            if gone:
+                style = discord.ButtonStyle.secondary
+            elif is_rogue:
+                style = discord.ButtonStyle.danger if pricey else discord.ButtonStyle.primary
+            elif looking:
+                style = discord.ButtonStyle.secondary
+            elif pricey:
+                style = discord.ButtonStyle.danger
+            else:
+                style = discord.ButtonStyle.success
+
+            prefix = "✓ " if gone else ("⚡ " if is_rogue else "")
             btn = discord.ui.Button(
                 # Price first: when a phone cuts a long label short, the price is what survives.
-                label=(("✓ " if gone else "") + f"{pounds(it['price'])} · {it['name']}")[:80],
-                style=discord.ButtonStyle.secondary if gone or looking else
-                (discord.ButtonStyle.danger if pricey else discord.ButtonStyle.success),
+                label=(prefix + f"{pounds(it['price'])} · {it['name']}")[:80],
+                style=style,
                 disabled=gone or pricey or looking)
 
             async def _buy(interaction: discord.Interaction, _item=it):
