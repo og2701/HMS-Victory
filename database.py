@@ -646,6 +646,18 @@ def init_db():
                 PRIMARY KEY (message_id, target)
             )
         ''')
+        # A transcribed voice note's words and its short summary, so the reply's
+        # summary / full transcript toggle can swap between them with no model call.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS voice_note_transcripts (
+                message_id    TEXT PRIMARY KEY,
+                author_mention TEXT NOT NULL,
+                full_text     TEXT NOT NULL,
+                summary       TEXT,
+                requested_by  TEXT NOT NULL,
+                seconds       REAL
+            )
+        ''')
         # Anti-alt / anti-farm / anti-laundering detection (see lib/core/detection.py).
         #
         # Every observation lands here, not only the ones that tripped a rule: nearly every

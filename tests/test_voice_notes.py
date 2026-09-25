@@ -154,15 +154,29 @@ def test_the_button_survives_a_restart():
 
 
 # --- pressing it -------------------------------------------------------------------------
-def _press(note, transcriber):
-    real = V.transcribe
+def _press(note, transcriber, summary=None):
+    real, real_sum = V.transcribe, V.summarise
     V.transcribe = transcriber
+
+    async def fake_summary(_text):
+        return summary
+    V.summarise = fake_summary
     try:
         i = Inter(note)
         _run(V.TranscribeButton(CH_ID, VN_ID).callback(i))
         return i
     finally:
-        V.transcribe = real
+        V.transcribe, V.summarise = real, real_sum
+
+
+def _texts(view):
+    return [c.content for box in view.children for c in getattr(box, "children", [])
+            if isinstance(c, discord.ui.TextDisplay)]
+
+
+def _buttons(view):
+    return [b for box in view.children for row in getattr(box, "children", [])
+            for b in getattr(row, "children", [])]
 
 
 def test_pressing_puts_the_words_on_the_reply():
@@ -224,6 +238,64 @@ def test_a_long_transcript_is_cut_rather_than_rejected():
     assert all(len(t) <= 4000 for t in texts)
     assert any(t.endswith("…") for t in texts)
     assert any("90s" in t for t in texts)
+
+
+# --- summary and the toggle -------------------------------------------------------------
+def test_a_long_note_opens_on_its_summary_with_a_toggle():
+    _clear()
+    try:
+        async def fake(data, name):
+            return "a very long rant about tiktok audios " * 20
+        i = _press(Msg(), fake, summary="They reckon TikTok is ruining music.")
+        view = i.message.edits[0]["view"]
+        texts = _texts(view)
+        assert any("TL;DR" in t and "ruining music" in t for t in texts), texts
+        assert not any("long rant" in t for t in texts), "the full words showed by default"
+        [btn] = _buttons(view)
+        assert btn.item.custom_id == f"vnt:{VN_ID}:full"
+    finally:
+        _clear()
+        V.DatabaseManager.execute("DELETE FROM voice_note_transcripts WHERE message_id = ?",
+                                  (str(VN_ID),))
+
+
+def test_a_short_note_has_no_summary_and_no_toggle():
+    _clear()
+    try:
+        async def fake(data, name):
+            return "on my way"
+        view = _press(Msg(), fake, summary=None).message.edits[0]["view"]
+        assert any("on my way" in t for t in _texts(view))
+        assert _buttons(view) == []
+    finally:
+        _clear()
+
+
+def test_the_toggle_flips_between_summary_and_full():
+    V._save(VN_ID, "<@1>", "every single word", "the gist", "Mod", 42.0)
+    try:
+        edits = []
+
+        async def edit_message(**kw):
+            edits.append(kw)
+        i = types.SimpleNamespace(response=types.SimpleNamespace(edit_message=edit_message))
+        _run(V.ToggleButton(VN_ID, True).callback(i))
+        full = edits[-1]["view"]
+        assert any("every single word" in t for t in _texts(full))
+        assert _buttons(full)[0].item.custom_id == f"vnt:{VN_ID}:tldr"
+        _run(V.ToggleButton(VN_ID, False).callback(i))
+        back = edits[-1]["view"]
+        assert any("the gist" in t for t in _texts(back))
+        assert _buttons(back)[0].item.custom_id == f"vnt:{VN_ID}:full"
+    finally:
+        V.DatabaseManager.execute("DELETE FROM voice_note_transcripts WHERE message_id = ?",
+                                  (str(VN_ID),))
+
+
+def test_the_toggle_survives_a_restart():
+    b = V.ToggleButton(VN_ID, False)
+    m = V.ToggleButton.__discord_ui_compiled_template__.match(b.item.custom_id)
+    assert m and int(m["mid"]) == VN_ID and m["to"] == "tldr"
 
 
 def _run_all():
