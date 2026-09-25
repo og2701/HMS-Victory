@@ -1741,3 +1741,43 @@ class _NoClient:
     async def fetch_channel(self, _):
         import types, discord
         raise discord.NotFound(types.SimpleNamespace(status=404, reason="nf"), "nf")
+
+
+def test_required_items_are_matched_to_the_catalogue_by_jev(shop, monkeypatch):
+    """A typo or different wording on the must-buy list is mapped onto the real catalogue
+    name; exact names skip Jev; Jev's 'none of these' leaves the item flagged as missing."""
+    import asyncio
+    from lib.features import mention_signals
+
+    shop.set_catalogue(shop.parse_catalogue(CATALOGUE), replace=True)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    asked = []
+
+    async def fake_post(payload, key, session=None, timeout=None):
+        wanted = payload["state"]["wanted"]
+        asked.append(wanted)
+        assert shop.NOT_IN_SHOP in payload["questions"]["match"]["criteria"]
+        pick = {"carots": "Carrots", "spuds": "Maris Piper potatoes"}.get(wanted, shop.NOT_IN_SHOP)
+        return {"answers": {"match": {"choice": pick}}}
+    monkeypatch.setattr(mention_signals, "_post", fake_post)
+
+    resolved, fixed, missing = asyncio.run(shop.resolve_required(["Whole chicken", "carots", "spuds", "caviar"]))
+    assert resolved == ["Whole chicken", "Carrots", "Maris Piper potatoes"]
+    assert fixed == [("carots", "Carrots"), ("spuds", "Maris Piper potatoes")]
+    assert missing == ["caviar"]
+    assert "Whole chicken" not in asked
+    assert "Carrots" in shop._candidates("carots")
+
+
+def test_required_items_fall_back_to_loose_match_without_jev(shop, monkeypatch):
+    import asyncio
+    shop.set_catalogue(shop.parse_catalogue(CATALOGUE), replace=True)
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    resolved, fixed, missing = asyncio.run(shop.resolve_required(["potatoes", "carots"]))
+    assert resolved == ["potatoes"] and fixed == [] and missing == ["carots"]
+
+
+def test_open_shop_form_shows_the_whole_shop_total(shop):
+    shop.set_catalogue(shop.parse_catalogue(CATALOGUE), replace=True)
+    total = sum(it["price"] for it in shop.catalogue())
+    assert shop.pounds(total) in shop._OpenShopModal(None).budget.label

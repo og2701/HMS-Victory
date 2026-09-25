@@ -13,6 +13,7 @@ main module, and the tables sit alongside the other bb_* tables.
 from __future__ import annotations
 
 import asyncio
+import difflib
 import json
 import logging
 import os
@@ -742,6 +743,72 @@ async def jev_sort_and_price(items: list[tuple[Optional[str], str]]) -> tuple[li
     return entries, len(items) - len(entries)
 
 
+NOT_IN_SHOP = "None of these"
+MATCH_CANDIDATES = 150  # the whole catalogue in practice: spelling alone never finds "spuds" -> potatoes
+
+
+def _candidates(req: str) -> list[str]:
+    """The catalogue names most like req: shared words first, then spelling closeness, so
+    'carots' still finds Carrots and 'spuds' at least gets the whole veg aisle's best guesses."""
+    rn = _norm(req)
+    words = set(rn.split())
+
+    def score(name: str) -> float:
+        nn = _norm(name)
+        overlap = len(words & set(nn.split())) / max(1, len(words))
+        return overlap + difflib.SequenceMatcher(None, rn, nn).ratio()
+    names = list(dict.fromkeys(it["name"] for it in catalogue()))
+    return sorted(names, key=score, reverse=True)[:MATCH_CANDIDATES]
+
+
+async def resolve_required(required: list[str]) -> tuple[list[str], list[tuple[str, str]], list[str]]:
+    """Map the host's shopping list onto real catalogue names, so a typo or a different
+    wording still counts. Exact matches pass straight through; the rest go to Jev with the
+    closest candidates. Returns (resolved list, [(typed, matched)] corrections, not found).
+    Without Jev, an item is kept as typed and judged by the loose word match."""
+    from lib.features.mention_signals import MENTION_SIGNALS_MODEL, _post
+    by_norm = {_norm(it["name"]): it["name"] for it in catalogue()}
+    key = os.getenv("TYPESAFE_API_KEY")
+    sem = asyncio.Semaphore(JEV_CONCURRENCY)
+
+    def loosely_found(req: str) -> bool:
+        rn = _norm(req)
+        return any(rn in n or n in rn for n in by_norm)
+
+    async def one(req: str) -> tuple[str, Optional[str]]:
+        exact = by_norm.get(_norm(req))
+        if exact:
+            return req, exact
+        if not key:
+            return req, req if loosely_found(req) else None
+        cands = _candidates(req)
+        payload = {"model": MENTION_SIGNALS_MODEL,
+                   "state": {"wanted": req, "shop_items": cands},
+                   "questions": {"match": {
+                       "type": "choice",
+                       "instructions": "Big Brother typed `wanted` as an item the house must buy. Which of the "
+                                       "shop's items is it? Allow for typos, plurals, brand or wording "
+                                       f"differences. Pick '{NOT_IN_SHOP}' if none of them is that item.",
+                       "criteria": {**{c: None for c in cands}, NOT_IN_SHOP: None}}}}
+        try:
+            async with sem:
+                body = await _post(payload, key, session=None, timeout=8.0)
+        except Exception:
+            body = None
+        choice = (((body or {}).get("answers") or {}).get("match") or {}).get("choice")
+        if choice in cands:
+            return req, choice
+        if choice == NOT_IN_SHOP:
+            return req, None
+        return req, req if loosely_found(req) else None   # Jev didn't answer: fall back
+
+    results = await asyncio.gather(*(one(r) for r in required))
+    resolved = [m for _, m in results if m]
+    fixed = [(r, m) for r, m in results if m and m != r]
+    missing = [r for r, m in results if not m]
+    return list(dict.fromkeys(resolved)), fixed, missing
+
+
 # ---------------------------------------------------------------------------
 # Catalogue capture: the host sends the list as a normal message (or a .txt) in the
 # control channel after pressing Add items, and the bot picks it up.
@@ -823,14 +890,16 @@ class _OpenShopModal(discord.ui.Modal, title="Open the shop"):
         # Discord caps modal labels at 45 characters.
         self.brief = discord.ui.TextInput(label="The task, as the house will see it", style=discord.TextStyle.long,
                                           required=True, max_length=1000)
-        self.budget = discord.ui.TextInput(label="Shared budget (e.g. 100 or £75.50)", required=True, max_length=12)
+        total = sum(it["price"] for it in catalogue())
+        self.budget = discord.ui.TextInput(label=f"Shared budget (whole shop costs {pounds(total)})"[:45],
+                                           required=True, max_length=12, placeholder="e.g. 100 or £75.50")
         self.minutes = discord.ui.TextInput(label="Minutes open (blank = until you close it)",
                                             required=False, max_length=5)
         self.viewing = discord.ui.TextInput(label="Viewing seconds before buying (0 = off)",
                                             required=False, max_length=4, default=str(viewing_seconds()))
         self.required = discord.ui.TextInput(
-            label="Secret shopping list (one per line)", style=discord.TextStyle.long, required=False,
-            max_length=1000, placeholder="Whole chicken\nMaris Piper potatoes\nCarrots")
+            label="Task goal: items they MUST buy (1 per line)", style=discord.TextStyle.long, required=False,
+            max_length=1000, placeholder="Kept secret. Pass if they buy all of these, e.g.\nWhole chicken\nCarrots")
         for item in (self.brief, self.budget, self.minutes, self.viewing, self.required):
             self.add_item(item)
 
@@ -1010,8 +1079,10 @@ async def act_shop(interaction: discord.Interaction):
         view_seconds = int(view_raw)
         bb.set_state(STATE_VIEWING_SECONDS, view_seconds)
         required = [ln.strip() for ln in re.split(r"[\n,]", modal.required.value or "") if ln.strip()]
-        unknown = [r for r in required if not any(_norm(r) in _norm(it["name"]) or _norm(it["name"]) in _norm(r)
-                                                  for it in catalogue())]
+        # Keep the items that aren't in the shop too: the task can then never pass, which the
+        # host is warned about below and may well want (a trick task).
+        resolved, fixed, unknown = await resolve_required(required)
+        required = resolved + unknown
         task, err = await open_shop(inter.client, modal.brief.value.strip(), budget, required, minutes, view_seconds)
         if err:
             await inter.edit_original_response(content=err)
@@ -1020,7 +1091,9 @@ async def act_shop(interaction: discord.Interaction):
         if view_seconds:
             note += f" Viewing only for {view_seconds}s; the panel's shop button can start buying early."
         if required:
-            note += f" Secret list: {', '.join(required)}."
+            note += f" Items they must buy: {', '.join(required)}."
+        if fixed:
+            note += "\n🔎 Matched to the catalogue: " + ", ".join(f"{a} → {b}" for a, b in fixed) + "."
         if unknown:
             note += f"\n⚠️ Not in the catalogue (can never be bought): {', '.join(unknown)}."
         await inter.edit_original_response(content=note)
