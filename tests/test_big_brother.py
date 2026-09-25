@@ -1781,3 +1781,26 @@ def test_open_shop_form_shows_the_whole_shop_total(shop):
     shop.set_catalogue(shop.parse_catalogue(CATALOGUE), replace=True)
     total = sum(it["price"] for it in shop.catalogue())
     assert shop.pounds(total) in shop._OpenShopModal(None).budget.label
+
+
+def test_panel_buttons_that_act_immediately_ask_first(bb, monkeypatch):
+    """Close noms, close vote, end challenge and the summary only ask on the first press:
+    a misclick on the panel mustn't change the game."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    for u in (1, 2, 3):
+        bb.db_add_housemate(u)
+    bb.create_round(bb.KIND_NOMINATIONS)
+    bb.create_round(bb.KIND_VOTE)
+    bb.add_challenge("Quiz", "What?", None, 1)
+    for name in ("close_nominations", "close_vote", "post_daily_roundup_draft"):
+        monkeypatch.setattr(bb, name, AsyncMock(side_effect=AssertionError(name)))
+
+    for action in ("close_noms", "close_vote", "end_challenge", "roundup"):
+        inter = MagicMock()
+        inter.response.send_message = AsyncMock()
+        asyncio.run(bb.PANEL_ACTIONS[action](inter))
+        view = inter.response.send_message.call_args.kwargs["view"]
+        assert isinstance(view, bb._Confirm), action
+    assert bb.open_challenge() is not None

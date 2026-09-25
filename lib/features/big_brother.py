@@ -3431,11 +3431,26 @@ async def _act_open_noms(interaction: discord.Interaction):
         view=_Confirm(yes, "Open nominations"), ephemeral=True)
 
 
+async def _confirm_first(interaction: discord.Interaction, question: str, label: str, run: Callable):
+    """Misclick guard for panel buttons that act on the first press: ask, then run(inter) on
+    the confirm button. run should defer() (an update), so its reply replaces the question."""
+    await interaction.response.send_message(question, view=_Confirm(run, label), ephemeral=True)
+
+
 async def _act_close_noms(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True, thinking=True)
-    res = await close_nominations(interaction.client)
-    await _reply(interaction, "No nominations round is open." if res is None
-                 else "Nominations closed. The tally is in your DMs.")
+    noms = open_round(KIND_NOMINATIONS)
+    if not noms:
+        await _reply(interaction, "No nominations round is open.", refresh=False)
+        return
+
+    async def run(inter: discord.Interaction):
+        await inter.response.defer()
+        res = await close_nominations(inter.client)
+        await _reply(inter, "No nominations round is open." if res is None
+                     else "Nominations closed. The tally is in your DMs.")
+    await _confirm_first(interaction, f"Close nominations now? {len(nominators_done(noms['id']))}/"
+                                      f"{len(housemates())} have nominated. Anyone who hasn't yet loses their chance.",
+                         "Close noms", run)
 
 
 async def _act_start_vote(interaction: discord.Interaction):
@@ -3496,10 +3511,18 @@ async def _act_start_vote(interaction: discord.Interaction):
 
 
 async def _act_close_vote(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True, thinking=True)
-    res = await close_vote(interaction.client)
-    await _reply(interaction, "No vote is open." if res is None
-                 else "Vote closed. The result is in your DMs and nothing has been announced yet.")
+    vote = open_round(KIND_VOTE)
+    if not vote:
+        await _reply(interaction, "No vote is open.", refresh=False)
+        return
+
+    async def run(inter: discord.Interaction):
+        await inter.response.defer()
+        res = await close_vote(inter.client)
+        await _reply(inter, "No vote is open." if res is None
+                     else "Vote closed. The result is in your DMs and nothing has been announced yet.")
+    await _confirm_first(interaction, f"Close the eviction vote now? {vote_count(vote['id'])} votes cast. "
+                                      f"The result goes to your DMs; nothing is announced.", "Close vote", run)
 
 
 async def _act_standings(interaction: discord.Interaction):
@@ -3795,17 +3818,24 @@ async def _act_challenge(interaction: discord.Interaction):
 
 
 async def _act_end_challenge(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True, thinking=True)
     chal = open_challenge()
     if not chal:
         await _reply(interaction, "No challenge is open.", refresh=False)
         return
-    close_challenge(chal["id"], None)
-    log_event("challenge_ended", challenge_id=chal["id"], title=chal["title"])
-    ch = await house_channel(interaction.client)
-    if ch:
-        await bb_send(ch, f"{EYE} **Challenge over:** {chal['title']}. Big Brother will announce the outcome.")
-    await _reply(interaction, f"Challenge #{chal['id']} closed with no auto-winner.")
+
+    async def run(inter: discord.Interaction):
+        await inter.response.defer()
+        if not open_challenge() or open_challenge()["id"] != chal["id"]:
+            await _reply(inter, "That challenge has already ended.", refresh=False)
+            return
+        close_challenge(chal["id"], None)
+        log_event("challenge_ended", challenge_id=chal["id"], title=chal["title"])
+        ch = await house_channel(inter.client)
+        if ch:
+            await bb_send(ch, f"{EYE} **Challenge over:** {chal['title']}. Big Brother will announce the outcome.")
+        await _reply(inter, f"Challenge #{chal['id']} closed with no auto-winner.")
+    await _confirm_first(interaction, f"End the challenge **{chal['title']}**? The house is told it's over; "
+                                      f"no winner is picked.", "End challenge", run)
 
 
 async def _act_dm(interaction: discord.Interaction):
@@ -3895,9 +3925,13 @@ async def _act_shop(interaction: discord.Interaction):
 
 
 async def _act_draft_roundup(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True, thinking=True)
-    ok, msg = await post_daily_roundup_draft(interaction.client)
-    await _reply(interaction, msg, refresh=False)
+    async def run(inter: discord.Interaction):
+        await inter.response.defer()
+        await inter.edit_original_response(content="Writing the summary...", view=None)
+        ok, msg = await post_daily_roundup_draft(inter.client)
+        await _reply(inter, msg, refresh=False)
+    await _confirm_first(interaction, "Write a summary of the day so far? It comes to this channel as a draft "
+                                      "for you to review; nothing is posted to the house.", "Write summary", run)
 
 
 PANEL_ACTIONS = {
