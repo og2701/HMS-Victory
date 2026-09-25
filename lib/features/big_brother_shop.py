@@ -36,6 +36,7 @@ STATE_VIEWING_SECONDS = "shop_viewing_seconds"  # the host's last choice, pre-fi
 SEED_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                          "data", "big_brother_catalogue.txt")
 _PRICE_LINE = re.compile(r"^(?P<name>.+?)\s*[-–—:]+\s*£?\s*(?P<price>\d+(?:[.,]\d{1,2})?)\s*$")
+_PRICE_FIRST_LINE = re.compile(r"^£?\s*(?P<price>\d+(?:[.,]\d{1,2})?)\s*[-–—:]+\s*(?P<name>.+?)\s*$")
 
 
 def shop_channel_id() -> int:
@@ -122,7 +123,12 @@ def parse_catalogue(text: str) -> list[tuple[str, str, int]]:
             pence = int(round(float(m.group("price").replace(",", ".")) * 100))
             out.append((category, m.group("name").strip(), pence))
         else:
-            category = line.rstrip(":.,;- ").strip()[:60] or "Other"
+            m1 = _PRICE_FIRST_LINE.match(line)
+            if m1:
+                pence = int(round(float(m1.group("price").replace(",", ".")) * 100))
+                out.append((category, m1.group("name").strip(), pence))
+            else:
+                category = line.rstrip(":.,;- ").strip()[:60] or "Other"
     return out
 
 
