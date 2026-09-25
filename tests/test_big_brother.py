@@ -1657,3 +1657,47 @@ def test_build_cast_guide_and_roundup_prompt(bb, monkeypatch):
 
 
 
+
+
+def test_silence_can_let_chosen_housemates_talk(bb, monkeypatch):
+    """The host silences the house but invites a couple of housemates to talk: member
+    overrides allow them, unsilencing takes them away, and other override bits survive."""
+    import asyncio
+    import discord
+    from unittest.mock import AsyncMock, MagicMock
+
+    house = MagicMock(spec=discord.TextChannel)
+    house.guild.get_role.return_value = MagicMock()
+    members = {u: MagicMock(spec=discord.Member, id=u) for u in (1, 2, 3)}
+    house.guild.get_member.side_effect = members.get
+    stored = {}
+    # User 2 already has an override (think the host's thread rights) that must survive.
+    stored[2] = discord.PermissionOverwrite(manage_threads=True)
+    house.overwrites_for.side_effect = lambda t: discord.PermissionOverwrite(
+        **dict((k, v) for k, v in stored.get(getattr(t, "id", None), discord.PermissionOverwrite()) if v is not None))
+
+    async def fake_set(target, overwrite=None, reason=None):
+        if target in members.values():
+            if overwrite is None:
+                stored.pop(target.id, None)
+            else:
+                stored[target.id] = overwrite
+    house.set_permissions = AsyncMock(side_effect=fake_set)
+    monkeypatch.setattr(bb, "house_channel", AsyncMock(return_value=house))
+    monkeypatch.setattr(bb, "housemate_role_id", lambda: 12345)
+
+    assert asyncio.run(bb.set_house_silence(MagicMock(), True, [1, 2])) is True
+    assert bb.house_silent() and bb.house_speakers() == [1, 2]
+    assert stored[1].send_messages is True and stored[2].send_messages is True
+    assert stored[2].manage_threads is True
+    assert "2 allowed to talk" in bb._panel_text(None)
+
+    # Swapping who may talk drops the old speaker's override entirely.
+    asyncio.run(bb.set_house_silence(MagicMock(), True, [2, 3]))
+    assert 1 not in stored and stored[3].send_messages is True
+    assert bb.house_speakers() == [2, 3]
+
+    asyncio.run(bb.set_house_silence(MagicMock(), False))
+    assert bb.house_speakers() == [] and not bb.house_silent()
+    assert 3 not in stored
+    assert stored[2].send_messages is None and stored[2].manage_threads is True

@@ -42,6 +42,7 @@ STATE_LAST_VOTE_RESULT = "last_vote_result"
 STATE_GAME_STARTED_AT = "game_started_at"
 STATE_HOUSE_MSGS_SINCE_PANEL = "house_msgs_since_panel"
 STATE_HOUSE_SILENT = "house_silent"
+STATE_HOUSE_SPEAKERS = "house_speakers"  # housemates let talk while the rest of the house is silent
 STATE_HOUSE_PANEL_SIG = "house_panel_signature"  # what the house panel last showed; a change re-posts it
 STATE_VOTE_REPOST_AT = "house_msgs_at_vote_repost"  # the house counter when the vote last moved down
 STATE_VOTE_BUMPED_AT = "vote_thread_bumped_at"      # when the board was last re-posted inside its thread
@@ -340,6 +341,10 @@ def day_number() -> int:
 
 def house_silent() -> bool:
     return bool(get_state(STATE_HOUSE_SILENT, False))
+
+
+def house_speakers() -> list[int]:
+    return [int(u) for u in get_state(STATE_HOUSE_SPEAKERS, []) or []]
 
 
 def house_unlocked() -> bool:
@@ -1027,9 +1032,34 @@ async def evict(client: discord.Client, user_id: int, *, announce: bool = True) 
     clear_all_eviction_safe()
 
 
-async def set_house_silence(client: discord.Client, silent: bool) -> bool:
+async def _set_house_speakers(ch: discord.TextChannel, user_ids: Iterable[int]) -> None:
+    """Member overrides that let a chosen few talk while the Housemate role is silenced. Only
+    send_messages is touched, so the host's thread rights and evictees' read-only overrides
+    survive; an override left with nothing in it is removed."""
+    before, after = set(house_speakers()), {int(u) for u in user_ids}
+    for uid, allow in [(u, None) for u in before - after] + [(u, True) for u in after - before]:
+        member = ch.guild.get_member(uid)
+        if member is None:
+            try:
+                member = await ch.guild.fetch_member(uid)
+            except discord.HTTPException:
+                continue
+        ow = ch.overwrites_for(member)
+        ow.send_messages = allow
+        try:
+            await ch.set_permissions(member, overwrite=None if ow.is_empty() else ow,
+                                     reason="Big Brother: " + ("may talk in the silent house" if allow else "speaking time over"))
+        except discord.HTTPException as e:
+            log.warning("Big Brother: could not change speaking rights for %s: %s", uid, e)
+            after.discard(uid) if allow else after.add(uid)
+    set_state(STATE_HOUSE_SPEAKERS, sorted(after))
+
+
+async def set_house_silence(client: discord.Client, silent: bool, speakers: Iterable[int] = ()) -> bool:
     """During nominations the house goes quiet: the Housemate role can't send in the house
-    channel, but snug threads remain open. Lifted when nominations close. Needs the role configured."""
+    channel, but snug threads remain open. Lifted when nominations close. Needs the role configured.
+    speakers are let talk through the silence (the host inviting two housemates to chat); every
+    call replaces them, and unsilencing clears them."""
     rid = housemate_role_id()
     ch = await house_channel(client)
     if not rid or not isinstance(ch, discord.TextChannel):
@@ -1046,10 +1076,11 @@ async def set_house_silence(client: discord.Client, silent: bool) -> bool:
         await ch.set_permissions(role, overwrite=overwrite,
                                  reason="Big Brother: house " + ("silenced (snugs open)" if silent else "unsilenced"))
         set_state(STATE_HOUSE_SILENT, bool(silent))
-        return True
     except discord.HTTPException as e:
         log.warning("Big Brother: could not %s the house: %s", "silence" if silent else "unsilence", e)
         return False
+    await _set_house_speakers(ch, speakers if silent else ())
+    return True
 
 
 async def open_house_to_spectators(client: discord.Client) -> bool:
@@ -1072,7 +1103,7 @@ async def open_house_to_spectators(client: discord.Client) -> bool:
         log.warning("Big Brother: could not open the house to spectators: %s", e)
         return False
     # Make sure housemates keep (or regain) the ability to post now that @everyone can't.
-    await set_house_silence(client, house_silent())
+    await set_house_silence(client, house_silent(), house_speakers())
     return True
 
 
@@ -2857,7 +2888,9 @@ def _panel_text(guild: Optional[discord.Guild]) -> str:
         lines.append(f"**Eviction vote:** 🟢 open in <#{vote['channel_id']}> · {vote_count(vote['id'])} votes cast")
     else:
         lines.append("**Eviction vote:** ⚪ none running")
-    lines.append("**House chat:** " + ("🔇 housemates silenced" if house_silent() else "🟢 open"))
+    speakers = house_speakers()
+    lines.append("**House chat:** " + ("🟢 open" if not house_silent() else "🔇 housemates silenced"
+                 + (f" · 🎙️ {len(speakers)} allowed to talk" if speakers else "")))
     from lib.features import big_brother_shop as _shop
     shop_task = _shop.current_task()
     if shop_task:
@@ -2941,7 +2974,7 @@ class BigBrotherControlView(discord.ui.LayoutView):
                  _PanelButton("immunity", "Immunity", emoji="🛡️"),
                  _PanelButton("token", "Grant token", emoji="🎟️")],
                 [_PanelButton("snug", "Open snug", emoji="🛋️"),
-                 _PanelButton("silence", "Unsilence" if house_silent() else "Silence",
+                 _PanelButton("silence", "House chat" if house_silent() else "Silence",
                               discord.ButtonStyle.secondary if house_silent() else discord.ButtonStyle.danger,
                               "🔊" if house_silent() else "🔇"),
                  _PanelButton("crown", "Crown winner", discord.ButtonStyle.success, "👑")],
@@ -3275,22 +3308,61 @@ async def _act_start(interaction: discord.Interaction):
         view=_Confirm(yes, "Start the game"), ephemeral=True)
 
 
-async def _act_silence(interaction: discord.Interaction):
-    # thinking=True: on a panel button a plain defer would make the panel message itself the
-    # "original response", and _reply would overwrite the panel with the confirmation text.
-    await interaction.response.defer(ephemeral=True, thinking=True)
-    target = not house_silent()
-    ok = await set_house_silence(interaction.client, target)
+async def _apply_silence(interaction: discord.Interaction, silent: bool, speakers: list[int] = ()):
+    # Pressed on the ephemeral menu or picker, so the confirmation replaces that message.
+    await interaction.response.defer()
+    ok = await set_house_silence(interaction.client, silent, speakers)
     if not ok:
         await _reply(interaction, "Couldn't change the house permissions (is the Housemate role configured?).", refresh=False)
         return
-    log_event("house_silenced" if target else "house_unsilenced", actor=interaction.user.id)
+    log_event("house_silenced" if silent else "house_unsilenced", actor=interaction.user.id,
+              speakers=list(speakers))
+    mentions = " and ".join(f"<@{u}>" for u in speakers)
     ch = await house_channel(interaction.client)
     if ch:
-        await bb_send(ch, f"{EYE} **The house is silent.** No talking until Big Brother says so." if target
-                      else f"{EYE} **You may talk again.**")
-    await _reply(interaction, "Housemates can no longer send messages in the house." if target
-                 else "Housemates can talk in the house again.")
+        if not silent:
+            text = f"{EYE} **You may talk again.**"
+        elif speakers:
+            text = f"{EYE} **The house is silent.** Only {mentions} may talk. Everyone else, watch and listen."
+        else:
+            text = f"{EYE} **The house is silent.** No talking until Big Brother says so."
+        await bb_send(ch, text)
+    await _reply(interaction, "Housemates can talk in the house again." if not silent
+                 else f"The house is silent. Only {mentions} can talk." if speakers
+                 else "Housemates can no longer send messages in the house.")
+
+
+async def _act_silence(interaction: discord.Interaction):
+    """Silence everyone, silence all but a chosen few, or lift it."""
+    silent, speakers = house_silent(), house_speakers()
+    view = discord.ui.View(timeout=120)
+    everyone = discord.ui.Button(label="Silence everyone", emoji="🔇", style=discord.ButtonStyle.danger,
+                                 disabled=silent and not speakers)
+    some = discord.ui.Button(label="Only let some talk", emoji="🎙️", style=discord.ButtonStyle.primary)
+    lift = discord.ui.Button(label="Unsilence", emoji="🔊", style=discord.ButtonStyle.success, disabled=not silent)
+
+    async def _everyone(inter: discord.Interaction):
+        await _apply_silence(inter, True)
+
+    async def _some(inter: discord.Interaction):
+        ins = housemates()
+        if not ins:
+            await _reply(inter, "No housemates.", refresh=False)
+            return
+
+        async def picked(inter2: discord.Interaction, ids: list[int]):
+            await _apply_silence(inter2, True, ids)
+        await _send_multi(inter, "Press the housemates who may talk, then Done. Everyone else is silenced.",
+                          inter.guild, ins, picked, defaults=speakers, done_label="Silence the rest", edit=True)
+
+    async def _lift(inter: discord.Interaction):
+        await _apply_silence(inter, False)
+    everyone.callback, some.callback, lift.callback = _everyone, _some, _lift
+    for b in (everyone, some, lift):
+        view.add_item(b)
+    now = ("🟢 open" if not silent else "🔇 silenced"
+           + (" · 🎙️ " + ", ".join(_name(interaction.guild, u) for u in speakers) + " may talk" if speakers else ""))
+    await interaction.response.send_message(f"**House chat:** {now}", view=view, ephemeral=True)
 
 
 async def _act_who(interaction: discord.Interaction):
