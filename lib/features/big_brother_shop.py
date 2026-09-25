@@ -17,6 +17,7 @@ import difflib
 import json
 import logging
 import os
+import random
 import re
 from typing import Optional
 
@@ -152,6 +153,26 @@ def set_catalogue(entries: list[tuple[str, str, int]], *, replace: bool) -> int:
                 c.execute("INSERT INTO bb_shop_items (category, name, price, position) VALUES (?, ?, ?, ?)",
                           (cat, name, pence, start + i))
     return len(entries)
+
+
+def add_hidden_item(category: str, name: str, pence: int) -> None:
+    """One hand-placed item, dropped at a random spot inside its aisle rather than on the end,
+    so a special (a diary leak among the cheeses) doesn't stand out as the newest addition."""
+    ensure_tables()
+    with DatabaseManager.transaction() as c:
+        existing = c.execute("SELECT id FROM bb_shop_items WHERE category = ? AND lower(name) = lower(?)",
+                             (category, name)).fetchone()
+        if existing:
+            c.execute("UPDATE bb_shop_items SET price = ? WHERE id = ?", (pence, existing[0]))
+            return
+        spots = [r[0] for r in c.execute("SELECT position FROM bb_shop_items WHERE category = ?", (category,))]
+        if spots:
+            pos = random.choice(spots)
+            c.execute("UPDATE bb_shop_items SET position = position + 1 WHERE position >= ?", (pos,))
+        else:
+            pos = int(c.execute("SELECT COALESCE(MAX(position), -1) FROM bb_shop_items").fetchone()[0]) + 1
+        c.execute("INSERT INTO bb_shop_items (category, name, price, position) VALUES (?, ?, ?, ?)",
+                  (category, name, pence, pos))
 
 
 def catalogue() -> list[dict]:
@@ -992,7 +1013,16 @@ class _CatalogueView(discord.ui.View):
         self.add_item(add)
         self.add_item(replace)
 
-        if os.path.exists(SEED_FILE):
+        if aisle:
+            # Row 4 holds five buttons; an aisle only shows once there's a catalogue, so the
+            # Load button (for an empty one) gives up its slot to this.
+            here = discord.ui.Button(label="Add to this aisle", emoji="🎁", style=discord.ButtonStyle.success, row=4)
+
+            async def _here(interaction: discord.Interaction):
+                await interaction.response.send_modal(_AddItemModal(aisle))
+            here.callback = _here
+            self.add_item(here)
+        elif os.path.exists(SEED_FILE) and not catalogue():
             load = discord.ui.Button(label="Load saved list", emoji="📥", row=4)
 
             async def _load(interaction: discord.Interaction):
@@ -1000,6 +1030,32 @@ class _CatalogueView(discord.ui.View):
                     await _catalogue_submitted(interaction, f.read(), True)
             load.callback = _load
             self.add_item(load)
+
+
+class _AddItemModal(discord.ui.Modal, title="Add an item to this aisle"):
+    """Hand-placed: no Jev, the host's own name and price, hidden somewhere in the aisle."""
+
+    def __init__(self, aisle: str):
+        super().__init__()
+        self.aisle = aisle
+        # The buy button shows "name £price" and Discord cuts labels at 80 characters.
+        self.name = discord.ui.TextInput(label="Item name", max_length=70, required=True,
+                                         placeholder="Diary Room Leak: read one anonymous diary entry")
+        self.price = discord.ui.TextInput(label="Price (e.g. 30 or £4.50)", max_length=12, required=True)
+        self.add_item(self.name)
+        self.add_item(self.price)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        pence = parse_money(self.price.value)
+        name = " ".join(self.name.value.split())
+        if pence is None or pence <= 0 or not name:
+            await interaction.response.send_message("Price needs to be a number like 30 or £4.50.", ephemeral=True)
+            return
+        add_hidden_item(self.aisle, name, pence)
+        bb.log_event("shop_item_added", actor=interaction.user.id, aisle=self.aisle, name=name, price=pence)
+        await interaction.response.edit_message(
+            content=f"🎁 Added **{name}** ({pounds(pence)}) somewhere in **{self.aisle}**.\n\n"
+                    + _aisle_text(self.aisle)[:1700], view=_CatalogueView(self.aisle))
 
 
 async def _catalogue_submitted(inter: discord.Interaction, text: str, replace: bool):

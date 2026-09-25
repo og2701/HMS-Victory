@@ -1804,3 +1804,23 @@ def test_panel_buttons_that_act_immediately_ask_first(bb, monkeypatch):
         view = inter.response.send_message.call_args.kwargs["view"]
         assert isinstance(view, bb._Confirm), action
     assert bb.open_challenge() is not None
+
+
+def test_hand_placed_item_hides_inside_its_aisle(shop, monkeypatch):
+    """A special added by hand keeps the host's price, skips Jev, and lands among the
+    aisle's items rather than tacked on the end; the aisle view offers the button."""
+    import random
+    shop.set_catalogue(shop.parse_catalogue(CATALOGUE), replace=True)
+    aisle = shop.catalogue()[0]["category"]
+    before = [i["name"] for i in shop.catalogue() if i["category"] == aisle]
+    monkeypatch.setattr(random, "choice", lambda xs: min(xs))
+    shop.add_hidden_item(aisle, "Diary Room Leak", 3000)
+    names = [i["name"] for i in shop.catalogue() if i["category"] == aisle]
+    assert names[0] == "Diary Room Leak" and names[1:] == before
+    assert next(i for i in shop.catalogue() if i["name"] == "Diary Room Leak")["price"] == 3000
+    shop.add_hidden_item(aisle, "diary room leak", 2500)          # same name again: reprices
+    assert [i["price"] for i in shop.catalogue() if i["name"].lower() == "diary room leak"] == [2500]
+
+    labels = [c.label for c in shop._CatalogueView(aisle).children]
+    assert "Add to this aisle" in labels and "Load saved list" not in labels
+    assert len([c for c in shop._CatalogueView(aisle).children if c.row == 4]) <= 5
