@@ -1806,6 +1806,41 @@ def test_panel_buttons_that_act_immediately_ask_first(bb, monkeypatch):
     assert bb.open_challenge() is not None
 
 
+def test_backdoor_evict_action_and_panel_limits(bb, monkeypatch):
+    """The control panel must stay at or under 40 components, and backdoor evict must evict silently."""
+    from unittest.mock import AsyncMock, MagicMock
+    v = bb.BigBrotherControlView(None)
+    total_comps = 0
+    for c in v.children:
+        total_comps += 1
+        if hasattr(c, "children"):
+            total_comps += len(c.children)
+            for sub in c.children:
+                if hasattr(sub, "children"):
+                    total_comps += len(sub.children)
+    assert total_comps <= 40, f"Control panel exceeds 40 components: {total_comps}"
+    assert "backdoor_evict" in bb.PANEL_ACTIONS
+    assert bb.PANEL_ACTIONS["backdoor_evict"] is bb._act_backdoor_evict
+
+    bb.db_add_housemate(999)
+    assert 999 in bb.housemates()
+
+    client = MagicMock()
+    monkeypatch.setattr(bb, "_sync_role", AsyncMock())
+    monkeypatch.setattr(bb, "_grant_spectator_access", AsyncMock())
+    monkeypatch.setattr(bb, "drop_from_threads", AsyncMock())
+    monkeypatch.setattr(bb, "bb_send", AsyncMock())
+    monkeypatch.setattr(bb, "dm_user", AsyncMock())
+
+    asyncio.run(bb.evict(client, 999, announce=False))
+    assert 999 not in bb.housemates()
+    assert bb.bb_send.await_count == 0  # not announced in house
+    last_event = bb.events()[-1]
+    assert last_event["kind"] == "evicted"
+    assert last_event["target"] == 999
+    assert last_event["announced"] is False
+
+
 def test_hand_placed_item_hides_inside_its_aisle(shop, monkeypatch):
     """A special added by hand keeps the host's price, skips Jev, and lands among the
     aisle's items rather than tacked on the end; the aisle view offers the button."""

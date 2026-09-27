@@ -2968,7 +2968,8 @@ class BigBrotherControlView(discord.ui.LayoutView):
                  _PanelButton("start_vote", "Start vote", discord.ButtonStyle.primary, "🗳️")],
                 [_PanelButton("standings", "Standings", emoji="📊"),
                  _PanelButton("close_vote", "Close vote", emoji="🔒"),
-                 _PanelButton("evict", "Evict housemate", discord.ButtonStyle.danger, "🚪")],
+                 _PanelButton("evict", "Evict", discord.ButtonStyle.danger, "🚪"),
+                 _PanelButton("backdoor_evict", "Backdoor", discord.ButtonStyle.danger, "🤫")],
             ]),
             ("### 🏠 Housemates", [
                 [_PanelButton("add", "Add housemates", discord.ButtonStyle.success, "➕"),
@@ -2987,12 +2988,10 @@ class BigBrotherControlView(discord.ui.LayoutView):
                  _PanelButton("challenge", "Challenge", emoji="🧠"),
                  _PanelButton("end_challenge", "End", emoji="🏁")],
             ]),
-            ("### 📣 Announcements & recaps", [
+            ("### 📣 Announcements & Shop", [
                 [_PanelButton("dm", "DM housemate", emoji="✉️"),
                  _PanelButton("broadcast", "Announce", emoji="📣"),
                  _PanelButton("roundup", "Summary so far", emoji="📰")],
-            ]),
-            ("### 🛒 The Shop", [
                 [_PanelButton("catalogue", "Catalogue", emoji="📋"),
                  _PanelButton("shop", "Close shop" if shop_open else "Open shop",
                               discord.ButtonStyle.danger if shop_open else discord.ButtonStyle.primary, "🛒")],
@@ -3575,6 +3574,31 @@ async def _act_evict(interaction: discord.Interaction):
                      interaction.guild, ins, picked, marked=default, style=discord.ButtonStyle.danger)
 
 
+async def _act_backdoor_evict(interaction: discord.Interaction):
+    ins = housemates()
+    if not ins:
+        await _reply(interaction, "Nobody to evict.", refresh=False)
+        return
+    last = get_state(STATE_LAST_VOTE_RESULT) or {}
+    default = [int(last["ranked"][0][0])] if last.get("ranked") and int(last["ranked"][0][0]) in ins else []
+
+    async def picked(inter: discord.Interaction, uid: int):
+        async def yes(inter2: discord.Interaction):
+            await inter2.response.defer(ephemeral=True)
+            await evict(inter2.client, uid, announce=False)
+            await notify_host(inter2.client, f"{EYE} 🤫 {_mention_and_name(inter2.guild, uid)} has been backdoor evicted (no announcement posted in the house).")
+            await _reply(inter2, f"Backdoor evicted {_name(inter2.guild, uid)}. Role removed and DMed, but NOT announced in the house channel.")
+
+        await inter.response.edit_message(
+            content=f"🤫 **Backdoor evict** **{_name(inter.guild, uid)}**?\n\nThis removes their housemate role and spectator access, but **DOES NOT post any announcement in the house channel**.",
+            view=_Confirm(yes, "Backdoor evict"))
+
+    await _send_pick(interaction,
+                     "🤫 Pick the housemate to backdoor evict (silent eviction)." + (" The last vote's top nominee is highlighted." if default else ""),
+                     interaction.guild, ins, picked, marked=default, style=discord.ButtonStyle.danger)
+
+
+
 async def _act_add(interaction: discord.Interaction):
     view = discord.ui.View(timeout=300)
     select = discord.ui.UserSelect(placeholder="Pick the new housemates", min_values=1, max_values=25)
@@ -3937,7 +3961,7 @@ async def _act_draft_roundup(interaction: discord.Interaction):
 PANEL_ACTIONS = {
     "catalogue": _act_catalogue, "shop": _act_shop, "teams": _act_teams,
     "start": _act_start, "who": _act_who, "silence": _act_silence, "open_noms": _act_open_noms, "close_noms": _act_close_noms, "start_vote": _act_start_vote,
-    "close_vote": _act_close_vote, "standings": _act_standings, "evict": _act_evict, "add": _act_add, "immunity": _act_immunity,
+    "close_vote": _act_close_vote, "standings": _act_standings, "evict": _act_evict, "backdoor_evict": _act_backdoor_evict, "add": _act_add, "immunity": _act_immunity,
     "mission": _act_mission, "resolve_mission": _act_resolve_mission, "challenge": _act_challenge,
     "token": _act_token, "snug": _act_snug,
     "end_challenge": _act_end_challenge, "dm": _act_dm, "broadcast": _act_broadcast,
