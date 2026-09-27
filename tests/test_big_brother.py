@@ -1838,7 +1838,7 @@ def test_backdoor_evict_action_and_panel_limits(bb, monkeypatch):
     assert bb.bb_send.await_count == 0  # not announced in house
     last_event = bb.events()[-1]
     assert last_event["kind"] == "evicted"
-    assert last_event["target"] == 999
+    assert last_event["target_id"] == 999
     assert last_event["announced"] is False
 
 
