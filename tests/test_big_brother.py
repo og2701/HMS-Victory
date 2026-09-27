@@ -164,7 +164,7 @@ def test_panel_text_and_view_have_no_secrets(bb):
     assert view.timeout is None
     ids = [c.custom_id for row in view.children[0].children
            if hasattr(row, "children") for c in row.children]
-    assert len(ids) == 25 and len(set(ids)) == 25
+    assert len(ids) == 26 and len(set(ids)) == 26
     assert set(ids) == {f"bb:ctl:{a}" for a in bb.PANEL_ACTIONS}
     # Rows stay within Discord's 5-button-per-row ceiling.
     assert all(len(row.children) <= 5 for row in view.children[0].children if hasattr(row, "children"))
@@ -1808,6 +1808,7 @@ def test_panel_buttons_that_act_immediately_ask_first(bb, monkeypatch):
 
 def test_backdoor_evict_action_and_panel_limits(bb, monkeypatch):
     """The control panel must stay at or under 40 components, and backdoor evict must evict silently."""
+    import asyncio
     from unittest.mock import AsyncMock, MagicMock
     v = bb.BigBrotherControlView(None)
     total_comps = 0
