@@ -425,6 +425,14 @@ def spend_token(user_id: int) -> bool:
     return bool(changed)
 
 
+def transfer_token(sender_id: int, recipient_id: int) -> Optional[int]:
+    """Atomically transfer 1 token from sender to recipient. Returns recipient's new token count, or None if sender had no tokens."""
+    ensure_tables()
+    if not spend_token(sender_id):
+        return None
+    return grant_token(recipient_id, 1)
+
+
 def set_immune(user_id: int, immune: bool) -> None:
     DatabaseManager.execute("UPDATE bb_housemates SET immune = ? WHERE user_id = ?",
                             (1 if immune else 0, str(user_id)))
@@ -3701,7 +3709,7 @@ def _token_blurb(total: int) -> str:
     return (f"You now hold **{total}** immunity token{'s' if total != 1 else ''}.\n\n"
             f"Press **Use immunity** on the house panel to spend one:\n"
             f"• protect yourself from the next nominations\n"
-            f"• give that protection to another housemate\n"
+            f"• transfer a token to another housemate\n"
             f"• or bank it, and if you're ever facing the public vote, swap yourself out for "
             f"a housemate who wasn't nominated.")
 
@@ -4122,21 +4130,23 @@ async def handle_use_immunity(interaction: discord.Interaction):
 
     async def _gift(inter: discord.Interaction):
         async def picked(inter2: discord.Interaction, target: int):
-            if target in immune_ids():
-                await inter2.response.edit_message(content=f"{_name(inter2.guild, target)} is already immune.", view=None)
+            if target not in housemates():
+                await inter2.response.edit_message(content="That housemate is no longer in the house.", view=None)
                 return
-            if not spend_token(me):
+            new_total = transfer_token(me, target)
+            if new_total is None:
                 await inter2.response.edit_message(content="No token left.", view=None)
                 return
-            set_immune(target, True)
-            log_event("immunity_used", actor=me, target=target, mode="gift")
+            log_event("immunity_used", actor=me, target=target, mode="gift", tokens=new_total)
             asyncio.create_task(dm_user(inter2.client, target, embed=bb_embed(
-                "A gift", f"{_name(inter2.guild, me)} has given you immunity from the next nominations.")))
-            asyncio.create_task(notify_host(inter2.client, f"{EYE} {_mention_and_name(inter2.guild, me)} gave immunity to {_mention_and_name(inter2.guild, target)}."))
+                "A gift", f"{_name(inter2.guild, me)} has given you an immunity token!\n\n"
+                          f"You now hold **{new_total}** token{'s' if new_total != 1 else ''}. "
+                          f"You can spend it anytime via **Use immunity** on the house panel.")))
+            asyncio.create_task(notify_host(inter2.client, f"{EYE} {_mention_and_name(inter2.guild, me)} transferred an immunity token to {_mention_and_name(inter2.guild, target)} (now holds {new_total})."))
             await inter2.response.edit_message(
-                content=f"{EYE} Done. {_name(inter2.guild, target)} is immune from the next nominations, and knows it came from you.", view=None)
+                content=f"{EYE} Done. You transferred an immunity token to {_name(inter2.guild, target)}. They now hold {new_total} token{'s' if new_total != 1 else ''} and know it came from you.", view=None)
             asyncio.create_task(refresh_panel(inter2.client))
-        await _send_pick(inter, "Who gets your immunity?", inter.guild, others, picked, edit=True)
+        await _send_pick(inter, "Who gets your token?", inter.guild, others, picked, edit=True)
 
     async def _swap(inter: discord.Interaction):
         vote_now = open_round(KIND_VOTE)
@@ -4195,7 +4205,7 @@ async def handle_use_immunity(interaction: discord.Interaction):
     await interaction.response.send_message(
         f"🎟️ You hold **{have}** immunity token{'s' if have != 1 else ''}. Spend one how?\n"
         f"• **Protect myself**: nobody can nominate you in the next round.\n"
-        f"• **Give to a housemate**: they get that protection instead, and they'll know it was you.\n"
+        f"• **Give to a housemate**: transfer the token to them to spend however they like, and they'll know it was you.\n"
         f"• **Save & replace**: only while you're facing the public vote. You leave the line-up and pick who replaces you."
         + ("" if facing else "\n-# You're not facing a vote right now, so that one's greyed out."),
         view=view, ephemeral=True)
@@ -4558,7 +4568,7 @@ def build_rundown(guild: Optional[discord.Guild]) -> tuple[dict, str]:
             detail = f"{kind.replace('_', ' ')}: {e.get('title', '')}" + (f" - won by {who}" if who else "")
         elif kind == "immunity_used":
             detail = {"self": f"{who} used immunity on themselves",
-                      "gift": f"{who} gave immunity to {tgt}",
+                      "gift": f"{who} transferred an immunity token to {tgt}",
                       "swap": f"{who} used save-and-replace: {tgt} takes their place in the vote"}.get(e.get("mode"), kind)
         elif kind == "token_granted":
             detail = f"{tgt} earned an immunity token ({e.get('source', '')}), now holds {e.get('tokens')}"

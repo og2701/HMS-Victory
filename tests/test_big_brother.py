@@ -245,6 +245,19 @@ def test_tokens_immunity_and_swap(bb):
     assert bb.grant_token(1) == 1
     assert bb.spend_token(1) and not bb.spend_token(1)
 
+    # Token transfer between housemates
+    assert bb.grant_token(1, 2) == 2
+    assert bb.tokens_of(2) == 0
+    assert bb.transfer_token(1, 2) == 1
+    assert bb.tokens_of(1) == 1
+    assert bb.tokens_of(2) == 1
+    assert bb.transfer_token(1, 2) == 2
+    assert bb.tokens_of(1) == 0
+    assert bb.tokens_of(2) == 2
+    assert bb.transfer_token(1, 2) is None  # sender has no tokens left
+    assert bb.tokens_of(1) == 0
+    assert bb.tokens_of(2) == 2
+
     bb.set_immune(2, True)
     assert bb.immune_ids() == {2}
     assert bb.clear_all_immunity() == [2]
@@ -1147,6 +1160,14 @@ def test_the_safe_are_kept_off_the_ballot(bb):
     # Save and replace still reaches anyone who isn't already on the block.
     swap = inspect.getsource(bb.handle_use_immunity)
     assert "eviction_safe_ids()" not in swap
+
+
+def test_gift_immunity_transfers_token(bb):
+    import inspect
+    src = inspect.getsource(bb.handle_use_immunity)
+    assert "transfer_token(me, target)" in src
+    assert "set_immune(target, True)" not in src
+    assert "Who gets your token?" in src
 
 
 def test_a_mission_can_be_paid_in_eviction_safety(bb):
