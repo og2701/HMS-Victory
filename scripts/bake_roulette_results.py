@@ -1,10 +1,12 @@
 """Pre-render the roulette spin GIFs.
 
-The ticker animation depends only on the winning number (0-36), so we render each of the
-37 outcomes once here and the bot serves them instantly at spin time. Also bakes one
-generic looping "spinner" used as the loader / fallback before the 37 are deployed.
+The spin animation (the wheel slowing while the ball drops into its pocket) depends only
+on the winning number (0-36), so we render each of the 37 outcomes once here and the bot
+serves them instantly at spin time. Also bakes one generic looping "spinner" used as the
+loader / fallback before the 37 are in place.
 
-Run on a machine with the bot's deps + headless Chrome (NOT this sandbox):
+The GIFs aren't committed (they're ~MBs each and change whenever the design does), so run
+this on the VM after deploying a change to the spin, with the bot's venv:
 
     python scripts/bake_roulette_results.py            # all 37 + spinner
     python scripts/bake_roulette_results.py --sample    # a handful to eyeball

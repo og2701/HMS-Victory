@@ -26,7 +26,6 @@ from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, remove_bb
 from lib.economy.casino_stats import record_result
-from lib.core.file_operations import read_html_template
 import commands.economy.casino_base as cb
 from lib.economy import casino_felt as felt
 from lib.economy import roulette_board
@@ -144,127 +143,29 @@ class BetSlip:
 # Spin ticker animation (pre-generated; one GIF per outcome 0..36), rendered on
 # the same felt-table shell as the table/result so the phases are one table.
 # ---------------------------------------------------------------------------
-SHELL_TEMPLATE = "templates/casino_table.html"
-CELL_W = 130
-VIEW_W = 688                # = .table width 760 - .body padding (36*2)
-VIEW_H = 240
-CENTER_X = VIEW_W / 2
-LEADIN = 72                 # pockets scrolled through (doubled for a ~2x longer spin)
-HALF = 3
-TARGET_IDX = LEADIN + HALF
-SPIN_STOP = 88              # frames of deceleration (doubled)
-SPIN_HOLD = 6
-SPIN_FRAME_MS = 60
-SPIN_FINAL_MS = 2200
-
-_TICKER_CSS = (
-    "<style>"
-    f".rl-vp{{position:relative;width:{VIEW_W}px;height:{VIEW_H}px;overflow:hidden;border-radius:14px;"
-    "background:linear-gradient(180deg,#0c2a52,#061d3e);"
-    "box-shadow:inset 0 0 0 3px rgba(214,164,74,.55),inset 0 0 44px rgba(0,0,0,.6);}"
-    ".rl-track{position:absolute;top:32px;display:flex;height:176px;}"
-    f".rl-pk{{width:{CELL_W}px;height:176px;flex:none;display:flex;align-items:center;justify-content:center;"
-    "font-family:Georgia,serif;font-weight:800;font-size:64px;color:#fff;"
-    "border-right:2px solid rgba(0,0,0,.55);text-shadow:0 2px 4px rgba(0,0,0,.55);}"
-    ".rl-pk.red{background:linear-gradient(180deg,#c62a35,#9c1f29);}"
-    ".rl-pk.black{background:linear-gradient(180deg,#262a30,#121316);}"
-    ".rl-pk.green{background:linear-gradient(180deg,#1d9a52,#10683a);}"
-    ".rl-pk.win{box-shadow:inset 0 0 0 5px #ffd95e,inset 0 0 30px rgba(255,217,94,.45);}"
-    ".rl-ptr{position:absolute;top:8px;left:50%;margin-left:-14px;z-index:3;width:0;height:0;"
-    "border-left:14px solid transparent;border-right:14px solid transparent;border-top:20px solid #ffd95e;"
-    "filter:drop-shadow(0 2px 3px rgba(0,0,0,.7));}"
-    ".rl-cl{position:absolute;top:32px;height:176px;left:50%;width:0;z-index:2;"
-    "box-shadow:0 0 0 1px rgba(255,217,94,.55),0 0 16px rgba(255,217,94,.4);}"
-    ".rl-fl,.rl-fr{position:absolute;top:32px;height:176px;width:150px;z-index:2;pointer-events:none;}"
-    ".rl-fl{left:0;background:linear-gradient(90deg,#08214a,rgba(8,33,74,0));}"
-    ".rl-fr{right:0;background:linear-gradient(270deg,#08214a,rgba(8,33,74,0));}"
-    "</style>"
-)
-
-
-def _ease_out_cubic(p: float) -> float:
-    return 1 - (1 - p) ** 3
-
-
-def _track_numbers(target: int) -> list:
-    w = WHEEL_ORDER.index(target)
-    length = LEADIN + 2 * HALF + 1
-    return [WHEEL_ORDER[(w + (i - TARGET_IDX)) % 37] for i in range(length)]
-
-
-def _ticker_body(nums: list, left: float, *, win_idx: int = None) -> str:
-    cells = "".join(
-        f'<div class="rl-pk {color(x)}{" win" if i == win_idx else ""}">{x}</div>'
-        for i, x in enumerate(nums)
-    )
-    return (
-        _TICKER_CSS
-        + '<div class="rl-vp"><div class="rl-ptr"></div><div class="rl-cl"></div>'
-        + f'<div class="rl-track" style="left:{left:.1f}px">{cells}</div>'
-        + '<div class="rl-fl"></div><div class="rl-fr"></div></div>'
-    )
-
-
-def _fill_shell(template: str, body: str, *, subtitle: str, hint: str,
-                bet: str = "-", balance: str = "-", banner: str = "") -> str:
-    # Replace the exact body <div>, not the bare {{BODY}} - the template's CSS comment also
-    # contains the literal "{{BODY}}", and a body carrying </style> would otherwise close
-    # the head <style> early and kill the shell styling.
-    return (
-        template
-        .replace("{{TITLE_MAIN}}", "EUROPEAN").replace("{{TITLE_ACCENT}}", "ROULETTE")
-        .replace("{{SUBTITLE}}", subtitle)
-        .replace('<div class="body">{{BODY}}</div>', f'<div class="body">{body}</div>')
-        .replace("{{BET_LABEL}}", "Pot").replace("{{BALANCE_LABEL}}", "Players")
-        .replace("{{BET_UNIT}}", "").replace("{{BALANCE_UNIT}}", "")
-        .replace("{{BET}}", bet).replace("{{BALANCE}}", balance)
-        .replace("{{HINT}}", hint)
-        .replace("{{RESULT_BANNER}}", banner).replace("{{SESSION}}", "")
-    )
-
-
-def build_spin_frames(target: int) -> list:
-    nums = _track_numbers(target)
-    template = read_html_template(SHELL_TEMPLATE)
-    final_left = CENTER_X - (TARGET_IDX * CELL_W + CELL_W / 2)
-    start_left = final_left + LEADIN * CELL_W
-    n = SPIN_STOP + SPIN_HOLD
-    frames = []
-    for f in range(n + 1):
-        landed = f >= SPIN_STOP
-        p = 1.0 if landed else _ease_out_cubic(f / SPIN_STOP)
-        left = start_left + (final_left - start_left) * p
-        body = _ticker_body(nums, left, win_idx=(TARGET_IDX if landed else None))
-        frames.append(_fill_shell(template, body, subtitle="No more bets - where will the ball land?",
-                                  hint="Spinning…"))
-    return frames
-
-
-def build_spinner_frames() -> list:
-    template = read_html_template(SHELL_TEMPLATE)
-    nums = WHEEL_ORDER * 2
-    span = 37 * CELL_W
-    start = CENTER_X - CELL_W / 2
-    n = 30
-    return [_fill_shell(template, _ticker_body(nums, start - span * (f / n)),
-                        subtitle="No more bets - where will the ball land?", hint="Spinning…")
-            for f in range(n)]
+# The spin is a GIF per outcome, baked ahead of time (scripts/bake_roulette_results.py): the
+# wheel slowing to a stop while the ball runs the other way and drops into the pocket.
+# Frames come from lib/economy/roulette_board.py; flat colours and one shared palette keep
+# each GIF a few MB, well inside Discord's upload limit.
+SPIN_SIZE_PX = (820, 1100)
+SPIN_COLOURS = 96
 
 
 async def render_result_gif(target: int) -> io.BytesIO:
     from lib.core.image_processing import screenshot_html_sequence
-    frames = build_spin_frames(target)
-    durations = [SPIN_FRAME_MS] * (len(frames) - 1) + [SPIN_FINAL_MS]
+    frames = roulette_board.spin_frames(target)
+    durations = [roulette_board.SPIN_FRAME_MS] * (len(frames) - 1) + [roulette_board.SPIN_HOLD_MS]
     return await screenshot_html_sequence(
-        frames, size=(900, 1500), element_selector=".table", durations=durations, loop=None)
+        frames, size=SPIN_SIZE_PX, element_selector=".felt", durations=durations, loop=None,
+        colors=SPIN_COLOURS)
 
 
 async def render_spinner_gif() -> io.BytesIO:
     from lib.core.image_processing import screenshot_html_sequence
-    frames = build_spinner_frames()
+    frames = roulette_board.spinner_frames()
     return await screenshot_html_sequence(
-        frames, size=(900, 1500), element_selector=".table",
-        durations=[SPIN_FRAME_MS] * len(frames), loop=0)
+        frames, size=SPIN_SIZE_PX, element_selector=".felt",
+        durations=[roulette_board.SPIN_FRAME_MS] * len(frames), loop=0, colors=SPIN_COLOURS)
 
 
 def results_dir() -> str:

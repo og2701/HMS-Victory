@@ -25,6 +25,9 @@ venv/
 data/iceberg_cache.png
 data/shop_preview_cache/
 data/slots_results/
+# roulette spin GIFs: baked on the VM with scripts/bake_roulette_results.py, not committed
+data/roulette_results/
+data/roulette_spinning/
 .chrome_data/
 scripts-local/
 .agents/

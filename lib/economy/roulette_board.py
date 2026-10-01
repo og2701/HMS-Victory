@@ -136,15 +136,27 @@ def layout_svg(table, result=None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# The wheel (shown small in the results rail)
+# The wheel: small in the results rail, big in the spin animation
 # ---------------------------------------------------------------------------
-def wheel_svg(result: int, size: int = 200) -> str:
-    """A top-down wheel turned so the winning pocket sits under the marker, with the ball in it."""
+STEP = 360 / 37
+# Radii as fractions of the wheel's radius
+RIM, TRACK, NUM, POCKET, TURRET = 0.987, 0.85, 0.735, 0.606, 0.148
+BALL_TRACK, BALL_POCKET = 0.915, (POCKET + NUM) / 2
+
+
+def wheel_svg(result=None, size: int = 200, *, turn=None, ball=None, lit: bool = True,
+              flat: bool = False) -> str:
+    """A top-down wheel.
+
+    With just `result` it's turned so that pocket sits under the marker, ball in it and lit.
+    `turn` (degrees) and `ball` ((angle, radius fraction), angle 0 at the top) draw any
+    moment of a spin. `flat` drops the gradients - a spinning GIF compresses far better."""
     R = _rules()
     c = size / 2
-    rim, track, num, pocket, turret = c * 0.987, c * 0.85, c * 0.735, c * 0.606, c * 0.148
-    step = 360 / 37
-    turn = -R.WHEEL_ORDER.index(result) * step
+    if turn is None:
+        turn = -R.WHEEL_ORDER.index(result) * STEP if result is not None else 0.0
+    if ball is None and result is not None:
+        ball = (0.0, BALL_POCKET)
     pocket_fill = {"red": "#7E1820", "black": "#0A0B0D", "green": "#0C5A33"}
 
     def pt(r, a):
@@ -156,46 +168,119 @@ def wheel_svg(result: int, size: int = 200) -> str:
         return (f"M{p1[0]:.2f} {p1[1]:.2f} A{r1:.2f} {r1:.2f} 0 0 1 {p2[0]:.2f} {p2[1]:.2f} L{p3[0]:.2f} {p3[1]:.2f} "
                 f"A{r0:.2f} {r0:.2f} 0 0 0 {p4[0]:.2f} {p4[1]:.2f} Z")
 
-    o = [f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg"><defs>'
-         '<radialGradient id="wwood" cx="0.5" cy="0.45" r="0.6"><stop offset="0.7" stop-color="#7A4A26"/><stop offset="0.9" stop-color="#4A2A14"/><stop offset="1" stop-color="#2A160A"/></radialGradient>'
-         '<radialGradient id="wtrack" cx="0.5" cy="0.4" r="0.6"><stop offset="0" stop-color="#5C3A20"/><stop offset="1" stop-color="#2E1B0E"/></radialGradient>'
-         '<radialGradient id="wcone" cx="0.45" cy="0.4" r="0.6"><stop offset="0" stop-color="#9A6638"/><stop offset="0.7" stop-color="#5E3A1E"/><stop offset="1" stop-color="#3A2210"/></radialGradient>'
-         '<radialGradient id="wchrome" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#FFFFFF"/><stop offset="0.35" stop-color="#C9CED6"/><stop offset="0.7" stop-color="#7C838E"/><stop offset="1" stop-color="#3A3F47"/></radialGradient>'
-         '<radialGradient id="wball" cx="0.35" cy="0.3" r="0.7"><stop offset="0" stop-color="#FFFFFF"/><stop offset="0.6" stop-color="#E8E8E8"/><stop offset="1" stop-color="#9A9A9A"/></radialGradient>'
-         '<radialGradient id="wgloss" cx="0.35" cy="0.25" r="0.75"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/><stop offset="0.6" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>'
-         '<filter id="wglow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.5"/></filter>'
-         "</defs>"]
-    o.append(f'<circle cx="{c}" cy="{c}" r="{rim:.1f}" fill="url(#wwood)"/>')
-    o.append(f'<circle cx="{c}" cy="{c}" r="{track:.1f}" fill="url(#wtrack)" stroke="#1C0F06" stroke-width="{max(1, c * 0.01):.1f}"/>')
+    if flat:
+        wood, track_fill, cone, chrome, ball_fill = "#5E3A1E", "#3A2414", "#6B4424", "#C9CED6", "#F2F2F2"
+        defs = ""
+    else:
+        wood, track_fill, cone, chrome, ball_fill = "url(#wwood)", "url(#wtrack)", "url(#wcone)", "url(#wchrome)", "url(#wball)"
+        defs = ('<radialGradient id="wwood" cx="0.5" cy="0.45" r="0.6"><stop offset="0.7" stop-color="#7A4A26"/><stop offset="0.9" stop-color="#4A2A14"/><stop offset="1" stop-color="#2A160A"/></radialGradient>'
+                '<radialGradient id="wtrack" cx="0.5" cy="0.4" r="0.6"><stop offset="0" stop-color="#5C3A20"/><stop offset="1" stop-color="#2E1B0E"/></radialGradient>'
+                '<radialGradient id="wcone" cx="0.45" cy="0.4" r="0.6"><stop offset="0" stop-color="#9A6638"/><stop offset="0.7" stop-color="#5E3A1E"/><stop offset="1" stop-color="#3A2210"/></radialGradient>'
+                '<radialGradient id="wchrome" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#FFFFFF"/><stop offset="0.35" stop-color="#C9CED6"/><stop offset="0.7" stop-color="#7C838E"/><stop offset="1" stop-color="#3A3F47"/></radialGradient>'
+                '<radialGradient id="wball" cx="0.35" cy="0.3" r="0.7"><stop offset="0" stop-color="#FFFFFF"/><stop offset="0.6" stop-color="#E8E8E8"/><stop offset="1" stop-color="#9A9A9A"/></radialGradient>'
+                '<radialGradient id="wgloss" cx="0.35" cy="0.25" r="0.75"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/><stop offset="0.6" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>')
+    o = [f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg"><defs>{defs}'
+         '<filter id="wglow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.5"/></filter></defs>']
+    o.append(f'<circle cx="{c}" cy="{c}" r="{c * RIM:.1f}" fill="{wood}"/>')
+    o.append(f'<circle cx="{c}" cy="{c}" r="{c * TRACK:.1f}" fill="{track_fill}" stroke="#1C0F06" stroke-width="{max(1, c * 0.01):.1f}"/>')
     o.append(f'<g transform="rotate({turn:.3f} {c} {c})">')
     for i, n in enumerate(R.WHEEL_ORDER):
-        a0, a1 = i * step - step / 2, i * step + step / 2
-        o.append(f'<path d="{sector(num, track * 0.98, a0, a1)}" fill="{FILL[R.color(n)]}" stroke="#D9C38A" stroke-opacity="0.55" stroke-width="0.6"/>')
-        o.append(f'<path d="{sector(pocket, num, a0, a1)}" fill="{pocket_fill[R.color(n)]}"/>')
-        tr = (num + track * 0.98) / 2
-        tx, ty = pt(tr, i * step)
-        o.append(f'<text x="{tx:.1f}" y="{ty:.1f}" transform="rotate({i * step:.2f} {tx:.1f} {ty:.1f})" text-anchor="middle" '
+        a0, a1 = i * STEP - STEP / 2, i * STEP + STEP / 2
+        o.append(f'<path d="{sector(c * NUM, c * TRACK * 0.98, a0, a1)}" fill="{FILL[R.color(n)]}" stroke="#D9C38A" stroke-opacity="0.55" stroke-width="0.6"/>')
+        o.append(f'<path d="{sector(c * POCKET, c * NUM, a0, a1)}" fill="{pocket_fill[R.color(n)]}"/>')
+        tx, ty = pt((c * NUM + c * TRACK * 0.98) / 2, i * STEP)
+        o.append(f'<text x="{tx:.1f}" y="{ty:.1f}" transform="rotate({i * STEP:.2f} {tx:.1f} {ty:.1f})" text-anchor="middle" '
                  f'dominant-baseline="central" font-family="DM Serif Display" font-size="{c * 0.068:.1f}" fill="#FFFFFF">{n}</text>')
-        f0, f1 = pt(pocket, a0), pt(num, a0)
+        f0, f1 = pt(c * POCKET, a0), pt(c * NUM, a0)
         o.append(f'<line x1="{f0[0]:.1f}" y1="{f0[1]:.1f}" x2="{f1[0]:.1f}" y2="{f1[1]:.1f}" stroke="#E6E9EE" stroke-width="{max(0.8, c * 0.007):.1f}"/>')
-    for r in (num, pocket):
-        o.append(f'<circle cx="{c}" cy="{c}" r="{r:.1f}" fill="none" stroke="#E6E9EE" stroke-width="{max(0.8, c * 0.008):.1f}"/>')
-    o.append(f'<circle cx="{c}" cy="{c}" r="{pocket * 0.98:.1f}" fill="url(#wcone)"/>')
+    for r in (NUM, POCKET):
+        o.append(f'<circle cx="{c}" cy="{c}" r="{c * r:.1f}" fill="none" stroke="#E6E9EE" stroke-width="{max(0.8, c * 0.008):.1f}"/>')
+    o.append(f'<circle cx="{c}" cy="{c}" r="{c * POCKET * 0.98:.1f}" fill="{cone}"/>')
     for k in range(4):
-        end = pt(turret + c * 0.15, k * 90)
+        end = pt(c * TURRET + c * 0.15, k * 90)
         o.append(f'<line x1="{c}" y1="{c}" x2="{end[0]:.1f}" y2="{end[1]:.1f}" stroke="#AEB4BD" stroke-width="{c * 0.04:.1f}" stroke-linecap="round"/>')
-        o.append(f'<circle cx="{end[0]:.1f}" cy="{end[1]:.1f}" r="{c * 0.033:.1f}" fill="url(#wchrome)"/>')
-    o.append(f'<circle cx="{c}" cy="{c}" r="{turret:.1f}" fill="url(#wchrome)" stroke="#2A2E35" stroke-width="{max(0.8, c * 0.006):.1f}"/>')
+        o.append(f'<circle cx="{end[0]:.1f}" cy="{end[1]:.1f}" r="{c * 0.033:.1f}" fill="{chrome}"/>')
+    o.append(f'<circle cx="{c}" cy="{c}" r="{c * TURRET:.1f}" fill="{chrome}" stroke="#2A2E35" stroke-width="{max(0.8, c * 0.006):.1f}"/>')
     o.append("</g>")
-    # the winning pocket (now at the top), outlined, with the ball in it
-    win = sector(pocket, track * 0.98, -step / 2, step / 2)
-    o.append(f'<path d="{win}" fill="none" stroke="{GOLD}" stroke-width="{c * 0.04:.1f}" filter="url(#wglow)"/>')
-    o.append(f'<path d="{win}" fill="none" stroke="{GOLD}" stroke-width="{c * 0.02:.1f}"/>')
-    by = c - (pocket + num) / 2
-    o.append(f'<circle cx="{c + c * 0.01:.1f}" cy="{by + c * 0.012:.1f}" r="{c * 0.042:.1f}" fill="#000000" opacity="0.45"/>')
-    o.append(f'<circle cx="{c}" cy="{by:.1f}" r="{c * 0.042:.1f}" fill="url(#wball)"/>')
-    o.append(f'<circle cx="{c}" cy="{c}" r="{rim:.1f}" fill="url(#wgloss)"/>')
+    if result is not None and lit:
+        # the winning pocket sits at the top once the wheel stops
+        win = sector(c * POCKET, c * TRACK * 0.98, -STEP / 2, STEP / 2)
+        o.append(f'<path d="{win}" fill="none" stroke="{GOLD}" stroke-width="{c * 0.04:.1f}" filter="url(#wglow)"/>')
+        o.append(f'<path d="{win}" fill="none" stroke="{GOLD}" stroke-width="{c * 0.02:.1f}"/>')
+    if ball is not None:
+        bx, by = pt(c * ball[1], ball[0])
+        o.append(f'<circle cx="{bx + c * 0.01:.1f}" cy="{by + c * 0.012:.1f}" r="{c * 0.042:.1f}" fill="#000000" opacity="0.45"/>')
+        o.append(f'<circle cx="{bx:.1f}" cy="{by:.1f}" r="{c * 0.042:.1f}" fill="{ball_fill}"/>')
+    if not flat:
+        o.append(f'<circle cx="{c}" cy="{c}" r="{c * RIM:.1f}" fill="url(#wgloss)"/>')
+    o.append(f'<polygon points="{c - c * 0.045:.1f},0 {c + c * 0.045:.1f},0 {c},{c * 0.07:.1f}" fill="{GOLD}" stroke="#6B4E12" stroke-width="1"/>')
     return "".join(o) + "</svg>"
+
+
+# ---------------------------------------------------------------------------
+# The spin: frames for a GIF, baked once per outcome (scripts/bake_roulette_results.py)
+# ---------------------------------------------------------------------------
+SPIN_FRAMES = 52          # frames of motion; the bot shows the GIF, then the results board
+SPIN_FRAME_MS = 65
+SPIN_HOLD_MS = 2200       # the last frame: the ball in its pocket, lit
+SPIN_WHEEL_TURN = 300     # degrees the wheel turns while slowing (under a full turn, so it doesn't strobe)
+SPIN_BALL_LAPS = 2.0      # laps the ball makes the other way before it drops
+SPIN_LAND = 0.8           # fraction of the spin at which the ball settles in its pocket
+SPIN_SIZE = 640
+
+
+def _ease_out(p):
+    return 1 - (1 - p) ** 3
+
+
+def spin_positions(target: int, frames: int = SPIN_FRAMES) -> list:
+    """(wheel turn, ball angle, ball radius) per frame. The wheel slows to a stop with the
+    target pocket under the marker; the ball runs the other way round the track, drops in,
+    and rides the wheel home."""
+    R = _rules()
+    final = -R.WHEEL_ORDER.index(target) * STEP
+    pocket = R.WHEEL_ORDER.index(target) * STEP
+
+    def turn(p):
+        return final + SPIN_WHEEL_TURN * (1 - _ease_out(p))
+
+    land_angle = turn(SPIN_LAND) + pocket
+    out = []
+    for f in range(frames):
+        p = f / (frames - 1)
+        w = turn(p)
+        if p >= SPIN_LAND:
+            out.append((w, w + pocket, BALL_POCKET))
+            continue
+        q = p / SPIN_LAND
+        angle = land_angle - 360 * SPIN_BALL_LAPS * (1 - _ease_out(q))
+        drop = max(0.0, (q - 0.6) / 0.4)                    # leaves the track in the last 40%
+        radius = BALL_TRACK + (BALL_POCKET - BALL_TRACK) * drop ** 1.5
+        radius += 0.03 * math.sin(drop * math.pi * 3) * (1 - drop)   # a couple of bounces off the frets
+        out.append((w, angle, radius))
+    return out
+
+
+def _spin_page(wheel: str, head: str = "No more bets", sub: str = "Where will it land?") -> str:
+    body = f'<div style="display:flex;justify-content:center;padding:6px 0 4px">{wheel}</div>'
+    return felt.build_page("European Roulette", "No more bets", body, felt.rail(head, sub))
+
+
+def spin_frames(target: int) -> list:
+    R = _rules()
+    pages = [_spin_page(wheel_svg(target, SPIN_SIZE, turn=w, ball=(a, r), lit=False, flat=True))
+             for w, a, r in spin_positions(target)]
+    # stopped, lit, and named - the results board follows
+    pages.append(_spin_page(wheel_svg(target, SPIN_SIZE, flat=True),
+                            f"{target} · {R.color(target).capitalize()}", "The ball has landed"))
+    return pages
+
+
+def spinner_frames(frames: int = 37) -> list:
+    """A seamless loop: the wheel moves one pocket a frame, the ball laps twice the other way."""
+    return [_spin_page(wheel_svg(None, SPIN_SIZE, turn=-f * STEP, flat=True,
+                                 ball=(f * 720 / frames, BALL_TRACK)))
+            for f in range(frames)]
 
 
 # ---------------------------------------------------------------------------

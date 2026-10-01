@@ -387,7 +387,8 @@ def _screenshot_html_sequence_sync(
     size: Tuple[int, int] = (1600, 1000),
     element_selector: str = None,
     durations: list = None,
-    loop: int = None
+    loop: int = None,
+    colors: int = None,
 ) -> io.BytesIO:
     """Synchronous implementation of screenshot_html_sequence."""
     global _browser, _render_count
@@ -485,6 +486,8 @@ def _screenshot_html_sequence_sync(
             images = []
             for p_bytes in png_frames:
                 images.append(Image.open(io.BytesIO(p_bytes)))
+            if colors:
+                images = _shared_palette(images, colors)
 
             buffer = io.BytesIO()
             # Default to 180ms per frame if durations is not provided
@@ -523,19 +526,32 @@ def _screenshot_html_sequence_sync(
     raise last_err
 
 
+def _shared_palette(images: list, colors: int) -> list:
+    """Map every frame onto one palette, without dithering. Per-frame palettes and dither
+    noise make neighbouring frames differ everywhere, so the GIF can't reuse anything;
+    with one flat palette only the pixels that actually moved change."""
+    sample = Image.new("RGB", (images[0].width, images[0].height * 3))
+    for i, frame in enumerate((images[0], images[len(images) // 2], images[-1])):
+        sample.paste(frame.convert("RGB"), (0, frame.height * i))
+    palette = sample.quantize(colors=colors, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    return [frame.convert("RGB").quantize(palette=palette, dither=Image.Dither.NONE) for frame in images]
+
+
 async def screenshot_html_sequence(
     html_strings: list,
     size: Tuple[int, int] = (1600, 1000),
     *,
     element_selector: str = None,
     durations: list = None,
-    loop: int = None
+    loop: int = None,
+    colors: int = None,
 ) -> io.BytesIO:
-    """Render a sequence of HTML strings into an animated GIF (non-blocking, queued)."""
+    """Render a sequence of HTML strings into an animated GIF (non-blocking, queued).
+    colors maps every frame onto one shared palette of that size (much smaller GIFs)."""
     async with rendering_lock:
         async_loop = asyncio.get_event_loop()
         return await async_loop.run_in_executor(
-            None, _screenshot_html_sequence_sync, html_strings, size, element_selector, durations, loop
+            None, _screenshot_html_sequence_sync, html_strings, size, element_selector, durations, loop, colors
         )
 
 
