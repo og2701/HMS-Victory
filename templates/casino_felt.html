@@ -51,7 +51,8 @@
   .fan .card + .card { box-shadow: -8px 6px 20px rgba(0,0,0,0.4); }
   .card.red { color: var(--red); }
   .card .idx { position: absolute; display: flex; flex-direction: column; align-items: center; }
-  .card .idx b { font-family: 'DM Serif Display', serif; font-weight: 400; }
+  /* Room under the rank: DM Serif's Q tail drops below the line and would hit the suit. */
+  .card .idx b { font-family: 'DM Serif Display', serif; font-weight: 400; padding-bottom: 0.18em; }
   .card .idx i { font-style: normal; font-family: var(--suit); }
   .card .pip { position: absolute; inset: 0; padding-top: 8%; display: flex; align-items: center; justify-content: center; font-family: var(--suit); line-height: 1; }
   .fan .card:not(:last-child) .pip { display: none; }
