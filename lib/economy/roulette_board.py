@@ -48,7 +48,7 @@ def player_colours(table) -> dict:
 def layout_svg(table, result=None) -> str:
     R = _rules()
     width = GRID_X + 3 * CELL_W + 24
-    height = GRID_Y + 13 * ROW_H + 30
+    height = GRID_Y + 13 * ROW_H + 52      # room under the 2 to 1 row for a winning chip's glow
     line = 'stroke="rgba(255,255,255,0.75)" stroke-width="2"'
     font = 'font-family="DM Serif Display"'
     out, spots = [], {}
@@ -130,7 +130,7 @@ def layout_svg(table, result=None) -> str:
                        f'<circle cx="{cx}" cy="{cy}" r="11.5" fill="{colour}" stroke="rgba(0,0,0,0.25)"/>'
                        f'<text x="{cx}" y="{cy + 4.5}" text-anchor="middle" font-family="Josefin Sans" font-weight="700" '
                        f'font-size="12" fill="#FFFFFF">{chip_text(amount)}</text></g>')
-    return (f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">'
+    return (f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" overflow="visible" xmlns="http://www.w3.org/2000/svg">'
             '<defs><filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter></defs>'
             + "".join(out) + "</svg>")
 
