@@ -9,10 +9,15 @@ styles. Card codes are rank+suit, e.g. "AS", "TD" (T = ten); None is a face-down
 
 from __future__ import annotations
 
+import base64
 import html
 import io
 import math
 import re
+import struct
+import zlib
+from functools import lru_cache
+from urllib.parse import quote
 
 from lib.core.file_operations import read_html_template
 
@@ -211,16 +216,64 @@ def player_ledger(player_id, *, bet: int, session_count: int, session_net: int,
 
 
 # ---------------------------------------------------------------------------
+# The felt texture: the table's shading ordered-dithered into a handful of greens
+# ---------------------------------------------------------------------------
+FELT_W, FELT_H = 820, 1800       # tall enough for the tallest table (roulette results)
+DITHER_CELL = 4                  # px per Bayer cell - big enough to survive Discord's downscale
+DITHER_LEVELS = 18               # quantisation steps per channel
+_BAYER = ((0, 8, 2, 10), (12, 4, 14, 6), (3, 11, 1, 9), (15, 7, 13, 5))
+
+
+def _grey_png(size: int, pixel) -> str:
+    """A greyscale PNG as a data URI; pixel(x, y) -> 0..255."""
+    raw = b"".join(b"\x00" + bytes(pixel(x, y) for x in range(size)) for y in range(size))
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 0, 0, 0, 0))
+           + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+    return "data:image/png;base64," + base64.b64encode(png).decode()
+
+
+@lru_cache(maxsize=1)
+def felt_texture() -> str:
+    """A CSS url() of the felt as an SVG. The radial shading is posterised to a few greens
+    per channel, and a Bayer threshold tile (added in before the posterise) decides which
+    pixels round up - a classic ordered dither, in flat colours that compress well."""
+    tile = 4 * DITHER_CELL
+    bayer = _grey_png(tile, lambda x, y: int((_BAYER[(y // DITHER_CELL) % 4][(x // DITHER_CELL) % 4] + 0.5) / 16 * 255))
+    amp = 1 / DITHER_LEVELS
+    table = " ".join(f"{k / (DITHER_LEVELS - 1):.4f}" for k in range(DITHER_LEVELS))
+    funcs = "".join(f"<feFunc{c} type='discrete' tableValues='{table}'/>" for c in "RGB")
+    svg = (
+        f"<svg xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' width='{FELT_W}' height='{FELT_H}'>"
+        "<defs><radialGradient id='g' gradientUnits='userSpaceOnUse' cx='410' cy='510' r='984' "
+        "gradientTransform='translate(410 510) scale(1 0.9) translate(-410 -510)'>"
+        "<stop offset='0' stop-color='#145040'/><stop offset='0.55' stop-color='#0E3B2C'/>"
+        "<stop offset='1' stop-color='#0A2E22'/></radialGradient>"
+        f"<filter id='q' filterUnits='userSpaceOnUse' x='0' y='0' width='{FELT_W}' height='{FELT_H}' "
+        "color-interpolation-filters='sRGB'>"
+        f"<feImage xlink:href='{bayer}' x='0' y='0' width='{tile}' height='{tile}' result='t'/>"
+        "<feTile in='t' result='th'/>"
+        f"<feComposite in='SourceGraphic' in2='th' operator='arithmetic' k1='0' k2='1' k3='{amp:.4f}' "
+        f"k4='{-amp / 2:.4f}' result='s'/>"
+        f"<feComponentTransfer in='s'>{funcs}</feComponentTransfer></filter></defs>"
+        f"<rect width='{FELT_W}' height='{FELT_H}' fill='url(#g)' filter='url(#q)'/></svg>")
+    return 'url("data:image/svg+xml,' + quote(svg, safe=" =:/,'") + '")'
+
+
+# ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
-_TOKEN = re.compile(r"\{\{(TITLE|TAG|BODY|RAIL|VARIANT)\}\}")
+_TOKEN = re.compile(r"\{\{(TITLE|TAG|BODY|RAIL|VARIANT|TEXTURE)\}\}")
 
 
 def build_page(title: str, tag: str, body: str, rail_html: str, *, variant: str = "") -> str:
     """Fill the template in a single pass, so text inside a player's name can never be
     read as another token. variant "arena" swaps the felt for a full-bleed scene."""
     parts = {"TITLE": esc(title), "TAG": esc(tag), "BODY": body, "RAIL": rail_html,
-             "VARIANT": f" {variant}" if variant else ""}
+             "VARIANT": f" {variant}" if variant else "", "TEXTURE": felt_texture()}
     return _TOKEN.sub(lambda m: parts[m.group(1)], read_html_template(TEMPLATE))
 
 

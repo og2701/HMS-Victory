@@ -24,7 +24,8 @@
   .serif { font-family: 'DM Serif Display', 'Noto Sans Math', serif; font-weight: 400; }
   .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  .felt { width: 820px; display: flex; flex-direction: column; background: radial-gradient(120% 70% at 50% 40%, #145040 0%, #0E3B2C 55%, #0A2E22 100%); }
+  /* The felt: its shading ordered-dithered into a few greens (built in casino_felt.felt_texture). */
+  .felt { width: 820px; display: flex; flex-direction: column; background: {{TEXTURE}} top center / 820px 1800px no-repeat, #0A2E22; }
 
   .top { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; padding: 36px 40px 0; font-size: 22px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; }
   .top .title { color: rgba(255,255,255,0.7); }
