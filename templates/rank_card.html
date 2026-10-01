@@ -51,9 +51,10 @@
   .name { min-width: 0; font-family: 'Outfit', 'Noto Sans Math', 'Noto Sans Symbols 2', 'Noto Color Emoji', sans-serif; font-weight: 800; line-height: 1.15; }
   .title-chip { flex-shrink: 0; max-width: 320px; padding: 4px 12px; border-radius: 4px; background: rgba(212,166,74,0.16); font-size: 16px; font-weight: 700; color: #E5C27A; }
   .subline { padding-left: 208px; font-size: 18px; font-weight: 600; color: #B5BAC1; }
-  .spacer { flex: 1; }
+  /* Fixed height so the badges always start just under the avatar, whatever the name size. */
+  .ident { height: 70px; flex-shrink: 0; }
 
-  .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+  .badges { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; margin-top: 14px; }
   .badge { width: var(--cell); height: var(--cell); border-radius: 6px; border: 2px solid; display: flex; align-items: center; justify-content: center; }
   .badge img { width: 68%; height: 68%; object-fit: contain; }
   .badge.gold { border-color: #FFD700; background: rgba(255,215,0,0.12); }

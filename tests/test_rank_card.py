@@ -42,7 +42,7 @@ class LayoutHelperTests(unittest.TestCase):
         self.assertLess(big, 34)
         cols = (928 + 6) // (big + 6)
         rows = -(-114 // cols)
-        self.assertLessEqual(rows * (big + 6) - 6, 126)
+        self.assertLessEqual(rows * (big + 6) - 6, 120)
 
     def test_name_size_steps_down(self):
         self.assertEqual(name_size("Gazza"), 42)

@@ -16,7 +16,7 @@ import html
 from lib.core.file_operations import read_html_template
 
 BADGE_BOX_W = 928          # lower panel width inside its padding
-BADGE_BOX_H = 126          # room under the name/subline before the bottom padding
+BADGE_BOX_H = 120          # from just under the avatar down to the bottom padding
 BADGE_GAP = 6
 RARITY_ORDER = {"Secret": -1, "Gold": 0, "Silver": 1, "Bronze": 2}
 
@@ -99,10 +99,11 @@ def build_rank_card_html(card: dict) -> str:
         '</div>'
         f'<div class="seam"><div style="width:{progress * 100:.1f}%"></div></div>'
         '<div class="lower">'
+        '<div class="ident">'
         f'<div class="name-row"><div class="name ellipsis" style="font-size:{name_size(card["username"])}px">'
         f'{esc(card["username"])}</div>{title_html}</div>'
         f'<div class="subline">{card["xp"]:,} XP · {len(badges)} {noun}</div>'
-        '<div class="spacer"></div>'
+        '</div>'
         f'<div class="badges">{"".join(_badge(b) for b in badges)}</div>'
         '</div>'
         f'<div class="avatar-ring"><img src="{esc(card["avatar_url"])}"></div>'
