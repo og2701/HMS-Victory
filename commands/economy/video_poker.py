@@ -8,7 +8,7 @@ Built on commands/economy/casino_base (shared card model, 5-card evaluation, ren
 layout, economy, persistence). The felt table re-renders as you toggle holds and on the
 draw; the in-flight draw decision persists so a restart never strands a debited stake.
 
-Paytable is sized for the locked ~800k economy (max bet 10k -> royal-flush jackpot 150k,
+Paytable is sized for the locked ~800k economy (max bet 10k -> royal-flush jackpot 250k,
 not the millions a true 800:1 royal would pay). RTP is tuned to keep a house edge.
 """
 
@@ -31,10 +31,12 @@ KEY = "videopoker"
 BANK = "Video Poker"   # reason keyword routed to the bank's Video Poker P/L columns
 
 # five_card_rank category -> payout multiple of the bet (total return, "for 1").
-# A pair only pays if it's Jacks or better (handled in _decide). Two pair just returns
-# your bet (a push); everything below a high pair loses. Top hands capped for the economy.
+# A pair only pays if it's Jacks or better (handled in _decide), and only returns your bet
+# (a push); everything below a high pair loses. Top hands capped for the economy, but the
+# ladder must still rise with the hand - tests/test_video_poker_paytable.py checks it.
 PAYTABLE = {
-    9: 15,   # Royal Flush   (jackpot kept capped so one hit can't warp the 800k economy)
+    9: 25,   # Royal Flush   (was 15, which sat below the straight flush; capped well short
+             #                of a true 800:1 so one hit can't warp the 800k economy)
     8: 20,   # Straight Flush (was 12)
     7: 16,   # Four of a Kind (was 10; the big RTP lever - 10-for-1 was very stingy)
     6: 9,    # Full House     (was 8; standard 9/6)

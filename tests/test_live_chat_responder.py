@@ -512,7 +512,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         # Scheduled events
         mock_event = MagicMock()
         mock_event.name = "Pub Quiz"
-        mock_event.status = 1  # scheduled
+        # Whichever discord is loaded - this file's stub, or the real one if another test got
+        # there first (the real EventStatus isn't equal to a bare 1).
+        mock_event.status = sys.modules["discord"].EventStatus.scheduled
         mock_event.url = "https://discord.com/events/123/456"
         mock_event.creator.display_name = "Chin"
         guild_mock = MagicMock()
@@ -3952,13 +3954,15 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Revised. No tea.", message.reply.call_args[0][0])
         self.assertTrue(any(c[0][0] == "gpt-4o-mini" for c in mock_usage.call_args_list))
 
+    @patch("lib.features.chat_responder.build_user_dossier", return_value=None)
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
     @patch("lib.features.chat_responder.generate_image_openai")
     @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
     @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
     @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
     @patch("lib.features.chat_responder.classify_mention_intent")
     async def test_handle_one_off_edit_without_recent_image_generates(
-        self, mock_classify, mock_find_img, mock_fetch_chat, mock_synth, mock_gen_img
+        self, mock_classify, mock_find_img, mock_fetch_chat, mock_synth, mock_gen_img, _sample, _dossier
     ):
         mock_classify.return_value = {
             "intent": "edit", "subject": "caller", "subject_name": None, "reason": "wants a redo", "input_tokens": 0, "output_tokens": 0,
@@ -4345,14 +4349,14 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         live_chat_manager.owner_mentions_paused = False
         btn = ChatbotDirectPauseButton()
         self.assertEqual(btn.label, "Pause Direct")
-        self.assertEqual(btn.emoji, "⏸️")
+        self.assertEqual(str(btn.emoji), "⏸️")   # a PartialEmoji with real discord, a str with the stub
         self.assertEqual(btn.custom_id, "vic_live_toggle_direct")
 
         # 2. When paused, button offers to Resume
         live_chat_manager.owner_mentions_paused = True
         btn_paused = ChatbotDirectPauseButton()
         self.assertEqual(btn_paused.label, "Resume Direct")
-        self.assertEqual(btn_paused.emoji, "▶️")
+        self.assertEqual(str(btn_paused.emoji), "▶️")
 
         # 3. Callback rejected for non-Oggers
         interaction_non_owner = MagicMock()

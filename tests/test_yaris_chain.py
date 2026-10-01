@@ -1,5 +1,7 @@
 """Unit tests for the Bouncy Yaris emoji chain reaction."""
 
+import asyncio
+
 import pytest
 import config
 from unittest.mock import AsyncMock, MagicMock
@@ -62,79 +64,84 @@ def test_posts_older_than_two_minutes_expire():
     assert record_and_check_yaris(104, now=now + 140) is True
 
 
-@pytest.mark.asyncio
-async def test_handle_yaris_chain_end_to_end():
-    general_id = config.CHANNELS.GENERAL
+def test_handle_yaris_chain_end_to_end():
+    async def run():
+        general_id = config.CHANNELS.GENERAL
 
-    client = MagicMock()
+        client = MagicMock()
 
-    # Channel mock
-    channel = MagicMock()
-    channel.id = general_id
-    channel.send = AsyncMock()
+        # Channel mock
+        channel = MagicMock()
+        channel.id = general_id
+        channel.send = AsyncMock()
 
-    # User 1
-    m1 = MagicMock()
-    m1.author.bot = False
-    m1.author.id = 201
-    m1.channel = channel
-    m1.content = "look at this <a:Bouncy_Yaris:1540334892317933599>"
+        # User 1
+        m1 = MagicMock()
+        m1.author.bot = False
+        m1.author.id = 201
+        m1.channel = channel
+        m1.content = "look at this <a:Bouncy_Yaris:1540334892317933599>"
 
-    # User 2
-    m2 = MagicMock()
-    m2.author.bot = False
-    m2.author.id = 202
-    m2.channel = channel
-    m2.content = ":Bouncy_Yaris:"
+        # User 2
+        m2 = MagicMock()
+        m2.author.bot = False
+        m2.author.id = 202
+        m2.channel = channel
+        m2.content = ":Bouncy_Yaris:"
 
-    # User 3
-    m3 = MagicMock()
-    m3.author.bot = False
-    m3.author.id = 203
-    m3.channel = channel
-    m3.content = "<a:Bouncy_Yaris:1540334892317933599>"
+        # User 3
+        m3 = MagicMock()
+        m3.author.bot = False
+        m3.author.id = 203
+        m3.channel = channel
+        m3.content = "<a:Bouncy_Yaris:1540334892317933599>"
 
-    res1 = await handle_yaris_chain(client, m1)
-    assert res1 is False
-    channel.send.assert_not_called()
+        res1 = await handle_yaris_chain(client, m1)
+        assert res1 is False
+        channel.send.assert_not_called()
 
-    res2 = await handle_yaris_chain(client, m2)
-    assert res2 is False
-    channel.send.assert_not_called()
+        res2 = await handle_yaris_chain(client, m2)
+        assert res2 is False
+        channel.send.assert_not_called()
 
-    res3 = await handle_yaris_chain(client, m3)
-    assert res3 is True
-    channel.send.assert_called_once_with(BOUNCY_YARIS_EMOJI)
+        res3 = await handle_yaris_chain(client, m3)
+        assert res3 is True
+        channel.send.assert_called_once_with(BOUNCY_YARIS_EMOJI)
+
+    asyncio.run(run())
 
 
-@pytest.mark.asyncio
-async def test_handle_yaris_chain_ignores_other_channels_and_bots():
-    client = MagicMock()
+def test_handle_yaris_chain_ignores_other_channels_and_bots():
+    async def run():
+        client = MagicMock()
 
-    # Other channel
-    other_channel = MagicMock()
-    other_channel.id = 123456789
-    other_channel.send = AsyncMock()
+        # Other channel
+        other_channel = MagicMock()
+        other_channel.id = 123456789
+        other_channel.send = AsyncMock()
 
-    m = MagicMock()
-    m.author.bot = False
-    m.author.id = 301
-    m.channel = other_channel
-    m.content = "<a:Bouncy_Yaris:1540334892317933599>"
+        m = MagicMock()
+        m.author.bot = False
+        m.author.id = 301
+        m.channel = other_channel
+        m.content = "<a:Bouncy_Yaris:1540334892317933599>"
 
-    assert await handle_yaris_chain(client, m) is False
-    other_channel.send.assert_not_called()
+        assert await handle_yaris_chain(client, m) is False
+        other_channel.send.assert_not_called()
 
-    # Bot author in general
-    general_channel = MagicMock()
-    general_channel.id = config.CHANNELS.GENERAL
-    general_channel.send = AsyncMock()
+        # Bot author in general
+        general_channel = MagicMock()
+        general_channel.id = config.CHANNELS.GENERAL
+        general_channel.send = AsyncMock()
 
-    bot_msg = MagicMock()
-    bot_msg.author.bot = True
-    bot_msg.author.id = 999
-    bot_msg.channel = general_channel
-    bot_msg.content = "<a:Bouncy_Yaris:1540334892317933599>"
+        bot_msg = MagicMock()
+        bot_msg.author.bot = True
+        bot_msg.author.id = 999
+        bot_msg.channel = general_channel
+        bot_msg.content = "<a:Bouncy_Yaris:1540334892317933599>"
 
-    assert await handle_yaris_chain(client, bot_msg) is False
-    general_channel.send.assert_not_called()
+        assert await handle_yaris_chain(client, bot_msg) is False
+        general_channel.send.assert_not_called()
+
+
+    asyncio.run(run())

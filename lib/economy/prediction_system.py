@@ -179,6 +179,10 @@ _OPTION_COLORS = [
     (155, 89, 182),   # purple
 ]
 
+# A settled prediction: the winner's block in gold, the others greyed out.
+_WINNER_ACCENT = 0xF0B232
+_SETTLED_LOSER_ACCENT = 0x4E5058
+
 # Circle emojis aligned 1:1 with _OPTION_COLORS, used on the bet buttons so each
 # button maps to its outcome's colour on the bar/card. Discord buttons only have
 # 4 fixed style colours and can't match a 5-colour palette, so for 3+ outcomes the
@@ -578,11 +582,17 @@ def build_prediction_layout(pred: Prediction, client: Optional[discord.Client],
         is_winner = (won == side)
         headline = f"{emoji}  **{em(opt)}**   {t:,} UKP · {pct}%"
         if is_winner:
-            headline = f"🏆  **{em(opt)}** — WINNER   {t:,} UKP · {pct}%"
+            headline = f"🏆  **{em(opt)}** · WINNER   {t:,} UKP · {pct}%"
         stats = f"{headline}\n-# {sub}"
 
-        # Winning outcome gets a green accent so it stands out from the muted losers.
-        accent = discord.Colour(0x2ECC71) if is_winner else discord.Colour.from_rgb(*rgb)
+        # Once it's settled the winner goes gold and the rest go grey. Gold rather than green,
+        # since option 1's own colour is green and a losing option 1 used to look like the winner.
+        if is_winner:
+            accent = discord.Colour(_WINNER_ACCENT)
+        elif won:
+            accent = discord.Colour(_SETTLED_LOSER_ACCENT)
+        else:
+            accent = discord.Colour.from_rgb(*rgb)
         container = discord.ui.Container(accent_colour=accent)
         if interactive and not pred.locked:
             bet_btn = discord.ui.Button(
