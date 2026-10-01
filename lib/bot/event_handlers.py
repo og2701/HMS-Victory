@@ -256,6 +256,12 @@ async def handle_hate_speech_message(client, message) -> bool:
     return True
 
 async def on_member_update(before, after):
+    # Feed the summary card's boost counters. premium_since only moves when someone starts or
+    # stops boosting, so a member adding a second boost isn't counted twice.
+    if getattr(after.guild, "id", None) == GUILD_ID and (before.premium_since is None) != (after.premium_since is None):
+        initialize_summary_data()
+        update_summary_data("boosters_gained" if after.premium_since else "boosters_lost")
+
     if not before.premium_since and after.premium_since:
         await award_badge_with_notify(after._state._get_client(), after.id, 'server_booster')
 
