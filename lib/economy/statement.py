@@ -37,6 +37,9 @@ _SEP = discord.SeparatorSpacing.small
 # Reason -> (label, emoji). Order matters: first substring hit wins. Transfers (/pay between
 # members) are detected by the presence of a counterparty id, ahead of any text match.
 _CATEGORIES = [
+    # First, so the whole Lucky Dip lives together: the purchase, its prizes, and its
+    # penalties (two of which say "tax" and would otherwise land under Tax).
+    ("Lucky Dip", "\U0001f381", ["lucky dip"]),
     ("Casino", "\U0001f3b0", ["blackjack", "roulette", "slots", "slot ", "video poker",
                                "vpoker", "videopoker", "red dog", "reddog", "three card",
                                "three-card", "tcp", "hold'em", "holdem", "poker", "higher",
@@ -55,7 +58,7 @@ _CATEGORIES = [
     ("Tree", "\U0001f333", ["tree", "water"]),
     ("Hall of Fame", "\U0001f3c6", ["hall of fame", "hof"]),
     ("Ticket", "\U0001f3ab", ["ticket"]),
-    ("Shop", "\U0001f6d2", ["shop", "purchase", "bought", "restock", "lucky dip", "rank background"]),
+    ("Shop", "\U0001f6d2", ["shop", "purchase", "bought", "restock", "rank background"]),
     ("Bond", "\U0001f3e6", ["bond"]),
     ("Admin", "⚖️", ["balance set", "admin", "manual", "unspecified", "ukpadd", "grant"]),
 ]

@@ -123,7 +123,7 @@ _CAT_COLOURS = {
     "Casino": "#F472B6", "Transfers": "#3BA3F5", "Rewards": "#3BD47A", "Benefits": "#2DD4BF",
     "Welcome": "#A3E635", "Predictions": "#A78BFA", "Shop": "#FB923C", "Games": "#FDE047",
     "Lottery": "#F59E0B", "Tax": "#F87171", "Bond": "#94A3B8", "Tree": "#84CC16",
-    "Hall of Fame": "#FBBF24", "Ticket": "#22D3EE", "Admin": "#CBD5E1", "Fines": "#E11D48",
+    "Hall of Fame": "#FBBF24", "Ticket": "#22D3EE", "Admin": "#CBD5E1", "Fines": "#E11D48", "Lucky Dip": "#C026D3",
     "Other": "#6B7280",
 }
 

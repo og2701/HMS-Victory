@@ -17,7 +17,11 @@ class CategoryTests(unittest.TestCase):
         for reason in ("Connect 4 stake", "Connect 4 vs AI stake", "Battleship win", "Rock Paper Scissors stake"):
             self.assertEqual(_categorize(reason)[0], "Games", reason)
         self.assertEqual(_categorize("You stayed and talked to a new member")[0], "Welcome")
-        self.assertEqual(_categorize("Lucky Dip win (+150 UKPence)")[0], "Shop")
+        for reason in ("Shop purchase: Lucky Dip", "Lucky Dip win (+150 UKPence)", "Lucky Dip penalty (Council Tax)",
+                       "Lucky Dip penalty (HMRC Tax Raid)", "Lucky Dip penalty (Parking Fine)",
+                       "Shop refund: Lucky Dip (execute error: NotFound)"):
+            self.assertEqual(_categorize(reason)[0], "Lucky Dip", reason)
+        self.assertEqual(_categorize("Shop purchase: Rank Card Theme")[0], "Shop")
 
     def test_transfers_win_on_a_counterparty(self):
         self.assertEqual(_categorize("/pay Pooja → Alex", counterparty_id=123)[0], "Transfers")
@@ -27,7 +31,7 @@ class CategoryTests(unittest.TestCase):
         self.assertEqual(_categorize("Paid benefits fraud fine for 795003706717372462")[0], "Fines")
         self.assertEqual(_categorize("Paid benefits fraud fine")[0], "Fines")
         self.assertEqual(_categorize("Weekly benefits")[0], "Benefits")
-        self.assertEqual(_categorize("Lucky Dip penalty (Parking Fine)")[0], "Shop")
+        self.assertEqual(_categorize("Lucky Dip penalty (Parking Fine)")[0], "Lucky Dip")
 
 
 if __name__ == "__main__":
