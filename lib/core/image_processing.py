@@ -154,7 +154,19 @@ def cleanup_browser():
     global _browser
     try:
         if _browser:
-            _browser.quit()
+            # systemd SIGTERMs the whole service at once, so on a restart chromedriver is usually
+            # already gone by now. Asking it to quit then just retries a dead socket three times
+            # and logs a warning each go - skip the request if it has exited, and keep urllib3
+            # quiet either way. Chrome itself got the same SIGTERM.
+            proc = getattr(getattr(_browser, "service", None), "process", None)
+            if proc is None or proc.poll() is None:
+                pool_log = logging.getLogger("urllib3.connectionpool")
+                level = pool_log.level
+                pool_log.setLevel(logging.ERROR)
+                try:
+                    _browser.quit()
+                finally:
+                    pool_log.setLevel(level)
     except Exception as e:
         logging.warning(f"Error while cleaning up Chrome on exit: {e}")
     finally:

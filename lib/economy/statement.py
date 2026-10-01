@@ -17,6 +17,7 @@ Defaults to the last completed month when first opened.
 """
 
 import logging
+import re
 from collections import OrderedDict
 from datetime import datetime
 
@@ -119,17 +120,27 @@ def _name(client, cp_id):
     return f"<@{cp_id}>"
 
 
+_USER_ID = re.compile(r"\b\d{17,20}\b")
+
+
 def _describe(reason, cp_id, amount, client):
     if cp_id:
         return f"Pay {'→' if amount < 0 else '←'} {_name(client, cp_id)}"
     r = (reason or "Unspecified").strip()
+    # Some reasons carry a member's raw ID ("Paid benefits fraud fine for 7950..."). Hold
+    # each one as a placeholder through the trimming below, then swap in their name.
+    ids = _USER_ID.findall(r)
+    r = _USER_ID.sub("\x00", r)
     # Strip internal tax annotation suffix like '[gross: 100, tax: -85 (85%)]'
     if "[" in r and "gross:" in r:
         r = r.split("[")[0].strip()
     # Strip formula details like '(5%/wk over 10,000)'
     if "(" in r and ("%" in r or "over" in r):
         r = r.split("(")[0].strip()
-    return (r[:1].upper() + r[1:])[:42]
+    r = (r[:1].upper() + r[1:])[:42]
+    for uid in ids:
+        r = r.replace("\x00", _name(client, uid), 1)
+    return r.replace("\x00", "")
 
 
 def _gather(uid, start_ts, end_ts, client):

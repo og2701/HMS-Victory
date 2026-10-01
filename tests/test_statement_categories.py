@@ -3,7 +3,7 @@ import unittest
 
 os.environ.setdefault("OPENAI_TOKEN", "mock-token")
 
-from lib.economy.statement import _categorize
+from lib.economy.statement import _categorize, _describe
 
 
 class CategoryTests(unittest.TestCase):
@@ -32,6 +32,25 @@ class CategoryTests(unittest.TestCase):
         self.assertEqual(_categorize("Paid benefits fraud fine")[0], "Fines")
         self.assertEqual(_categorize("Weekly benefits")[0], "Benefits")
         self.assertEqual(_categorize("Lucky Dip penalty (Parking Fine)")[0], "Lucky Dip")
+
+
+class DescribeTests(unittest.TestCase):
+    class _Client:
+        def get_user(self, uid):
+            if uid == 795003706717372462:
+                return type("U", (), {"display_name": "Pengrin"})()
+            return None
+
+    def test_raw_ids_become_names(self):
+        self.assertEqual(_describe("Paid benefits fraud fine for 795003706717372462", None, -83, self._Client()),
+                         "Paid benefits fraud fine for Pengrin")
+
+    def test_unknown_members_become_mentions_not_digits(self):
+        desc = _describe("Paid benefits fraud fine for 123456789012345678", None, -83, self._Client())
+        self.assertTrue(desc.endswith("<@123456789012345678>"), desc)
+
+    def test_ordinary_reasons_are_untouched(self):
+        self.assertEqual(_describe("Mines bet", None, -50, self._Client()), "Mines bet")
 
 
 if __name__ == "__main__":
