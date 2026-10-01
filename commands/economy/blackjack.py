@@ -154,6 +154,10 @@ class BlackjackGame:
             # dealer does not draw (standard casino rule).
             self.hole_revealed = True
             self.state = "over"
+        elif self.player_total() == 21:
+            # Nothing beats 21 and another hit can only hurt, so stand for them - a
+            # misclick on Hit shouldn't throw away a made hand.
+            self.dealer_play()
 
     def dealer_play(self):
         """Reveal the hole card and draw to DEALER_STANDS_ON, then end the hand."""
@@ -513,7 +517,8 @@ async def _show_rules(interaction: Interaction):
         "- **Card values:** 2-10 are face value, J/Q/K are 10, and an Ace is 1 or 11 - "
         "whichever is better for your hand (it drops to 1 automatically to save you from a bust).\n"
         "- **Blackjack:** an Ace plus a 10-value card on your first two cards. Pays **3:2**.\n"
-        "- **Hit** draws another card; **Stand** locks in your total.\n"
+        "- **Hit** draws another card; **Stand** locks in your total. Hit your way to "
+        "**21** and you stand automatically.\n"
         "- **Double Down:** on your opening two cards only - doubles your stake for exactly "
         "one more card, then stands.\n"
         "- **Dealer** reveals the hole card and draws until **17** (stands on all 17s, soft 17 included).\n"
