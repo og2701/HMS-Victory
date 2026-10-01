@@ -1,7 +1,7 @@
 """HMS Victory - Blackjack (vs-the-house).
 
 A premium single-hand blackjack game. The table is rendered as an HTML→PNG image
-(templates/blackjack_table.html) via the shared headless-Chrome pipeline and wrapped
+(the shared casino felt, lib/economy/casino_felt.py) via headless Chrome and wrapped
 in a Components V2 LayoutView with Hit / Stand / Double Down buttons - mirroring the
 prediction system. If image rendering is disabled (config.BLACKJACK_IMAGE_ENABLED) or
 fails, it falls back to a native CV2 text layout, exactly like build_prediction_render.
@@ -18,7 +18,6 @@ is a mild UKPence sink rather than a faucet. See economy_manager.credit_casino_p
 
 import asyncio
 import io
-import html as _html
 import logging
 import random
 import time
@@ -28,10 +27,10 @@ import discord
 from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, remove_bb, credit_casino_payout
-from lib.economy.casino_stats import record_result, session_footer_html
+from lib.economy import casino_felt as felt
+from lib.economy.casino_stats import record_result
 from lib.economy.casino_drain import action_in_flight, deal_in_flight
 from lib.core.file_operations import (
-    read_html_template,
     load_persistent_views,
     save_persistent_views,
 )
@@ -286,131 +285,71 @@ def _settle(game: BlackjackGame):
 
 
 # ---------------------------------------------------------------------------
-# Rendering - premium HTML table
+# Rendering - the shared felt table (lib/economy/casino_felt.py)
 # ---------------------------------------------------------------------------
-# Card fan geometry (keep in sync with .card width in templates/blackjack_table.html).
-_CARD_W = 160
-_HAND_MAXW = 600       # cards never spill past this, however many are dealt
-_DEFAULT_STEP = 112    # comfortable spacing for small hands
+def _rail_html(game: BlackjackGame) -> str:
+    pt = game.player_total()
+    ledger = felt.player_ledger(
+        game.player_id, bet=game.total_staked,
+        session_count=getattr(game, "session_count", 1),
+        session_net=getattr(game, "session_net", 0),
+        current_net=getattr(game, "net", 0), over=(game.state == "over"))
+    if game.state != "over":
+        moves = "Hit · Stand · Double" if game.can_double() else "Hit · Stand"
+        return felt.rail("Your move", f"Dealer shows {felt.rank_with_article(game.dealer_cards[0])}",
+                         actions=moves, ledger=ledger)
 
-
-def _overlaps(n: int) -> list:
-    """Per-card left-margins (for cards after the first) so the fan fits _HAND_MAXW."""
-    if n <= 1:
-        return []
-    step = min(_DEFAULT_STEP, (_HAND_MAXW - _CARD_W) / (n - 1))
-    return [round(step - _CARD_W)] * (n - 1)
-
-
-def _style(margin_left):
-    return f' style="margin-left:{margin_left}px"' if margin_left is not None else ""
-
-
-def _card_html(code: str, margin_left=None) -> str:
-    r, s = code[0], code[1]
-    disp = _disp_rank(r)
-    glyph = SUIT_GLYPH[s]
-    red = " red" if s in RED_SUITS else ""
-    return (
-        f'<div class="card{red}"{_style(margin_left)}>'
-        f'<span class="corner tl"><b>{disp}</b><i>{glyph}</i></span>'
-        f'<span class="pip">{glyph}</span>'
-        f'<span class="corner br"><b>{disp}</b><i>{glyph}</i></span>'
-        f"</div>"
-    )
-
-
-def _back_html(margin_left=None) -> str:
-    return f'<div class="card back"{_style(margin_left)}></div>'
-
-
-def _hand_html(specs: list) -> str:
-    """Render a hand from specs (a card code, or None for a face-down back),
-    overlapping cards just enough that even a big hand stays on the table."""
-    margins = _overlaps(len(specs))
-    parts = []
-    for i, spec in enumerate(specs):
-        ml = None if i == 0 else margins[i - 1]
-        parts.append(_back_html(ml) if spec is None else _card_html(spec, ml))
-    return "".join(parts)
-
-
-def _banner_html(game: BlackjackGame) -> str:
+    dt = game.dealer_total()
+    doubled = " · doubled" if game.doubled else ""
     o = game.outcome
     if o == "blackjack":
-        cls, head, sub = "win", "Blackjack!", f"+{game.net:,} UKPence"
-    elif o == "win":
-        cls, head, sub = "win", "You Win", f"+{game.net:,} UKPence"
-    elif o == "push":
-        cls, head, sub = "push", "Push", "Stake returned"
+        return felt.rail("Blackjack!", "Pays 3:2" + doubled, money=felt.signed(game.net),
+                         tone="gold", head_tone="gold", ledger=ledger)
+    if o == "win":
+        head, sub = ("Dealer busts", f"Dealer went to {dt}") if dt > 21 else \
+            ("You win", f"{pt} against the dealer's {dt}")
+        return felt.rail(head, sub + doubled, money=felt.signed(game.net), tone="win", ledger=ledger)
+    if o == "push":
+        return felt.rail("Push", f"Both on {pt} · stake returned", money="0", tone="push", ledger=ledger)
+    if pt > 21:
+        head, sub = "Bust", f"{pt} is over 21"
+    elif game.is_blackjack(game.dealer_cards):
+        head, sub = "Dealer blackjack", f"Beats your {pt}"
     else:
-        cls = "lose"
-        head = "Bust" if game.player_busted() else "Dealer Wins"
-        sub = f"-{game.total_staked:,} UKPence"
-    return (
-        f'<div class="banner-wrap"><div class="banner {cls}">'
-        f'<div class="head">{head}</div><div class="sub">{sub}</div>'
-        f"</div></div>"
-    )
+        head, sub = "Dealer wins", f"{dt} against your {pt}"
+    return felt.rail(head, sub + doubled, money=felt.signed(-game.total_staked), tone="lose", ledger=ledger)
 
 
 def build_table_html(game: BlackjackGame) -> str:
-    template = read_html_template("templates/blackjack_table.html")
-
+    up = game.dealer_cards[0]
     if game.hole_revealed:
-        dealer_cards = _hand_html(list(game.dealer_cards))
+        dealer_cards = list(game.dealer_cards)
         dt = game.dealer_total()
-        dealer_total = str(dt)
-        d_cls = "bust" if dt > 21 else ("bj" if game.is_blackjack(game.dealer_cards) else "")
+        dealer_total, dealer_tone = str(dt), ("bust" if dt > 21 else "")
     else:
-        dealer_cards = _hand_html([game.dealer_cards[0], None])  # None = face-down hole card
-        dealer_total = "?"
-        d_cls = ""
+        dealer_cards = [up, None]  # None = the face-down hole card
+        dealer_total, dealer_tone = str(hand_value([up])[0]), ""
 
-    player_cards = _hand_html(list(game.player_cards))
     pt = game.player_total()
     if pt > 21:
-        p_cls = "bust"
+        player_tone = "bust"
     elif game.is_blackjack(game.player_cards):
-        p_cls = "bj"
-    elif game.state == "over" and game.outcome in ("win", "blackjack"):
-        p_cls = "win"
+        player_tone = "gold"
     else:
-        p_cls = ""
+        player_tone = ""
 
-    if game.state == "over":
-        banner = _banner_html(game)
-        hint = "Round complete"
-    else:
-        banner = ""
-        hint = "Your move - Hit or Stand" + (" or Double" if game.can_double() else "")
-
-    return (
-        template
-        .replace("{{RULE}}", "Dealer stands on all 17s<br>Blackjack pays 3 : 2")
-        .replace("{{PLAYER_NAME}}", _html.escape(str(game.player_name)[:24]) or "Player")
-        .replace("{{DEALER_CARDS}}", dealer_cards)
-        .replace("{{PLAYER_CARDS}}", player_cards)
-        .replace("{{DEALER_TOTAL}}", dealer_total)
-        .replace("{{PLAYER_TOTAL}}", str(pt))
-        .replace("{{DEALER_TOTAL_CLASS}}", d_cls)
-        .replace("{{PLAYER_TOTAL_CLASS}}", p_cls)
-        .replace("{{BET}}", f"{game.total_staked:,}")
-        .replace("{{BALANCE}}", f"{get_bb(game.player_id):,}")
-        .replace("{{STATE_HINT}}", hint)
-        .replace("{{RESULT_BANNER}}", banner)
-        .replace("{{SESSION}}", session_footer_html(
-            game.player_id, session_count=getattr(game, "session_count", 1),
-            session_net=getattr(game, "session_net", 0), current_net=getattr(game, "net", 0),
-            over=(game.state == "over")))
+    body = (
+        felt.seat("Dealer", felt.fan(dealer_cards), dealer_total, dealer=True, tone=dealer_tone)
+        + felt.arc()
+        + felt.seat(str(game.player_name)[:32] or "Player", felt.fan(game.player_cards),
+                    str(pt), tone=player_tone)
     )
+    return felt.build_page("Blackjack", f"Hand {getattr(game, 'session_count', 1)}",
+                           body, _rail_html(game))
 
 
 async def render_blackjack_image(game: BlackjackGame) -> io.BytesIO:
-    from lib.core.image_processing import screenshot_html
-    html_out = build_table_html(game)
-    # Portrait table; the CDP element-clip captures the real .table size regardless.
-    return await screenshot_html(html_out, size=(900, 1500), element_selector=".table")
+    return await felt.render(build_table_html(game))
 
 
 def _native_text(game: BlackjackGame) -> str:

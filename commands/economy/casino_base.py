@@ -1,7 +1,7 @@
 """Shared foundation for HMS Victory casino card games (Video Poker, Red Dog, Three Card
-Poker, ...). Provides the card model, hand evaluation, the felt-table renderer (one shared
-template), the Components V2 layout wrapper, house-bank economy helpers and persistence -
-so each game module only has to express its own rules, view and handlers.
+Poker, ...). Provides the card model, hand evaluation, the Components V2 layout wrapper,
+house-bank economy helpers and persistence - so each game module only has to express its
+own rules, view and handlers. The table image itself comes from lib/economy/casino_felt.py.
 
 Economy convention (UKP conserved; the server bank is the house):
   • stake:  remove_bb(uid, bet, reason="<Game> bet")     - stake enters the bank.
@@ -175,51 +175,8 @@ def five_card_name(cards: list) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Card HTML for the shared felt-table template body
-# ---------------------------------------------------------------------------
-def card_html(code=None, *, size: str = "med", facedown: bool = False) -> str:
-    if facedown or code is None:
-        return f'<div class="card {size} back"></div>'
-    r, s = code[0], code[1]
-    glyph = SUIT_GLYPH[s]
-    red = " red" if s in RED_SUITS else ""
-    return (
-        f'<div class="card {size}{red}">'
-        f'<span class="corner tl"><b>{disp_rank(r)}</b><i>{glyph}</i></span>'
-        f'<span class="pip">{glyph}</span>'
-        f'<span class="corner br"><b>{disp_rank(r)}</b><i>{glyph}</i></span>'
-        f"</div>"
-    )
-
-
-def hand_html(cards: list, *, size: str = "med", overlap: bool = False) -> str:
-    """A row of cards; cards may be a code or None (face-down)."""
-    cls = "hand overlap" if overlap else "hand"
-    inner = "".join(card_html(c, size=size, facedown=(c is None)) for c in cards)
-    return f'<div class="{cls}">{inner}</div>'
-
-
-def zone_html(label: str, cards_html: str, *, badge: str = "", badge_cls: str = "") -> str:
-    """A labelled seat: a header (label + optional total/name badge) and its cards."""
-    badge_html = f'<span class="badge {badge_cls}">{badge}</span>' if badge else ""
-    return (
-        f'<div class="zone"><div class="zhead">'
-        f'<span class="zlabel">{_html.escape(label)}</span>{badge_html}</div>'
-        f"{cards_html}</div>"
-    )
-
-
-def banner_html(kind: str, head: str, sub: str = "") -> str:
-    """Result banner. kind: win | lose | push | gold."""
-    sub_html = f'<div class="sub">{_html.escape(sub)}</div>' if sub else ""
-    return (
-        f'<div class="banner-wrap"><div class="banner {kind}">'
-        f'<div class="head">{_html.escape(head)}</div>{sub_html}</div></div>'
-    )
-
-
-# ---------------------------------------------------------------------------
-# Rendering - one shared felt table (templates/casino_table.html)
+# Rendering - the older felt shell, still used by roulette (templates/casino_table.html).
+# The card games render through lib/economy/casino_felt.py instead.
 # ---------------------------------------------------------------------------
 async def render_table(*, title_main: str, title_accent: str, subtitle: str,
                        body_html: str, bet: int, balance: int, hint: str,

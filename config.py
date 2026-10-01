@@ -38,7 +38,7 @@ PREDICTION_IMAGE_ENABLED = False
 # --- Blackjack (vs-the-house) ---
 #   BLACKJACK_ENABLED        - master toggle for the /blackjack command.
 #   BLACKJACK_IMAGE_ENABLED  - render the premium HTML→PNG felt table each action
-#                              (templates/blackjack_table.html). When off - or if a
+#                              (templates/casino_felt.html). When off - or if a
 #                              render raises - the game falls back to a native
 #                              Components V2 text layout (mobile-crisp, zero render
 #                              cost). Mirrors the PREDICTION_* dual-path design.

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HMS Victory - Casino Felt</title>
+<style>
+  /* Shared felt table for the casino card games (820px wide, portrait, sized for phones).
+     lib/economy/casino_felt.py builds the body and the rail and fills the tokens in one pass. */
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Josefin+Sans:wght@400;600;700&family=Noto+Sans+Math&family=Noto+Sans+Symbols+2&display=swap');
+
+  :root {
+    --gold: #E2BE78;
+    --ink: #171717;
+    --red: #DC2626;
+    --paper: #F5F5F4;
+    --win: #4ADE80;
+    --lose: #F87171;
+    --suit: 'Noto Sans Symbols 2', 'DejaVu Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #0A2E22; }
+  body { width: 820px; font-family: 'Josefin Sans', 'Noto Sans Math', 'Noto Sans Symbols 2', sans-serif; color: #FFFFFF; -webkit-font-smoothing: antialiased; }
+  .serif { font-family: 'DM Serif Display', 'Noto Sans Math', serif; font-weight: 400; }
+  .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .felt { width: 820px; display: flex; flex-direction: column; background: radial-gradient(120% 70% at 50% 40%, #145040 0%, #0E3B2C 55%, #0A2E22 100%); }
+
+  .top { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; padding: 36px 40px 0; font-size: 22px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; }
+  .top .title { color: rgba(255,255,255,0.7); }
+  .top .tag { color: rgba(255,255,255,0.45); }
+  .table { display: flex; flex-direction: column; align-items: stretch; padding: 28px 40px 40px; }
+
+  /* Seats: a hand with its label and total underneath. */
+  .seat { display: flex; flex-direction: column; align-items: center; gap: 20px; }
+  .seat .label { display: flex; align-items: baseline; justify-content: center; gap: 16px; max-width: 740px; }
+  .seat .who { max-width: 420px; font-size: 22px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255,255,255,0.85); }
+  .seat.dealer .who { color: rgba(255,255,255,0.55); }
+  .seat .total { font-size: 84px; line-height: 80px; color: #FFFFFF; white-space: nowrap; }
+  .seat.dealer .total { color: rgba(255,255,255,0.75); }
+  .seat .total.name { font-size: 44px; line-height: 48px; }
+  .seat .total.bust { color: var(--lose); }
+  .seat .total.gold { color: var(--gold); }
+
+  .arc { display: flex; justify-content: center; padding: 22px 0 30px; }
+
+  /* Cards. Sizes: xl (higher/lower), lg (hands), md (rows of five), sm (history, hold'em seats). */
+  .fan, .row { display: flex; align-items: flex-end; justify-content: center; }
+  .row { gap: 12px; }
+  .card { position: relative; flex: none; background: var(--paper); color: var(--ink); box-shadow: 0 10px 24px rgba(0,0,0,0.35); }
+  .fan .card + .card { box-shadow: -8px 6px 20px rgba(0,0,0,0.4); }
+  .card.red { color: var(--red); }
+  .card .idx { position: absolute; display: flex; flex-direction: column; align-items: center; }
+  .card .idx b { font-family: 'DM Serif Display', serif; font-weight: 400; }
+  .card .idx i { font-style: normal; font-family: var(--suit); }
+  .card .pip { position: absolute; inset: 0; padding-top: 8%; display: flex; align-items: center; justify-content: center; font-family: var(--suit); line-height: 1; }
+  .fan .card:not(:last-child) .pip { display: none; }
+  .card.xl { width: 220px; height: 310px; border-radius: 16px; }
+  .card.xl .idx { top: 18px; left: 20px; gap: 4px; }
+  .card.xl .idx b { font-size: 54px; line-height: 54px; }
+  .card.xl .idx i { font-size: 36px; line-height: 36px; }
+  .card.xl .pip { font-size: 116px; }
+  .card.lg { width: 176px; height: 248px; border-radius: 13px; }
+  .card.lg .idx { top: 15px; left: 17px; gap: 3px; }
+  .card.lg .idx b { font-size: 42px; line-height: 42px; }
+  .card.lg .idx i { font-size: 28px; line-height: 28px; }
+  .card.lg .pip { font-size: 88px; }
+  .card.md { width: 136px; height: 192px; border-radius: 11px; }
+  .card.md .idx { top: 12px; left: 14px; gap: 2px; }
+  .card.md .idx b { font-size: 36px; line-height: 36px; }
+  .card.md .idx i { font-size: 24px; line-height: 24px; }
+  .card.md .pip { font-size: 70px; }
+  .card.sm { width: 86px; height: 120px; border-radius: 9px; }
+  .card.sm .idx { top: 9px; left: 11px; }
+  .card.sm .idx b { font-size: 32px; line-height: 32px; }
+  .card.sm .idx i { font-size: 22px; line-height: 22px; }
+  .card.sm .pip { display: none; }
+
+  /* Card back: navy with a gold lattice and the anchor medallion. */
+  .card.back .face { position: absolute; inset: 9px; border-radius: 7px; display: flex; align-items: center; justify-content: center; background-color: #16264A;
+    background-image: repeating-linear-gradient(45deg, rgba(217,182,107,0.22) 0 1px, transparent 1px 12px), repeating-linear-gradient(-45deg, rgba(217,182,107,0.22) 0 1px, transparent 1px 12px); }
+  .card.back .face::before { content: ""; position: absolute; inset: 7px; border-radius: 4px; border: 1px solid rgba(217,182,107,0.6); }
+  .card.back .medal { position: relative; width: 40%; aspect-ratio: 1; border-radius: 50%; background: #16264A; border: 1.5px solid #D9B66B; display: flex; align-items: center; justify-content: center; }
+  .card.back .medal svg { width: 57%; height: 57%; }
+  .card.xl.back .face { inset: 11px; }
+  .card.md.back .face { inset: 7px; }
+  .card.md.back .face::before { inset: 5px; }
+  .card.sm.back .face { inset: 5px; border-radius: 5px; }
+  .card.sm.back .face::before { inset: 4px; }
+
+  .card.lit { box-shadow: 0 0 0 4px var(--gold), 0 10px 24px rgba(0,0,0,0.4); }
+  .card.sm.lit { box-shadow: 0 0 0 3px var(--gold), 0 6px 14px rgba(0,0,0,0.35); }
+
+  /* Stage: a centre card or row with a stat column either side (higher/lower, red dog). */
+  .stage { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 12px; }
+  .stage.solo { justify-content: center; }
+  .stat { width: 190px; flex: none; display: flex; flex-direction: column; gap: 8px; }
+  .stat.right { align-items: flex-end; text-align: right; }
+  .stat .lab { font-size: 22px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255,255,255,0.7); }
+  .stat .val { font-size: 72px; line-height: 72px; color: #FFFFFF; white-space: nowrap; }
+  .stat .val.small { font-size: 52px; line-height: 56px; }
+  .stat.off .val { color: rgba(255,255,255,0.3); }
+  .stat.narrow { width: 130px; }
+  .stat.narrow .val { font-size: 52px; line-height: 56px; }
+
+  /* Higher/lower run. */
+  .run { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+  .run .lab { font-size: 22px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255,255,255,0.6); }
+  .run .cards { display: flex; align-items: center; gap: 10px; }
+  .step { width: 20px; text-align: center; font-family: var(--suit); font-size: 22px; color: var(--win); }
+  .step.bad { color: var(--lose); }
+  .step.tie { color: rgba(255,255,255,0.5); font-family: 'Josefin Sans', sans-serif; font-weight: 700; }
+  .run .empty { font-size: 22px; color: rgba(255,255,255,0.5); }
+
+  /* Video poker. */
+  .slots { display: flex; justify-content: space-between; }
+  .slot { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .held { font-size: 22px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold); }
+  .held.off { visibility: hidden; }
+  .pay { display: flex; gap: 48px; padding: 0 8px; }
+  .pay .col { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .pay .r { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 12px; border-radius: 6px; }
+  .pay .n { font-size: 20px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.6); }
+  .pay .m { font-size: 28px; line-height: 30px; color: rgba(255,255,255,0.85); }
+  .pay .r.hit { background: rgba(226,190,120,0.16); }
+  .pay .r.hit .n, .pay .r.hit .m { color: var(--gold); }
+
+  /* Hold'em seats. */
+  .seats { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; }
+  .pseat { width: 230px; padding: 16px 14px; border-radius: 12px; border: 2px solid transparent; background: rgba(0,0,0,0.25); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .pseat.act { border-color: var(--gold); }
+  .pseat.out { opacity: 0.45; }
+  .pseat .nm { max-width: 200px; font-size: 21px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
+  .pseat .st { font-size: 34px; line-height: 36px; }
+  .pseat .meta { font-size: 18px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); min-height: 20px; }
+  .pseat .fan { min-height: 120px; align-items: center; }
+
+  /* Rail: the result or prompt, then the money ledger. */
+  .rail { display: flex; flex-direction: column; gap: 26px; padding: 32px 40px 36px; background: rgba(0,0,0,0.42); }
+  .rail .main { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+  .rail .say { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .rail .head { font-size: 62px; line-height: 66px; color: #FFFFFF; }
+  .rail .head.small { font-size: 48px; line-height: 54px; }
+  .rail .head.gold { color: var(--gold); }
+  .rail .sub { font-size: 25px; line-height: 32px; color: rgba(255,255,255,0.55); }
+  .rail .money { flex: none; font-size: 84px; line-height: 84px; white-space: nowrap; }
+  .money.win { color: var(--win); }
+  .money.lose { color: var(--lose); }
+  .money.push { color: rgba(255,255,255,0.8); }
+  .money.gold { color: var(--gold); }
+  .rail .actions { flex: none; white-space: nowrap; text-align: right; font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); }
+  .ledger { display: flex; padding-top: 22px; border-top: 1px solid rgba(255,255,255,0.1); }
+  .ledger .c { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .ledger .c:last-child { flex: none; align-items: flex-end; }
+  .ledger .l { font-size: 21px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.45); }
+  .ledger .v { font-size: 42px; line-height: 44px; color: rgba(255,255,255,0.92); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="felt">
+  <div class="top"><span class="title">{{TITLE}}</span><span class="tag">{{TAG}}</span></div>
+  <div class="table">{{BODY}}</div>
+  {{RAIL}}
+</div>
+</body>
+</html>

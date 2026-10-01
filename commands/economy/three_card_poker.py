@@ -21,7 +21,8 @@ import discord
 from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, remove_bb
-from lib.economy.casino_stats import record_result, session_footer_html
+from lib.economy import casino_felt as felt
+from lib.economy.casino_stats import record_result
 from lib.economy.casino_drain import action_in_flight, deal_in_flight
 import commands.economy.casino_base as cb
 
@@ -167,55 +168,54 @@ def _pay(game: TcpGame):
 # ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
-SUBTITLE = "Beat the dealer · play or fold"
+def _ledger(game: TcpGame) -> list:
+    return felt.player_ledger(
+        game.player_id, bet=game.total_staked, session_count=getattr(game, "session_count", 1),
+        session_net=getattr(game, "session_net", 0), current_net=getattr(game, "net", 0),
+        over=(game.state == "over"))
 
 
-def _result_banner(game: TcpGame) -> str:
-    o = game.outcome
+def _rail_html(game: TcpGame) -> str:
+    ledger = _ledger(game)
+    mine = cb.three_card_name(game.player_cards)
+    if game.state == "play_decision":
+        return felt.rail("Play or fold?", f"{mine} · play matches your ante",
+                         actions="Play · Fold", ledger=ledger)
+    theirs = cb.three_card_name(game.dealer_cards)
+    o, net = game.outcome, game.net
     if o == "win":
-        return cb.banner_html("gold" if game.net > 2 * game.bet else "win",
-                              "You Win", f"+{game.net:,} UKPence")
+        return felt.rail("You win", f"{mine} beats {theirs}", money=felt.signed(net),
+                         tone=("gold" if net > 2 * game.bet else "win"), ledger=ledger)
     if o == "dealer_no_qualify":
-        return cb.banner_html("win", "Dealer Folds", f"+{game.net:,} UKPence")
+        return felt.rail("Dealer folds", f"{theirs} doesn't qualify", money=felt.signed(net),
+                         tone="win", ledger=ledger)
     if o == "push":
-        head = "Push" if game.net == 0 else "Push +Bonus"
-        sub = "Bets returned" if game.net == 0 else f"+{game.net:,} UKPence"
-        return cb.banner_html("push", head, sub)
+        if net:
+            return felt.rail("Push + bonus", "Ante bonus paid", money=felt.signed(net), tone="win", ledger=ledger)
+        return felt.rail("Push", f"{mine} ties {theirs}", money="0", tone="push", ledger=ledger)
     if o == "fold":
-        return cb.banner_html("lose", "Folded", f"-{abs(game.net):,} UKPence")
-    return cb.banner_html("lose", "Dealer Wins", f"-{abs(game.net):,} UKPence")
-
-
-def _player_badge(game: TcpGame) -> str:
-    return cb.three_card_name(game.player_cards)
+        return felt.rail("Folded", "Ante lost", money=felt.signed(net), tone="lose", ledger=ledger)
+    return felt.rail("Dealer wins", f"{theirs} beats {mine}", money=felt.signed(net), tone="lose", ledger=ledger)
 
 
 def _body(game: TcpGame) -> str:
     if game.dealer_shown:
-        dealer_cards = game.dealer_cards
-        dealer_badge = cb.three_card_name(game.dealer_cards)
+        dealer = felt.seat("Dealer", felt.fan(game.dealer_cards), cb.three_card_name(game.dealer_cards),
+                           dealer=True, tone="name")
     else:
-        dealer_cards = [None, None, None]
-        dealer_badge = ""
-    dealer = cb.zone_html("Dealer", cb.hand_html(dealer_cards, size="med"),
-                          badge=dealer_badge)
-    rail = '<div class="vs">VS</div>'
-    player = cb.zone_html(game.player_name, cb.hand_html(game.player_cards, size="med"),
-                          badge=_player_badge(game))
-    return dealer + rail + player
+        dealer = felt.seat("Dealer", felt.fan([None, None, None]), dealer=True)
+    player = felt.seat(str(game.player_name)[:32] or "Player", felt.fan(game.player_cards),
+                       cb.three_card_name(game.player_cards), tone="name")
+    return dealer + felt.arc() + player
+
+
+def build_html(game: TcpGame) -> str:
+    return felt.build_page("Three Card Poker", f"Hand {getattr(game, 'session_count', 1)}",
+                           _body(game), _rail_html(game))
 
 
 async def _render(game: TcpGame):
-    return await cb.render_table(
-        title_main="3-Card ", title_accent="Poker", subtitle=SUBTITLE,
-        body_html=_body(game), bet=game.total_staked, balance=get_bb(game.player_id),
-        hint=("Play or fold?" if game.state == "play_decision" else "Round complete"),
-        result_banner=("" if game.state == "play_decision" else _result_banner(game)),
-        session_html=session_footer_html(
-            game.player_id, session_count=getattr(game, "session_count", 1),
-            session_net=getattr(game, "session_net", 0), current_net=getattr(game, "net", 0),
-            over=(game.state == "over")),
-    )
+    return await felt.render(build_html(game))
 
 
 def _native(game: TcpGame) -> str:

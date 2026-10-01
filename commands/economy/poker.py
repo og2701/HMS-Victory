@@ -9,7 +9,6 @@ restart refunds everyone (voiding any live hand) instead of stranding chips.
 """
 
 import asyncio
-import html as _html
 import io
 import logging
 import time
@@ -19,6 +18,7 @@ from discord import Interaction
 
 import config
 import commands.economy.casino_base as cb
+from lib.economy import casino_felt as felt
 from lib.economy.economy_manager import get_bb, remove_bb
 from commands.economy.casino_base import credit_from_bank
 from lib.economy.poker import escrow
@@ -59,53 +59,55 @@ async def _dismiss(interaction):
         logger.debug("poker ephemeral dismiss failed", exc_info=True)
 
 
-async def _render_felt(table, viewer=None):
-    """Render the table as the shared casino felt image. `viewer` (a seat id) sees their own
-    hole cards face-up; everyone else's are face-down. Returns a PNG BytesIO or None."""
+_STREET = {0: "Pre-flop", 3: "Flop", 4: "Turn", 5: "River"}
+
+
+def build_felt_html(table, viewer=None) -> str:
+    """The table as the shared casino felt. `viewer` (a seat id) sees their own hole cards
+    face-up; everyone else's are face-down."""
     h = table.hand
     board = [_code(c) for c in h.board] + [None] * (5 - len(h.board)) if h else [None] * 5
-    community = cb.zone_html("Board", cb.hand_html(board, size="small"))
     actor = h.current_player() if h else None
-    boxes = []
+    seats = []
     for i, s in enumerate(table.seats):
         sid = s["id"]
+        cls, cards = "pseat", ""
         if h:
             stack = h.stack[sid]
             if sid in h.folded:
-                cards = '<div style="opacity:.45;font-style:italic;padding:18px 0;">folded</div>'
-                meta = ""
+                cls, meta = "pseat out", "Folded"
             else:
                 shown = [_code(c) for c in h.hole[sid]] if viewer == sid else [None, None]
-                cards = cb.hand_html(shown, size="small")
+                cards = felt.fan(shown, "sm")
                 bet = h.committed.get(sid, 0)
-                meta = "ALL-IN" if sid in h.allin else (f"bet {bet:,}" if bet else "")
+                meta = "All-in" if sid in h.allin else (f"Bet {bet:,}" if bet else "")
+            if i == table.button:
+                meta = f"Dealer · {meta}" if meta else "Dealer"
         else:
-            stack = s["stack"]
-            cards = ""
-            meta = "ready"
-        btn = "(D) " if (h and i == table.button) else ""
-        ring = ("border:3px solid #d6a44a;box-shadow:0 0 18px rgba(214,164,74,.5);"
-                if sid == actor else "border:2px solid rgba(255,255,255,.16);")
-        boxes.append(
-            f'<div style="{ring}border-radius:14px;padding:10px 16px 12px;'
-            f'background:rgba(0,0,0,.34);text-align:center;min-width:150px;">'
-            f'<div style="font-weight:800;font-size:21px;color:#fff;">{btn}{_html.escape(s["name"])[:14]}</div>'
-            f'<div style="color:#e8cf92;font-size:17px;margin:2px 0 6px;">{stack:,}'
-            f'{(" &middot; " + meta) if meta else ""}</div>{cards}</div>')
-    seats = (f'<div style="display:flex;flex-wrap:wrap;gap:16px;justify-content:center;'
-             f'max-width:680px;">{"".join(boxes)}</div>')
+            stack, meta = s["stack"], "Ready"
+        if sid == actor:
+            cls += " act"
+        seats.append(f'<div class="{cls}"><span class="nm ellipsis">{felt.esc(s["name"])}</span>'
+                     f'<span class="st serif">{stack:,}</span><span class="meta">{felt.esc(meta)}</span>'
+                     f'{cards}</div>')
+    body = felt.row(board, "md") + felt.arc() + f'<div class="seats">{"".join(seats)}</div>'
+
     if actor is not None:
-        nm = next((x["name"] for x in table.seats if x["id"] == actor), "")
-        hint = f"{nm} to act"
+        head = f'{next((x["name"] for x in table.seats if x["id"] == actor), "")} to act'
     elif h is None:
-        hint = "Waiting to deal"
+        head = "Waiting to deal"
     else:
-        hint = "Showdown"
+        head = "Showdown"
+    sub = _STREET.get(len(h.board), "") if h else "Sit down to play"
+    ledger = [("Pot", f"{(h.pot() if h else 0):,}"), ("Blinds", f"{SB}/{BB}"),
+              ("Players", f"{len(table.seats)}/{MAX_SEATS}")]
+    return felt.build_page("Hold'em", "No limit", body, felt.rail(head, sub, ledger=ledger))
+
+
+async def _render_felt(table, viewer=None):
+    """Render the table image. Returns a PNG BytesIO or None."""
     try:
-        return await cb.render_table(
-            title_main="HOLD", title_accent="'EM", subtitle="No-Limit Texas Hold'em",
-            body_html=community + seats, bet=(h.pot() if h else 0),
-            balance=len(table.seats), hint=hint, bet_label="Pot", balance_label="Players")
+        return await felt.render(build_felt_html(table, viewer))
     except Exception:
         logger.error("poker felt render failed", exc_info=True)
         return None

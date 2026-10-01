@@ -20,7 +20,8 @@ import discord
 from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, remove_bb
-from lib.economy.casino_stats import record_result, session_footer_html
+from lib.economy import casino_felt as felt
+from lib.economy.casino_stats import record_result
 from lib.economy.casino_drain import action_in_flight, deal_in_flight
 import commands.economy.casino_base as cb
 
@@ -139,48 +140,55 @@ def _pay(game: VideoPokerGame):
 # ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
-SUBTITLE = "Hold the cards you want, then draw"
-_HELD_TAG = ('<div style="margin-top:8px;font-family:Georgia,serif;font-weight:700;font-size:18px;'
-             'letter-spacing:.18em;color:#7CFC9A;text-shadow:0 1px 2px rgba(0,0,0,.6)">HELD</div>')
-_GAP_TAG = '<div style="margin-top:8px;height:22px"></div>'
+_PAY_ROWS = [(9, "Royal Flush"), (8, "Straight Flush"), (7, "Four of a Kind"), (6, "Full House"),
+             (5, "Flush"), (4, "Straight"), (3, "Three of a Kind"), (2, "Two Pair"), (1, "Jacks or Better")]
 
 
-def _result_banner(game: VideoPokerGame) -> str:
-    if game.mult >= 9:                      # quads, straight/royal flush
-        return cb.banner_html("gold", game.outcome, f"+{game.net:,} UKPence")
+def _paying_category(cards):
+    """The paytable row this hand currently sits on, or None if it pays nothing."""
+    cat, tb = cb.five_card_rank(cards)
+    if cat >= 2:
+        return cat
+    if cat == 1 and tb[0] >= 11:
+        return 1
+    return None
+
+
+def _pays(cat) -> int:
+    return JACKS_OR_BETTER if cat == 1 else PAYTABLE[cat]
+
+
+def _rail_html(game: VideoPokerGame) -> str:
+    ledger = felt.player_ledger(
+        game.player_id, bet=game.bet, session_count=getattr(game, "session_count", 1),
+        session_net=getattr(game, "session_net", 0), current_net=getattr(game, "net", 0),
+        over=(game.state == "over"))
+    if game.state == "draw_decision":
+        cat = _paying_category(game.cards)
+        if cat is None:
+            return felt.rail("Pick your holds", "Jacks or better to win", actions="Hold, then draw", ledger=ledger)
+        sub = "Already pays your bet back" if _pays(cat) == 1 else f"Already pays {_pays(cat)}x"
+        return felt.rail(cb.five_card_name(game.cards), sub, actions="Hold, then draw", ledger=ledger)
     if game.mult > 1:
-        return cb.banner_html("win", game.outcome, f"+{game.net:,} UKPence")
+        big = game.mult >= 9
+        return felt.rail(game.outcome, f"Pays {game.mult}x", money=felt.signed(game.net),
+                         tone=("gold" if big else "win"), head_tone=("gold" if big else ""), ledger=ledger)
     if game.mult == 1:
-        return cb.banner_html("push", "Push", "Bet returned")
-    return cb.banner_html("lose", "No Win", f"-{game.bet:,} UKPence")
+        return felt.rail(game.outcome, "Bet returned", money="0", tone="push", ledger=ledger)
+    return felt.rail("No win", cb.five_card_name(game.cards), money=felt.signed(-game.bet),
+                     tone="lose", ledger=ledger)
 
 
-def _body(game: VideoPokerGame) -> str:
-    cells = []
-    for i, c in enumerate(game.cards):
-        # During the draw decision, mark held cards; once over, the hand name says it all.
-        tag = _HELD_TAG if (game.held[i] and not game.drawn) else _GAP_TAG
-        cells.append(f'<div style="display:flex;flex-direction:column;align-items:center">'
-                     f'{cb.card_html(c, size="med")}{tag}</div>')
-    hand = '<div class="hand">' + "".join(cells) + "</div>"
-    if game.drawn:
-        badge = cb.five_card_name(game.cards)
-        return cb.zone_html("Your Hand", hand, badge=badge,
-                            badge_cls=("gold" if game.mult >= 9 else "win" if game.mult > 1 else ""))
-    return cb.zone_html("Your Hand", hand)
+def build_html(game: VideoPokerGame) -> str:
+    held = None if game.drawn else game.held
+    rows = [(cat, name, _pays(cat)) for cat, name in _PAY_ROWS]
+    body = (felt.held_hand(game.cards, held) + felt.arc()
+            + felt.paytable(rows, hit=_paying_category(game.cards)))
+    return felt.build_page("Video Poker", "Jacks or better", body, _rail_html(game))
 
 
 async def _render(game: VideoPokerGame):
-    return await cb.render_table(
-        title_main="Video ", title_accent="Poker", subtitle=SUBTITLE,
-        body_html=_body(game), bet=game.bet, balance=get_bb(game.player_id),
-        hint=("Hold cards, then Draw" if game.state == "draw_decision" else "Round complete"),
-        result_banner=("" if game.state == "draw_decision" else _result_banner(game)),
-        session_html=session_footer_html(
-            game.player_id, session_count=getattr(game, "session_count", 1),
-            session_net=getattr(game, "session_net", 0), current_net=getattr(game, "net", 0),
-            over=(game.state == "over")),
-    )
+    return await felt.render(build_html(game))
 
 
 def _native(game: VideoPokerGame) -> str:

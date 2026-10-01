@@ -19,7 +19,8 @@ import discord
 from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, remove_bb
-from lib.economy.casino_stats import record_result, session_footer_html
+from lib.economy import casino_felt as felt
+from lib.economy.casino_stats import record_result
 from lib.economy.casino_drain import action_in_flight, deal_in_flight
 import commands.economy.casino_base as cb
 
@@ -186,84 +187,54 @@ def _pay(game: RedDogGame):
 # ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
-SUBTITLE = "Will the third card fall in between?"
-
-
-def _result_banner(game: RedDogGame) -> str:
-    o = game.outcome
-    if o == "trips":
-        return cb.banner_html("gold", "Three of a Kind!", f"+{game.net:,} UKPence")
-    if o == "win":
-        return cb.banner_html("win", "In Between!", f"+{game.net:,} UKPence")
-    if o == "push":
-        return cb.banner_html("push", "Push", "Bet returned")
-    return cb.banner_html("lose", "Outside", f"-{abs(game.net):,} UKPence")
-
-
-def _rail(game: RedDogGame) -> str:
-    """The centre rail: shows the spread + payout odds, or the slot for the 3rd card."""
-    if game.state == "raise_decision":
-        odds = game.odds
-        return (
-            '<div class="rail"><span class="ln"></span>'
-            f'<span class="pays">Spread {game.spread} &middot; pays {odds}:1</span>'
-            '<span class="ln"></span></div>'
-        )
-    if game.outcome == "trips":
-        return (
-            '<div class="rail"><span class="ln"></span>'
-            '<span class="pays">Trips pay 11:1</span>'
-            '<span class="ln"></span></div>'
-        )
-    if game.outcome == "push" and game.third_card is None:
-        return (
-            '<div class="rail"><span class="ln"></span>'
-            '<span class="pays">Consecutive &middot; push</span>'
-            '<span class="ln"></span></div>'
-        )
-    odds = game.odds
-    return (
-        '<div class="rail"><span class="ln"></span>'
-        f'<span class="pays">Spread {game.spread} &middot; pays {odds}:1</span>'
-        '<span class="ln"></span></div>'
-    )
-
-
-def _body(game: RedDogGame) -> str:
-    """Board zone: the two outline cards with the third in the middle when revealed.
-
-    The third slot shows face-down (None) while the round is undecided and the spread
-    is still live; it reveals once the card has been dealt."""
-    over = game.state == "over"
-    # Show a middle slot whenever a third card is in play (pair/trips or a resolved
-    # spread). For a consecutive push there is no third card at all.
-    has_middle = game.third_card is not None or (over and not game.is_consecutive and not game.is_pair)
-    middle = game.third_card if game.third_card is not None else None
-    if has_middle:
-        board = [game.first_card, middle, game.second_card]
+def _stage_html(game: RedDogGame) -> str:
+    """The two board cards with the third between them (face down until it's dealt)."""
+    if game.is_consecutive:
+        cards = felt.card(game.first_card, "md") + felt.card(game.second_card, "md")
+        left = felt.stat("Spread", "0", narrow=True)
+        right = felt.stat("Pays", "Push", right=True, narrow=True)
     else:
-        board = [game.first_card, game.second_card]
-    zone = cb.zone_html("Board", cb.hand_html(board, size="big"))
-    rail = _rail(game)
-    stake = (
-        '<div class="rail"><span class="ln"></span>'
-        f'<span class="pays">{game.player_name} staked {game.total_staked:,}</span>'
-        '<span class="ln"></span></div>'
-    )
-    return zone + rail + stake
+        hit = game.outcome in ("win", "trips")
+        cards = (felt.card(game.first_card, "md") + felt.card(game.third_card, "md", lit=hit)
+                 + felt.card(game.second_card, "md"))
+        if game.is_pair:
+            left = felt.stat("Pair", felt.rank_name(game.first_card), narrow=True)
+            right = felt.stat("Trips", f"{PAIR_TRIPS_ODDS}:1", right=True, narrow=True)
+        else:
+            left = felt.stat("Spread", str(game.spread), narrow=True)
+            right = felt.stat("Pays", f"{game.odds}:1", right=True, narrow=True)
+    return felt.stage(f'<div class="row">{cards}</div>', left, right)
+
+
+def _rail_html(game: RedDogGame) -> str:
+    ledger = felt.player_ledger(
+        game.player_id, bet=game.total_staked, session_count=getattr(game, "session_count", 1),
+        session_net=getattr(game, "session_net", 0), current_net=getattr(game, "net", 0),
+        over=(game.state == "over"))
+    if game.state == "raise_decision":
+        return felt.rail(f"Spread of {game.spread}", f"Pays {game.odds}:1 if the next card lands between",
+                         actions="Raise · Call", ledger=ledger)
+    o, net = game.outcome, game.net
+    if o == "trips":
+        return felt.rail("Three of a kind!", f"Trips pay {PAIR_TRIPS_ODDS}:1", money=felt.signed(net),
+                         tone="gold", head_tone="gold", ledger=ledger)
+    if o == "win":
+        return felt.rail("In between!", f"The {felt.rank_name(game.third_card)} landed inside",
+                         money=felt.signed(net), tone="win", ledger=ledger)
+    if o == "push":
+        sub = "Consecutive cards · ante back" if game.is_consecutive else "Pair without trips · ante back"
+        return felt.rail("Push", sub, money="0", tone="push", ledger=ledger)
+    return felt.rail("Outside", f"The {felt.rank_name(game.third_card)} missed the spread",
+                     money=felt.signed(net), tone="lose", ledger=ledger)
+
+
+def build_html(game: RedDogGame) -> str:
+    return felt.build_page("Red Dog", f"Hand {getattr(game, 'session_count', 1)}",
+                           _stage_html(game) + felt.arc(), _rail_html(game))
 
 
 async def _render(game: RedDogGame):
-    return await cb.render_table(
-        title_main="Red ", title_accent="Dog", subtitle=SUBTITLE,
-        body_html=_body(game), bet=game.total_staked, balance=get_bb(game.player_id),
-        hint=("Raise or call?" if game.state == "raise_decision" else "Round complete"),
-        result_banner=("" if game.state == "raise_decision" else _result_banner(game)),
-        session_html=session_footer_html(
-            game.player_id, session_count=getattr(game, "session_count", 1),
-            session_net=getattr(game, "session_net", 0), current_net=getattr(game, "net", 0),
-            over=(game.state == "over")),
-    )
+    return await felt.render(build_html(game))
 
 
 def _native(game: RedDogGame) -> str:

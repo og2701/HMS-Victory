@@ -5,7 +5,7 @@ guess multiplies your stake by the odds shown on the button (shaved by the house
 factor); cash out any time to bank it, or lose the lot on a wrong guess. A tie (equal
 value) is a push - no win, no loss - and the run carries on from the new card.
 
-Visuals + lifecycle mirror the blackjack feature: an HTML->PNG felt table wrapped in
+Visuals + lifecycle mirror the blackjack feature: the shared HTML->PNG felt table wrapped in
 a Components V2 LayoutView, a native text fallback, persistence of in-play ladders to
 persistent_views.json (so a restart never strands a debited stake), a busy-guard that
 drops double-clicks during a render, and a Rules button on the opening hand.
@@ -18,7 +18,6 @@ factor (<1), so the house edge compounds the longer a player rides.
 
 import asyncio
 import io
-import html as _html
 import logging
 import random
 import time
@@ -28,10 +27,10 @@ import discord
 from discord import Interaction
 
 from lib.economy.economy_manager import get_bb, remove_bb, credit_casino_payout
-from lib.economy.casino_stats import record_result, session_footer_html
+from lib.economy import casino_felt as felt
+from lib.economy.casino_stats import record_result
 from lib.economy.casino_drain import action_in_flight, deal_in_flight
 from lib.core.file_operations import (
-    read_html_template,
     load_persistent_views,
     save_persistent_views,
 )
@@ -254,65 +253,70 @@ def _payout(game: HigherLowerGame):
 # ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
-def _card_html(code: str, size: str = "big") -> str:
-    r, s = code[0], code[1]
-    disp = _disp_rank(r)
-    glyph = SUIT_GLYPH[s]
-    red = " red" if s in RED_SUITS else ""
-    return (
-        f'<div class="card {size}{red}">'
-        f'<span class="corner tl"><b>{disp}</b><i>{glyph}</i></span>'
-        f'<span class="pip">{glyph}</span>'
-        f'<span class="corner br"><b>{disp}</b><i>{glyph}</i></span>'
-        f"</div>"
+_RUN_LEN = 5   # past cards shown in "the run" (plus the current one)
+
+
+def _run_html(game: HigherLowerGame) -> str:
+    """The last few cards with an arrow for each move; the card in play is outlined in
+    gold, and the move that busted the run is marked red."""
+    seq = list(game.history[-_RUN_LEN:]) + [game.current]
+    if len(seq) == 1:
+        return '<div class="run"><span class="empty">Your run starts here</span></div>'
+    parts = []
+    for i, code in enumerate(seq):
+        if i:
+            before, now = _value(seq[i - 1]), _value(code)
+            if now == before:
+                parts.append('<span class="step tie">=</span>')
+            else:
+                bust = i == len(seq) - 1 and game.outcome == "lose"
+                parts.append(f'<span class="step{" bad" if bust else ""}">{"▲" if now > before else "▼"}</span>')
+        parts.append(felt.card(code, "sm", lit=(i == len(seq) - 1)))
+    label = "The run" if game.state == "over" else "The run so far"
+    return f'<div class="run"><span class="lab">{label}</span><div class="cards">{"".join(parts)}</div></div>'
+
+
+def _stage_html(game: HigherLowerGame) -> str:
+    current = felt.card(game.current, "xl")
+    if game.state == "over":
+        return felt.stage(current)
+
+    def odds(mult):
+        return f"{mult:.2f}×" if mult else "—"
+
+    return felt.stage(
+        current,
+        felt.stat("▲ Higher", odds(game.mult_higher), off=game.mult_higher is None),
+        felt.stat("Lower ▼", odds(game.mult_lower), right=True, off=game.mult_lower is None),
     )
 
 
-def _banner_html(game: HigherLowerGame) -> str:
+def _rail_html(game: HigherLowerGame) -> str:
+    ledger = felt.player_ledger(
+        game.player_id, bet=game.bet, session_count=getattr(game, "session_count", 1),
+        session_net=getattr(game, "session_net", 0), current_net=(game.payout - game.bet),
+        over=(game.outcome is not None))
     if game.outcome == "win":
-        cls, head, sub = "win", "Cashed Out", f"+{game.net:,} UKPence  ({game.cumulative:.2f}x)"
-    else:
-        cls, head, sub = "lose", "Busted", f"-{game.bet:,} UKPence"
-    return (f'<div class="banner-wrap"><div class="banner {cls}">'
-            f'<div class="head">{head}</div><div class="sub">{sub}</div></div></div>')
+        return felt.rail("Cashed out", f"{game.cumulative:.2f}x after a run of {game.steps}",
+                         money=felt.signed(game.net), tone="win", ledger=ledger)
+    if game.outcome == "lose":
+        sub = (f"The {felt.rank_name(game.current)} ended a run of {game.steps}" if game.steps
+               else "Wrong on the first call")
+        return felt.rail("Busted", sub, money=felt.signed(-game.bet), tone="lose", ledger=ledger)
+    if game.steps:
+        return felt.rail(f"{game.current_value():,} banked", f"{game.cumulative:.2f}x your {game.bet:,} bet",
+                         actions="Keep going or cash out", ledger=ledger)
+    return felt.rail(f"{game.bet:,} on the line", "Call the next card",
+                     actions="Higher or lower?", ledger=ledger)
 
 
 def build_hl_html(game: HigherLowerGame) -> str:
-    template = read_html_template("templates/higher_lower.html")
-    history = "".join(_card_html(c, "small") for c in game.history[-8:])
-    mh = f"{game.mult_higher:.2f}x" if game.mult_higher else "-"
-    ml = f"{game.mult_lower:.2f}x" if game.mult_lower else "-"
-
-    if game.state == "over":
-        banner = _banner_html(game)
-        hint = "Round complete"
-    else:
-        banner = ""
-        hint = "Higher or lower?" + ("  ·  cash out to bank it" if game.can_cash_out() else "")
-
-    return (
-        template
-        .replace("{{RULE}}", "Will the next card be higher or lower?<br>Cash out any time")
-        .replace("{{PLAYER_NAME}}", _html.escape(str(game.player_name)[:24]) or "Player")
-        .replace("{{CURRENT_CARD}}", _card_html(game.current, "big"))
-        .replace("{{HISTORY}}", history or "<span class='empty'>no streak yet</span>")
-        .replace("{{MULT_HIGHER}}", mh)
-        .replace("{{MULT_LOWER}}", ml)
-        .replace("{{STREAK}}", str(game.steps))
-        .replace("{{BET}}", f"{game.bet:,}")
-        .replace("{{VALUE}}", f"{game.current_value():,}")
-        .replace("{{HINT}}", hint)
-        .replace("{{RESULT_BANNER}}", banner)
-        .replace("{{SESSION}}", session_footer_html(
-            game.player_id, session_count=getattr(game, "session_count", 1),
-            session_net=getattr(game, "session_net", 0),
-            current_net=(game.payout - game.bet), over=(game.outcome is not None)))
-    )
+    body = _stage_html(game) + felt.arc() + _run_html(game)
+    return felt.build_page("Higher or Lower", f"Streak {game.steps}", body, _rail_html(game))
 
 
 async def render_hl_image(game: HigherLowerGame) -> io.BytesIO:
-    from lib.core.image_processing import screenshot_html
-    return await screenshot_html(build_hl_html(game), size=(900, 1500), element_selector=".table")
+    return await felt.render(build_hl_html(game))
 
 
 def _native_text(game: HigherLowerGame) -> str:
