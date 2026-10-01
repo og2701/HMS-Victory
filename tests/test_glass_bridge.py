@@ -143,7 +143,7 @@ def test_the_board_never_shows_which_side_is_safe():
 
 
 def _labels(game):
-    view, _files = G.build_glass_layout(game)
+    view = G.build_glass_view(game, with_image=False)
     return [getattr(c, "label", "") for row in view.children
             for c in getattr(row, "children", [])]
 
@@ -172,62 +172,76 @@ def test_a_finished_board_offers_play_again_and_no_way_to_step():
 
 
 # --- the picture ----------------------------------------------------------------------
-def _png(game):
-    try:
-        return G.draw_board(game).getvalue()
-    except ModuleNotFoundError:
-        return None            # no Pillow on this machine
+import asyncio
+
+import pytest
 
 
-def test_the_board_draws_in_every_state():
-    """A board that will not draw costs somebody their crossing, so all four states have to
-    survive the renderer, including the one where nothing has happened yet."""
-    states = []
+@pytest.fixture
+def no_db_ledger(monkeypatch):
+    """The board's money ledger reads balances and casino history; the picture tests don't
+    need either."""
+    monkeypatch.setattr(G.felt, "player_ledger",
+                        lambda *a, **k: [("Bet", "100"), ("Balance", "1,000"), ("Session", "0"), ("Career", "0")])
+
+
+def _states():
     fresh = _game(bridge=[G.LEFT] * 8)
-    states.append(("fresh", fresh))
     mid = _game(bridge=[G.LEFT] * 8)
     _walk(mid, [G.LEFT] * 3)
-    states.append(("mid", mid))
     fell = _game(bridge=[G.LEFT] * 8)
     fell.take_step(G.RIGHT)
-    states.append(("fell", fell))
     done = _game(bridge=[G.LEFT] * 8)
     _walk(done, [G.LEFT] * 8)
-    states.append(("across", done))
-    for name, g in states:
-        data = _png(g)
-        if data is None:
-            print("      (skipped: no Pillow)")
-            return
-        assert data[:8] == b"\x89PNG\r\n\x1a\n", f"{name} did not render a PNG"
-        assert len(data) < 60_000, f"{name} is {len(data)} bytes - the upload is the slow leg"
+    cashed = _game(bridge=[G.LEFT] * 8)
+    _walk(cashed, [G.LEFT] * 2)
+    cashed.cash_out()
+    return {"fresh": fresh, "mid": mid, "fell": fell, "across": done, "cashed": cashed}
 
 
-def test_a_render_failure_falls_back_to_text_rather_than_raising(monkeypatch=None):
+def test_the_board_builds_in_every_state(no_db_ledger):
+    """A board that will not draw costs somebody their crossing, so every state has to
+    survive the builder, including the one where nothing has happened yet."""
+    want = {"fresh": "Pick a panel", "mid": "held", "fell": "The glass went",
+            "across": "Across!", "cashed": "Cashed out"}
+    for name, g in _states().items():
+        page = G.build_board_html(g)
+        assert "<svg" in page and "{{" not in page, name
+        assert want[name] in page, f"{name} rail is missing {want[name]!r}"
+
+
+def test_the_board_never_shows_the_panes_ahead(no_db_ledger):
+    """Two bridges that differ only beyond where the player has got to must draw the same
+    board, or the picture would give away the safe side."""
+    a = _game(bridge=[G.LEFT, G.LEFT, G.LEFT, G.LEFT, G.LEFT, G.LEFT, G.LEFT, G.LEFT])
+    b = _game(bridge=[G.LEFT, G.LEFT, G.RIGHT, G.RIGHT, G.LEFT, G.RIGHT, G.RIGHT, G.LEFT])
+    b.game_id = a.game_id
+    _walk(a, [G.LEFT, G.LEFT])
+    _walk(b, [G.LEFT, G.LEFT])
+    assert G.build_board_html(a) == G.build_board_html(b)
+
+
+def test_a_render_failure_falls_back_to_text_rather_than_raising(monkeypatch):
     """The picture is a nicety; the crossing is the game."""
     g = _game()
-    real = G.draw_board
-    G.draw_board = lambda _g: (_ for _ in ()).throw(RuntimeError("no fonts"))
-    try:
-        files, fname = G.board_file(g)
-        assert files == [] and fname is None
-        view, files = G.build_glass_layout(g)
-        assert files == []
-        assert "🪟" in G._status_text(g, walkway=True)
-    finally:
-        G.draw_board = real
+
+    async def broken(_game):
+        raise RuntimeError("no browser")
+
+    monkeypatch.setattr(G, "render_board", broken)
+    assert asyncio.run(G.board_files(g)) == ([], None)
+    view, files = asyncio.run(G.build_glass_layout(g))
+    assert files == []
+    assert any(isinstance(c, G.discord.ui.Container) for c in view.children)
+    assert "🪟" in G._status_text(g, walkway=True)
 
 
-def test_pictures_can_be_switched_off():
+def test_pictures_can_be_switched_off(monkeypatch):
     import config
-    old = getattr(config, "GLASS_IMAGE_ENABLED", True)
-    config.GLASS_IMAGE_ENABLED = False
-    try:
-        assert G.board_file(_game()) == ([], None)
-        # with no picture the text panel has to carry the walkway itself
-        assert "🟦" in G._status_text(_game(), walkway=True)
-    finally:
-        config.GLASS_IMAGE_ENABLED = old
+    monkeypatch.setattr(config, "GLASS_IMAGE_ENABLED", False, raising=False)
+    assert asyncio.run(G.board_files(_game())) == ([], None)
+    # with no picture the text panel has to carry the walkway itself
+    assert "🟦" in G._status_text(_game(), walkway=True)
 
 
 # --- the bank has to be able to see the money -----------------------------------------

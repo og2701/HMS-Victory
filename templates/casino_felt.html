@@ -136,6 +136,15 @@
   .pseat .meta { font-size: 18px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); min-height: 20px; }
   .pseat .fan { min-height: 120px; align-items: center; }
 
+  /* Arena variant (the glass bridge): a full-bleed scene with the title laid over it. */
+  .felt.arena { position: relative; background: #000000; }
+  .felt.arena .top { position: absolute; left: 0; right: 0; top: 0; z-index: 2; text-shadow: 0 2px 8px rgba(0,0,0,0.6); }
+  .felt.arena .top .title { color: rgba(255,255,255,0.8); }
+  .felt.arena .top .tag { color: rgba(255,255,255,0.55); }
+  .felt.arena .table { padding: 0; }
+  .felt.arena .table svg { display: block; }
+  .felt.arena .rail { background: #06080D; }
+
   /* Rail: the result or prompt, then the money ledger. */
   .rail { display: flex; flex-direction: column; gap: 26px; padding: 32px 40px 36px; background: rgba(0,0,0,0.42); }
   .rail .main { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
@@ -158,7 +167,7 @@
 </style>
 </head>
 <body>
-<div class="felt">
+<div class="felt{{VARIANT}}">
   <div class="top"><span class="title">{{TITLE}}</span><span class="tag">{{TAG}}</span></div>
   <div class="table">{{BODY}}</div>
   {{RAIL}}

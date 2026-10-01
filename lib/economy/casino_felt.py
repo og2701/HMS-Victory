@@ -210,13 +210,14 @@ def player_ledger(player_id, *, bet: int, session_count: int, session_net: int,
 # ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
-_TOKEN = re.compile(r"\{\{(TITLE|TAG|BODY|RAIL)\}\}")
+_TOKEN = re.compile(r"\{\{(TITLE|TAG|BODY|RAIL|VARIANT)\}\}")
 
 
-def build_page(title: str, tag: str, body: str, rail_html: str) -> str:
+def build_page(title: str, tag: str, body: str, rail_html: str, *, variant: str = "") -> str:
     """Fill the template in a single pass, so text inside a player's name can never be
-    read as another token."""
-    parts = {"TITLE": esc(title), "TAG": esc(tag), "BODY": body, "RAIL": rail_html}
+    read as another token. variant "arena" swaps the felt for a full-bleed scene."""
+    parts = {"TITLE": esc(title), "TAG": esc(tag), "BODY": body, "RAIL": rail_html,
+             "VARIANT": f" {variant}" if variant else ""}
     return _TOKEN.sub(lambda m: parts[m.group(1)], read_html_template(TEMPLATE))
 
 
