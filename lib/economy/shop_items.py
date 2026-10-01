@@ -1206,20 +1206,20 @@ SHOP_ITEMS: List[ShopItem] = [
     # --- UK THEMED (PRIORITY) ---
     RankBackgroundItem("rank_bg_cotswolds", "Cotswolds Countryside", "Peaceful English village with honey-stone cottages", 250, "rank_bg_cotswolds.png"),
     RankBackgroundItem("rank_bg_white_cliffs", "White Cliffs of Dover", "Iconic white chalk cliffs meeting the deep blue sea", 250, "rank_bg_white_cliffs.png"),
-    RankBackgroundItem("rank_bg_edinburgh_pixel", "Pixel Edinburgh", "Vibrant and moody pixel art of Edinburgh Castle on a hill", 250, "rank_bg_edinburgh_pixel_1772822517002.png"),
+    RankBackgroundItem("rank_bg_edinburgh_pixel", "Edinburgh Castle", "Panoramic photograph of Edinburgh Castle", 250, "rank_bg_edinburgh_pixel_1772822517002.png"),
     RankBackgroundItem("rank_bg_spitfire_vector", "Vector Spitfire", "Clean minimalist vector graphic of a Supermarine Spitfire", 250, "rank_bg_spitfire_vector_1772822538620.png"),
-    RankBackgroundItem("rank_bg_national_flowers_pixel_art", "UK National Flowers", "Pixel art of the 4 national flowers of the UK countries", 250, "rank_bg_national_flowers_pixel_art_1772824236989.png"),
-    RankBackgroundItem("rank_bg_wales", "Mount Snowdon", "Beautiful landscape illustration of Mount Snowdon in Wales", 250, "rank_bg_wales_1772822730240.png"),
-    RankBackgroundItem("rank_bg_nireland", "Giant's Causeway", "Epic pixel art of the Giant's Causeway in Northern Ireland", 250, "rank_bg_nireland_causeway_pixel_1772822836374.png"),
-    RankBackgroundItem("rank_bg_uk_carrier", "HMS Queen Elizabeth", "Sleek geometric illustration of a British aircraft carrier", 250, "rank_bg_uk_carrier_geo_1772822866110.png"),
+    RankBackgroundItem("rank_bg_national_flowers_pixel_art", "UK National Flowers", "Blocky vector-style illustration of a rose, thistle, daffodil and shamrock in the countryside", 250, "rank_bg_national_flowers_pixel_art_1772824236989.png"),
+    RankBackgroundItem("rank_bg_wales", "Llyn Llydaw", "Photograph of Llyn Llydaw from the approach to Crib Goch in Wales", 250, "rank_bg_wales_1772822730240.png"),
+    RankBackgroundItem("rank_bg_nireland", "Giant's Causeway", "Blocky vector-style illustration of Giant's Causeway at sunset", 250, "rank_bg_nireland_causeway_pixel_1772822836374.png"),
+    RankBackgroundItem("rank_bg_uk_carrier", "British Aircraft Carriers", "Blocky vector-style illustration of HMS Queen Elizabeth and HMS Prince of Wales at sea", 250, "rank_bg_uk_carrier_geo_1772822866110.png"),
 
     RankColorThemeItem("rank_theme_country", "Countryside Theme", "Forest greens and earthy browns of rural England", 100, "#228B22", "#8B4513", "#F0FFF0"),
 
     # --- VARIETY STYLES ---
-    RankBackgroundItem("rank_bg_lofi", "Lofi Bedroom (PixelArt)", "Cosy lofi aesthetic bedroom in pixel art style", 250, "rank_bg_lofi.png"),
-    RankBackgroundItem("rank_bg_vaporwave", "Vaporwave Retro", "Neon pink sunset with glitch art and palm trees", 250, "rank_bg_vaporwave.png"),
-    RankBackgroundItem("rank_bg_medieval", "Medieval Throne", "Grand stone throne room with flickering torches", 250, "rank_bg_medieval.png"),
-    RankBackgroundItem("rank_bg_underwater", "Underwater Reef", "Deep sea coral reef with glowing jellyfish", 250, "rank_bg_underwater.png"),
+    RankBackgroundItem("rank_bg_lofi", "Lofi Bedroom", "Cosy geometric bedroom with purple lighting, a rainy city view and a sleeping cat", 250, "rank_bg_lofi.png"),
+    RankBackgroundItem("rank_bg_vaporwave", "Vaporwave Retro", "Geometric neon sunset with palm trees, a retro grid and marble busts", 250, "rank_bg_vaporwave.png"),
+    RankBackgroundItem("rank_bg_medieval", "Hampton Court Great Hall", "Photograph of the ornate timber roof and windows of Hampton Court Palace's Great Hall", 250, "rank_bg_medieval.png"),
+    RankBackgroundItem("rank_bg_underwater", "Underwater Reef", "Photorealistic coral reef with tropical fish, sunbeams and a weathered shipwreck", 250, "rank_bg_underwater.png"),
 
     RankColorThemeItem("rank_theme_lofi", "Lofi Sunset Theme", "Purple and peach colours of a cosy sunset", 100, "#9370DB", "#FFA07A", "#4B0082"),
     RankColorThemeItem("rank_theme_deepsea", "Deep Sea Theme", "Teal and navy blues of the ocean depths", 100, "#008080", "#000080", "#00FFFF"),
