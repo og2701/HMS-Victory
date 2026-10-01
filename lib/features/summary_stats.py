@@ -1,9 +1,8 @@
 """Extra figures for the daily/weekly/monthly summary cards.
 
-The per-day counters in ``daily_summaries`` carry the headline numbers. Everything else
-on the card (hourly activity, media, first posts, casino, economy, Big Brother) is read
-here from the tables other features already maintain. Every lookup is best-effort: a
-missing table or a purged range yields an empty result and the card drops that widget.
+The per-day counters in ``daily_summaries`` carry the headline numbers. The rest of the
+card (hourly activity, media, first posts) is read here from tables other features already
+maintain. Every lookup is best-effort: a missing table or a purged range yields zeros.
 
 All day boundaries are UK local days, matching how ``daily_summaries`` is keyed.
 """
@@ -12,7 +11,6 @@ from __future__ import annotations
 
 import json
 import logging
-from collections import Counter
 from datetime import date, datetime, timedelta
 
 import pytz
@@ -104,62 +102,3 @@ def daily_series(start: date, end: date) -> dict[date, dict]:
         except (ValueError, TypeError):
             continue
     return out
-
-
-def casino(start: date, end: date) -> dict | None:
-    lo, hi = day_bounds(start, end)
-    row = _safe_fetch_one(
-        "SELECT COUNT(*), COUNT(DISTINCT user_id), COALESCE(SUM(net), 0) "
-        "FROM casino_results WHERE timestamp >= ? AND timestamp < ?", (lo, hi))
-    if not row or not row[0]:
-        return None
-    fave = _safe_fetch_one(
-        "SELECT game, COUNT(*) FROM casino_results WHERE timestamp >= ? AND timestamp < ? "
-        "GROUP BY game ORDER BY COUNT(*) DESC LIMIT 1", (lo, hi))
-    try:
-        from lib.economy.casino_stats import GAME_LABELS
-    except Exception:
-        GAME_LABELS = {}
-    return {
-        "games": int(row[0]),
-        "players": int(row[1]),
-        "house_net": -int(row[2]),  # players' net is the house's loss
-        "fave": (GAME_LABELS.get(fave[0], str(fave[0]).title()), int(fave[1])) if fave else None,
-    }
-
-
-def economy(daily: bool) -> dict | None:
-    """Latest UKPence circulation, with the change since the previous snapshot on daily cards.
-
-    Snapshots are kept for 48h, so a week/month delta isn't available.
-    """
-    rows = _safe_fetch_all(
-        "SELECT total_circulation FROM circulation_snapshots ORDER BY timestamp DESC LIMIT 2")
-    if not rows:
-        return None
-    out = {"circulation": int(rows[0][0]), "change": None, "lottery_pot": None}
-    if daily and len(rows) > 1:
-        out["change"] = int(rows[0][0]) - int(rows[1][0])
-    try:
-        from lib.economy import lottery
-        rnd = lottery.get_open_round()
-        if rnd:
-            out["lottery_pot"] = lottery.tickets_sold(rnd["id"]) * int(rnd["ticket_price"])
-    except Exception:
-        log.debug("lottery pot lookup failed", exc_info=True)
-    return out
-
-
-def big_brother(start: date, end: date) -> dict | None:
-    lo, hi = day_bounds(start, end)
-    rows = _safe_fetch_all(
-        "SELECT kind, COUNT(*) FROM bb_events WHERE at >= ? AND at < ? GROUP BY kind", (lo, hi))
-    counts = Counter({k: int(n) for k, n in rows})
-    if not counts:
-        return None
-    return {
-        "evicted": counts.get("evicted", 0),
-        "votes": counts.get("vote_cast", 0),
-        "nominations": counts.get("nominated", 0),
-        "shop": counts.get("shop_purchase", 0),
-    }

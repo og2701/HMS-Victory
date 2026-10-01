@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <title>HMS Victory - Server Summary</title>
 <style>
-  /* Daily / weekly / monthly server summary card (portrait, 820px wide).
+  /* Daily / weekly / monthly server summary card (portrait, CARD_W wide).
      The bot fills the accent tokens and injects the body markup from
      lib/features/summary_html.py. Palette follows Discord's dark theme. */
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=Outfit:wght@700;800&family=Noto+Color+Emoji&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=Outfit:wght@700;800&family=Noto+Sans+Math&family=Noto+Sans+Symbols+2&family=Noto+Color+Emoji&display=swap');
 
   :root {
     --bg: #111214;
@@ -33,13 +33,13 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: var(--bg); }
   body {
-    width: 820px;
-    font-family: 'Inter', 'Noto Color Emoji', sans-serif;
+    width: {{card_width}};
+    font-family: 'Inter', 'Noto Sans Math', 'Noto Sans Symbols 2', 'Noto Color Emoji', sans-serif;
     color: var(--text);
     -webkit-font-smoothing: antialiased;
   }
   .num { font-family: 'Outfit', 'Inter', sans-serif; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .card { width: 820px; padding: 28px; display: flex; flex-direction: column; gap: 14px; background: var(--bg); }
+  .card { width: {{card_width}}; padding: 28px; display: flex; flex-direction: column; gap: 14px; background: var(--bg); }
   .row { display: flex; gap: 14px; }
   .grow { flex: 1; min-width: 0; }
   .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -70,7 +70,7 @@
   .delta.down { background: rgba(242,63,67,0.16); color: var(--red-text); }
   .delta.flat { background: var(--raised); color: var(--muted); }
   .hero .big { font-size: 60px; line-height: 60px; letter-spacing: -0.02em; }
-  .spark { display: block; width: 325px; height: 84px; }
+  .spark { display: block; width: {{spark_width}}; height: 84px; }
   .caption { font-size: 16px; font-weight: 600; color: var(--faint); }
 
   /* KPI tiles */
@@ -99,7 +99,7 @@
   .cal-row { display: flex; gap: 6px; }
   .cal-row > div { flex: 1 1 0; min-width: 0; }
   .cal-head { font-size: 14px; font-weight: 800; letter-spacing: 0.08em; color: var(--faint); padding-left: 9px; }
-  .day { height: 62px; border-radius: 12px; padding: 7px 9px; display: flex; flex-direction: column; justify-content: space-between; color: var(--text); }
+  .day { height: 68px; border-radius: 12px; padding: 7px 9px; display: flex; flex-direction: column; justify-content: space-between; color: var(--text); }
   .day.light { color: #1E1F22; }
   .day.best { box-shadow: inset 0 0 0 3px #FFFFFF; }
   .day b { font-size: 15px; font-weight: 800; }
@@ -125,8 +125,8 @@
 
   /* Podium */
   .podium { display: flex; align-items: flex-end; justify-content: center; gap: 12px; }
-  .place { width: 200px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-  .place .who { max-width: 200px; font-size: 19px; font-weight: 700; }
+  .place { width: 250px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .place .who { max-width: 250px; font-size: 19px; font-weight: 700; }
   .place.first .who { font-size: 21px; font-weight: 800; }
   .place .avatar { width: 64px; height: 64px; border: 4px solid; font-size: 26px; }
   .place.first .avatar { width: 80px; height: 80px; font-size: 32px; }
@@ -153,19 +153,10 @@
   .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: -2px; }
   .chip { display: flex; align-items: center; gap: 10px; padding: 8px 14px 8px 8px; border-radius: 999px; background: var(--raised); border: 1px solid transparent; max-width: 100%; }
   .chip .avatar { width: 32px; height: 32px; font-size: 14px; }
-  .chip .who { font-size: 19px; font-weight: 700; max-width: 260px; }
+  .chip .who { font-size: 19px; font-weight: 700; max-width: 340px; }
   .chip .num { font-size: 19px; color: var(--muted); }
   .chip.top { background: rgba(240,178,50,0.14); border-color: rgba(240,178,50,0.45); }
   .chip.top .num { color: var(--yellow); }
-
-  /* Around the server */
-  .section-label { padding: 6px 6px 0; font-size: 17px; font-weight: 800; letter-spacing: 0.12em; color: var(--faint); }
-  .around { flex: 1; min-width: 0; background: var(--tile); border: 1px solid var(--line); border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
-  .around .label { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; }
-  .around .icon { width: 32px; height: 32px; border-radius: 9px; }
-  .around .main { font-size: 34px; line-height: 36px; white-space: nowrap; }
-  .around .sub { font-size: 15px; font-weight: 600; color: var(--muted); }
-  .around .sub.dim { color: var(--faint); }
 </style>
 </head>
 <body>

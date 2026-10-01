@@ -4,8 +4,7 @@
 into HTML (``build_summary_html``, pure and testable) and then a PNG. The layout is a
 dark Discord-style stack of widgets: messages/members with sparklines, an activity view
 that changes with the period (hourly bars, a day-by-hour heatmap, or a month calendar),
-headline counters, channel share, a podium of chatters, reactor chips and a row of
-"around the server" tiles for casino, economy and Big Brother.
+headline counters, channel share, a podium of chatters and reactor chips.
 """
 
 from __future__ import annotations
@@ -31,7 +30,9 @@ CAL_LEVELS = ["#2B2D31", "#4A3A12", "#7A5A12", "#B7841A", "#F0B232"]
 AVATAR_COLOURS = ["#3B5BDB", "#C2410C", "#0F766E", "#7C3AED", "#15803D",
                   "#BE185D", "#475569", "#B45309", "#0369A1", "#9F1239"]
 MEDAL = {1: "#F0B232", 2: "#B8BEC9", 3: "#C98B4E"}
-SPARK_W, SPARK_H = 325, 84
+CARD_W = 1000
+# Hero widgets split the card in two: padding 28 each side, 14 gap, 1px borders, 22px padding.
+SPARK_W, SPARK_H = (CARD_W - 56 - 14) // 2 - 46, 84
 
 ICON_MESSAGES = ('<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" '
                  'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">'
@@ -40,15 +41,6 @@ ICON_MEMBERS = ('<svg width="19" height="19" viewBox="0 0 24 24" fill="none" str
                 'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">'
                 '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/>'
                 '<path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.7.7 2.8 2.4 3 5.2"/></svg>')
-ICON_DICE = ('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E1F22" '
-             'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">'
-             '<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2" fill="#1E1F22"/>'
-             '<circle cx="15" cy="15" r="1.2" fill="#1E1F22"/><circle cx="15" cy="9" r="1.2" fill="#1E1F22"/>'
-             '<circle cx="9" cy="15" r="1.2" fill="#1E1F22"/></svg>')
-ICON_EYE = ('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" '
-            'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">'
-            '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>')
-
 
 def esc(value) -> str:
     return html.escape(str(value), quote=True)
@@ -61,23 +53,6 @@ def fmt(n) -> str:
 def signed(n) -> str:
     n = int(n)
     return f"+{n:,}" if n > 0 else (f"−{abs(n):,}" if n < 0 else "0")
-
-
-def compact(n) -> str:
-    """605744 -> 605.7k, 15232 -> 15.2k; small numbers stay exact."""
-    n = int(n)
-    sign = "−" if n < 0 else ""
-    a = abs(n)
-    if a >= 1_000_000:
-        return f"{sign}{a / 1_000_000:.1f}m"
-    if a >= 10_000:
-        return f"{sign}{a / 1000:.1f}k"
-    return f"{sign}{a:,}"
-
-
-def signed_compact(n) -> str:
-    n = int(n)
-    return ("+" if n > 0 else "") + compact(n)
 
 
 def rgba(hex_colour: str, alpha: float) -> str:
@@ -388,54 +363,16 @@ def _reactors(card) -> str:
     )
 
 
-def _around_tile(label, icon_html, icon_bg, main, subs) -> str:
-    sub_html = "".join(f'<div class="sub ellipsis{" dim" if i else ""}">{esc(s)}</div>'
-                       for i, s in enumerate(subs) if s)
-    return (f'<div class="around"><div class="label"><span class="icon" style="background:{icon_bg}">'
-            f'{icon_html}</span>{label}</div><div class="main num">{esc(main)}</div>{sub_html}</div>')
-
-
-def _around(card) -> str:
-    tiles = []
-    casino = card.get("casino")
-    if casino:
-        house = casino["house_net"]
-        money = f"house {signed_compact(house)}" if house >= 0 else f"players {signed_compact(-house)}"
-        fave = casino.get("fave")
-        tiles.append(_around_tile(
-            "Casino", ICON_DICE, "#F0B232", f"{fmt(casino['games'])} games",
-            [f"{casino['players']} players · {money}",
-             f"Fave: {fave[0]} ({fmt(fave[1])})" if fave else ""]))
-    economy = card.get("economy")
-    if economy:
-        change = economy.get("change")
-        first = (f"in circulation · {signed_compact(change)}" if change is not None
-                 else "in circulation now")
-        pot = economy.get("lottery_pot")
-        tiles.append(_around_tile(
-            "UKPence", '<span class="num" style="font-size:18px;color:#FFFFFF">£</span>', "#23A55A",
-            compact(economy["circulation"]),
-            [first, f"Lottery pot: {fmt(pot)}" if pot else ""]))
-    bb = card.get("big_brother")
-    if bb:
-        main = f"{bb['evicted']} evicted" if bb["evicted"] else f"{fmt(bb['votes'])} votes"
-        tiles.append(_around_tile(
-            "Big Brother", ICON_EYE, "#EB459E", main,
-            [f"{fmt(bb['votes'])} votes · {fmt(bb['nominations'])} nominations",
-             f"{fmt(bb['shop'])} shop buys" if bb["shop"] else ""]))
-    if not tiles:
-        return ""
-    return f'<div class="section-label">AROUND THE SERVER</div><div class="row">{"".join(tiles)}</div>'
-
-
 def build_summary_html(card: dict) -> str:
     period = PERIODS[card["frequency"]]
     body = "\n".join(part for part in (
         _header(card), _hero(card), _activity(card), _counters(card),
-        _channels(card), _podium(card), _reactors(card), _around(card),
+        _channels(card), _podium(card), _reactors(card),
     ) if part)
     template = read_html_template("templates/summary.html")
     for token, value in (
+        ("{{card_width}}", f"{CARD_W}px"),
+        ("{{spark_width}}", f"{SPARK_W}px"),
         ("{{accent}}", period["accent"]),
         ("{{accent_soft}}", rgba(period["accent"], 0.18)),
         ("{{accent_edge}}", rgba(period["accent"], 0.55)),
@@ -447,4 +384,4 @@ def build_summary_html(card: dict) -> str:
 
 
 async def create_summary_image(card: dict):
-    return await screenshot_html(build_summary_html(card), size=(820, 2600), element_selector=".card")
+    return await screenshot_html(build_summary_html(card), size=(CARD_W, 2600), element_selector=".card")

@@ -435,7 +435,8 @@ async def _build_card(client, guild, frequency, data, previous_data, total_membe
         series_days = days
 
     message_series = [history.get(d, {}).get("messages") for d in series_days]
-    message_series[-1] = data.get("total_messages", 0)
+    if frequency == "daily":
+        message_series[-1] = data.get("total_messages", 0)
     # A day's member total is only written after its summary posts, so use the live count.
     member_series = [history.get(d, {}).get("members") or None for d in series_days]
     member_series[-1] = total_members
@@ -496,9 +497,6 @@ async def _build_card(client, guild, frequency, data, previous_data, total_membe
         "channels": channels,
         "chatters": await _people(client, guild, ranked("active_members")),
         "reactors": await _people(client, guild, ranked("reacting_members")),
-        "casino": stats.casino(start, end),
-        "economy": stats.economy(daily=frequency == "daily"),
-        "big_brother": stats.big_brother(start, end),
     }
 
 

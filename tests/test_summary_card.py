@@ -8,7 +8,7 @@ import pytz
 
 from lib.features import summary_stats as stats
 from lib.features.summary_html import (
-    build_summary_html, calendar_weeks, cal_level, heat_level, compact, signed_compact, hour_label,
+    build_summary_html, calendar_weeks, cal_level, heat_level, hour_label,
 )
 from lib.features.summary import _period_bounds, _subtitle, _build_card
 
@@ -27,7 +27,6 @@ def _card(**overrides):
         "deleted": 15, "channels": [("#general", 2915), ("#politics", 513)],
         "chatters": [{"name": "Gazza", "count": 485, "avatar": None, "colour": "#3B5BDB"}],
         "reactors": [{"name": "<b>Mrs Doyle</b> {{body}}", "count": 75, "avatar": None, "colour": "#BE185D"}],
-        "casino": None, "economy": None, "big_brother": None,
     }
     card.update(overrides)
     return card
@@ -67,22 +66,10 @@ class BucketTests(unittest.TestCase):
         self.assertEqual(days[date(2026, 10, 1)][0], 1)
         self.assertEqual(sum(days[date(2026, 9, 30)]), 2)
 
-    def test_casino_reports_the_house_side(self):
-        def fetch_one(sql, params=()):
-            if "GROUP BY game" in sql:
-                return ("higherlower", 970)
-            return (1788, 18, -15232)
-        with patch.object(stats.DatabaseManager, "fetch_one", side_effect=fetch_one):
-            result = stats.casino(date(2026, 9, 24), date(2026, 9, 30))
-        self.assertEqual(result["house_net"], 15232)
-        self.assertEqual(result["fave"], ("Higher/Lower", 970))
-
     def test_missing_tables_degrade_to_nothing(self):
         with patch.object(stats.DatabaseManager, "fetch_one", side_effect=Exception("no table")), \
              patch.object(stats.DatabaseManager, "fetch_all", side_effect=Exception("no table")):
-            self.assertIsNone(stats.casino(date(2026, 9, 30), date(2026, 9, 30)))
-            self.assertIsNone(stats.big_brother(date(2026, 9, 30), date(2026, 9, 30)))
-            self.assertIsNone(stats.economy(daily=True))
+            self.assertEqual(stats.media_count(date(2026, 9, 30), date(2026, 9, 30)), 0)
             self.assertEqual(stats.new_voices(date(2026, 9, 30), date(2026, 9, 30)), 0)
 
 
@@ -104,9 +91,6 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(cal_level(100, 100), 4)
 
     def test_number_formats(self):
-        self.assertEqual(compact(605744), "605.7k")
-        self.assertEqual(compact(7692), "7,692")
-        self.assertEqual(signed_compact(15232), "+15.2k")
         self.assertEqual(hour_label(0), "12am")
         self.assertEqual(hour_label(21), "9pm")
 
@@ -124,21 +108,16 @@ class HtmlTests(unittest.TestCase):
         self.assertIn(escaped_name, page)
         self.assertNotIn("{{", page.replace(escaped_name, ""))  # no unfilled tokens
         self.assertNotIn("<b>Mrs Doyle</b>", page)
-        # No extras recorded -> no "around the server" row.
-        self.assertNotIn("AROUND THE SERVER", page)
 
     def test_weekly_card_has_heatmap_and_runners_up(self):
         days = [(date(2026, 9, 28) + timedelta(days=i), [i] * 24) for i in range(7)]
         chatters = [{"name": f"user{i}", "count": 100 - i, "avatar": None, "colour": "#000000"} for i in range(10)]
         page = build_summary_html(_card(
-            frequency="weekly", activity={"kind": "week", "days": days}, chatters=chatters,
-            casino={"games": 1788, "players": 18, "house_net": -500, "fave": ("Mines", 3)},
-        ))
+            frequency="weekly", activity={"kind": "week", "days": days}, chatters=chatters))
         self.assertIn("Weekly recap", page)
         self.assertEqual(page.count('class="heat-row"'), 7)
         self.assertIn("10&nbsp;&nbsp;user9", page)
-        self.assertIn("players +500", page)
-        self.assertIn("AROUND THE SERVER", page)
+        self.assertNotIn("AROUND THE SERVER", page)
 
     def test_monthly_card_has_calendar(self):
         days = [(date(2026, 9, 1) + timedelta(days=i), 1000 + i * 10) for i in range(30)]
@@ -164,10 +143,7 @@ class BuildCardTests(unittest.TestCase):
         with patch.object(stats, "daily_series", return_value=history), \
              patch.object(stats, "message_activity", return_value={date(2026, 9, 30): [1] * 24}), \
              patch.object(stats, "media_count", return_value=189), \
-             patch.object(stats, "new_voices", return_value=22), \
-             patch.object(stats, "casino", return_value=None), \
-             patch.object(stats, "economy", return_value=None), \
-             patch.object(stats, "big_brother", return_value=None):
+             patch.object(stats, "new_voices", return_value=22):
             card = asyncio.run(_build_card(
                 None, guild, "daily", data, {"total_messages": 4401}, 13229, 18,
                 date(2026, 9, 30), date(2026, 9, 30)))
@@ -178,6 +154,21 @@ class BuildCardTests(unittest.TestCase):
         self.assertEqual(card["channels"], [("#general", 2915)])
         self.assertEqual(card["chatters"][0]["name"], "Unknown Member")
         self.assertEqual(card["activity"]["kind"], "hours")
+
+    def test_weekly_series_is_daily_totals_not_the_week_total(self):
+        days = [date(2026, 9, 21) + timedelta(days=i) for i in range(7)]
+        history = {d: {"messages": 1000 + i, "members": 13000 + i} for i, d in enumerate(days)}
+        guild = SimpleNamespace(get_member=lambda uid: None, get_channel=lambda cid: None)
+        data = {"total_messages": 7021, "messages": {}, "active_members": {}, "reacting_members": {}}
+        with patch.object(stats, "daily_series", return_value=history), \
+             patch.object(stats, "message_activity", return_value={d: [0] * 24 for d in days}), \
+             patch.object(stats, "media_count", return_value=0), \
+             patch.object(stats, "new_voices", return_value=0):
+            card = asyncio.run(_build_card(
+                None, guild, "weekly", data, None, 13010, 10, days[0], days[-1]))
+        self.assertEqual(card["message_series"], [1000, 1001, 1002, 1003, 1004, 1005, 1006])
+        self.assertEqual(card["member_series"][-1], 13010)
+        self.assertEqual(card["activity"]["kind"], "week")
 
 
 if __name__ == "__main__":
