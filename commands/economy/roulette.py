@@ -20,7 +20,6 @@ import logging
 import os
 import random
 import time
-from html import escape as _esc
 
 import discord
 from discord import Interaction
@@ -29,6 +28,8 @@ from lib.economy.economy_manager import get_bb, remove_bb
 from lib.economy.casino_stats import record_result
 from lib.core.file_operations import read_html_template
 import commands.economy.casino_base as cb
+from lib.economy import casino_felt as felt
+from lib.economy import roulette_board
 
 logger = logging.getLogger(__name__)
 
@@ -282,97 +283,14 @@ def get_spinner_gif() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Felt images: the betting roster and the results board (shared table shell)
+# Felt images: the betting layout and the results board (lib/economy/roulette_board.py)
 # ---------------------------------------------------------------------------
-def _roster_body(table) -> str:
-    if not table.players:
-        return ('<div style="text-align:center;color:rgba(255,255,255,.6);font-size:22px;'
-                'padding:46px 20px">No bets yet - tap <b>Enter Table</b> to place your chips.</div>')
-    rows = []
-    for slot in sorted(table.players.values(), key=lambda s: -sum(s["bets"].values())):
-        ptotal = sum(slot["bets"].values())
-        chips = " · ".join(f"{bet_label(k)} {a:,}" for k, a in slot["bets"].items())
-        rows.append(
-            '<div style="display:flex;flex-direction:column;gap:5px;padding:12px 18px;border-radius:12px;'
-            'background:rgba(0,0,0,.32);border:1px solid rgba(214,164,74,.32)">'
-            '<div style="display:flex;justify-content:space-between;align-items:center">'
-            f'<span style="font-weight:800;color:#fff;font-size:20px">{_esc(slot["name"])}</span>'
-            f'<span style="font-weight:800;color:#e8cf92;font-size:18px">{ptotal:,}</span></div>'
-            f'<div style="color:rgba(255,255,255,.72);font-size:15px">{_esc(chips)}</div></div>'
-        )
-    return ('<div style="width:100%;max-width:560px;margin:0 auto;display:flex;flex-direction:column;'
-            f'gap:8px">{"".join(rows)}</div>')
-
-
-def _results_body(table) -> str:
-    n = table.result
-    bg = {"green": "#1b8a4b", "red": "#b3242f", "black": "#1a1a1a"}[color(n)]
-    tags = ["Zero", "Green"] if n == 0 else [
-        color(n).capitalize(), "Even" if n % 2 == 0 else "Odd", "1-18" if n <= 18 else "19-36"]
-    hero = (
-        '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin:2px 0 16px">'
-        f'<div style="width:132px;height:132px;border-radius:50%;display:flex;align-items:center;'
-        f'justify-content:center;font-family:Georgia,serif;font-weight:800;font-size:68px;color:#fff;'
-        f'background:{bg};box-shadow:0 0 0 5px rgba(214,164,74,.75),0 12px 30px rgba(0,0,0,.55)">{n}</div>'
-        f'<div style="font-size:16px;letter-spacing:.16em;text-transform:uppercase;color:#e8cf92;'
-        f'font-weight:700">{" · ".join(tags)}</div></div>'
-    )
-    cards = []
-    standings = sorted(table.players.values(),
-                       key=lambda s: -(_resolve(s["bets"], n) - sum(s["bets"].values())))
-    for slot in standings:
-        bets = slot["bets"]
-        net = _resolve(bets, n) - sum(bets.values())
-        ncol = "#7CFC9B" if net > 0 else ("#ff7a7a" if net < 0 else "#e8e2cf")
-        nsign = f"+{net:,}" if net > 0 else (f"-{abs(net):,}" if net < 0 else "even")
-        bet_rows = []
-        for key in sorted(bets, key=lambda k: (not bet_wins(k, n), k)):
-            amt = bets[key]
-            won = bet_wins(key, n)
-            val = f"+{amt * bet_payout(key):,}" if won else f"-{amt:,}"
-            bcol = "#7CFC9B" if won else "#ff7a7a"
-            bet_rows.append(
-                '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 2px">'
-                f'<span style="color:rgba(255,255,255,.82);font-size:16px">{bet_label(key)}'
-                f'<span style="opacity:.5"> · staked {amt:,}</span></span>'
-                f'<span style="font-weight:700;font-size:16px;color:{bcol}">{val}</span></div>'
-            )
-        cards.append(
-            '<div style="background:rgba(0,0,0,.32);border:1px solid rgba(214,164,74,.3);'
-            'border-radius:12px;padding:11px 16px">'
-            '<div style="display:flex;justify-content:space-between;align-items:center;'
-            'padding-bottom:6px;margin-bottom:5px;border-bottom:1px solid rgba(255,255,255,.12)">'
-            f'<span style="font-weight:800;color:#fff;font-size:20px">{_esc(slot["name"])}</span>'
-            f'<span style="font-weight:800;font-size:20px;color:{ncol}">{nsign}</span></div>'
-            f'{"".join(bet_rows)}</div>'
-        )
-    if cards:
-        body = ('<div style="width:100%;max-width:560px;margin:0 auto;display:flex;flex-direction:column;'
-                f'gap:9px">{"".join(cards)}</div>')
-    else:
-        body = ('<div style="text-align:center;color:rgba(255,255,255,.6);font-size:22px;'
-                'padding:30px">No bets were placed this round.</div>')
-    return hero + body
-
-
 async def render_table_image(table) -> io.BytesIO:
-    return await cb.render_table(
-        title_main="EUROPEAN", title_accent="ROULETTE",
-        subtitle="Place your bets - tap Enter Table",
-        body_html=_roster_body(table),
-        bet=table.pot, balance=len(table.players),
-        bet_label="Pot", balance_label="Players", balance_unit="",
-        hint="Bets lock when the countdown ends.", result_banner="", session_html="")
+    return await felt.render(roulette_board.build_table_html(table))
 
 
 async def render_results_image(table) -> io.BytesIO:
-    return await cb.render_table(
-        title_main="EUROPEAN", title_accent="ROULETTE",
-        subtitle="The ball has landed",
-        body_html=_results_body(table),
-        bet=table.pot, balance=len(table.players),
-        bet_label="Pot", balance_label="Players", balance_unit="",
-        hint="Tap New Round to play again.", result_banner="", session_html="")
+    return await felt.render(roulette_board.build_results_html(table))
 
 
 # ---------------------------------------------------------------------------

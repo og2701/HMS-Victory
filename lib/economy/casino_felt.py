@@ -173,11 +173,12 @@ def paytable(rows, hit=None) -> str:
 
 
 def rail(head: str, sub: str = "", *, money: str | None = None, tone: str = "push",
-         actions: str | None = None, ledger=(), head_tone: str = "") -> str:
+         actions: str | None = None, side_html: str | None = None, ledger=(), head_tone: str = "") -> str:
     """The dark strip at the bottom: what happened (or what to do next), then the ledger.
 
     money shows on the right in a result colour (tone: win | lose | push | gold);
-    actions shows the next moves in gold small caps instead. ledger is [(label, value)]."""
+    actions shows the next moves in gold small caps instead; side_html puts any markup there
+    (roulette's little wheel). ledger is [(label, value)]."""
     crowded = len(head) > 14 or (actions and money is None and len(head) + len(actions) > 32)
     head_cls = "head serif" + (" small" if crowded else "") + (f" {head_tone}" if head_tone else "")
     sub_html = f'<span class="sub">{esc(sub)}</span>' if sub else ""
@@ -185,6 +186,8 @@ def rail(head: str, sub: str = "", *, money: str | None = None, tone: str = "pus
         side = f'<span class="money serif {tone}">{esc(money)}</span>'
     elif actions:
         side = f'<span class="actions">{esc(actions)}</span>'
+    elif side_html:
+        side = f'<div style="flex:none">{side_html}</div>'
     else:
         side = ""
     cols = "".join(f'<div class="c"><span class="l">{esc(lab)}</span>'

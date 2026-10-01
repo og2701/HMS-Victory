@@ -11,8 +11,6 @@ The reason string MUST contain the game's bank keyword (e.g. "Video Poker", "Red
 "Three Card Poker") so lib/economy/bank_manager routes it to that game's P/L counters.
 """
 
-import io
-import html as _html
 import logging
 import random
 
@@ -20,7 +18,6 @@ import discord
 
 from lib.economy.economy_manager import credit_casino_payout
 from lib.core.file_operations import (
-    read_html_template,
     load_persistent_views,
     save_persistent_views,
 )
@@ -172,38 +169,6 @@ def five_card_name(cards: list) -> str:
         5: "Flush", 4: "Straight", 3: "Three of a Kind", 2: "Two Pair",
         1: f"Pair of {RANK_NAME[tb[0]]}s", 0: f"{RANK_NAME[tb[0]]} high",
     }[cat]
-
-
-# ---------------------------------------------------------------------------
-# Rendering - the older felt shell, still used by roulette (templates/casino_table.html).
-# The card games render through lib/economy/casino_felt.py instead.
-# ---------------------------------------------------------------------------
-async def render_table(*, title_main: str, title_accent: str, subtitle: str,
-                       body_html: str, bet: int, balance: int, hint: str,
-                       result_banner: str = "", session_html: str = "",
-                       bet_label: str = "Bet", balance_label: str = "Balance",
-                       bet_unit: str = "UKP", balance_unit: str = "UKP") -> io.BytesIO:
-    # The two HUD chips default to "Bet"/"Balance" in UKP; pass labels/units to repurpose
-    # them (e.g. roulette's shared table shows "Pot" and "Players").
-    from lib.core.image_processing import screenshot_html
-    tpl = read_html_template("templates/casino_table.html")
-    out = (
-        tpl
-        .replace("{{TITLE_MAIN}}", _html.escape(title_main))
-        .replace("{{TITLE_ACCENT}}", _html.escape(title_accent))
-        .replace("{{SUBTITLE}}", subtitle)  # may contain <br>
-        .replace("{{BODY}}", body_html)
-        .replace("{{BET_LABEL}}", _html.escape(bet_label))
-        .replace("{{BALANCE_LABEL}}", _html.escape(balance_label))
-        .replace("{{BET_UNIT}}", _html.escape(bet_unit))
-        .replace("{{BALANCE_UNIT}}", _html.escape(balance_unit))
-        .replace("{{BET}}", f"{bet:,}")
-        .replace("{{BALANCE}}", f"{balance:,}")
-        .replace("{{HINT}}", _html.escape(hint))
-        .replace("{{RESULT_BANNER}}", result_banner)
-        .replace("{{SESSION}}", session_html)
-    )
-    return await screenshot_html(out, size=(900, 1500), element_selector=".table")
 
 
 # ---------------------------------------------------------------------------
