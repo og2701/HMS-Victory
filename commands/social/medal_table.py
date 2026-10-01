@@ -1,13 +1,10 @@
-import html
 import io
 
 import discord
-from discord import Embed, File, Interaction
+from discord import File, Interaction
 from discord.ui import View, Button
 
 from database import DatabaseManager
-from lib.core.file_operations import read_html_template
-from lib.core.image_processing import screenshot_html
 
 PAGE_SIZE = 20
 from config import BOT_ID
@@ -65,73 +62,9 @@ def _fetch_medal_table(guild=None):
             for rank, row in zip(ranks, table)]
 
 
-def _resolve_name(interaction: Interaction, user_id: str) -> str:
-    try:
-        uid_int = int(user_id)
-    except ValueError:
-        return f"User {user_id}"
-    member = interaction.guild.get_member(uid_int) if interaction.guild else None
-    if member:
-        return member.display_name
-    user = interaction.client.get_user(uid_int)
-    if user:
-        return user.name
-    return f"User {user_id}"
-
-
-def _rank_cell(rank: int, shared: bool) -> str:
-    prefix = "=" if shared else ""
-    if rank == 1:
-        return f'<span class="rank-medal gold">{prefix}1</span>'
-    if rank == 2:
-        return f'<span class="rank-medal silver">{prefix}2</span>'
-    if rank == 3:
-        return f'<span class="rank-medal bronze">{prefix}3</span>'
-    return f"{prefix}{rank}"
-
-
-def _render_html(interaction: Interaction, table: list, page: int) -> str:
-    total_pages = max(1, (len(table) + PAGE_SIZE - 1) // PAGE_SIZE)
-    page = max(0, min(page, total_pages - 1))
-    start = page * PAGE_SIZE
-    slice_ = table[start:start + PAGE_SIZE]
-
-    rows_html = []
-    for rank, shared, uid, g, s, b, total, has_secret in slice_:
-        name = html.escape(_resolve_name(interaction, uid))
-        # Secret-badge holders get a subtle rainbow outline on the whole row (see the
-        # tr.secret-row rule in the template), not a ring around just the name.
-        classes = []
-        if rank <= 3:
-            classes.append(f"top-{rank}")
-        if has_secret:
-            classes.append("secret-row")
-        row_class = " ".join(classes)
-        rows_html.append(
-            f'<tr class="{row_class}">'
-            f'<td class="rank">{_rank_cell(rank, shared)}</td>'
-            f'<td class="name">{name}</td>'
-            f'<td class="count gold-count">{g}</td>'
-            f'<td class="count silver-count">{s}</td>'
-            f'<td class="count bronze-count">{b}</td>'
-            f'<td class="total">{total}</td>'
-            f'</tr>'
-        )
-
-    template = read_html_template("templates/medal_table.html")
-    return (
-        template
-        .replace("{{ ROWS }}", "\n".join(rows_html))
-        .replace("{{ SUBTITLE }}", f"{len(table):,} ranked members")
-        .replace("{{ FOOTER_LEFT }}", f"Page {page + 1} of {total_pages}")
-        .replace("{{ FOOTER_RIGHT }}", "Ranked by Gold \u203a Silver \u203a Bronze")
-    )
-
-
 async def render_page_bytes(interaction: Interaction, table: list, page: int) -> bytes:
-    html_str = _render_html(interaction, table, page)
-    buf = await screenshot_html(html_str, size=(1600, 1200), element_selector=".container")
-    return buf.getvalue()
+    from lib.features.leaderboard_cards import render_medal_page
+    return await render_medal_page(interaction.client, interaction.guild, table, page)
 
 
 class MedalTableView(View):
@@ -158,8 +91,7 @@ class MedalTableView(View):
         self._sync_buttons()
         image_bytes = await self._get_page()
         file = File(fp=io.BytesIO(image_bytes), filename="medal_table.png")
-        embed = Embed(color=0xD4AF37).set_image(url="attachment://medal_table.png")
-        await interaction.edit_original_response(embed=embed, attachments=[file], view=self)
+        await interaction.edit_original_response(attachments=[file], view=self)
 
     @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
     async def prev_button(self, interaction: Interaction, button: Button):
@@ -185,6 +117,5 @@ async def handle_medal_table_command(interaction: Interaction):
     view = MedalTableView(interaction, table)
     image_bytes = await view._get_page()
     file = File(fp=io.BytesIO(image_bytes), filename="medal_table.png")
-    embed = Embed(color=0xD4AF37).set_image(url="attachment://medal_table.png")
     send_view = view if view.total_pages > 1 else None
-    await interaction.followup.send(embed=embed, file=file, view=send_view)
+    await interaction.followup.send(file=file, view=send_view)

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HMS Victory - Leaderboard</title>
+<style>
+  /* Shared card for the XP leaderboard, rich list and medal table (1000px wide).
+     lib/features/leaderboard_cards.py fills the accent tokens and injects the body.
+     Same Discord-dark language as the server summary card. */
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=Outfit:wght@700;800&family=Noto+Sans+Math&family=Noto+Sans+Symbols+2&family=Noto+Color+Emoji&display=swap');
+
+  :root {
+    --bg: #111214;
+    --tile: #1E1F22;
+    --line: #2B2D31;
+    --raised: #2B2D31;
+    --text: #F2F3F5;
+    --muted: #B5BAC1;
+    --faint: #949BA4;
+    --title: #E5C27A;
+    --up: #3BD47A;
+    --down: #FF6B6E;
+    --accent: {{accent}};
+    --accent-soft: {{accent_soft}};
+    --accent-edge: {{accent_edge}};
+    --accent-text: {{accent_text}};
+    --first: {{first_block}};
+    --first-text: {{first_text}};
+    --first-sub: {{first_sub}};
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); }
+  body { width: 1000px; font-family: 'Inter', 'Noto Sans Math', 'Noto Sans Symbols 2', 'Noto Color Emoji', sans-serif; color: var(--text); -webkit-font-smoothing: antialiased; }
+  .num { font-family: 'Outfit', 'Inter', sans-serif; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .card { width: 1000px; padding: 28px; display: flex; flex-direction: column; gap: 14px; background: var(--bg); }
+  .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Header */
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 8px 6px 14px; }
+  .brand { display: flex; align-items: center; gap: 16px; }
+  .badge { width: 60px; height: 60px; border-radius: 8px; background: var(--accent); display: flex; align-items: center; justify-content: center; }
+  .roundel { width: 34px; height: 34px; border-radius: 50%; background: radial-gradient(circle at center, #CF142B 0 30%, #FFFFFF 30% 54%, #00247D 54% 78%, #FFFFFF 78% 100%); }
+  .h-title { font-family: 'Outfit', sans-serif; font-size: 34px; line-height: 36px; font-weight: 800; }
+  .h-sub { font-size: 19px; font-weight: 500; color: var(--muted); margin-top: 4px; }
+  .page-chip { padding: 8px 16px; border-radius: 6px; background: var(--accent-soft); border: 1px solid var(--accent-edge); font-size: 17px; font-weight: 800; letter-spacing: 0.1em; color: var(--accent-text); white-space: nowrap; }
+
+  /* Stat tiles */
+  .stats { display: flex; gap: 14px; }
+  .tile { flex: 1; min-width: 0; background: var(--tile); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; }
+  .tile .label { font-size: 17px; font-weight: 700; }
+  .tile .value { font-size: 40px; line-height: 44px; white-space: nowrap; }
+  .tile .sub { font-size: 15px; font-weight: 600; color: var(--faint); }
+
+  /* Widgets */
+  .widget { background: var(--tile); border: 1px solid var(--line); border-radius: 8px; }
+
+  /* Podium */
+  .podium { padding: 24px 24px 22px; display: flex; align-items: flex-end; justify-content: center; gap: 14px; }
+  .place { width: 270px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .place.first { width: 290px; }
+  .place .who { max-width: 100%; font-size: 21px; font-weight: 700; }
+  .place.first .who { font-size: 23px; font-weight: 800; }
+  .place .note { font-size: 15px; font-weight: 600; color: var(--faint); }
+  .chip-title { max-width: 100%; padding: 3px 10px; border-radius: 4px; background: rgba(212,166,74,0.14); font-size: 14px; font-weight: 700; color: var(--title); }
+  .chip-gold { padding: 3px 10px; border-radius: 4px; background: rgba(240,178,50,0.16); font-size: 14px; font-weight: 800; color: #FBDC94; }
+  .block { width: 100%; border-radius: 6px 6px 2px 2px; background: var(--raised); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+  .block .big { font-size: 32px; }
+  .block .small { font-size: 15px; font-weight: 700; }
+  .place.second .block { height: 118px; }
+  .place.second .block .small { color: #B8BEC9; }
+  .place.third .block { height: 92px; }
+  .place.third .block .big { font-size: 30px; }
+  .place.third .block .small { color: #C98B4E; }
+  .place.first .block { height: 158px; background: var(--first); }
+  .place.first .block .big { font-size: 42px; color: var(--first-text); }
+  .place.first .block .small { font-size: 16px; font-weight: 800; color: var(--first-sub); }
+  .small.up { color: var(--up) !important; }
+  .small.down { color: var(--down) !important; }
+  .place.first .small.up { color: #D1FADF !important; }
+
+  /* Avatars */
+  .avatar { border-radius: 50%; flex-shrink: 0; object-fit: cover; display: flex; align-items: center; justify-content: center; font-family: 'Outfit', sans-serif; font-weight: 800; color: #FFFFFF; overflow: hidden; }
+  .ring { border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .ring.secret { background: conic-gradient(#F23F43, #F0B232, #23A55A, #00A8FC, #5865F2, #EB459E, #F23F43); }
+
+  /* Rows */
+  .rows { padding: 10px 12px; display: flex; flex-direction: column; }
+  .rows.with-heads { padding-top: 6px; }
+  .col-heads { display: flex; align-items: center; gap: 16px; padding: 12px 12px 10px; border-bottom: 1px solid var(--line); font-size: 14px; font-weight: 800; letter-spacing: 0.1em; color: var(--faint); }
+  .row { display: flex; align-items: center; gap: 16px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: none; }
+  .row.custom { border-radius: 6px; border: 1px solid rgba(255,255,255,0.18); background-size: cover; background-position: center; margin: 2px 0; }
+  .rank { width: 34px; flex-shrink: 0; font-family: 'Outfit', sans-serif; font-size: 22px; font-weight: 800; color: var(--faint); white-space: nowrap; }
+  .row .avatar { width: 40px; height: 40px; font-size: 17px; }
+  .who-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .who-col .name { font-size: 21px; font-weight: 700; }
+  .who-col .title { font-size: 15px; font-weight: 700; color: var(--title); }
+  .mid { width: 250px; flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; }
+  .mid-top { display: flex; justify-content: space-between; font-size: 15px; font-weight: 700; }
+  .mid-top .label { color: var(--text); }
+  .mid-top .label.dim { color: var(--faint); font-weight: 600; }
+  .mid-top .gap { color: var(--faint); }
+  .mid-top .gap.close, .mid-top .up { color: var(--up); }
+  .mid-top .down { color: var(--down); }
+  .track { height: 8px; border-radius: 2px; background: var(--raised); display: flex; }
+  .track div { height: 8px; border-radius: 2px; background: var(--accent); }
+  .track div.close { background: #23A55A; }
+  .spark { display: block; width: 250px; height: 26px; }
+  .value-col { width: 130px; flex-shrink: 0; text-align: right; font-size: 24px; }
+
+  /* Medal columns */
+  .collection { width: 170px; flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; }
+  .collection .label { font-size: 15px; font-weight: 700; color: var(--muted); }
+  .collection .track div { background: #F0B232; }
+  .medal-col { width: 62px; flex-shrink: 0; display: flex; justify-content: flex-end; align-items: center; gap: 6px; font-size: 22px; }
+  .medal-col.wide { width: 68px; }
+  .total-col { width: 62px; flex-shrink: 0; text-align: right; font-size: 24px; color: #FBDC94; }
+  .disc { border-radius: 50%; flex-shrink: 0; }
+  .disc.gold { background: radial-gradient(circle at 35% 30%, #FFE08A, #D4A017 60%, #9C7410); }
+  .disc.silver { background: radial-gradient(circle at 35% 30%, #FFFFFF, #C0C6CF 60%, #858D99); }
+  .disc.bronze { background: radial-gradient(circle at 35% 30%, #F2C49B, #C07A3E 60%, #8A4F22); }
+  .medals { display: flex; gap: 18px; font-size: 26px; }
+  .medals span { display: flex; align-items: center; gap: 7px; }
+  .place.first .medals { gap: 20px; font-size: 32px; color: #1E1F22; }
+  .place.third .medals { font-size: 24px; }
+</style>
+</head>
+<body>
+<div class="card">
+{{body}}
+</div>
+</body>
+</html>

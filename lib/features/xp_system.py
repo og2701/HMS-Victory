@@ -6,12 +6,9 @@ import asyncio
 import logging
 from database import DatabaseManager
 from config import *
-from lib.core.constants import CHAT_LEVEL_ROLE_THRESHOLDS, CUSTOM_RANK_BACKGROUNDS
+from lib.core.constants import CHAT_LEVEL_ROLE_THRESHOLDS
 from lib.economy.economy_manager import get_bb, add_bb
 from lib.economy.bank_manager import BankManager
-from lib.core.image_processing import screenshot_html, get_avatar_data_uri, encode_image_to_data_uri
-import os
-from lib.core.file_operations import read_html_template
 
 logger = logging.getLogger(__name__)
 
@@ -31,25 +28,22 @@ class LeaderboardView(discord.ui.View):
         self.previous_button.disabled = True
         self.next_button.disabled = (len(self.sorted_data) <= self.PAGE_SIZE)
 
-    def get_slice(self):
-        return self.sorted_data[self.offset : self.offset + self.PAGE_SIZE]
-
     async def _get_or_generate_image(self):
         next_off = self.offset + self.PAGE_SIZE
         if next_off < len(self.sorted_data) and next_off not in self.image_cache:
             self.image_cache[next_off] = asyncio.create_task(
-                self.xp_system.generate_leaderboard_image(self.guild, self.sorted_data[next_off : next_off + self.PAGE_SIZE], next_off)
+                self.xp_system.generate_leaderboard_image(self.guild, self.sorted_data, next_off)
             )
 
         prev_off = self.offset - self.PAGE_SIZE
         if prev_off >= 0 and prev_off not in self.image_cache:
             self.image_cache[prev_off] = asyncio.create_task(
-                self.xp_system.generate_leaderboard_image(self.guild, self.sorted_data[prev_off : prev_off + self.PAGE_SIZE], prev_off)
+                self.xp_system.generate_leaderboard_image(self.guild, self.sorted_data, prev_off)
             )
 
         if self.offset not in self.image_cache:
             self.image_cache[self.offset] = await self.xp_system.generate_leaderboard_image(
-                self.guild, self.get_slice(), self.offset
+                self.guild, self.sorted_data, self.offset
             )
         elif isinstance(self.image_cache[self.offset], asyncio.Task):
             try:
@@ -60,7 +54,7 @@ class LeaderboardView(discord.ui.View):
                 logger.warning(f"Cached leaderboard render at offset {self.offset} failed, regenerating: {e}")
                 self.image_cache.pop(self.offset, None)
                 self.image_cache[self.offset] = await self.xp_system.generate_leaderboard_image(
-                    self.guild, self.get_slice(), self.offset
+                    self.guild, self.sorted_data, self.offset
                 )
 
         return discord.File(fp=io.BytesIO(self.image_cache[self.offset]), filename="leaderboard.png")
@@ -113,25 +107,22 @@ class RichListView(discord.ui.View):
         self.previous_button.disabled = True
         self.next_button.disabled = (len(self.sorted_data) <= self.PAGE_SIZE)
 
-    def get_slice(self):
-        return self.sorted_data[self.offset : self.offset + self.PAGE_SIZE]
-
     async def _get_or_generate_image(self):
         next_off = self.offset + self.PAGE_SIZE
         if next_off < len(self.sorted_data) and next_off not in self.image_cache:
             self.image_cache[next_off] = asyncio.create_task(
-                self.xp_system.generate_richlist_image(self.guild, self.sorted_data[next_off : next_off + self.PAGE_SIZE], next_off)
+                self.xp_system.generate_richlist_image(self.guild, self.sorted_data, next_off)
             )
 
         prev_off = self.offset - self.PAGE_SIZE
         if prev_off >= 0 and prev_off not in self.image_cache:
             self.image_cache[prev_off] = asyncio.create_task(
-                self.xp_system.generate_richlist_image(self.guild, self.sorted_data[prev_off : prev_off + self.PAGE_SIZE], prev_off)
+                self.xp_system.generate_richlist_image(self.guild, self.sorted_data, prev_off)
             )
 
         if self.offset not in self.image_cache:
             self.image_cache[self.offset] = await self.xp_system.generate_richlist_image(
-                self.guild, self.get_slice(), self.offset
+                self.guild, self.sorted_data, self.offset
             )
         elif isinstance(self.image_cache[self.offset], asyncio.Task):
             try:
@@ -140,7 +131,7 @@ class RichListView(discord.ui.View):
                 logger.warning(f"Cached richlist render at offset {self.offset} failed, regenerating: {e}")
                 self.image_cache.pop(self.offset, None)
                 self.image_cache[self.offset] = await self.xp_system.generate_richlist_image(
-                    self.guild, self.get_slice(), self.offset
+                    self.guild, self.sorted_data, self.offset
                 )
 
         return discord.File(fp=io.BytesIO(self.image_cache[self.offset]), filename="richlist.png")
@@ -314,103 +305,17 @@ class XPSystem:
             sorted_xp = [(uid, xp) for uid, xp in sorted_xp if int(uid) in member_ids]
         return sorted_xp
 
-    async def generate_leaderboard_image(self, guild: discord.Guild, data_slice, offset):
-        template = read_html_template("templates/leaderboard.html")
-
-        left_html, right_html = "", ""
-        half = len(data_slice) // 2
-
-        # Pre-fetch missing members in bulk to improve performance on t3.micro
-        missing_uids = [uid for uid, _ in data_slice if guild.get_member(int(uid)) is None]
-        if missing_uids:
-            # We use query_members to fetch several at once if they are missing from cache
-            try:
-                await guild.query_members(user_ids=[int(uid) for uid in missing_uids], cache=True)
-            except:
-                pass
-
-        # Encode title banner texture
-        title_banner_path = os.path.join(BASE_DIR, "data", "rank_cards", "title_banner_texture.png")
-        title_bg_uri = ""
-        if os.path.exists(title_banner_path):
-            title_bg_uri = encode_image_to_data_uri(title_banner_path)
-
-        user_ids = [str(uid) for uid, _ in data_slice]
-        customizations = {}
-        if user_ids:
-            placeholders = ','.join('?' * len(user_ids))
-            query = f"SELECT user_id, title, background FROM user_rank_customization WHERE user_id IN ({placeholders})"
-            results = DatabaseManager.fetch_all(query, tuple(user_ids))
-            customizations = {row[0]: {'title': row[1], 'background': row[2]} for row in results}
-
-        for i, (uid, xp_val) in enumerate(data_slice):
-            rank = offset + i + 1
-            member = guild.get_member(int(uid))
-            name = member.display_name if member else "Unknown"
-            
-            uid_str = str(uid)
-            cust = customizations.get(uid_str, {})
-            title = cust.get('title')
-            db_bg = cust.get('background')
-            
-            bg_file = CUSTOM_RANK_BACKGROUNDS.get(uid_str)
-            if db_bg:
-                bg_file = db_bg
-                
-            has_custom_bg = bg_file is not None and bg_file != "unionjack.png"
-            
-            avatar_url = member.display_avatar.url if member else "https://cdn.discordapp.com/embed/avatars/0.png"
-            avatar = await get_avatar_data_uri(self.client, avatar_url)
-
-            # Determine rank class for specific styling (Gold, Silver, Bronze for top 3)
-            rank_class = f"rank-{rank}" if rank <= 3 else ""
-            
-            box_style = ""
-            if has_custom_bg:
-                bg_path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
-                if os.path.exists(bg_path):
-                    bg_uri = encode_image_to_data_uri(bg_path)
-                    box_style = f"background: linear-gradient(90deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%), url('{bg_uri}') no-repeat center center; background-size: cover; border: 1px solid rgba(255,255,255,0.3);"
-            elif title and title_bg_uri:
-                box_style = f"background: url('{title_bg_uri}') no-repeat center center; background-size: cover; border: 1px solid #D4AF37;"
-
-            title_html = f'<div class="user-title">{title}</div>' if title else ""
-
-            block = f"""
-            <div class="leaderboard-item {rank_class}" style="{box_style}">
-              <div class="rank-badge">#{rank}</div>
-              <div class="avatar-container">
-                <img src="{avatar}" class="avatar" />
-              </div>
-              <div class="user-info">
-                <div class="user-name">{name}</div>
-                {title_html}
-                <div class="user-stats">XP: <span class="stat-highlight">{xp_val:,}</span></div>
-              </div>
-            </div>
-            """
-            if i < half:
-                left_html += block
-            else:
-                right_html += block
-
-        two_col = f"""
-        <div class="flex gap-4 justify-center w-full">
-          <div class="flex flex-col gap-2 w-full max-w-[380px]">{left_html}</div>
-          <div class="flex flex-col gap-2 w-full max-w-[380px]">{right_html}</div>
-        </div>
-        """
-        final_html = template.replace("{{ LEADERBOARD_ROWS }}", two_col).replace("{{ TITLE }}", "HMS Victory XP Leaderboard")
-        image_buffer = await screenshot_html(final_html, size=(1000, 1400))
-        return image_buffer.getvalue()
+    async def generate_leaderboard_image(self, guild: discord.Guild, sorted_data, offset):
+        """Render one 20-entry page of the XP leaderboard (page one opens with a podium)."""
+        from lib.features.leaderboard_cards import render_xp_page
+        return await render_xp_page(self.client, guild, sorted_data, offset)
 
     async def handle_leaderboard_command(self, interaction: discord.Interaction):
         data = self.get_all_sorted_xp(interaction.guild)
         if not data:
             return await interaction.followup.send("No XP data found.")
         view = LeaderboardView(self, interaction.guild, data)
-        first = data[: LeaderboardView.PAGE_SIZE]
-        image_bytes = await self.generate_leaderboard_image(interaction.guild, first, 0)
+        image_bytes = await self.generate_leaderboard_image(interaction.guild, data, 0)
         view.image_cache[0] = image_bytes
 
         file = discord.File(fp=io.BytesIO(image_bytes), filename="leaderboard.png")
@@ -420,130 +325,23 @@ class XPSystem:
         # The bot/bank (BOT_ID) is the house, not a player - keep it off the ranked list
         # (it's shown separately as a header on the richlist).
         from config import BOT_ID
+        # Empty wallets are left off so the page count matches the holder count on the card.
         balances = DatabaseManager.fetch_all(
-            "SELECT user_id, balance FROM ukpence WHERE user_id != ? ORDER BY balance DESC",
+            "SELECT user_id, balance FROM ukpence WHERE user_id != ? AND balance > 0 ORDER BY balance DESC",
             (str(BOT_ID),))
         return balances
 
-    async def generate_richlist_image(self, guild, data_slice, offset):
-        template = read_html_template("templates/leaderboard.html")
-
-        left_html, right_html = "", ""
-        half = RichListView.PAGE_SIZE // 2
-
-        # Pre-fetch missing members in bulk
-        missing_uids = [uid for uid, _ in data_slice if guild.get_member(int(uid)) is None]
-        if missing_uids:
-            try:
-                await guild.query_members(user_ids=[int(uid) for uid in missing_uids], cache=True)
-            except:
-                pass
-
-        # Encode title banner texture
-        title_banner_path = os.path.join(BASE_DIR, "data", "rank_cards", "title_banner_texture.png")
-        title_bg_uri = ""
-        if os.path.exists(title_banner_path):
-            title_bg_uri = encode_image_to_data_uri(title_banner_path)
-
-        user_ids = [str(uid) for uid, _ in data_slice]
-        customizations = {}
-        if user_ids:
-            placeholders = ','.join('?' * len(user_ids))
-            query = f"SELECT user_id, title, background FROM user_rank_customization WHERE user_id IN ({placeholders})"
-            results = DatabaseManager.fetch_all(query, tuple(user_ids))
-            customizations = {row[0]: {'title': row[1], 'background': row[2]} for row in results}
-
-        for i, (uid, bal) in enumerate(data_slice):
-            rank = offset + i + 1
-            member = guild.get_member(int(uid))
-            name = member.display_name if member else "Unknown"
-            
-            uid_str = str(uid)
-            cust = customizations.get(uid_str, {})
-            title = cust.get('title')
-            db_bg = cust.get('background')
-            
-            bg_file = CUSTOM_RANK_BACKGROUNDS.get(uid_str)
-            if db_bg:
-                bg_file = db_bg
-                
-            has_custom_bg = bg_file is not None and bg_file != "unionjack.png"
-            
-            avatar_url = member.display_avatar.url if member else "https://cdn.discordapp.com/embed/avatars/0.png"
-            avatar = await get_avatar_data_uri(self.client, avatar_url)
-
-            # Determine rank class for specific styling
-            rank_class = f"rank-{rank}" if rank <= 3 else ""
-            
-            box_style = ""
-            if has_custom_bg:
-                bg_path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
-                if os.path.exists(bg_path):
-                    bg_uri = encode_image_to_data_uri(bg_path)
-                    box_style = f"background: linear-gradient(90deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%), url('{bg_uri}') no-repeat center center; background-size: cover; border: 1px solid rgba(255,255,255,0.3);"
-            elif title and title_bg_uri:
-                box_style = f"background: url('{title_bg_uri}') no-repeat center center; background-size: cover; border: 1px solid #D4AF37;"
-
-            title_html = f'<div class="user-title">{title}</div>' if title else ""
-
-            block = f"""
-            <div class="leaderboard-item {rank_class}" style="{box_style}">
-              <div class="rank-badge">#{rank}</div>
-              <div class="avatar-container">
-                <img src="{avatar}" class="avatar" />
-              </div>
-              <div class="user-info">
-                <div class="user-name">{name}</div>
-                {title_html}
-                <div class="user-stats">UKPence: <span class="stat-highlight">{bal:,}</span></div>
-              </div>
-            </div>
-            """
-            if i < half:
-                left_html += block
-            else:
-                right_html += block
-
-        two_col = f"""
-        <div class="flex gap-4 justify-center w-full">
-          <div class="flex flex-col gap-2 w-full max-w-[380px]">{left_html}</div>
-          <div class="flex flex-col gap-2 w-full max-w-[380px]">{right_html}</div>
-        </div>
-        """
-
-        # House Bank header - the bot/bank isn't ranked among players, but its balance is
-        # shown centred at the top of every page.
-        from config import BOT_ID
-        bank_row = DatabaseManager.fetch_one("SELECT balance FROM ukpence WHERE user_id = ?", (str(BOT_ID),))
-        bank_bal = bank_row[0] if bank_row else 0
-        bank_member = guild.get_member(int(BOT_ID))
-        bank_avatar_url = bank_member.display_avatar.url if bank_member else "https://cdn.discordapp.com/embed/avatars/0.png"
-        bank_avatar = await get_avatar_data_uri(self.client, bank_avatar_url)
-        bank_html = f"""
-        <div class="flex justify-center w-full" style="margin-bottom:18px">
-          <div class="leaderboard-item" style="max-width:470px;width:100%;border:1.5px solid #D4AF37;box-shadow:0 0 22px rgba(212,175,55,.4);background:linear-gradient(90deg, rgba(0,0,0,.9), rgba(48,36,6,.7));">
-            <div class="rank-badge" style="color:#D4AF37;font-size:30px;font-weight:700">£</div>
-            <div class="avatar-container"><img src="{bank_avatar}" class="avatar" /></div>
-            <div class="user-info">
-              <div class="user-name" style="color:#D4AF37">Victory Bank</div>
-              <div class="user-stats">UKPence: <span class="stat-highlight">{bank_bal:,}</span></div>
-            </div>
-          </div>
-        </div>
-        """
-
-        rows_html = f'<div class="flex flex-col w-full">{bank_html}{two_col}</div>'
-        final_html = template.replace("{{ LEADERBOARD_ROWS }}", rows_html).replace("{{ TITLE }}", "HMS Victory UKPence Richlist")
-        image_buffer = await screenshot_html(final_html, size=(1000, 1400))
-        return image_buffer.getvalue()
+    async def generate_richlist_image(self, guild, sorted_data, offset):
+        """Render one 20-entry page of the UKPence rich list (the bank is shown, not ranked)."""
+        from lib.features.leaderboard_cards import render_rich_page
+        return await render_rich_page(self.client, guild, sorted_data, offset)
 
     async def handle_richlist_command(self, interaction: discord.Interaction):
         data = self.get_all_balances()
         if not data:
             return await interaction.followup.send("No UKPence data found.")
         view = RichListView(self, interaction.guild, data)
-        first = data[: RichListView.PAGE_SIZE]
-        image_bytes = await self.generate_richlist_image(interaction.guild, first, 0)
+        image_bytes = await self.generate_richlist_image(interaction.guild, data, 0)
         view.image_cache[0] = image_bytes
 
         file = discord.File(fp=io.BytesIO(image_bytes), filename="richlist.png")
