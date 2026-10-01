@@ -19,8 +19,15 @@ class CategoryTests(unittest.TestCase):
         self.assertEqual(_categorize("You stayed and talked to a new member")[0], "Welcome")
         self.assertEqual(_categorize("Lucky Dip win (+150 UKPence)")[0], "Shop")
 
-    def test_pay_still_wins_on_a_counterparty(self):
-        self.assertEqual(_categorize("Mines bet", counterparty_id=123)[0], "Pay")
+    def test_transfers_win_on_a_counterparty(self):
+        self.assertEqual(_categorize("/pay Pooja → Alex", counterparty_id=123)[0], "Transfers")
+        self.assertEqual(_categorize("Mines bet", counterparty_id=123)[0], "Transfers")
+
+    def test_a_fraud_fine_is_a_fine_not_a_benefit(self):
+        self.assertEqual(_categorize("Paid benefits fraud fine for 795003706717372462")[0], "Fines")
+        self.assertEqual(_categorize("Paid benefits fraud fine")[0], "Fines")
+        self.assertEqual(_categorize("Weekly benefits")[0], "Benefits")
+        self.assertEqual(_categorize("Lucky Dip penalty (Parking Fine)")[0], "Shop")
 
 
 if __name__ == "__main__":

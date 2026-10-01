@@ -120,10 +120,11 @@ _WINDOW_NAME = {1: "24 hours", 7: "7 days", 30: "30 days", 90: "90 days"}
 
 # Category colours for the in/out bars (statement._categorize's labels)
 _CAT_COLOURS = {
-    "Casino": "#F472B6", "Pay": "#3BA3F5", "Rewards": "#3BD47A", "Benefits": "#2DD4BF",
+    "Casino": "#F472B6", "Transfers": "#3BA3F5", "Rewards": "#3BD47A", "Benefits": "#2DD4BF",
     "Welcome": "#A3E635", "Predictions": "#A78BFA", "Shop": "#FB923C", "Games": "#FDE047",
     "Lottery": "#F59E0B", "Tax": "#F87171", "Bond": "#94A3B8", "Tree": "#84CC16",
-    "Hall of Fame": "#FBBF24", "Ticket": "#22D3EE", "Admin": "#CBD5E1", "Other": "#6B7280",
+    "Hall of Fame": "#FBBF24", "Ticket": "#22D3EE", "Admin": "#CBD5E1", "Fines": "#E11D48",
+    "Other": "#6B7280",
 }
 
 

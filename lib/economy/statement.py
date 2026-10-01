@@ -34,8 +34,8 @@ _MAX_LINES = 40           # itemised lines before older entries roll into the su
 _DAY_SECONDS = 24 * 60 * 60
 _SEP = discord.SeparatorSpacing.small
 
-# Reason -> (label, emoji). Order matters: first substring hit wins. Pay is detected by the
-# presence of a counterparty id, ahead of any text match.
+# Reason -> (label, emoji). Order matters: first substring hit wins. Transfers (/pay between
+# members) are detected by the presence of a counterparty id, ahead of any text match.
 _CATEGORIES = [
     ("Casino", "\U0001f3b0", ["blackjack", "roulette", "slots", "slot ", "video poker",
                                "vpoker", "videopoker", "red dog", "reddog", "three card",
@@ -49,6 +49,8 @@ _CATEGORIES = [
     ("Rewards", "📈", ["chat", "stage", "booster", "top chatter", "message reward", "reward", "daily", "solve", "crossword", "wordle"]),
     ("Welcome", "📈", ["welcome", "new member"]),
     ("Tax", "📉", ["tax", "inactivity tax", "demurrage", "dormant"]),
+    # Ahead of Benefits: paying a benefits fraud fine isn't a benefit
+    ("Fines", "⚖️", ["fraud fine"]),
     ("Benefits", "\U0001f9fe", ["benefit", "dole"]),
     ("Tree", "\U0001f333", ["tree", "water"]),
     ("Hall of Fame", "\U0001f3c6", ["hall of fame", "hof"]),
@@ -61,7 +63,7 @@ _CATEGORIES = [
 
 def _categorize(reason, counterparty_id=None):
     if counterparty_id:
-        return ("Pay", "\U0001f501")
+        return ("Transfers", "\U0001f501")
     r = (reason or "").lower()
     # Strip bracketed tax annotation suffix before categorizing
     if "[" in r and "tax:" in r:
@@ -309,7 +311,7 @@ def build_statement_view(*, target_id, target_name, viewer_id, offset, client, d
 
 
 def _emoji_for(label):
-    if label == "Pay":
+    if label == "Transfers":
         return "\U0001f501"
     if label == "Rewards & other":
         return "📈"

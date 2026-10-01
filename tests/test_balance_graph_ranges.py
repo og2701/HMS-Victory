@@ -81,7 +81,7 @@ def test_long_windows_bucket_by_week():
 def test_card_shows_rank_flows_and_escapes_the_name():
     now = int(time.time())
     page = bg._build_html("<b>og</b>", [(now - 30 * 86_400, 700), (now, 9_120)], days=30, rank=20,
-                          holders=3_772, came_in={"Casino": 31_812, "Pay": 14_085},
+                          holders=3_772, came_in={"Casino": 31_812, "Transfers": 14_085},
                           went_out={"Casino": -37_600, "Shop": -3_000})
     assert "&lt;b&gt;og&lt;/b&gt;" in page and "<b>og</b>" not in page
     assert "#20 RICHEST OF 3,772" in page
