@@ -6,6 +6,7 @@ import io
 import os
 import pytz
 import random
+import re
 from datetime import datetime, timedelta
 
 from config import *
@@ -64,223 +65,96 @@ async def post_summary_helper(interaction: Interaction, summary_type: str):
 
 
 
+_HEX_COLOUR = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def _safe_colour(value, default):
+    """Only plain #RRGGBB colours reach the card's CSS."""
+    return value if isinstance(value, str) and _HEX_COLOUR.match(value) else default
+
+
 async def generate_rank_card(interaction: discord.Interaction, member: discord.Member) -> discord.File:
+    from lib.features.rank_card import build_rank_card_html, tier_progress
     logger.info(f"Initiating rank card generation for {member.display_name} (ID: {member.id})")
     try:
         if not hasattr(interaction.client, "xp_system"):
-            logger.warning("XPSystem not found on client. Initializing now.")
             from lib.features.xp_system import XPSystem
             interaction.client.xp_system = XPSystem(interaction.client)
         xp_system = interaction.client.xp_system
-        logger.debug("XPSystem has been accessed.")
 
         rank, current_xp = xp_system.get_rank(str(member.id), interaction.guild)
-        rank_display = f"#{rank}" if rank is not None else "Unranked"
-        if current_xp is None:
-            current_xp = 0
-            logger.warning(f"No XP data for {member.id}, defaulting to 0.")
-        logger.info(f"Data for {member.display_name}: Rank={rank_display}, XP={current_xp}")
+        current_xp = int(current_xp or 0)
 
-        current_role_id, next_role_id, next_threshold = None, None, None
-        for threshold, role_id in CHAT_LEVEL_ROLE_THRESHOLDS:
-            if current_xp >= threshold:
-                current_role_id = role_id
-            else:
-                next_role_id = role_id
-                next_threshold = threshold
-                break
-        logger.debug(f"Role state: current_role_id={current_role_id}, next_role_id={next_role_id}, next_threshold={next_threshold}")
+        # Progress runs from the current peerage's threshold to the next one, so a member
+        # who has just been promoted starts on an empty bar.
+        tier = tier_progress(current_xp, CHAT_LEVEL_ROLE_THRESHOLDS)
+        guild = interaction.guild
 
-        if next_threshold is None:
-            progress_percent = 100
-            xp_display = f"{current_xp:,}"
-            next_role_name = "MAX"
-        else:
-            progress_percent = (current_xp / next_threshold) * 100 if next_threshold > 0 else 100
-            xp_display = f"{current_xp:,} / {next_threshold:,}"
-            next_role = interaction.guild.get_role(next_role_id) if next_role_id else None
-            next_role_name = next_role.name if next_role else "Max"
-        logger.info(f"Progress calculated: {progress_percent:.2f}%")
+        def role_name(role_id):
+            role = guild.get_role(role_id) if role_id and guild else None
+            return role.name if role else None
 
-        current_role_name = "None"
-        if current_role_id:
-            current_role = interaction.guild.get_role(current_role_id)
-            if current_role:
-                current_role_name = current_role.name
-                # Special override: "Duke" -> "Duchess" for specific users
-                if current_role_id == ROLES.DUKE and member.id in [USERS.CHIN, USERS.CHERRY_BLOSSOM]:
-                    current_role_name = "Duchess"
-        logger.info(f"Current role set to: {current_role_name}")
+        current_role_name = role_name(tier["current_id"])
+        # Special override: "Duke" -> "Duchess" for specific users
+        if tier["current_id"] == ROLES.DUKE and member.id in [USERS.CHIN, USERS.CHERRY_BLOSSOM]:
+            current_role_name = "Duchess"
 
-        from config import BASE_DIR
-        template_path = os.path.join(BASE_DIR, "templates", "rank_card.html")
-        logger.debug(f"Reading template from {template_path}")
-        html_content = read_html_template(template_path)
-
-        import re
-        def safe_replace(content, key, value):
-            # Matches {key}, { key }, or { \n key \n }
-            pattern = r'\{\s*' + re.escape(key) + r'\s*\}'
-            return re.sub(pattern, lambda _: str(value), content, flags=re.MULTILINE)
-
-        shutcoin_html = ""
-        if True: # Force enable for display, or use config explicitly
-            try:
-                from lib.economy.economy_manager import get_shutcoins
-                shutcoin_count = get_shutcoins(member.id)
-                shutcoin_icon_path = os.path.join(BASE_DIR, "data", "shutcoin.png")
-                shutcoin_icon_uri = encode_image_to_data_uri(shutcoin_icon_path)
-                shutcoin_html = f'<div class="coin-box"><img src="{shutcoin_icon_uri}" class="coin-icon" /><span class="xp-text">{shutcoin_count:,}</span></div>'
-            except Exception as e:
-                logger.error(f"Error getting shutcoins: {e}")
-
-        britbuck_amount = get_bb(member.id)
-        britbuck_icon_path = os.path.join(BASE_DIR, "data", "ukpence.png")
-        britbuck_icon_uri = encode_image_to_data_uri(britbuck_icon_path)
-        britbuck_html = f'<div class="coin-box"><img src="{britbuck_icon_uri}" class="coin-icon" /><span class="xp-text">{britbuck_amount:,}</span></div>'
+        shutcoins = None
+        try:
+            shutcoins = int(get_shutcoins(member.id))
+        except Exception as e:
+            logger.error(f"Error getting shutcoins: {e}")
 
         user_id_str = str(member.id)
         customization = DatabaseManager.fetch_one(
             "SELECT background, primary_color, secondary_color, tertiary_color, title FROM user_rank_customization WHERE user_id = ?",
             (user_id_str,)
         )
-        
         bg_file = CUSTOM_RANK_BACKGROUNDS.get(user_id_str, "unionjack.png")
         primary_color, secondary_color, tertiary_color = '#CF142B', '#00247D', '#FFFFFF'
         title = ""
-        
         if customization:
             res_bg, res_p, res_s, res_t, res_title = customization
-            if res_bg and res_bg != 'unionjack.png': 
+            if res_bg and res_bg != 'unionjack.png':
                 bg_file = res_bg
-            if res_p: primary_color = res_p
-            if res_s: secondary_color = res_s
-            if res_t: tertiary_color = res_t
-            if res_title: title = res_title
-
-        # Username scaling
-        username = member.display_name
-        name_len = len(username)
-        if name_len <= 10:
-            username_font_size = "4.5rem"
-        elif name_len <= 15:
-            username_font_size = "3.5rem"
-        elif name_len <= 20:
-            username_font_size = "2.8rem"
-        else:
-            username_font_size = "2.2rem"
-            
-        title_display = "block" if title else "none"
+            primary_color = _safe_colour(res_p, primary_color)
+            secondary_color = _safe_colour(res_s, secondary_color)
+            tertiary_color = _safe_colour(res_t, tertiary_color)
+            title = res_title or ""
 
         background_path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
         if not os.path.exists(background_path):
-            bg_file = "unionjack.png"
-            background_path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
-        background_data_uri = encode_image_to_data_uri(background_path)
-        
-        # Encode title banner texture
-        title_banner_path = os.path.join(BASE_DIR, "data", "rank_cards", "title_banner_texture.png")
-        title_bg_uri = ""
-        if os.path.exists(title_banner_path):
-            title_bg_uri = encode_image_to_data_uri(title_banner_path)
+            background_path = os.path.join(BASE_DIR, "data", "rank_cards", "unionjack.png")
 
-        # Add badges
-        badges_html = ""
-        secret_badges_html = ""
-        n_main_badges = 0
-        n_secret_badges = 0
-        user_badges = get_user_badges(user_id_str)
-        if user_badges:
-            # Sort by rarity: Secret (-1), Gold (0), Silver (1), Bronze (2)
-            rarity_map = {"Secret": -1, "Gold": 0, "Silver": 1, "Bronze": 2}
-            user_badges.sort(key=lambda x: rarity_map.get(x[5], 3))
-            
-            for badge in user_badges:
-                b_id, b_name, b_desc, icon, awarded_at, rarity = badge
-                rarity_class = f"rarity-{rarity.lower()}"
-                
-                # Check if it's a file path or a raw emoji
-                icon_file_path = os.path.join(BASE_DIR, "data", "badges", icon)
-                badge_inner_html = ""
-                if os.path.exists(icon_file_path):
-                    data_uri = encode_image_to_data_uri(icon_file_path)
-                    badge_inner_html = f'<div class="badge-item {rarity_class}"><img src="{data_uri}" alt="{b_name}"></div>'
-                else:
-                    # Assume it's a raw emoji
-                    twemoji_url = get_twemoji_url(icon)
-                    badge_inner_html = f'<div class="badge-item emoji {rarity_class}"><img src="{twemoji_url}" alt="{b_name}"></div>'
-                
-                if rarity == "Secret":
-                    secret_badges_html += badge_inner_html
-                    n_secret_badges += 1
-                else:
-                    badges_html += badge_inner_html
-                    n_main_badges += 1
-        
-        # --- Dynamic badge grid sizing ---------------------------------------
-        # Each badge grid is fit inside a bounded box so it never spills below the rank
-        # progress row or onto the username. The right (non-secret) box narrows as the name
-        # gets longer (keeping badges clear of a long name); the cell size is then the
-        # largest that fits every badge in the box. Boxes are in the template's 1000x600
-        # logical card space.
-        def _fit_badge_cell(count, box_w, box_h, gap, max_cell=40, min_cell=16):
-            if count <= 0:
-                return max_cell
-            for cell in range(max_cell, min_cell - 1, -1):
-                cols = max(1, (box_w + gap) // (cell + gap))
-                rows = (count + cols - 1) // cols
-                if rows * (cell + gap) - gap <= box_h:
-                    return cell
-            return min_cell
+        badges = []
+        for b_id, b_name, b_desc, icon, awarded_at, rarity in get_user_badges(user_id_str) or []:
+            icon_file_path = os.path.join(BASE_DIR, "data", "badges", icon)
+            src = encode_image_to_data_uri(icon_file_path) if os.path.exists(icon_file_path) else get_twemoji_url(icon)
+            badges.append({"src": src, "rarity": rarity, "name": b_name})
 
-        badge_gap = 6
-        # Right box width shrinks with the username so badges stay off a longer name.
-        if name_len <= 12:
-            main_box_w = 580
-        elif name_len <= 18:
-            main_box_w = 500
-        elif name_len <= 24:
-            main_box_w = 430
-        else:
-            main_box_w = 370
-        main_box_h = 250                       # keeps the grid above the rank-progress row
-        secret_box_w, secret_box_h = 320, 150  # top-left, above the avatar
-        main_badge_size = _fit_badge_cell(n_main_badges, main_box_w, main_box_h, badge_gap)
-        secret_badge_size = _fit_badge_cell(n_secret_badges, secret_box_w, secret_box_h, badge_gap)
-
-        # Apply replacements
-        html_content = safe_replace(html_content, "badge_gap", badge_gap)
-        html_content = safe_replace(html_content, "main_box_w", main_box_w)
-        html_content = safe_replace(html_content, "main_box_h", main_box_h)
-        html_content = safe_replace(html_content, "secret_box_w", secret_box_w)
-        html_content = safe_replace(html_content, "secret_box_h", secret_box_h)
-        html_content = safe_replace(html_content, "main_badge_size", main_badge_size)
-        html_content = safe_replace(html_content, "secret_badge_size", secret_badge_size)
-        html_content = safe_replace(html_content, "profile_pic", member.display_avatar.url)
-        html_content = safe_replace(html_content, "username", member.display_name)
-        # Render "#5" when ranked, "Unranked" otherwise (the template prefixes "Rank ").
-        # Previously injected raw `rank`, so an uncached member showed "Rank #None".
-        html_content = safe_replace(html_content, "rank", f"#{rank}" if rank is not None else "Unranked")
-        html_content = safe_replace(html_content, "xp_display", xp_display)
-        html_content = safe_replace(html_content, "progress_percent", f"{progress_percent}%")
-        html_content = safe_replace(html_content, "current_role", current_role_name)
-        html_content = safe_replace(html_content, "next_role_name", next_role_name)
-        html_content = safe_replace(html_content, "shutcoin_html", shutcoin_html)
-        html_content = safe_replace(html_content, "britbuck_html", britbuck_html)
-        html_content = safe_replace(html_content, "bg_image", background_data_uri)
-        html_content = safe_replace(html_content, "primary_color", primary_color)
-        html_content = safe_replace(html_content, "secondary_color", secondary_color)
-        html_content = safe_replace(html_content, "tertiary_color", tertiary_color)
-        html_content = safe_replace(html_content, "username_font_size", username_font_size)
-        html_content = safe_replace(html_content, "title", title)
-        html_content = safe_replace(html_content, "title_display", title_display)
-        html_content = safe_replace(html_content, "title_bg", title_bg_uri)
-        html_content = safe_replace(html_content, "badges_html", badges_html)
-        html_content = safe_replace(html_content, "secret_badges_html", secret_badges_html)
+        card = {
+            "username": member.display_name,
+            "title": title,
+            "rank_label": f"#{rank}" if rank is not None else "Unranked",
+            "xp": current_xp,
+            "current_role": current_role_name,
+            "next_role": role_name(tier["next_id"]) if tier["next_id"] else None,
+            "to_next": tier["to_next"],
+            "progress": tier["progress"],
+            "ukpence": int(get_bb(member.id) or 0),
+            "shutcoins": shutcoins,
+            "ukpence_icon": encode_image_to_data_uri(os.path.join(BASE_DIR, "data", "ukpence.png")),
+            "shutcoin_icon": encode_image_to_data_uri(os.path.join(BASE_DIR, "data", "shutcoin.png")),
+            "avatar_url": member.display_avatar.with_size(256).with_static_format("png").url,
+            "background": encode_image_to_data_uri(background_path),
+            "primary": primary_color,
+            "secondary": secondary_color,
+            "tertiary": tertiary_color,
+            "badges": badges,
+        }
 
         import time
-        size = (1400, 1000)
-        image_bytes = await screenshot_html(html_content, size)
+        image_bytes = await screenshot_html(build_rank_card_html(card), size=(1000, 700), element_selector=".card")
         filename = f"rank_{int(time.time())}.png"
         return discord.File(fp=image_bytes, filename=filename)
 

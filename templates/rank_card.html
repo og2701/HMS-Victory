@@ -1,466 +1,70 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@600;800;900&family=Noto+Sans+Math&family=Noto+Color+Emoji&display=swap');
+<meta charset="UTF-8">
+<title>HMS Victory - Rank Card</title>
+<style>
+  /* Rank card (1000x600, the size the purchasable backgrounds are made for).
+     The background fills the top banner; the seam under it is the peerage progress bar.
+     lib/features/rank_card.py fills the tokens and injects the body. */
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=Outfit:wght@700;800&family=Noto+Sans+Math&family=Noto+Sans+Symbols+2&family=Noto+Color+Emoji&display=swap');
 
-    * {
-      box-sizing: border-box;
-    }
+  :root {
+    --primary: {{primary}};
+    --secondary: {{secondary}};
+    --tertiary: {{tertiary}};
+    --cell: {{cell}}px;
+  }
 
-    /* Twemoji image styling */
-    img.emoji {
-       height: 1em;
-       width: 1em;
-       margin: 0 .05em 0 .1em;
-       vertical-align: -0.1em;
-       display: inline-block;
-    }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #111214; }
+  body { font-family: 'Inter', 'Noto Sans Math', 'Noto Sans Symbols 2', 'Noto Color Emoji', sans-serif; color: #F2F3F5; -webkit-font-smoothing: antialiased; }
+  .num { font-family: 'Outfit', 'Inter', sans-serif; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    body {
-      margin: 0;
-      padding: 0;
-      width: 100vw;
-      height: 100vh;
-      background: #000;
-      font-family: 'Inter', 'Outfit', 'Noto Sans Math', 'apple color emoji', 'segoe ui emoji', 'noto color emoji', 'android emoji', 'emojisymbols', 'emojione mozilla', 'twemoji mozilla', 'segoe ui symbol', sans-serif;
-      color: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-    }
+  .card { position: relative; width: 1000px; height: 600px; overflow: hidden; background: #111214; display: flex; flex-direction: column; }
 
-    .container {
-      position: relative;
-      width: 1000px;
-      height: 600px;
-      background: url('{bg_image}') no-repeat center center;
-      background-size: cover;
+  /* Banner: the member's background, untouched apart from a soft fade into the seam. */
+  .banner { height: 340px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 20px 24px 14px; background-size: cover; background-position: center; }
+  .banner-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .banner-row.bottom { align-items: flex-end; padding-left: 220px; }
+  .chip { padding: 8px 14px; border-radius: 6px; background: rgba(17,18,20,0.85); }
+  .rank-chip { font-size: 26px; color: #F0B232; }
+  .coins { display: flex; gap: 8px; }
+  .coin { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+  .coin img { width: 24px; height: 24px; }
+  .coin span { font-size: 21px; }
+  .tier { padding: 6px 12px; font-size: 17px; font-weight: 700; }
+  .tier.current { color: #8C95FF; }
+  .tier.next { color: #3BD47A; }
+  .tier.max { color: #F0B232; }
 
-      border: 4px solid {
-        primary_color
-      }
+  /* Seam = peerage progress, coloured with the member's chosen palette. */
+  .seam { height: 16px; flex-shrink: 0; background: #2B2D31; display: flex; }
+  .seam div { height: 16px; background: linear-gradient(90deg, var(--primary), var(--tertiary), var(--secondary)); }
 
-      ;
-      border-radius: 24px;
-      overflow: hidden;
-      display: flex;
-      flex-direction: row;
-      padding: 35px;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
-    }
+  .avatar-ring { position: absolute; left: 36px; top: 256px; width: 184px; height: 184px; border-radius: 50%; background: conic-gradient(var(--primary), var(--tertiary), var(--secondary), var(--tertiary), var(--primary)); display: flex; align-items: center; justify-content: center; }
+  .avatar-ring img { width: 172px; height: 172px; border-radius: 50%; border: 6px solid #111214; object-fit: cover; background: #2B2D31; }
 
-    .badge-container {
-      position: absolute;
-      top: 25px;
-      right: 25px;
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-      align-content: flex-start;
-      gap: {badge_gap}px;
-      max-width: {main_box_w}px;
-      max-height: {main_box_h}px;
-      overflow: hidden;
-      z-index: 20;
-    }
+  .lower { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 16px 36px 24px; }
+  .name-row { padding-left: 208px; display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .name { min-width: 0; font-family: 'Outfit', 'Noto Sans Math', 'Noto Sans Symbols 2', 'Noto Color Emoji', sans-serif; font-weight: 800; line-height: 1.15; }
+  .title-chip { flex-shrink: 0; max-width: 320px; padding: 4px 12px; border-radius: 4px; background: rgba(212,166,74,0.16); font-size: 16px; font-weight: 700; color: #E5C27A; }
+  .subline { padding-left: 208px; font-size: 18px; font-weight: 600; color: #B5BAC1; }
+  .spacer { flex: 1; }
 
-    .badge-item {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.2s;
-      border-radius: 8px;
-      flex: 0 0 auto;
-    }
-
-    /* Cell size is computed per render so each grid fits its box (keeps the badges off
-       the username and above the rank-progress row). */
-    .badge-container .badge-item {
-      width: {main_badge_size}px;
-      height: {main_badge_size}px;
-    }
-
-    .secret-badge-container .badge-item {
-      width: {secret_badge_size}px;
-      height: {secret_badge_size}px;
-    }
-
-    .rarity-bronze {
-      border: 2px solid #cd7f32;
-      box-shadow: 0 0 10px rgba(205, 127, 50, 0.6);
-      background: rgba(205, 127, 50, 0.1);
-    }
-
-    .rarity-silver {
-      border: 2px solid #c0c0c0;
-      box-shadow: 0 0 15px rgba(192, 192, 192, 0.7);
-      background: rgba(192, 192, 192, 0.1);
-    }
-
-    .rarity-gold {
-      border: 2px solid #ffd700;
-      box-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
-      background: rgba(255, 215, 0, 0.1);
-    }
-
-    .rarity-secret {
-      position: relative;
-      background: rgba(0, 0, 0, 0.3);
-      padding: 2px;
-      z-index: 10;
-      border: none;
-      box-shadow: 0 0 15px rgba(255, 255, 255, 0.4);
-    }
-
-    .rarity-secret::before {
-      content: "";
-      position: absolute;
-      top: -2px;
-      left: -2px;
-      right: -2px;
-      bottom: -2px;
-      background: conic-gradient(from 0deg, #ff0000, #ff7300, #fffb00, #48ff00, #00ffd5, #002bff, #7a00ff, #ff00c8, #ff0000);
-      border-radius: 10px;
-      z-index: -1;
-      animation: rainbow-rotate 3s linear infinite;
-    }
-
-    .rarity-secret::after {
-      content: "";
-      position: absolute;
-      top: 1px;
-      left: 1px;
-      right: 1px;
-      bottom: 1px;
-      background: #000;
-      border-radius: 7px;
-      z-index: -1;
-    }
-
-    @keyframes rainbow-rotate {
-      from {
-        filter: hue-rotate(0deg);
-      }
-
-      to {
-        filter: hue-rotate(360deg);
-      }
-    }
-
-    .secret-badge-container {
-      position: absolute;
-      top: 25px;
-      left: 25px;
-      display: flex;
-      flex-wrap: wrap;
-      align-content: flex-start;
-      gap: {badge_gap}px;
-      max-width: {secret_box_w}px;
-      max-height: {secret_box_h}px;
-      overflow: hidden;
-      z-index: 20;
-    }
-
-    .badge-item.emoji {
-      padding: 4px;
-    }
-
-    .badge-item img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-    }
-
-    /* Dark overlay to make text readable over the flag */
-    .overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: linear-gradient(90deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.6) 50%, rgba(0, 0, 0, 0.85) 100%);
-      z-index: 1;
-    }
-
-    .left-panel {
-      flex: 0 0 220px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      z-index: 10;
-    }
-
-    .avatar-container {
-      width: 180px;
-      height: 180px;
-      border-radius: 50%;
-      padding: 4px;
-
-      background: linear-gradient(135deg, {
-        secondary_color
-      }
-
-      25%, {
-      tertiary_color
-    }
-
-    40%, {
-    primary_color
-    }
-
-    60%, {
-    tertiary_color
-    }
-
-    75%, {
-    secondary_color
-    });
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
-    }
-
-    .avatar {
-      width: 100%;
-      height: 100%;
-      border-radius: 50%;
-      object-fit: cover;
-      border: 2px solid #000;
-    }
-
-    .main-panel {
-      flex: 1;
-      padding-left: 30px;
-      padding-bottom: 30px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      z-index: 10;
-    }
-
-    .user-header {
-      margin-bottom: 25px;
-    }
-
-    .rank-label {
-      font-family: 'Outfit', sans-serif;
-      font-size: 2rem;
-      color: #FFD700;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      margin-bottom: 5px;
-    }
-
-    .username-container {
-      width: 680px;
-      /* removed overflow: hidden to prevent clipping descenders */
-    }
-
-    .username {
-      font-family: 'Outfit', 'Noto Sans Math', 'apple color emoji', 'segoe ui emoji', 'noto color emoji', 'android emoji', 'emojisymbols', 'emojione mozilla', 'twemoji mozilla', 'segoe ui symbol', sans-serif;
-
-      font-size: {
-        username_font_size
-      }
-
-      ;
-
-      font-weight: 900;
-      color: #fff;
-      line-height: 1.2;
-      /* increased from 1 to allow descenders */
-      text-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-      white-space: nowrap;
-      padding-bottom: 5px;
-      /* extra space for descenders */
-    }
-
-    .title-banner {
-      display: {
-        title_display
-      }
-
-      ;
-      margin-top: 25px;
-      padding: 8px 24px;
-      background: url('{title_bg}') no-repeat center center;
-      background-size: cover;
-      border: 2px solid #D4AF37;
-      /* Gold border */
-      border-radius: 8px;
-      font-family: 'Outfit',
-      sans-serif;
-      font-size: 1.6rem;
-      font-weight: 900;
-      color: #FFD700;
-      /* Gold text for maximum visibility on navy */
-      text-transform: uppercase;
-      letter-spacing: 0.3em;
-      width: max-content;
-      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.6);
-      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.9),
-      0 0 10px rgba(212, 175, 55, 0.4);
-      position: relative;
-      z-index: 15;
-    }
-
-    .progress-section {
-      margin-top: 10px;
-      width: 100%;
-    }
-
-    .progress-meta {
-      display: flex;
-      justify-content: space-between;
-      font-size: 1.8rem;
-      font-weight: 700;
-      color: #e2e8f0;
-      margin-bottom: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .progress-track {
-      height: 24px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 7px;
-      overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      backdrop-filter: blur(5px);
-    }
-
-    .progress-fill {
-      height: 100%;
-
-      background: linear-gradient(90deg, {
-        primary_color
-      }
-
-      , {
-      tertiary_color
-    }
-
-    , {
-    secondary_color
-    });
-    background-size: 200% 100%;
-    border-radius: 7px;
-
-    box-shadow: 0 0 10px {
-      primary_color
-    }
-
-    80;
-    }
-
-    .xp-summary {
-      font-family: 'Outfit', sans-serif;
-      font-size: 1rem;
-      margin-top: 12px;
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-    }
-
-    .xp-value {
-      color: #fff;
-      font-weight: 900;
-      font-size: 2.5rem;
-    }
-
-    .xp-label {
-      color: #94a3b8;
-      font-size: 1.4rem;
-      text-transform: uppercase;
-      font-weight: 700;
-    }
-
-    .balance-chips {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      width: 100%;
-    }
-
-    .coin-box {
-      display: flex;
-      align-items: center;
-      background: rgba(0, 0, 0, 0.5);
-      padding: 10px 18px;
-      border-radius: 14px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      font-weight: 700;
-      font-size: 1.5rem;
-      backdrop-filter: blur(5px);
-    }
-
-    .coin-icon {
-      width: 32px;
-      height: 32px;
-    }
-  </style>
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+  .badge { width: var(--cell); height: var(--cell); border-radius: 6px; border: 2px solid; display: flex; align-items: center; justify-content: center; }
+  .badge img { width: 68%; height: 68%; object-fit: contain; }
+  .badge.gold { border-color: #FFD700; background: rgba(255,215,0,0.12); }
+  .badge.silver { border-color: #C0C6CF; background: rgba(192,198,207,0.12); }
+  .badge.bronze { border-color: #C98B4E; background: rgba(201,139,78,0.12); }
+  .badge.secret { border: none; padding: 3px; background: conic-gradient(#F23F43, #F0B232, #23A55A, #00A8FC, #5865F2, #EB459E, #F23F43); }
+  .badge.secret div { width: 100%; height: 100%; border-radius: 4px; background: #111214; display: flex; align-items: center; justify-content: center; }
+  .badge.secret img { width: 72%; height: 72%; }
+</style>
 </head>
-
 <body>
-  <div class="container">
-    <div class="overlay"></div>
-    <div class="secret-badge-container">
-      {secret_badges_html}
-    </div>
-    <div class="badge-container">
-      {badges_html}
-    </div>
-    <div class="left-panel">
-      <div class="avatar-container">
-        <img src="{profile_pic}" alt="Avatar" class="avatar" />
-      </div>
-      <div class="balance-chips">
-        {shutcoin_html}
-        {britbuck_html}
-      </div>
-    </div>
-    <div class="main-panel">
-      <div class="user-header">
-        <div class="rank-label">Rank {rank}</div>
-        <div class="username-container">
-          <div class="username">{username}</div>
-        </div>
-        <div class="title-banner">{title}</div>
-      </div>
-
-      <div class="progress-section">
-        <div class="progress-meta">
-          <span>{current_role}</span>
-          <span>{next_role_name}</span>
-        </div>
-        <div class="progress-track">
-          <div class="progress-fill" style="width: {progress_percent};"></div>
-        </div>
-        <div class="xp-summary">
-          <span class="xp-value">{xp_display}</span>
-          <span class="xp-label">Total XP</span>
-        </div>
-      </div>
-    </div>
-  </div>
-  <script src="https://cdn.jsdelivr.net/npm/@twemoji/api@latest/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <script>
-    window.onload = function() {
-      twemoji.parse(document.body, {
-        folder: 'svg',
-        ext: '.svg'
-      });
-    };
-  </script>
+{{body}}
 </body>
-
 </html>
