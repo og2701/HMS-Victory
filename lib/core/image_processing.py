@@ -605,7 +605,7 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
     """
     from PIL import ImageDraw, ImageFont, Image
     
-    # High resolution (600x300 per item) to make the image smaller for faster Discord uploads
+    # Drawn at 600x300 per item, then halved on save (see the end of this function)
     preview_width = 600
     preview_height = 300
     padding = 30
@@ -682,16 +682,34 @@ def generate_shop_preview_grid(items: list, cols: int = 2) -> io.BytesIO:
         text_x = badge_x + 12 if idx >= 9 else badge_x + 20
         draw.text((text_x, badge_y + 5), str(idx + 1), fill="white", font=font)
 
+    # Discord shows this grid at ~550px wide, so halving it loses nothing you can see, and a
+    # JPEG keeps the photo backgrounds ~10x smaller than a PNG - the shop opens fast on mobile.
+    canvas = canvas.resize((grid_width // 2, grid_height // 2), Image.Resampling.LANCZOS)
     buffer = io.BytesIO()
-    canvas.save(buffer, format="PNG")
+    canvas.save(buffer, format="JPEG", quality=85, optimize=True)
     buffer.seek(0)
     return buffer
 
-# Use LRU cache to keep the grid in memory for the life of the bot process
-# We convert items to a string representation for the cache key since objects aren't hashable
+
+def _shop_preview_dir() -> str:
+    from config import BASE_DIR
+    return os.path.join(BASE_DIR, "data", "shop_preview_cache")
+
+
+# Kept in memory for the life of the process and on disk across restarts, keyed on the items
+# and the background files' mtimes (so a refreshed background rebuilds the grid). Items come
+# in as a string since the objects aren't hashable.
 @lru_cache(maxsize=4)
-def _getCachedShopPreview(items_str: str, cols: int) -> bytes:
-    """Helper to cache the raw bytes of the generated grid."""
+def _getCachedShopPreview(items_str: str, cols: int, key: str) -> bytes:
+    """The grid's JPEG bytes: from disk if this exact grid was built before, else built now."""
+    cache_dir = _shop_preview_dir()
+    path = os.path.join(cache_dir, f"{key}.jpg")
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        pass
+
     import ast
     # Reconstruct a simplified list of objects just for rendering
     class DummyItem:
@@ -704,31 +722,50 @@ def _getCachedShopPreview(items_str: str, cols: int) -> bytes:
             setattr(obj, k, v)
         items.append(obj)
         
-    buffer = generate_shop_preview_grid(items, cols)
-    return buffer.getvalue()
+    data = generate_shop_preview_grid(items, cols).getvalue()
+    try:
+        os.makedirs(cache_dir, exist_ok=True)
+        tmp = f"{path}.tmp"
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, path)
+        for name in os.listdir(cache_dir):   # drop grids for old item sets
+            if name.endswith(".jpg") and name != f"{key}.jpg":
+                os.remove(os.path.join(cache_dir, name))
+    except OSError:
+        logging.warning("Couldn't write the shop preview cache.", exc_info=True)
+    return data
+
 
 async def generate_shop_preview_grid_async(items: list, cols: int = 4) -> io.BytesIO:
-    """Queued async wrapper for grid generation with process-level caching."""
-    async with rendering_lock:
-        loop = asyncio.get_event_loop()
-        
-        # Create a cacheable string representation of the items we care about for rendering
-        cacheable_items = []
-        for item in items:
-            cache_dict = {'name': item.name}
-            if hasattr(item, 'bg_filename'):
-                cache_dict['bg_filename'] = item.bg_filename
-            elif hasattr(item, 'primary'):
-                cache_dict['primary'] = item.primary
-                cache_dict['secondary'] = item.secondary
-                cache_dict['tertiary'] = item.tertiary
-            cacheable_items.append(cache_dict)
-            
-        items_str = str(cacheable_items)
-        
-        # Run the cached generation in executor
-        img_bytes = await loop.run_in_executor(None, _getCachedShopPreview, items_str, cols)
-        return io.BytesIO(img_bytes)
+    """Async wrapper for grid generation with memory + disk caching. It's plain PIL work, so
+    it runs in the executor without waiting on the Chrome render queue."""
+    import hashlib
+    from config import BASE_DIR
+
+    # A cacheable string representation of the items we care about for rendering
+    cacheable_items = []
+    stamps = []
+    for item in items:
+        cache_dict = {'name': item.name}
+        if hasattr(item, 'bg_filename'):
+            cache_dict['bg_filename'] = item.bg_filename
+            try:
+                st = os.stat(os.path.join(BASE_DIR, "data", "rank_cards", item.bg_filename))
+                stamps.append(f"{st.st_mtime_ns}:{st.st_size}")
+            except OSError:
+                stamps.append("missing")
+        elif hasattr(item, 'primary'):
+            cache_dict['primary'] = item.primary
+            cache_dict['secondary'] = item.secondary
+            cache_dict['tertiary'] = item.tertiary
+        cacheable_items.append(cache_dict)
+
+    items_str = str(cacheable_items)
+    key = hashlib.sha1(f"{items_str}|{cols}|{stamps}|jpeg-half".encode()).hexdigest()[:16]
+    loop = asyncio.get_running_loop()
+    img_bytes = await loop.run_in_executor(None, _getCachedShopPreview, items_str, cols, key)
+    return io.BytesIO(img_bytes)
 
 
 def process_and_compress_media(data: bytes, filename: str, is_emoji: bool = True) -> tuple[bytes, str, bool]:

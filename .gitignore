@@ -23,6 +23,7 @@ remote_database.db*
 .env
 venv/
 data/iceberg_cache.png
+data/shop_preview_cache/
 data/slots_results/
 .chrome_data/
 scripts-local/

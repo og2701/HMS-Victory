@@ -383,20 +383,10 @@ class PurchaseConfirmationView(View):
                     else:
                         await interaction.followup.send(f"✅ **Purchase Successful!**\n{result_message}", ephemeral=True)
                         # Have to fetch the message to edit it since response is done
-                        msg = await interaction.original_response()
-                        if hasattr(self.return_view, "_update_view"):
-                            # Helper to handle the edit manually if needed
-                            start_idx = self.return_view.current_page * self.return_view.ITEMS_PER_PAGE
-                            current_items = self.return_view.items[start_idx:start_idx + self.return_view.ITEMS_PER_PAGE]
-                            import time
-                            from lib.core.image_processing import generate_shop_preview_grid_async
-                            image_buffer = await generate_shop_preview_grid_async(current_items, cols=2)
-                            filename = f"preview_grid_{int(time.time())}.png"
-                            file = discord.File(fp=image_buffer, filename=filename)
-                            new_embed = self.return_view._create_embed()
-                            new_embed.set_image(url=f"attachment://{filename}")
-                            await msg.edit(embed=new_embed, view=self.return_view, attachments=[file])
+                        if hasattr(self.return_view, "_render_to"):
+                            await self.return_view._render_to(interaction)
                         else:
+                            msg = await interaction.original_response()
                             await msg.edit(embed=self.return_view._create_embed(), view=self.return_view)
 
                 # Log the purchase
@@ -1342,7 +1332,8 @@ class RankCustomisationOverviewView(View):
     """Sub-shop view specifically for Rank Customisations."""
     
     ITEMS_PER_PAGE = 25
-    _IMAGE_URL_CACHE = {}
+    _IMAGE_URL_CACHE = {}   # page -> (cdn url, cached at)
+    _URL_TTL = 12 * 3600    # Discord attachment links are signed and expire after about a day
     
     def __init__(self, items: List['ShopItem'], user_id: int, guild: Optional[discord.Guild] = None):
         super().__init__(timeout=300)
@@ -1365,51 +1356,39 @@ class RankCustomisationOverviewView(View):
             embed.set_image(url=f"attachment://{image_filename}")
         return embed
 
+    async def _grid_image(self, client):
+        """This page's preview grid as (cdn url, None), or (None, file) when there's no image
+        cache channel to host it. The url is reused until it's close to expiring."""
+        cached = self._IMAGE_URL_CACHE.get(self.current_page)
+        if cached and time.time() - cached[1] < self._URL_TTL:
+            return cached[0], None
+        start = self.current_page * self.ITEMS_PER_PAGE
+        buffer = await generate_shop_preview_grid_async(self.items[start:start + self.ITEMS_PER_PAGE], cols=5)
+        file = discord.File(fp=buffer, filename="rank_shop_preview.jpg")
+        from config import CHANNELS
+        cache_channel = client.get_channel(CHANNELS.IMAGE_CACHE)
+        if not cache_channel:
+            return None, file
+        cache_msg = await cache_channel.send(file=file)
+        url = cache_msg.attachments[0].url
+        self._IMAGE_URL_CACHE[self.current_page] = (url, time.time())
+        return url, None
+
+    async def _render_to(self, interaction: discord.Interaction):
+        """Edit the interaction's message to show this view with the preview grid."""
+        url, file = await self._grid_image(interaction.client)
+        embed = self._create_embed(image_filename=None if url else file.filename)
+        if url:
+            embed.set_image(url=url)
+        msg = await interaction.original_response()
+        await msg.edit(embed=embed, view=self, attachments=[file] if file else [])
+
     async def _update_view(self, interaction: discord.Interaction):
         """Helper to update the message with new embed, view, and file."""
         if not interaction.response.is_done():
             await interaction.response.defer()
-            
-        start_idx = self.current_page * self.ITEMS_PER_PAGE
-        end_idx = start_idx + self.ITEMS_PER_PAGE
-        current_items = self.items[start_idx:end_idx]
         self._update_components()
-        
-        if self.current_page in self.__class__._IMAGE_URL_CACHE:
-            url = self.__class__._IMAGE_URL_CACHE[self.current_page]
-            embed = self._create_embed(image_filename=None)
-            embed.set_image(url=url)
-            msg = await interaction.original_response()
-            await msg.edit(embed=embed, view=self, attachments=[])
-            return
-            
-        # Generate the grid image for current items
-        grid_pos = 1
-        grid_items = []
-        for item in current_items:
-            grid_items.append(item)
-            
-        import time
-        from config import CHANNELS
-        image_buffer = await generate_shop_preview_grid_async(grid_items, cols=5)
-        filename = f"preview_grid_{int(time.time())}.png"
-        file = discord.File(fp=image_buffer, filename=filename)
-        
-        # Upload to image cache channel for a permanent CDN URL
-        cache_channel = interaction.client.get_channel(CHANNELS.IMAGE_CACHE)
-        if cache_channel:
-            cache_msg = await cache_channel.send(file=file)
-            perm_url = cache_msg.attachments[0].url
-            self.__class__._IMAGE_URL_CACHE[self.current_page] = perm_url
-            
-            embed = self._create_embed(image_filename=None)
-            embed.set_image(url=perm_url)
-            msg = await interaction.original_response()
-            await msg.edit(embed=embed, view=self, attachments=[])
-        else:
-            embed = self._create_embed(image_filename=filename)
-            msg = await interaction.original_response()
-            await msg.edit(embed=embed, view=self, attachments=[file])
+        await self._render_to(interaction)
 
     def _update_components(self):
         self.clear_items()
@@ -1480,37 +1459,4 @@ class RankCustomisationOverviewView(View):
         # Defer the response immediately so it doesn't timeout while generating the image
         if not interaction.response.is_done():
             await interaction.response.defer()
-            
-        start_idx = self.current_page * self.ITEMS_PER_PAGE
-        end_idx = start_idx + self.ITEMS_PER_PAGE
-        current_items = self.items[start_idx:end_idx]
-        
-        if self.current_page in self.__class__._IMAGE_URL_CACHE:
-            url = self.__class__._IMAGE_URL_CACHE[self.current_page]
-            embed = self._create_embed(image_filename=None)
-            embed.set_image(url=url)
-            msg = await interaction.original_response()
-            await msg.edit(embed=embed, view=self, attachments=[])
-            return
-            
-        import time
-        from config import CHANNELS
-        image_buffer = await generate_shop_preview_grid_async(current_items, cols=5)
-        filename = f"preview_grid_{int(time.time())}.png"
-        file = discord.File(fp=image_buffer, filename=filename)
-        
-        # Upload to image cache channel for a permanent CDN URL
-        cache_channel = interaction.client.get_channel(CHANNELS.IMAGE_CACHE)
-        if cache_channel:
-            cache_msg = await cache_channel.send(file=file)
-            perm_url = cache_msg.attachments[0].url
-            self.__class__._IMAGE_URL_CACHE[self.current_page] = perm_url
-            
-            embed = self._create_embed(image_filename=None)
-            embed.set_image(url=perm_url)
-            msg = await interaction.original_response()
-            await msg.edit(embed=embed, view=self, attachments=[])
-        else:
-            embed = self._create_embed(image_filename=filename)
-            msg = await interaction.original_response()
-            await msg.edit(embed=embed, view=self, attachments=[file])
+        await self._render_to(interaction)
