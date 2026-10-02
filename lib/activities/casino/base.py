@@ -127,6 +127,17 @@ class Adapter:
 # The bot's client, for the badge awards that need it. Set when the API starts.
 CLIENT = None
 
+# Payouts queued during a move, run once the finished game is off the books. Same order as
+# the slash commands (delete the saved game, then credit): a crash between the two leaves
+# an unpaid hand at worst, never one that's both paid and still resumable. A move runs
+# start to finish without awaiting, so one list serves every player.
+_after: list = []
+
+
+def after_save(fn, *args, **kwargs) -> None:
+    """Run fn (a credit, a settle) after this move's game state is saved."""
+    _after.append((fn, args, kwargs))
+
 
 def badge(fn, *args) -> None:
     """Run a game's badge award (async, needs the client) without holding up the move."""
@@ -248,6 +259,7 @@ async def play(registry: dict, uid: int, name: str, key: str, action: str, body:
     _throttle(uid)
     async with lock:
         with action_in_flight():
+            _after.clear()
             slot = _slot(uid, key)
             game = _games.get(slot)
             if action == "deal":
@@ -275,6 +287,9 @@ async def play(registry: dict, uid: int, name: str, key: str, action: str, body:
                 _save(registry)
             except Exception:
                 log.error("couldn't save in-play activity hands", exc_info=True)
+            queued, _after[:] = list(_after), []
+            for fn, args, kwargs in queued:
+                fn(*args, **kwargs)
             if finished is not None and on_round is not None:
                 try:
                     on_round(uid, key, finished)

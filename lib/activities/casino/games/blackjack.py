@@ -1,7 +1,7 @@
 """Blackjack in the activity, on commands/economy/blackjack.py's own game and money paths."""
 
 from commands.economy import blackjack as B
-from lib.activities.casino.base import Adapter, Refuse, Round
+from lib.activities.casino.base import Adapter, Refuse, Round, after_save
 from lib.economy.economy_manager import remove_bb
 
 OUTCOMES = {"blackjack": "Blackjack 3:2", "win": "Win", "push": "Push", "lose": "Loss"}
@@ -28,7 +28,8 @@ class Blackjack(Adapter):
             B._credit(uid, bet, "Blackjack stake refund (deal failed)")
             raise
         if game.state == "over":          # a natural on either side settles on the deal
-            B._settle(game)
+            B._decide(game)
+            after_save(B._payout, game)
         return game
 
     def act(self, game, action, body):
@@ -52,7 +53,8 @@ class Blackjack(Adapter):
             else:
                 game.dealer_play()
         if game.state == "over" and not game.settled:
-            B._settle(game)
+            B._decide(game)
+            after_save(B._payout, game)
 
     def over(self, game):
         return game.state == "over"
