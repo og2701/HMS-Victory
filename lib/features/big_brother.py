@@ -3364,7 +3364,7 @@ def _public_vote_control_embed(guild: Optional[discord.Guild]) -> discord.Embed:
             f"**Round ID:** `#{last.get('round_id')}`\n\n"
             f"**Housemates Scheduled for Eviction (Bottom 3):**\n{evict_lines}\n\n"
             f"👉 Press **Evict Bottom 3** below to evict them.\n"
-            f"-# Strips roles, grants spectator access, zero pings."
+            f"-# Strips roles, grants spectator access, alerts housemates."
         )
         embed = discord.Embed(title=f"{EYE} Public Eviction Vote Control (Evictions Pending)", description=desc, colour=0xE67E22)
     else:
@@ -3582,17 +3582,17 @@ class PublicVoteControlView(discord.ui.View):
             guild = _guild(inter.client)
             names_str = ", ".join(f"**{_name(guild, u)}**" for u in bottom3)
 
-            # Announce in house channel with STRICTLY ZERO PINGS
+            # Announce in house channel (pings housemates)
             house = await house_channel(inter.client)
             if house:
                 announcement = (
-                    f"{EYE} **THE PUBLIC HAVE SPOKEN.**\n\n"
+                    f"{_role_mention()}{EYE} **THE PUBLIC HAVE SPOKEN.**\n\n"
                     f"In tonight's triple eviction, the public voted to save their favourites.\n\n"
                     f"Having received the fewest votes to save, the following housemates have been evicted from the Big Brother house:\n\n"
                     f"🚪 {names_str}\n\n"
                     f"Please leave through the diary room door. Big Brother is watching."
                 )
-                await house.send(announcement, allowed_mentions=discord.AllowedMentions.none())
+                await bb_send(house, announcement)
 
             # Announce in voting channel with STRICTLY ZERO PINGS
             vch = await _channel(inter.client, public_vote_channel_id())
@@ -3609,7 +3609,7 @@ class PublicVoteControlView(discord.ui.View):
             last["evicted_at"] = _now()
             set_state(STATE_LAST_PUBLIC_VOTE_RESULT, last)
             await refresh_public_vote_control(inter.client)
-            await inter.followup.send(f"✅ Eviction complete! {len(bottom3)} housemates evicted, roles stripped, spectator access granted. Zero pings sent.", ephemeral=True)
+            await inter.followup.send(f"✅ Eviction complete! {len(bottom3)} housemates evicted, roles stripped, spectator access granted.", ephemeral=True)
 
         async def cancel_cb(inter: discord.Interaction):
             await inter.response.edit_message(content="Cancelled eviction.", view=None)
@@ -3628,7 +3628,8 @@ class PublicVoteControlView(discord.ui.View):
             f"- Strip Housemate role\n"
             f"- Grant read-only spectator access\n"
             f"- Drop from private house threads\n"
-            f"- Post announcement with **STRICTLY ZERO PINGS**\n\n"
+            f"- Announce eviction in the house channel (pings @Housemate)\n"
+            f"- Announce conclusion in #voting (zero pings)\n\n"
             f"Press Confirm Eviction to execute.",
             view=view,
             ephemeral=True
