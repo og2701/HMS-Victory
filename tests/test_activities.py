@@ -145,3 +145,22 @@ def test_progress_is_shared_with_the_slash_command(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path)
     W._submit_guess(42, DAY.isoformat(), "ghost", "crane")      # played via /wordle
     assert [r["word"] for r in wordle_api.state(42, DAY)["rows"]] == ["CRANE"]
+
+
+# --- the typed launch command -----------------------------------------------------------
+def test_the_launch_command_only_opens_in_allowed_channels(monkeypatch):
+    from lib.activities import launcher
+    monkeypatch.setattr(config, "ACTIVITIES_ALLOWED_CHANNELS", [WORKSHOP])
+    assert launcher._allowed(WORKSHOP)
+    assert not launcher._allowed(123)
+    assert not launcher._allowed(None)
+    assert f"<#{WORKSHOP}>" in launcher._refusal()
+    monkeypatch.setattr(config, "ACTIVITIES_ALLOWED_CHANNELS", [])
+    assert launcher._allowed(123)
+
+
+def test_the_launcher_builds_its_command():
+    from lib.activities import launcher
+    bot = launcher.Launcher()
+    names = [c.name for c in bot.tree.get_commands()]
+    assert names == [config.ACTIVITIES_LAUNCH_COMMAND]

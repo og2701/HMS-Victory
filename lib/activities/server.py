@@ -196,11 +196,15 @@ async def start(client) -> bool:
     await web.TCPSite(_runner, "127.0.0.1", port).start()
     log.info("ukplace activities API listening on 127.0.0.1:%s", port)
     await _name_entry_command(client)
+    from lib.activities import launcher
+    await launcher.start(client.session)
     return True
 
 
 async def stop() -> None:
     global _runner
+    from lib.activities import launcher
+    await launcher.stop()
     if _runner is not None:
         await _runner.cleanup()
         _runner = None
