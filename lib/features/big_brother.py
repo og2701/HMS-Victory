@@ -35,10 +35,14 @@ STATUS_EVICTED = "evicted"
 STATUS_WINNER = "winner"
 KIND_NOMINATIONS = "nominations"
 KIND_VOTE = "vote"
+KIND_PUBLIC_VOTE = "public_vote"
 STATE_PANEL_MSG = "panel_message_id"
 STATE_HOUSE_PANEL_MSG = "house_panel_message_id"
+STATE_PUBLIC_VOTE_CTRL_MSG = "bb_public_vote_control_msg_id"
+STATE_PUBLIC_VOTE_BOARD_MSG = "bb_public_vote_board_msg_id"
 STATE_LAST_NOM_TALLY = "last_nomination_tally"
 STATE_LAST_VOTE_RESULT = "last_vote_result"
+STATE_LAST_PUBLIC_VOTE_RESULT = "bb_last_public_vote_result"
 STATE_GAME_STARTED_AT = "game_started_at"
 STATE_HOUSE_MSGS_SINCE_PANEL = "house_msgs_since_panel"
 STATE_HOUSE_SILENT = "house_silent"
@@ -92,6 +96,10 @@ def control_channel_id() -> int:
 
 def vote_channel_id() -> int:
     return int(getattr(config, "BIG_BROTHER_VOTE_CHANNEL", 0) or house_channel_id())
+
+
+def public_vote_channel_id() -> int:
+    return int(getattr(config, "BIG_BROTHER_PUBLIC_VOTE_CHANNEL", 0) or getattr(getattr(config, "CHANNELS", None), "VOTING", 959848236384919692))
 
 
 def vote_in_thread() -> bool:
@@ -945,15 +953,19 @@ async def dm_user(client: discord.Client, user_id: int, content: Optional[str] =
 
 
 async def bb_send(channel, content: Optional[str] = None, embed: Optional[discord.Embed] = None,
-                  view=None, *, reply_to: Optional[discord.Message] = None):
+                  view=None, *, reply_to: Optional[discord.Message] = None,
+                  allowed_mentions: Optional[discord.AllowedMentions] = None):
     """Send as Big Brother into a channel and echo a copy to the host."""
+    kwargs = {}
+    if allowed_mentions is not None:
+        kwargs["allowed_mentions"] = allowed_mentions
     if reply_to is not None:
-        msg = await reply_to.reply(content=content, embed=embed, view=view) if view is not None \
-            else await reply_to.reply(content=content, embed=embed)
+        msg = await reply_to.reply(content=content, embed=embed, view=view, **kwargs) if view is not None \
+            else await reply_to.reply(content=content, embed=embed, **kwargs)
     elif view is not None:
-        msg = await channel.send(content=content, embed=embed, view=view)
+        msg = await channel.send(content=content, embed=embed, view=view, **kwargs)
     else:
-        msg = await channel.send(content=content, embed=embed)
+        msg = await channel.send(content=content, embed=embed, **kwargs)
     if _client_ref is not None:
         where = f"Posted in #{getattr(channel, 'name', 'channel')}"
         await _echo_to_host(_client_ref, where, content, embed, True)
@@ -2433,7 +2445,244 @@ class MyVoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:myvo
                 msg += f"\n\n-# You still have {ve - len(mine)} vote left. Press another name above to cast it."
             else:
                 msg += "\n\n-# Press **Clear My Votes** below if you want to wipe and recast your votes."
-            await interaction.response.send_message(msg, view=view, ephemeral=True)
+# ---------------------------------------------------------------------------
+# Public eviction vote (Vote to Save, #voting channel)
+# ---------------------------------------------------------------------------
+
+class PublicSaveButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:pubsave:(?P<rid>\d+):(?P<uid>\d+)"):
+    """Public vote to save button for #voting. Dynamic so it survives bot restarts."""
+
+    def __init__(self, round_id: int, nominee_id: int, label: str = "Save", row: Optional[int] = None):
+        self.round_id, self.nominee_id = int(round_id), int(nominee_id)
+        super().__init__(discord.ui.Button(
+            label=label[:80], emoji="🗳️", style=discord.ButtonStyle.primary,
+            row=row, custom_id=f"bb:pubsave:{self.round_id}:{self.nominee_id}"))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(int(match["rid"]), int(match["uid"]), item.label or "Save")
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not enabled():
+            await interaction.response.send_message("Big Brother has left the building.", ephemeral=True)
+            return
+        rnd = get_round(self.round_id)
+        if not rnd or rnd.get("kind") != KIND_PUBLIC_VOTE or rnd.get("status") != "open":
+            await interaction.response.send_message("This public vote has closed.", ephemeral=True)
+            return
+        if self.nominee_id not in rnd["nominees"]:
+            await interaction.response.send_message("That housemate is not facing the public vote.", ephemeral=True)
+            return
+        # Active housemates are strictly barred from voting in public eviction votes
+        if is_housemate(interaction.user.id):
+            await interaction.response.send_message(
+                f"{EYE} Housemates cannot vote in the public vote! The public decides your fate.",
+                ephemeral=True
+            )
+            return
+
+        target_name = _name(interaction.guild, self.nominee_id)
+        prior = vote_of(self.round_id, interaction.user.id)
+        if prior and prior[0] == self.nominee_id:
+            await interaction.response.send_message(
+                f"✅ You have already voted to save **{target_name}**! Your vote is securely recorded.",
+                ephemeral=True
+            )
+            return
+
+        cast_vote(self.round_id, interaction.user.id, self.nominee_id)
+        log_event("public_vote_cast", round_id=self.round_id, voter=interaction.user.id, nominee=self.nominee_id)
+
+        if prior:
+            old_name = _name(interaction.guild, prior[0])
+            await interaction.response.send_message(
+                f"🔄 You changed your vote! You are now voting to save **{target_name}** (previously voted for **{old_name}**).",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"🗳️ Your vote to save **{target_name}** has been recorded! Thank you for voting.",
+                ephemeral=True
+            )
+        asyncio.create_task(refresh_public_vote_board(interaction.client, self.round_id))
+
+
+_last_public_vote_board_refresh: dict[int, float] = {}
+
+
+async def refresh_public_vote_board(client: discord.Client, round_id: int) -> None:
+    now = time.time()
+    last = _last_public_vote_board_refresh.get(round_id, 0.0)
+    if now - last < 4.0:
+        return
+    _last_public_vote_board_refresh[round_id] = now
+
+    rnd = get_round(round_id)
+    if not rnd or rnd.get("kind") != KIND_PUBLIC_VOTE or rnd.get("status") != "open":
+        return
+    mid = rnd.get("message_id") or get_state(STATE_PUBLIC_VOTE_BOARD_MSG)
+    cid = rnd.get("channel_id") or public_vote_channel_id()
+    if not mid or not cid:
+        return
+    ch = await _channel(client, int(cid))
+    if not ch:
+        return
+    try:
+        msg = await ch.fetch_message(int(mid))
+        guild = _guild(client)
+        embed = _public_vote_embed(rnd["nominees"], guild, round_id)
+        await msg.edit(embed=embed)
+    except Exception as e:
+        log.warning("Big Brother: could not refresh public vote board footer: %s", e)
+
+
+def _public_vote_embed(nominee_ids: list[int], guild: Optional[discord.Guild], round_id: int, *, closed: bool = False) -> discord.Embed:
+    if closed:
+        embed = discord.Embed(
+            title=f"{EYE} BIG BROTHER: PUBLIC VOTE CLOSED",
+            description=(
+                "Voting has officially **CLOSED**.\n\n"
+                "The results have been verified by Big Brother.\n"
+                "The **3 housemates with the fewest save votes** will be evicted shortly!\n\n"
+                "Stay tuned to find out who leaves the house."
+            ),
+            colour=0x95A5A6
+        )
+        embed.set_footer(text="Big Brother is watching.")
+        return embed
+
+    nominee_lines = "\n".join(f"{i+1}. **{_name(guild, n)}**" for i, n in enumerate(nominee_ids))
+    desc = (
+        "## 🗳️ Public Vote to Save\n\n"
+        "The public vote is now **OPEN**!\n\n"
+        "Vote to **SAVE** your favourite housemate. The **3 housemates with the fewest votes** "
+        "will be evicted from the Big Brother house!\n\n"
+        f"### Nominees Facing the Vote:\n{nominee_lines}\n\n"
+        "👉 **Click a button below to cast your vote to save that housemate.**\n\n"
+        "-# 1 vote per person · Active housemates cannot vote · You may change your vote at any time before the vote closes."
+    )
+    embed = discord.Embed(
+        title=f"{EYE} BIG BROTHER: EVICTION VOTE",
+        description=desc,
+        colour=ACCENT
+    )
+    total = vote_count(round_id)
+    embed.set_footer(text=f"Big Brother is watching. · Total votes cast: {total}")
+    return embed
+
+
+def _public_vote_view(round_id: int, nominee_ids: Iterable[int], guild: Optional[discord.Guild], *, disabled: bool = False) -> discord.ui.View:
+    view = discord.ui.View(timeout=None)
+    nominees = list(nominee_ids)
+    for i, n in enumerate(nominees):
+        name = _name(guild, n)
+        row = i // 3 if len(nominees) <= 6 else i // 5
+        if disabled:
+            btn = discord.ui.Button(
+                label=f"Save {name}"[:80],
+                emoji="🗳️",
+                style=discord.ButtonStyle.secondary,
+                disabled=True,
+                row=row,
+                custom_id=f"bb:pubsave_done:{round_id}:{n}"
+            )
+            view.add_item(btn)
+        else:
+            view.add_item(PublicSaveButton(round_id, n, label=f"Save {name}"[:80], row=row))
+    return view
+
+
+async def start_public_vote(client: discord.Client, nominee_ids: list[int]) -> Optional[dict]:
+    if open_round(KIND_PUBLIC_VOTE):
+        return None
+    guild = _guild(client)
+    ch = await _channel(client, public_vote_channel_id())
+    if not ch:
+        log.warning("Big Brother: public vote channel %s not found", public_vote_channel_id())
+        return None
+    rid = create_round(KIND_PUBLIC_VOTE, nominees=nominee_ids, votes_each=1)
+    embed = _public_vote_embed(nominee_ids, guild, rid)
+    view = _public_vote_view(rid, nominee_ids, guild)
+
+    msg = await ch.send(
+        content=f"{EYE} **The Big Brother Public Vote is now OPEN!**",
+        embed=embed,
+        view=view,
+        allowed_mentions=discord.AllowedMentions.none()
+    )
+    set_round_message(rid, ch.id, msg.id)
+    set_state(STATE_PUBLIC_VOTE_BOARD_MSG, msg.id)
+    log_event("public_vote_started", round_id=rid, nominees=nominee_ids, channel_id=ch.id, message_id=msg.id)
+    await notify_host(client, embed=bb_embed(
+        f"Public Vote Started (Round {rid})",
+        f"Vote to save is now live in <#{ch.id}> with {len(nominee_ids)} nominees:\n"
+        + "\n".join(f"• {_name(guild, n)}" for n in nominee_ids)
+    ))
+    return {"id": rid, "channel_id": ch.id, "message_id": msg.id}
+
+
+async def close_public_vote(client: discord.Client) -> Optional[dict]:
+    rnd = open_round(KIND_PUBLIC_VOTE)
+    if not rnd:
+        return None
+    rid = rnd["id"]
+    close_round(rid)
+
+    guild = _guild(client)
+    nominees = rnd["nominees"]
+    tally = vote_tally(rid)
+    total = vote_count(rid)
+
+    # Disable buttons on public board in #voting
+    board_mid = rnd.get("message_id") or get_state(STATE_PUBLIC_VOTE_BOARD_MSG)
+    ch_id = rnd.get("channel_id") or public_vote_channel_id()
+    if board_mid and ch_id:
+        ch = await _channel(client, int(ch_id))
+        if ch:
+            try:
+                board_msg = await ch.fetch_message(int(board_mid))
+                closed_embed = _public_vote_embed(nominees, guild, rid, closed=True)
+                closed_view = _public_vote_view(rid, nominees, guild, disabled=True)
+                await board_msg.edit(embed=closed_embed, view=closed_view)
+            except Exception as e:
+                log.warning("Big Brother: could not close public vote board: %s", e)
+
+    # Sort nominees ascending by votes (fewest votes = eviction)
+    sorted_nominees = sorted(nominees, key=lambda n: (tally.get(n, 0), n))
+    bottom3 = sorted_nominees[:3]
+    top_safe = sorted_nominees[3:]
+
+    v3 = tally.get(sorted_nominees[2], 0) if len(sorted_nominees) >= 3 else 0
+    v4 = tally.get(sorted_nominees[3], 0) if len(sorted_nominees) >= 4 else 0
+    tied = (len(sorted_nominees) >= 4 and v3 == v4)
+
+    result = {
+        "round_id": rid,
+        "closed_at": _now(),
+        "total_votes": total,
+        "standings": [(n, tally.get(n, 0)) for n in sorted_nominees],
+        "bottom3": bottom3,
+        "top_safe": top_safe,
+        "tied_boundary": tied,
+        "pending_evictions": True
+    }
+    set_state(STATE_LAST_PUBLIC_VOTE_RESULT, result)
+    log_event("public_vote_closed", round_id=rid, standings=result["standings"], bottom3=bottom3)
+
+    # Notify host via DM
+    standings_text = "### ⚠️ Eviction Zone (Bottom 3 — Fewest Save Votes):\n" + "\n".join(
+        f"`#{i+1}` 🚪 **{_name(guild, u)}** — {tally.get(u, 0)} votes" for i, u in enumerate(bottom3)
+    )
+    if top_safe:
+        standings_text += "\n\n### 🛡️ Safe (Top Votes):\n" + "\n".join(
+            f"`#{i}` 🟢 **{_name(guild, u)}** — {tally.get(u, 0)} votes" for i, u in enumerate(top_safe, start=4)
+        )
+    if tied:
+        standings_text += f"\n\n⚠️ **WARNING**: There is a tie at the eviction boundary ({v3} votes) between rank 3 and 4!"
+    standings_text += "\n\n👉 Return to `bb-control` and press **Evict Bottom 3** to execute the eviction."
+
+    await notify_host(client, embed=bb_embed(f"Public Vote Closed (Round {rid})", standings_text))
+    return result
 
 
 class AckButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:ack:(?P<aid>\d+):(?P<uid>\d+)"):
@@ -3042,6 +3291,10 @@ async def refresh_panel(client: discord.Client) -> None:
         except discord.HTTPException as e:
             log.info("Big Brother: control panel refresh failed: %s", e)
     try:
+        await refresh_public_vote_control(client)
+    except Exception:
+        log.exception("Big Brother: public vote control refresh failed")
+    try:
         sig = _house_panel_signature(guild)
         if sig == get_state(STATE_HOUSE_PANEL_SIG):
             return
@@ -3080,6 +3333,353 @@ async def ensure_control_panel(client: discord.Client) -> None:
     msg = await ch.send(view=view)
     set_state(STATE_PANEL_MSG, msg.id)
     log.info("Big Brother: posted control panel %s in %s", msg.id, ch.id)
+
+
+def _public_vote_control_embed(guild: Optional[discord.Guild]) -> discord.Embed:
+    rnd = open_round(KIND_PUBLIC_VOTE)
+    last = get_state(STATE_LAST_PUBLIC_VOTE_RESULT) or {}
+
+    if rnd:
+        nominees = rnd["nominees"]
+        nom_lines = "\n".join(f"{i+1}. **{_name(guild, n)}**" for i, n in enumerate(nominees))
+        total = vote_count(rnd["id"])
+        desc = (
+            f"**Status:** 🟢 **LIVE / OPEN**\n"
+            f"**Round ID:** `#{rnd['id']}`\n"
+            f"**Channel:** <#{public_vote_channel_id()}>\n"
+            f"**Opened:** <t:{rnd['opened_at']}:R>\n"
+            f"**Total Votes Cast:** `{total}`\n\n"
+            f"**Nominees Facing Eviction ({len(nominees)}):**\n{nom_lines}\n\n"
+            f"-# Press **Live Tally** to view the live leaderboard (ephemeral).\n"
+            f"-# Press **Close Vote** to lock voting in #voting and calculate bottom 3."
+        )
+        embed = discord.Embed(title=f"{EYE} Public Eviction Vote Control (Round #{rnd['id']})", description=desc, colour=0x2ECC71)
+    elif last.get("pending_evictions"):
+        bottom3 = last.get("bottom3", [])
+        standings = last.get("standings", [])
+        standings_map = dict(standings)
+        evict_lines = "\n".join(f"• 🚪 **{_name(guild, u)}** ({standings_map.get(u, 0)} votes)" for u in bottom3)
+        desc = (
+            f"**Status:** ⚠️ **VOTE CLOSED — EVICTIONS PENDING**\n"
+            f"**Round ID:** `#{last.get('round_id')}`\n\n"
+            f"**Housemates Scheduled for Eviction (Bottom 3):**\n{evict_lines}\n\n"
+            f"👉 Press **Evict Bottom 3** below to evict them.\n"
+            f"-# Strips roles, grants spectator access, zero pings."
+        )
+        embed = discord.Embed(title=f"{EYE} Public Eviction Vote Control (Evictions Pending)", description=desc, colour=0xE67E22)
+    else:
+        last_info = ""
+        if last.get("round_id"):
+            last_info = f"\n\n-# Last public vote: Round #{last.get('round_id')} closed."
+        desc = (
+            f"**Status:** ⚪ **IDLE (No vote open)**\n"
+            f"**Voting Channel:** <#{public_vote_channel_id()}>\n\n"
+            f"When nominations are complete, press **Open Public Vote** below to select the 6 nominees "
+            f"and launch the Vote to Save in <#{public_vote_channel_id()}>.{last_info}"
+        )
+        embed = discord.Embed(title=f"{EYE} Public Eviction Vote Control", description=desc, colour=ACCENT)
+
+    embed.set_footer(text="Big Brother Control")
+    return embed
+
+
+class PublicVoteControlView(discord.ui.View):
+    def __init__(self, guild: Optional[discord.Guild] = None):
+        super().__init__(timeout=None)
+        self.guild = guild
+        rnd = open_round(KIND_PUBLIC_VOTE)
+        last = get_state(STATE_LAST_PUBLIC_VOTE_RESULT) or {}
+        has_pending = bool(last.get("pending_evictions"))
+
+        if rnd:
+            self.btn_open.disabled = True
+            self.btn_tally.disabled = False
+            self.btn_close.disabled = False
+            self.btn_evict.disabled = True
+        else:
+            self.btn_open.disabled = False
+            self.btn_tally.disabled = not bool(last.get("round_id"))
+            self.btn_close.disabled = True
+            self.btn_evict.disabled = not has_pending
+
+    @discord.ui.button(label="Open Public Vote", style=discord.ButtonStyle.primary, emoji="🗳️", custom_id="bb_pv_open", row=0)
+    async def btn_open(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_operator(interaction.user.id):
+            await interaction.response.send_message("Only Big Brother operators can use this panel.", ephemeral=True)
+            return
+        if open_round(KIND_PUBLIC_VOTE):
+            await interaction.response.send_message("A public vote is already running. Close it first.", ephemeral=True)
+            return
+        ins = housemates()
+        if len(ins) < 2:
+            await interaction.response.send_message("Need at least two housemates in the house.", ephemeral=True)
+            return
+
+        last_nom = get_state(STATE_LAST_NOM_TALLY) or {}
+        ranked = [int(n) for n, _ in last_nom.get("ranked", []) if int(n) in ins]
+        safe = immune_ids() | eviction_safe_ids()
+        choices = [u for u in ranked if u not in safe] + [u for u in ins if u not in ranked and u not in safe]
+        defaults = [u for u in ranked if u not in safe][:6]
+        if len(defaults) < 6:
+            for u in choices:
+                if u not in defaults:
+                    defaults.append(u)
+                if len(defaults) == 6:
+                    break
+
+        if len(choices) < 2:
+            await interaction.response.send_message("Fewer than two housemates are eligible.", ephemeral=True)
+            return
+
+        async def done_pick(inter: discord.Interaction, picked_ids: list[int]):
+            view = discord.ui.View(timeout=180)
+
+            async def confirm_cb(inter2: discord.Interaction):
+                await inter2.response.defer(ephemeral=True)
+                res = await start_public_vote(inter2.client, picked_ids)
+                if not res:
+                    await inter2.followup.send("Could not start public vote (already open or channel missing).", ephemeral=True)
+                else:
+                    await refresh_public_vote_control(inter2.client)
+                    await inter2.followup.send(f"✅ Public vote to save opened in <#{public_vote_channel_id()}> with {len(picked_ids)} nominees!", ephemeral=True)
+
+            async def cancel_cb(inter2: discord.Interaction):
+                await inter2.response.edit_message(content="Cancelled opening public vote.", view=None)
+
+            c_btn = discord.ui.Button(label="🚀 Launch Public Vote", style=discord.ButtonStyle.success)
+            c_btn.callback = confirm_cb
+            x_btn = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.secondary)
+            x_btn.callback = cancel_cb
+            view.add_item(c_btn)
+            view.add_item(x_btn)
+
+            names_str = "\n".join(f"• {_name(inter.guild, i)}" for i in picked_ids)
+            await inter.response.edit_message(
+                content=f"### Launch Public Vote to Save\nNominees ({len(picked_ids)}):\n{names_str}\n\n"
+                        f"Will be posted to <#{public_vote_channel_id()}>. **Zero pings** will be sent.\n"
+                        f"Press Launch to confirm.",
+                view=view
+            )
+
+        target_count = min(6, len(choices))
+        await _send_multi(
+            interaction,
+            f"Select the {target_count} housemates facing the public vote, then press Done. (Pre-selected from the latest nominations tally where available).",
+            interaction.guild,
+            choices,
+            done_pick,
+            min_values=min(2, len(choices)),
+            max_values=min(6, len(choices)),
+            defaults=defaults,
+            done_label="Review Nominees"
+        )
+
+    @discord.ui.button(label="Live Tally", style=discord.ButtonStyle.secondary, emoji="📊", custom_id="bb_pv_tally", row=0)
+    async def btn_tally(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_operator(interaction.user.id):
+            await interaction.response.send_message("Only Big Brother operators can use this panel.", ephemeral=True)
+            return
+        rnd = open_round(KIND_PUBLIC_VOTE) or latest_round(KIND_PUBLIC_VOTE)
+        if not rnd:
+            await interaction.response.send_message("No public vote found.", ephemeral=True)
+            return
+        tally = vote_tally(rnd["id"])
+        total = vote_count(rnd["id"])
+        nominees = rnd["nominees"]
+        sorted_nominees = sorted(nominees, key=lambda n: (tally.get(n, 0), n))
+
+        embed = discord.Embed(
+            title=f"📊 Live Public Vote Standings (Round #{rnd['id']})",
+            colour=ACCENT
+        )
+        danger_lines = []
+        for i, u in enumerate(sorted_nominees[:3]):
+            votes = tally.get(u, 0)
+            pct = f"({votes / total * 100:.1f}%)" if total > 0 else "(0.0%)"
+            danger_lines.append(f"`#{i+1}` 🚪 **{_name(interaction.guild, u)}** — **{votes}** vote{'s' if votes != 1 else ''} {pct}")
+
+        safe_lines = []
+        for i, u in enumerate(sorted_nominees[3:], start=4):
+            votes = tally.get(u, 0)
+            pct = f"({votes / total * 100:.1f}%)" if total > 0 else "(0.0%)"
+            safe_lines.append(f"`#{i}` 🟢 **{_name(interaction.guild, u)}** — **{votes}** vote{'s' if votes != 1 else ''} {pct}")
+
+        desc = (
+            f"**Status:** {'🟢 Open' if rnd['status'] == 'open' else '🔒 Closed'}\n"
+            f"**Total votes cast:** `{total}`\n\n"
+            f"### ⚠️ EVICTION DANGER ZONE (Bottom 3 — Fewest Save Votes)\n"
+            + ("\n".join(danger_lines) if danger_lines else "None")
+        )
+        if safe_lines:
+            desc += "\n\n### 🛡️ CURRENTLY SAFE (Top Votes)\n" + "\n".join(safe_lines)
+
+        if len(sorted_nominees) >= 4:
+            v3 = tally.get(sorted_nominees[2], 0)
+            v4 = tally.get(sorted_nominees[3], 0)
+            if v3 == v4:
+                desc += f"\n\n⚠️ **WARNING**: There is a tie at the eviction line ({v3} votes) between rank 3 and 4!"
+
+        embed.description = desc
+        embed.set_footer(text="Confidential · Host & Operators only")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="Close Vote", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="bb_pv_close", row=0)
+    async def btn_close(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_operator(interaction.user.id):
+            await interaction.response.send_message("Only Big Brother operators can use this panel.", ephemeral=True)
+            return
+        rnd = open_round(KIND_PUBLIC_VOTE)
+        if not rnd:
+            await interaction.response.send_message("No public vote is open.", ephemeral=True)
+            return
+
+        view = discord.ui.View(timeout=120)
+        async def confirm_cb(inter: discord.Interaction):
+            await inter.response.defer(ephemeral=True)
+            res = await close_public_vote(inter.client)
+            await refresh_public_vote_control(inter.client)
+            if res:
+                await inter.followup.send("✅ Public vote closed! Final standings delivered to Big Brother's DMs and evictions are ready.", ephemeral=True)
+            else:
+                await inter.followup.send("Could not close vote.", ephemeral=True)
+
+        async def cancel_cb(inter: discord.Interaction):
+            await inter.response.edit_message(content="Cancelled closing vote.", view=None)
+
+        c_btn = discord.ui.Button(label="🔒 Confirm Close", style=discord.ButtonStyle.danger)
+        c_btn.callback = confirm_cb
+        x_btn = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.secondary)
+        x_btn.callback = cancel_cb
+        view.add_item(c_btn)
+        view.add_item(x_btn)
+
+        await interaction.response.send_message(
+            "⚠️ **Are you sure you want to CLOSE the public vote?**\n"
+            "This will lock the vote board in #voting, disable all buttons, and finalize the bottom 3 housemates for eviction.",
+            view=view,
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="Evict Bottom 3", style=discord.ButtonStyle.danger, emoji="🚪", custom_id="bb_pv_evict", row=1)
+    async def btn_evict(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_operator(interaction.user.id):
+            await interaction.response.send_message("Only Big Brother operators can use this panel.", ephemeral=True)
+            return
+        last = get_state(STATE_LAST_PUBLIC_VOTE_RESULT) or {}
+        if not last.get("pending_evictions"):
+            await interaction.response.send_message("No evictions pending.", ephemeral=True)
+            return
+        bottom3 = last.get("bottom3", [])
+        standings = dict(last.get("standings", []))
+
+        view = discord.ui.View(timeout=120)
+        async def confirm_cb(inter: discord.Interaction):
+            await inter.response.defer(ephemeral=True)
+            # Evict each housemate without standard announcement (to suppress pinging housemate role)
+            for uid in bottom3:
+                await evict(inter.client, uid, announce=False)
+
+            guild = _guild(inter.client)
+            names_str = ", ".join(f"**{_name(guild, u)}**" for u in bottom3)
+
+            # Announce in house channel with STRICTLY ZERO PINGS
+            house = await house_channel(inter.client)
+            if house:
+                announcement = (
+                    f"{EYE} **THE PUBLIC HAVE SPOKEN.**\n\n"
+                    f"In tonight's triple eviction, the public voted to save their favourites.\n\n"
+                    f"Having received the fewest votes to save, the following housemates have been evicted from the Big Brother house:\n\n"
+                    f"🚪 {names_str}\n\n"
+                    f"Please leave through the diary room door. Big Brother is watching."
+                )
+                await house.send(announcement, allowed_mentions=discord.AllowedMentions.none())
+
+            # Announce in voting channel with STRICTLY ZERO PINGS
+            vch = await _channel(inter.client, public_vote_channel_id())
+            if vch:
+                announcement_pub = (
+                    f"{EYE} **THE PUBLIC VOTE HAS CONCLUDED.**\n\n"
+                    f"The following housemates received the fewest votes to save and have been evicted from the Big Brother house:\n\n"
+                    f"🚪 {names_str}\n\n"
+                    f"Thank you to everyone who voted!"
+                )
+                await vch.send(announcement_pub, allowed_mentions=discord.AllowedMentions.none())
+
+            last["pending_evictions"] = False
+            last["evicted_at"] = _now()
+            set_state(STATE_LAST_PUBLIC_VOTE_RESULT, last)
+            await refresh_public_vote_control(inter.client)
+            await inter.followup.send(f"✅ Eviction complete! {len(bottom3)} housemates evicted, roles stripped, spectator access granted. Zero pings sent.", ephemeral=True)
+
+        async def cancel_cb(inter: discord.Interaction):
+            await inter.response.edit_message(content="Cancelled eviction.", view=None)
+
+        c_btn = discord.ui.Button(label="🚪 Confirm Eviction", style=discord.ButtonStyle.danger)
+        c_btn.callback = confirm_cb
+        x_btn = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.secondary)
+        x_btn.callback = cancel_cb
+        view.add_item(c_btn)
+        view.add_item(x_btn)
+
+        list_lines = "\n".join(f"• 🚪 **{_name(interaction.guild, u)}** ({standings.get(u, 0)} votes)" for u in bottom3)
+        await interaction.response.send_message(
+            f"### Confirm Triple Eviction\nThe following 3 housemates received the fewest votes and will be evicted:\n{list_lines}\n\n"
+            f"⚠️ **Actions to be taken:**\n"
+            f"- Strip Housemate role\n"
+            f"- Grant read-only spectator access\n"
+            f"- Drop from private house threads\n"
+            f"- Post announcement with **STRICTLY ZERO PINGS**\n\n"
+            f"Press Confirm Eviction to execute.",
+            view=view,
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="bb_pv_refresh", row=1)
+    async def btn_refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_operator(interaction.user.id):
+            await interaction.response.send_message("Only Big Brother operators can use this panel.", ephemeral=True)
+            return
+        await refresh_public_vote_control(interaction.client)
+        await interaction.response.send_message("Public vote control refreshed.", ephemeral=True)
+
+
+async def ensure_public_vote_control(client: discord.Client) -> None:
+    """Post the public vote control panel in the host control channel once, then keep editing that message."""
+    if not enabled():
+        return
+    ensure_tables()
+    ch = await _channel(client, control_channel_id())
+    if not ch:
+        log.warning("Big Brother: control channel %s not found for public vote control", control_channel_id())
+        return
+    guild = _guild(client)
+    embed = _public_vote_control_embed(guild)
+    view = PublicVoteControlView(guild)
+    mid = get_state(STATE_PUBLIC_VOTE_CTRL_MSG)
+    if mid:
+        try:
+            msg = await ch.fetch_message(int(mid))
+            await msg.edit(embed=embed, view=view)
+            return
+        except discord.HTTPException:
+            pass
+    msg = await ch.send(embed=embed, view=view)
+    set_state(STATE_PUBLIC_VOTE_CTRL_MSG, msg.id)
+    log.info("Big Brother: posted public vote control panel %s in %s", msg.id, ch.id)
+
+
+async def refresh_public_vote_control(client: discord.Client) -> None:
+    guild = _guild(client)
+    mid = get_state(STATE_PUBLIC_VOTE_CTRL_MSG)
+    ch = await _channel(client, control_channel_id())
+    if ch and mid:
+        try:
+            msg = await ch.fetch_message(int(mid))
+            await msg.edit(embed=_public_vote_control_embed(guild), view=PublicVoteControlView(guild))
+            return
+        except discord.HTTPException as e:
+            log.info("Big Brother: public vote control refresh failed: %s", e)
+    await ensure_public_vote_control(client)
 
 
 PANEL_THREAD_NAME = "🏠 the house panel"
@@ -3230,6 +3830,7 @@ async def ensure_panels(client: discord.Client) -> None:
     except Exception:
         log.exception("Big Brother: could not restore shop timer")
     await ensure_control_panel(client)
+    await ensure_public_vote_control(client)
     await ensure_house_panel(client)
     # A restart doesn't reset the counter, so if the house talked past the vote while the bot
     # was down, bring it back to the bottom now instead of waiting for five more messages.

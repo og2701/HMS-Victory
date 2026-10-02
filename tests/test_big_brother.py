@@ -1894,3 +1894,125 @@ def test_shop_buttons_lead_with_the_price_and_the_aisle_lists_full_names(shop):
     shelf = shop._shelf(tid, "Cheese")
     assert "£30.00 · Diary Room Leak: Read One Housemate's Anonymous Diary Entry" in shelf
     assert "~~£3.00 · Brie~~ ✓" in shelf
+
+
+def test_public_save_button_custom_id(bb):
+    btn = bb.PublicSaveButton(12, 101, "Save Alice")
+    assert btn.custom_id == "bb:pubsave:12:101"
+    assert btn.item.label == "Save Alice"
+
+
+def test_public_vote_channel_accessor(bb, monkeypatch):
+    import config
+    monkeypatch.setattr(config, "BIG_BROTHER_PUBLIC_VOTE_CHANNEL", 959848236384919692)
+    assert bb.public_vote_channel_id() == 959848236384919692
+
+
+def test_public_vote_round_storage_and_vote_switch(bb):
+    nominees = [1, 2, 3, 4, 5, 6]
+    rid = bb.create_round(bb.KIND_PUBLIC_VOTE, nominees=nominees, votes_each=1)
+    rnd = bb.open_round(bb.KIND_PUBLIC_VOTE)
+    assert rnd["id"] == rid
+    assert rnd["nominees"] == nominees
+    assert bb.latest_round(bb.KIND_PUBLIC_VOTE)["id"] == rid
+
+    # Public voter 999 votes to save nominee 1
+    bb.cast_vote(rid, 999, 1)
+    assert bb.vote_tally(rid) == {1: 1}
+    assert bb.vote_of(rid, 999) == (1, None)
+
+    # Public voter 999 switches vote to save nominee 2
+    bb.cast_vote(rid, 999, 2)
+    assert bb.vote_tally(rid) == {2: 1}
+    assert bb.vote_of(rid, 999) == (2, None)
+    assert bb.vote_count(rid) == 1
+
+
+def test_public_vote_standings_bottom3_eviction(bb):
+    nominees = [10, 20, 30, 40, 50, 60]
+    rid = bb.create_round(bb.KIND_PUBLIC_VOTE, nominees=nominees, votes_each=1)
+
+    # Votes to save:
+    # 60 gets 10 votes, 50 gets 8 votes, 40 gets 6 votes (Top 3 Safe)
+    # 30 gets 4 votes, 20 gets 2 votes, 10 gets 1 vote (Bottom 3 Evicted)
+    for i in range(10):
+        bb.cast_vote(rid, 1000 + i, 60)
+    for i in range(8):
+        bb.cast_vote(rid, 2000 + i, 50)
+    for i in range(6):
+        bb.cast_vote(rid, 3000 + i, 40)
+    for i in range(4):
+        bb.cast_vote(rid, 4000 + i, 30)
+    for i in range(2):
+        bb.cast_vote(rid, 5000 + i, 20)
+    bb.cast_vote(rid, 6000, 10)
+
+    tally = bb.vote_tally(rid)
+    sorted_nominees = sorted(nominees, key=lambda n: (tally.get(n, 0), n))
+    bottom3 = sorted_nominees[:3]
+    top_safe = sorted_nominees[3:]
+
+    assert bottom3 == [10, 20, 30]
+    assert top_safe == [40, 50, 60]
+
+
+def test_public_vote_embed_contents(bb):
+    nominees = [1, 2, 3, 4, 5, 6]
+    rid = bb.create_round(bb.KIND_PUBLIC_VOTE, nominees=nominees, votes_each=1)
+
+    open_embed = bb._public_vote_embed(nominees, None, rid, closed=False)
+    assert "Public Vote to Save" in open_embed.description
+    assert "3 housemates with the fewest votes" in open_embed.description
+    assert "Total votes cast: 0" in open_embed.footer.text
+
+    closed_embed = bb._public_vote_embed(nominees, None, rid, closed=True)
+    assert "PUBLIC VOTE CLOSED" in closed_embed.title
+    assert "fewest save votes" in closed_embed.description
+
+
+def test_public_vote_control_embed_states(bb):
+    # Idle state
+    idle_embed = bb._public_vote_control_embed(None)
+    assert "IDLE" in idle_embed.description
+
+    # Open state
+    rid = bb.create_round(bb.KIND_PUBLIC_VOTE, nominees=[1, 2, 3, 4, 5, 6], votes_each=1)
+    live_embed = bb._public_vote_control_embed(None)
+    assert "LIVE / OPEN" in live_embed.description
+    assert f"Round #{rid}" in live_embed.title
+
+    # Closed / Pending evictions state
+    bb.close_round(rid)
+    bb.set_state(bb.STATE_LAST_PUBLIC_VOTE_RESULT, {
+        "round_id": rid,
+        "bottom3": [1, 2, 3],
+        "standings": [(1, 0), (2, 1), (3, 2), (4, 5), (5, 6), (6, 7)],
+        "pending_evictions": True
+    })
+    pending_embed = bb._public_vote_control_embed(None)
+    assert "EVICTIONS PENDING" in pending_embed.description
+    assert "Evict Bottom 3" in pending_embed.description
+
+
+def test_drop_outsider_votes_does_not_affect_public_vote(bb):
+    # Standard house vote round
+    bb.db_add_housemate(10)
+    bb.db_add_housemate(20)
+    vote_rid = bb.create_round(bb.KIND_VOTE, nominees=[10, 20], votes_each=1)
+
+    # Housemate 10 votes, outsider 999 votes in standard round
+    bb.cast_vote(vote_rid, 10, 20)
+    bb.cast_vote(vote_rid, 999, 10)
+
+    # Public vote round
+    pub_rid = bb.create_round(bb.KIND_PUBLIC_VOTE, nominees=[10, 20], votes_each=1)
+    # Outsider 999 votes in public round
+    bb.cast_vote(pub_rid, 999, 10)
+
+    # Drop outsider votes is only called on KIND_VOTE
+    gone = bb.drop_outsider_votes(vote_rid)
+    assert gone == [999]
+    assert bb.vote_tally(vote_rid) == {20: 1}
+
+    # Public vote round is untouched
+    assert bb.vote_tally(pub_rid) == {10: 1}
