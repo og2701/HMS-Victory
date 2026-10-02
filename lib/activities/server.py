@@ -121,6 +121,37 @@ async def _none():
     return None
 
 
+async def resume(request):
+    """Reopen with a remembered session instead of Discord's sign-in, which takes seconds.
+
+    The remembered token says who; Discord's own record of this activity instance says
+    where, and that the same person is genuinely in it. Anything that doesn't check out
+    gets a 401 and the page falls back to the full sign-in."""
+    client = request.app[CLIENT]
+    who = _player(request)
+    if who is None:
+        return _error("Sign in again.", 401)
+    try:
+        body = await request.json()
+    except Exception:
+        return _error("Bad request.", 400)
+    instance_id = str(body.get("instance_id") or "")
+    channel = None
+    if instance_id:
+        channel = auth.instance_channel(await auth.fetch_instance(client.session, instance_id), who["uid"])
+        if channel is None:
+            return _error("Sign in again.", 401)
+    allowed = _allowed_channels()
+    if allowed and channel not in allowed:
+        return _error("This is still being tested, and only opens in #bot-workshop for now.", 403)
+    gated = _gate(client, who["uid"])
+    if gated is not None:
+        return gated
+    date = _today()
+    wordle_api.opened(client, who["uid"], date)
+    return _json({"session": auth.make_session(who["uid"], channel), "wordle": wordle_api.state(who["uid"], date)})
+
+
 async def timing(request):
     """The page reports how long each sign-in step took, so a slow launch can be pinned down."""
     who = _player(request)
@@ -184,6 +215,7 @@ def build_app(client) -> web.Application:
         app.router.add_post(f"{prefix}/wordle/guess", wordle_guess)
         app.router.add_get(f"{prefix}/health", health)
         app.router.add_post(f"{prefix}/timing", timing)
+        app.router.add_post(f"{prefix}/resume", resume)
     return app
 
 

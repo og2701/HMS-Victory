@@ -22,7 +22,7 @@ import time
 log = logging.getLogger(__name__)
 
 API = "https://discord.com/api/v10"
-SESSION_TTL = 12 * 3600
+SESSION_TTL = 7 * 24 * 3600      # remembered on the player's device so reopening skips Discord's slow sign-in
 
 
 class AuthError(Exception):

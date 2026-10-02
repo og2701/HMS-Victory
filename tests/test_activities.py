@@ -190,3 +190,24 @@ def test_a_solve_through_the_activity_is_announced_in_its_channel(monkeypatch, t
         await asyncio.sleep(0)
     _run(client, scenario)
     assert len(posted) == 1 and posted[0][0] == WORKSHOP and "in **2/6**" in posted[0][1]
+
+
+def test_a_remembered_session_reopens_only_where_discord_says_you_are(monkeypatch, tmp_path):
+    client, _ = _setup(monkeypatch, tmp_path)
+
+    async def fake_instance(_s, iid):
+        users = ["42"] if iid != "someone-elses" else ["7"]
+        ch = WORKSHOP if iid != "general" else 123
+        return {"users": users, "location": {"channel_id": str(ch)}}
+    monkeypatch.setattr(auth, "fetch_instance", fake_instance)
+
+    async def scenario(http):
+        ok = await http.post("/api/resume", json={"instance_id": "here"}, headers=_auth(42))
+        not_in_it = await http.post("/api/resume", json={"instance_id": "someone-elses"}, headers=_auth(42))
+        wrong_channel = await http.post("/api/resume", json={"instance_id": "general"}, headers=_auth(42))
+        no_session = await http.post("/api/resume", json={"instance_id": "here"})
+        return ok.status, (await ok.json()), not_in_it.status, wrong_channel.status, no_session.status
+    ok, body, not_in_it, wrong_channel, no_session = _run(client, scenario)
+    assert ok == 200 and body["wordle"]["game"] == "wordle"
+    assert auth.read_session(body["session"], secret=SECRET) == {"uid": 42, "ch": WORKSHOP}
+    assert (not_in_it, wrong_channel, no_session) == (401, 403, 401)
