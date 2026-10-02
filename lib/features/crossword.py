@@ -23,6 +23,7 @@ and the ephemeral being dismissed - just run /crossword again to resume today's 
 import asyncio
 import datetime
 import logging
+import os
 import time
 
 import discord
@@ -451,9 +452,13 @@ li b{{color:#fff}} li i{{color:rgba(255,255,255,.4);font-style:normal}}
 # cards and the summaries, so each redraw queued behind whatever the casino was doing and
 # the board sat on a loading spinner for seconds at a time. Straight PIL takes no lock,
 # starts no browser and fetches no webfont, so it lands in milliseconds.
-# First hit wins. Liberation is what the server has; the rest are so the board still
-# draws (and can be eyeballed) on a dev machine.
-_FONT_CANDIDATES = {
+#
+# The look: chunky ivory tiles on an HMS-navy board, solved answers on green tiles and a
+# revealed letter on gold, the same set as /wordle. Archivo ships in data/fonts (one
+# variable file, weight picked per use); Liberation/DejaVu/Arial are only fallbacks so the
+# board still draws somewhere without it.
+_ARCHIVO = os.path.join("data", "fonts", "Archivo.ttf")
+_FALLBACK_FONTS = {
     "bold": (
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -467,24 +472,34 @@ _FONT_CANDIDATES = {
 }
 _font_cache = {}
 
+NAVY, PANEL, SLOT = "#0F1B33", "#0A1426", "#1A2948"
+IVORY, IVORY_EDGE, MUTED = "#F4EBD9", "#CDBF9F", "#9DAAC4"
+GREEN, GREEN_EDGE = "#2F8F5B", "#1E6A41"
+GOLD, GOLD_EDGE = "#E2B33C", "#A9801F"
+RED, RED_EDGE = "#CF142B", "#8E0D1D"
+FADED = "#989896"          # navy at 40% on ivory: a clue you've already answered
 
-def _font(weight: str, size: int):
-    """A cached truetype face, falling back to PIL's bitmap default if none is installed
-    (the board still draws, it just looks plainer)."""
+
+def _font(weight: int, size: int):
+    """Archivo at ``weight`` (100-900), cached. Falls back to a plain bold/regular face,
+    then to PIL's bitmap default (the board still draws, it just looks plainer)."""
     key = (weight, size)
     if key in _font_cache:
         return _font_cache[key]
     from PIL import ImageFont
     face = None
-    for path in _FONT_CANDIDATES[weight]:
-        try:
-            face = ImageFont.truetype(path, size)
-            break
-        except Exception:
-            continue
+    try:
+        face = ImageFont.truetype(_ARCHIVO, size)
+        face.set_variation_by_axes([weight, 100])      # axes: weight, width
+    except Exception:
+        face = None
+        for path in _FALLBACK_FONTS["bold" if weight >= 700 else "regular"]:
+            try:
+                face = ImageFont.truetype(path, size)
+                break
+            except Exception:
+                continue
     if face is None:
-        # No truetype anywhere: the bitmap default ignores `size` and kerns badly, but a
-        # readable-ish board beats no board at all.
         face = ImageFont.load_default()
         log.warning("HMS Crossword: no truetype font found, falling back to the default")
     _font_cache[key] = face
@@ -503,6 +518,37 @@ def _wrap(draw, text, font, width):
     if cur:
         lines.append(cur)
     return lines
+
+
+def _tile(dr, box, face, edge, radius=12, depth=7):
+    """A raised tile: the edge colour shows as a lip along the bottom."""
+    x0, y0, x1, y1 = box
+    dr.rounded_rectangle(box, radius, fill=edge)
+    dr.rounded_rectangle((x0, y0, x1, y1 - depth), radius, fill=face)
+
+
+def _spaced(dr, x, y, text, font, fill, gap):
+    """Letter-spaced small caps (PIL has no tracking of its own)."""
+    for ch in text:
+        dr.text((x, y), ch, font=font, fill=fill)
+        x += dr.textlength(ch, font=font) + gap
+
+
+def _clue_lines(dr, puzzle, p, direction, width):
+    """[(lines, length, solved, num)] for one direction, wrapped to ``width`` with room left
+    on the last line for the length badge (its last word drops a line if it won't fit)."""
+    f_clue, f_len = _font(600, 20), _font(800, 16)
+    out = []
+    for e in puzzle["entries"]:
+        if e["dir"] != direction:
+            continue
+        badge = dr.textlength(str(len(e["answer"])), font=f_len) + 20
+        lines = _wrap(dr, e["clue"], f_clue, width)
+        if dr.textlength(lines[-1], font=f_clue) + badge > width:
+            words = lines[-1].split()
+            lines[-1:] = [" ".join(words[:-1]), words[-1]] if len(words) > 1 else [lines[-1], ""]
+        out.append((lines, len(e["answer"]), _key(e) in p["solved"], e["num"]))
+    return out
 
 
 def draw_board(uid, date):
@@ -526,85 +572,132 @@ def draw_board(uid, date):
     solved_cells = {tuple(c) for e in puzzle["entries"] if _key(e) in p["solved"]
                     for c in e["cells"]}
 
-    CELL, GAP, PAD, W = 54, 4, 26, 620
-    grid_w = size * CELL + (size - 1) * GAP
-    gx, gy = (W - grid_w) // 2, 84
+    W, PAD, GAP, INNER = 820, 30, 8, 22
+    cell = min(104, (W - 2 * PAD - 2 * INNER - (size - 1) * GAP) // size)
+    cell_h = cell + 4                                   # a touch taller for the lip
+    grid_w, grid_h = size * cell + (size - 1) * GAP, size * cell_h + (size - 1) * GAP
+    panel_y = 170
+    clue_y = panel_y + grid_h + 2 * INNER + 20
+    col_w = (W - 2 * PAD - 14) // 2
+    text_w = col_w - 40 - 32                            # card padding, then the number column
 
-    f_title, f_date = _font("bold", 27), _font("regular", 15)
-    f_cell, f_num = _font("bold", 30), _font("regular", 13)
-    f_head, f_clue, f_sub = _font("bold", 15), _font("regular", 14), _font("regular", 15)
-
-    # lay the clue columns out first so the card can be sized to fit them exactly
     scratch = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    col_w = (W - 2 * PAD - 26) // 2
-    cols = []
-    for d in ("across", "down"):
-        lines = []
-        for e in puzzle["entries"]:
-            if e["dir"] != d:
-                continue
-            txt = f"{e['num']}. {e['clue']} ({len(e['answer'])})"
-            for i, ln in enumerate(_wrap(scratch, txt, f_clue, col_w - 4)):
-                lines.append((ln, _key(e) in p["solved"], i))
-        cols.append(lines)
-    clue_y = gy + size * CELL + (size - 1) * GAP + 22
-    body_h = max(len(c) for c in cols) * 21 + 26
-    H = clue_y + body_h + 46
+    cols = [_clue_lines(scratch, puzzle, p, d, text_w) for d in ("across", "down")]
+    body = max(sum(len(lines) * 27 + 8 for lines, *_ in c) for c in cols)
+    card_h = 20 + 28 + body + 18
+    H = clue_y + card_h + PAD
 
-    img = Image.new("RGB", (W + 36, H + 36), "#0a0e1a")
+    img = Image.new("RGB", (W, H), NAVY)
     dr = ImageDraw.Draw(img)
-    dr.rounded_rectangle([18, 18, W + 18, H + 18], 18, fill="#121624", outline="#CF142B", width=4)
 
-    def at(x, y):
-        return x + 18, y + 18
-
-    dr.text(at(W // 2, 30), "HMS Crossword", font=f_title, fill="#ffffff", anchor="mt")
-    dr.text(at(W // 2, 62), _pretty(date), font=f_date, fill="#6f7686", anchor="mt")
-
-    for r in range(size):
-        for c in range(size):
-            x, y = gx + c * (CELL + GAP), gy + r * (CELL + GAP)
-            box = [*at(x, y), *at(x + CELL, y + CELL)]
-            if (r, c) in black:
-                dr.rounded_rectangle(box, 4, fill="#1c2030")
-                continue
-            if (r, c) in solved_cells:
-                bg, fg, nfg = "#6aaa64", "#ffffff", "#d8ecd5"
-            elif (r, c) in revealed_cells:
-                bg, fg, nfg = "#c9b458", "#11141c", "#6b6033"
-            else:
-                bg, fg, nfg = "#f5f6f8", "#11141c", "#5a5f6b"
-            dr.rounded_rectangle(box, 4, fill=bg)
-            if (r, c) in nums:
-                dr.text(at(x + 5, y + 3), str(nums[(r, c)]), font=f_num, fill=nfg)
-            ch = seen.get((r, c))
-            if ch:
-                dr.text(at(x + CELL // 2, y + CELL // 2 + 2), ch, font=f_cell,
-                        fill=fg, anchor="mm")
-
-    for i, (head, lines) in enumerate(zip(("ACROSS", "DOWN"), cols)):
-        cx = PAD + i * (col_w + 26)
-        dr.text(at(cx, clue_y), head, font=f_head, fill="#CF142B")
-        for j, (ln, done, wrapped) in enumerate(lines):
-            dr.text(at(cx + (12 if wrapped else 0), clue_y + 24 + j * 21), ln,
-                    font=f_clue, fill="#4c515e" if done else "#d2d6de")
+    # header: HMS in red tiles, CROSSWORD on one ivory tile, the day and the hints under it
+    f_mini = _font(900, 28)
+    x = PAD
+    for ch in "HMS":
+        _tile(dr, (x, PAD, x + 46, PAD + 50), RED, RED_EDGE, radius=6, depth=5)
+        dr.text((x + 23, PAD + 23), ch, font=f_mini, fill=IVORY, anchor="mm")
+        x += 52
+    x += 10
+    word_w = int(dr.textlength("CROSSWORD", font=f_mini)) + 28
+    _tile(dr, (x, PAD, x + word_w, PAD + 50), IVORY, IVORY_EDGE, radius=6, depth=5)
+    dr.text((x + word_w / 2, PAD + 23), "CROSSWORD", font=f_mini, fill=NAVY, anchor="mm")
 
     r = rules(date)
-    hints, wrong_tiers = penalties(p, date)
-    total, got = len(puzzle["entries"]), len(set(p["solved"]))
+    hints, _wrong_tiers = penalties(p, date)
+    sub = f"{date:%A %-d %B} · {size}×{size} mini"
+    if r["max_hints"] and not p["done"]:
+        left = max(r["max_hints"] - hints, 0)
+        sub += f" · {left} hint{'' if left == 1 else 's'} left"
+    elif hints:
+        sub += f" · {hints} revealed"
+    dr.text((PAD, PAD + 62), sub, font=_font(600, 19), fill=MUTED)
+
+    # the coin: what finishing pays from here
+    reward, top = reward_for(p, date), r["rewards"][0]
     if p["done"]:
-        sub = f"Complete · +{reward_for(p, date):,} UKPence"
+        big, small = f"+{reward:,} UKP", "complete"
     else:
-        sub = f"{got}/{total} filled · worth {reward_for(p, date):,}"
-        if r["max_hints"]:
-            sub += f" · {r['max_hints'] - hints} hint(s) left"
-        if r["wrong_per_tier"] and int(p.get("wrong", 0)):
-            sub += f" · {p['wrong']} wrong"
-    dr.text(at(W // 2, H - 34), sub, font=f_sub, fill="#8f96a5", anchor="mt")
+        big, small = f"{reward:,} UKP", (f"down from {top:,}" if reward < top else "if you finish")
+    f_big, f_small = _font(900, 26), _font(600, 16)
+    coin_w = 10 + 38 + 10 + int(max(dr.textlength(big, font=f_big), dr.textlength(small, font=f_small))) + 20
+    cx0 = W - PAD - coin_w
+    dr.rounded_rectangle((cx0, 36, W - PAD, 100), 32, fill=SLOT)
+    dr.ellipse((cx0 + 10, 49, cx0 + 48, 87), fill=GOLD_EDGE)
+    dr.ellipse((cx0 + 10, 45, cx0 + 48, 83), fill=GOLD)
+    dr.text((cx0 + 58, 44), big, font=f_big, fill=IVORY)
+    dr.text((cx0 + 58, 74), small, font=f_small, fill=MUTED)
+
+    # progress: one pip per answer, and how close the next wrong answer is to costing a tier
+    total, got = len(puzzle["entries"]), len(set(p["solved"]))
+    f_prog = _font(700, 19)
+    left_lbl = f"{got}/{total}"
+    wrong = int(p.get("wrong", 0))
+    right_lbl = ""
+    if wrong:
+        right_lbl = f"{wrong} wrong"
+        # shown from the first wrong answer, not just once it has cost a tier - people
+        # can't ration something they can't see coming
+        if r["wrong_per_tier"] and not p["done"]:
+            right_lbl += f" · {r['wrong_per_tier'] - wrong % r['wrong_per_tier']} to a drop"
+    py = 130
+    dr.text((PAD, py + 7), left_lbl, font=f_prog, fill=MUTED, anchor="lm")
+    px0 = PAD + int(dr.textlength(left_lbl, font=f_prog)) + 16
+    px1 = W - PAD - (int(dr.textlength(right_lbl, font=f_prog)) + 16 if right_lbl else 0)
+    if right_lbl:
+        dr.text((W - PAD, py + 7), right_lbl, font=f_prog, fill=MUTED, anchor="rm")
+    pip = (px1 - px0 - (total - 1) * 6) / max(total, 1)
+    for i in range(total):
+        a = px0 + i * (pip + 6)
+        dr.rounded_rectangle((a, py, a + pip, py + 14), 7, fill=GREEN if i < got else SLOT)
+
+    # the grid, on a recessed panel; black squares are just gaps in it
+    dr.rounded_rectangle((PAD, panel_y, W - PAD, panel_y + grid_h + 2 * INNER), 16, fill=PANEL)
+    gx, gy = (W - grid_w) // 2, panel_y + INNER
+    f_cell, f_num = _font(900, int(cell * 0.5)), _font(800, 18)
+    for row in range(size):
+        for col in range(size):
+            if (row, col) in black:
+                continue
+            x, y = gx + col * (cell + GAP), gy + row * (cell_h + GAP)
+            if (row, col) in solved_cells:
+                face, edge, fg, nfg = GREEN, GREEN_EDGE, IVORY, "#A5C6A6"
+            elif (row, col) in revealed_cells:
+                face, edge, fg, nfg = GOLD, GOLD_EDGE, NAVY, "#635837"
+            else:
+                face, edge, fg, nfg = IVORY, IVORY_EDGE, NAVY, "#6A6E75"
+            _tile(dr, (x, y, x + cell, y + cell_h), face, edge)
+            if (row, col) in nums:
+                dr.text((x + 9, y + 5), str(nums[(row, col)]), font=f_num, fill=nfg)
+            ch = seen.get((row, col))
+            if ch:
+                dr.text((x + cell / 2, y + (cell_h - 7) / 2 + 2), ch, font=f_cell, fill=fg, anchor="mm")
+
+    # the clues, on two ivory cards; answered ones fade and get struck through
+    f_head, f_clue, f_n, f_len = _font(900, 16), _font(600, 20), _font(900, 20), _font(800, 16)
+    for i, (head, entries) in enumerate(zip(("ACROSS", "DOWN"), cols)):
+        x0 = PAD + i * (col_w + 14)
+        _tile(dr, (x0, clue_y, x0 + col_w, clue_y + card_h), IVORY, IVORY_EDGE, radius=14, depth=6)
+        _spaced(dr, x0 + 20, clue_y + 20, head, f_head, RED, 2.4)
+        y = clue_y + 20 + 28
+        for lines, length, done, num in entries:
+            ink = FADED if done else NAVY
+            dr.text((x0 + 20, y), str(num), font=f_n, fill=ink)
+            tx = x0 + 20 + 32
+            for j, ln in enumerate(lines):
+                dr.text((tx, y + j * 27), ln, font=f_clue, fill=ink)
+                lw = dr.textlength(ln, font=f_clue)
+                if done:
+                    dr.line((tx, y + j * 27 + 13, tx + lw, y + j * 27 + 13), fill=ink, width=2)
+                if j == len(lines) - 1:                 # the length badge after the last word
+                    bw = dr.textlength(str(length), font=f_len) + 12
+                    bx, by = tx + lw + (8 if ln else 0), y + j * 27 + 3
+                    dr.rounded_rectangle((bx, by, bx + bw, by + 21), 4, fill=FADED if done else NAVY)
+                    dr.text((bx + bw / 2, by + 11), str(length), font=f_len, fill=IVORY, anchor="mm")
+            y += len(lines) * 27 + 8
 
     buf = io.BytesIO()
     # Saved as a palette PNG. A board is a couple of dozen flat colours plus antialiased
-    # text, so 256 of them is the same picture to the eye at 14KB instead of 36KB - and
+    # text, so 256 of them is the same picture to the eye at a fraction of the bytes - and
     # those bytes are the upload, which is the part the player actually sits waiting for.
     img.convert("P", palette=Image.ADAPTIVE, colors=256).save(buf, format="PNG", optimize=True)
     buf.seek(0)

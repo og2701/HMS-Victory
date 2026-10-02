@@ -223,64 +223,77 @@ def _render(uid, date):
 
 
 # --- image board ---------------------------------------------------------------
-_TILE = {"correct": "#6aaa64", "present": "#c9b458", "absent": "#3a3a3c"}
+# Chunky ivory tiles on an HMS-navy board, the same set as /crossword: green for the right
+# spot, gold for the wrong spot, slate for not in the word. The coin says what the next
+# guess is worth while you're playing, and what you won once you're done.
+_FACE = {"correct": ("#2F8F5B", "#1E6A41", "#F4EBD9"),
+         "present": ("#E2B33C", "#A9801F", "#0F1B33"),
+         "absent": ("#34405C", "#232D45", "#9DAAC4")}
 
 
 def _board_html(uid, date):
     word = _todays_word(date)
     p = _player(date.isoformat(), uid)
     guesses = p["guesses"]
+    playing = not p["done"]
     rows = []
     for r in range(6):
         if r < len(guesses):
             g = guesses[r]
-            sc = _score(g, word)
-            tiles = "".join(f'<div class="t {s}">{g[i].upper()}</div>' for i, s in enumerate(sc))
+            rows.append("<div class='row'>" + "".join(
+                f"<div class='tile' style='background:{_FACE[s][0]};box-shadow:inset 0 -8px 0 {_FACE[s][1]};"
+                f"color:{_FACE[s][2]}'>{g[i].upper()}</div>" for i, s in enumerate(_score(g, word))) + "</div>")
         else:
-            tiles = '<div class="t e"></div>' * 5
-        rows.append(f'<div class="row">{tiles}</div>')
+            nxt = " next" if playing and r == len(guesses) else ""
+            rows.append(f"<div class='row{nxt}'>" + "<div class='slot'></div>" * 5 + "</div>")
     status = {}
     for g in guesses:
         for s, ch in zip(_score(g, word), g.upper()):
             if ch not in status or _RANK[s] > _RANK[status[ch]]:
                 status[ch] = s
-    kb = []
-    for row in _KB_ROWS:
-        keys = "".join(f'<div class="k {status.get(ch, "u")}">{ch}</div>' for ch in row)
-        kb.append(f'<div class="krow">{keys}</div>')
+    kb = "".join("<div class='krow'>" + "".join(
+        f"<div class='key {status.get(ch, '')}'>{ch}</div>" for ch in row) + "</div>" for row in _KB_ROWS)
+
     if p["solved"]:
         n = len(guesses)
-        sub = f"Solved in {n}/6 · +{config.WORDLE_REWARDS[n - 1]:,} UKPence"
+        coin = (f"<div class='coin'><i></i><div><b>+{config.WORDLE_REWARDS[n - 1]:,} UKP</b>"
+                f"<span>solved in {n}/6</span></div></div>")
     elif p["done"]:
-        sub = f"Out of guesses · the word was {word.upper()}"
+        coin = f"<div class='coin plain'><div><b>{word.upper()}</b><span>was the word</span></div></div>"
     else:
-        left = 6 - len(guesses)
-        sub = f"{left} guess{'es' if left != 1 else ''} left"
+        nxt = config.WORDLE_REWARDS[len(guesses)]
+        when = "first try" if not guesses else ("on your last go" if len(guesses) == 5 else "next")
+        coin = f"<div class='coin'><i></i><div><b>{nxt:,} UKP</b><span>if you get it {when}</span></div></div>"
+
+    title = ("".join(f"<div class='mini r'>{ch}</div>" for ch in "HMS") + "<div style='width:10px'></div>"
+             + "".join(f"<div class='mini'>{ch}</div>" for ch in "WORDLE"))
     return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@600;800&family=Outfit:wght@800&display=swap');
-*{{margin:0;padding:0;box-sizing:border-box}}html,body{{overflow:hidden}}::-webkit-scrollbar{{width:0;height:0}}
-body{{background:#0a0e1a;display:flex;justify-content:center;padding:18px;font-family:'Inter',sans-serif}}
-.card{{background:#121624;border:4px solid #CF142B;border-radius:18px;padding:22px 26px 24px;
- box-shadow:0 14px 44px rgba(0,0,0,.55)}}
-.title{{font-family:'Outfit',sans-serif;font-weight:800;color:#fff;font-size:26px;text-align:center;letter-spacing:.5px}}
-.date{{color:rgba(255,255,255,.45);font-size:14px;text-align:center;margin:2px 0 16px}}
-.grid{{display:flex;flex-direction:column;gap:7px;align-items:center}}
-.row{{display:flex;gap:7px}}
-.t{{width:58px;height:58px;border-radius:6px;display:flex;align-items:center;justify-content:center;
- font-weight:800;font-size:30px;color:#fff;text-transform:uppercase}}
-.t.correct{{background:#6aaa64}}.t.present{{background:#c9b458}}.t.absent{{background:#3a3a3c}}
-.t.e{{background:transparent;border:2px solid #2b2f3a}}
-.kb{{display:flex;flex-direction:column;gap:6px;align-items:center;margin-top:18px}}
-.krow{{display:flex;gap:5px}}
-.k{{min-width:30px;height:42px;padding:0 7px;border-radius:5px;display:flex;align-items:center;justify-content:center;
- font-weight:700;font-size:16px;color:#fff;background:#818384}}
-.k.correct{{background:#6aaa64}}.k.present{{background:#c9b458}}.k.absent{{background:#2b2f3a;color:#6b6f78}}
-.sub{{color:rgba(255,255,255,.6);font-size:15px;text-align:center;margin-top:16px}}
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&display=swap');
+*{{margin:0;padding:0;box-sizing:border-box}} html,body{{background:#0F1B33}} body{{width:820px}}
+.card{{width:820px;padding:30px 30px 32px;background:#0F1B33;font-family:Archivo,sans-serif;color:#F4EBD9;display:flex;flex-direction:column;gap:20px}}
+.head{{display:flex;align-items:center;justify-content:space-between}}
+.word{{display:flex;gap:6px}}
+.mini{{width:46px;height:50px;border-radius:6px;background:#F4EBD9;color:#0F1B33;box-shadow:inset 0 -5px 0 #CDBF9F;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:28px;padding-bottom:4px}}
+.mini.r{{background:#CF142B;color:#F4EBD9;box-shadow:inset 0 -5px 0 #8E0D1D}}
+.sub{{font-size:19px;font-weight:600;color:#9DAAC4;margin-top:8px}}
+.coin{{display:flex;align-items:center;gap:10px;padding:10px 20px 10px 10px;border-radius:40px;background:#1A2948}}
+.coin.plain{{padding-left:20px}}
+.coin i{{width:38px;height:38px;border-radius:50%;background:#E2B33C;box-shadow:inset 0 -4px 0 #A9801F;display:block}}
+.coin b{{font-size:26px;font-weight:900;display:block}} .coin span{{font-size:16px;color:#9DAAC4;font-weight:600;display:block}}
+.panel{{background:#0A1426;border-radius:16px;padding:22px;box-shadow:inset 0 3px 0 rgba(0,0,0,.35)}}
+.board{{display:flex;flex-direction:column;gap:12px;align-items:center}}
+.row{{display:flex;gap:12px}}
+.tile{{width:108px;height:112px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:58px;padding-bottom:8px}}
+.slot{{width:108px;height:112px;border-radius:12px;background:#132241;box-shadow:inset 0 4px 0 rgba(0,0,0,.4)}}
+.row.next .slot{{background:#1A2948;box-shadow:inset 0 4px 0 rgba(0,0,0,.4),0 0 0 3px #E2B33C}}
+.kb{{display:flex;flex-direction:column;gap:9px;align-items:center}} .krow{{display:flex;gap:7px}}
+.key{{width:64px;height:76px;border-radius:9px;background:#F4EBD9;color:#0F1B33;box-shadow:inset 0 -6px 0 #CDBF9F;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:28px;padding-bottom:5px}}
+.key.correct{{background:#2F8F5B;color:#F4EBD9;box-shadow:inset 0 -6px 0 #1E6A41}} .key.present{{background:#E2B33C;box-shadow:inset 0 -6px 0 #A9801F}}
+.key.absent{{background:#132241;color:#3E4C6B;box-shadow:inset 0 3px 0 rgba(0,0,0,.4)}}
 </style></head><body><div class='card'>
-<div class='title'>HMS Wordle</div><div class='date'>{_pretty(date)}</div>
-<div class='grid'>{''.join(rows)}</div>
-<div class='kb'>{''.join(kb)}</div>
-<div class='sub'>{sub}</div>
+<div class='head'><div><div class='word'>{title}</div><div class='sub'>{date:%A %-d %B} · No. {(date - _EPOCH).days + 1:,}</div></div>{coin}</div>
+<div class='panel'><div class='board'>{''.join(rows)}</div></div>
+<div class='kb'>{kb}</div>
 </div></body></html>"""
 
 
@@ -297,7 +310,7 @@ async def render_board(uid, date):
         return None, p["done"]
     try:
         from lib.core.image_processing import screenshot_html
-        img = await screenshot_html(_board_html(uid, date), size=(560, 1000), apply_trim=True)
+        img = await screenshot_html(_board_html(uid, date), size=(820, 1400), element_selector=".card")
         return img, p["done"]
     except Exception:
         log.error("HMS Wordle board render failed", exc_info=True)
