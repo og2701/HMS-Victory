@@ -9,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ENV_FILE=.env
-CLIENT_ID=1555603316547780608
+CLIENT_ID=1555609854108770355
 
 set_env() {   # set_env KEY VALUE - replace any existing line for KEY
   touch "$ENV_FILE"
@@ -39,8 +39,11 @@ else
 fi
 
 echo "== 2/3  Discord app secrets"
+old_id=$(grep -m1 '^ACTIVITIES_CLIENT_ID=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
 set_env ACTIVITIES_CLIENT_ID "$CLIENT_ID"
-if grep -q '^ACTIVITIES_CLIENT_SECRET=.' "$ENV_FILE" && grep -q '^ACTIVITIES_BOT_TOKEN=.' "$ENV_FILE"; then
+# A different app id means a new app, so its secrets are asked for again.
+if [ "$old_id" = "$CLIENT_ID" ] && grep -q '^ACTIVITIES_CLIENT_SECRET=.' "$ENV_FILE" \
+    && grep -q '^ACTIVITIES_BOT_TOKEN=.' "$ENV_FILE"; then
   echo "   already in .env (delete those lines and re-run to replace them)"
 else
   read -rsp "   Client secret (portal > ukplace activities > OAuth2 > Reset Secret): " secret; echo
