@@ -396,12 +396,13 @@ async def _name_entry_command(client) -> None:
         async with client.session.get(f"{auth.API}/applications/{app_id}/commands", headers=headers) as r:
             commands = await r.json() if r.status == 200 else []
         entry = next((c for c in commands if c.get("type") == 4), None)
-        if entry is None or entry.get("name") == want:
+        description = getattr(config, "ACTIVITIES_ENTRY_DESCRIPTION", "")
+        if entry is None or (entry.get("name") == want and entry.get("description") == description):
             return
         async with client.session.patch(
                 f"{auth.API}/applications/{app_id}/commands/{entry['id']}", headers=headers,
-                json={"name": want, "description": getattr(config, "ACTIVITIES_ENTRY_DESCRIPTION", "")}) as r:
-            log.info("activity launch command renamed /%s -> /%s (%s)", entry.get("name"), want, r.status)
+                json={"name": want, "description": description}) as r:
+            log.info("activity launch command set to /%s (%s)", want, r.status)
     except Exception:
         log.warning("couldn't name the activity launch command", exc_info=True)
 

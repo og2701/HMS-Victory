@@ -466,11 +466,11 @@ ACTIVITIES_LAUNCH_COMMANDS = {
     "test-crossword": ("crossword", "Play HMS Crossword as an activity (testing)"),
 }
 # The casino inside the activity (lib/activities/casino): the house games, same rules and
-# money paths as the slash commands. While it's being tested it only opens in the channels
-# listed here ([] = anywhere), and its live session lines and big wins post to
-# ACTIVITIES_CASINO_CHANNEL (None = the #casino channel).
-ACTIVITIES_CASINO_CHANNELS = [1141037835445616640]    # bot-workshop while testing
-ACTIVITIES_CASINO_CHANNEL = 1141037835445616640       # bot-workshop while testing
+# money paths as the slash commands. Play is private to each player, so it opens from any
+# channel ([] = anywhere; list channel ids to lock it down), while its live session lines and
+# big wins always post to ACTIVITIES_CASINO_CHANNEL (None = the #casino channel).
+ACTIVITIES_CASINO_CHANNELS = []
+ACTIVITIES_CASINO_CHANNEL = None
 ACTIVITIES_CASINO_BIG_WIN_MULTIPLE = 5.0              # a round paying this x the stake...
 ACTIVITIES_CASINO_BIG_WIN_MIN = 250                   # ...and netting at least this gets its own post
 ACTIVITIES_CASINO_BIG_WIN_NET = 5_000                 # any round netting this much does too
