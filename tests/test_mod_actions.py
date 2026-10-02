@@ -31,8 +31,7 @@ def _run(coro):
 
 
 def _ban(i, kind="dmspam", uid=7, view=None):
-    """Press Ban, then press the confirmation. Ban is two presses now, so a test that only
-    does the first is testing the dialog rather than the ban.
+    """Press Ban.
 
     Pass `view` to press the button as part of a real row. Item.view is read-only and is
     set by add_item, so the button has to be taken back out of the view rather than having
@@ -42,9 +41,6 @@ def _ban(i, kind="dmspam", uid=7, view=None):
     if view is not None:
         btn = next(c for c in view.children if isinstance(c, M.ModBanButton))
     _run(btn.callback(i))
-    # The row is captured when Ban is pressed and carried to the confirmation, exactly as
-    # the real button does, so what gets greyed out is what the report was showing.
-    _run(M._ConfirmBan(kind, uid, i.message, M._row_of(btn.view)).confirm.callback(i))
 
 
 # --- the staff buttons -------------------------------------------------------------------
@@ -279,33 +275,17 @@ def test_a_narrowed_row_stays_narrow_after_it_is_handled():
     assert all(c.item.disabled for c in after.children)
 
 
-def test_ban_never_fires_on_the_first_press():
-    """It sits next to Analyse and Ignore, it cannot be undone from here, and the detectors
-    do get it wrong. The first press opens a confirmation; the second one acts."""
-    i = FakeButtonInteraction(staff=True, member=FakeMember(7))
-    _run(M.ModBanButton("dmspam", 7).callback(i))
-    assert i.guild.bans == [], "it banned on the first press"
-    kind, content = i.log[0]
-    assert kind == "replied" and "Ban <@7>?" in content, i.log
-
-
-def test_the_second_press_is_the_one_that_bans():
+def test_one_press_bans_and_settles_the_report():
+    """No confirmation step: staff asked for Ban to act on the click."""
     i = FakeButtonInteraction(staff=True, member=FakeMember(7))
     report = i.message
-    confirm = M._ConfirmBan("dmspam", 7, report, [M.ModBanButton])
-    _run(confirm.confirm.callback(i))
+    _run(M.ModBanButton("dmspam", 7).callback(i))
     assert i.guild.bans and i.guild.bans[0][0] == 7, i.guild.bans
     assert report.edits, "the report was not settled"
+    assert not any(kind == "replied" for kind, _ in i.log), i.log
 
 
-def test_cancelling_bans_nobody():
-    i = FakeButtonInteraction(staff=True, member=FakeMember(7))
-    confirm = M._ConfirmBan("dmspam", 7, i.message, [M.ModBanButton])
-    _run(confirm.cancel.callback(i))
-    assert i.guild.bans == []
-
-
-def test_a_non_staff_press_does_not_even_get_the_confirmation():
+def test_a_non_staff_press_bans_nobody():
     i = FakeButtonInteraction(staff=False)
     _run(M.ModBanButton("dmspam", 7).callback(i))
     assert i.log[0] == ("replied", "Staff only.")

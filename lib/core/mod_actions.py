@@ -91,9 +91,7 @@ def _row_of(view) -> list | None:
     """Which of our buttons that report was actually showing.
 
     Settling greys out exactly the row that was there - a report that never offered Ban
-    must not sprout a greyed-out Ban the moment somebody presses Ignore. Ban's confirmation
-    happens on a separate ephemeral message, so the row has to be captured up front rather
-    than read back at settle time.
+    must not sprout a greyed-out Ban the moment somebody presses Ignore.
     """
     children = getattr(view, "children", None) or []
     present = [b for b in BUTTONS if any(isinstance(c, b) for c in children)]
@@ -102,9 +100,6 @@ def _row_of(view) -> list | None:
 
 async def _settle_message(msg, note: str, kind: str, user_id: int, only=None) -> None:
     """Write what was done onto the report and grey the buttons out.
-
-    Takes the message rather than the interaction, because the ban confirmation runs on an
-    ephemeral of its own and still has to settle the report it came from.
 
     Greyed rather than removed: a handled report that has lost its buttons reads as though
     it was never actionable, and you can no longer see what the other options had been.
@@ -191,47 +186,17 @@ class ModBanButton(_MemberAction, template=r"mod:ban:(?P<kind>\w+):(?P<uid>\d+)"
         return cls(match["kind"], match["uid"])
 
     async def callback(self, interaction):
-        """Never bans on the first press. These reports sit next to Analyse and Ignore, a
-        ban cannot be undone from here, and the detectors do get it wrong - so the button
-        opens a confirmation and the second press is the one that acts."""
+        """Bans on the first press. It used to open a confirmation; staff asked for it to go,
+        and a wrong ban is still put right with an unban in Discord."""
         if await self._reject_non_staff(interaction):
             return
-        kind = _kind(self.kind)
-        await interaction.response.send_message(
-            f"### Ban <@{self.user_id}>?\n"
-            f"Reason recorded: *{kind.audit}*. They will be DM'd the appeal first. This "
-            "cannot be undone from here - unbanning is done in Discord.",
-            view=_ConfirmBan(self.kind, self.user_id, interaction.message,
-                             _row_of(self.view)),
-            ephemeral=True, allowed_mentions=NO_PINGS)
-
-
-class _ConfirmBan(discord.ui.View):
-    """The second press. Short-lived and ephemeral, so it needs no dynamic id."""
-
-    def __init__(self, kind, user_id, report_message, present):
-        super().__init__(timeout=120)
-        self.kind, self.user_id = str(kind), int(user_id)
-        self.report_message, self.present = report_message, present
-
-    @discord.ui.button(label="Yes, ban them", style=discord.ButtonStyle.danger, emoji="🔨")
-    async def confirm(self, interaction, button):
-        if not _is_staff(interaction.user):
-            await interaction.response.send_message("Staff only.", ephemeral=True)
-            return
         await interaction.response.defer(ephemeral=True, thinking=True)
-        self.stop()
         kind = _kind(self.kind)
 
         # Tell them before the ban lands. Afterwards we no longer share a guild and
         # Discord will not deliver the DM, so the appeal route silently disappears.
         told = False
-        member = interaction.guild.get_member(self.user_id) if interaction.guild else None
-        if member is None and interaction.guild is not None:
-            try:
-                member = await interaction.guild.fetch_member(self.user_id)
-            except discord.HTTPException:
-                member = None
+        member = await self._member(interaction)
         if member is not None:
             from commands.moderation.join_clusters import send_ban_appeal_dm
             told = await send_ban_appeal_dm(member, kind.ban_dm)
@@ -245,20 +210,12 @@ class _ConfirmBan(discord.ui.View):
         except Exception as e:
             await interaction.followup.send(f"Could not ban them: {e}", ephemeral=True)
             return
-        note = (f"🔨 Banned by {interaction.user.mention}"
-                + ("" if told else " · could not DM them the appeal"))
-        await _settle_message(self.report_message, note, self.kind, self.user_id,
-                              self.present)
+        await self._done(interaction, f"🔨 Banned by {interaction.user.mention}"
+                         + ("" if told else " · could not DM them the appeal"))
         await interaction.followup.send(
             "Banned." + (" They have the appeal button." if told
                          else " Their DMs are closed, so no appeal notice reached them."),
             ephemeral=True)
-
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel(self, interaction, button):
-        self.stop()
-        await interaction.response.edit_message(content="Cancelled - nobody was banned.",
-                                                view=None)
 
 
 class ModTimeoutButton(_MemberAction, template=r"mod:to:(?P<kind>\w+):(?P<uid>\d+)"):
