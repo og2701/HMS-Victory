@@ -526,7 +526,9 @@ class AClient(discord.Client):
                     if ref_id not in self.message_repliers:
                         self.message_repliers[ref_id] = set()
                     self.message_repliers[ref_id].add(message.author.id)
-                    if len(self.message_repliers[ref_id]) >= 3:
+                    # Bots don't collect badges (or the UKPence that comes with them): an app's
+                    # activity invite drew three replies and paid UK Place Activities 100 UKP.
+                    if len(self.message_repliers[ref_id]) >= 3 and not referenced_msg.author.bot:
                         await award_badge_with_notify(self, referenced_msg.author.id, 'triple_reply')
                         # Clean up to prevent multi-award
                         del self.message_repliers[ref_id]
