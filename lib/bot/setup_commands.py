@@ -883,15 +883,19 @@ def define_commands(tree, client):
             ephemeral=True,
         )
 
-    @command("wordle", "Play today's HMS Wordle - guess the 5-letter word for UKPence")
-    async def wordle_command(interaction: Interaction):
-        from lib.features.wordle import handle_wordle_command
-        await handle_wordle_command(interaction)
+    # With PUZZLES_AS_ACTIVITY on, /wordle and /crossword belong to the UK Place Activities
+    # app instead (lib/activities/launcher.py) and open the games as a Discord Activity.
+    # Turning it off brings these classic versions straight back on the next boot.
+    if not PUZZLES_AS_ACTIVITY:
+        @command("wordle", "Play today's HMS Wordle - guess the 5-letter word for UKPence")
+        async def wordle_command(interaction: Interaction):
+            from lib.features.wordle import handle_wordle_command
+            await handle_wordle_command(interaction)
 
-    @command("crossword", "Play today's HMS Crossword - fill the 5x5 mini for UKPence")
-    async def crossword_command(interaction: Interaction):
-        from lib.features.crossword import handle_crossword_command
-        await handle_crossword_command(interaction)
+        @command("crossword", "Play today's HMS Crossword - fill the 5x5 mini for UKPence")
+        async def crossword_command(interaction: Interaction):
+            from lib.features.crossword import handle_crossword_command
+            await handle_crossword_command(interaction)
 
     @command("skyrim", "Adventure in Skyrim - delve ruins, level up, slay dragons")
     async def skyrim_command(interaction: Interaction):

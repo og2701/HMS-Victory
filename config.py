@@ -448,12 +448,19 @@ WORDLE_REWARDS = [200, 140, 100, 70, 45, 25]  # payout by number of guesses to s
 # ACTIVITIES_CLIENT_SECRET, ACTIVITIES_BOT_TOKEN and ACTIVITIES_SESSION_SECRET are in .env.
 ACTIVITIES_API_ENABLED = True
 ACTIVITIES_API_PORT = 8787
-ACTIVITIES_ALLOWED_CHANNELS = [1141037835445616640]   # bot-workshop while testing; [] = anywhere
+# /wordle and /crossword open the games as an activity (UK Place Activities' commands).
+# False brings back HMS Victory's own classic /wordle and /crossword on the next boot.
+PUZZLES_AS_ACTIVITY = True
+ACTIVITIES_ALLOWED_CHANNELS = []                      # [] = anywhere; list channel ids to lock it down
 ACTIVITIES_ENTRY_COMMAND = "launch"                   # the App Launcher's built-in command, renamed on boot
-ACTIVITIES_ENTRY_DESCRIPTION = "Play HMS Wordle as an activity (testing)"
+ACTIVITIES_ENTRY_DESCRIPTION = "Play HMS Wordle and HMS Crossword"
 # The typed commands that open the activity, and which game each one opens it on
-# (lib/activities/launcher.py): command name -> (game, description).
+# (lib/activities/launcher.py): command name -> (game, description). Any other typed command
+# the app has is deleted on boot.
 ACTIVITIES_LAUNCH_COMMANDS = {
+    "wordle": ("wordle", "Play today's HMS Wordle - guess the 5-letter word for UKPence"),
+    "crossword": ("crossword", "Play today's HMS Crossword - the daily mini for UKPence"),
+} if PUZZLES_AS_ACTIVITY else {
     "test-wordle": ("wordle", "Play HMS Wordle as an activity (testing)"),
     "test-crossword": ("crossword", "Play HMS Crossword as an activity (testing)"),
 }

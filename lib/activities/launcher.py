@@ -101,15 +101,24 @@ class Launcher(discord.Client):
 
 
 async def _register(session) -> None:
-    """Create or update each typed command, leaving the Entry Point command alone."""
+    """Create or update each typed command and delete any the config no longer lists
+    (the /test- ones, say), leaving the Entry Point command alone."""
     app_id = auth._env("ACTIVITIES_CLIENT_ID")
+    base = f"{auth.API}/applications/{app_id}/commands"
     headers = {"Authorization": f"Bot {auth._env('ACTIVITIES_BOT_TOKEN')}"}
-    for name, (_game, description) in _commands().items():
+    wanted = _commands()
+    for name, (_game, description) in wanted.items():
         body = {"name": name, "description": description, "type": 1,
                 "integration_types": [0],   # installed to a server
                 "contexts": [0]}            # used in a server channel
-        async with session.post(f"{auth.API}/applications/{app_id}/commands", json=body, headers=headers) as r:
+        async with session.post(base, json=body, headers=headers) as r:
             log.info("activity launch command /%s registered (%s)", name, r.status)
+    async with session.get(base, headers=headers) as r:
+        existing = await r.json() if r.status == 200 else []
+    for c in existing:
+        if c.get("type") == 1 and c.get("name") not in wanted:
+            async with session.delete(f"{base}/{c['id']}", headers=headers) as r:
+                log.info("old activity command /%s removed (%s)", c.get("name"), r.status)
 
 
 async def announce(channel_id: int, text: str, game: str = "wordle") -> None:
