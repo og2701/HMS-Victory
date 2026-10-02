@@ -218,7 +218,7 @@ def test_a_remembered_session_reopens_only_where_discord_says_you_are(monkeypatc
         no_session = await http.post("/api/resume", json={"instance_id": "here"})
         return ok.status, (await ok.json()), not_in_it.status, wrong_channel.status, no_session.status
     ok, body, not_in_it, wrong_channel, no_session = _run(client, scenario)
-    assert ok == 200 and body["wordle"]["game"] == "wordle"
+    assert ok == 200 and body["game"] == "home" and "balance" in body["home"]
     assert auth.read_session(body["session"], secret=SECRET) == {"uid": 42, "ch": WORKSHOP}
     assert (not_in_it, wrong_channel, no_session) == (401, 403, 401)
 
@@ -288,4 +288,4 @@ def test_the_crossword_command_opens_the_crossword(monkeypatch, tmp_path):
         return first, again
     first, again = _run(client, scenario)
     assert first["game"] == "crossword" and first["crossword"]["game"] == "crossword"
-    assert again["game"] == "wordle"
+    assert again["game"] == "home"          # nothing asked for this time: Home

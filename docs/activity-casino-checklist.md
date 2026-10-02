@@ -1,0 +1,58 @@
+# UK Place Activities: casino + home build checklist
+
+The activity grows from two daily puzzles into a home screen with the daily puzzles and all
+13 house casino games. Mockups: Paper file "Optimistic quartz". The bot keeps every
+`/blackjack`-style command; the activity is a second way in that reuses the same game logic
+and money paths.
+
+Rules that hold for every step:
+- The server deals. The page only sends moves and plays back results it is given, so no
+  deck order, mine layout, bridge path or spin result reaches the browser early.
+- Stakes and payouts go through each game's existing functions and reason strings, so the
+  bank's per-game P/L, `casino_results`, badges and the economy log all keep working.
+- Card games and Roulette sit on the bot's felt. The rest keep their own scenes. Glass
+  Bridge uses the bot's own board render.
+- Animations play out a result the server already decided, and respect reduced motion.
+
+## Phase 0 - bot foundations
+- [ ] 1. Casino adapter framework in `lib/activities/casino/`: game registry, bet limits
+      (config min/max + `max_casino_bet`), balance check, stake, one in-play game per
+      player per game, per-player lock, drain counter, in-play games saved to disk so a
+      reopen resumes the hand.
+- [ ] 2. API: `GET /home` (balance, daily puzzle status, casino games ordered by last played
+      from `casino_results`), `GET /casino/<game>` (resume or idle), `POST /casino/<game>/<action>`.
+- [ ] 3. #casino posts: one live session line per player (posted on first round, edited as
+      they play, finalised when idle), plus a separate post for big wins with a Play button.
+- [ ] 4. Launching: `/casino` on the activities bot opens the casino; entry point opens Home;
+      Play buttons on casino posts open that game.
+- [ ] 5. Tests for the framework, sessions and posts.
+
+## Phase 1 - activity foundations
+- [ ] 6. Router and Home screen: daily cards with today's status, casino section in
+      last-played order (jump back in, two tiles, then the full list).
+- [ ] 7. Casino shell: top bar (back, title, balance, rules button), rail (prompt, ledger),
+      action bar, bet picker, rules sheet, toasts, error states.
+- [ ] 8. Animation kit: cards (deal, flip), count-up numbers, chips sliding, shake, win
+      shimmer, reduced-motion fallbacks.
+- [ ] 9. `?dev` mock API covering home and every game, for previewing outside Discord.
+
+## Phase 2 - games (each: adapter + tests + screen + animations + rules)
+- [ ] 10. Blackjack (reference implementation)
+- [ ] 11. Higher or Lower
+- [ ] 12. Video Poker
+- [ ] 13. Red Dog
+- [ ] 14. 3-Card Poker
+- [ ] 15. Roulette (solo spin, same bets and payouts as the table)
+- [ ] 16. Fruit Machine
+- [ ] 17. Mines
+- [ ] 18. Chest Upgrade
+- [ ] 19. Glass Bridge
+- [ ] 20. Blockade Run
+- [ ] 21. Darts
+- [ ] 22. Penalties
+
+## Phase 3 - ship
+- [ ] 23. Full pass in the browser preview (mock) on phone and desktop sizes.
+- [ ] 24. Local API smoke test against a copy of the database.
+- [ ] 25. Deploy bot + frontend (after a yes), then play every game once in Discord and
+      check the #casino posts land.

@@ -82,6 +82,22 @@ class PlayView(discord.ui.View):
         self.add_item(button)
 
 
+class CasinoPlay(discord.ui.DynamicItem[discord.ui.Button], template=r"ukplace:play:casino:(?P<key>[a-z]+)"):
+    """The Play button on a #casino post: opens the activity at that game's table."""
+
+    def __init__(self, key: str):
+        super().__init__(discord.ui.Button(label="Play", style=discord.ButtonStyle.success,
+                                           custom_id=f"ukplace:play:casino:{key}"))
+        self.key = key
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(match["key"])
+
+    async def callback(self, interaction: discord.Interaction):
+        await _launch(interaction, f"casino:{self.key}")
+
+
 class Launcher(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.none())
@@ -98,6 +114,7 @@ class Launcher(discord.Client):
     async def setup_hook(self):
         for game in GAMES:
             self.add_view(PlayView(game))
+        self.add_dynamic_items(CasinoPlay)
 
 
 async def _register(session) -> None:
@@ -131,6 +148,22 @@ async def announce(channel_id: int, text: str, game: str = "wordle") -> None:
             text, view=PlayView(game), allowed_mentions=discord.AllowedMentions.none())
     except Exception:
         log.warning("couldn't post the activity message in %s", channel_id, exc_info=True)
+
+
+async def post_view(channel_id: int, view: discord.ui.LayoutView) -> int | None:
+    """Post a Components V2 message as the activities bot; returns its id."""
+    if _client is None or not _client.is_ready():
+        return None
+    msg = await _client.get_partial_messageable(int(channel_id)).send(
+        view=view, allowed_mentions=discord.AllowedMentions.none())
+    return msg.id
+
+
+async def edit_view(channel_id: int, message_id: int, view: discord.ui.LayoutView) -> None:
+    if _client is None or not _client.is_ready():
+        return
+    await _client.get_partial_messageable(int(channel_id)).get_partial_message(int(message_id)).edit(
+        view=view, allowed_mentions=discord.AllowedMentions.none())
 
 
 async def start(session) -> None:

@@ -460,10 +460,20 @@ ACTIVITIES_ENTRY_DESCRIPTION = "Play HMS Wordle and HMS Crossword"
 ACTIVITIES_LAUNCH_COMMANDS = {
     "wordle": ("wordle", "Play today's HMS Wordle - guess the 5-letter word for UKPence"),
     "crossword": ("crossword", "Play today's HMS Crossword - the daily mini for UKPence"),
+    "games": ("home", "Open HMS Games: the daily puzzles and the casino"),
 } if PUZZLES_AS_ACTIVITY else {
     "test-wordle": ("wordle", "Play HMS Wordle as an activity (testing)"),
     "test-crossword": ("crossword", "Play HMS Crossword as an activity (testing)"),
 }
+# The casino inside the activity (lib/activities/casino): the house games, same rules and
+# money paths as the slash commands. While it's being tested it only opens in the channels
+# listed here ([] = anywhere), and its live session lines and big wins post to
+# ACTIVITIES_CASINO_CHANNEL (None = the #casino channel).
+ACTIVITIES_CASINO_CHANNELS = [1141037835445616640]    # bot-workshop while testing
+ACTIVITIES_CASINO_CHANNEL = 1141037835445616640       # bot-workshop while testing
+ACTIVITIES_CASINO_BIG_WIN_MULTIPLE = 5.0              # a round paying this x the stake...
+ACTIVITIES_CASINO_BIG_WIN_MIN = 250                   # ...and netting at least this gets its own post
+ACTIVITIES_CASINO_BIG_WIN_NET = 5_000                 # any round netting this much does too
 # HMS Crossword: one shared mini per UK day, answered clue by clue. Grid size, payout
 # tiers and difficulty rules all live per puzzle-SET inside the file below and are gated
 # by date, so tightening them never changes a puzzle someone is midway through. The tiers

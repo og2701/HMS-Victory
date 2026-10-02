@@ -9,6 +9,10 @@ mapping's prefix isn't worth betting the launch on:
     POST /token          {code, instance_id} -> {access_token, session, user}
     GET  /wordle         today's board for the session's player
     POST /wordle/guess   {guess} -> the board after it
+    GET  /crossword, POST /crossword/answer, POST /crossword/hint
+    GET  /home           balance, today's puzzles, the casino in last-played order
+    GET  /casino/<game>  a casino table (the hand in play, or the last one)
+    POST /casino/<game>/<action>   deal {bet} or a move -> the table after it
     GET  /health
 """
 
@@ -19,11 +23,12 @@ import time
 from aiohttp import web
 
 import config
-from lib.activities import auth, crossword_api, wordle_api
+from lib.activities import auth, casino, crossword_api, wordle_api
 
 log = logging.getLogger(__name__)
 
 _runner: web.AppRunner | None = None
+_sweeper: asyncio.Task | None = None
 CLIENT = web.AppKey("client", object)
 _last_guess: dict[int, float] = {}
 _token_hits: dict[str, list[float]] = {}
@@ -106,31 +111,59 @@ async def token(request):
         return _error("This is still being tested, and only opens in #bot-workshop for now.", 403)
 
     game = _game_for(uid, body)
-    gated = _gate(client, uid, game)
+    gated = _gate(client, uid, _gate_name(game))
     if gated is not None:
         return gated
     return _json({"session": auth.make_session(uid, channel),
                   "user": {"id": str(uid), "name": user.get("global_name") or user.get("username"),
                            "avatar": user.get("avatar")},
-                  **_opening(client, uid, game)})
+                  **_opening(client, uid, game, channel)})
 
 
 _STATE = {"wordle": wordle_api, "crossword": crossword_api}
 
 
 def _game_for(uid: int, body: dict) -> str:
-    """Which game to open: the one this person just asked for with a command or Play button,
-    else the one the page names (an activity link's custom_id), else Wordle."""
+    """Which screen to open: the one this person just asked for with a command or Play
+    button, else the one the page names (an activity link's custom_id), else Home."""
     from lib.activities import launcher
     asked = launcher.take_requested(uid) or str(body.get("game") or "")
-    return asked if asked in _STATE else "wordle"
+    if asked in _STATE or asked == "home":
+        return asked
+    if asked.startswith("casino:") and casino.adapter(asked[7:]) is not None:
+        return asked
+    return "home"
 
 
-def _opening(client, uid: int, game: str) -> dict:
-    """The game and its board, sent with the sign-in to save the page a second round trip."""
+def _gate_name(game: str) -> str:
+    """The name lib.core.restrictions knows a screen by."""
+    if game.startswith("casino:"):
+        a = casino.adapter(game[7:])
+        return a.command if a else "casino"
+    return game     # "home" isn't a command, so only a full block keeps someone off it
+
+
+def _casino_open(channel) -> bool:
+    allowed = {int(c) for c in getattr(config, "ACTIVITIES_CASINO_CHANNELS", []) or []}
+    return not allowed or (channel is not None and int(channel) in allowed)
+
+
+def _opening(client, uid: int, game: str, channel=None) -> dict:
+    """The screen's data, sent with the sign-in to save the page a second round trip."""
+    if game == "home":
+        return {"game": game, "home": _home(client, uid, channel)}
+    if game.startswith("casino:"):
+        if not _casino_open(channel):
+            return {"game": "home", "home": _home(client, uid, channel)}
+        return {"game": game, "casino": casino.table(uid, game[7:])}
     date = _today()
     _STATE[game].opened(client, uid, date)
     return {"game": game, game: _STATE[game].state(uid, date)}
+
+
+def _home(client, uid: int, channel) -> dict:
+    from lib.activities import home
+    return {**home.state(client, uid), "casinoOpen": _casino_open(channel)}
 
 
 async def _none():
@@ -161,10 +194,11 @@ async def resume(request):
     if allowed and channel not in allowed:
         return _error("This is still being tested, and only opens in #bot-workshop for now.", 403)
     game = _game_for(who["uid"], body)
-    gated = _gate(client, who["uid"], game)
+    gated = _gate(client, who["uid"], _gate_name(game))
     if gated is not None:
         return gated
-    return _json({"session": auth.make_session(who["uid"], channel), **_opening(client, who["uid"], game)})
+    return _json({"session": auth.make_session(who["uid"], channel),
+                  **_opening(client, who["uid"], game, channel)})
 
 
 async def timing(request):
@@ -269,6 +303,63 @@ async def crossword_hint(request):
     return await _crossword_move(request, lambda client, uid, date, body: crossword_api.hint(client, uid, date))
 
 
+async def home_state(request):
+    who = _player(request)
+    if who is None:
+        return _error("Sign in again.", 401)
+    client = request.app[CLIENT]
+    gated = _gate(client, who["uid"], "home")
+    if gated is not None:
+        return gated
+    return _json(_home(client, who["uid"], who["ch"]))
+
+
+def _casino_request(request):
+    """(who, adapter key, error response) for a casino route."""
+    who = _player(request)
+    if who is None:
+        return None, None, _error("Sign in again.", 401)
+    key = request.match_info["game"]
+    a = casino.adapter(key)
+    if a is None:
+        return who, None, _error("That game isn't here.", 404)
+    if not _casino_open(who["ch"]):
+        return who, None, _error("The casino only opens in #bot-workshop while it's being tested.", 403)
+    gated = _gate(request.app[CLIENT], who["uid"], a.command)
+    return who, key, gated
+
+
+async def casino_state(request):
+    who, key, err = _casino_request(request)
+    if err is not None:
+        return err
+    return _json(casino.table(who["uid"], key))
+
+
+async def casino_move(request):
+    who, key, err = _casino_request(request)
+    if err is not None:
+        return err
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    client = request.app[CLIENT]
+    guild = client.get_guild(config.GUILD_ID)
+    member = guild.get_member(who["uid"]) if guild else None
+    name = member.display_name if member else "Player"
+    try:
+        return _json(await casino.move(who["uid"], name, key, request.match_info["action"],
+                                       body if isinstance(body, dict) else {}))
+    except casino.Busy as e:
+        return _error(str(e), 429)
+    except casino.Refuse as e:
+        return _error(str(e), 422)
+    except Exception:
+        log.error("casino move failed (%s %s)", key, request.match_info["action"], exc_info=True)
+        return _error("Something went wrong at the table. Your stake is safe; try again.", 500)
+
+
 async def health(_request):
     return _json({"ok": True})
 
@@ -286,6 +377,9 @@ def build_app(client) -> web.Application:
         app.router.add_get(f"{prefix}/crossword", crossword_state)
         app.router.add_post(f"{prefix}/crossword/answer", crossword_answer)
         app.router.add_post(f"{prefix}/crossword/hint", crossword_hint)
+        app.router.add_get(f"{prefix}/home", home_state)
+        app.router.add_get(f"{prefix}/casino/{{game}}", casino_state)
+        app.router.add_post(f"{prefix}/casino/{{game}}/{{action}}", casino_move)
     return app
 
 
@@ -320,6 +414,7 @@ async def start(client) -> bool:
     if not auth.configured():
         log.info("ukplace activities API not started: ACTIVITIES_* secrets aren't in .env")
         return False
+    casino.base.CLIENT = client          # badge awards need the bot's client
     _runner = web.AppRunner(build_app(client), access_log=None)
     await _runner.setup()
     port = int(getattr(config, "ACTIVITIES_API_PORT", 8787))
@@ -328,12 +423,21 @@ async def start(client) -> bool:
     await _name_entry_command(client)
     from lib.activities import launcher
     await launcher.start(client.session)
+    global _sweeper
+    _sweeper = asyncio.create_task(casino.sessions.run_sweeper())
     return True
 
 
 async def stop() -> None:
-    global _runner
+    global _runner, _sweeper
     from lib.activities import launcher
+    if _sweeper is not None:
+        _sweeper.cancel()
+        _sweeper = None
+    try:
+        await casino.sessions.close_all()
+    except Exception:
+        log.warning("couldn't close the casino session lines", exc_info=True)
     await launcher.stop()
     if _runner is not None:
         await _runner.cleanup()
