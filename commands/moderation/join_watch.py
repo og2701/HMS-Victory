@@ -1177,6 +1177,13 @@ async def announce_toggle(client: Any, actor: Any, enabled: bool) -> None:
         logger.exception("join-watch could not post the police station toggle notice")
 
 
+# Report links by member ID, for the mute DM staff get. That DM linked to the member's
+# latest message, which for a join-watch timeout is in #general (or just deleted), and on
+# mobile there was no getting from there across to the report and its buttons.
+_report_links: dict[int, tuple[str, float]] = {}
+REPORT_LINK_TTL = 120
+
+
 async def _send_report(
     client: Any, member: Any, entry: dict[str, Any], reason: str, confidence: float, action: str
 ) -> None:
@@ -1184,11 +1191,34 @@ async def _send_report(
     if channel is None:
         return
     try:
-        await channel.send(
+        sent = await channel.send(
             view=_report_view(member, entry, reason, confidence, action),
             allowed_mentions=discord.AllowedMentions.none(),
         )
     except Exception:
         logger.exception("join-watch could not post the police station report")
+        return
+    url = getattr(sent, "jump_url", None)
+    if isinstance(url, str):
+        now = time.time()
+        for uid in [k for k, (_, ts) in _report_links.items() if now - ts > REPORT_LINK_TTL]:
+            _report_links.pop(uid, None)
+        _report_links[member.id] = (url, now)
+
+
+async def wait_for_report_link(user_id: int, timeout: float = 15.0) -> str | None:
+    """The police-station report link for a join-watch timeout, or None if none turns up.
+
+    The timeout lands before the trigger is deleted and the report posted, so the mute DM
+    it sets off usually asks before the link exists - hence the wait.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        found = _report_links.pop(user_id, None)
+        if found and time.time() - found[1] <= REPORT_LINK_TTL:
+            return found[0]
+        if time.monotonic() >= deadline:
+            return None
+        await asyncio.sleep(0.5)
 
 

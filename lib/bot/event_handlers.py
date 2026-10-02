@@ -357,6 +357,8 @@ def _classify_mute(entry, client) -> tuple[str, str]:
             return ("Bedtime shut", reason.split(" by ", 1)[-1].rstrip(".") if " by " in reason else "(via bedtime reaction)")
         if "VIP Case" in reason:
             return ("VIP Case (self-inflicted)", str(actor))
+        if reason.startswith("Join-watch AI screening"):
+            return ("Join-watch AI", str(actor))
         return ("Bot timeout", str(actor))
 
     if actor and actor.id == USERS.WICK_BOT:
@@ -418,11 +420,20 @@ async def notify_mute(client, member):
         if msg_info is None:
             msg_info = _find_recent_user_message(client, member.id)
 
+        # Join-watch deletes the trigger, so the "recent" message is the one before it. Link
+        # the police-station report instead: it has the deleted text and the Ban button.
+        report_url = None
+        if mute_type == "Join-watch AI":
+            from commands.moderation.join_watch import wait_for_report_link
+            report_url = await wait_for_report_link(member.id)
+
         lines = [
             f"{member.mention} `{member}` · **{mute_type}** · {duration_str} (→ {until_str})",
             f"By **{moderator}** - {reason[:300]}",
         ]
-        if msg_info:
+        if report_url:
+            lines.append(f"📋 [Open the report in police station]({report_url})")
+        elif msg_info:
             url, preview = msg_info
             tag = "trigger" if (is_trigger and mute_type in ("Shut reaction", "Bedtime shut", "Oggersglare shut")) else "recent"
             preview_line = preview.replace("\n", " ")

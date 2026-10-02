@@ -589,3 +589,31 @@ def test_messages_without_a_timestamp_still_render():
     whole scan rather than one line of it."""
     block = join_watch._messages_block([{"channel": "general", "content": "hi"}])
     assert '"hi"' in block
+
+
+def test_mute_dm_gets_the_report_link_once_the_report_posts(monkeypatch):
+    """The mute DM asks for the link before the report is up, so it has to wait for it."""
+    join_watch._report_links.clear()
+
+    class PostedReport:
+        jump_url = "https://discord.com/channels/1/police/42"
+
+    class ReportingChannel(FakeChannel):
+        async def send(self, *args, **kwargs):
+            await super().send(*args, **kwargs)
+            return PostedReport()
+
+    client = FakeClient()
+    client.police = ReportingChannel()
+    member = FakeMember(1234)
+    monkeypatch.setattr(join_watch, "_report_view", lambda *a, **k: None)
+
+    async def scenario():
+        waiter = asyncio.create_task(join_watch.wait_for_report_link(member.id, timeout=5))
+        await asyncio.sleep(0.1)
+        await join_watch._send_report(client, member, {"messages": []}, "slur", 0.99, "timed out")
+        return await waiter
+
+    assert asyncio.run(scenario()) == PostedReport.jump_url
+    # Taken once: a later mute of the same member must not reuse this report.
+    assert asyncio.run(join_watch.wait_for_report_link(member.id, timeout=0)) is None
