@@ -7,6 +7,8 @@ the payout is credited (after_save), so a crash can't leave a paid game that sti
 resumes. Cash-out guards the bot only enforces in its buttons (at least one gem, panel or
 goal first; Stand only after a dart) are enforced here."""
 
+import math
+
 import config
 from commands.economy import blockade as BR
 from commands.economy import chest as CH
@@ -321,10 +323,12 @@ class Blockade(Adapter):
 
     def view(self, game):
         over = game.state != "running"
-        nxt = BR._growth() ** (game.ticks + 1)
+        # The multiplier one more push would show, worked out the way sail_on() does (floored to
+        # the penny), so the button's promise and the next screen agree.
+        nxt = min(math.floor(BR._growth() ** (game.ticks + 1) * 100) / 100.0, BR._cap())
         return {
             "id": game.game_id, "bet": game.bet, "ticks": game.ticks, "mult": game.mult,
-            "value": game.payout_now(), "next": round(min(nxt, BR._cap()), 2),
+            "value": game.payout_now(), "next": nxt,
             "cap": BR._cap(), "state": game.state,
             "caught": game.crash_display() if game.state == "busted" else None,
             "over": over, "outcome": None if not over else ("win" if game.state == "cashed" else "lose"),

@@ -23,7 +23,7 @@ Rules that hold for every step:
       from `casino_results`), `GET /casino/<game>` (resume or idle), `POST /casino/<game>/<action>`.
 - [x] 3. #casino posts: one live session line per player (posted on first round, edited as
       they play, finalised when idle), plus a separate post for big wins with a Play button.
-- [x] 4. Launching: `/casino` on the activities bot opens the casino; entry point opens Home;
+- [x] 4. Launching: `/games` on the activities bot opens Home; entry point opens Home;
       Play buttons on casino posts open that game.
 - [x] 5. Tests for the framework, sessions and posts.
 
@@ -34,27 +34,27 @@ Rules that hold for every step:
       action bar, bet picker, rules sheet, toasts, error states.
 - [x] 8. Animation kit: cards (deal, flip), count-up numbers, chips sliding, shake, win
       shimmer, reduced-motion fallbacks.
-- [ ] 9. `?dev` mock API covering home and every game, for previewing outside Discord.
-      (home + Blackjack done; each game's stand-in comes with its screen)
+- [x] 9. `?dev` mock API covering home and every game, for previewing outside Discord.
 
 ## Phase 2 - games (each: adapter + tests + screen + animations + rules)
 All 13 adapters are done and tested on the bot side; the boxes below track the screens.
 - [x] 10. Blackjack (reference implementation)
-- [ ] 11. Higher or Lower
-- [ ] 12. Video Poker
-- [ ] 13. Red Dog
-- [ ] 14. 3-Card Poker
-- [ ] 15. Roulette (solo spin, same bets and payouts as the table)
-- [ ] 16. Fruit Machine
-- [ ] 17. Mines
-- [ ] 18. Chest Upgrade
-- [ ] 19. Glass Bridge
-- [ ] 20. Blockade Run
-- [ ] 21. Darts
-- [ ] 22. Penalties
+- [x] 11. Higher or Lower
+- [x] 12. Video Poker
+- [x] 13. Red Dog
+- [x] 14. 3-Card Poker
+- [x] 15. Roulette (solo spin, same bets and payouts as the table)
+- [x] 16. Fruit Machine
+- [x] 17. Mines
+- [x] 18. Chest Upgrade
+- [x] 19. Glass Bridge
+- [x] 20. Blockade Run
+- [x] 21. Darts
+- [x] 22. Penalties
 
 ## Phase 3 - ship
-- [ ] 23. Full pass in the browser preview (mock) on phone and desktop sizes.
-- [ ] 24. Local API smoke test against a copy of the database.
+- [x] 23. Full pass in the browser preview (mock) on phone and desktop sizes.
+- [x] 24. Local API smoke test against a throwaway database (scripts/dev_activity_api.py,
+      then http://localhost:5174/?local=<token>): every game played against the real code.
 - [ ] 25. Deploy bot + frontend (after a yes), then play every game once in Discord and
       check the #casino posts land.
