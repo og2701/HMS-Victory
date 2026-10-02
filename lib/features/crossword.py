@@ -229,7 +229,7 @@ def _note_daily(interaction, name: str) -> None:
         log.debug("daily co-occurrence note failed", exc_info=True)
 
 
-def _run_solve_checks(interaction, uid: int, player: dict, puzzle: dict, reward: int) -> None:
+def _run_solve_checks(client, uid: int, player: dict, puzzle: dict, reward: int) -> None:
     """Hand the finished grid to the detectors. Wrapped whole - a detector must never cost
     somebody a solve they earned."""
     try:
@@ -243,17 +243,52 @@ def _run_solve_checks(interaction, uid: int, player: dict, puzzle: dict, reward:
         for kind, triggers in R.crossword_solve_findings(
                 player.get("opened_at"), player.get("finished_at"),
                 hints, wrong, order, len(puzzle["entries"])):
-            D.flag(interaction.client, kind, uid, triggers,
+            D.flag(client, kind, uid, triggers,
                    context=f"HMS Crossword {date_str} · payout {reward:,} UKP", amount=reward)
 
         match_id, triggers = R.crossword_sequence_findings(uid, order)
         if match_id:
-            D.flag(interaction.client, D.CROSSWORD_SEQUENCE_COPY, [uid, match_id], triggers,
+            D.flag(client, D.CROSSWORD_SEQUENCE_COPY, [uid, match_id], triggers,
                    context=f"HMS Crossword {date_str}", amount=reward)
         # Recorded after the comparison, so a solve is never matched against itself.
         D.record_event(uid, D.CROSSWORD_SEQUENCE_COPY, {"order": order, "date": date_str})
     except Exception:
         log.exception("crossword detection checks failed for %s", uid)
+
+
+def _pay_finish(client, uid: int, date, p, puzzle) -> int | None:
+    """Pay a just-finished grid, once. Returns what was paid, or None when nothing was due
+    or the bank couldn't cover it.
+
+    Shared by /crossword and the ukplace activity so both pay through the same path.
+    Synchronous on purpose: no await between checking `rewarded` and setting it, so two
+    windows finishing the grid at once can't both collect."""
+    if not (p and p.get("done") and not p.get("rewarded")):
+        return None
+    reward = reward_for(p, date)
+    _run_solve_checks(client, uid, p, puzzle, reward)
+    # discretionary: this is a reward the server chooses to give, so it scales down when
+    # bank reserves are low. Scaled here too only so the board can show what landed.
+    from lib.economy.reserve_policy import scale_reward
+    shown = scale_reward(reward) if reward else 0
+    if add_bb(uid, reward, reason="HMS Crossword solve", taxable=False, discretionary=True):
+        p["rewarded"] = True
+        p["paid"] = int(shown)
+        _save_player(date.isoformat(), uid, p)
+        return shown
+    return None
+
+
+async def settle_finish(client, uid: int, date, p, puzzle) -> int | None:
+    """_pay_finish plus the bookkeeping that has to await (the income badge)."""
+    paid = _pay_finish(client, uid, date, p, puzzle)
+    if paid is not None:
+        try:
+            from lib.features.income_badges import record_income_source
+            await record_income_source(client, uid, "crossword")
+        except Exception:
+            pass
+    return paid
 
 
 def submit(uid, date_str, puzzle, entry_key: str, guess: str):
@@ -782,19 +817,8 @@ class AnswerModal(discord.ui.Modal, title="HMS Crossword"):
         if status in ("invalid", "wrong", "already") and msg:
             await interaction.response.send_message(msg, ephemeral=True)
             return
-        if status == "ok" and p["done"] and not p["rewarded"]:
-            reward = reward_for(p, self.date)
-            _run_solve_checks(interaction, self.user_id, p, puzzle, reward)
-            # discretionary: this is a reward the server chooses to give, so it scales
-            # down when bank reserves are low
-            if add_bb(self.user_id, reward, reason="HMS Crossword solve", taxable=False, discretionary=True):
-                p["rewarded"] = True
-                _save_player(self.date.isoformat(), self.user_id, p)
-                try:
-                    from lib.features.income_badges import record_income_source
-                    await record_income_source(interaction.client, self.user_id, "crossword")
-                except Exception:
-                    pass
+        if status == "ok":
+            await settle_finish(interaction.client, self.user_id, self.date, p, puzzle)
         board = _start_board(interaction.client, self.user_id, self.date)
         await interaction.response.defer()
         await _refresh(interaction, self.user_id, self.date, edit=True, prepared=board)
@@ -852,8 +876,11 @@ class _HintConfirmView(discord.ui.View):
         if p["done"]:
             await interaction.response.defer()
             return
-        msg, _p = reveal_letter(self.user_id, self.date.isoformat(),
-                                _todays_puzzle(self.date), self.date)
+        puzzle = _todays_puzzle(self.date)
+        msg, p = reveal_letter(self.user_id, self.date.isoformat(), puzzle, self.date)
+        # A revealed letter can finish the grid (its crossings fill the rest in), and a
+        # finished grid pays - at the tier the hint has already cost.
+        await settle_finish(interaction.client, self.user_id, self.date, p, puzzle)
         board = _start_board(interaction.client, self.user_id, self.date)
         await interaction.response.defer()
         await _refresh(interaction, self.user_id, self.date, edit=True, prepared=board)

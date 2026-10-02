@@ -159,11 +159,21 @@ def test_the_launch_command_only_opens_in_allowed_channels(monkeypatch):
     assert launcher._allowed(123)
 
 
-def test_the_launcher_builds_its_command():
+def test_the_launcher_builds_a_command_per_game():
     from lib.activities import launcher
     bot = launcher.Launcher()
-    names = [c.name for c in bot.tree.get_commands()]
-    assert names == [config.ACTIVITIES_LAUNCH_COMMAND]
+    names = sorted(c.name for c in bot.tree.get_commands())
+    assert names == sorted(config.ACTIVITIES_LAUNCH_COMMANDS)
+
+
+def test_a_requested_game_is_handed_over_once_and_expires(monkeypatch):
+    from lib.activities import launcher
+    launcher.want(42, "crossword")
+    assert launcher.take_requested(42) == "crossword"
+    assert launcher.take_requested(42) is None
+    launcher.want(42, "crossword")
+    monkeypatch.setattr(launcher, "REQUEST_TTL", -1)
+    assert launcher.take_requested(42) is None
 
 
 def test_the_solve_message_shows_colours_not_letters():
@@ -180,7 +190,7 @@ def test_a_solve_through_the_activity_is_announced_in_its_channel(monkeypatch, t
     from lib.activities import launcher
     posted = []
 
-    async def fake_announce(ch, text):
+    async def fake_announce(ch, text, game="wordle"):
         posted.append((ch, text))
     monkeypatch.setattr(launcher, "announce", fake_announce)
 
@@ -211,3 +221,71 @@ def test_a_remembered_session_reopens_only_where_discord_says_you_are(monkeypatc
     assert ok == 200 and body["wordle"]["game"] == "wordle"
     assert auth.read_session(body["session"], secret=SECRET) == {"uid": 42, "ch": WORKSHOP}
     assert (not_in_it, wrong_channel, no_session) == (401, 403, 401)
+
+
+
+# --- the crossword ---------------------------------------------------------------------------
+def _crossword_setup(monkeypatch, tmp_path):
+    client, _ = _setup(monkeypatch, tmp_path)
+    from lib.features import crossword as X
+    monkeypatch.setattr(config, "CROSSWORD_STATE_FILE", str(tmp_path / "crossword.json"))
+    monkeypatch.setattr(X, "_run_solve_checks", lambda *a, **k: None)
+    paid = []
+    monkeypatch.setattr(X, "add_bb", lambda uid, amount, **kw: paid.append((uid, amount, kw["reason"])) or True)
+    return client, paid, X._todays_puzzle(DAY), X
+
+
+def test_the_crossword_never_sends_an_answer_it_hasnt_earned(monkeypatch, tmp_path):
+    client, _, puzzle, X = _crossword_setup(monkeypatch, tmp_path)
+    from lib.activities import crossword_api
+    board = crossword_api.state(42, DAY)
+    assert all(c is None or c["letter"] is None for row in board["cells"] for c in row)
+    assert "answer" not in board["entries"][0]
+    assert board["reward"] == board["rewards"][0]
+
+
+def test_a_wrong_answer_counts_and_a_full_grid_pays_once(monkeypatch, tmp_path):
+    client, paid, puzzle, X = _crossword_setup(monkeypatch, tmp_path)
+    from lib.activities import launcher
+    posted = []
+
+    async def fake_announce(ch, text, game="wordle"):
+        posted.append((ch, game))
+    monkeypatch.setattr(launcher, "announce", fake_announce)
+    entries = puzzle["entries"]
+
+    async def scenario(http):
+        first = entries[0]
+        wrong = await (await http.post("/api/crossword/answer", json={"entry": X._key(first), "guess": "Q" * len(first["answer"])},
+                                       headers=_auth(42))).json()
+        short = await http.post("/api/crossword/answer", json={"entry": X._key(first), "guess": "A"}, headers=_auth(42))
+        last = None
+        for e in entries:
+            r = await http.post("/api/crossword/answer", json={"entry": X._key(e), "guess": e["answer"]}, headers=_auth(42))
+            last = await r.json()
+        await asyncio.sleep(0)
+        return wrong, short.status, last
+    wrong, short, last = _run(client, scenario)
+    assert wrong["wrong"]["count"] == 1 and "isn't it" in wrong["message"]
+    assert short == 422
+    assert last["done"] and last["paid"] == last["rewards"][0]
+    assert paid == [(42, last["rewards"][0], "HMS Crossword solve")]
+    assert posted == [(WORKSHOP, "crossword")]
+
+
+def test_the_crossword_command_opens_the_crossword(monkeypatch, tmp_path):
+    client, _, _, _ = _crossword_setup(monkeypatch, tmp_path)
+    from lib.activities import launcher
+
+    async def fake_instance(_s, iid):
+        return {"users": ["42"], "location": {"channel_id": str(WORKSHOP)}}
+    monkeypatch.setattr(auth, "fetch_instance", fake_instance)
+    launcher.want(42, "crossword")
+
+    async def scenario(http):
+        first = await (await http.post("/api/resume", json={"instance_id": "here"}, headers=_auth(42))).json()
+        again = await (await http.post("/api/resume", json={"instance_id": "here"}, headers=_auth(42))).json()
+        return first, again
+    first, again = _run(client, scenario)
+    assert first["game"] == "crossword" and first["crossword"]["game"] == "crossword"
+    assert again["game"] == "wordle"

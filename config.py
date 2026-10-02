@@ -451,8 +451,12 @@ ACTIVITIES_API_PORT = 8787
 ACTIVITIES_ALLOWED_CHANNELS = [1141037835445616640]   # bot-workshop while testing; [] = anywhere
 ACTIVITIES_ENTRY_COMMAND = "launch"                   # the App Launcher's built-in command, renamed on boot
 ACTIVITIES_ENTRY_DESCRIPTION = "Play HMS Wordle as an activity (testing)"
-ACTIVITIES_LAUNCH_COMMAND = "test-wordle"             # the typed command that opens it (lib/activities/launcher.py)
-ACTIVITIES_LAUNCH_DESCRIPTION = "Play HMS Wordle as an activity (testing)"
+# The typed commands that open the activity, and which game each one opens it on
+# (lib/activities/launcher.py): command name -> (game, description).
+ACTIVITIES_LAUNCH_COMMANDS = {
+    "test-wordle": ("wordle", "Play HMS Wordle as an activity (testing)"),
+    "test-crossword": ("crossword", "Play HMS Crossword as an activity (testing)"),
+}
 # HMS Crossword: one shared mini per UK day, answered clue by clue. Grid size, payout
 # tiers and difficulty rules all live per puzzle-SET inside the file below and are gated
 # by date, so tightening them never changes a puzzle someone is midway through. The tiers

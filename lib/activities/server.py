@@ -19,7 +19,7 @@ import time
 from aiohttp import web
 
 import config
-from lib.activities import auth, wordle_api
+from lib.activities import auth, crossword_api, wordle_api
 
 log = logging.getLogger(__name__)
 
@@ -48,8 +48,8 @@ def _allowed_channels() -> set[int]:
     return {int(c) for c in getattr(config, "ACTIVITIES_ALLOWED_CHANNELS", []) or []}
 
 
-def _gate(client, uid: int):
-    """Why this player can't play right now, or None. Same rules as the slash command."""
+def _gate(client, uid: int, game: str = "wordle"):
+    """Why this player can't play right now, or None. Same rules as the slash commands."""
     if getattr(client, "maintenance_mode", False):
         return _error("The bot is restarting. Try again in a minute.", 503)
     guild = client.get_guild(config.GUILD_ID)
@@ -58,7 +58,7 @@ def _gate(client, uid: int):
     if guild.get_member(uid) is None:
         return _error("Join the HMS Victory server to play for UKPence.", 403)
     from lib.core import restrictions
-    tier = restrictions.is_blocked(uid, "wordle")
+    tier = restrictions.is_blocked(uid, game)
     if tier:
         return _error(restrictions.refusal_message(tier).replace("**", ""), 403)
     return None
@@ -105,16 +105,32 @@ async def token(request):
     if allowed and channel not in allowed:
         return _error("This is still being tested, and only opens in #bot-workshop for now.", 403)
 
-    gated = _gate(client, uid)
+    game = _game_for(uid, body)
+    gated = _gate(client, uid, game)
     if gated is not None:
         return gated
-    # The board rides along with the sign-in, saving the page a second round trip.
-    date = _today()
-    wordle_api.opened(client, uid, date)
     return _json({"session": auth.make_session(uid, channel),
                   "user": {"id": str(uid), "name": user.get("global_name") or user.get("username"),
                            "avatar": user.get("avatar")},
-                  "wordle": wordle_api.state(uid, date)})
+                  **_opening(client, uid, game)})
+
+
+_STATE = {"wordle": wordle_api, "crossword": crossword_api}
+
+
+def _game_for(uid: int, body: dict) -> str:
+    """Which game to open: the one this person just asked for with a command or Play button,
+    else the one the page names (an activity link's custom_id), else Wordle."""
+    from lib.activities import launcher
+    asked = launcher.take_requested(uid) or str(body.get("game") or "")
+    return asked if asked in _STATE else "wordle"
+
+
+def _opening(client, uid: int, game: str) -> dict:
+    """The game and its board, sent with the sign-in to save the page a second round trip."""
+    date = _today()
+    _STATE[game].opened(client, uid, date)
+    return {"game": game, game: _STATE[game].state(uid, date)}
 
 
 async def _none():
@@ -144,12 +160,11 @@ async def resume(request):
     allowed = _allowed_channels()
     if allowed and channel not in allowed:
         return _error("This is still being tested, and only opens in #bot-workshop for now.", 403)
-    gated = _gate(client, who["uid"])
+    game = _game_for(who["uid"], body)
+    gated = _gate(client, who["uid"], game)
     if gated is not None:
         return gated
-    date = _today()
-    wordle_api.opened(client, who["uid"], date)
-    return _json({"session": auth.make_session(who["uid"], channel), "wordle": wordle_api.state(who["uid"], date)})
+    return _json({"session": auth.make_session(who["uid"], channel), **_opening(client, who["uid"], game)})
 
 
 async def timing(request):
@@ -198,8 +213,60 @@ async def wordle_guess(request):
     if solved_now and who["ch"]:
         import asyncio
         from lib.activities import launcher
-        asyncio.create_task(launcher.announce(who["ch"], wordle_api.solve_message(who["uid"], board)))
+        asyncio.create_task(launcher.announce(who["ch"], wordle_api.solve_message(who["uid"], board), "wordle"))
     return _json(board)
+
+
+def _slow_down(uid: int):
+    now = time.time()
+    if now - _last_guess.get(uid, 0) < GUESS_GAP:
+        return _error("Slow down a little.", 429)
+    _last_guess[uid] = now
+    return None
+
+
+async def crossword_state(request):
+    who = _player(request)
+    if who is None:
+        return _error("Sign in again.", 401)
+    client = request.app[CLIENT]
+    gated = _gate(client, who["uid"], "crossword")
+    if gated is not None:
+        return gated
+    date = _today()
+    crossword_api.opened(client, who["uid"], date)
+    return _json(crossword_api.state(who["uid"], date))
+
+
+async def _crossword_move(request, move):
+    who = _player(request)
+    if who is None:
+        return _error("Sign in again.", 401)
+    client = request.app[CLIENT]
+    gated = _gate(client, who["uid"], "crossword") or _slow_down(who["uid"])
+    if gated is not None:
+        return gated
+    try:
+        body = await request.json()
+    except Exception:
+        return _error("Bad request.", 400)
+    board, msg, finished_now = await move(client, who["uid"], _today(), body)
+    if board is None:
+        return _error(msg or "That wasn't accepted.", 422)
+    if finished_now and who["ch"]:
+        from lib.activities import launcher
+        asyncio.create_task(launcher.announce(
+            who["ch"], crossword_api.finish_message(who["uid"], board), "crossword"))
+    return _json({**board, "message": msg})
+
+
+async def crossword_answer(request):
+    return await _crossword_move(request, lambda client, uid, date, body: crossword_api.answer(
+        client, uid, date, str(body.get("entry") or ""), str(body.get("guess") or "")))
+
+
+async def crossword_hint(request):
+    return await _crossword_move(request, lambda client, uid, date, body: crossword_api.hint(client, uid, date))
 
 
 async def health(_request):
@@ -216,6 +283,9 @@ def build_app(client) -> web.Application:
         app.router.add_get(f"{prefix}/health", health)
         app.router.add_post(f"{prefix}/timing", timing)
         app.router.add_post(f"{prefix}/resume", resume)
+        app.router.add_get(f"{prefix}/crossword", crossword_state)
+        app.router.add_post(f"{prefix}/crossword/answer", crossword_answer)
+        app.router.add_post(f"{prefix}/crossword/hint", crossword_hint)
     return app
 
 
