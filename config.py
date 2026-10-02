@@ -442,6 +442,15 @@ WORDLE_IMAGE_ENABLED = True
 WORDLE_ANSWERS_FILE = os.path.join("data", "words", "answers.txt")
 WORDLE_VALID_FILE = os.path.join("data", "words", "valid.txt")
 WORDLE_REWARDS = [200, 140, 100, 70, 45, 25]  # payout by number of guesses to solve (1..6)
+# ukplace activities: the games that run as Discord Activities, under the separate
+# "ukplace activities" app. Its API runs inside this bot (lib/activities), reached through a
+# Cloudflare Tunnel at ukplace.ogme.dev, and only starts once ACTIVITIES_CLIENT_ID,
+# ACTIVITIES_CLIENT_SECRET, ACTIVITIES_BOT_TOKEN and ACTIVITIES_SESSION_SECRET are in .env.
+ACTIVITIES_API_ENABLED = True
+ACTIVITIES_API_PORT = 8787
+ACTIVITIES_ALLOWED_CHANNELS = [1141037835445616640]   # bot-workshop while testing; [] = anywhere
+ACTIVITIES_ENTRY_COMMAND = "test-wordle"              # the app's launch command, renamed on boot
+ACTIVITIES_ENTRY_DESCRIPTION = "Play HMS Wordle as an activity (testing)"
 # HMS Crossword: one shared mini per UK day, answered clue by clue. Grid size, payout
 # tiers and difficulty rules all live per puzzle-SET inside the file below and are gated
 # by date, so tightening them never changes a puzzle someone is midway through. The tiers

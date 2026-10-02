@@ -227,6 +227,14 @@ class AClient(discord.Client):
 
         logger.info("Persistent prediction views registered in setup_hook.")
 
+        # The ukplace activities API (Wordle as a Discord Activity). Inside this process on
+        # purpose: it pays through the same database lock and state files as /wordle.
+        try:
+            from lib.activities.server import start as start_activities
+            await start_activities(self)
+        except Exception:
+            logger.exception("could not start the ukplace activities API")
+
     async def on_ready(self):
         # Open chronicle.db up front so a disk or permissions problem shows in the boot
         # log rather than silently, inside the writer thread, hours later. A one-row
@@ -882,6 +890,11 @@ async def graceful_shutdown(client, sig_name):
 
     # 3. Close our aiohttp session (avoids 'Unclosed client session' warnings).
     try:
+        try:
+            from lib.activities.server import stop as stop_activities
+            await stop_activities()
+        except Exception:
+            logger.exception("could not stop the ukplace activities API")
         if client.session and not client.session.closed:
             await client.session.close()
             logger.info("aiohttp session closed.")

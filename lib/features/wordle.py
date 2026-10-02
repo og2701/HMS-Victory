@@ -133,11 +133,13 @@ def _submit_guess(uid, date_str, word, guess):
     return "ok", None, p
 
 
-def _mark_rewarded(uid, date_str):
+def _mark_rewarded(uid, date_str, paid=None):
     state = _load_state()
     players = _day_players(state, date_str)
     if str(uid) in players:
         players[str(uid)]["rewarded"] = True
+        if paid is not None:
+            players[str(uid)]["paid"] = int(paid)
         save_json_file(config.WORDLE_STATE_FILE, state)
 
 
@@ -327,7 +329,7 @@ def _note_daily(interaction, name: str) -> None:
         log.debug("daily co-occurrence note failed", exc_info=True)
 
 
-def _run_solve_checks(interaction, uid: int, player: dict, guess_count: int, reward: int) -> None:
+def _run_solve_checks(client, uid: int, player: dict, guess_count: int, reward: int) -> None:
     """Hand the finished game to the detectors.
 
     Wrapped whole in a try: this runs on the path that pays the player out, and a detector
@@ -343,16 +345,61 @@ def _run_solve_checks(interaction, uid: int, player: dict, guess_count: int, rew
 
         for kind, triggers in R.wordle_solve_findings(
                 player.get("guess_times", []), player.get("opened_at"), player.get("solved")):
-            D.flag(interaction.client, kind, uid, triggers,
+            D.flag(client, kind, uid, triggers,
                    context=f"HMS Wordle {date_str} · solved in {guess_count} · payout {reward:,} UKP",
                    amount=reward)
 
         rate = R.wordle_one_guess_rate(uid)
         if rate:
-            D.flag(interaction.client, D.WORDLE_ONE_GUESS_STREAK, uid, rate,
+            D.flag(client, D.WORDLE_ONE_GUESS_STREAK, uid, rate,
                    context=f"HMS Wordle {date_str}", amount=reward)
     except Exception:
         log.exception("wordle detection checks failed for %s", uid)
+
+
+def _pay_solve(client, uid: int, date, p) -> int | None:
+    """Pay a just-finished solve, once. Returns what was paid (0 under the anti-cheat tax),
+    or None when nothing was due or the bank couldn't cover it.
+
+    Shared by /wordle and the ukplace activity, so both pay through exactly the same path.
+    Deliberately synchronous: there is no await between checking `rewarded` and setting
+    it, so two windows submitting the winning guess at once can't both collect."""
+    if not (p and p.get("solved") and not p.get("rewarded")):
+        return None
+    guess_count = len(p["guesses"])
+    _record_solve_guesses(uid, guess_count)
+    consecutive_1g = _get_consecutive_first_try(uid)
+    if guess_count == 1 and consecutive_1g >= 2:
+        # 2+ consecutive 1-guess solves: 100% anti-cheat tax
+        reward = 0
+        log.warning("HMS Wordle anti-cheat tax (100%%): User %s solved in 1 guess %d times in a row",
+                    uid, consecutive_1g)
+    else:
+        reward = config.WORDLE_REWARDS[guess_count - 1]
+
+    _run_solve_checks(client, uid, p, guess_count, reward)
+
+    # discretionary: a puzzle prize is a reward the server chooses to give, so it scales
+    # with bank reserves like every other one (see reserve_policy.py). Scaled here too only
+    # so the board can show what actually landed; add_bb does the real scaling.
+    from lib.economy.reserve_policy import scale_reward
+    shown = scale_reward(reward) if reward else 0
+    if add_bb(uid, reward, reason="HMS Wordle solve", taxable=False, discretionary=True):
+        _mark_rewarded(uid, date.isoformat(), paid=shown)
+        return shown
+    return None
+
+
+async def settle_solve(client, uid: int, date, p) -> int | None:
+    """_pay_solve plus the bookkeeping that has to await (the income badge)."""
+    paid = _pay_solve(client, uid, date, p)
+    if paid is not None:
+        try:
+            from lib.features.income_badges import record_income_source
+            await record_income_source(client, uid, "wordle")
+        except Exception:
+            pass
+    return paid
 
 
 class WordleModal(discord.ui.Modal, title="HMS Wordle"):
@@ -370,30 +417,8 @@ class WordleModal(discord.ui.Modal, title="HMS Wordle"):
         if status == "invalid":
             await interaction.response.send_message(err, ephemeral=True)
             return
-        if status == "ok" and p["solved"] and not p["rewarded"]:
-            guess_count = len(p["guesses"])
-            _record_solve_guesses(int(self.user_id), guess_count)
-            consecutive_1g = _get_consecutive_first_try(int(self.user_id))
-            
-            if guess_count == 1 and consecutive_1g >= 2:
-                # 2+ consecutive 1-guess solves: 100% anti-cheat tax
-                reward = 0
-                log.warning("HMS Wordle anti-cheat tax (100%): User %s solved in 1 guess %d times in a row",
-                            self.user_id, consecutive_1g)
-            else:
-                reward = config.WORDLE_REWARDS[guess_count - 1]
-
-            # discretionary: a puzzle prize is a reward the server chooses to give, so it
-            # scales with bank reserves like every other one (see reserve_policy.py)
-            _run_solve_checks(interaction, int(self.user_id), p, guess_count, reward)
-
-            if add_bb(int(self.user_id), reward, reason="HMS Wordle solve", taxable=False, discretionary=True):
-                _mark_rewarded(self.user_id, self.date.isoformat())
-                try:
-                    from lib.features.income_badges import record_income_source
-                    await record_income_source(interaction.client, self.user_id, "wordle")
-                except Exception:
-                    pass
+        if status == "ok":
+            await settle_solve(interaction.client, int(self.user_id), self.date, p)
         await interaction.response.defer()
         content, embed, files, done = await _board_payload(
             interaction.client, self.user_id, self.date)
