@@ -164,3 +164,29 @@ def test_the_launcher_builds_its_command():
     bot = launcher.Launcher()
     names = [c.name for c in bot.tree.get_commands()]
     assert names == [config.ACTIVITIES_LAUNCH_COMMAND]
+
+
+def test_the_solve_message_shows_colours_not_letters():
+    board = {"rows": [{"word": "CRANE", "score": ["absent"] * 5},
+                      {"word": "GHOST", "score": ["correct"] * 5}], "paid": 140}
+    msg = wordle_api.solve_message(42, board)
+    assert msg.startswith("<@42> solved today's **HMS Wordle** in **2/6** · +140 UKP")
+    assert "⬛⬛⬛⬛⬛\n🟩🟩🟩🟩🟩" in msg
+    assert "CRANE" not in msg and "GHOST" not in msg
+
+
+def test_a_solve_through_the_activity_is_announced_in_its_channel(monkeypatch, tmp_path):
+    client, _ = _setup(monkeypatch, tmp_path)
+    from lib.activities import launcher
+    posted = []
+
+    async def fake_announce(ch, text):
+        posted.append((ch, text))
+    monkeypatch.setattr(launcher, "announce", fake_announce)
+
+    async def scenario(http):
+        await http.post("/wordle/guess", json={"guess": "crane"}, headers=_auth(42))
+        await http.post("/wordle/guess", json={"guess": "ghost"}, headers=_auth(42))
+        await asyncio.sleep(0)
+    _run(client, scenario)
+    assert len(posted) == 1 and posted[0][0] == WORKSHOP and "in **2/6**" in posted[0][1]

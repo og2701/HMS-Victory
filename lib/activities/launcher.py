@@ -33,7 +33,24 @@ def _refusal() -> str:
     return f"HMS Wordle is still being tested and only opens in {channels} for now."
 
 
+class PlayView(discord.ui.View):
+    """The Play button under a solve message. Persistent, so it keeps working after a restart."""
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Play", style=discord.ButtonStyle.success, custom_id="ukplace:play")
+    async def play(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not _allowed(interaction.channel_id):
+            await interaction.response.send_message(_refusal(), ephemeral=True)
+            return
+        await interaction.response.launch_activity()
+
+
 class Launcher(discord.Client):
+    async def setup_hook(self):
+        self.add_view(PlayView())
+
     def __init__(self):
         super().__init__(intents=discord.Intents.none())
         self.tree = app_commands.CommandTree(self)
@@ -61,6 +78,18 @@ async def _register(session) -> None:
     async with session.post(f"{auth.API}/applications/{app_id}/commands", json=body,
                             headers={"Authorization": f"Bot {auth._env('ACTIVITIES_BOT_TOKEN')}"}) as r:
         log.info("activity launch command /%s registered (%s)", body["name"], r.status)
+
+
+async def announce(channel_id: int, text: str) -> None:
+    """Post a line in the channel the game was opened in, with a Play button under it.
+    Best-effort: needs the bot in the server with permission to post there."""
+    if _client is None or not _client.is_ready():
+        return
+    try:
+        await _client.get_partial_messageable(int(channel_id)).send(
+            text, view=PlayView(), allowed_mentions=discord.AllowedMentions.none())
+    except Exception:
+        log.warning("couldn't post the activity message in %s", channel_id, exc_info=True)
 
 
 async def start(session) -> None:

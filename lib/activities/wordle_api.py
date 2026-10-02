@@ -34,14 +34,24 @@ def state(uid: int, date) -> dict:
     }
 
 
-async def guess(client, uid: int, date, word: str) -> tuple[dict | None, str | None]:
-    """(new state, None) after a guess, or (None, reason) when it wasn't accepted."""
+async def guess(client, uid: int, date, word: str) -> tuple[dict | None, str | None, bool]:
+    """(new state, None, solved_now) after a guess, or (None, reason, False) when it wasn't
+    accepted. solved_now is True only for the guess that solved it."""
     status, err, p = W._submit_guess(uid, date.isoformat(), W._todays_word(date), word)
     if status == "invalid":
-        return None, (err or "That guess wasn't accepted.").replace("**", "")
+        return None, (err or "That guess wasn't accepted.").replace("**", ""), False
+    solved_now = status == "ok" and bool(p["solved"])
     if status == "ok":
         await W.settle_solve(client, uid, date, p)
-    return state(uid, date), None
+    return state(uid, date), None, solved_now
+
+
+def solve_message(uid: int, board: dict) -> str:
+    """The spoiler-free line posted to the channel when someone solves it."""
+    n = len(board["rows"])
+    paid = f" · +{board['paid']:,} UKP" if board.get("paid") else ""
+    grid = "\n".join("".join(W._SQUARES[s] for s in r["score"]) for r in board["rows"])
+    return f"<@{uid}> solved today's **HMS Wordle** in **{n}/6**{paid}\n{grid}"
 
 
 def opened(client, uid: int, date) -> None:

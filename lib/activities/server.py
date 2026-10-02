@@ -138,9 +138,13 @@ async def wordle_guess(request):
         body = await request.json()
     except Exception:
         return _error("Bad request.", 400)
-    board, err = await wordle_api.guess(client, who["uid"], _today(), str(body.get("guess") or ""))
+    board, err, solved_now = await wordle_api.guess(client, who["uid"], _today(), str(body.get("guess") or ""))
     if err:
         return _error(err, 422)
+    if solved_now and who["ch"]:
+        import asyncio
+        from lib.activities import launcher
+        asyncio.create_task(launcher.announce(who["ch"], wordle_api.solve_message(who["uid"], board)))
     return _json(board)
 
 
