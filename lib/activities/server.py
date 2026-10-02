@@ -12,6 +12,7 @@ mapping's prefix isn't worth betting the launch on:
     GET  /health
 """
 
+import asyncio
 import logging
 import time
 
@@ -90,14 +91,16 @@ async def token(request):
     session = client.session
     try:
         access = await auth.exchange_code(session, code)
-        user = await auth.fetch_user(session, access)
+        # Who it is and where the activity is running don't depend on each other, so both
+        # questions go to Discord at once - sign-in is the wait every player sits through.
+        user, instance = await asyncio.gather(
+            auth.fetch_user(session, access),
+            auth.fetch_instance(session, instance_id) if instance_id else _none())
     except auth.AuthError as e:
         return _error(str(e), 401)
     uid = int(user["id"])
 
-    channel = None
-    if instance_id:
-        channel = auth.instance_channel(await auth.fetch_instance(session, instance_id), uid)
+    channel = auth.instance_channel(instance, uid) if instance_id else None
     allowed = _allowed_channels()
     if allowed and channel not in allowed:
         return _error("This is still being tested, and only opens in #bot-workshop for now.", 403)
@@ -105,9 +108,29 @@ async def token(request):
     gated = _gate(client, uid)
     if gated is not None:
         return gated
-    return _json({"access_token": access, "session": auth.make_session(uid, channel),
+    # The board rides along with the sign-in, saving the page a second round trip.
+    date = _today()
+    wordle_api.opened(client, uid, date)
+    return _json({"session": auth.make_session(uid, channel),
                   "user": {"id": str(uid), "name": user.get("global_name") or user.get("username"),
-                           "avatar": user.get("avatar")}})
+                           "avatar": user.get("avatar")},
+                  "wordle": wordle_api.state(uid, date)})
+
+
+async def _none():
+    return None
+
+
+async def timing(request):
+    """The page reports how long each sign-in step took, so a slow launch can be pinned down."""
+    who = _player(request)
+    try:
+        body = await request.json()
+        steps = {k: int(v) for k, v in (body.get("steps") or {}).items() if isinstance(v, (int, float))}
+    except Exception:
+        return _error("Bad request.", 400)
+    log.info("activity launch timing for %s: %s", who["uid"] if who else "?", steps)
+    return _json({"ok": True})
 
 
 async def wordle_state(request):
@@ -160,6 +183,7 @@ def build_app(client) -> web.Application:
         app.router.add_get(f"{prefix}/wordle", wordle_state)
         app.router.add_post(f"{prefix}/wordle/guess", wordle_guess)
         app.router.add_get(f"{prefix}/health", health)
+        app.router.add_post(f"{prefix}/timing", timing)
     return app
 
 
