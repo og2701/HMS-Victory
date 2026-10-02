@@ -453,7 +453,7 @@ ACTIVITIES_API_PORT = 8787
 PUZZLES_AS_ACTIVITY = True
 ACTIVITIES_ALLOWED_CHANNELS = []                      # [] = anywhere; list channel ids to lock it down
 ACTIVITIES_ENTRY_COMMAND = "launch"                   # the App Launcher's built-in command, renamed on boot
-ACTIVITIES_ENTRY_DESCRIPTION = "Play HMS Wordle and HMS Crossword"
+ACTIVITIES_ENTRY_DESCRIPTION = "HMS Games: the daily puzzles and the casino"
 # The typed commands that open the activity, and which game each one opens it on
 # (lib/activities/launcher.py): command name -> (game, description). Any other typed command
 # the app has is deleted on boot.
