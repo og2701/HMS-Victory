@@ -394,8 +394,12 @@ async def maybe_watch_message(client: Any, message: Any) -> None:
             if entry is None or entry["done"]:
                 return
             entry["messages"].append(_snapshot(message))
-            verdict, usage = await _evaluate(client, member, entry["messages"])
-            await _apply_verdict(client, member, entry, verdict, usage, message)
+            # Jev screens alongside OpenAI and never acts; see join_watch_jev.
+            (verdict, usage), jev = await asyncio.gather(
+                _evaluate(client, member, entry["messages"]),
+                _jev_shadow(member, entry["messages"]),
+            )
+            await _apply_verdict(client, member, entry, verdict, usage, message, jev)
             # After the verdict, so a member marked done drops out of the saved list.
             _save_buffers()
     except Exception:
@@ -409,6 +413,7 @@ async def _apply_verdict(
     verdict: dict[str, Any] | None,
     usage: dict[str, int] | None,
     message: Any = None,
+    jev: dict[str, Any] | None = None,
 ) -> None:
     call = str(verdict.get("verdict", "unsure")).lower() if verdict else "no verdict (model error)"
     try:
@@ -425,7 +430,39 @@ async def _apply_verdict(
         logger.info("join-watch finished watching member %s without action", member.id)
     else:
         outcome = "still watching"
-    await _log_scan(client, member, entry, verdict, call, confidence, outcome, usage)
+    jev_line = _record_jev_shadow(member, entry, verdict, call, confidence, jev)
+    await _log_scan(client, member, entry, verdict, call, confidence, outcome, usage, jev_line)
+
+
+async def _jev_shadow(member: Any, messages: list[dict[str, Any]]) -> dict[str, Any] | None:
+    from commands.moderation import join_watch_jev
+
+    return await join_watch_jev.screen(
+        member, messages, get_join_watch_state()["context"], ACT_CONFIDENCE
+    )
+
+
+def _record_jev_shadow(
+    member: Any,
+    entry: dict[str, Any],
+    verdict: dict[str, Any] | None,
+    call: str,
+    confidence: float,
+    jev: dict[str, Any] | None,
+) -> str | None:
+    """Log Jev's verdict beside OpenAI's and return the card line for it."""
+    if jev is None:
+        return None
+    from commands.moderation import join_watch_jev
+
+    acted = call == "troll" and confidence >= ACT_CONFIDENCE
+    reason = " ".join(str((verdict or {}).get("reason", "")).split())[:300]
+    join_watch_jev.record(member, entry["messages"], call, confidence, reason, acted, jev)
+    logger.info(
+        "join-watch jev shadow for %s (scan %d): openai %s %.2f, jev %s via %s %.2f",
+        member.id, len(entry["messages"]), call, confidence, jev["call"], jev["rule"], jev["p"],
+    )
+    return join_watch_jev.card_line(jev, acted)
 
 
 # --- Gemini ---------------------------------------------------------------------
@@ -1096,6 +1133,7 @@ async def _log_scan(
     confidence: float,
     outcome: str,
     usage: dict[str, int] | None,
+    extra_line: str | None = None,
 ) -> None:
     """Best-effort per-scan audit card in the bot usage log; never blocks screening."""
     try:
@@ -1128,6 +1166,8 @@ async def _log_scan(
         cost_line = _cost_footer(usage)
         if cost_line:
             text += f"\n-# {cost_line}"
+        if extra_line:
+            text += f"\n{extra_line}"
         view = discord.ui.LayoutView(timeout=None)
         card = discord.ui.Container(accent_colour=colour)
         card.add_item(discord.ui.TextDisplay(text[:1900]))

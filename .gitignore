@@ -10,6 +10,7 @@ data/updated_iceberg.png
 data/iceberg_texts.json
 
 *.json
+data/json/*.jsonl
 # ...but the crossword puzzle set is shipped game content, not runtime state - it sits
 # alongside the Wordle word lists and the bot can't run the feature without it.
 !data/words/crosswords.json

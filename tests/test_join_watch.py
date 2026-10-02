@@ -18,6 +18,12 @@ def _fresh(monkeypatch, tmp_path):
     monkeypatch.setattr(join_watch, "_buffers_loaded", False)
     join_watch._buffers.clear()
     join_watch._locks.clear()
+    # The Jev shadow would call TypeSafe whenever the key is in the environment.
+    monkeypatch.setattr(join_watch, "_jev_shadow", _no_jev)
+
+
+async def _no_jev(_member, _messages):
+    return None
 
 
 def _restart(monkeypatch):
@@ -617,3 +623,63 @@ def test_mute_dm_gets_the_report_link_once_the_report_posts(monkeypatch):
     assert asyncio.run(scenario()) == PostedReport.jump_url
     # Taken once: a later mute of the same member must not reuse this report.
     assert asyncio.run(join_watch.wait_for_report_link(member.id, timeout=0)) is None
+
+
+# --- Jev shadow -------------------------------------------------------------------------
+
+from commands.moderation import join_watch_jev  # noqa: E402
+
+
+def test_jev_flood_is_decided_in_code_from_the_timestamps():
+    burst = [{"channel": f"#{c}", "content": "JOIN discord.gg/x NOW", "ts": 100 + i * 5}
+             for i, c in enumerate(("general", "memes", "gaming"))]
+    assert join_watch_jev.is_flood(burst)
+    # The same three hellos spread over an afternoon are somebody looking round.
+    spread = [dict(m, ts=100 + i * 3600) for i, m in enumerate(burst)]
+    assert not join_watch_jev.is_flood(spread)
+
+
+def test_jev_screen_turns_its_highest_noul_into_the_verdict(monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    sent = {}
+
+    async def fake_post(payload, key, *, session, timeout):
+        sent.update(payload)
+        return {"model": "jev-1.13.0", "usage": {"input_tokens": 900},
+                "answers": {q: {"noul": 0.97 if q == "brief" else 0.02} for q in payload["questions"]}}
+
+    import lib.features.mention_signals as signals
+    monkeypatch.setattr(signals, "_post", fake_post)
+    member = FakeMember()
+    msgs = [{"channel": "#general", "content": "anyone got a spare o2 code", "ts": 1}]
+    jev = asyncio.run(join_watch_jev.screen(member, msgs, "flag code askers", 0.85))
+    assert (jev["call"], jev["rule"]) == ("troll", "brief")
+    assert sent["state"]["messages"] == [{"channel": "#general", "text": "anyone got a spare o2 code"}]
+    # No brief, no brief question: the floor is all there is to screen against.
+    asyncio.run(join_watch_jev.screen(member, msgs, "", 0.85))
+    assert "brief" not in sent["questions"]
+
+
+def test_jev_shadow_only_annotates_the_scan_and_never_acts(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    monkeypatch.setattr(join_watch_jev.config, "JOIN_WATCH_JEV_SHADOW_FILE", str(tmp_path / "shadow.jsonl"))
+    join_watch.set_join_watch_state(True)
+    member, client = FakeMember(), FakeClient()
+
+    async def fake_evaluate(_client, _member, _messages):
+        return {"verdict": "fine", "confidence": 0.9, "reason": "Hello."}, None
+
+    async def jev_says_troll(_member, _messages):
+        return {"call": "troll", "rule": "slur", "p": 0.97, "probs": {"slur": 0.97}, "ms": 210}
+
+    monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
+    monkeypatch.setattr(join_watch, "_jev_shadow", jev_says_troll)
+    join_watch.register_join(member)
+    asyncio.run(join_watch.maybe_watch_message(client, FakeMessage(member, "hello")))
+
+    assert member.timeouts == [] and client.police.sent == []
+    card = client.usage_log.sent[-1]["view"].children[0].children[0].content
+    assert "Jev (shadow): **troll**" in card and "disagrees" in card
+    import json as _json
+    row = _json.loads((tmp_path / "shadow.jsonl").read_text().splitlines()[-1])
+    assert row["agree"] is False and row["openai"]["call"] == "fine" and row["jev"]["rule"] == "slur"

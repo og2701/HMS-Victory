@@ -532,6 +532,10 @@ JOIN_WATCH_FILE = os.path.join(JSON_DATA_DIR, "join_watch.json")  # oggers' AI r
 # message while the toggle changes about twice a week.
 JOIN_WATCH_BUFFERS_FILE = os.path.join(JSON_DATA_DIR, "join_watch_buffers.json")
 JOIN_WATCH_MAX_WATCH_HOURS = 168  # stop watching a joiner after 7d even if they never hit the message cap
+# Jev (TypeSafe) screens every join-watch scan alongside OpenAI without acting, so the two can be
+# compared on real joiners. Each scan's pair of verdicts is appended to the JSONL file.
+JOIN_WATCH_JEV_SHADOW = True
+JOIN_WATCH_JEV_SHADOW_FILE = os.path.join(JSON_DATA_DIR, "join_watch_jev_shadow.jsonl")
 TOWN_CRIER_TRACKING_FILE = os.path.join(JSON_DATA_DIR, "town_crier_tracking.json")
 CHATBOT_USAGE_FILE = os.path.join(JSON_DATA_DIR, "chatbot_usage.json")
 CHATBOT_CONFIG_FILE = os.path.join(JSON_DATA_DIR, "chatbot_config.json")
