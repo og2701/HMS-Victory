@@ -235,14 +235,20 @@ async def resume(request):
 
 
 async def timing(request):
-    """The page reports how long each sign-in step took, so a slow launch can be pinned down."""
+    """The page reports how long each sign-in step took, so a slow launch can be pinned down,
+    and anything that went wrong on the device (as `problem`), so it can be diagnosed."""
     who = _player(request)
     try:
         body = await request.json()
         steps = {k: int(v) for k, v in (body.get("steps") or {}).items() if isinstance(v, (int, float))}
     except Exception:
         return _error("Bad request.", 400)
-    log.info("activity launch timing for %s: %s", who["uid"] if who else "?", steps)
+    problem = body.get("problem")
+    if isinstance(problem, str) and problem:
+        # something that went wrong on the player's device (a 3D view lost, say), for diagnosing
+        log.warning("activity problem for %s: %s", who["uid"] if who else "?", problem[:600])
+    elif steps:
+        log.info("activity launch timing for %s: %s", who["uid"] if who else "?", steps)
     return _json({"ok": True})
 
 
