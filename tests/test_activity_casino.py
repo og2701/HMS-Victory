@@ -288,6 +288,37 @@ def test_the_api_deals_and_plays(economy, monkeypatch):
     assert status == 422
 
 
+def test_leaving_the_table_ends_the_sitting(economy, monkeypatch):
+    client = _client(monkeypatch)
+    sessions._sittings.clear()
+    monkeypatch.setattr(sessions, "_schedule", lambda s: None)
+    sessions.record(UID, "blackjack", "Blackjack", "hands", base.Round(100, 200, "Win"))
+    s = sessions._sittings[UID]
+    status, _ = _call(client, "POST", "/api/casino/mines/leave")     # another table: no effect
+    assert status == 200 and not s.done
+    status, _ = _call(client, "POST", "/api/casino/blackjack/here")
+    assert status == 200 and not s.done
+    status, _ = _call(client, "POST", "/api/casino/blackjack/leave")
+    assert status == 200 and s.done and UID not in sessions._sittings
+
+
+def test_a_table_that_stops_checking_in_is_closed_by_the_sweep(monkeypatch):
+    sessions._sittings.clear()
+    monkeypatch.setattr(sessions, "_schedule", lambda s: None)
+    sessions.record(1, "darts", "Darts", "rounds", base.Round(100, 0, ""))
+    s = sessions._sittings[1]
+    s.seen -= sessions.GONE_AFTER - 10
+    sessions.sweep()
+    assert not s.done
+    sessions.here(1, "darts")
+    s.last -= sessions.GONE_AFTER + 5                # no rounds lately, but still checking in
+    sessions.sweep()
+    assert not s.done
+    s.seen -= sessions.GONE_AFTER + 5
+    sessions.sweep()
+    assert s.done
+
+
 def test_the_casino_stays_shut_outside_its_test_channels(economy, monkeypatch):
     client = _client(monkeypatch)
     status, out = _call(client, "GET", "/api/casino/blackjack", ch=999)

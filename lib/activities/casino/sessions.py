@@ -2,8 +2,8 @@
 
 Play happens privately in the activity, so the channel gets a summary instead of a message
 per hand: one live line per player per sitting, posted after their first round and edited
-as they go, then marked as left once they've been idle for a while or moved to another
-game. A round that pays at least BIG_WIN_MULTIPLE times the stake (or nets BIG_WIN_NET)
+as they go, then marked as left once they leave the table (the activity says so, or stops
+checking in while the table is open), go idle, or move to another game. A round that pays at least BIG_WIN_MULTIPLE times the stake (or nets BIG_WIN_NET)
 also gets a post of its own with a Play button, so the moments worth seeing still stand
 out.
 
@@ -30,6 +30,7 @@ import config
 log = logging.getLogger(__name__)
 
 IDLE_AFTER = 300        # seconds without a round before a sitting is over
+GONE_AFTER = 75         # seconds without a word from the open table before they've gone
 EDIT_GAP = 6.0          # seconds between edits of one live line
 IMAGE = "casino.png"
 GOLD, WIN, LOSS = 0xE2BE78, 0x23A55A, 0xF87171
@@ -57,6 +58,7 @@ class Sitting:
     best_net: int | None = None
     best_text: str = ""
     last: float = field(default_factory=time.time)
+    seen: float = field(default_factory=time.time)  # the table last checked in
     message_id: int | None = None
     done: bool = False
     dirty: bool = False
@@ -164,7 +166,7 @@ def record(uid: int, key: str, label: str, unit: str, rnd, view: dict | None = N
         s = _sittings[uid] = Sitting(uid, key, label, unit)
     s.rounds += 1
     s.net += rnd.net
-    s.last = now
+    s.last = s.seen = now
     if rnd.net > 0 and (s.best_net is None or rnd.net > s.best_net):
         s.best_net, s.best_text = rnd.net, rnd.outcome
     big = is_big(rnd)
@@ -278,11 +280,26 @@ def _finish(s: Sitting) -> None:
     _schedule(s)
 
 
+def here(uid: int, key: str) -> None:
+    """The activity still has this table open (it checks in every 25 seconds or so)."""
+    s = _sittings.get(int(uid))
+    if s is not None and s.key == key:
+        s.seen = time.time()
+
+
+def leave(uid: int, key: str) -> None:
+    """The player closed the table or the activity: the line stops saying playing now."""
+    s = _sittings.get(int(uid))
+    if s is not None and s.key == key:
+        _finish(s)
+
+
 def sweep() -> None:
-    """Close sittings nobody has played at for IDLE_AFTER seconds."""
+    """Close sittings nobody has played at for IDLE_AFTER seconds, or whose table stopped
+    checking in GONE_AFTER seconds ago (the activity was closed without saying so)."""
     now = time.time()
     for s in list(_sittings.values()):
-        if now - s.last > IDLE_AFTER:
+        if now - s.last > IDLE_AFTER or now - s.seen > GONE_AFTER:
             _finish(s)
 
 

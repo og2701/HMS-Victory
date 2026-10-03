@@ -13,6 +13,7 @@ mapping's prefix isn't worth betting the launch on:
     GET  /home           balance, today's puzzles, the casino in last-played order
     GET  /casino/<game>  a casino table (the hand in play, or the last one)
     POST /casino/<game>/<action>   deal {bet} or a move -> the table after it
+    POST /casino/<game>/here|leave the open table checking in, or closing (for #casino)
     GET  /health
 """
 
@@ -340,6 +341,10 @@ async def casino_move(request):
     who, key, err = _casino_request(request)
     if err is not None:
         return err
+    presence = {"here": casino.sessions.here, "leave": casino.sessions.leave}.get(request.match_info["action"])
+    if presence is not None:            # the open table checking in, or closing
+        presence(who["uid"], key)
+        return _json({"ok": True})
     try:
         body = await request.json()
     except Exception:
